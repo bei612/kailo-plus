@@ -99,12 +99,88 @@ export class ApiHistoryRepository
   // Commit the original query record before calling the native engine. A
   // duplicate key never starts another query, including after process death.
   public async reserveGovernedQuery(record: ApiHistory): Promise<boolean> {
-    const rows = await this.knex(this.tableName)
-      .insert(this.transformToDBData(record))
-      .onConflict(['governance_binding_id', 'governance_key'])
-      .ignore()
-      .returning('id');
-    return rows.length === 1;
+    return this.knex.transaction(async (tx) => {
+      const rows = await tx(this.tableName)
+        .insert(this.transformToDBData(record))
+        .onConflict(['governance_binding_id', 'governance_key'])
+        .ignore()
+        .returning('id');
+      if (rows.length === 1) return true;
+      const row = await tx(this.tableName)
+        .where({
+          id: record.id,
+          governance_binding_id: record.governanceBindingId,
+          governance_key: record.governanceKey,
+        })
+        .first()
+        .forUpdate();
+      if (!row) return false;
+      const prepared = this.transformFromDBData(row);
+      // The original SQL editor freezes this same native history row before
+      // admission. Only the first authenticated dispatch may attach its AE;
+      // it cannot replace the native SQL, deployment, sources or current user.
+      if (
+        prepared.governanceState != null ||
+        prepared.governanceActionExecutionId != null ||
+        prepared.governanceOperationId != null ||
+        prepared.governanceParameterHash != null ||
+        typeof prepared.requestPayload?.previewScope !== 'string' ||
+        prepared.projectId !== record.projectId ||
+        prepared.apiType !== record.apiType ||
+        prepared.governanceDeploymentId !== record.governanceDeploymentId ||
+        prepared.governanceDeploymentHash !== record.governanceDeploymentHash ||
+        !isEqual(
+          Object.fromEntries(
+            Object.entries(prepared.requestPayload).filter(
+              ([key]) => !['previewScope', 'nativeSources'].includes(key),
+            ),
+          ),
+          record.requestPayload,
+        )
+      )
+        return false;
+      return (
+        (await tx(this.tableName)
+          .where({ id: record.id })
+          .update(
+            this.transformToDBData({
+              governanceActionExecutionId: record.governanceActionExecutionId,
+              governanceOperationId: record.governanceOperationId,
+              governanceParameterHash: record.governanceParameterHash,
+              governanceState: 'UNKNOWN',
+              statusCode: 202,
+              durationMs: 0,
+            }),
+          )) === 1
+      );
+    });
+  }
+
+  public async prepareNativeSql(
+    record: ApiHistory,
+  ): Promise<ApiHistory | null> {
+    return this.knex.transaction(async (tx) => {
+      await tx(this.tableName)
+        .insert(this.transformToDBData(record))
+        .onConflict(['governance_binding_id', 'governance_key'])
+        .ignore();
+      const row = await tx(this.tableName)
+        .where({
+          governance_binding_id: record.governanceBindingId,
+          governance_key: record.governanceKey,
+        })
+        .first()
+        .forUpdate();
+      if (!row) return null;
+      const current = this.transformFromDBData(row);
+      return current.projectId === record.projectId &&
+        current.apiType === record.apiType &&
+        current.governanceDeploymentId === record.governanceDeploymentId &&
+        current.governanceDeploymentHash === record.governanceDeploymentHash &&
+        isEqual(current.requestPayload, record.requestPayload)
+        ? current
+        : null;
+    });
   }
 
   public async completeGovernedQuery(

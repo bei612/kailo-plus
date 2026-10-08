@@ -1244,7 +1244,8 @@ export class ModelResolver {
     args: { data: PreviewSQLData },
     ctx: IContext,
   ) {
-    const { sql, projectId, limit, dryRun } = args.data;
+    const { sql, projectId, limit, dryRun, idempotencyKey, idempotencyScope } =
+      args.data;
     const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
     const project =
       projectId && !bound
@@ -1252,6 +1253,36 @@ export class ModelResolver {
         : await ctx.projectService.getCurrentProject();
     if (bound && projectId && projectId !== String(project.id)) {
       throw new Error('Project not found');
+    }
+    if (bound) {
+      const config = await loadQueryDelivery();
+      const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);
+      if (idempotencyScope !== previewScope || config.projectId !== project.id)
+        throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+      const { components } = await import('@/common');
+      const native = new NativeQueryService(
+        config,
+        ctx.projectRepository,
+        ctx.deployRepository,
+        components.apiHistoryRepository,
+        ctx.queryService,
+        ctx.viewRepository,
+        ctx.modelRepository,
+        ctx.modelColumnRepository,
+      );
+      const receipt = await new NativeHumanQuery(
+        config,
+        native,
+        components.apiHistoryRepository,
+      ).previewSql(
+        ctx.nativeHumanToken,
+        idempotencyKey,
+        sql,
+        limit ?? DEFAULT_PREVIEW_LIMIT,
+        previewScope,
+        !!dryRun,
+      );
+      return { ...receipt, previewScope };
     }
     const { manifest } = await ctx.deployService.getLastDeployment(project.id);
     return await ctx.queryService.preview(sql, {

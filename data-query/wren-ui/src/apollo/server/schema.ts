@@ -871,6 +871,8 @@ export const typeDefs = gql`
     projectId: String
     limit: Int
     dryRun: Boolean
+    idempotencyKey: String
+    idempotencyScope: String
   }
 
   # Schema Change

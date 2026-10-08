@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/source_resource.schema.json",
+  "title": "AdapterSourceResource",
+  "description": "Actual native planner source within the existing execution binding. Metadata only: neither SQL/content nor a grant. The original action and result-exposure authority must authorize every resolved Resource.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nativeType", "nativeRef"],
+  "properties": {
+    "nativeType": {"type": "string", "minLength": 1},
+    "nativeRef": {"type": "string", "minLength": 1}
+  }
+}

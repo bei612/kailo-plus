@@ -247,6 +247,7 @@ export interface AdapterExecutionResponse {
     contentReferences?: ContentReferenceElement[];
     execution:          ExecutionClass;
     resultJson?:        string;
+    sourceResources?:   SourceResourceElement[];
 }
 
 /**
@@ -262,6 +263,16 @@ export interface ExecutionClass {
     nativeType:       string;
     platformStatus:   ExternalExecutionStatus;
     terminalAt?:      string;
+}
+
+/**
+ * Actual native planner source within the existing execution binding. Metadata only:
+ * neither SQL/content nor a grant. The original action and result-exposure authority must
+ * authorize every resolved Resource.
+ */
+export interface SourceResourceElement {
+    nativeRef:  string;
+    nativeType: string;
 }
 
 /**
@@ -292,6 +303,7 @@ export interface AdapterPepCheckRequest {
     bindingId:         string;
     contentReference?: ContentReferenceElement;
     operation:         string;
+    sourceResources?:  SourceResourceElement[];
 }
 
 /**
@@ -700,6 +712,16 @@ export enum NativeScopeResult {
     AbsentFenced = "ABSENT_FENCED",
     Found = "FOUND",
     Refused = "REFUSED",
+}
+
+/**
+ * Actual native planner source within the existing execution binding. Metadata only:
+ * neither SQL/content nor a grant. The original action and result-exposure authority must
+ * authorize every resolved Resource.
+ */
+export interface AdapterSourceResource {
+    nativeRef:  string;
+    nativeType: string;
 }
 
 /**
@@ -3153,6 +3175,7 @@ export interface NativeHumanActionRequest {
      * never creates a Resource or native object.
      */
     resolveResource?: NativeHumanResourceQuery;
+    sourceResources?: SourceResourceElement[];
 }
 
 /**

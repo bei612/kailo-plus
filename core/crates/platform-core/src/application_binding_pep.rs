@@ -134,9 +134,11 @@ pub(crate) async fn check(
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         let operation=text(&raw,"operation")?;
+        let sources=raw.get("sourceResources");
+        if sources.is_some() && operation!="execute" { return Err(invalid()); }
         let arguments:Value=serde_json::from_str(text(&raw,"argumentsJson")?).map_err(|_|invalid())?;
         if super::read_grant::native_receiver::is_receiver(&ae) {
-            if status!="ACTIVE" || raw.get("contentReference").is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
+            if status!="ACTIVE" || raw.get("contentReference").is_some() || sources.is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
             let revision=super::read_grant::native_receiver::authorize(&state,&mut tx,&ae,binding,&claims,operation,&arguments).await?;
             tx.commit().await?;
             let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
@@ -144,7 +146,7 @@ pub(crate) async fn check(
             return Ok(response);
         }
         if super::read_grant::is_service(&ae) {
-            if status!="ACTIVE" || raw.get("contentReference").is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
+            if status!="ACTIVE" || raw.get("contentReference").is_some() || sources.is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
             let revision=super::read_grant::authorize(&state,&ae,binding,&claims,operation,&arguments).await?;
             tx.commit().await?;
             let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
@@ -154,6 +156,7 @@ pub(crate) async fn check(
         let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         let management=crate::action_token::management_operation(&ae.action_key,&status,operation);
         if def.execution_mode=="PROTOCOL" {
+            if sources.is_some() { return Err(invalid()); }
             let observing=matches!(operation,"observe"|"cancel")
                 || (operation=="query_revision" && arguments.get("protocolReconcile").is_some());
             let parameters=ae.parameters.as_ref().ok_or_else(invalid)?;
@@ -249,7 +252,7 @@ pub(crate) async fn check(
                 let (_,revision)=crate::application_tool::fresh_revision_read(&state,&ae,&arguments).await?;
                 revision
             } else {
-                let decision=crate::application_tool::fresh_execution(&state.governance,&ae).await?;
+                let decision=crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,sources).await?;
                 if !decision.allowed {return Err(Refusal::Denied(ReasonCode::PermissionDenied));}
                 decision.zed_token.filter(|v|!v.is_empty()).ok_or_else(blocked)?
             };
@@ -263,7 +266,7 @@ pub(crate) async fn check(
             return Ok(response);
         }
         let expected_workspace=workspace.map(|id|json!(id));
-        if !management || Some(ae.id)!=lifecycle || ae.target_id!=binding
+        if !management || sources.is_some() || Some(ae.id)!=lifecycle || ae.target_id!=binding
             || ae.tenant_id!=tenant || ae.workspace_id!=workspace
             || ae.actor_principal_id!=ae.initiator_principal_id || ae.gate_state!="ALLOWED" || ae.dispatch_state!="DISPATCHED"
             || def.result_exposure!="NONE" || def.target_type!="APPLICATION_BINDING"

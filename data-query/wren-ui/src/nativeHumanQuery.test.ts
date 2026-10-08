@@ -150,6 +150,243 @@ describe('native saved-view HUMAN query consumer', () => {
       { findOneBy: history } as unknown as ApiHistoryRepository,
     );
   });
+  it.each([false, true])(
+    'submits the original SQL editor with its exact query/dry-run action and policy (%s)',
+    async (dryRun) => {
+      const scope = 'c'.repeat(64),
+        historyId = '872bff6e-4a5b-4301-a3df-3fb92fd78321';
+      const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+      const frozenSelection = {
+        modelId: 8,
+        deploymentId: selection.deploymentId,
+        deploymentHash: selection.deploymentHash,
+        limit: 10,
+        historyId,
+      };
+      const frozen = {
+        ...reference,
+        resourceId: binding,
+        nativeObjectRef: JSON.stringify(frozenSelection),
+      };
+      const output = {
+        ...receipt,
+        submission: { ...submission, actionKey: action },
+        inputReference: frozen,
+      };
+      const draft = { objects: capturedSources };
+      const native = {
+        sqlSelection: jest.fn().mockResolvedValue(draft),
+        sqlReference: jest.fn().mockResolvedValue(frozen),
+        sqlIntent: jest.fn().mockResolvedValue(frozenSelection),
+      };
+      const dryRunAction = {
+        resultExposurePolicyId: 'a4f32fcf-374c-4565-a8b8-14b0f0d21c0c',
+        resultExposurePolicyVersion: 2,
+      };
+      const human = new NativeHumanQuery(
+        { ...config, dryRunAction },
+        native as any,
+        { findOneBy: history } as any,
+      );
+      calls.mockImplementation(async (_config, _operation, request) => {
+        const resolved = request.resolveResource as any;
+        if (resolved)
+          return {
+            resource: {
+              ...resolution.resource,
+              resourceId: resolved.nativeType === 'model' ? binding : resource,
+              nativeType: resolved.nativeType,
+              nativeRef: resolved.nativeRef,
+            },
+          };
+        if (request.command)
+          return {
+            ...output,
+            inputReference: { ...frozen, resourceId: binding },
+          };
+        return null;
+      });
+      expect(
+        await human.previewSql(
+          'verified-native-token',
+          key,
+          statement,
+          10,
+          scope,
+          dryRun,
+        ),
+      ).toMatchObject({ submission: { actionKey: action } });
+      expect(native.sqlSelection).toHaveBeenCalledWith(
+        key,
+        statement,
+        10,
+        scope,
+        action,
+      );
+      expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
+      const command = calls.mock.calls.find((call) => call[2].command)?.[2]
+        .command as any;
+      expect(command.componentAction).toEqual({
+        actionVersion: 1,
+        inputReference: frozen,
+        ...(dryRun ? dryRunAction : config.humanAction),
+      });
+      expect(JSON.stringify(command)).not.toContain(statement);
+      expect(
+        calls.mock.calls.filter((call) => call[2].resolveResource),
+      ).toHaveLength(4);
+      expect(history).not.toHaveBeenCalled();
+    },
+  );
+
+  it('never freezes or submits SQL when any current source is denied', async () => {
+    const native = {
+      sqlSelection: jest.fn().mockResolvedValue({ objects: capturedSources }),
+      sqlReference: jest.fn(),
+    };
+    const human = new NativeHumanQuery(
+      config,
+      native as any,
+      { findOneBy: history } as any,
+    );
+    calls
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+    await expect(
+      human.previewSql(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        'c'.repeat(64),
+        false,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(native.sqlReference).not.toHaveBeenCalled();
+    expect(calls.mock.calls.some((call) => call[2].command)).toBe(false);
+  });
+
+  it('does not use the query output policy for an unconfigured dry run', async () => {
+    await expect(
+      service.previewSql(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        'c'.repeat(64),
+        true,
+      ),
+    ).rejects.toThrow('NATIVE_HUMAN_ADMISSION_UNAVAILABLE');
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it('observes the original SQL-editor UNKNOWN without another selection or command', async () => {
+    const frozenSelection = { ...selection, historyId: key };
+    const output = {
+      ...receipt,
+      inputReference: {
+        ...reference,
+        nativeObjectRef: JSON.stringify(frozenSelection),
+      },
+    };
+    const native = {
+      sqlSelection: jest.fn(),
+      sqlReference: jest.fn(),
+      sqlIntent: jest.fn().mockResolvedValue(frozenSelection),
+    };
+    const human = new NativeHumanQuery(
+      config,
+      native as any,
+      { findOneBy: history } as any,
+    );
+    calls.mockResolvedValue(output);
+    expect(
+      await human.previewSql(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        'c'.repeat(64),
+        false,
+      ),
+    ).toEqual(output);
+    expect(native.sqlSelection).not.toHaveBeenCalled();
+    expect(native.sqlReference).not.toHaveBeenCalled();
+    expect(native.sqlIntent).toHaveBeenCalledWith(
+      output.inputReference,
+      key,
+      statement,
+      10,
+      'c'.repeat(64),
+      'data_query.query@v1',
+    );
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes the actual SQL resolver through current HUMAN scope and never direct QueryService.preview', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
+    const scope = nativePreviewScope(config, 'a'.repeat(64));
+    const delegated = jest
+      .spyOn(NativeHumanQuery.prototype, 'previewSql')
+      .mockResolvedValue(receipt);
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    const ctx: any = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'verified-native-token',
+      projectService: {
+        getCurrentProject: jest
+          .fn()
+          .mockResolvedValue({ id: config.projectId }),
+      },
+      queryService: { preview: jest.fn() },
+    };
+    try {
+      expect(
+        await new ModelResolver().previewSql(
+          null,
+          {
+            data: {
+              sql: statement,
+              limit: 10,
+              dryRun: true,
+              idempotencyKey: key,
+              idempotencyScope: scope,
+            },
+          },
+          ctx,
+        ),
+      ).toEqual({ ...receipt, previewScope: scope });
+      expect(delegated).toHaveBeenCalledWith(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        scope,
+        true,
+      );
+      await expect(
+        new ModelResolver().previewSql(
+          null,
+          {
+            data: {
+              sql: statement,
+              limit: 10,
+              idempotencyKey: key,
+              idempotencyScope: 'b'.repeat(64),
+            },
+          },
+          ctx,
+        ),
+      ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    } finally {
+      delegated.mockRestore();
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
   it('submits only a saved reference through the original action and never treats dispatch as data', async () => {
     calls
       .mockResolvedValueOnce(null)
@@ -351,6 +588,14 @@ describe('native saved-view HUMAN query consumer', () => {
         nativeRef: '7',
       },
     });
+    expect(calls.mock.calls[3][2]).toEqual({
+      bindingId: binding,
+      idempotencyKey: key,
+      sourceResources: [
+        { nativeType: 'model', nativeRef: '8' },
+        { nativeType: 'view', nativeRef: '7' },
+      ],
+    });
     calls.mockReset();
     calls
       .mockResolvedValueOnce(completed)
@@ -402,6 +647,120 @@ describe('native saved-view HUMAN query consumer', () => {
     ).toHaveLength(1);
     expect(freeze).not.toHaveBeenCalled();
   });
+
+  it('does not disclose completed native data when the same AE source read/export policy intersection is denied', async () => {
+    const completed = {
+      ...receipt,
+      terminalStatus: 'COMPLETED',
+      nativeType: 'wren.api_history',
+      nativeId: 'native-result',
+    };
+    history.mockResolvedValue(nativeRecord());
+    calls.mockImplementation(async (_config, _operation, input) => {
+      if (input.sourceResources)
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const query = input.resolveResource as any;
+      if (query)
+        return {
+          resource: {
+            ...resolution.resource,
+            nativeType: query.nativeType,
+            nativeRef: query.nativeRef,
+          },
+        };
+      return completed;
+    });
+    await expect(
+      service.preview('verified-native-token', 7, 10, key),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+    expect(calls.mock.calls.at(-1)[2].sourceResources).toEqual([
+      { nativeType: 'model', nativeRef: '8' },
+      { nativeType: 'view', nativeRef: '7' },
+    ]);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'discloses the original SQL-editor history only after current same-AE source policy checks (dry run %s)',
+    async (dryRun) => {
+      const id = 'e70f46be-16d8-40ae-8bfb-38bdc28615bc';
+      const selected = { ...selection, historyId: id };
+      const frozen = {
+        ...reference,
+        nativeObjectRef: JSON.stringify(selected),
+        nativeRevision: digest({
+          bindingId: binding,
+          projectId: config.projectId,
+          connection,
+          selection: selected,
+          sql: statement,
+        }),
+      };
+      const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+      const completed = {
+        ...receipt,
+        inputReference: frozen,
+        submission: { ...submission, actionKey: action },
+        terminalStatus: 'COMPLETED',
+        nativeType: 'wren.api_history',
+        nativeId: id,
+      };
+      const record = nativeRecord(frozen);
+      record.requestPayload.action = action;
+      if (dryRun)
+        record.responsePayload = {
+          valid: true,
+          deploymentId: selection.deploymentId,
+          deploymentHash: selection.deploymentHash,
+        } as any;
+      history.mockResolvedValue(record);
+      const native = {
+        sqlIntent: jest.fn().mockResolvedValue(selected),
+        sqlSelection: jest.fn(),
+        sqlReference: jest.fn(),
+        completedQuerySources: sources,
+      };
+      const human = new NativeHumanQuery(
+        { ...config, dryRunAction: config.humanAction },
+        native as any,
+        { findOneBy: history } as any,
+      );
+      calls.mockImplementation(async (_config, _operation, input) => {
+        const query = input.resolveResource as any;
+        if (query)
+          return {
+            resource: {
+              ...resolution.resource,
+              nativeType: query.nativeType,
+              nativeRef: query.nativeRef,
+            },
+          };
+        return completed;
+      });
+      const result = await human.previewSql(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        'c'.repeat(64),
+        dryRun,
+      );
+      expect(result.data).toEqual(record.responsePayload);
+      expect(calls.mock.calls.at(-1)[2].sourceResources).toEqual([
+        { nativeType: 'model', nativeRef: '8' },
+        { nativeType: 'view', nativeRef: '7' },
+      ]);
+      expect(
+        calls.mock.calls
+          .filter((call) => call[2].resolveResource)
+          .every(
+            (call) => (call[2].resolveResource as any).actionKey === action,
+          ),
+      ).toBe(true);
+      expect(native.sqlSelection).not.toHaveBeenCalled();
+      expect(native.sqlReference).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     'missing history',

@@ -72,6 +72,8 @@ integration('original Wren query handler, SDK and native history', () => {
   let expectedSourceSql: string;
   let onSources: (() => Promise<void>) | undefined;
   let onQuery: (() => Promise<void>) | undefined;
+  let deniedSource: string | undefined;
+  let sourceChecks: unknown[][];
   const serviceSecret = randomUUID();
   const serviceToken = randomUUID();
   const resource = randomUUID();
@@ -232,6 +234,17 @@ integration('original Wren query handler, SDK and native history', () => {
           Buffer.from(body.actionToken.split('.')[1], 'base64url').toString(),
         );
         const argumentsValue = JSON.parse(body.argumentsJson);
+        if (body.sourceResources !== undefined) {
+          expect(body.operation).toBe('execute');
+          expect(Array.isArray(body.sourceResources)).toBe(true);
+          expect(body.sourceResources.length).toBeGreaterThan(0);
+          for (const source of body.sourceResources)
+            expect(Object.keys(source).sort()).toEqual([
+              'nativeRef',
+              'nativeType',
+            ]);
+          sourceChecks.push(body.sourceResources);
+        }
         expect(claims.normalized_parameter_hash).toBe(
           digest(
             body.operation === 'execute'
@@ -239,7 +252,13 @@ integration('original Wren query handler, SDK and native history', () => {
               : { operation: body.operation, arguments: argumentsValue },
           ),
         );
-        if (denyAt && peps >= denyAt) response.writeHead(403).end('{}');
+        if (
+          (denyAt && peps >= denyAt) ||
+          body.sourceResources?.some(
+            (source) => source.nativeRef === deniedSource,
+          )
+        )
+          response.writeHead(403).end('{}');
         else
           response.end(
             JSON.stringify({
@@ -372,6 +391,8 @@ integration('original Wren query handler, SDK and native history', () => {
     ];
     onSources = undefined;
     onQuery = undefined;
+    deniedSource = undefined;
+    sourceChecks = [];
     await database('deploy_log')
       .where({ id: 1 })
       .update({
@@ -873,6 +894,223 @@ integration('original Wren query handler, SDK and native history', () => {
     }
   }, 30000);
 
+  it.each(['data_query.query', 'data_query.dry_run'])(
+    'attaches %s to the same original SQL-editor history row and never repeats its native call',
+    async (action) => {
+      const service = new NativeQueryService(
+        delivery,
+        mockComponents.projectRepository,
+        mockComponents.deployLogRepository,
+        mockComponents.apiHistoryRepository,
+        mockComponents.queryService,
+        mockComponents.viewRepository,
+        mockComponents.modelRepository,
+        mockComponents.modelColumnRepository,
+      );
+      const key = randomUUID(),
+        scope = 'd'.repeat(64);
+      const draft = await service.sqlSelection(
+        key,
+        input.sql,
+        input.limit,
+        scope,
+        `${action}@v1` as 'data_query.query@v1' | 'data_query.dry_run@v1',
+      );
+      const reference = await service.sqlReference(resource, draft);
+      const selection = JSON.parse(reference.nativeObjectRef);
+      expect(JSON.stringify(reference)).not.toContain(input.sql);
+      const before = await mockComponents.apiHistoryRepository.findOneBy({
+        id: selection.historyId,
+      });
+      expect(before.governanceState).toBeNull();
+      expect(before.governanceActionExecutionId).toBeNull();
+      expect(before.requestPayload.previewScope).toBe(scope);
+      expect(before.requestPayload.sql).toBe(input.sql);
+      const awaiting = {
+        externalExecutionId: randomUUID(),
+        idempotencyKey: key,
+        nativeType: 'wren.api_history',
+      };
+      expect(
+        await service.observe(
+          await signed(action, awaiting, randomUUID(), randomUUID(), true),
+          awaiting,
+        ),
+      ).toEqual({
+        execution: {
+          idempotencyKey: key,
+          nativeType: 'wren.api_history',
+          platformStatus: 'UNKNOWN',
+          cancelCapability: 'UNSUPPORTED',
+        },
+      });
+      expect(queries).toBe(0);
+      const token = await signed(action, reference);
+      const first = (await call(token, key, action, reference))
+        .structuredContent as any;
+      expect(first.execution.platformStatus).toBe('SUCCEEDED');
+      expect(first.execution.nativeId).toBe(selection.historyId);
+      expect(queries).toBe(1);
+      const after = await mockComponents.apiHistoryRepository.findOneBy({
+        id: selection.historyId,
+      });
+      expect(after.governanceActionExecutionId).toBeTruthy();
+      expect(after.requestPayload).toEqual(before.requestPayload);
+      expect(
+        (
+          await database('api_history').where({
+            governance_binding_id: delivery.bindingId,
+            governance_key: key,
+          })
+        ).length,
+      ).toBe(1);
+      const replay = (await call(token, key, action, reference))
+        .structuredContent as any;
+      expect(replay).toMatchObject({
+        execution: {
+          nativeId: first.execution.nativeId,
+          platformStatus: 'SUCCEEDED',
+        },
+      });
+      expect(JSON.parse(replay.resultJson)).toEqual(
+        JSON.parse(first.resultJson),
+      );
+      expect(queries).toBe(1);
+      await expect(
+        service.sqlSelection(
+          key,
+          input.sql,
+          input.limit,
+          'e'.repeat(64),
+          `${action}@v1` as any,
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+      await expect(
+        service.sqlSelection(
+          key,
+          `${input.sql} `,
+          input.limit,
+          scope,
+          `${action}@v1` as any,
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(
+        await mockComponents.apiHistoryRepository.prepareNativeSql({
+          ...before,
+          requestPayload: { ...before.requestPayload, nativeSources: [] },
+        }),
+      ).toBeNull();
+      const unchanged = await mockComponents.apiHistoryRepository.findOneBy({
+        id: after.id,
+      });
+      expect(unchanged.requestPayload).toEqual(before.requestPayload);
+    },
+  );
+
+  it('keeps the original prepared SQL history UNKNOWN after transport loss without another native query', async () => {
+    const service = new NativeQueryService(
+      delivery,
+      mockComponents.projectRepository,
+      mockComponents.deployLogRepository,
+      mockComponents.apiHistoryRepository,
+      mockComponents.queryService,
+      mockComponents.viewRepository,
+      mockComponents.modelRepository,
+      mockComponents.modelColumnRepository,
+    );
+    const key = randomUUID();
+    const draft = await service.sqlSelection(
+      key,
+      input.sql,
+      input.limit,
+      'f'.repeat(64),
+      'data_query.query@v1',
+    );
+    const reference = await service.sqlReference(resource, draft);
+    const token = await signed('data_query.query', reference);
+    engineFails = true;
+    const first = (await call(token, key, 'data_query.query', reference))
+      .structuredContent as any;
+    expect(first.execution.platformStatus).toBe('UNKNOWN');
+    expect(first.execution.nativeId).toBe(
+      JSON.parse(reference.nativeObjectRef).historyId,
+    );
+    expect(
+      (await call(token, key, 'data_query.query', reference)).structuredContent,
+    ).toMatchObject({
+      execution: {
+        nativeId: first.execution.nativeId,
+        platformStatus: 'UNKNOWN',
+      },
+    });
+    expect(queries).toBe(1);
+    const record = await mockComponents.apiHistoryRepository.findOneBy({
+      id: first.execution.nativeId,
+    });
+    expect(record.governanceState).toBe('UNKNOWN');
+    expect(record.responsePayload).toBeNull();
+  });
+
+  it('atomically claims one prepared SQL history during competing deliveries without another native task', async () => {
+    const service = new NativeQueryService(
+      delivery,
+      mockComponents.projectRepository,
+      mockComponents.deployLogRepository,
+      mockComponents.apiHistoryRepository,
+      mockComponents.queryService,
+      mockComponents.viewRepository,
+      mockComponents.modelRepository,
+      mockComponents.modelColumnRepository,
+    );
+    const key = randomUUID();
+    const reference = await service.sqlReference(
+      resource,
+      await service.sqlSelection(
+        key,
+        input.sql,
+        input.limit,
+        'd'.repeat(64),
+        'data_query.query@v1',
+      ),
+    );
+    const token = await signed('data_query.query', reference);
+    let started: () => void, release: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onQuery = async () => {
+      started();
+      await wait;
+    };
+    const pending = call(token, key, 'data_query.query', reference);
+    try {
+      await entered;
+      const competing = (await call(token, key, 'data_query.query', reference))
+        .structuredContent as any;
+      expect(competing.execution.platformStatus).toBe('UNKNOWN');
+      expect(competing.execution.nativeId).toBe(
+        JSON.parse(reference.nativeObjectRef).historyId,
+      );
+      expect(competing.resultJson).toBeUndefined();
+    } finally {
+      release();
+    }
+    const first = (await pending).structuredContent as any;
+    expect(first.execution.platformStatus).toBe('SUCCEEDED');
+    expect(queries).toBe(1);
+    expect(
+      (
+        await database('api_history').where({
+          governance_binding_id: delivery.bindingId,
+          governance_key: key,
+        })
+      ).length,
+    ).toBe(1);
+  });
+
   it('runs the frozen deployment through the original native QueryService once and reuses native history', async () => {
     const key = randomUUID();
     let beforeSql: any;
@@ -924,6 +1162,108 @@ integration('original Wren query handler, SDK and native history', () => {
     expect(JSON.stringify(stored)).not.toContain(token);
     expect(JSON.stringify(stored)).not.toContain(serviceSecret);
     expect(JSON.stringify(stored)).not.toContain(serviceToken);
+  });
+
+  it('consumes every original captured model through the same execute PEP and result envelope, including revocation', async () => {
+    const dependentName = `dependent_${randomUUID().replaceAll('-', '')}`;
+    const [dependent] = await database('model')
+      .insert({
+        project_id: delivery.projectId,
+        display_name: dependentName,
+        reference_name: dependentName,
+        ref_sql: 'SELECT 2 AS two',
+        cached: false,
+      })
+      .returning('id');
+    const manifest = {
+      ...rawManifest,
+      models: [
+        ...rawManifest.models,
+        {
+          name: dependentName,
+          refSql: 'SELECT 2 AS two',
+          cached: false,
+          columns: [{ name: 'two', type: 'INTEGER', isCalculated: false }],
+        },
+      ],
+    };
+    const nativeSources = [
+      { nativeType: 'model', nativeId: rawModel.id, nativeName: rawName },
+      {
+        nativeType: 'model',
+        nativeId: dependent.id,
+        nativeName: dependentName,
+      },
+    ];
+    const expected = nativeSources.map((source) => ({
+      nativeType: source.nativeType,
+      nativeRef: String(source.nativeId),
+    }));
+    const selected = {
+      ...input,
+      sql: `SELECT one FROM "${rawName}" WHERE EXISTS (SELECT two FROM "${dependentName}")`,
+    };
+    expectedSourceSql = selected.sql;
+    expectedSourceManifest = manifest;
+    sourceEvidence = [
+      ...(sourceEvidence as unknown[]),
+      {
+        catalog: manifest.catalog,
+        schemaTable: { schema: manifest.schema, table: dependentName },
+      },
+    ];
+    await database('deploy_log')
+      .where({ id: input.deploymentId })
+      .update({
+        manifest: JSON.stringify(manifest),
+        native_object_refs: JSON.stringify(nativeSources),
+      });
+    try {
+      const key = randomUUID();
+      const token = await signed('data_query.query', selected);
+      onQuery = async () => {
+        expect(sourceChecks.length).toBeGreaterThan(0);
+      };
+      const first = (await call(token, key, 'data_query.query', selected))
+        .structuredContent as any;
+      expect(first.execution.platformStatus).toBe('SUCCEEDED');
+      expect(first.sourceResources).toEqual(expected);
+      expect(
+        sourceChecks.every(
+          (check) => JSON.stringify(check) === JSON.stringify(expected),
+        ),
+      ).toBe(true);
+      expect(queries).toBe(1);
+      const record = await mockComponents.apiHistoryRepository.findOneBy({
+        id: first.execution.nativeId,
+      });
+      expect(record.requestPayload.nativeSources).toEqual(nativeSources);
+      deniedSource = String(dependent.id);
+      await expect(
+        call(token, key, 'data_query.query', selected),
+      ).rejects.toThrow('QUERY_ADMISSION_UNAVAILABLE');
+      expect(queries).toBe(1);
+      expect(
+        (
+          await mockComponents.apiHistoryRepository.findOneBy({
+            id: first.execution.nativeId,
+          })
+        ).governanceState,
+      ).toBe('SUCCEEDED');
+      const refused = (
+        await call(
+          await signed('data_query.query', selected),
+          randomUUID(),
+          'data_query.query',
+          selected,
+        )
+      ).structuredContent as any;
+      expect(refused.execution.platformStatus).toBe('FAILED');
+      expect(refused.resultJson).toBeUndefined();
+      expect(queries).toBe(1);
+    } finally {
+      await database('model').where({ id: dependent.id }).del();
+    }
   });
 
   it('never backfills or replaces completed history sources to make a replay disclose data', async () => {

@@ -8,6 +8,25 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("native source resources preserve complete metadata and legacy absence", () => {
+  const sample: {
+    pep: import("../src/generated/contracts.js").AdapterPepCheckRequest;
+    response: import("../src/generated/contracts.js").AdapterExecutionResponse;
+    human: import("../src/generated/contracts.js").NativeHumanActionRequest;
+  } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-source-resources.sample.json", import.meta.url), "utf8"));
+  for (const present of [true, false]) {
+    const value = structuredClone(sample);
+    if (!present) { delete value.pep.sourceResources; delete value.response.sourceResources; delete value.human.sourceResources; }
+    const sources = (rows: typeof value.pep.sourceResources) => rows?.map(row => ({nativeType:row.nativeType,nativeRef:row.nativeRef}));
+    const pep: typeof value.pep = {bindingId:value.pep.bindingId,actionToken:value.pep.actionToken,operation:value.pep.operation,
+      argumentsJson:value.pep.argumentsJson,sourceResources:sources(value.pep.sourceResources)};
+    const response: typeof value.response = {execution:value.response.execution,sourceResources:sources(value.response.sourceResources)};
+    const human: typeof value.human = {bindingId:value.human.bindingId,idempotencyKey:value.human.idempotencyKey,
+      sourceResources:sources(value.human.sourceResources)};
+    deepStrictEqual(JSON.parse(JSON.stringify({pep,response,human})),value);
+  }
+});
+
 test("Project preference preserves original coordinate and shared CAS", () => {
   const sample: import("../src/generated/contracts.js").ProjectPreferenceRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/project-preference.sample.json",import.meta.url),"utf8"));
   const actual: typeof sample = sample.map(row=>({projectAddress:row.projectAddress,selected:row.selected,version:row.version}));

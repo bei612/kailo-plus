@@ -9,6 +9,35 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'native source resources preserve complete metadata and legacy absence',
+    () {
+      for (final present in [true, false]) {
+        final sample = jsonDecode(
+          File(
+            '../../contracts/samples/adapter-source-resources.sample.json',
+          ).readAsStringSync(),
+        );
+        if (!present) {
+          for (final key in ['pep', 'response', 'human']) {
+            sample[key].remove('sourceResources');
+          }
+        }
+        expect(
+          AdapterPepCheckRequest.fromJson(sample['pep']).toJson(),
+          sample['pep'],
+        );
+        expect(
+          AdapterExecutionResponse.fromJson(sample['response']).toJson(),
+          sample['response'],
+        );
+        expect(
+          NativeHumanActionRequest.fromJson(sample['human']).toJson(),
+          sample['human'],
+        );
+      }
+    },
+  );
   test('Project preference preserves original coordinate and shared CAS', () {
     final sample =
         jsonDecode(

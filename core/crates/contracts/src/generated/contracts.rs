@@ -367,6 +367,9 @@ pub struct AdapterExecutionResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_resources: Option<Vec<SourceResourceElement>>,
 }
 
 /// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -393,6 +396,17 @@ pub struct ExecutionClass {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_at: Option<String>,
+}
+
+/// Actual native planner source within the existing execution binding. Metadata only:
+/// neither SQL/content nor a grant. The original action and result-exposure authority must
+/// authorize every resolved Resource.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceResourceElement {
+    pub native_ref: String,
+
+    pub native_type: String,
 }
 
 /// DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
@@ -436,6 +450,9 @@ pub struct AdapterPepCheckRequest {
     pub content_reference: Option<ReferenceElement>,
 
     pub operation: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_resources: Option<Vec<SourceResourceElement>>,
 }
 
 /// 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
@@ -1024,6 +1041,17 @@ pub enum NativeScopeResult {
     Found,
 
     Refused,
+}
+
+/// Actual native planner source within the existing execution binding. Metadata only:
+/// neither SQL/content nor a grant. The original action and result-exposure authority must
+/// authorize every resolved Resource.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSourceResource {
+    pub native_ref: String,
+
+    pub native_type: String,
 }
 
 /// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -4706,6 +4734,9 @@ pub struct NativeHumanActionRequest {
     /// never creates a Resource or native object.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolve_resource: Option<NativeHumanResourceQuery>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_resources: Option<Vec<SourceResourceElement>>,
 }
 
 /// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按

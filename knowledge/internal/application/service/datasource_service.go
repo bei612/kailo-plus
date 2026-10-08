@@ -199,16 +199,16 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 		}
 	}
 
-	// Validate new configuration if non-credential fields changed. Skip
-	// when there are no stored credentials yet (validators would fail with
-	// no token to call the live API) and when the parsed config is
-	// structurally identical.
-	configActuallyChanged := true
+	// Native credential connectors cannot validate before credentials exist.
+	// The governed file-storage connector deliberately has no native secrets:
+	// its Resource references still require validation before saving an edit.
+	// Structurally identical configurations keep the original no-I/O path.
+	configActuallyChanged := len(ds.Config) > 0
 	if mergedCfg != nil && existingParsedCfg != nil {
 		configActuallyChanged = !reflect.DeepEqual(*mergedCfg, *existingParsedCfg)
 	}
 	hasCreds := mergedCfg != nil && mergedCfg.HasConfiguredCredentials(ds.Type)
-	if hasCreds && (ds.Type != existing.Type || configActuallyChanged) {
+	if (hasCreds || ds.Type == fileStorageConnectorType) && (ds.Type != existing.Type || configActuallyChanged) {
 		if err := s.validateDataSourceConfig(ctx, ds); err != nil {
 			return nil, err
 		}

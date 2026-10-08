@@ -214,7 +214,7 @@ pub(crate) async fn handle(
         let actor = human(&state,&before,id,token).await?;
         if binding(&state,id).await? != before { return Err(denied()); }
         if let Some(query) = raw.get("resolveResource") {
-            if raw.get("command").is_some() || raw.get("idempotencyKey").is_some() { return Err(invalid()); }
+            if raw.get("command").is_some() || raw.get("idempotencyKey").is_some() || raw.get("sourceResources").is_some() { return Err(invalid()); }
             let resource = resolve_resource(&state,actor,id,&before,query).await?;
             let after_actor = human(&state,&before,id,token).await?;
             if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
@@ -223,6 +223,7 @@ pub(crate) async fn handle(
         }
         let key = match (raw.get("command"),raw.get("idempotencyKey")) {
             (Some(command),None) => {
+                if raw.get("sourceResources").is_some() { return Err(invalid()); }
                 let command: ActionCommand = serde_json::from_value(command.clone()).map_err(|_| invalid())?;
                 let parsed = normalized(&command)?;
                 // Fence the exact existing idempotency key before the original replay path can start it.
@@ -238,7 +239,8 @@ pub(crate) async fn handle(
         };
         let ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
         if !is_human(&ae) { return Err(denied()); }
-        if ae.gate_state != "DENIED" && !fresh_execution(&state.governance,&ae).await?.allowed { return Err(denied()); }
+        if ae.gate_state == "DENIED" && raw.get("sourceResources").is_some() { return Err(denied()); }
+        if ae.gate_state != "DENIED" && !crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,raw.get("sourceResources")).await?.allowed { return Err(denied()); }
         let mut output = json!({"submission":ae.submission(),"inputReference":ae.parameters.as_ref().ok_or_else(unavailable)?["inputArguments"]["input"]});
         let terminal: Option<String> = sqlx::query_scalar("select result_code from audit.audit_event where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4")
             .bind(format!("{}:component_action:terminal",ae.operation_id)).bind(ae.tenant_id).bind(ae.operation_id).bind(&ae.action_key)

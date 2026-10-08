@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ViewMetadata from './components/pages/modeling/metadata/ViewMetadata';
 import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
 import useGovernedPreview from './hooks/useGovernedPreview';
+import useGovernedSqlPreview from './hooks/useGovernedSqlPreview';
 import { queryReceiptState } from './utils/queryReceipt';
 import { getQueryPreviewText } from './utils/language';
 
@@ -19,6 +20,9 @@ jest.mock('./apollo/client/graphql/view.generated', () => ({
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
   usePreviewModelDataMutation: () => [mockPreview, mockPreviewResult],
+}));
+jest.mock('./apollo/client/graphql/sql.generated', () => ({
+  usePreviewSqlMutation: () => [mockPreview, mockPreviewResult],
 }));
 jest.mock('antd', () => {
   const React = require('react');
@@ -123,6 +127,146 @@ describe('original saved-view preview controls', () => {
     };
     return renderToStaticMarkup(createElement(ResponsePreview));
   };
+  const renderSql = (
+    sql = 'select original_column from original_model',
+    visible = true,
+  ) => {
+    let query: ReturnType<typeof useGovernedSqlPreview>;
+    const Editor = () => {
+      query = useGovernedSqlPreview(sql, visible);
+      return createElement('button', null, 'Original SQL editor');
+    };
+    renderToStaticMarkup(createElement(Editor));
+    return query!;
+  };
+  const sqlReceipt = (scope: string, dryRun = false, completed = false) => ({
+    previewScope: scope,
+    submission: {
+      actionKey: dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1',
+      gateState: 'ALLOWED',
+      dispatchState: 'DISPATCHED',
+    },
+    inputReference: {
+      nativeObjectRef: JSON.stringify({
+        historyId: 'native-original-history',
+        modelId: 7,
+        limit: 50,
+      }),
+    },
+    ...(completed
+      ? {
+          terminalStatus: 'COMPLETED',
+          data: dryRun ? { valid: true } : { columns: [], data: [] },
+        }
+      : {}),
+  });
+  it('keeps one opaque SQL-editor key across UNKNOWN and transport loss, without persisting SQL', async () => {
+    const sql = 'select original_column from original_model';
+    mockPreviewResult = { error: new Error('native delivery result unknown') };
+    const query = renderSql(sql);
+    expect(query.result.error).toBeUndefined();
+    mockPreview.mockResolvedValue({
+      data: { previewSql: sqlReceipt(mockScope) },
+    });
+    expect(
+      await query.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(false);
+    const first = mockPreview.mock.calls[0][0].variables.data;
+    mockPreview.mockRejectedValueOnce(new Error('transport result unknown'));
+    expect(
+      await query.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(false);
+    expect(mockPreview.mock.calls[1][0].variables.data.idempotencyKey).toBe(
+      first.idempotencyKey,
+    );
+    expect(JSON.stringify([...entries.entries()])).not.toContain(sql);
+    mockPreview.mockResolvedValueOnce({
+      data: { previewSql: sqlReceipt(mockScope, false, true) },
+    });
+    expect(
+      await query.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(true);
+    expect(entries.size).toBe(0);
+  });
+  it('separates SQL-editor query/dry-run, limits and human identities without clearing UNKNOWN', async () => {
+    const sql = 'select original_column from original_model';
+    const query = renderSql(sql);
+    mockPreview.mockResolvedValue({
+      data: { previewSql: sqlReceipt(mockScope) },
+    });
+    for (const data of [
+      { sql, limit: 50 },
+      { sql, limit: 1, dryRun: true },
+      { sql, limit: 1 },
+    ])
+      expect(await query.preview({ variables: { data } })).toBe(false);
+    mockScope = 'b'.repeat(64);
+    expect(
+      await query.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(false);
+    expect(
+      new Set(
+        mockPreview.mock.calls.map(
+          (call) => call[0].variables.data.idempotencyKey,
+        ),
+      ).size,
+    ).toBe(4);
+    expect(entries.size).toBe(4);
+  });
+  it('does not validate SQL from an incomplete COMPLETED receipt or identity changed during the mutation', async () => {
+    const sql = 'select original_column from original_model';
+    const query = renderSql(sql);
+    mockPreview.mockResolvedValueOnce({
+      data: {
+        previewSql: { ...sqlReceipt(mockScope, true, true), data: undefined },
+      },
+    });
+    expect(
+      await query.preview({
+        variables: { data: { sql, limit: 50, dryRun: true } },
+      }),
+    ).toBe(false);
+    expect(entries.size).toBe(1);
+    mockPreview.mockImplementationOnce(async () => {
+      const receipt = sqlReceipt(mockScope, true, true);
+      mockScope = 'b'.repeat(64);
+      return { data: { previewSql: receipt } };
+    });
+    expect(
+      await query.preview({
+        variables: { data: { sql, limit: 50, dryRun: true } },
+      }),
+    ).toBe(false);
+    expect(entries.size).toBe(1);
+  });
+
+  it('fences a closed or reset SQL editor without clearing its pending native intent', async () => {
+    const sql = 'select original_column from original_model';
+    mockPreviewResult = { reset: jest.fn() };
+    const query = renderSql(sql);
+    let entered: () => void;
+    let finish: (value: any) => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    mockPreview.mockImplementationOnce(() => {
+      entered();
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    const pending = query.preview({ variables: { data: { sql, limit: 50 } } });
+    await started;
+    query.result.reset();
+    finish({ data: { previewSql: sqlReceipt(mockScope, false, true) } });
+    expect(await pending).toBe(false);
+    expect(entries.size).toBe(1);
+    const closed = renderSql(sql, false);
+    expect(
+      await closed.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(false);
+    expect(mockPreview).toHaveBeenCalledTimes(1);
+  });
 
   it('keeps the original controls and renders one selected language', () => {
     expect(render()).toContain('预览数据');

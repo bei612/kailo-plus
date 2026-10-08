@@ -28,6 +28,7 @@
 //     final adapterReadGrantResponse = adapterReadGrantResponseFromJson(jsonString);
 //     final adapterReadReceipt = adapterReadReceiptFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
+//     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
@@ -379,6 +380,12 @@ AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
     AdapterScopeObservation.fromJson(json.decode(str));
 
 String adapterScopeObservationToJson(AdapterScopeObservation data) =>
+    json.encode(data.toJson());
+
+AdapterSourceResource adapterSourceResourceFromJson(String str) =>
+    AdapterSourceResource.fromJson(json.decode(str));
+
+String adapterSourceResourceToJson(AdapterSourceResource data) =>
     json.encode(data.toJson());
 
 ActionCommand actionCommandFromJson(String str) =>
@@ -2060,12 +2067,14 @@ class AdapterExecutionResponse {
   final List<ReferenceElement>? contentReferences;
   final ExecutionClass execution;
   final String? resultJson;
+  final List<SourceResourceElement>? sourceResources;
 
   AdapterExecutionResponse({
     this.contentReference,
     this.contentReferences,
     required this.execution,
     this.resultJson,
+    this.sourceResources,
   });
 
   factory AdapterExecutionResponse.fromJson(Map<String, dynamic> json) =>
@@ -2082,6 +2091,13 @@ class AdapterExecutionResponse {
               ),
         execution: ExecutionClass.fromJson(json["execution"]),
         resultJson: json["resultJson"],
+        sourceResources: json["sourceResources"] == null
+            ? null
+            : List<SourceResourceElement>.from(
+                json["sourceResources"]!.map(
+                  (x) => SourceResourceElement.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -2091,6 +2107,9 @@ class AdapterExecutionResponse {
         : List<dynamic>.from(contentReferences!.map((x) => x.toJson())),
     "execution": execution.toJson(),
     "resultJson": resultJson,
+    "sourceResources": sourceResources == null
+        ? null
+        : List<dynamic>.from(sourceResources!.map((x) => x.toJson())),
   });
 }
 
@@ -2139,6 +2158,25 @@ class ExecutionClass {
     "platformStatus": externalExecutionStatusValues.reverse[platformStatus],
     "terminalAt": terminalAt,
   });
+}
+
+///Actual native planner source within the existing execution binding. Metadata only:
+///neither SQL/content nor a grant. The original action and result-exposure authority must
+///authorize every resolved Resource.
+class SourceResourceElement {
+  final String nativeRef;
+  final String nativeType;
+
+  SourceResourceElement({required this.nativeRef, required this.nativeType});
+
+  factory SourceResourceElement.fromJson(Map<String, dynamic> json) =>
+      SourceResourceElement(
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"nativeRef": nativeRef, "nativeType": nativeType});
 }
 
 ///DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
@@ -2214,6 +2252,7 @@ class AdapterPepCheckRequest {
   final String bindingId;
   final ReferenceElement? contentReference;
   final String operation;
+  final List<SourceResourceElement>? sourceResources;
 
   AdapterPepCheckRequest({
     required this.actionToken,
@@ -2221,6 +2260,7 @@ class AdapterPepCheckRequest {
     required this.bindingId,
     this.contentReference,
     required this.operation,
+    this.sourceResources,
   });
 
   factory AdapterPepCheckRequest.fromJson(Map<String, dynamic> json) =>
@@ -2232,6 +2272,13 @@ class AdapterPepCheckRequest {
             ? null
             : ReferenceElement.fromJson(json["contentReference"]),
         operation: json["operation"],
+        sourceResources: json["sourceResources"] == null
+            ? null
+            : List<SourceResourceElement>.from(
+                json["sourceResources"]!.map(
+                  (x) => SourceResourceElement.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -2240,6 +2287,9 @@ class AdapterPepCheckRequest {
     "bindingId": bindingId,
     "contentReference": contentReference?.toJson(),
     "operation": operation,
+    "sourceResources": sourceResources == null
+        ? null
+        : List<dynamic>.from(sourceResources!.map((x) => x.toJson())),
   });
 }
 
@@ -3253,6 +3303,25 @@ final nativeScopeResultValues = EnumValues({
   "FOUND": NativeScopeResult.FOUND,
   "REFUSED": NativeScopeResult.REFUSED,
 });
+
+///Actual native planner source within the existing execution binding. Metadata only:
+///neither SQL/content nor a grant. The original action and result-exposure authority must
+///authorize every resolved Resource.
+class AdapterSourceResource {
+  final String nativeRef;
+  final String nativeType;
+
+  AdapterSourceResource({required this.nativeRef, required this.nativeType});
+
+  factory AdapterSourceResource.fromJson(Map<String, dynamic> json) =>
+      AdapterSourceResource(
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"nativeRef": nativeRef, "nativeType": nativeType});
+}
 
 ///POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 ///actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
@@ -9574,12 +9643,14 @@ class NativeHumanActionRequest {
   ///Read the already-registered exact native object for the verified HUMAN and action. This
   ///never creates a Resource or native object.
   final NativeHumanResourceQuery? resolveResource;
+  final List<SourceResourceElement>? sourceResources;
 
   NativeHumanActionRequest({
     required this.bindingId,
     this.command,
     this.idempotencyKey,
     this.resolveResource,
+    this.sourceResources,
   });
 
   factory NativeHumanActionRequest.fromJson(Map<String, dynamic> json) =>
@@ -9592,6 +9663,13 @@ class NativeHumanActionRequest {
         resolveResource: json["resolveResource"] == null
             ? null
             : NativeHumanResourceQuery.fromJson(json["resolveResource"]),
+        sourceResources: json["sourceResources"] == null
+            ? null
+            : List<SourceResourceElement>.from(
+                json["sourceResources"]!.map(
+                  (x) => SourceResourceElement.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -9599,6 +9677,9 @@ class NativeHumanActionRequest {
     "command": command?.toJson(),
     "idempotencyKey": idempotencyKey,
     "resolveResource": resolveResource?.toJson(),
+    "sourceResources": sourceResources == null
+        ? null
+        : List<dynamic>.from(sourceResources!.map((x) => x.toJson())),
   });
 }
 

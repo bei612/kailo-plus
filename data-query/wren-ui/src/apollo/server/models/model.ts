@@ -94,4 +94,6 @@ export interface PreviewSQLData {
   projectId?: string;
   limit?: number;
   dryRun?: boolean;
+  idempotencyKey?: string;
+  idempotencyScope?: string;
 }

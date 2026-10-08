@@ -1140,3 +1140,51 @@ oom_kill/oom_group_kill 均为 0。早期一条只读计数命令因 shell 引�
 binding，没有页面截图或 Windows/Mobile 验收。真实 Cells→WeKnora 的
 原生创建/解析/删除、双边 receipt 与 OpenMeter 终态及 Wiki 删除可信终态
 仍须分别验收；不将本批消费者修正称为三组件上线或生产就绪。
+
+## 原 SQL 多来源的同执行授权消费者（2026-10-08）
+
+实现后按 DD-89/98、设计 07 §8.2 与 08 §6 收口。原 Wren SQL 编辑器及
+查询消费者保留，Core 不保存 SQL、原生历史或结果正文。新增可选
+`sourceResources` 只含固定 nativeType/nativeRef，必须非空、唯一；仅业务
+execute PEP 和同一 HUMAN AE 的观察可用，管理、SERVICE、PROTOCOL_PEER、
+HUMAN command/resolve 不接受它，不把来源引用当作权限。
+
+影响面为原 application_tool fresh execution、PEP、native HUMAN observe、
+三个协议 schema 加被引用的 source schema、四侧生成类型及原 roundtrip。
+每个来源均校验冻结 binding/release/generation、精确原生标识、ACTIVE 资源、
+home Workspace、投影与当前 read/export 及结果暴露策略。原 HUMAN/AGENT
+授权与 Delegation 交集不变；任一来源不符拒绝，不过滤后继续查询。
+历史 AE/Operation 与不明结果仍沿原对账，不重跑 SQL，不新增状态或权威。
+无数据库迁移。旧字段缺省仍可解析；新 Core 必须先于发送新字段的 Wren
+部署，四侧缺省往返不证明旧严格 Core 能读取新字段。
+
+实际验证复用原 Data SDK/cache，UID1000、4 CPU/8 GiB、swap0、Cargo -j16。
+命令与原始输出位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`：
+
+- `native-source-index-contracts-restored-20261008.log`：原 gen.sh --check
+  四生成物与同源词条全部通过；随后 Rust 检查文件格式失败使组合命令退出1。
+  该格式已修正，后续原 rustfmt 与四侧检查通过，不将组合失败记为全通过。
+- `native-source-index-roundtrip-final-20261008.log`：原完整 contracts 检查
+  Rust44、TS52、Dart44通过，Go包通过，全部退出0。
+- `native-source-four-side-mutation-20261008.log`：仅私有样例增加未声明
+  来源字段，原实际消费者退出码 Rust101/Go1/TS1/Dart1，均真实失败。
+  样例原字节恢复 cmp0；`native-source-four-side-restored-20261008.log`
+  同四目标实际退出码0/0/0/0，SHA-256
+  `9665ceb9e773af95dae910b20fabf1edf5049dab3be745b3fedddff7cac5eefc`。
+- `native-source-sql-instance-20261008.log`：隔离库精确 SQL 守卫1项通过；
+  初轮原生标识唯一约束冲突23505保留，仅修正两个独立原生实例的 fixture。
+- `native-source-private-mutation-20261008.log`：私有实际来源唯一性、输出
+  schema与Workspace三个保护移除后3项失败、退出101；原字节还原后
+  `native-source-restored-20261008.log` 同目标3/3通过、退出0。
+- `native-source-history-upstream-20261008.log`：原 check.sh 历史兼容段
+  实查 contracts-v0.1.0、283 schemas、匹配3项，无破坏性变更；后续 status
+  错传多个项目退出1，不能称组合通过。未挂正确上游路径的一轮status也不能
+  证明上游无变化；`native-source-upstream-real-mount-20261008.log` 又因
+  强制 GIT_DIR 影响上游仓库解析而回退缓存，PermissionError退出1。
+  去除该环境覆盖、保留真实只读 Git 后，原命令三个项目均成功核到固定
+  官方HEAD，退出0，原件为 `native-source-upstream-final-20261008.log`。
+
+本批未跑全量门禁、未部署、未激活 release/binding、未截图或更新安装包。
+对应 Wren/WeKnora 原生消费者验收分别见其已有回执；不将局部通过计作
+三组件可用、完整原版恢复、真实多来源业务或生产就绪。

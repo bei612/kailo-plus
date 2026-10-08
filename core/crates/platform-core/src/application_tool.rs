@@ -136,6 +136,214 @@ fn citation_identity(reference: &Value) -> Result<(Uuid, Option<Uuid>), Refusal>
 mod application_tool_tests {
     use super::*;
 
+    #[test]
+    fn source_resources_accept_only_complete_unique_native_metadata() {
+        let sources = json!([{"nativeType":"view","nativeRef":"9"},
+            {"nativeType":"model","nativeRef":"7"}]);
+        assert_eq!(
+            source_references(&sources)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![("model", "7"), ("view", "9")]
+        );
+        for invalid in [
+            json!(null),
+            json!({}),
+            json!([]),
+            json!([null]),
+            json!([{"nativeType":"model"}]),
+            json!([{"nativeType":"model","nativeRef":""}]),
+            json!([{"nativeType":" model","nativeRef":"7"}]),
+            json!([{"nativeType":"model","nativeRef":"7 "}]),
+            json!([{"nativeType":"model","nativeRef":7}]),
+            json!([{"nativeType":"model","nativeRef":"7","secretRef":"caller-selected"}]),
+            json!([{"nativeType":"model","nativeRef":"7"},{"nativeType":"model","nativeRef":"7"}]),
+        ] {
+            assert!(source_references(&invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn source_resources_require_exact_scope_and_sufficient_result_exposure() {
+        use contracts::ResultExposureMode::{ConsumeOnly, Export, Read};
+        let resource = Uuid::new_v4();
+        let mut scope: contracts::ScopeElement = serde_json::from_value(json!({
+            "actionKey":"data_query.query@v1","actionVersion":1,"targetType":"RESOURCE",
+            "targetId":resource,"outputSchemaHash":"fixed-result-schema",
+            "redactionPolicy":"PLATFORM_METADATA_ONLY","resultExposureMode":"READ"
+        }))
+        .unwrap();
+        for mode in ["CONSUME_ONLY", "READ", "EXPORT", "UNKNOWN"] {
+            for granted in [ConsumeOnly, Read, Export] {
+                scope.result_exposure_mode = granted.clone();
+                let expected = matches!(
+                    (mode, granted),
+                    ("CONSUME_ONLY", ConsumeOnly | Read | Export)
+                        | ("READ", Read | Export)
+                        | ("EXPORT", Export)
+                );
+                assert_eq!(
+                    source_scope(
+                        &scope,
+                        resource,
+                        mode,
+                        "fixed-result-schema",
+                        "PLATFORM_METADATA_ONLY"
+                    ),
+                    expected
+                );
+            }
+        }
+        scope.result_exposure_mode = Export;
+        assert!(!source_scope(
+            &scope,
+            Uuid::new_v4(),
+            "READ",
+            "fixed-result-schema",
+            "PLATFORM_METADATA_ONLY"
+        ));
+        assert!(!source_scope(
+            &scope,
+            resource,
+            "READ",
+            "different-schema",
+            "PLATFORM_METADATA_ONLY"
+        ));
+        assert!(!source_scope(
+            &scope,
+            resource,
+            "READ",
+            "fixed-result-schema",
+            "different-redaction"
+        ));
+        scope.create_workspace_id = Some(Uuid::new_v4().to_string());
+        assert!(!source_scope(
+            &scope,
+            resource,
+            "READ",
+            "fixed-result-schema",
+            "PLATFORM_METADATA_ONLY"
+        ));
+        scope.create_workspace_id = None;
+        scope.target_type = "ASSET".into();
+        assert!(!source_scope(
+            &scope,
+            resource,
+            "READ",
+            "fixed-result-schema",
+            "PLATFORM_METADATA_ONLY"
+        ));
+        scope.target_type = "RESOURCE".into();
+        scope.target_id = None;
+        assert!(!source_scope(
+            &scope,
+            resource,
+            "READ",
+            "fixed-result-schema",
+            "PLATFORM_METADATA_ONLY"
+        ));
+        assert_eq!(exposure_permission("READ").unwrap(), Some("read"));
+        assert_eq!(exposure_permission("EXPORT").unwrap(), Some("export"));
+        assert_eq!(exposure_permission("CONSUME_ONLY").unwrap(), None);
+        assert!(exposure_permission("UNKNOWN").is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the existing migrated isolated database; all fixtures roll back"]
+    async fn source_resources_resolve_native_identity_only_in_the_original_execution_binding() {
+        use sqlx::Connection;
+        let mut conn = PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL").expect("isolated database"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        let (registration, bindings) =
+            include_str!("../../../verify/application-execution-dispatch.sql")
+                .split_once("DO $$\nDECLARE provider text; release uuid; binding uuid;")
+                .unwrap();
+        // The original category projection admits one binding per scope.
+        // Keep that constraint and exercise two real workspace-scoped bindings
+        // with the same native resource identity, rather than bypassing it.
+        let bindings = format!(
+            "DO $$\nDECLARE provider text; release uuid; binding uuid;{bindings}"
+        )
+        .replacen("create_ae uuid;", "workspace uuid; create_ae uuid;", 1)
+        .replace(
+            "FOREACH provider IN ARRAY ARRAY['catalog_fixture_two'] LOOP",
+            "FOREACH provider IN ARRAY ARRAY['catalog_fixture_one','catalog_fixture_two'] LOOP",
+        )
+        .replacen(
+            "binding:=gen_random_uuid();",
+            "workspace:=gen_random_uuid();\n   INSERT INTO identity.workspace(id,tenant_id,slug,name,state)\n   VALUES(workspace,tenant,provider,provider,'ACTIVE');\n   binding:=gen_random_uuid();",
+            1,
+        )
+        .replace("id,operation_id,tenant_id,action_key", "id,operation_id,tenant_id,workspace_id,action_key")
+        .replace(",tenant,'", ",tenant,workspace,'")
+        .replace("application_binding(id,tenant_id,component_type_key", "application_binding(id,tenant_id,workspace_id,component_type_key")
+        .replace("VALUES(binding,tenant,provider", "VALUES(binding,tenant,workspace,provider")
+        .replace("application_category(tenant_id,category_key", "application_category(tenant_id,workspace_id,category_key")
+        .replace("VALUES(tenant,'retire_plain'", "VALUES(tenant,workspace,'retire_plain'")
+        .replace("catalog.resource(id,tenant_id,type_key", "catalog.resource(id,tenant_id,home_workspace_id,type_key")
+        .replace("kind,tenant_id,operation_id", "kind,tenant_id,workspace_id,operation_id")
+        .replace("'COMPONENT_BINDING',tenant,business_ae", "'COMPONENT_BINDING',tenant,workspace,business_ae")
+        .replace("'isolated-instance'", "provider||'-instance'")
+        // Separate native instances may use the same object reference; the
+        // globally unique identity must still include the actual instance.
+        .replace("repeat('f',64)",
+            "encode(sha256(convert_to(format('{\"instance\":%s,\"ref\":%s,\"scope\":%s,\"type\":%s}',\n\
+             frozen->'nativeInstanceRef',frozen->'reference'->'nativeRef',\n\
+             frozen->'nativeScopeRef',frozen->'reference'->'nativeType'),'UTF8')),'hex')");
+        let fixture = format!("{registration}{bindings}");
+        sqlx::raw_sql(&fixture).execute(&mut *tx).await.unwrap();
+        let actions: Vec<Uuid> =
+            sqlx::query_scalar("select child from application_dispatch_fixture order by child")
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(actions.len(), 2);
+        for action in actions {
+            sqlx::query(
+                "update admission.action_execution set dispatch_state='DISPATCHED' where id=$1",
+            )
+            .bind(action)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            let mut ae = crate::governance::lock_execution(&mut tx, action)
+                .await
+                .unwrap();
+            ae.parameters = Some(json!({"targetType":"RESOURCE"}));
+            let sources = json!([{"nativeType":"collection","nativeRef":"original-object"}]);
+            assert_eq!(
+                source_resources(&mut tx, &ae, &sources).await.unwrap(),
+                vec![(ae.target_id, 2)]
+            );
+            for changed in [
+                json!([{"nativeType":"collection","nativeRef":"another-object"}]),
+                json!([{"nativeType":"another-type","nativeRef":"original-object"}]),
+            ] {
+                assert!(source_resources(&mut tx, &ae, &changed).await.is_err());
+            }
+            let tenant = ae.tenant_id;
+            ae.tenant_id = Uuid::new_v4();
+            assert!(source_resources(&mut tx, &ae, &sources).await.is_err());
+            ae.tenant_id = tenant;
+            let workspace = ae.workspace_id;
+            ae.workspace_id = Some(Uuid::new_v4());
+            assert!(source_resources(&mut tx, &ae, &sources).await.is_err());
+            ae.workspace_id = workspace;
+            ae.parameters = Some(json!({"targetType":"ASSET"}));
+            assert!(source_resources(&mut tx, &ae, &sources).await.is_err());
+        }
+        tx.rollback().await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore = "requires the existing migrated isolated database; all fixtures roll back"]
     async fn citations_resolve_only_existing_source_ownership_in_the_execution_tenant() {
@@ -533,8 +741,74 @@ pub(crate) async fn fresh_execution(
     gov: &crate::governance::Governance,
     ae: &Execution,
 ) -> Result<crate::governance::Evaluation, Refusal> {
+    fresh_execution_with_sources(gov, ae, None).await
+}
+
+/// Sources are native planner facts, not caller-selected credentials or new
+/// executions. Every source must resolve within this execution's frozen binding
+/// and pass the same action and result-exposure authority as its primary target.
+pub(crate) async fn fresh_execution_with_sources(
+    gov: &crate::governance::Governance,
+    ae: &Execution,
+    sources: Option<&Value>,
+) -> Result<crate::governance::Evaluation, Refusal> {
     if crate::application_action::is_human(ae) {
-        return crate::application_action::fresh_execution(gov, ae).await;
+        let mut decision = crate::application_action::fresh_execution(gov, ae).await?;
+        if !decision.allowed || sources.is_none() {
+            return Ok(decision);
+        }
+        let mut tx = gov.pool.begin().await?;
+        for (resource, version) in
+            source_resources(&mut tx, ae, sources.ok_or_else(invalid)?).await?
+        {
+            let (_, _, application) = crate::application_catalog::definition_for_resource(
+                &mut tx,
+                ae.tenant_id,
+                ae.workspace_id,
+                resource,
+                &ae.action_key,
+                ae.action_version,
+            )
+            .await?;
+            let exact: bool = sqlx::query_scalar(
+                "select exists(select 1 from admission.action_execution
+                where id=$1 and action_definition_id=$2 and component_release_id=$3)",
+            )
+            .bind(ae.id)
+            .bind(application.definition_id)
+            .bind(application.component_release_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !exact || application.definition.target_type != "RESOURCE" {
+                return Err(denied());
+            }
+            let (mode, _, _) = execution_policy(&mut tx, ae, &application.declaration).await?;
+            let checked = gov
+                .evaluate(
+                    crate::governance::Actor {
+                        tenant_id: ae.tenant_id,
+                        principal_id: ae.actor_principal_id,
+                        human_identity_id: None,
+                    },
+                    &application.definition,
+                    &crate::governance::Target {
+                        id: resource,
+                        version,
+                        workspace_id: ae.workspace_id,
+                    },
+                )
+                .await?;
+            if !checked.allowed || checked.zed_token.as_ref().is_none_or(String::is_empty) {
+                return Err(denied());
+            }
+            decision.zed_token = checked.zed_token;
+            if let Some(required) = exposure_permission(&mode)? {
+                decision.zed_token =
+                    Some(permission(gov, resource, ae.actor_principal_id, required).await?);
+            }
+        }
+        tx.commit().await?;
+        return Ok(decision);
     }
     let mut tx = gov.pool.begin().await?;
     let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
@@ -609,6 +883,18 @@ pub(crate) async fn fresh_execution(
     {
         return Err(denied());
     }
+    if let Some(sources) = sources {
+        let (mode, digest, redaction) = execution_policy(&mut tx, ae, &tool.declaration).await?;
+        let allowed = scopes(gov, &mut tx, &context, &parent, &tool).await?;
+        for (resource, _) in source_resources(&mut tx, ae, sources).await? {
+            if !allowed
+                .iter()
+                .any(|scope| source_scope(scope, resource, &mode, &digest, &redaction))
+            {
+                return Err(denied());
+            }
+        }
+    }
     tx.commit().await?;
     Ok(crate::governance::Evaluation {
         allowed: true,
@@ -618,6 +904,126 @@ pub(crate) async fn fresh_execution(
         zed_token: Some(proof),
         reason: None,
     })
+}
+
+fn exposure_permission(mode: &str) -> Result<Option<&'static str>, Refusal> {
+    match mode {
+        "CONSUME_ONLY" => Ok(None),
+        "READ" => Ok(Some("read")),
+        "EXPORT" => Ok(Some("export")),
+        _ => Err(denied()),
+    }
+}
+
+fn source_scope(
+    scope: &contracts::ScopeElement,
+    resource: Uuid,
+    mode: &str,
+    digest: &str,
+    redaction: &str,
+) -> bool {
+    use contracts::ResultExposureMode::*;
+    scope.target_type == "RESOURCE"
+        && scope.target_id.as_deref() == Some(resource.to_string().as_str())
+        && scope.create_workspace_id.is_none()
+        && scope.output_schema_hash == digest
+        && scope.redaction_policy == redaction
+        && matches!(
+            (mode, &scope.result_exposure_mode),
+            ("CONSUME_ONLY", ConsumeOnly | Read | Export)
+                | ("READ", Read | Export)
+                | ("EXPORT", Export)
+        )
+}
+
+async fn execution_policy(
+    conn: &mut PgConnection,
+    ae: &Execution,
+    declaration: &Value,
+) -> Result<(String, String, String), Refusal> {
+    let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
+    let id = parameters["resultExposurePolicyId"]
+        .as_str()
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(denied)?;
+    let version = parameters["resultExposurePolicyVersion"]
+        .as_i64()
+        .and_then(|value| i32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(denied)?;
+    let policy: Option<(String, String, String)> = sqlx::query_as("select mode,output_schema_hash,redaction_policy
+        from catalog.result_exposure_policy where id=$1 and version=$2 and tenant_id=$3 and status='ACTIVE'")
+        .bind(id).bind(version).bind(ae.tenant_id).fetch_optional(conn).await?;
+    let (mode, digest, redaction) = policy.ok_or_else(denied)?;
+    exposure_permission(&mode)?;
+    if redaction != "PLATFORM_METADATA_ONLY"
+        || declaration["outputSchemaDigest"].as_str() != Some(digest.as_str())
+    {
+        return Err(denied());
+    }
+    Ok((mode, digest, redaction))
+}
+
+fn source_references(sources: &Value) -> Result<BTreeSet<(&str, &str)>, Refusal> {
+    let items = sources
+        .as_array()
+        .filter(|items| !items.is_empty())
+        .ok_or_else(invalid)?;
+    let mut references = BTreeSet::new();
+    for item in items {
+        let object = item
+            .as_object()
+            .filter(|object| object.len() == 2)
+            .ok_or_else(invalid)?;
+        let text = |field| {
+            object
+                .get(field)
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty() && value.trim() == *value)
+                .ok_or_else(invalid)
+        };
+        if !references.insert((text("nativeType")?, text("nativeRef")?)) {
+            return Err(invalid());
+        }
+    }
+    Ok(references)
+}
+
+async fn source_resources(
+    conn: &mut PgConnection,
+    ae: &Execution,
+    sources: &Value,
+) -> Result<Vec<(Uuid, i32)>, Refusal> {
+    if ae
+        .parameters
+        .as_ref()
+        .and_then(|parameters| parameters["targetType"].as_str())
+        != Some("RESOURCE")
+    {
+        return Err(denied());
+    }
+    let mut resources = Vec::new();
+    // Deterministic native identity ordering also keeps source locks stable.
+    for (kind, reference) in source_references(sources)? {
+        let rows: Vec<(Uuid, i32)> = sqlx::query_as("select r.id,r.version from admission.action_execution a
+            join catalog.application_binding b on b.id=a.component_binding_id and b.tenant_id=a.tenant_id
+              and b.component_release_id=a.component_release_id and b.active_projection_generation=a.component_projection_generation
+              and b.state='ACTIVE' and (b.workspace_id is null or b.workspace_id=a.workspace_id)
+            join projection.application_runtime p on p.binding_id=b.id and p.generation=a.component_projection_generation
+              and p.component_release_id=a.component_release_id and p.state='ACTIVE'
+            join catalog.resource r on r.application_binding_id=b.id and r.tenant_id=a.tenant_id
+              and r.state='ACTIVE' and r.projection_action_execution_id is null
+              and (r.home_workspace_id is null or r.home_workspace_id=a.workspace_id)
+            where a.id=$1 and a.tenant_id=$2 and a.workspace_id is not distinct from $3
+              and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED' and a.component_binding_kind='APPLICATION'
+              and r.native_type=$4 and r.native_id=$5 order by r.id limit 2 for share of a,b,r,p")
+            .bind(ae.id).bind(ae.tenant_id).bind(ae.workspace_id).bind(kind).bind(reference).fetch_all(&mut *conn).await?;
+        let [resource] = rows.as_slice() else {
+            return Err(denied());
+        };
+        resources.push(*resource);
+    }
+    Ok(resources)
 }
 
 /// Ephemeral facts read from the original child/target/binding. No token or
@@ -1574,7 +1980,12 @@ pub(crate) async fn disclose(
             return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
         }
     }
-    let decision = fresh_execution(&state.governance, &ae).await?;
+    let decision = fresh_execution_with_sources(
+        &state.governance,
+        &ae,
+        raw.and_then(|value| value.get("sourceResources")),
+    )
+    .await?;
     if !decision.allowed {
         return Err(denied());
     }
@@ -1610,21 +2021,7 @@ pub(crate) async fn disclose(
         ae.target_id,
     )
     .await?;
-    let policy:Option<(String,String,String)>=sqlx::query_as("select mode,output_schema_hash,redaction_policy
-        from catalog.result_exposure_policy where id=$1 and version=$2 and tenant_id=$3 and status='ACTIVE'")
-        .bind(Uuid::parse_str(parameters["resultExposurePolicyId"].as_str().ok_or_else(denied)?).map_err(|_|denied())?)
-        .bind(parameters["resultExposurePolicyVersion"].as_i64().ok_or_else(denied)? as i32)
-        .bind(ae.tenant_id).fetch_optional(&mut *tx).await?;
-    let (mode, digest, redaction) = policy.ok_or_else(denied)?;
-    if !matches!(mode.as_str(), "CONSUME_ONLY" | "READ" | "EXPORT")
-        || redaction != "PLATFORM_METADATA_ONLY"
-        || digest
-            != tool.declaration["outputSchemaDigest"]
-                .as_str()
-                .ok_or_else(unavailable)?
-    {
-        return Err(denied());
-    }
+    let (_, digest, _) = execution_policy(&mut tx, &ae, &tool.declaration).await?;
     if reference.is_some() {
         let object_type = match parameters["targetType"].as_str() {
             Some("RESOURCE") => "resource",

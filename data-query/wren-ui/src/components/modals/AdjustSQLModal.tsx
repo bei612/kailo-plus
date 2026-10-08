@@ -7,7 +7,9 @@ import SQLEditor from '@/components/editor/SQLEditor';
 import { parseGraphQLError } from '@/utils/errorHandler';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import PreviewData from '@/components/dataPreview/PreviewData';
-import { usePreviewSqlMutation } from '@/apollo/client/graphql/sql.generated';
+import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
+import { useRouter } from 'next/router';
+import { getQueryPreviewText } from '@/utils/language';
 
 interface AdjustSQLFormValues {
   responseId: number;
@@ -29,9 +31,11 @@ export default function AdjustSQLModal(props: Props) {
   const [showPreview, setShowPreview] = useState<boolean>(false);
 
   // Handle errors via try/catch blocks rather than onError callback
-  const [previewSqlMutation, previewSqlResult] = usePreviewSqlMutation();
-
   const sqlValue = Form.useWatch('sql', form);
+  const query = useGovernedSqlPreview(sqlValue, visible);
+  const previewSqlMutation = query.preview;
+  const previewSqlResult = query.result;
+  const text = getQueryPreviewText(useRouter().locale);
 
   useEffect(() => {
     if (visible) {
@@ -49,7 +53,7 @@ export default function AdjustSQLModal(props: Props) {
   };
 
   const onValidateSQL = async () => {
-    await previewSqlMutation({
+    return previewSqlMutation({
       variables: {
         data: {
           sql: sqlValue,
@@ -70,7 +74,7 @@ export default function AdjustSQLModal(props: Props) {
     setError(null);
     setPreviewing(true);
     try {
-      await onValidateSQL();
+      if (!(await onValidateSQL())) return;
       setShowPreview(true);
       await previewSqlMutation({
         variables: {
@@ -96,7 +100,7 @@ export default function AdjustSQLModal(props: Props) {
       .validateFields()
       .then(async (values) => {
         try {
-          await onValidateSQL();
+          if (!(await onValidateSQL())) return;
           await onSubmit({
             responseId: defaultValue?.responseId,
             sql: values.sql,
@@ -182,6 +186,19 @@ export default function AdjustSQLModal(props: Props) {
           <SQLEditor autoComplete autoFocus />
         </Form.Item>
       </Form>
+      {query.scopeError ? (
+        <Alert type="error" message={text.scopeError} />
+      ) : null}
+      {query.storageError ? (
+        <Alert type="error" message={text.storageError} />
+      ) : null}
+      {query.state.pending ? (
+        <Alert type="info" message={text.pending} />
+      ) : null}
+      {query.state.ended ? <Alert type="error" message={text.ended} /> : null}
+      {query.state.denied ? (
+        <Alert type="warning" message={text.denied} />
+      ) : null}
       <div className="my-3">
         <Typography.Text className="d-block gray-7 mb-2">
           Data preview (50 rows)

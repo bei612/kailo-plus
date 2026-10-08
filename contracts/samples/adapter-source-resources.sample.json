@@ -1,0 +1,23 @@
+{
+  "pep": {
+    "bindingId": "00000000-0000-4000-8000-000000000001",
+    "actionToken": "isolated-noncredential-fixture",
+    "operation": "execute",
+    "argumentsJson": "{}",
+    "sourceResources": [{"nativeType": "model", "nativeRef": "7"}, {"nativeType": "view", "nativeRef": "9"}]
+  },
+  "response": {
+    "execution": {
+      "idempotencyKey": "22222222-2222-4222-8222-222222222222",
+      "nativeType": "query",
+      "platformStatus": "SUCCEEDED",
+      "cancelCapability": "UNSUPPORTED"
+    },
+    "sourceResources": [{"nativeType": "model", "nativeRef": "7"}, {"nativeType": "view", "nativeRef": "9"}]
+  },
+  "human": {
+    "bindingId": "00000000-0000-4000-8000-000000000001",
+    "idempotencyKey": "22222222-2222-4222-8222-222222222222",
+    "sourceResources": [{"nativeType": "model", "nativeRef": "7"}, {"nativeType": "view", "nativeRef": "9"}]
+  }
+}

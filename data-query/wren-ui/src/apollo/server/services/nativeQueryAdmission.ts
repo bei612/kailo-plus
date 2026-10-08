@@ -30,6 +30,10 @@ export type NativeQueryDelivery = {
     resultExposurePolicyId: string;
     resultExposurePolicyVersion: number;
   };
+  dryRunAction?: {
+    resultExposurePolicyId: string;
+    resultExposurePolicyVersion: number;
+  };
 };
 
 export class NativeQueryRefusal extends Error {
@@ -93,7 +97,8 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
     !value ||
     Array.isArray(value) ||
     Object.keys(value).some(
-      (key) => ![...strings, ...numbers, 'humanAction'].includes(key),
+      (key) =>
+        ![...strings, ...numbers, 'humanAction', 'dryRunAction'].includes(key),
     ) ||
     strings.some(
       (key) =>
@@ -114,8 +119,9 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
   ) {
     throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
   }
-  if (value.humanAction !== undefined) {
-    const human = value.humanAction;
+  for (const field of ['humanAction', 'dryRunAction']) {
+    if (value[field] === undefined) continue;
+    const human = value[field];
     if (
       !human ||
       Object.keys(human).sort().join(',') !==
@@ -266,6 +272,7 @@ export async function authorizeQuery(
   token: string,
   operation: 'execute' | 'observe' | 'handshake' | 'validate_binding',
   argumentsValue: unknown,
+  sourceResources?: unknown,
 ): Promise<JWTPayload> {
   const keyDocument = JSON.parse(
     await readFile(config.actionTokenJwksFile, 'utf8'),
@@ -305,6 +312,7 @@ export async function authorizeQuery(
     actionToken: token,
     operation,
     argumentsJson: canonical(argumentsValue),
+    ...(sourceResources === undefined ? {} : { sourceResources }),
   });
   if (
     admitted.actionExecutionId !== payload.action_execution_id ||

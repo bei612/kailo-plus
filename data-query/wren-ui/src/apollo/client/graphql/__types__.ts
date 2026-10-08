@@ -1112,6 +1112,8 @@ export type PreviewItemSqlInput = {
 
 export type PreviewSqlDataInput = {
   dryRun?: InputMaybe<Scalars['Boolean']>;
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   limit?: InputMaybe<Scalars['Int']>;
   projectId?: InputMaybe<Scalars['String']>;
   sql: Scalars['String'];

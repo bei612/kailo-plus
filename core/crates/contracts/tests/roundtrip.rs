@@ -6,6 +6,35 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn native_source_resources_preserve_all_metadata_and_legacy_absence() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("adapter-source-resources.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    for present in [true, false] {
+        let mut value = sample.clone();
+        if !present {
+            for key in ["pep", "response", "human"] {
+                value[key]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("sourceResources");
+            }
+        }
+        let pep: contracts::AdapterPepCheckRequest =
+            serde_json::from_value(value["pep"].clone()).unwrap();
+        let response: contracts::AdapterExecutionResponse =
+            serde_json::from_value(value["response"].clone()).unwrap();
+        let human: contracts::NativeHumanActionRequest =
+            serde_json::from_value(value["human"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(pep).unwrap(), value["pep"]);
+        assert_eq!(serde_json::to_value(response).unwrap(), value["response"]);
+        assert_eq!(serde_json::to_value(human).unwrap(), value["human"]);
+    }
+}
+
+#[test]
 fn project_preference_preserves_coordinate_selection_and_shared_version() {
     let value: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("project-preference.sample.json"))

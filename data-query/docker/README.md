@@ -239,8 +239,10 @@ is refused rather than silently followed under the old binding.
 This delivery implementation does not prove that a production database role is
 read-only, nor does it manufacture SecretStore request receipts for lifecycle
 validation. Actual native scope/role evidence and the normal binding validation
-consumer remain required before activation. The native browser's original
-internal queries are not automatically governed platform commands.
+consumer remain required before activation. The original SQL editor previews
+described below consume the governed query chain. Other native browser or
+AI-service operations are not automatically governed platform commands merely
+because this overlay is present.
 
 ### Model and saved-view metadata access
 
@@ -268,6 +270,54 @@ id/version used by actual queries; do not configure a global Resource id/version
 to bypass per-object lookup. These metadata reads do not execute SQL or create
 an ActionExecution. Unregistered objects remain unavailable: this change does
 not complete the separate REMOTE_ADAPTER native-object registration path.
+
+### Original SQL editor preview and full-source admission
+
+The original Adjust SQL, Fix SQL and Question/SQL Pair dialogs keep their native
+forms, SQL editor, preview and submit controls. Their existing `previewSql`
+mutation now carries an opaque retry key and the verified current preview scope.
+Query and validation use the separate existing `data_query.query@v1` and
+`data_query.dry_run@v1` actions. To enable the native validation consumer, deliver
+`dryRunAction.resultExposurePolicyId` and `dryRunAction.resultExposurePolicyVersion`
+for the actual registered dry-run action. It has the same closed id/version
+configuration shape as `humanAction`, but does not inherit the query policy:
+the two actions' output schemas differ. Missing dry-run delivery refuses
+validation and does not fall back to direct SQL or a query policy.
+
+The SQL body, frozen deployment and original native model/view source IDs stay
+in Wren's existing `api_history` row. Before admission that row records native
+input acceptance, without an ActionExecution or execution status. The first
+authenticated adapter dispatch atomically attaches the existing AE/Operation,
+sets UNKNOWN and claims that same native ID. Competing deliveries and transport
+loss do not issue another query. Core/Temporal receive only the ContentReference
+and revision, not a copy of the SQL. A changed SQL, scope, limit, deployment or
+frozen source set cannot replace an existing intent.
+
+Actual original planner/deployment sources are sent as `sourceResources` through
+the existing execute PEP and successful execution response. They are metadata,
+not grants or caller-selected credentials. The same AE/binding/Workspace must
+authorize every source; the primary Resource alone does not authorize another
+model, view dependency or hidden subquery. Completed HUMAN previews re-read
+the same native history and sources, then pass those sources to the original
+idempotency-key observation so Core checks current action and read/export policy
+intersection before Wren returns the result body. Missing old source evidence
+is refused, never backfilled to make a previous result readable.
+
+UNKNOWN, malformed evidence and transport failure preserve the original opaque
+browser retry key and do not validate or submit an SQL edit. Only a verified
+completed dry-run with its native validation body may advance the original
+submit flow; an HTTP response or terminal label alone is insufficient. Focus,
+visibility, identity changes and superseded requests clear/fence rendered
+results without deleting another pending intent. Browser storage contains
+opaque IDs only, never SQL, tokens or results.
+
+This source increment is not complete native-business acceptance. The new Java
+source endpoint still rejects FunctionCall nodes, including ordinary count/sum;
+Java compilation and actual Engine HTTP validation have not passed. Full
+generated-answer Asking consumption, remaining native writes, complete native
+Chinese/English coverage, real datasource/LLM operation and embedded browser
+acceptance remain delivery gaps. Controlled TypeScript peers do not prove those
+features, a deployed Wren instance, an ACTIVE binding or original-feature parity.
 
 The saved-view query-reference export also selects its registered Resource
 from the verified current human, binding and native view ID. Its existing

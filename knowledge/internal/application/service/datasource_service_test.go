@@ -70,6 +70,73 @@ type processSyncKBService struct {
 	kb     *types.KnowledgeBase
 }
 
+type fileStorageConfigRepository struct {
+	*kbDeleteDSRepo
+	writes int
+}
+
+func (r *fileStorageConfigRepository) Update(context.Context, *types.DataSource) error {
+	r.writes++
+	return nil
+}
+
+func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t *testing.T) {
+	resource := uuid.NewString()
+	for _, name := range []string{"valid-selection", "unchanged-selection", "omitted-config", "empty-selection", "duplicate-selection", "invalid-reference", "native-url-setting", "malformed-config"} {
+		t.Run(name, func(t *testing.T) {
+			original, err := (&types.DataSourceConfig{ResourceIDs: []string{resource}}).ToJSON()
+			require.NoError(t, err)
+			existing := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(),
+				Type: fileStorageConnectorType, Status: types.DataSourceStatusPaused, Config: original}
+			repo := &fileStorageConfigRepository{kbDeleteDSRepo: newKBDeleteDSRepo(existing.KnowledgeBaseID, existing)}
+			registry := datasource.NewConnectorRegistry()
+			registry.Register(&fileStorageConnector{})
+			svc := &DataSourceService{dsRepo: repo, connectorRegistry: registry, scheduler: datasource.NewScheduler(repo, nil, nil)}
+			defer svc.scheduler.Stop()
+			cfg := &types.DataSourceConfig{ResourceIDs: []string{uuid.NewString()}}
+			switch name {
+			case "unchanged-selection":
+				cfg.ResourceIDs = []string{resource}
+			case "empty-selection":
+				cfg.ResourceIDs = nil
+			case "duplicate-selection":
+				cfg.ResourceIDs = append(cfg.ResourceIDs, cfg.ResourceIDs[0])
+			case "invalid-reference":
+				cfg.ResourceIDs = []string{"not-a-platform-resource"}
+			case "native-url-setting":
+				cfg.Settings = map[string]interface{}{"native_url": "https://native-source.invalid"}
+			}
+			next := *existing
+			next.Config, err = cfg.ToJSON()
+			require.NoError(t, err)
+			if name == "malformed-config" {
+				next.Config = types.JSON(`{"resource_ids":`)
+			}
+			if name == "omitted-config" {
+				next.Config = nil
+			}
+			result, err := svc.UpdateDataSource(context.Background(), &next)
+			if name == "omitted-config" {
+				require.NoError(t, err)
+				require.Same(t, &next, result)
+				require.Equal(t, 1, repo.writes)
+			} else if name == "valid-selection" || name == "unchanged-selection" {
+				require.NoError(t, err)
+				require.Equal(t, 1, repo.writes)
+				actual, parseErr := result.ParseConfig()
+				require.NoError(t, parseErr)
+				require.Equal(t, cfg.ResourceIDs, actual.ResourceIDs)
+				require.Empty(t, actual.Credentials)
+			} else {
+				require.Error(t, err)
+				require.Nil(t, result)
+				require.Zero(t, repo.writes, "invalid configuration must not be persisted or scheduled")
+			}
+			require.Equal(t, original, existing.Config, "editing must not mutate the previous native row before validation")
+		})
+	}
+}
+
 func (s *processSyncKBService) CreateKnowledgeBase(context.Context, *types.KnowledgeBase) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

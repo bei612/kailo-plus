@@ -2295,3 +2295,97 @@ performed by this subtask. Live authorized listing/read, native parsing,
 replacement/deletion and bilateral receipt/usage settlement still require the
 approved actual release/binding and deployed source versions; no activation
 was simulated and no business database was edited.
+
+## Native file-storage source edits validate without native credentials (2026-10-08)
+
+Authority and cause: DD-89 and design `13` §4.1/§4.4 require the receiver to
+consume governed source Resource references, not source-service credentials.
+The fixed official WeKnora source at
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::DataSourceService.UpdateDataSource`,
+validates edits only when native credentials exist. That assumption is valid
+for an unconfigured credential connector, but excludes the actual credential-free
+`fileStorageConnector.Validate` consumer. Consequently empty/duplicate/invalid
+Resource selections, native URL settings and malformed JSON could be saved
+successfully and fail only when a later native synchronization consumed them.
+The fixed source was re-read with `git show`/`git grep`; it was not executed.
+
+Impact: the original PUT handler, configuration merge, native repository and
+scheduler are retained. A changed file-storage configuration now runs the
+existing connector validator before repository update or schedule changes.
+The changed-configuration decision distinguishes omitted configuration from
+an explicitly supplied invalid configuration. Valid selections, unchanged
+selections and PUT requests omitting configuration retain their original
+behavior. Other native credential connectors keep their existing prerequisite
+behavior. No API/schema/Workflow/cursor/translation/layout change or migration
+is introduced; the existing `fileStorageConnectorType` is reused.
+
+Side effects: validation is not permission or service-read authorization and
+does not discover a native directory. Source references still need the existing
+receiver ServicePrincipal reader grant and each actual read/write still goes
+through the original fresh source/receiver PEP. No service bearer, native URL,
+file body or additional permission authority is introduced. The old native
+record remains unchanged on refusal. The original handler returns its existing
+HTTP 400 validation failure rather than a saved-success response; scope/auth
+checks and original six-class adapter mapping are unchanged.
+
+Boundaries: empty/duplicate/malformed/non-UUID references, extra native settings
+and invalid JSON reject before persistence. No new asynchronous state exists.
+Old persisted pending imports/deletes still observe their original receipt
+before new configuration validation, as recorded above; this edit correction
+does not erase old cursors or cancel an already-dispatched native task. The
+older receipt noting that an empty source configuration could be saved records
+the previous behavior, not permission for future invalid edits.
+
+Implementation preceded the added original service check. The first positive
+run passed 10 top-level +51 subchecks, service runtime `0.662s`. Restoring the
+old production `hasCreds` guard in the private candidate made that same target
+fail five invalid-edit states. After adding the omitted-configuration
+compatibility state, the same actual guard mutation exited 1: 9 top-level
+passed/1 failed, 47 subchecks passed/5 failed, runtime `0.523s`. The failure was
+`An error is expected but got nil` after actual `UpdateDataSource` saved each
+invalid configuration. Restoring the exact formal production input and running
+the same command exited 0: **10 top-level +52 subchecks passed**, none skipped,
+runtime `0.554s`.
+
+```sh
+sudo -n docker exec -u 1000:1000 -w /workspace/knowledge \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  kailo-knowledge-native-check-wkkigg \
+  go test ./internal/application/service -run TestFileStorage -count=1 -v
+```
+
+The existing independent Go SDK/cache/image described in the previous receipt
+was reused, not the root UI/Core SDK. Before execution, build processes and
+CPU/memory pressure were read; available host memory was 24–31 GiB and Data
+space 1.4–1.6 GiB. Actual cgroup limits remained 4 CPU/8 GiB, no additional swap;
+OOM counters stayed zero. No install, image, new database or tree snapshot was
+created. SDK `gofmt -d` was empty; formal/candidate entire native `internal/`
+`diff -qr` and scoped `git diff --check` exited 0; reused TMP was empty.
+
+Logs in the same existing SDK evidence root above:
+
+- `file-storage-edit-positive-20261008.log`, exit 0, SHA-256
+  `97c24bb182aab3ac78578f459bf81ff840352d4ce51ce943ecdaecd82c519575`.
+- `file-storage-edit-mutation-20261008.log`, intentional exit 1, SHA-256
+  `af30607f7ffb09e035566fd7a72b18268897d14f1723c64911a0ef53f0c77f31`.
+- `file-storage-edit-final-mutation-20261008.log`, intentional exit 1, SHA-256
+  `65d570808a3147b9cc85b480fb680a29aeabc5fa894269c17f2c61690b8f6189`.
+- `file-storage-edit-restored-20261008.log`, exit 0, SHA-256
+  `e54aefda27c3caf5afcab9b998e06b7affd89fa5cb43926f8ee844bc566792e5`.
+
+This is native service/configuration evidence, not complete user acceptance.
+The existing BFF `application_binding_read::read_resources` and shared
+`ServiceReadPermissions` already select governed sources/receivers and submit
+`resource.grant_read/revoke_read`. The native WeKnora editor does not yet consume
+that selection: its connector definitions omit file-storage and its original
+resource-list step creates an empty-selection draft, while this connector
+requires source references. There is no configuration handoff from the shared
+native iframe into original `POST /api/v1/datasource`
+(`knowledge_base_id`, `type`, `config.resource_ids`). No unusable option was
+added, no service credential/shared Cookie was put in the iframe, and these
+missing user-flow consumers are not claimed complete. UI/screenshots, live
+Cells/WeKnora/LLM, release/binding activation, global checks and deployment were
+not run by this subtask. The manifest `status` command was not rerun for this
+batch; the read-only fixed-source evidence does not replace that command.

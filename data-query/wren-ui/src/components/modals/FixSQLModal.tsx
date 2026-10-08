@@ -7,7 +7,9 @@ import { parseGraphQLError } from '@/utils/errorHandler';
 import SQLEditor from '@/components/editor/SQLEditor';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import PreviewData from '@/components/dataPreview/PreviewData';
-import { usePreviewSqlMutation } from '@/apollo/client/graphql/sql.generated';
+import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
+import { useRouter } from 'next/router';
+import { getQueryPreviewText } from '@/utils/language';
 
 type Props = ModalAction<{ sql: string; responseId: number }> & {
   loading?: boolean;
@@ -19,7 +21,11 @@ export function FixSQLModal(props: Props) {
   const [form] = Form.useForm();
 
   // Handle errors via try/catch blocks rather than onError callback
-  const [previewSqlMutation, previewSqlResult] = usePreviewSqlMutation();
+  const sqlValue = Form.useWatch('sql', form);
+  const query = useGovernedSqlPreview(sqlValue, visible);
+  const previewSqlMutation = query.preview;
+  const previewSqlResult = query.result;
+  const text = getQueryPreviewText(useRouter().locale);
 
   const error = useMemo(() => {
     if (!previewSqlResult.error) return null;
@@ -34,7 +40,7 @@ export function FixSQLModal(props: Props) {
 
   const validateSql = async () => {
     const sql = form.getFieldValue('sql');
-    await previewSqlMutation({
+    return previewSqlMutation({
       variables: { data: { sql, limit: 1, dryRun: true } },
     });
   };
@@ -62,7 +68,7 @@ export function FixSQLModal(props: Props) {
     form
       .validateFields()
       .then(async (values) => {
-        await validateSql();
+        if (!(await validateSql())) return;
         await onSubmit(values.sql);
         onClose();
       })
@@ -103,6 +109,19 @@ export function FixSQLModal(props: Props) {
           <SQLEditor autoComplete autoFocus />
         </Form.Item>
       </Form>
+      {query.scopeError ? (
+        <Alert type="error" message={text.scopeError} />
+      ) : null}
+      {query.storageError ? (
+        <Alert type="error" message={text.storageError} />
+      ) : null}
+      {query.state.pending ? (
+        <Alert type="info" message={text.pending} />
+      ) : null}
+      {query.state.ended ? <Alert type="error" message={text.ended} /> : null}
+      {query.state.denied ? (
+        <Alert type="warning" message={text.denied} />
+      ) : null}
       <div className="my-3">
         <Typography.Text className="d-block gray-7 mb-2">
           Data preview (50 rows)

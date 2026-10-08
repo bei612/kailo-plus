@@ -11,6 +11,10 @@
     "actionToken": {"type": "string"},
     "operation": {"type": "string"},
     "argumentsJson": {"type": "string"},
-    "contentReference": {"$ref": "../../domain/content_reference.schema.json"}
+    "contentReference": {"$ref": "../../domain/content_reference.schema.json"},
+    "sourceResources": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "source_resource.schema.json"}
+    }
   }
 }

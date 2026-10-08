@@ -2,7 +2,10 @@ import {
   ApiHistoryRepository,
   ApiType,
 } from '../repositories/apiHistoryRepository';
-import { NativeQueryService } from './nativeQueryService';
+import {
+  NativeQueryService,
+  nativeSourceResources,
+} from './nativeQueryService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import {
   bindingServiceCall,
@@ -34,7 +37,10 @@ export async function resolveNativeResource(
   token: string,
   kind: 'model' | 'view',
   id: number,
-  actionKey: 'data_query.query@v1' | 'data_query.describe@v1',
+  actionKey:
+    | 'data_query.query@v1'
+    | 'data_query.dry_run@v1'
+    | 'data_query.describe@v1',
   filterDenied = false,
 ) {
   if (!token || !Number.isSafeInteger(id) || id <= 0)
@@ -247,6 +253,141 @@ export class NativeHumanQuery {
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return frozen;
     };
+    return this.disclose(token, key, receipt, check, 'data_query.query@v1');
+  }
+
+  async previewSql(
+    token: string | undefined,
+    key: string,
+    sql: string,
+    limit: number,
+    previewScope: string,
+    dryRun: boolean,
+  ) {
+    const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+    const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
+    if (!token || !policy)
+      throw new NativeQueryRefusal(503, 'NATIVE_HUMAN_ADMISSION_UNAVAILABLE');
+    if (
+      typeof key !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        key,
+      ) ||
+      typeof sql !== 'string' ||
+      !sql.trim() ||
+      !Number.isSafeInteger(limit) ||
+      limit <= 0 ||
+      !/^[a-f0-9]{64}$/.test(previewScope)
+    )
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    const observe = () =>
+      bindingServiceCall(
+        this.config,
+        'human-action',
+        {
+          bindingId: this.config.bindingId,
+          idempotencyKey: key,
+        },
+        token,
+      );
+    let receipt = await observe();
+    let selectedResource: string | undefined;
+    if (!receipt) {
+      const draft = await this.queries.sqlSelection(
+        key,
+        sql,
+        limit,
+        previewScope,
+        action,
+      );
+      const resources = [];
+      for (const source of draft.objects)
+        resources.push(
+          await resolveNativeResource(
+            this.config,
+            token,
+            source.nativeType,
+            source.nativeId,
+            action,
+          ),
+        );
+      const reference = await this.queries.sqlReference(
+        resources[0].resourceId,
+        draft,
+      );
+      selectedResource = resources[0].resourceId;
+      // Authorization may race the analyzer or native history write. Retain
+      // the same primary Resource/version and recheck every frozen source.
+      for (let index = 0; index < draft.objects.length; index++) {
+        const source = draft.objects[index];
+        const after = await resolveNativeResource(
+          this.config,
+          token,
+          source.nativeType,
+          source.nativeId,
+          action,
+        );
+        if (canonical(after) !== canonical(resources[index]))
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      }
+      receipt = await bindingServiceCall(
+        this.config,
+        'human-action',
+        {
+          bindingId: this.config.bindingId,
+          command: {
+            actionKey: action,
+            idempotencyKey: key,
+            workspaceId: this.config.workspaceId,
+            resourceId: resources[0].resourceId,
+            resourceVersion: resources[0].resourceVersion,
+            componentAction: {
+              actionVersion: 1,
+              inputReference: reference,
+              resultExposurePolicyId: policy.resultExposurePolicyId,
+              resultExposurePolicyVersion: policy.resultExposurePolicyVersion,
+            },
+          },
+        },
+        token,
+      );
+    }
+    const check = (value: any) => {
+      if (
+        !queryReceiptState(value).valid ||
+        value?.submission?.actionKey !== action ||
+        typeof value.inputReference?.resourceId !== 'string' ||
+        (selectedResource !== undefined &&
+          value.inputReference.resourceId !== selectedResource) ||
+        typeof value.submission.actionExecutionId !== 'string' ||
+        typeof value.submission.operationId !== 'string'
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      try {
+        return JSON.parse(value.inputReference.nativeObjectRef);
+      } catch {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+    };
+    check(receipt);
+    await this.queries.sqlIntent(
+      receipt.inputReference,
+      key,
+      sql,
+      limit,
+      previewScope,
+      action,
+    );
+    return this.disclose(token, key, receipt, check, action);
+  }
+
+  private async disclose(
+    token: string,
+    key: string,
+    receipt: any,
+    check: (value: any) => any,
+    action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+  ) {
     const frozen = check(receipt);
     if (receipt.terminalStatus !== 'COMPLETED') return receipt;
     if (
@@ -264,16 +405,23 @@ export class NativeHumanQuery {
       governanceKey: key,
       governanceState: 'SUCCEEDED',
     });
+    const model = Object.hasOwn(frozen, 'modelId');
+    const editor = Object.hasOwn(frozen, 'historyId');
     if (
       Object.keys(frozen).sort().join(',') !==
-        (kind === 'model'
-          ? 'deploymentHash,deploymentId,limit,modelId'
-          : 'deploymentHash,deploymentId,limit,viewId') ||
+        (editor
+          ? model
+            ? 'deploymentHash,deploymentId,historyId,limit,modelId'
+            : 'deploymentHash,deploymentId,historyId,limit,viewId'
+          : model
+            ? 'deploymentHash,deploymentId,limit,modelId'
+            : 'deploymentHash,deploymentId,limit,viewId') ||
       !Number.isSafeInteger(frozen.deploymentId) ||
       frozen.deploymentId <= 0 ||
       typeof frozen.deploymentHash !== 'string' ||
       !/^[a-f0-9]{40}$/.test(frozen.deploymentHash) ||
       record?.apiType !== ApiType.RUN_SQL ||
+      (editor && frozen.historyId !== receipt.nativeId) ||
       record.governanceKey !== key ||
       record.governanceParameterHash !==
         digest({
@@ -282,7 +430,7 @@ export class NativeHumanQuery {
         }) ||
       record.governanceDeploymentId !== frozen.deploymentId ||
       record.governanceDeploymentHash !== frozen.deploymentHash ||
-      record.requestPayload?.action !== 'data_query.query@v1' ||
+      record.requestPayload?.action !== action ||
       typeof record.requestPayload.sql !== 'string' ||
       !record.requestPayload.sql.trim() ||
       record.requestPayload.deploymentId !== frozen.deploymentId ||
@@ -299,19 +447,21 @@ export class NativeHumanQuery {
       !record?.responsePayload ||
       record.responsePayload.deploymentId !== frozen.deploymentId ||
       record.responsePayload.deploymentHash !== frozen.deploymentHash ||
-      !Array.isArray(record.responsePayload.columns) ||
-      !Array.isArray(record.responsePayload.data) ||
-      record.responsePayload.columns.some(
-        (column) =>
-          !column ||
-          typeof column.name !== 'string' ||
-          typeof column.type !== 'string',
-      ) ||
-      record.responsePayload.data.some(
-        (row) =>
-          !Array.isArray(row) ||
-          row.length !== record.responsePayload.columns.length,
-      )
+      (action === 'data_query.dry_run@v1'
+        ? record.responsePayload.valid !== true
+        : !Array.isArray(record.responsePayload.columns) ||
+          !Array.isArray(record.responsePayload.data) ||
+          record.responsePayload.columns.some(
+            (column) =>
+              !column ||
+              typeof column.name !== 'string' ||
+              typeof column.type !== 'string',
+          ) ||
+          record.responsePayload.data.some(
+            (row) =>
+              !Array.isArray(row) ||
+              row.length !== record.responsePayload.columns.length,
+          ))
     ) {
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
     }
@@ -325,7 +475,7 @@ export class NativeHumanQuery {
         token,
         source.nativeType,
         source.nativeId,
-        'data_query.query@v1',
+        action,
       );
     // A current view/model may change during source authorization. Re-read
     // the original deployment/source facts, not a new query or a name alias.
@@ -340,7 +490,16 @@ export class NativeHumanQuery {
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     // Reading native rows does not confer permission. Re-admit immediately
     // before disclosure, including revocation/config generation changes.
-    const after = await observe();
+    const after = await bindingServiceCall(
+      this.config,
+      'human-action',
+      {
+        bindingId: this.config.bindingId,
+        idempotencyKey: key,
+        sourceResources: nativeSourceResources(sources),
+      },
+      token,
+    );
     check(after);
     if (canonical(after) !== canonical(receipt))
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');

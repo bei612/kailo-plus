@@ -14,6 +14,47 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestNativeSourceResourcesRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-source-resources.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, present := range []bool{true, false} {
+		var expected map[string]map[string]any
+		if err := json.Unmarshal(raw, &expected); err != nil {
+			t.Fatal(err)
+		}
+		if !present {
+			for _, key := range []string{"pep", "response", "human"} {
+				delete(expected[key], "sourceResources")
+			}
+		}
+		input, err := json.Marshal(expected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed struct {
+			Pep      generated.AdapterPepCheckRequest   `json:"pep"`
+			Response generated.AdapterExecutionResponse `json:"response"`
+			Human    generated.NativeHumanActionRequest `json:"human"`
+		}
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]map[string]any
+		if err := json.Unmarshal(encoded, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatal("Native planner source metadata changed")
+		}
+	}
+}
+
 func TestProjectPreferenceRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "project-preference.sample.json"))
 	if err != nil {

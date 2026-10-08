@@ -3254,3 +3254,165 @@ generated-SQL `ModelResolver.previewSql` execution consumer remain open
 delivery gaps, not excluded product scope. No full check, Wren business
 instance/release/binding, live datasource/LLM acceptance, iframe screenshots,
 Windows/Mobile package, deployment or 100% original-feature parity is claimed.
+
+## 2026-10-08 — original SQL editors and same-execution source consumers
+
+This is evidence recorded after implementation, not a new execution contract.
+The authority remains `.design/08` §6 and DD-98, the existing Resource,
+ContentReference, ActionExecution and native HUMAN/adapter protocols. This
+increment consumes the existing query/dry-run actions and the shared
+`sourceResources` protocol field; it does not create a Wren permission ticket,
+task registry, workflow engine, SQL parser or Core SQL-body store.
+
+The fixed official source was reread using `git grep` and `git ls-tree`:
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.previewSql`,
+`wren-ui/src/apollo/server/repositories/apiHistoryRepository.ts::ApiHistoryRepository`,
+`wren-ui/src/components/modals/AdjustSQLModal.tsx::AdjustSQLModal`,
+`wren-ui/src/components/modals/FixSQLModal.tsx::FixSQLModal`, and
+`wren-ui/src/components/modals/QuestionSQLPairModal.tsx::QuestionSQLPairModal`.
+That UI tree fixes `wren-engine` to
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0`. No reference-directory content was
+modified or executed.
+
+The four implementation impact checks are as follows.
+
+1. Authority and status: original native SQL preview is supported upstream;
+   Kailo's HUMAN admission, separate dry-run policy and full-source execution
+   checks are authorized adaptations. The original three forms, editors,
+   preview/submit controls and layout remain. No replacement page is added.
+   This is a source-level difference classification for this increment, not
+   a claim that the entire Wren/UI diff or every original page is accepted.
+2. Readers and writers: the original `ModelResolver.previewSql` now consumes
+   current trusted identity/scope and `NativeHumanQuery.previewSql`.
+   `NativeQueryService.sqlSelection/sqlReference/sqlIntent` and the original
+   `ApiHistoryRepository.prepareNativeSql/reserveGovernedQuery` freeze and
+   consume the native SQL/deployment/source input. The original GraphQL input,
+   TypeScript model and generated client type add optional opaque key/scope
+   fields; all three original modal callers actually provide them through
+   `useGovernedSqlPreview`. There is no new table or migration. Old bound
+   clients missing current identity/key evidence are refused, not silently
+   routed to direct SQL. Old history rows without frozen sources are not
+   backfilled or replayed to manufacture evidence.
+3. Side effects: before admission, the same original `api_history` row is
+   an immutable native ContentReference input with no AE/Operation/execution
+   state. Its HTTP 202 and zero duration satisfy the original non-null native
+   history columns and do not claim SQL execution. The first authenticated
+   adapter dispatch locks and claims that same row, attaching the original
+   AE/Operation and UNKNOWN state. Duplicate delivery cannot claim it again.
+   SQL, body and source history stay in Wren; Core receives references,
+   revisions and source metadata only. No second execution authority is added.
+4. Boundaries: malformed or changed SQL/key/scope/limit/source/deployment
+   evidence is refused before SQL or result disclosure. Resource/action denial
+   is not filtered out of a multi-source query. Missing source evidence is
+   unavailable, not an empty successful result. Native transport uncertainty
+   preserves UNKNOWN, the original native ID and opaque browser key; neither
+   a transport exception nor an unverified COMPLETED label validates an edit.
+   Concurrent dispatch, reentry, revocation before disclosure, identity change,
+   hidden/closed/reset editors and late responses have actual consumers below.
+   Refusals use the existing NativeQueryRefusal/Core ErrorBody translation;
+   UNKNOWN is not converted into a successful or failed business terminal.
+
+`NativeQueryService.reauthorize` sends all original frozen model/view sources
+through the existing execute PEP. The original successful execution/replay
+response carries the same source set. This removes the prior single-object
+restriction only after the actual full-source consumer is called. It does
+not make source metadata a permission grant. The original primary Resource,
+binding, project, deployment/hash, native identities and frozen source set are
+still checked, including hidden subquery/view dependencies.
+
+`NativeHumanQuery.disclose` rereads the same completed history and sources,
+then sends `sourceResources` to the original same-AE/idempotency-key observation
+before returning the body. The shared Core consumer must apply current action
+and read/export policy intersection there. Source fields are not added to HUMAN
+command or resource-resolution requests. These checks use a controlled Core
+PEP peer; they do not by themselves prove the new Core implementation, Java
+Analyzer or live Wren instance has been jointly accepted.
+
+Query and dry-run use separate existing actions and actual delivered result
+exposure policies. `dryRunAction` has the original closed policy id/version
+shape; absence refuses validation rather than inheriting the query policy.
+Only a verified completed dry-run with its native validation body advances the
+original submit flow. The browser stores only opaque intent/key identifiers,
+never SQL, credentials or results. UNKNOWN retries reuse the key. Visibility,
+scope changes, reset and superseded requests fence late results without deleting
+the admitted pending intent. Apollo's transport error is not exposed as the
+original Fix SQL syntax-failure display when the native outcome is unknown.
+Necessary governance notices reuse existing Chinese/English receipt vocabulary;
+complete native-product Chinese/English coverage is not claimed.
+
+Verification reused `kailo-wren-query-sdk-itgs2n` with 4 CPU / 4 GiB memory and
+4 GiB memory-plus-swap limits, existing mounts/cache and existing isolated
+PostgreSQL. Existing builds and host CPU/memory/disk pressure were checked.
+No new database service, image or release was created. The original offline
+GraphQL codegen ran against `src/apollo/server/schema.ts`, exit 0; the generated
+client diff is only the two optional input fields, not formatting churn.
+
+Actual original commands, inside that existing SDK:
+
+```sh
+./node_modules/.bin/tsc --noEmit --incremental false
+./node_modules/.bin/jest src/nativeQuery.test.ts src/nativeHumanQuery.test.ts src/viewMetadata.test.ts --runInBand
+./node_modules/.bin/jest src/viewMetadata.test.ts --runInBand
+./node_modules/.bin/prettier --check src/apollo/server/models/model.ts src/apollo/server/repositories/apiHistoryRepository.ts src/apollo/server/resolvers/modelResolver.ts src/apollo/server/schema.ts src/apollo/server/services/nativeHumanQuery.ts src/apollo/server/services/nativeQueryAdmission.ts src/apollo/server/services/nativeQueryService.ts src/components/modals/AdjustSQLModal.tsx src/components/modals/FixSQLModal.tsx src/components/modals/QuestionSQLPairModal.tsx src/hooks/useGovernedSqlPreview.ts src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/viewMetadata.test.ts
+```
+
+An initial candidate failed: the native suite reported 94 passed / 1 failed,
+and the HUMAN suite did not compile. The checks were corrected to compare
+PostgreSQL JSONB semantically instead of relying on property order, and to
+explicitly type the controlled HUMAN peer value. A later candidate had a
+missing closing brace and failed compilation; that implementation error was
+fixed. These failed candidates are retained in the logs, not counted as passes.
+
+After correction, the three original suites reported 189/189 passed, zero
+skips, exit 0 (26.618 s). The native pre-admission history phase was then checked
+against the original non-null columns: 189/189 passed, zero skips, exit 0
+(26.827 s). Whole-UI TypeScript exited 0.
+
+Three real protections were deliberately removed only in the private SDK copy:
+immutable prepared native sources, the completed HUMAN observation source
+payload, and the verified COMPLETED body requirement. The original consumers
+reported 6 failed / 183 explicitly name-filtered skips / 0 passed, exit 1
+(9.859 s). The failures caught replacing frozen input, disclosing after source
+policy denial, missing same-AE source checks and false SQL validation. All 15
+formal UI/backend inputs, including the generated type and new consumed hook,
+were restored and matched with `cmp`; the 14 handwritten TypeScript inputs
+passed original Prettier. The restored three suites reported 189/189 passed,
+zero skips, exit 0 (441.624 s); whole-UI TypeScript again exited 0.
+
+The final changes affect only the new hook and its three original modal
+consumers plus the existing UI check: hidden/reset editors fence late completion
+and an Apollo transport error cannot label UNKNOWN as SQL syntax failure.
+Removing the reset revision and transport-error isolation in the private copy
+caused 2 failed / 27 explicitly name-filtered skips, exit 1 (6.790 s). After
+restoring and comparing all 15 inputs, original Prettier passed and the complete
+original `viewMetadata.test.ts` suite reported 29/29 passed, zero skips, exit 0
+(6.081 s); final whole-UI TypeScript exited 0. The unchanged PostgreSQL/backend
+189-check set was not rerun for those last frontend-only changes. This is not
+reported as a fictitious final combined 190-check run.
+
+Logs are under the existing directory
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-sql-editor-positive.log` (initial failed checks),
+`native-sql-editor-source-positive.log` (compilation error),
+`native-sql-editor-source-final-positive.log` (189/189),
+`native-sql-editor-input-phase-positive.log` (189/189),
+`native-sql-editor-source-tsc.log` (exit 0),
+`native-sql-editor-source-negative.log` (six real failures),
+`native-sql-editor-source-restored.log` (restored 189/189),
+`native-sql-editor-source-restored-tsc.log` (exit 0),
+`native-sql-editor-reset-negative.log` (two real failures),
+`native-sql-editor-final-format.log`, `native-sql-editor-final-ui.log` (29/29),
+and `native-sql-editor-final-tsc.log` (exit 0, empty successful compiler output).
+
+Remaining delivery gaps are not removed from the original product scope. The
+Java source endpoint still rejects FunctionCall nodes, including ordinary
+count/sum. The fixed original function-directory facts classify functions but
+do not prove hidden provider reads absent; no guessed name whitelist or blanket
+function bypass is introduced. Java compilation and actual Analyzer HTTP are
+unverified. Real datasource/LLM integration, remaining native writes and full
+generated-answer behavior, complete native Chinese/English coverage, iframe
+navigation/upload/download/revocation screenshots, a real deployed Wren business
+instance and ACTIVE binding, Windows/Mobile acceptance and global `check.sh
+--full` are not accepted by this increment. No deployment, installation package
+or 100% original-feature/style parity is claimed.

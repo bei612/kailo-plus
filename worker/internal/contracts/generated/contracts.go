@@ -85,6 +85,9 @@
 //    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
 //    bytes, err = adapterScopeObservation.Marshal()
 //
+//    adapterSourceResource, err := UnmarshalAdapterSourceResource(bytes)
+//    bytes, err = adapterSourceResource.Marshal()
+//
 //    actionCommand, err := UnmarshalActionCommand(bytes)
 //    bytes, err = actionCommand.Marshal()
 //
@@ -890,6 +893,16 @@ func UnmarshalAdapterScopeObservation(data []byte) (AdapterScopeObservation, err
 }
 
 func (r *AdapterScopeObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterSourceResource(data []byte) (AdapterSourceResource, error) {
+	var r AdapterSourceResource
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterSourceResource) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2779,6 +2792,7 @@ type AdapterExecutionResponse struct {
 	ContentReferences []ContentReferenceElement `json:"contentReferences,omitempty"`
 	Execution         ExecutionClass            `json:"execution"`
 	ResultJSON        *string                   `json:"resultJson,omitempty"`
+	SourceResources   []SourceResourceElement   `json:"sourceResources,omitempty"`
 }
 
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -2792,6 +2806,14 @@ type ExecutionClass struct {
 	NativeType       string                  `json:"nativeType"`
 	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
 	TerminalAt       *string                 `json:"terminalAt,omitempty"`
+}
+
+// Actual native planner source within the existing execution binding. Metadata only:
+// neither SQL/content nor a grant. The original action and result-exposure authority must
+// authorize every resolved Resource.
+type SourceResourceElement struct {
+	NativeRef  string `json:"nativeRef"`
+	NativeType string `json:"nativeType"`
 }
 
 // DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
@@ -2818,6 +2840,7 @@ type AdapterPepCheckRequest struct {
 	BindingID        string                   `json:"bindingId"`
 	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
 	Operation        string                   `json:"operation"`
+	SourceResources  []SourceResourceElement  `json:"sourceResources,omitempty"`
 }
 
 // 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
@@ -3084,6 +3107,14 @@ type AdapterScopeObservation struct {
 	NativeType          *string           `json:"nativeType,omitempty"`
 	PlatformResourceRef string            `json:"platformResourceRef"`
 	Result              NativeScopeResult `json:"result"`
+}
+
+// Actual native planner source within the existing execution binding. Metadata only:
+// neither SQL/content nor a grant. The original action and result-exposure authority must
+// authorize every resolved Resource.
+type AdapterSourceResource struct {
+	NativeRef  string `json:"nativeRef"`
+	NativeType string `json:"nativeType"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -4550,6 +4581,7 @@ type NativeHumanActionRequest struct {
 	// Read the already-registered exact native object for the verified HUMAN and action. This
 	// never creates a Resource or native object.
 	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
+	SourceResources []SourceResourceElement   `json:"sourceResources,omitempty"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
