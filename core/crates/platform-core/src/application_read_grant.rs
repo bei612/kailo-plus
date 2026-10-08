@@ -38,6 +38,83 @@ struct Source {
     adapter: native::Adapter,
 }
 
+#[derive(PartialEq, sqlx::FromRow)]
+struct ReadCaller {
+    tenant: Uuid,
+    workspace: Option<Uuid>,
+    principal: Uuid,
+    client: String,
+    generation: Option<i64>,
+}
+
+/// Authentication of retained operation metadata is separate from fresh read
+/// admission. Disabled scope/projections cannot erase the original SERVICE
+/// identity, but a missing, rotated or reused client cannot impersonate it.
+async fn read_caller(conn: &mut PgConnection, binding: Uuid) -> Result<ReadCaller, Refusal> {
+    let caller: ReadCaller = sqlx::query_as(
+        "select b.tenant_id as tenant,b.workspace_id as workspace,
+            s.principal_id as principal,b.normalized_config->>'client_id' as client,
+            b.active_projection_generation as generation
+         from catalog.application_binding b
+         join identity.service_principal s on s.principal_id=b.service_principal_id
+           and s.component_binding_kind='APPLICATION' and s.component_binding_id=b.id
+         join identity.principal p on p.id=s.principal_id and p.tenant_id=b.tenant_id and p.kind='SERVICE'
+         where b.id=$1 for share of b,s,p",
+    )
+    .bind(binding)
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or_else(denied)?;
+    let count: i64 = sqlx::query_scalar(
+        "select count(*) from catalog.application_binding where normalized_config->>'client_id'=$1",
+    )
+    .bind(&caller.client)
+    .fetch_one(conn)
+    .await?;
+    if caller.client.is_empty() || count != 1 {
+        return Err(denied());
+    }
+    Ok(caller)
+}
+
+fn validate_observation_request(
+    caller: &ReadCaller,
+    ae: &Execution,
+    raw: &Value,
+    input: &Value,
+) -> Result<(), Refusal> {
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let binding = uuid(&p["readBilling"]["RECEIVER"], "bindingId")?;
+    let arguments = json!({"targetType":"RESOURCE","targetId":ae.target_id,
+        "input":input,"authorizationTargetNativeRef":text(p,"readNativeRoot")?});
+    let digest = collab_bridge::limits::canonical_digest(&arguments);
+    let command = collab_bridge::limits::canonical_digest(&json!({
+        "receiverBindingId":binding,"sourceResourceId":ae.target_id,
+        "actionKey":ae.action_key,"actionVersion":ae.action_version,
+        "argumentHash":digest,"nativeBatch":raw["nativeBatch"]}));
+    if !is_service(ae)
+        || caller.tenant != ae.tenant_id
+        || caller.workspace != ae.workspace_id
+        || caller.principal != ae.actor_principal_id
+        || raw["receiverBindingId"] != json!(binding)
+        || p["receiverBindingId"] != json!(binding)
+        || raw["sourceResourceId"] != json!(ae.target_id)
+        || raw["actionKey"] != ae.action_key
+        || raw["actionVersion"] != ae.action_version
+        || raw["idempotencyKey"] != p["idempotencyKey"]
+        || !p["nativeBatch"].is_object()
+        || raw["nativeBatch"] != p["nativeBatch"]
+        || input != &p["readReference"]
+        || input["resourceId"] != json!(ae.target_id)
+        || p["toolParameterHash"] != digest
+        || p["commandDigest"] != command
+        || ae.parameter_hash != command
+    {
+        return Err(Refusal::Conflict(ReasonCode::IdempotencyKeyReused));
+    }
+    Ok(())
+}
+
 fn denied() -> Refusal {
     Refusal::Denied(ReasonCode::ScopeGuardFailed)
 }
@@ -335,12 +412,34 @@ pub(crate) async fn request(
         let header=authorization.next().and_then(|value|value.to_str().ok()).ok_or_else(invalid)?;
         if authorization.next().is_some() { return Err(invalid()); }
         let mut tx=state.pool.begin().await?;
-        let initial=receiver(&mut tx,binding).await?;
-        state.auth.verify_binding_client(Some(header),&initial.client).await.map_err(|error|match error {
+        let caller=read_caller(&mut tx,binding).await?;
+        state.auth.verify_binding_client(Some(header),&caller.client).await.map_err(|error|match error {
             crate::service_auth::ServiceAuthError::KeysUnavailable=>Refusal::Unavailable("adapter identity keys unavailable".into()),
             _=>Refusal::Denied(ReasonCode::PermissionDenied),
         })?;
         tx.rollback().await?;
+        let mut tx=state.pool.begin().await?;
+        let previous: Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution
+            where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
+            .bind(caller.tenant).bind(caller.principal).bind(key).fetch_optional(&mut *tx).await?;
+        let previous=match previous {
+            Some(id)=>Some(crate::governance::lock_execution(&mut tx,id).await?),
+            None=>None,
+        };
+        if let (Some(ae),Some(_))=(&previous,native_batch) {
+            if read_caller(&mut tx,binding).await?!=caller {return Err(denied());}
+            validate_observation_request(&caller,ae,&raw,&input)?;
+            if let Some(observed)=native_receiver::observation(&mut tx,ae).await? {
+                tx.commit().await?;
+                return serde_json::from_value::<contracts::AdapterReadGrantResponse>(observed).map_err(|_|invalid());
+            }
+        }
+        // Drop historical AE/binding locks before resuming the original new
+        // admission order: parent/AE -> Tenant -> active receiver. Otherwise
+        // a metadata lookup could invert disable/receipt lock ordering.
+        tx.rollback().await?;
+        let initial=caller;
+        let initial_generation=initial.generation.ok_or_else(denied)?;
         let mut tx=state.pool.begin().await?;
         // The admitted receiver is provenance, not an AE parent: a SERVICE
         // batch must not impersonate the receiver's HUMAN/AGENT actor. DD-89
@@ -351,7 +450,7 @@ pub(crate) async fn request(
             and component_binding_id=$4 and component_projection_generation=$5
             and gate_state='ALLOWED' and dispatch_state='DISPATCHED' for update")
             .bind(receiver_execution).bind(initial.tenant).bind(initial.workspace).bind(binding)
-            .bind(initial.generation).fetch_optional(&mut *tx).await?.ok_or_else(denied)?) } else { None };
+            .bind(initial_generation).fetch_optional(&mut *tx).await?.ok_or_else(denied)?) } else { None };
         let previous: Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution
             where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
             .bind(initial.tenant).bind(initial.principal).bind(key).fetch_optional(&mut *tx).await?;
@@ -362,7 +461,8 @@ pub(crate) async fn request(
         if !crate::roles::lock_tenant(&mut tx,initial.tenant).await? { return Err(denied()); }
         let receiver=receiver(&mut tx,binding).await?;
         if receiver.principal!=initial.principal || receiver.client!=initial.client
-            || receiver.tenant!=initial.tenant || receiver.generation!=initial.generation { return Err(denied()); }
+            || receiver.tenant!=initial.tenant || receiver.workspace!=initial.workspace
+            || receiver.generation!=initial_generation { return Err(denied()); }
         if input["resourceId"]!=json!(target) { return Err(denied()); }
         if let Some((_,parent_target,parent_hash))=&parent {
             let args=receiver_arguments.as_ref().ok_or_else(invalid)?;
@@ -441,12 +541,6 @@ pub(crate) async fn request(
         if let Some(native)=&native {
             if ae.parameters.as_ref().is_none_or(|p|p["receiverTargetVersion"]!=native.version
                 || p["receiverDefinitionId"]!=json!(native.application.definition_id)) { return Err(denied()); }
-        }
-        if let Some(native)=&native {
-            if let Some(observed)=native_receiver::observation(&state,&mut tx,&ae,&receiver,native,&source).await? {
-                tx.commit().await?;
-                return serde_json::from_value::<contracts::AdapterReadGrantResponse>(observed).map_err(|_|invalid());
-            }
         }
         let fresh=evaluate(&state,&receiver,&source,target).await?;
         crate::governance::record_decision(&mut tx,&crate::governance::DecisionSubject {
@@ -611,6 +705,135 @@ fn validate_claims(
 mod tests {
     use super::*;
 
+    fn retained_observation() -> (ReadCaller, Execution, Value, Value) {
+        let caller = ReadCaller {
+            tenant: Uuid::new_v4(),
+            workspace: Some(Uuid::new_v4()),
+            principal: Uuid::new_v4(),
+            client: "retained-receiver-fixture".into(),
+            generation: Some(2),
+        };
+        let binding = Uuid::new_v4();
+        let target = Uuid::new_v4();
+        let key = Uuid::new_v4();
+        let input = json!({"resourceId":target,"nativeObjectRef":"original-node","nativeRevision":"fixed-version"});
+        let batch = json!({"receiverResourceId":Uuid::new_v4(),"importConfigRef":Uuid::new_v4(),
+            "batchId":Uuid::new_v4(),"actionKey":"knowledge.sync_apply@v2","actionVersion":1});
+        let arguments = json!({"targetType":"RESOURCE","targetId":target,"input":input,
+            "authorizationTargetNativeRef":"retained-source-root"});
+        let digest = collab_bridge::limits::canonical_digest(&arguments);
+        let raw = json!({"receiverBindingId":binding,"sourceResourceId":target,
+            "actionKey":"file_storage.read@v1","actionVersion":1,"nativeBatch":batch,
+            "idempotencyKey":key,"inputJson":collab_bridge::limits::canonical_json(&input)});
+        let command = collab_bridge::limits::canonical_digest(&json!({"receiverBindingId":binding,
+            "sourceResourceId":target,"actionKey":raw["actionKey"],"actionVersion":1,
+            "argumentHash":digest,"nativeBatch":batch}));
+        let operation = Uuid::new_v4();
+        let ae = Execution {
+            id: Uuid::new_v4(),
+            operation_id: operation,
+            tenant_id: caller.tenant,
+            workspace_id: caller.workspace,
+            action_key: "file_storage.read@v1".into(),
+            action_version: 1,
+            initiator_principal_id: caller.principal,
+            actor_principal_id: caller.principal,
+            target_id: target,
+            parameter_hash: command.clone(),
+            parameters: Some(json!({"componentActionKind":KIND,"commandDigest":command,
+                "toolParameterHash":digest,"receiverBindingId":binding,"nativeBatch":batch,
+                "idempotencyKey":key,"readReference":input,"readNativeRoot":"retained-source-root",
+                "readBilling":{"RECEIVER":{"bindingId":binding}},"readToken":{"exp":1}})),
+            temporal_workflow_id: None,
+            cancel_first_run_id: None,
+            approval_workflow_id: None,
+            approval_expires_at: None,
+            gate_state: "ALLOWED".into(),
+            dispatch_state: "UNKNOWN".into(),
+            reason_code: Some("EXTERNAL_RESULT_UNKNOWN".into()),
+            correlation_id: operation,
+            updated_at: chrono::Utc::now(),
+        };
+        (caller, ae, raw, input)
+    }
+
+    #[test]
+    fn retained_observation_requires_original_service_scope_and_command() {
+        let (caller, ae, raw, input) = retained_observation();
+        assert!(validate_observation_request(&caller, &ae, &raw, &input).is_ok());
+        for field in ["receiverBindingId", "sourceResourceId", "idempotencyKey"] {
+            let mut altered = raw.clone();
+            altered[field] = json!(Uuid::new_v4());
+            assert!(
+                validate_observation_request(&caller, &ae, &altered, &input).is_err(),
+                "{field}"
+            );
+        }
+        for (field, value) in [
+            ("actionKey", json!("another.read@v1")),
+            ("actionVersion", json!(2)),
+            ("nativeBatch", json!({"batchId":Uuid::new_v4()})),
+        ] {
+            let mut altered = raw.clone();
+            altered[field] = value;
+            assert!(
+                validate_observation_request(&caller, &ae, &altered, &input).is_err(),
+                "{field}"
+            );
+        }
+        let mut altered_input = input.clone();
+        altered_input["nativeRevision"] = json!("another-version");
+        assert!(validate_observation_request(&caller, &ae, &raw, &altered_input).is_err());
+        for field in ["tenant", "workspace", "principal"] {
+            let (mut altered, _, _, _) = retained_observation();
+            altered.tenant = caller.tenant;
+            altered.workspace = caller.workspace;
+            altered.principal = caller.principal;
+            match field {
+                "tenant" => altered.tenant = Uuid::new_v4(),
+                "workspace" => altered.workspace = None,
+                _ => altered.principal = Uuid::new_v4(),
+            }
+            assert!(
+                validate_observation_request(&altered, &ae, &raw, &input).is_err(),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn retained_observation_does_not_reconstruct_missing_or_changed_provenance() {
+        for field in [
+            "componentActionKind",
+            "receiverBindingId",
+            "nativeBatch",
+            "readReference",
+            "readNativeRoot",
+            "toolParameterHash",
+            "commandDigest",
+            "idempotencyKey",
+            "readBilling",
+        ] {
+            let (caller, mut ae, raw, input) = retained_observation();
+            ae.parameters
+                .as_mut()
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                validate_observation_request(&caller, &ae, &raw, &input).is_err(),
+                "{field}"
+            );
+        }
+        let (caller, mut ae, raw, input) = retained_observation();
+        ae.parameter_hash = "different-frozen-command".into();
+        assert!(validate_observation_request(&caller, &ae, &raw, &input).is_err());
+        let (caller, mut ae, raw, input) = retained_observation();
+        ae.initiator_principal_id = Uuid::new_v4();
+        assert!(validate_observation_request(&caller, &ae, &raw, &input).is_err());
+    }
+
     #[test]
     fn native_sync_does_not_borrow_or_mix_a_human_parent() {
         let native = json!({"nativeBatch":{"receiverResourceId":Uuid::new_v4(),
@@ -648,6 +871,17 @@ mod tests {
             receiver(&mut conn, Uuid::new_v4()).await,
             Err(Refusal::Denied(_))
         ));
+        assert!(matches!(
+            read_caller(&mut conn, Uuid::new_v4()).await,
+            Err(Refusal::Denied(_))
+        ));
+        let (_, ae, _, _) = retained_observation();
+        let mut tx = conn.begin().await.unwrap();
+        assert!(matches!(
+            native_receiver::observation(&mut tx, &ae).await,
+            Err(Refusal::Denied(_))
+        ));
+        tx.rollback().await.unwrap();
         let admitted = Receiver {
             tenant: Uuid::new_v4(),
             workspace: None,

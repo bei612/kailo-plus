@@ -4,7 +4,7 @@ import {setLocale} from "../src/i18n";
 import {ProjectsView,loadProjects,type ProjectsHost} from "../src/react/projects";
 import type {PulseEvent} from "../src/react/pulse/host";
 import {buildProjectReadModels} from "../src/react/projects/projectModels";
-import {render,button,click} from "./render";
+import {render,button,click,type} from "./render";
 import {ProjectDeleteAction} from "../src/react/projects/ProjectDeleteAction";
 import {BffError,TransportError,type BffTransport} from "../src/transport";
 import {SidebarProjectsSection,type SidebarProjectMembership} from "../src/react/sidebar/SidebarProjectsSection";
@@ -50,7 +50,7 @@ async function creationFixture(){
   return {h,intent,client,publish,rows,task,send,revoke:()=>{member=false;}};
 }
 const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><button aria-label="Delete project" disabled={pending} onClick={onOpen}>Open deletion</button>;
-beforeEach(()=>{setLocale("en");sessionStorage.clear();});
+beforeEach(()=>{localStorage.clear();setLocale("en");sessionStorage.clear();});
 
 describe("governed original project creation",()=>{
   const selectedAgent={agentResourceId:"42345678-1234-4234-8234-123456789012",agentVersionAssetId:"52345678-1234-4234-8234-123456789012",displayName:"Original persona",ordinal:3,resourceVersion:2,assetVersion:4};
@@ -226,6 +226,86 @@ describe("governed original project creation",()=>{
   });
 });
 
+describe("original Projects directory management consumers",()=>{
+  const cache=()=>new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+  async function directory(h:ProjectsHost,client=bff,onSelectedProjectChange=vi.fn()){
+    const ui=await render(<PlatformProvider client={client}><QueryClientProvider client={cache()}><ProjectsView host={h} onSelectedProjectChange={onSelectedProjectChange}/></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[role="status"]')).toBeNull());
+    return ui;
+  }
+  async function openMenu(ui:HTMLElement,name:string){
+    const trigger=ui.querySelector<HTMLButtonElement>(`button[aria-label="More options for ${name}"]`)!;
+    await act(async()=>{trigger.focus();trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
+  }
+  it("opens the original empty-state form and completes the existing governed creation chain",async()=>{
+    const f=await creationFixture();const original=f.send.getMockImplementation()!;
+    f.send.mockImplementation(async request=>{
+      if(request.path==="/api/v1/role-workspaces")return {status:200,body:{workspaces:[],createActionKey:CreateActionKey.WorkspaceCreate}};
+      if(request.path.startsWith("/api/v1/agent-definitions"))return {status:200,body:{definitions:[]}};
+      if(request.method==="POST")f.intent.channel.slug=(request.body as {slug:string}).slug;
+      return original(request);
+    });
+    const selected=vi.fn();const ui=await directory(f.h,f.client,selected);
+    await vi.waitFor(()=>expect([...ui.querySelectorAll("button")].some(node=>node.textContent==="Create project")).toBe(true));
+    await click(button(ui,"Create project"));
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-project-name"]')).not.toBeNull());
+    await type(document.querySelector<HTMLInputElement>('[data-testid="create-project-name"]')!,creationInput.name);
+    await type(document.querySelector<HTMLTextAreaElement>("textarea")!,creationInput.description);
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="create-project-submit"]')!);
+    await vi.waitFor(()=>expect(selected).toHaveBeenCalledWith(expect.stringContaining(`30621:${owner}:`)));
+    expect(f.publish.mock.calls.map(call=>call[0].operation)).toEqual(["CREATE_PROJECT","CREATE_REPOSITORY"]);
+    expect(f.send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(1);
+    expect(sessionStorage.length).toBe(0);expect(document.querySelector('[data-testid="create-project-name"]')).toBeNull();
+    expect(ui.textContent).toContain(creationInput.name);
+  });
+  it.each(["denied","offline"])("does not render creation when the real capability is %s",async outcome=>{
+    const publish=vi.fn();const client=createBffClient({send:async()=>{if(outcome==="offline")throw new TransportError("capability offline");return {status:200,body:{workspaces:[]}};}});
+    const ui=await directory({...host([]),publish},client);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("No projects yet"));
+    expect(ui.querySelector('button[aria-label="Create project"]')).toBeNull();expect(ui.textContent).not.toContain("Create project");
+    expect(publish).not.toHaveBeenCalled();
+  });
+  it.each(["grid","list"])("uses the original %s actions menu and deletes only the winning owned announcement",async layout=>{
+    if(layout==="list")localStorage.setItem("buzz.projects.viewMode","list");
+    const old=project("Old owned","c".repeat(64));const current={...old,id:"e".repeat(64),created_at:11,tags:old.tags.map(tag=>tag[0]==="name"?["name","Current owned"]:tag)};
+    let rows=[old,current];const publish=vi.fn(async()=>{rows=[];return {eventId:"f".repeat(64)};});
+    const h:ProjectsHost={scopeKey:"owned-directory",query:async request=>({pubkey:owner,limit:20,events:request.view==="PROJECTS"?rows:[]}),publish};
+    const ui=await directory(h);await vi.waitFor(()=>expect(ui.textContent).toContain("Current owned"));
+    await openMenu(ui,"Current owned");await click(document.querySelector<HTMLElement>('[role="menuitem"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[role="alertdialog"]')).not.toBeNull());
+    await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!,"Delete project"));
+    await vi.waitFor(()=>expect(ui.textContent).toContain("No projects yet"));
+    expect(publish).toHaveBeenCalledWith({operation:"DELETE",targetEventId:current.id},expect.any(String),false,expect.objectContaining({onPrepared:expect.any(Function)}));
+    expect(publish).toHaveBeenCalledOnce();expect(sessionStorage.length).toBe(0);
+    expect(ui.querySelectorAll("button button")).toHaveLength(0);
+  });
+  it("does not turn another author's directory row into a delete action",async()=>{
+    const source={...project("Someone else's project"),pubkey:other};const publish=vi.fn();
+    const ui=await directory({...host([source]),publish});await vi.waitFor(()=>expect(ui.textContent).toContain("Someone else's project"));
+    expect(ui.querySelector('[aria-label^="More options"]')).toBeNull();expect(publish).not.toHaveBeenCalled();
+  });
+  it("retains the original list preference across remount and flattens only its compact description",async()=>{
+    const source=project();source.tags=source.tags.map(tag=>tag[0]==="description"?["description","## **Original** [description](https://example.invalid)\nnext line"]:tag);
+    const h=host([source]);function Host(){const [generation,next]=useState(0);return <><button onClick={()=>next(generation+1)}>Reopen Projects</button><ProjectsView key={generation} host={h}/></>;}
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache()}><Host/></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
+    await click(ui.querySelector<HTMLButtonElement>('[aria-label="List layout"]')!);
+    expect(localStorage.getItem("buzz.projects.viewMode")).toBe("list");
+    expect(ui.querySelector('[data-testid="projects-row-description"]')?.textContent).toBe("Original description next line");
+    await click(button(ui,"Reopen Projects"));
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-row-p"]')).not.toBeNull());
+    expect(ui.querySelector('[aria-label="List layout"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(ui.querySelector('[data-projects-grid-card]')).toBeNull();
+  });
+  it("renders the original filtered-empty state rather than the unfiltered directory hint",async()=>{
+    const ui=await directory(host());await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
+    await type(ui.querySelector<HTMLInputElement>('[aria-label="Search projects"]')!,"absent-project");
+    expect(ui.textContent).toContain("No matching projects");expect(ui.textContent).toContain("Try another owner filter or sort mode.");
+    expect(ui.textContent).not.toContain("Projects published to this relay");
+  });
+});
+
 describe("original SidebarProjectsSection governed hosts",()=>{
   beforeEach(()=>Object.defineProperty(window,"matchMedia",{configurable:true,value:vi.fn(()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}))}));
   const childId="12345678-1234-1234-8234-123456789012";
@@ -354,7 +434,7 @@ describe("original Projects announcements",()=>{
   });
   it("opens the original announcement card, switches layout and removes old detail on failed fresh read",async()=>{
     const h=host();const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-    const ui=await render(<QueryClientProvider client={cache}><ProjectsView host={h}/></QueryClientProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><ProjectsView host={h}/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
     await click(button(ui,"View Real project"));
     expect(ui.querySelector("aside")?.textContent).toContain(`30617:${other}:missing`);
@@ -366,7 +446,7 @@ describe("original Projects announcements",()=>{
   });
   it("uses the same Chinese catalog without fabricating create or Git actions",async()=>{
     setLocale("zh-CN");const cache=new QueryClient();
-    const ui=await render(<QueryClientProvider client={cache}><ProjectsView host={host([])}/></QueryClientProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><ProjectsView host={host([])}/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.textContent).toContain("暂无项目"));
     expect(ui.querySelector('button[aria-label="网格布局"]')).not.toBeNull();
     expect(ui.textContent).not.toMatch(/Create project|Delete project|terminal/);

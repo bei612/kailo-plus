@@ -245,19 +245,21 @@ pub(crate) async fn record(
         validate(&ae,&raw,Utc::now())?;
         let p=ae.parameters.as_ref().ok_or_else(invalid)?;
         let pin=&p["readBilling"][role];
-        let client:String=sqlx::query_scalar("select normalized_config->>'client_id' from catalog.application_binding
-            where id=$1 and tenant_id=$2 and state in ('ACTIVE','DISABLING') and active_projection_generation=$3
-              and component_release_id=$4")
-            .bind(binding).bind(ae.tenant_id).bind(pin["generation"].as_i64().ok_or_else(invalid)?)
-            .bind(uuid(pin,"releaseId")?).fetch_optional(&mut *tx).await?.ok_or_else(denied)?;
-        let clients:i64=sqlx::query_scalar("select count(*) from catalog.application_binding
-            where normalized_config->>'client_id'=$1 and state<>'DISABLED'")
-            .bind(&client).fetch_one(&mut *tx).await?;
-        if client.is_empty() || clients!=1 {return Err(denied());}
+        let caller=read_caller(&mut tx,binding).await?;
+        if caller.tenant!=ae.tenant_id || (role=="RECEIVER" && (caller.principal!=ae.actor_principal_id
+            || caller.workspace!=ae.workspace_id)) {return Err(denied());}
+        // A late native receipt belongs to the frozen generation, not the
+        // currently selected release. This authenticates metadata only; the
+        // source/receiver PEP still denies any new post-withdrawal side effect.
+        let retained:bool=sqlx::query_scalar("select exists(select 1 from projection.application_runtime
+            where binding_id=$1 and generation=$2 and component_release_id=$3)")
+            .bind(binding).bind(pin["generation"].as_i64().ok_or_else(invalid)?)
+            .bind(uuid(pin,"releaseId")?).fetch_one(&mut *tx).await?;
+        if !retained {return Err(denied());}
         let mut values=headers.get_all(axum::http::header::AUTHORIZATION).iter();
         let header=values.next().and_then(|v|v.to_str().ok()).ok_or_else(denied)?;
         if values.next().is_some() {return Err(denied());}
-        state.auth.verify_binding_client(Some(header),&client).await.map_err(|_|denied())?;
+        state.auth.verify_binding_client(Some(header),&caller.client).await.map_err(|_|denied())?;
         let existing=&p["readReceipts"][role];
         if !existing.is_null() {
             let mut old=existing.clone();

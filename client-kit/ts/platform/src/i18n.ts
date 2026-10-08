@@ -851,6 +851,8 @@ export const platformMessages = {
   "projects.empty": { en: "No projects yet", "zh-CN": "暂无项目" },
   "projects.emptyHint": { en: "Projects published to this relay will appear here.", "zh-CN": "发布到当前 Relay 的项目会显示在这里。" },
   "projects.noMatch": { en: "No matching projects", "zh-CN": "没有匹配的项目" },
+  "projects.filteredHint": { en: "Try another owner filter or sort mode.", "zh-CN": "试试其他所有者筛选或排序方式。" },
+  "projects.moreOptions": { en: "More options for {name}", "zh-CN": "{name}的更多选项" },
   "projects.announcement": { en: "Project announcement", "zh-CN": "项目公告" },
   "projects.close": { en: "Close project announcement", "zh-CN": "关闭项目公告" },
   "projects.delete": { en: "Delete project", "zh-CN": "删除项目" },

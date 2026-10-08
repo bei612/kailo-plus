@@ -1056,3 +1056,87 @@ UID 1000、4 CPU/8 GiB、无额外 swap，Cargo 保持 `-j16`；源码私有候�
 2026-10-08 主线只读查证实际运行库 component_release/application_binding 均为
 0；修好原准入消费者不等于已激活组件。最近完整门禁仍有失败，不能用本批窄验
 宣称三组件完成、原版全量一致或生产就绪。
+
+## 原 SERVICE 读取操作的历史观察与晚回执（2026-10-08）
+
+1. 权威与真实缺口：DD-89、`.design/07` §6.2/6.3/8.2 要求在途执行固定
+   旧 generation，对账原 usage/audit；停用或撤权拒绝新的读取，不删除已持久
+   Operation 的证据。原 `application_read_grant::request` 在查找原 AE 前即
+   调用只接受当前 ACTIVE 的 receiver，随后再解析当前来源/接收 generation；
+   原 observation 还要求新的业务 read/update。这使旧回执在停用/升级后无法
+   被原接收者观察。`receipt::record` 也把晚回执限制在当前 release/generation。
+   本批修原消费者，不新增读取协议、执行权威或同步状态。
+2. 影响面：原 request 继续验证唯一 binding 的 SERVICE OIDC 身份，完整
+   JWT 校验仍使用原 `verify_binding_client`。历史 nativeBatch 先核原 AE 的
+   Tenant/Workspace/actor、binding、key、action/version、原 input/native root、
+   batch 与两个摘要，再核原 receiver child/Operation、双方历史 projection/
+   release/definition 关联。只有既有 outcome 可观察才返回原状态与已存的
+   terminal receiverReceipt；没有观察事实就回到原新准入。历史观察事务先
+   结束，再进入原 parent/AE→Tenant→ACTIVE receiver 锁序，不把身份元数据锁
+   带进新准入或颠倒停用/回执锁序。晚回执沿原冻结 billing pin 与历史 projection
+   认证，保留双方各自的身份、来源字节/revision/时间/measurement 检查。
+3. 副作用：历史分支不取正文、解析 native endpoint、签发/续发 token、取得
+   新 receiver write admission、执行上传/解析/删除，亦不再申请 Quota。新的
+   source 读取及 receiver 写入仍必须通过原 ACTIVE、Tenant/scope、fresh PEP
+   和额度检查；业务 reader 撤销不会成为重新读取的旁路。原回执仍进入原
+   AE、UsageEvent/outbox、审计和既有 reconciler，没有第二套账本或任务。
+   当前 binding client 必须唯一且 OIDC 有效；client 被移除、更换、复用或
+   无法验签时拒绝，不借历史 token 或共用身份绕过凭据撤销。
+4. 边界：PENDING、UNKNOWN 与 COMPLETED 继续由原观察消费者判定。
+   COMPLETED 仍要求原双方回执与原 usage terminal audit；缺关联、错 scope/
+   参数/版本或缺旧事实不猜终态。已拒绝/未准入执行不能凭该分支取得新 grant。
+   没有新合同字段、表、迁移、接口、权限、状态或客户端变化。只读观察是
+   原操作 metadata，不是恢复业务读取权限；Web/Desktop/Mobile 的原身份及
+   管理链不变。旧 credential 的实际轮换/撤销投递及真实服务对账仍需线上证据。
+
+实现后补原检查：两个新增原文件检查覆盖 binding/source/key/action/version/
+batch/input revision、SERVICE Tenant/Workspace/actor 与缺失/变化的原摘要和
+身份。原隔离 SQL scope 检查还实际执行 `read_caller` 和历史 association 查询，
+确认缺失对象拒绝且 SQL 可执行；该隔离库没有 binding，不能据此宣称真实旧
+generation、撤权或晚回执端到端已验收。
+
+复用原 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Cargo/rustc 1.90.0、UID/GID 1000/1000，实际 cgroup 4 CPU/8 GiB、swap 0。
+每轮先核并发构建、CPU/内存压力、Data 与 cgroup；无其他项目编译重叠，Data
+约 2.0 GiB 可用、主机可用内存约 25 GiB。`-j16`、已有 target/cache、Data
+TMPDIR 不变，未新建镜像、依赖、PG、数据库、整树快照或清理其他缓存。
+
+```sh
+CARGO_TARGET_DIR=/cache/rust-target CARGO_INCREMENTAL=0 TMPDIR=/evidence \
+cargo test -p platform-core --bin platform-core read_grant:: \
+  -j16 --offline --locked -- --include-ignored \
+  --skip read_receipt_sql_guards_use_exact_roles_and_native_evidence --nocapture
+```
+
+原既有环境变量投递的数据库经只读查证为隔离 `component_runtime_lcivus`，
+未使用业务库；变量值和 credential 未打印。原日志根仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`。
+
+- 首轮未 skip 的 `retained-native-read-positive-20261008.log` 真实退出 101：
+  编译成功（1m56s），11 项中 10 通过、1 失败。失败原文为
+  `42883: function admission.guard_service_read_receipts() does not exist`；
+  该库缺原 receipt SQL 检查前置函数。没有修改产品逻辑或补数据库来使它通过。
+  SHA-256 `ac4d9eed8df85ab2a33153147d63dd0a39d30bb4fb3e1faff4b96998055f5109`。
+- 最终锁序修正后的 `retained-native-read-final-positive-20261008.log`，同原
+  目标明确 skip 上述一项：退出 0，10 passed/0 failed，编译 36.77s。
+  skip 不是数据库验收通过。SHA-256
+  `c7b2572f8e70e3da7d10f3a1504d343326d8520123504ab1a917889d975697df`。
+- `retained-native-read-mutation-20261008.log`：只在私有候选把实际生产
+  frozen-command/identity 复合守卫变为恒 false，原同命令真实退出 101：
+  8 passed/2 failed，编译 35.43s；失败暴露 `receiverBindingId` 错配与缺
+  `componentActionKind` 被接受。不是测试专用返回值或模拟成功。SHA-256
+  `0a44dadbfeae838ab70677099c1c6a0e63578a45cca99cf9405855245e107dde`。
+- `retained-native-read-restored-20261008.log`：三个生产输入原字节还原，
+  同命令退出 0，10 passed/0 failed，编译 35.81s；同一 SQL 前置项仍明确
+  skip。SHA-256 `6aaf7e89b0abc73603a97f95d2fd5c295d384eba483862be0c0d64c406a3323e`。
+
+正式生产输入未被破坏，最终三输入 `cmp` 全部通过；原 SDK 三路径
+`rustfmt --edition 2021 --check` 与定向 `git diff --check` 退出 0，OOM/
+oom_kill/oom_group_kill 均为 0。早期一条只读计数命令因 shell 引号报告
+`Syntax error: Unterminated quoted string` 而未执行 SQL；随后使用原变量的
+只读命令成功确认库名与零 binding，不构成业务激活。
+
+本批未跑 Clippy/full/docs 全局检查、未提交/push、未部署或创建 release/
+binding，没有页面截图或 Windows/Mobile 验收。真实 Cells→WeKnora 的
+原生创建/解析/删除、双边 receipt 与 OpenMeter 终态及 Wiki 删除可信终态
+仍须分别验收；不将本批消费者修正称为三组件上线或生产就绪。

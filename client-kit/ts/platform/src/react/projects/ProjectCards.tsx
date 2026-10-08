@@ -1,14 +1,38 @@
 // Original ProjectGridCard, Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectCards.tsx.
-// Announcement-only host: no fabricated Git statistics or ungoverned action menu.
+// Existing governed management actions occupy the original action slot. Git
+// statistics/terminal actions still require their actual production chains.
 import * as React from "react";
-import {Folders} from "lucide-react";
+import {FolderGit2,Folders,Plus} from "lucide-react";
 import {twMerge as cn} from "tailwind-merge";
 import {useUiT} from "../context";
 import type {Project} from "./projectModels";
+import {Button} from "../profile/buzz/shared/ui/button";
+import {listRowDescription} from "./lib/projectsViewHelpers";
+
+export function EmptyState({onCreateProject}:{onCreateProject?:()=>void}) {
+  const t=useUiT();
+  return <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+    <Folders className="h-10 w-10 text-muted-foreground/40"/>
+    <div className="space-y-1"><p className="text-sm font-medium text-foreground">{t("projects.empty")}</p>
+      <p className="text-sm text-muted-foreground">{t("projects.emptyHint")}</p></div>
+    {onCreateProject?<Button onClick={onCreateProject} size="sm" type="button"><Plus className="h-4 w-4"/>{t("projects.create.submit")}</Button>:null}
+  </div>;
+}
+
+export function EmptyFilteredState() {
+  const t=useUiT();
+  return <div className="flex flex-1 flex-col items-center justify-center gap-3 border border-dashed border-border/60 px-4 py-12 text-center">
+    <Folders className="h-9 w-9 text-muted-foreground/40"/>
+    <div className="space-y-1"><p className="text-sm font-medium text-foreground">{t("projects.noMatch")}</p>
+      <p className="text-sm text-muted-foreground">{t("projects.filteredHint")}</p></div>
+  </div>;
+}
+
 export const ProjectGridCard = React.memo(function ProjectGridCard({
   project,
   onOpen,
-}: {project:Project;onOpen:(project:Project)=>void}) {
+  actions,
+}: {project:Project;onOpen:(project:Project)=>void;actions?:React.ReactNode}) {
   const t=useUiT();
   return (
     <div
@@ -43,6 +67,7 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
               </div>
             </div>
           </div>
+          {actions?<div className="pointer-events-auto relative z-10 shrink-0">{actions}</div>:null}
         </div>
 
         <p
@@ -59,4 +84,34 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
       </div>
     </div>
   );
+});
+
+// Original ProjectListRow -> ProjectEntityListRow overlay/body. Only actual
+// announcement facts and the governed management consumer are supplied here;
+// absent people/activity/selection producers are not represented as empty data.
+export const ProjectListRow = React.memo(function ProjectListRow({project,onOpen,actions}:{
+  project:Project;onOpen:(project:Project)=>void;actions?:React.ReactNode;
+}) {
+  const description=listRowDescription(project.description,project.name);
+  const body=<>
+    <span className="relative flex h-4 w-4 shrink-0 items-center justify-center" data-testid="project-entity-leading-icon">
+      <span className="flex items-center justify-center"><Folders className="h-3.5 w-3.5 text-muted-foreground/70"/></span>
+    </span>
+    <span className="min-w-0 flex-1 text-sm font-medium text-foreground" data-projects-text-priority="primary">
+      {description?<span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+        <span className="max-w-full shrink-0 truncate" data-testid="project-entity-title">{project.name}</span>
+        <span className="min-w-0 flex-1 truncate text-left font-normal text-muted-foreground/65" data-projects-text-priority="secondary"
+          data-testid="projects-row-description" title={description}>{description}</span>
+      </span>:<span className="block truncate" data-testid="project-entity-title">{project.name}</span>}
+    </span>
+    <span className="hidden w-auto shrink-0 truncate text-left text-xs text-muted-foreground/65 md:block" data-projects-text-priority="secondary" data-testid="projects-row-context">
+      <span className="flex items-center justify-end gap-1"><FolderGit2 className="h-3.5 w-3.5"/><span>{project.repositoryAddresses.length}</span></span>
+    </span>
+    {actions?<span className="pointer-events-auto relative z-10 shrink-0">{actions}</span>:null}
+  </>;
+  const rowClass="mx-2 flex min-h-9 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/30";
+  return actions?<div className="group relative" data-testid={`project-row-${project.dtag}`}>
+    <button className="absolute inset-0" onClick={()=>onOpen(project)} title={project.name} type="button"><span className="sr-only">{project.name}</span></button>
+    <div className={cn(rowClass,"pointer-events-none relative z-10 group-hover:bg-muted/30")}>{body}</div>
+  </div>:<button className={rowClass} data-testid={`project-row-${project.dtag}`} onClick={()=>onOpen(project)} title={project.name} type="button">{body}</button>;
 });

@@ -710,6 +710,8 @@ enum PlatformMessageKey {
   projectsEmpty,
   projectsEmptyHint,
   projectsNoMatch,
+  projectsFilteredHint,
+  projectsMoreOptions,
   projectsAnnouncement,
   projectsClose,
   projectsDelete,
@@ -3266,6 +3268,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '发布到当前 Relay 的项目会显示在这里。',
   ),
   PlatformMessageKey.projectsNoMatch: ('No matching projects', '没有匹配的项目'),
+  PlatformMessageKey.projectsFilteredHint: (
+    'Try another owner filter or sort mode.',
+    '试试其他所有者筛选或排序方式。',
+  ),
+  PlatformMessageKey.projectsMoreOptions: (
+    'More options for {name}',
+    '{name}的更多选项',
+  ),
   PlatformMessageKey.projectsAnnouncement: ('Project announcement', '项目公告'),
   PlatformMessageKey.projectsClose: ('Close project announcement', '关闭项目公告'),
   PlatformMessageKey.projectsDelete: ('Delete project', '删除项目'),

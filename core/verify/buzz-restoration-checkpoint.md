@@ -2426,6 +2426,118 @@ ThreadPanelSurface 两个摘要消费者没有转送宿主解析。这不是缺�
   `useUsersBatchQuery`，Web 仍只在已准入绑定内解析参与者；原 `+N more`
   提示改为同源 `dm.moreParticipants` 中英词条并沿原工具生成 Dart。
 - 缺失需恢复：只闭合本批草稿来源消费，不据此称整个私聊、Inbox、所有
+
+### 2026-10-08：原 Projects 目录创建／管理实际消费者恢复
+
+固定官方基准仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。本批不再只补
+Inbox 局部效果，而接回原 Projects 空态创建、网格／列表管理菜单及列表展示链。
+八个代码／生成／检查路径共 +344/-26 行，未改契约、Core、组件数据或宿主业务实现。
+
+#### 权威、影响、副作用与边界
+
+1. 用户要求完整原版页面而保留既有治理；原
+   `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/ProjectGridCard/ProjectListRow`、
+   `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` 与
+   `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu`
+   是本批显示／交互依据；动作继续用现有 `useCreateProject` 与 `ProjectDeleteAction`。
+   不把原 Projects 过滤列表头没有的创建加号留在当前页面；原空态创建入口恢复。
+2. 实际消费者为共享 `ProjectsView::ProjectDirectory`，由
+   `web-client/web/src/platform/ui/ProjectsPane.tsx` 与
+   `collaboration/desktop/src/features/platform/ProjectsScreen.tsx` 直接复用。
+   查询仍沿原 ProjectsHost；创建检查真实 roleWorkspaces capability，提交原工作区
+   ActionCommand、项目／仓库公告并读回，不另造项目或执行权威。删除目标按
+   `projectModels` 的时间戳／最小 ID 赢头规则选择，不能删除旧 revision 冒充删除当前项目。
+   只有本机原身份拥有的条目显示删除菜单，最终权限仍在 Relay／Core。
+3. 当前 scope 失败／刷新时不保留公告事实；无创建 capability 或读取失败无创建入口。
+   UNKNOWN 沿现有冻结意图与同键观察，不因本批弹窗创建新命令；已确认创建后的导航错误
+   不报成创建失败。卸载后不写新页面状态、不导航。Core 不复制正文；列表持久化只保存
+   原 `buzz.projects.viewMode` 的 grid/list 设备偏好，不保存成员、权限或账号事实。
+4. 空目录与过滤零结果使用不同原组件；列表描述直接复用固定原
+   `desktop/src/features/projects/lib/projectsViewHelpers.ts::markdownToPlainText/listRowDescription`。
+   重入、超时、撤权、未知结果、ACK 后读回失败继续由现有动作链决定，不新增状态机。
+   本批无数据库／四侧契约变更；两条原英文文案补中文，同源生成 Dart，未另立翻译权威。
+
+#### 固定原路径四类归档（本模块范围，不代表全树完成）
+
+| 固定官方完整路径／符号 | 分类、已恢复与仍缺项 |
+| --- | --- |
+| `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu` | 共享迁移；除两行来源注释和两个共享 import 路径外，原函数字节级 diff 退出 0。Web/Desktop 网格和列表均是真实消费者。 |
+| `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` | 已授权治理改造；原 Dialog 关闭／busy 规则复用，附加现有冻结意图及原治理表单 back 接缝。真实空态按钮调用，不是无调用方 helper。 |
+| `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/EmptyFilteredState/ProjectGridCard/ProjectListRow` | 缺失需恢复（部分已补）；原空态、过滤空态、菜单位置／覆盖按钮与列表正文已恢复，people、activity、Git/Terminal 仍缺真实生产链，不能算整文件完成。 |
+| `desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` | 缺失需恢复（部分已补）；共源目录接回真实创建／删除，仍不是原完整 Activity/Repositories/Tasks/Reviews/Channels/详情产品页面；当前公告侧栏不当作完整原详情。 |
+| `desktop/src/features/projects/lib/projectsViewHelpers.ts::readStoredViewMode/writeStoredViewMode/markdownToPlainText/listRowDescription` | 缺失需恢复（部分已补）；列明的实际调用函数已迁移，其余 Git/activity/filter 依赖未按名称复制成死代码。本批没有新增原样保留文件；未变化原文件不计入本表五条变动归档。 |
+
+原 3307 路径历史 patch 的绝对原件未能定位，本表不把该快照称当前可复核完整清单，
+也不与旧 3278 路径另一版本混算。下一步沿现有 upstream_manifest 重新导出当前完整
+差异；全局未分类／未恢复准确数量仍未知，不能用此五条记录计算全仓完成比例。
+
+#### 实施后实际验证／破坏恢复
+
+仍复用 `kailo-agent-receipt-xvkujx` 4 CPU／8 GiB 受限 SDK 与现有缓存；检查前主机
+可用内存 24 GiB、swap 0、Data 2.0 GiB，无已在跑编译进程。未新镜像／安装依赖／整树复制。
+日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`。
+
+- `projects-directory-candidate.log`：shared production/test 两次 tsc 退出 0；第一次
+  54 项有 16 项失败，原因是本批检查把 localStorage.clear 放在 setLocale(en) 后，清掉
+  检查语言，修正清理顺序后 `projects-directory-final.log` 54 passed。未改生产语言默认。
+- `projects-directory-hosts.log`：Web／Native tsc 两次退出 0，原 Dart 生成及 `--check`
+  输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+  正式 Dart 文件为 root 所有，普通 cp 一次 Permission denied 后，用限定目标 sudo cp
+  投递机械生成的十行词条差异；reason_text cmp 未变化。
+- 私有候选破坏创建点击、准入、删除赢头、布局保存和过滤空态，
+  `projects-directory-mutation.log` 退出 1，7 failed／1 passed／46 skipped；独立绕过
+  compact description 解析，`projects-description-mutation.log` 退出 1，1 failed／53 skipped。
+- 全部恢复后 `projects-directory-restored.log` 54 passed；固定原列表头复核删除非原加号
+  后 `projects-directory-source-aligned.log` shared production tsc 及 54 项再次退出 0。
+  两已安装共享包／SDK 正式输入与生成词条共二十次 cmp、相关 diff --check 均退出 0。
+  日志保留现有 React 异步 act 警告，不把告警隐藏为零。
+
+本批未提交／部署／更新安装包，未运行全仓门禁，由主线集中收口。新版 Projects 浏览器
+与 Windows/Mobile 尚未验收。既有正常 SSO 会话另打开并实际截图复核旧 live 通知设置
+`.playwright-cli/kailo-ui-20261008-live-notifications.png`（1920×1080）；现共十二张旧
+live d313fb 图，十类页面及两状态，不是本批源码截图。通知权限显示已阻止，未保存偏好
+或验证推送。该旧会话 console 有图片请求被转到 IdP 后受 img-src CSP 阻断的真实错误，
+未放宽 CSP 或注入会话；不把布局可见称头像／全部功能／100% 原版一致性验收。
+
+### 2026-10-08：当前固定官方全树差异重新导出及逐路径归档起点
+
+原历史 3307 路径 patch 未能定位，不沿其数字宣称当前全量可复核。本次只运行现有
+`python3 tools/upstream_manifest.py diff collaboration` 一次；官方基准为
+`779af8886caae1317b4de962082429867ab61503`，导出前后 apps HEAD 都是
+`8ee8e674bb8c53a0698e1ba47261acb4b91bcead`。工作树含尚未提交改动，HEAD 不代表
+全部输入；下面的不可变 patch 字节才是本次差异快照，不与其他历史快照混算。
+
+复用现有 SDK 镜像，以独立只读源码挂载、network none、4 CPU／8 GiB cgroup 导出，
+没有新镜像、下载、源码整树复制、GitNexus、主 SDK 并发编译或发布。生成产物位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `collaboration-current-20261008.patch`：3313 差异路径，1,040,289 行、44,230,352 字节；
+  SHA-256 `8f570bf7af384ddc39a9d0b28eab705489b4377c7653c183c9cccc12418a22b4`。
+- `collaboration-current-20261008.numstat`：由原 patch 经 `git apply --numstat` 只读解析，
+  3313 行；SHA-256 `30cb8f0d0a133fc150ce7c585de05c507276cb3222dddd506c6fcc767f8fe327`。
+- `collaboration-current-20261008.classification.tsv`：3313 个差异路径逐行登记固定版本、
+  路径、变动种类、分类、迁入位置与证据边界；SHA-256
+  `153513977f30c3bd0aa88b50af7b8ac7701fbb8a9a8e461d9d3dd17bed5f0884`。
+
+本表当前确实归类 27 路径：共享迁移 21、已授权治理改造 1、缺失需恢复 5，
+其余 **3286 路径未分类**。其中 18 个迁移路径以固定官方 blob 与迁入文件原始字节
+完全一致确认；其余九条沿上节 Projects 归档及逐文件源码对照。原文件字节被复制不自动
+证明真实调用方、布局或运行验收成立，因此表中明确保留该证据边界，不把分类数量当
+功能完成率。官方完整树共 5195 文件，其中同路径原 blob 一致的 1980 文件是差异表外
+的原样保留事实，不混入 3313 差异路径的分母。
+
+原 `desktop/src/features/projects/` 共 279 路径落入本次差异；旧路径删除既包括迁入共享
+实现，也包括未恢复模块。不能把 `remove_paths` 当删除功能的授权，或将整个目录按
+“共享迁移”一次性通过。已定位的真实缺项包括原 `ProjectDetailMetaPills`、
+`projectCollection::homeRepositoriesToBind` 及其完整详情／仓库绑定调用链；未为无调用方
+函数单独复制死代码。全仓尚未恢复的准确数量仍未知，不把五个已确认缺项当全部缺项。
+
+浏览器正常会话另查看并打开复核旧 live 快捷键截图
+`.playwright-cli/kailo-ui-20261008-live-shortcuts.png`；旧 live 业务截图现十三张，
+十一类页面及两状态。随后点击自定义表情时会话过期，截图
+`.playwright-cli/kailo-ui-20261008-live-session-expired.png` 只记录正常 IdP 登录页，
+不计自定义表情页验收，不注入或重置会话。新 Projects 源码业务截图、Windows/Mobile
+设备验收仍为零，未用旧 live 页面证明本次源码已部署或全部原版一致。
   侧栏或原 `dmParticipantDisplay` 其他功能已完整还原。
 
 10 个代码/检查/生成路径合计 `+232/-3`：共享 package.json、i18n.ts、

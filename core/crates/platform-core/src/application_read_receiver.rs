@@ -443,13 +443,13 @@ pub(super) async fn settle(
 /// Retries after a later item in a native SyncLog failed observe the same batch;
 /// they do not reacquire a token for an already written item.
 pub(super) async fn observation(
-    state: &ServiceState,
     tx: &mut Transaction<'_, Postgres>,
     ae: &Execution,
-    identity: &Receiver,
-    admission: &Admission,
-    source: &Source,
 ) -> Result<Option<Value>, Refusal> {
+    if ae.gate_state != "ALLOWED" || !matches!(ae.dispatch_state.as_str(), "DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(None);
+    }
     let p = ae.parameters.as_ref().ok_or_else(invalid)?;
     let terminal: bool = sqlx::query_scalar(
         "select exists(select 1 from audit.audit_event
@@ -469,43 +469,55 @@ pub(super) async fn observation(
     else {
         return Ok(None);
     };
-    // Observing an existing outcome is not another billable read/write. It
-    // still needs fresh scope and permission, but must not require new quota
-    // after the original operation has consumed its allowance.
-    for (resource, permission) in [
-        (ae.target_id, "read"),
-        (
-            ae.target_id,
-            source.application.definition.permission.as_str(),
-        ),
-        (
-            admission.resource,
-            admission.application.definition.permission.as_str(),
-        ),
-    ]
-    .into_iter()
-    .collect::<BTreeSet<_>>()
-    {
-        let check = state
-            .governance
-            .spicedb
-            .check(
-                "resource",
-                &resource.to_string(),
-                permission,
-                &identity.principal.to_string(),
-                crate::spicedb::Consistency::FullyConsistent,
-            )
-            .await
-            .map_err(|_| {
-                Refusal::Unavailable("native read outcome authorization unavailable".into())
-            })?;
-        if !check.allowed || check.zed_token.is_empty() {
-            return Err(denied());
-        }
+    // request authenticated the exact original receiver and checked the full
+    // frozen command. Only its original child/Operation and both historical
+    // implementation generations authorize this metadata observation. Current
+    // read/update permission remains mandatory for every new grant and PEP.
+    let attached: bool = sqlx::query_scalar(
+        "select exists(select 1 from admission.action_execution a
+         join projection.application_runtime source on source.binding_id=a.component_binding_id
+           and source.generation=a.component_projection_generation and source.component_release_id=a.component_release_id
+         join catalog.action_definition source_def on source_def.id=a.action_definition_id
+           and source_def.component_release_id=source.component_release_id
+           and source_def.action_key=a.action_key and source_def.version=a.action_version
+         join admission.action_execution child on child.parent_action_execution_id=a.id
+           and child.id=(a.parameters->>'receiverActionExecutionId')::uuid
+           and child.operation_id=a.operation_id and child.tenant_id=a.tenant_id
+           and child.workspace_id is not distinct from a.workspace_id
+           and child.actor_principal_id=a.actor_principal_id and child.initiator_principal_id=a.actor_principal_id
+           and child.component_binding_kind='APPLICATION'
+           and child.component_binding_id=(a.parameters->>'receiverBindingId')::uuid
+           and child.component_projection_generation=(a.parameters->>'receiverGeneration')::bigint
+           and child.component_release_id=(a.parameters->'readBilling'->'RECEIVER'->>'releaseId')::uuid
+           and child.action_definition_id=(a.parameters->>'receiverDefinitionId')::uuid
+           and child.action_key=a.parameters->'nativeBatch'->>'actionKey'
+           and child.action_version=(a.parameters->'nativeBatch'->>'actionVersion')::integer
+           and child.target_id=(a.parameters->'nativeBatch'->>'receiverResourceId')::uuid
+           and child.parameters->>'componentActionKind'='SERVICE_READ_RECEIVER'
+           and child.parameters->>'sourceReadActionExecutionId'=a.id::text
+           and child.parameters->>'sourceResourceId'=a.target_id::text
+           and child.parameters->'nativeBatch'=a.parameters->'nativeBatch'
+           and child.parameters->'idempotencyKey'=a.parameters->'idempotencyKey'
+           and child.gate_state='ALLOWED' and child.dispatch_state in ('DISPATCHED','UNKNOWN')
+         join projection.application_runtime receiver on receiver.binding_id=child.component_binding_id
+           and receiver.generation=child.component_projection_generation and receiver.component_release_id=child.component_release_id
+         join catalog.action_definition receiver_def on receiver_def.id=child.action_definition_id
+           and receiver_def.component_release_id=receiver.component_release_id
+           and receiver_def.action_key=child.action_key and receiver_def.version=child.action_version
+         where a.id=$1 and a.component_binding_kind='APPLICATION'
+           and a.component_binding_id=(a.parameters->'readBilling'->'SOURCE'->>'bindingId')::uuid
+           and a.component_release_id=(a.parameters->'readBilling'->'SOURCE'->>'releaseId')::uuid
+           and a.component_projection_generation=(a.parameters->'readBilling'->'SOURCE'->>'generation')::bigint
+           and child.component_projection_generation=(a.parameters->'readBilling'->'RECEIVER'->>'generation')::bigint)",
+    )
+    .bind(ae.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !attached {
+        return Err(denied());
     }
     let mut response = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
-        "sourceBindingId":source.binding,"outcome":outcome});
+        "sourceBindingId":uuid(&p["readBilling"]["SOURCE"],"bindingId")?,"outcome":outcome});
     if terminal {
         response["receiverReceipt"] = p["readReceipts"]["RECEIVER"].clone();
     }
