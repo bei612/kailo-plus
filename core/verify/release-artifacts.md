@@ -1149,3 +1149,31 @@ docs/设计输入执行原 `tools/check-docs.sh ../.design`，实际退出 0：2
 只恢复既有 `/cache/home` 与 `/cache/npm` 环境后通过，没有 chown、安装或更换工具。
 日志保留在既有 `codex-agent-receipt-regression-20261005.XvkUjX/` 的
 `release-329-current-docs.log` 和 `release-329-current-docs-restored-env.log`。
+
+### 2026-10-08 已恢复路径登记与原 Rust 检查收口
+
+本批沿 REQ-24 与原来源登记语义，只纠正真实源码与发布门禁不一致，不增加功能
+或裁剪上游。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/channels/useActiveChannelHeader.ts::useActiveChannelHeader`、
+`desktop/src/features/sidebar/lib/channelLabels.ts::resolveChannelDisplayLabel` 及
+`desktop/src/features/onboarding/ui/NsecMaskedDisplay.tsx::NsecMaskedDisplay` 已有
+实际 Header、Sidebar/Drafts 与 PrivateKeyBackupRow 消费者，不再登记为删除。
+onboarding 其余缺失原路径逐项保留为缺口，不把部分恢复误记为整目录删除或完整恢复。
+影响只在来源记录；无契约、数据迁移、scope、执行副作用或三端功能变更。
+
+原 bridge 重定向陷阱检查删除未消费返回字节数的多余读取；真实 accept 计数和
+禁止凭据重定向断言保留。其他四个 Rust 文件仅原 rustfmt 的导入/表达式/空行
+格式；不改原鉴权、额度或错误语义。复用已有4 CPU/8 GiB SDK 与 Cargo -j16，
+原 `cargo clippy --workspace --all-targets -- -D warnings` 退出0，原 bridge
+media目标6项通过、0失败，实际日志分别为 `native-scope-core-clippy-restored.log`
+和 `native-scope-bridge-media.log`；完整路径沿 Wren 本批原证据目录。
+
+正式只读源码、原SDK镜像、禁网2 CPU/4 GiB执行
+`python3 tools/upstream_manifest.py diff collaboration --check` 退出0：
+remove_paths 与实际一致1042项；原 `tools/check-docs.sh /workspace/.design`
+退出0，277引用、87实体、115DD、29SS和87场景及两侧markdownlint通过。
+原件 `native-scope-formal-contract-seam-docs-restored-cwd.log` 保留在既有
+`codex-agent-receipt-regression-20261005.XvkUjX/`。该次contract因login shell
+丢原formatter PATH退出1，失败未抹除；只恢复镜像原PATH后原contract实际退出0，
+四侧生成同步、291schema与3历史匹配，记录在Wren原回执。未重新构建/部署，
+没有把删除登记一致、格式或窄验当全功能恢复；最近一次完整门禁仍退出1。

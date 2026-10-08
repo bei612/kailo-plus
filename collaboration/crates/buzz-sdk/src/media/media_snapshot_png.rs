@@ -143,6 +143,4 @@ mod tests {
         let reader = decoder.read_info().unwrap();
         assert!(reader.info().uncompressed_latin1_text.is_empty());
     }
-
-
 }

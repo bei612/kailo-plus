@@ -5,10 +5,10 @@ use crate::{
     application_catalog::ApplicationDefinition, governance::Evaluation, service_api::ServiceState,
 };
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
+    Json,
 };
 
 const KIND: &str = "SERVICE_READ";
@@ -906,8 +906,8 @@ mod tests {
     async fn service_directory_reads_real_scoped_rows_and_fresh_service_permissions() {
         use sqlx::Connection;
         use std::sync::{
-            Arc,
             atomic::{AtomicU8, AtomicUsize, Ordering},
+            Arc,
         };
         let mut conn = PgConnection::connect(
             &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL").expect("isolated database"),
@@ -985,33 +985,29 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(all.len(), 2);
-        assert!(
-            super::super::read::read_resource_rows(
-                &mut tx,
-                Uuid::new_v4(),
-                binding,
-                None,
-                &query,
-                16
-            )
-            .await
-            .unwrap()
-            .is_empty()
-        );
+        assert!(super::super::read::read_resource_rows(
+            &mut tx,
+            Uuid::new_v4(),
+            binding,
+            None,
+            &query,
+            16
+        )
+        .await
+        .unwrap()
+        .is_empty());
         query.category_key = Some("unavailable-category".into());
-        assert!(
-            super::super::read::read_resource_rows(
-                &mut tx,
-                admitted.tenant,
-                binding,
-                None,
-                &query,
-                16
-            )
-            .await
-            .unwrap()
-            .is_empty()
-        );
+        assert!(super::super::read::read_resource_rows(
+            &mut tx,
+            admitted.tenant,
+            binding,
+            None,
+            &query,
+            16
+        )
+        .await
+        .unwrap()
+        .is_empty());
         query.category_key = Some("retire_plain".into());
         let observed = Arc::new((
             scoped[0].clone(),
@@ -1028,16 +1024,16 @@ mod tests {
                     assert_eq!(request["consistency"]["fullyConsistent"], true);
                     assert_eq!(
                         request["relationshipFilter"]["optionalResourceId"],
-                        observed.0.0.to_string()
+                        observed.0 .0.to_string()
                     );
                     let owner = if observed.2.load(Ordering::SeqCst) == 3 {
                         Uuid::new_v4()
                     } else {
-                        observed.0.4
+                        observed.0 .4
                     };
                     let mut facts =
                         vec![("owner", "principal", owner), ("tenant", "tenant", tenant)];
-                    facts.extend(observed.0.3.map(|id| ("home_workspace", "workspace", id)));
+                    facts.extend(observed.0 .3.map(|id| ("home_workspace", "workspace", id)));
                     assert_eq!(request["optionalLimit"], 1);
                     let offset = request["optionalCursor"]["token"]
                         .as_str()

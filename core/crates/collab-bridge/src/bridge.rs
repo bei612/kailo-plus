@@ -1704,8 +1704,6 @@ mod media_tests {
                 accepted = target.accept() => {
                     count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let (mut socket, _) = accepted.unwrap();
-                    let mut request = [0; 4096];
-                    socket.read(&mut request).await.unwrap();
                     socket.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
                 }
                 _ = stopped => {}

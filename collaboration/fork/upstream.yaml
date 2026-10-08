@@ -333,7 +333,6 @@ remove_paths:
   - desktop/src/features/channels/ui/useWelcomeComposerBanner.ts
   - desktop/src/features/channels/ui/useWelcomeInitialUnreadSuppression.test.mjs
   - desktop/src/features/channels/ui/useWelcomeInitialUnreadSuppression.ts
-  - desktop/src/features/channels/useActiveChannelHeader.ts
   - desktop/src/features/channels/useCanAddChannelMembers.ts
   - desktop/src/features/channels/useDmResurfaceBatching.test.mjs
   - desktop/src/features/channels/useDmResurfaceFromMessages.ts
@@ -483,7 +482,73 @@ remove_paths:
   - desktop/src/features/messages/useTypingBroadcast.ts
   - desktop/src/features/moderation
   - desktop/src/features/notifications/lib/sound.test.mjs
-  - desktop/src/features/onboarding
+  - desktop/src/features/onboarding/assets
+  - desktop/src/features/onboarding/communityOnboarding.test.mjs
+  - desktop/src/features/onboarding/communityOnboarding.tsx
+  - desktop/src/features/onboarding/devFreshOnboarding.ts
+  - desktop/src/features/onboarding/hooks.ts
+  - desktop/src/features/onboarding/lib
+  - desktop/src/features/onboarding/machineOnboarding.test.mjs
+  - desktop/src/features/onboarding/machineOnboarding.ts
+  - desktop/src/features/onboarding/ui/AvatarStep.tsx
+  - desktop/src/features/onboarding/ui/BackupPasswordTimeline.tsx
+  - desktop/src/features/onboarding/ui/BackupStep.tsx
+  - desktop/src/features/onboarding/ui/BackupTestFlow.tsx
+  - desktop/src/features/onboarding/ui/CommunityOnboardingFlow.tsx
+  - desktop/src/features/onboarding/ui/ConnectionMethodSection.tsx
+  - desktop/src/features/onboarding/ui/DefaultConfigStep.tsx
+  - desktop/src/features/onboarding/ui/DownloadKeyStep.tsx
+  - desktop/src/features/onboarding/ui/EncryptedBackupCreator.tsx
+  - desktop/src/features/onboarding/ui/HarnessMarks.tsx
+  - desktop/src/features/onboarding/ui/IdentityKeyHelpDialog.tsx
+  - desktop/src/features/onboarding/ui/IdentityKeyIntroduction.tsx
+  - desktop/src/features/onboarding/ui/IdentityRecoveryPairing.tsx
+  - desktop/src/features/onboarding/ui/InviteRedeemForm.tsx
+  - desktop/src/features/onboarding/ui/JoinPolicyNotice.tsx
+  - desktop/src/features/onboarding/ui/KeyringLockedScreen.tsx
+  - desktop/src/features/onboarding/ui/LandingBees.tsx
+  - desktop/src/features/onboarding/ui/MachineOnboardingFlow.tsx
+  - desktop/src/features/onboarding/ui/MembershipDenied.tsx
+  - desktop/src/features/onboarding/ui/NostrKeyImportForm.tsx
+  - desktop/src/features/onboarding/ui/OnboardingCard.tsx
+  - desktop/src/features/onboarding/ui/OnboardingChrome.tsx
+  - desktop/src/features/onboarding/ui/OnboardingFlow.tsx
+  - desktop/src/features/onboarding/ui/OnboardingFooter.tsx
+  - desktop/src/features/onboarding/ui/OnboardingInput.tsx
+  - desktop/src/features/onboarding/ui/OnboardingSlideTransition.tsx
+  - desktop/src/features/onboarding/ui/PendingInviteGate.tsx
+  - desktop/src/features/onboarding/ui/ProfileStep.tsx
+  - desktop/src/features/onboarding/ui/RecoveryScreen.tsx
+  - desktop/src/features/onboarding/ui/RelaunchRequiredScreen.tsx
+  - desktop/src/features/onboarding/ui/ResetFailedScreen.tsx
+  - desktop/src/features/onboarding/ui/RuntimeErrorTooltip.tsx
+  - desktop/src/features/onboarding/ui/RuntimeIcon.tsx
+  - desktop/src/features/onboarding/ui/SetupStep.acpForcedGate.test.mjs
+  - desktop/src/features/onboarding/ui/SetupStep.tsx
+  - desktop/src/features/onboarding/ui/WelcomeKickoffStage.tsx
+  - desktop/src/features/onboarding/ui/agentReadiness.test.mjs
+  - desktop/src/features/onboarding/ui/agentReadiness.ts
+  - desktop/src/features/onboarding/ui/harnessConnectionOptions.test.mjs
+  - desktop/src/features/onboarding/ui/harnessConnectionOptions.ts
+  - desktop/src/features/onboarding/ui/onboardingCardStyles.ts
+  - desktop/src/features/onboarding/ui/onboardingFlowSteps.test.mjs
+  - desktop/src/features/onboarding/ui/onboardingRuntimeSelection.test.mjs
+  - desktop/src/features/onboarding/ui/onboardingRuntimeSelection.ts
+  - desktop/src/features/onboarding/ui/presetLogos.test.mjs
+  - desktop/src/features/onboarding/ui/types.ts
+  - desktop/src/features/onboarding/useClaimInvite.ts
+  - desktop/src/features/onboarding/useWelcomeKickoffEntrance.ts
+  - desktop/src/features/onboarding/useWelcomeKickoffStage.test.mjs
+  - desktop/src/features/onboarding/useWelcomeKickoffStage.ts
+  - desktop/src/features/onboarding/useWelcomeKickoffStagePresence.tsx
+  - desktop/src/features/onboarding/welcome.test.mjs
+  - desktop/src/features/onboarding/welcome.ts
+  - desktop/src/features/onboarding/welcomeCanvas.test.mjs
+  - desktop/src/features/onboarding/welcomeCanvas.ts
+  - desktop/src/features/onboarding/welcomeGuide.test.mjs
+  - desktop/src/features/onboarding/welcomeGuide.ts
+  - desktop/src/features/onboarding/welcomeKickoff.test.mjs
+  - desktop/src/features/onboarding/welcomeKickoff.ts
   - desktop/src/features/presence
   - desktop/src/features/profile/avatarPresentationStore.test.mjs
   - desktop/src/features/profile/avatarPresentationStore.ts
@@ -591,7 +656,6 @@ remove_paths:
   - desktop/src/features/settings/ui/voiceSettingsLogic.test.mjs
   - desktop/src/features/settings/ui/voiceSettingsLogic.ts
   - desktop/src/features/sidebar/data
-  - desktop/src/features/sidebar/lib/channelLabels.ts
   - desktop/src/features/sidebar/lib/channelMutesSync.test.mjs
   - desktop/src/features/sidebar/lib/channelMutesSync.ts
   - desktop/src/features/sidebar/lib/channelSectionsHelpers.test.mjs

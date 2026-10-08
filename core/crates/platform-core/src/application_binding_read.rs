@@ -3,10 +3,10 @@
 
 use super::*;
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
+    Json,
 };
 
 #[derive(serde::Deserialize)]
@@ -461,12 +461,10 @@ mod read_resource_tests {
         let mut conn = sqlx::PgConnection::connect(&url).await.unwrap();
         let tenant = Uuid::new_v4();
         let binding = Uuid::new_v4();
-        assert!(
-            read_receiver(&mut conn, tenant, binding)
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(read_receiver(&mut conn, tenant, binding)
+            .await
+            .unwrap()
+            .is_none());
         for source in [true, false] {
             let query = ReadResourceQuery {
                 direction: if source {
