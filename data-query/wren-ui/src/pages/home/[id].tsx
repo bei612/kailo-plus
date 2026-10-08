@@ -48,6 +48,12 @@ import {
   CreateSqlPairInput,
 } from '@/apollo/client/graphql/__types__';
 import { useCreateSqlPairMutation } from '@/apollo/client/graphql/sqlPairs.generated';
+import { v4 as uuidv4 } from 'uuid';
+import { getUserConfig } from '@/utils/env';
+import { queryReceiptState } from '@/utils/queryReceipt';
+
+// Reuse the original response polling cadence for the admitted SQL receipt.
+const RESPONSE_POLL_INTERVAL = 1000;
 
 const getThreadResponseIsFinished = (threadResponse: ThreadResponse) => {
   const { answerDetail, breakdownDetail, chartDetail } = threadResponse || {};
@@ -82,6 +88,9 @@ export default function HomeThread() {
   const questionSqlPairModal = useModalAction();
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
+  const answerRequests = useRef(new Set<number>());
+  const answerGeneration = useRef(0);
+  const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
 
   const [showRecommendedQuestions, setShowRecommendedQuestions] =
     useState<boolean>(false);
@@ -123,7 +132,7 @@ export default function HomeThread() {
     });
   const [fetchThreadResponse, threadResponseResult] =
     useThreadResponseLazyQuery({
-      pollInterval: 1000,
+      pollInterval: RESPONSE_POLL_INTERVAL,
       onCompleted(next) {
         const nextResponse = next.threadResponse;
         updateThreadQuery((prev) => ({
@@ -173,7 +182,14 @@ export default function HomeThread() {
     });
 
   const thread = useMemo(() => data?.thread || null, [data]);
-  const responses = useMemo(() => thread?.responses || [], [thread]);
+  const responses = useMemo(
+    () =>
+      (thread?.responses || []).map((response) => ({
+        ...response,
+        queryReceipt: answerReceipts[response.id],
+      })),
+    [thread, answerReceipts],
+  );
   const pollingResponse = useMemo(
     () => threadResponseResult.data?.threadResponse || null,
     [threadResponseResult.data],
@@ -190,8 +206,76 @@ export default function HomeThread() {
   };
 
   const onGenerateThreadResponseAnswer = async (responseId: number) => {
-    await generateThreadResponseAnswer({ variables: { responseId } });
-    fetchThreadResponse({ variables: { responseId } });
+    if (answerRequests.current.has(responseId)) return;
+    answerRequests.current.add(responseId);
+    const generation = answerGeneration.current;
+    try {
+      const scope = (await getUserConfig()).queryScope;
+      if (scope === undefined) {
+        await generateThreadResponseAnswer({ variables: { responseId } });
+        fetchThreadResponse({ variables: { responseId } });
+        return;
+      }
+      if (!/^[a-f0-9]{64}$/.test(scope)) return;
+      const slot = `kailo.query.answer.${scope}.${responseId}`;
+      const key = sessionStorage.getItem(slot) || uuidv4();
+      sessionStorage.setItem(slot, key);
+      while (generation === answerGeneration.current) {
+        if ((await getUserConfig()).queryScope !== scope) return;
+        const result = await generateThreadResponseAnswer({
+          variables: {
+            responseId,
+            idempotencyKey: key,
+            idempotencyScope: scope,
+          },
+        });
+        if (
+          generation !== answerGeneration.current ||
+          (await getUserConfig()).queryScope !== scope
+        )
+          return;
+        const response = result.data?.generateThreadResponseAnswer;
+        if (response?.id === responseId)
+          updateThreadQuery((previous) => ({
+            ...previous,
+            thread: {
+              ...previous.thread,
+              responses: previous.thread.responses.map((current) =>
+                current.id === responseId
+                  ? { ...current, ...response }
+                  : current,
+              ),
+            },
+          }));
+        setAnswerReceipts((current) => ({
+          ...current,
+          [responseId]: response?.queryReceipt || {},
+        }));
+        const state = queryReceiptState(response?.queryReceipt);
+        if (state.completed && response?.answerDetail?.queryId) {
+          if (sessionStorage.getItem(slot) === key)
+            sessionStorage.removeItem(slot);
+          fetchThreadResponse({ variables: { responseId } });
+          return;
+        }
+        if (state.ended || state.denied) {
+          if (sessionStorage.getItem(slot) === key)
+            sessionStorage.removeItem(slot);
+          return;
+        }
+        // UNKNOWN, malformed evidence and lost AI-create acknowledgement keep
+        // this exact opaque key. No SQL, data or token is stored in the browser.
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, RESPONSE_POLL_INTERVAL),
+        );
+      }
+    } catch {
+      // A lost transport/storage acknowledgement cannot authorize another key.
+      if (generation === answerGeneration.current)
+        setAnswerReceipts((current) => ({ ...current, [responseId]: {} }));
+    } finally {
+      answerRequests.current.delete(responseId);
+    }
   };
 
   const onGenerateThreadResponseChart = async (responseId: number) => {
@@ -259,6 +343,7 @@ export default function HomeThread() {
       setShowRecommendedQuestions(true);
     }
     return () => {
+      ++answerGeneration.current;
       askPrompt.onStopPolling();
       threadResponseResult.stopPolling();
       threadRecommendationQuestionsResult.stopPolling();
@@ -308,7 +393,7 @@ export default function HomeThread() {
   };
 
   const providerValue = {
-    data: thread,
+    data: thread ? { ...thread, responses } : thread,
     recommendedQuestions,
     showRecommendedQuestions,
     preparation: {

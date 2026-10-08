@@ -13,6 +13,7 @@ import {
   PreviewDataResponse,
 } from '../services';
 import { getLogger } from '@server/utils';
+import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
 
 const logger = getLogger('TextBasedAnswerBackgroundTracker');
 logger.level = 'debug';
@@ -61,89 +62,127 @@ export class TextBasedAnswerBackgroundTracker {
             return;
           }
           this.runningJobs.add(threadResponse.id);
-
-          // update the status to fetching data
-          await this.threadResponseRepository.updateOne(threadResponse.id, {
-            answerDetail: {
-              ...threadResponse.answerDetail,
-              status: ThreadResponseAnswerStatus.FETCHING_DATA,
-            },
-          });
-
-          // get sql data
-          const project = await this.projectService.getCurrentProject();
-          const deployment = await this.deployService.getLastDeployment(
-            project.id,
-          );
-          const mdl = deployment.manifest;
-          let data: PreviewDataResponse;
           try {
-            data = (await this.queryService.preview(threadResponse.sql, {
-              project,
-              manifest: mdl,
-              modelingOnly: false,
-              limit: 500,
-            })) as PreviewDataResponse;
-          } catch (error) {
-            logger.error(`Error when query sql data: ${error}`);
+            if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+              const detail = threadResponse.answerDetail;
+              if (!detail.queryHistoryId || !detail.queryId)
+                throw new NativeQueryRefusal(
+                  503,
+                  'QUERY_TERMINAL_EVIDENCE_REQUIRED',
+                );
+              const result = await this.wrenAIAdaptor.getTextBasedAnswerResult(
+                detail.queryId,
+              );
+              if (result.status === TextBasedAnswerStatus.PREPROCESSING) return;
+              if (
+                ![
+                  TextBasedAnswerStatus.SUCCEEDED,
+                  TextBasedAnswerStatus.FAILED,
+                ].includes(result.status)
+              )
+                throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+              // Keep the original AI task id and the original query evidence.
+              // A stale response/SQL or another answer must not be overwritten.
+              await this.threadResponseRepository.claimNativeAnswer(
+                threadResponse,
+                {
+                  ...detail,
+                  status:
+                    result.status === TextBasedAnswerStatus.SUCCEEDED
+                      ? ThreadResponseAnswerStatus.STREAMING
+                      : ThreadResponseAnswerStatus.FAILED,
+                  numRowsUsedInLLM: result.numRowsUsedInLLM,
+                  error: result.error,
+                },
+              );
+              delete this.tasks[threadResponse.id];
+              return;
+            }
+
+            // update the status to fetching data
             await this.threadResponseRepository.updateOne(threadResponse.id, {
               answerDetail: {
                 ...threadResponse.answerDetail,
-                status: ThreadResponseAnswerStatus.FAILED,
-                error: error?.extensions || error,
+                status: ThreadResponseAnswerStatus.FETCHING_DATA,
               },
             });
-            throw error;
-          }
 
-          // request AI service
-          const response = await this.wrenAIAdaptor.createTextBasedAnswer({
-            query: threadResponse.question,
-            sql: threadResponse.sql,
-            sqlData: data,
-            threadId: threadResponse.threadId.toString(),
-            configurations: {
-              language: WrenAILanguage[project.language] || WrenAILanguage.EN,
-            },
-          });
-
-          // update the status to preprocessing
-          await this.threadResponseRepository.updateOne(threadResponse.id, {
-            answerDetail: {
-              ...threadResponse.answerDetail,
-              status: ThreadResponseAnswerStatus.PREPROCESSING,
-            },
-          });
-
-          // polling query id to check the status
-          let result: TextBasedAnswerResult;
-          do {
-            result = await this.wrenAIAdaptor.getTextBasedAnswerResult(
-              response.queryId,
+            // get sql data
+            const project = await this.projectService.getCurrentProject();
+            const deployment = await this.deployService.getLastDeployment(
+              project.id,
             );
-            if (result.status === TextBasedAnswerStatus.PREPROCESSING) {
-              await new Promise((resolve) => setTimeout(resolve, 500));
+            const mdl = deployment.manifest;
+            let data: PreviewDataResponse;
+            try {
+              data = (await this.queryService.preview(threadResponse.sql, {
+                project,
+                manifest: mdl,
+                modelingOnly: false,
+                limit: 500,
+              })) as PreviewDataResponse;
+            } catch (error) {
+              logger.error(`Error when query sql data: ${error}`);
+              await this.threadResponseRepository.updateOne(threadResponse.id, {
+                answerDetail: {
+                  ...threadResponse.answerDetail,
+                  status: ThreadResponseAnswerStatus.FAILED,
+                  error: error?.extensions || error,
+                },
+              });
+              throw error;
             }
-          } while (result.status === TextBasedAnswerStatus.PREPROCESSING);
 
-          // update the status to final
-          const updatedAnswerDetail = {
-            queryId: response.queryId,
-            status:
-              result.status === TextBasedAnswerStatus.SUCCEEDED
-                ? ThreadResponseAnswerStatus.STREAMING
-                : ThreadResponseAnswerStatus.FAILED,
-            numRowsUsedInLLM: result.numRowsUsedInLLM,
-            error: result.error,
-          };
-          await this.threadResponseRepository.updateOne(threadResponse.id, {
-            answerDetail: updatedAnswerDetail,
-          });
+            // request AI service
+            const response = await this.wrenAIAdaptor.createTextBasedAnswer({
+              query: threadResponse.question,
+              sql: threadResponse.sql,
+              sqlData: data,
+              threadId: threadResponse.threadId.toString(),
+              configurations: {
+                language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+              },
+            });
 
-          delete this.tasks[threadResponse.id];
+            // update the status to preprocessing
+            await this.threadResponseRepository.updateOne(threadResponse.id, {
+              answerDetail: {
+                ...threadResponse.answerDetail,
+                status: ThreadResponseAnswerStatus.PREPROCESSING,
+              },
+            });
 
-          // Mark the job as finished
-          this.runningJobs.delete(threadResponse.id);
+            // polling query id to check the status
+            let result: TextBasedAnswerResult;
+            do {
+              result = await this.wrenAIAdaptor.getTextBasedAnswerResult(
+                response.queryId,
+              );
+              if (result.status === TextBasedAnswerStatus.PREPROCESSING) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+              }
+            } while (result.status === TextBasedAnswerStatus.PREPROCESSING);
+
+            // update the status to final
+            const updatedAnswerDetail = {
+              queryId: response.queryId,
+              status:
+                result.status === TextBasedAnswerStatus.SUCCEEDED
+                  ? ThreadResponseAnswerStatus.STREAMING
+                  : ThreadResponseAnswerStatus.FAILED,
+              numRowsUsedInLLM: result.numRowsUsedInLLM,
+              error: result.error,
+            };
+            await this.threadResponseRepository.updateOne(threadResponse.id, {
+              answerDetail: updatedAnswerDetail,
+            });
+
+            delete this.tasks[threadResponse.id];
+          } finally {
+            // A transient poll failure is not a terminal AI result. Retry the
+            // same original id; never repeat SQL or create another AI task.
+            this.runningJobs.delete(threadResponse.id);
+          }
         },
       );
 

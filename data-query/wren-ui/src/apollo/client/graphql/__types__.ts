@@ -877,6 +877,8 @@ export type MutationGenerateThreadRecommendationQuestionsArgs = {
 
 
 export type MutationGenerateThreadResponseAnswerArgs = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   responseId: Scalars['Int'];
 };
 
@@ -1437,6 +1439,7 @@ export type ThreadResponse = {
   breakdownDetail?: Maybe<ThreadResponseBreakdownDetail>;
   chartDetail?: Maybe<ThreadResponseChartDetail>;
   id: Scalars['Int'];
+  queryReceipt?: Maybe<Scalars['JSON']>;
   question: Scalars['String'];
   sql?: Maybe<Scalars['String']>;
   threadId: Scalars['Int'];

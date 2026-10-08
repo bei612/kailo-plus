@@ -947,6 +947,118 @@ describe('native bound-project business consumers', () => {
       }),
     );
   });
+
+  describe('original native text answer consumes a disclosed query history', () => {
+    const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    beforeEach(() => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    });
+    afterEach(() => {
+      if (originalDelivery === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
+    });
+    const fixture = async () => {
+      const service = asking();
+      const expected = await service.getResponse(71);
+      let current = expected;
+      service.threadResponseRepository.findOneBy.mockImplementation(
+        async () => current,
+      );
+      service.threadResponseRepository.claimNativeAnswer = jest.fn(
+        async (snapshot, answerDetail) => {
+          if (JSON.stringify(snapshot) !== JSON.stringify(current)) return null;
+          current = { ...current, answerDetail };
+          return current;
+        },
+      );
+      service.wrenAIAdaptor = {
+        createTextBasedAnswer: jest.fn(async () => ({
+          queryId: 'original-ai-task',
+        })),
+      };
+      service.textBasedAnswerBackgroundTracker = { addTask: jest.fn() };
+      return {
+        service,
+        input: {
+          language: 'zh-TW',
+          nativeQuery: {
+            historyId: 'original-query-history',
+            expected,
+            data: { columns: [{ name: 'value', type: 'int' }], data: [[7]] },
+          },
+        },
+      };
+    };
+    it('passes the exact current HUMAN query data to original AI and joins the same original task', async () => {
+      const { service, input } = await fixture();
+      const first = await service.generateThreadResponseAnswer(71, input);
+      expect(first.answerDetail).toEqual({
+        queryHistoryId: 'original-query-history',
+        queryId: 'original-ai-task',
+        status: 'PREPROCESSING',
+      });
+      expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledWith({
+        query: 'original',
+        sql: 'SELECT 1',
+        sqlData: input.nativeQuery.data,
+        threadId: '81',
+        configurations: { language: 'zh-TW' },
+      });
+      await service.generateThreadResponseAnswer(71, input);
+      expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+    it('never retries an AI create after a lost response and retains the original query history', async () => {
+      const { service, input } = await fixture();
+      service.wrenAIAdaptor.createTextBasedAnswer.mockRejectedValue(
+        new Error('lost acknowledgement'),
+      );
+      await expect(
+        service.generateThreadResponseAnswer(71, input),
+      ).rejects.toThrow('lost acknowledgement');
+      expect(
+        (await service.generateThreadResponseAnswer(71, input)).answerDetail,
+      ).toEqual({
+        queryHistoryId: 'original-query-history',
+        status: 'PREPROCESSING',
+      });
+      expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(
+        service.textBasedAnswerBackgroundTracker.addTask,
+      ).not.toHaveBeenCalled();
+    });
+    it.each(['missing', 'changed-sql', 'concurrent-replacement'])(
+      'refuses %s before sending original AI data',
+      async (failure) => {
+        const { service, input } = await fixture();
+        if (failure === 'changed-sql')
+          input.nativeQuery.expected = {
+            ...input.nativeQuery.expected,
+            sql: 'SELECT 2',
+          };
+        if (failure === 'concurrent-replacement')
+          service.threadResponseRepository.claimNativeAnswer.mockResolvedValue(
+            null,
+          );
+        await expect(
+          service.generateThreadResponseAnswer(
+            71,
+            failure === 'missing' ? undefined : input,
+          ),
+        ).rejects.toThrow();
+        expect(
+          service.wrenAIAdaptor.createTextBasedAnswer,
+        ).not.toHaveBeenCalled();
+        expect(
+          service.textBasedAnswerBackgroundTracker.addTask,
+        ).not.toHaveBeenCalled();
+      },
+    );
+  });
   it('thread recommendation builds its MDL from the same selected project before original dispatch', async () => {
     const service = asking();
     service.threadRecommendQuestionBackgroundTracker = {

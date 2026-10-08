@@ -20,6 +20,7 @@ import { ThreadResponseAnswerStatus } from '@/apollo/client/graphql/__types__';
 import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { getQueryPreviewText } from '@/utils/language';
 import { useRouter } from 'next/router';
+import { queryReceiptState } from '@/utils/queryReceipt';
 
 const { Text } = Typography;
 
@@ -50,6 +51,9 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   const { isLastThreadResponse, onInitPreviewDone, threadResponse } = props;
   const { id } = threadResponse;
   const text = getQueryPreviewText(useRouter().locale);
+  const answerQuery = queryReceiptState(threadResponse.queryReceipt);
+  const answerUnknown =
+    answerQuery.completed && !threadResponse.answerDetail?.queryId;
   const { content, error, numRowsUsedInLLM, status } =
     threadResponse?.answerDetail || {};
 
@@ -214,99 +218,119 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   }
 
   return (
-    <StyledSkeleton
-      active
-      loading={loading}
-      paragraph={{ rows: 4 }}
-      title={false}
-    >
-      <div className="text-md gray-10 py-4 px-6">
-        <div className="text-right mb-4">{adjustAnswerDropdown}</div>
-        <MarkdownBlock content={textAnswer} />
-        {isStreaming && <LoadingOutlined className="geekblue-6" spin />}
-        {status === ThreadResponseAnswerStatus.INTERRUPTED && (
-          <div className="mt-2 text-right">
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              type="link"
-              title="Regenerate answer"
-              onClick={onRegenerateAnswer}
-            >
-              Regenerate
-            </Button>
-          </div>
-        )}
-        {allowPreviewData ? (
-          <div className="mt-6">
-            <Button
-              size="small"
-              icon={
-                <BinocularsIcon
-                  style={{
-                    paddingBottom: 2,
-                    marginRight: 8,
-                  }}
-                />
-              }
-              loading={previewDataResult.loading || query.preparing}
-              onClick={onPreviewData}
-              data-ph-capture="true"
-              data-ph-capture-attribute-name="cta_text-answer_preview_data"
-            >
-              {query.pending || query.error ? text.check : text.results}
-            </Button>
-            {query.storageError ? (
-              <Alert type="error" message={text.storageError} />
-            ) : null}
-            {query.scopeError ? (
-              <Alert type="error" message={text.scopeError} />
-            ) : null}
-            {query.pending ? (
-              <Alert type="info" message={text.pending} />
-            ) : null}
-            {query.error ? (
-              <Alert type="warning" message={text.unknown} />
-            ) : null}
-            {query.ended ? <Alert type="error" message={text.ended} /> : null}
-            {query.denied ? (
-              <Alert type="warning" message={text.denied} />
-            ) : null}
-
-            <div className="mt-2 mb-3" data-guideid="text-answer-preview-data">
-              {hasPreviewData && (
-                <Text type="secondary" className="text-sm">
-                  Considering the limit of the context window, we retrieve up to
-                  500 rows of results to generate the answer.
-                </Text>
-              )}
-              <PreviewData
-                error={query.error}
-                loading={
-                  previewDataResult.loading ||
-                  query.preparing ||
-                  Boolean(query.pending)
-                }
-                previewData={query.completed ? query.receipt?.data : undefined}
-              />
+    <>
+      {answerQuery.pending ? (
+        <Alert type="info" message={text.pending} />
+      ) : null}
+      {answerUnknown ? <Alert type="warning" message={text.unknown} /> : null}
+      {answerQuery.denied ? (
+        <Alert type="warning" message={text.denied} />
+      ) : null}
+      {answerQuery.ended ? <Alert type="error" message={text.ended} /> : null}
+      {answerQuery.pending || answerUnknown ? (
+        <Button onClick={() => onGenerateTextBasedAnswer(id)}>
+          {text.check}
+        </Button>
+      ) : null}
+      <StyledSkeleton
+        active
+        loading={loading}
+        paragraph={{ rows: 4 }}
+        title={false}
+      >
+        <div className="text-md gray-10 py-4 px-6">
+          <div className="text-right mb-4">{adjustAnswerDropdown}</div>
+          <MarkdownBlock content={textAnswer} />
+          {isStreaming && <LoadingOutlined className="geekblue-6" spin />}
+          {status === ThreadResponseAnswerStatus.INTERRUPTED && (
+            <div className="mt-2 text-right">
+              <Button
+                icon={<ReloadOutlined />}
+                size="small"
+                type="link"
+                title="Regenerate answer"
+                onClick={onRegenerateAnswer}
+              >
+                Regenerate
+              </Button>
             </div>
-          </div>
-        ) : (
-          <>
-            {!isStreaming && (
-              <Alert
-                message={
-                  <>
-                    Click <b>View SQL</b> to review the step-by-step query logic
-                    and verify why the data is unavailable.
-                  </>
+          )}
+          {allowPreviewData ? (
+            <div className="mt-6">
+              <Button
+                size="small"
+                icon={
+                  <BinocularsIcon
+                    style={{
+                      paddingBottom: 2,
+                      marginRight: 8,
+                    }}
+                  />
                 }
-                type="info"
-              />
-            )}
-          </>
-        )}
-      </div>
-    </StyledSkeleton>
+                loading={previewDataResult.loading || query.preparing}
+                onClick={onPreviewData}
+                data-ph-capture="true"
+                data-ph-capture-attribute-name="cta_text-answer_preview_data"
+              >
+                {query.pending || query.error ? text.check : text.results}
+              </Button>
+              {query.storageError ? (
+                <Alert type="error" message={text.storageError} />
+              ) : null}
+              {query.scopeError ? (
+                <Alert type="error" message={text.scopeError} />
+              ) : null}
+              {query.pending ? (
+                <Alert type="info" message={text.pending} />
+              ) : null}
+              {query.error ? (
+                <Alert type="warning" message={text.unknown} />
+              ) : null}
+              {query.ended ? <Alert type="error" message={text.ended} /> : null}
+              {query.denied ? (
+                <Alert type="warning" message={text.denied} />
+              ) : null}
+
+              <div
+                className="mt-2 mb-3"
+                data-guideid="text-answer-preview-data"
+              >
+                {hasPreviewData && (
+                  <Text type="secondary" className="text-sm">
+                    Considering the limit of the context window, we retrieve up
+                    to 500 rows of results to generate the answer.
+                  </Text>
+                )}
+                <PreviewData
+                  error={query.error}
+                  loading={
+                    previewDataResult.loading ||
+                    query.preparing ||
+                    Boolean(query.pending)
+                  }
+                  previewData={
+                    query.completed ? query.receipt?.data : undefined
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              {!isStreaming && (
+                <Alert
+                  message={
+                    <>
+                      Click <b>View SQL</b> to review the step-by-step query
+                      logic and verify why the data is unavailable.
+                    </>
+                  }
+                  type="info"
+                />
+              )}
+            </>
+          )}
+        </div>
+      </StyledSkeleton>
+    </>
   );
 }

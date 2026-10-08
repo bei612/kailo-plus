@@ -823,6 +823,7 @@ export const typeDefs = gql`
     askingTask: AskingTask
     adjustment: ThreadResponseAdjustment
     adjustmentTask: AdjustmentTask
+    queryReceipt: JSON
   }
 
   # Thread only consists of basic information of a thread
@@ -1252,7 +1253,11 @@ export const typeDefs = gql`
     generateThreadResponseBreakdown(responseId: Int!): ThreadResponse!
 
     # Generate Thread Response Answer
-    generateThreadResponseAnswer(responseId: Int!): ThreadResponse!
+    generateThreadResponseAnswer(
+      responseId: Int!
+      idempotencyKey: String
+      idempotencyScope: String
+    ): ThreadResponse!
 
     # Generate Thread Response Chart
     generateThreadResponseChart(responseId: Int!): ThreadResponse!

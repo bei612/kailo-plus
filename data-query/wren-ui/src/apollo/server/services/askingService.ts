@@ -33,7 +33,7 @@ import {
   IViewRepository,
   Project,
 } from '../repositories';
-import { IQueryService } from './queryService';
+import { IQueryService, PreviewDataResponse } from './queryService';
 import { IMDLService } from './mdlService';
 import {
   ThreadRecommendQuestionBackgroundTracker,
@@ -45,6 +45,7 @@ import {
 import { getConfig } from '@server/config';
 import { TextBasedAnswerBackgroundTracker } from '../backgrounds/textBasedAnswerBackgroundTracker';
 import { IAskingTaskTracker, TrackedAskingResult } from './askingTaskTracker';
+import { NativeQueryRefusal } from './nativeQueryAdmission';
 
 const config = getConfig();
 
@@ -164,7 +165,14 @@ export interface IAskingService {
   ): Promise<ThreadResponse>;
   generateThreadResponseAnswer(
     threadResponseId: number,
-    configurations: { language: string },
+    configurations: {
+      language: string;
+      nativeQuery?: {
+        historyId: string;
+        expected: ThreadResponse;
+        data: PreviewDataResponse;
+      };
+    },
   ): Promise<ThreadResponse>;
   generateThreadResponseChart(
     threadResponseId: number,
@@ -892,11 +900,85 @@ export class AskingService implements IAskingService {
 
   public async generateThreadResponseAnswer(
     threadResponseId: number,
+    configurations?: {
+      language: string;
+      nativeQuery?: {
+        historyId: string;
+        expected: ThreadResponse;
+        data: PreviewDataResponse;
+      };
+    },
   ): Promise<ThreadResponse> {
     const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
+    }
+
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      const native = configurations?.nativeQuery;
+      if (!native)
+        throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+      if (
+        native.expected.id !== threadResponse.id ||
+        native.expected.threadId !== threadResponse.threadId ||
+        native.expected.question !== threadResponse.question ||
+        native.expected.sql !== threadResponse.sql
+      )
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      if (threadResponse.answerDetail?.queryHistoryId === native.historyId) {
+        // A missing AI id is an indeterminate original create, not authority
+        // to invoke the original non-idempotent AI endpoint again.
+        if (
+          threadResponse.answerDetail.queryId &&
+          threadResponse.answerDetail.status ===
+            ThreadResponseAnswerStatus.PREPROCESSING
+        )
+          this.textBasedAnswerBackgroundTracker.addTask(threadResponse);
+        return threadResponse;
+      }
+      if (
+        threadResponse.answerDetail &&
+        [
+          ThreadResponseAnswerStatus.FETCHING_DATA,
+          ThreadResponseAnswerStatus.PREPROCESSING,
+          ThreadResponseAnswerStatus.STREAMING,
+        ].includes(
+          threadResponse.answerDetail.status as ThreadResponseAnswerStatus,
+        )
+      )
+        throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+      const claimed = await this.threadResponseRepository.claimNativeAnswer(
+        threadResponse,
+        {
+          queryHistoryId: native.historyId,
+          status: ThreadResponseAnswerStatus.PREPROCESSING,
+        },
+      );
+      if (!claimed) {
+        const current = await this.getResponse(threadResponseId);
+        if (current?.answerDetail?.queryHistoryId === native.historyId)
+          return current;
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      }
+      // Only the current HUMAN's disclosed, frozen result enters the original
+      // AI service. No credential is retained and no background SQL is run.
+      const response = await this.wrenAIAdaptor.createTextBasedAnswer({
+        query: claimed.question,
+        sql: claimed.sql,
+        sqlData: native.data,
+        threadId: claimed.threadId.toString(),
+        configurations: { language: configurations.language },
+      });
+      if (typeof response?.queryId !== 'string' || !response.queryId.trim())
+        throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+      const accepted = await this.threadResponseRepository.claimNativeAnswer(
+        claimed,
+        { ...claimed.answerDetail, queryId: response.queryId },
+      );
+      if (!accepted) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      this.textBasedAnswerBackgroundTracker.addTask(accepted);
+      return accepted;
     }
 
     // update with initial status

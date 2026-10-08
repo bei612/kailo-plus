@@ -89,6 +89,7 @@ describe('native instance identity boundary', () => {
     '/api/platform-query-reference',
     '/api/v1/run_sql',
     '/api/ask_task/streaming',
+    '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
     '/_next/static/native.js',
   ])('does not accept an anonymous native request to %s', async (path) => {
@@ -97,28 +98,35 @@ describe('native instance identity boundary', () => {
     expect(response.headers.get('x-middleware-next')).toBeNull();
   });
 
-  it.each(['/api/graphql', '/api/platform-query-reference'])('verifies signed entitlement through a real JWKS endpoint and strips credentials for %s', async (path) => {
-    const signed = await token();
-    const response = await middleware(
-      request(path, `Bearer ${signed}`, {
-        method: 'POST',
-        headers: {
-          origin: settings.publicOrigin,
-          cookie: 'native=synthetic',
-          'x-kailo-native-human-token': 'forged',
-        },
-      }),
-    );
-    expect(response.headers.get('x-middleware-next')).toBe('1');
-    expect(
-      response.headers.get('x-middleware-request-authorization'),
-    ).toBeNull();
-    expect(response.headers.get('x-middleware-request-cookie')).toBeNull();
-    expect(
-      response.headers.get('x-middleware-request-x-kailo-native-human-token'),
-    ).toBe(signed);
-    expect(response.headers.get('cache-control')).toContain('no-store');
-  });
+  it.each([
+    '/api/graphql',
+    '/api/platform-query-reference',
+    '/api/ask_task/streaming_answer',
+  ])(
+    'verifies signed entitlement through a real JWKS endpoint and strips credentials for %s',
+    async (path) => {
+      const signed = await token();
+      const response = await middleware(
+        request(path, `Bearer ${signed}`, {
+          method: 'POST',
+          headers: {
+            origin: settings.publicOrigin,
+            cookie: 'native=synthetic',
+            'x-kailo-native-human-token': 'forged',
+          },
+        }),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      expect(
+        response.headers.get('x-middleware-request-authorization'),
+      ).toBeNull();
+      expect(response.headers.get('x-middleware-request-cookie')).toBeNull();
+      expect(
+        response.headers.get('x-middleware-request-x-kailo-native-human-token'),
+      ).toBe(signed);
+      expect(response.headers.get('cache-control')).toContain('no-store');
+    },
+  );
 
   it('does not forward the HUMAN token to unrelated native routes', async () => {
     const response = await middleware(

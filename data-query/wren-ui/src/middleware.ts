@@ -197,12 +197,22 @@ export async function middleware(request: NextRequest) {
   headers.delete('cookie');
   headers.delete('x-kailo-native-human-token');
   headers.delete('x-kailo-native-identity-scope');
-  if (['/api/graphql', '/api/config'].includes(request.nextUrl.pathname)) {
+  if (
+    ['/api/graphql', '/api/config', '/api/ask_task/streaming_answer'].includes(
+      request.nextUrl.pathname,
+    )
+  ) {
     headers.set('x-kailo-native-identity-scope', identityScope);
   }
   // Private Next hop only; Core independently verifies this original signed
   // token. Never synthesize a trusted subject/issuer from browser headers.
-  if (['/api/graphql', '/api/platform-query-reference'].includes(request.nextUrl.pathname))
+  if (
+    [
+      '/api/graphql',
+      '/api/platform-query-reference',
+      '/api/ask_task/streaming_answer',
+    ].includes(request.nextUrl.pathname)
+  )
     headers.set('x-kailo-native-human-token', token);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'private, no-store');

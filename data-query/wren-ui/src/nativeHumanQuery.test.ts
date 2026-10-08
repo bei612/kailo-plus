@@ -658,6 +658,100 @@ describe('native saved-view HUMAN query consumer', () => {
       else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
     }
   });
+
+  it.each(['completed', 'unknown', 'failed', 'malformed'])(
+    'original text-answer resolver consumes %s HUMAN SQL evidence without background SQL',
+    async (state) => {
+      const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      const expected: any = {
+        id: 91,
+        threadId: 81,
+        question: 'original question',
+        sql: statement,
+      };
+      const value: any = {
+        ...receipt,
+        nativeType: 'wren.api_history',
+        nativeId: 'original-query-history',
+        terminalStatus: 'COMPLETED',
+        data: { columns: [], data: [] },
+      };
+      if (state === 'unknown') {
+        delete value.terminalStatus;
+        value.submission = { ...value.submission, dispatchState: 'UNKNOWN' };
+      }
+      if (state === 'failed') value.terminalStatus = 'FAILED';
+      if (state === 'malformed') value.data = {};
+      const sqlPreview = jest
+        .spyOn(ModelResolver.prototype, 'previewSql')
+        .mockResolvedValue(value);
+      const ctx: any = {
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({
+            id: config.projectId,
+            language: 'EN',
+          })),
+        },
+        askingService: {
+          getResponse: jest.fn(async () => expected),
+          generateThreadResponseAnswer: jest.fn(async () => expected),
+        },
+      };
+      try {
+        const invoke = () =>
+          new AskingResolver().generateThreadResponseAnswer(
+            null,
+            {
+              responseId: expected.id,
+              idempotencyKey: key,
+              idempotencyScope: 'a'.repeat(64),
+            },
+            ctx,
+          );
+        if (state === 'malformed')
+          await expect(invoke()).rejects.toThrow(
+            'QUERY_TERMINAL_EVIDENCE_REQUIRED',
+          );
+        else
+          expect(await invoke()).toEqual({ ...expected, queryReceipt: value });
+        expect(sqlPreview).toHaveBeenCalledWith(
+          null,
+          {
+            data: {
+              sql: statement,
+              projectId: String(config.projectId),
+              limit: 500,
+              idempotencyKey: key,
+              idempotencyScope: 'a'.repeat(64),
+            },
+          },
+          ctx,
+        );
+        if (state === 'completed')
+          expect(
+            ctx.askingService.generateThreadResponseAnswer,
+          ).toHaveBeenCalledWith(expected.id, {
+            language: 'English',
+            nativeQuery: {
+              historyId: value.nativeId,
+              expected,
+              data: value.data,
+            },
+          });
+        else
+          expect(
+            ctx.askingService.generateThreadResponseAnswer,
+          ).not.toHaveBeenCalled();
+      } finally {
+        sqlPreview.mockRestore();
+        if (original === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+      }
+    },
+  );
   it('submits only a saved reference through the original action and never treats dispatch as data', async () => {
     calls
       .mockResolvedValueOnce(null)

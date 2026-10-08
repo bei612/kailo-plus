@@ -3611,3 +3611,124 @@ original-page screenshot parity remain unaccepted. Global `check.sh --full`,
 Desktop and Mobile acceptance were not run by this increment. Passing the
 original GraphQL document is not browser screenshot or full-feature parity
 evidence.
+
+## 2026-10-08 Original text-answer SQL result and native stream consumers
+
+The implementation continues the fixed official source at
+`c5f02a0391c87420dba78632dcd86073710deb72`, verified with `git show` / `git grep`:
+`wren-ui/src/apollo/server/services/askingService.ts::generateThreadResponseAnswer`,
+`wren-ui/src/apollo/server/backgrounds/textBasedAnswerBackgroundTracker.ts::TextBasedAnswerBackgroundTracker.start`,
+`wren-ui/src/pages/api/ask_task/streaming_answer.ts::handler`,
+`wren-ai-service/src/pipelines/generation/sql_answer.py::SQLAnswer.get_streaming_results`
+and `SQLAnswer.run`, and
+`wren-ai-service/src/web/v1/services/sql_answer.py::SqlAnswerService.get_sql_answer_streaming_result`.
+These are original consumers, not replacement answer pages or a new executor.
+
+The four implementation conclusions are:
+
+1. Authority: `.design/08` §6 / DD-98 require current HUMAN admission and
+   authorized result consumption. The bound original answer mutation now calls
+   the existing `ModelResolver.previewSql` / `NativeHumanQuery` chain with the
+   original SQL and original preview limit. Only its verified successful
+   `wren.api_history` receipt and disclosed data enter the original AI
+   `createTextBasedAnswer`. The background no longer reruns SQL against the
+   newest deployment. The original query history remains the SQL/result
+   authority; only its reference is attached to the original thread response.
+2. Impact: original GraphQL mutation/schema/generated TypeScript, original Home
+   answer caller, repository, background tracker and SSE consumer are changed
+   together. The original page/layout/buttons/Markdown remain; the existing
+   bilingual query-receipt wording is reused for required pending/refusal
+   feedback. Middleware forwards only its already verified current HUMAN token
+   and identity partition to the original stream route. Nested answer bodies
+   and each streamed content exposure reuse the accepted same-AE API History
+   reader. No HUMAN token is stored in the thread, sent to Python or reused as
+   a SERVICE identity. Standalone unbound native answers keep their original
+   execution path and persistence; both modes consume the same native SSE
+   completion receipt.
+3. Side effects: the original repository CAS binds response/thread/question/
+   SQL/previous answer JSON before the non-idempotent AI create and before final
+   answer persistence. Concurrent replacement cannot overwrite newer native
+   intent. Reentry with the same SQL history rejoins the original AI task; a
+   missing create acknowledgement never creates another AI task. A query
+   receipt, source authorization or stored intent changing refuses result
+   exposure, without rewriting an already successful SQL terminal into failure.
+   The browser retains only an opaque intent key in its existing session
+   partition, never SQL, result body or credentials.
+4. Boundaries: TCP close, queue timeout, unknown native status and literal
+   model-produced `<DONE>` are not completion. The original Python producer
+   emits its internal completion marker only after its provider pipeline
+   returns normally; its original SSE service carries the actual query ID.
+   The Node consumer accepts that exact ID, rechecks current disclosure and
+   CAS-writes the original FINISHED status. Missing/expired AI task lookup is
+   now HTTP 404, not invented FAILED. The existing UNKNOWN/PRECONDITION/DENIED
+   handling follows `06` §4; no new platform state or task authority is added.
+
+Verification reused `kailo-wren-query-sdk-itgs2n`, its original dependencies and
+cache, with 4 CPU / 4 GiB / no additional swap. Existing processes, host
+pressure, cgroup limits and Data space were checked; Data had 641 MiB available
+before the final narrow run. No database, image or dependency installation was
+started. Original GraphQL Code Generator used the original `codegen.yaml`
+against `print(typeDefs)` from the actual server SDL through the existing
+`ts-node` / `@graphql-codegen/cli`; it exited 0 without fetching a remote schema.
+Only the original `__types__.ts` and `home.generated.ts` outputs are changed.
+Their original generator formatting is preserved, with only +3 and +12/-3
+lines respectively. Applying the handwritten Prettier policy to those raw
+generated outputs initially reported two formatting failures and would have
+caused unrelated whole-file churn; rerunning the same original offline
+generator restored its output, exit 0. The final 14 handwritten TS/TSX inputs
+passed original Prettier, exit 0; raw generated outputs are not claimed to pass
+that distinct formatting policy. `git diff --check` exited 0.
+
+Actual original commands in that SDK were:
+
+```sh
+./node_modules/.bin/jest src/nativeProjectScope.test.ts src/nativeHumanQuery.test.ts src/nativeTextAnswer.test.ts src/middleware.test.ts src/nativeAskingView.test.ts src/nativeTaskOwnership.test.ts --runInBand
+./node_modules/.bin/jest src/nativeTextAnswer.test.ts --runInBand
+./node_modules/.bin/tsc --noEmit --incremental false
+PYTHONDONTWRITEBYTECODE=1 python3 data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py
+./node_modules/.bin/jest src/nativeTextAnswer.test.ts --runInBand --testNamePattern='foreign-id|before each content exposure'
+```
+
+The first candidate had 3 suites pass / 1 fail, 240 passed / 7 failed: the new
+stream check incorrectly spied an instance arrow property on the prototype.
+The actual `NativeHumanQuery.readHistory` boundary replaced that invalid test
+setup; the subsequent six suites passed 314/314, zero skips, exit 0 (15.2 s).
+After consolidating the standalone and bound stream consumer and adding the
+standalone/pre-authorization checks, the actual stream suite passed 9/9, exit
+0 (6.537 s), and whole-UI TypeScript exited 0. The six-suite result precedes
+this final stream-only revision; it is not claimed as a fresh all-suite run.
+
+Deliberately removing per-content authorization and the native query-ID
+comparison only in the private SDK copy caused 2 failed / 7 explicitly
+name-filtered skips, exit 1 (6.229 s): revoked content leaked and a foreign task
+receipt wrote FINISHED. Deliberately yielding completion on Python queue
+timeout caused 1 failed / 4 passed, exit 1 (0.011 s), exposing a fabricated
+`done` event. Both changes were restored using reverse patches and compared
+against the formal source with `cmp`, exit 0. The restored stream suite passed
+9/9, exit 0 (6.149 s); the actual original Python producer/service consumers
+passed 5/5, exit 0 (0.008 s). Python checks substitute dependency boundaries,
+not the production producer/service methods; they are not live model or
+AgentGateway acceptance. Repository CAS service consumers pass, but no real
+PostgreSQL CAS/concurrency run was performed in this increment.
+
+Logs under the existing private SDK directory
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`
+are `native-text-answer-codegen.log`, `native-text-answer-positive.log`,
+`native-text-answer-codegen-final.log`, `native-text-answer-format-final.log`,
+`native-text-answer-final-positive.log`, `native-text-answer-stream-final.log`,
+`native-text-answer-tsc-final.log` (empty successful compiler output),
+`native-text-answer-negative.log`, `native-text-answer-python-negative.log`,
+`native-text-answer-stream-restored.log` and
+`native-text-answer-python-restored.log`.
+
+No business runtime, ACTIVE ApplicationBinding, iframe, deployment or package
+was produced or accepted. Trusted AI SERVICE SQL callback admission remains
+unclosed: existing SERVICE source-read grants do not authorize native SQL.
+Original AI create has no lookup-by-intent endpoint, so an acknowledgement
+lost before its ID is persisted remains pending/unknown and is not silently
+retried; its production reconciliation is still unaccepted. Complete model
+usage/quota/AgentGateway runtime evidence, ordinary aggregate/function
+provenance, the separate two Java changes, full original-page screenshots,
+Chinese/English completeness, Desktop/Mobile and global `check.sh --full`
+were not accepted by this batch. These limits do not remove those capabilities
+from the delivery goal or claim the full Wren integration complete.

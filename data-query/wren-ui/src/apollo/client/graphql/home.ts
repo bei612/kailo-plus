@@ -358,9 +358,18 @@ export const GENERATE_THREAD_RECOMMENDATION_QUESTIONS = gql`
 `;
 
 export const GENERATE_THREAD_RESPONSE_ANSWER = gql`
-  mutation GenerateThreadResponseAnswer($responseId: Int!) {
-    generateThreadResponseAnswer(responseId: $responseId) {
+  mutation GenerateThreadResponseAnswer(
+    $responseId: Int!
+    $idempotencyKey: String
+    $idempotencyScope: String
+  ) {
+    generateThreadResponseAnswer(
+      responseId: $responseId
+      idempotencyKey: $idempotencyKey
+      idempotencyScope: $idempotencyScope
+    ) {
       ...CommonResponse
+      queryReceipt
     }
   }
 

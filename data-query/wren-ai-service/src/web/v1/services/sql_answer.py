@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import json
 from typing import Dict, Literal, Optional
 
 from cachetools import TTLCache
 from langfuse.decorators import observe
 from pydantic import BaseModel
+from fastapi import HTTPException
 
 from src.core.pipeline import BasicPipeline
 from src.utils import trace_metadata
@@ -131,16 +133,9 @@ class SqlAnswerService:
         if (
             result := self._sql_answer_results.get(sql_answer_result_request.query_id)
         ) is None:
-            logger.exception(
-                f"sql answer pipeline - OTHERS: {sql_answer_result_request.query_id} is not found"
-            )
-            return SqlAnswerResultResponse(
-                status="failed",
-                error=SqlAnswerResultResponse.SqlAnswerError(
-                    code="OTHERS",
-                    message=f"{sql_answer_result_request.query_id} is not found",
-                ),
-            )
+            # Cache expiry/restart proves no native terminal outcome. The
+            # original caller must retain its task id, not manufacture failure.
+            raise HTTPException(status_code=404, detail="SQL answer task unavailable")
 
         return result
 
@@ -155,6 +150,11 @@ class SqlAnswerService:
             async for chunk in self._pipelines["sql_answer"].get_streaming_results(
                 query_id
             ):
+                if chunk is None:
+                    # Only the original native generator completion produces
+                    # this receipt. Timeout/HTTP close never emits done.
+                    yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
+                    return
                 event = SSEEvent(
                     data=SSEEvent.SSEEventMessage(message=chunk),
                 )

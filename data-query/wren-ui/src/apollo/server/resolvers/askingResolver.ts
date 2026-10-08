@@ -27,13 +27,16 @@ import {
   getSampleAskQuestions,
 } from '../data';
 import { TelemetryEvent, WrenService } from '../telemetry/telemetry';
-import { TrackedAskingResult } from '../services';
+import { TrackedAskingResult, ThreadResponseAnswerStatus } from '../services';
 import { View } from '../repositories/viewRepository';
 import { ModelResolver } from './modelResolver';
 import {
   nativePreviewScope,
   resolveNativeResource,
 } from '../services/nativeHumanQuery';
+import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
+import { queryReceiptState } from '@/utils/queryReceipt';
+import { ApiHistoryResolver } from './apiHistoryResolver';
 import {
   canonical,
   loadQueryDelivery,
@@ -657,12 +660,68 @@ export class AskingResolver {
 
   public async generateThreadResponseAnswer(
     _root: any,
-    args: { responseId: number },
+    args: {
+      responseId: number;
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    },
     ctx: IContext,
-  ): Promise<ThreadResponse> {
+  ): Promise<ThreadResponse & { queryReceipt?: any }> {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId } = args;
     const askingService = ctx.askingService;
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      const expected = await askingService.getResponse(responseId);
+      if (!expected?.sql)
+        throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
+      if (
+        expected.answerDetail?.queryHistoryId &&
+        [
+          ThreadResponseAnswerStatus.PREPROCESSING,
+          ThreadResponseAnswerStatus.STREAMING,
+        ].includes(expected.answerDetail.status as ThreadResponseAnswerStatus)
+      ) {
+        const history = await ctx.apiHistoryRepository.findOneBy({
+          id: expected.answerDetail.queryHistoryId,
+        });
+        if (!history || history.governanceKey !== args.idempotencyKey)
+          throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+      }
+      const receipt = await new ModelResolver().previewSql(
+        null,
+        {
+          data: {
+            sql: expected.sql,
+            projectId: String(project.id),
+            limit: DEFAULT_PREVIEW_LIMIT,
+            idempotencyKey: args.idempotencyKey,
+            idempotencyScope: args.idempotencyScope,
+          },
+        },
+        ctx,
+      );
+      const state = queryReceiptState(receipt);
+      if (!state.completed) return { ...expected, queryReceipt: receipt };
+      if (
+        receipt.nativeType !== 'wren.api_history' ||
+        typeof receipt.nativeId !== 'string' ||
+        !Array.isArray(receipt.data?.columns) ||
+        !Array.isArray(receipt.data?.data)
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+      const response = await askingService.generateThreadResponseAnswer(
+        responseId,
+        {
+          language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+          nativeQuery: {
+            historyId: receipt.nativeId,
+            expected,
+            data: receipt.data,
+          },
+        },
+      );
+      return { ...response, queryReceipt: receipt };
+    }
     return askingService.generateThreadResponseAnswer(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
@@ -859,8 +918,41 @@ export class AskingResolver {
         : view.name;
       return { ...view, displayName };
     },
-    answerDetail: (parent: ThreadResponse, _args: any, _ctx: IContext) => {
+    answerDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent?.answerDetail) return null;
+      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+        if (!parent.answerDetail.queryHistoryId) {
+          if (parent.answerDetail.queryId || parent.answerDetail.content)
+            throw new NativeQueryRefusal(
+              503,
+              'QUERY_TERMINAL_EVIDENCE_REQUIRED',
+            );
+        } else {
+          const history = await ctx.apiHistoryRepository.findOneBy({
+            id: parent.answerDetail.queryHistoryId,
+          });
+          if (!history || history.requestPayload?.sql !== parent.sql)
+            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+          // Original GraphQL answer bodies and the stream share the already
+          // implemented same-AE/current-HUMAN history disclosure consumer.
+          await new ApiHistoryResolver()
+            .getApiHistoryNestedResolver()
+            .responsePayload(history, {}, ctx);
+          const current = await ctx.askingService.getResponse(parent.id);
+          const intent = (value: ThreadResponse) => ({
+            id: value.id,
+            threadId: value.threadId,
+            question: value.question,
+            sql: value.sql,
+            answerDetail: value.answerDetail,
+          });
+          if (
+            !current ||
+            canonical(intent(current)) !== canonical(intent(parent))
+          )
+            throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+        }
+      }
 
       const { content, ...rest } = parent.answerDetail;
 

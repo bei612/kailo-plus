@@ -23,6 +23,9 @@ export interface ThreadResponseBreakdownDetail {
 
 export interface ThreadResponseAnswerDetail {
   queryId?: string;
+  // Original Wren query history consumed by this native AI answer. This is
+  // evidence linking the two original tasks, not a second query authority.
+  queryHistoryId?: string;
   status: string;
   error?: object;
   numRowsUsedInLLM?: number;
@@ -77,6 +80,10 @@ export interface ThreadResponse {
 
 export interface IThreadResponseRepository
   extends IBasicRepository<ThreadResponse> {
+  claimNativeAnswer(
+    expected: ThreadResponse,
+    answerDetail: ThreadResponseAnswerDetail,
+  ): Promise<ThreadResponse | null>;
   getResponsesWithThread(
     threadId: number,
     limit?: number,
@@ -96,6 +103,25 @@ export class ThreadResponseRepository
 
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'thread_response' });
+  }
+
+  public async claimNativeAnswer(
+    expected: ThreadResponse,
+    answerDetail: ThreadResponseAnswerDetail,
+  ) {
+    const query = this.knex(this.tableName).where({
+      id: expected.id,
+      thread_id: expected.threadId,
+      question: expected.question,
+      sql: expected.sql,
+    });
+    if (expected.answerDetail === null || expected.answerDetail === undefined)
+      query.whereNull('answer_detail');
+    else query.where('answer_detail', JSON.stringify(expected.answerDetail));
+    const [row] = await query
+      .update({ answer_detail: JSON.stringify(answerDetail) })
+      .returning('*');
+    return row ? this.transformFromDBData(row) : null;
   }
 
   public async getResponsesWithThread(threadId: number, limit?: number) {
