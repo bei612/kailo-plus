@@ -191,6 +191,12 @@ class NativeEntrypointTests(unittest.TestCase):
                "KNOWLEDGE_ADAPTER_BAO_ROLE": "adapter-reader", "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "2",
                "KNOWLEDGE_BAO_BOOTSTRAP_FILE": str(operator), "KNOWLEDGE_BAO_TOKEN_TTL": "60s", "KNOWLEDGE_BAO_WRAP_TTL": "60s"}
         policy = ''.join(f'path "kv/data/{key}" {{ capabilities = ["read"] }}\n' for key in ("native", "pep"))
+        # Resume the actual adapter-reader consumer after a process died while
+        # staging any of its three original Agent bootstrap inputs.
+        for name in ("adapter-role-id", "adapter-wrapped-secret-id", "adapter-agent.hcl"):
+            pending = bootstrap / (name + ".pending")
+            pending.write_text("interrupted private delivery")
+            pending.chmod(0o600)
 
         def response(path):
             method, _, headers, _ = received[-1]
@@ -225,6 +231,7 @@ class NativeEntrypointTests(unittest.TestCase):
             self.assertNotIn('synthetic-one-use-wrap', generated + output.getvalue())
             self.assertEqual(list(outputs.iterdir()), [])
             self.assertEqual((bootstrap/"adapter-agent.hcl").stat().st_mode & 0o777, 0o600)
+            self.assertEqual(list(bootstrap.glob("*.pending")), [])
             count = len(received)
             for failure in ("foreign-tenant", "outside-output", "bootstrap-mounted", "jwks-drift"):
                 original = json.loads(json.dumps(config))
@@ -624,6 +631,50 @@ class NativeProvisioningTests(unittest.TestCase):
             with self.assertRaises(provision.ConfigurationError):
                 provision.write_private(link, "not-delivered")
             self.assertEqual(target.read_text(), "second")
+
+    def test_interrupted_delivery_preserves_original_and_recovers_its_private_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "delivery"
+            provision.write_private(target, "original")
+            with patch("provision.os.replace", side_effect=OSError("interrupted replacement")):
+                with self.assertRaises(OSError): provision.write_private(target, "new")
+            self.assertEqual(target.read_text(), "original")
+            pending = target.with_name("delivery.pending")
+            self.assertFalse(pending.exists())
+            pending.write_text("crashed writer")
+            pending.chmod(0o600)
+            provision.write_private(target, "recovered")
+            self.assertEqual(target.read_text(), "recovered")
+            self.assertFalse(pending.exists())
+
+    def test_delivery_refuses_unsafe_staging_and_a_concurrent_directory_writer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "delivery"
+            provision.write_private(target, "original")
+            pending = target.with_name("delivery.pending")
+            pending.symlink_to(target)
+            with self.assertRaises(provision.ConfigurationError): provision.write_private(target, "refused")
+            self.assertTrue(pending.is_symlink())
+            pending.unlink()
+            pending.write_text("not owner private")
+            pending.chmod(0o644)
+            with self.assertRaises(provision.ConfigurationError): provision.write_private(target, "refused")
+            self.assertEqual(pending.read_text(), "not owner private")
+            pending.chmod(0o600)
+            other = Path(directory) / "other"
+            os.link(pending, other)
+            with self.assertRaises(provision.ConfigurationError): provision.write_private(target, "refused")
+            other.unlink()
+            lock = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                provision.fcntl.flock(lock, provision.fcntl.LOCK_EX | provision.fcntl.LOCK_NB)
+                with self.assertRaises(provision.ConfigurationError): provision.write_private(target, "refused")
+                self.assertEqual(pending.read_text(), "not owner private")
+            finally:
+                os.close(lock)
+            self.assertEqual(target.read_text(), "original")
+            provision.write_private(target, "recovered")
+            self.assertEqual(target.read_text(), "recovered")
 
     def test_operator_secret_refuses_world_or_group_permissions(self):
         with tempfile.TemporaryDirectory() as directory:

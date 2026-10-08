@@ -7,6 +7,7 @@ are verified, not reset. OpenBao Agent, not this program, renders service files.
 """
 
 import json
+import fcntl
 import hashlib
 import hmac
 import os
@@ -132,16 +133,42 @@ def native_client(env, timeout):
 
 def write_private(path, content):
     # Delivery inputs are replaceable operation artifacts, not a key authority.
-    # Refuse symlink substitution; atomic replacement leaves no partial file.
-    if path.is_symlink():
-        raise ConfigurationError("delivery file must not be a symlink")
+    # Lock the existing private directory, not a replaced inode. A crashed
+    # writer releases this lock; only its owner-private staging file is retired.
     temporary = path.with_name(path.name + ".pending")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as stream:
-        stream.write(content)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    staged = False
+    try:
+        try:
+            fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ConfigurationError("delivery directory has an active writer; retry the original delivery") from None
+        if path.is_symlink():
+            raise ConfigurationError("delivery file must not be a symlink")
+        try:
+            pending = temporary.lstat()
+        except FileNotFoundError:
+            pending = None
+        if pending is not None:
+            if (not stat.S_ISREG(pending.st_mode) or stat.S_IMODE(pending.st_mode) != 0o600
+                    or pending.st_uid != os.geteuid() or pending.st_nlink != 1):
+                raise ConfigurationError("delivery staging file is not an owner-private regular file")
+            temporary.unlink()
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        staged = True
+        with os.fdopen(fd, "w") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        staged = False
+        os.fsync(directory)
+    finally:
+        try:
+            if staged:
+                temporary.unlink()
+        finally:
+            os.close(directory)
 
 
 def model_input(env):

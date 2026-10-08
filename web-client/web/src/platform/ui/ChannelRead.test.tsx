@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ReadMarkRequest } from "@client-kit/contracts";
+import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
 import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   stream: vi.fn(),
   history: vi.fn(),
   reaction: vi.fn(),
+  authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),
   reason: (value: string) => value,
 }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
@@ -39,11 +40,15 @@ vi.mock("@/platform/bff-client", async () => ({
   BffError: (await import("@client-kit/platform/transport")).BffError,
   bff: {
     members: () => state.members(),
+    conversationParticipants:async()=>({items:[],nextCursor:null}),
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
     profile: async () => ({pubkey:"mine"}),
     customEmoji: async () => ({events:[],mediaPaths:{}}),
     workspaceMessages: (...args: unknown[]) => state.history(...args),
+    conversationMessages:(...args:unknown[])=>state.history(...args),
+    messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),
+    conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
@@ -83,7 +88,7 @@ async function flush() {
       await vi.advanceTimersByTimeAsync(10);
     });
 }
-async function renderChannel(props: { archived?: boolean; metadataPending?: boolean } = {}) {
+async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView } = {}) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
@@ -232,6 +237,12 @@ beforeEach(() => {
   });
   vi.useFakeTimers();
   vi.clearAllMocks();
+  vi.stubGlobal("Image",function(){
+    const image=document.createElement("img");let source="";
+    Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
+      source=value;queueMicrotask(()=>image.dispatchEvent(new Event("load")));
+    }}});return image;
+  });
   localStorage.clear();
   clearAllDrafts();
   setThreadViewMode("split");
@@ -246,6 +257,8 @@ beforeEach(() => {
   state.history.mockResolvedValue({events:windowEvents([event(10)])});
   state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
   state.reaction.mockResolvedValue({eventId:"reaction",operationId:"operation"});
+  const author={pubkey:"other",eventId:"profile",displayName:"Original author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}};
+  state.authorProfile.mockResolvedValue(author);state.dmAuthorProfile.mockResolvedValue(author);
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -654,4 +667,35 @@ it("failed readback or revoked scope cannot turn explicit retry into a write", a
   await flush();
   expect(state.mark).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("PERMISSION_DENIED");
+});
+
+it("restores the original channel avatar without adding one to continuation rows and withdraws media on interruption",async()=>{
+  const avatarUrl="https://community.example/media/channel-author.png",mediaPath="/api/v1/workspaces/workspace-a/media/channel-author";
+  state.authorProfile.mockResolvedValue({pubkey:"other",eventId:"profile",displayName:"Original author",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
+  state.mark.mockResolvedValue({version:4});
+  await open();
+  const image=()=>host.querySelector('[data-testid="message-avatar-image"]');
+  expect(image()?.getAttribute("src")).toBe(mediaPath);
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace-a","event-10");
+  expect(state.dmAuthorProfile).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"event",event:event(20)}));await flush();
+  expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
+  expect(state.authorProfile).not.toHaveBeenCalledWith("workspace-a","event-20");
+  expect(state.publish).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"interrupted"}));await flush();
+  expect(image()).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+});
+
+it("loads the original DM channel avatar through its own conversation instead of the workspace author route",async()=>{
+  const avatarUrl="https://community.example/media/dm-channel-author.png",mediaPath="/api/v1/conversations/private-binding/media/author";
+  state.dmAuthorProfile.mockResolvedValue({pubkey:"other",eventId:"profile",displayName:"Original author",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
+  state.mark.mockResolvedValue({version:4});
+  await renderChannel({conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ItemState.Active,version:1,operationId:"op"}});
+  await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([event(10)])});state.receive!({type:"live"});});await flush();
+  expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding","event-10");
+  expect(state.authorProfile).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="message-avatar-image"]')?.getAttribute("src")).toBe(mediaPath);
+  expect(state.publish).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"closed",reason:"binding-not-active"}));await flush();
+  expect(host.querySelector("img")).toBeNull();
 });

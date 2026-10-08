@@ -1141,3 +1141,84 @@ browser screenshot, cross-site cookie or signed Windows acceptance. Desktop
 native sessions and all complete component business flows remain unverified by
 this increment. Web/Desktop host frame-src and shared content routing must ship
 with the service configuration; adding a parent origin alone grants no access.
+
+## Original Agent delivery crash recovery (2026-10-08)
+
+The existing `fork/deploy/provision.py::adapter_reader` writes its original
+AppRole ID, single-use wrapped SecretID and Agent HCL through `write_private`.
+The old writer used one fixed `.pending` file with `O_EXCL`; process death before
+replacement left that file behind and every subsequent operator delivery failed
+with `FileExistsError`, even with correct, unchanged binding inputs. The same
+writer is also consumed by the existing native/model delivery, not a new secret
+store or component lifecycle.
+
+Four-step impact and boundaries:
+
+1. Authority remains DD-70/71/93 and the existing private Agent delivery contract.
+   The reader still resolves existing namespace, KV, role and fixed SecretRef
+   versions; it does not create platform identities, resources, bindings or
+   native business credentials. Fixed OpenBao
+   `735723da5628148f232497a48a35a137b6512103`,
+   `internal/command/agent.go::AgentCommand.Run` (template namespace setup at
+   lines 305–310, template server setup at line 692), was rechecked read-only:
+   auto-auth namespace reaches the template consumer. No namespace workaround
+   or shared root credential was added to the adapter.
+2. All `write_private` call sites were inspected. Only that original writer and
+   its existing post-implementation checks change; there is no contract, schema,
+   migration, Workflow, page, API or four-language generated-type change. Linux
+   is already the original deployment host. Web/Desktop/Mobile and the
+   components' independent databases and entrances are unaffected.
+3. A nonblocking lock on the existing directory serializes this writer across
+   atomic replacements. A concurrent writer refuses without altering files;
+   process death releases the OS lock. Recovery removes only the exact staging
+   name when it is a single-link, current-UID, mode-0600 regular file. Symlinks,
+   hardlinks and nonprivate staging files refuse and remain untouched. A failed
+   write removes its own stage and preserves the old delivered file; successful
+   replacement synchronizes both file and directory. No secret value is logged.
+4. A crash residue converges on the next invocation of the existing delivery,
+   before writing that original input; no queue, retry daemon, new authorization
+   or persistent recovery state is introduced. Unsafe residue remains an
+   explicit operator configuration failure, not a successful startup. Remote
+   creation results, native side effects, UNKNOWN executions and receiver-owned
+   synchronization state are unchanged.
+
+Actual verification reused the existing `kailo-agent-receipt-xvkujx` SDK,
+uid/gid 1000, actual cgroup `cpu.max=400000 100000`, memory and memory+swap
+8 GiB, and its original Data-backed candidate/cache. The only two Python source
+files were copied; no dependencies, complete tree or image were rebuilt.
+Before execution, MemAvailable was 32,590,396 KiB, memory PSI avg10/60/300 were
+zero, and existing build processes were checked. Data had approximately
+294 MiB available.
+
+In the original `knowledge/fork/deploy` input, the actual command was
+`python3 -m unittest -v test_native_entrypoint`:
+
+- `knowledge-adapter-reader-recovery-final.log`: exit 0, 29 tests, 0.955 s.
+  The real `adapter_reader` runs against its existing isolated native management
+  HTTP fixture with all three bootstrap `.pending` files present, then consumes
+  their recovered original outputs. Additional checks exercise failed atomic
+  replacement, unsafe staging, hardlinks and a held directory lock.
+- `knowledge-adapter-reader-recovery-mutation.log`: private candidate removed
+  the real stale-stage unlink. Both the actual `adapter_reader` and interrupted
+  delivery check failed with `FileExistsError`; exit 1, two errors. The formal
+  source was not mutated.
+- `knowledge-adapter-reader-recovery-restored.log`: original source copied back
+  and both files compared byte-for-byte, then exit 0, 29 tests, 0.962 s.
+- `git diff --check` on the two source files exited 0. An initial host SHA command
+  used brace expansion under `sh` and failed to find the literal brace path;
+  rerunning with the three explicit existing paths produced the hashes below.
+
+All three original logs are under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`:
+
+| Log suffix | SHA-256 |
+|---|---|
+| `reader-recovery-final.log` | `274014c71632df25854a21ab0051d80b8561e7131720c35b7ff11d33ed36b289` |
+| `reader-recovery-mutation.log` | `4a01fa6858d4c2fa33fb3f22b3533795f9f866b026db2e21af09156bba223e5f` |
+| `reader-recovery-restored.log` | `16c85f5d600a575f4648300e616c5b2f327a531753a1230ff4f055b82632cb53` |
+
+No actual operator credentials, AppRole or native data were changed. These are
+the real provisioning consumer's isolated HTTP/filesystem checks, not live
+OpenBao auto-auth, native MCP access, component release registration, binding
+activation, full check, screenshots or deployment acceptance. Those gates remain
+separate; an adapter process or configuration alone is not an active component.

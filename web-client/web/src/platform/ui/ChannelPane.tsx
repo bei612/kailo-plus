@@ -51,7 +51,7 @@ import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
-import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
@@ -395,9 +395,11 @@ export function ChannelPane({
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
                 reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
-                renderIdentity={message.pubkey && live && !denied ? (node) => <MessageAuthorIdentity
+                renderIdentity={message.pubkey && live && !denied ? (node,kind) => <MessageAuthorIdentity
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
-                  onOpen={() => setProfileTarget(message)}>{node}</MessageAuthorIdentity> : undefined}
+                  onOpen={() => setProfileTarget(message)}>{kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
+                    target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
+                    accent={message.accent} className="shrink-0" displayName={message.author} testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
                   onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setSystemProfileTarget(null);setReplyTarget(target);} : undefined}

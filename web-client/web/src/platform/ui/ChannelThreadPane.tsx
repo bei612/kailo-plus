@@ -9,7 +9,7 @@ import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageC
 import { publishMessage } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
-import { MessageAuthorIdentity } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
@@ -87,9 +87,12 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
     renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply"
       onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
       reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
-      renderIdentity={row.message.pubkey && onOpenAuthor && !unavailable && !interrupted ? (node) => <MessageAuthorIdentity
-        target={{principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!}}
-        onOpen={() => onOpenAuthor(row.message)}>{node}</MessageAuthorIdentity> : undefined}
+      renderIdentity={row.message.pubkey && !unavailable && !interrupted ? (node,kind) => {
+        const target={principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!};
+        const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar target={target}
+          accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div> : node;
+        return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
+      } : undefined}
       renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}

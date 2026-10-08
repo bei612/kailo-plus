@@ -2166,3 +2166,51 @@ Web 仍经 BFF，Native 本机凭据/Relay 原链及 Mobile 均未改动。作�
 本批没有新版业务页面截图、部署或 Windows/Mobile 实机验收；窄验不等于全仓门禁。
 原 Inbox 筛选生产者、完整 bot profile、频道/线程其他头像消费者及全树未分类差异
 仍未全部闭合，不能据此声明所有头像、原版体验或生产目标完成。
+
+### 2026-10-08：原频道、私聊与线程真实作者头像消费者
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageRow.tsx::MessageRow` 在原 `avatarNode`
+消费 `message.avatarUrl`，保留 `relative shrink-0` 外层与 `shrink-0` Avatar。
+全树清单续核发现 Web ChannelPane/ChannelThreadPane 的 TimelineMessage 与原资料
+适配均未消费真实头像；现直接沿原 MessageRowSurface identity 槽接回既有
+MessageAuthorAvatar，不重画布局、不增加页面、按钮或业务动作。
+
+- 原样保留：原频道/私聊/线程布局、默认 md 人类头像、消息作者与相邻同作者续行
+  分组、编辑、回复、反应、富文本输入、资料弹层及原事件准入。
+- 共享迁移：继续使用既有共享 MessageRowSurface/UserAvatar，两 Web 实际消费者
+  共用已有作者读取与缓存；Native 原消费者、Mobile 原链不变。
+- 已授权治理改造：真实头像沿既有 Principal/workspace/conversation/event/签名作者
+  读取，私聊使用 conversation author 路由，不退回 workspace 资料或全局目录。
+- 缺失需恢复→已接真实消费者：频道、私聊及线程头像按原样显示；同作者续行不额外
+  生成头像或读取。线程没有可选资料打开动作时，头像读取不凭空增加该动作。
+
+四步结论（REQ-24、DD-74/75）：上游已支持原头像；影响面仅 ChannelPane、
+ChannelThreadPane 与既有 ChannelRead/ChannelThreadPane 检查四文件 `+90/-14`。
+无契约、数据库、Workflow、状态机、持久偏好或词条变化，无四侧生成。Web 仍经
+BFF；作者不符、资料或媒体读取失败沿原 helper 拒绝旧头像，不复制正文或身份权威。
+断流、绑定关闭/撤销卸载实际读取及 profile trigger；零消息无读取，并发缓存 key
+隔离 Principal/scope。只读头像不发布消息、不新建私聊、不触发审批/额度或副作用
+重试；UNKNOWN、六类错误和原失败终态不变。
+
+仍复用原 4 CPU/8 GiB SDK/cache，启动前无构建/检查进程，可用内存 33090 MiB、
+load 6.19/5.09/6.21，Data 仅余 294 MiB；只同步四个精确输入，没有安装依赖、
+整树复制、新镜像、打包、清缓存或部署。日志仍位于上述
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1`：
+
+- `channel-author-avatar-first.log`：Web `tsc --noEmit` 通过，48 passed/2 failed、
+  退出 1。两检查把原同作者线程续行误判成两头像；保留产品分组，改正 root-only
+  断言并用不同签名作者构造两头像场景；`channel-author-avatar-continuation.log`
+  线程 7 项通过、退出 0。
+- `channel-author-avatar-mutation.log`：只在私有 SDK 断开两个实际头像槽消费者，
+  新增频道、私聊、不同作者线程三检查真实失败：媒体路径为 undefined、私聊作者
+  读取 Number of calls 0，3 failed/30 skipped、退出 1。随后恢复原字节，四正式
+  输入与 SDK `cmp` 均退出 0，没有修改正式源码作破坏。
+- `channel-author-avatar-restored.log`（session 95746）：Web `tsc --noEmit` 与
+  ChannelRead 26/线程 7/ChannelPane 8/作者资料 9 项整条命令实际退出 0、50 passed。
+  原 React `act(...)` 与 linkify 初始化 warning 保留在 stderr。四路径
+  `git diff --check` 退出 0。
+
+本批没有新版业务截图、部署、完整门禁或 Windows/Mobile 实机验收；原条件/样式与
+实际消费者检查不冒充图像验收。完整 bot profile（含 agent 形状/owner/presence
+真实事实）、原 Inbox 剩余筛选生产者/消费者及全树未分类项仍未全部闭合。

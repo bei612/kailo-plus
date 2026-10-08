@@ -16,13 +16,14 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
   useBffClient: () => ({workspaceMessages: state.query}), useLocale: () => "en", useT: () => (key: string) => key,
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content: string}) => <p>{content}</p>}));
-vi.mock("@/platform/bff-client", () => ({
+vi.mock("@/platform/bff-client", async(original) => ({
+  ...await original<typeof import("@/platform/bff-client")>(),
   bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args)},
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
-vi.mock("./ChannelPane", () => ({Composer: ({disabled, onPublish}: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
+vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: ({disabled, onPublish}: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
   <button data-testid="host-send" disabled={disabled} onClick={async () => {try {await onPublish("reply", [], "original-intent", []); state.outcome = "confirmed";} catch {state.outcome = "unknown";}}}>send</button>}));
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const author = "c".repeat(64);
 const event = (id: string, content: string, tags: string[][], created_at: number) => ({id, pubkey: author, content, tags: [["h", "workspace"], ...tags], created_at, kind: 9});
@@ -41,6 +42,12 @@ async function mount() {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";
+  vi.stubGlobal("Image",function(){
+    const image=document.createElement("img");let source="";
+    Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
+      source=value;queueMicrotask(()=>image.dispatchEvent(new Event("load")));
+    }}});return image;
+  });
   Object.defineProperty(window, "matchMedia", {configurable: true, value: () => ({matches: false, addEventListener() {}, removeEventListener() {}})});
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {configurable: true, value: vi.fn()});
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {configurable: true, value: vi.fn()});
@@ -51,7 +58,7 @@ beforeEach(() => {
   query = new QueryClient({defaultOptions: {queries: {retry: false}}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();});
+afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();vi.unstubAllGlobals();});
 it("uses the admitted thread query, original panel and exact selected parent when publishing", async () => {
   await mount();
   expect(state.query).toHaveBeenCalledWith("workspace", {messageType: "STREAM", parentEventId: rootId});
@@ -95,9 +102,12 @@ it("traverses forward cursors and refuses a repeated cursor without offering an 
   expect(state.query.mock.calls[1]?.[1]).toMatchObject({before: 2, beforeId: replyId});
   expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
 });
-it("keeps thread author lookup lazy and opens only the actual admitted message author", async () => {
+it("keeps opening the actual admitted thread author separate from its restored avatar reads", async () => {
   await mount();
-  expect(state.profile).not.toHaveBeenCalled();
+  expect(state.profile).toHaveBeenCalledWith("workspace",rootId);
+  expect(state.profile).not.toHaveBeenCalledWith("workspace",replyId);
+  expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
+  expect(state.openAuthor).not.toHaveBeenCalled();
   const trigger = [...host.querySelectorAll<HTMLElement>('[role="button"][aria-label="Profile"]')].find((node) => node.textContent === "Alice")!;
   expect(trigger).toBeDefined();
   await act(async () => {trigger.dispatchEvent(new MouseEvent("mouseover", {bubbles:true})); await vi.advanceTimersByTimeAsync(600);});
@@ -108,4 +118,21 @@ it("keeps thread author lookup lazy and opens only the actual admitted message a
   await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
   await settle();
   expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+});
+
+it("renders the original thread author avatars through admitted media and removes them on interruption",async()=>{
+  const avatarUrl="https://community.example/media/thread-author.png",mediaPath="/api/v1/workspaces/workspace/media/thread-author";
+  const peer="e".repeat(64);
+  state.query.mockResolvedValue({events:[rootEvent,{...reply,pubkey:peer}]});
+  state.profile.mockImplementation(async(_scope,eventId)=>({pubkey:eventId===replyId?peer:author,eventId:"profile",displayName:"Alice",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}}));
+  await mount();
+  const avatars=[...host.querySelectorAll('[data-testid="message-avatar"]')];
+  expect(avatars).toHaveLength(2);
+  for(const avatar of avatars){
+    expect(avatar.classList.contains("h-9")).toBe(true);expect(avatar.classList.contains("w-9")).toBe(true);
+    expect(avatar.getAttribute("data-avatar-shape")).toBe("circle");expect(avatar.querySelector("img")?.getAttribute("src")).toBe(mediaPath);
+  }
+  expect(state.openAuthor).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"interrupted"}));await settle();
+  expect(host.querySelector("img")).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
 });
