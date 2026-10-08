@@ -2275,3 +2275,115 @@ load 6.19/5.09/6.21，Data 仅余 294 MiB；只同步四个精确输入，没有
 本批没有新版业务截图、部署、完整门禁或 Windows/Mobile 实机验收；原条件/样式与
 实际消费者检查不冒充图像验收。完整 bot profile（含 agent 形状/owner/presence
 真实事实）、原 Inbox 剩余筛选生产者/消费者及全树未分类项仍未全部闭合。
+
+### 2026-10-08：原线程摘要宿主媒体消费者与发送中双语状态
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx::ParticipantAvatar`
+直接使用原 UserAvatar；后者在
+`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 内对海报/动画调用 rewriteRelayUrl。
+现存 Native TimelineMessageRow/MessageThreadPanel 的真实 summary 已有 avatarUrl，
+但共源 UserAvatar 默认 resolver 为 identity，Native 的直接 re-export 和共享
+ThreadPanelSurface 两个摘要消费者没有转送宿主解析。这不是缺头像正文生产者，
+也不是需要新媒体端点；本批补回既有 rewriteRelayUrl 的实际消费链。
+
+- 原样保留：摘要 sm/h-6 尺寸、圆形/Agent 方圆形、堆叠遮罩、海报与悬停播放、
+  折叠/展开、回复计数、未读、原间距与草稿保留；不新增入口或重画布局。
+- 共享迁移：共享摘要与线程只转送既有媒体 resolver，Native 两实际 adapter 接原
+  rewriteRelayUrl；没有复制两套 UI，Web 未提供 resolver 的既有调用保持兼容。
+- 已授权治理改造：MessageRowSurface 的原 Sending… 使用已有 buzz.sending 中英
+  同源词条，保留原省略号与 pending/未分组/禁已投递操作的语义；不新增词条权威。
+- 缺失需恢复→已接实际消费者：Native 主列表摘要与线程分支摘要不再漏过原媒体
+  解析；这里没有补造 Web 参与者头像、agent owner 或 presence 事实。
+
+四步结论（REQ-24、DD-74/75）：上游支持、既有 summary/profile 已生产数据；影响
+面只有两 shared thread、MessageRowSurface、Native 两 adapter 与原两检查，七文件
+`+79/-7`。只新增可选 UI resolver 转送，公共契约、数据库、Workflow、词条与四侧
+生成均未变化。空头像/空列表无媒体读取，解析失败仍沿原 Avatar 行为，不扩大
+媒体或身份集合；scope/撤权沿原宿主链，不改变写动作、副作用、重试、六类错误
+或 UNKNOWN。Mobile 未改动；只读图片与 pending 文案不伪装业务终态。
+
+沿用原 4 CPU/8 GiB SDK/cache；开始时无编译/检查进程、容器仅 sleep，可用内存
+33457 MiB、load 2.73/3.70/4.55，Data 余 114 MiB。只同步七个精确文件及两宿主
+六个共享模块副本，没有依赖安装、整树复制、镜像/安装包构建、缓存清理或部署。
+七正式输入与 SDK、两宿主六副本共十三处 cmp 退出 0；七路径 diff 检查退出 0。
+日志仍在本章既有 `workflow-native-template.s3JDP1` 目录：
+
+- `thread-summary-first.log`：shared production 类型通过；检查夹具错用原
+  buildAnimatedAvatarUrl 参数，test 类型 TS2554，整条退出 2。改正调用后
+  `thread-summary-fixture.log` 为 13 passed/1 failed、退出 1：夹具错误假设原 depth0
+  根节点存在折叠 guide。没有给产品补假按钮，改为真实主列表/分支摘要检查。
+- `thread-summary-consumer.log`：错误从 barrel 导入 buildMainTimelineEntries，
+  13 passed/1 failed、退出 1；只改为其原文件导入，不新增产品 export。
+  `thread-summary-targeted.log`（session 19034）：test 类型及 14 项退出 0。
+- `thread-summary-avatar-locale-mutation.log`（session 82510）：仅私有 SDK 断开
+  摘要 UserAvatar resolver 并还原英文常量，两检查真实失败，2 failed/12 skipped、
+  退出 1。`thread-summary-panel-mutation.log`（session 76864）：恢复前两处后，
+  另断开 ThreadPanelSurface 摘要传送，1 failed/2 skipped、退出 1；错误均为原
+  图片地址不同于宿主解析路径。负向日志的 React act warning 保留，未屏蔽。
+- 恢复十三处原字节后，`thread-summary-restored.log`（session 72838）整条实际
+  退出 0：shared production/test、Web、Native 四个 tsc --noEmit 与 14 项均通过。
+
+本批未部署、未更新安装包、未运行全仓门禁，真实业务截图仍为零。playwright-cli
+无敏感值探测返回 require/process/readFile/fs 均 undefined，不能把 Node 文件读取
+写进其 sandbox 并声称安全登录；未新造 CDP/传密通道、改账户或注入会话。
+全树 3307 路径尚未全量语义分类，精确未分类数未统计；Web 摘要参与者头像、
+完整 bot profile、Inbox 三种筛选业务链和逐页面图像验收仍未闭合，不称 100%。
+
+### 2026-10-08 草稿详情原操作条恢复（未部署）
+
+本批仍以 Buzz `779af8886caae1317b4de962082429867ab61503` 为固定依据。
+`desktop/src/features/messages/ui/DraftDetailPane.tsx::DraftActionBar` 的详情
+操作使用 `h-8 w-8`、`size="sm"`；原列表
+`desktop/src/features/messages/ui/DraftsPanel.tsx::DraftRowActionButton` 使用
+`h-7 w-7`。共源迁移误把列表按钮复用于详情，缩小了原版详情控件。本批只
+恢复该实际缺失，不重画页面，不将未有业务生产者的 Inbox 筛选加成空入口。
+
+动手前边界与影响：
+
+- 权威：用户的原版一致性红线、既定共源迁移；上游支持，属于缺失需恢复。
+- 引用：检索确认 `DraftDetailSurface` 的真实消费者为
+  `web-client/web/src/platform/ui/InboxDrafts.tsx` 和
+  `collaboration/desktop/src/features/messages/ui/DraftDetailPane.tsx`。
+  两宿主继续共用同一个详情组件，不新增独立 Web 页面实现。
+- 副作用：不更改草稿存储、发布意图、身份、scope、API、错误分类或契约。
+  打开/发送仍消费宿主已算出的可用性；发送仍先确认，结果不明的
+  `sendIntent` 仍禁止删除，不重复执行，不将未知状态渲染为成功或失败。
+- 异常：空详情、不可打开/不可发送、孤儿提示沿既有行为；确认取消不发送，
+  确认后只调用既有回调。并发、撤权、额度和发布终态仍交给既有治理链，
+  本批不另造状态、额度、授权或对账权威，无数据格式/迁移变化。
+
+实现与分类（仅本批，不冒充全树分类完成）：
+
+- 原样保留：列表的 28px 控件、详情原正文/布局、原确认交互。
+- 共享迁移：在 `client-kit/ts/platform/src/react/draft-surfaces.tsx` 恢复
+  `DraftDetailActionButton`、`DraftDetailActionBar`，由实际
+  `DraftDetailSurface` 消费；原 32px、hover/focus 与删除色类直接来自上述
+  固定原模块。
+- 已授权治理改造：保留 `canOpen`、`canSend`、未决发布意图禁止删除及中英
+  词条，不恢复原版未经治理的执行旁路。
+- 缺失需恢复：本批恢复详情误缩小问题；完整草稿页面、Web 线程删除事实、
+  尚存文案差异和逐页截图尚未全量验收，不能据此称整页 100% 一致。
+
+两代码路径合计 `+56/-3`：上述实现及
+`client-kit/ts/platform/test/draft-surfaces.test.tsx`。实现后补原实际消费者
+检查，同时验证列表/详情尺寸、按钮顺序、真实打开/删除参数、发送确认、
+取消及结果不明禁止删除，不以 helper 自测代替调用接通。
+
+验证复用 `kailo-agent-receipt-xvkujx` 的既有 SDK/依赖与 4CPU/8GiB cgroup，
+执行前核对在途进程、CPU/内存和 Data 空间；未新镜像、安装依赖或全树复制。
+日志根为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- 首次 shared production/test 类型校验与专项 3 项通过，实际退出 0。
+- 私有副本主动将详情降回 28px 并放开未决意图删除，
+  `draft-detail-mutation.log` 实际退出 1，`2 failed / 1 passed`，分别抓到
+  原尺寸回归和 UNKNOWN 删除破坏；正式源码未改坏。
+- 恢复后 `draft-detail-restored.log`（session 87222）实际退出 0：shared
+  production/test、Web、Native 四个 `tsc --noEmit` 与专项 `3 passed`。
+  正式实现/检查与 SDK 以及 Web/Native 已装共享包共四处 `cmp` 均退出 0，
+  两代码路径 `git diff --check` 退出 0。
+
+本批未部署、未更新安装包、未运行全仓门禁。业务页面截图仍为零，仅有此前
+两张 OIDC 登录边界图，不拿旧部署证明新源码。固定全树 3307 路径尚未全部
+语义分类，准确未分类数未统计；原版全量恢复及三端实际验收仍未完成。

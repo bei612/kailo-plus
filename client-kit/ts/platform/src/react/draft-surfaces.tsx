@@ -29,6 +29,28 @@ function DraftActionButton({ children, label, disabled = false, onClick, destruc
     disabled={disabled} onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (!disabled) onClick(); }} size="icon" type="button" variant="ghost">{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
 }
 
+// DraftDetailPane uses its original 32px controls, not the 28px list controls.
+function DraftDetailActionButton({ children, label, disabled = false, onClick, destructive = false }: {
+  children: React.ReactNode; label: string; disabled?: boolean; onClick: () => void; destructive?: boolean;
+}) {
+  return <Tooltip><TooltipTrigger asChild><Button aria-label={label}
+    className={destructive ? "h-8 w-8 rounded-full p-0 text-destructive hover:text-destructive" : "h-8 w-8 rounded-full p-0"}
+    disabled={disabled} onClick={onClick} size="sm" type="button" variant="ghost">{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
+}
+
+function DraftDetailActionBar({ canOpen, canSend, canDelete, onOpen, onSend, onDelete }: {
+  canOpen: boolean; canSend: boolean; canDelete: boolean; onOpen: () => void; onSend: () => void; onDelete: () => void;
+}) {
+  const t = useUiT();
+  return <div className="absolute right-2 top-1 z-10"><div
+    className="-m-1 p-1 opacity-100 transition-opacity duration-150 ease-out sm:pointer-events-none sm:opacity-0 sm:group-hover/message:pointer-events-auto sm:group-hover/message:opacity-100 sm:group-focus-within/message:pointer-events-auto sm:group-focus-within/message:opacity-100"
+    data-testid="home-inbox-draft-action-bar"><div className="overflow-hidden rounded-full border border-border/70 bg-background/95 shadow-xs backdrop-blur-sm supports-[backdrop-filter]:bg-background/85"><div className="flex items-center gap-0.5 p-1">
+      <DraftDetailActionButton disabled={!canOpen} label={t("drafts.open")} onClick={onOpen}><Pencil className="h-4 w-4" /></DraftDetailActionButton>
+      <DraftDetailActionButton disabled={!canSend} label={t("drafts.send")} onClick={onSend}><Send className="h-4 w-4" /></DraftDetailActionButton>
+      <DraftDetailActionButton destructive disabled={!canDelete} label={t("drafts.delete")} onClick={onDelete}><Trash2 className="h-4 w-4" /></DraftDetailActionButton>
+    </div></div></div></div>;
+}
+
 export function DraftSendConfirm({ destination, onCancel, onConfirm }: { destination: string; onCancel: () => void; onConfirm: () => void }) {
   const t = useUiT();
   // Exact default AlertDialog surface used by the original SendConfirmDialog;
@@ -88,9 +110,8 @@ export function DraftDetailSurface({ item, onBack, onOpen, onSend, onDelete, ren
     <div className="-mt-13 min-h-0 flex-1 overflow-y-auto pb-8 pt-15">
       {isOrphaned ? <div className="mx-5 mb-3 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive" data-testid="home-inbox-draft-orphaned-notice"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{t("drafts.orphaned")}</span></div> : null}
       <div className="relative px-2"><article className="group/message relative z-10 mx-1 flex items-start gap-2.5 rounded-2xl px-2 py-1 transition-colors hover:bg-muted/50 focus-within:bg-muted/50">
-        <div className="absolute right-2 top-1 z-10"><div className="-m-1 p-1 opacity-100 transition-opacity duration-150 ease-out sm:pointer-events-none sm:opacity-0 sm:group-hover/message:pointer-events-auto sm:group-hover/message:opacity-100 sm:group-focus-within/message:pointer-events-auto sm:group-focus-within/message:opacity-100" data-testid="home-inbox-draft-action-bar"><div className="overflow-hidden rounded-full border border-border/70 bg-background/95 shadow-xs backdrop-blur-sm supports-[backdrop-filter]:bg-background/85"><div className="flex items-center gap-0.5 p-1">
-          <DraftActionButton disabled={!canOpen} label={t("drafts.open")} onClick={() => onOpen(entry)}><Pencil className="h-4 w-4" /></DraftActionButton><DraftActionButton disabled={!canSend} label={t("drafts.send")} onClick={() => setSendOpen(true)}><Send className="h-4 w-4" /></DraftActionButton><DraftActionButton destructive disabled={Boolean(entry.draft.sendIntent)} label={t("drafts.delete")} onClick={() => onDelete(entry.key)}><Trash2 className="h-4 w-4" /></DraftActionButton>
-        </div></div></div></div>
+        <DraftDetailActionBar canOpen={canOpen} canSend={canSend} canDelete={!entry.draft.sendIntent}
+          onOpen={() => onOpen(entry)} onSend={() => setSendOpen(true)} onDelete={() => onDelete(entry.key)} />
         <UserAvatar avatarUrl={null} className="h-9 w-9 shrink-0" displayName={t("drafts.you")} size="md" />
         <div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0"><span className="text-sm font-semibold text-foreground">{t("drafts.you")}</span><span className="text-xs font-medium text-muted-foreground">{t("drafts.draft")}</span><span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground/55">{createdAt}</span></div>
           <div className="mt-0.5 text-base leading-6 text-foreground">{renderPreview(entry.draft, "inbox-preview-markdown text-inherit leading-6")}{entry.draft.pendingImeta.length > 0 && entry.draft.content.trim() ? <p className="mt-2 text-sm text-muted-foreground">{t("drafts.attachments", { count: entry.draft.pendingImeta.length })}</p> : null}</div>

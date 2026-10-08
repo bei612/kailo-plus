@@ -128,7 +128,10 @@ it("keeps pending sends ungrouped and prevents delivered-message copy actions", 
   const pending = { ...message, pending: true };
   const host = await render(<TooltipProvider><MessageRowSurface message={pending} isContinuation renderBody={() => pending.body}
     renderActions={(ref) => <MessageActionBarSurface ref={ref} message={pending} onCopyMessage={vi.fn()} onCopyLink={vi.fn()} />} /></TooltipProvider>);
+  await act(async () => setLocale("zh-CN"));
   expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Alice");
+  expect(host.querySelector('[data-testid="message-send-status"]')?.textContent).toBe("发送中…");
+  await act(async () => setLocale("en"));
   expect(host.querySelector('[data-testid="message-send-status"]')?.textContent).toBe("Sending…");
   expect(host.querySelector('[data-testid="copy-link-message-message"]')).toBeNull();
   expect(host.querySelector('[data-testid="more-actions-message"]')).toBeNull();

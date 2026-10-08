@@ -38,16 +38,19 @@ function ParticipantAvatar({
   index,
   participantCount,
   foregroundIsAgent,
+  resolveMediaUrl,
 }: {
   participant: TimelineThreadSummaryParticipant;
   index: number;
   participantCount: number;
   foregroundIsAgent: boolean;
+  resolveMediaUrl?: (url: string) => string | undefined;
 }) {
   const hasForegroundAvatar = index < participantCount - 1;
   const avatar = (
     <UserAvatar
       avatarUrl={participant.avatarUrl}
+      resolveMediaUrl={resolveMediaUrl}
       className="h-6 w-6 text-2xs"
       displayName={participant.author}
       shape={participant.isAgent ? "squircle" : "circle"}
@@ -90,6 +93,7 @@ export function MessageThreadSummaryRow({
   onCollapseDepthGuide,
   onCollapseDepthGuideHoverChange,
   onOpenThread,
+  resolveMediaUrl,
   showDepthGuides = true,
   summary,
   summaryIndentOffsetRem = 0,
@@ -106,6 +110,7 @@ export function MessageThreadSummaryRow({
     hovered: boolean,
   ) => void;
   onOpenThread: (message: TimelineMessage) => void;
+  resolveMediaUrl?: (url: string) => string | undefined;
   showDepthGuides?: boolean;
   summary: TimelineThreadSummary;
   summaryIndentOffsetRem?: number;
@@ -267,6 +272,7 @@ export function MessageThreadSummaryRow({
               key={participant.id}
               participant={participant}
               participantCount={summary.participants.length}
+              resolveMediaUrl={resolveMediaUrl}
             />
           ))}
         </div>

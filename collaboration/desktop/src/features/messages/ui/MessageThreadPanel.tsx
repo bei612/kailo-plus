@@ -6,6 +6,7 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { ThreadPanelLayoutProps } from "@/features/channels/lib/threadPanelLayout";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import { VideoReviewNavigationProvider } from "@/shared/ui/VideoReviewNavigation";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { MessageComposer } from "./MessageComposer";
 import { MessageThreadRow } from "./MessageThreadRow";
 import { useStableSendToChannel } from "./useStableSendToChannel";
@@ -78,7 +79,7 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
 export function MessageThreadPanel(props: MessageThreadPanelProps) {
   const stableSendToChannel = useStableSendToChannel(props.channelId, props.threadHead, props.onSendToChannel);
   return <VideoReviewNavigationProvider>
-    <ThreadPanelSurface {...props} onCopy={handleTimelineMentionCopy}
+    <ThreadPanelSurface {...props} onCopy={handleTimelineMentionCopy} resolveMediaUrl={rewriteRelayUrl}
       renderRow={(row) => <MessageThreadRow {...row}
         channelId={props.channelId} currentPubkey={props.currentPubkey} profiles={props.profiles}
         isFollowingThread={row.message.id === props.threadHead?.id ? props.isFollowingThread : undefined}

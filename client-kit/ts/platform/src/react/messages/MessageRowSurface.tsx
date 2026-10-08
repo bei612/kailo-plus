@@ -243,7 +243,7 @@ export function MessageRowSurface({
         className="font-normal text-muted-foreground/70"
         data-testid="message-send-status"
       >
-        Sending…
+        {translateUi("buzz.sending")}…
       </p>
     ) : null;
 

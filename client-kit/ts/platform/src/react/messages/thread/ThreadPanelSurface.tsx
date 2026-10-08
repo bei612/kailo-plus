@@ -55,6 +55,7 @@ export type ThreadPanelComposerProps = {
 export type ThreadPanelSurfaceProps = ThreadPanelLayoutProps & {
   renderRow: (props: ThreadPanelRowProps) => React.ReactNode;
   renderComposer: (props: ThreadPanelComposerProps) => React.ReactNode;
+  resolveMediaUrl?: (url: string) => string | undefined;
   onCopy?: React.ClipboardEventHandler<HTMLDivElement>;
   channelId: string | null;
   channelName: string;
@@ -112,6 +113,7 @@ function ThreadComposer({ render, ...props }: ThreadPanelComposerProps & { rende
 export function ThreadPanelSurface({
   renderRow,
   renderComposer,
+  resolveMediaUrl,
   onCopy,
   channelId,
   channelName,
@@ -508,6 +510,7 @@ export function ThreadPanelSurface({
                   data-render-pending={isRepliesPending ? "true" : undefined}
                 >
                   <MessageThreadSummaryRow
+                    resolveMediaUrl={resolveMediaUrl}
                     depth={threadHead.depth}
                     message={threadHead}
                     onOpenThread={expandThreadHeadReplies}
@@ -602,6 +605,7 @@ export function ThreadPanelSurface({
                         />
                         {entry.summary ? (
                           <MessageThreadSummaryRow
+                            resolveMediaUrl={resolveMediaUrl}
                             collapseDepthGuideActions={
                               collapseDepthGuideActions
                             }
