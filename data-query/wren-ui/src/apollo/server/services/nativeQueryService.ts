@@ -8,13 +8,14 @@ import {
   Deploy,
   deploymentObjects,
   IDeployLogRepository,
+  NativeDeploymentObject,
 } from '../repositories/deployLogRepository';
 import { IProjectRepository } from '../repositories/projectRepository';
 import { IViewRepository } from '../repositories/viewRepository';
 import { IModelRepository } from '../repositories/modelRepository';
 import { IModelColumnRepository } from '../repositories/modelColumnRepository';
 import { getPreviewColumnsStr } from '../utils/model';
-import { Manifest } from '../mdl/type';
+import { Manifest, TableReference } from '../mdl/type';
 import { IQueryService, PreviewDataResponse } from './queryService';
 import { verifyPostgresReader } from './nativeBindingService';
 import { toIbisConnectionInfo } from '../dataSource';
@@ -413,6 +414,178 @@ export class NativeQueryService {
     };
   }
 
+  private async nativeSources(deployment: Deploy, sources: TableReference[]) {
+    let captured: NativeDeploymentObject[];
+    try {
+      captured = deploymentObjects(
+        deployment.manifest,
+        deployment.nativeObjectRefs,
+      );
+    } catch {
+      throw unavailable();
+    }
+    if (!sources.length) throw scopeDenied();
+    const objects: NativeDeploymentObject[] = [];
+    for (const source of sources) {
+      if (
+        source.catalog !== deployment.manifest.catalog ||
+        source.schema !== deployment.manifest.schema
+      )
+        throw scopeDenied();
+      const matches = captured.filter((row) => row.nativeName === source.table);
+      // Resolve from the historical builder capture, not a model with a
+      // matching current name. A model/view collision is not a first match.
+      if (matches.length !== 1) throw scopeDenied();
+      const object = matches[0];
+      if (
+        objects.some(
+          (prior) =>
+            prior.nativeType === object.nativeType &&
+            prior.nativeId === object.nativeId,
+        )
+      )
+        throw unavailable();
+      if (object.nativeType === 'model') {
+        if (!this.models) throw unavailable();
+        const model = await this.models.findOneBy({
+          id: object.nativeId,
+          projectId: this.config.projectId,
+        });
+        if (!model || model.referenceName !== object.nativeName)
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      } else {
+        if (!this.views) throw unavailable();
+        const view = await this.views.findOneBy({
+          id: object.nativeId,
+          projectId: this.config.projectId,
+        });
+        const definition = deployment.manifest.views?.find(
+          (row) => row.name === object.nativeName,
+        );
+        if (
+          !view ||
+          view.name !== object.nativeName ||
+          !definition?.statement?.trim() ||
+          view.statement !== definition.statement
+        )
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      }
+      objects.push(object);
+    }
+    return objects.sort((left, right) =>
+      left.nativeType === right.nativeType
+        ? left.nativeId - right.nativeId
+        : left.nativeType < right.nativeType
+          ? -1
+          : 1,
+    );
+  }
+
+  private async querySourceObjects(
+    deployment: Deploy,
+    input: GovernedQueryInput,
+    reference?: Record<string, unknown>,
+  ) {
+    const sources = await this.queries.sourceObjects(input.sql, {
+      manifest: deployment.manifest,
+      timeoutMs: this.config.requestTimeoutMs,
+      responseMaxBytes: this.config.responseMaxBytes,
+    });
+    // A saved view's body can name only its dependencies. Its original
+    // selected object remains part of the same query intent, not a source
+    // inferred from a current-name lookup or generated SQL explanation.
+    if (reference) {
+      let selection: Record<string, unknown>;
+      let captured: NativeDeploymentObject[];
+      try {
+        selection = JSON.parse(String(reference.nativeObjectRef));
+        captured = deploymentObjects(
+          deployment.manifest,
+          deployment.nativeObjectRefs,
+        );
+      } catch {
+        throw unavailable();
+      }
+      if (
+        !selection ||
+        typeof selection !== 'object' ||
+        Array.isArray(selection)
+      )
+        throw unavailable();
+      const kind = Object.hasOwn(selection, 'modelId') ? 'model' : 'view';
+      const id = selection[kind === 'model' ? 'modelId' : 'viewId'];
+      const selected = captured.find(
+        (row) => row.nativeType === kind && row.nativeId === id,
+      );
+      if (!selected)
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      if (!sources.some((source) => source.table === selected.nativeName))
+        sources.push({
+          catalog: deployment.manifest.catalog,
+          schema: deployment.manifest.schema,
+          table: selected.nativeName,
+        });
+    }
+    return {
+      sources,
+      objects: await this.nativeSources(deployment, sources),
+    };
+  }
+
+  // The HUMAN result consumer reads the same native deployment and original
+  // query record as execution. These are provenance facts, never permission.
+  async completedQuerySources(
+    record: ApiHistory,
+    reference: Record<string, unknown>,
+  ): Promise<NativeDeploymentObject[]> {
+    const payload = record.requestPayload;
+    if (
+      record.projectId !== this.config.projectId ||
+      record.governanceBindingId !== this.config.bindingId ||
+      record.apiType !== ApiType.RUN_SQL ||
+      record.governanceState !== 'SUCCEEDED' ||
+      payload?.action !== 'data_query.query@v1' ||
+      !Array.isArray(payload.nativeSources)
+    )
+      throw unavailable();
+    const input = queryInput({
+      sql: payload.sql,
+      deploymentId: payload.deploymentId,
+      deploymentHash: payload.deploymentHash,
+      limit: payload.limit,
+    });
+    if (
+      record.governanceDeploymentId !== input.deploymentId ||
+      record.governanceDeploymentHash !== input.deploymentHash
+    )
+      throw unavailable();
+    const project = await this.projects.findOneBy({
+      id: this.config.projectId,
+    });
+    if (
+      !project ||
+      digest({
+        type: project.type,
+        connectionInfo: project.connectionInfo,
+        catalog: project.catalog,
+        schema: project.schema,
+      }) !== this.config.projectConnectionDigest
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
+    const deployment = await this.deployments.findOneBy({
+      id: input.deploymentId,
+      projectId: this.config.projectId,
+      hash: input.deploymentHash,
+      status: 'SUCCESS',
+    });
+    if (!deployment)
+      throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
+    const current = await this.querySourceObjects(deployment, input, reference);
+    if (digest(current.objects) !== digest(payload.nativeSources))
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    return current.objects;
+  }
+
   async execute(
     token: string,
     key: string,
@@ -484,8 +657,11 @@ export class NativeQueryService {
     )
       throw scopeDenied();
     let described: Awaited<ReturnType<NativeQueryService['describedModel']>>;
+    let sourceReferences: TableReference[] | undefined;
+    let querySources: NativeDeploymentObject[] | undefined;
+    let queryDeploymentFingerprint: string | undefined;
     const reauthorize = async () => {
-      const current = await authorizeQuery(
+      let current = await authorizeQuery(
         this.config,
         token,
         'execute',
@@ -496,7 +672,43 @@ export class NativeQueryService {
           raw as Record<string, unknown>,
           current.targetResource,
         );
-      if (describing) {
+      if (!describing && !querySources) {
+        const captured = referenced
+          ? undefined
+          : await this.describedModel(
+              deployment,
+              current.targetResource,
+              String(claims.target_id),
+            );
+        const { sources, objects } = await this.querySourceObjects(
+          deployment,
+          input,
+          referenced ? (raw as Record<string, unknown>) : undefined,
+        );
+        // One Resource grant cannot authorize arbitrary SQL against other
+        // models, hidden subqueries or native descriptor dependencies. This
+        // consumes planner facts, never retrievedTables or a client table list.
+        if (
+          !referenced &&
+          (objects.length !== 1 ||
+            objects[0].nativeType !== 'model' ||
+            String(objects[0].nativeId) !==
+              (current.targetResource as Record<string, unknown>).nativeRef ||
+            objects[0].nativeName !== captured.value.models[0].name)
+        )
+          throw scopeDenied();
+        sourceReferences = sources;
+        querySources = objects;
+        queryDeploymentFingerprint = digest({
+          manifest: deployment.manifest,
+          nativeObjectRefs: deployment.nativeObjectRefs,
+        });
+        if (captured) described = captured;
+        // Analysis is another native round trip. Permission can be revoked
+        // while it runs; re-admit before the original data-source operation.
+        current = await authorizeQuery(this.config, token, 'execute', envelope);
+      }
+      if (described) {
         const frozen = await this.deployments.findOneBy({
           id: described.value.deploymentId,
           projectId: this.config.projectId,
@@ -512,6 +724,24 @@ export class NativeQueryService {
               String(claims.target_id),
             )
           ).fingerprint !== described.fingerprint
+        )
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      }
+      if (querySources) {
+        const frozen = await this.deployments.findOneBy({
+          id: input.deploymentId,
+          projectId: this.config.projectId,
+          hash: input.deploymentHash,
+          status: 'SUCCESS',
+        });
+        if (
+          !frozen ||
+          digest({
+            manifest: frozen.manifest,
+            nativeObjectRefs: frozen.nativeObjectRefs,
+          }) !== queryDeploymentFingerprint ||
+          digest(await this.nativeSources(frozen, sourceReferences)) !==
+            digest(querySources)
         )
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       }
@@ -659,6 +889,12 @@ export class NativeQueryService {
       // writer died between reservation and the database call.
       if (prior.governanceState === 'SUCCEEDED') {
         await reauthorize();
+        if (
+          !describing &&
+          (!Array.isArray(prior.requestPayload?.nativeSources) ||
+            digest(prior.requestPayload.nativeSources) !== digest(querySources))
+        )
+          throw unavailable();
         if (!prior.responsePayload || typeof prior.responsePayload !== 'object')
           throw unavailable();
         if (
@@ -687,6 +923,18 @@ export class NativeQueryService {
         );
       }
       await reauthorize();
+      if (!describing) {
+        if (
+          !querySources ||
+          !(await this.history.freezeGovernedQuerySources(
+            id,
+            hash,
+            querySources,
+          ))
+        )
+          throw unavailable();
+        await reauthorize();
+      }
     } catch {
       if (!(await this.history.rejectUnsentGovernedQuery(id, hash)))
         throw unavailable();

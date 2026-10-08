@@ -69,6 +69,7 @@ type fileStorageApplication struct {
 
 type fileStorageSavedListing struct {
 	Key        string    `json:"key"`
+	BatchID    string    `json:"batchId,omitempty"`
 	ItemsJSON  string    `json:"itemsJson"`
 	Digest     string    `json:"digest"`
 	Bytes      int64     `json:"bytes"`
@@ -402,6 +403,45 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			return nil, err
 		}
 	}
+	// A new native SyncLog is not a terminal receipt for its predecessor's
+	// discovery. Finish the original read/usage observation before replacing
+	// that saved snapshot; never re-read the source under another batch key.
+	for source, saved := range state.Discovery {
+		batch := saved.BatchID
+		if batch == "" && saved.Key == fileStorageKey(run.syncLogID, source, "discover") {
+			// An older cursor can prove only the still-current native batch.
+			batch = run.syncLogID
+		}
+		if !fileStorageUUID(source) || !fileStorageUUID(batch) || saved.Key != fileStorageKey(batch, source, "discover") {
+			return nil, fmt.Errorf("original discovery batch identity requires reconciliation")
+		}
+		if batch == run.syncLogID {
+			continue
+		}
+		var items []map[string]json.RawMessage
+		if saved.Bytes != int64(len(saved.ItemsJSON)) || saved.Digest != fileStorageDigest([]byte(saved.ItemsJSON)) ||
+			json.Unmarshal([]byte(saved.ItemsJSON), &items) != nil || items == nil ||
+			saved.ObservedAt.IsZero() || saved.ObservedAt.After(time.Now()) {
+			return nil, fmt.Errorf("original discovery completion evidence is unavailable")
+		}
+		priorRun := run
+		priorRun.syncLogID = batch
+		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.list@v1", c.transport.config.ListActionVersion,
+			saved.Key, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, map[string]string{"resourceId": source})
+		if err != nil {
+			return nil, err
+		}
+		if fileStorageText(grant.value, "outcome") == "" {
+			return nil, fmt.Errorf("original discovery has no retained operation observation")
+		}
+		if err := c.transport.receipt(ctx, grant, run.dataSourceID, saved.Digest, saved.Digest, saved.Bytes, saved.ObservedAt); err != nil {
+			return nil, err
+		}
+		delete(state.Discovery, source)
+		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
+			return nil, err
+		}
+	}
 	if err := c.Validate(ctx, cfg); err != nil {
 		return nil, err
 	}
@@ -418,7 +458,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	// completion acknowledges only this snapshot, not a new desired baseline.
 	state.Discovery = map[string]fileStorageSavedListing{}
 	for source, listing := range listings {
-		state.Discovery[source] = fileStorageSavedListing{Key: listing.grant.key, ItemsJSON: listing.itemsJSON, Digest: listing.digest, Bytes: listing.bytes, ObservedAt: listing.observedAt}
+		state.Discovery[source] = fileStorageSavedListing{Key: listing.grant.key, BatchID: run.syncLogID, ItemsJSON: listing.itemsJSON, Digest: listing.digest, Bytes: listing.bytes, ObservedAt: listing.observedAt}
 		if fileStorageText(listing.grant.value, "outcome") != "COMPLETED" {
 			if err := c.transport.pep(ctx, listing.grant); err != nil {
 				return nil, err

@@ -1,4 +1,7 @@
-import { ApiHistoryRepository } from '../repositories/apiHistoryRepository';
+import {
+  ApiHistoryRepository,
+  ApiType,
+} from '../repositories/apiHistoryRepository';
 import { NativeQueryService } from './nativeQueryService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import {
@@ -242,8 +245,9 @@ export class NativeHumanQuery {
           })
       )
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return frozen;
     };
-    check(receipt);
+    const frozen = check(receipt);
     if (receipt.terminalStatus !== 'COMPLETED') return receipt;
     if (
       receipt.nativeType !== 'wren.api_history' ||
@@ -257,15 +261,83 @@ export class NativeHumanQuery {
       governanceBindingId: this.config.bindingId,
       governanceActionExecutionId: receipt.submission.actionExecutionId,
       governanceOperationId: receipt.submission.operationId,
+      governanceKey: key,
       governanceState: 'SUCCEEDED',
     });
     if (
+      Object.keys(frozen).sort().join(',') !==
+        (kind === 'model'
+          ? 'deploymentHash,deploymentId,limit,modelId'
+          : 'deploymentHash,deploymentId,limit,viewId') ||
+      !Number.isSafeInteger(frozen.deploymentId) ||
+      frozen.deploymentId <= 0 ||
+      typeof frozen.deploymentHash !== 'string' ||
+      !/^[a-f0-9]{40}$/.test(frozen.deploymentHash) ||
+      record?.apiType !== ApiType.RUN_SQL ||
+      record.governanceKey !== key ||
+      record.governanceParameterHash !==
+        digest({
+          target: { resourceId: receipt.inputReference.resourceId },
+          input: receipt.inputReference,
+        }) ||
+      record.governanceDeploymentId !== frozen.deploymentId ||
+      record.governanceDeploymentHash !== frozen.deploymentHash ||
+      record.requestPayload?.action !== 'data_query.query@v1' ||
+      typeof record.requestPayload.sql !== 'string' ||
+      !record.requestPayload.sql.trim() ||
+      record.requestPayload.deploymentId !== frozen.deploymentId ||
+      record.requestPayload.deploymentHash !== frozen.deploymentHash ||
+      record.requestPayload.limit !== frozen.limit ||
+      receipt.inputReference.nativeRevision !==
+        digest({
+          bindingId: this.config.bindingId,
+          projectId: this.config.projectId,
+          connection: this.config.projectConnectionDigest,
+          selection: frozen,
+          sql: record.requestPayload.sql,
+        }) ||
       !record?.responsePayload ||
+      record.responsePayload.deploymentId !== frozen.deploymentId ||
+      record.responsePayload.deploymentHash !== frozen.deploymentHash ||
       !Array.isArray(record.responsePayload.columns) ||
-      !Array.isArray(record.responsePayload.data)
+      !Array.isArray(record.responsePayload.data) ||
+      record.responsePayload.columns.some(
+        (column) =>
+          !column ||
+          typeof column.name !== 'string' ||
+          typeof column.type !== 'string',
+      ) ||
+      record.responsePayload.data.some(
+        (row) =>
+          !Array.isArray(row) ||
+          row.length !== record.responsePayload.columns.length,
+      )
     ) {
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
     }
+    const sources = await this.queries.completedQuerySources(
+      record,
+      receipt.inputReference,
+    );
+    for (const source of sources)
+      await resolveNativeResource(
+        this.config,
+        token,
+        source.nativeType,
+        source.nativeId,
+        'data_query.query@v1',
+      );
+    // A current view/model may change during source authorization. Re-read
+    // the original deployment/source facts, not a new query or a name alias.
+    if (
+      digest(
+        await this.queries.completedQuerySources(
+          record,
+          receipt.inputReference,
+        ),
+      ) !== digest(sources)
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     // Reading native rows does not confer permission. Re-admit immediately
     // before disclosure, including revocation/config generation changes.
     const after = await observe();

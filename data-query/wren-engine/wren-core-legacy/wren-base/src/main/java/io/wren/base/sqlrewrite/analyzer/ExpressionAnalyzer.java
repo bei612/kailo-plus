@@ -104,8 +104,14 @@ public class ExpressionAnalyzer
         protected Void visitSubscriptExpression(SubscriptExpression node, Void context)
         {
             QualifiedName qualifiedName = getQualifiedName(node.getBase());
-            scope.resolveAnyField(qualifiedName)
-                    .ifPresent(field -> referenceFields.put(NodeRef.of(node), field));
+            if (qualifiedName != null) {
+                scope.resolveAnyField(qualifiedName)
+                        .ifPresent(field -> referenceFields.put(NodeRef.of(node), field));
+            }
+            else {
+                process(node.getBase());
+            }
+            process(node.getIndex());
             return null;
         }
 
@@ -123,7 +129,6 @@ public class ExpressionAnalyzer
         {
             if (node.getName().getSuffix().equalsIgnoreCase("count") && node.getArguments().isEmpty()) {
                 requireRelation = true;
-                return null;
             }
             node.getArguments().forEach(this::process);
             node.getWindow().ifPresent(this::analyzeWindow);

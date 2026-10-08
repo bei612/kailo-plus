@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { Manifest } from '../mdl/type';
+import { Manifest, TableReference } from '../mdl/type';
 import { getLogger } from '@server/utils';
 import * as Errors from '@server/utils/error';
 import { CompactTable, DEFAULT_PREVIEW_LIMIT } from '../services';
@@ -85,6 +85,12 @@ export interface IWrenEngineAdaptor {
     limit?: number,
   ): Promise<EngineQueryResponse>;
   getNativeSQL(sql: string, options?: DryPlanOption): Promise<string>;
+  getSourceObjects(
+    sql: string,
+    manifest: Manifest,
+    timeoutMs: number,
+    responseMaxBytes: number,
+  ): Promise<TableReference[]>;
   validateColumnIsValid(
     manifest: Manifest,
     modelName: string,
@@ -291,6 +297,54 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
         customMessage: err.message,
         originalError: err,
       });
+    }
+  }
+
+  public async getSourceObjects(
+    sql: string,
+    manifest: Manifest,
+    timeoutMs: number,
+    responseMaxBytes: number,
+  ): Promise<TableReference[]> {
+    try {
+      const response = await axios({
+        method: 'get',
+        url: new URL('/v2/analysis/sql/sources', this.wrenEngineBaseEndpoint)
+          .href,
+        timeout: timeoutMs,
+        maxContentLength: responseMaxBytes,
+        headers: { 'Content-Type': 'application/json' },
+        data: {
+          sql,
+          manifestStr: Buffer.from(JSON.stringify(manifest)).toString('base64'),
+        },
+      });
+      if (
+        !Array.isArray(response.data) ||
+        response.data.some(
+          (row) =>
+            !row ||
+            Object.keys(row).sort().join(',') !== 'catalog,schemaTable' ||
+            typeof row.catalog !== 'string' ||
+            !row.catalog ||
+            !row.schemaTable ||
+            Object.keys(row.schemaTable).sort().join(',') !== 'schema,table' ||
+            typeof row.schemaTable.schema !== 'string' ||
+            !row.schemaTable.schema ||
+            typeof row.schemaTable.table !== 'string' ||
+            !row.schemaTable.table,
+        )
+      )
+        throw new Error('Native source evidence unavailable');
+      return response.data.map((row) => ({
+        catalog: row.catalog,
+        schema: row.schemaTable.schema,
+        table: row.schemaTable.table,
+      }));
+    } catch {
+      // Native errors can contain SQL/connection details. Missing evidence is
+      // not an empty source set or permission to dispatch the original query.
+      throw new Error('Native source evidence unavailable');
     }
   }
 

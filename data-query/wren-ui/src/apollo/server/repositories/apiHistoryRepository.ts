@@ -1,12 +1,14 @@
 import {
   camelCase,
   isPlainObject,
+  isEqual,
   mapKeys,
   mapValues,
   snakeCase,
 } from 'lodash';
 import { BaseRepository, IBasicRepository } from './baseRepository';
 import { Knex } from 'knex';
+import type { NativeDeploymentObject } from './deployLogRepository';
 
 // SS-WRN-IDENTITY: request credentials must never become API history.
 // Keep protocol metadata only; a denylist would miss provider-specific keys.
@@ -127,6 +129,42 @@ export class ApiHistoryRepository
         }),
       );
     return changed === 1;
+  }
+
+  public async freezeGovernedQuerySources(
+    id: string,
+    parameterHash: string,
+    sources: NativeDeploymentObject[],
+  ): Promise<boolean> {
+    return this.knex.transaction(async (tx) => {
+      const row = await tx(this.tableName)
+        .where({
+          id,
+          governance_parameter_hash: parameterHash,
+          governance_state: 'UNKNOWN',
+        })
+        .first()
+        .forUpdate();
+      if (!row) return false;
+      const payload = this.transformFromDBData(row).requestPayload;
+      if (!isPlainObject(payload)) return false;
+      // Freeze original native IDs before SQL. Re-entry may compare this
+      // evidence, never replace it with a newly selected set after execution.
+      if (Object.hasOwn(payload, 'nativeSources'))
+        return isEqual(payload.nativeSources, sources);
+      const changed = await tx(this.tableName)
+        .where({
+          id,
+          governance_parameter_hash: parameterHash,
+          governance_state: 'UNKNOWN',
+        })
+        .update(
+          this.transformToDBData({
+            requestPayload: { ...payload, nativeSources: sources },
+          }),
+        );
+      return changed === 1;
+    });
   }
 
   public async rejectUnsentGovernedQuery(

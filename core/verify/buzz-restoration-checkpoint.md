@@ -2546,3 +2546,67 @@ OCI revision 为空；是旧部署，不证明本批源码、最新 main 或 Win
 全部页面总数与精确未覆盖数未统计。新六路径未部署/未更新安装包，未运行
 全仓门禁；Windows/Mobile 实机未验收。3307 仍不是逐处分类完成数，准确
 未分类数未统计，不能声明完整原版一致性或生产就绪。
+
+### 2026-10-08 原 Inbox 选中高亮消退与 custom-shortcode 消费者恢复
+
+沿前节固定全树差异清单续核 Buzz
+`779af8886caae1317b4de962082429867ab61503`，本批引用：
+`desktop/src/features/home/ui/InboxDetailPane.tsx::InboxMessageDetailPane`、
+`desktop/src/shared/lib/emojiOnly.ts::isEmojiOnlyMessage`、
+`desktop/src/features/messages/lib/useMessageEmoji.ts::useMessageEmoji`、
+`desktop/src/features/messages/ui/MessageRow.tsx::MessageRow`。不是自行设计
+高亮动画或另建 shortcode 协议；前节两项明确缺口按原模块补齐。
+
+动手前四步与本批分类（REQ-24、DD-74/75）：
+
+- 权威：原上游已支持；Native 原高亮 effect 已存在，Web 错把选中状态
+  直接当作永久高亮。共享纯 emoji 解析丢失原 shortcode 分支，两个行
+  消费者没有传入消息自身 tags，通用行还缺原 custom-emoji 大字号 class。
+- 影响：完整追踪 Native InboxDetailPane/InboxMessageRow、Web
+  InboxThreadPane、共享 InboxMessageRowSurface/MessageRowSurface、原
+  emojiOnly/useMessageEmoji、两端 Markdown 实际标签与安全媒体消费者。
+  改十个 UI/检查路径；不改契约、Core、数据库、绑定、API 或词条。
+- 副作用：高亮为原已有短暂显示状态，不参与授权、读取游标或发送终态。
+  使用稳定 conversation/root 标识，实时消息重渲染不重启高亮；切换重置，
+  1_200 ms 后消退，卸载清理 timer。该值保留原版既有封闭交互值，不是
+  新增业务阈值。未触碰六类错误映射及 UNKNOWN 意图，不弱化失败关闭。
+- 边界：空白、未知/未闭合 shortcode、混合正文不放大；大小写沿原规则。
+  只读本消息实际 emoji tags，社区反应 palette 不能让无标签消息被放大。
+  解析不请求 URL；图片呈现仍经两宿主原 Markdown/媒体授权链。
+- 原样保留：原 Unicode/shortcode 判定、emoji 图片 1.45em 与 align-middle
+  class、原高亮延时/清理与既有底板 transition；未新增菜单、按钮或布局。
+- 共享迁移：原 useMessageEmoji 提到共享消息目录，Inbox/通用行均实际
+  调用；原高亮 effect 提到 useInboxFocusHighlight，Native/Web 同时调用。
+  移除 Native 原本地重复 effect，不保留双实现或 helper-only。
+- 已授权治理适配：原消息仍由既有 Relay/BFF 准入生产，媒体、反应、资料、
+  发布和撤权消费保持原治理路线；共享迁移仅调 import/type 和宿主调用。
+- 缺失需恢复：Agent owner/config-nudge、原编辑删除完整治理消费、未支持
+  Inbox 筛选等不因这两个显示缺口关闭而被算作完成；未生成无生产者入口。
+
+十个代码/检查路径 `+135/-27`（含新 useMessageEmoji.ts 15 行）：共享
+`react/inbox-surface.tsx`、`react/inbox-message-row.tsx`、
+`react/messages/{emojiOnly.ts,useMessageEmoji.ts,MessageRowSurface.tsx}`、
+`test/{inbox-surface.test.tsx,message-row.test.tsx}`，以及 Native
+`features/home/ui/InboxDetailPane.tsx`、Web `InboxThreadPane.tsx` 和其检查。
+
+运行前核在途构建/CPU/内存/磁盘：26 GiB 可用内存、无 swap、Data 2.1 GiB
+可用，未检出 cargo/tsc/vitest 活跃任务。复用原 SDK/cache 与现有容器
+`kailo-agent-receipt-xvkujx`，实际 cgroup `cpu.max=400000 100000`、
+`memory.max=8589934592`；未新镜像、依赖安装、全树复制或发布。
+日志沿前节 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `inbox-fade-shortcode-candidate.log` 整链退出 0：shared production/test、
+  Web、Native 四次 tsc --noEmit；共享 `25 passed`（13 Inbox +12 MessageRow），
+  Web 实际 Inbox 消费者 `18 passed`。
+- 实现后的检查在私有 SDK 主动破坏：禁用 shortcode 识别，
+  `inbox-shortcode-mutation.log` 退出 1、`2 failed /23 skipped`；阻止消退，
+  `inbox-fade-shared-mutation.log` 退出 1、`1 failed /12 skipped`，Web 已装
+  共享包同样破坏后 `inbox-fade-web-mutation.log` 退出 1、`1 failed /17 skipped`。
+- 恢复全部私有副本后 `inbox-fade-shortcode-restored.log` 整链退出 0，
+  `25 +18 passed`；十个正式输入/SDK与两已装共享包五文件共二十次 cmp
+  全部退出 0。正式源码未被破坏，相关路径 diff --check 退出 0。
+
+本批十路径未提交/部署/更新安装包，未运行全仓门禁；由主线集中收口。
+本批无新增截图，前节十一张只证明旧线上 d313fb 镜像；新源码 Inbox 高亮/
+shortcode 的实际浏览器视觉、Windows/Mobile 仍未验收。3307 全树差异尚未
+全部语义分类，准确未分类数与全部页面截图覆盖总数未统计，不称 100% 还原。

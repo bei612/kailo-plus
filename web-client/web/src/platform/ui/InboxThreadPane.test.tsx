@@ -73,6 +73,26 @@ it("reads the true thread and preserves the original selected-reply parent when 
   expect(state.outcome).toBe("confirmed");
 });
 
+it("uses the original selected-message fade rather than leaving Web Inbox permanently highlighted", async () => {
+  await mount();
+  const highlight=()=>host.querySelector('[data-testid="home-inbox-selected-message"]')?.parentElement?.querySelector('[aria-hidden="true"]');
+  expect(highlight()?.classList.contains("opacity-100")).toBe(true);
+  await act(async()=>vi.advanceTimersByTimeAsync(1_119));
+  expect(highlight()?.classList.contains("opacity-100")).toBe(true);
+  await act(async()=>vi.advanceTimersByTimeAsync(1));
+  expect(highlight()?.classList.contains("opacity-0")).toBe(true);
+  await mount();
+  expect(highlight()?.classList.contains("opacity-0")).toBe(true);
+});
+
+it("passes actual message emoji tags through the shared original Inbox sizing consumer", async () => {
+  state.query.mockResolvedValue({events:[rootEvent,{...reply,content:"😀 :BUZZ:",tags:[...reply.tags,["emoji","buzz",new URL("emoji.png",window.location.href).href]]}]});
+  await mount();
+  const body=host.querySelector('[data-testid="home-inbox-selected-message"] [data-testid="message-body"] > div');
+  expect(body?.classList.contains("text-4xl")).toBe(true);
+  expect(body?.classList.contains("[&_img[data-custom-emoji]]:h-[1.45em]")).toBe(true);
+});
+
 it("uses the original Inbox row layout, dated timestamp and actual same-author continuation boundaries", async () => {
   const follow = {...reply, id:"d".repeat(64), content:"same-author continuation", created_at:3};
   const later = {...reply, id:"e".repeat(64), content:"later thought", created_at:3600};

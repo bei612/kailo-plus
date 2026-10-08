@@ -15,7 +15,10 @@
 package io.wren.testing;
 
 import com.google.common.collect.ImmutableMap;
+import io.airlift.http.client.Request;
+import io.airlift.http.client.StringResponseHandler.StringResponse;
 import io.trino.sql.tree.SortItem;
+import io.wren.base.CatalogSchemaTableName;
 import io.wren.base.WrenTypes;
 import io.wren.base.dto.Column;
 import io.wren.base.dto.Manifest;
@@ -24,6 +27,7 @@ import io.wren.base.sqlrewrite.analyzer.decisionpoint.RelationAnalysis;
 import io.wren.main.web.dto.QueryAnalysisDto;
 import io.wren.main.web.dto.SqlAnalysisInputBatchDto;
 import io.wren.main.web.dto.SqlAnalysisInputDto;
+import io.wren.main.web.dto.SqlAnalysisInputDtoV2;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
@@ -33,8 +37,16 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 
+import static com.google.common.net.HttpHeaders.CONTENT_TYPE;
+import static io.airlift.http.client.JsonBodyGenerator.jsonBodyGenerator;
+import static io.airlift.http.client.Request.Builder.prepareGet;
+import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
+import static io.airlift.json.JsonCodec.jsonCodec;
+import static io.airlift.json.JsonCodec.listJsonCodec;
+import static io.wren.base.dto.Model.onBaseObject;
 import static io.wren.base.dto.Model.onTableReference;
 import static io.wren.base.dto.TableReference.tableReference;
+import static io.wren.base.dto.View.view;
 import static io.wren.main.web.dto.NodeLocationDto.nodeLocationDto;
 import static io.wren.testing.AbstractTestFramework.DEFAULT_SESSION_CONTEXT;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -219,6 +231,75 @@ public class TestAnalysisResource
         assertThat(results.get(1).size()).isEqualTo(1);
         assertThat(results.get(2).size()).isEqualTo(2);
         assertThat(results.get(3).size()).isEqualTo(2);
+    }
+
+    @Test
+    public void testNativeSourceObjects()
+    {
+        for (String sql : List.of(
+                "select c.custkey from customer c join orders o on c.custkey = o.custkey",
+                "select custkey, (select orderkey from orders limit 1) as other from customer",
+                "select custkey from customer group by custkey having custkey in (select custkey from orders)",
+                "select custkey from customer union select custkey from customer order by (select orderkey from orders limit 1)",
+                "select custkey[(select orderkey from orders limit 1)] from customer",
+                "select custkey from customer cross join (values ((select orderkey from orders limit 1))) as v(other)",
+                "select * from unnest(array[(select custkey from customer limit 1), (select orderkey from orders limit 1)]) as t(item)",
+                "with visible as (select custkey from customer) select custkey from orders where custkey in (select custkey from visible)")) {
+            assertThat(getNativeSourceObjects(manifest, sql)).containsExactlyInAnyOrder(
+                    new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "customer"),
+                    new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders"));
+        }
+
+        Manifest derived = Manifest.builder(manifest)
+                .setModels(List.of(manifest.getModels().get(0), manifest.getModels().get(1),
+                        onBaseObject("orders_alias", "orders", manifest.getModels().get(1).getColumns(), "orderkey")))
+                .setViews(List.of(view("saved_orders", "select orderkey from orders_alias")))
+                .build();
+        assertThat(getNativeSourceObjects(derived, "select orderkey from saved_orders")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "saved_orders"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders_alias"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders"));
+
+        Manifest nativeView = Manifest.builder(manifest)
+                .setViews(List.of(view("native_view", "select c.custkey from customer c join remote.other.orders o on c.custkey = o.custkey")))
+                .build();
+        assertThat(getNativeSourceObjects(nativeView, "select custkey from native_view")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "native_view"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "customer"),
+                new CatalogSchemaTableName("remote", "other", "orders"));
+
+        assertThat(getNativeSourceObjects(manifest, "select custkey from remote.other.customer")).containsExactly(
+                new CatalogSchemaTableName("remote", "other", "customer"));
+    }
+
+    @Test
+    public void testIncompleteNativeSourcesRefused()
+    {
+        for (String sql : List.of(
+                "select c.custkey from customer c cross join read_csv('unproved-source.csv')",
+                "select c.custkey from customer c cross join 'unproved-source.csv'",
+                "select count(*) from customer",
+                "delete from customer")) {
+            assertThat(nativeSourceResponse(manifest, sql).getStatusCode()).isGreaterThanOrEqualTo(400);
+        }
+    }
+
+    private List<CatalogSchemaTableName> getNativeSourceObjects(Manifest mdl, String sql)
+    {
+        StringResponse response = nativeSourceResponse(mdl, sql);
+        assertThat(response.getStatusCode()).isEqualTo(200);
+        return listJsonCodec(CatalogSchemaTableName.class).fromJson(response.getBody());
+    }
+
+    private StringResponse nativeSourceResponse(Manifest mdl, String sql)
+    {
+        Request request = prepareGet()
+                .setUri(server().getHttpServerBasedUrl().resolve("/v2/analysis/sql/sources"))
+                .setHeader(CONTENT_TYPE, "application/json")
+                .setBodyGenerator(jsonBodyGenerator(jsonCodec(SqlAnalysisInputDtoV2.class),
+                        new SqlAnalysisInputDtoV2(base64Encode(toJson(mdl)), sql)))
+                .build();
+        return executeHttpRequest(request, createStringResponseHandler());
     }
 
     private String toJson(Manifest manifest)

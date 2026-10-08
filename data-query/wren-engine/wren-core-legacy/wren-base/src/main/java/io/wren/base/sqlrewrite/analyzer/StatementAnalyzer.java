@@ -333,6 +333,12 @@ public final class StatementAnalyzer
         {
             Optional<Scope> withScope = analyzeWith(node, scope);
             Scope queryBodyScope = process(node.getQueryBody(), withScope);
+            node.getOrderBy().ifPresent(orderBy -> orderBy.getSortItems()
+                    .forEach(item -> {
+                        if (!(item.getSortKey() instanceof LongLiteral)) {
+                            analyzeExpression(item.getSortKey(), queryBodyScope);
+                        }
+                    }));
             return createAndAssignScope(node, scope, queryBodyScope);
         }
 
@@ -449,14 +455,17 @@ public final class StatementAnalyzer
         @Override
         protected Scope visitValues(Values node, Optional<Scope> scope)
         {
+            Scope valueScope = Scope.builder().parent(scope).build();
+            node.getRows().forEach(row -> analyzeExpression(row, valueScope));
             // TODO: output scope here isn't right
-            return Scope.builder().parent(scope).build();
+            return valueScope;
         }
 
         @Override
         protected Scope visitUnnest(Unnest node, Optional<Scope> scope)
         {
-            scope.ifPresent(s -> node.getExpressions().forEach(e -> analyzeExpression(e, s)));
+            Scope expressionScope = scope.orElseGet(() -> Scope.builder().build());
+            node.getExpressions().forEach(expression -> analyzeExpression(expression, expressionScope));
             // TODO: output scope here isn't right
             return Scope.builder().parent(scope).build();
         }

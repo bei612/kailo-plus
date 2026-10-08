@@ -14,6 +14,20 @@ export { InboxMessageRowSurface } from "./inbox-message-row";
 
 export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
 
+/** Original InboxDetailPane effect, including its existing 1_200 ms animation delay. */
+export function useInboxFocusHighlight(conversationId: string | null): boolean {
+  const [isFocusHighlightVisible, setIsFocusHighlightVisible] = React.useState(true);
+  React.useEffect(() => {
+    void conversationId;
+    setIsFocusHighlightVisible(true);
+    const timeoutId = window.setTimeout(() => {
+      setIsFocusHighlightVisible(false);
+    }, 1_200);
+    return () => window.clearTimeout(timeoutId);
+  }, [conversationId]);
+  return isFocusHighlightVisible;
+}
+
 /** Original useHomeDrafts selection; local draft selection is not a read cursor. */
 export function useInboxDraftSelection({ items, selectedKey, setSelectedKey, autoSelect, selectionEnabled, viewportWidthPx, isNarrowHomeViewport }: {
   items: readonly { entry: { key: string } }[];

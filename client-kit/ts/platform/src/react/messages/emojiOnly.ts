@@ -1,4 +1,5 @@
 import data from "@emoji-mart/data/sets/15/native.json" with { type: "json" };
+import type { CustomEmoji } from "../custom-emoji/emoji";
 
 type EmojiMartData = {
   emojis?: Record<
@@ -88,12 +89,13 @@ function isEmojiTag(codePoint: number): boolean {
   return codePoint >= 0xe0020 && codePoint <= 0xe007f;
 }
 
-export function isEmojiOnlyMessage(content: string): boolean {
+export function isEmojiOnlyMessage(content: string, customEmoji: CustomEmoji[] = []): boolean {
   const trimmed = content.trim();
   if (!trimmed) {
     return false;
   }
 
+  const shortcodeSet = new Set(customEmoji.map(emoji => emoji.shortcode.toLowerCase()));
   let sawEmoji = false;
 
   for (let index = 0; index < trimmed.length; ) {
@@ -102,6 +104,19 @@ export function isEmojiOnlyMessage(content: string): boolean {
     if (/\s/u.test(char)) {
       index += char.length;
       continue;
+    }
+
+    if (char === ":") {
+      const end = trimmed.indexOf(":", index + 1);
+      if (end > index + 1) {
+        const shortcode = trimmed.slice(index + 1, end).toLowerCase();
+        if (shortcodeSet.has(shortcode)) {
+          sawEmoji = true;
+          index = end + 1;
+          continue;
+        }
+      }
+      return false;
     }
 
     const cluster = readGrapheme(trimmed, index);

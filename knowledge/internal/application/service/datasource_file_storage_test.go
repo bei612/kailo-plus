@@ -147,6 +147,166 @@ func TestFileStorageCursorDoesNotInventMissingTargetEvidence(t *testing.T) {
 	require.Empty(t, state.Retiring)
 }
 
+func TestFileStorageDiscoveryResumesOriginalBatchBeforeNewAdmission(t *testing.T) {
+	for _, outcome := range []string{"usage-settled", "already-completed", "unknown-operation", "receipt-ack-lost", "receipt-refused", "usage-pending", "checkpoint-failed", "source-revoked", "missing-batch", "wrong-batch", "snapshot-corrupt", "future-clock", "no-observation", "legacy-current-batch", "source-config-removed"} {
+		t.Run(outcome, func(t *testing.T) {
+			source, receiver, root := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
+			batch := uuid.NewString()
+			if outcome == "legacy-current-batch" {
+				batch = run.syncLogID
+			}
+			key := fileStorageKey(batch, source, "discover")
+			at := time.Now().Add(-time.Hour).UTC()
+			saved := fileStorageSavedListing{Key: key, BatchID: batch, ItemsJSON: "[]", Digest: fileStorageDigest([]byte("[]")), Bytes: 2, ObservedAt: at}
+			switch outcome {
+			case "missing-batch", "legacy-current-batch":
+				saved.BatchID = ""
+			case "wrong-batch":
+				saved.BatchID = uuid.NewString()
+			case "snapshot-corrupt":
+				saved.ItemsJSON = "[null]"
+			case "future-clock":
+				saved.ObservedAt = time.Now().Add(time.Hour)
+			}
+			state := fileStorageCursor{Groups: map[string]fileStorageGroup{}, Retiring: map[string]fileStorageRetirement{},
+				Applying: map[string]fileStorageApplication{}, Discovery: map[string]fileStorageSavedListing{source: saved}}
+			fields := map[string]interface{}{}
+			raw, err := json.Marshal(state)
+			require.NoError(t, err)
+			require.NoError(t, json.Unmarshal(raw, &fields))
+			previous := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: fields}
+			initial, err := previous.ToJSON()
+			require.NoError(t, err)
+			ds := &types.DataSource{ID: run.dataSourceID, LastSyncCursor: initial}
+			repo := &recordingDSRepo{}
+			if outcome == "checkpoint-failed" {
+				repo.updateErr = fmt.Errorf("native checkpoint unavailable")
+			}
+			var accepted map[string]any
+			if outcome == "already-completed" {
+				accepted = map[string]any{"bindingId": receiver, "operationId": key, "idempotencyKey": key, "role": "RECEIVER",
+					"nativeObjectRef": run.dataSourceID, "nativeRevision": saved.Digest, "contentSha256": saved.Digest, "contentBytes": float64(saved.Bytes)}
+			}
+			var oldGrants, newGrants, receipts int
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/oidc" {
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
+				require.Equal(t, "Bearer receiver-service-token", r.Header.Get("Authorization"))
+				var request map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				switch r.URL.Path {
+				case "/service/v1/adapter/request_read_grant":
+					if request["idempotencyKey"] != key {
+						newGrants++
+						require.NotNil(t, accepted, "new discovery cannot abandon the original completion")
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					oldGrants++
+					require.Equal(t, batch, request["nativeBatch"].(map[string]any)["batchId"])
+					require.Equal(t, source, request["sourceResourceId"])
+					if outcome == "source-revoked" {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					response := map[string]any{"operationId": key, "actionExecutionId": key, "sourceBindingId": source, "outcome": "PENDING"}
+					if outcome == "unknown-operation" {
+						response["outcome"] = "UNKNOWN"
+					}
+					if outcome == "no-observation" {
+						delete(response, "outcome")
+						args, _ := json.Marshal(map[string]any{"actionKey": request["actionKey"], "idempotencyKey": key,
+							"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root, "input": map[string]string{"resourceId": source}}})
+						receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": root, "authorizationTargetNativeRef": run.knowledgeBaseID,
+							"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": batch, "sourceReadActionExecutionId": key}})
+						response["endpoint"], response["argumentsJson"], response["actionToken"], response["expiresAt"] = server.URL+"/execute", string(args), "source-only-token", time.Now().Add(time.Hour).Unix()
+						response["receiverWrite"] = map[string]any{"actionExecutionId": receiver, "argumentsJson": string(receiverArgs), "actionToken": "receiver-only-token", "expiresAt": time.Now().Add(time.Hour).Unix()}
+					}
+					if accepted != nil && outcome != "usage-pending" {
+						response["outcome"], response["receiverReceipt"] = "COMPLETED", accepted
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+				case "/service/v1/adapter/read_receipt":
+					receipts++
+					require.Equal(t, key, request["idempotencyKey"])
+					require.Equal(t, at.Format(time.RFC3339Nano), request["completedAt"])
+					require.Equal(t, saved.Digest, request["contentSha256"])
+					if outcome == "receipt-refused" {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					accepted = request
+					if outcome == "receipt-ack-lost" && receipts == 1 {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": saved.Digest}))
+				default:
+					t.Errorf("saved discovery must not re-read bytes or obtain receiver write authorization: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "service-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-service-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: receiver, ReceiverResourceID: root,
+				NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID, CorePepURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1,
+				ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1})
+			require.NoError(t, err)
+			connector := &fileStorageConnector{transport: transport}
+			svc := &DataSourceService{dsRepo: repo, syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}
+			ctx := context.WithValue(context.Background(), fileStorageRunKey{}, run)
+			input := &types.DataSourceConfig{ResourceIDs: []string{source}}
+			if outcome == "source-config-removed" {
+				input.ResourceIDs = nil
+			}
+			_, err = connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			if outcome == "legacy-current-batch" {
+				require.NoError(t, err)
+				require.NotNil(t, accepted)
+				require.Zero(t, newGrants)
+				return
+			}
+			require.Error(t, err)
+			if outcome == "receipt-ack-lost" || outcome == "checkpoint-failed" {
+				require.Equal(t, initial, ds.LastSyncCursor)
+				repo.updateErr = nil
+				_, err = connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+				require.Error(t, err)
+				require.Equal(t, 1, receipts, "recover original acknowledgement without a second receipt/write")
+			}
+			switch outcome {
+			case "usage-settled", "already-completed", "unknown-operation", "receipt-ack-lost", "checkpoint-failed", "source-config-removed":
+				retained, err := ds.ParseSyncCursor()
+				require.NoError(t, err)
+				confirmed, err := fileStorageState(retained)
+				require.NoError(t, err)
+				require.Empty(t, confirmed.Discovery)
+				require.Equal(t, at, retained.LastSyncTime, "settling old discovery does not complete a new import")
+				if outcome == "source-config-removed" {
+					require.Zero(t, newGrants)
+				} else {
+					require.Equal(t, 1, newGrants)
+				}
+			default:
+				require.Equal(t, initial, ds.LastSyncCursor)
+				require.Empty(t, repo.updated)
+				require.Zero(t, newGrants)
+			}
+			if outcome == "missing-batch" || outcome == "wrong-batch" || outcome == "snapshot-corrupt" || outcome == "future-clock" {
+				require.Zero(t, oldGrants, "invalid saved evidence cannot mint a replacement operation")
+			}
+		})
+	}
+}
+
 func TestFileStorageExpiredRetirementOnlyObservesOriginalTask(t *testing.T) {
 	for _, nativeState := range []string{"SUCCEEDED", "RUNNING", "UNKNOWN"} {
 		t.Run(nativeState, func(t *testing.T) {

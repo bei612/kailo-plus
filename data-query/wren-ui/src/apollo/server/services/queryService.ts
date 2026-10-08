@@ -1,5 +1,5 @@
 import { DataSourceName } from '@server/types';
-import { Manifest } from '@server/mdl/type';
+import { Manifest, TableReference } from '@server/mdl/type';
 import { IWrenEngineAdaptor } from '../adaptors/wrenEngineAdaptor';
 import {
   SupportedDataSource,
@@ -58,6 +58,14 @@ export interface ValidateResponse {
 }
 
 export interface IQueryService {
+  sourceObjects(
+    sql: string,
+    options: {
+      manifest: Manifest;
+      timeoutMs: number;
+      responseMaxBytes: number;
+    },
+  ): Promise<TableReference[]>;
   preview(
     sql: string,
     options: PreviewOptions,
@@ -93,6 +101,22 @@ export class QueryService implements IQueryService {
     this.ibisAdaptor = ibisAdaptor;
     this.wrenEngineAdaptor = wrenEngineAdaptor;
     this.telemetry = telemetry;
+  }
+
+  public async sourceObjects(
+    sql: string,
+    options: {
+      manifest: Manifest;
+      timeoutMs: number;
+      responseMaxBytes: number;
+    },
+  ): Promise<TableReference[]> {
+    return this.wrenEngineAdaptor.getSourceObjects(
+      sql,
+      options.manifest,
+      options.timeoutMs,
+      options.responseMaxBytes,
+    );
   }
 
   public async preview(

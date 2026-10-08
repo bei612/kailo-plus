@@ -1776,6 +1776,106 @@ completion with both receipts/usage remain separate delivery evidence.
 Whole-project/full/docs checks, commit/push, deployment, screenshots and
 device acceptance were not run by this subtask.
 
+## Retain discovery completion across native sync batches (2026-10-08)
+
+Authority and actual cause: `.design/13` §4.4 retains the receiver-owned
+cursor, native retries and parsing authority; `.design/07` §8.2 requires
+both source and receiver receipt/usage completion. Fixed read-only WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+and `internal/application/repository/datasource_repo.go::DataSourceRepository.UpdateSyncState`
+were rechecked. The Cells connector already retained its listing snapshot
+before acknowledging the receiver read, but a new native `SyncLogID` could
+replace that snapshot while its original receipt acknowledgement or usage
+was pending. The existing Applying/Retiring records retained their original
+batch; Discovery did not. This is a missing authorized integration consumer,
+not an upstream page or business feature replacement.
+
+Impact: `fileStorageSavedListing` now retains the original native `batchId`
+in the existing connector cursor. Before admitting a new discovery,
+`fileStorageConnector.FetchStream` validates its source/batch/key, snapshot
+digest and byte length, JSON listing and original observation clock. It
+reuses the original batch and idempotency key through the existing
+`fileStorageTransport.grant`/`receipt` consumers. A fresh grant without an
+original operation observation is refused. Only confirmed original
+completion clears that snapshot through the existing checkpoint; the new
+import's `LastSyncTime` is not advanced by settling an old read. Same-batch
+snapshots continue through the original listing consumer. No public
+protocol, interface, database schema/migration, queue, task, execution
+authority, permission authority or platform content copy was added.
+
+Side effects and compatibility: recovery neither re-reads source bytes nor
+obtains receiver write admission or uploads/parses/deletes content. Lost
+receipt acknowledgement recovers the original observation; pending usage,
+source refusal, malformed evidence and failed checkpoint retain the durable
+snapshot and refuse new work. Removing a source from configuration still
+settles its retained original read before validating the new configuration;
+it is not proof of deletion. A legacy cursor without `batchId` can prove
+only the still-current batch when its exact saved key matches. A missing
+identity for an older batch fails closed, not guessed. The additive native
+JSON field is readable by old readers, but this evidence does not authorize
+mixed old/new writers. Current active-generation checks in Core still apply;
+this change does not bypass revoked bindings or claim retired-generation
+read reconciliation is already available. Result-unknown stays unknown.
+
+Implementation preceded the original-file checks. Fifteen added subcases
+exercise settled/already-completed/unknown observations, lost/refused receipt
+acknowledgement, pending usage, checkpoint failure/recovery, source refusal,
+missing/wrong batch, corrupt snapshot, future clock, absent original
+observation, legacy current-batch cursor and removed source configuration.
+They use the original stream handler and repository fixture, with controlled
+HTTP Core/OIDC responses; they are not live Core/OpenMeter E2E. The combined
+original target also includes the actual SQLite checkpoint/version cases.
+
+Before each compile, host build processes and CPU/memory pressure, Data
+space and the existing SDK's actual cgroup were checked. The same Go 1.26.8
+SDK/cache, UID/GID 1000/1000, 4 CPU, 8 GiB, zero swap and existing Data
+temporary directory were reused. Data had 2.0–2.1 GiB free and host memory
+available was 27–29 GiB; no project Go/Cargo/frontend build overlapped.
+No image, dependency, database service, tree snapshot or cache purge was
+created. Only the two changed Go inputs were copied to the private candidate.
+
+```sh
+TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOTMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/application/repository ./internal/application/service \
+  -run 'TestDataSourceRepository|TestSyncLogRepository|TestFileStorage|TestStreamHandler|TestDataSourceReplacement|TestCreateKnowledgeFromFileAtID|TestDataSourceServiceDeleteSQLite|TestDeleteKnowledgeBaseCleansUpSQLite' \
+  -count=1 -v
+```
+
+Positive and byte-restored runs exited 0: **27 top-level checks and 53
+subchecks passed, none failed or skipped**. Repository/service runtimes were
+`0.583s`/`4.921s` and `0.616s`/`6.155s`. In the private candidate only,
+the actual production `batch == run.syncLogID` guard was changed to `!=`.
+The same command exited 1: **24 top-level checks passed, 3 failed; 35
+subchecks passed, 18 failed**, repository/service `0.565s`/`8.157s`.
+The preserved output includes `new discovery cannot abandon the original
+completion` and `completed discovery lacks its native cursor snapshot`.
+These failures include the original pending/recovered-application consumers;
+they are not eighteen independent defects. Formal inputs were not mutated.
+All **422** repository/service Go and module-lock inputs were byte-compared
+after restoration. SDK `gofmt -d` was empty, `git diff --check` exited 0,
+all OOM counters remained zero and the Data temporary directory was empty.
+
+Logs in the same existing native SDK receipt directory:
+
+- `native-self-pull-discovery-positive-20261008.log`, SHA-256
+  `f8d6348c96f68e189c3751d9c9a23046ab9ad5a64690dcf10d51ece696b7ffe7`.
+- `native-self-pull-discovery-mutation-20261008.log`, SHA-256
+  `48209d71f9d604ca1b50fd38986e3c357be4fc2b4ee69d061877839eb36b052c`.
+- `native-self-pull-discovery-restored-20261008.log`, SHA-256
+  `b20e19786b7be8754417a8302344ee39227b93d7420a57165e75e2af4f7ddf3f`.
+
+Actual component release/binding activation, live source replacement and
+parsing/deletion with both receipt/usage terminals remain separate evidence.
+Core currently requires active/current source/receiver generation before
+original read observation; withdrawal/upgrade recovery remains a platform
+consumer boundary. Original Wiki deletion still lacks retained terminal
+success evidence and stays unknown even when no pending Wiki row remains.
+Whole-project/full/docs checks, commit/push, deployment, screenshots and
+device acceptance were not run by this subtask.
+
 ## Original MCP import accepts an authorized empty file (2026-10-08)
 
 Authority and cause: `.design/13` §4.4 leaves file creation, original native

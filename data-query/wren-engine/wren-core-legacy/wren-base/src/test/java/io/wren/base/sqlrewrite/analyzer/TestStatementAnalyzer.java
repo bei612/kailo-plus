@@ -130,6 +130,30 @@ public class TestStatementAnalyzer
     }
 
     @Test
+    public void testNestedNativeSourcesUseOriginalAnalyzer()
+    {
+        Manifest manifest = Manifest.builder()
+                .setCatalog(DEFAULT_SESSION_CONTEXT.getCatalog().orElseThrow())
+                .setSchema(DEFAULT_SESSION_CONTEXT.getSchema().orElseThrow())
+                .setModels(List.of(
+                        Model.model("table_1", "SELECT * FROM foo", List.of(integerColumn("c1"))),
+                        Model.model("table_2", "SELECT * FROM bar", List.of(integerColumn("c1")))))
+                .build();
+        for (String sql : List.of(
+                "SELECT c1 FROM table_1 UNION SELECT c1 FROM table_1 ORDER BY (SELECT c1 FROM table_2 LIMIT 1)",
+                "SELECT c1[(SELECT c1 FROM table_2 LIMIT 1)] FROM table_1",
+                "SELECT ARRAY[(SELECT c1 FROM table_2 LIMIT 1)][1] FROM table_1",
+                "SELECT c1 FROM table_1 CROSS JOIN (VALUES ((SELECT c1 FROM table_2 LIMIT 1))) AS v(other)",
+                "SELECT * FROM UNNEST(ARRAY[(SELECT c1 FROM table_1 LIMIT 1), (SELECT c1 FROM table_2 LIMIT 1)]) AS t(item)",
+                "SELECT count(*) FILTER (WHERE c1 IN (SELECT c1 FROM table_2)) FROM table_1",
+                "SELECT count(*) OVER (PARTITION BY (SELECT c1 FROM table_2 LIMIT 1)) FROM table_1")) {
+            assertThat(analyzeSql(sql, manifest).getTables()).containsExactlyInAnyOrder(
+                    new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "table_1"),
+                    new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "table_2"));
+        }
+    }
+
+    @Test
     public void testScope()
     {
         SessionContext sessionContext = SessionContext.builder().setCatalog("test").setSchema("test").build();

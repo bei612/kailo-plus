@@ -3075,3 +3075,182 @@ close value; it must retain the original reconciled component-audit evidence.
 Arbitrary generated SQL provenance, multi-resource authorization and the
 remaining native side-effect/usage consumers still prevent claiming complete
 Wren integration.
+
+### 2026-10-08 original planner sources and historical native-object consumption
+
+This source batch extends the existing real QueryService/NativeQueryService
+chain. It does not claim that a single Resource grant authorizes multi-model
+SQL, and is not a deployed business instance.
+
+1. Authority is `.design/08` section 6, SS-WRN-GOVERNANCE and DD-98. SQL,
+   manifests, model/view bodies and results remain in Wren's independent
+   original storage. Core Resource and fresh authorization remain authoritative;
+   neither explanatory retrievedTables nor current-name matching supplies
+   permission or historical native identity.
+2. The actual impact is the original registered AnalysisResourceV2 -> existing
+   WrenEngineAdaptor -> QueryService -> NativeQueryService execute/retry/result
+   path. Analysis.getTables and QueryDescriptor.getRequiredObjects recursively
+   collect original semantic dependencies. ViewInfo's actual query is analyzed
+   as well because its dependency names omit direct physical tables. Five
+   original Analyzer omissions are corrected in place: Query-level ORDER BY,
+   subscript index/non-name base, count(*) FILTER/window, VALUES rows, and
+   UNNEST expressions without a parent scope. The planner itself consumes those
+   same Analyzer methods; no second SQL parser is introduced. Existing original
+   analysis endpoints and pages remain; the internal source endpoint is additive.
+3. Side effects: the native source HTTP read uses the already delivered timeout
+   and response bound; malformed/absent source evidence cannot become an empty
+   allowed set. All source FQNs must uniquely map to the historical deploy_log
+   native_object_refs captured by MdlService.build. Current native rows are
+   re-read by captured ID plus project; a renamed/replaced model, changed view
+   statement, duplicate source or model/view name collision refuses rather than
+   selecting the first match. Analysis is followed by the original fresh PEP and
+   frozen deployment/target revalidation before QueryService dispatch. A proven
+   pre-query refusal settles the original reserved history as NOT_DISPATCHED;
+   a query transport failure retains UNKNOWN and never replays.
+4. Boundaries: the existing PEP contract authorizes one targetResource. Until
+   the same authoritative execution and result-disclosure chain consumes all
+   source Resource grants, arbitrary SQL remains limited to a provable single
+   captured model; hidden dependencies, foreign namespaces and unregistered
+   physical sources refuse (`DENIED`). Historical/native mutation is CONFLICT;
+   missing/malformed analysis is PRECONDITION. Native table/path functions and
+   scalar calls without authoritative hidden-read evidence remain unavailable,
+   not newly declared safe. Those restrictions are remaining delivery gaps,
+   not a reduction of the full Wren target. Existing view-reference consumers
+   still need the same complete source authorization at execution and HUMAN
+   result disclosure. No new persistent state, task, migration or authority is
+   added; existing UNKNOWN/history reconciliation remains the convergence path.
+
+Fixed upstream source evidence was re-resolved, read-only, at Engine commit
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0` inside the UI pin
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+
+- `wren-core-legacy/wren-main/src/main/java/io/wren/main/web/AnalysisResourceV2.java::getSqlAnalysis`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/Analysis.java::getTables`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/StatementAnalyzer.java::analyze`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/ExpressionAnalyzer.java::visitFunctionCall`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/QueryDescriptor.java::of`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/ViewInfo.java::get`
+- `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/WrenSqlRewrite.java::addSqlDescriptorToGraph`
+- `wren-core-legacy/trino-parser/src/main/java/io/trino/sql/tree/Values.java::getRows`
+- `wren-core-legacy/trino-parser/src/main/java/io/trino/sql/tree/SubscriptExpression.java::getIndex`
+
+The diffs are authorized governance changes to the original planner/adapter
+consumers, not replacement frontend pages. Complete official-source parity,
+Java runtime and visual acceptance are not asserted.
+
+The earlier six-file candidate reused the existing non-root 4 CPU / 4 GiB SDK
+and original nativeQuery HTTP/MCP handler plus isolated PostgreSQL history:
+
+```text
+Test Suites: 1 passed, 1 total
+Tests:       59 passed, 59 total
+Time:        24.153 s
+```
+
+Its whole-UI type check also exited 0. The actual log remains
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-query-provenance-positive.log`.
+After adding a response-bound check, the next 60-case run failed while Data
+was full: 38 failed, 22 passed. The first native database error was
+`could not create directory "base/96457": No space left on device`; log tee
+creation also failed. That run is not a functional negative control or final
+acceptance. No success log for it is claimed. The Engine endpoint was an
+HTTP evidence peer in the TypeScript check, not the real Java Engine.
+
+The subsequent original Analyzer and complete native-ID mapping changes have
+not been recompiled or rerun: source development continued under the explicit
+shared Data-space restriction, without another PG/database, image or build.
+No JDK/Maven runner is available for the new original Java checks. Their source
+exists, but Java compilation, actual Engine HTTP acceptance, the final complete
+narrow positive run and deliberate-fault/restore run remain unverified. A
+formal `git diff --check` passed; that is not runtime evidence. No full check,
+business instance/release/binding, datasource/LLM end-to-end, screenshots,
+Windows/Mobile package, deployment or complete multi-model integration is
+claimed by this batch.
+
+## 2026-10-08 native source history and HUMAN result consumer
+
+This later evidence supersedes only the preceding unverified TypeScript
+candidate status. It does not verify the five changed original Java files or
+claim a deployed Engine, datasource, model provider or Wren business instance.
+The source pins remain UI `c5f02a0391c87420dba78632dcd86073710deb72` and Engine
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0`, with the original paths and Analyzer,
+QueryDescriptor, QueryService and native-history symbols recorded above.
+
+The actual implementation now consumes original Engine source analysis for
+direct SQL and native model/view references. A selected saved view is retained
+alongside its analyzed dependencies, using the same deployment's captured
+native IDs rather than current-name lookup. The original `api_history` UNKNOWN
+row freezes `request_payload.nativeSources` before native SQL; a repeat can
+compare the set but cannot replace it. Completed replay requires the same
+frozen source set. The service checks the original deployment and current
+native object identities again after authorization and before result return.
+No Core body copy, new task, ledger, permission ticket or SQL parser is added.
+
+The actual `NativeHumanQuery.preview` consumer checks completed receipts against
+the same binding, project, action execution, operation, key, parameter hash,
+original RUN_SQL row, deployment/hash, SQL revision and result shape.
+`NativeQueryService.completedQuerySources` then reads the same original history
+and frozen native deployment. For every resulting model/view, the current
+HUMAN bearer calls the existing Core `human-action.resolveResource` consumer
+with `data_query.query@v1`; denied or inconsistent facts do not filter a source
+out of the result. Source facts are reread, and the original completed receipt
+is observed again before disclosure. This is not an EXPORT grant. Core's
+original `application_action::fresh_execution` already consumes
+`validate_reference_and_policy`; this batch retains that active-policy gate.
+
+The impact is the existing native query execution/reentry and HUMAN result
+paths, not original page composition. Native body/SQL/source history remains
+in Wren's database; platform authority remains Core/SpiceDB and original
+ActionExecution. A changed native selection/deployment/scope fails with the
+existing refusal; missing completed evidence is unavailable, and an uncertain
+native call remains UNKNOWN without replay. No database migration, contract
+field or new public workflow state is introduced. Older completed rows without
+frozen source evidence are refused, not silently backfilled or re-executed.
+
+Verification used the existing `kailo-wren-query-sdk-itgs2n` 4 CPU / 4 GiB
+cgroup, existing dependency/cache mounts and existing isolated PostgreSQL.
+No new database service, image or release was started. Actual commands:
+
+```sh
+./node_modules/.bin/tsc --noEmit --incremental false
+./node_modules/.bin/jest --runInBand src/nativeQuery.test.ts src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+./node_modules/.bin/prettier --check src/apollo/server/repositories/apiHistoryRepository.ts src/apollo/server/services/nativeHumanQuery.ts src/apollo/server/services/nativeQueryService.ts src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/apollo/server/adaptors/wrenEngineAdaptor.ts src/apollo/server/services/queryService.ts
+```
+
+The first run reported 169 passed / 2 failed / 0 skips, exit 1 (27.261 s).
+Its failures were the check expecting an MCP error value instead of the
+actual thrown `QUERY_EVIDENCE_UNAVAILABLE`, and a check using an old numeric
+PEP call position after source-freeze reauthorization added a real callback.
+The checks were corrected to consume the actual MCP refusal and SQL dispatch
+event, without removing production protection. The final complete positive
+run reported 3 suites passed, 172/172 passed, 0 skips, exit 0 (90.022 s).
+Whole-UI TypeScript exited 0.
+
+After implementation, three real protections were deliberately removed only
+in the private SDK copy: immutable native source history, completed-source
+equality, and per-source HUMAN authorization. The original consumers reported
+5 failed / 141 explicitly name-filtered skips / 1 passed, exit 1 (10.011 s).
+The failures caught source replacement, changed dependency evidence and
+disclosure after source denial. All seven formal TypeScript inputs were then
+compared with `cmp` against the restored private inputs and matched. Prettier
+reported all seven files conforming. The restored original three-suite run
+again reported 172/172 passed, 0 skips, exit 0 (22.754 s).
+
+Actual logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-query-human-provenance-positive.log` (initial two failures),
+`native-query-human-provenance-tsc.log` (exit 0, empty successful compiler
+output), `native-query-human-provenance-final-positive.log` (172/172),
+`native-query-human-provenance-negative.log` (five real protection failures),
+and `native-query-human-provenance-restored.log` (restored 172/172).
+
+These TypeScript checks exercise original native HTTP/MCP handlers,
+QueryService/adaptor, real original repositories/PostgreSQL and HUMAN/Asking
+result consumers. The source HTTP endpoint in these checks is a controlled
+evidence peer, not the actual new Java Engine endpoint. Java compilation and
+real Analyzer HTTP acceptance remain unverified. Complete Agent multi-source
+fresh authorization, source read/export policy intersection and the original
+generated-SQL `ModelResolver.previewSql` execution consumer remain open
+delivery gaps, not excluded product scope. No full check, Wren business
+instance/release/binding, live datasource/LLM acceptance, iframe screenshots,
+Windows/Mobile package, deployment or 100% original-feature parity is claimed.

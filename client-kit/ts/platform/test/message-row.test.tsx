@@ -10,6 +10,22 @@ import { buildMentionClipboardHtml, parseMentionClipboardRecords } from "../src/
 
 const message: TimelineMessage = { id: "message", pubkey: "author", author: "Alice", body: "Hello", createdAt: 1770000000, depth: 0, time: "", tags: [] };
 
+it("restores original custom-shortcode emoji-only sizing from each message's own tags", async () => {
+  const tags=[["emoji","buzz",new URL("emoji.png",window.location.href).href]];
+  const body="😀 :BUZZ:";
+  const host=await render(<MessageRowSurface message={{...message,body,tags}}
+    renderBody={className=><p className={className}>{body}</p>} />);
+  const rendered=host.querySelector('[data-testid="message-body"] p')!;
+  expect(rendered.classList.contains("text-4xl")).toBe(true);
+  expect(rendered.classList.contains("[&_img[data-custom-emoji]]:h-[1.45em]")).toBe(true);
+  const untagged=await render(<MessageRowSurface message={{...message,body,tags:[]}}
+    customEmoji={[{shortcode:"buzz",url:tags[0]![2]!}]} renderBody={className=><p className={className}>{body}</p>} />);
+  expect(untagged.querySelector('[data-testid="message-body"] p')?.classList.contains("text-4xl")).toBe(false);
+  const mixed=await render(<MessageRowSurface message={{...message,body:"hello :buzz:",tags}}
+    renderBody={className=><p className={className}>hello :buzz:</p>} />);
+  expect(mixed.querySelector('[data-testid="message-body"] p')?.classList.contains("text-4xl")).toBe(false);
+});
+
 it("copies only the original resolved identity, including reference tags, aliases and qualified duplicate names", () => {
   const first = "ab".repeat(32), second = "cd".repeat(32);
   const profiles = {

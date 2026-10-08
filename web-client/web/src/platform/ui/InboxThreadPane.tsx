@@ -1,7 +1,7 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { InboxDetailHeader, InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { InboxDetailHeader, InboxMessageRowSurface, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
 import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
@@ -30,6 +30,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
   const t = useT(); const locale = useLocale();
   const [anchor] = useState(selectedEventId);
   const [anchorRoot] = useState(rootId);
+  const isFocusHighlightVisible = useInboxFocusHighlight(anchorRoot);
   const replyParent = useRef<string | null>(null);
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
   const [sending, setSending] = useState(false);
@@ -92,7 +93,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
           const isContinuation = index !== 1 && !startsNewMessageGroup(event)
             && hasSameMessageAuthor(previous, event) && isWithinGroupingWindow(previous?.createdAt, event.createdAt);
           return <InboxMessageRowSurface key={event.id} isSelected={event.id === anchor}
-            isFocusHighlightVisible={event.id === anchor} isContinuation={isContinuation} isFirst={index === 0}
+            isFocusHighlightVisible={isFocusHighlightVisible} isContinuation={isContinuation} isFirst={index === 0}
             onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
             reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
             renderIdentity={!interrupted ? (node,kind) => {

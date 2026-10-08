@@ -4,7 +4,7 @@ import type { TimelineMessage } from "./types";
 import { getThreadReplyAvatarCenterRem, getThreadReplyAvatarCenterYRem, getThreadReplyDescendantRailStartYRem, getThreadReplyConnectorLayout, getThreadReplyIndentRem, threadReplyLength, THREAD_REPLY_LINE_WIDTH_REM } from "./threadTreeLayout";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useMeasuredCssVariable } from "./useMeasuredCssVariable";
-import { isEmojiOnlyMessage } from "./emojiOnly";
+import { useMessageEmoji } from "./useMessageEmoji";
 import { UserAvatar } from "./UserAvatar";
 import { MessageHeaderRow, MessageAuthorText } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
@@ -109,10 +109,7 @@ export function MessageRowSurface({
       resetValue: "0px",
       targetRef: articleRef,
     });
-    const emojiOnly = React.useMemo(
-      () => isEmojiOnlyMessage(message.body),
-      [message.body],
-    );
+    const { emojiOnly } = useMessageEmoji(message.body, message.tags);
     const bodyOffsetClass = emojiOnly ? "mt-1" : "mt-conversation-body";
 
 
@@ -177,7 +174,7 @@ export function MessageRowSurface({
       );
     }, [collapseDepthGuideActions]);
 
-    const bodyNode = renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight"));
+    const bodyNode = renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"));
 
     const isThreadReplyLayout = layoutVariant === "thread-reply";
     const guideBleedRem = isThreadReplyLayout ? 0.25 : 0;

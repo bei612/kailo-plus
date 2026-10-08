@@ -5,7 +5,7 @@ import { cn } from "./profile/buzz/shared/lib/cn";
 import { formatItemTimestamp } from "./messages/datetime";
 import { formatFullDateTime, formatTime, formatTimeWithoutDayPeriod } from "./messages/dateFormatters";
 import { UserAvatar } from "./messages/UserAvatar";
-import { isEmojiOnlyMessage } from "./messages/emojiOnly";
+import { useMessageEmoji } from "./messages/useMessageEmoji";
 import { UnreadDivider } from "./messages/UnreadDivider";
 import { MessageReactions } from "./messages/reactions/MessageReactions";
 import { useReactionHandler } from "./messages/reactions/useReactionHandler";
@@ -34,7 +34,7 @@ export function InboxMessageRowSurface({
 }) {
   const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
   const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
-  const emojiOnly = React.useMemo(() => isEmojiOnlyMessage(message.body), [message.body]);
+  const { emojiOnly } = useMessageEmoji(message.body, message.tags);
   const identity = (node: React.ReactNode, kind: "avatar" | "author") => renderIdentity?.(node, kind) ?? node;
   const absoluteTimestamp = fullTimestampLabel ?? formatFullDateTime(message.createdAt);
   return <div className="relative px-2">

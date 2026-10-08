@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, useState, type ReactNode } from "react";
 import { getLocale, setLocale } from "../src/i18n";
-import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxMessageRowSurface, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection } from "../src/react/inbox-surface";
+import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxMessageRowSurface, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, useInboxFocusHighlight } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { click, render, settle } from "./render";
 
@@ -10,6 +10,49 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it("fades the original selection once per conversation and clears its timer on unmount", async () => {
+    vi.useFakeTimers();
+    function FocusHighlight({conversationId}: {conversationId: string}) {
+      const visible=useInboxFocusHighlight(conversationId);
+      return <output>{visible ? "visible" : "faded"}</output>;
+    }
+    function Selection() {
+      const [conversationId,setConversationId]=useState("first"), [mounted,setMounted]=useState(true), [revision,setRevision]=useState(0);
+      return <><button onClick={()=>setConversationId("second")}>select</button><button onClick={()=>setRevision(revision+1)}>live update</button><button onClick={()=>setMounted(false)}>close</button>
+        {mounted ? <FocusHighlight conversationId={conversationId} /> : null}</>;
+    }
+    try {
+      const host=await render(<Selection />);
+      expect(host.querySelector("output")?.textContent).toBe("visible");
+      expect(vi.getTimerCount()).toBe(1);
+      await act(async()=>vi.advanceTimersByTime(1_199));
+      expect(host.querySelector("output")?.textContent).toBe("visible");
+      await act(async()=>vi.advanceTimersByTime(1));
+      expect(host.querySelector("output")?.textContent).toBe("faded");
+      await click([...host.querySelectorAll("button")].find(button=>button.textContent==="live update")!);
+      expect(host.querySelector("output")?.textContent).toBe("faded");
+      expect(vi.getTimerCount()).toBe(0);
+      await click([...host.querySelectorAll("button")].find(button=>button.textContent==="select")!);
+      expect(host.querySelector("output")?.textContent).toBe("visible");
+      expect(vi.getTimerCount()).toBe(1);
+      await click([...host.querySelectorAll("button")].find(button=>button.textContent==="close")!);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("uses only each Inbox message's actual custom-emoji tags for original emoji-only sizing", async () => {
+    const tags=[["emoji","buzz",new URL("emoji.png",window.location.href).href]];
+    const message={id:"inbox-shortcode",author:"Actual author",body:"😀 :BUZZ:",pubkey:"author",depth:0,createdAt:1,time:"absolute time",tags};
+    const body=(className:string)=><p className={className}>{message.body}</p>;
+    const host=await render(<InboxMessageRowSurface message={message} renderBody={body} />);
+    expect(host.querySelector('[data-testid="message-body"] p')?.classList.contains("text-4xl")).toBe(true);
+    expect(host.querySelector('[data-testid="message-body"] p')?.classList.contains("[&_img[data-custom-emoji]]:h-[1.45em]")).toBe(true);
+    for (const invalid of [{...message,tags:[]},{...message,body:"hello :buzz:"},{...message,body:":missing:"},{...message,body:":buzz"},{...message,body:"  "}]) {
+      const plain=await render(<InboxMessageRowSurface message={invalid} customEmoji={[{shortcode:"buzz",url:tags[0]![2]!}]} renderBody={body} />);
+      expect(plain.querySelector('[data-testid="message-body"] p')?.classList.contains("text-4xl")).toBe(false);
+    }
+  });
+
   it.each(["en", "zh-CN"] as const)("preserves original detail row anatomy and date/continuation presentation in %s", async locale => {
     setLocale(locale);
     const message={id:"inbox-original-row",author:"Actual author",body:"admitted content",pubkey:"author",depth:0,createdAt:1,time:"absolute time"};

@@ -1,4 +1,4 @@
-import { InboxEmptyDetail, InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
+import { InboxEmptyDetail, InboxDetailHeader, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
 import {
   AlertCircle,
   LoaderCircle,
@@ -121,12 +121,11 @@ function InboxMessageDetailPane({
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const [replyTargetId, setReplyTargetId] = React.useState<string | null>(null);
-  const [isFocusHighlightVisible, setIsFocusHighlightVisible] =
-    React.useState(true);
   // The stable conversation ID: does not change when the representative latest
   // event advances. All lifecycle effects (reply target reset, focus highlight,
   // scroll centering) key on this.
   const conversationId = item?.conversationId ?? null;
+  const isFocusHighlightVisible = useInboxFocusHighlight(conversationId);
   // Build the plain, non-virtualized timeline the shared hook anchors against.
   // Live arrivals rerun its layout compensation without changing the target.
 
@@ -236,18 +235,6 @@ function InboxMessageDetailPane({
   React.useEffect(() => {
     void conversationId;
     setReplyTargetId(null);
-  }, [conversationId]);
-
-  React.useEffect(() => {
-    void conversationId;
-    setIsFocusHighlightVisible(true);
-    const timeoutId = window.setTimeout(() => {
-      setIsFocusHighlightVisible(false);
-    }, 1_200);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
   }, [conversationId]);
 
   // Capture the default composer reply parent from the selected-event anchor

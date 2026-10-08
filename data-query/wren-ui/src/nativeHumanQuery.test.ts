@@ -3,9 +3,13 @@ import {
   nativePreviewScope,
 } from './apollo/server/services/nativeHumanQuery';
 import { NativeQueryService } from './apollo/server/services/nativeQueryService';
-import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
+import {
+  ApiHistoryRepository,
+  ApiType,
+} from './apollo/server/repositories/apiHistoryRepository';
 import {
   bindingServiceCall,
+  digest,
   loadQueryDelivery,
   NativeQueryDelivery,
   NativeQueryRefusal,
@@ -26,10 +30,40 @@ describe('native saved-view HUMAN query consumer', () => {
   const key = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
   const binding = '8b066261-f827-462e-95c1-1d596fce1849';
   const resource = 'f0d7d739-666c-4cdb-927b-4bad718c94e2';
+  const selection = {
+    viewId: 7,
+    deploymentId: 12,
+    deploymentHash: 'b'.repeat(40),
+    limit: 10,
+  };
+  const statement = 'SELECT customer FROM native_model';
+  const nativeProject = {
+    id: 3,
+    type: 'DUCKDB',
+    connectionInfo: {},
+    catalog: 'wrenai',
+    schema: 'public',
+  };
+  const connection = digest({
+    type: nativeProject.type,
+    connectionInfo: nativeProject.connectionInfo,
+    catalog: nativeProject.catalog,
+    schema: nativeProject.schema,
+  });
+  const capturedSources = [
+    { nativeType: 'model' as const, nativeId: 8, nativeName: 'native_model' },
+    { nativeType: 'view' as const, nativeId: 7, nativeName: 'native_view' },
+  ];
   const reference = {
     resourceId: resource,
-    nativeObjectRef: JSON.stringify({ viewId: 7, limit: 10 }),
-    nativeRevision: 'a'.repeat(64),
+    nativeObjectRef: JSON.stringify(selection),
+    nativeRevision: digest({
+      bindingId: binding,
+      projectId: 3,
+      connection,
+      selection,
+      sql: statement,
+    }),
     displayName: 'saved view',
     mediaType: 'application/json',
   };
@@ -44,6 +78,7 @@ describe('native saved-view HUMAN query consumer', () => {
   const config = {
     bindingId: binding,
     projectId: 3,
+    projectConnectionDigest: connection,
     nativeInstanceRef: 'native-fixture',
     nativeScopeRef: '3',
     workspaceId: '02c405cd-786f-49fe-a460-0b94f98e014d',
@@ -63,16 +98,54 @@ describe('native saved-view HUMAN query consumer', () => {
     },
   };
   const calls = jest.mocked(bindingServiceCall);
-  let freeze: jest.Mock, history: jest.Mock, service: NativeHumanQuery;
+  const nativeRecord = (
+    frozen = reference,
+    sql = statement,
+    columns: { name: string; type: string }[] = [],
+    data: unknown[][] = [],
+  ) => {
+    const captured = JSON.parse(frozen.nativeObjectRef);
+    return {
+      projectId: config.projectId,
+      governanceBindingId: binding,
+      governanceState: 'SUCCEEDED',
+      apiType: ApiType.RUN_SQL,
+      governanceKey: key,
+      governanceParameterHash: digest({
+        target: { resourceId: frozen.resourceId },
+        input: frozen,
+      }),
+      governanceDeploymentId: captured.deploymentId,
+      governanceDeploymentHash: captured.deploymentHash,
+      requestPayload: {
+        action: 'data_query.query@v1',
+        sql,
+        deploymentId: captured.deploymentId,
+        deploymentHash: captured.deploymentHash,
+        limit: captured.limit,
+        nativeSources: capturedSources,
+      },
+      responsePayload: {
+        columns,
+        data,
+        deploymentId: captured.deploymentId,
+        deploymentHash: captured.deploymentHash,
+      },
+    };
+  };
+  let freeze: jest.Mock, history: jest.Mock, sources: jest.Mock;
+  let service: NativeHumanQuery;
   beforeEach(() => {
     calls.mockReset();
     freeze = jest.fn().mockResolvedValue(reference);
     history = jest.fn();
+    sources = jest.fn().mockResolvedValue(capturedSources);
     service = new NativeHumanQuery(
       config,
       {
         reference: freeze,
         modelReference: freeze,
+        completedQuerySources: sources,
       } as unknown as NativeQueryService,
       { findOneBy: history } as unknown as ApiHistoryRepository,
     );
@@ -237,20 +310,47 @@ describe('native saved-view HUMAN query consumer', () => {
       nativeType: 'wren.api_history',
       nativeId: 'native-result',
     };
-    calls.mockResolvedValue(completed);
-    history.mockResolvedValue({ responsePayload: { columns: [], data: [] } });
+    calls.mockImplementation(async (_config, _operation, input) => {
+      const query = input.resolveResource as any;
+      if (query)
+        return {
+          resource: {
+            ...resolution.resource,
+            nativeType: query.nativeType,
+            nativeRef: query.nativeRef,
+          },
+        };
+      return completed;
+    });
+    history.mockResolvedValue(nativeRecord());
     expect(
       (await service.preview('verified-native-token', 7, 10, key)).data,
-    ).toEqual({ columns: [], data: [] });
+    ).toEqual(nativeRecord().responsePayload);
     expect(history).toHaveBeenCalledWith({
       id: 'native-result',
       projectId: 3,
       governanceBindingId: binding,
       governanceActionExecutionId: submission.actionExecutionId,
       governanceOperationId: submission.operationId,
+      governanceKey: key,
       governanceState: 'SUCCEEDED',
     });
-    expect(calls).toHaveBeenCalledTimes(2);
+    expect(calls).toHaveBeenCalledTimes(4);
+    expect(sources).toHaveBeenCalledTimes(2);
+    expect(calls.mock.calls[1][2]).toMatchObject({
+      resolveResource: {
+        actionKey: 'data_query.query@v1',
+        nativeType: 'model',
+        nativeRef: '8',
+      },
+    });
+    expect(calls.mock.calls[2][2]).toMatchObject({
+      resolveResource: {
+        actionKey: 'data_query.query@v1',
+        nativeType: 'view',
+        nativeRef: '7',
+      },
+    });
     calls.mockReset();
     calls
       .mockResolvedValueOnce(completed)
@@ -259,6 +359,123 @@ describe('native saved-view HUMAN query consumer', () => {
       service.preview('verified-native-token', 7, 10, key),
     ).rejects.toThrow('QUERY_SCOPE_DENIED');
   });
+
+  it.each([
+    'another native source',
+    'denied source permission',
+    'changed sources during authorization',
+  ])('does not disclose the original result with %s', async (failure) => {
+    const completed = {
+      ...receipt,
+      terminalStatus: 'COMPLETED',
+      nativeType: 'wren.api_history',
+      nativeId: 'native-result',
+    };
+    history.mockResolvedValue(nativeRecord());
+    if (failure === 'changed sources during authorization')
+      sources
+        .mockResolvedValueOnce(capturedSources)
+        .mockResolvedValueOnce(capturedSources.slice(1));
+    calls.mockImplementation(async (_config, _operation, input) => {
+      const query = input.resolveResource as any;
+      if (!query) return completed;
+      if (failure === 'denied source permission')
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      return {
+        resource: {
+          ...resolution.resource,
+          nativeType: query.nativeType,
+          nativeRef:
+            failure === 'another native source' ? '99' : query.nativeRef,
+        },
+      };
+    });
+    await expect(
+      service.preview('verified-native-token', 7, 10, key),
+    ).rejects.toThrow(
+      failure === 'changed sources during authorization'
+        ? 'QUERY_REFERENCE_CHANGED'
+        : 'QUERY_SCOPE_DENIED',
+    );
+    expect(
+      calls.mock.calls.filter((call) => !call[2].resolveResource),
+    ).toHaveLength(1);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'missing history',
+    'wrong API type',
+    'another intent key',
+    'another parameter hash',
+    'another deployment ID',
+    'another deployment hash',
+    'missing SQL',
+    'changed SQL',
+    'another action',
+    'request deployment ID',
+    'request deployment hash',
+    'request limit',
+    'result deployment ID',
+    'result deployment hash',
+    'missing column type',
+    'invalid row width',
+    'unknown selection field',
+    'missing selection deployment',
+  ])(
+    'refuses %s in the actual HUMAN history result consumer',
+    async (changed) => {
+      const completed = {
+        ...receipt,
+        inputReference: { ...reference },
+        terminalStatus: 'COMPLETED',
+        nativeType: 'wren.api_history',
+        nativeId: 'native-result',
+      };
+      const record: any = nativeRecord();
+      if (changed === 'wrong API type') record.apiType = ApiType.GET_MODELS;
+      if (changed === 'another intent key') record.governanceKey = binding;
+      if (changed === 'another parameter hash')
+        record.governanceParameterHash = 'd'.repeat(64);
+      if (changed === 'another deployment ID') record.governanceDeploymentId++;
+      if (changed === 'another deployment hash')
+        record.governanceDeploymentHash = 'd'.repeat(40);
+      if (changed === 'missing SQL') delete record.requestPayload.sql;
+      if (changed === 'changed SQL')
+        record.requestPayload.sql = 'SELECT private';
+      if (changed === 'another action')
+        record.requestPayload.action = 'data_query.dry_run@v1';
+      if (changed === 'request deployment ID')
+        record.requestPayload.deploymentId++;
+      if (changed === 'request deployment hash')
+        record.requestPayload.deploymentHash = 'd'.repeat(40);
+      if (changed === 'request limit') record.requestPayload.limit++;
+      if (changed === 'result deployment ID')
+        record.responsePayload.deploymentId++;
+      if (changed === 'result deployment hash')
+        record.responsePayload.deploymentHash = 'd'.repeat(40);
+      if (changed === 'missing column type')
+        record.responsePayload.columns = [{ name: 'customer' }];
+      if (changed === 'invalid row width') record.responsePayload.data = [[1]];
+      if (changed === 'unknown selection field')
+        completed.inputReference.nativeObjectRef = JSON.stringify({
+          ...selection,
+          source: 'untrusted',
+        });
+      if (changed === 'missing selection deployment')
+        completed.inputReference.nativeObjectRef = JSON.stringify({
+          viewId: selection.viewId,
+          limit: selection.limit,
+        });
+      calls.mockResolvedValue(completed);
+      history.mockResolvedValue(changed === 'missing history' ? null : record);
+      await expect(
+        service.preview('verified-native-token', 7, 10, key),
+      ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(freeze).not.toHaveBeenCalled();
+    },
+  );
   it.each(['RUNNING', 'FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'])(
     'consumes the original %s task receipt without inventing native result rows',
     async (terminalStatus) => {
@@ -450,6 +667,7 @@ describe('native saved-view HUMAN query consumer', () => {
         projectService: {
           getCurrentProject: jest.fn(async () => ({ id: 3 })),
         },
+        projectRepository: { findOneBy: jest.fn(async () => nativeProject) },
         askingService: {
           getResponse: jest.fn(async () => ({ ...response })),
         },
@@ -463,8 +681,43 @@ describe('native saved-view HUMAN query consumer', () => {
             hash: 'b'.repeat(40),
             status: 'SUCCESS',
           })),
+          findOneBy: jest.fn(async () => ({
+            id: 12,
+            projectId: 3,
+            hash: 'b'.repeat(40),
+            status: 'SUCCESS',
+            manifest: {
+              catalog: nativeProject.catalog,
+              schema: nativeProject.schema,
+              models: [{ name: 'native_model', columns: [] }],
+              views: [
+                {
+                  name: view.name,
+                  statement: view.statement,
+                  properties: { viewId: String(view.id) },
+                },
+              ],
+            },
+            nativeObjectRefs: capturedSources,
+          })),
         },
-        queryService: { preview: jest.fn() },
+        modelRepository: {
+          findOneBy: jest.fn(async () => ({
+            id: 8,
+            projectId: 3,
+            referenceName: 'native_model',
+          })),
+        },
+        queryService: {
+          preview: jest.fn(),
+          sourceObjects: jest.fn(async () => [
+            {
+              catalog: nativeProject.catalog,
+              schema: nativeProject.schema,
+              table: 'native_model',
+            },
+          ]),
+        },
       };
       where = {
         responseId: 21,
@@ -473,16 +726,25 @@ describe('native saved-view HUMAN query consumer', () => {
         idempotencyScope: nativePreviewScope(config, ctx.nativeIdentityScope),
       };
       require('./common').components.apiHistoryRepository.findOneBy = history;
-      history.mockResolvedValue({
-        responsePayload: {
-          columns: [{ name: 'customer' }],
-          data: [['native']],
-        },
-      });
+      history.mockImplementation(async () =>
+        nativeRecord(
+          command.componentAction.inputReference,
+          view.statement,
+          [{ name: 'customer', type: 'VARCHAR' }],
+          [['native']],
+        ),
+      );
       calls.mockImplementation(async (_config, _operation, input, token) => {
         expect(token).toBe('verified-native-token');
         const payload = input as any;
-        if (payload.resolveResource) return resolution;
+        if (payload.resolveResource)
+          return {
+            resource: {
+              ...resolution.resource,
+              nativeType: payload.resolveResource.nativeType,
+              nativeRef: payload.resolveResource.nativeRef,
+            },
+          };
         if (payload.command) {
           command = payload.command;
           observed = {
@@ -535,8 +797,10 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(ctx.queryService.preview).not.toHaveBeenCalled();
         if (completed) {
           expect(result.data).toEqual({
-            columns: [{ name: 'customer' }],
+            columns: [{ name: 'customer', type: 'VARCHAR' }],
             data: [['native']],
+            deploymentId: 12,
+            deploymentHash: 'b'.repeat(40),
           });
           expect(history).toHaveBeenCalledWith({
             id: 'native-result',
@@ -544,6 +808,7 @@ describe('native saved-view HUMAN query consumer', () => {
             governanceBindingId: binding,
             governanceActionExecutionId: submission.actionExecutionId,
             governanceOperationId: submission.operationId,
+            governanceKey: key,
             governanceState: 'SUCCEEDED',
           });
         } else {
@@ -733,8 +998,10 @@ describe('native saved-view HUMAN query consumer', () => {
         ctx,
       );
       expect(result.data).toEqual({
-        columns: [{ name: 'customer' }],
+        columns: [{ name: 'customer', type: 'VARCHAR' }],
         data: [['native']],
+        deploymentId: 12,
+        deploymentHash: 'b'.repeat(40),
       });
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
       expect(JSON.stringify(command)).not.toContain('Original answer');
