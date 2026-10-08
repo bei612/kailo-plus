@@ -18,6 +18,7 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   editTarget?: TimelineMessage | null;
   onEdit?: (message: TimelineMessage) => void;
   onCancelEdit?: () => void;
+  onEditLastOwnMessage?: () => boolean;
   onEditSave?: (
     content: string,
     mentionPubkeys: string[],
@@ -106,6 +107,7 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
           key={props.editTarget ? `edit:${props.editTarget.id}` : composer.draftKey}
           editTarget={props.editTarget ?? undefined}
           onCancelEdit={props.onCancelEdit}
+          onEditLastOwnMessage={props.onEditLastOwnMessage}
           onSend={
             props.editTarget && props.onEditSave ? props.onEditSave : props.onSend
           }

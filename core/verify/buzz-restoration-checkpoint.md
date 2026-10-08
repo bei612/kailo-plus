@@ -4396,3 +4396,107 @@ Vitest threads/maxWorkers=1；无Cargo、镜像、下载、全局Node重跑或�
 本批源码检查和本节冻结交主代理提交；不自行stage/push。
 未新增业务截图，仍只有此前329线上8状态；新定位修复、全量原版一致性、
 Windows/Mobile和三组件业务页面未由本批验收，不声明100%或生产就绪。
+
+## 2026-10-08 原 routed-edit 延后焦点与本人末条快捷键真实消费者
+
+本批依据用户的固定官方全量对照、Web/Desktop共源恢复要求，
+直接迁移 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/channels/ui/useRoutedMessageEdit.ts::useRoutedMessageEdit`、
+`desktop/src/features/channels/ui/useFocusDrawerPresence.ts::usePresenceCoverage/useFocusDrawerPresence`、
+`desktop/src/features/channels/focusedThreadCloseRequest.ts::requestFocusedThreadClose/subscribeToFocusedThreadCloseRequest`、
+`desktop/src/features/messages/lib/useRichTextEditor.ts::useRichTextEditor`、
+`desktop/src/features/messages/ui/MessageComposer.tsx::MessageComposer`。
+已逐模块核实原逻辑；不是自行设计页面或新键盘规则。
+
+影响面与实际实现：三个原线程模块迁入既有共享thread目录，Native原路径转导出；
+原ChannelPane、MessageThreadPanel、两端实际Composer与Web独立授权线程读源接回。
+原主消息从focus/single线程进入编辑时，先关闭线程，等真实presence退出且主面板不被覆盖后编辑；
+退出完成前原主面板保持inert。保留原跨main/thread编辑守卫、同目标切换、原关闭订阅。
+ArrowUp仅在实际Tiptap空doc、无修饰键、无autocomplete时选择当前本人最新已确认非system消息；
+主频道和线程各用自己的真实数据，草稿非空时不消费键盘。
+Web线程选择root继续经父级原路由，不另造线程编辑或执行权威。
+
+授权差异仅限既定宿主接缝：共享导入路径、现成中文/英文词条、
+身份/频道切换时丢弃旧pending编辑；Web缺省thread数组不以假空数据代替真实独立读源。
+本批无Core/API/契约/迁移、无新增数据状态和服务权威、无菜单/布局/文案设计变化。
+未授权/归档/资料落后/执行中不提供新编辑准入；既有UNKNOWN和receipt处理不变。
+频道、身份、线程切换及卸载丢弃旧UI选择，不保留跨scope pending。
+Mobile非组件宿主与本机持钥边界不变，本批没有Mobile源码或设备验收。
+
+源码17路径（包含3个原模块共享迁移新文件），合计+448/-62；
+既有14路径+281/-62，三个共享模块131/12/24行。
+`client-kit/ts/platform/package.json`只增加真实关闭订阅消费者需要的子路径export，
+无新依赖或锁文件变动。候选中Shared、Native、Web三个实际platform副本均已精确同步。
+
+原SDK `kailo-agent-receipt-xvkujx`，固定4CPU/8GiB，Node heap3072MiB，Vitest单worker。
+未安装依赖、建镜像、运行Cargo/Go、全量生成或全量构建；正式源不做故障注入。
+原候选 `/evidence/profile-settings-ortsoo.DRR20F/apps`；日志绝对目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+
+实现后实际执行（上述候选对应工程cwd）：
+
+```sh
+./node_modules/.bin/vitest run test/timeline-scope.test.tsx test/custom-emoji-composer.test.tsx --pool=forks --maxWorkers=1
+./node_modules/.bin/vitest run src/platform/ui/ChannelRead.test.tsx --pool=forks --maxWorkers=1
+./node_modules/.bin/vitest run src/platform/ui/ChannelPane.test.tsx src/platform/ui/ChannelThreadPane.test.tsx --pool=forks --maxWorkers=1
+node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/tsc --noEmit -p tsconfig.test.json
+```
+
+最终结果Shared15/15、Web真实读写/编辑34/34、Web相关19/19、Native4/4，
+合计72项，均exit0；不是72个已部署页面。
+日志依次为`routed-edit-shared-restored.log`、`routed-edit-web-restored.log`、
+`routed-edit-web-related.log`、`routed-edit-native.log`。
+Shared生产/检查、Web、Native四次类型检查exit0，日志为
+`routed-edit-shared-types.log`、`routed-edit-shared-test-types-final.log`、
+`routed-edit-web-types.log`、`routed-edit-native-types-final.log`。
+Native最初TS2307为新增真实子路径export遗漏，已修正式package并同步后通过，
+不以声明桩或改依赖版本规避。
+
+首次Shared检查实际exit1（jsdom缺Range几何API），补标准测试DOM几何后恢复；
+首次Web7项失败包括fixture非原始窗口倒序、captured rAF与fake timer时钟不一致。
+最终使用真实Motion `frameSteps/frameData`驱动原presence动画，不mock动画组件或退出callback；
+保持原断言与真实Tiptap事件。Web既有React act/linkify提示仍有，未冒称无警告。
+
+生产破坏均限私有候选，原始失败日志保留：
+删除covered守卫的首次检查没有触发effect重算而错误通过，
+`routed-edit-focus-negative.log`不算负向命中；追加真实editor准入callback重渲染后，
+`routed-edit-focus-negative-final.log`实际1失败，抓到覆盖期间提前编辑。
+删除空doc守卫，`routed-edit-draft-negative.log`实际1失败；
+删除本人pubkey过滤，`routed-edit-owner-negative.log`实际1失败（选中他人最新消息）；
+断开Web主频道两处与线程一处真实Composer回调，
+`routed-edit-consumer-negative.log`实际2失败，不只测未调用的helper。
+全部还原后重新执行Shared15/Web34及最终检查类型，exit0。
+17输入与候选、12个两宿主共享副本cmp全0，限定git diff --check exit0；
+cgroup原max16751/oom2/oom_kill2均零增量，终态只有sleep infinity。
+本批不重复全检；主线按集中收口执行既有全量门禁，不能把本节窄验当全检退出0。
+
+全量对照仍以已有当前归档为准：官方上述40位commit与apps
+`32971030d1d856b4f26b19fcff02cd4939204864`的3323路径快照，非本批新HEAD完整再导出。
+仅将本批已逐模块核实的两个原thread模块归入共享迁移；
+`collaboration-main.classification.tsv`现在34共享迁移、7缺失需恢复、3282未分类，
+合计3323；41已分类不等于41已全体验验收，更不代表100%。
+TSV位于上述日志目录，SHA256
+`8513fea5f3ea1510fc8bd0e5d8dd6305942b0ebcbf016b4ed3b0cc22d145d933`。
+未将整个RichTextEditor/Composer路径因局部恢复而改判全量一致；
+原Native useRoutedMessageEdit旧路径仍不存在且已迁共享，保留remove_paths事实，
+不将合法共享迁移谎称原路径恢复。
+
+实际浏览器沿playwright-cli `header-restoration`正常IdP表单重新登录，
+无Cookie/会话注入、账号重置或明文凭据输出。
+重新登录后读取实际build-info为固定main
+`0b04bc2654e5f1b8a7942d9966ebe334927e0c86`、
+source/buildId `sha256:a61b2f7db919f3fe9d4aa20b136bcff530a48954847ba096ca22bf5339110672`。
+本次五张业务截图均已实际打开视觉复核，文件位于apps/.playwright-cli：
+`kailo-ui-20261008-main0b-channel-readonly-followup.png`、
+`kailo-ui-20261008-main0b-inbox-followup.png`、
+`kailo-ui-20261008-main0b-pulse-followup.png`、
+`kailo-ui-20261008-main0b-projects-followup.png`、
+`kailo-ui-20261008-main0b-projects-channels-followup.png`。
+截图对应真实频道/Inbox/Pulse/Projects及项目频道；Projects当前零数据仅验证原空态，
+不冒称有数据的项目/频道完整操作通过；无新发消息、创建项目或其他业务写入。
+Pulse等待“全部”30秒超时是原实际词条为“所有人”，已如实保留，后续实际页面截图已打开；
+不把超时描述成等待成功。Windows/Mobile仍无真实设备验收，组件页不由这些截图证明。
+本批编辑源码尚未提交/部署，上述0b截图不能验本批恢复的键盘与焦点操作。
+原Agent资料/直聊、Activity与其他未分类模块仍缺实证，不生成假入口或删除交付目标。

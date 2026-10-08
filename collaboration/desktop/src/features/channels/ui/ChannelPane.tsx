@@ -8,6 +8,7 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { getThreadReference, isThreadReply } from "@/features/messages/lib/threading";
+import { useRoutedMessageEdit } from "@client-kit/platform/react/thread";
 import type { TimelineMessage } from "@/features/messages/types";
 import { AnimatePresence } from "motion/react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -262,19 +263,23 @@ export const ChannelPane = React.memo(function ChannelPane({
     Boolean(threadHeadMessage) || shouldShowThreadSkeleton;
   const useFocusThreadDrawer =
     threadViewMode === "focus" && useSplitAuxiliaryPane && hasThreadSurface;
-  const handleRoutedEdit = (message: TimelineMessage) => {
-    if (
-      !isThreadReply(message.tags ?? []) &&
-      (isSinglePanelView || useFocusThreadDrawer)
-    ) {
-      onCloseThread();
-    }
-    onEdit(message);
-  };
   const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(
     useFocusThreadDrawer,
     onCloseThread,
   );
+  const { handleEditLastOwnMainMessage, handleEditLastOwnThreadMessage, routeEdit: handleRoutedEdit } = useRoutedMessageEdit({
+    activeChannelId: activeChannel.id,
+    channelIsCovered,
+    currentPubkey,
+    editTarget: editTarget ? {id: editTarget.id, isThreadReply: isThreadReply(editTarget.tags ?? [])} : null,
+    isSinglePanelView,
+    mainMessages: mainTimelineEntries.map(entry => entry.message),
+    onCloseThread,
+    onEdit: isComposerDisabled || editing ? undefined : onEdit,
+    threadHeadMessage,
+    threadMessages: threadMessages.map(entry => entry.message),
+    useFocusThreadDrawer,
+  });
   const { changeThreadViewMode, layoutScrollTargetId, resolveScrollTarget } =
     useThreadViewModeSwitch({
       activeThreadHeadId: threadHeadMessage?.id ?? null,
@@ -436,6 +441,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   mediaController={mainComposerMedia}
                   onAttachmentAcceptanceChange={setAcceptsMainAttachments}
                   onSend={handleSendMessage}
+                  onEditLastOwnMessage={handleEditLastOwnMainMessage}
                   profiles={profiles}
                   showBackgroundUploadProgress={false}
                   placeholder={
@@ -464,6 +470,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 editTarget={threadEditTarget}
                 onEdit={isComposerDisabled || editing ? undefined : handleRoutedEdit}
                 onCancelEdit={onCancelEdit}
+                onEditLastOwnMessage={handleEditLastOwnThreadMessage}
                 onEditSave={saveEdit}
                 disabled={isComposerDisabled}
                 firstUnreadReplyId={threadFirstUnreadReplyId}

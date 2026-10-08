@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { frameData, frameSteps, MotionGlobalConfig } from "motion/react";
 import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
 import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
@@ -86,6 +87,16 @@ async function flush() {
   for (let i = 0; i < 20; i++)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
+      // Advance the real Motion frame steps on this deterministic test clock.
+      // jsdom's rAF scheduler was captured before Vitest installed fake timers.
+      frameData.delta = 10;
+      frameData.timestamp += 10;
+      frameData.isProcessing = true;
+      try {
+        for (const step of Object.values(frameSteps)) step.process(frameData);
+      } finally {
+        frameData.isProcessing = false;
+      }
     });
 }
 async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView } = {}) {
@@ -237,6 +248,7 @@ beforeEach(() => {
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
   vi.useFakeTimers();
+  MotionGlobalConfig.useManualTiming = true;
   vi.clearAllMocks();
   vi.stubGlobal("Image",function(){
     const image=document.createElement("img");let source="";
@@ -372,6 +384,89 @@ it.each(["confirmed", "missing-receipt", "unknown", "denied"])(
     }
   },
 );
+it("the actual empty main Composer ArrowUp edits only the latest own acknowledged message", async () => {
+  state.members.mockResolvedValue([
+    { principalId: "human-a", displayName: "Me", pubkeys: ["mine"], state: "ACTIVE" },
+  ]);
+  await renderChannel();
+  await act(async () => {
+    state.receive!({type: "snapshot", events: windowEvents([
+      {...event(30), content: "Later other author"},
+      {...event(20), pubkey: "mine", content: "Latest own message"},
+      {...event(10), pubkey: "mine", content: "Older own message"},
+    ])});
+    state.receive!({type: "live"});
+  });
+  await flush();
+  const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  const key = new KeyboardEvent("keydown", {key: "ArrowUp", bubbles: true, cancelable: true});
+  await act(async () => input.dispatchEvent(key));
+  await flush();
+  expect(key.defaultPrevented).toBe(true);
+  expect(host.textContent).toContain("Editing message");
+  expect([...host.querySelectorAll('[data-testid="message-input"]')].some(editor => editor.textContent === "Latest own message")).toBe(true);
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("the actual thread Composer ArrowUp chooses the latest own reply and saves its original edit target", async () => {
+  state.members.mockResolvedValue([
+    { principalId: "human-a", displayName: "Me", pubkeys: ["mine"], state: "ACTIVE" },
+  ]);
+  const reply = {...event(20), pubkey: "mine", content: "Latest own reply", tags: [
+    ["h", "channel-a"], ["e", "event-10", "", "root"], ["e", "event-10", "", "reply"],
+  ]};
+  threadMessages.splice(0, threadMessages.length,
+    {...event(10), createdAt: 10}, {...reply, createdAt: 20},
+    {...reply, id: "other-reply", pubkey: "other", content: "Later other reply", createdAt: 30},
+  );
+  await open();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+  await flush();
+  const panel = () => host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!;
+  const input = panel().querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  const key = new KeyboardEvent("keydown", {key: "ArrowUp", bubbles: true, cancelable: true});
+  await act(async () => input.dispatchEvent(key));
+  await flush();
+  expect(key.defaultPrevented).toBe(true);
+  expect(panel().textContent).toContain("Editing message");
+  expect(panel().querySelector('[data-testid="message-input"]')?.textContent).toBe(reply.content);
+  await act(async () => panel().querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(state.publish).toHaveBeenCalledExactlyOnceWith("workspace-a", reply.content, [], expect.any(String), [],
+    {editEventId: reply.id, mentionPubkeys: []});
+  expect(panel().textContent).not.toContain("Editing message");
+});
+
+it("the actual focused thread root edit waits for the original drawer exit before focusing the main editor", async () => {
+  state.members.mockResolvedValue([
+    { principalId: "human-a", displayName: "Me", pubkeys: ["mine"], state: "ACTIVE" },
+  ]);
+  const ownRoot = {...event(10), pubkey: "mine", content: "Original owned root", createdAt: 10};
+  threadMessages.splice(0, threadMessages.length, ownRoot);
+  await act(async () => setThreadViewMode("focus"));
+  await renderChannel();
+  await act(async () => {
+    state.receive!({type: "snapshot", events: windowEvents([ownRoot])});
+    state.receive!({type: "live"});
+  });
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+  await flush();
+  const drawer = host.querySelector<HTMLElement>('[data-testid="focus-thread-drawer"]')!;
+  expect(drawer).not.toBeNull();
+  await act(async () => drawer.querySelector<HTMLButtonElement>('[data-testid="more-actions-event-10"]')!
+    .dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})));
+  await flush();
+  await act(async () => document.querySelector<HTMLElement>('[data-testid="edit-message-event-10"]')!.click());
+  expect(host.textContent).not.toContain("Editing message");
+  expect(host.querySelector("[inert]")).not.toBeNull();
+  await flush();
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).toBeNull();
+  expect(host.querySelector("[inert]")).toBeNull();
+  expect(host.textContent).toContain("Editing message");
+  expect([...host.querySelectorAll('[data-testid="message-input"]')].some(editor => editor.textContent === ownRoot.content)).toBe(true);
+  expect(state.publish).not.toHaveBeenCalled();
+});
 it("the original thread row Reply leaves editing and publishes to the selected reply, not the edit target", async () => {
 	state.members.mockResolvedValue([
 		{
@@ -496,6 +591,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
   host.remove();
+  MotionGlobalConfig.useManualTiming = false;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

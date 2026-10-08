@@ -50,6 +50,7 @@
     "./react/thread": "./src/react/messages/thread/index.ts",
     "./react/thread/threadViewModePreference": "./src/react/messages/thread/threadViewModePreference.ts",
     "./react/thread/FocusThreadDrawer": "./src/react/messages/thread/FocusThreadDrawer.tsx",
+    "./react/thread/focusedThreadCloseRequest": "./src/react/messages/thread/focusedThreadCloseRequest.ts",
     "./react/thread-layout-settings": "./src/react/thread-layout-settings.tsx",
     "./react/thread/kinds": "./src/react/messages/thread/kinds.ts",
     "./react/thread/threadPanel": "./src/react/messages/thread/threadPanel.ts",

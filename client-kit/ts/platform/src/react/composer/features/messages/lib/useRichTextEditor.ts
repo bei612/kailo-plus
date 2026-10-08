@@ -84,6 +84,7 @@ export type RichTextEditorOptions = {
   /** Called on plain Enter (submit). Handled inside Tiptap's extension system
    *  so it fires *before* ProseMirror's default splitBlock behaviour. */
   onSubmit?: () => void;
+  onEditLastOwnMessage?: () => boolean;
   /** When true, plain Enter is passed through (e.g. to select an autocomplete item). */
   isAutocompleteOpen?: React.RefObject<boolean>;
   /**
@@ -131,6 +132,7 @@ export function useRichTextEditor({
   customEmoji,
   getMentionIdentities,
   onSubmit,
+  onEditLastOwnMessage,
   isAutocompleteOpen,
   onEditLink,
   onLinkSelectionChange,
@@ -144,6 +146,8 @@ export function useRichTextEditor({
   onUpdateRef.current = onUpdate;
   const onSubmitRef = React.useRef(onSubmit);
   onSubmitRef.current = onSubmit;
+  const onEditLastOwnMessageRef = React.useRef(onEditLastOwnMessage);
+  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
   const onEditLinkRef = React.useRef(onEditLink);
   onEditLinkRef.current = onEditLink;
   const onLinkSelectionChangeRef = React.useRef(onLinkSelectionChange);
@@ -469,7 +473,15 @@ export function useRichTextEditor({
             return onLinkShortcutRef.current?.() ?? false;
           }
 
-          return false;
+          if (event.key !== "ArrowUp") return false;
+          if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+          if (isAutocompleteOpen?.current) return false;
+          const handler = onEditLastOwnMessageRef.current;
+          if (!handler) return false;
+          const { doc } = view.state;
+          const isEmptyDoc = doc.childCount <= 1 && doc.textContent.length === 0;
+          if (!isEmptyDoc) return false;
+          return handler();
         },
       },
       onUpdate: ({ editor: ed }) => {

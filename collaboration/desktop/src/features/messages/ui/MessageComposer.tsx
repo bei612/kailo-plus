@@ -60,6 +60,7 @@ function MessageComposerImpl({
   disabled = false,
   editTarget,
   onCancelEdit,
+  onEditLastOwnMessage,
   draftKey,
   autoSubmitDraftKey = null,
   onAutoSubmitComplete,
@@ -166,6 +167,10 @@ function MessageComposerImpl({
   const isSubmitLockedRef = React.useRef(false);
   const [isSubmitLocked, setIsSubmitLocked] = React.useState(false);
   const onSendRef = React.useRef(onSend);
+  const onEditLastOwnMessageRef = React.useRef(onEditLastOwnMessage);
+  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
+  const editTargetRef = React.useRef(editTarget);
+  editTargetRef.current = editTarget;
   disabledRef.current = disabled;
   isSendingRef.current = isSending;
   isUploadingRef.current = media.isUploading;
@@ -208,6 +213,11 @@ function MessageComposerImpl({
     messageLinkChannels: channelLinks.channels,
     getMentionIdentities: mentions.getMentionIdentities,
     onSubmit: () => submitMessageRef.current(),
+    onEditLastOwnMessage: () => {
+      if (editTargetRef.current) return false;
+      const handler = onEditLastOwnMessageRef.current;
+      return handler ? handler() : false;
+    },
     isAutocompleteOpen: isAutocompleteOpenRef,
     onEditLink: (info) => onEditLinkRef.current?.(info),
     onLinkSelectionChange: (info) => onLinkSelectionChangeRef.current?.(info),

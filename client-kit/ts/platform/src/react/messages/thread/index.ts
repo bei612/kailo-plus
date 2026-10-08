@@ -10,3 +10,5 @@ export type { MainTimelineEntry } from "./threadPanel";
 export * from "./auxiliary";
 export { getThreadRouteTarget, getRouteMainTimelineTargetId } from "./channelRouteTarget";
 export { useChannelMessageEdit } from "./useChannelMessageEdit";
+export { useRoutedMessageEdit } from "./useRoutedMessageEdit";
+export { useFocusDrawerPresence } from "./useFocusDrawerPresence";

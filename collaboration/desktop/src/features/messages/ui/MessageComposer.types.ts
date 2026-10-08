@@ -21,6 +21,7 @@ export type MessageComposerProps = {
   disabled?: boolean;
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
+  onEditLastOwnMessage?: () => boolean;
   draftKey?: string;
   /**
    * When provided, the composer fires `submitMessage` once on mount after

@@ -52,6 +52,8 @@ import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
+import { useFocusDrawerPresence, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
+import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
@@ -170,14 +172,8 @@ export function ChannelPane({
   const handleCloseThread = useCallback(() => {
     if (requireThreadEditResolution()) setReplyTarget(null);
   }, [requireThreadEditResolution]);
-  const handleRoutedEdit = useCallback(
-    (message: TimelineMessage) => {
-      if (!handleEdit(message)) return false;
-      if (!isThreadReply(message.tags ?? []) && focusThread) setReplyTarget(null);
-      return true;
-    },
-    [focusThread, handleEdit],
-  );
+  const useFocusThreadDrawer = Boolean(!conversation && replyTarget && focusThread && !profileTarget && !systemProfileTarget);
+  const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer, handleCloseThread);
   const handleEditConfirmed = useCallback(
     (message: TimelineMessage) => {
       setEditTarget((current) => (current?.id === message.id ? null : current));
@@ -269,6 +265,17 @@ export function ChannelPane({
     handledRouteTarget.current = key;
   }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
+  const { handleEditLastOwnMainMessage, routeEdit: handleRoutedEdit } = useRoutedMessageEdit({
+    activeChannelId: JSON.stringify([myPrincipalId, conversation?.id ?? workspaceId]),
+    channelIsCovered,
+    currentPubkey: ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined,
+    editTarget: editTarget ? {id: editTarget.id, isThreadReply: isThreadReply(editTarget.tags ?? [])} : null,
+    isSinglePanelView: false,
+    mainMessages: routedTimelineMessages.filter(message => message.kind === 9),
+    onCloseThread: handleCloseThread,
+    onEdit: live && !denied && !archived && !metadataPending && !composerBusy ? handleEdit : undefined,
+    useFocusThreadDrawer,
+  });
   const SystemProfilePopover = useCallback(({pubkey, children, triggerAriaLabel}: {pubkey:string;children:ReactNode;triggerAriaLabel?:string}) => {
     const member = byPubkey.get(pubkey);
     if (conversation || !live || denied || !member || !("state" in member) || member.state !== "ACTIVE") return <>{children}</>;
@@ -431,7 +438,7 @@ export function ChannelPane({
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
+    <div inert={channelIsCovered ? true : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
       <div className="text-xs text-muted-foreground" role="status">
         {status}
       </div>
@@ -520,12 +527,14 @@ export function ChannelPane({
       <div hidden={mainEditTarget !== null}>
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
+            onEditLastOwnMessage={handleEditLastOwnMainMessage}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
             mentionPeople={mentionPeople}
+            onEditLastOwnMessage={handleEditLastOwnMainMessage}
             disabled={archived || metadataPending}
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
@@ -537,7 +546,8 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    {!conversation && replyTarget ? <div className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
+    {!conversation && replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
@@ -549,6 +559,7 @@ export function ChannelPane({
       editBusy={composerBusy} onEditSendingChange={setComposerBusy}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
+    </AnimatePresence>
     </div>
   );
 }
@@ -567,10 +578,11 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
+export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId }: {
   mentionPeople?: readonly MentionSuggestion[];
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
+  onEditLastOwnMessage?: () => boolean;
   onConfirmed?: () => void;
   draftChannelId?: string;
   surface?: "stream" | "forum";
@@ -739,6 +751,10 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
 
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
   const sendRef = useRef<() => void>(() => {});
+  const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
+  onEditLastOwnMessageRef.current = onEditLastOwnMessage;
+  const editTargetRef = useRef(editTarget);
+  editTargetRef.current = editTarget;
   const editLinkRef = useRef<(info: LinkSelectionInfo) => void>(() => {});
   const linkSelectionRef = useRef<(info: LinkSelectionInfo | null) => void>(() => {});
   const linkShortcutRef = useRef<() => boolean>(() => false);
@@ -768,6 +784,11 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       const query=mentionPeople?detectPrefixQuery("@",text,cursor,mentionPeople.map(person=>person.displayName.toLowerCase())):null;
       setHumanQuery(query?{...query,cursor}:null);
     }, onSubmit: () => sendRef.current(),
+    onEditLastOwnMessage: () => {
+      if (editTargetRef.current) return false;
+      const handler = onEditLastOwnMessageRef.current;
+      return handler ? handler() : false;
+    },
     isAutocompleteOpen: autocompleteOpenRef,
     onEditLink: (info) => editLinkRef.current(info),
     onLinkSelectionChange: (info) => linkSelectionRef.current(info),

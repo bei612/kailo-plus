@@ -26,9 +26,43 @@ const custom = [{ shortcode: "party", url: "/api/v1/profile/media/approved" }];
 beforeEach(() => {
   setLocale("en");
   HTMLElement.prototype.scrollIntoView ??= () => {};
+  // The actual ProseMirror ArrowUp fallback consults DOM Range geometry.
+  // jsdom omits these browser methods; keep the editor/key path real.
+  Object.defineProperties(Range.prototype, {
+    getClientRects: {configurable:true,value:()=>[]},
+    getBoundingClientRect: {configurable:true,value:()=>new DOMRect()},
+  });
 });
 
 describe("original custom emoji composer consumers", () => {
+  it("uses the original empty-editor ArrowUp callback without taking drafted, modified or autocomplete keys", async () => {
+    const selected=vi.fn(()=>true), autocomplete={current:false};
+    let editor:ReturnType<typeof useRichTextEditor>|undefined;
+    function Composer() {
+      editor=useRichTextEditor({readClipboardText:async()=>"",onEditLastOwnMessage:selected,isAutocompleteOpen:autocomplete});
+      return <EditorContent editor={editor.editor}/>;
+    }
+    const host=await render(<Composer/>);
+    const input=host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    async function press(extra:KeyboardEventInit={}) {
+      const event=new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true,cancelable:true,...extra});
+      await act(async()=>{input.dispatchEvent(event);});
+      return event.defaultPrevented;
+    }
+    expect(await press()).toBe(true);
+    expect(selected).toHaveBeenCalledTimes(1);
+    for(const extra of [{ctrlKey:true},{metaKey:true},{altKey:true},{shiftKey:true}]) expect(await press(extra)).toBe(false);
+    autocomplete.current=true;
+    expect(await press()).toBe(false);
+    autocomplete.current=false;
+    await act(async()=>{editor!.setContent("Kept draft");});
+    expect(await press()).toBe(false);
+    expect(selected).toHaveBeenCalledTimes(1);
+    await act(async()=>{editor!.clearContent();});
+    selected.mockReturnValueOnce(false);
+    expect(await press()).toBe(false);
+    expect(selected).toHaveBeenCalledTimes(2);
+  });
   it("keeps the original emoji-mart category and its empty behavior", () => {
     expect(buildCustomEmojiCategory([], "Custom")).toBeUndefined();
     expect(buildCustomEmojiCategory(custom, "Custom")).toEqual([{id:"buzz-custom",name:"Custom",emojis:[{

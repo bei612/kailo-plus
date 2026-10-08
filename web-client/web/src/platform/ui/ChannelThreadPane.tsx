@@ -1,7 +1,7 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget } from "@client-kit/platform/react/thread";
-import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
+import { MessageRowSurface, MessageActionBarSurface, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -109,6 +109,19 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
     },
     [onCancelEdit, rootId],
   );
+  const { handleEditLastOwnThreadMessage } = useRoutedMessageEdit({
+    activeChannelId: JSON.stringify([principalId, workspaceId]),
+    channelIsCovered: false,
+    currentPubkey: editAuthorPubkey,
+    editTarget: editTarget ? {id: editTarget.id, isThreadReply: isThreadReply(editTarget.tags ?? [])} : null,
+    isSinglePanelView: false,
+    mainMessages: rows.filter(row => !row.parentId && row.kind === 9),
+    onCloseThread: onClose,
+    onEdit: canEdit && !editBusy && onEdit ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined,
+    threadHeadMessage: data.threadHead?.kind === 9 ? data.threadHead : undefined,
+    threadMessages: rows.filter(row => row.parentId !== null && row.parentId !== undefined && row.kind === 9),
+    useFocusThreadDrawer: false,
+  });
   const panelLayout = {...getThreadPanelLayout({isFocusDrawer:isFocusMode,isSinglePanelView:false,useSplitAuxiliaryPane:false}), onClose, widthPx: width.widthPx,
     onResizeStart: width.onResizeStart, onResetWidth: width.onResetWidth, canResetWidth: width.canReset};
   if (denied || !data.threadHead) {
@@ -144,6 +157,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
     renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={workspaceId} draftIdentity={principalId}
       editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}
+      onEditLastOwnMessage={handleEditLastOwnThreadMessage}
       onConfirmed={editTarget ? () => onEditConfirmed?.(editTarget) : undefined}
       mentionPeople={mentionPeopleFromMembers(members)}
       draftKey={editTarget ? `edit:${workspaceId}:${editTarget.id}` : `thread:${workspaceId}:${rootId}:${replyId}`}

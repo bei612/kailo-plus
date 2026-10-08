@@ -6,6 +6,8 @@ import { render, click } from "./render";
 import { useAnchoredScroll } from "../src/react/messages/thread/useAnchoredScroll";
 import { getRouteMainTimelineTargetId, getThreadRouteTarget } from "../src/react/messages/thread/channelRouteTarget";
 import { useChannelMessageEdit } from "../src/react/messages/thread/useChannelMessageEdit";
+import { useRoutedMessageEdit } from "../src/react/messages/thread/useRoutedMessageEdit";
+import { useFocusDrawerPresence } from "../src/react/messages/thread/useFocusDrawerPresence";
 import { toast } from "sonner";
 
 const messages: TimelineMessage[] = [{ id: "message", author: "Alice", time: "", createdAt: 1, depth: 0, body: "Body" }];
@@ -151,4 +153,58 @@ it("fences old-owner edit completion and clears the original edit selection on i
   await click(buttons[0]!);
   await click(buttons[2]!);
   expect(host.querySelector("output")?.textContent).toBe("second");
+});
+
+it("defers the original main edit until the real focus drawer exit and drops it on identity changes", async () => {
+  const selected = vi.fn();
+  const own = {...messages[0]!, id:"own", pubkey:"me", kind:9};
+  function FocusHost() {
+    const [open,setOpen] = useState(true);
+    const [owner,setOwner] = useState("me");
+    const [admission,setAdmission] = useState(0);
+    const onEdit = useCallback((message:TimelineMessage)=>{selected(message);},[admission]);
+    const close = useCallback(() => setOpen(false),[]);
+    const presence = useFocusDrawerPresence(open,close);
+    const edit = useRoutedMessageEdit({activeChannelId:"channel",currentPubkey:owner,
+      channelIsCovered:presence.channelIsCovered,isSinglePanelView:false,mainMessages:[own],
+      editTarget:null,onCloseThread:close,onEdit,useFocusThreadDrawer:open});
+    return <><button onClick={()=>edit.routeEdit(own)}>Edit main</button>
+      <button onClick={presence.markExitComplete}>Exit complete</button>
+      <button onClick={()=>{setOpen(true);setOwner("me");}}>Reopen</button>
+      <button onClick={()=>setOwner("other")}>Change owner</button>
+      <button onClick={()=>setAdmission(value=>value+1)}>Refresh actual editor admission</button>
+      <output>{open?"open":"closing"}/{presence.channelIsCovered?"covered":"ready"}</output></>;
+  }
+  const host = await render(<FocusHost/>);
+  const buttons=host.querySelectorAll("button");
+  await click(buttons[0]!);
+  expect(host.querySelector("output")?.textContent).toBe("closing/covered");
+  expect(selected).not.toHaveBeenCalled();
+  await click(buttons[4]!);
+  expect(selected).not.toHaveBeenCalled();
+  await click(buttons[1]!);
+  expect(selected).toHaveBeenCalledExactlyOnceWith(own);
+  await click(buttons[2]!);
+  await click(buttons[0]!);
+  await click(buttons[3]!);
+  await click(buttons[1]!);
+  expect(selected).toHaveBeenCalledTimes(1);
+});
+
+it("selects the original latest own non-system acknowledged message separately for main and thread", async () => {
+  const selected=vi.fn();
+  const own={...messages[0]!,id:"own",pubkey:"me",kind:9,createdAt:2};
+  const reply={...own,id:"reply",createdAt:3,tags:[["e","root","","reply"]]};
+  function LastOwnHost() {
+    const edit=useRoutedMessageEdit({activeChannelId:"channel",currentPubkey:"me",channelIsCovered:false,
+      isSinglePanelView:false,editTarget:null,onCloseThread:()=>{},onEdit:selected,useFocusThreadDrawer:false,
+      mainMessages:[own,{...own,id:"other",pubkey:"other",createdAt:9},{...own,id:"pending",pending:true,createdAt:8},
+        {...own,id:"system",kind:40099,createdAt:7}],threadHeadMessage:own,threadMessages:[reply]});
+    return <><button onClick={edit.handleEditLastOwnMainMessage}>Last main</button>
+      <button onClick={edit.handleEditLastOwnThreadMessage}>Last thread</button></>;
+  }
+  const host=await render(<LastOwnHost/>);
+  await click(host.querySelectorAll("button")[0]!);
+  await click(host.querySelectorAll("button")[1]!);
+  expect(selected.mock.calls).toEqual([[own],[reply]]);
 });
