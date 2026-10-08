@@ -86,6 +86,7 @@ describe('native instance identity boundary', () => {
     '/',
     '/setup/connection',
     '/api/graphql',
+    '/api/platform-query-reference',
     '/api/v1/run_sql',
     '/api/ask_task/streaming',
     '/_next/data/native/index.json',
@@ -96,10 +97,10 @@ describe('native instance identity boundary', () => {
     expect(response.headers.get('x-middleware-next')).toBeNull();
   });
 
-  it('verifies signed entitlement through a real JWKS endpoint and strips credentials', async () => {
+  it.each(['/api/graphql', '/api/platform-query-reference'])('verifies signed entitlement through a real JWKS endpoint and strips credentials for %s', async (path) => {
     const signed = await token();
     const response = await middleware(
-      request('/api/graphql', `Bearer ${signed}`, {
+      request(path, `Bearer ${signed}`, {
         method: 'POST',
         headers: {
           origin: settings.publicOrigin,

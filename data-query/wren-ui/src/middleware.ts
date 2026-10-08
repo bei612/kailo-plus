@@ -202,7 +202,7 @@ export async function middleware(request: NextRequest) {
   }
   // Private Next hop only; Core independently verifies this original signed
   // token. Never synthesize a trusted subject/issuer from browser headers.
-  if (request.nextUrl.pathname === '/api/graphql')
+  if (['/api/graphql', '/api/platform-query-reference'].includes(request.nextUrl.pathname))
     headers.set('x-kailo-native-human-token', token);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'private, no-store');

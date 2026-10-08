@@ -25,7 +25,7 @@ export function nativePreviewScope(
   ]);
 }
 
-async function resolveNativeResource(
+export async function resolveNativeResource(
   config: NativeQueryDelivery,
   token: string,
   kind: 'model' | 'view',

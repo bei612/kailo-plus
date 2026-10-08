@@ -12,6 +12,7 @@ import {
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { getQueryPreviewText } from './utils/language';
+import referenceHandler from './pages/api/platform-query-reference';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -398,6 +399,51 @@ describe('native saved-view HUMAN query consumer', () => {
     ).toEqual({ ...receipt, previewScope: idempotencyScope });
     expect(calls).toHaveBeenCalledTimes(1);
   });
+
+  it('exports only the resolved native view resource through the actual reference handler', async () => {
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    calls.mockResolvedValue(resolution);
+    const nativeReference = jest.spyOn(NativeQueryService.prototype, 'reference').mockResolvedValue(reference);
+    const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn(), end: jest.fn() };
+    try {
+      await referenceHandler({ method: 'GET', headers: { 'x-kailo-native-human-token': 'verified-native-token' },
+        query: { viewId: '7', limit: '10' } } as any, response);
+      expect(response.status).toHaveBeenLastCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith(reference);
+      expect(nativeReference).toHaveBeenCalledWith(resource, 7, 10);
+      expect(calls).toHaveBeenCalledTimes(2);
+      for (const call of calls.mock.calls) {
+        expect(call[2]).toEqual({ bindingId: binding, resolveResource: {
+          workspaceId: config.workspaceId, actionKey: 'data_query.query@v1', actionVersion: 1,
+          nativeType: 'view', nativeRef: '7',
+        } });
+        expect(call[3]).toBe('verified-native-token');
+      }
+    } finally { nativeReference.mockRestore(); }
+  });
+
+  it.each(['missing-token', 'forged-resource', 'denied', 'revoked', 'changed-resource', 'changed-version'])(
+    'does not disclose an exported reference for %s', async (failure) => {
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      calls.mockResolvedValue(resolution);
+      if (failure === 'denied') calls.mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+      if (failure === 'revoked') calls.mockResolvedValueOnce(resolution).mockRejectedValueOnce(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+      if (failure === 'changed-resource' || failure === 'changed-version') calls.mockResolvedValueOnce(resolution).mockResolvedValueOnce({
+        resource: { ...resolution.resource, ...(failure === 'changed-resource' ? { resourceId: binding } : { resourceVersion: 5 }) },
+      });
+      const nativeReference = jest.spyOn(NativeQueryService.prototype, 'reference').mockResolvedValue(reference);
+      const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn(), end: jest.fn() };
+      try {
+        await referenceHandler({ method: 'GET',
+          headers: failure === 'missing-token' ? {} : { 'x-kailo-native-human-token': 'verified-native-token' },
+          query: { viewId: '7', limit: '10', ...(failure === 'forged-resource' ? { resourceId: resource } : {}) },
+        } as any, response);
+        expect(response.status).toHaveBeenLastCalledWith(failure === 'missing-token' ? 401 : failure === 'forged-resource' ? 400 : failure.startsWith('changed-') ? 409 : 403);
+        expect(response.json).not.toHaveBeenCalledWith(reference);
+        if (['missing-token', 'forged-resource', 'denied'].includes(failure)) expect(nativeReference).not.toHaveBeenCalled();
+      } finally { nativeReference.mockRestore(); }
+    },
+  );
 
   it('uses Chinese by default and a single English locale for necessary preview guidance', () => {
     expect(getQueryPreviewText().check).toBe('检查原查询');

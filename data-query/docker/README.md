@@ -268,6 +268,17 @@ id/version used by actual queries; do not configure a global Resource id/version
 to bypass per-object lookup. These metadata reads do not execute SQL or create
 an ActionExecution. Unregistered objects remain unavailable: this change does
 not complete the separate REMOTE_ADAPTER native-object registration path.
+
+The saved-view query-reference export also selects its registered Resource
+from the verified current human, binding and native view ID. Its existing
+form takes only the row limit; it no longer asks the user to type a platform
+Resource ID. The API checks the existing `data_query.query@v1` selection before
+reading the frozen reference and again before disclosing it. Missing native
+identity, unavailable/unregistered resources, denied execution selection,
+revocation or changed Resource/version return an error, not an exported
+reference. Export itself runs no SQL and submits no ActionExecution; subsequent
+query execution retains its existing admission, approval and quota checks.
+
 Deployment/MDL, Asking, dashboard and native write authorization are not covered
 by these four metadata readers; see the component verification receipt for the
 current acceptance boundary before publishing the component.

@@ -2309,3 +2309,76 @@ The final restored `jest --runInBand src/nativeQuery.test.ts` passed 24 tests /
 no diagnostics and exited 0. `git diff --check -- data-query` exited 0. The
 parent's already completed documentation check is separate shared-batch
 evidence; this agent did not rerun the global check or claim `--full` passed.
+
+## Saved-view query-reference HUMAN authorization (2026-10-08)
+
+The deployment-input pass found no additional producer to update: the optional
+query overlay already mounts controlled `query.json` / `binding.json` and uses
+the original Agent's immediate Unix proxy. It does not manufacture those
+authoritative lifecycle documents. The actual remaining consumer defect was
+the existing `/api/platform-query-reference` handler: instance middleware did
+not propagate a verified human token there, and the handler froze a view with
+the browser's arbitrary Resource ID without consuming per-object authorization.
+
+The fixed upstream is Wren
+`c5f02a0391c87420dba78632dcd86073710deb72`, full path
+`wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx::ViewMetadata`
+and its `onPreviewData` callback. The complete native metadata/preview layout
+was compared: name, description, columns, SQL statement and original preview
+remain. The pre-existing query-reference export is a Kailo governance addition,
+not an upstream control. This batch preserves that real function but removes
+its obsolete manually entered platform-ID field and its two dead translations;
+the row-limit, export action and frozen-reference result remain unchanged.
+No unrelated original page or action was removed, redesigned or reordered.
+
+Four-step implementation boundary:
+
+1. Authority: Resource identity and query permission come from the existing
+   Core `human-action.resolveResource` consumer for `data_query.query@v1`.
+   This reuses DD-98 native-reference correspondence and the already established
+   HUMAN query selection, not a new permission or resource directory. The
+   original native view/deployment remain owners of the frozen query reference.
+2. Impact: only the existing reference API is added to the middleware's private
+   verified-token forwarding set; it is not exempted from authentication.
+   That API and existing preview consumer share `resolveNativeResource`.
+   The export request now accepts only view ID and row limit. Existing requests
+   carrying a guessed Resource ID fail rather than using a compatibility bypass.
+   No contract/table/Core/Worker/AgentGateway registration changes are needed.
+3. Side effects: object selection runs before native reference construction and
+   again before disclosure. Both observations must identify the exact same
+   current Resource/version/instance/scope. This is a read/export only: no SQL,
+   native mutation or ActionExecution is submitted. Real execution still passes
+   through the existing permission, approval, quota and terminal-evidence chain.
+4. Boundaries: absent trusted token, malformed IDs/limit, injected Resource ID,
+   unregistered object, denial, unavailable authorization, revocation or changed
+   Resource/version refuse the export. The original UI retains its pending,
+   error and selection-change response fence. The API keeps no identity or
+   permission cache and adds no persistent state. Native project management
+   write authorization remains an independent open gap, not implicitly granted
+   by this export or by instance login.
+
+Checks added after implementation exercise the real Next reference handler and
+the real shared resource resolver, with the native freeze operation isolated;
+the existing native query suite separately covers actual native repository
+reference construction. Middleware consumers use signed tokens and a real JWKS
+HTTP endpoint. The original ViewMetadata consumer verifies that the obsolete
+platform-ID field is absent while preview remains. These are not browser,
+production database, deployment or full-global-check acceptance claims.
+
+The existing 4 CPU / 4 GiB Wren SDK was idle before validation, with no new
+tree or dependency installation. After implementation,
+`jest --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/viewMetadata.test.ts`
+passed 3 suites / 83 tests, exit 0, 171.856 s (cold source/dependency reads).
+The following `tsc --noEmit` produced no diagnostics and exited 0.
+
+Private mutation removed the final Resource/version comparison and the new
+verified-token forwarding. The real consumers failed: 3 failed / 76 targeted
+skips, exit 1, 7.009 s; changed-resource and changed-version exports returned
+HTTP 200 instead of 409, and the reference route received no verified human
+token. Both changes were restored, and all eight changed source/test files
+matched formal source via `cmp`. The same full three-suite command then passed
+83/83 in 7.384 s, exit 0. `git diff --check -- data-query` exited 0.
+Logs are `native-reference-access-tests.log`, `native-reference-access-types.log`,
+`native-reference-access-mutation.log` and `native-reference-access-restored.log`
+in the existing Wren SDK candidate directory. No new release was built or
+deployed; this does not claim full-global-check or browser acceptance.

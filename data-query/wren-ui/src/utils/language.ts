@@ -18,7 +18,6 @@ export const getQueryPreviewText = (locale?: string) =>
         referenceTitle: 'Kailo governed query reference',
         referenceDescription:
           'Select this existing view and a row limit. Export only a frozen native reference; submit it from Kailo under your own platform session and approvals. No query runs here.',
-        resourceId: 'Kailo resource ID',
         rowLimit: 'Query row limit',
         exportReference: 'Export reference',
         frozenReference: 'Frozen query reference',
@@ -36,7 +35,6 @@ export const getQueryPreviewText = (locale?: string) =>
         referenceTitle: 'Kailo 受治理查询引用',
         referenceDescription:
           '选择现有视图及行数上限，仅导出固定的原生引用；随后在 Kailo 中以自己的身份提交并完成所需审批。此处不执行查询。',
-        resourceId: 'Kailo 资源 ID',
         rowLimit: '查询行数上限',
         exportReference: '导出引用',
         frozenReference: '固定的查询引用',

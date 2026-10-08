@@ -35,7 +35,6 @@ export default function ViewMetadata(props: Props) {
     return result.data?.previewViewData;
   }, previewViewDataResult.data?.previewViewData, previewViewDataResult.error);
 
-  const [resourceId, setResourceId] = useState('');
   const [limit, setLimit] = useState<number | null>(null);
   const [reference, setReference] = useState('');
   const [referenceError, setReferenceError] = useState(false);
@@ -57,7 +56,6 @@ export default function ViewMetadata(props: Props) {
     setReferenceError(false);
     try {
       const query = new URLSearchParams({
-        resourceId,
         viewId: String(viewId),
         limit: String(limit),
       });
@@ -68,7 +66,8 @@ export default function ViewMetadata(props: Props) {
       if (!response.ok) throw new Error('reference unavailable');
       const value = await response.json();
       if (
-        value.resourceId !== resourceId ||
+        typeof value.resourceId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.resourceId) ||
         typeof value.nativeObjectRef !== 'string' ||
         typeof value.nativeRevision !== 'string'
       )
@@ -152,17 +151,6 @@ export default function ViewMetadata(props: Props) {
           {text.referenceTitle}
         </Typography.Text>
         <Typography.Paragraph>{text.referenceDescription}</Typography.Paragraph>
-        <Input
-          aria-label={text.resourceId}
-          placeholder={text.resourceId}
-          value={resourceId}
-          disabled={exporting}
-          onChange={(event) => {
-            selection.current++;
-            setReference('');
-            setResourceId(event.target.value);
-          }}
-        />
         <InputNumber
           aria-label={text.rowLimit}
           placeholder={text.rowLimit}
@@ -179,7 +167,7 @@ export default function ViewMetadata(props: Props) {
         <Button
           loading={exporting}
           disabled={
-            !resourceId.trim() || !Number.isSafeInteger(limit) || limit <= 0
+            !Number.isSafeInteger(limit) || limit <= 0
           }
           onClick={() => void exportReference()}
         >

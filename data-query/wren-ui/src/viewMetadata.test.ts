@@ -20,7 +20,7 @@ jest.mock('antd', () => {
   const React = require('react');
   const field = ({ children }: any) =>
     React.createElement('div', null, children);
-  const Input: any = () => null;
+  const Input: any = (props: any) => React.createElement('input', { 'aria-label': props['aria-label'] });
   Input.TextArea = () => null;
   return {
     Alert: field,
@@ -95,6 +95,7 @@ describe('original saved-view preview controls', () => {
 
   it('keeps the original controls and renders one selected language', () => {
     expect(render()).toContain('预览数据');
+    expect(render()).not.toContain('Kailo 资源 ID');
     mockButtons = [];
     mockLocale = 'en';
     const english = render();
