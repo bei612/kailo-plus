@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, verifyBindingHandshakeToken, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, verifyBindingManagementToken, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { createServer } from 'node:http';
@@ -8,11 +8,24 @@ import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
+import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
 // binding adapter. Neither implies release activation or tool registration.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
+
+function executionMapping(action, config) {
+  if (!exactKeys(action, ['actionKey', 'actionVersion'])
+    || !Number.isSafeInteger(action.actionVersion) || action.actionVersion <= 0) throw new Refused(503);
+  if (['file_storage.read@v1', 'file_storage.list@v1'].includes(action.actionKey) && config.readEdge) {
+    return { ...action, nativeType: 'node', cancelCapability: 'UNSUPPORTED' };
+  }
+  if (['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(action.actionKey) && config.documentLaunch) {
+    return { ...action, nativeType: 'document.pat', cancelCapability: 'SUPPORTED' };
+  }
+  throw new Refused(503);
+}
 
 export function queryDigest(argumentsValue) {
   // The original collab_bridge::limits::canonical_json rule; query fields are
@@ -28,7 +41,8 @@ export function configuration(value) {
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
     || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management'].includes(key))) throw new Refused(503);
   if (value.management !== undefined && (!exactKeys(value.management,
-    ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange'])
+    ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
+      ...(value.management.validation === undefined ? [] : ['validation'])])
     || !nonempty(value.management.componentTypeKey) || !UUID.test(value.management.componentReleaseId)
     || !/^[a-f0-9]{64}$/.test(value.management.artifactDigest)
     || value.management.protocolRange !== '1')) throw new Refused(503);
@@ -49,6 +63,11 @@ export function configuration(value) {
   for (const key of ['cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile']) {
     if (!value[key].startsWith('/')) throw new Refused(503);
   }
+  bindingValidationConfiguration(value.management?.validation, value, {
+    nativeScopeRef: value.nativeWorkspaceId, isolationMode: 'DEDICATED_INSTANCE',
+    credentialFiles: [value.cellsBearerFile, value.oidcClientSecretFile],
+    executionMapping: action => executionMapping(action, value),
+  });
   return Object.freeze({ ...value, ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
 }
@@ -221,26 +240,35 @@ async function originalWriteRevision(config, deadline, args, claims) {
     protocolSessionId: frozen.protocolSessionId, correlationRef: evidence.correlationRef };
 }
 
-async function bindingHandshake(config, deadline, raw, key, token) {
+async function bindingManagement(config, deadline, raw, key, token, operation) {
   let args;
   try { args = JSON.parse(raw); } catch { throw new Refused(400); }
-  if (!exactKeys(args, ['idempotencyKey', 'componentReleaseId', 'componentTypeKey', 'protocolRange'])
-    || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== key || raw !== canonical(args)) throw new Refused(400);
+  if (!object(args) || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== key
+    || raw !== canonical(args)) throw new Refused(400);
   const delivered = config.management;
   if (!delivered) throw new Refused(503);
-  if (args.componentReleaseId !== delivered.componentReleaseId || args.componentTypeKey !== delivered.componentTypeKey
-    || args.protocolRange !== delivered.protocolRange) throw new Refused(403);
-  const claims = await verifyBindingHandshakeToken(token, config, args);
-  await freshPep(config, deadline, token, args, claims, 'handshake');
+  if (operation === 'handshake') {
+    if (!exactKeys(args, ['idempotencyKey', 'componentReleaseId', 'componentTypeKey', 'protocolRange'])) throw new Refused(400);
+    if (args.componentReleaseId !== delivered.componentReleaseId || args.componentTypeKey !== delivered.componentTypeKey
+      || args.protocolRange !== delivered.protocolRange) throw new Refused(403);
+  } else bindingArguments(config, args);
+  const claims = await verifyBindingManagementToken(token, config, args, operation);
+  const observe = () => bindingObservation(config, action => executionMapping(action, config), deadline);
+  await freshPep(config, deadline, token, args, claims, operation);
+  const before = operation === 'validate_binding' ? await observe() : undefined;
   const base = fixedUrl(config.cellsRestBaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const root = await jsonFetch(config, deadline, new URL(`n/node/${config.nativeRootRef}?Flags=WithVersionsAll`, base), {
     headers: { authorization: `Bearer ${await secret(config.cellsBearerFile)}`, 'content-type': 'application/json' },
   });
   nativeNode(root, config.nativeRootRef, config.nativeWorkspaceId, 'COLLECTION');
-  const current = await verifyBindingHandshakeToken(token, config, args);
-  await freshPep(config, deadline, token, args, current, 'handshake');
-  return { protocolVersion: '1', artifactDigest: delivered.artifactDigest };
+  const current = await verifyBindingManagementToken(token, config, args, operation);
+  await freshPep(config, deadline, token, args, current, operation);
+  // The original Agent proxy must read the pinned KV versions during this
+  // request. Its new request IDs are evidence, not stable receipt identities.
+  const value = before === undefined ? { protocolVersion: '1', artifactDigest: delivered.artifactDigest } : await observe();
+  await verifyBindingManagementToken(token, config, args, operation);
+  return value;
 }
 
 export function createAdapter(rawConfig) {
@@ -248,13 +276,15 @@ export function createAdapter(rawConfig) {
   const server = createServer(async (request, response) => {
     try {
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
-        '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake'].includes(request.url)) throw new Refused(404);
+        '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
+        '/platform-adapter/v1/validate_binding'].includes(request.url)) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
       const deadline = Date.now() + config.timeoutMs;
       const raw = await boundedBody(request, config.maxBodyBytes);
-      if (request.url === '/platform-adapter/v1/handshake') {
-        const value = await bindingHandshake(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+      if (['/platform-adapter/v1/handshake', '/platform-adapter/v1/validate_binding'].includes(request.url)) {
+        const value = await bindingManagement(config, deadline, raw, request.headers['idempotency-key'],
+          request.headers.authorization.slice(7), request.url.slice('/platform-adapter/v1/'.length));
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify(value));
         return;

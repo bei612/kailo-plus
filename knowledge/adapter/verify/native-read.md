@@ -1203,3 +1203,118 @@ is not opened, so no partial release/binding is enabled. Actual running Core
 release/binding counts remain zero as independently queried by the main
 agent; no live configuration, deployment, menu, database state or installation
 package was changed. Full conformance and full checks remain unrun here.
+
+## 2026-10-08 — binding validation consumes fresh Agent reads
+
+This increment supersedes the preceding missing `validate_binding` consumer;
+it does not supersede the zero live bindings or unrun conformance/deployment
+boundary. Diff base is `ecbc18356709da2ad8742d0d334a9f7eb6c6f9d2`
+(the already-pushed handshake increment).
+
+Authority and impact: DD-70/71 and `.design/07` binding activation retain Core
+as the only lifecycle/audit authority. The existing Core `observe_generation`
+sends the signed `validate_binding` operation; `application_binding_native::validate`
+still verifies the typed observation, exact manifest mappings, SecretRef version,
+reader role and original Bao request/response audit pair. Its `not_before` is
+the current AE's `updated_at`, not the credential file's modification time.
+The actual consumer is the existing adapter HTTP operation, not a new admin
+API, task registry, credential issuer or permissions authority. No shared wire
+contract, migration, release, generation or deployed configuration changed.
+
+Knowledge now consumes the same binding-management token verifier as Cells.
+The controlled `management.validation` delivery fixes binding version, SERVICE,
+adapter/instance/scope references, isolation, normalized config, action versions
+and SecretRef deliveries. Every request must equal these exact facts (including
+tenant/workspace, release and digests). Knowledge's existing MCP KB filter is
+the accepted `RESOURCE_FILTER` scope: `nativeScopeRef` must equal the configured
+KB and the native `list_knowledge_bases` response must contain that exact KB
+once, with a valid original revision. Discovering a KB does not prove write
+capabilities; Core's original full conformance gate remains mandatory.
+
+Shared `client-kit/adapter/binding-validation.mjs` serves the two actual native
+adapters. Each consumer supplies its own fixed native scope, isolation mode,
+actual credential-file list and real execution mapping; no product-name branch
+was added to Core. Knowledge maps existing search/read/export/ingest/delete
+handlers; unsupported search v1 cannot be advertised. Its configured native
+MCP bearer and PEP OIDC secret must both have delivery evidence.
+
+The completed evidence path reuses the already-existing Wren
+`data-query/wren-ui/src/apollo/server/services/nativeBindingService.ts::connectionSecret`
+(last committed implementation `f5f786cadcf0ad88d5fd13c2e964c92ebf0b328a`):
+the original OpenBao Agent Unix API proxy performs a new version-pinned GET
+under the Agent's existing AppRole. The adapter sends no token and has no
+network Bao endpoint or KV credential. Each controlled delivery contains exactly
+`secretKey`, `locator`, `version`, `audience`, `secretFile`, `secretSocket`,
+`secretValueKey`. Namespace and KV v2 path derive from the same tenant SecretRef
+locator used by Core, not caller-controlled URLs. Deployment must use the
+original Agent API proxy with `use_auto_auth_token = "force"`, a restricted
+Unix listener and no cache; it is not a TCP endpoint or shared token sink.
+These are deployment requirements, not evidence that this environment has
+already installed the proxy. Existing Agent configuration is retained rather
+than generating a new parallel secret configuration from the adapter.
+
+Fixed source: OpenBao `735723da5628148f232497a48a35a137b6512103`,
+`internal/command/agent/config/config.go::APIProxy` and `parseAPIProxy`,
+`internal/command/agentproxyshared/cache/api_proxy.go::APIProxy.Send` provide
+the original proxy/config boundary. Core's existing
+`secret_store::split_locator` and `AuditObserver::verify_secret_reads` provide
+the exact namespace/path, role, version, request/response ordering and AE-time
+check. Knowledge original native read remains fixed WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/mcpserver/tools_retrieve.go::Server.handleListKnowledgeBases`, with
+the previously recorded Kailo revision projection in the implementation tree.
+
+Before the native observation and again before final PEP/disclosure, the adapter
+reads the configured fixed version through that socket. Responses must have a
+real UUID request ID, matching version, `destroyed=false`, empty deletion time,
+and a string value exactly equal to the existing credential file actually used
+by MCP/PEP. Each fresh read may correctly have a different request ID; the last
+real reads are returned as existing `AdapterSecretRead` references only.
+Neither value nor digest becomes response data, log, workflow history or a
+second secret store. Body size and the one original request deadline bound the
+proxy operation, including slow streams; malformed/unavailable/oversize,
+wrong-version, deleted, mismatched or mid-observation rotated credentials fail
+closed. Missing management/validation configuration also refuses. No blind
+side-effect retry or new persistent state was introduced. Refused identity or
+scope is a deterministic rejection; unavailable native/proof data remains
+unavailable, never a successful activation.
+
+An initially implemented static Agent-template receipt reader was discarded,
+not left as a second optional mode. Fixed OpenBao depends on official
+`openbao-template` v1.0.1 commit `291f926a07551a007b7f5235fcfba4be768a3386`;
+`dependency/vault_common.go::{Secret,updateSecret}` preserves RequestID and
+`template/funcs.go::sha256Hex` can render a value-bound receipt. That source
+capability alone does not cause a fresh read after this AE. A startup receipt
+can be too old for Core and file mtime cannot repair it. The temporary isolated
+Agent-template experiment first rejected malformed HCL JSON, then failed on
+the fixture's unauthenticated seal-status request; a subsequent launch raced
+fixture-file creation. No real Agent rendering success is claimed. The local
+image reported 2.7.0-beta20260909 (`ccc04f0952a84846330def323da1db6f8416a79e`),
+distinct from the source-evidence pin. Those templates/test experiment were
+removed from the delivery; the existing Unix-proxy mechanism is the only
+implemented proof path. No production OpenBao process was changed.
+
+Verification after implementation reused container `kailo-agent-receipt-xvkujx`
+(4 CPU, 8 GiB memory and equal memory+swap), the existing bounded
+`/evidence/knowledge-adapter.N8sx1m` input and cached Node dependencies; no
+installation, full-tree snapshot or large build was run. Logs are under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`:
+
+- `knowledge-binding-proxy-first.log`: first proxy run exposed an unhandled
+  oversize-response destroy error; fixed to reject and close without a second
+  error event, preserving the same body/deadline refusal.
+- `knowledge-binding-proxy-final.log`: `npm test`, 110 passed, 0 failed,
+  0 skipped. Uses actual Unix socket requests plus signed management HTTP,
+  native MCP and two PEP consumers; no direct helper-only success substitute.
+- `knowledge-binding-proxy-mutation.log`: private candidate removed the actual
+  delivered-secret comparison. Wrong-secret and mid-read rotation then returned
+  200 instead of 503; 15 passed, 3 failed including the parent case.
+- `knowledge-binding-proxy-restored.log`: exact production shared file restored
+  and compared byte-for-byte, then 110 passed, 0 failed, 0 skipped.
+
+This is implementation plus isolated consumer verification, not live component
+activation. Actual Agent AppRole/socket provisioning, original audit correlation
+for a live activation AE, all release conformance vectors, full check, deployment,
+browser/desktop/mobile screenshots and installation packages were not run by
+this increment. Core continues to refuse stale/missing/incorrect audit evidence;
+the adapter never substitutes a supplied timestamp for that existing check.

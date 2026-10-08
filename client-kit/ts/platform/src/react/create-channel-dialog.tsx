@@ -3,11 +3,11 @@
 // desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent
 // The original chooser layout/focus semantics are shared by Web and Desktop.
 // DD-80 changes the write transport to the existing BFF workspace.create action.
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { ChannelType, CreateActionKey } from "@client-kit/contracts";
 import { X } from "lucide-react";
 import { useBffClient, useT } from "./context";
-import { useWorkspaceCreate, WorkspaceCreateForm } from "./roles";
+import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "./roles";
 import { ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 
@@ -26,7 +26,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
       || capability.data.createActionKey === CreateActionKey.WorkspaceCreate)
     ? capability.data : null;
   const actionKey = page?.createActionKey;
-  const state = useWorkspaceCreate(actionKey, channelKind);
+  const state = useWorkspaceCreate(actionKey, channelKind, {active: open});
   const pendingIntent = state.busy || state.command !== null;
   return (
     <Dialog open={open} onOpenChange={(next) => {
@@ -35,12 +35,12 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
     }}>
           <DialogContent
             showCloseButton={false}
+            aria-describedby={undefined}
             className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0"
             data-testid="create-channel-dialog"
           >
             <DialogHeader className="shrink-0 px-6 py-5 pr-14 pb-2">
-              <DialogTitle>{t("channel.create.title")}</DialogTitle>
-              <DialogDescription className="mt-2">{t("channel.create.description")}</DialogDescription>
+              <DialogTitle>{t(channelKind === ChannelType.Forum ? "channel.create.forumTitle" : "channel.create.title")}</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-6">
               <div className="py-5 pt-3">
@@ -50,6 +50,9 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
                   : !actionKey ? <p role="status">{t("channel.create.unavailable")}</p> : null}
                 <WorkspaceCreateForm state={state} channel />
               </div>
+            </div>
+            <div className="flex shrink-0 border-border/60 px-6 py-4 border-t-0 pt-0">
+              <WorkspaceCreateFormFooter state={state} />
             </div>
             <DialogClose
               aria-label={t("channel.create.close")}

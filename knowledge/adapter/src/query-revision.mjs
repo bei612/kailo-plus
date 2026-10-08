@@ -3,8 +3,9 @@ import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, verifyBindingHandshakeToken, secret, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, verifyBindingManagementToken, secret, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
 import { sourceReference, sourceFile } from './service-read.mjs';
+import { bindingValidationConfiguration, bindingArguments, bindingObservation } from './binding-validation.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
@@ -23,10 +24,12 @@ export function configuration(value) {
   if (!object(value) || required.some(key => !Object.hasOwn(value, key))
     || Object.keys(value).some(key => ![...required, 'workspaceId', 'readEdge', 'management'].includes(key))) throw new Refused(503);
   if (value.management !== undefined && (!exactKeys(value.management,
-    ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange'])
+    ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
+      ...(value.management?.validation === undefined ? [] : ['validation'])])
     || !nonempty(value.management.componentTypeKey) || !UUID.test(value.management.componentReleaseId)
     || !/^[a-f0-9]{64}$/.test(value.management.artifactDigest)
     || value.management.protocolRange !== '1')) throw new Refused(503);
+  bindingValidationConfiguration(value.management?.validation, value);
   if (value.readEdge!==undefined && (!exactKeys(value.readEdge,value.readEdge?.usageMeasurements===undefined
       ? ['sourceActionVersion'] : ['sourceActionVersion','usageMeasurements'])
     || !Number.isSafeInteger(value.readEdge.sourceActionVersion) || value.readEdge.sourceActionVersion<=0)) throw new Refused(503);
@@ -50,27 +53,31 @@ export function configuration(value) {
   return Object.freeze({ ...value });
 }
 
-async function bindingHandshake(config, deadline, token, args) {
+async function bindingManagement(config, deadline, token, args, operation) {
   const delivered = config.management;
   if (!delivered) throw new Refused(503);
-  if (!exactKeys(args, ['idempotencyKey', 'componentReleaseId', 'componentTypeKey', 'protocolRange'])
+  if (operation === 'handshake' && (!exactKeys(args, ['idempotencyKey', 'componentReleaseId', 'componentTypeKey', 'protocolRange'])
     || args.componentReleaseId !== delivered.componentReleaseId
     || args.componentTypeKey !== delivered.componentTypeKey
-    || args.protocolRange !== delivered.protocolRange) throw new Refused(403);
-  const claims = await verifyBindingHandshakeToken(token, config, args);
-  await freshPep(config, deadline, token, args, claims, 'handshake');
+    || args.protocolRange !== delivered.protocolRange)) throw new Refused(403);
+  if (operation === 'validate_binding') bindingArguments(config, args);
+  const claims = await verifyBindingManagementToken(token, config, args, operation);
+  await freshPep(config, deadline, token, args, claims, operation);
+  if (operation === 'validate_binding') await bindingObservation(config, deadline);
   // This observation proves only that the existing native MCP credential can
-  // discover the exact configured KB. It does not assert write, secret-read
-  // audit, or full validate_binding/conformance capabilities.
+  // discover the exact configured KB. Write conformance and authenticated Bao
+  // audit verification remain the existing Core activation gates.
   const native = await nativeTool(config, deadline, 'list_knowledge_bases', {});
   if (!Array.isArray(native.knowledge_bases)) throw new Refused(503);
   const matches = native.knowledge_bases.filter(item => item?.id === config.nativeKnowledgeBaseId);
   if (matches.length !== 1) throw new Refused(403);
   if (!nonempty(matches[0].native_revision) || !Number.isFinite(Date.parse(matches[0].native_revision))
     || matches[0].native_revision.startsWith('0001-')) throw new Refused(503);
-  const current = await verifyBindingHandshakeToken(token, config, args);
-  await freshPep(config, deadline, token, args, current, 'handshake');
-  return { protocolVersion: '1', artifactDigest: delivered.artifactDigest };
+  const value = operation === 'validate_binding' ? await bindingObservation(config, deadline)
+    : { protocolVersion: '1', artifactDigest: delivered.artifactDigest };
+  const current = await verifyBindingManagementToken(token, config, args, operation);
+  await freshPep(config, deadline, token, args, current, operation);
+  return value;
 }
 
 export async function verifyKnowledgeToken(token, config, args, operation = 'query_revision') {
@@ -367,6 +374,7 @@ export function createAdapter(rawConfig) {
     try {
       const operation = request.url === QUERY_PATH ? 'query_revision'
         : request.url === '/platform-adapter/v1/handshake' ? 'handshake'
+        : request.url === '/platform-adapter/v1/validate_binding' ? 'validate_binding'
         : request.url === '/platform-adapter/v1/execute' ? 'execute'
           : request.url === '/platform-adapter/v1/observe' ? 'observe'
             : request.url === '/platform-adapter/v1/extract_usage' ? 'extract_usage' : undefined;
@@ -378,10 +386,10 @@ export function createAdapter(rawConfig) {
       const raw = await boundedBody(request, config.maxBodyBytes);
       let args;
       try { args = JSON.parse(raw); } catch { throw new Refused(400); }
-      if (operation === 'handshake') {
+      if (['handshake', 'validate_binding'].includes(operation)) {
         if (!object(args) || !UUID.test(args.idempotencyKey)
           || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args)) throw new Refused(400);
-        const value = await bindingHandshake(config, deadline, request.headers.authorization.slice('Bearer '.length), args);
+        const value = await bindingManagement(config, deadline, request.headers.authorization.slice('Bearer '.length), args, operation);
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify(value));
         return;

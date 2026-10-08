@@ -11,7 +11,7 @@
 1. `ADAPTER_CONFIG_FILE` 的可选 `management` 只投递实际 release 的
    `componentTypeKey/componentReleaseId/artifactDigest/protocolRange`。协议为既有 `1`，
    缺投递不开放成功握手，格式错误拒绝启动；没有默认 release 或凭据。
-2. Cells 与知识 Adapter 共用 `client-kit/adapter/protocol.mjs::verifyBindingHandshakeToken`，
+2. Cells 与知识 Adapter 共用 `client-kit/adapter/protocol.mjs::verifyBindingManagementToken`，
    只接受既有 `application_binding.create` / APPLICATION_BINDING / HUMAN 形状，
    不把业务 RESOURCE 的 ResultExposure 要求放宽。请求 release、type、range、
    canonical body、幂等 key 与 header 必须一致；租户、工作区、binding 必须精确匹配。
@@ -53,6 +53,65 @@
 本批没有启用 release/binding、部署服务或更新安装包。真实 OpenBao Agent 读取
 request_id 的回执消费仍未闭合，不能靠回填配置伪造 validate_binding 成功。
 全量 `tools/check.sh --full` 本批未运行，磁盘约 1.2 GiB；定向通过不提高生产就绪结论。
+
+## 绑定验证与本次 Agent 读取接通（2026-10-08）
+
+沿同一 DD-88/93/94 与 `.design/07` §5.2、`.design/08` §4，接通原 Core
+`application_binding_native::validate` 的第二个调用 `validate_binding`，不添加
+第二个绑定流程。Cells 原始来源仍为上述完整 commit 的 `Handler.TreeNodeToNode`
+和 `Handler.ContextWorkspace`；实际 SDK 读取路径和 Node/PAT 业务实现不替换。
+
+实现后的四步结论：
+
+1. 权威：Core 保留 binding、SecretRef、AE 和 AuditObserver；Cells 保留空间和
+   文件正文，OpenBao 保留密钥。Shared `binding-validation.mjs` 被 Cells、知识
+   两个实际消费者复用；管理验签仅封闭为 handshake/validate_binding。
+2. 影响：现有 `ADAPTER_CONFIG_FILE.management.validation` 投递 bindingVersion、
+   servicePrincipalId、adapterServiceRef、nativeInstanceRef、nativeScopeRef、
+   isolationMode、normalizedConfig、secretDeliveries、actionVersions。请求完整值
+   与投递值比较，不能以请求选择凭据文件、实例或 socket。Cells 固定
+   DEDICATED_INSTANCE，nativeScopeRef 必须等于 nativeWorkspaceId，并以原 root
+   的 ContextWorkspace.Uuid 核实；独立数据库与部署归属仍须由原 release/binding
+   部署证据证明，读取一个根目录不证明实例独占。协议、四侧契约和数据库无变化。
+3. 副作用：复用 Wren `nativeBindingService.ts::connectionSecret` 已有的 OpenBao Agent
+   Unix API proxy 读取方式，无 adapter token、远端 Bao URL、新凭据管理器或缓存。
+   固定版本 KV 值必须等于实际使用的 secretFile；仅把原 request_id/version/
+   audience 返回 Core，由原审计配对核 AppRole、locator 和 AE 时间窗口。密钥值
+   不进入输出、日志或业务数据。读取前后原 PEP 均保留，返回前再次验签。
+4. 异常：原生 scope 漂移、过期 token、撤权、超限、总截止时间、错误/销毁/删除
+   密钥版本、不同值、重复 request_id 均拒绝；读取期间轮换不能拿前一次观察成功
+   应答。不建立新持久状态，不触发原生 CREATE、PAT 或文件写入，重复调用重新
+   查原引用。三端页面及 Mobile 非组件宿主边界不变。
+
+投递使用说明：每个 secretDeliveries 条目保留原
+`secretKey/locator/version/audience`，另指定实际绝对路径 `secretFile`、
+专属 Agent Unix `secretSocket` 和 KV 数据字段 `secretValueKey`。namespace 与
+KV 路径由同一 SecretRef locator 解析，不再另投递一份可能不一致的路径。
+Agent 原 API proxy 不配置 cache；adapter 不持有 Agent token，不发送共享凭据。
+至少覆盖真实 Cells bearer 和 PEP OIDC client secret，不能只证明未使用的密钥。
+actionVersions 只接受实际启用消费者：readEdge 对应 read/list@v1，documentLaunch
+对应 open_view/open_edit@v1；不因配置列出未实现动作就宣称支持。
+该运行配置不是新增放宽安全的开关，不启用任何原先 blocked 的能力。
+
+静态 Agent 模板回执方案在本批复核中被撤回：即使能匹配实际值，启动时的旧
+request_id 也不能证明本次 AE 后的读取。没有保留双模式或靠文件 mtime 冒充
+新审计。首次文件回执验证日志保留，但不能用于宣称最终 Unix proxy 版已验收。
+
+最终验证复用已有 `kailo-agent-receipt-xvkujx`，4 CPU/8 GiB、无额外 swap；
+运行前读取进程、内存和磁盘（约 20 GiB available、Data 1.2 GiB），无依赖安装、
+镜像构建或全树快照。`node --test test/*.test.mjs` 为 **126 passed / 0 failed**，
+退出 0；实际 HTTP + Unix socket 消费者验证固定 scope、两凭据版本/值、新读取
+request_id、前后授权及中途轮换。隔离响应器不是线上 Cells/OpenBao 审计验收。
+
+私有候选把末尾即时读取改为直接返回初次观察后，原生读取中和最后 PEP 中的
+轮换都错误返回 200，检查实际报 `200 !== 503`，**14 passed / 3 failed**（含父
+用例），退出 1。还原正式字节 `cmp` 0，完整重跑日志为
+`cells-binding-agent-proxy-restored.log`；同一既有证据目录还保留
+`cells-binding-agent-proxy.log` 和 `cells-binding-agent-proxy-mutation.log`。
+
+本批没有修改线上 Agent 配置、启用 release/binding、发布镜像或更新安装包；
+真实审计时窗、完整组件业务、Web/Windows/Mobile 与全量检查仍未验收。
+本机剩余磁盘不能支撑原全树导出，此处不把定向通过称为 `check.sh --full` 通过。
 
 ## 历史原查询候选 RTq1FU
 

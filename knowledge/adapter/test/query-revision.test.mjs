@@ -34,12 +34,52 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   await writeFile(nativeSecretFile, nativeSecret, { mode: 0o600 });
   await writeFile(oidcSecretFile, randomUUID(), { mode: 0o600 });
   const handshake = protocolOperation === 'handshake';
+  const validating = protocolOperation === 'validate_binding';
+  const managing = handshake || validating;
   const management = { componentTypeKey: 'knowledge-native', componentReleaseId: ids[9],
     artifactDigest: 'a'.repeat(64), protocolRange: '1' };
-  const args = handshake ? { idempotencyKey: ids[3], componentReleaseId: ids[9],
+  const validation = { bindingVersion: 1, servicePrincipalId: ids[4], adapterServiceRef: 'fixture-adapter',
+    nativeInstanceRef: 'fixture-instance', nativeScopeRef: ids[1], isolationMode: 'RESOURCE_FILTER',
+    normalizedConfig: { knowledgeBaseId: ids[1] }, actionVersions: [{ actionKey: 'knowledge.search@v2', actionVersion: 1 }],
+    secretDeliveries: [] };
+  const baoReads = [];
+  if (validating) {
+    const secretSocket = join(directory, 'agent.sock');
+    const values = new Map([['native', nativeSecret], ['pep', await readFile(oidcSecretFile, 'utf8')]]);
+    const proxy = createServer((request, response) => {
+      assert.equal(request.headers.authorization, undefined);
+      assert.equal(request.headers['x-vault-token'], undefined);
+      assert.equal(request.headers['x-vault-namespace'], `tenants/${ids[7]}`);
+      const secretKey = request.url === '/v1/native/data/native?version=1' ? 'native'
+        : request.url === '/v1/native/data/pep?version=1' ? 'pep' : undefined;
+      assert.ok(secretKey);
+      if (mode === 'missing-proof') return reply(response, 503, {});
+      const proof = { request_id: randomUUID(), data: { metadata: {
+        version: mode === 'wrong-proof-version' ? 2 : 1, destroyed: mode === 'destroyed-secret',
+        deletion_time: mode === 'deleted-secret' ? new Date().toISOString() : '',
+      }, data: { value: mode === 'wrong-proof-secret' ? randomUUID() : values.get(secretKey) } } };
+      if (mode === 'invalid-request-id') proof.request_id = 'not-a-request';
+      baoReads.push(proof.request_id);
+      return reply(response, 200, mode === 'oversized-proof' ? { oversized: 'x'.repeat(16384) } : proof);
+    });
+    await new Promise(resolve => proxy.listen(secretSocket, resolve));
+    t.after(() => { proxy.closeAllConnections(); return new Promise(resolve => proxy.close(resolve)); });
+    for (const [secretKey, secretFile] of [['native', nativeSecretFile], ['pep', oidcSecretFile]]) {
+      validation.secretDeliveries.push({ secretKey, locator: `tenants/${ids[7]}/native/${secretKey}`,
+        version: 1, audience: `fixture-${secretKey}`, secretFile, secretSocket, secretValueKey: 'value' });
+    }
+    if (mode !== 'missing-validation') management.validation = validation;
+  }
+  const refs = validation.secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience }));
+  const args = validating ? { bindingId: ids[0], bindingVersion: mode === 'wrong-binding-version' ? 2 : 1,
+    tenantId: ids[7], componentReleaseId: ids[9], servicePrincipalId: ids[4], adapterServiceRef: validation.adapterServiceRef,
+    nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: mode === 'wrong-scope' ? ids[9] : ids[1],
+    isolationMode: validation.isolationMode, normalizedConfig: validation.normalizedConfig,
+    configDigest: createHash('sha256').update(canonical(validation.normalizedConfig)).digest('hex'), secretRefs: refs,
+    idempotencyKey: ids[3] } : handshake ? { idempotencyKey: ids[3], componentReleaseId: ids[9],
     componentTypeKey: mode === 'wrong-release' ? 'foreign-component' : management.componentTypeKey, protocolRange: '1' }
     : { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
-  const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
+  const state = { baoReads, peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
   const search = action === 'knowledge.search@v2';
@@ -48,10 +88,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       displayName: 'native document', mediaType: 'text/markdown' });
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = handshake ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
+  const intent = managing ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
-  const bodyValue = handshake || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = managing || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -106,8 +146,9 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
     if (body.params.name === 'list_knowledge_bases') {
-      assert.equal(handshake, true);
+      assert.equal(managing, true);
       assert.deepEqual(body.params.arguments, {});
+      if (validating && mode === 'rotated-proof') await writeFile(nativeSecretFile, randomUUID());
       const kb = { id: mode === 'foreign' ? ids[8] : ids[1],
         native_revision: mode === 'no-revision' ? undefined : revision };
       return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [],
@@ -189,7 +230,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
   if (ingest) config.readEdge={sourceActionVersion:1,
     usageMeasurements:[{meterKey:'native_import_count',quantitySource:'COUNT'},{meterKey:'native_import_bytes',quantitySource:'CONTENT_BYTES'}]};
-  if (handshake && mode !== 'missing-management') config.management = management;
+  if (managing && mode !== 'missing-management') config.management = management;
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
@@ -205,7 +246,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     result_exposure_policy_id: randomUUID(), result_exposure_policy_version: 1,
     normalized_parameter_hash: createHash('sha256').update(canonical(operation === 'execute' ? intent : { operation, arguments: intent })).digest('hex') };
   if (action) { claims.idempotency_key = args.idempotencyKey; claims.external_execution_id = randomUUID(); }
-  if (handshake) {
+  if (managing) {
     claims.target_type = 'APPLICATION_BINDING'; claims.target_id = mode === 'wrong-binding' ? ids[8] : ids[0];
     delete claims.result_exposure_policy_id; delete claims.result_exposure_policy_version;
     delete claims.idempotency_key; delete claims.external_execution_id;
@@ -230,6 +271,42 @@ test('knowledge binding handshake uses the real management token, native KB obse
   assert.deepEqual(await response.json(), { protocolVersion: '1', artifactDigest: 'a'.repeat(64) });
   assert.equal(run.state.peps, 2);
   assert.deepEqual(run.state.methods, ['list_knowledge_bases']);
+});
+
+test('knowledge validate_binding returns native scope and actual Agent read references without secret values', async t => {
+  const run = await fixture(t, 'ok', 'application_binding.create', 'validate_binding');
+  const response = await run.invoke();
+  assert.equal(response.status, 200);
+  const value = await response.json();
+  assert.equal(value.bindingId, run.args.bindingId);
+  assert.equal(value.nativeScopeRef, run.args.nativeScopeRef);
+  assert.equal(value.configDigest, run.args.configDigest);
+  assert.equal(value.secretRefDigest, createHash('sha256').update(canonical(run.args.secretRefs)).digest('hex'));
+  assert.equal(value.secretReads.length, 2);
+  assert.equal(run.state.baoReads.length, 4);
+  assert.deepEqual(value.secretReads.map(value => value.requestId), run.state.baoReads.slice(-2));
+  for (const proof of value.secretReads) {
+    assert.deepEqual(Object.keys(proof).sort(), ['audience', 'requestId', 'secretKey', 'version']);
+    assert.equal(proof.version, 1);
+    assert.match(proof.requestId, /^[a-f0-9-]{36}$/);
+  }
+  assert.deepEqual(value.executionMappings, [{ actionKey: 'knowledge.search@v2', actionVersion: 1,
+    nativeType: 'search_knowledge', cancelCapability: 'UNSUPPORTED' }]);
+  assert.equal(run.state.peps, 2);
+  assert.deepEqual(run.state.methods, ['list_knowledge_bases']);
+});
+
+test('knowledge validation refuses mismatched delivery, frozen binding drift and revocation', async t => {
+  for (const [mode, status] of [['wrong-proof-version', 503], ['wrong-proof-secret', 503],
+    ['destroyed-secret', 503], ['deleted-secret', 503], ['invalid-request-id', 503], ['oversized-proof', 503], ['missing-proof', 503],
+    ['missing-validation', 503], ['wrong-binding-version', 403], ['wrong-scope', 403],
+    ['rotated-proof', 503], ['foreign', 403], ['no-revision', 503], ['revoke', 503],
+    ['wrong-hash', 401], ['wrong-binding', 401], ['agent', 401]]) await t.test(mode, async t => {
+    const run = await fixture(t, mode, 'application_binding.create', 'validate_binding');
+    const response = await run.invoke();
+    assert.equal(response.status, status);
+    assert.equal(Object.hasOwn(await response.json(), 'secretReads'), false);
+  });
 });
 
 test('knowledge management refuses drift, missing native facts and revoked disclosure without claiming activation', async t => {

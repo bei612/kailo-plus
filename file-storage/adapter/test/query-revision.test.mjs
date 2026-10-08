@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -91,7 +91,7 @@ function reply(response, status, value) {
 }
 
 async function setup(t, changes = {}) {
-  const requestArguments = changes.arguments ?? args;
+  let requestArguments = changes.arguments ?? args;
   const operation = changes.operation ?? 'query_revision';
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -181,7 +181,10 @@ async function setup(t, changes = {}) {
         protocolSessionId: ids[7], nativeObjectRef: ids[3], nativeState: 'ABSENT',
       });
     }
-    if (request.url === `/v2/n/node/${ids[2]}?Flags=WithVersionsAll`) return reply(response, 200, changes.root ?? root);
+    if (request.url === `/v2/n/node/${ids[2]}?Flags=WithVersionsAll`) {
+      await state.onNativeRoot?.();
+      return reply(response, 200, changes.root ?? root);
+    }
     if (request.url === `/v2/n/node/${ids[3]}?Flags=WithVersionsAll`) return reply(response, 200, changes.target ?? target);
     if (request.url === `/v2/n/node/${ids[10]}?Flags=WithVersionsAll`) return reply(response, 200, changes.authorized ?? {
       Uuid: ids[10], Type: 'COLLECTION', Path: 'documents/root/authorized', ContextWorkspace: { Uuid: ids[1] },
@@ -208,12 +211,61 @@ async function setup(t, changes = {}) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
     oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1,
     ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}),
-    ...(changes.serviceRead || changes.serviceList ? {readEdge:{downloadOrigin:origin,
+    ...(changes.serviceRead || changes.serviceList || changes.validation ? {readEdge:{downloadOrigin:origin,
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
+  const proofFiles = [];
+  let secretAgent;
+  if (changes.validation) {
+    const secretSocket = join(directory, 'agent.sock');
+    state.secretReads = [];
+    secretAgent = createServer((request, response) => {
+      assert.equal(request.headers.authorization, undefined);
+      assert.equal(request.headers['x-vault-token'], undefined);
+      assert.equal(request.headers['x-vault-namespace'], `tenants/${ids[4]}`);
+      const matching = proofFiles.find(({ entry }) => request.url === `/v1/kv/data/component/${entry.secretKey}?version=1`);
+      if (!matching) return reply(response, 404, {});
+      const requestId = state.duplicateSecretRead ? ids[8] : randomUUID();
+      state.secretReads.push(requestId);
+      reply(response, 200, { request_id: requestId, data: {
+        metadata: { version: state.wrongSecretVersion ? 2 : 1, destroyed: false, deletion_time: '' },
+        data: { credential: matching.value },
+      } });
+    });
+    await new Promise((resolve, reject) => { secretAgent.once('error', reject); secretAgent.listen(secretSocket, resolve); });
+    const secretDeliveries = [];
+    for (const [name, value] of [['native', nativeSecret], ['oidc', oidcSecret]]) {
+      const entry = { secretKey: name, locator: `tenants/${ids[4]}/kv/component/${name}`, version: 1,
+        audience: `binding-${name}`, secretFile: join(directory, `${name}-credential`),
+        secretSocket, secretValueKey: 'credential' };
+      secretDeliveries.push(entry);
+      proofFiles.push({ entry, value });
+    }
+    config.management = { componentReleaseId: ids[10], componentTypeKey: 'file_storage',
+      artifactDigest: 'a'.repeat(64), protocolRange: '1', validation: {
+        bindingVersion: 1, servicePrincipalId: ids[8], adapterServiceRef: 'delivered-adapter',
+        nativeInstanceRef: 'delivered-instance', nativeScopeRef: ids[1], isolationMode: 'DEDICATED_INSTANCE',
+        normalizedConfig: { nativeWorkspaceId: ids[1], nativeRootRef: ids[2] }, secretDeliveries,
+        actionVersions: [{ actionKey: 'file_storage.read@v1', actionVersion: 1 },
+          { actionKey: 'file_storage.list@v1', actionVersion: 1 }],
+      } };
+    const fixed = config.management.validation;
+    requestArguments = { bindingId: config.bindingId, bindingVersion: fixed.bindingVersion,
+      tenantId: config.tenantId, workspaceId: config.workspaceId, componentReleaseId: config.management.componentReleaseId,
+      servicePrincipalId: fixed.servicePrincipalId, adapterServiceRef: fixed.adapterServiceRef,
+      nativeInstanceRef: fixed.nativeInstanceRef, nativeScopeRef: fixed.nativeScopeRef,
+      isolationMode: fixed.isolationMode, normalizedConfig: fixed.normalizedConfig,
+      configDigest: createHash('sha256').update(canonical(fixed.normalizedConfig)).digest('hex'),
+      secretRefs: secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience })),
+      idempotencyKey: ids[7], ...changes.validationArguments };
+  }
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
   t.after(async () => {
     adapter.closeAllConnections(); upstream.closeAllConnections();
+    if (secretAgent) {
+      secretAgent.closeAllConnections();
+      await new Promise(resolve => secretAgent.close(resolve));
+    }
     await Promise.all([new Promise((resolve) => adapter.close(resolve)), new Promise((resolve) => upstream.close(resolve))]);
     await rm(directory, { recursive: true, force: true });
   });
@@ -229,7 +281,7 @@ async function setup(t, changes = {}) {
       ...(changes.human ? { actor_principal_id: ids[9], agent_principal_id: undefined,
         action_key: 'file_storage.open_edit@v1', delegation_id: undefined, delegation_version: undefined,
         result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
-      ...(changes.management ? { actor_principal_id: ids[9], agent_principal_id: undefined,
+      ...(changes.management || changes.validation ? { actor_principal_id: ids[9], agent_principal_id: undefined,
         target_type: 'APPLICATION_BINDING', target_id: ids[0], action_key: 'application_binding.create',
         delegation_id: undefined, delegation_version: undefined,
         result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
@@ -248,8 +300,79 @@ async function setup(t, changes = {}) {
         'idempotency-key': options.key ?? requestArguments.idempotencyKey }, body: options.raw ?? canonical(requestArguments),
     });
   }
-  return { state, token, invoke, target };
+  return { state, token, invoke, target, proofFiles, requestArguments };
 }
+
+test('binding validation observes original Cells workspace and actual delivered credential receipts', async (t) => {
+  const fixture = await setup(t, { validation: true, operation: 'validate_binding' });
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const response = await fixture.invoke({ path: '/platform-adapter/v1/validate_binding' });
+    assert.equal(response.status, 200);
+    const value = await response.json();
+    assert.equal(value.bindingId, ids[0]);
+    assert.equal(value.nativeScopeRef, ids[1]);
+    assert.equal(value.isolationMode, 'DEDICATED_INSTANCE');
+    assert.equal(value.configDigest, fixture.requestArguments.configDigest);
+    assert.equal(value.secretRefDigest, createHash('sha256').update(canonical(fixture.requestArguments.secretRefs)).digest('hex'));
+    assert.deepEqual(value.secretReads.map(({ requestId, ...read }) => {
+      assert.ok(fixture.state.secretReads.includes(requestId));
+      return read;
+    }), fixture.proofFiles.map(({ entry }) => ({
+      secretKey: entry.secretKey, version: entry.version, audience: entry.audience,
+    })));
+    assert.deepEqual(value.executionMappings, ['read', 'list'].map(action => ({
+      actionKey: `file_storage.${action}@v1`, actionVersion: 1, nativeType: 'node', cancelCapability: 'UNSUPPORTED',
+    })));
+    assert.equal(JSON.stringify(value).includes('credentialDigest'), false);
+  }
+  assert.equal(fixture.state.peps, 4);
+  assert.equal(fixture.state.nativeReads.length, 2);
+  assert.equal(fixture.state.queries.length, 0);
+});
+
+test('binding validation refuses forged scope, configuration, binding or credential references before native access', async (t) => {
+  for (const validationArguments of [{ bindingVersion: 2 }, { nativeScopeRef: ids[2] },
+    { isolationMode: 'RESOURCE_FILTER' }, { configDigest: 'b'.repeat(64) }, { secretRefs: [] },
+    { nativeInstanceRef: 'other-instance' }, { extra: true }]) {
+    await t.test(JSON.stringify(validationArguments), async nested => {
+      const fixture = await setup(nested, { validation: true, operation: 'validate_binding', validationArguments });
+      assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/validate_binding' })).status, 403);
+      assert.equal(fixture.state.peps, 0);
+      assert.equal(fixture.state.nativeReads.length, 0);
+    });
+  }
+});
+
+test('binding validation rejects absent, mismatched, duplicate and rotated original Agent receipts', async (t) => {
+  for (const failure of ['missing', 'digest', 'version', 'duplicate', 'native-rotation', 'final-pep-rotation']) {
+    await t.test(failure, async nested => {
+      let rotate;
+      const fixture = await setup(nested, { validation: true, operation: 'validate_binding',
+        pep: async (state, response) => {
+          if (failure === 'final-pep-rotation' && state.peps === 2) await rotate();
+          reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh' });
+        } });
+      const { entry } = fixture.proofFiles[0];
+      rotate = () => writeFile(entry.secretFile, randomBytes(32).toString('hex'));
+      if (failure === 'missing') await rm(entry.secretFile);
+      if (failure === 'digest') await rotate();
+      if (failure === 'version') fixture.state.wrongSecretVersion = true;
+      if (failure === 'duplicate') fixture.state.duplicateSecretRead = true;
+      if (failure === 'native-rotation') fixture.state.onNativeRoot = rotate;
+      assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/validate_binding' })).status, 503);
+      assert.equal(fixture.state.nativeReads.length, failure.endsWith('rotation') ? 1 : 0);
+    });
+  }
+});
+
+test('binding validation rechecks management permission after observing the original workspace', async (t) => {
+  const fixture = await setup(t, { validation: true, operation: 'validate_binding',
+    pep: (state, response) => reply(response, state.peps === 2 ? 403 : 200,
+      { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh' }) });
+  assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/validate_binding' })).status, 503);
+  assert.equal(fixture.state.nativeReads.length, 1);
+  assert.equal(fixture.state.peps, 2);
+});
 
 test('binding handshake checks the original Cells root and both fresh management authorizations', async (t) => {
   const management = { componentReleaseId: ids[10], componentTypeKey: 'file_storage', artifactDigest: 'a'.repeat(64), protocolRange: '1' };

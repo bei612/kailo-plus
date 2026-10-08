@@ -2,7 +2,7 @@
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
 import { ActionDispatchState, ActionGateState, BindingKind, ChannelType, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberPage, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { enumLabel, workspaceStateMessages } from "../i18n";
 import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
@@ -10,6 +10,7 @@ import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 import { Input } from "./composer/shared/ui/input";
+import { Button as ChannelButton } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS } from "./channel-type-settings";
 import { WorkspaceVisibility } from "@client-kit/contracts";
@@ -104,7 +105,7 @@ export function RoleManagement() {
 }
 
 /** 沿用已登记的 workspace.create；受理回应不代表 Channel/权限投影已完成。 */
-export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: ChannelType) {
+export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: ChannelType, form?: {active: boolean; initialName?: string}) {
   const client = useBffClient();
   const t = useT();
   const inFlight = useRef(false);
@@ -118,6 +119,30 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const wasActive = useRef(false);
+  const active = form?.active ?? false;
+  const initialName = form?.initialName ?? "";
+  // Original useCreateChannelForm resets a fresh opening, never an unresolved
+  // governed intent. Browser and standalone dialog consume the same form.
+  useEffect(() => {
+    const opening = active && !wasActive.current;
+    wasActive.current = active;
+    if (!opening || busy || command) return;
+    setName(initialName); setDescription(""); setVisibility(WorkspaceVisibility.Open);
+    setTemporary(false); setTtlSeconds(DEFAULT_EPHEMERAL_TTL_SECONDS);
+    setFailure(null); setSubmission(null);
+  }, [active, initialName, busy, command]);
+  useEffect(() => {
+    if (!active || !actionKey || command) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (document.activeElement instanceof HTMLElement && document.activeElement.closest("#create-channel-form")) return;
+      const input = nameInputRef.current;
+      if (!input) return;
+      input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, actionKey, command]);
   const locked = !actionKey || busy || command !== null;
   // 页面刷新或离开后本地幂等键不复存在；服务端按本人列出的 ActionExecution 才是意图的
   // 权威。尚无结论（taskPhase 中性）的 workspace.create 在此列出，避免用户以为请求丢了
@@ -155,7 +180,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
       setName("");
       setSlug("");
       setDescription("");
-      setVisibility(WorkspaceVisibility.Private);
+      setVisibility(channelType === undefined ? WorkspaceVisibility.Private : WorkspaceVisibility.Open);
       setTemporary(false);
       setTtlSeconds(DEFAULT_EPHEMERAL_TTL_SECONDS);
     } catch (error) {
@@ -171,7 +196,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
   };
 
   return { actionKey, name, setName, slug, setSlug, description, setDescription, visibility, setVisibility, temporary, setTemporary, ttlSeconds, setTtlSeconds, channelType, command, busy, failure, submission,
-    locked, openTasks, pendingCreates, reloadOpenTasks, submit };
+    locked, openTasks, pendingCreates, reloadOpenTasks, submit, nameInputRef };
 }
 
 /** The existing workspace.create command and UNKNOWN intent are shared by both hosts. */
@@ -189,6 +214,19 @@ function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
 // desktop/src/features/channels/ui/channelFormStyles.ts.
 const CHANNEL_FORM_FIELD_SHELL_CLASS = "rounded-xl border border-input bg-muted/40 transition-colors duration-150 ease-out hover:border-muted-foreground/40 focus-within:border-muted-foreground/50";
 const CHANNEL_FORM_FIELD_CONTROL_CLASS = "border-0 bg-transparent text-foreground shadow-none outline-none ring-0 transition-colors duration-150 ease-out placeholder:text-muted-foreground/55 focus:bg-transparent focus:text-foreground focus:outline-hidden focus-visible:ring-0";
+const CREATE_CHANNEL_FORM_ID = "create-channel-form";
+
+// Original CreateChannelFormFooter lives outside the scrolling form body.
+export function WorkspaceCreateFormFooter({state}: {state: WorkspaceCreateState}) {
+  const t = useT();
+  const entity = t(state.channelType === ChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
+  return <div className="flex w-full items-center justify-end gap-3">
+    <ChannelButton data-testid="create-channel-submit" form={CREATE_CHANNEL_FORM_ID} type="submit"
+      disabled={!state.actionKey || state.busy || (!state.command && !state.name.trim())}>
+      {state.busy ? t("channel.create.creating") : state.command ? t("workspace.create.retry") : t("channel.browser.create", {entity})}
+    </ChannelButton>
+  </div>;
+}
 
 export function WorkspaceCreateForm({ state, channel = false }: { state: WorkspaceCreateState; channel?: boolean }) {
   const t = useT();
@@ -196,15 +234,19 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
   const failureText = useFailureText();
   const { actionKey, name, setName, slug, setSlug, description, setDescription, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit } = state;
+  const entity = t(state.channelType === ChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
   return (
-    <form className={channel ? "space-y-5" : "flex flex-col gap-3 rounded-md border p-3"} data-testid={channel ? "create-channel-form" : undefined} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form className={channel ? "space-y-5" : "flex flex-col gap-3 rounded-md border p-3"} id={channel ? CREATE_CHANNEL_FORM_ID : undefined} data-testid={channel ? "create-channel-form" : undefined} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {!channel ? <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2> : null}
-      <label className="flex flex-col gap-1 text-sm">
-        {t("workspace.create.name")}
+      <div className={channel ? "space-y-1.5" : "flex flex-col gap-1 text-sm"}>
+        <label className={channel ? "text-sm font-medium text-foreground" : undefined} htmlFor={channel ? "create-channel-name" : "create-workspace-name"}>{t(channel ? "channel.create.name" : "workspace.create.name")}</label>
         <div className={channel ? cn("flex min-h-11 items-center px-3", CHANNEL_FORM_FIELD_SHELL_CLASS) : undefined}>
-          <Input required autoComplete="off" disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? cn("h-8 px-0 py-0 leading-6", CHANNEL_FORM_FIELD_CONTROL_CLASS) : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
+          <Input required autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            id={channel ? "create-channel-name" : "create-workspace-name"} ref={channel ? state.nameInputRef : undefined}
+            placeholder={channel ? t(state.channelType === ChannelType.Forum ? "channel.create.forumNamePlaceholder" : "channel.create.namePlaceholder") : undefined}
+            disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? cn("h-8 px-0 py-0 leading-6", CHANNEL_FORM_FIELD_CONTROL_CLASS) : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
         </div>
-      </label>
+      </div>
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-foreground" htmlFor="create-channel-description">
           {t("channel.create.about")}<span className="ml-1 text-xs font-normal text-muted-foreground/50">{t("channel.create.optional")}</span>
@@ -212,7 +254,7 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
         <div className={CHANNEL_FORM_FIELD_SHELL_CLASS}>
           <textarea autoCapitalize="none" autoCorrect="off" spellCheck={false}
             className={cn("flex min-h-20 w-full rounded-lg border border-input/40 bg-background px-3 py-2 text-base transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm", "min-h-20 resize-none px-3 py-3 leading-5", CHANNEL_FORM_FIELD_CONTROL_CLASS)}
-            data-testid="create-channel-description" id="create-channel-description" rows={2}
+            data-testid="create-channel-description" id="create-channel-description" rows={2} placeholder={channel ? t("channel.create.aboutPlaceholder", {entity}) : undefined}
             disabled={locked} value={description} onChange={(event) => setDescription(event.target.value)} />
         </div>
       </div>
@@ -230,9 +272,9 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
           {submission.reason ? <p>{reasonText(submission.reason)}</p> : null}
         </div>
       ) : null}
-        <Button type="submit" className={channel ? "ml-auto flex w-fit" : "w-fit"} data-testid={channel ? "create-channel-submit" : undefined} disabled={!actionKey || busy || (!command && (!name.trim() || (!channel && !slug.trim())))}>
-          {busy ? t("platform.loading") : command ? t("workspace.create.retry") : channel ? t("channel.create.submit") : t("workspace.create.title")}
-        </Button>
+      {!channel ? <Button type="submit" className="w-fit" disabled={!actionKey || busy || (!command && (!name.trim() || !slug.trim()))}>
+        {busy ? t("platform.loading") : command ? t("workspace.create.retry") : t("workspace.create.title")}
+      </Button> : null}
       {openTasks.status === "error" ? (
         <Notice role="alert">
           {t("workspace.create.inFlightUnavailable")}

@@ -164,8 +164,11 @@ describe("shared original channel creation entry", () => {
     const t = routes(() => recorded);
     await mount(t, <CreateChannelDialog open channelKind={ChannelType.Forum} onOpenChange={() => {}} />);
     const dialog = await fill();
+    expect(dialog.querySelector("h2")?.textContent).toBe("Create a new forum");
+    expect(dialog.querySelector<HTMLInputElement>("input")?.placeholder).toBe("design-discussions");
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.placeholder).toBe("What this forum is for");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "  Architecture decisions  ");
-    await click(button(dialog, "Create channel"));
+    await click(button(dialog, "Create forum"));
     expect(t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({
       workspaceChannel: { channelType: "forum", description: "Architecture decisions" },
     });
@@ -174,11 +177,74 @@ describe("shared original channel creation entry", () => {
     const t = routes(() => recorded);
     await mount(t, <CreateChannelDialog open onOpenChange={() => {}} />);
     const dialog = await fill();
-    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-permissions-option-open]")!);
     await click(button(dialog, "Create channel"));
     const command = t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body as ActionCommand;
     expect(command.workspaceVisibility).toBe("open");
     expect(command.workspaceChannel).not.toHaveProperty("visibility");
+  });
+  it("keeps the original submit footer outside the scroll body and resets a cancelled opening", async () => {
+    const t = routes(() => recorded);
+    let reopen!: () => void;
+    function Host() {
+      const [open, setOpen] = useState(true);
+      reopen = () => setOpen(true);
+      return <CreateChannelDialog open={open} onOpenChange={setOpen} />;
+    }
+    await mount(t, <Host />);
+    const dialog = await fill();
+    const form = dialog.querySelector<HTMLFormElement>("form")!;
+    expect(form.querySelector('label[for="create-channel-name"]')?.textContent).toBe("Name");
+    const submit = button(dialog, "Create channel");
+    expect(submit.form).toBe(form);
+    expect(form.contains(submit)).toBe(false);
+    expect(form.closest(".overflow-y-auto")?.contains(submit)).toBe(false);
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Discarded description");
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-permissions-option-private]")!);
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-channel-type-option-temporary]")!);
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    await act(async () => reopen());
+    await settle();
+    const fresh = document.querySelector<HTMLElement>("[data-testid=create-channel-dialog]")!;
+    expect(fresh.querySelector<HTMLInputElement>("input")?.value).toBe("");
+    expect(fresh.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("");
+    expect(fresh.querySelector("[data-testid=create-channel-ttl]")).toBeNull();
+    await type(fresh.querySelector<HTMLInputElement>("input")!, "Fresh channel");
+    await click(button(fresh, "Create channel"));
+    expect(t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({
+      name: "Fresh channel", workspaceVisibility: "open", workspaceChannel: { channelType: "stream" },
+    });
+    expect((t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body as ActionCommand).workspaceChannel?.ttlSeconds).toBeUndefined();
+  });
+  it("prefills the browser creation form and keeps UNKNOWN visible instead of returning to browse", async () => {
+    Object.defineProperty(document, "fonts", { configurable: true, value: { ready: Promise.resolve() } });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const close = vi.fn();
+    const t = transport((request) => request.method === "POST" ? { status: 503, body: {
+      class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "create-unknown",
+    } } : request.path.startsWith("/api/v1/role-workspaces") ? { status: 200, body: {
+      workspaces: [], createActionKey: "workspace.create",
+    } } : { status: 200, body: { items: [] } });
+    await mount(t, <ChannelBrowser open onOpenChange={close} onSelect={() => {}} />);
+    await settle();
+    await type(document.querySelector<HTMLInputElement>('input')!, "release-notes");
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="channel-browser-create-row"]')!);
+    const input = document.querySelector<HTMLInputElement>('[data-testid="create-channel-name"]')!;
+    expect(input.value).toBe("release-notes");
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(input.value.length);
+    const submit = button(document.body, "Create channel");
+    expect(submit.form).toBe(document.querySelector("form"));
+    expect(submit.form?.closest(".overflow-y-auto")?.contains(submit)).toBe(false);
+    await click(submit);
+    expect(document.body.textContent).toContain("create-unknown");
+    const back = document.querySelector<HTMLButtonElement>('[data-testid="channel-browser-create-back"]')!;
+    expect(back.disabled).toBe(true);
+    await click(back);
+    expect(document.querySelector('[data-testid="create-channel-name"]')).toBe(input);
+    expect(input.value).toBe("release-notes");
+    expect(close).not.toHaveBeenCalled();
+    expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   });
   it("keeps the original unknown command and blocks dismissing it until it is located", async () => {
     let writes = 0;
@@ -211,6 +277,7 @@ describe("shared original channel creation entry", () => {
     await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-channel-type-option-temporary]")!);
     const trigger = dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-ttl]")!;
     expect(trigger.textContent).toContain("7 days");
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); trigger.focus(); });
     await act(async () => { trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
     await settle();
     expect(document.querySelectorAll("[data-testid^=create-channel-ttl-option-]")).toHaveLength(9);

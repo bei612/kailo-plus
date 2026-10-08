@@ -14,7 +14,7 @@ import type { DiscoverableWorkspace } from "@client-kit/contracts";
 import { ChannelType, CreateActionKey } from "@client-kit/contracts";
 import { useT, useLocale } from "../context";
 import { enumLabel, workspaceMembershipStateMessages } from "../../i18n";
-import { useWorkspaceCreate, WorkspaceCreateForm } from "../roles";
+import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "../roles";
 export type BrowserChannel = DiscoverableWorkspace & { name: string; description: string; channelType: ChannelType; archivedAt: boolean; lastMessageAt?: string | null };
 type Channel = BrowserChannel;
 import {
@@ -154,8 +154,7 @@ export function ChannelBrowserDialog({
       : t("channel.browser.search");
   const entityLabel = t(isForumMode ? "channel.browser.forum" : "channel.browser.channel");
 
-  const createForm = useWorkspaceCreate(createActionKey, createKind);
-  React.useEffect(() => { if (mode === "create") createForm.setName(createInitialName); }, [mode, createInitialName]);
+  const createForm = useWorkspaceCreate(createActionKey, createKind, {active: open && mode === "create", initialName: createInitialName});
 
   // Fuzzy match score per channel id for the current query, so both filtering
   // and relevance-ordering share one source of truth. Empty when no query.
@@ -376,6 +375,7 @@ export function ChannelBrowserDialog({
   }
 
   function exitCreateMode() {
+    if (createForm.busy || createForm.command) return;
     setMode("browse");
     // Return focus to the search field so keyboard users stay oriented.
     window.requestAnimationFrame(() => {
@@ -700,6 +700,7 @@ function ChannelCreateView({
               aria-label={t("channel.browser.back")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
               data-testid="channel-browser-create-back"
+              disabled={form.busy || form.command !== null}
               onClick={onBack}
               type="button"
             >
@@ -711,6 +712,7 @@ function ChannelCreateView({
           </div>
           <button
             aria-label={t("channel.browser.close")}
+            disabled={form.busy || form.command !== null}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
             onClick={onClose}
             type="button"
@@ -724,8 +726,9 @@ function ChannelCreateView({
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         <WorkspaceCreateForm state={form} channel />
       </div>
-
-
+      <div className="shrink-0 pb-6 pt-4">
+        <WorkspaceCreateFormFooter state={form} />
+      </div>
     </div>
   );
 }

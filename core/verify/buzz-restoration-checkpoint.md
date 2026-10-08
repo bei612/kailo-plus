@@ -1794,3 +1794,71 @@ Native **1 failed / 5 passed**，都退出 1；把 sidebar 恢复成忽略 msg/t
 线上仍是前述旧部署，本批无发布/Windows 安装包/实机检查；该截图不证明新 Native 已读链。
 全树 3307 变动路径尚未全部分类；本批按原模块复用及授权 Core 改造补 DM 接缝，
 普通频道读权威迁移、三端实际协作、全页面原版一致性仍是明确剩余项。
+
+## 2026-10-08 原版频道／论坛创建表单与固定提交区
+
+本批从已有全树差异清单继续追踪频道创建整个模块，而非只核本批文件；全树 3307
+变动路径仍未全部分类。固定来源为 Buzz
+`779af8886caae1317b4de962082429867ab61503`，本次重新以 `git show` 核验：
+
+| 固定上游路径与符号 | 本批分类及真实消费者 |
+| --- | --- |
+| `desktop/src/features/sidebar/ui/CreateChannelDialog.tsx::CreateChannelDialog` | 共享迁移：两端同用 `client-kit/ts/platform/src/react/create-channel-dialog.tsx::CreateChannelDialog`；恢复频道／论坛标题及原固定底部区域 |
+| `desktop/src/features/sidebar/ui/CreateChannelFormFields.tsx::CreateChannelFormFields`、`CreateChannelFormFooter` | 缺失恢复：`roles.tsx::WorkspaceCreateForm` 与 `WorkspaceCreateFormFooter` 恢复原 Name、占位符、标签／输入结构、原 Button 和 HTML form 关联；不再用简化按钮或把提交区放在滚动正文中 |
+| `desktop/src/features/sidebar/lib/useCreateChannelForm.ts::useCreateChannelForm` | 共享迁移＋授权治理：`roles.tsx::useWorkspaceCreate` 恢复 fresh opening 重置、公开默认及预填光标；保留原不抢占表单内焦点的规则，宿主动画后聚焦使用已有 requestAnimationFrame；UNKNOWN 不重置命令 |
+| `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent` | 共享迁移：复用原 header／scroll／footer 类；原 `description: _description` 未渲染说明，删除此前自行显示的介绍文字及无消费者词条 |
+| `desktop/src/features/channels/ui/ChannelBrowserDialog.tsx::ChannelCreateView` | 缺失恢复：共享 `react/channel-browser/ChannelBrowserDialog.tsx::ChannelCreateView` 使用相同表单，恢复原 `shrink-0 pb-6 pt-4` 提交区及搜索预填；UNKNOWN 阻止返回浏览或关闭 |
+| `desktop/src/shared/ui/button.tsx::Button` | 原样共享控件：提交按钮消费已有 `react/profile/buzz/shared/ui/button.tsx::Button`，不再消费治理页最小按钮样式 |
+
+### 四步影响与边界
+
+1. 权威为原版一致性要求及 `.design/09` §3、DD-80。`workspaceVisibility=open`
+   是产品发现可见性，不能改成 Relay public；本批未改 Core CONTROL 签发、Relay private、
+   membership 或 scope 准入。原模板选择／创建有上游实现，但当前
+   `contracts/domain/workspace_channel_create.schema.json` 无 template 字段或执行消费者，
+   此缺口仍存在，不生成假菜单、不宣称模板已还原。
+2. 检索全部 `useWorkspaceCreate`、`WorkspaceCreateForm` 调用：管理页、独立创建弹窗、
+   浏览器创建页。仅两个频道入口传入 active／initialName；管理页仍默认 private，
+   既有 slug、ActionCommand、BFF `/api/v1/actions` 均保留。Web/Desktop 共源，
+   Mobile 未新增页面；六个实际词条沿原生成器投影 Dart，删除两个无消费者旧词条。
+   不改四侧业务契约、存量数据、冻结命令格式或数据库。
+3. UNKNOWN 保留原 command/idempotencyKey 和禁改输入；浏览器 back 原先允许离开
+   未知结果，现在与 close 同样锁定，仍可同键确认。不复制频道或权限权威，不把
+   `202/DISPATCHED` 解释成物化完成，不新增自动打开尚无真实频道的行为。
+4. 空名称／无 capability 禁止提交；复开取消草稿恢复原默认，未知意图不随复开清空。
+   论坛描述、TTL 九档及重试原意图由实际消费者检查；明确拒绝保留既有错误分类，
+   受理引用仍由原任务页收敛，超时或无法判断保持 UNKNOWN。异步物化后自动进入新
+   频道尚未闭合，不把当前受理提示当作原版完整创建完成体验。
+
+### 实施后验证与截图边界
+
+复用 `kailo-agent-receipt-xvkujx`（4 CPU／8 GiB）及既有
+`/evidence/profile-settings-ortsoo.DRR20F/apps`，没有安装、镜像构建或整树导出。
+日志目录为 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`。
+
+- `python3 tools/gen-platform-i18n.py` 与 `--check` 实际输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`；
+  入口 PATH 补上 SDK 已有 `/usr/lib/dart/bin`，此前缺 PATH 的一次失败为
+  `FAIL: Dart formatter unavailable`，未安装新工具。最终输出见 `channel-create-i18n.log`。
+- 实现后 `vitest run test/pages.test.tsx -t "shared original channel creation entry"`
+  通过 9 项，另 259 项因定向选择跳过；`vitest run test/channel-navigation-shortcuts.test.tsx`
+  通过 14 项。前次 JSX 多余括号报错保留 `channel-create-consumer.log`；
+  两个 footer 断言误把外层 modal 容器也算正文、TTL 测试未等待焦点帧的失败保留
+  `channel-create-consumer-final.log`，修正实际正文边界后检查通过。
+- 私有候选故意删除 footer 的 form 关联并改坏默认可见性：`channel-create-mutation.log`
+  实际 7 failed／2 passed；单独保留错误 private 默认：
+  `channel-create-default-mutation.log` 实际 2 failed／7 passed，均退出 1。
+  恢复正式源码并 `cmp` 为 0 后，最终用例及类型命令输出留存
+  `channel-create-final-restored.log`；未对生产文件实施变异。
+- 最终同一冻结输入依次执行 shared `tsc --noEmit -p tsconfig.test.json`、
+  Desktop `tsc --noEmit`、Web `tsc --noEmit`；连同上述 9＋14 项恢复用例的
+  整条命令退出 0（session 36421），没有拿变异输入的结果当正式通过。
+- playwright-cli 真实点击线上频道浏览器→创建→临时 TTL，分别截图并打开复核：
+  `/volumes/kailo/.playwright-cli/channel-browser-current-20261008.png`、
+  `/volumes/kailo/.playwright-cli/channel-create-old-deployed-20261008.png`、
+  `/volumes/kailo/.playwright-cli/channel-create-ttl-old-deployed-20261008.png`。
+  可见旧版名称写成“工作区名称”、默认私有、临时表单提交位于滚动体底部；
+  仅操作未提交草稿，不新增业务频道。截图属于本批发布前旧部署，不证明新源码已上线。
+
+本批未执行全仓 `check.sh --full`、新部署、Windows 包或实机验收；主线集中收口。
+本页创建模块仍有模板及物化后导航缺项，不能宣称全模块或三端 100% 一致。

@@ -2,6 +2,7 @@
 // actions, targets and native scope policy remain in each actual consumer.
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { request } from 'node:http';
 
 export class Refused extends Error {
   constructor(status) {
@@ -97,7 +98,8 @@ export async function verifiedClaims(token, config) {
 
 // Existing binding-create management tokens carry no business Resource or
 // ResultExposure authority. Both native adapters use the same signed shape.
-export async function verifyBindingHandshakeToken(token, config, args) {
+export async function verifyBindingManagementToken(token, config, args, operation) {
+  if (!['handshake', 'validate_binding'].includes(operation)) throw new Refused(401);
   const claims = await verifiedClaims(token, config);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   for (const key of ['jti', 'tenant_id', 'actor_principal_id', 'initiating_human_principal_id',
@@ -113,7 +115,7 @@ export async function verifyBindingHandshakeToken(token, config, args) {
     || ['agent_principal_id', 'delegation_id', 'delegation_version', 'result_exposure_policy_id',
       'result_exposure_policy_version'].some(key => Object.hasOwn(claims, key))
     || claims.normalized_parameter_hash !== createHash('sha256')
-      .update(canonical({ operation: 'handshake', arguments: args })).digest('hex')) throw new Refused(401);
+      .update(canonical({ operation, arguments: args })).digest('hex')) throw new Refused(401);
   return claims;
 }
 
@@ -122,6 +124,49 @@ export async function secret(path) {
     const value = (await readFile(path, 'utf8')).trim();
     if (!value || /[\r\n]/.test(value)) throw new Refused(503);
     return value;
+  } catch { throw new Refused(503); }
+}
+
+// Reuses Wren nativeBindingService.ts::connectionSecret's Agent Unix proxy.
+// No adapter token, network Bao endpoint, cache or second secret authority.
+// Core authenticates this actual read's audit pair, role and AE time window.
+export async function readSecretDeliveryReceipt(entry, maximumBytes, deadline) {
+  try {
+    const remaining = deadline - Date.now();
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || remaining <= 0) throw new Refused(503);
+    const locator = /^tenants\/([a-f0-9-]{36})\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)$/.exec(entry.locator);
+    if (!locator || !entry.secretSocket?.startsWith('/') || !nonempty(entry.secretValueKey)) throw new Refused(503);
+    const proof = await new Promise((resolve, reject) => {
+      const pending = request({ socketPath: entry.secretSocket, method: 'GET',
+        path: `/v1/${locator[2]}/data/${locator[3]}?version=${entry.version}`,
+        headers: { 'X-Vault-Namespace': `tenants/${locator[1]}` }, timeout: remaining }, response => {
+        const chunks = [];
+        let size = 0;
+        response.on('data', chunk => {
+          size += chunk.length;
+          if (size > maximumBytes) { reject(new Refused(503)); response.destroy(); pending.destroy(); }
+          else chunks.push(chunk);
+        });
+        response.on('error', () => reject(new Refused(503)));
+        response.on('end', () => {
+          try {
+            if (response.statusCode !== 200) throw new Refused(503);
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch { reject(new Refused(503)); }
+        });
+      });
+      const timer = setTimeout(() => { reject(new Refused(503)); pending.destroy(); }, remaining);
+      pending.on('close', () => clearTimeout(timer));
+      pending.on('timeout', () => { reject(new Refused(503)); pending.destroy(); });
+      pending.on('error', () => reject(new Refused(503)));
+      pending.end();
+    });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(proof.request_id)
+      || proof.data?.metadata?.version !== entry.version || proof.data.metadata.destroyed !== false
+      || proof.data.metadata.deletion_time !== '' || !object(proof.data.data)
+      || typeof proof.data.data[entry.secretValueKey] !== 'string'
+      || proof.data.data[entry.secretValueKey] !== await secret(entry.secretFile)) throw new Refused(503);
+    return { secretKey: entry.secretKey, requestId: proof.request_id, version: entry.version, audience: entry.audience };
   } catch { throw new Refused(503); }
 }
 
