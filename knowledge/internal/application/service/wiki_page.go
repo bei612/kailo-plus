@@ -404,6 +404,12 @@ func (s *wikiPageService) DeletePage(ctx context.Context, kbID string, slug stri
 	// Remove inbound link references from pages this page links to
 	s.removeInLinks(ctx, kbID, slug, page.OutLinks)
 
+	// Keep the source page reachable until its searchable chunk is removed.
+	// Otherwise a retry would mistake the soft-deleted page for completed cleanup.
+	if err := s.deleteChunkForPage(ctx, page); err != nil {
+		return err
+	}
+
 	// Delete the page
 	if err := s.repo.Delete(ctx, kbID, slug); err != nil {
 		return err
@@ -415,9 +421,6 @@ func (s *wikiPageService) DeletePage(ctx context.Context, kbID string, slug stri
 	if err := s.repo.DeleteRevisionsByPage(ctx, page.ID); err != nil {
 		logger.Warnf(ctx, "delete wiki page revisions for %s failed: %v", page.ID, err)
 	}
-
-	// Delete synced chunk
-	s.deleteChunkForPage(ctx, page)
 
 	return nil
 }
@@ -1237,14 +1240,16 @@ func (s *wikiPageService) removeInLinks(ctx context.Context, kbID string, source
 // deleteChunkForPage removes the synced chunk for a wiki page. Chunk sync is
 // optional wiring, so a service built without a chunk repository just skips
 // it rather than taking the delete down with it.
-func (s *wikiPageService) deleteChunkForPage(ctx context.Context, page *types.WikiPage) {
+func (s *wikiPageService) deleteChunkForPage(ctx context.Context, page *types.WikiPage) error {
 	if s.chunkRepo == nil {
-		return
+		return nil
 	}
 	chunkID := "wp-" + page.ID
 	if err := s.chunkRepo.DeleteChunk(ctx, page.TenantID, chunkID); err != nil {
 		logger.Warnf(ctx, "wiki: failed to delete chunk for page %s: %v", page.Slug, err)
+		return err
 	}
+	return nil
 }
 
 // createDefaultPage creates the default index page.

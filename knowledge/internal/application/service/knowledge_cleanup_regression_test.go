@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/alicebob/miniredis/v2"
@@ -17,6 +19,256 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
+
+type wikiDeleteModelService struct {
+	interfaces.ModelService
+	model chat.Chat
+	err   error
+}
+
+func (s *wikiDeleteModelService) GetChatModel(context.Context, string) (chat.Chat, error) {
+	return s.model, s.err
+}
+
+type wikiDeleteKBService struct {
+	interfaces.KnowledgeBaseService
+	kb *types.KnowledgeBase
+}
+
+func (s *wikiDeleteKBService) GetKnowledgeBaseByIDOnly(context.Context, string) (*types.KnowledgeBase, error) {
+	return s.kb, nil
+}
+
+func (s *wikiDeleteKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
+	return s.kb, nil
+}
+
+type wikiDeletePageService struct {
+	interfaces.WikiPageService
+	index        *types.WikiPage
+	updates      int
+	lookupErr    error
+	sourcePages  []*types.WikiPage
+	beforeSource func()
+}
+
+func (s *wikiDeletePageService) ListPagesBySourceRef(context.Context, string, string) ([]*types.WikiPage, error) {
+	if s.beforeSource != nil {
+		s.beforeSource()
+	}
+	return s.sourcePages, s.lookupErr
+}
+
+func (s *wikiDeletePageService) GetIndex(context.Context, string) (*types.WikiPage, error) {
+	return s.index, s.lookupErr
+}
+
+func (s *wikiDeletePageService) GetPageBySlug(context.Context, string, string) (*types.WikiPage, error) {
+	if s.lookupErr != nil {
+		return nil, s.lookupErr
+	}
+	return nil, repository.ErrWikiPageNotFound
+}
+
+func (s *wikiDeletePageService) UpdatePage(_ context.Context, page *types.WikiPage) (*types.WikiPage, error) {
+	s.updates++
+	s.index = page
+	return page, nil
+}
+
+type wikiDeletePendingRepository struct {
+	interfaces.TaskPendingOpsRepository
+	trimErr error
+}
+
+func (r *wikiDeletePendingRepository) DeleteByIDs(ctx context.Context, ids []int64) error {
+	if r.trimErr != nil {
+		return r.trimErr
+	}
+	return r.TaskPendingOpsRepository.DeleteByIDs(ctx, ids)
+}
+
+func TestConditionalWikiDeletionUsesOriginalRetractionAndFinalizeReceipt(t *testing.T) {
+	f := newDocumentWriteFixture(t)
+	require.NoError(t, f.db.AutoMigrate(&types.KnowledgeBase{}, &types.TaskPendingOp{}, &types.TaskDeadLetter{}))
+	kb := f.kbs.values["kb"]
+	kb.IndexingStrategy.WikiEnabled = true
+	kb.SummaryModelID = "native-fixture-model"
+	require.NoError(t, f.db.Create(kb).Error)
+	r := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: r.Addr()})
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	queue := asynq.NewClient(asynq.RedisClientOpt{Addr: r.Addr()})
+	t.Cleanup(func() { require.NoError(t, queue.Close()) })
+	pending := &wikiDeletePendingRepository{TaskPendingOpsRepository: repository.NewTaskPendingOpsRepository(f.db)}
+	f.svc.redisClient, f.svc.task, f.svc.taskPendingRepo = client, queue, pending
+	f.svc.wikiRepo = &moveWikiPageRepo{}
+	f.svc.config = &config.Config{KnowledgeBase: &config.KnowledgeBaseConfig{DeleteReceiptRetention: time.Hour}}
+	row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+	require.NoError(t, err)
+	revision, taskID := row.UpdatedAt.UTC().Format(time.RFC3339Nano), uuid.NewString()
+	_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", revision, taskID)
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	server := asynq.NewServer(asynq.RedisClientOpt{Addr: r.Addr()}, asynq.Config{Concurrency: 1, Queues: map[string]int{types.QueueMaintenance: 1}, ShutdownTimeout: time.Second})
+	require.NoError(t, server.Start(asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
+		err := f.svc.ProcessKnowledgeListDelete(ctx, task)
+		done <- err
+		return err
+	})))
+	t.Cleanup(server.Shutdown)
+	select {
+	case err = <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("original deletion task did not execute")
+	}
+	observe := func(t *testing.T, want string) {
+		t.Helper()
+		state, err := f.svc.ObserveKnowledgeDeleteTask(f.ctx, "kb", "doc", revision, taskID)
+		require.NoError(t, err)
+		require.Equal(t, want, state["state"])
+	}
+	observe(t, "RUNNING")
+	markerKey := WikiDeletedTombstoneKey("kb", "doc")
+	raw, err := client.Get(f.ctx, markerKey).Result()
+	require.NoError(t, err)
+	var expected wikiDeleteReceipt
+	require.NoError(t, json.Unmarshal([]byte(raw), &expected))
+	require.Equal(t, revision, expected.Revision, "CAS timestamp must not replace the admitted revision")
+	pages := &wikiDeletePageService{index: &types.WikiPage{Content: "old native index", Summary: "old native index"}}
+	model := &templateCaptureChatModel{response: "index without deleted document"}
+	models := &wikiDeleteModelService{model: model}
+	wiki := &wikiIngestService{
+		kbService: &wikiDeleteKBService{kb: kb}, wikiService: pages, modelService: models,
+		knowledgeRepo: f.repo, pendingRepo: pending, task: queue, redisClient: client,
+	}
+	payload, err := json.Marshal(WikiIngestPayload{TenantID: 7, KnowledgeBaseID: "kb"})
+	require.NoError(t, err)
+	pages.lookupErr = errors.New("native source lookup unavailable")
+	require.NoError(t, wiki.ProcessWikiIngest(f.ctx, asynq.NewTask(types.TypeWikiIngest, payload)))
+	remaining, err := pending.PeekBatch(f.ctx, wikiTaskType, wikiTaskScope, "kb", wikiMaxDocsPerBatch)
+	require.NoError(t, err)
+	require.Len(t, remaining, 1, "failed native lookup must retain the original retract")
+	require.Equal(t, 1, remaining[0].FailCount)
+	observe(t, "RUNNING")
+	pages.lookupErr = nil
+	require.NoError(t, wiki.ProcessWikiIngest(f.ctx, asynq.NewTask(types.TypeWikiIngest, payload)))
+	observe(t, "UNKNOWN") // A successful retract still has unfinished native index work.
+	rows, err := pending.PeekBatch(f.ctx, wikiFinalizeTaskType, wikiTaskScope, "kb", wikiFinalizeMaxRows)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	var finalization wikiFinalizeRow
+	require.NoError(t, json.Unmarshal(rows[0].Payload, &finalization))
+	require.NotNil(t, finalization.Change.Cleanup)
+	require.True(t, finalization.Change.Cleanup.sameDeletion(expected))
+	finalize := asynq.NewTask(types.TypeWikiFinalize, payload)
+	models.err = errors.New("native synthesis unavailable")
+	require.ErrorContains(t, wiki.ProcessWikiFinalize(f.ctx, finalize), "synthesis model")
+	observe(t, "UNKNOWN")
+	models.err, model.response = nil, ""
+	require.ErrorContains(t, wiki.ProcessWikiFinalize(f.ctx, finalize), "no content")
+	observe(t, "UNKNOWN")
+	model.response = "index without deleted document"
+	pages.sourcePages = []*types.WikiPage{{Slug: "still-referenced"}}
+	require.ErrorContains(t, wiki.ProcessWikiFinalize(f.ctx, finalize), "source references")
+	observe(t, "UNKNOWN")
+	pages.sourcePages = nil
+	pending.trimErr = errors.New("native trim interrupted")
+	require.ErrorContains(t, wiki.ProcessWikiFinalize(f.ctx, finalize), "trim pending")
+	observe(t, "SUCCEEDED") // Durable native work won before queue acknowledgement.
+	updates, graphCalls := pages.updates, f.graph.calls
+	pending.trimErr = nil
+	require.NoError(t, wiki.ProcessWikiFinalize(f.ctx, finalize))
+	require.Equal(t, updates, pages.updates, "retry after durable completion must not rewrite the index")
+	observe(t, "SUCCEEDED")
+	_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", revision, taskID)
+	require.NoError(t, err)
+	require.Equal(t, graphCalls, f.graph.calls, "observation must not repeat document deletion")
+	completed, err := client.Get(f.ctx, markerKey).Result()
+	require.NoError(t, err)
+	for _, field := range []string{"task", "tenant", "scope", "document", "revision", "expired", "legacy", "missing"} {
+		t.Run(field, func(t *testing.T) {
+			var changed wikiDeleteReceipt
+			require.NoError(t, json.Unmarshal([]byte(completed), &changed))
+			switch field {
+			case "task":
+				changed.TaskID = uuid.NewString()
+			case "tenant":
+				changed.TenantID++
+			case "scope":
+				changed.KnowledgeBaseID = "other"
+			case "document":
+				changed.KnowledgeID = "other-doc"
+			case "revision":
+				changed.Revision = time.Now().UTC().Format(time.RFC3339Nano)
+			case "expired":
+				changed.ExpiresAt = time.Now().Add(-time.Second)
+			}
+			value, err := json.Marshal(changed)
+			require.NoError(t, err)
+			if field == "legacy" {
+				value = []byte("1")
+			}
+			require.NoError(t, client.Set(f.ctx, markerKey, value, time.Hour).Err())
+			if field == "missing" {
+				require.NoError(t, client.Del(f.ctx, markerKey).Err())
+			}
+			observe(t, "UNKNOWN")
+			require.Error(t, wiki.completeWikiDeletion(f.ctx, expected))
+			require.NoError(t, client.Set(f.ctx, markerKey, completed, time.Hour).Err())
+		})
+	}
+	observe(t, "SUCCEEDED")
+	t.Run("native completion CAS", func(t *testing.T) {
+		require.NoError(t, client.Set(f.ctx, markerKey, raw, time.Hour).Err())
+		changed := expected
+		changed.TaskID = uuid.NewString()
+		replacement, err := json.Marshal(changed)
+		require.NoError(t, err)
+		pages.beforeSource = func() {
+			require.NoError(t, client.Set(f.ctx, markerKey, replacement, time.Hour).Err())
+		}
+		require.ErrorContains(t, wiki.completeWikiDeletion(f.ctx, expected), "changed before completion")
+		stored, err := client.Get(f.ctx, markerKey).Result()
+		require.NoError(t, err)
+		require.Equal(t, string(replacement), stored, "late completion must not overwrite another task's tombstone")
+		pages.beforeSource = nil
+		require.NoError(t, client.Set(f.ctx, markerKey, completed, time.Hour).Err())
+	})
+}
+
+type wikiDeleteChunkRepository struct {
+	interfaces.ChunkRepository
+	err   error
+	calls int
+}
+
+func (r *wikiDeleteChunkRepository) DeleteChunk(context.Context, uint64, string) error {
+	r.calls++
+	return r.err
+}
+
+func TestConditionalWikiDeletionDoesNotHideLegacySearchChunkFailure(t *testing.T) {
+	f := newDocumentWriteFixture(t)
+	require.NoError(t, f.db.AutoMigrate(&types.WikiPage{}, &types.WikiPageRevision{}))
+	repo := repository.NewWikiPageRepository(f.db)
+	require.NoError(t, repo.Create(f.ctx, &types.WikiPage{
+		ID: uuid.NewString(), TenantID: 7, KnowledgeBaseID: "kb", Slug: "summary/doc",
+		PageType: types.WikiPageTypeSummary, Status: types.WikiPageStatusPublished, Version: 1,
+	}))
+	chunks := &wikiDeleteChunkRepository{err: errors.New("native search chunk cleanup unavailable")}
+	pages := NewWikiPageService(repo, chunks, nil, nil, nil)
+	require.ErrorIs(t, pages.DeletePage(f.ctx, "kb", "summary/doc"), chunks.err)
+	require.Equal(t, 1, chunks.calls)
+	_, err := repo.GetBySlug(f.ctx, "kb", "summary/doc")
+	require.NoError(t, err, "native page must remain reachable until searchable content cleanup succeeds")
+	chunks.err = nil
+	require.NoError(t, pages.DeletePage(f.ctx, "kb", "summary/doc"))
+	require.Equal(t, 2, chunks.calls, "original retry must perform the failed chunk cleanup")
+	_, err = repo.GetBySlug(f.ctx, "kb", "summary/doc")
+	require.ErrorIs(t, err, repository.ErrWikiPageNotFound)
+}
 
 func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) {
 	for _, scenario := range []string{"completed", "missing row", "cleanup failed", "wiki enabled after enqueue"} {

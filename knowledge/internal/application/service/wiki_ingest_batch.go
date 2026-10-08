@@ -420,6 +420,7 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 	slugUpdates := make(map[string][]SlugUpdate)
 	var docResults []*docIngestResult
 	var retractFolderIDs []string
+	retractCleanup := make(map[string]*wikiDeleteReceipt)
 	// rateLimited flips true when any map/reduce LLM failure looks like an
 	// upstream 429/quota trip. It steers the follow-up scheduler onto the
 	// longer wikiRateLimitBackoff so retries don't keep hammering an already
@@ -465,6 +466,10 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 					livePages, err := s.wikiService.ListPagesBySourceRef(mapCtx, payload.KnowledgeBaseID, op.KnowledgeID)
 					if err != nil {
 						logger.Warnf(mapCtx, "wiki ingest: retract lookup failed for %s: %v", op.KnowledgeID, err)
+						mapMu.Lock()
+						failedOps = append(failedOps, op)
+						mapMu.Unlock()
+						return nil
 					} else {
 						for _, p := range livePages {
 							if p == nil || p.Slug == "" {
@@ -501,6 +506,18 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 				}
 				for folderID := range folderSet {
 					retractFolderIDs = append(retractFolderIDs, folderID)
+				}
+				if op.Cleanup != nil {
+					cleanup := *op.Cleanup
+					cleanup.PageSlugs = make([]string, 0, len(slugSet))
+					cleanup.FolderIDs = make([]string, 0, len(folderSet))
+					for slug := range slugSet {
+						cleanup.PageSlugs = append(cleanup.PageSlugs, slug)
+					}
+					for folderID := range folderSet {
+						cleanup.FolderIDs = append(cleanup.FolderIDs, folderID)
+					}
+					retractCleanup[op.KnowledgeID] = &cleanup
 				}
 				mapMu.Unlock()
 				return nil
@@ -752,6 +769,11 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 	}
 	if len(allPagesAffected) > 0 || len(docResults) > 0 || retractHandled > 0 || len(retractFolderIDs) > 0 {
 		changes := make([]wikiFinalizeChange, 0, len(docResults)+len(pendingOps))
+		failedRetractions := make(map[string]bool, len(failedOps))
+		for _, op := range failedOps {
+			failedRetractions[op.KnowledgeID] = true
+		}
+		strictFinalize := false
 		for _, r := range docResults {
 			changes = append(changes, wikiFinalizeChange{
 				Action: wikiFinalizeAdded, DocTitle: r.DocTitle, DocSummary: r.Summary,
@@ -759,12 +781,20 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 		}
 		for _, op := range pendingOps {
 			if op.Op == WikiOpRetract {
+				if _, unapplied := unappliedSlugKIDs[op.KnowledgeID]; unapplied || failedRetractions[op.KnowledgeID] {
+					continue
+				}
+				cleanup := retractCleanup[op.KnowledgeID]
+				strictFinalize = strictFinalize || cleanup != nil
 				changes = append(changes, wikiFinalizeChange{
-					Action: wikiFinalizeRemoved, DocTitle: op.DocTitle, DocSummary: op.DocSummary,
+					Action: wikiFinalizeRemoved, DocTitle: op.DocTitle, DocSummary: op.DocSummary, Cleanup: cleanup,
 				})
 			}
 		}
-		s.enqueueFinalize(tailCtx, payload, allPagesAffected, freshTitleBySlug, changes, retractFolderIDs)
+		accepted := s.enqueueFinalize(tailCtx, payload, allPagesAffected, freshTitleBySlug, changes, retractFolderIDs)
+		if strictFinalize && !accepted {
+			return fmt.Errorf("wiki retract: native finalization was not persisted")
+		}
 	}
 
 	// Close postprocess.wiki spans for every successfully-mapped doc.
@@ -1000,6 +1030,7 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	var freshRefs []linkRef
 	var folderPruneIDs []string
 	var changeDesc strings.Builder
+	cleanups := make(map[string]wikiDeleteReceipt)
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 		if r.Op == wikiFinalizeOpFolderPrune {
@@ -1018,6 +1049,27 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 			continue
 		}
 		if row.Change != nil {
+			if cleanup := row.Change.Cleanup; cleanup != nil {
+				if row.Change.Action != wikiFinalizeRemoved || r.TenantID != payload.TenantID ||
+					cleanup.TenantID != payload.TenantID || cleanup.KnowledgeBaseID != payload.KnowledgeBaseID {
+					return fmt.Errorf("wiki finalize: deletion scope changed")
+				}
+				receipt, _, err := readWikiDeleteReceipt(ctx, s.redisClient, *cleanup)
+				if err != nil {
+					return fmt.Errorf("wiki finalize: original deletion unavailable: %w", err)
+				}
+				if !receipt.CompletedAt.IsZero() {
+					continue // Original completion won before a failed queue trim.
+				}
+				cleanups[cleanup.TaskID] = *cleanup
+				for _, slug := range cleanup.PageSlugs {
+					if _, seen := affectedSet[slug]; slug != "" && !seen {
+						affectedSet[slug] = struct{}{}
+						affectedSlugs = append(affectedSlugs, slug)
+					}
+				}
+				folderPruneIDs = append(folderPruneIDs, cleanup.FolderIDs...)
+			}
 			if row.Change.Action == wikiFinalizeRemoved {
 				fmt.Fprintf(&changeDesc, "<document_removed>\n<title>%s</title>\n<summary>%s</summary>\n</document_removed>\n\n", row.Change.DocTitle, row.Change.DocSummary)
 			} else {
@@ -1039,6 +1091,9 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	// KB flipped away from wiki (deleted / type change) — drain the lane so the
 	// rows don't accumulate, then stop.
 	if !kb.IsWikiEnabled() {
+		if len(cleanups) != 0 {
+			return fmt.Errorf("wiki finalize: conditional deletion cannot skip a disabled Wiki")
+		}
 		drainCtx, drainCancel := wikiIngestCleanupContext(ctx)
 		err := s.trimPendingList(drainCtx, ids)
 		drainCancel()
@@ -1056,9 +1111,22 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 		synthesisModelID = kb.SummaryModelID
 	}
 	if synthesisModelID == "" {
+		if len(cleanups) != 0 {
+			return fmt.Errorf("wiki finalize: deletion synthesis model unavailable")
+		}
 		// No model to rebuild the index with; still run the pure-text passes,
 		// then drain. Missing model is a config gap, not a transient error.
 		logger.Warnf(ctx, "wiki finalize: no synthesis model for KB %s, skipping index rebuild", payload.KnowledgeBaseID)
+	}
+	for _, cleanup := range cleanups {
+		pending, failed, err := s.pendingRepo.UnresolvedDocumentOps(ctx, cleanup.TenantID, wikiTaskType,
+			wikiTaskScope, cleanup.KnowledgeBaseID, cleanup.KnowledgeID)
+		if err != nil {
+			return fmt.Errorf("wiki finalize: deletion work observation: %w", err)
+		}
+		if pending != 0 || failed != 0 {
+			return fmt.Errorf("wiki finalize: deletion retraction is unresolved")
+		}
 	}
 
 	batchCtx := s.newWikiBatchContext(payload.KnowledgeBaseID, kb.WikiConfig)
@@ -1068,9 +1136,15 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	if changeDesc.Len() > 0 && synthesisModelID != "" {
 		chatModel, mErr := s.modelService.GetChatModel(ctx, synthesisModelID)
 		if mErr != nil {
+			if len(cleanups) != 0 {
+				return fmt.Errorf("wiki finalize: deletion synthesis model: %w", mErr)
+			}
 			logger.Warnf(ctx, "wiki finalize: get chat model failed: %v", mErr)
 		} else if err := s.rebuildIndexPage(ctx, chatModel, payload, changeDesc.String(), lang,
 			batchCtx.ContentInstructions); err != nil {
+			if len(cleanups) != 0 {
+				return fmt.Errorf("wiki finalize: deletion index cleanup: %w", err)
+			}
 			logger.Warnf(ctx, "wiki finalize: rebuild index failed: %v", err)
 		} else {
 			indexRebuilt = true
@@ -1078,7 +1152,9 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	}
 
 	if len(affectedSlugs) > 0 {
-		s.cleanDeadLinks(ctx, payload.KnowledgeBaseID, affectedSlugs, batchCtx)
+		if err := s.cleanDeadLinks(ctx, payload.KnowledgeBaseID, affectedSlugs, batchCtx); err != nil && len(cleanups) != 0 {
+			return fmt.Errorf("wiki finalize: deletion link cleanup: %w", err)
+		}
 		s.injectCrossLinks(ctx, payload.KnowledgeBaseID, affectedSlugs, freshRefs, batchCtx)
 	}
 
@@ -1104,6 +1180,16 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 				pruneDeferred = true
 			} else {
 				deletedFolders = len(deleted)
+			}
+		}
+	}
+	if len(cleanups) != 0 {
+		if pruneDeferred {
+			return fmt.Errorf("wiki finalize: deletion folder cleanup is still pending")
+		}
+		for _, cleanup := range cleanups {
+			if err := s.completeWikiDeletion(ctx, cleanup); err != nil {
+				return fmt.Errorf("wiki finalize: deletion result: %w", err)
 			}
 		}
 	}
@@ -1790,6 +1876,9 @@ func (s *wikiIngestService) reduceSlugUpdates(
 	}()
 
 	page, err = s.wikiService.GetPageBySlug(ctx, kbID, slug)
+	if err != nil && !errors.Is(err, apprepo.ErrWikiPageNotFound) {
+		return false, "", false, err
+	}
 	exists := (err == nil && page != nil)
 
 	if !exists {
@@ -2082,10 +2171,14 @@ func (s *wikiIngestService) reduceSlugUpdates(
 			if len(additions) > 0 {
 				additionFailed = true
 			}
-			// Don't propagate the LLM error to the named return: it has
-			// already been logged, and the eg.Go caller would otherwise
-			// log it a second time as "reduce failed for slug".
+			// A retraction that left the old body intact is not complete.
+			// Keep the original operation retryable instead of trimming it.
+			if len(retracts) != 0 {
+				return false, affectedType, additionFailed, err
+			}
 			err = nil
+		} else if len(retracts) != 0 {
+			return false, affectedType, additionFailed, fmt.Errorf("wiki retraction returned no content")
 		}
 	}
 

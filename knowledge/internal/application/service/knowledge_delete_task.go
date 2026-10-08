@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 )
 
 // A receipt is the original native task's result, not a second execution table.
@@ -23,6 +24,46 @@ type knowledgeDeleteReceipt struct {
 	Revision        string    `json:"revision"`
 	WikiEnabled     bool      `json:"wiki_enabled"`
 	CleanedAt       time.Time `json:"cleaned_at"`
+}
+
+// The existing Wiki tombstone also retains the native cleanup result. Its
+// coordinates come from the admitted deletion task, never from an observer.
+// Legacy "1" tombstones remain valid deletion guards but prove no completion.
+type wikiDeleteReceipt struct {
+	TaskID          string    `json:"task_id"`
+	TenantID        uint64    `json:"tenant_id"`
+	KnowledgeBaseID string    `json:"knowledge_base_id"`
+	KnowledgeID     string    `json:"knowledge_id"`
+	Revision        string    `json:"revision"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	CompletedAt     time.Time `json:"completed_at,omitempty"`
+	PageSlugs       []string  `json:"page_slugs,omitempty"`
+	FolderIDs       []string  `json:"folder_ids,omitempty"`
+}
+
+type wikiDeleteTaskKey struct{}
+
+func (r wikiDeleteReceipt) sameDeletion(other wikiDeleteReceipt) bool {
+	return validDeleteTaskCoordinates(r.KnowledgeBaseID, r.KnowledgeID, r.Revision, r.TaskID) &&
+		r.TenantID != 0 && !r.ExpiresAt.IsZero() && r.TaskID == other.TaskID &&
+		r.TenantID == other.TenantID && r.KnowledgeBaseID == other.KnowledgeBaseID &&
+		r.KnowledgeID == other.KnowledgeID && r.Revision == other.Revision && r.ExpiresAt.Equal(other.ExpiresAt)
+}
+
+func readWikiDeleteReceipt(ctx context.Context, client *redis.Client, expected wikiDeleteReceipt) (wikiDeleteReceipt, string, error) {
+	if client == nil || !expected.sameDeletion(expected) || !time.Now().Before(expected.ExpiresAt) {
+		return wikiDeleteReceipt{}, "", fmt.Errorf("native Wiki deletion receipt unavailable")
+	}
+	raw, err := client.Get(ctx, WikiDeletedTombstoneKey(expected.KnowledgeBaseID, expected.KnowledgeID)).Result()
+	if err != nil {
+		return wikiDeleteReceipt{}, "", err
+	}
+	var receipt wikiDeleteReceipt
+	if json.Unmarshal([]byte(raw), &receipt) != nil || !receipt.sameDeletion(expected) ||
+		(!receipt.CompletedAt.IsZero() && !receipt.CompletedAt.Before(receipt.ExpiresAt)) {
+		return wikiDeleteReceipt{}, "", fmt.Errorf("native Wiki deletion receipt does not match the original task")
+	}
+	return receipt, raw, nil
 }
 
 func validDeleteTaskCoordinates(kbID, id, revision, taskID string) bool {
@@ -106,10 +147,27 @@ func (s *knowledgeService) ObserveKnowledgeDeleteTask(ctx context.Context, kbID,
 			result["state"] = "RUNNING"
 			return result, nil
 		}
-		// The upstream pending repository removes successful retract rows; an
-		// absent row/dead-letter is not a durable success receipt (operators can
-		// also remove them). Do not turn that absence into a terminal assertion.
-		return result, nil
+		// Queue absence alone is never terminal. Only the original Wiki worker
+		// can finish the exact task/revision retained in its existing tombstone.
+		raw, err := s.redisClient.Get(ctx, WikiDeletedTombstoneKey(kbID, id)).Result()
+		if errors.Is(err, redis.Nil) {
+			return result, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		var expected wikiDeleteReceipt
+		if json.Unmarshal([]byte(raw), &expected) != nil || expected.TaskID != taskID ||
+			expected.TenantID != tenant || expected.KnowledgeBaseID != kbID || expected.KnowledgeID != id || expected.Revision != revision {
+			return result, nil
+		}
+		wikiReceipt, _, err := readWikiDeleteReceipt(ctx, s.redisClient, expected)
+		if err != nil || wikiReceipt.CompletedAt.IsZero() {
+			return result, nil
+		}
+		if wikiReceipt.CompletedAt.After(receipt.CleanedAt) {
+			receipt.CleanedAt = wikiReceipt.CompletedAt
+		}
 	}
 	result["state"] = "SUCCEEDED"
 	result["completed_at"] = receipt.CleanedAt.UTC().Format(time.RFC3339Nano)

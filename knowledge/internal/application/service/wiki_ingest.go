@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/agent"
+	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/searchutil"
@@ -263,9 +264,10 @@ return proposed
 // wikiFinalizeChange is a doc-level add/remove entry for the index-intro
 // change description, persisted as a finalize-lane row payload.
 type wikiFinalizeChange struct {
-	Action     string `json:"action"` // wikiFinalizeAdded | wikiFinalizeRemoved
-	DocTitle   string `json:"doc_title,omitempty"`
-	DocSummary string `json:"doc_summary,omitempty"`
+	Action     string             `json:"action"` // wikiFinalizeAdded | wikiFinalizeRemoved
+	DocTitle   string             `json:"doc_title,omitempty"`
+	DocSummary string             `json:"doc_summary,omitempty"`
+	Cleanup    *wikiDeleteReceipt `json:"cleanup,omitempty"`
 }
 
 // wikiFinalizeRow is the JSON payload of a task_pending_ops row in the
@@ -301,14 +303,15 @@ type WikiIngestPayload struct {
 // WikiRetractPayload is the asynq task payload for wiki content retraction
 type WikiRetractPayload struct {
 	types.TracingContext
-	TenantID        uint64   `json:"tenant_id"`
-	KnowledgeBaseID string   `json:"knowledge_base_id"`
-	KnowledgeID     string   `json:"knowledge_id"`
-	DocTitle        string   `json:"doc_title"`
-	DocSummary      string   `json:"doc_summary,omitempty"` // one-line summary of the deleted document
-	Language        string   `json:"language,omitempty"`
-	PageSlugs       []string `json:"page_slugs"`
-	FolderIDs       []string `json:"folder_ids,omitempty"`
+	TenantID        uint64             `json:"tenant_id"`
+	KnowledgeBaseID string             `json:"knowledge_base_id"`
+	KnowledgeID     string             `json:"knowledge_id"`
+	DocTitle        string             `json:"doc_title"`
+	DocSummary      string             `json:"doc_summary,omitempty"` // one-line summary of the deleted document
+	Language        string             `json:"language,omitempty"`
+	PageSlugs       []string           `json:"page_slugs"`
+	FolderIDs       []string           `json:"folder_ids,omitempty"`
+	Cleanup         *wikiDeleteReceipt `json:"cleanup,omitempty"`
 }
 
 const (
@@ -334,10 +337,11 @@ type WikiPendingOp struct {
 	// Ingest fields
 	Language string `json:"language,omitempty"`
 	// Retract fields
-	DocTitle   string   `json:"doc_title,omitempty"`
-	DocSummary string   `json:"doc_summary,omitempty"`
-	PageSlugs  []string `json:"page_slugs,omitempty"`
-	FolderIDs  []string `json:"folder_ids,omitempty"`
+	DocTitle   string             `json:"doc_title,omitempty"`
+	DocSummary string             `json:"doc_summary,omitempty"`
+	PageSlugs  []string           `json:"page_slugs,omitempty"`
+	FolderIDs  []string           `json:"folder_ids,omitempty"`
+	Cleanup    *wikiDeleteReceipt `json:"cleanup,omitempty"`
 
 	// dbID is set by peekPendingList from task_pending_ops.id. Zero in
 	// constructions made outside the queue (e.g. legacy tests).
@@ -620,6 +624,7 @@ func enqueueWikiRetract(
 		PageSlugs:   payload.PageSlugs,
 		FolderIDs:   payload.FolderIDs,
 		Language:    payload.Language,
+		Cleanup:     payload.Cleanup,
 	}
 	payloadBytes, err := json.Marshal(op)
 	if err != nil {
@@ -715,15 +720,17 @@ func (s *wikiIngestService) enqueueFinalize(
 	freshTitleBySlug map[string]string,
 	changes []wikiFinalizeChange,
 	folderIDs []string,
-) {
+) bool {
 	if s.pendingRepo == nil {
-		return
+		return false
 	}
 	acceptedAny := false
+	acceptedAll := true
 	for _, slug := range affectedSlugs {
 		row := wikiFinalizeRow{Slug: slug, Title: freshTitleBySlug[slug]}
 		b, err := json.Marshal(row)
 		if err != nil {
+			acceptedAll = false
 			continue
 		}
 		if s.enqueueFinalizeRow(ctx, &types.TaskPendingOp{
@@ -736,12 +743,15 @@ func (s *wikiIngestService) enqueueFinalize(
 			Payload:  b,
 		}) {
 			acceptedAny = true
+		} else {
+			acceptedAll = false
 		}
 	}
 	for i := range changes {
 		row := wikiFinalizeRow{Change: &changes[i]}
 		b, err := json.Marshal(row)
 		if err != nil {
+			acceptedAll = false
 			continue
 		}
 		if s.enqueueFinalizeRow(ctx, &types.TaskPendingOp{
@@ -754,6 +764,8 @@ func (s *wikiIngestService) enqueueFinalize(
 			Payload:  b,
 		}) {
 			acceptedAny = true
+		} else {
+			acceptedAll = false
 		}
 	}
 	if len(folderIDs) > 0 {
@@ -769,13 +781,67 @@ func (s *wikiIngestService) enqueueFinalize(
 				Payload:  b,
 			}) {
 				acceptedAny = true
+			} else {
+				acceptedAll = false
 			}
+		} else {
+			acceptedAll = false
 		}
 	}
 	if !acceptedAny {
-		return
+		return false
 	}
 	s.scheduleFinalize(ctx, payload)
+	return acceptedAll
+}
+
+// Completing the original tombstone is conditional on its unchanged task and
+// revision. A replay reads the stored result without repeating cleanup; a
+// missing/expired/replaced tombstone cannot be recreated as success.
+func (s *wikiIngestService) completeWikiDeletion(ctx context.Context, expected wikiDeleteReceipt) error {
+	receipt, before, err := readWikiDeleteReceipt(ctx, s.redisClient, expected)
+	if err != nil {
+		return err
+	}
+	if !receipt.CompletedAt.IsZero() {
+		return nil
+	}
+	if s.knowledgeRepo == nil {
+		return fmt.Errorf("Wiki deletion knowledge observation unavailable")
+	}
+	row, err := s.knowledgeRepo.GetKnowledgeByID(ctx, expected.TenantID, expected.KnowledgeID)
+	if !errors.Is(err, apprepo.ErrKnowledgeNotFound) || row != nil {
+		return fmt.Errorf("Wiki deletion knowledge cleanup is not complete")
+	}
+	pages, err := s.wikiService.ListPagesBySourceRef(ctx, expected.KnowledgeBaseID, expected.KnowledgeID)
+	if err != nil {
+		return err
+	}
+	if len(pages) != 0 {
+		return fmt.Errorf("Wiki deletion still has source references")
+	}
+	receipt.CompletedAt = time.Now().UTC()
+	if !receipt.CompletedAt.Before(receipt.ExpiresAt) {
+		return fmt.Errorf("Wiki deletion receipt expired")
+	}
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		return err
+	}
+	const complete = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL')
+return 1
+`
+	written, err := s.redisClient.Eval(ctx, complete,
+		[]string{WikiDeletedTombstoneKey(expected.KnowledgeBaseID, expected.KnowledgeID)}, before, string(raw)).Int()
+	if err != nil {
+		return err
+	}
+	if written != 1 {
+		return fmt.Errorf("Wiki deletion receipt changed before completion")
+	}
+	return nil
 }
 
 func uniqueWikiFolderIDs(values []string) []string {
@@ -906,9 +972,8 @@ func (s *wikiIngestService) claimPendingList(ctx context.Context, kbID string, l
 // directly. Returns (false, nil) if the lock could not be acquired within
 // wikiSlugLockWait — the caller then treats the slug like a best-effort
 // reduce miss (matching pre-existing reduce-failure handling). On a Redis
-// error we fail OPEN (run fn unlocked): a rare lost-update on a shared page
-// is tolerated by the finalize/dead-link passes, whereas silently dropping
-// the update is strictly worse.
+// error we leave the op retryable: an unlocked stale write could restore a
+// deleted source after the retract worker had already recorded completion.
 func (s *wikiIngestService) withSlugLock(ctx context.Context, kbID, slug string, fn func() error) (bool, error) {
 	if s.redisClient == nil {
 		return true, fn()
@@ -918,8 +983,7 @@ func (s *wikiIngestService) withSlugLock(ctx context.Context, kbID, slug string,
 	for {
 		ok, rerr := s.redisClient.SetNX(ctx, key, "1", wikiSlugLockTTL).Result()
 		if rerr != nil {
-			logger.Warnf(ctx, "wiki reduce: slug lock SetNX failed for %s: %v (running unlocked)", slug, rerr)
-			return true, fn()
+			return false, fmt.Errorf("wiki reduce: acquire slug lock: %w", rerr)
 		}
 		if ok {
 			break
@@ -1713,9 +1777,9 @@ func stripDeadWikiLinks(
 //  4. Persist the rewritten content via UpdateAutoLinkedContent so
 //     the version counter stays unchanged (this is a maintenance
 //     pass, not a user-visible edit).
-func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, affectedSlugs []string, batchCtx *WikiBatchContext) {
+func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, affectedSlugs []string, batchCtx *WikiBatchContext) error {
 	if len(affectedSlugs) == 0 {
-		return
+		return nil
 	}
 
 	// (1) Load the affected pages' content + out-links in one go.
@@ -1723,9 +1787,15 @@ func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, aff
 	// because we're going to rewrite content; the lite path saves
 	// nothing once we're touching content anyway.
 	cleaned := 0
+	var cleanupErr error
 	for _, slug := range affectedSlugs {
 		page, err := s.wikiService.GetPageBySlug(ctx, kbID, slug)
 		if err != nil || page == nil {
+			if err == nil {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wiki page lookup returned no observation"))
+			} else if !errors.Is(err, apprepo.ErrWikiPageNotFound) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
 			continue
 		}
 		if page.Status == types.WikiPageStatusArchived {
@@ -1743,6 +1813,7 @@ func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, aff
 		liveMap, err := s.wikiService.ExistsSlugs(ctx, kbID, []string(page.OutLinks))
 		if err != nil {
 			logger.Warnf(ctx, "wiki: ExistsSlugs failed during dead-link cleanup for %s: %v", slug, err)
+			cleanupErr = errors.Join(cleanupErr, err)
 			continue
 		}
 		deadSlugs := make(map[string]struct{})
@@ -1779,6 +1850,7 @@ func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, aff
 		page.Content = newContent
 		if err := s.wikiService.UpdateAutoLinkedContent(ctx, page); err != nil {
 			logger.Warnf(ctx, "wiki: failed to clean dead links in page %s: %v", page.Slug, err)
+			cleanupErr = errors.Join(cleanupErr, err)
 			continue
 		}
 		cleaned++
@@ -1787,6 +1859,7 @@ func (s *wikiIngestService) cleanDeadLinks(ctx context.Context, kbID string, aff
 	if cleaned > 0 {
 		logger.Infof(ctx, "wiki: cleaned dead links in %d pages", cleaned)
 	}
+	return cleanupErr
 }
 
 // injectCrossLinks scans the batch's affected pages and injects
@@ -2108,9 +2181,12 @@ const indexIntroSummaryCap = 200
 func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat.Chat, payload WikiIngestPayload,
 	changeDesc, lang, customInstructions string,
 ) error {
-	indexPage, _ := s.wikiService.GetIndex(ctx, payload.KnowledgeBaseID)
+	indexPage, err := s.wikiService.GetIndex(ctx, payload.KnowledgeBaseID)
+	if err != nil {
+		return err
+	}
 	if indexPage == nil {
-		return nil
+		return fmt.Errorf("wiki index is unavailable")
 	}
 
 	// The intro lives on both Content and Summary. Prefer Content since
@@ -2167,7 +2243,7 @@ func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat
 			"InstructionScope":   "wiki_content",
 		})
 		if genErr != nil {
-			intro = "# Wiki Index\n\nThis wiki contains knowledge extracted from uploaded documents.\n"
+			return genErr
 		} else {
 			intro = strings.TrimSpace(generatedIntro)
 		}
@@ -2187,7 +2263,7 @@ func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat
 			"InstructionScope":   "wiki_content",
 		})
 		if genErr != nil {
-			intro = existingIntro // keep existing on error
+			return genErr
 		} else {
 			intro = strings.TrimSpace(updatedIntro)
 		}
@@ -2195,6 +2271,9 @@ func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat
 		// No change description and an existing intro: leave it as-is so
 		// we don't bump the version for a no-op.
 		intro = existingIntro
+	}
+	if strings.TrimSpace(intro) == "" {
+		return fmt.Errorf("wiki index synthesis returned no content")
 	}
 
 	// Defensive: some LLM outputs occasionally bleed into a directory-
@@ -2208,7 +2287,7 @@ func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat
 
 	indexPage.Content = intro
 	indexPage.Summary = intro
-	_, err := s.wikiService.UpdatePage(ctx, indexPage)
+	_, err = s.wikiService.UpdatePage(ctx, indexPage)
 	return err
 }
 

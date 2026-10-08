@@ -2061,3 +2061,121 @@ Actual component release/binding activation and live source replacement,
 parsing/deletion with terminal receipt/usage remain separate evidence.
 Whole-project/full/docs checks, commit/push, deployment, screenshots and
 device acceptance were not run by this subtask.
+
+## Conditional deletion observes original Wiki cleanup completion (2026-10-08)
+
+Authority and actual gap: `.design/07` §8.1–8.2 and `.design/13` §4.4 leave
+derived content, native deletion, indexing and their convergence in WeKnora;
+queue acceptance and missing rows are not terminal evidence. Fixed read-only
+WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` was rechecked at
+`internal/application/service/knowledge_delete.go::ProcessKnowledgeListDelete`,
+`internal/application/service/wiki_ingest.go::enqueueWikiRetract`,
+`internal/application/service/wiki_ingest.go::wikiIngestService.enqueueFinalize`,
+`internal/application/service/wiki_ingest_batch.go::wikiIngestService.ProcessWikiIngest`,
+`internal/application/service/wiki_ingest_batch.go::wikiIngestService.ProcessWikiFinalize`
+and `internal/application/service/wiki_page.go::wikiPageService.DeletePage`.
+The original maintenance task already retained its native deletion result,
+but successful Wiki retract rows were removed without retaining the Wiki
+finalization result. Conditional observation therefore correctly refused to
+infer success, yet could never close a Wiki-enabled deletion. Native source
+lookup, retraction synthesis and search-chunk errors could also be swallowed
+before the original work rows were removed.
+
+Impact: six original service/check paths were changed. The existing Wiki
+deletion tombstone now retains private native task/tenant/KB/document/revision,
+expiry and completion metadata for the original conditional task. The same
+metadata follows the existing retract and finalize-change rows; affected
+slugs/folders remain on that original change so batch boundaries cannot drop
+its cleanup scope. This adds no platform entity, schema, migration, queue,
+workflow, credential, shared contract, public route or second index/execution
+authority. No client or component page changes. Legacy `"1"` tombstones still
+block stale ingestion but cannot prove completion; older consumers ignoring
+the private metadata leave observation UNKNOWN, not implicitly successful.
+
+Side effects: a failed source lookup keeps the original retract retryable;
+failed retraction synthesis, unknown page observation and Redis lock failure
+cannot silently trim it. Conditional finalization must persist the original
+change, see the original document work drain, complete index/dead-link/folder
+cleanup and observe native knowledge absence plus no remaining source refs.
+Only then does its compare-before-set write completion into the unchanged
+original tombstone, preserving TTL. Missing, expired or replaced metadata
+cannot be recreated as success. The observer reads only original task/result,
+pending/dead-letter counts and tombstone metadata, not content or a new action.
+
+Boundaries: metadata matches the original task, tenant, KB, document and
+admitted revision, not the timestamp changed by the native deleting CAS.
+Retention comes from the existing `DeleteReceiptRetention`; observations do
+not extend it. Disabled Wiki, missing model, query/LLM/index/link/folder
+failures, live source references, expired/legacy/mismatched/missing results
+remain unresolved, preserving the existing UNKNOWN/error mapping. Completion
+written before a failed queue trim wins on replay without another index write
+or document deletion. Search-chunk deletion now precedes page soft deletion:
+a chunk failure retains the original page for a real retry rather than losing
+the cleanup reference. Map failures use the existing pending retry/dead-letter
+policy; finalizer errors retain its original rows and existing Asynq retry
+budget. Exhausted native retries or expired evidence still require original
+native task/operator reconciliation; this is not a new automatic recovery
+authority or a claim that every failure has been exercised online.
+
+Implementation preceded checks. The existing original cleanup regression
+file drives the original Asynq maintenance worker/result, real SQLite native
+repositories and pending rows, miniredis and the native Wiki workers. It
+covers source lookup failure/recovery, native index error/empty response,
+live source references, successful completion followed by failed queue trim,
+repeated observation, every retained coordinate, expiry, legacy/missing
+metadata, concurrent tombstone replacement and failed search-chunk cleanup
+followed by real retry. The Wiki/model boundary uses existing fixture
+interfaces; no live PostgreSQL, actual model synthesis or live Cells parser
+was exercised by this increment.
+
+The existing Go 1.26.8 SDK `kailo-knowledge-native-check-wkkigg`, UID/GID
+1000/1000, fixed image
+`golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+cache and Data temporary directory were reused. Actual cgroup remained
+4 CPU/8 GiB with swap 0, all OOM counters zero, Data 1.7–2.0 GiB free and
+host available memory 28–30 GiB. Existing concurrent builds were checked;
+the parent explicitly permitted the separate bounded Core SDK. No image,
+dependency install, new database, whole-tree snapshot or cache purge. The
+initial SDK `gofmt -w` attempt returned read-only filesystem errors because
+its source mount is read-only; formatting output was instead produced by the
+same SDK and applied to the host candidate, without changing product logic.
+
+```sh
+TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/application/repository ./internal/application/service \
+  -run 'Test(Conditional|DeleteKnowledgeAtRevision|DeleteWiki|ProcessWikiFinalize|EnqueueWiki|WikiIngestCleanup|TrimPending|RequeueFailed|TaskPendingOps|BuildKnowledgeVector|RemoveChunkRefs)' \
+  -count=1 -v
+```
+
+The first and final positive runs exited 0: **37 top-level checks and 31
+subchecks passed, none failed or skipped**. The final positive native package
+runtimes were `0.525s` and `64.843s`. Only in the private candidate, removing
+the actual tombstone Lua compare and moving chunk deletion after page soft
+deletion made the same command exit 1: **35 top-level passed/2 failed;
+30 subchecks passed/1 failed**. The retained failure output includes
+`An error is expected but got nil` for `native_completion_CAS` and
+`wiki page not found` with `native page must remain reachable until searchable
+content cleanup succeeds`. Production inputs were restored byte-for-byte;
+the same command exited 0 again, **37 top-level +31 subchecks passed**,
+native package runtimes `0.506s` and `63.593s`. Whole native input-tree
+`diff -qr`, empty SDK `gofmt -d`, scoped `git diff --check` and empty temporary
+directory were verified after restoration.
+
+Logs in the same existing native SDK receipt directory:
+
+- `wiki-native-delete-positive-20261008.log`, SHA-256
+  `38a9304232e639f273f52f852e1a58b9eec58d7f0fa69c6688a2640097a493ab`.
+- `wiki-native-delete-final-positive-20261008.log`, SHA-256
+  `768dbe3fe07a600a2b58155ae5836f81ec7b94ce01777a55a6706c2d22a8e6e1`.
+- `wiki-native-delete-mutation-20261008.log`, SHA-256
+  `84937fae928b8242ac9192ad805cb53a108463de86251bbfc10c248c1bc829d6`.
+- `wiki-native-delete-restored-20261008.log`, SHA-256
+  `71d9ca7fd1b085c9430027d1aa468899bcd0dca9298ab5fd6617687bc11185c9`.
+
+This is scoped native implementation evidence, not a full upstream parity
+comparison or live component acceptance. Image publication, approved actual
+release/binding activation and live authorized Cells-to-WeKnora parsing,
+replacement/deletion plus both receipt/usage terminals remain separate.
+Whole-project/full/docs checks, commit/push, deployment, screenshots and
+Desktop/Mobile acceptance were not run by this subtask.

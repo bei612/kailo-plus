@@ -160,6 +160,11 @@ func (s *knowledgeService) deleteKnowledgeAtRevision(ctx context.Context, id, re
 		plan.knowledge[0].UpdatedAt.UTC().Format(time.RFC3339Nano) != revision {
 		return false, apperrors.NewConflictError("native revision changed")
 	}
+	if admitted, ok := ctx.Value(wikiDeleteTaskKey{}).(wikiDeleteReceipt); ok &&
+		(admitted.TenantID != plan.knowledge[0].TenantID || admitted.KnowledgeBaseID != plan.knowledge[0].KnowledgeBaseID ||
+			admitted.KnowledgeID != id || admitted.Revision != revision || !admitted.sameDeletion(admitted)) {
+		return false, apperrors.NewConflictError("conditional Wiki deletion changed")
+	}
 	plan.strictCleanup = true
 	wikiEnabled := plan.kbs[plan.knowledge[0].KnowledgeBaseID].IsWikiEnabled()
 	return wikiEnabled, s.executeKnowledgeDelete(plan, true)
@@ -215,9 +220,28 @@ func (s *knowledgeService) cleanupWikiReferences(
 	// (1) Tombstone + scrub pending ingest — must happen first so any
 	// wiki_ingest task that wakes up between here and the retract enqueue
 	// below sees "knowledge gone" and bails out.
+	var wikiReceipt *wikiDeleteReceipt
+	if admitted, ok := ctx.Value(wikiDeleteTaskKey{}).(wikiDeleteReceipt); ok {
+		if admitted.TenantID != knowledge.TenantID || admitted.KnowledgeBaseID != kbID || admitted.KnowledgeID != knowledgeID ||
+			!admitted.sameDeletion(admitted) {
+			return fmt.Errorf("Wiki cleanup does not match conditional deletion")
+		}
+		wikiReceipt = &admitted
+	}
 	if s.redisClient != nil {
 		key := WikiDeletedTombstoneKey(kbID, knowledgeID)
-		if err := s.redisClient.Set(ctx, key, "1", wikiDeletedTTL).Err(); err != nil {
+		value, ttl := "1", wikiDeletedTTL
+		if wikiReceipt != nil {
+			raw, err := json.Marshal(wikiReceipt)
+			if err != nil {
+				return err
+			}
+			value = string(raw)
+			if remaining := time.Until(wikiReceipt.ExpiresAt); remaining > ttl {
+				ttl = remaining
+			}
+		}
+		if err := s.redisClient.Set(ctx, key, value, ttl).Err(); err != nil {
 			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
@@ -276,6 +300,7 @@ func (s *knowledgeService) cleanupWikiReferences(
 		TenantID: tenantID, KnowledgeBaseID: kbID, KnowledgeID: knowledgeID,
 		DocTitle: docTitle, DocSummary: docSummary, Language: lang,
 		PageSlugs: pageSlugs, FolderIDs: uniqueWikiFolderIDs(folderIDs),
+		Cleanup: wikiReceipt,
 	}); err != nil {
 		return errors.Join(cleanupErr, err)
 	}
@@ -823,6 +848,14 @@ func (s *knowledgeService) ProcessKnowledgeListDelete(ctx context.Context, t *as
 			}
 			return nil
 		}
+		if s.config == nil || s.config.KnowledgeBase == nil || s.config.KnowledgeBase.DeleteReceiptRetention <= 0 {
+			return fmt.Errorf("conditional deletion retention unavailable: %w", asynq.SkipRetry)
+		}
+		ctx = context.WithValue(ctx, wikiDeleteTaskKey{}, wikiDeleteReceipt{
+			TaskID: taskID, TenantID: payload.TenantID, KnowledgeBaseID: kbID,
+			KnowledgeID: ids[0], Revision: payload.ExpectedRevision,
+			ExpiresAt: time.Now().UTC().Add(s.config.KnowledgeBase.DeleteReceiptRetention),
+		})
 		wikiEnabled, err := s.deleteKnowledgeAtRevision(ctx, ids[0], payload.ExpectedRevision)
 		if err != nil {
 			// Partial cleanup is retained as UNKNOWN. Re-running a document write
