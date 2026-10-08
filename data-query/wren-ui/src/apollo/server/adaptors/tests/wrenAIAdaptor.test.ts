@@ -3,6 +3,7 @@ import { WrenAIAdaptor } from '../wrenAIAdaptor';
 import {
   RecommendationQuestionsInput,
   RecommendationQuestionStatus,
+  ChartType,
 } from '@server/models/adaptor';
 import { Manifest } from '../../mdl/type';
 
@@ -31,6 +32,48 @@ describe('WrenAIAdaptor', () => {
   beforeEach(() => {
     adaptor = new WrenAIAdaptor({ wrenAIBaseEndpoint: baseEndpoint });
     jest.clearAllMocks();
+  });
+
+  it('preserves disclosed native data in both original chart HTTP consumers', async () => {
+    const data = { columns: [{ name: 'value', type: 'int' }], data: [[7]] };
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { query_id: 'original-chart-task' } })
+      .mockResolvedValueOnce({ data: { query_id: 'original-chart-task' } });
+    expect(
+      await adaptor.generateChart({
+        query: 'original',
+        sql: 'original SQL',
+        data,
+      }),
+    ).toEqual({ queryId: 'original-chart-task' });
+    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+      `${baseEndpoint}/v1/charts`,
+      {
+        query: 'original',
+        sql: 'original SQL',
+        data,
+      },
+    );
+    await adaptor.adjustChart({
+      query: 'original',
+      sql: 'original SQL',
+      data,
+      chartSchema: { mark: 'bar' },
+      adjustmentOption: { chartType: ChartType.LINE, xAxis: 'value' },
+    });
+    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+      `${baseEndpoint}/v1/chart-adjustments`,
+      expect.objectContaining({
+        query: 'original',
+        sql: 'original SQL',
+        data,
+        chart_schema: { mark: 'bar' },
+        adjustment_option: expect.objectContaining({
+          chart_type: 'line',
+          x_axis: 'value',
+        }),
+      }),
+    );
   });
 
   describe('deployment terminal evidence', () => {

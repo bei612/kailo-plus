@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, Literal, Optional
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import BaseModel
 
@@ -202,12 +203,6 @@ class ChartService:
             logger.exception(
                 f"chart pipeline - OTHERS: {chart_result_request.query_id} is not found"
             )
-            return ChartResultResponse(
-                status="failed",
-                error=ChartError(
-                    code="OTHERS",
-                    message=f"{chart_result_request.query_id} is not found",
-                ),
-            )
+            raise HTTPException(status_code=404, detail="Native chart task not found")
 
         return result

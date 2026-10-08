@@ -5,6 +5,7 @@ import {
   AskResultType,
   RecommendationQuestionStatus,
   ChartAdjustmentOption,
+  ChartStatus,
   AskFeedbackStatus,
 } from '@server/models/adaptor';
 import { Thread } from '../repositories/threadRepository';
@@ -729,12 +730,18 @@ export class AskingResolver {
 
   public async generateThreadResponseChart(
     _root: any,
-    args: { responseId: number },
+    args: {
+      responseId: number;
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    },
     ctx: IContext,
-  ): Promise<ThreadResponse> {
+  ): Promise<ThreadResponse & { chartQueryReceipt?: any }> {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId } = args;
     const askingService = ctx.askingService;
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      return this.generateNativeChart(args, ctx);
     return askingService.generateThreadResponseChart(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
@@ -742,15 +749,93 @@ export class AskingResolver {
 
   public async adjustThreadResponseChart(
     _root: any,
-    args: { responseId: number; data: ChartAdjustmentOption },
+    args: {
+      responseId: number;
+      data: ChartAdjustmentOption;
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    },
     ctx: IContext,
-  ): Promise<ThreadResponse> {
+  ): Promise<ThreadResponse & { chartQueryReceipt?: any }> {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId, data } = args;
     const askingService = ctx.askingService;
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      return this.generateNativeChart(args, ctx);
     return askingService.adjustThreadResponseChart(responseId, data, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
+  }
+
+  private async generateNativeChart(
+    args: {
+      responseId: number;
+      data?: ChartAdjustmentOption;
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    },
+    ctx: IContext,
+  ): Promise<ThreadResponse & { chartQueryReceipt?: any }> {
+    const project = await ctx.projectService.getCurrentProject();
+    const expected = await ctx.askingService.getResponse(
+      args.responseId,
+      project,
+    );
+    if (!expected?.sql)
+      throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
+    if (
+      expected.chartDetail?.queryHistoryId &&
+      [ChartStatus.FETCHING, ChartStatus.GENERATING].includes(
+        expected.chartDetail.status as ChartStatus,
+      )
+    ) {
+      const history = await ctx.apiHistoryRepository.findOneBy({
+        id: expected.chartDetail.queryHistoryId,
+      });
+      if (!history || history.governanceKey !== args.idempotencyKey)
+        throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+    }
+    const receipt = await new ModelResolver().previewSql(
+      null,
+      {
+        data: {
+          sql: expected.sql,
+          projectId: String(project.id),
+          limit: DEFAULT_PREVIEW_LIMIT,
+          idempotencyKey: args.idempotencyKey,
+          idempotencyScope: args.idempotencyScope,
+        },
+      },
+      ctx,
+    );
+    if (!queryReceiptState(receipt).completed)
+      return { ...expected, chartQueryReceipt: receipt };
+    if (
+      receipt.nativeType !== 'wren.api_history' ||
+      typeof receipt.nativeId !== 'string' ||
+      !Array.isArray(receipt.data?.columns) ||
+      !Array.isArray(receipt.data?.data)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+    const configurations = {
+      language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+      nativeQuery: {
+        historyId: receipt.nativeId,
+        expected,
+        data: receipt.data,
+      },
+    };
+    const response = args.data
+      ? await ctx.askingService.adjustThreadResponseChart(
+          args.responseId,
+          args.data,
+          configurations,
+        )
+      : await ctx.askingService.generateThreadResponseChart(
+          args.responseId,
+          configurations,
+        );
+    return { ...response, chartQueryReceipt: receipt };
   }
 
   public async getResponse(
@@ -903,6 +988,37 @@ export class AskingResolver {
    * Nested resolvers
    */
   public getThreadResponseNestedResolver = () => ({
+    chartDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
+      if (!parent.chartDetail) return null;
+      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+        const detail = parent.chartDetail;
+        if (Object.keys(detail).length === 0) return null;
+        if (!detail.queryHistoryId)
+          throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+        const history = await ctx.apiHistoryRepository.findOneBy({
+          id: detail.queryHistoryId,
+        });
+        if (!history || history.requestPayload?.sql !== parent.sql)
+          throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+        await new ApiHistoryResolver()
+          .getApiHistoryNestedResolver()
+          .responsePayload(history, {}, ctx);
+        const current = await ctx.askingService.getResponse(parent.id);
+        const intent = (value: ThreadResponse) => ({
+          id: value.id,
+          threadId: value.threadId,
+          question: value.question,
+          sql: value.sql,
+          chartDetail: value.chartDetail,
+        });
+        if (
+          !current ||
+          canonical(intent(current)) !== canonical(intent(parent))
+        )
+          throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      }
+      return parent.chartDetail;
+    },
     view: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       const viewId = parent.viewId;
       if (viewId === null || viewId === undefined) return null;

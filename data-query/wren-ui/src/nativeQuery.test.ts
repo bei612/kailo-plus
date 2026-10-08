@@ -135,6 +135,55 @@ integration('original Wren native answer PostgreSQL CAS', () => {
       (await repository.findOneBy({ id: expected.id })).answerDetail,
     ).toEqual(completed.answerDetail);
   });
+  it.each(['sql', 'question', 'chartDetail'])(
+    'the original chart CAS refuses changed %s before native create/result persistence',
+    async (field) => {
+      const update =
+        field === 'chartDetail'
+          ? {
+              chart_detail: JSON.stringify({
+                status: 'FINISHED',
+                chartSchema: { mark: 'bar' },
+              }),
+            }
+          : { [field]: randomUUID() };
+      await tx('thread_response').where({ id: expected.id }).update(update);
+      const current = await repository.findOneBy({ id: expected.id });
+      expect(
+        await repository.claimNativeChart(expected, {
+          queryHistoryId: randomUUID(),
+          status: 'GENERATING',
+        }),
+      ).toBeNull();
+      expect(await repository.findOneBy({ id: expected.id })).toEqual(current);
+    },
+  );
+  it('the original chart CAS admits one overlapping native claim and preserves the exact terminal snapshot', async () => {
+    const results = await Promise.all(
+      [randomUUID(), randomUUID()].map((queryHistoryId) =>
+        repository.claimNativeChart(expected, {
+          queryHistoryId,
+          status: 'GENERATING',
+        }),
+      ),
+    );
+    const winners = results.filter(Boolean);
+    expect(winners).toHaveLength(1);
+    const [claimed] = winners;
+    const terminal = await repository.claimNativeChart(claimed, {
+      ...claimed.chartDetail,
+      status: 'FINISHED',
+      queryId: 'original-chart-id',
+      chartSchema: { mark: 'bar' },
+    });
+    expect(terminal.chartDetail.queryHistoryId).toBe(
+      claimed.chartDetail.queryHistoryId,
+    );
+    expect(
+      await repository.claimNativeChart(claimed, { status: 'FAILED' }),
+    ).toBeNull();
+    expect(await repository.findOneBy({ id: expected.id })).toEqual(terminal);
+  });
 
   it.each(['sql', 'question', 'threadId', 'answerDetail'])(
     'refuses an actually changed %s without overwriting native state',

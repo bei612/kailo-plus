@@ -63,6 +63,8 @@ def load_original(name, path):
 
 pipeline_module = load_original("native_sql_answer_pipeline", "src/pipelines/generation/sql_answer.py")
 service_module = load_original("native_sql_answer_service", "src/web/v1/services/sql_answer.py")
+chart_module = load_original("native_chart_service", "src/web/v1/services/chart.py")
+adjustment_module = load_original("native_chart_adjustment_service", "src/web/v1/services/chart_adjustment.py")
 
 
 class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
@@ -126,6 +128,60 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as caught:
             service.get_sql_answer_result(types.SimpleNamespace(query_id="expired-original-task"))
         self.assertEqual(caught.exception.status_code, 404)
+
+
+class NativeChartData(unittest.IsolatedAsyncioTestCase):
+    async def test_original_generation_and_adjustment_use_the_disclosed_data_without_sql_callback(self):
+        for adjustment in [False, True]:
+            with self.subTest(adjustment=adjustment):
+                sql = types.SimpleNamespace(run=AsyncMock(side_effect=AssertionError("unadmitted SERVICE SQL callback")))
+                result = {"reasoning": "original", "chart_type": "line", "chart_schema": {"mark": "line"}}
+                pipeline = types.SimpleNamespace(run=AsyncMock(return_value={"post_process": {"results": result}}))
+                data = {"columns": [{"name": "value", "type": "int"}], "data": []}
+                request = types.SimpleNamespace(
+                    query_id="original-chart-id", query="original", sql="SELECT value FROM native_model",
+                    data=data, request_from="ui", project_id="original-project",
+                    configurations=types.SimpleNamespace(language="Chinese"),
+                    remove_data_from_chart_schema=True, custom_instruction=None,
+                    adjustment_option={"chart_type": "line"}, chart_schema={"mark": "bar"},
+                )
+                if adjustment:
+                    service = adjustment_module.ChartAdjustmentService({"sql_executor": sql, "chart_adjustment": pipeline})
+                    await service.chart_adjustment(request)
+                    terminal = service.get_chart_adjustment_result(request)
+                else:
+                    service = chart_module.ChartService({"sql_executor": sql, "chart_generation": pipeline})
+                    await service.chart(request)
+                    terminal = service.get_chart_result(request)
+                sql.run.assert_not_called()
+                self.assertIs(pipeline.run.call_args.kwargs["data"], data)
+                self.assertEqual(terminal.status, "finished")
+                self.assertEqual(terminal.response.chart_schema, {"mark": "line"})
+
+    async def test_original_standalone_adjustment_keeps_its_native_sql_executor(self):
+        data = {"columns": [], "data": []}
+        sql = types.SimpleNamespace(run=AsyncMock(return_value={"execute_sql": {"results": data}}))
+        pipeline = types.SimpleNamespace(run=AsyncMock(return_value={"post_process": {"results": {
+            "reasoning": "original", "chart_type": "bar", "chart_schema": {"mark": "bar"},
+        }}}))
+        service = adjustment_module.ChartAdjustmentService({"sql_executor": sql, "chart_adjustment": pipeline})
+        request = types.SimpleNamespace(
+            query_id="original-adjustment", query="original", sql="original SQL", data=None,
+            request_from="ui", project_id="original-project", configurations=types.SimpleNamespace(language="English"),
+            adjustment_option={"chart_type": "bar"}, chart_schema={"mark": "line"},
+        )
+        await service.chart_adjustment(request)
+        sql.run.assert_awaited_once_with(sql=request.sql, project_id=request.project_id)
+        self.assertIs(pipeline.run.call_args.kwargs["data"], data)
+
+    async def test_missing_chart_tasks_are_unknown_not_fabricated_failed_terminals(self):
+        for service, read in [
+            (chart_module.ChartService({}), "get_chart_result"),
+            (adjustment_module.ChartAdjustmentService({}), "get_chart_adjustment_result"),
+        ]:
+            with self.subTest(read=read), self.assertRaises(HTTPException) as caught:
+                getattr(service, read)(types.SimpleNamespace(query_id="expired-original-id"))
+            self.assertEqual(caught.exception.status_code, 404)
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ import {
 import { getConfig } from '@server/config';
 import { TextBasedAnswerBackgroundTracker } from '../backgrounds/textBasedAnswerBackgroundTracker';
 import { IAskingTaskTracker, TrackedAskingResult } from './askingTaskTracker';
-import { NativeQueryRefusal } from './nativeQueryAdmission';
+import { canonical, NativeQueryRefusal } from './nativeQueryAdmission';
 
 const config = getConfig();
 
@@ -115,6 +115,15 @@ export interface AdjustmentSqlInput {
   sql: string;
 }
 
+interface NativeChartConfigurations {
+  language: string;
+  nativeQuery?: {
+    historyId: string;
+    expected: ThreadResponse;
+    data: PreviewDataResponse;
+  };
+}
+
 export interface IAskingService {
   /**
    * Asking task.
@@ -176,12 +185,12 @@ export interface IAskingService {
   ): Promise<ThreadResponse>;
   generateThreadResponseChart(
     threadResponseId: number,
-    configurations: { language: string },
+    configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse>;
   adjustThreadResponseChart(
     threadResponseId: number,
     input: ChartAdjustmentOption,
-    configurations: { language: string },
+    configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse>;
   adjustThreadResponseWithSQL(
     threadResponseId: number,
@@ -999,8 +1008,10 @@ export class AskingService implements IAskingService {
 
   public async generateThreadResponseChart(
     threadResponseId: number,
-    configurations: { language: string },
+    configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse> {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      return this.createNativeChart(threadResponseId, configurations);
     const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
@@ -1034,8 +1045,10 @@ export class AskingService implements IAskingService {
   public async adjustThreadResponseChart(
     threadResponseId: number,
     input: ChartAdjustmentOption,
-    configurations: { language: string },
+    configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse> {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      return this.createNativeChart(threadResponseId, configurations, input);
     const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
@@ -1067,6 +1080,109 @@ export class AskingService implements IAskingService {
     this.chartAdjustmentBackgroundTracker.addTask(updatedThreadResponse);
 
     return updatedThreadResponse;
+  }
+
+  private async createNativeChart(
+    responseId: number,
+    configurations: NativeChartConfigurations,
+    adjustmentOption?: ChartAdjustmentOption,
+  ): Promise<ThreadResponse> {
+    const native = configurations.nativeQuery;
+    if (!native)
+      throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+    const current = await this.getResponse(responseId);
+    const intent = (response: ThreadResponse) => ({
+      id: response.id,
+      threadId: response.threadId,
+      question: response.question,
+      sql: response.sql,
+    });
+    if (
+      !current ||
+      canonical(intent(current)) !== canonical(intent(native.expected))
+    )
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    const tracker = adjustmentOption
+      ? this.chartAdjustmentBackgroundTracker
+      : this.chartBackgroundTracker;
+    const detail = current.chartDetail;
+    if (detail?.queryHistoryId === native.historyId) {
+      if (
+        canonical(detail.adjustmentOption || null) !==
+        canonical(adjustmentOption || null)
+      )
+        throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+      if (
+        detail.queryId &&
+        [ChartStatus.FETCHING, ChartStatus.GENERATING].includes(
+          detail.status as ChartStatus,
+        )
+      )
+        tracker.addTask(current);
+      return current;
+    }
+    if (
+      detail &&
+      [ChartStatus.FETCHING, ChartStatus.GENERATING].includes(
+        detail.status as ChartStatus,
+      )
+    )
+      throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+    if (
+      canonical(detail || null) !==
+      canonical(native.expected.chartDetail || null)
+    )
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    if (
+      adjustmentOption &&
+      (!detail?.chartSchema || detail.status !== ChartStatus.FINISHED)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
+    // Persist the exact original response and previous chart before the native
+    // non-idempotent create. Lost acknowledgement remains this original claim.
+    const claimed = await this.threadResponseRepository.claimNativeChart(
+      current,
+      {
+        queryHistoryId: native.historyId,
+        status: ChartStatus.GENERATING,
+        ...(adjustmentOption ? { adjustment: true, adjustmentOption } : {}),
+      },
+    );
+    if (!claimed) {
+      const latest = await this.getResponse(responseId);
+      if (
+        latest?.chartDetail?.queryHistoryId === native.historyId &&
+        canonical(latest.chartDetail.adjustmentOption || null) ===
+          canonical(adjustmentOption || null)
+      )
+        return latest;
+      throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    }
+    const input = {
+      query: claimed.question,
+      sql: claimed.sql,
+      data: native.data,
+      configurations: { language: configurations.language },
+    };
+    const created = adjustmentOption
+      ? await this.wrenAIAdaptor.adjustChart({
+          ...input,
+          adjustmentOption,
+          chartSchema: detail.chartSchema,
+        })
+      : await this.wrenAIAdaptor.generateChart(input);
+    if (typeof created?.queryId !== 'string' || !created.queryId.trim())
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    const accepted = await this.threadResponseRepository.claimNativeChart(
+      claimed,
+      {
+        ...claimed.chartDetail,
+        queryId: created.queryId,
+      },
+    );
+    if (!accepted) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
+    tracker.addTask(accepted);
+    return accepted;
   }
 
   public async getResponsesWithThread(threadId: number) {

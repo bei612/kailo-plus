@@ -52,6 +52,7 @@ const COMMON_CHART_DETAIL = gql`
       ...CommonError
     }
     adjustment
+    adjustmentOption
   }
 `;
 
@@ -377,9 +378,18 @@ export const GENERATE_THREAD_RESPONSE_ANSWER = gql`
 `;
 
 export const GENERATE_THREAD_RESPONSE_CHART = gql`
-  mutation GenerateThreadResponseChart($responseId: Int!) {
-    generateThreadResponseChart(responseId: $responseId) {
+  mutation GenerateThreadResponseChart(
+    $responseId: Int!
+    $idempotencyKey: String
+    $idempotencyScope: String
+  ) {
+    generateThreadResponseChart(
+      responseId: $responseId
+      idempotencyKey: $idempotencyKey
+      idempotencyScope: $idempotencyScope
+    ) {
       ...CommonResponse
+      chartQueryReceipt
     }
   }
   ${COMMON_RESPONSE}
@@ -389,9 +399,17 @@ export const ADJUST_THREAD_RESPONSE_CHART = gql`
   mutation AdjustThreadResponseChart(
     $responseId: Int!
     $data: AdjustThreadResponseChartInput!
+    $idempotencyKey: String
+    $idempotencyScope: String
   ) {
-    adjustThreadResponseChart(responseId: $responseId, data: $data) {
+    adjustThreadResponseChart(
+      responseId: $responseId
+      data: $data
+      idempotencyKey: $idempotencyKey
+      idempotencyScope: $idempotencyScope
+    ) {
       ...CommonResponse
+      chartQueryReceipt
     }
   }
   ${COMMON_RESPONSE}

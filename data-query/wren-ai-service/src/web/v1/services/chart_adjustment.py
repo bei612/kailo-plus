@@ -1,7 +1,8 @@
 import logging
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import BaseModel
 
@@ -27,6 +28,7 @@ class ChartAdjustmentOption(BaseModel):
 class ChartAdjustmentRequest(BaseRequest):
     query: str
     sql: str
+    data: Optional[Dict[str, Any]] = None
     adjustment_option: ChartAdjustmentOption
     chart_schema: dict
 
@@ -112,20 +114,21 @@ class ChartAdjustmentService:
             query_id = chart_adjustment_request.query_id
             execute_sql_error_message = None
 
-            self._chart_adjustment_results[query_id] = ChartAdjustmentResultResponse(
-                status="fetching",
-                trace_id=trace_id,
-            )
-
-            execute_sql_result = (
-                await self._pipelines["sql_executor"].run(
-                    sql=chart_adjustment_request.sql,
-                    project_id=chart_adjustment_request.project_id,
+            if chart_adjustment_request.data is None:
+                self._chart_adjustment_results[query_id] = ChartAdjustmentResultResponse(
+                    status="fetching",
+                    trace_id=trace_id,
                 )
-            )["execute_sql"]
-
-            sql_data = execute_sql_result["results"]
-            execute_sql_error_message = execute_sql_result.get("error_message", None)
+                execute_sql_result = (
+                    await self._pipelines["sql_executor"].run(
+                        sql=chart_adjustment_request.sql,
+                        project_id=chart_adjustment_request.project_id,
+                    )
+                )["execute_sql"]
+                sql_data = execute_sql_result["results"]
+                execute_sql_error_message = execute_sql_result.get("error_message", None)
+            else:
+                sql_data = chart_adjustment_request.data
 
             if execute_sql_error_message:
                 self._chart_adjustment_results[
@@ -221,12 +224,6 @@ class ChartAdjustmentService:
             logger.exception(
                 f"chart adjustment pipeline - OTHERS: {chart_adjustment_result_request.query_id} is not found"
             )
-            return ChartAdjustmentResultResponse(
-                status="failed",
-                error=ChartAdjustmentError(
-                    code="OTHERS",
-                    message=f"{chart_adjustment_result_request.query_id} is not found",
-                ),
-            )
+            raise HTTPException(status_code=404, detail="Native chart adjustment task not found")
 
         return result

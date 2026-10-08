@@ -5,6 +5,11 @@ import { NativeHumanQuery } from './apollo/server/services/nativeHumanQuery';
 import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { TextBasedAnswerBackgroundTracker } from './apollo/server/backgrounds/textBasedAnswerBackgroundTracker';
 import { components } from './common';
+import { AskingResolver } from './apollo/server/resolvers/askingResolver';
+import {
+  ChartBackgroundTracker,
+  ChartAdjustmentBackgroundTracker,
+} from './apollo/server/backgrounds/chart';
 
 jest.mock('./common', () => ({
   components: {
@@ -207,6 +212,132 @@ describe('original native text-answer result consumers', () => {
       error.mockRestore();
     }
   });
+  it.each(['allowed', 'revoked', 'changed', 'missing-history', 'empty'])(
+    'the original chart body consumes current HUMAN history disclosure: %s',
+    async (state) => {
+      const parent: any = {
+        ...response,
+        chartDetail: {
+          queryId: 'native-chart-task',
+          queryHistoryId: record.id,
+          status: 'FINISHED',
+          chartSchema: { mark: 'bar' },
+        },
+      };
+      native.askingService.getResponse.mockResolvedValue(parent);
+      if (state === 'revoked')
+        authorize.mockRejectedValue(new Error('current Resource revoked'));
+      if (state === 'changed')
+        native.askingService.getResponse.mockResolvedValue({
+          ...parent,
+          question: 'changed',
+        });
+      if (state === 'missing-history') delete parent.chartDetail.queryHistoryId;
+      if (state === 'empty') parent.chartDetail = {};
+      const read = new AskingResolver().getThreadResponseNestedResolver()
+        .chartDetail;
+      const ctx: any = {
+        ...native,
+        nativeHumanToken: 'verified-human',
+        nativeIdentityScope: 'a'.repeat(64),
+      };
+      if (state === 'allowed') {
+        expect(await read(parent, {}, ctx)).toEqual(parent.chartDetail);
+        expect(authorize).toHaveBeenCalledWith('verified-human', record);
+      } else if (state === 'empty') {
+        expect(await read(parent, {}, ctx)).toBeNull();
+        expect(authorize).not.toHaveBeenCalled();
+      } else await expect(read(parent, {}, ctx)).rejects.toThrow();
+    },
+  );
+  it.each([false, true])(
+    'the original chart tracker retries UNKNOWN and CASes the exact known task, adjustment=%s',
+    async (adjustment) => {
+      let tick: () => Promise<void>;
+      const interval = jest.spyOn(global, 'setInterval').mockImplementation(((
+        callback,
+      ) => {
+        tick = callback;
+        return 1;
+      }) as any);
+      const pending: any = {
+        ...response,
+        chartDetail: {
+          queryHistoryId: record.id,
+          queryId: 'native-chart-task',
+          status: 'GENERATING',
+          ...(adjustment
+            ? { adjustment: true, adjustmentOption: { chartType: 'LINE' } }
+            : {}),
+        },
+      };
+      const result = jest.fn(async () => ({ status: 'UNKNOWN' }) as any);
+      const adaptor: any = {
+        getChartResult: result,
+        getChartAdjustmentResult: result,
+        generateChart: jest.fn(),
+        adjustChart: jest.fn(),
+      };
+      const repository: any = {
+        updateOne: jest.fn(),
+        claimNativeChart: jest.fn(async (snapshot, chartDetail) => ({
+          ...snapshot,
+          chartDetail,
+        })),
+      };
+      const telemetry = { sendEvent: jest.fn() };
+      const Constructor = adjustment
+        ? ChartAdjustmentBackgroundTracker
+        : ChartBackgroundTracker;
+      const tracker = new Constructor({
+        wrenAIAdaptor: adaptor,
+        threadResponseRepository: repository,
+        telemetry: telemetry as any,
+      });
+      interval.mockRestore();
+      tracker.addTask(pending);
+      await tick();
+      expect(repository.claimNativeChart).not.toHaveBeenCalled();
+      expect(tracker.getTasks()[pending.id]).toEqual(pending);
+      result.mockResolvedValue({
+        status: 'FINISHED',
+        response: {
+          reasoning: 'unrecognized chart type',
+          chartType: 'FUTURE_CHART',
+          chartSchema: {},
+        },
+      });
+      await tick();
+      expect(repository.claimNativeChart).not.toHaveBeenCalled();
+      expect(tracker.getTasks()[pending.id]).toEqual(pending);
+      result.mockResolvedValue({
+        status: 'FINISHED',
+        response: {
+          reasoning: 'original',
+          chartType: 'line',
+          chartSchema: { mark: 'line' },
+        },
+      });
+      await tick();
+      expect(result.mock.calls).toEqual([
+        ['native-chart-task'],
+        ['native-chart-task'],
+        ['native-chart-task'],
+      ]);
+      expect(repository.claimNativeChart).toHaveBeenCalledWith(
+        pending,
+        expect.objectContaining({
+          ...pending.chartDetail,
+          status: 'FINISHED',
+          chartSchema: { mark: 'line' },
+        }),
+      );
+      expect(repository.updateOne).not.toHaveBeenCalled();
+      expect(adaptor.generateChart).not.toHaveBeenCalled();
+      expect(adaptor.adjustChart).not.toHaveBeenCalled();
+      expect(tracker.getTasks()[pending.id]).toBeUndefined();
+    },
+  );
   it('the original background tracker only polls an admitted AI task; UNKNOWN retries that id without SQL/create', async () => {
     let tick: () => Promise<void>;
     const interval = jest.spyOn(global, 'setInterval').mockImplementation(((

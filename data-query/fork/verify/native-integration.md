@@ -3797,3 +3797,124 @@ isolated database. Logs in the same private SDK directory are
 `native-text-answer-pg-restored.log` and `native-text-answer-pg-format.log`.
 The previously stated deployment, binding, full native functionality, browser,
 Desktop/Mobile and provider/governance runtime gaps remain unchanged.
+
+### Original chart generation and adjustment: actual governed result consumers
+
+Authority and fixed upstream: `.design/07` §§2/4.6, `.design/08` §2.3 and
+DD-98 keep the full native GenBI application while requiring current HUMAN
+query/result authorization. The read-only source baseline is
+`c5f02a0391c87420dba78632dcd86073710deb72` in
+`.references/WrenAI-ui-0.32.2`. Verified original symbols are
+`wren-ai-service/src/web/v1/services/chart.py::ChartRequest/ChartService.chart`,
+`wren-ai-service/src/web/v1/services/chart_adjustment.py::ChartAdjustmentService.chart_adjustment`,
+`wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts::transformChartAdjustmentInput`,
+`wren-ui/src/apollo/server/services/askingService.ts::generateThreadResponseChart/adjustThreadResponseChart`,
+and `wren-ui/src/apollo/server/backgrounds/chart.ts::ChartBackgroundTracker`.
+Original generation already supports supplied `data`; adjustment now consumes
+the same native shape. The original pipelines, controls, chart renderer,
+adjustment form and standalone SQL path are retained, not replaced by summary
+cards or a new chart implementation.
+
+The implemented impact chain is original GraphQL/Home mutations → current
+HUMAN `ModelResolver.previewSql` → the existing query receipt/API History →
+original Asking service → original AI generation/adjustment with disclosed
+data → original trackers and response JSONB → current HUMAN history disclosure
+before exposing chart detail. The existing `thread_response.chart_detail`
+stores only native query/history IDs, original chart state and adjustment
+intent; exact id/thread/question/SQL/previous-chart CAS claims precede native
+create and terminal writes. No Core SQL/result copy, new table, migration,
+task registry, execution authority or permission ticket is introduced.
+Original GraphQL gains optional governance arguments and receipt/adjustment
+fields; existing codegen regenerated the original client types/hooks. No
+shared four-language contract changed. Existing unproven chart rows are not
+silently treated as authorized; the original empty JSONB default remains an
+empty chart. Native standalone calls keep their existing optional-data path.
+
+Side-effect and exception behavior: exact same query/history/adjustment intent
+rejoins its original AI task; changed SQL/question/chart/adjustment or a lost
+concurrent CAS refuses, never overwrites. The already frozen query uses the
+existing capacity/approval/quota/source authorization and disclosure path;
+supplied zero-row data is still supplied data and never calls SQL again.
+No HUMAN token enters AI input, and no SERVICE callback impersonates HUMAN.
+Unknown status/chart type, missing terminal fields, native task expiry/404,
+transport timeout and acknowledgement lost before native task ID persistence
+remain unknown; polling releases its lock and only retries the known ID.
+The lost-create claim is not replayed under another key. Current scope or
+authorization failure blocks disclosure; a chart changed while disclosure is
+being checked is rejected. These consume the existing `apps/06` §4 classes:
+DENIED for identity/scope/exposure; BLOCKED for unadmitted SERVICE SQL;
+PRECONDITION for absent binding/secret/terminal evidence; LIMIT for existing
+query admission limits; CONFLICT for exact native snapshot/intent changes;
+UNKNOWN for unobserved external outcomes. No unknown is rendered as a proved
+business failure or success. Browser session storage contains only the
+existing opaque idempotency key, scoped by actual query scope and artifact.
+
+Validation reused `kailo-wren-query-sdk-itgs2n` with its existing dependencies,
+cache and independently rechecked 4 CPU / 4 GiB / no-extra-swap limits. Existing
+processes/host pressure were checked before execution; no image, dependency
+download, database creation or whole-tree copy occurred. Actual commands were:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeProjectScope.test.ts src/nativeHumanQuery.test.ts src/nativeTextAnswer.test.ts src/nativeAskingView.test.ts src/nativeTaskOwnership.test.ts src/middleware.test.ts
+node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts --testNamePattern='original Wren native answer PostgreSQL CAS'
+node node_modules/jest/bin/jest.js --runInBand src/apollo/server/adaptors/tests/wrenAIAdaptor.test.ts --testNamePattern='chart'
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+PYTHONDONTWRITEBYTECODE=1 python3 data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py
+```
+
+The first candidate had five suites pass and one test-type compilation fail,
+224 passing checks, exit 1; whole-UI TypeScript exited 2. The actual dynamic
+fixture invocation/enum and Home identity-call fields were corrected. Final
+restored six suites passed **340/340**, zero skips, exit 0 (13.729 s); whole-UI
+TypeScript exited 0. Original offline GraphQL generation and original Prettier
+exited 0. The actual chart HTTP adaptor consumer passed 1/1, 11 other adaptor
+checks explicitly name-filtered out, exit 0. A separate full seven-suite run
+had 351 passed / 1 failed, exit 1: the original recommendation check expects
+`project_id`, while the fixed official
+`wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts::generateRecommendationQuestions`
+does not send that field either. That unrelated failure is preserved, not
+weakened or reported as passing.
+
+The existing isolated `wren_query_itgs2n` database/current user `postgres` and
+`isolated-query-fixture` identity were independently checked. Twelve actual
+repository/service CAS consumers passed, 69 unrelated original checks
+name-filtered out, exit 0 (7.002 s). This adds four chart SQL/question/snapshot
+and concurrent-claim consumers to the preceding eight answer checks. As in
+that preceding receipt, each case rolls back the same original outer
+transaction/connection; it is not evidence of cross-connection lock behavior.
+Final response/thread counts remain 0, API History remains 1225.
+
+Real private production faults were then introduced and restored:
+
+- Removing the previous-chart repository predicate produced 2 failed / 2
+  passed / 77 filtered skips, exit 1: changed detail overwrote and both claims
+  won. The reverse patch restored the exact predicate; formal/private `cmp`
+  exited 0, followed by the restored 12/12 database result above.
+- Removing the actual nested chart history-disclosure call produced 2 failed /
+  3 passed / 11 filtered skips, exit 1: missing fresh authorization and revoked
+  chart disclosure were caught. Reverse patch and `cmp` exited 0, followed by
+  the restored 340/340 suites above.
+- Forcing original Python adjustment to run SQL despite supplied data produced
+  1 failed / 7 passed, exit 1. Reverse patch and `cmp` exited 0; the original
+  producer/service checks then passed 8/8, exit 0 (0.013 s), including empty
+  data, retained standalone SQL and absent-task 404 behavior. These substitute
+  external dependency boundaries, not the production service/pipeline calls;
+  they are not live AI/provider acceptance.
+
+Logs in the preceding existing private SDK directory are
+`native-chart-codegen.log`, `native-chart-positive.log`,
+`native-chart-tsc.log`, `native-chart-tsc-final.log`,
+`native-chart-final-positive.log`, `native-chart-adaptor-positive.log`,
+`native-chart-pg-positive.log`, `native-chart-pg-negative.log`,
+`native-chart-disclosure-negative.log`, `native-chart-python-positive.log`,
+`native-chart-python-negative.log`, `native-chart-python-restored.log`,
+`native-chart-restored.log`, `native-chart-pg-restored.log` and
+`native-chart-format-final.log`. `git diff --check` exited 0.
+
+No business runtime, ACTIVE binding, iframe, live datasource/model execution,
+browser screenshot, Desktop/Mobile or global full check was performed or
+accepted. The separate two Engine Java changes remain **unvalidated**: the
+existing SDK has no `java`, `javac` or `mvn`; no dependency/tool installation
+was attempted. Ordinary aggregate/function provenance, trusted SERVICE SQL
+admission and lost-native-create reconciliation remain actual delivery gaps,
+not removed original features or claimed completed production behavior.

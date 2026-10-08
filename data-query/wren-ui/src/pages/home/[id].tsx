@@ -69,7 +69,7 @@ const getThreadResponseIsFinished = (threadResponse: ThreadResponse) => {
     isAnswerFinished = getAnswerIsFinished(answerDetail?.status);
   }
 
-  if (chartDetail?.queryId) {
+  if (chartDetail?.queryId || chartDetail?.status) {
     isChartFinished = getIsChartFinished(chartDetail?.status);
   }
   // if equal false, it means it has task & the task is not finished
@@ -88,9 +88,10 @@ export default function HomeThread() {
   const questionSqlPairModal = useModalAction();
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
-  const answerRequests = useRef(new Set<number>());
+  const answerRequests = useRef(new Set<string>());
   const answerGeneration = useRef(0);
   const [answerReceipts, setAnswerReceipts] = useState<Record<number, any>>({});
+  const [chartReceipts, setChartReceipts] = useState<Record<number, any>>({});
 
   const [showRecommendedQuestions, setShowRecommendedQuestions] =
     useState<boolean>(false);
@@ -187,8 +188,9 @@ export default function HomeThread() {
       (thread?.responses || []).map((response) => ({
         ...response,
         queryReceipt: answerReceipts[response.id],
+        chartQueryReceipt: chartReceipts[response.id],
       })),
-    [thread, answerReceipts],
+    [thread, answerReceipts, chartReceipts],
   );
   const pollingResponse = useMemo(
     () => threadResponseResult.data?.threadResponse || null,
@@ -205,36 +207,61 @@ export default function HomeThread() {
     });
   };
 
-  const onGenerateThreadResponseAnswer = async (responseId: number) => {
-    if (answerRequests.current.has(responseId)) return;
-    answerRequests.current.add(responseId);
+  const generateResponseArtifact = async (
+    responseId: number,
+    artifact: 'answer' | 'chart',
+    adjustment?: AdjustThreadResponseChartInput,
+  ) => {
+    const request = `${artifact}.${responseId}`;
+    if (answerRequests.current.has(request)) return;
+    answerRequests.current.add(request);
     const generation = answerGeneration.current;
+    const publishReceipt =
+      artifact === 'answer' ? setAnswerReceipts : setChartReceipts;
+    const create = async (identity: {
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    }): Promise<ThreadResponse | undefined> => {
+      if (artifact === 'answer')
+        return (
+          await generateThreadResponseAnswer({
+            variables: { responseId, ...identity },
+          })
+        ).data?.generateThreadResponseAnswer;
+      if (adjustment)
+        return (
+          await adjustThreadResponseChart({
+            variables: { responseId, data: adjustment, ...identity },
+          })
+        ).data?.adjustThreadResponseChart;
+      return (
+        await generateThreadResponseChart({
+          variables: { responseId, ...identity },
+        })
+      ).data?.generateThreadResponseChart;
+    };
     try {
       const scope = (await getUserConfig()).queryScope;
       if (scope === undefined) {
-        await generateThreadResponseAnswer({ variables: { responseId } });
+        await create({});
         fetchThreadResponse({ variables: { responseId } });
         return;
       }
       if (!/^[a-f0-9]{64}$/.test(scope)) return;
-      const slot = `kailo.query.answer.${scope}.${responseId}`;
+      const slot = `kailo.query.${artifact}${adjustment ? '.adjust' : ''}.${scope}.${responseId}`;
       const key = sessionStorage.getItem(slot) || uuidv4();
       sessionStorage.setItem(slot, key);
       while (generation === answerGeneration.current) {
         if ((await getUserConfig()).queryScope !== scope) return;
-        const result = await generateThreadResponseAnswer({
-          variables: {
-            responseId,
-            idempotencyKey: key,
-            idempotencyScope: scope,
-          },
+        const response = await create({
+          idempotencyKey: key,
+          idempotencyScope: scope,
         });
         if (
           generation !== answerGeneration.current ||
           (await getUserConfig()).queryScope !== scope
         )
           return;
-        const response = result.data?.generateThreadResponseAnswer;
         if (response?.id === responseId)
           updateThreadQuery((previous) => ({
             ...previous,
@@ -247,12 +274,20 @@ export default function HomeThread() {
               ),
             },
           }));
-        setAnswerReceipts((current) => ({
+        const receipt =
+          artifact === 'answer'
+            ? response?.queryReceipt
+            : response?.chartQueryReceipt;
+        publishReceipt((current) => ({
           ...current,
-          [responseId]: response?.queryReceipt || {},
+          [responseId]: receipt || {},
         }));
-        const state = queryReceiptState(response?.queryReceipt);
-        if (state.completed && response?.answerDetail?.queryId) {
+        const state = queryReceiptState(receipt);
+        const detail =
+          artifact === 'answer'
+            ? response?.answerDetail
+            : response?.chartDetail;
+        if (state.completed && detail?.queryId) {
           if (sessionStorage.getItem(slot) === key)
             sessionStorage.removeItem(slot);
           fetchThreadResponse({ variables: { responseId } });
@@ -272,25 +307,24 @@ export default function HomeThread() {
     } catch {
       // A lost transport/storage acknowledgement cannot authorize another key.
       if (generation === answerGeneration.current)
-        setAnswerReceipts((current) => ({ ...current, [responseId]: {} }));
+        publishReceipt((current) => ({ ...current, [responseId]: {} }));
     } finally {
-      answerRequests.current.delete(responseId);
+      answerRequests.current.delete(request);
     }
   };
 
+  const onGenerateThreadResponseAnswer = (responseId: number) =>
+    generateResponseArtifact(responseId, 'answer');
+
   const onGenerateThreadResponseChart = async (responseId: number) => {
-    await generateThreadResponseChart({ variables: { responseId } });
-    fetchThreadResponse({ variables: { responseId } });
+    await generateResponseArtifact(responseId, 'chart');
   };
 
   const onAdjustThreadResponseChart = async (
     responseId: number,
     data: AdjustThreadResponseChartInput,
   ) => {
-    await adjustThreadResponseChart({
-      variables: { responseId, data },
-    });
-    fetchThreadResponse({ variables: { responseId } });
+    await generateResponseArtifact(responseId, 'chart', data);
   };
 
   const onGenerateThreadRecommendedQuestions = async () => {

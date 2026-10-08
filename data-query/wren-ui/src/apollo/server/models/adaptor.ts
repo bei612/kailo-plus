@@ -1,6 +1,7 @@
 import * as Errors from '@server/utils/error';
 import { Manifest } from '@server/mdl/type';
 import { ThreadResponse } from '../repositories';
+import type { PreviewDataResponse } from '../services/queryService';
 
 // Add branded types for SQL strings
 type Brand<T, B> = T & { __brand: B };
@@ -225,6 +226,7 @@ export enum ChartType {
 export interface ChartInput {
   query: string;
   sql: string;
+  data?: PreviewDataResponse;
   projectId?: string;
   configurations?: ProjectConfigurations;
 }
@@ -241,6 +243,7 @@ export interface ChartAdjustmentOption {
 export interface ChartAdjustmentInput {
   query: string;
   sql: string;
+  data?: PreviewDataResponse;
   adjustmentOption: ChartAdjustmentOption;
   chartSchema: Record<string, any>;
   projectId?: string;

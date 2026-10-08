@@ -5,7 +5,7 @@ import {
   IQueryOptions,
 } from './baseRepository';
 import { camelCase, isPlainObject, mapKeys, mapValues } from 'lodash';
-import { AskResultStatus } from '@server/models/adaptor';
+import { AskResultStatus, ChartAdjustmentOption } from '@server/models/adaptor';
 
 export interface DetailStep {
   summary: string;
@@ -34,12 +34,14 @@ export interface ThreadResponseAnswerDetail {
 
 export interface ThreadResponseChartDetail {
   queryId?: string;
+  queryHistoryId?: string;
   status: string;
   error?: object;
   description?: string;
   chartType?: string;
   chartSchema?: Record<string, any>;
   adjustment?: boolean;
+  adjustmentOption?: ChartAdjustmentOption;
 }
 
 export enum ThreadResponseAdjustmentType {
@@ -84,6 +86,10 @@ export interface IThreadResponseRepository
     expected: ThreadResponse,
     answerDetail: ThreadResponseAnswerDetail,
   ): Promise<ThreadResponse | null>;
+  claimNativeChart(
+    expected: ThreadResponse,
+    chartDetail: ThreadResponseChartDetail,
+  ): Promise<ThreadResponse | null>;
   getResponsesWithThread(
     threadId: number,
     limit?: number,
@@ -120,6 +126,25 @@ export class ThreadResponseRepository
     else query.where('answer_detail', JSON.stringify(expected.answerDetail));
     const [row] = await query
       .update({ answer_detail: JSON.stringify(answerDetail) })
+      .returning('*');
+    return row ? this.transformFromDBData(row) : null;
+  }
+
+  public async claimNativeChart(
+    expected: ThreadResponse,
+    chartDetail: ThreadResponseChartDetail,
+  ) {
+    const query = this.knex(this.tableName).where({
+      id: expected.id,
+      thread_id: expected.threadId,
+      question: expected.question,
+      sql: expected.sql,
+    });
+    if (expected.chartDetail === null || expected.chartDetail === undefined)
+      query.whereNull('chart_detail');
+    else query.where('chart_detail', JSON.stringify(expected.chartDetail));
+    const [row] = await query
+      .update({ chart_detail: JSON.stringify(chartDetail) })
       .returning('*');
     return row ? this.transformFromDBData(row) : null;
   }

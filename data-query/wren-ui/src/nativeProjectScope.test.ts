@@ -1059,6 +1059,160 @@ describe('native bound-project business consumers', () => {
       },
     );
   });
+  describe('original native charts consume the same disclosed query history', () => {
+    const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    beforeEach(() => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    });
+    afterEach(() => {
+      if (originalDelivery === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
+    });
+    const fixture = async (adjustment = false) => {
+      const service = asking();
+      const expected = {
+        ...(await service.getResponse(71)),
+        chartDetail: adjustment
+          ? {
+              queryId: 'previous-chart',
+              status: 'FINISHED',
+              chartSchema: { mark: 'bar' },
+            }
+          : null,
+      };
+      let current = expected;
+      service.threadResponseRepository.findOneBy.mockImplementation(
+        async () => current,
+      );
+      service.threadResponseRepository.claimNativeChart = jest.fn(
+        async (snapshot, chartDetail) => {
+          if (JSON.stringify(snapshot) !== JSON.stringify(current)) return null;
+          current = { ...current, chartDetail };
+          return current;
+        },
+      );
+      service.wrenAIAdaptor = {
+        generateChart: jest.fn(async () => ({
+          queryId: 'original-chart-task',
+        })),
+        adjustChart: jest.fn(async () => ({ queryId: 'original-adjust-task' })),
+      };
+      service.chartBackgroundTracker = { addTask: jest.fn() };
+      service.chartAdjustmentBackgroundTracker = { addTask: jest.fn() };
+      const input = {
+        language: 'zh-TW',
+        nativeQuery: {
+          historyId: 'original-chart-history',
+          expected,
+          data: { columns: [{ name: 'value', type: 'int' }], data: [[7]] },
+        },
+      };
+      const option = { chartType: 'LINE', xAxis: 'value' };
+      const run = (config = input) =>
+        adjustment
+          ? service.adjustThreadResponseChart(71, option, config)
+          : service.generateThreadResponseChart(71, config);
+      return { service, input, option, run };
+    };
+    it.each([false, true])(
+      'passes disclosed data to the original chart API and rejoins it, adjustment=%s',
+      async (adjustment) => {
+        const { service, input, option, run } = await fixture(adjustment);
+        const first = await run();
+        const create = adjustment
+          ? service.wrenAIAdaptor.adjustChart
+          : service.wrenAIAdaptor.generateChart;
+        expect(create).toHaveBeenCalledWith({
+          query: 'original',
+          sql: 'SELECT 1',
+          data: input.nativeQuery.data,
+          configurations: { language: 'zh-TW' },
+          ...(adjustment
+            ? { adjustmentOption: option, chartSchema: { mark: 'bar' } }
+            : {}),
+        });
+        expect(first.chartDetail.queryHistoryId).toBe(
+          input.nativeQuery.historyId,
+        );
+        expect(first.chartDetail.queryId).toBe(
+          adjustment ? 'original-adjust-task' : 'original-chart-task',
+        );
+        await run();
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(
+          service.threadResponseRepository.updateOne,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each([false, true])(
+      'keeps the original claim without repeating a lost create, adjustment=%s',
+      async (adjustment) => {
+        const { service, run } = await fixture(adjustment);
+        const create = adjustment
+          ? service.wrenAIAdaptor.adjustChart
+          : service.wrenAIAdaptor.generateChart;
+        create.mockRejectedValue(
+          new Error('lost native chart acknowledgement'),
+        );
+        await expect(run()).rejects.toThrow(
+          'lost native chart acknowledgement',
+        );
+        expect((await run()).chartDetail).toEqual(
+          expect.objectContaining({
+            queryHistoryId: 'original-chart-history',
+            status: 'GENERATING',
+          }),
+        );
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(service.chartBackgroundTracker.addTask).not.toHaveBeenCalled();
+        expect(
+          service.chartAdjustmentBackgroundTracker.addTask,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      'missing',
+      'changed-sql',
+      'changed-chart',
+      'concurrent-replacement',
+    ])('refuses %s before creating a native chart', async (failure) => {
+      const { service, input } = await fixture();
+      if (failure === 'changed-sql')
+        input.nativeQuery.expected = {
+          ...input.nativeQuery.expected,
+          sql: 'SELECT 2',
+        };
+      if (failure === 'changed-chart')
+        input.nativeQuery.expected = {
+          ...input.nativeQuery.expected,
+          chartDetail: { status: 'FINISHED' },
+        };
+      if (failure === 'concurrent-replacement')
+        service.threadResponseRepository.claimNativeChart.mockResolvedValue(
+          null,
+        );
+      await expect(
+        service.generateThreadResponseChart(
+          71,
+          failure === 'missing' ? { language: 'en' } : input,
+        ),
+      ).rejects.toThrow();
+      expect(service.wrenAIAdaptor.generateChart).not.toHaveBeenCalled();
+    });
+    it('does not reuse an existing history for a different adjustment or generation', async () => {
+      const { service, input, run } = await fixture(true);
+      await run();
+      await expect(
+        service.adjustThreadResponseChart(71, { chartType: 'PIE' }, input),
+      ).rejects.toThrow('NATIVE_OBJECT_CHANGED');
+      await expect(
+        service.generateThreadResponseChart(71, input),
+      ).rejects.toThrow();
+      expect(service.wrenAIAdaptor.adjustChart).toHaveBeenCalledTimes(1);
+      expect(service.wrenAIAdaptor.generateChart).not.toHaveBeenCalled();
+    });
+  });
   it('thread recommendation builds its MDL from the same selected project before original dispatch', async () => {
     const service = asking();
     service.threadRecommendQuestionBackgroundTracker = {

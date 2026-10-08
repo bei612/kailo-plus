@@ -790,6 +790,7 @@ export const typeDefs = gql`
     chartType: ChartType
     chartSchema: JSON
     adjustment: Boolean
+    adjustmentOption: JSON
   }
 
   enum ThreadResponseAdjustmentType {
@@ -824,6 +825,7 @@ export const typeDefs = gql`
     adjustment: ThreadResponseAdjustment
     adjustmentTask: AdjustmentTask
     queryReceipt: JSON
+    chartQueryReceipt: JSON
   }
 
   # Thread only consists of basic information of a thread
@@ -1260,12 +1262,18 @@ export const typeDefs = gql`
     ): ThreadResponse!
 
     # Generate Thread Response Chart
-    generateThreadResponseChart(responseId: Int!): ThreadResponse!
+    generateThreadResponseChart(
+      responseId: Int!
+      idempotencyKey: String
+      idempotencyScope: String
+    ): ThreadResponse!
 
     # Adjust Thread Response Chart
     adjustThreadResponseChart(
       responseId: Int!
       data: AdjustThreadResponseChartInput!
+      idempotencyKey: String
+      idempotencyScope: String
     ): ThreadResponse!
 
     # Adjustment

@@ -751,6 +751,8 @@ export type MutationAdjustThreadResponseArgs = {
 
 export type MutationAdjustThreadResponseChartArgs = {
   data: AdjustThreadResponseChartInput;
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   responseId: Scalars['Int'];
 };
 
@@ -889,6 +891,8 @@ export type MutationGenerateThreadResponseBreakdownArgs = {
 
 
 export type MutationGenerateThreadResponseChartArgs = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   responseId: Scalars['Int'];
 };
 
@@ -1438,6 +1442,7 @@ export type ThreadResponse = {
   askingTask?: Maybe<AskingTask>;
   breakdownDetail?: Maybe<ThreadResponseBreakdownDetail>;
   chartDetail?: Maybe<ThreadResponseChartDetail>;
+  chartQueryReceipt?: Maybe<Scalars['JSON']>;
   id: Scalars['Int'];
   queryReceipt?: Maybe<Scalars['JSON']>;
   question: Scalars['String'];
@@ -1488,6 +1493,7 @@ export type ThreadResponseBreakdownDetail = {
 export type ThreadResponseChartDetail = {
   __typename?: 'ThreadResponseChartDetail';
   adjustment?: Maybe<Scalars['Boolean']>;
+  adjustmentOption?: Maybe<Scalars['JSON']>;
   chartSchema?: Maybe<Scalars['JSON']>;
   chartType?: Maybe<ChartType>;
   description?: Maybe<Scalars['String']>;

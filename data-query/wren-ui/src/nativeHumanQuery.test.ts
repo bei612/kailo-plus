@@ -24,6 +24,7 @@ import GraphQLJSON from 'graphql-type-json';
 import { typeDefs } from './apollo/server/schema';
 import { API_HISTORY } from './apollo/client/graphql/apiManagement';
 import { components } from './common';
+import { ChartType } from './apollo/server/models/adaptor';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -659,9 +660,16 @@ describe('native saved-view HUMAN query consumer', () => {
     }
   });
 
-  it.each(['completed', 'unknown', 'failed', 'malformed'])(
-    'original text-answer resolver consumes %s HUMAN SQL evidence without background SQL',
-    async (state) => {
+  it.each(
+    ['answer', 'chart', 'adjust'].flatMap((artifact) =>
+      ['completed', 'unknown', 'failed', 'malformed'].map((state) => [
+        artifact,
+        state,
+      ]),
+    ),
+  )(
+    'original %s resolver consumes %s HUMAN SQL evidence without background SQL',
+    async (artifact, state) => {
       const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
         'fixture-controlled-delivery';
@@ -697,25 +705,44 @@ describe('native saved-view HUMAN query consumer', () => {
         askingService: {
           getResponse: jest.fn(async () => expected),
           generateThreadResponseAnswer: jest.fn(async () => expected),
+          generateThreadResponseChart: jest.fn(async () => expected),
+          adjustThreadResponseChart: jest.fn(async () => expected),
         },
       };
       try {
-        const invoke = () =>
-          new AskingResolver().generateThreadResponseAnswer(
-            null,
-            {
-              responseId: expected.id,
-              idempotencyKey: key,
-              idempotencyScope: 'a'.repeat(64),
-            },
-            ctx,
-          );
+        const method =
+          artifact === 'answer'
+            ? 'generateThreadResponseAnswer'
+            : artifact === 'chart'
+              ? 'generateThreadResponseChart'
+              : 'adjustThreadResponseChart';
+        const invoke = () => {
+          const resolver = new AskingResolver();
+          const args = {
+            responseId: expected.id,
+            idempotencyKey: key,
+            idempotencyScope: 'a'.repeat(64),
+          };
+          if (artifact === 'adjust')
+            return resolver.adjustThreadResponseChart(
+              null,
+              { ...args, data: { chartType: ChartType.LINE } },
+              ctx,
+            );
+          if (artifact === 'chart')
+            return resolver.generateThreadResponseChart(null, args, ctx);
+          return resolver.generateThreadResponseAnswer(null, args, ctx);
+        };
         if (state === 'malformed')
           await expect(invoke()).rejects.toThrow(
             'QUERY_TERMINAL_EVIDENCE_REQUIRED',
           );
         else
-          expect(await invoke()).toEqual({ ...expected, queryReceipt: value });
+          expect(await invoke()).toEqual({
+            ...expected,
+            [artifact === 'answer' ? 'queryReceipt' : 'chartQueryReceipt']:
+              value,
+          });
         expect(sqlPreview).toHaveBeenCalledWith(
           null,
           {
@@ -730,20 +757,19 @@ describe('native saved-view HUMAN query consumer', () => {
           ctx,
         );
         if (state === 'completed')
-          expect(
-            ctx.askingService.generateThreadResponseAnswer,
-          ).toHaveBeenCalledWith(expected.id, {
-            language: 'English',
-            nativeQuery: {
-              historyId: value.nativeId,
-              expected,
-              data: value.data,
+          expect(ctx.askingService[method]).toHaveBeenCalledWith(
+            expected.id,
+            ...(artifact === 'adjust' ? [{ chartType: ChartType.LINE }] : []),
+            {
+              language: 'English',
+              nativeQuery: {
+                historyId: value.nativeId,
+                expected,
+                data: value.data,
+              },
             },
-          });
-        else
-          expect(
-            ctx.askingService.generateThreadResponseAnswer,
-          ).not.toHaveBeenCalled();
+          );
+        else expect(ctx.askingService[method]).not.toHaveBeenCalled();
       } finally {
         sqlPreview.mockRestore();
         if (original === undefined)
