@@ -382,6 +382,29 @@ versioned `data_query.query@v1`, `data_query.dry_run@v1` and
 to these fixed versioned keys inside the same native consumer. ActionToken
 comparison keeps the version; it never strips a caller's unsupported version.
 
+The same HTTP `/execute` consumer accepts the registered describe operation
+with its original empty input. It hashes the submitted target together with
+that input and requires the verified ActionToken's exact Resource, rather than
+silently substituting a different token target. The MCP consumer continues to
+reconstruct its existing frozen target envelope from the subsequently verified
+ticket. Describe reads only the authorized model's name and column metadata:
+the original deployment must carry the builder's exact native ID/name capture,
+and the original current-project model row must still match it. Legacy
+deployments without that evidence cannot be inferred from current model names.
+SQL, connection credentials and other models' metadata are not returned. Before
+disclosure, fresh Core authorization, the captured deployment and the original
+native model are checked again. Replaying an existing native history keeps its
+original deployment even after a newer one becomes current; it never executes
+the metadata operation again under a replacement deployment.
+
+`/observe` returns the existing Adapter Protocol v1 execution-response envelope
+(`execution`), including the original history identity and terminal timestamp
+when recorded. It returns metadata only. Missing history remains `UNKNOWN`,
+not a not-delivered proof; uncertain engine outcomes are not replayed and do not
+gain a fabricated terminal status or query-cancellation capability. Runtime
+reconciliation uses this original observe consumer; no separate native
+reconciliation engine or endpoint is introduced.
+
 The overlay's non-secret paths, versions and endpoint metadata are also in
 the sole `deploy/local/.env` Wren section. Use the same file for both original
 Compose inputs, never a second environment authority:

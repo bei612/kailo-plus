@@ -4,7 +4,11 @@ import {
   ApiHistoryRepository,
   ApiType,
 } from '../repositories/apiHistoryRepository';
-import { IDeployLogRepository } from '../repositories/deployLogRepository';
+import {
+  Deploy,
+  deploymentObjects,
+  IDeployLogRepository,
+} from '../repositories/deployLogRepository';
 import { IProjectRepository } from '../repositories/projectRepository';
 import { IViewRepository } from '../repositories/viewRepository';
 import { IModelRepository } from '../repositories/modelRepository';
@@ -307,6 +311,95 @@ export class NativeQueryService {
     };
   }
 
+  private async describedModel(
+    deployment: Deploy,
+    target: unknown,
+    resourceId: string,
+  ) {
+    const authorized = target as Record<string, unknown> | undefined;
+    if (
+      !authorized ||
+      authorized.resourceId !== resourceId ||
+      authorized.nativeType !== 'model' ||
+      typeof authorized.nativeRef !== 'string' ||
+      authorized.nativeInstanceRef !== this.config.nativeInstanceRef ||
+      authorized.nativeScopeRef !== this.config.nativeScopeRef
+    )
+      throw scopeDenied();
+    const id = Number(authorized.nativeRef);
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      String(id) !== authorized.nativeRef
+    )
+      throw scopeDenied();
+    if (!this.models) throw unavailable();
+    let captured;
+    try {
+      captured = deploymentObjects(
+        deployment.manifest,
+        deployment.nativeObjectRefs,
+      );
+    } catch {
+      throw unavailable();
+    }
+    const reference = captured.find(
+      (row) => row.nativeType === 'model' && row.nativeId === id,
+    );
+    const model = await this.models.findOneBy({
+      id,
+      projectId: this.config.projectId,
+    });
+    if (!reference || !model || model.referenceName !== reference.nativeName)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const metadata = deployment.manifest.models?.find(
+      (row) => row.name === reference.nativeName,
+    );
+    if (
+      !metadata ||
+      !Array.isArray(metadata.columns) ||
+      metadata.columns.some(
+        (column) =>
+          !column ||
+          typeof column.name !== 'string' ||
+          !column.name ||
+          (column.type !== undefined && typeof column.type !== 'string'),
+      )
+    )
+      throw unavailable();
+    return {
+      value: {
+        deploymentId: deployment.id,
+        deploymentHash: deployment.hash,
+        models: [
+          {
+            name: metadata.name,
+            columns: metadata.columns.map((column) => ({
+              name: column.name,
+              type: column.type,
+            })),
+          },
+        ],
+      },
+      fingerprint: digest({
+        resource: {
+          resourceId,
+          nativeType: authorized.nativeType,
+          nativeRef: authorized.nativeRef,
+          nativeInstanceRef: authorized.nativeInstanceRef,
+          nativeScopeRef: authorized.nativeScopeRef,
+        },
+        deployment: {
+          id: deployment.id,
+          hash: deployment.hash,
+          manifest: deployment.manifest,
+          nativeObjectRefs: captured,
+        },
+        model: { id: model.id, referenceName: model.referenceName },
+      }),
+    };
+  }
+
   async execute(
     token: string,
     key: string,
@@ -315,6 +408,7 @@ export class NativeQueryService {
       | 'data_query.dry_run@v1'
       | 'data_query.describe@v1',
     raw: unknown,
+    submittedTarget?: unknown,
   ) {
     if (!uuid.test(key)) throw invalid();
     const describing = action === 'data_query.describe@v1';
@@ -342,7 +436,7 @@ export class NativeQueryService {
       throw scopeDenied();
     }
     const envelope = {
-      target: { resourceId: targetClaims.target_id },
+      target: submittedTarget ?? { resourceId: targetClaims.target_id },
       input: raw,
     };
     const claims = await authorizeQuery(
@@ -357,6 +451,12 @@ export class NativeQueryService {
       claims.target_type !== 'RESOURCE' ||
       typeof claims.target_id !== 'string' ||
       !uuid.test(claims.target_id) ||
+      !envelope.target ||
+      typeof envelope.target !== 'object' ||
+      Array.isArray(envelope.target) ||
+      Object.keys(envelope.target).join(',') !== 'resourceId' ||
+      (envelope.target as Record<string, unknown>).resourceId !==
+        claims.target_id ||
       (claims.agent_principal_id === undefined &&
         (claims.actor_principal_id !== claims.initiating_human_principal_id ||
           typeof claims.external_execution_id !== 'string' ||
@@ -370,6 +470,7 @@ export class NativeQueryService {
       (raw as Record<string, unknown>).resourceId !== claims.target_id
     )
       throw scopeDenied();
+    let described: Awaited<ReturnType<NativeQueryService['describedModel']>>;
     const reauthorize = async () => {
       const current = await authorizeQuery(
         this.config,
@@ -382,6 +483,25 @@ export class NativeQueryService {
           raw as Record<string, unknown>,
           current.targetResource,
         );
+      if (describing) {
+        const frozen = await this.deployments.findOneBy({
+          id: described.value.deploymentId,
+          projectId: this.config.projectId,
+          hash: described.value.deploymentHash,
+          status: 'SUCCESS',
+        });
+        if (
+          !frozen ||
+          (
+            await this.describedModel(
+              frozen,
+              current.targetResource,
+              String(claims.target_id),
+            )
+          ).fingerprint !== described.fingerprint
+        )
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      }
     };
     const rejectUnsentReference = async () => {
       if (referenced) {
@@ -450,8 +570,21 @@ export class NativeQueryService {
       await rejectUnsentReference();
       throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
     }
+    const existingDescription = describing
+      ? await this.history.findOneBy({
+          governanceBindingId: this.config.bindingId,
+          governanceKey: key,
+        })
+      : undefined;
     const deployment = describing
-      ? await this.deployments.findLastProjectDeployLog(this.config.projectId)
+      ? existingDescription
+        ? await this.deployments.findOneBy({
+            id: existingDescription.governanceDeploymentId,
+            hash: existingDescription.governanceDeploymentHash,
+            projectId: this.config.projectId,
+            status: 'SUCCESS',
+          })
+        : await this.deployments.findLastProjectDeployLog(this.config.projectId)
       : await this.deployments.findOneBy({
           id: input.deploymentId,
           projectId: this.config.projectId,
@@ -470,6 +603,12 @@ export class NativeQueryService {
       await rejectUnsentReference();
       throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
     }
+    if (describing)
+      described = await this.describedModel(
+        deployment,
+        claims.targetResource,
+        String(claims.target_id),
+      );
     const id = randomUUID();
     const hash = String(claims.normalized_parameter_hash);
     const record: ApiHistory = {
@@ -509,6 +648,11 @@ export class NativeQueryService {
         await reauthorize();
         if (!prior.responsePayload || typeof prior.responsePayload !== 'object')
           throw unavailable();
+        if (
+          describing &&
+          digest(prior.responsePayload) !== digest(described.value)
+        )
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
         return {
           execution: this.observation(prior),
           resultJson: JSON.stringify(prior.responsePayload),
@@ -545,19 +689,7 @@ export class NativeQueryService {
     let value: Record<string, unknown>;
     try {
       if (describing) {
-        const manifest = deployment.manifest as Manifest;
-        if (!Array.isArray(manifest.models)) throw unavailable();
-        value = {
-          deploymentId: deployment.id,
-          deploymentHash: deployment.hash,
-          models: manifest.models.map((model) => ({
-            name: model.name,
-            columns: model.columns.map((column) => ({
-              name: column.name,
-              type: column.type,
-            })),
-          })),
-        };
+        value = described.value;
       } else {
         const result = await this.queries.preview(input.sql, {
           project,
@@ -668,10 +800,12 @@ export class NativeQueryService {
     if (!record) {
       // Absence is not a writer fence and cannot become NOT_DELIVERED.
       return {
-        idempotencyKey: reference.idempotencyKey,
-        nativeType,
-        platformStatus: 'UNKNOWN',
-        cancelCapability: 'UNSUPPORTED',
+        execution: {
+          idempotencyKey: reference.idempotencyKey,
+          nativeType,
+          platformStatus: 'UNKNOWN',
+          cancelCapability: 'UNSUPPORTED',
+        },
       };
     }
     const management =
@@ -688,6 +822,6 @@ export class NativeQueryService {
       (reference.nativeId !== undefined && record.id !== reference.nativeId)
     )
       throw scopeDenied();
-    return this.observation(record);
+    return { execution: this.observation(record) };
   }
 }

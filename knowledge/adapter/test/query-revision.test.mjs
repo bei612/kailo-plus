@@ -91,6 +91,9 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const intent = managing ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
+  if (['known-native-id','mismatched-native-id'].includes(mode)) {
+    intent.nativeId = mode === 'known-native-id' ? ingest ? ids[2] : ids[9] : ingest ? ids[9] : ids[2];
+  }
   const bodyValue = managing || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
@@ -258,7 +261,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   const token = `${header}.${payload}.${signature}`;
-  return { state, args, reference, revision, invoke: () => fetch(`${endpoint}/platform-adapter/v1/${operation}`, {
+  return { state, args, reference, revision, invoke: (route = operation) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
     method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'idempotency-key': args.idempotencyKey },
     body: canonical(bodyValue),
   }) };
@@ -415,11 +418,17 @@ test('service file import preserves its distinct read batch operation, binary by
         if (operation==='execute') assert.equal(state.native,mode==='native-operation'?1:0);
       } else {
         assert.equal(response.status,200);
-        const observed=operation==='execute'?result.execution:result;
+        const observed=result.execution;
         assert.equal(observed.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
         assert.equal(observed.terminalAt!==undefined,mode==='ok');
         assert.equal(state.receipts.length,mode==='ok'?1:0);
-        if (operation==='execute' && mode==='ok') assert.notEqual(result.contentReference.resourceId,reference.resourceId);
+        assert.deepEqual(Object.keys(result).sort(),mode==='ok'?['contentReference','execution','resultJson']:['execution']);
+        if (mode==='ok') {
+          assert.notEqual(result.contentReference.resourceId,reference.resourceId);
+          assert.equal(result.contentReference.nativeObjectRef,observed.nativeId);
+          assert.equal(result.contentReference.nativeRevision,observed.terminalAt);
+          assert.equal(result.resultJson,'{}');
+        }
       }
       assert.equal(state.grants,operation==='execute'?1:0);
       assert.equal(state.downloads,operation==='execute'?1:0);
@@ -438,6 +447,8 @@ test('receiver bills only original completed parsing and exact persisted read-ba
       assert.deepEqual(state.methods,['add_document']);
       if (mode==='ok') {
         const value=await response.json();
+        assert.equal(Object.hasOwn(value,'execution'),false);
+        assert.deepEqual(Object.keys(value).sort(),['externalExecutionId','idempotencyKey','measurements','nativeId','nativeType']);
         assert.deepEqual(value.measurements.map(({meterKey,quantity})=>({meterKey,quantity})),[
           {meterKey:'native_import_count',quantity:1},{meterKey:'native_import_bytes',quantity:4}]);
         assert.equal(value.measurements[0].occurredAt,state.receipts[0].completedAt);
@@ -466,14 +477,49 @@ test('conditional delete and observation require retained native terminal eviden
         assert.equal(body.execution,undefined);
       } else {
         assert.equal(response.status,200);
-        const observation=operation==='execute'?body.execution:body;
+        const observation=body.execution;
         assert.equal(observation.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
         assert.equal(observation.terminalAt !== undefined,mode==='ok');
         if(operation==='execute') assert.equal(body.resultJson,mode==='ok'?'{}':undefined);
+        else assert.deepEqual(Object.keys(body),['execution']);
       }
       assert.deepEqual(state.methods,['delete_document']);
     });
   }
+});
+
+test('native observations retain the frozen identity across execution envelopes without replaying a write',async t=>{
+  for (const version of ['v1','v2']) for (const action of ['ingest','delete']) {
+    for (const mode of ['known-native-id','mismatched-native-id']) await t.test(`${version}/${action}/${mode}`,async nested=>{
+      const {invoke,state}=await fixture(nested,mode,`knowledge.${action}@${version}`,'observe');
+      const response=await invoke();
+      const value=await response.json();
+      assert.equal(response.status,mode==='known-native-id'?200:503);
+      if (mode==='known-native-id') assert.equal(value.execution.platformStatus,'SUCCEEDED');
+      else assert.equal(value.execution,undefined);
+      assert.equal(state.grants,0);
+      assert.equal(state.downloads,0);
+      assert.deepEqual(state.methods,[action==='ingest'?'add_document':'delete_document']);
+    });
+  }
+  for (const mode of ['known-native-id','mismatched-native-id']) await t.test(`extract_usage/${mode}`,async nested=>{
+    const {invoke}=await fixture(nested,mode,'knowledge.ingest@v1','extract_usage');
+    const response=await invoke();
+    assert.equal(response.status,mode==='known-native-id'?200:503);
+    const value=await response.json();
+    assert.equal(Object.hasOwn(value,'execution'),false);
+    assert.equal(value.measurements!==undefined,mode==='known-native-id');
+  });
+});
+
+test('unsupported reconciliation remains a closed route rather than fabricated task evidence',async t=>{
+  const {invoke,state}=await fixture(t,'ok','knowledge.ingest@v1','observe');
+  const response=await invoke('reconcile');
+  assert.equal(response.status,404);
+  assert.equal((await response.json()).execution,undefined);
+  assert.equal(state.peps,0);
+  assert.equal(state.native,0);
+  assert.equal(state.receipts.length,0);
 });
 
 test('actual read/export consume the signed typed reference and native content', async t => {

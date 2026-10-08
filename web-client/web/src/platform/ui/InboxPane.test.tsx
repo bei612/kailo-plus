@@ -8,7 +8,7 @@ import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
 import type { ConversationView } from "@client-kit/contracts";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxWindowEvents } from "./inbox-events";
 
@@ -26,6 +26,19 @@ const event = {
   content: "message",
   tags: [["h", "workspace-a"]],
 };
+
+beforeEach(() => {
+  // Keep the actual original virtualizer; jsdom supplies no layout of its own.
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute("data-index") ? 96 : 420;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const list = this.closest<HTMLElement>('[data-testid="home-inbox-list"]');
+    return new DOMRect(0, list && list !== this ? -list.scrollTop : 0, 800, this.offsetHeight);
+  });
+});
+afterEach(() => vi.restoreAllMocks());
 
 describe("Inbox uses the original shared HomeLoadingState at the real read boundary", () => {
   it.each(["empty", "message", "failure", "read-failure", "unknown"] as const)(
@@ -158,13 +171,51 @@ describe("Inbox and sidebar consume the original governed Relay window", () => {
   });
 });
 
+it("uses the original shared virtual list for admitted Inbox rows and reaches rows outside its first viewport", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  setLocale("en"); localStorage.clear(); sessionStorage.clear();
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  const self = "c".repeat(64);
+  const messages = Array.from({ length: 40 }, (_, index) => ({ ...event,
+    id: (index + 1).toString(16).padStart(64, "0"), created_at: index + 1,
+    content: `Admitted message ${index}`, tags: [...event.tags, ["p", self]],
+  }));
+  api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+  api.readFailed = false; api.readUnknown = false;
+  api.workspaces.mockResolvedValue([{ id: "workspace-a", name: "Admitted channel", isMember: true }]);
+  api.agentInstallations.mockResolvedValue({ installations: [] });
+  api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+  api.workspaceMessages.mockResolvedValue({ events: [...messages, { ...event, id: "d".repeat(64), kind: 39006,
+    tags: [...event.tags, ["d", "workspace-a:head"]], content: JSON.stringify({ has_more: false, next_cursor: null }) }] });
+  api.messageAuthorProfile.mockResolvedValue({ pubkey: event.pubkey, eventId: "profile", displayName: "Author",
+    about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} });
+  api.write.mockClear();
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  try {
+    await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+      <InboxPane principalId="human" onOpen={vi.fn()} />
+    </TooltipProvider></QueryClientProvider></PlatformProvider>));
+    const rowSelector = '[data-testid^="home-inbox-item-"]';
+    await vi.waitFor(() => expect(host.querySelectorAll(rowSelector).length).toBeGreaterThan(0));
+    const list = host.querySelector<HTMLElement>('[data-testid="home-inbox-list"]')!;
+    expect(list.querySelectorAll(rowSelector).length).toBeLessThan(messages.length);
+    expect(list.querySelector(`[data-testid="home-inbox-item-${messages[0]!.id}"]`)).toBeNull();
+    await act(async () => { list.scrollTop = 96 * (messages.length - 1); list.dispatchEvent(new Event("scroll")); });
+    await vi.waitFor(() => expect(list.querySelector(`[data-testid="home-inbox-item-${messages[0]!.id}"]`)).not.toBeNull());
+    expect(list.querySelectorAll(rowSelector).length).toBeLessThan(messages.length);
+    expect(api.write).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it("opens the Inbox row's actual author without marking it read and clears the panel on identity change",async()=>{
   (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
   const scrollDescriptor=Object.getOwnPropertyDescriptor(Element.prototype,"scrollIntoView");
   const scrollIntoView=vi.fn();
   Object.defineProperty(Element.prototype,"scrollIntoView",{configurable:true,value:scrollIntoView});
   setLocale("en"); localStorage.clear(); sessionStorage.clear();
-  vi.stubGlobal("ResizeObserver",class{constructor(private callback:ResizeObserverCallback){} observe(){this.callback([{contentRect:{width:1400}} as ResizeObserverEntry],this as unknown as ResizeObserver);} unobserve(){} disconnect(){}});
+  vi.stubGlobal("ResizeObserver",class{constructor(private callback:ResizeObserverCallback){} observe(target:Element){this.callback([{target,contentRect:target.getBoundingClientRect()} as ResizeObserverEntry],this as unknown as ResizeObserver);} unobserve(){} disconnect(){}});
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   vi.stubGlobal("Image",function(){
     const image=document.createElement("img");let source="";

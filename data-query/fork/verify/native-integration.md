@@ -2599,3 +2599,157 @@ batch adds no release, binding or platform entry and is not full-global-check,
 browser screenshot, Windows/Mobile verification, component image build or
 deployment. Those boundaries must not be reported as completed Asking or
 production Wren acceptance.
+
+## 2026-10-08 exact model describe and execution observation consumer
+
+### Authority and impact established before implementation
+
+1. `.design/08` §6 maps native model describe to the exact model Resource's
+   `read` permission and the existing `data_query.describe@v1` action. `.design/07`
+   and the frozen `execution_response` contract determine the native observation
+   envelope. These are existing supported/adapted seams, not a new permission,
+   output contract, UI or registry. Official baseline remains
+   `c5f02a0391c87420dba78632dcd86073710deb72`; original consumers are
+   `wren-ui/src/apollo/server/repositories/modelRepository.ts::ModelRepository`
+   and `wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview`.
+   Their fixed-source symbols were read with `git show` before editing.
+2. Full references of the touched consumers were searched: the original native
+   MCP and HTTP adapter both call `NativeQueryService.execute`; the HTTP handler
+   and existing native-history checks call `observe`. Core's existing
+   `application_execution` observation consumer and Worker conformance expect
+   the frozen response envelope; their changes are owned by the parent batch.
+   No database/contract field, migration, GraphQL schema, page, setting, locale
+   or Web/Desktop/Mobile presentation changes here. Current `deploymentObjects`
+   and the builder's persisted capture are reused, not replaced by a second
+   name-to-object mapping. There is no new state to migrate or lifecycle to own.
+3. The prior describe consumer disclosed the whole deployment's model metadata
+   under one model Resource ticket. It now selects the exact fresh Core target,
+   matches its native ID against the original deployment's capture and the
+   original model row in the controlled project, and exposes only that model's
+   original name/columns. SQL, connection credentials and unrelated models stay
+   native. The HTTP consumer now accepts the declared describe operation and
+   actually consumes its submitted target in the authenticated parameter hash;
+   it cannot substitute the token target for a changed request target. Final
+   authorization and native evidence are checked before body disclosure.
+4. Missing/foreign target facts are denied; absent legacy capture is unavailable;
+   a same-name replacement, changed native row/captured manifest or frozen
+   deployment is a precondition refusal. Empty input remains the existing
+   describe shape; it is not authority to describe an empty/all-model project.
+   A denied pre-native recheck records the existing proven unsent failure;
+   native query uncertainty stays `UNKNOWN`. An existing description replays
+   only its original native history/deployment after fresh authorization, never
+   a newer current deployment or a second native call. Observe returns the
+   contract's `execution` envelope with original history ID/status/time; absent
+   history remains `UNKNOWN`, with no claimed writer fence, result body or
+   unsupported cancellation. Existing six-class error boundaries are retained;
+   this batch does not redefine Core transport classification. Web's BFF and
+   Desktop/Mobile's existing credential/transport paths remain unchanged; no
+   mobile component-host entry is added.
+
+### Actual isolated validation and negative controls
+
+Only the existing isolated PostgreSQL and SDK container were used. Before the
+batch, `free -h` showed 26 GiB available; `docker top` showed only its idle
+keeper, and `docker inspect` confirmed the existing cgroup allocation of
+4 CPU / 4 GiB. Commands run at its existing `/work` candidate, reusing installed
+dependencies and cache; there was no image build, package download, database
+provisioning or source execution under `.references`.
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeQuery.test.ts src/nativeHumanQuery.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The first implementation run reported 63 passed / 4 failed. Three old direct
+observe assertions still expected the superseded bare response; the new replay
+assertion compared JSON strings despite native PostgreSQL JSONB key ordering.
+The assertions were corrected to the existing response envelope and parsed
+business value, not by reverting production behavior. The concentrated rerun
+passed, exit 0:
+
+```text
+Test Suites: 2 passed, 2 total
+Tests:       67 passed, 67 total
+Snapshots:   0 total
+Time:        15.165 s
+```
+
+The same native HTTP/MCP consumers, original repositories and real PostgreSQL
+history exercised exact model selection, forged token-side native facts, all
+five foreign target dimensions, absent facts, legacy capture, same-name ID
+replacement, request-target mismatch, final permission/target/manifest/model
+changes, replay after a newer deployment, uncertain engine history and missing
+history. The existing original QueryService transport fixture still exercised
+query/dry-run and real HTTP admission; it is not a deployed datasource claim.
+Whole Wren `tsc --noEmit` emitted no diagnostics, exit 0.
+
+Private-candidate faults were applied only after implementation and acceptance:
+
+- Removing final fresh reauthorization caused all four real describe disclosure
+  checks to fail (`Received promise resolved instead of rejected`), exit 1,
+  8.290 s. The 36 skips were the explicit mutation name filter.
+- Returning all captured models and reverting known-history observe to a bare
+  response caused five real MCP/history checks to fail, exit 1, 7.952 s; 35 other
+  tests were intentionally outside that mutation filter.
+- Ignoring the submitted HTTP target caused its real rejection check to fail
+  (`Expected: 403`, `Received: 200`), exit 1, 7.066 s; 39 other tests were outside
+  that filter.
+
+All faults were restored. `cmp` of each of the three source/test inputs against
+formal source returned 0; the original complete two-suite command then passed
+67/67 again, 0 skipped, exit 0, 18.232 s. `git diff --check` for these files
+returned 0. Logs in the existing candidate are
+`native-query-describe-tests.log`, `native-query-describe-types.log`,
+`native-query-describe-mutation.log`, `native-query-scope-wire-mutation.log`,
+`native-query-submitted-target-mutation.log` and
+`native-query-describe-restored.log`.
+
+This is the precise describe/HTTP execute/observe consumer batch, not complete
+Wren release acceptance. Arbitrary generated-SQL resource provenance and AI
+task admission/usage/terminal evidence, other native writes, real datasource
+and identity/catalog/binding delivery remain integration work. No deployment,
+release, binding, image build, screenshot, Windows/Mobile acceptance or global
+check is claimed here; the parent owns consolidated checks and publication.
+
+### 2026-10-08 original Asking native terminal observation
+
+Authority and fixed source: DD-98 and `.design/08` §6 keep the original Asking
+task as native authority. The restored upstream consumer is WrenUI
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts::AskingTaskTracker.pollTasks`.
+Classification `GENERAL` or `MISLEADING_QUERY` is not terminal evidence: the
+original async AI task can still be `GENERATING`. The same acknowledged query
+ID now remains polled until native `FINISHED`, `FAILED` or `STOPPED`. Original
+SQL-rerun non-SQL failure presentation is retained only after native FINISHED;
+native failure and cancellation details are no longer overwritten by that
+presentation. Unknown status is not finalized or remapped to success/failure.
+
+Impact: native ACK → existing project-owned task row → original poll/result
+consumers and reset-settled check. There is no new task registry, schema field,
+migration, public action, quota/audit authority or page/layout change. A DB
+persistence failure still retries observation of the original native query,
+not redispatch. Empty/unknown results stay nonterminal, and a classification
+does not permit an in-flight task to be treated as settled. Existing request
+authentication, scope/project ownership and resource authorization remain in
+their original consumers; this batch does not claim to complete AI admission
+or usage association.
+
+Implementation preceded the evidence. The existing SDK had no active build
+child and its actual cgroup was 4 CPU / 4 GiB; original dependencies and the
+existing isolated PostgreSQL were reused without image/package rebuild. The
+three original suites `nativeTaskOwnership.test.ts`, `nativeAskingView.test.ts`
+and `nativeHumanQuery.test.ts` passed 94/94, no skips, exit 0 (93.547 s). Replacing
+the two real guards with the former wrong behavior in the private SDK copy
+made all eight targeted cases fail, exit 1 (7.204 s); 30 other cases were
+explicitly filtered, not missing database checks. Both source/test copies were
+restored with `cmp` exit 0. The original complete three-suite command then
+passed 94/94 again, no skips, exit 0 (10.091 s). `tsc --noEmit` exited 0 with no
+diagnostics; Prettier passed both changed inputs. The actual tool-output
+excerpts are archived, explicitly not another invocation, at
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-polling-receipt.log`.
+
+This is the two-file original polling consumer fix. No Wren business instance,
+catalog release/binding, live LLM/datasource, image, deployment or screenshot
+is claimed. The separate saved-view browser/GraphQL integration in progress
+and generated-SQL multi-resource authorization/LLM usage gaps are not included
+in this 94-case receipt.

@@ -4,7 +4,7 @@ import { join } from 'path';
 import { AskingService } from './apollo/server/services/askingService';
 import { AskingTaskTracker } from './apollo/server/services/askingTaskTracker';
 import { AskingTaskRepository } from './apollo/server/repositories/askingTaskRepository';
-import { AskResultStatus } from './apollo/server/models/adaptor';
+import { AskResultStatus, AskResultType } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { AdjustmentBackgroundTaskTracker } from './apollo/server/backgrounds/adjustmentBackgroundTracker';
 import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
@@ -439,6 +439,148 @@ describe('acknowledged native asking task persistence and observation', () => {
     expect(rows[0].detail.status).toBe('FUTURE_NATIVE_STATUS');
     expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(false);
   });
+  it.each([AskResultType.GENERAL, AskResultType.MISLEADING_QUERY])(
+    'continues observing %s until the original native query actually finishes',
+    async (type) => {
+      await tracker.createAskingTask({ query: 'native', projectId: 7 });
+      const generating = {
+        type,
+        status: AskResultStatus.GENERATING,
+        response: [],
+        error: null,
+      };
+      const finished = { ...generating, status: AskResultStatus.FINISHED };
+      adaptor.getAskResult
+        .mockResolvedValueOnce(generating)
+        .mockResolvedValueOnce(finished);
+
+      await tracker.pollTasks();
+      expect(rows[0].detail).toEqual(generating);
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(false);
+      expect(await tracker.getAskingResult('acknowledged')).toMatchObject({
+        taskId: 1,
+        queryId: 'acknowledged',
+        status: AskResultStatus.GENERATING,
+      });
+
+      await tracker.pollTasks();
+      expect(rows[0].detail).toEqual(finished);
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(true);
+      expect(adaptor.getAskResult.mock.calls).toEqual([
+        ['acknowledged'],
+        ['acknowledged'],
+      ]);
+      await tracker.pollTasks();
+      expect(adaptor.getAskResult).toHaveBeenCalledTimes(2);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([AskResultType.GENERAL, AskResultType.MISLEADING_QUERY])(
+    'does not mark a %s SQL rerun as failed while the native task is still generating',
+    async (type) => {
+      rows.push({
+        id: 9,
+        projectId: 7,
+        queryId: 'cancelled',
+        threadResponseId: 21,
+        detail: { status: AskResultStatus.STOPPED },
+      });
+      await tracker.createAskingTask({
+        query: 'native',
+        projectId: 7,
+        rerunFromCancelled: true,
+        previousTaskId: 9,
+        threadResponseId: 21,
+      });
+      const generating = {
+        type,
+        status: AskResultStatus.GENERATING,
+        response: [],
+        error: null,
+      };
+      adaptor.getAskResult
+        .mockResolvedValueOnce(generating)
+        .mockResolvedValueOnce({
+          ...generating,
+          status: AskResultStatus.FINISHED,
+        });
+
+      await tracker.pollTasks();
+      expect(rows[0].detail).toEqual(generating);
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(false);
+      await tracker.pollTasks();
+      expect(rows[0].detail).toMatchObject({
+        type,
+        status: AskResultStatus.FAILED,
+        error: expect.objectContaining({ code: expect.any(String) }),
+      });
+      expect(await tracker.getAskingResultById(9)).toMatchObject({
+        taskId: 9,
+        queryId: 'acknowledged',
+        status: AskResultStatus.FINISHED,
+      });
+      expect(rows).toHaveLength(1);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([AskResultStatus.FAILED, AskResultStatus.STOPPED])(
+    'preserves native %s evidence on a classified SQL rerun',
+    async (status) => {
+      rows.push({
+        id: 9,
+        projectId: 7,
+        queryId: 'cancelled',
+        threadResponseId: 21,
+        detail: { status: AskResultStatus.STOPPED },
+      });
+      await tracker.createAskingTask({
+        query: 'native',
+        projectId: 7,
+        rerunFromCancelled: true,
+        previousTaskId: 9,
+        threadResponseId: 21,
+      });
+      const result = {
+        type: AskResultType.GENERAL,
+        status,
+        response: [],
+        error:
+          status === AskResultStatus.FAILED
+            ? { code: 'NATIVE_FAILURE', message: 'native failure' }
+            : null,
+      };
+      adaptor.getAskResult.mockResolvedValue(result);
+
+      await tracker.pollTasks();
+      expect(rows[0].detail).toEqual(result);
+      expect(await tracker.getAskingResultById(9)).toMatchObject(result);
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(true);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([AskResultType.GENERAL, AskResultType.MISLEADING_QUERY])(
+    'does not treat %s classification as terminal evidence for an unknown native status',
+    async (type) => {
+      await tracker.createAskingTask({ query: 'native', projectId: 7 });
+      adaptor.getAskResult.mockResolvedValue({
+        type,
+        status: 'FUTURE_NATIVE_STATUS',
+        response: [],
+      });
+      await tracker.pollTasks();
+      expect(rows[0].detail.status).toBe('FUTURE_NATIVE_STATUS');
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(false);
+      adaptor.getAskResult.mockResolvedValue({
+        type,
+        status: AskResultStatus.STOPPED,
+        response: [],
+      });
+      await tracker.pollTasks();
+      expect(rows[0].detail.status).toBe(AskResultStatus.STOPPED);
+      expect(tracker.trackedTasks.get('acknowledged').isFinalized).toBe(true);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    },
+  );
   it('persists adjustment ownership and binds the original response atomically, keyed by task ID', async () => {
     tracker.stopPolling();
     adaptor.createAskFeedback = jest.fn(async () => ({ queryId: 'adjusted' }));

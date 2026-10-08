@@ -1427,3 +1427,90 @@ authentication/rendering against live Bao, runtime activation audit correlation,
 complete conformance, actual image publication/deployment and three-client
 visual acceptance remain unrun. Source delivery wiring is not a declaration
 that the zero-live-binding boundary has changed.
+
+## 2026-10-08 — native execution observation retains the shared response envelope
+
+The existing HTTP `observe` producer returned a bare observation for both
+native file ingestion and conditional deletion, contrary to
+`contracts/adapter/protocol.v1/execution_response.schema.json`. Ingestion also
+dropped the completed task's existing `resultJson` and `contentReference`.
+`createAdapter` now returns the complete `creationObservation` response for
+ingestion and `{execution: deletionObservation(...)}` for deletion. The frozen
+optional native ID is checked at `execution.nativeId`; `extract_usage` keeps
+its original top-level usage response and native ID check. No alternative old
+response reader, new task, state store or reconciliation route was introduced.
+
+Authority and impact were resolved before writing the correction:
+
+- Authority: `.design/07` §5.2 and the existing execution response/observation
+  contracts require observations of the original frozen external execution;
+  `.design/13` §4.4 leaves ingestion and retirement state with WeKnora. The
+  readonly official baseline remains `2be7bd40631dda1dd485306038f07a62e9ee287e`;
+  its `internal/mcpserver/tools_ingest.go::Server.handleAddDocument` and
+  `Server.handleDeleteDocument` still resolve at that commit. The already
+  committed Kailo native observation adaptations at
+  `3d72e6fa975d812e04d76fa3b067d1562f1556e1`, in the same source path and
+  `internal/application/service/knowledge_delete_task.go::knowledgeService.ObserveKnowledgeDeleteTask`,
+  remain the actual task producers. This change does not present the original
+  upstream as having provided Kailo's later `observe_only` adaptation.
+- Impact: only `knowledge/adapter/src/query-revision.mjs::createAdapter`, its
+  existing HTTP/MCP consumer checks and this evidence file change. The reader
+  is Core's existing external-execution reconciliation consumer; its response
+  consumption is corrected in the parallel Core batch. Neither contract
+  fields nor native/Core database state changes; no four-side generation or
+  migration is needed. The wire now matches the already-fixed contract rather
+  than supporting a second legacy format. This is not a frontend change;
+  Web/Desktop/Mobile continue to consume their existing BFF execution facts.
+- Side effects: original `add_document`/`delete_document` are called once with
+  `observe_only=true` and the original idempotency key. Observation never
+  uploads source bytes or starts deletion. It retains the original receiver
+  read receipt on completed ingestion; usage extraction and fresh pre/post
+  PEP remain unchanged. Bodies, credentials and native business authority are
+  not copied into Core. Missing scope or task evidence still refuses.
+- Boundary: RUNNING/UNKNOWN have no fabricated `terminalAt`, result or content
+  reference. Completed ingestion preserves the exact native ID/revision in
+  its reference; deletion requires its native retained completion evidence.
+  A frozen native ID mismatch refuses, including after the new envelope;
+  revocation and unavailable receipts remain fail closed. Unsupported
+  `reconcile` is actually 404 with no PEP, native call or receipt, not a dummy
+  success. Read/export/search have no new observation support; deletion usage,
+  cancel and full conformance are not certified by this change. Existing
+  UNKNOWN task/time-limit and reconciliation ownership remain unchanged.
+
+Implementation preceded the existing consumer checks. They now consume the
+same envelope for execute and observe, assert completed ingestion references,
+check both v1/v2 frozen-ID observations and verify usage stays unenveloped.
+The same SDK `kailo-agent-receipt-xvkujx` was reused with 4 CPU/8 GiB
+(`cpu.max=400000 100000`, `memory.max=8589934592`) and existing locked MCP
+dependencies. Process/pressure inspection preceded verification: the host had
+23 GiB available; an unrelated GitNexus process was observed but not started,
+invoked or changed by this batch. Only the small adapter/shared consumer inputs
+were copied into its existing `knowledge-adapter.N8sx1m` candidate; no dependency
+download, full-tree copy or image build occurred.
+
+```sh
+node --test test/*.test.mjs
+```
+
+Initial and final restored runs each exited 0 with **122 passed, 0 failed,
+0 skipped**. In the private SDK only, both actual HTTP production return points
+were changed back to bare observations: the same checks exited 1 with
+**109 passed, 13 failed**, including both RUNNING/UNKNOWN envelope reads and
+both v1/v2 known-ID observations. Formal production source was copied back,
+`cmp` exited 0, and the full narrow target above passed again. Formal source
+was never mutated for the negative run. `git diff --check` also exited 0.
+
+Logs are in
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`:
+
+- `knowledge-observation-envelope-first-20261008.log`, SHA-256
+  `f1df9406f537aa2141a954be1d3a9ee50e57c74fbe70f96106fc0e310ba608f4`.
+- `knowledge-observation-envelope-mutation-20261008.log`, SHA-256
+  `7f53b0f665873fba53d6cf4346fc31db64c66c52735de55fa88d434f2d604d97`.
+- `knowledge-observation-envelope-restored-20261008.log`, SHA-256
+  `a94f7999356f1b1ebca767c5672e625feafc59989b6ea5dbe543697303354677`.
+
+This batch has no adapter image publication, live task invocation, component
+release/binding activation, browser/device acceptance or deployment. Whole
+project/full checks and commit/push belong to the integrated main batch; the
+narrow HTTP/MCP fixture evidence is not reported as native live E2E acceptance.

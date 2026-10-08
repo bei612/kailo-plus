@@ -318,8 +318,13 @@ export class AskingTaskTracker implements IAskingTaskTracker {
               result.type === AskResultType.GENERAL ||
               result.type === AskResultType.MISLEADING_QUERY
             ) {
-              // if it's rerun from cancelled, we need to update the task result to failed in db
-              if (task.rerunFromCancelled) {
+              // Only a finished non-SQL response is a failed SQL rerun.
+              // Classification is not terminal evidence; preserve generation,
+              // cancellation and native failure until the original query settles.
+              if (
+                task.rerunFromCancelled &&
+                result.status === AskResultStatus.FINISHED
+              ) {
                 const errorCode =
                   result.type === AskResultType.GENERAL
                     ? Errors.GeneralErrorCodes.IDENTIED_AS_GENERAL
@@ -349,7 +354,7 @@ export class AskingTaskTracker implements IAskingTaskTracker {
                 );
               }
               task.result = result;
-              task.isFinalized = true;
+              task.isFinalized = this.isTaskFinalized(result.status);
               this.runningJobs.delete(queryId);
               return;
             }

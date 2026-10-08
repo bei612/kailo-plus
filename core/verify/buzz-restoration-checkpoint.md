@@ -1807,6 +1807,60 @@ Native **1 failed / 5 passed**，都退出 1；把 sidebar 恢复成忽略 msg/t
 | `desktop/src/features/sidebar/ui/CreateChannelFormFields.tsx::CreateChannelFormFields`、`CreateChannelFormFooter` | 缺失恢复：`roles.tsx::WorkspaceCreateForm` 与 `WorkspaceCreateFormFooter` 恢复原 Name、占位符、标签／输入结构、原 Button 和 HTML form 关联；不再用简化按钮或把提交区放在滚动正文中 |
 | `desktop/src/features/sidebar/lib/useCreateChannelForm.ts::useCreateChannelForm` | 共享迁移＋授权治理：`roles.tsx::useWorkspaceCreate` 恢复 fresh opening 重置、公开默认及预填光标；保留原不抢占表单内焦点的规则，宿主动画后聚焦使用已有 requestAnimationFrame；UNKNOWN 不重置命令 |
 | `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent` | 共享迁移：复用原 header／scroll／footer 类；原 `description: _description` 未渲染说明，删除此前自行显示的介绍文字及无消费者词条 |
+
+### 2026-10-08：原 Inbox 虚拟列表实际消费者恢复与 Native 共源
+
+从既有 3307 路径全树清单续核，固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 使用原
+`desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`，行高估算 96、
+稳定行键、外部滚动容器及动态测量。Web 现行消费者却直接全量 `map`，
+Native 仍保留另一份原列表；本批恢复实际共源调用，不添加新的页面/菜单/业务功能。
+
+- 原样保留：原行包装、样式、上下文菜单、头像、行动作、空态和原滚动容器。
+  列表仍由 TanStack 原虚拟器按动态行高测量，不自写另一套虚拟化。
+- 共享迁移：包导出既有 `src/react/forum/VirtualizedList.tsx`，
+  Native 原路径只再导出同一主体，删除重复实现；实际消费者是 Native
+  `InboxListPane`、`EmojiAutocomplete` 及 Web `InboxPane`，非 helper-only。
+- 已授权治理改造：Web 既有 BFF 准入、signed window、Principal/scope 聚合及
+  原读写动作均未改；列表稳定键消费现有 `scopeKey`，不据可见 DOM 判断准入或已读。
+- 缺失需恢复→已接真实消费者：Web Inbox 长列表只挂载窗口内行，实际滚动能
+  到达首屏外消息；原 Forum 的既有共享调用不变。
+
+四步结论（REQ-24、DD-74/75、V-REQ-24、SS-WEB-PRESENTATION）：
+
+1. 原 Inbox 布局/虚拟列表上游支持，共源呈现设计已定；不改领域语义、正文权威或执行底座。
+2. 检索确认以上 Native 两调用方及 Web 实际调用方。仅包出口、Native 原路径、
+   Web Inbox 与现有检查四路径变化，`+62/-189`；无契约、四侧生成、迁移或新持久状态。
+   固定原列表与既有共享主体的完整 diff 仍仅有来源/导入迁移、严格索引断言及
+   已验证的外部祖先 ref 订阅修正，本批不再修改原列表内部逻辑。
+3. 行卸载不写已读、不改变消息聚合或授权查询，重新挂载复用既有 scope query/cache；
+   原 profile 迟到/错误作者/Principal 切换检查继续通过，无第二资料或副作用权威。
+4. 零条目仍是原空态；列表切换和缓存复挂由原虚拟器处理，背压/分页仍沿原读取链。
+   不增加重试或中间状态，六类治理错误与 UNKNOWN 表达不变。
+   Web 经 BFF、Native 本机凭据与 Relay 边界不变，Mobile 无适用 TS 消费者。
+
+沿原 `kailo-agent-receipt-xvkujx` SDK 与已安装缓存集中窄验；inspect 实际
+4 CPU、8 GiB，终验前无编译/测试进程，可用内存 19720 MiB。
+未安装依赖、复制全树、构建镜像/安装包或发布。日志根沿用上一节：
+
+- `inbox-virtual-list-first.log`：Web 类型检查通过，Inbox 首轮 18 通过／2 失败，
+  原检查浏览器模拟缺真实滚动几何及 ResizeObserver `target`；只修正 jsdom 布局模拟，
+  未叠生产条件迎合检查。`inbox-virtual-list-layout.log` 后实际 20 passed、退出 0。
+- `inbox-virtual-list-mutation.log`：仅在 SDK 把实际 Web 调用方 overscan 退化成
+  全部行，真实长列表检查报 `expected 40 to be less than 40`，1 failed／19 skipped、
+  退出 1。还原后正式源码与四候选输入 `cmp` 均退出 0。
+- `inbox-virtual-list-restored.log`（session 52599）：Web `tsc --noEmit`、
+  Inbox/作者资料 29 项、Desktop `tsc --noEmit`、原共享虚拟列表 3 项，
+  整条命令实际退出 0；React `act(...)` warning 保留在原 stderr。
+- 四路径 `git diff --check` 实际退出 0；全仓 `check.sh --full` 留给主线批次收口，
+  不把上述窄验写成全仓验收。
+
+本批尚未部署或生成安装包，新增业务页面截图为零。实际 playwright-cli 当前进入
+OIDC 登录页、会话失效；受控本地账号口令没有打印、写入命令行或注入 session。
+因此不能用旧截图证明本批 Inbox/Native 虚拟列表呈现；新版本视觉验收尚未完成。
+3307 全树路径仍未全部分类，精确未分类数未统计；project/needs_action/reminders、
+完整 bot profile 及遗留 i18n 缺项仍未关闭，不能称 100% 还原或生产就绪。
 | `desktop/src/features/channels/ui/ChannelBrowserDialog.tsx::ChannelCreateView` | 缺失恢复：共享 `react/channel-browser/ChannelBrowserDialog.tsx::ChannelCreateView` 使用相同表单，恢复原 `shrink-0 pb-6 pt-4` 提交区及搜索预填；UNKNOWN 阻止返回浏览或关闭 |
 | `desktop/src/shared/ui/button.tsx::Button` | 原样共享控件：提交按钮消费已有 `react/profile/buzz/shared/ui/button.tsx::Button`，不再消费治理页最小按钮样式 |
 

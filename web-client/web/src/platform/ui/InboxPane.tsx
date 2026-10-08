@@ -19,6 +19,7 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
+import { VirtualizedList } from "@client-kit/platform/react/VirtualizedList";
 import { HomeLoadingState, InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
@@ -77,6 +78,7 @@ export function InboxPane({
   }, []);
   const drafts = useInboxDrafts(principalId);
   const container = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
   const resize = useResizableInboxListWidth();
   useEffect(() => { setSelected(null); setSelectedDraft(null); setProfileTarget(null); }, [principalId]);
@@ -310,8 +312,9 @@ export function InboxPane({
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     {showList ? <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showDetail ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
       {header}
-      <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list">
-        {visibleRows.map((row) => {
+      <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list" ref={scrollRef}>
+        {visibleRows.length > 0 ? <VirtualizedList estimateSize={96} getItemKey={(row) => row.scopeKey}
+          items={visibleRows} scrollRef={scrollRef} renderItem={(row) => {
           const item = row.item;
           const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
           const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
@@ -339,8 +342,7 @@ export function InboxPane({
             <ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4" />{t(read ? "inbox.markUnread" : "inbox.markRead")}</ContextMenuItem>
             <ContextMenuSeparator /><ContextMenuItem disabled={hiddenDm.isReopenPending(item.channelId)} onSelect={() => openItem(item)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
           </ContextMenuContent></ContextMenu>;
-        })}
-        {!visibleRows.length ? <InboxEmptyList filter={filter} unreadOnly={unreadOnly} /> : null}
+        }} /> : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
       </div>
     </section> : null}
     {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}

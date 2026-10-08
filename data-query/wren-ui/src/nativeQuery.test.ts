@@ -63,6 +63,7 @@ integration('original Wren query handler, SDK and native history', () => {
   let metadataStatus = 200;
   let metadataErrorBody = '';
   let metadataReads = 0;
+  let onPep: (() => Promise<void>) | undefined;
   const serviceSecret = randomUUID();
   const serviceToken = randomUUID();
   const resource = randomUUID();
@@ -190,6 +191,7 @@ integration('original Wren query handler, SDK and native history', () => {
           );
       } else if (request.url === '/service/v1/adapter/pep_check') {
         peps++;
+        await onPep?.();
         if (changeTargetAt && peps >= changeTargetAt && authorizedTarget)
           authorizedTarget = {
             ...authorizedTarget,
@@ -322,6 +324,7 @@ integration('original Wren query handler, SDK and native history', () => {
       reason: 'PERMISSION_DENIED',
     });
     metadataReads = 0;
+    onPep = undefined;
   });
 
   it('distinguishes real service-token HTTP 403 from an object read denial through the actual metadata helper', async () => {
@@ -426,6 +429,7 @@ integration('original Wren query handler, SDK and native history', () => {
     ae = randomUUID(),
     operation = randomUUID(),
     observing = false,
+    changedClaims = {},
   ) =>
     new SignJWT({
       tenant_id: delivery.tenantId,
@@ -449,6 +453,7 @@ integration('original Wren query handler, SDK and native history', () => {
       delegation_version: 1,
       result_exposure_policy_id: randomUUID(),
       result_exposure_policy_version: 1,
+      ...changedClaims,
     })
       .setProtectedHeader({ alg: 'ES256', kid: 'action' })
       .setIssuer(delivery.actionTokenIssuer)
@@ -860,10 +865,16 @@ integration('original Wren query handler, SDK and native history', () => {
       body: JSON.stringify(reference),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    const observation = await response.json();
+    expect(Object.keys(observation)).toEqual(['execution']);
+    expect(observation.execution).toMatchObject({
       platformStatus: 'UNKNOWN',
       nativeId: first.execution.nativeId,
+      nativeType: 'wren.api_history',
+      cancelCapability: 'UNSUPPORTED',
+      idempotencyKey: key,
     });
+    expect(observation.execution.terminalAt).toBeUndefined();
     expect(queries).toBe(1);
   });
 
@@ -920,21 +931,348 @@ integration('original Wren query handler, SDK and native history', () => {
     expect(queries).toBe(0);
   });
 
-  it('describes only scoped metadata and preserves the native dry-run path', async () => {
-    const result = (
-      await call(
-        await signed('data_query.describe', {}),
-        randomUUID(),
-        'data_query.describe',
-        {},
-      )
-    ).structuredContent as any;
-    expect(JSON.parse(result.resultJson)).toEqual({
+  const description = async () => {
+    const models = await Promise.all(
+      ['authorized', 'other'].map((kind) =>
+        mockComponents.modelRepository.createOne({
+          projectId: 1,
+          displayName: kind,
+          referenceName: `${kind}_${randomUUID().replaceAll('-', '')}`,
+          sourceTableName: kind,
+          refSql: `SELECT 'private-${kind}-sql'`,
+          cached: false,
+        }),
+      ),
+    );
+    const manifest = {
+      catalog: 'wrenai',
+      schema: 'public',
+      models: models.map((model) => ({
+        name: model.referenceName,
+        refSql: model.refSql,
+        cached: false,
+        columns: [
+          {
+            name: `${model.displayName}_column`,
+            type: 'INTEGER',
+            isCalculated: false,
+          },
+        ],
+      })),
+    };
+    const captures = models.map((model) => ({
+      nativeType: 'model',
+      nativeId: model.id,
+      nativeName: model.referenceName,
+    }));
+    await database('deploy_log')
+      .where({ id: 1 })
+      .update({
+        manifest: JSON.stringify(manifest),
+        native_object_refs: JSON.stringify(captures),
+      });
+    authorizedTarget = {
+      resourceId: resource,
+      nativeType: 'model',
+      nativeRef: String(models[0].id),
+      nativeInstanceRef: delivery.nativeInstanceRef,
+      nativeScopeRef: delivery.nativeScopeRef,
+    };
+    const expected = {
       deploymentId: 1,
       deploymentHash: input.deploymentHash,
-      models: [],
+      models: [
+        {
+          name: models[0].referenceName,
+          columns: [{ name: 'authorized_column', type: 'INTEGER' }],
+        },
+      ],
+    };
+    const execute = (token: string, key: string, target = resource) =>
+      fetch(`${endpoint}/execute`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        body: JSON.stringify({
+          actionKey: 'data_query.describe@v1',
+          idempotencyKey: key,
+          arguments: { target: { resourceId: target }, input: {} },
+        }),
+      });
+    const clean = async () => {
+      await database('deploy_log')
+        .where({ id: 1 })
+        .update({
+          manifest: JSON.stringify({
+            catalog: 'wrenai',
+            schema: 'public',
+            models: [],
+          }),
+          native_object_refs: JSON.stringify([]),
+        });
+      await database('model')
+        .whereIn(
+          'id',
+          models.map((model) => model.id),
+        )
+        .delete();
+    };
+    return { models, manifest, captures, expected, execute, clean };
+  };
+
+  it('describes exactly the Core-authorized captured model through real MCP and HTTP execute without revealing other models or SQL', async () => {
+    const { expected, models, execute, clean } = await description();
+    try {
+      const ae = randomUUID(),
+        key = randomUUID();
+      const token = await signed(
+        'data_query.describe',
+        {},
+        ae,
+        randomUUID(),
+        false,
+        {
+          targetResource: {
+            ...authorizedTarget,
+            nativeRef: String(models[1].id),
+          },
+        },
+      );
+      const first = (await call(token, key, 'data_query.describe', {}))
+        .structuredContent as any;
+      expect(first.execution.platformStatus).toBe('SUCCEEDED');
+      expect(JSON.parse(first.resultJson)).toEqual(expected);
+      expect(first.resultJson).not.toContain(models[1].referenceName);
+      expect(first.resultJson).not.toContain('private-');
+      const response = await execute(
+        await signed('data_query.describe', {}),
+        randomUUID(),
+      );
+      expect(response.status).toBe(200);
+      expect(JSON.parse((await response.json()).resultJson)).toEqual(expected);
+      const replay = (await call(token, key, 'data_query.describe', {}))
+        .structuredContent as any;
+      expect(replay).toMatchObject({
+        execution: {
+          nativeId: first.execution.nativeId,
+          platformStatus: 'SUCCEEDED',
+        },
+      });
+      expect(JSON.parse(replay.resultJson)).toEqual(expected);
+      expect(queries).toBe(0);
+    } finally {
+      await clean();
+    }
+  });
+
+  it.each([
+    'absent',
+    'resourceId',
+    'nativeType',
+    'nativeRef',
+    'nativeInstanceRef',
+    'nativeScopeRef',
+  ])(
+    'does not describe a model when authoritative target %s is missing or foreign',
+    async (field) => {
+      const { clean } = await description();
+      try {
+        if (field === 'absent') authorizedTarget = undefined;
+        else
+          authorizedTarget[field] =
+            field === 'resourceId' ? randomUUID() : 'foreign';
+        await expect(
+          call(
+            await signed('data_query.describe', {}),
+            randomUUID(),
+            'data_query.describe',
+            {},
+          ),
+        ).rejects.toThrow('QUERY_SCOPE_DENIED');
+        expect(queries).toBe(0);
+      } finally {
+        await clean();
+      }
+    },
+  );
+
+  it.each(['legacy', 'same-name-replacement'])(
+    'does not infer describe authorization from a current model name when capture is %s',
+    async (kind) => {
+      const { models, captures, clean } = await description();
+      try {
+        await database('deploy_log')
+          .where({ id: 1 })
+          .update({
+            native_object_refs:
+              kind === 'legacy'
+                ? null
+                : JSON.stringify([
+                    { ...captures[0], nativeId: models[1].id },
+                    { ...captures[1], nativeId: models[0].id },
+                  ]),
+          });
+        await expect(
+          call(
+            await signed('data_query.describe', {}),
+            randomUUID(),
+            'data_query.describe',
+            {},
+          ),
+        ).rejects.toThrow(
+          kind === 'legacy'
+            ? 'QUERY_EVIDENCE_UNAVAILABLE'
+            : 'QUERY_REFERENCE_CHANGED',
+        );
+        expect(queries).toBe(0);
+      } finally {
+        await clean();
+      }
+    },
+  );
+
+  it('denies a submitted HTTP describe target different from the frozen action target before PEP or native execution', async () => {
+    const { execute, clean } = await description();
+    try {
+      const response = await execute(
+        await signed('data_query.describe', {}),
+        randomUUID(),
+        randomUUID(),
+      );
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: 'QUERY_SCOPE_DENIED' });
+      expect(peps).toBe(0);
+      expect(queries).toBe(0);
+    } finally {
+      await clean();
+    }
+  });
+
+  it.each(['permission', 'target', 'manifest', 'model'])(
+    'does not disclose completed describe metadata when final %s evidence changes',
+    async (kind) => {
+      const { models, manifest, clean } = await description();
+      const ae = randomUUID(),
+        key = randomUUID();
+      try {
+        if (kind === 'permission') denyAt = 3;
+        if (kind === 'target') changeTargetAt = 3;
+        if (kind === 'manifest')
+          onPep = async () => {
+            if (peps === 3)
+              await database('deploy_log')
+                .where({ id: 1 })
+                .update({
+                  manifest: JSON.stringify({
+                    ...manifest,
+                    models: manifest.models.map((model) => ({
+                      ...model,
+                      columns: [],
+                    })),
+                  }),
+                });
+          };
+        if (kind === 'model')
+          onPep = async () => {
+            if (peps === 3)
+              await database('model')
+                .where({ id: models[0].id })
+                .update({ reference_name: 'changed-native-name' });
+          };
+        await expect(
+          call(
+            await signed('data_query.describe', {}, ae),
+            key,
+            'data_query.describe',
+            {},
+          ),
+        ).rejects.toThrow(
+          kind === 'permission'
+            ? 'QUERY_ADMISSION_UNAVAILABLE'
+            : kind === 'target'
+              ? 'QUERY_SCOPE_DENIED'
+              : 'QUERY_REFERENCE_CHANGED',
+        );
+        const stored = await database('api_history')
+          .where({ governance_action_execution_id: ae })
+          .first();
+        expect(stored.governance_state).toBe('SUCCEEDED');
+        expect(stored.response_payload.models).toHaveLength(1);
+        expect(stored.response_payload.models[0].name).toBe(
+          models[0].referenceName,
+        );
+        expect(queries).toBe(0);
+      } finally {
+        await clean();
+      }
+    },
+  );
+
+  it('keeps describe replay on its original captured deployment after a newer deployment becomes current', async () => {
+    const { models, manifest, captures, expected, clean } = await description();
+    const deploymentId = Number.parseInt(randomUUID().slice(0, 7), 16);
+    const key = randomUUID(),
+      token = await signed('data_query.describe', {});
+    try {
+      const original = (await call(token, key, 'data_query.describe', {}))
+        .structuredContent as any;
+      await database('deploy_log').insert({
+        id: deploymentId,
+        project_id: 1,
+        hash: 'b'.repeat(40),
+        status: 'SUCCESS',
+        manifest: JSON.stringify({
+          ...manifest,
+          models: manifest.models.map((model) => ({ ...model, columns: [] })),
+        }),
+        native_object_refs: JSON.stringify(captures),
+      });
+      expect(
+        (await mockComponents.deployLogRepository.findLastProjectDeployLog(1))
+          .id,
+      ).toBe(deploymentId);
+      const replay = (await call(token, key, 'data_query.describe', {}))
+        .structuredContent as any;
+      expect(replay.execution.nativeId).toBe(original.execution.nativeId);
+      expect(JSON.parse(replay.resultJson)).toEqual(expected);
+      expect(replay.resultJson).not.toContain(models[1].referenceName);
+      expect(queries).toBe(0);
+    } finally {
+      await database('deploy_log').where({ id: deploymentId }).delete();
+      await clean();
+    }
+  });
+
+  it('returns the contracted execution envelope for an absent native history without claiming a writer fence or result', async () => {
+    const reference = {
+      externalExecutionId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      nativeType: 'wren.api_history',
+    };
+    const response = await fetch(`${endpoint}/observe`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${await signed('data_query.query', reference, randomUUID(), randomUUID(), true)}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(reference),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      execution: {
+        idempotencyKey: reference.idempotencyKey,
+        nativeType: reference.nativeType,
+        platformStatus: 'UNKNOWN',
+        cancelCapability: 'UNSUPPORTED',
+      },
     });
     expect(queries).toBe(0);
+  });
+
+  it('preserves the original native dry-run execution path', async () => {
     const dry = (
       await call(
         await signed('data_query.dry_run', input),
@@ -1251,9 +1589,11 @@ integration('original Wren query handler, SDK and native history', () => {
           ref,
         );
         expect(observed).toMatchObject({
-          platformStatus: 'FAILED',
-          nativeId: expect.any(String),
-          terminalAt: expect.any(Date),
+          execution: {
+            platformStatus: 'FAILED',
+            nativeId: expect.any(String),
+            terminalAt: expect.any(Date),
+          },
         });
       } finally {
         await database('project')

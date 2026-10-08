@@ -124,14 +124,18 @@ export default async function handler(
           'actionKey,arguments,idempotencyKey' ||
         typeof key !== 'string' ||
         raw.idempotencyKey !== key ||
-        !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
-          raw.actionKey,
-        ) ||
+        ![
+          'data_query.query@v1',
+          'data_query.dry_run@v1',
+          'data_query.describe@v1',
+        ].includes(raw.actionKey) ||
         !raw.arguments ||
         Object.keys(raw.arguments).sort().join(',') !== 'input,target' ||
         !raw.arguments.target ||
         Object.keys(raw.arguments.target).join(',') !== 'resourceId' ||
-        raw.arguments.target.resourceId !== raw.arguments.input?.resourceId
+        typeof raw.arguments.target.resourceId !== 'string' ||
+        (raw.actionKey !== 'data_query.describe@v1' &&
+          raw.arguments.target.resourceId !== raw.arguments.input?.resourceId)
       ) {
         throw new NativeQueryRefusal(400, 'QUERY_INVALID_REQUEST');
       }
@@ -140,7 +144,13 @@ export default async function handler(
         .json(
           await (
             await queries()
-          ).execute(bearer(request), key, raw.actionKey, raw.arguments.input),
+          ).execute(
+            bearer(request),
+            key,
+            raw.actionKey,
+            raw.arguments.input,
+            raw.arguments.target,
+          ),
         );
       return;
     }

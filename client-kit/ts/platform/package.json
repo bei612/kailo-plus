@@ -135,6 +135,7 @@
     "./react/workflows": "./src/react/workflows.tsx",
     "./react/invitations": "./src/react/invitations.tsx",
     "./react/inbox-row": "./src/react/inbox-row.tsx",
+    "./react/VirtualizedList": "./src/react/forum/VirtualizedList.tsx",
     "./react/use-inbox-state": "./src/react/use-inbox-state.ts",
     "./react/use-inbox-auto-selection": "./src/react/use-inbox-auto-selection.ts",
     "./react/message-body": "./src/react/message-body.tsx",

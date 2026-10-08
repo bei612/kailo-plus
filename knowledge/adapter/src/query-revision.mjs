@@ -422,7 +422,7 @@ export function createAdapter(rawConfig) {
           });
           const observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
           await recordCreationReceipt(native,observed,config,deadline,args.idempotencyKey);
-          value=operation==='observe' ? observed.execution : {
+          value=operation==='observe' ? observed : {
             externalExecutionId:args.externalExecutionId,idempotencyKey:args.idempotencyKey,
             nativeType:observed.execution.nativeType,nativeId:observed.execution.nativeId,
             measurements:readMeasurements(config.readEdge?.usageMeasurements,native.source_content_bytes)
@@ -430,11 +430,11 @@ export function createAdapter(rawConfig) {
           };
           if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
         } else if (operation==='observe' && nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
-          value = deletionObservation(await nativeTool(config,deadline,'delete_document',{
+          value = { execution: deletionObservation(await nativeTool(config,deadline,'delete_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
-          }),config,args.idempotencyKey);
+          }),config,args.idempotencyKey) };
         } else throw new Refused(403);
-        if (args.nativeId !== undefined && args.nativeId !== value.nativeId) throw new Refused(503);
+        if (args.nativeId !== undefined && args.nativeId !== (operation==='observe' ? value.execution.nativeId : value.nativeId)) throw new Refused(503);
       } else {
         value = operation === 'execute' ? await executeOperation(config, deadline, args, claims, token)
           : await nativeRevision(config, deadline, args);
