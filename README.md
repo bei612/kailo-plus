@@ -4,7 +4,17 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 当前使用与恢复范围（2026-10-06）
+## 当前使用与恢复范围（2026-10-08）
+
+- 2026-10-08 18:40 UTC：Core、Worker、Web 已集中发布固定 main
+  `0b04bc2654e5f1b8a7942d9966ebe334927e0c86`，入口仍为
+  `http://192.168.0.193:58090/app/`。原 Compose 28 个现存容器中仅三者替换，
+  其余 25 项 ID/镜像不变；BFF health 200、Worker 接回原 Temporal 队列、Web
+  healthy。正常 SSO 后搜索冷命中、线程回复及两种整页刷新已复验，五张截图已打开
+  逐一检查；只证明这些状态，不代表全页面或 Windows 验收。
+  一个 Agent runtime 初始化仍未闭合并禁止新 turn；三组件完整业务、原版全量
+  一致性、Windows/Mobile 及生产门禁未完成。当前未提交的线程编辑和组件修复
+  不在镜像内。实际来源与失败边界见 [发布记录](core/verify/release-artifacts.md)。
 
 - 2026-10-08 17:29 UTC：Core、Worker、Web 已集中发布固定
   `32971030d1d856b4f26b19fcff02cd4939204864`；71 个运行容器中仅这三项替换，

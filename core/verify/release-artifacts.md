@@ -1177,3 +1177,96 @@ remove_paths 与实际一致1042项；原 `tools/check-docs.sh /workspace/.desig
 丢原formatter PATH退出1，失败未抹除；只恢复镜像原PATH后原contract实际退出0，
 四侧生成同步、291schema与3历史匹配，记录在Wren原回执。未重新构建/部署，
 没有把删除登记一致、格式或窄验当全功能恢复；最近一次完整门禁仍退出1。
+
+## 2026-10-08 18:40 UTC 固定 main 集中发布
+
+本批实际输入为 `0b04bc2654e5f1b8a7942d9966ebe334927e0c86` 的干净 detached
+发布快照，不是当前未提交工作树。沿原 `tools/release.sh`、
+`tools/build-upstream.sh web-client` 一次集中构建并推送，不复制业务数据。
+四步影响结论如下：
+
+1. 权威为既有治理与原版恢复要求。本批投递已提交的频道复制、冷搜索定位、
+   线程打开和原 HUMAN scope 消费，不改变设计合同、资源权威或组件生命周期。
+2. 影响仅 Core/Worker/Web 三镜像、Compose 三个 pin、Web 两个来源摘要、
+   既有追溯产物引用与使用记录。Web 经 BFF、Desktop/Mobile 本机持钥不变；
+   本批未更新两个原生端安装包，也未部署 Cells/WeKnora/Wren。
+3. 原 `start-core.sh --no-build` 现取三枚一次性 OpenBao 投递，没有复用包装、
+   打印秘密、引导默认账号或回退共享身份；Worker 接回既有 Temporal 队列。
+   没有新建 Agent turn、重放 UNKNOWN 执行或伪造组件 ACTIVE binding。
+4. 发布/启动实际退出 0，但健康检查不等于业务验收。Agent runtime 初始化
+   一项 `DependencyUnavailable` 仍禁止新 turn；不以容器运行把它记作稳定协作。
+   当前新的线程编辑、WeKnora 队列与 Wren 创建 UNKNOWN 修复不在本批镜像。
+
+| 实际产物 | registry digest |
+|---|---|
+| Core | `sha256:bf61a6a266309c490cea504f01b80871db7fc82c54152811c5733d8e63810bb4` |
+| Worker | `sha256:523657a1f218c426b9bf661ffc001b63d6c97720b17f4141962a51cce30a06fa` |
+| Web | `sha256:f60b4fe4dbcc9b9caa3f1567e9c5b80ebea0b8db81d49790ad05f20fe1d02f5b` |
+
+Web 原构建 helper 实际登记的 source/build digest 为
+`sha256:a61b2f7db919f3fe9d4aa20b136bcff530a48954847ba096ca22bf5339110672`。
+Core/Worker 的 SBOM/provenance 四文件复制至忽略的 `dist/`，逐一 `cmp` 退出 0；
+provenance 的源码提交、镜像 subject、依赖锁与 Codex 既有镜像引用保留。
+没有为 Web 编造原入口不产生的 SBOM/provenance。
+
+构建沿既有 `kailo-core-data` builder，Data 持久状态、8 CPU/16 GiB 实际 cgroup，
+运行前检查进程及内存压力。Web 原 npm cache 命中后安装 476 包，tsc/Vite 退出 0；
+chunk 大小警告原样保留，不为消除警告改页面。构建仍解析和获取固定基础层/依赖，
+不是完全离线构建，也没有通过降低 Cargo 并行度规避资源限制。
+
+原运行目录仍为
+`/volumes/data/kailo/tmp/buzz-conditions-release-20261007.rjEksd/apps/deploy/local`。
+实际启动命令：`./start-core.sh --no-build`；原 Compose
+`up -d --no-deps --no-build --pull never worker` 及同命令 `buzz-web`，均退出 0。
+Core、Worker、Web 分别于 18:39:04、18:39:05、18:40:18 UTC 启动，实际镜像
+与上表一致。原 Compose 共 28 个现存容器（含四个已停止的初始化容器），仅这
+三者 ID/镜像改变，其余 25 项相同、零新增/缺失；未替换三组件或清理存储。
+BFF `/healthz` 返回 200；Worker 实际日志为 `Started Worker Namespace kailo
+TaskQueue kailo-component-task`；Web healthy，匿名 `/app/` 返回预期登录 302。
+新版经正常 SSO 后以实际搜索结果进入冷命中与线程回复，未注入会话或写消息。
+实际 `/app/platform-build-info.json` 为上表 Web source digest；冷命中
+`ea24…` 位于主列表 y498.75/h47，线程回复 `929c…` 位于线程 y267/h62。
+两种整页重载后等待原虚拟列表/RAF 稳定仍在同位置，根消息 `5532…` 在主列表
+y456.25/h47。五张截图均由执行队友和主线打开视觉复核，范围是搜索结果、冷命中、
+线程回复与两种重载；没有把它们称为全页面、全量原版或 Windows 验收。
+
+截图位于 `apps/.playwright-cli/`，原件 SHA-256：
+
+| 原件 | SHA-256 |
+|---|---|
+| `kailo-ui-20261008-main0b-search-results.png` | `a0467a85467f6f3c843bbd9decbad27151350895bc80cbb867ed7435479169d3` |
+| `kailo-ui-20261008-main0b-search-cold-target.png` | `b46697c8317c82ca7cec12489c59c8fb31e1d31a27451959a73089683433b8f6` |
+| `kailo-ui-20261008-main0b-search-thread-target.png` | `d3c3896516d0a09da05d60af5071227670a34e002baa247c180f336f7e822d76` |
+| `kailo-ui-20261008-main0b-search-thread-reloaded.png` | `7c756d5492cd51b4ba3939188260f4861362b5e43a7f1531830174e083f4b333` |
+| `kailo-ui-20261008-main0b-search-cold-reloaded.png` | `b46697c8317c82ca7cec12489c59c8fb31e1d31a27451959a73089683433b8f6` |
+
+原发布快照及本批日志在
+`/volumes/data/kailo/tmp/core-web-main-release-20261008.SzH7rU/`：
+
+| 原件 | SHA-256 |
+|---|---|
+| `core-worker-release-0b04bc265.log` | `3f52ac0a90f0903f4ad5096d496cba1abcf0c51fdf300ff56096f7eb5bfbb85f` |
+| `web-client-release-0b04bc265.log` | `b54af7c7e9ae81bb4b61d54e8b0bbf7959626066f595b90f71931682d8131f0e` |
+| `start-core-0b04bc265.log` | `467a598b703642c6d53f336773f1e12e6f89066f28ce7df9324026b3570978d1` |
+| `start-worker-0b04bc265.log` | `66e5df7d95496e455d35f38e84dc8166d0926e99935c99c44fe136b9a6d31be0` |
+| `start-web-0b04bc265.log` | `0c9d447b0a60555ee0161b71a691ca73630ea7623b4456e6a69a3a751e0d2331` |
+
+独立原构建日志位于 Data `tmp/`：`release-core.EKANHD.log` 的 SHA-256 为
+`a3ac038b5ae898e225b023a1b9be6f1d53b42442ec71cc9d6a62f4342bcddf8b`，
+`release-worker.BVolBB.log` 为
+`a05693192699ead857f916824c39046c1ba46b42f9b2f5e5bc68c36e6748f583`，
+`build-web-client.KXVoFJ.log` 为
+`a73b6bf9d747fd6a51ab6a322ae14000547a8af82b5bfbabb2abd3a833629ce3`。
+
+原限额检查容器 UID 1000、2 CPU/4 GiB、network none 对正式树运行原
+`step_trace; step_supply`，实际退出 1：文档六项、24 条追溯、20 种 workflow kind、
+四个构建期拒绝条件及 46 个产物 SBOM/provenance 一致性通过；供应链检查未取得
+`document-editor/fork/upstream.yaml` 固定 ONLYOFFICE/core
+`3250a848ee4ef20c2fb8c38dc86350ec579124b8`，对应本仓库增量不能完成扫描。
+内置扫描无命中、未安装 gitleaks；没有联网修改只读证据目录、跳过失败或重算伪造摘要。
+原日志 `release-formal-trace-supply-0b04bc265.log` 的 SHA-256 为
+`c450c0193e56dac0dd4fe4758561211b77cdb29edd5dc5cd60efc1ef58d48324`。
+
+没有重复执行全局编译或把旧 full 退出 1 改记通过。全量官方差异分类、原生端、
+三组件独立二开后的完整绑定/业务、跨服务同步、三人多 Agent 稳定协作与生产退出
+门禁仍未完成。正文及外部资源权威未进入 Core，本批不新增不安全运行开关。
