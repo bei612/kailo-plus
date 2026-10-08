@@ -967,3 +967,27 @@ This source increment does not establish a business deployment, ACTIVE binding,
 browser/iframe acceptance, full original parity, dynamic trusted native Resource
 registration or ordinary-function provenance. A permanently lost native cache is
 not proof of failure and cannot authorize a replacement POST.
+
+### Original independent model, view and MDL readers
+
+When `WREN_PLATFORM_QUERY_CONFIG_FILE` has never been configured and neither
+trusted native identity header exists, the original GraphQL model/view lists,
+complete model/view details and current-project MDL body remain usable without
+fabricated platform identity or Resource records. The original native fields,
+relationships and response shapes are retained. Present empty/invalid
+configuration, even an empty native identity header, or platform-correlated MDL
+input cannot select independent mode. A binding configured while the original
+columns/views load withholds that in-flight independent response.
+
+Configured consumers retain current HUMAN/project and per-Resource read
+authorization, captured native source/deployment facts and generation fences;
+rejection never selects independent current-project behavior.
+The [independent reader receipt](../fork/verify/native-integration.md#original-independent-model-view-and-mdl-readers)
+records 171 passing original consumer checks, two actual production-damage
+runs catching five and three failures, exact restoration and original
+type/format checks. These are local SDK consumers, not business deployment or
+browser/device acceptance. Dynamic native Resource registration still lacks a
+trusted existing-object evidence consumer; bare CRUD IDs or `query_revision`
+cannot replace scope/owner/type evidence. Static controlled native-resource
+facts remain the existing supported path. Neither an ACTIVE Wren binding nor
+complete original parity is established by this increment.

@@ -6534,3 +6534,113 @@ No database path changed, so no new DB check was run. Root owns the one global
 check and this four-file batch's review/main commit/push; this agent does not
 stage/commit/push. The production Wren instance and ACTIVE binding remain
 unestablished; no deployment or complete original restoration is claimed.
+
+## Original independent model, view and MDL readers
+
+Fixed official baseline: `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.listModels`,
+`ModelResolver.getModel`, `ModelResolver.listViews`, `ModelResolver.getView` and
+`ModelResolver.getMDL`. Those original native readers return the complete model
+fields/relationships, views and MDL without a platform delivery file. Kailo's
+unconditional `metadataConfig` loader had broken that independent native mode.
+This batch restores those consumers, not dynamic Resource adoption or every
+original frontend difference. No `.references` content was edited or executed.
+
+Implementation four-step findings:
+
+1. Authority: `.design/08` §6 retains Wren's complete independent native system
+   and requires trustworthy HUMAN/project/public authorization when bound.
+   `.design/07` §2 / DD-98 requires trustworthy native references, not inferred
+   ownership or a second registry. Only absent configuration and absent native
+   identity fields select independent mode; empty/bad configured delivery does
+   not. This is a real original consumer restoration, not a new capability.
+2. Impact: the existing `metadataConfig/readableMetadata` consumers preserve
+   native repository calls, full list/detail bodies and current-project checks.
+   Model detail/relation and view detail reuse that same helper. Independent MDL
+   reads the existing current-project deployment/manifest without requiring
+   platform `nativeObjectRefs` absent from original deployments. The authorized
+   current-project constraint stays; the old global hash reader is not restored.
+   Bound GET_MODELS History still requires its real bound proof. No contract,
+   generated type, table, state, migration or client presentation changes;
+   shared-host migration is **无适用对象**. Old independent rows stay readable;
+   old bound rows without trustworthy provenance remain refused.
+3. Side effects: these readers create no model/view, SQL/Ask execution, History
+   or second authority. Defined-empty configuration, empty/partial native
+   headers or a correlated platform MDL request cannot borrow independent mode.
+   If binding appears during original column/view loading, the same existing
+   helper withholds the in-flight independent response. Wren bodies stay Wren
+   business data; no Core plaintext or ownership claim is added.
+4. Boundaries: original empty-list behavior and no unfiltered dependency reads
+   remain; current Resource denials, unavailable authorization, foreign project,
+   missing identity, malformed sources and generation/deployment changes keep
+   existing rejection. The existing `apps/06` §4 DENIED/BLOCKED/PRECONDITION and
+   reference CONFLICT behavior/reasons are retained. No UNKNOWN becomes a
+   success/failure. This read adds no retry/task/lease, response limit,
+   reconciliation state or changed DB writer, so those mechanisms and their
+   existing bounds are unchanged; no database check was rerun.
+
+Difference classification: original frontend/layout and original model/view/MDL
+body fields are **原样保留**; existing project/Resource authority, explicit
+independent-mode selection and mid-read binding fences are **已授权治理改造**.
+The independent consumer regression is restored in source/local checks.
+Dynamic trusted native-object adoption remains **缺失需恢复**:
+`core/crates/platform-core/src/resource_provision.rs::verify_delivery` and
+`delivery_match` consume exact operator-delivered
+`typeKey/nativeType/nativeRef/evidenceRef/evidenceDigest` facts from the existing
+adapter directory. At the same fixed official pin,
+`wren-ui/src/apollo/server/repositories/modelRepository.ts::ModelRepository` and
+`wren-ui/src/apollo/server/repositories/viewRepository.ts::ViewRepository` have
+native ID/project fields but no complete platform adoption receipt. Existing
+`query_revision` cannot prove scope/owner/type;
+`resolve_native_scope(LOOKUP)` is not bare native-ID discovery. This batch does
+not invent those operations, manufacture trusted directory facts from CRUD IDs,
+write Core delivery or activate the release.
+
+Only the existing `kailo-wren-query-sdk-itgs2n`, original single `/work` root and
+installed dependencies were used, limited to CPU `400000 100000` and memory
+`4294967296`. It was idle before the concentrated run; host available memory
+was 24.0 GiB and I/O full avg10 42.33%. Root's one full check remained separately
+owned. No SDK/image/download/database/global check or inherited Java input was
+started/changed. Logs:
+`/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeProjectScope.test.ts src/nativeHumanQuery.test.ts \
+  --testNamePattern 'native bound-project business consumers|original models REST current MDL consumer|original native project scope permission consumers'
+```
+
+- `standalone-model-positive.log`: **exit 0**, **169 passed / 345 filtered**,
+  10.186 seconds, including the first fourteen new actual original GraphQL
+  consumers. This predates the final two empty-header cases/predicates and is
+  not their final-byte evidence.
+- `standalone-model-types.log`: original `node
+  /work/node_modules/typescript/bin/tsc --noEmit --incremental false --pretty
+  false`, **exit 0**, covering final predicates and all sixteen new original
+  GraphQL cases, with no altered config or suppressed diagnostics.
+- `standalone-model-mutation-native-original.log`: **exit 1**, **5 failed /
+  11 passed / 95 filtered**, 8.246 seconds. Removing the real private production
+  independent-mode selection broke all five actual model/view/MDL GraphQL
+  readers. The original nested `original never-configured model metadata
+  consumers` target caught it. The source was restored with `apply_patch`,
+  then `cmp` **0** before the second independent production-damage run.
+- `standalone-model-mutation-transition.log`: **exit 1**, **3 failed /
+  13 passed / 95 filtered**, 8.334 seconds. Removing only the private production
+  `readableMetadata` mid-read fence leaked listModels/model/listViews after a
+  binding appeared during native reads; all three actual GraphQL cases failed.
+  Formal production files were never damaged.
+- `standalone-model-restored.log`: **exit 0**, **171 passed / 345 filtered**,
+  10.286 seconds, using the full positive command above on final restored bytes.
+  Both formal/SDK source/check files `cmp` **0** before that run. Original bound
+  native/project, captured-MDL REST/History and public permission consumers
+  passed alongside all sixteen independent GraphQL cases.
+- `standalone-model-format.log`: original Prettier check of both source/check
+  files, **exit 0**. `standalone-model-cgroup-final.log`: resource limits remained
+  as above, and all memory-event counters were **0**, unchanged from pre-run.
+
+This four-file increment is ready for root's main review/commit/push. These are
+actual local original GraphQL/REST consumers with repository/permission fixtures,
+not PostgreSQL/provider/browser/screenshot/iframe/Desktop/Mobile/multi-user
+evidence. No production Wren instance, ACTIVE binding or dynamic registration
+is established. Ordinary-function provenance, trusted SERVICE SQL and complete
+original parity remain unaccepted. This agent does not stage/commit/push/deploy.

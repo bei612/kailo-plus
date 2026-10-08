@@ -64,6 +64,12 @@ export class ModelResolver {
     ctx: Pick<IContext, 'nativeIdentityScope' | 'nativeHumanToken'>,
     projectId: number,
   ) {
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
+      ctx.nativeIdentityScope === undefined &&
+      ctx.nativeHumanToken === undefined
+    )
+      return undefined;
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
@@ -75,10 +81,20 @@ export class ModelResolver {
 
   private async readableMetadata<T extends { id: number }>(
     ctx: IContext,
-    config: NativeQueryDelivery,
+    config: NativeQueryDelivery | undefined,
     kind: 'model' | 'view',
     rows: T[],
   ): Promise<T[]> {
+    if (!config) {
+      // A newly configured binding cannot adopt an in-flight standalone read.
+      if (
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+        ctx.nativeIdentityScope !== undefined ||
+        ctx.nativeHumanToken !== undefined
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return rows;
+    }
     const visible: T[] = [];
     for (const row of rows) {
       if (
@@ -374,6 +390,21 @@ export class ModelResolver {
     });
     if (!deploy) throw new Error('Deployment not found');
     const config = await this.metadataConfig(ctx, projectId);
+    if (!config) {
+      if (
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+        ctx.nativeIdentityScope !== undefined ||
+        ctx.nativeHumanToken !== undefined
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      if (args.queryScope !== undefined || args.generation !== undefined)
+        throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+      // The independent native MDL does not require platform provenance fields.
+      return {
+        hash: args.hash,
+        mdl: Buffer.from(JSON.stringify(deploy.manifest)).toString('base64'),
+      };
+    }
     const verifyRequest = async () => {
       if (args.queryScope === undefined && args.generation === undefined)
         return;
@@ -462,6 +493,8 @@ export class ModelResolver {
   ) {
     const project = await ctx.projectService.getCurrentProject();
     const config = await this.metadataConfig(ctx, project.id);
+    if (!config)
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
     const proof = selected.requestPayload?.nativeModels;
     if (
       selected.apiType !== ApiType.GET_MODELS ||
@@ -575,14 +608,7 @@ export class ModelResolver {
     }
 
     const config = await this.metadataConfig(ctx, projectId);
-    if (
-      !(await canReadNativeMetadata(
-        config,
-        ctx.nativeHumanToken,
-        'model',
-        model.id,
-      ))
-    )
+    if (!(await this.readableMetadata(ctx, config, 'model', [model])).length)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     const modelColumns = await ctx.modelColumnRepository.findColumnsByModelIds([
@@ -627,12 +653,11 @@ export class ModelResolver {
             id: column.modelId,
             projectId,
           })) ||
-          !(await canReadNativeMetadata(
-            config,
-            ctx.nativeHumanToken,
-            'model',
-            column.modelId,
-          ))
+          !(
+            await this.readableMetadata(ctx, config, 'model', [
+              { id: column.modelId },
+            ])
+          ).length
         ) {
           visible = false;
           break;
@@ -640,14 +665,7 @@ export class ModelResolver {
       }
       if (visible) relations.push(relation);
     }
-    if (
-      !(await canReadNativeMetadata(
-        config,
-        ctx.nativeHumanToken,
-        'model',
-        model.id,
-      ))
-    )
+    if (!(await this.readableMetadata(ctx, config, 'model', [model])).length)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     return {
@@ -1166,14 +1184,7 @@ export class ModelResolver {
       throw new Error('View not found');
     }
     const config = await this.metadataConfig(ctx, projectId);
-    if (
-      !(await canReadNativeMetadata(
-        config,
-        ctx.nativeHumanToken,
-        'view',
-        view.id,
-      ))
-    )
+    if (!(await this.readableMetadata(ctx, config, 'view', [view])).length)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const displayName = view.properties
       ? JSON.parse(view.properties)?.displayName

@@ -1,4 +1,10 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { ApolloServer } from 'apollo-server-micro';
+import { gql } from '@apollo/client';
+import GraphQLJSON from 'graphql-type-json';
+import { typeDefs } from './apollo/server/schema';
+import { LIST_MODELS, GET_MODEL } from './apollo/client/graphql/model';
+import { LIST_VIEWS } from './apollo/client/graphql/view';
 import { DiagramResolver } from './apollo/server/resolvers/diagramResolver';
 import { AskingService } from './apollo/server/services/askingService';
 import { ProjectService } from './apollo/server/services/projectService';
@@ -184,6 +190,248 @@ describe('native bound-project business consumers', () => {
       resolver: new DiagramResolver(),
     };
   };
+  describe('original never-configured model metadata consumers', () => {
+    let previous: string | undefined;
+    const manifest = { models: [{ name: 'model11' }], views: [] };
+    const queries = {
+      listModels: LIST_MODELS,
+      model: GET_MODEL,
+      listViews: LIST_VIEWS,
+      view: gql`
+        query View($where: ViewWhereUniqueInput!) {
+          view(where: $where) {
+            id
+            name
+            statement
+            displayName
+          }
+        }
+      `,
+      getMDL: gql`
+        query MDL($hash: String!) {
+          getMDL(hash: $hash) {
+            hash
+            mdl
+          }
+        }
+      `,
+    };
+    const read = async (operation: keyof typeof queries) => {
+      const graphql = new ApolloServer({
+        typeDefs,
+        resolvers: {
+          JSON: GraphQLJSON,
+          Query: {
+            listModels: resolver.listModels,
+            model: resolver.getModel,
+            listViews: resolver.listViews,
+            view: resolver.getView,
+            getMDL: resolver.getMDL,
+          },
+        },
+        context: () => ctx,
+      });
+      try {
+        return await graphql.executeOperation({
+          query: queries[operation],
+          variables: {
+            where: { id: operation === 'view' ? 21 : 11 },
+            hash: 'original-standalone-hash',
+          },
+        });
+      } finally {
+        await graphql.stop();
+      }
+    };
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeHumanToken;
+      delete ctx.nativeIdentityScope;
+      jest.mocked(loadQueryDelivery).mockClear();
+      const model = {
+        id: 11,
+        projectId,
+        referenceName: 'model11',
+        displayName: 'Original model',
+        sourceTableName: 'original_table',
+        refSql: '',
+        cached: false,
+        properties: '{}',
+      };
+      ctx.modelRepository = repository([model]);
+      ctx.modelRepository.findAllBy.mockResolvedValue([model]);
+      ctx.viewRepository = repository([
+        {
+          id: 21,
+          projectId,
+          name: 'originalView',
+          statement: 'SELECT original',
+        },
+      ]);
+      ctx.viewRepository.findAllBy.mockResolvedValue([
+        {
+          id: 21,
+          projectId,
+          name: 'originalView',
+          statement: 'SELECT original',
+        },
+      ]);
+      ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue([
+        {
+          id: 31,
+          modelId: 11,
+          displayName: 'ID',
+          referenceName: 'id',
+          sourceColumnName: 'id',
+          type: 'INTEGER',
+          isCalculated: false,
+          notNull: false,
+          properties: '{}',
+        },
+      ]);
+      ctx.deployRepository = repository([
+        {
+          id: 61,
+          projectId,
+          hash: 'original-standalone-hash',
+          manifest,
+          // The original standalone deployment predates platform provenance.
+        },
+      ]);
+    });
+    afterEach(() => {
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    it.each(Object.keys(queries) as (keyof typeof queries)[])(
+      'serves the actual original %s GraphQL body without fabricated platform identity or Resource',
+      async (operation) => {
+        const result = await read(operation);
+        expect(result.errors).toBeUndefined();
+        if (operation === 'getMDL')
+          expect(result.data.getMDL).toEqual({
+            hash: 'original-standalone-hash',
+            mdl: Buffer.from(JSON.stringify(manifest)).toString('base64'),
+          });
+        else {
+          expect(result.data[operation]).toBeTruthy();
+          if (operation === 'model')
+            expect(result.data.model).toMatchObject({
+              displayName: 'Original model',
+              fields: [{ referenceName: 'id' }],
+            });
+          if (operation === 'view')
+            expect(result.data.view).toMatchObject({
+              id: 21,
+              statement: 'SELECT original',
+            });
+        }
+        expect(loadQueryDelivery).not.toHaveBeenCalled();
+        expect(authorize).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        expect(ctx.modelRepository.createOne).not.toHaveBeenCalled();
+        expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['', 'invalid-controlled-delivery'])(
+      'does not treat defined configuration %p as the independent original model mode',
+      async (value) => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = value;
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(
+            new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+          );
+        for (const operation of Object.keys(
+          queries,
+        ) as (keyof typeof queries)[]) {
+          const result = await read(operation);
+          expect(result.errors).toBeDefined();
+          expect(result.data).toBeNull();
+        }
+        expect(authorize).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      'scope-only',
+      'token-only',
+      'both-heads',
+      'empty-scope',
+      'empty-token',
+    ])(
+      'refuses %s without a configured binding instead of borrowing the standalone current project',
+      async (mode) => {
+        if (mode === 'empty-scope') ctx.nativeIdentityScope = '';
+        else if (mode === 'empty-token') ctx.nativeHumanToken = '';
+        else {
+          if (mode !== 'token-only') ctx.nativeIdentityScope = 'a'.repeat(64);
+          if (mode !== 'scope-only')
+            ctx.nativeHumanToken = 'verified-native-token';
+        }
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(
+            new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+          );
+        const result = await read('listModels');
+        expect(result.errors).toBeDefined();
+        expect(result.data).toBeNull();
+        expect(loadQueryDelivery).toHaveBeenCalledTimes(1);
+        expect(
+          ctx.modelColumnRepository.findColumnsByModelIds,
+        ).not.toHaveBeenCalled();
+        expect(authorize).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['listModels', 'model'] as const)(
+      'withholds the original standalone %s response if a binding appears during native column loading',
+      async (operation) => {
+        const columns =
+          ctx.modelColumnRepository.findColumnsByModelIds.getMockImplementation();
+        ctx.modelColumnRepository.findColumnsByModelIds.mockImplementation(
+          async (...args) => {
+            const result = await columns(...args);
+            process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+              'new-controlled-binding';
+            return result;
+          },
+        );
+        const result = await read(operation);
+        expect(result.errors).toBeDefined();
+        expect(result.data).toBeNull();
+        expect(authorize).not.toHaveBeenCalled();
+      },
+    );
+    it('withholds the original standalone view list if a binding appears during its native read', async () => {
+      const find = ctx.viewRepository.findAllBy.getMockImplementation();
+      ctx.viewRepository.findAllBy.mockImplementation(async (...args) => {
+        const rows = await find(...args);
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-controlled-binding';
+        return rows;
+      });
+      const result = await read('listViews');
+      expect(result.errors).toBeDefined();
+      expect(result.data).toBeNull();
+      expect(authorize).not.toHaveBeenCalled();
+    });
+    it('refuses a platform-correlated MDL request rather than claiming standalone evidence', async () => {
+      await expect(
+        resolver.getMDL(
+          null,
+          {
+            hash: 'original-standalone-hash',
+            queryScope: 'a'.repeat(64),
+            generation: 1,
+          },
+          ctx,
+        ),
+      ).rejects.toThrow('NATIVE_AUTHENTICATION_REQUIRED');
+      expect(authorize).not.toHaveBeenCalled();
+    });
+  });
 
   it('returns the original complete diagram through its real builder after read authorizing every captured model and view', async () => {
     const { resolver: diagram } = diagramContext();
