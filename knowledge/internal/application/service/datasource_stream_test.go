@@ -86,6 +86,7 @@ func TestStreamHandler_EmitClassifiesDeletedAndFailed(t *testing.T) {
 	knowledgeSvc := &sweepFakeKS{repo: knowledgeRepo}
 	h := newStreamHandler(&DataSourceService{knowledgeService: knowledgeSvc}, ds, result, &types.SyncLog{})
 
+	require.NoError(t, h.Emit(context.Background(), types.FetchedItem{ExternalID: "missing", Title: "No payload"}))
 	require.NoError(t, h.Emit(context.Background(), types.FetchedItem{ExternalID: "gone", IsDeleted: true}))
 	require.Error(t, h.Emit(context.Background(), types.FetchedItem{
 		ExternalID: "bad", Title: "Broken Doc",
@@ -93,6 +94,7 @@ func TestStreamHandler_EmitClassifiesDeletedAndFailed(t *testing.T) {
 	}))
 
 	assert.Equal(t, 1, result.Deleted)
+	assert.Equal(t, 1, result.Skipped, "nil payload without a URL remains absent, not an empty file")
 	assert.Equal(t, 1, result.Failed)
 	require.Len(t, result.Errors, 1)
 	assert.Equal(t, "Broken Doc", result.Errors[0].Title)

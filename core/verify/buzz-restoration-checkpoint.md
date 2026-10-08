@@ -2387,3 +2387,76 @@ ThreadPanelSurface 两个摘要消费者没有转送宿主解析。这不是缺�
 本批未部署、未更新安装包、未运行全仓门禁。业务页面截图仍为零，仅有此前
 两张 OIDC 登录边界图，不拿旧部署证明新源码。固定全树 3307 路径尚未全部
 语义分类，准确未分类数未统计；原版全量恢复及三端实际验收仍未完成。
+
+### 2026-10-08 原私聊草稿来源资料消费者恢复（未部署）
+
+固定源码仍为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/messages/ui/DraftsPanel.tsx::useDraftViewItems` 原本读取
+当前身份及草稿所在频道参与者的真实资料，再经
+`desktop/src/features/sidebar/lib/channelLabels.ts::resolveChannelDisplayLabel`
+显示私聊来源。现有 Native 实现删掉了这条消费链，只显示 `channel.name`，
+因此通用名 DM 未恢复为真实姓名。本批按原模块接回，并非自创私聊页面。
+
+动手前边界与影响：
+
+- 权威：用户原版一致性红线、共源及中文默认要求；现有 Relay 资料读取已
+  支持，属于需恢复的消费者。未给缺少业务生产者的 Inbox 筛选加空入口。
+- 影响：检索实际 `useDraftViewItems`、`toDraftSurfaceItem`、两端原
+  `DraftListSurface`/`DraftDetailSurface` 与现有资料查询、词条生成路径。
+  原 Native `Channel`/`UserProfileLookup` 沿原类型使用；Web 沿受准入的
+  Conversation/participant 事实，不新增手写合同、持久化字段或迁移。
+- 副作用：只恢复显示资料消费，不新增身份/权限/资料权威，不复制消息正文，
+  不使持有凭据或读取到姓名等同资源授权；打开、发送、确认、UNKNOWN 意图
+  禁止删除和现有宿主准入保持原链。资料 fallback 不制造 owner、在线状态。
+- 异常：原通用名检测、排除自身、同名去重、最多三名后余量提示、用户自定
+  群名保留及空参与者返回原名沿固定源码。资料刷新重算来源；只请求有真实
+  草稿的频道参与者，不把不相关频道名单加入请求。未知目的地及执行错误
+  沿原分类/准入处理，无新增状态或重试/对账权威。
+
+本批分类与真实调用：
+
+- 原样保留：恢复的 Native `channelLabels.ts` 对固定原文件的 diff 仅为
+  两行出处注释和共享展示函数 import；通用名/身份/资料/去重逻辑未重写。
+- 共享迁移：把原
+  `desktop/src/features/channels/lib/dmParticipantDisplay.ts` 中实际消费的
+  `getDmParticipantPreview`、`formatDmParticipantDisplayName` 搬到共享
+  `react/conversations/dm-participant-display.ts`；Native 原 resolver 与 Web
+  `InboxDrafts` 均实际调用，仍由原共源草稿列表和详情呈现，不另造布局。
+- 已授权治理/中英适配：Native 复用现有 `useIdentityQuery` 与
+  `useUsersBatchQuery`，Web 仍只在已准入绑定内解析参与者；原 `+N more`
+  提示改为同源 `dm.moreParticipants` 中英词条并沿原工具生成 Dart。
+- 缺失需恢复：只闭合本批草稿来源消费，不据此称整个私聊、Inbox、所有
+  侧栏或原 `dmParticipantDisplay` 其他功能已完整还原。
+
+10 个代码/检查/生成路径合计 `+232/-3`：共享 package.json、i18n.ts、
+dm-participant-display.ts、Dart platform_text.dart；Native channelLabels.ts、
+DraftsPanel.tsx、DraftsPanelSources.test.mjs、原 test-loader-hooks.mjs；Web
+InboxDrafts.tsx、InboxDrafts.test.tsx。生成 reason_text.dart 字节未变。
+
+验证沿原 4CPU/8GiB SDK/cache，运行前核对进程、CPU/内存与 Data；未新建
+镜像、安装依赖、全树复制、编译发布。日志根沿前小节同一个
+`workflow-native-template.s3JDP1/`：
+
+- `dm-draft-sources-first.log` 失败：原 Native Node loader 的 emoji-mart
+  inert stub 缺实际依赖的 Picker 导出；只在原 loader 补该命名导出，不替代
+  业务。随后 `dm-draft-sources-candidate.log` 为新检查 DOM Event 环境缺失，
+  `13 passed / 2 failed`；修正检查环境后继续，不把两次失败算验收。
+- `dm-draft-sources-checked.log`（session 97655）整链退出 0：Native
+  `15 passed`（原谓词 13 + 中英实际消费者 2）、Web `7 passed`、Native/
+  Web/shared production/shared test 四个 tsc --noEmit。Web 原有三条
+  DraftEditor act 警告如实留在日志，不称零警告。
+- 私有 Native 副本断开原 resolver 后，抓到两项 `DM` 不等于真实姓名的
+  断言失败。首次失败 fixture 没在 finally 卸载而留定时器，仅终止本次
+  检查子进程并修正清理；`dm-draft-sources-native-mutation-cleanup.log`
+  重新运行自行退出 1，`2 failed`。未变更正式生产实现。
+- 私有 Web 已装共享展示函数把三名误改为四名，
+  `dm-draft-sources-web-mutation.log` 退出 1，`2 failed / 5 skipped`。
+- 恢复两私有破坏后，`dm-draft-sources-restored.log`（session 9493）整链
+  退出 0：Native 实际消费者 `2 passed`、Web `7 passed`、既有 i18n
+  `--check` 通过。10 个正式输入与 SDK、两宿主共享包三文件共 16 次 cmp
+  均退出 0，相关路径 git diff --check 退出 0。
+
+本批源码仍未部署、未更新安装包、未运行全仓门禁。有效业务截图仍为零，
+已有两张 OIDC 边界图不能证明新源码；Windows/Mobile 实机未验收。
+3307 是既有全树差异清单快照，不是已分类完成数；准确未分类数未统计，
+全量原版一致性、逐页面视觉复核和全部缺项尚未闭合，不称 100% 还原。

@@ -358,12 +358,15 @@ func (s *fileStorageApplicationService) CreateKnowledgeFromFileAtID(ctx context.
 }
 
 func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T) {
-	for _, stage := range []string{"parse-pending", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing"} {
+	for _, stage := range []string{"parse-pending", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing"} {
 		t.Run(stage, func(t *testing.T) {
 			source, node, root := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			receiverResource := uuid.NewString()
 			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
 			body := []byte("original native source body")
+			if stage == "empty-file" || stage == "empty-file-parse-failed" {
+				body = []byte{}
+			}
 			ref := map[string]string{"resourceId": source, "nativeObjectRef": node, "nativeRevision": "source-revision", "displayName": "doc.txt", "mediaType": "text/plain"}
 			items, err := json.Marshal([]map[string]string{ref})
 			require.NoError(t, err)
@@ -506,6 +509,9 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			require.Equal(t, 1, repo.createCalls)
 			require.Equal(t, 1, storage.saveCalls)
 			require.Equal(t, 1, queue.calls)
+			require.EqualValues(t, len(body), repo.createdKnowledge.FileSize)
+			require.Equal(t, fileStorageDigest(body), repo.createdKnowledge.GetMetadata()["source_content_sha256"])
+			require.Equal(t, fmt.Sprint(len(body)), repo.createdKnowledge.GetMetadata()["source_content_bytes"])
 			require.Zero(t, readReceipts)
 			retained, err := ds.ParseSyncCursor()
 			require.NoError(t, err)
@@ -522,7 +528,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			repo.createdKnowledge.ParseStatus = types.ParseStatusCompleted
 			repo.createdKnowledge.UpdatedAt = time.Now().Add(-time.Second).UTC()
 			switch stage {
-			case "parse-failed":
+			case "parse-failed", "empty-file-parse-failed":
 				repo.createdKnowledge.ParseStatus = types.ParseStatusFailed
 			case "provenance-drift":
 				repo.createdKnowledge.FileSize++
@@ -534,7 +540,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			calls, peps := sourceCalls, pepCalls
 			before := ds.LastSyncCursor
 			next, err := connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
-			if stage == "receipt-ack-lost" || stage == "receipt-refused" || stage == "usage-pending" || stage == "parse-failed" || stage == "provenance-drift" || stage == "creation-missing" {
+			if stage == "receipt-ack-lost" || stage == "receipt-refused" || stage == "usage-pending" || stage == "parse-failed" || stage == "empty-file-parse-failed" || stage == "provenance-drift" || stage == "creation-missing" {
 				require.Error(t, err)
 				require.Nil(t, next)
 				require.Equal(t, before, ds.LastSyncCursor)

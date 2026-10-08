@@ -12,6 +12,7 @@ import { ChannelPane } from "./ChannelPane";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { ForumPane } from "./ForumPane";
 import { MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 
 /** Existing Web composer namespaces, resolved against the stored destination (never inferred from a secret or a fallback scope). */
 export function draftMessageTarget(entry: DraftListEntry): { messageType: WebMessageType; parentEventId?: string; threadRootId?: string; editEventId?: string } | null {
@@ -67,7 +68,8 @@ export function InboxDrafts({ principalId, workspaces, members, participants, en
   const items: DraftSurfaceItem[] = entries.map((entry) => {
     const target = destination(entry); const supported = draftMessageTarget(entry) !== null;
     const createdAt = Date.parse(entry.draft.createdAt);
-    return { entry, channelLabel: target?.kind === "workspace" ? `#${target.workspace.name}` : target?.kind === "conversation" ? target.conversation.participantPrincipalIds.filter((id) => id !== principalId).map(id => participants.find(person => person.principalId === id)?.displayName || id).join(", ") : t("drafts.unknownChannel"),
+    const dmLabels = target?.kind === "conversation" ? [...new Set(target.conversation.participantPrincipalIds.filter((id) => id !== principalId).map(id => participants.find(person => person.principalId === id)?.displayName || id))] : [];
+    return { entry, channelLabel: target?.kind === "workspace" ? `#${target.workspace.name}` : target?.kind === "conversation" ? formatDmParticipantDisplayName(dmLabels.map(displayName => ({ displayName })), t) : t("drafts.unknownChannel"),
       createdAt: Number.isFinite(createdAt) ? formatItemTimestamp(createdAt / 1000, { withTime: true }) : t("platform.time.unavailable"), isPrivate: target?.kind === "conversation", isOrphaned: false,
       canOpen: target !== null && supported, canSend: target !== null && supported };
   });

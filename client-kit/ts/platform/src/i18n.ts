@@ -331,6 +331,7 @@ export const platformMessages = {
   "dm.verifyPerson": { en: "Verify {name}", "zh-CN": "核验{name}的身份" },
   "dm.messagePerson": { en: "Message {name}", "zh-CN": "发送消息给{name}" },
   "dm.messagePeople": { en: "Message {count} people", "zh-CN": "向{count}人发送消息" },
+  "dm.moreParticipants": { en: "+{count} more", "zh-CN": "+{count} 人" },
   "dm.to": { en: "To", "zh-CN": "收件人" },
   "dm.toLabel": { en: "To:", "zh-CN": "收件人：" },
   "dm.loadingPeople": { en: "Loading people", "zh-CN": "正在读取成员" },

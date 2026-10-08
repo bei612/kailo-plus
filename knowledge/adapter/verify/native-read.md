@@ -1615,3 +1615,163 @@ controlled checks. There are no client, menu, authentication, credential,
 global-contract or configuration-switch changes. Whole-project/full and docs
 checks, commit/push and deployment belong to the integrated main batch and
 were not run here.
+
+## Native self-pull does not skip authorized zero-byte files (2026-10-08)
+
+Authority and cause: `.design/13` §4.4 keeps file creation, parsing and its
+terminal evidence in the native receiver. The fixed read-only WeKnora source
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::{DataSourceService.applyFetchedItem,DataSourceService.ingestItem,bytesToFileHeader}`
+and `internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromFile`
+were rechecked. Original multipart creation and hashing accept zero bytes;
+the streaming consumer's length-based presence checks discarded such files.
+The authorized Cells reader, receiver digest/size checks and Applying cursor
+already accept zero bytes. Thus a saved Applying reference could be left
+without ever calling native creation, and later observation correctly found
+no Knowledge rather than inventing successful import evidence.
+
+Impact: the original `applyFetchedItem` and `ingestItem` now distinguish nil
+content (no fetched payload) from an explicitly fetched empty byte slice. Both
+nonempty and zero-byte payloads enter the existing native file-creation path.
+Missing nil content without a URL still skips, connector fetch errors still
+fail, URL-only items keep their native URL path, and deletions are unchanged.
+The native FileHeader, quota check, content hash, stable creation ID, storage,
+parse queue, parse readiness, original receipts and committed usage remain the
+consumers; no new operation, cursor field, database table, platform body copy,
+secret, configuration switch or authority was introduced. Existing persisted
+data and contract formats do not change.
+
+Failure and boundary behavior: zero bytes do not mean successful parsing. The
+original Applying checkpoint precedes native storage; pending parsing retains
+the old groups and sync clock. Failed parsing, missing creation, mismatched
+provenance or unknown/refused receipt still retain the original reference and
+cannot authorize another source read, upload or parse enqueue. Only the
+original native completed parse and matching receipts/usage can advance the
+cursor. Existing sync/parse retry, timeout and failure isolation apply; this
+increment creates no new long-lived state or error classification.
+
+Implementation preceded checks. The original
+`TestFileStoragePendingApplicationResumesOriginalNativeCreation` now also runs
+zero-byte content through the real Connector, stream handler and native
+`CreateKnowledgeFromFileAtID`, testing both completed native observation and
+failed native parsing. It checks the actual native size, digest and retained
+creation identity. The original stream classification check also confirms
+that a nil payload remains skipped. HTTP and repository/file/queue boundaries
+are controlled, and native parse completion is set by the check; this is not
+live Cells/WeKnora or parser E2E acceptance.
+
+The same existing 4 CPU/8 GiB Go 1.26.8 SDK and module/build caches described
+above were reused, with no dependency fetch or new image/tree. Pressure and
+processes were checked before the run; only three source inputs were copied
+and byte-compared. The original narrow command above exited 0: **15 top-level
+checks and 26 subchecks passed, none skipped**, package runtime `0.710s`.
+`gofmt -d` produced no output and `git diff --check` exited 0. The log is
+`native-self-pull-empty-file-positive-20261008.log` in the same native SDK
+receipt directory, SHA-256
+`d5c96662afe170811b35179bc64288aa6b8f6e93456041d219ff24b45e4eaf66`.
+
+The initial positive run stopped with only about 52 MiB of Data available, so
+active mutation and restored verification were not accepted at that point.
+They are now completed by the combined native self-pull check below. This
+does not add image publication, live import, release/binding activation,
+deployment, browser/device acceptance, whole-project/docs checks or a
+commit/push by this subtask.
+
+## Confirmed native applications survive the next sync batch (2026-10-08)
+
+Authority and cause: `.design/13` §4.4 keeps import grouping, the cursor,
+native task ownership, readiness and retirement in the receiving service.
+The fixed read-only WeKnora commit
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::DataSourceService.ManualSync`
+and
+`internal/application/repository/knowledge.go::knowledgeRepository.FindByDataSourceExternalID`
+were rechecked. A later manual sync has its own SyncLog ID. The prior Cells
+consumer observed a saved Applying native creation and submitted its old
+receipts, but did not retain that confirmed object in Groups before new
+discovery. A changed/empty source could therefore omit the object from the
+next desired set and forget the only retirement reference on completion.
+Revocation could instead leave a completed application stuck as Applying.
+
+Impact: `internal/application/service/datasource_file_storage.go::{fileStorageConnector.observeApplication,fileStorageConnector.FetchStream}`
+now returns the original ready Knowledge ID, native revision and source
+references only after the existing exact provenance, original read receipts
+and committed-usage checks. FetchStream retains that group and removes its
+confirmed Applying entry through the existing native Checkpoint before new
+discovery. A conflicting retained native ID fails before old read admission.
+Only the receiver's existing cursor/reference metadata changes; there is no
+new state, database model, public contract, migration, configuration switch,
+platform body copy, authority or credentials. Existing cursor formats remain
+readable; no ID is guessed for historical cursors that already lost evidence.
+
+Side effects: observing a prior application does not authorize source reads,
+file creation, parsing or a new native deletion. It uses the saved prior batch
+and the actual original Knowledge. A source refusal preserves the confirmed
+group and old sync clock. A full authorized empty enumeration can retire it
+only through the existing fresh receiver PEP and original native delete task;
+the task identity is checkpointed before dispatch, and a retry observes that
+same task rather than issuing another deletion. The desired baseline and
+clock advance only after native terminal evidence, original receipts and
+committed usage. No unconfirmed result is rendered as success.
+
+Boundaries: the added original-service check exercises different old/new
+SyncLog IDs, source revocation, complete empty-source retirement and the same
+saved task's late completion, checkpoint failure, refused receipt, pending
+usage and a conflicting existing group. Failed admission/receipt/checkpoint
+does not create a new source read or write. Existing native sync/parse retry,
+timeout and failure isolation remain unchanged; no new long-lived state or
+error category was added. HTTP and native repository/task boundaries are
+controlled; these checks do not run live Cells, the parser, Redis/Asynq or a
+database, and do not establish deployed cross-service acceptance.
+
+Implementation preceded verification. The same existing SDK image
+`golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`
+ran Go `go1.26.8 linux/amd64` as UID/GID 1000/1000. HostConfig and cgroup
+readback confirmed 4 CPU, 8 GiB memory and no additional swap. Before each
+run, existing processes, CPU/memory/I/O pressure and Data free space were
+checked. At 341 MiB the run was deferred rather than using the overlay /tmp;
+after the main batch recovered its own disposable build artifacts, the
+actual preflight saw 2.5 GiB. Both TMPDIR and GOTMPDIR were explicitly set to
+the private existing-cache directory below, backed by `/volumes/data`.
+Only the five changed Go inputs were copied to the existing candidate and
+byte-compared; no dependency fetch, new SDK/image/database/tree or cache
+purge was performed by this subtask.
+
+```sh
+TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOTMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/application/service \
+  -run 'TestFileStorage|TestStreamHandler|TestDataSourceReplacement|TestCreateKnowledgeFromFileAtID' \
+  -count=1 -v
+```
+
+Positive and restored runs both exited 0: **16 top-level checks and 32
+subchecks passed, none failed or skipped**, package runtimes `1.408s` and
+`0.537s`. The same target in the private candidate restored the old empty-file
+length checks and removed the real Applying-to-Groups/checkpoint block. It
+exited 1 with **14 top-level checks passed, 2 failed; 27 subchecks passed,
+5 failed**. Both empty-file stages observed zero native creates instead of
+one; revoked-source recovery retained its completed Applying entry; an empty
+source incorrectly returned success without retirement; and a failed
+checkpoint permitted new discovery. The original failure output is retained.
+All five candidate inputs were then byte-restored to formal source before
+the same full narrow target passed again. SDK `gofmt -d` produced no output,
+`git diff --check` exited 0, cgroup OOM counters stayed zero and the private
+Data temporary directory was empty after completion.
+
+Logs in the same existing native SDK receipt directory:
+
+- `native-self-pull-convergence-positive-20261008.log`, SHA-256
+  `dd6811a7bbd0796a0240b324b1aca0d6c285fd63c97ddb0a698406ee9adcd456`.
+- `native-self-pull-convergence-mutation-20261008.log`, SHA-256
+  `d0520c83ceaff3976d287ad25cd1e94731e03ff4a67d4868000f43895dd906d4`.
+- `native-self-pull-convergence-restored-20261008.log`, SHA-256
+  `6007dd1b35ad763951ab8b1a5726a739aae070bfe0836f64a50001925a02d9e3`.
+
+This batch changes no client, menu, authentication policy, platform contract
+or deployment configuration. Image publication, actual component
+release/binding activation, live source revision replacement and parser/delete
+completion with both receipts/usage remain separate delivery evidence.
+Whole-project/full/docs checks, commit/push, deployment, screenshots and
+device acceptance were not run by this subtask.

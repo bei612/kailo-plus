@@ -5,14 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -871,6 +877,205 @@ func TestDataSourceReplacementLostAckAndCASFailureNeverRepeatDelete(t *testing.T
 	assert.Equal(t, 1, ks.starts)
 	assert.Equal(t, 1, ks.observations)
 	assert.Empty(t, repo.hardDeleted)
+}
+
+type recoveredFileStorageKnowledge struct {
+	*fileStorageApplicationService
+	t                    *testing.T
+	ds                   *types.DataSource
+	key                  string
+	completed            bool
+	starts, observations int
+}
+
+func (s *recoveredFileStorageKnowledge) StartKnowledgeDeleteTask(_ context.Context, kb, id, revision, task string) (map[string]any, error) {
+	s.starts++
+	cursor, err := s.ds.ParseSyncCursor()
+	require.NoError(s.t, err)
+	state, err := fileStorageState(cursor)
+	require.NoError(s.t, err)
+	intent := state.Retiring[s.key]
+	require.Equal(s.t, task, intent.Key, "the original native task must be checkpointed before dispatch")
+	require.Equal(s.t, id, intent.Group.KnowledgeID)
+	require.Equal(s.t, revision, intent.Group.Revision)
+	return map[string]any{"state": "RUNNING", "task_id": task}, nil
+}
+
+func (s *recoveredFileStorageKnowledge) ObserveKnowledgeDeleteTask(_ context.Context, kb, id, revision, task string) (map[string]any, error) {
+	s.observations++
+	require.True(s.t, s.completed)
+	return map[string]any{"state": "SUCCEEDED", "task_id": task, "knowledge_id": id,
+		"knowledge_base_id": kb, "native_revision": revision, "completed_at": time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)}, nil
+}
+
+func TestFileStorageRecoveredApplicationSurvivesNextBatchAndSourceRevocation(t *testing.T) {
+	for _, outcome := range []string{"source-revoked", "source-empty", "checkpoint-failed", "receipt-failed", "usage-pending", "group-conflict"} {
+		t.Run(outcome, func(t *testing.T) {
+			source, node, receiver, root := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1, syncDeletions: true}
+			oldBatch, nativeID, key := uuid.NewString(), uuid.NewString(), "original-hash:txt"
+			body := []byte("original source bytes")
+			ref := fileStorageTestWire(t, map[string]string{"resourceId": source, "nativeObjectRef": node, "nativeRevision": "original-source-revision", "displayName": "doc.txt", "mediaType": "text/plain"})
+			refs, err := json.Marshal([]map[string]json.RawMessage{ref})
+			require.NoError(t, err)
+			metadata, err := json.Marshal(map[string]string{"datasource_id": run.dataSourceID, "external_id": key,
+				"source_content_sha256": fileStorageDigest(body), "source_references": string(refs)})
+			require.NoError(t, err)
+			native := &types.Knowledge{ID: nativeID, TenantID: 1, KnowledgeBaseID: run.knowledgeBaseID, FileHash: "original-hash", FileType: "txt",
+				FileSize: int64(len(body)), ParseStatus: types.ParseStatusCompleted, UpdatedAt: time.Now().Add(-time.Second).UTC(), Metadata: types.JSON(metadata)}
+			pending := fileStorageApplication{KnowledgeID: nativeID, BatchID: oldBatch, Digest: fileStorageDigest(body), Bytes: int64(len(body)), References: []map[string]json.RawMessage{ref}}
+			state := fileStorageCursor{Groups: map[string]fileStorageGroup{}, Retiring: map[string]fileStorageRetirement{}, Applying: map[string]fileStorageApplication{key: pending}}
+			if outcome == "group-conflict" {
+				state.Groups[key] = fileStorageGroup{KnowledgeID: uuid.NewString(), Revision: "other-native-revision", References: pending.References}
+			}
+			at := time.Now().Add(-time.Hour).UTC()
+			fields := fileStorageTestWire(t, state)
+			cursor := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: map[string]any{}}
+			for name, raw := range fields {
+				var value any
+				require.NoError(t, json.Unmarshal(raw, &value))
+				cursor.ConnectorCursor[name] = value
+			}
+			initial, err := cursor.ToJSON()
+			require.NoError(t, err)
+			ds := &types.DataSource{ID: run.dataSourceID, LastSyncCursor: initial}
+			dsRepo := &recordingDSRepo{}
+			if outcome == "checkpoint-failed" {
+				dsRepo.updateErr = errors.New("native checkpoint unavailable")
+			}
+			repo := &fileStorageApplicationRepo{createKnowledgeFileRepoStub: createKnowledgeFileRepoStub{createdKnowledge: native}}
+			knowledge := &recoveredFileStorageKnowledge{fileStorageApplicationService: &fileStorageApplicationService{repo: repo}, t: t, ds: ds, key: key}
+			readKey := fileStorageKey(oldBatch, source, node, "original-source-revision")
+			retireKey := fileStorageKey(run.syncLogID, run.dataSourceID, key, nativeID, native.UpdatedAt.Format(time.RFC3339Nano), "retire")
+			receipts := map[string]map[string]any{}
+			var readGrants, discoveries, sourceCalls, receiverPEPs int
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/oidc" {
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
+				var request map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				if r.URL.Path != "/execute" {
+					require.Equal(t, "Bearer receiver-service-token", r.Header.Get("Authorization"))
+				}
+				switch r.URL.Path {
+				case "/service/v1/adapter/request_read_grant":
+					id := request["idempotencyKey"].(string)
+					response := map[string]any{"operationId": id, "actionExecutionId": id, "sourceBindingId": source}
+					if id == readKey {
+						readGrants++
+						require.Equal(t, oldBatch, request["nativeBatch"].(map[string]any)["batchId"])
+						response["outcome"] = "PENDING"
+					} else {
+						discoveries++
+						require.Equal(t, run.syncLogID, request["nativeBatch"].(map[string]any)["batchId"])
+						require.NotEqual(t, oldBatch, run.syncLogID)
+						if outcome != "source-empty" {
+							w.WriteHeader(http.StatusForbidden)
+							return
+						}
+						var input any
+						require.NoError(t, json.Unmarshal([]byte(request["inputJson"].(string)), &input))
+						args, _ := json.Marshal(map[string]any{"actionKey": request["actionKey"], "idempotencyKey": id,
+							"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root, "input": input}})
+						receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": receiver, "authorizationTargetNativeRef": run.knowledgeBaseID,
+							"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": run.syncLogID, "sourceReadActionExecutionId": id}})
+						response["endpoint"], response["argumentsJson"], response["actionToken"], response["expiresAt"] = server.URL+"/execute", string(args), "source-only-token", time.Now().Add(time.Hour).Unix()
+						response["receiverWrite"] = map[string]any{"actionExecutionId": fileStorageKey(id, "receiver"), "actionToken": "receiver-only-token", "expiresAt": time.Now().Add(time.Hour).Unix(), "argumentsJson": string(receiverArgs)}
+						if id == retireKey && knowledge.starts > 0 {
+							response = map[string]any{"operationId": id, "actionExecutionId": id, "sourceBindingId": source, "outcome": "PENDING"}
+						}
+					}
+					if saved := receipts[id]; saved != nil && !(outcome == "usage-pending" && id == readKey) {
+						response = map[string]any{"operationId": id, "actionExecutionId": id, "sourceBindingId": source, "outcome": "COMPLETED", "receiverReceipt": saved}
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+				case "/service/v1/adapter/read_receipt":
+					if outcome == "receipt-failed" {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					id := request["idempotencyKey"].(string)
+					receipts[id] = request
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": id, "receiptDigest": fileStorageDigest([]byte("receipt"))}))
+				case "/service/v1/adapter/pep_check":
+					receiverPEPs++
+					var args map[string]any
+					require.NoError(t, json.Unmarshal([]byte(request["argumentsJson"].(string)), &args))
+					id := args["input"].(map[string]any)["sourceReadActionExecutionId"].(string)
+					require.NotEqual(t, readKey, id, "observing the prior creation is not authorization for a new write")
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": id, "actionExecutionId": fileStorageKey(id, "receiver"), "authorizationMinZedToken": "confirmed"}))
+				case "/execute":
+					sourceCalls++
+					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))
+					require.Equal(t, "file_storage.list@v1", request["actionKey"], "recovery must not re-read or upload source bytes")
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": request["idempotencyKey"],
+						"items": []any{}, "listingDigest": fileStorageDigest([]byte("[]")), "nativeRevision": fileStorageDigest([]byte("[]"))}))
+				default:
+					t.Errorf("unexpected recovery endpoint %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "service-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-service-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: uuid.NewString(), ReceiverResourceID: receiver, NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID,
+				CorePepURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1, ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1})
+			require.NoError(t, err)
+			connector := &fileStorageConnector{transport: transport, knowledge: knowledge}
+			svc := &DataSourceService{dsRepo: dsRepo, syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}
+			ctx := context.WithValue(context.Background(), fileStorageRunKey{}, run)
+			input := &types.DataSourceConfig{ResourceIDs: []string{source}}
+			next, err := connector.FetchStream(ctx, input, cursor, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			require.Error(t, err)
+			require.Nil(t, next)
+			require.Zero(t, repo.createCalls)
+			if outcome == "source-revoked" || outcome == "source-empty" {
+				retained, err := ds.ParseSyncCursor()
+				require.NoError(t, err)
+				tracked, err := fileStorageState(retained)
+				require.NoError(t, err)
+				require.Empty(t, tracked.Applying)
+				require.Equal(t, nativeID, tracked.Groups[key].KnowledgeID)
+				require.Equal(t, native.UpdatedAt.Format(time.RFC3339Nano), tracked.Groups[key].Revision)
+				require.Equal(t, at, retained.LastSyncTime)
+				if outcome == "source-empty" {
+					require.Equal(t, 1, knowledge.starts)
+					require.Len(t, tracked.Retiring, 1)
+					knowledge.completed = true
+					next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+					require.NoError(t, err)
+					final, err := fileStorageState(next)
+					require.NoError(t, err)
+					require.Empty(t, final.Groups)
+					require.Empty(t, final.Applying)
+					require.Empty(t, final.Retiring)
+					require.True(t, next.LastSyncTime.After(at))
+					require.Equal(t, 1, knowledge.starts)
+					require.Equal(t, 1, knowledge.observations)
+					require.Equal(t, 2, sourceCalls)
+				} else {
+					require.Zero(t, knowledge.starts)
+					require.Zero(t, sourceCalls)
+					require.Zero(t, receiverPEPs)
+				}
+			} else {
+				require.Equal(t, initial, ds.LastSyncCursor)
+				require.Empty(t, dsRepo.updated)
+				require.Zero(t, discoveries)
+				require.Zero(t, sourceCalls)
+				require.Zero(t, receiverPEPs)
+				require.Zero(t, knowledge.starts)
+				if outcome == "group-conflict" {
+					require.Zero(t, readGrants)
+				}
+			}
+		})
+	}
 }
 
 func TestDataSourceEmbeddedImageUnconfirmedReplacementRetainsCursor(t *testing.T) {

@@ -51,8 +51,8 @@ type fileStorageCursor struct {
 	Retiring map[string]fileStorageRetirement  `json:"retiring"`
 	Applying map[string]fileStorageApplication `json:"applying,omitempty"`
 	// Discovery receipts acknowledge a persisted native observation, not a
-	// prematurely replaced desired set. Groups stays the previous baseline
-	// until every required receiver receipt has been accepted.
+	// prematurely replaced desired set. Groups retains previous materializations
+	// and fully confirmed applications until their native retirement completes.
 	Discovery map[string]fileStorageSavedListing `json:"discovery,omitempty"`
 }
 
@@ -323,7 +323,7 @@ func (c *fileStorageConnector) completedNative(ctx context.Context, run fileStor
 	return native, receipt, nil
 }
 
-func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileStorageRun, key string, item fileStorageApplication) error {
+func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileStorageRun, key string, item fileStorageApplication) (fileStorageGroup, error) {
 	native, err := c.knowledge.GetKnowledgeByID(ctx, item.KnowledgeID)
 	refs, marshalErr := json.Marshal(item.References)
 	if err != nil || marshalErr != nil || native == nil || native.ID != item.KnowledgeID ||
@@ -332,7 +332,7 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 		native.FileHash+":"+native.FileType != key || native.FileSize != item.Bytes ||
 		native.GetMetadata()["datasource_id"] != run.dataSourceID || native.GetMetadata()["external_id"] != key ||
 		native.GetMetadata()["source_content_sha256"] != item.Digest || native.GetMetadata()["source_references"] != string(refs) {
-		return fmt.Errorf("original native file application is not ready or its provenance requires reconciliation")
+		return fileStorageGroup{}, fmt.Errorf("original native file application is not ready or its provenance requires reconciliation")
 	}
 	priorRun := run
 	priorRun.syncLogID = item.BatchID
@@ -342,13 +342,13 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.read@v1", c.transport.config.ReadActionVersion,
 			readKey, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, ref)
 		if err != nil {
-			return err
+			return fileStorageGroup{}, err
 		}
 		if err := c.transport.receipt(ctx, grant, native.ID, native.UpdatedAt.UTC().Format(time.RFC3339Nano), item.Digest, item.Bytes, native.UpdatedAt.UTC()); err != nil {
-			return err
+			return fileStorageGroup{}, err
 		}
 	}
-	return nil
+	return fileStorageGroup{KnowledgeID: native.ID, Revision: native.UpdatedAt.UTC().Format(time.RFC3339Nano), References: item.References}, nil
 }
 
 func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataSourceConfig, previous *types.SyncCursor, h datasource.StreamHandler) (*types.SyncCursor, error) {
@@ -369,7 +369,19 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	// native identity is observed before new discovery; never re-upload to make
 	// an uncertain old invocation appear complete.
 	for key, item := range state.Applying {
-		if err := c.observeApplication(ctx, run, key, item); err != nil {
+		if prior, exists := state.Groups[key]; exists && prior.KnowledgeID != item.KnowledgeID {
+			return nil, fmt.Errorf("native application conflicts with its retained source group")
+		}
+		group, err := c.observeApplication(ctx, run, key, item)
+		if err != nil {
+			return nil, err
+		}
+		// A later native sync has another batch ID and may discover a changed
+		// source revision. Retain this confirmed object before that discovery,
+		// so it remains eligible for the original create-ready-retire flow.
+		state.Groups[key] = group
+		delete(state.Applying, key)
+		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
 			return nil, err
 		}
 	}

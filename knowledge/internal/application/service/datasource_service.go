@@ -923,7 +923,9 @@ func (s *DataSourceService) applyFetchedItem(
 		return
 	}
 
-	if len(item.Content) == 0 && item.URL == "" {
+	// A non-nil empty payload is a fetched zero-byte file, not a missing
+	// response. It must follow native creation/parsing and its recovery path.
+	if item.Content == nil && item.URL == "" {
 		// Check if this is an error item from the connector (failed to fetch content)
 		if errMsg, hasErr := item.Metadata["error"]; hasErr {
 			logger.Warnf(ctx, "item %q (external_id=%s) fetch failed: %s", item.Title, item.ExternalID, errMsg)
@@ -1341,7 +1343,7 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 	isUpdate := existing != nil
 
 	// Case 1: content already fetched → build a FileHeader from bytes and call CreateKnowledgeFromFile
-	if len(item.Content) > 0 {
+	if item.Content != nil {
 		fh, err := bytesToFileHeader(item.Content, item.FileName)
 		if err != nil {
 			return isUpdate, fmt.Errorf("build file header: %w", err)

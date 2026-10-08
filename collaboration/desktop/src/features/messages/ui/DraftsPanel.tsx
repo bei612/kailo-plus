@@ -22,6 +22,10 @@ import {
   getChannelIdFromTags,
   getThreadReference,
 } from "@/features/messages/lib/threading";
+import { useUsersBatchQuery } from "@/features/profile/hooks";
+import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { getEventById } from "@/shared/api/tauri";
 import type { Channel } from "@/shared/api/types";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
@@ -110,10 +114,14 @@ export function getDraftPreview(draft: DraftState): string {
 
 function resolveDraftSources({
   channels,
+  currentPubkey,
   drafts,
+  profiles,
 }: {
   channels: Channel[] | undefined;
+  currentPubkey: string | undefined;
   drafts: DraftListEntry[];
+  profiles: UserProfileLookup | undefined;
 }): Map<string, DraftSource> {
   const channelsById = new Map(
     (channels ?? []).map((channel) => [channel.id, channel]),
@@ -124,7 +132,9 @@ function resolveDraftSources({
     const channel = channelsById.get(entry.draft.channelId);
     sources.set(entry.key, {
       channel: channel ?? null,
-      label: channel ? channel.name : UNKNOWN_CHANNEL_LABEL,
+      label: channel
+        ? resolveChannelDisplayLabel(channel, currentPubkey, profiles)
+        : UNKNOWN_CHANNEL_LABEL,
     });
   }
 
@@ -290,6 +300,8 @@ export function useActiveDraftCount(
 // ── Shared draft view model ──────────────────────────────────────────────────
 
 export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
+  const identityQuery = useIdentityQuery();
+  const currentPubkey = identityQuery.data?.pubkey;
   const channelsQuery = useChannelsQuery();
 
   useDraftsSnapshot();
@@ -308,13 +320,32 @@ export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
 
   const rootStatusMap = useDraftRootStatus(threadRootIds, enabled);
 
+  const profilePubkeys = React.useMemo(
+    () => [
+      ...new Set(
+        (channelsQuery.data ?? [])
+          .filter((channel) =>
+            drafts.some((entry) => entry.draft.channelId === channel.id),
+          )
+          .flatMap((channel) => channel.participantPubkeys),
+      ),
+    ],
+    [channelsQuery.data, drafts],
+  );
+  const usersBatchQuery = useUsersBatchQuery(profilePubkeys, {
+    enabled: profilePubkeys.length > 0,
+  });
+  const profiles = usersBatchQuery.data?.profiles;
+
   const sources = React.useMemo(
     () =>
       resolveDraftSources({
         channels: channelsQuery.data,
+        currentPubkey,
         drafts,
+        profiles,
       }),
-    [channelsQuery.data, drafts],
+    [channelsQuery.data, currentPubkey, drafts, profiles],
   );
 
   return drafts.map((entry) => {

@@ -89,3 +89,24 @@ it("does not open a hidden DM draft or confuse a native channel draft with anoth
     expect(views.thread).not.toHaveBeenCalled();
   } finally {cache.clear();views.items=[];views.hidden=new Set();}
 });
+
+it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM source preview in the actual Web draft surfaces (%s)", async locale => {
+  const entry = {key: "conversation-binding", draft: {...draft, channelId: "conversation-binding"}};
+  const people = ["Alice", "First", "Second", "Third", "Fourth", "Fourth"].map((displayName, index) => ({principalId: `person-${index}`, displayName, pubkeys: [(index + 1).toString(16).repeat(64)]}));
+  views.items = [{id: entry.draft.channelId, channelId: "native-dm", participantPrincipalIds: people.map(person => person.principalId), state: ItemState.Active, operationId: "operation", version: 1}];
+  views.error = false; views.loading = false;
+  const cache = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
+  try {
+    await act(async () => root.render(<PlatformProvider client={{} as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider>
+      <InboxDrafts principalId={people[0]!.principalId} workspaces={[]} members={new Map()} participants={people}
+        entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList showDetail header={null} />
+    </TooltipProvider></QueryClientProvider></PlatformProvider>));
+    const expected = locale === "en" ? "First, Second, Third, +1 more" : "First, Second, Third, +1 人";
+    const list = host.querySelector('[data-testid="home-inbox-drafts-list"]')!;
+    const detail = host.querySelector('[data-testid="home-inbox-draft-detail"]')!;
+    expect(list.querySelector('button[aria-label^="View draft"],button[aria-label^="查看"]')?.getAttribute("aria-label")).toContain(expected);
+    expect(detail.querySelector("h2")?.textContent).toBe(expected);
+    expect(detail.textContent).not.toContain("Alice");
+    expect(detail.textContent).not.toContain("Fourth");
+  } finally {cache.clear(); views.items = [];}
+});

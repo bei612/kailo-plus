@@ -106,6 +106,7 @@
     "./react/forum/DeleteActionMenu": "./src/react/forum/DeleteActionMenu.tsx",
     "./react/forum/ForumComposerSurface": "./src/react/forum/ForumComposerSurface.tsx",
     "./react/new-message": "./src/react/new-message.tsx",
+    "./react/conversations/dm-participant-display": "./src/react/conversations/dm-participant-display.ts",
     "./react/create-channel-dialog": "./src/react/create-channel-dialog.tsx",
     "./react/channel-browser": "./src/react/channel-browser.tsx",
     "./react/channel-glyph": "./src/react/channel-glyph.tsx",
