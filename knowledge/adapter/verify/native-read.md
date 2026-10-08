@@ -3108,6 +3108,98 @@ Logs are retained in the existing directory
 | `native-observation-cas-mutation.log` | `05c97f4bc68461d5ab12feb91860b9e4705f4bd2f3dc61f3bf7a1c81a2f80e2c` |
 | `native-observation-cas-restored.log` | `b4f387f8c65f1da01651b958e85f7ee8155e683d2d4907a023ea60b4e66bd34c` |
 
+## Native parse-task rejection instead of a false acknowledgement — 2026-10-08
+
+Four-step implementation impact:
+
+1. **Authority and fixed source.** DD-89, design `07` §5 and `08` §5 leave
+   parsing, its queue and its terminal evidence with WeKnora; queued/accepted
+   is not completed. Fixed official commit
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/application/service/knowledge_process.go::knowledgeService.ProcessManualUpdate`
+   and `::knowledgeService.ProcessDocument`, returned nil when their native
+   task JSON could not be decoded. The existing fork still inherited that
+   false acknowledgement. These two real consumers now return the original
+   `asynq.SkipRetry` sentinel for an absent task, malformed payload, or absent
+   tenant/KB/Knowledge identity, before any native lookup or side effect.
+2. **Impact surface.** Both handlers remain registered by the original
+   `internal/router/task.go::RunAsynqServer` and Lite executor; existing
+   `ManualProcessPayload`/`DocumentProcessPayload` fields and native storage
+   are unchanged. Original Asynq `v0.26.0` is still pinned by `go.mod`/`go.sum`.
+   Its actual cached `processor.go::processor.handleFailedMessage` sends
+   `errors.Is(err, SkipRetry)` to `processor.archive`, not `markAsDone` or
+   `retry`. No Core contract, queue, task ID, retry policy, table, platform
+   entity, native UI or migration was introduced.
+3. **Side effects and uncertainty.** Malformed or scopeless tasks cannot
+   read a default tenant, mutate Knowledge, clean chunks, consume a model or
+   write an index. Returned errors contain no task content. Valid transient
+   observation errors still propagate for retry of the same original task;
+   confirmed completed/cancelled/deleting/absent Knowledge retains its native
+   no-op behavior. An unknown creation/enqueue outcome is not repaired by
+   submitting another manual task. `CreateKnowledgeFromManual` and its
+   existing creation-identity readback were not changed in this batch.
+4. **Boundary and termination.** Native nil/empty/broken JSON, array, wrong
+   field type, null/object and each missing scope field are deterministic
+   refusals (apps `06` §4 `REFUSAL`), not successful processing or transient
+   errors. The original Redis archive is the queue rejection evidence; this
+   batch does not claim a live archived-task inspection or a successful
+   `task_dead_letters` insert. The original dead-letter callback does not
+   mutate Knowledge for `SkipRetry`. Any orphaned pending Knowledge remains
+   under the existing queue-aware Housekeeping sweep and existing
+   `max(1 hour, DocumentProcessTimeout) + 10 minutes` stale threshold;
+   this change neither guesses its owner nor writes a fabricated failure.
+   Unreadable observation remains nonterminal; no new replay is issued.
+
+Implementation preceded the additional cases in the original
+`internal/application/service/knowledge_transfer_test.go`. The existing
+Go `1.26.8` SDK `kailo-knowledge-native-check-wkkigg`, image
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+was idle at preflight. Actual limits were 4 CPU, 8 GiB and no extra swap,
+UID/GID 1000:1000; host available memory was about 17.9 GiB and Data had
+290 GiB free. The existing read-only candidate and original module/build
+caches were reused without dependency downloads, new images, external
+databases or a full-tree snapshot. Only the two actual inputs were refreshed.
+
+Positive handle 63477 and restored handle 8272 ran the same original target:
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  go test -mod=readonly ./internal/application/service \
+  -run 'TestProcessingTasks|TestProcessingCannotEnterClaimedMove' -count=1 -v
+```
+
+Both exited 0 with **6 top-level and 45 subchecks passed, 0 failed, 0 skipped**;
+service runtimes were 94.581s and 213.863s. The scope includes the original
+move/preparation-failure/terminal-no-op consumers, not only the new 20-case
+payload matrix. In the private production candidate only, the four actual
+JSON/scope rejection returns were changed back to nil. Handle 20943 ran the
+same command with only
+`-run 'TestProcessingTasksRejectMalformedPayloadBeforeNativeReads'` narrowed:
+exit 1, **1 top-level and 18 subchecks failed, 2 subchecks passed**. The retained
+failure says `Expected error with "skip retry for the task" in chain but got nil`.
+The production candidate was byte-restored before the full original narrow
+target was rerun. Formal production was never mutated. Final gofmt output
+was empty; scoped `git diff --check` passed; cgroup max/oom/oom_kill remained
+zero. There is no remaining Go command from this batch.
+
+Logs remain under
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/`:
+
+| Log | SHA-256 |
+|---|---|
+| `knowledge-parse-task-payload-positive.log` | `8166253fc28c1d87d37c33d280a30bb9620307041de93b8cdf91ec1b03d98b09` |
+| `knowledge-parse-task-payload-mutation.log` | `3dfc842d7213d3fdb7ba84ae750306c891cb18ee04489b7b6f2996f31c4b4f1e` |
+| `knowledge-parse-task-payload-restored.log` | `20fd3014c459068cf646cdf8abd3952d953d0cfaa6647d1107e085c3b3528d2c` |
+
+This is source plus original isolated-consumer evidence. It is not live
+Redis archival, external component registration/activation, Cells→WeKnora
+end-to-end synchronization, UI/screenshots, deployment or production acceptance.
+The existing manual enqueue ambiguity and ignored failure-update result are
+not claimed resolved, and no incomplete FILE_STORAGE release was activated.
+
 These are original native consumers with existing SQLite/retriever-interface
 fixtures, not live vector/provider/Postgres acceptance. Non-Cells asynchronous
 passage/manual goroutines and complete multimodal/postprocess acknowledgement

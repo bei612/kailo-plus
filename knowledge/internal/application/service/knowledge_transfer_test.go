@@ -339,6 +339,44 @@ func TestTransferCheckpointCannotResurrectOrOverwriteChangedDocument(t *testing.
 	require.Error(t, err)
 }
 
+func TestProcessingTasksRejectMalformedPayloadBeforeNativeReads(t *testing.T) {
+	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
+		for _, tc := range []struct {
+			name    string
+			payload []byte
+		}{
+			{"missing-task", nil},
+			{"empty", []byte{}},
+			{"broken-json", []byte(`{"content":"private-native-content"`)},
+			{"wrong-shape", []byte(`[]`)},
+			{"wrong-field-type", []byte(`{"tenant_id":"private-native-content"}`)},
+			{"null", []byte(`null`)},
+			{"empty-object", []byte(`{}`)},
+			{"missing-tenant", []byte(`{"knowledge_id":"doc","knowledge_base_id":"kb"}`)},
+			{"missing-knowledge", []byte(`{"tenant_id":7,"knowledge_base_id":"kb"}`)},
+			{"missing-kb", []byte(`{"tenant_id":7,"knowledge_id":"doc"}`)},
+		} {
+			t.Run(taskType+"/"+tc.name, func(t *testing.T) {
+				// No repositories are installed: decoding and scope validation
+				// must reject the task before reading any native tenant or body.
+				svc := &knowledgeService{}
+				var task *asynq.Task
+				if tc.name != "missing-task" {
+					task = asynq.NewTask(taskType, tc.payload)
+				}
+				process := svc.ProcessDocument
+				if taskType == types.TypeManualProcess {
+					process = svc.ProcessManualUpdate
+				}
+				err := process(context.Background(), task)
+				require.ErrorIs(t, err, asynq.SkipRetry,
+					"the original queue must archive a malformed task, not acknowledge it or submit a retry")
+				require.NotContains(t, err.Error(), "private-native-content")
+			})
+		}
+	}
+}
+
 func TestProcessingTasksRejectOldKnowledgeBaseAfterMove(t *testing.T) {
 	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
 		t.Run(taskType, func(t *testing.T) {

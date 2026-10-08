@@ -3247,9 +3247,15 @@ func (s *knowledgeService) UpdateImageInfo(
 // It performs cleanup of old indexes/chunks (when NeedCleanup is true) and re-indexes the content.
 func (s *knowledgeService) ProcessManualUpdate(ctx context.Context, t *asynq.Task) error {
 	var payload types.ManualProcessPayload
+	if t == nil {
+		return fmt.Errorf("missing native manual processing task: %w", asynq.SkipRetry)
+	}
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		logger.Errorf(ctx, "failed to unmarshal manual process task payload: %v", err)
-		return nil
+		return fmt.Errorf("invalid native manual processing task payload: %w", asynq.SkipRetry)
+	}
+	if payload.TenantID == 0 || payload.KnowledgeBaseID == "" || payload.KnowledgeID == "" {
+		return fmt.Errorf("missing native manual processing task scope: %w", asynq.SkipRetry)
 	}
 
 	ctx = logger.WithRequestID(ctx, payload.RequestId)
@@ -3357,9 +3363,15 @@ func (s *knowledgeService) ProcessManualUpdate(ctx context.Context, t *asynq.Tas
 // ProcessDocument handles Asynq document processing tasks
 func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) error {
 	var payload types.DocumentProcessPayload
+	if t == nil {
+		return fmt.Errorf("missing native document processing task: %w", asynq.SkipRetry)
+	}
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		logger.Errorf(ctx, "failed to unmarshal document process task payload: %v", err)
-		return nil
+		return fmt.Errorf("invalid native document processing task payload: %w", asynq.SkipRetry)
+	}
+	if payload.TenantID == 0 || payload.KnowledgeBaseID == "" || payload.KnowledgeID == "" {
+		return fmt.Errorf("missing native document processing task scope: %w", asynq.SkipRetry)
 	}
 
 	ctx = logger.WithRequestID(ctx, payload.RequestId)
