@@ -3685,3 +3685,117 @@ deleted_lines；change_kind和行数字段仍是该快照，不冒称重导出�
 缺失：本批只恢复真实消费的设置备份，不把尚无消费者的原import/canonical cleanup
 冒充已补齐；Profile Card整体仍缺实机/视觉完整证据。本节与26路径冻结交主代理，
 继承checkpoint删除及旧inventory两行不纳入本批。
+
+### 2026-10-08 原频道及私聊 Header 的共享真实消费者
+
+本节为实现后回执。权威为 REQ-08/24、DD-75、设计09 §3、既有 Core
+Conversation 准入，以及用户原版恢复要求。固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 逐文件/符号核验：
+
+- `desktop/src/features/chat/ui/ChatHeader.tsx::ChatHeader/ChannelIcon`：原标题
+  baseline、频道图标、复制、状态和 system-chrome wrapper 迁入实际共源消费者。
+- `desktop/src/features/channels/ui/ChannelScreenHeader.tsx::
+  ChannelScreenHeader/DmHeaderParticipantStack`：原单人头像与三人预览堆叠、
+  ring、重叠顺序和 +remaining 原样复用；两宿主均消费同一实现。
+- `desktop/src/features/profile/ui/ProfileAvatarWithStatus.tsx::
+  ProfileAvatarWithStatus`：复用原无 status 分支的 MaskedAvatarBadgeFrame 与
+  ProfileAvatar，不把尚无真实 producer 的 presence 默认成 offline。
+- `desktop/src/features/channels/useActiveChannelHeader.ts::useActiveChannelHeader`
+  与 `desktop/src/features/channels/lib/dmParticipantDisplay.ts` 的
+  getDmParticipantPreview/formatDmParticipantDisplayName：原展示规则保留，
+  身份读取替换为既有可信 Core Conversation 与完整 BFF people 目录。
+- `desktop/src/features/sidebar/lib/channelLabels.ts::
+  isGenericDmChannelName/resolveChannelDisplayLabel`：原规则保留，只导出已有
+  predicate 给实际 Header 消费，不覆盖用户原本的自定义私聊名。
+
+影响面限共享 Header/现有目录读取、Web 实际 PlatformApp/search、Native 实际
+ChannelScreen/Header/hook 及既有检查；不改契约、数据库、Workflow、权限或
+计费权威。Web 仍经 BFF，Native 管理读取仍经 BFF、本机持钥 Relay 链不变；
+没有新状态、注册表、服务、开关、正文副本或外部写动作。Mobile 无本批 UI
+改动/设备验收，未另建翻译权威。原 i18n/clipboard/media host 继续复用。
+
+直接按原组件恢复布局，不将设备 pubkey 数量冒充人数。当前用户必须属于实际
+ACTIVE Conversation；完整目录每个 Principal 和公钥必须唯一，空目录项、未知
+格式、重复/不推进游标拒绝消费。Native 按 Community、device、Principal、实际
+channel 隔离读取，迟到回执有 owner 检查；Core UNKNOWN/failed、目录不完整、
+身份变化或非 ACTIVE 时不渲染参与者身份。完整目录由原 Web 读取函数移入现有
+use-conversations 模块，两端实际消费，不是第二份权威或无调用方 helper。
+
+目录没有声明 canonical profile key：只有真实该频道中存在的唯一单公钥成员
+才能接原 Native profile read/Popover；多设备成员用原 fallback 头像，不选第一
+设备伪造 canonical 身份。Web 本批只用可信姓名/原 fallback，真实头像 profile
+读取仍有缺口。组内 profile 点击只对上述有证明的成员开放。保留原作者自定义
+DM 名称，普通频道继续原 ChannelGlyph，私密频道不再错画成公开 Hash。
+无 profile、Presence 或 Agent 身份证据时不编造状态/owner，也不回退共享身份。
+
+异常沿工程06 §4现有分类：失权/身份不符不暴露资料，缺准入/资源事实不消费，
+目录 LIMIT/格式/游标异常保持原读取错误，UNKNOWN 不成为成功或执行失败。
+本批没有写入重试、结果重放、租约或待终结持久状态；复制失败仍走原错误反馈。
+本批16源码/检查路径 **+424/-62**（13已跟踪+212/-62，3新增212行）；这些是
+已写入范围，不是原版完成率。完整文件清单已交主代理选择性复核/提交。
+
+验证复用 kailo-agent-receipt-xvkujx，实测4CPU/8GiB；Node/Vitest 顺序执行、
+maxWorkers=1，无 Cargo/Go、镜像、下载、安装、整树复制或全量构建。日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/
+workflow-native-template.s3JDP1`：
+
+- `dm-header-shared-final-restored.log`：shared 下
+  `node node_modules/vitest/vitest.mjs run test/chat-header.test.tsx
+  test/conversation-sidebar.test.tsx --maxWorkers=1 --no-file-parallelism`，
+  **17 passed/退出0**，含原 DOM/样式与实际可信成员解析。
+- `dm-header-native-final-restored.log`：desktop 下
+  `node ../../web-client/web/node_modules/vitest/vitest.mjs run
+  tests/channels/ChannelScreenHeader.test.tsx --maxWorkers=1 --no-file-parallelism`，
+  **8 passed/退出0**，含当前身份、原 profile 实际点击、多人预览、自定义名称及
+  UNKNOWN/缺目录/换设备拒绝；多设备本人不再显示成另一个参与者。
+- `dm-header-web-final-restored.log`：web 下
+  `node node_modules/vitest/vitest.mjs run src/platform/ui/search.test.tsx
+  src/platform/ui/PlatformApp.test.tsx --maxWorkers=1 --no-file-parallelism`，
+  **39 passed/退出0**；两宿主与共享最终共64项。夹具中的 HTTP/profile 源不等于
+  在线 BFF/Relay 或 Windows 实机结果，DOM 检查也不是截图验收。
+- private 实际 resolver 移除成员守卫，
+  `dm-header-membership-production-fault.log` **1 failed/8 skipped/退出1**，真实
+  得到 Known outsider/Bob 而非 null；夹具含已知 outsider，不能靠缺目录误通过。
+  private Native hook 移除 device 关联，
+  `dm-header-native-identity-production-fault.log` **1 failed/7 skipped/退出1**，
+  换设备仍出现 Actual peer 而非 DM。生产字节恢复后上述64项再次全部通过。
+- `dm-header-{shared,test,web,native}-tsc.log` 四个最终类型检查退出0：
+  shared 普通与 tsconfig.test.json、Web、Native 原 tsc --noEmit；集中句柄85347
+  终态0。最终还原专项句柄71432终态0，不把较早17/7项当最终字节验收。
+- `dm-header-final-inputs-diff.log`：16正式/候选与12两宿主物理包输入 cmp全0，
+  owned git diff --check退出0；第一次 evidence 命令引号错误退出2保留在
+  dm-header-inputs-shell-failed.log，修正命令后实际cmp通过，未改生产源码绕过。
+- Web 首次 dm-header-web.log 因真实 AvatarHostProvider package subpath 未导出
+  退出1；补实际 package export 后39通过，保留原失败。共享/Native首次通过后
+  补已知 outsider 的真实否定夹具与自定义 DM 名检查，再按最终字节完成上述结果。
+  最终SDK只有sleep，memory.events 的旧 oom/oom_kill=2不变，
+  dm-header-final-resources.log留实测限额；SDK已释放。未运行full/发布/设备检查。
+
+同一3313历史全树快照派生
+`collaboration-current-20261008.dm-header-classification.tsv`，SHA256
+`f49c23bf733c5233429e629a2b540fa0781431ea111fa045f1e94db935ac8bd9`。
+列为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
+deleted_lines；change_kind/行数仍是原快照，不冒称当前重导出的全树diff。
+**原样1、共享42、授权9、缺失32、未分类3229，共3313，84条已归档**；
+1980同路径同字节另计。六条原路径已逐项核对，Header整体仍记缺失：
+UpdateIndicator、完整actions/titleAdornment、成员/终端/Join、Agent provenance/
+profile/DM、Presence producer与未接的原mode/overlay等没有被这批冒充补齐。
+
+本轮沿 playwright-cli 正常 SSO 表单重新登录，没有注入 Cookie/session、重置
+账号或打印口令。实际20张旧live截图均已打开视觉复核，路径统一为
+`.playwright-cli/kailo-ui-20261008-relogin-oldlive-<name>.png`：
+
+- channel、dm、inbox、pulse、projects、members、agents、workflows、tasks、
+  approvals、audit、devices、settings（13个页面状态）。
+- appearance、notifications、shortcuts、custom-emoji、invites（5个设置状态）。
+- avatar-editor、profile-edit（2个实际弹窗状态，不是设备页误图）。
+
+这些截图绑定旧线上Web镜像
+`sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
+不证明本批新源码。旧线上已有原主题/侧栏/圆角/消息布局，不再笼统称无样式；
+旧主菜单/缺搜索/DM标题等与当前源码不同，旧外观设置差异不能重复修已恢复源码。
+本轮只读取导航/打开弹窗，未做头像上传保存、偏好写入、发消息或创建工作流；
+通知受浏览器权限限制。没有当前用户可访问 ACTIVE 业务 binding、Wren 无业务
+runtime，三组件页面未验收，不生成假入口。新源码业务截图0、Windows/Mobile
+实机0；20图不等于所有页面/关键状态/双语全覆盖，也不与旧13图重复累加。
+本节源码尚未提交/push/部署或更新包；Header完整功能与全量原版一致性仍未完成。

@@ -6,6 +6,38 @@ import { newIdempotencyKey } from "../../governance";
 import { isOutcomeUnknown, TransportError } from "../../transport";
 import { useConversationVisibilityHost, useConversationInvalidation } from "./use-conversation-state";
 import { normalizePubkey } from "./pubkey";
+import type { BffClient } from "../../client";
+
+/** Complete, bounded BFF directory used by search and actual DM header consumers. */
+export async function loadConversationPeople(client: BffClient, check: () => void): Promise<ConversationParticipant[]> {
+  const result: ConversationParticipant[] = [];
+  const cursors = new Set<string>();
+  const owners = new Map<string, string>();
+  const principals = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    check();
+    const page = await client.conversationParticipants(cursor);
+    check();
+    if (!page || !Array.isArray(page.items)) throw new TransportError("Invalid conversation people directory");
+    for (const person of page.items) {
+      if (!person.principalId || principals.has(person.principalId) || typeof person.displayName !== "string" ||
+          !Array.isArray(person.pubkeys) || person.pubkeys.length === 0)
+        throw new TransportError("Invalid conversation person");
+      principals.add(person.principalId);
+      for (const pubkey of person.pubkeys) {
+        if (!/^[0-9a-f]{64}$/.test(pubkey) || owners.has(pubkey)) throw new TransportError("Ambiguous conversation identity");
+        owners.set(pubkey, person.principalId);
+      }
+      result.push(person);
+    }
+    cursor = page.nextCursor;
+    if (cursor !== undefined && (typeof cursor !== "string" || !cursor || cursors.has(cursor)))
+      throw new TransportError("Invalid conversation people cursor");
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return result;
+}
 
 export function formatRecipientName(user: ConversationParticipant) { return user.displayName; }
 export class ConversationPreparationPending extends Error {}

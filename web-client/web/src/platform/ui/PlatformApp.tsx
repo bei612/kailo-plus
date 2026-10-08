@@ -73,7 +73,10 @@ import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
-import { FileText, Hash } from "lucide-react";
+import { ChannelGlyph } from "@client-kit/platform/react/channel-glyph";
+import { DmHeaderParticipants } from "@client-kit/platform/react/messages/dm-header-participants";
+import { AvatarHostProvider } from "@client-kit/platform/react/profile/avatar-host";
+import { formatDmParticipantDisplayName, resolveConversationHeaderParticipants } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
 import { TopbarSearch } from "./TopbarSearch";
@@ -191,6 +194,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
   const searchDirectory = useWebSearchDirectory(searchScopeKey, conversations.items, session.tenantPrincipalId,
     !conversations.loading && !conversations.error && tab !== "settings");
+  const dmHeaderPeople = searchDirectory.isSuccess && !searchDirectory.isFetching
+    ? resolveConversationHeaderParticipants(chosenConversation, session.tenantPrincipalId, searchDirectory.data.people) : null;
+  const dmHeaderTitle = dmHeaderPeople ? formatDmParticipantDisplayName(dmHeaderPeople) : null;
+  const dmHeaderParticipants = dmHeaderPeople?.map(person => ({id:person.principalId,displayName:person.displayName,avatarUrl:null})) ?? [];
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
@@ -459,11 +466,19 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         <ContentSurface>
           {tab === "channel" && active && activeRow?.isMember === true && !workspaces.isError && !channel.isError && channel.data ?
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
-              leadingContent={channel.data.channelType === "forum" ? <FileText className="h-4 w-4 text-muted-foreground" /> : <Hash className="h-4 w-4 translate-y-px text-muted-foreground" />}
+              channelType={channel.data.channelType}
+              leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               onCopyTitle={async (title) => {
                 try { await navigator.clipboard.writeText(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
-              }} /> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+              }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>url}}>
+              <ChatHeader title={dmHeaderTitle} channelType="dm" visibility="private"
+                leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
+                onCopyTitle={async title=>{
+                  try { await navigator.clipboard.writeText(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
+                  catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
+                }}/>
+            </AvatarHostProvider> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
           <main className={tab === "inbox" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>

@@ -7,7 +7,7 @@ import { SelectedRecipientChip } from "./conversations/selected-recipient-chip";
 import { Popover, PopoverAnchor, PopoverContent } from "./conversations/popover";
 import { NewMessageResultRow } from "./conversations/new-message-result-row";
 import { formatRecipientName, useConversationDirectory, useConversationOpen } from "./conversations/use-conversations";
-export { useConversations, useConversationDirectory, useDirectMessageOpen } from "./conversations/use-conversations";
+export { useConversations, useConversationDirectory, useDirectMessageOpen, loadConversationPeople } from "./conversations/use-conversations";
 export { ConversationPreparationPending } from "./conversations/use-conversations";
 export { ConversationList } from "./conversations/conversation-list";
 export { ConversationVisibilityProvider, useConversationInvalidation, useConversationVisibilityHost, type ConversationVisibilityHost } from "./conversations/use-conversation-state";

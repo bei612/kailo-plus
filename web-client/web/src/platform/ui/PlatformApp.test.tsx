@@ -15,12 +15,16 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   openDm: vi.fn(), reloadConversations: vi.fn(), openConversation: vi.fn(), openTab: vi.fn(),
   search: null as import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch> | null,
   openChannel: vi.fn(), searchRefetch: vi.fn(),
+  headerReady: true, conversationState: "ACTIVE", privateWorkspace: false,
 }));
 const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
 function searchHit(channelId:string,threadRootId:string|null=null):import("@client-kit/platform/react/search/types").SearchHit {
   return {channelId,eventId:"actual-message",threadRootId,content:"actual result",pubkey:"b".repeat(64),kind:9,channelName:null,createdAt:12,score:1};
 }
-vi.mock("./search",()=>({useWebSearchDirectory:()=>({data:{channels:[],labels:{},workspaces:searchWorkspaces},error:null,isError:false,refetch:state.searchRefetch})}));
+vi.mock("./search",()=>({useWebSearchDirectory:()=>({data:{channels:[],labels:{},workspaces:searchWorkspaces,
+  people:[{principalId:"human-a",displayName:"Me",pubkeys:["a".repeat(64),"c".repeat(64)]},
+    {principalId:"human-b",displayName:"Actual participant",pubkeys:["b".repeat(64),"d".repeat(64)]}]},
+  error:null,isError:false,isSuccess:state.headerReady,isFetching:false,refetch:state.searchRefetch})}));
 vi.mock("./TopbarSearch",()=>({TopbarSearch:(props:import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch>)=>{state.search=props;return <button data-testid="actual-web-search-host"/>;}}));
 vi.mock("@/app/platform-navigation", () => ({
   usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
@@ -54,8 +58,8 @@ vi.mock("@tanstack/react-query", () => ({
     data:
       options.queryKey[1] === "workspaces"
         ? [
-            { id: "workspace-a", name: "A", isMember: state.memberA },
-            { id: "workspace-b", name: "B", isMember: state.memberB },
+            { id: "workspace-a", name: "A", isMember: state.memberA, visibility: "open" },
+            { id: "workspace-b", name: "B", isMember: state.memberB, visibility: state.privateWorkspace ? "private" : "open" },
           ]
         : options.queryKey[1] === "channel-descriptor"
           ? { channelId: "native-stream", channelType: state.channelType, name: "Actual channel" }
@@ -94,7 +98,8 @@ vi.mock("@client-kit/platform/react/channel-browser", () => ({
 }));
 vi.mock("@client-kit/platform/react/new-message", () => ({
   ConversationVisibilityProvider: ({ children }: { children: React.ReactNode }) => children,
-  useConversations: () => ({ items: state.conversationId ? [{id: state.conversationId, channelId: "native-private"}] : [], loading: false, error: null, reload: state.reloadConversations }),
+  useConversations: () => ({ items: state.conversationId ? [{id: state.conversationId, channelId: "native-private",
+    state:state.conversationState,participantPrincipalIds:["human-a","human-b"]}] : [], loading: false, error: null, reload: state.reloadConversations }),
   useDirectMessageOpen: () => ({open: state.openDm}),
   ConversationList: () => <div data-testid="shared-conversation-list" />,
 }));
@@ -186,6 +191,9 @@ beforeEach(() => {
   state.channelEnabled = false;
   state.channelType = "stream";
   state.conversationId = null;
+  state.headerReady = true;
+  state.conversationState = "ACTIVE";
+  state.privateWorkspace = false;
   state.startDm = {};
   state.search = null;
   state.openChannel.mockReset().mockResolvedValue(undefined);
@@ -195,6 +203,29 @@ beforeEach(() => {
   state.openConversation.mockReset().mockResolvedValue(undefined);
   state.openTab.mockReset();
   window.history.replaceState({}, "", "/app/");
+});
+
+it("mounts the actual shared original DM Header from admitted people without splitting their device keys",()=>{
+  state.tab="conversation";state.conversationId="actual-dm";
+  const host=document.createElement("div");host.innerHTML=renderToStaticMarkup(<PlatformApp/>);
+  expect(host.querySelector('[data-testid="chat-title"]')?.textContent).toBe("Actual participant");
+  expect(host.querySelector('[data-testid="chat-title"]')?.classList.contains("translate-y-px")).toBe(false);
+  expect(host.querySelector('[data-testid="chat-header-dm-avatar"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="chat-header-dm-avatar-stack"]')).toBeNull();
+  expect(host.querySelector('[data-testid="chat-presence-badge"]')).toBeNull();
+});
+it.each(["unavailable","preparing"])("does not render participant identity from an %s DM source",condition=>{
+  state.tab="conversation";state.conversationId="actual-dm";
+  if(condition==="unavailable")state.headerReady=false;else state.conversationState="PROVISIONING";
+  const host=document.createElement("div");host.innerHTML=renderToStaticMarkup(<PlatformApp/>);
+  expect(host.querySelector('[data-testid="chat-header-dm-avatar"]')).toBeNull();
+  expect(host.querySelector('[data-testid="chat-title"]')).toBeNull();
+});
+it("keeps the original private ChannelGlyph in the actual Web header",()=>{
+  state.tab="channel";state.privateWorkspace=true;
+  const host=document.createElement("div");host.innerHTML=renderToStaticMarkup(<PlatformApp/>);
+  expect(host.querySelector('[data-testid="chat-header"] .lucide-lock')).not.toBeNull();
+  expect(host.querySelector('[data-testid="chat-header"] .lucide-hash')).toBeNull();
 });
 
 it("mounts the same original search in the fixed pinned sidebar header, with real browse/create and People consumers",async()=>{

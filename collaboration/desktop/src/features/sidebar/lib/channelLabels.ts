@@ -7,7 +7,7 @@ import {
 import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 import type { Channel } from "@/shared/api/types";
 
-function isGenericDmChannelName(name: string) {
+export function isGenericDmChannelName(name: string) {
   const normalized = name.trim().toLowerCase();
   return (
     normalized.length === 0 ||

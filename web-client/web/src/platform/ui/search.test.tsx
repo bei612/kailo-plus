@@ -42,6 +42,7 @@ it("uses actual native directory bindings and current participant labels without
   expect(page.channels[0]).not.toHaveProperty("memberPubkeys");
   expect(page.channels[1]).not.toHaveProperty("participantPubkeys");
   expect(page.channels[1]).not.toHaveProperty("archivedAt");
+  expect(page.people).toEqual([alice,bob]);
 });
 
 it.each(["unadmitted-dm","missing-person","ambiguous-binding","scope-changed"])("rejects the %s directory instead of manufacturing search facts",async(invalid)=>{

@@ -405,6 +405,7 @@ export function ChannelScreen({
       <ChannelScreenHeader
         activeChannel={activeChannel}
         activeChannelEphemeralDisplay={activeChannelEphemeralDisplay}
+        currentPubkey={currentPubkey}
         chromeWrapperRef={channelHeaderChromeRef}
       />
     ) : null;

@@ -2,7 +2,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { BffClient } from "@client-kit/platform/client";
-import { PulseQueryRequestView, type ConversationParticipant, type ConversationView } from "@client-kit/contracts";
+import { PulseQueryRequestView, type ConversationView } from "@client-kit/contracts";
 import { useBffClient } from "@client-kit/platform/react/context";
 import { createSearchResultsReader, type SearchDataHooks } from "@client-kit/platform/react/search/useSearchResults";
 import { rankUserCandidatesBySearch } from "@client-kit/platform/react/search/userCandidateSearch";
@@ -12,39 +12,12 @@ import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conve
 import { translateCurrent } from "@client-kit/platform/i18n";
 import type { UserProfileLookup } from "@client-kit/platform/react/messages/system/identity";
 import { TransportError } from "@client-kit/platform/transport";
+import { loadConversationPeople } from "@client-kit/platform/react/new-message";
 import { queryPulse, searchMessages } from "../bff-client";
-
-async function peopleDirectory(client:BffClient, check:()=>void):Promise<ConversationParticipant[]> {
-  const result:ConversationParticipant[]=[];
-  const cursors=new Set<string>();
-  const owners=new Map<string,string>();
-  const principals=new Set<string>();
-  let cursor:string|undefined;
-  do {
-    check();
-    const page=await client.conversationParticipants(cursor);
-    check();
-    if (!page || !Array.isArray(page.items)) throw new TransportError("Invalid search people directory");
-    for(const person of page.items) {
-      if(!person.principalId || principals.has(person.principalId) || typeof person.displayName!=="string" || !Array.isArray(person.pubkeys) || person.pubkeys.length===0)
-        throw new TransportError("Invalid search person");
-      principals.add(person.principalId);
-      for(const pubkey of person.pubkeys) {
-        if(!/^[0-9a-f]{64}$/.test(pubkey) || owners.has(pubkey)) throw new TransportError("Ambiguous search identity");
-        owners.set(pubkey,person.principalId);
-      }
-      result.push(person);
-    }
-    cursor=page.nextCursor;
-    if(cursor!==undefined && (typeof cursor!=="string" || !cursor || cursors.has(cursor))) throw new TransportError("Invalid search people cursor");
-    if(cursor)cursors.add(cursor);
-  } while(cursor);
-  return result;
-}
 
 export async function loadWebSearchDirectory(client:BffClient, conversations:readonly ConversationView[], principalId:string, check:()=>void) {
   const workspaces=await loadChannelDirectory(client,()=>{check();return true;});
-  const people=await peopleDirectory(client,check);
+  const people=await loadConversationPeople(client,check);
   const labels:Record<string,string>={};
   const channels:SearchChannel[]=workspaces.map(row=>({id:row.channel.channelId,name:row.channel.name,
     description:row.channel.description??"",channelType:row.channel.channelType,archived:row.channel.archived,
@@ -63,7 +36,7 @@ export async function loadWebSearchDirectory(client:BffClient, conversations:rea
   }
   if(new Set(channels.map(channel=>channel.id)).size!==channels.length)throw new TransportError("Ambiguous search channel binding");
   check();
-  return {channels,labels,workspaces};
+  return {channels,labels,workspaces,people};
 }
 
 export function useWebSearchDirectory(scopeKey:string, conversations:readonly ConversationView[],principalId:string,enabled:boolean) {
@@ -107,7 +80,7 @@ export function useWebSearchReader(scopeKey:string, directoryError?:unknown) {
         queryKey:["platform",scopeKey,"search-people",query,options?.limit,options?.allowEmpty],
         enabled:options?.enabled!==false&&(options?.allowEmpty===true||query.trim().length>0),retry:false,
         queryFn:async()=>{
-          const people=await peopleDirectory(client,check);
+          const people=await loadConversationPeople(client,check);
           const directory=people.flatMap(person=>person.pubkeys.map(pubkey=>({pubkey,displayName:person.displayName,
             avatarUrl:null,nip05Handle:null,ownerPubkey:null,isAgent:false} satisfies UserSearchResult)));
           const ranked=rankUserCandidatesBySearch({candidates:directory,getLabel:user=>user.displayName??user.pubkey,

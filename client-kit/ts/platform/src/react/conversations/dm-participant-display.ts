@@ -5,6 +5,26 @@ import type { Translate } from "../context";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
 import { normalizePubkey } from "./pubkey";
 import type { SearchChannel as Channel } from "../search/types";
+import type { ConversationParticipant, ConversationView } from "@client-kit/contracts";
+
+/** Core admission owns people; a person's other device must not become another participant. */
+export function resolveConversationHeaderParticipants(conversation: ConversationView | undefined,
+  currentPrincipalId: string, people: readonly ConversationParticipant[]): ConversationParticipant[] | null {
+  if (!conversation || conversation.state !== "ACTIVE" || !conversation.channelId || !currentPrincipalId ||
+      !conversation.participantPrincipalIds.includes(currentPrincipalId) ||
+      new Set(conversation.participantPrincipalIds).size !== conversation.participantPrincipalIds.length) return null;
+  const others = conversation.participantPrincipalIds.filter(id => id !== currentPrincipalId);
+  if (others.length === 0) return null;
+  const directory = new Map(people.map(person => [person.principalId, person]));
+  if (directory.size !== people.length) return null;
+  const result: ConversationParticipant[] = [];
+  for (const id of others) {
+    const person = directory.get(id);
+    if (!person || !person.pubkeys.length || typeof person.displayName !== "string") return null;
+    result.push(person);
+  }
+  return result;
+}
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
 
