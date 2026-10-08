@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pydio/cells/v5/common/errors"
 	proto "github.com/pydio/cells/v5/common/proto/docstore"
 	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/storage/test"
@@ -58,6 +59,9 @@ func TestDocStore(t *testing.T) {
 
 			er := dao.PutDocument(ctx, "mystore", &proto.Document{ID: "1", Data: "Data"})
 			So(er, ShouldBeNil)
+			missing, missingErr := dao.GetDocument(ctx, "mystore", "missing-native-document")
+			So(missing, ShouldBeNil)
+			So(errors.Is(missingErr, errors.StatusNotFound), ShouldBeTrue)
 			stores, e := dao.ListStores(ctx)
 			So(e, ShouldBeNil)
 			So(stores, ShouldHaveLength, 1)

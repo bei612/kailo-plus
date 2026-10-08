@@ -28,6 +28,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	"github.com/pydio/cells/v5/common/errors"
 	proto "github.com/pydio/cells/v5/common/proto/docstore"
 	"github.com/pydio/cells/v5/common/storage/mongodb"
 	json "github.com/pydio/cells/v5/common/utils/jsonx"
@@ -96,6 +97,9 @@ func (m *mongoImpl) GetDocument(ctx context.Context, storeID string, docId strin
 	filter := bson.D{{"store_id", storeID}, {"doc_id", docId}}
 	res := m.Collection(collDocuments).FindOne(ctx, filter)
 	if res.Err() != nil {
+		if errors.Is(res.Err(), mongo.ErrNoDocuments) {
+			return nil, errors.WithStack(errors.DocStoreDocNotFound)
+		}
 		return nil, res.Err()
 	}
 	mdoc := &mDoc{}

@@ -30,7 +30,9 @@ import (
 
 	"github.com/pydio/cells/v5/common"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/permissions"
+	"github.com/pydio/cells/v5/common/proto/docstore"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -39,6 +41,128 @@ import (
 
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+type shareDocumentFixture struct {
+	docstore.UnimplementedDocStoreServer
+	scenario string
+	cause    error
+	docs     map[string]*docstore.Document
+	calls    []string
+}
+
+func (f *shareDocumentFixture) GetDocument(_ context.Context, request *docstore.GetDocumentRequest) (*docstore.GetDocumentResponse, error) {
+	f.calls = append(f.calls, "get:"+request.DocumentID)
+	if f.scenario == "lookup-error" {
+		return nil, f.cause
+	}
+	if doc := f.docs[request.DocumentID]; doc != nil {
+		return &docstore.GetDocumentResponse{Document: proto.Clone(doc).(*docstore.Document)}, nil
+	}
+	return nil, cellserrors.DocStoreDocNotFound
+}
+
+func (f *shareDocumentFixture) PutDocument(_ context.Context, request *docstore.PutDocumentRequest) (*docstore.PutDocumentResponse, error) {
+	f.calls = append(f.calls, "put:"+request.DocumentID)
+	if f.scenario == "put-error" {
+		return nil, f.cause
+	}
+	f.docs[request.DocumentID] = proto.Clone(request.Document).(*docstore.Document)
+	if f.scenario == "put-lost-ack" {
+		return nil, f.cause
+	}
+	response := &docstore.PutDocumentResponse{Document: proto.Clone(request.Document).(*docstore.Document)}
+	switch f.scenario {
+	case "put-empty-ack":
+		response.Document = nil
+	case "put-wrong-id":
+		response.Document.ID = "different-native-hash"
+	case "put-wrong-body":
+		response.Document.Data = "{}"
+	case "put-wrong-index":
+		response.Document.IndexableMeta = "{}"
+	}
+	return response, nil
+}
+
+func (f *shareDocumentFixture) DeleteDocuments(_ context.Context, request *docstore.DeleteDocumentsRequest) (*docstore.DeleteDocumentsResponse, error) {
+	f.calls = append(f.calls, "delete:"+request.DocumentID)
+	if f.scenario == "delete-error" {
+		return nil, f.cause
+	}
+	switch f.scenario {
+	case "delete-negative-ack":
+		return &docstore.DeleteDocumentsResponse{Success: false, DeletionCount: 1}, nil
+	case "delete-empty-ack":
+		return &docstore.DeleteDocumentsResponse{Success: true}, nil
+	case "delete-wrong-count":
+		return &docstore.DeleteDocumentsResponse{Success: true, DeletionCount: 2}, nil
+	}
+	delete(f.docs, request.DocumentID)
+	if f.scenario == "delete-lost-ack" {
+		return nil, f.cause
+	}
+	return &docstore.DeleteDocumentsResponse{Success: true, DeletionCount: 1}, nil
+}
+
+func TestNativeShareDocumentRequiresWriteConfirmation(t *testing.T) {
+	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	for _, scenario := range []string{"unchanged", "rename", "collision", "lookup-error", "put-error", "put-lost-ack", "put-empty-ack", "put-wrong-id", "put-wrong-body", "put-wrong-index", "delete-error", "delete-lost-ack", "delete-negative-ack", "delete-empty-ack", "delete-wrong-count"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := &shareDocumentFixture{scenario: scenario, cause: errors.New("native share document result is unavailable"),
+				docs: map[string]*docstore.Document{"old-hash": {ID: "old-hash", Data: "original native share"}}}
+			if scenario == "collision" {
+				f.docs["new-hash"] = &docstore.Document{ID: "new-hash", Data: "another native share"}
+			}
+			grpcclient.RegisterMock(common.ServiceDocStoreGRPC, &docstore.DocStoreStub{DocStoreServer: f})
+			link := &rest.ShareLink{Uuid: "native-share", LinkHash: "old-hash", UserLogin: "native-guest", UserUuid: "native-guest-uuid",
+				Permissions: []rest.ShareLinkAccessType{rest.ShareLinkAccessType_Download}}
+			updatedHash := "new-hash"
+			if scenario == "unchanged" {
+				updatedHash = link.LinkHash
+			}
+			err := NewClient(nil).StoreHashDocument(context.Background(), &idm.User{Login: "native-owner"}, link, updatedHash)
+			if scenario == "unchanged" || scenario == "rename" {
+				if err != nil || link.LinkHash != updatedHash || f.docs[updatedHash] == nil {
+					t.Fatalf("confirmed original share was not saved: error=%v link=%v calls=%v", err, link, f.calls)
+				}
+			} else if err == nil || link.LinkHash != "old-hash" {
+				t.Fatalf("unconfirmed share write became success: error=%v link=%v calls=%v", err, link, f.calls)
+			}
+			if scenario == "collision" && !errors.Is(err, cellserrors.StatusConflict) {
+				t.Fatalf("existing native hash was not refused: %v", err)
+			}
+			if scenario == "lookup-error" || scenario == "put-error" || scenario == "put-lost-ack" || scenario == "delete-error" || scenario == "delete-lost-ack" {
+				if !errors.Is(err, f.cause) {
+					t.Fatalf("original uncertain result was replaced: %v", err)
+				}
+			}
+			wantCalls := []string{"get:new-hash", "put:new-hash"}
+			switch scenario {
+			case "unchanged":
+				wantCalls = []string{"put:old-hash"}
+			case "collision", "lookup-error":
+				wantCalls = []string{"get:new-hash"}
+			case "rename", "delete-error", "delete-lost-ack", "delete-negative-ack", "delete-empty-ack", "delete-wrong-count":
+				wantCalls = append(wantCalls, "delete:old-hash")
+			}
+			if len(f.calls) != len(wantCalls) {
+				t.Fatalf("native mutation continued or repeated after an unknown result: got %v want %v", f.calls, wantCalls)
+			}
+			for i := range wantCalls {
+				if f.calls[i] != wantCalls[i] {
+					t.Fatalf("old share was removed before confirmed replacement: got %v want %v", f.calls, wantCalls)
+				}
+			}
+			oldRemoved := scenario == "rename" || scenario == "delete-lost-ack"
+			if (f.docs["old-hash"] == nil) != oldRemoved {
+				t.Fatalf("old share was unexpectedly removed or recreated: scenario=%s calls=%v", scenario, f.calls)
+			}
+			if scenario == "collision" && f.docs["new-hash"].Data != "another native share" {
+				t.Fatal("another share was overwritten")
+			}
+		})
+	}
+}
 
 type sharePermissionFixture struct {
 	idm.UnimplementedACLServiceServer

@@ -1699,3 +1699,148 @@ Node 日志根：
 完整批准 catalog、可信现有用户/scope 投递与实库 ACL 验收、平台 write/share
 的稳定操作 key/终态/usage 以及原子条件删除仍是上线门禁；没有伪造它们。
 原生独立入口保留，继承的 deploy/compose.yaml 未改。
+
+## 2026-10-08 原生自定义分享链接的文档写入确认（源码批）
+
+本节初次冻结时只记录实现后的源码事实，未沿用上一节的通过数；当时未执行的
+边界保留如下，后续实际正向、生产破坏与还原终态见本节末。
+
+1. 权威仍为 `.design/07` §5.2/§8A、`.design/08` §4/§9.2、
+   `apps/06` §4，以及独立组件原生业务边界。只读重新核验固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+   `idm/share/client-hash-doc.go::Client.StoreHashDocument` 在改自定义 hash 时，
+   未检查新文档 PutDocument 的错误便删除旧文档，随后以删除 RPC 的错误覆盖
+   写入结果。该源码中的 `Client.UpsertLink`、`Client.LinkById` 与
+   `Client.WorkspaceToShareLinkObject` 分别位于完整路径
+   `idm/share/client.go`、`idm/share/client.go`、`idm/share/client-acls.go`，
+   确实消费该写入/读取链。原 hash 和 workspace UUID 是原生引用，不是绑定
+   actor/generation/操作参数的 operation key，也不能证明完整平台 share。
+2. 影响检索沿原 REST PutShareLink/GetShareLink、自定义链接 Field 和上节
+   LinkModel/Mailer 消费者，未改页面/布局、认证或 ACL。当前修改只复用原
+   DocStore RPC/DAO：新文档 ACK 必须对应原请求的完整 Document；确认前不删
+   旧 hash；旧文档删除确认前不把调用方 LinkHash 改为新 hash。不新增契约、
+   表、任务、状态、重试、补偿、凭据或配置。现有数据格式与原 RPC 响应不变，
+   无数据迁移；旧原生 writer 与旧错误传播不因此获得安全证明。
+3. 核对同一固定 commit 的 `data/docstore/grpc/handler.go::Handler.GetDocument`
+   发现任意 DAO 失败都被转换为 DocStoreDocNotFound，会把超时/取消/存储故障
+   当成“新 hash 不存在”。该真实生产者现仅把既有 StatusNotFound 映射为原
+   DocStoreDocNotFound，其余错误传播。完整路径
+   `data/docstore/dao/mongo/mongo.go::mongoImpl.GetDocument` 只将真实
+   mongo.ErrNoDocuments 归一到该原缺失类型；原 Bolt 的完整路径
+   `data/docstore/dao/bleve/bolt.go::BoltStore.GetDocument` 已返回 StatusNotFound，
+   不需修改。分享的 collision 探测只接受这种确定缺失，其他拒绝/不明不写入。
+4. 原生确定 collision 仍为原 StatusConflict（平台归类 CONFLICT），配置/权限
+   拒绝不被变成不存在（PRECONDITION/DENIED）；写入或删除 ACK 不明不得作为
+   完整 share 成功（UNKNOWN/EXTERNAL_RESULT_UNKNOWN），且本批不开放该平台
+   动作（BLOCKED）。先写后删仍是多 RPC：新文档可能已保存而 ACK 丢失，或
+   新旧文档同时存在/旧删除 ACK 丢失；错误沿原调用链返回，没有重试、回滚
+   猜测或第二账本。原生 hash collision 的读后写不是原子 CAS，创建与
+   workspace/ACL/hidden-user 等多步副作用也没有 operation-key 终态证据。
+   这些仍阻断 generic write/share，不以本批修复宣布已闭合。
+
+实现之后在原 `idm/share/client-acls_test.go` 追加真实生成 DocStore RPC stub
+消费者检查，覆盖原样保存、hash 更换、collision、读取失败、写前失败、写后
+ACK 丢失、缺/错 ID/正文/索引 ACK、删除错误/ACK 丢失与三种坏删除确认。
+原 `data/docstore/grpc/handler_test.go` 追加原 manager/DAO 注入检查，覆盖确定
+缺失、取消、超时、解码错误、存储故障与成功回读；原
+`data/docstore/dao/dao_test.go` 追加既有 Bolt/Mongo fixture 的缺失类型断言。
+初次冻结时这些检查已写入但没有执行，不能据此报告通过或 mutation 被检出。
+
+按主代理当时 I/O 暂停指令，初次冻结未运行 Go/Node 构建、测试、formatter、
+生产破坏/还原、Docker、镜像或部署。仅只读源码及固定 commit 检索，六个
+源码/检查文件的 `git diff --check` 实际退出 0；这只证明 diff 空白检查。
+集中原目标、实际生产保护破坏/还原与最终字节检查由主代理协调原受限 SDK，
+其运行结果须另行记录。本批未修改继承 compose、未投递 native actor 配置，
+未激活 release/binding、未做 Playwright/实库/三端 E2E，不声明 100% 还原或
+完整 FILE_STORAGE 已交付。
+
+### 同一源码批的受限 SDK 核验与未执行边界
+
+后续检查确认原 `kailo-cells-native-check-lftow7` 仍运行且没有在途任务，
+UID1000:1000、Go `go1.26.8 linux/amd64`；实际 cgroup 为
+`cpu.max=400000 100000`、`memory.max=8589934592`、
+`memory.swap.max=0`，OOM/oom_kill 均为 0。六个源码/检查输入以及
+`go.mod`、`go.sum` 与该原候选逐字节相同。镜像内原 `gofmt -l` 检查六文件
+无输出；未更改源码字节。`CELLS_TEST_MONGODB_DSN` 未投递，真实 Mongo
+fixture 明确 SKIP，不新建数据库、不打印或猜测凭据。
+
+执行前宿主 MemAvailable 约 24 GiB、Data 可用约 278 GiB，但原 Knowledge
+专项正在链接、全量检查也在途，磁盘 I/O full avg10 从约 67% 升至约 74%。
+因此先仅核对原缓存目标命令规模，没有启动实际测试：
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test -n -mod=readonly -tags=kv \
+  ./idm/share ./data/docstore/grpc ./data/docstore/dao \
+  -run "TestNativeShareDocumentRequiresWriteConfirmation|TestDocumentReadPreservesUnavailableEvidence|TestDocStore" \
+  -count=1 -v
+```
+
+该只读 dry-run 等待约五分钟仍未完成缓存/依赖读取，未启动 compile/link。
+为避免叠加发布 I/O，仅对该次 Go 进程发出 TERM；原 handle34535 实际终态
+为 exit143，不是检查通过或源码编译失败。保留的部分命令日志为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/cells-native-hash-doc-dry-run.log`
+（40 行，SHA-256
+`f8da6bf0a02f5b188ee8c2c4abd3bf99e907e78c27f95709391ef2375804bcca`）。
+最初日志目的目录不可写的一次 shell 诊断未进入 Go，后改用原宿主候选目录；
+没有因此重建 SDK、安装依赖或修改产品代码。该次资源窗口没有执行实际正向、
+生产破坏或还原验证；后续移除 `-n` 的真实终态见下节。当时本批未提交或部署，
+generic write/share 准入继续 BLOCKED。
+
+### 同一冻结源码的实际正向、生产破坏与还原结果
+
+资源窗口恢复后，没有重建 SDK 或重启上一检查，沿原
+`kailo-cells-native-check-lftow7` 完成以下同一精确目标；原镜像为
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+UID1000、4 CPU/8 GiB/swap0 与原缓存不变。开始前 MemAvailable 24 GiB、
+Data 可用 282 GiB、memory pressure avg10=0、I/O full avg10=15.8%；
+后续窗口分别读到 MemAvailable 17/25 GiB，未叠加第二份本批编译。
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+CELLS_WORKING_DIR=/tmp/cells-hash-document-check \
+CELLS_DATA_DIR=/tmp/cells-hash-document-check \
+go test -p=1 -mod=readonly -tags=kv \
+  ./idm/share ./data/docstore/grpc ./data/docstore/dao \
+  -run "TestNativeShareDocumentRequiresWriteConfirmation|TestDocumentReadPreservesUnavailableEvidence|TestDocStore" \
+  -count=1 -v
+```
+
+- 正向 handle91250 实际 exit0：三包 `PASS/ok`，3 顶层、24 子项通过。
+- 仅在原私有候选禁用 `StoreHashDocument` 的 5 处保护（非确定缺失、Put
+  错误、完整 Document ACK、Delete 错误、Delete ACK/count），并将
+  `Handler.GetDocument` 的错误分支恢复为旧的无差别 NotFound。原检查、
+  fixture 与正式源码没有破坏或改写。负向 handle15196 实际 exit1：
+  2 顶层、16 子项失败（分享 12、读取错误误映射 4）；其余 1 顶层、8 子项
+  仍通过。原 DAO 的确定缺失与正常读写未被误报为失败。
+- 从正式源码恢复全部六个候选文件，逐字节 `cmp=0` 后沿同一命令复跑；
+  handle1366 实际 exit0，三包 `PASS/ok`，3 顶层、24 子项再次通过。
+  最终六文件 `cmp=0`，镜像内 `gofmt -l` 空输出/exit0。
+
+负向原输出包含（分享行仅摘录开头及调用序列，中间原 fixture link 字段见日志）：
+
+```text
+client-acls_test.go:129: unconfirmed share write became success: error=<nil>
+calls=[get:new-hash put:new-hash delete:old-hash]
+handler_test.go:94: unavailable evidence became confirmed absence: document not found
+negative exit=1
+```
+
+完整日志与实际生产破坏差异均保留在
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| cells-native-hash-doc-positive.log | `34f0ae8c4c6a510200d84ec21d9585a629263bbd001d2f3aae9a511532d489d9` |
+| cells-native-hash-doc-negative.log | `b0de3c4700dc13c730800a4b1b03feba621f6da76393e1bd0ac8d98671f39215` |
+| cells-native-hash-doc-restored.log | `9002adc9c225b993834cb8d4e48cddc771a4531f02e0c297af4c152aea31782e` |
+| cells-native-hash-doc-production-mutation.diff | `c562ed11aa6a20de15973aab4fd9ac325857f025397f7a6218eacabb664d5a03` |
+
+上述候选只保证本批六文件及依赖锁与正式输入一致，不冒充全 main 快照。
+检查实际覆盖生成 RPC stub、原 Handler/manager 注入与原 Bolt/Bleve fixture，
+不是部署后的跨服务 E2E。Mongo fixture 仍无投递，真实 Mongo/索引迁移 SKIP；
+编译 Mongo 实现不算实库通过。最终 SDK 无 Go/compile/link 在途，OOM/
+oom_kill=0；累计 `memory.peak=2538696704` 不是本批独立峰值。
+未运行全量检查、镜像发布、Playwright 或三端验收；没有激活 release/binding。
+多 RPC 的未知副作用、原子 collision 与操作 key/终态/usage 门禁没有因此
+闭合，generic write/share 继续 BLOCKED。本节仅更新实施后的实际验证事实。

@@ -62,7 +62,10 @@ func (h *Handler) GetDocument(ctx context.Context, request *proto.GetDocumentReq
 	log.Logger(ctx).Debug("GetDocument", zap.String("store", request.StoreID), zap.String("docId", request.DocumentID))
 	doc, e := dao.GetDocument(ctx, request.StoreID, request.DocumentID)
 	if e != nil {
-		return nil, errors.WithStack(errors.DocStoreDocNotFound)
+		if errors.Is(e, errors.StatusNotFound) {
+			return nil, errors.WithStack(errors.DocStoreDocNotFound)
+		}
+		return nil, e
 	}
 	return &proto.GetDocumentResponse{Document: doc}, nil
 }

@@ -23,6 +23,8 @@ package share
 import (
 	"context"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/client/commons/docstorec"
 	"github.com/pydio/cells/v5/common/errors"
@@ -76,28 +78,44 @@ func (sc *Client) StoreHashDocument(ctx context.Context, ownerUser *idm.User, li
 
 	storeID := common.DocStoreIdShares
 	var removeHash string
+	hash := link.LinkHash
 	if len(updateHash) > 0 && len(updateHash[0]) > 0 && link.LinkHash != updateHash[0] {
 		newHash := updateHash[0]
 		// Check if it already exists
 		if _, e := store.GetDocument(ctx, &docstore.GetDocumentRequest{StoreID: storeID, DocumentID: newHash}); e == nil {
 			return errors.WithMessage(errors.StatusConflict, "hash is already in use, please use another one")
+		} else if !errors.Is(e, errors.DocStoreDocNotFound) {
+			return e
 		}
 		removeHash = link.LinkHash
-		link.LinkHash = newHash
+		hash = newHash
 	}
 
 	doc := &docstore.Document{
-		ID:            link.LinkHash,
+		ID:            hash,
 		Data:          string(hashDocMarshaled),
 		IndexableMeta: string(hashDocMarshaled),
 	}
-	_, e := store.PutDocument(ctx, &docstore.PutDocumentRequest{StoreID: storeID, Document: doc, DocumentID: doc.ID})
-
-	if removeHash != "" {
-		_, e = store.DeleteDocuments(ctx, &docstore.DeleteDocumentsRequest{StoreID: storeID, DocumentID: removeHash})
+	stored, e := store.PutDocument(ctx, &docstore.PutDocumentRequest{StoreID: storeID, Document: doc, DocumentID: doc.ID})
+	if e != nil {
+		return e
+	}
+	if !proto.Equal(stored.GetDocument(), doc) {
+		return errors.WithMessage(errors.StatusDataLoss, "share document write was not confirmed")
 	}
 
-	return e
+	if removeHash != "" {
+		removed, e := store.DeleteDocuments(ctx, &docstore.DeleteDocumentsRequest{StoreID: storeID, DocumentID: removeHash})
+		if e != nil {
+			return e
+		}
+		if !removed.GetSuccess() || removed.GetDeletionCount() != 1 {
+			return errors.WithMessage(errors.StatusDataLoss, "previous share document removal was not confirmed")
+		}
+	}
+
+	link.LinkHash = hash
+	return nil
 
 }
 

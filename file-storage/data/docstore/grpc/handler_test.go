@@ -24,20 +24,78 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"google.golang.org/grpc"
 
+	cellserrors "github.com/pydio/cells/v5/common/errors"
 	proto "github.com/pydio/cells/v5/common/proto/docstore"
+	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/storage/test"
 	"github.com/pydio/cells/v5/common/utils/uuid"
+	"github.com/pydio/cells/v5/data/docstore"
 	"github.com/pydio/cells/v5/data/docstore/dao/bleve"
 	"github.com/pydio/cells/v5/data/docstore/dao/mongo"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+type documentReadEvidenceFixture struct {
+	docstore.DAO
+	document *proto.Document
+	cause    error
+}
+
+func (f *documentReadEvidenceFixture) GetDocument(context.Context, string, string) (*proto.Document, error) {
+	return f.document, f.cause
+}
+
+func TestDocumentReadPreservesUnavailableEvidence(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		cause   error
+		missing bool
+	}{
+		{name: "document-missing", cause: cellserrors.DocStoreDocNotFound, missing: true},
+		{name: "bucket-missing", cause: cellserrors.BucketNotFound, missing: true},
+		{name: "cancelled", cause: context.Canceled},
+		{name: "timed-out", cause: context.DeadlineExceeded},
+		{name: "unreadable-document", cause: cellserrors.UnmarshalError},
+		{name: "storage-unavailable", cause: errors.New("native storage result is unavailable")},
+		{name: "confirmed-document"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			fixture := &documentReadEvidenceFixture{cause: scenario.cause}
+			if scenario.cause == nil {
+				fixture.document = &proto.Document{ID: "native-share-hash", Data: "native share document"}
+			}
+			ctx, err := manager.DSNtoContextDAO(t.Context(), []string{}, func(context.Context) docstore.DAO { return fixture })
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := (&Handler{}).GetDocument(ctx, &proto.GetDocumentRequest{StoreID: "native-share-store", DocumentID: "native-share-hash"})
+			if scenario.cause == nil {
+				if err != nil || response.GetDocument() != fixture.document {
+					t.Fatalf("confirmed native read was not preserved: response=%v error=%v", response, err)
+				}
+				return
+			}
+			if response != nil {
+				t.Fatalf("unconfirmed native read returned a document: %v", response)
+			}
+			if scenario.missing {
+				if !errors.Is(err, cellserrors.DocStoreDocNotFound) {
+					t.Fatalf("confirmed absence no longer maps to original document-not-found: %v", err)
+				}
+			} else if !errors.Is(err, scenario.cause) || errors.Is(err, cellserrors.DocStoreDocNotFound) {
+				t.Fatalf("unavailable evidence became confirmed absence: %v", err)
+			}
+		})
+	}
+}
 
 type listDocsTestStreamer struct {
 	grpc.ServerStream
