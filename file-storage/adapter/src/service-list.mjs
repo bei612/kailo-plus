@@ -144,6 +144,10 @@ export async function listFiles(config, deadline, raw, key, token) {
     role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.authorizationTargetNativeRef,nativeRevision:digest,
     contentSha256:digest,contentBytes:bytes,completedAt:new Date().toISOString(),
     measurements:readMeasurements(config.readEdge.usageMeasurements,bytes)});
+  // A complete native snapshot is not a new authorization. Receipt I/O can
+  // outlive the source permission; never disclose its desired set afterwards.
+  const final=await claimsForRead(config,token,args,request.actionKey);
+  await freshPep(config,deadline,token,args,final,'execute');
   return {resourceId:args.input.resourceId,nativeObjectRef:args.authorizationTargetNativeRef,nativeRevision:digest,
     items,listingDigest:digest,operationId:claims.operation_id};
 }

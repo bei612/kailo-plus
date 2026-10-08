@@ -641,3 +641,114 @@ byte-restored: exit 0; 85 passed, 0 failed, 0 skipped
 这些是受控 Cells REST/PEP 的原 HTTP 消费者证据。没有执行实际 Cells 空文件
 跨服务导入/解析/结算、release/binding 激活、原 UI8、Windows/Mobile、full、
 镜像发布或部署；知识库冻结 Go10 的最新字节仍未验收，不借本批结果增加其完成度。
+
+## 平台固定版本删除阻断（2026-10-08，新增实现已撤回）
+
+沿 DD-89、DD-93 与 `.design/07` 的固定版本、幂等及 UNKNOWN 规则复核真实
+副作用边界后，撤回本轮新增的 delete adapter、能力发现/配置/VALIDATE 路由、
+原生 Job 扩展、专用检查及两个 schema；15 个源码/schema/检查路径均已恢复到
+提交版本或删除本轮新增文件。原有独立 Cells UI、原 ACL、既有读取/文档能力和
+其历史回执未改动。没有可以用开关重新开启的半成品删除入口。
+
+固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的只读源码证据：
+
+- `common/proto/tree/cells-tree.pb.go::DeleteNodeRequest` 没有 IfMatch/revision 字段。
+- `common/nodes/core/handler-exec.go::Executor.DeleteNode` 的 StatObject 只检查
+  存在性，随后不带版本条件调用 RemoveObject。
+- `common/nodes/objects/mc/client.go::Client.RemoveObject` 使用空的
+  `minio.RemoveObjectOptions{}`，没有对象版本条件。
+- `common/nodes/core/handler-exec-flat.go::FlatStorageHandler.DeleteNode` 先删除
+  对象再删除索引；`data/tree/grpc/handler.go::TreeServer.DeleteNode` 也只传 Node。
+- `common/nodes/acl/handler-acl-lock.go` 中 DeleteNode 锁代码是注释，不是可复用
+  的原子消费者。
+
+因此，执行前读取 HeadVersion/UUID 与后续 DeleteNode 之间仍可能并发换版；
+原任务唯一 claim 不能证明固定版本删除。没有另造锁、执行权威、二次副作用或
+以文件消失推导成功。处置为关闭本批平台删除能力；重新接入需原生存储删除链
+具备可证明的原子版本条件及真实并发/崩溃验证，不能只补 adapter 前置判断。
+
+本轮调查曾在已有受限 Node SDK 运行原 HTTP 目标（排除缺 xml2js 的两项
+ONLYOFFICE 检查）：226 passed/0 failed/exit 0；私有 producer-proof 破坏
+220 passed/6 failed/exit 1；字节恢复 226 passed/0 failed/exit 0。它们证明
+原检查能抓到旧 producer 被误接受，不证明原生条件删除，因此不能计作交付。
+Go 未编译，四侧生成、full、实际业务删除、release/binding 激活及部署均未运行。
+
+调查日志仍保留于
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-delete-final-positive.log` | `c98d179ab888959c633bf6831d8596578c9e7445e2b899c1ac07a6a7106ffa1d` |
+| `cells-delete-producer-mutation.log` | `7cf855ab481c834852554feb26e15172de1f25e0a165387f6f16bba33be89055` |
+| `cells-delete-restored.log` | `1149fec24c0fd5d35023da2f5c78125e9d840b973d4e64277fbe7a468b3459b6` |
+| `cells-delete-positive-initial.log`（命令失败） | `e6a3fcaea729a93a92c1f3024ce86012fdcbffcd068cdc0368e14e0027b0e8a2` |
+
+## SOURCE 回执后的实际披露保护（2026-10-08，未部署）
+
+修正原 `readFile` / `listFiles` 的真实返回边界：此前最终 fresh PEP 之后仍会
+等待 OIDC 和 `read_receipt` HTTP，回执等待期间的撤权不能阻止随后外发已缓存
+文件或完整目录。现在保留原前置检查，回执返回后再验原 ActionToken 与 fresh
+PEP；文件还重新核验原 UUID、binding root、Workspace 和授权子树。目录仍只做
+原两遍完整列举，不新增同步器或第三遍遍历。原生 UI、页面、上传/删除和文档
+接缝未改动；上一节平台固定版本删除继续关闭。
+
+四步影响结论：
+
+1. 权威为 DD-89、`.design/07` §8.2 和 `.design/13` §4.1–4.4/§7 的受权读取、
+   撤权不得产生不完整 desired set 规则。复用固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api-lookup.go::Handler.GetByUuid`、
+   `gateway/restv2/api-versions.go::Handler.NodeVersions` 与
+   `gateway/restv2/api.go::Handler.TreeNodeToNode` 所提供的 native UUID、版本、
+   Workspace/lifecycle 元数据；未运行证据树代码，也未修改原生能力。
+2. 影响面仅原 SOURCE 文件/目录消费者及原 HTTP 检查；同 binding、Resource、
+   Operation、idempotencyKey、revision、SHA 和计量映射保持。调用方仍由既有
+   WeKnora 自拉连接器消费；Web/Desktop/Mobile 无新页面、字段或身份路径。
+   没有契约、数据库格式、迁移、新状态、任务或注册权威，旧数据及读格式不变。
+3. 原 `SOURCE` 回执证明已发生的 native 读取，不是回执完成后的披露授权。
+   回执后拒绝不撤销事实、不补造 RECEIVER、不重读字节、不猜终态；未配对的
+   原 Operation 沿已有到期隔离/UNKNOWN 对账及用量规则收敛。未复制平台正文，
+   未增加副作用或把认证失败降级成功。
+4. 回执期间撤权、移出授权子树、跨 Workspace、UUID 替换、回收、native ACL
+   拒绝/删除及 root 回收均不外发文件；平台撤权也不外发完整目录。空文件、
+   空目录、合法同 UUID 改名、旧 receipt 错误及原先检查保持。原 DENIED /
+   UNAVAILABLE 拒绝呈现不变，结果不明不变为成功或失败。没有新收敛状态。
+
+执行前 Data 296 GiB 可用、根盘 88 GiB、主机 22 GiB available，无构建进程。
+复用原 `kailo-wren-query-sdk-itgs2n`（UID/GID 1000:1000、4 CPU/4 GiB、无额外
+swap、Node v24.21.0）与原小候选。与 Wren 的窄 Jest 检查共用限额但输入目录
+独立；未安装依赖、下载、构建镜像或启动 Go/Cargo。三个实际 Node 入口语法检查
+通过；原 HTTP 目标三轮：
+
+```sh
+node --test --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  file-storage/adapter/test/query-revision.test.mjs
+final-positive: exit 0; 214 passed, 0 failed
+private disclosure-guard mutation: exit 1; 187 passed, 27 failed
+byte-restored: exit 0; 214 passed, 0 failed
+```
+
+私有破坏只删除原 `readFile` / `listFiles` 的回执后生产保护，检查与 fixture
+不变。八种 native 撤权/移位及文件/目录平台撤权真实返回 `200`，与预期 `403`
+或 `503` 不符；其余失败包含原 PEP 次数断言，不把 27 项都声称为独立漏洞。
+正式源码从未破坏。恢复后八个实际 import/检查输入逐文件 cmp 一致，原目标再
+通过，`git diff --check` 退出 0。初跑有两个旧 PEP 次数断言未随新增保护更新
+（含父测试共 3 项失败），原日志保留；修正原次数断言后才算最终通过。一次 cmp
+误列未被 import 的 `native-reference.mjs` 报候选缺失，随后按真实依赖集合核对，
+未用其冒充输入完整。最后 SDK memory.events 各 OOM 计数为 0，容器共享内存
+快照 680239104 bytes；全部命令已终态。
+
+日志目录：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`。
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-source-receipt-positive.log`（首次失败） | `5bd4db6bbfcc40aac97222107c01e1d2f6bbe91f26d3ab96b3b3b57480a20be1` |
+| `cells-source-receipt-final-positive.log` | `f19b045b480541e3c1798201d47e46a9433b807fa94b1cc19d8a1c0f7d21197f` |
+| `cells-source-receipt-mutation.log` | `bc58e08cf9c0e1a9c3c7a026395fa1d9cafd0ac853cf79a70ea7a574f59cf040` |
+| `cells-source-receipt-restored.log` | `886decb9f5c925219964269933ab65a3bcc57a4bd0fd0cd62ea7724ff05339dc` |
+
+这只是原受控 HTTP SOURCE 消费者证据，不是实际 Cells→WeKnora E2E 或生产
+验收。SDK 仍缺 xml2js，上述两项 ONLYOFFICE 目标明确排除；full、四侧生成、
+真实 release/binding 激活、截图、Windows/Mobile、镜像及部署本批未执行。
+Knowledge 冻结 Go10/UI8 最新字节仍未验收，不借本批结果增加完成度。

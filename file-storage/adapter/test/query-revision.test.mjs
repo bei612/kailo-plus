@@ -136,6 +136,7 @@ async function setup(t, changes = {}) {
       let body=''; for await (const chunk of request) body+=chunk;
       const receipt=JSON.parse(body); state.receipts.push(receipt);
       assert.equal(state.peps,changes.serviceRead?3:2);
+      await state.onReceipt?.();
       if (changes.receiptStatus) return reply(response,changes.receiptStatus,{});
       return reply(response,200,{operationId:receipt.operationId,
         receiptDigest:changes.wrongReceipt?'wrong':createHash('sha256').update(canonical(receipt)).digest('hex')});
@@ -494,7 +495,7 @@ test('SERVICE source read returns exact binary version only after initial, reval
   assert.deepEqual(Buffer.from(await result.arrayBuffer()),Buffer.from([0,255,1,254]));
   assert.equal(result.headers.get('x-kailo-native-revision'),'frozen-version');
   assert.equal(result.headers.get('x-kailo-content-sha256'),createHash('sha256').update(Buffer.from([0,255,1,254])).digest('hex'));
-  assert.equal(fixture.state.peps,3);
+  assert.equal(fixture.state.peps,4);
   assert.equal(fixture.state.downloads,1);
   assert.equal(result.headers.get('location'),null);
   assert.equal(fixture.state.receipts.length,1);
@@ -557,7 +558,7 @@ test('SERVICE source read consumes native proto3 omitted zero without accepting 
       assert.equal(result.headers.get('content-length'),'0');
       assert.equal(result.headers.get('x-kailo-native-revision'),'frozen-version');
       assert.equal(result.headers.get('x-kailo-content-sha256'),createHash('sha256').update(empty).digest('hex'));
-      assert.equal(fixture.state.peps,3);
+      assert.equal(fixture.state.peps,4);
       assert.equal(fixture.state.receipts[0].contentBytes,0);
       assert.deepEqual(fixture.state.receipts[0].measurements,
         [{meterKey:'native_read_count',quantity:1},{meterKey:'native_read_bytes',quantity:0}]);
@@ -645,9 +646,9 @@ test('SERVICE source read preserves a same-UUID rename within the authorized roo
       };
       const result = await fixture.invoke({ path: '/platform-adapter/v1/execute', key: ids[7], raw });
       assert.equal(fixture.state.downloads, 1);
-      assert.equal(fixture.state.peps, 3);
+      assert.equal(fixture.state.peps, revoked ? 3 : 4);
       assert.equal(fixture.state.queries.length, 1);
-      assert.equal(fixture.state.nativeReads.length, 5);
+      assert.equal(fixture.state.nativeReads.length, revoked ? 5 : 7);
       assert.equal(fixture.state.receipts.length, revoked ? 0 : 1);
       assert.equal(result.status, revoked ? 503 : 200);
       if (revoked) assert.deepEqual(await result.json(), { error: 'adapter request refused' });
@@ -655,6 +656,67 @@ test('SERVICE source read preserves a same-UUID rename within the authorized roo
         assert.deepEqual(Buffer.from(await result.arrayBuffer()), Buffer.from([0, 255, 1, 254]));
         assert.equal(fixture.state.receipts[0].nativeRevision, 'frozen-version');
       }
+    });
+  }
+});
+
+test('SERVICE source read refuses native withdrawal during receipt delivery without disclosing buffered bytes', async (t) => {
+  const target = { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt', ContextWorkspace: { Uuid: ids[1] } };
+  const root = { Uuid: ids[2], Type: 'COLLECTION', Path: 'documents/root', ContextWorkspace: { Uuid: ids[1] } };
+  const cases = [
+    ['moved outside binding root', { target: { ...target, Path: 'documents/root-peer/file.txt' } }, 403],
+    ['moved to another Workspace', { target: { ...target, ContextWorkspace: { Uuid: ids[8] } } }, 503],
+    ['replaced native UUID', { target: { ...target, Uuid: ids[8] } }, 503],
+    ['recycled file', { target: { ...target, IsRecycled: true } }, 503],
+    ['native ACL withdrawn', { nodeStatus: 403 }, 503],
+    ['native node deleted', { nodeStatus: 404 }, 503],
+    ['binding root recycled', { root: { ...root, IsRecycled: true } }, 503],
+    ['authorized subtree moved', {
+      authorized: { Uuid: ids[10], Type: 'COLLECTION', Path: 'documents/root/elsewhere', ContextWorkspace: { Uuid: ids[1] } },
+    }, 403],
+  ];
+  for (const [name, patch, status] of cases) {
+    await t.test(name, async nested => {
+      const subtree = name === 'authorized subtree moved';
+      const argumentsValue = { targetType: 'RESOURCE', targetId: ids[10],
+        authorizationTargetNativeRef: subtree ? ids[10] : ids[2],
+        input: { resourceId: ids[10], nativeObjectRef: ids[3], nativeRevision: 'frozen-version' } };
+      const changes = { operation: 'execute', arguments: argumentsValue, serviceRead: true,
+        ...(subtree ? { target: { ...target, Path: 'documents/root/authorized/file.txt' } } : {}) };
+      const fixture = await setup(nested, changes);
+      fixture.state.onReceipt = () => Object.assign(changes, patch);
+      const response = await fixture.invoke({ path: '/platform-adapter/v1/execute', key: ids[7],
+        raw: canonical({ actionKey: 'file_storage.read@v1', idempotencyKey: ids[7], arguments: argumentsValue }) });
+      assert.equal(response.status, status);
+      assert.deepEqual(await response.json(), { error: 'adapter request refused' });
+      assert.equal(response.headers.get('x-kailo-native-object-ref'), null);
+      assert.equal(fixture.state.downloads, 1);
+      assert.equal(fixture.state.queries.length, 1);
+      assert.equal(fixture.state.receipts.length, 1);
+      assert.equal(fixture.state.receipts[0].role, 'SOURCE');
+    });
+  }
+});
+
+test('SERVICE file and directory disclosure recheck platform permission after acknowledged receipt I/O', async t => {
+  for (const serviceList of [false, true]) {
+    await t.test(serviceList ? 'complete desired set withheld' : 'buffered file bytes withheld', async nested => {
+      const argumentsValue = { targetType: 'RESOURCE', targetId: ids[10], authorizationTargetNativeRef: ids[2],
+        input: serviceList ? { resourceId: ids[10] }
+          : { resourceId: ids[10], nativeObjectRef: ids[3], nativeRevision: 'frozen-version' } };
+      const actionKey = serviceList ? 'file_storage.list@v1' : 'file_storage.read@v1';
+      const fixture = await setup(nested, { operation: 'execute', arguments: argumentsValue, serviceList, serviceRead: !serviceList,
+        pep: (state, response) => reply(response, state.receipts.length ? 403 : 200,
+          { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh' }) });
+      const response = await fixture.invoke({ path: '/platform-adapter/v1/execute', key: ids[7],
+        raw: canonical({ actionKey, idempotencyKey: ids[7], arguments: argumentsValue }) });
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: 'adapter request refused' });
+      assert.equal(response.headers.get('x-kailo-native-object-ref'), null);
+      assert.equal(fixture.state.receipts.length, 1);
+      assert.equal(fixture.state.receipts[0].role, 'SOURCE');
+      assert.equal(fixture.state.peps, serviceList ? 3 : 4);
+      assert.equal(serviceList ? fixture.state.listings : fixture.state.downloads, serviceList ? 2 : 1);
     });
   }
 });
@@ -672,7 +734,7 @@ test('SERVICE directory discovery uses counted complete native listings and exac
   const encoded=canonical(result.items);
   assert.equal(result.listingDigest,createHash('sha256').update(encoded).digest('hex'));
   assert.equal(fixture.state.listings,2);
-  assert.equal(fixture.state.peps,2);
+  assert.equal(fixture.state.peps,3);
   assert.equal(fixture.state.receipts.length,1);
   assert.equal(fixture.state.receipts[0].nativeObjectRef,ids[2]);
   assert.equal(fixture.state.receipts[0].nativeRevision,result.listingDigest);
@@ -713,7 +775,7 @@ test('SERVICE discovery consumes the native omitted empty collection without inv
       assert.deepEqual(result.items,[]);
       assert.equal(result.listingDigest,createHash('sha256').update('[]').digest('hex'));
       assert.equal(fixture.state.listings,2);
-      assert.equal(fixture.state.peps,2);
+      assert.equal(fixture.state.peps,3);
       assert.equal(fixture.state.receipts.length,1);
       assert.equal(fixture.state.receipts[0].contentBytes,2);
       assert.equal(fixture.state.receipts[0].nativeRevision,result.listingDigest);
@@ -949,7 +1011,7 @@ test('shared PEP consumer accepts optional complete native target facts and reje
         { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh',
           ...(supplied === undefined ? {} : { targetResource: supplied }) }) });
       assert.equal((await invoke(invokeOptions)).status, 200);
-      assert.equal(state.peps, 3);
+      assert.equal(state.peps, 4);
       assert.equal(state.downloads, 1);
       assert.equal(state.receipts.length, 1);
     });

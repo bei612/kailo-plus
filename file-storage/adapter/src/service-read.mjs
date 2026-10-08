@@ -92,6 +92,15 @@ export async function readFile(config, deadline, raw, key, token) {
     role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
     contentSha256:sha256,contentBytes:bytes.length,completedAt:new Date().toISOString(),
     measurements:readMeasurements(config.readEdge.usageMeasurements,bytes.length)});
+  // Receipt delivery includes authenticated network I/O. A recorded SOURCE
+  // receipt proves the native read, not permission to disclose its buffered
+  // bytes after a withdrawal/move during that I/O. The missing RECEIVER
+  // receipt remains the original operation's reconciliation responsibility.
+  const final=await claimsForRead(config,token,args);
+  await nativeDocumentNode(config,deadline,{
+    nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
+  },final);
+  await freshPep(config,deadline,token,args,final,'execute');
   return {bytes,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
     sha256,operationId:claims.operation_id};
 }
