@@ -1,12 +1,12 @@
-//! BFF-only management metadata reader. The selected scope is authorized before
-//! querying bindings, and no native/configuration/credential bytes are selected.
+//! Human and receiver-SERVICE metadata discovery share native binding facts;
+//! neither reader selects content, configuration or credential bytes.
 
 use super::*;
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
-    Json,
 };
 
 #[derive(serde::Deserialize)]
@@ -19,11 +19,12 @@ pub(crate) struct PageQuery {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ReadResourceQuery {
-    direction: contracts::ApplicationReadResourceDirection,
-    offset: Option<i64>,
+    pub(super) direction: contracts::ApplicationReadResourceDirection,
+    pub(super) offset: Option<i64>,
+    pub(super) category_key: Option<String>,
 }
 
-type ReadResourceRow = (Uuid, i32, Uuid, Option<Uuid>, Uuid, String, String);
+pub(super) type ReadResourceRow = (Uuid, i32, Uuid, Option<Uuid>, Uuid, String, String);
 
 pub(crate) async fn read_resources(
     State(state): State<crate::bff::BffState>,
@@ -41,7 +42,7 @@ pub(crate) async fn read_resources(
     }
 }
 
-async fn read_receiver(
+pub(super) async fn read_receiver(
     conn: &mut PgConnection,
     tenant: Uuid,
     binding: Uuid,
@@ -66,15 +67,15 @@ async fn read_receiver(
     ).bind(binding).bind(tenant).fetch_optional(conn).await?)
 }
 
-async fn read_resource_rows(
+pub(super) async fn read_resource_rows(
     conn: &mut PgConnection,
     tenant: Uuid,
     binding: Uuid,
     workspace: Option<Uuid>,
-    source: bool,
-    offset: i64,
+    query: &ReadResourceQuery,
     limit: i64,
 ) -> Result<Vec<ReadResourceRow>, Refusal> {
+    let source = query.direction == contracts::ApplicationReadResourceDirection::Source;
     Ok(sqlx::query_as(
         "select r.id,r.version,b.id,r.home_workspace_id,r.owner_principal_id,r.type_key,r.native_id
         from catalog.resource r
@@ -91,6 +92,7 @@ async fn read_resource_rows(
         join catalog.resource_type_definition kind on kind.id=r.resource_type_definition_id
           and kind.type_key=r.type_key and kind.component_release_id=b.component_release_id and kind.status='ACTIVE'
         where r.tenant_id=$1 and r.state='ACTIVE' and r.projection_action_execution_id is null
+          and ($7::text is null or kind.capability_category=$7)
           and (not $2 or (owner.kind='HUMAN' and owner.status='ACTIVE'
             and exists(select 1 from identity.tenant_membership membership
               where membership.tenant_principal_id=owner.id and membership.tenant_id=r.tenant_id and membership.state='ACTIVE')))
@@ -108,8 +110,51 @@ async fn read_resource_rows(
             where d->>'categoryKey'=kind.capability_category
               and d->>'readEdge' in (case when $2 then 'SOURCE' else 'RECEIVER' end,'BOTH'))
         order by r.id offset $5 limit $6",
-    ).bind(tenant).bind(source).bind(workspace).bind(binding).bind(offset).bind(limit)
+    ).bind(tenant).bind(source).bind(workspace).bind(binding).bind(query.offset.unwrap_or(0)).bind(limit)
+        .bind(query.category_key.as_deref())
         .fetch_all(conn).await?)
+}
+
+pub(super) async fn resource_visible(
+    spicedb: &crate::spicedb::SpiceDb,
+    page: u32,
+    tenant: Uuid,
+    principal: Uuid,
+    permission: &str,
+    row: &ReadResourceRow,
+) -> Result<bool, Refusal> {
+    let workspace = row.3.map(|id| id.to_string());
+    if !spicedb
+        .resource_projection_matches_in_workspace(
+            &row.0.to_string(),
+            &tenant.to_string(),
+            &row.4.to_string(),
+            workspace.as_deref(),
+            page,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Resource projection unavailable".into()))?
+    {
+        return Err(Refusal::Unavailable(
+            "Resource projection unavailable".into(),
+        ));
+    }
+    let checked = spicedb
+        .check(
+            "resource",
+            &row.0.to_string(),
+            permission,
+            &principal.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Resource permission unavailable".into()))?;
+    if checked.zed_token.is_empty() {
+        return Err(Refusal::Unavailable(
+            "Resource permission unavailable".into(),
+        ));
+    }
+    Ok(checked.allowed)
 }
 
 async fn read_resource_page(
@@ -136,24 +181,17 @@ async fn read_resource_page(
     )
     .await?;
     let source = query.direction == contracts::ApplicationReadResourceDirection::Source;
-    let rows = read_resource_rows(
-        &mut tx,
-        actor.tenant_id,
-        binding,
-        receiver.2,
-        source,
-        offset,
-        limit,
-    )
-    .await?;
+    let rows =
+        read_resource_rows(&mut tx, actor.tenant_id, binding, receiver.2, &query, limit).await?;
     let has_next = rows.len() == usize::try_from(limit).map_err(|_| invalid())?;
     let mut resources = Vec::new();
-    for (id, version, resource_binding, workspace, owner, kind, native_ref) in rows {
+    for row in rows {
+        let (id, version, resource_binding, workspace, _, kind, native_ref) = &row;
         match crate::governance::installation_permission::human_scope(
             &state.governance,
             &mut tx,
             actor.tenant_id,
-            workspace,
+            *workspace,
             actor.tenant_principal_id,
         )
         .await
@@ -162,42 +200,16 @@ async fn read_resource_page(
             Err(Refusal::Denied(_)) => continue,
             Err(error) => return Err(error),
         }
-        let workspace_text = workspace.map(|id| id.to_string());
-        if !state
-            .governance
-            .spicedb
-            .resource_projection_matches_in_workspace(
-                &id.to_string(),
-                &actor.tenant_id.to_string(),
-                &owner.to_string(),
-                workspace_text.as_deref(),
-                state.governance.cfg.relationship_page,
-            )
-            .await
-            .map_err(|_| Refusal::Unavailable("Resource projection unavailable".into()))?
+        if !resource_visible(
+            &state.governance.spicedb,
+            state.governance.cfg.relationship_page,
+            actor.tenant_id,
+            actor.tenant_principal_id,
+            if source { "share" } else { "update" },
+            &row,
+        )
+        .await?
         {
-            return Err(Refusal::Unavailable(
-                "Resource projection unavailable".into(),
-            ));
-        }
-        let permission = state
-            .governance
-            .spicedb
-            .check(
-                "resource",
-                &id.to_string(),
-                if source { "share" } else { "update" },
-                &actor.tenant_principal_id.to_string(),
-                crate::spicedb::Consistency::FullyConsistent,
-            )
-            .await
-            .map_err(|_| Refusal::Unavailable("Resource permission unavailable".into()))?;
-        if permission.zed_token.is_empty() {
-            return Err(Refusal::Unavailable(
-                "Resource permission unavailable".into(),
-            ));
-        }
-        if !permission.allowed {
             continue;
         }
         let mut value = json!({"resourceId":id,"version":version,"bindingId":resource_binding,
@@ -449,13 +461,24 @@ mod read_resource_tests {
         let mut conn = sqlx::PgConnection::connect(&url).await.unwrap();
         let tenant = Uuid::new_v4();
         let binding = Uuid::new_v4();
-        assert!(read_receiver(&mut conn, tenant, binding)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            read_receiver(&mut conn, tenant, binding)
+                .await
+                .unwrap()
+                .is_none()
+        );
         for source in [true, false] {
+            let query = ReadResourceQuery {
+                direction: if source {
+                    contracts::ApplicationReadResourceDirection::Source
+                } else {
+                    contracts::ApplicationReadResourceDirection::Receiver
+                },
+                offset: None,
+                category_key: None,
+            };
             assert!(
-                read_resource_rows(&mut conn, tenant, binding, None, source, 0, 1)
+                read_resource_rows(&mut conn, tenant, binding, None, &query, 1)
                     .await
                     .unwrap()
                     .is_empty()

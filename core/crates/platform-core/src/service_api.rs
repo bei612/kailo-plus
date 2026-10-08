@@ -12,11 +12,11 @@
 use std::sync::Arc;
 
 use axum::{
+    Json, Router,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
-    Json, Router,
 };
 use serde::Serialize;
 use sqlx::PgPool;
@@ -217,6 +217,10 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/adapter/request_read_grant",
             post(crate::application_binding::read_grant::request),
+        )
+        .route(
+            "/service/v1/adapter/bindings/{binding}/read-resources",
+            axum::routing::get(crate::application_binding::read_grant::read_resources),
         )
         .route(
             "/service/v1/adapter/read_receipt",

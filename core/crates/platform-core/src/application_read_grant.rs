@@ -5,10 +5,10 @@ use crate::{
     application_catalog::ApplicationDefinition, governance::Evaluation, service_api::ServiceState,
 };
 use axum::{
-    extract::State,
+    Json,
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
-    Json,
 };
 
 const KIND: &str = "SERVICE_READ";
@@ -205,6 +205,149 @@ async fn receiver(conn: &mut PgConnection, binding: Uuid) -> Result<Receiver, Re
         return Err(denied());
     }
     Ok(row)
+}
+
+/// Only the receiving binding's own SERVICE identity can discover its current
+/// reader grants. This is metadata, not a read token or a second grant authority;
+/// request_read_grant and the source PEP still authorize every actual batch.
+pub(crate) async fn read_resources(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    Path(binding): Path<Uuid>,
+    Query(query): Query<super::read::ReadResourceQuery>,
+) -> Response {
+    match service_resource_page(&state, &headers, binding, query).await {
+        Ok(page) => Json(page).into_response(),
+        Err(error) => error.respond(None),
+    }
+}
+
+async fn service_resource_page(
+    state: &ServiceState,
+    headers: &HeaderMap,
+    binding: Uuid,
+    query: super::read::ReadResourceQuery,
+) -> Result<contracts::ApplicationReadResourcePage, Refusal> {
+    let mut authorization = headers.get_all(axum::http::header::AUTHORIZATION).iter();
+    let header = authorization
+        .next()
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(denied)?;
+    if authorization.next().is_some() {
+        return Err(denied());
+    }
+    // Do not retain binding locks while acquiring the Tenant lifecycle lock.
+    let mut tx = state.pool.begin().await?;
+    let caller = read_caller(&mut tx, binding).await?;
+    state
+        .auth
+        .verify_binding_client(Some(header), &caller.client)
+        .await
+        .map_err(|error| match error {
+            crate::service_auth::ServiceAuthError::KeysUnavailable => {
+                Refusal::Unavailable("adapter identity keys unavailable".into())
+            }
+            _ => Refusal::Denied(ReasonCode::PermissionDenied),
+        })?;
+    tx.rollback().await?;
+
+    let mut tx = state.pool.begin().await?;
+    if !crate::roles::lock_tenant(&mut tx, caller.tenant).await? {
+        return Err(denied());
+    }
+    let admitted = receiver(&mut tx, binding).await?;
+    validate_current_receiver(&caller, &admitted)?;
+    let page = read_service_resource_page(
+        &mut tx,
+        &state.governance.spicedb,
+        state.governance.cfg.relationship_page,
+        &admitted,
+        binding,
+        &query,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(page)
+}
+
+async fn read_service_resource_page(
+    conn: &mut PgConnection,
+    spicedb: &crate::spicedb::SpiceDb,
+    relationship_page: u32,
+    admitted: &Receiver,
+    binding: Uuid,
+    query: &super::read::ReadResourceQuery,
+) -> Result<contracts::ApplicationReadResourcePage, Refusal> {
+    let limit = i64::from(relationship_page);
+    let offset = service_directory_offset(query, limit)?;
+    let (version, principal, workspace) =
+        super::read::read_receiver(conn, admitted.tenant, binding)
+            .await?
+            .ok_or_else(denied)?;
+    let rows =
+        super::read::read_resource_rows(conn, admitted.tenant, binding, workspace, query, limit)
+            .await?;
+    let has_next = rows.len() == usize::try_from(limit).map_err(|_| invalid())?;
+    let mut resources = Vec::new();
+    for row in rows {
+        if !super::read::resource_visible(
+            spicedb,
+            relationship_page,
+            admitted.tenant,
+            principal,
+            "read",
+            &row,
+        )
+        .await?
+        {
+            continue;
+        }
+        let (id, resource_version, resource_binding, home_workspace, _, kind, native_ref) = row;
+        let mut value = json!({"resourceId":id,"version":resource_version,
+            "bindingId":resource_binding,"typeKey":kind,"nativeRef":native_ref});
+        if let Some(home_workspace) = home_workspace {
+            value["workspaceId"] = json!(home_workspace);
+        }
+        resources.push(value);
+    }
+    let mut value = json!({"bindingId":binding,"bindingVersion":version,
+        "servicePrincipalId":principal,"tenantId":admitted.tenant,
+        "direction":query.direction,"resources":resources});
+    if let Some(workspace) = workspace {
+        value["workspaceId"] = json!(workspace);
+    }
+    if has_next {
+        value["nextOffset"] = json!(offset + limit);
+    }
+    let page = serde_json::from_value(value).map_err(|_| blocked())?;
+    Ok(page)
+}
+
+fn service_directory_offset(
+    query: &super::read::ReadResourceQuery,
+    limit: i64,
+) -> Result<i64, Refusal> {
+    let offset = query.offset.unwrap_or(0);
+    if query.direction != contracts::ApplicationReadResourceDirection::Source
+        || offset < 0
+        || limit <= 0
+        || offset.checked_add(limit).is_none()
+    {
+        return Err(invalid());
+    }
+    Ok(offset)
+}
+
+fn validate_current_receiver(caller: &ReadCaller, admitted: &Receiver) -> Result<(), Refusal> {
+    if admitted.tenant != caller.tenant
+        || admitted.workspace != caller.workspace
+        || admitted.principal != caller.principal
+        || admitted.client != caller.client
+        || Some(admitted.generation) != caller.generation
+    {
+        return Err(denied());
+    }
+    Ok(())
 }
 
 async fn source(
@@ -460,9 +603,7 @@ pub(crate) async fn request(
         };
         if !crate::roles::lock_tenant(&mut tx,initial.tenant).await? { return Err(denied()); }
         let receiver=receiver(&mut tx,binding).await?;
-        if receiver.principal!=initial.principal || receiver.client!=initial.client
-            || receiver.tenant!=initial.tenant || receiver.workspace!=initial.workspace
-            || receiver.generation!=initial_generation { return Err(denied()); }
+        validate_current_receiver(&initial,&receiver)?;
         if input["resourceId"]!=json!(target) { return Err(denied()); }
         if let Some((_,parent_target,parent_hash))=&parent {
             let args=receiver_arguments.as_ref().ok_or_else(invalid)?;
@@ -704,6 +845,275 @@ fn validate_claims(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn service_directory_rejects_receiver_direction_and_invalid_pages() {
+        let query = |direction, offset| super::super::read::ReadResourceQuery {
+            direction,
+            offset,
+            category_key: None,
+        };
+        use contracts::ApplicationReadResourceDirection::{Receiver, Source};
+        assert_eq!(
+            service_directory_offset(&query(Source, None), 16).unwrap(),
+            0
+        );
+        assert_eq!(
+            service_directory_offset(&query(Source, Some(16)), 16).unwrap(),
+            16
+        );
+        for (direction, offset, limit) in [
+            (Receiver, None, 16),
+            (Source, Some(-1), 16),
+            (Source, Some(i64::MAX), 16),
+            (Source, None, 0),
+        ] {
+            assert!(service_directory_offset(&query(direction, offset), limit).is_err());
+        }
+    }
+
+    #[test]
+    fn service_directory_rechecks_all_authenticated_binding_identity_facts() {
+        let (caller, _, _, _) = retained_observation();
+        let current = || Receiver {
+            tenant: caller.tenant,
+            workspace: caller.workspace,
+            principal: caller.principal,
+            client: caller.client.clone(),
+            generation: caller.generation.unwrap(),
+            manifest: json!({}),
+        };
+        assert!(validate_current_receiver(&caller, &current()).is_ok());
+        for field in ["tenant", "workspace", "principal", "client", "generation"] {
+            let mut altered = current();
+            match field {
+                "tenant" => altered.tenant = Uuid::new_v4(),
+                "workspace" => altered.workspace = None,
+                "principal" => altered.principal = Uuid::new_v4(),
+                "client" => altered.client.push_str("-rotated"),
+                "generation" => altered.generation += 1,
+                _ => unreachable!(),
+            }
+            assert!(
+                validate_current_receiver(&caller, &altered).is_err(),
+                "{field}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the existing migrated isolated database; fixtures roll back"]
+    async fn service_directory_reads_real_scoped_rows_and_fresh_service_permissions() {
+        use sqlx::Connection;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU8, AtomicUsize, Ordering},
+        };
+        let mut conn = PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL").expect("isolated database"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        let (registration, bindings) =
+            include_str!("../../../verify/application-execution-dispatch.sql")
+                .split_once("DO $$\nDECLARE provider text; release uuid; binding uuid;")
+                .unwrap();
+        let registration = registration.replace(
+            "'resourceTypeDefinitions',jsonb_build_array(resource_type));",
+            "'resourceTypeDefinitions',jsonb_build_array(resource_type),\n\
+             'executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER','adapterProtocolRange','1','actionTokenAudience','isolated-reader'),\n\
+             'capabilityDeclarations',jsonb_build_array(jsonb_build_object('categoryKey','retire_plain','readEdge','BOTH')));",
+        );
+        // Reuse the original dispatch fixture with its constraints enabled;
+        // distinct workspace bindings keep the native category uniqueness rule.
+        let bindings = format!("DO $$\nDECLARE provider text; release uuid; binding uuid;{bindings}")
+            .replacen("create_ae uuid;", "workspace uuid; create_ae uuid;", 1)
+            .replace("FOREACH provider IN ARRAY ARRAY['catalog_fixture_two'] LOOP", "FOREACH provider IN ARRAY ARRAY['catalog_fixture_one','catalog_fixture_two'] LOOP")
+            .replacen("binding:=gen_random_uuid();", "workspace:=gen_random_uuid(); INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,provider,provider,'ACTIVE'); binding:=gen_random_uuid();", 1)
+            .replace("id,operation_id,tenant_id,action_key", "id,operation_id,tenant_id,workspace_id,action_key")
+            .replace(",tenant,'", ",tenant,workspace,'")
+            .replace("application_binding(id,tenant_id,component_type_key", "application_binding(id,tenant_id,workspace_id,component_type_key")
+            .replace("VALUES(binding,tenant,provider", "VALUES(binding,tenant,workspace,provider")
+            .replace("application_category(tenant_id,category_key", "application_category(tenant_id,workspace_id,category_key")
+            .replace("VALUES(tenant,'retire_plain'", "VALUES(tenant,workspace,'retire_plain'")
+            .replace("catalog.resource(id,tenant_id,type_key", "catalog.resource(id,tenant_id,home_workspace_id,type_key")
+            .replace("kind,tenant_id,operation_id", "kind,tenant_id,workspace_id,operation_id")
+            .replace("'COMPONENT_BINDING',tenant,business_ae", "'COMPONENT_BINDING',tenant,workspace,business_ae")
+            .replace("'isolated-instance'", "provider||'-instance'")
+            .replace("'{}',repeat('6',64)", "jsonb_build_object('client_id',provider),repeat('6',64)")
+            .replace("repeat('f',64)", "encode(sha256(convert_to(format('{\"instance\":%s,\"ref\":%s,\"scope\":%s,\"type\":%s}',frozen->'nativeInstanceRef',frozen->'reference'->'nativeRef',frozen->'nativeScopeRef',frozen->'reference'->'nativeType'),'UTF8')),'hex')");
+        sqlx::raw_sql(&format!("{registration}{bindings}"))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("update identity.service_principal s set component_binding_kind='APPLICATION',component_binding_id=b.id from catalog.application_binding b where b.service_principal_id=s.principal_id")
+            .execute(&mut *tx).await.unwrap();
+        let binding: Uuid = sqlx::query_scalar("select id from catalog.application_binding where component_type_key='catalog_fixture_one'")
+            .fetch_one(&mut *tx).await.unwrap();
+        let caller = read_caller(&mut tx, binding).await.unwrap();
+        let admitted = receiver(&mut tx, binding).await.unwrap();
+        validate_current_receiver(&caller, &admitted).unwrap();
+        let mut query = super::super::read::ReadResourceQuery {
+            direction: contracts::ApplicationReadResourceDirection::Source,
+            offset: None,
+            category_key: Some("retire_plain".into()),
+        };
+        let scoped = super::super::read::read_resource_rows(
+            &mut tx,
+            admitted.tenant,
+            binding,
+            admitted.workspace,
+            &query,
+            16,
+        )
+        .await
+        .unwrap();
+        assert_eq!(scoped.len(), 1);
+        let all = super::super::read::read_resource_rows(
+            &mut tx,
+            admitted.tenant,
+            binding,
+            None,
+            &query,
+            16,
+        )
+        .await
+        .unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(
+            super::super::read::read_resource_rows(
+                &mut tx,
+                Uuid::new_v4(),
+                binding,
+                None,
+                &query,
+                16
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        query.category_key = Some("unavailable-category".into());
+        assert!(
+            super::super::read::read_resource_rows(
+                &mut tx,
+                admitted.tenant,
+                binding,
+                None,
+                &query,
+                16
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        query.category_key = Some("retire_plain".into());
+        let observed = Arc::new((
+            scoped[0].clone(),
+            admitted.principal,
+            AtomicU8::new(0),
+            AtomicUsize::new(0),
+        ));
+        let relationships = {
+            let observed = observed.clone();
+            let tenant = admitted.tenant;
+            move |Json(request): Json<Value>| {
+                let observed = observed.clone();
+                async move {
+                    assert_eq!(request["consistency"]["fullyConsistent"], true);
+                    assert_eq!(
+                        request["relationshipFilter"]["optionalResourceId"],
+                        observed.0.0.to_string()
+                    );
+                    let owner = if observed.2.load(Ordering::SeqCst) == 3 {
+                        Uuid::new_v4()
+                    } else {
+                        observed.0.4
+                    };
+                    let mut facts =
+                        vec![("owner", "principal", owner), ("tenant", "tenant", tenant)];
+                    facts.extend(observed.0.3.map(|id| ("home_workspace", "workspace", id)));
+                    assert_eq!(request["optionalLimit"], 1);
+                    let offset = request["optionalCursor"]["token"]
+                        .as_str()
+                        .map(|token| token.parse::<usize>().unwrap())
+                        .unwrap_or(0);
+                    facts.into_iter().enumerate().skip(offset).take(1).map(|(index, (relation, kind, id))| json!({"result":{"relationship":{
+                        "resource":{"objectType":"resource","objectId":observed.0.0},"relation":relation,
+                        "subject":{"object":{"objectType":kind,"objectId":id}}
+                    },"afterResultCursor":{"token":(index + 1).to_string()}}}).to_string()).collect::<Vec<_>>().join("\n")
+                }
+            }
+        };
+        let checks = {
+            let observed = observed.clone();
+            move |Json(request): Json<Value>| {
+                let observed = observed.clone();
+                async move {
+                    assert_eq!(request["consistency"]["fullyConsistent"], true);
+                    assert_eq!(request["permission"], "read");
+                    assert_eq!(
+                        request["subject"]["object"]["objectId"],
+                        observed.1.to_string()
+                    );
+                    observed.3.fetch_add(1, Ordering::SeqCst);
+                    let mode = observed.2.load(Ordering::SeqCst);
+                    Json(
+                        json!({"checkedAt":{"token":if mode == 2 { "" } else { "fresh-read" }},
+                        "permissionship":if mode == 1 { "PERMISSIONSHIP_NO_PERMISSION" } else { "PERMISSIONSHIP_HAS_PERMISSION" }}),
+                    )
+                }
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let spicedb =
+            crate::spicedb::SpiceDb::for_test(format!("http://{}", listener.local_addr().unwrap()));
+        let router = axum::Router::new()
+            .route("/v1/relationships/read", axum::routing::post(relationships))
+            .route("/v1/permissions/check", axum::routing::post(checks));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let page = read_service_resource_page(&mut tx, &spicedb, 1, &admitted, binding, &query)
+            .await
+            .unwrap();
+        let page = serde_json::to_value(page).unwrap();
+        assert_eq!(page["resources"].as_array().unwrap().len(), 1);
+        assert_eq!(page["resources"][0]["bindingId"], json!(binding));
+        assert_eq!(page["nextOffset"], 1);
+        observed.2.store(1, Ordering::SeqCst);
+        let denied_page = serde_json::to_value(
+            read_service_resource_page(&mut tx, &spicedb, 1, &admitted, binding, &query)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(denied_page["resources"], json!([]));
+        assert_eq!(denied_page["nextOffset"], 1);
+        for mode in [2, 3] {
+            observed.2.store(mode, Ordering::SeqCst);
+            assert!(
+                read_service_resource_page(&mut tx, &spicedb, 1, &admitted, binding, &query)
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(observed.3.load(Ordering::SeqCst), 3);
+        query.offset = Some(1);
+        let end = serde_json::to_value(
+            read_service_resource_page(&mut tx, &spicedb, 1, &admitted, binding, &query)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(end["resources"], json!([]));
+        assert!(end.get("nextOffset").is_none());
+        server.abort();
+        tx.rollback().await.unwrap();
+    }
 
     fn retained_observation() -> (ReadCaller, Execution, Value, Value) {
         let caller = ReadCaller {

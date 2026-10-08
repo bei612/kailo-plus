@@ -1188,3 +1188,81 @@ home Workspace、投影与当前 read/export 及结果暴露策略。原 HUMAN/A
 本批未跑全量门禁、未部署、未激活 release/binding、未截图或更新安装包。
 对应 Wren/WeKnora 原生消费者验收分别见其已有回执；不将局部通过计作
 三组件可用、完整原版恢复、真实多来源业务或生产就绪。
+
+## 接收服务的真实来源目录消费者（2026-10-08）
+
+本批基线为 main `608af0d77d1118eed8cb8cbe3f66decb95740a8b`。已有知识库
+`internal/application/service/datasource_file_storage_directory.go::sourceResources`
+实际请求服务来源目录，但 Core 尚未登记该路由；本次闭合这个消费者，不另造目录。
+仅修改 `application_binding_read.rs`、`application_read_grant.rs`、
+`service_api.rs` 三生产/既有检查文件；本节记录不代表部署或组件启用。
+
+四步影响记录：
+
+1. 权威是 DD-89、设计07 §8.2 与设计13 的接收方自拉规则。固定 WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/knowledge_process.go::ProcessDocument` 保持原生
+   处理消费者；Kailo 来源选择器只发现已授权 Resource 引用，不读取正文。
+2. 影响面是既有 `ApplicationReadResourcePage`、接收 binding 的 SERVICE
+   认证、活动 release/runtime、Tenant/Workspace、来源类型、SpiceDB 投影与
+   fresh read。新增 GET `/service/v1/adapter/bindings/{binding}/read-resources`
+   只接受 SOURCE；categoryKey 为可选精确类别筛选。共用原 BFF 的真实 SQL 与
+   投影/权限读取，BFF 仍按 HUMAN share/update 和原 scope guard 执行。没有
+   schema、生成类型、数据库迁移、持久格式、Workflow 或第二权限权威。
+3. 单一 Authorization 经既有 verify_binding_client 校验绑定的独立 client；
+   先释放初始 binding 锁，再取原 Tenant 生命周期锁，重读 binding 并核对
+   tenant/workspace/principal/client/generation 五项身份事实。不能从请求选择
+   actor 或借用 Core/HUMAN 凭据。只返回引用元数据，后续实际取数仍走原
+   request_read_grant、Quota、短期 ActionToken、来源 PEP 与 operation 审计。
+4. 失效 binding、跨 Tenant/Workspace、错误类别与 inactive 来源不入目录；
+   无权限项过滤，原始 SQL 页的 nextOffset 不因过滤变空而提前结束。投影不符、
+   HTTP 观察失败或缺少 fresh zed token 返回原 Unavailable；拒绝不降级。
+   负 offset、溢出与零页长沿 InvalidInput。没有新增副作用或待收敛状态；
+   Web/Native 管理面与 Mobile 非组件宿主边界不变。
+
+集中窄验复用原 SDK `kailo-agent-receipt-xvkujx`，UID1000、4 CPU/8 GiB、
+memory+swap=8 GiB、镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+Cargo 保持 `-j16 --locked --offline`，CARGO_INCREMENTAL=0，原 registry/git/target
+缓存与 Data TMPDIR；没有新镜像、下载、数据库、迁移或整树复制。开始前主机
+available 约31 GiB、CPU pressure avg10=4.05、memory pressure 为0；Data 约367 MiB。
+原 SDK 历史 memory.max 事件12244保留，oom/oom_kill/oom_group_kill均0。
+
+私有候选的 Core crates 生产输入先全目录核对，仅三修改文件与正式树不同；
+同步三文件后使用原 SDK rustfmt，回投正式树，最终三文件 cmp 均0。实际数据库
+只用已经迁移的隔离 `service_native_batch_6cmb1h`（105条迁移），不接业务库。
+所有新增真实 SQL fixture 在同一事务内运行并回滚；最终 Tenant 行数0。
+SpiceDB 外部 HTTP 边界使用现有 for_test 及真实客户端，非真实部署授权实例。
+
+原始日志目录为 `/volumes/data/kailo/check-cache/service-source-directory.P8mgbo`：
+
+- `unit-positive.log`：原 read_grant tests 7 passed/2 ignored，退出0，编译1m59s；
+  两项数据库检查当时未跑，不计通过。
+- `database-positive.log`：同一已编译二进制显式 `--ignored`，2 passed/0 failed，
+  退出0。真实 SQL 验证 Workspace 来源1条/Tenant来源2条、异Tenant与错误类别0条；
+  原 HTTP 客户端验证 SERVICE fresh read、拒绝页分页、投影错误与空zed token。
+- `permission-mutation.log`：仅私有实际 read_service_resource_page 故意跳过
+  resource_visible；原真实消费者检查退出101、1 failed，拒绝页泄露原资源引用，
+  报 `left: Array [Object ...] right: Array []`。检查本身及正式生产字节未破坏。
+- 实际守卫还原、三输入 cmp0；`restored-final.log` 同原
+  `cargo test --locked --offline -j16 -p platform-core --bin platform-core
+  application_binding::read_grant::tests -- --include-ignored --nocapture`：
+  **9 passed/0 failed/0 ignored，退出0**，恢复编译33.51s。
+- `bff-restored.log` 原 BFF read_resource_tests 显式 include-ignored：2/2通过，
+  退出0。`auth-final.log` 原 service_auth::gateway_tests：3/3通过，退出0；
+  这是既有 Gateway 检查，不冒称新 SERVICE 路由的实时 OIDC HTTP 验收。
+  首次误筛 service_auth::tests 得0项，已纠正，不将0项当鉴权通过。
+- 三路径原 rustfmt --check、限定 git diff --check 均退出0。最终只读 SQL 的
+  第一条 shell 引号误用使查询语法报错，未执行写入；纠正后实读数据库名、105条
+  迁移与Tenant0。所有任务终态后立即释放 SDK 给 UI 实现批。
+
+| 日志 | SHA-256 |
+|---|---|
+| unit-positive.log | `55d43402291bd927943c5693092e1a7ccdf0da77855889d72000d1baf536371e` |
+| database-positive.log | `6f5d463cd416d007556053e921a3b7510e2a0327ac239ea3b2fb713fbd0665ba` |
+| permission-mutation.log | `22f3563697599d794ef71cafd016c62953ba36f0ba2fb3ebf1da8c63066d393e` |
+| restored-final.log | `56239cd4b51a37b5f165066fe05e2524c7679393c157f43424eefc4f65dff380` |
+
+本批未跑全仓 full/Clippy、真实 Adapter OIDC 路由、三组件业务导入/解析/撤权、
+浏览器截图、Windows/Mobile 或安装包验收；未部署或创建 release/binding。
+最近 full 已知失败不因窄验改记成功。本接口不证明三个外部组件已经可用。
