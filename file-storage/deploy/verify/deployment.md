@@ -1,5 +1,65 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-08 适配器实际打包与可选启动
+
+本批解决已有 `adapter/src/main.mjs` 无镜像配方和部署消费者的问题；不恢复原版
+无治理调用、不更改 Cells 页面。`tools/build-upstream.sh file-storage-adapter`
+现消费本工程 adapter、锁定的 XML 解析依赖及 `client-kit/adapter` 实际跨目录
+imports。构建上下文为 apps，专属 dockerignore 不带原生数据、密钥或 node_modules。
+Node digest 复用 `tools/check.Dockerfile`，npm 使用 lockfile、BuildKit 缓存及
+`--ignore-scripts`，不在镜像层渲染凭据。
+
+正常独立 Cells 启动命令不变。已投递组件专属 OpenBao Agent 的目录、Unix
+proxy 与绑定配置后，使用 `bash file-storage/deploy/start.sh --check
+--platform-adapter CONTROLLED_ENV_FILE` 核对投递，再移除 `--check` 启动。
+可选模式只 create/up `cells-adapter`，不重建 Cells 或数据库；镜像须已存在
+且固定 digest，`--pull never` 不重复联网取镜像。独立 Agent 仍由原受控
+AppRole 投递负责：无 cache、`api_proxy.use_auto_auth_token="force"`、专属
+Unix socket，不能拿共享管理 token 或伪造审计文件替代。
+
+四步结论：
+
+1. 权威为 DD-87/89/93、原 FILE_STORAGE 接入合同与现有绑定校验。固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api.go::Handler.TreeNodeToNode`、`Handler.ContextWorkspace`
+   已用 git grep 重新核验；没有另立服务、身份、资源或授权权威。
+2. 影响为适配器镜像输入、已有 start.sh 的显式可选消费者与环境模板；配置
+   继续由 `query-revision.mjs::configuration` 解释。无合同、数据库、Workflow
+   格式变化及迁移；原两服务配置回读保持相同，Web/Desktop/Mobile 传输边界不变。
+3. 所有投递文件与 socket 必须位于该组件独占的 owner-only 目录，非 root
+   adapter 同 UID/GID 只读挂载，且与原生/数据库目录互不包含。没有宿主发布
+   adapter 端口。启动回执不充当 Core 的 release/binding 验证和 ACTIVE 证据。
+4. 缺配置、权限不符、目录逃逸、非 socket 或缺本地镜像拒绝启动；实际原生
+   超时、撤权、用量与绑定验证仍由已实现调用链处理，不重放副作用。没有新
+   持久状态；本批不增加在途任务或改变 UNKNOWN 的处置。
+
+实际验证：既有 4 CPU/8 GiB SDK 内，`npm ci --offline --ignore-scripts
+--no-audit --no-fund --cache /cache/npm` 退出 0，3 个锁定依赖安装成功；既有
+`node --test test/*.test.mjs` 为 126/126。实际 import 共享 protocol 和 xml2js
+退出 0；未投递配置运行 `node src/main.mjs` 退出 1，原文
+`file storage adapter configuration unavailable`。验证源码与当前源逐文件 cmp
+一致；旧候选缺 main/native-reference 文件已补入，未把缺文件当完整输入。
+
+`bash -n`、原 launcher 独立模式及 adapter `--check` 均退出 0；实际 Compose
+回读确认原两服务不变、adapter 无公开端口、有限 CPU/内存及同绝对路径只读
+mount。将投递 SERVICE 文件权限改为 0644，原 launcher 退出 2；恢复 0600 后
+退出 0。主动把生产 overlay 的 mount 改为可写，回读断言退出 1；还原后
+退出 0。实现后交叉复核发现符号链接祖先可能让宿主解析成功而容器字面路径
+不可达，已要求目录及每个投递文件/socket 使用真实绝对路径；把配置改为
+符号链接祖先路径，原 launcher 退出 2，还原后退出 0。
+首轮观察脚本误把 Compose 省略的 false 属性视为必有 key，曾报
+`KeyError: create_host_path`；按实际序列化语义修正后才取得上述正反结果。
+旧 OIDC fixture 缺当前 native OAuth/subnet 输入，首次原 launcher 退出 2；
+新 fixture 只作配置读取，无真实凭据、binding 或容器启动。
+实际 `docker compose create --help` 核对不支持 `--no-deps`，启动命令已移除
+该参数；adapter 本身没有 depends_on，仍以明确服务名限定 create。up 的
+`--no-deps` 保留，不把仅通过 config 解析当作所有启动参数已验证。
+
+证据目录 `/volumes/data/kailo/tmp/cells-adapter.L8MUbo`；锁依赖与 126 项输出为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/read-receipts-20261007/cells-packaged-dependencies.log`。
+Data 剩余约 1.2 GiB，未运行镜像构建、完整检查、实际部署、三端业务或 binding
+激活，artifact/source digest 均如实为 none；本批不是 Cells 集成全部完成。
+
 ## 当前结果
 
 2026-10-05 22:30 UTC 的原生 OIDC 投递记录存在错误判断：Compose 将受控

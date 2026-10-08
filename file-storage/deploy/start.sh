@@ -2,8 +2,16 @@
 # Independent native Cells service. Does not create Kailo resources or identities.
 set -euo pipefail
 check_only=false
-if [[ ${1:-} == --check ]]; then check_only=true; shift; fi
-[[ $# == 1 && -f $1 ]] || { printf 'usage: bash start.sh [--check] CONTROLLED_ENV_FILE\n' >&2; exit 2; }
+platform_adapter=false
+while [[ ${1:-} == --* ]]; do
+  case "$1" in
+    --check) check_only=true ;;
+    --platform-adapter) platform_adapter=true ;;
+    *) printf 'unknown deployment option\n' >&2; exit 2 ;;
+  esac
+  shift
+done
+[[ $# == 1 && -f $1 ]] || { printf 'usage: bash start.sh [--check] [--platform-adapter] CONTROLLED_ENV_FILE\n' >&2; exit 2; }
 config=$(realpath -e -- "$1")
 [[ $(stat -c '%a' -- "$config") == 600 ]] || { printf 'deployment env must be mode 0600\n' >&2; exit 2; }
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -84,13 +92,65 @@ PY
 source "$root/tools/container-safety.sh"
 container_safety_init
 compose=("${CONTAINER_DOCKER[@]}" compose --project-name "$CELLS_COMPOSE_PROJECT" --env-file "$config" -f "$here/compose.yaml")
+if "$platform_adapter"; then
+  # Validate actual mounted paths/ownership, not a second binding schema. The
+  # existing Node configuration parser and Core validation remain authoritative.
+  python3 - <<'PY'
+import json, os, pathlib, re, stat, sys
+def require(condition):
+    if not condition:
+        raise ValueError('invalid delivery')
+try:
+    env = os.environ
+    require(re.fullmatch(r'[^\s@]+@sha256:[a-f0-9]{64}', env['CELLS_ADAPTER_IMAGE']))
+    uid, gid = int(env['CELLS_ADAPTER_UID']), int(env['CELLS_ADAPTER_GID'])
+    require(uid > 0 and gid > 0)
+    directory = pathlib.Path(env['CELLS_ADAPTER_DELIVERY_DIR'])
+    require(directory.is_absolute() and directory.is_dir() and directory == directory.resolve())
+    directory = directory.resolve()
+    ds = directory.stat()
+    require(ds.st_uid == uid and ds.st_gid == gid and stat.S_IMODE(ds.st_mode) == 0o700)
+    native_dirs = [pathlib.Path(env[k]).resolve() for k in ('CELLS_DATA_DIR', 'CELLS_DB_DATA_DIR')]
+    require(all(directory != p and directory not in p.parents and p not in directory.parents for p in native_dirs))
+    def delivered(value, socket=False):
+        path = pathlib.Path(value)
+        require(path.is_absolute() and path == path.resolve() and directory in path.parents)
+        entry = path.stat()
+        require(entry.st_uid == uid and entry.st_gid == gid)
+        require(stat.S_IMODE(entry.st_mode) in ((0o600,) if socket else (0o400, 0o600)))
+        require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
+        return path
+    conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
+    for key in ('cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile'):
+        delivered(conf[key])
+    for item in conf['management']['validation']['secretDeliveries']:
+        delivered(item['secretFile'])
+        delivered(item['secretSocket'], socket=True)
+except (KeyError, TypeError, ValueError, OSError):
+    print('Cells adapter delivery refused; no services started', file=sys.stderr)
+    sys.exit(2)
+print('Cells adapter mount delivery validated; binding activation is not asserted')
+PY
+  compose+=(-f "$here/compose.adapter.yaml")
+fi
 "${compose[@]}" config --quiet
 if "$check_only"; then exit 0; fi
 container_resource_preflight
+if "$platform_adapter"; then
+  # Start only the optional consumer; never recreate Cells or its database.
+  "${CONTAINER_DOCKER[@]}" image inspect "$CELLS_ADAPTER_IMAGE" >/dev/null
+  "${compose[@]}" create --no-build --pull never cells-adapter
+  mapfile -t containers < <("${compose[@]}" ps --all --quiet cells-adapter)
+  [[ ${#containers[@]} == 1 ]] || { printf 'unexpected Cells adapter service set\n' >&2; exit 2; }
+  container_verify_limits "${containers[0]}"
+  "${compose[@]}" up --detach --no-build --no-deps --no-recreate --pull never cells-adapter
+  printf 'Cells adapter started; release validation, binding activation and business acceptance remain separate\n'
+  exit 0
+fi
 # All images are digest-pinned. No build, initializer outside this project, or shared DB.
 "${compose[@]}" pull
 "${compose[@]}" create --no-build --pull never
-mapfile -t containers < <("${compose[@]}" ps --all --quiet)
+mapfile -t containers < <("${compose[@]}" ps --all --quiet cells cells-db)
 [[ ${#containers[@]} == 2 ]] || { printf 'unexpected independent Cells service set\n' >&2; exit 2; }
 for container in "${containers[@]}"; do container_verify_limits "$container"; done
 "${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}"

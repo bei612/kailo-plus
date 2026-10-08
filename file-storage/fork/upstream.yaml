@@ -9,6 +9,14 @@ implementation_base_commit: c57f02f4962835447df694c63bd0fd8c22bd7baf
 base_divergence: none
 
 artifacts:
+  - name: file-storage-adapter
+    kind: image
+    build_context: .
+    build_dockerfile: file-storage/adapter/Dockerfile
+    inputs: [file-storage/adapter/Dockerfile, file-storage/adapter/Dockerfile.dockerignore, file-storage/adapter/package.json, file-storage/adapter/package-lock.json, file-storage/adapter/src/, client-kit/adapter/]
+    source_digest: none
+    artifact_digest: none
+    blocked: Source packaging exists; no adapter artifact, live SecretRef delivery, binding activation or tool acceptance has been recorded.
   - name: file-storage-service
     kind: image
     build_context: file-storage

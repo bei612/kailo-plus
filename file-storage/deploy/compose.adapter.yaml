@@ -1,0 +1,29 @@
+# Optional platform protocol consumer. Native Cells keeps its independent entry
+# and data. No host port, platform administrator credential or writable state.
+services:
+  cells-adapter:
+    image: ${CELLS_ADAPTER_IMAGE:?recorded adapter image digest required}
+    user: ${CELLS_ADAPTER_UID:?delivery owner UID required}:${CELLS_ADAPTER_GID:?delivery owner GID required}
+    cpus: ${CELLS_ADAPTER_CPUS:?required}
+    mem_limit: ${CELLS_ADAPTER_MEMORY:?required}
+    memswap_limit: ${CELLS_ADAPTER_MEMORY:?required}
+    restart: on-failure
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      ADAPTER_CONFIG_FILE: ${CELLS_ADAPTER_CONFIG_FILE:?controlled binding configuration required}
+    volumes:
+      # Same absolute paths as the controlled configuration. Atomic OpenBao
+      # Agent rotation stays visible; no copy of a token or secret into an image.
+      - type: bind
+        source: ${CELLS_ADAPTER_DELIVERY_DIR:?component-specific Agent delivery required}
+        target: ${CELLS_ADAPTER_DELIVERY_DIR}
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [cells-ui, cells-platform]
+
+networks:
+  cells-platform:
+    external: true
+    name: ${CELLS_ADAPTER_PLATFORM_NETWORK:?existing private platform protocol network required}
