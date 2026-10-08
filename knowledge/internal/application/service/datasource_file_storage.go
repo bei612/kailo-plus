@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -316,6 +317,15 @@ type fileStorageFetched struct {
 	size   int64
 }
 
+// A retained native creation is not a ready import. This error distinguishes
+// its original asynchronous parse from missing identity/provenance, so one
+// pending file does not prevent dispatching other independently admitted files.
+type fileStorageParsePending struct{}
+
+func (*fileStorageParsePending) Error() string {
+	return "original native file parsing remains pending"
+}
+
 func (c *fileStorageConnector) completedNative(ctx context.Context, run fileStorageRun, grant *fileStorageGrant) (*types.Knowledge, map[string]json.RawMessage, error) {
 	var receipt map[string]json.RawMessage
 	if json.Unmarshal(grant.value["receiverReceipt"], &receipt) != nil {
@@ -339,11 +349,17 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 	refs, marshalErr := json.Marshal(item.References)
 	if err != nil || marshalErr != nil || native == nil || native.ID != item.KnowledgeID ||
 		native.TenantID != run.tenantID || native.KnowledgeBaseID != run.knowledgeBaseID || native.DeletedAt.Valid ||
-		native.ParseStatus != types.ParseStatusCompleted || native.UpdatedAt.IsZero() || native.UpdatedAt.After(time.Now()) ||
+		native.UpdatedAt.IsZero() || native.UpdatedAt.After(time.Now()) ||
 		native.FileHash+":"+native.FileType != key || native.FileSize != item.Bytes ||
 		native.GetMetadata()["datasource_id"] != run.dataSourceID || native.GetMetadata()["external_id"] != key ||
 		native.GetMetadata()["source_content_sha256"] != item.Digest || native.GetMetadata()["source_references"] != string(refs) {
 		return fileStorageGroup{}, fmt.Errorf("original native file application is not ready or its provenance requires reconciliation")
+	}
+	if native.ParseStatus != types.ParseStatusCompleted {
+		if item.ObservedAt.IsZero() && (native.ParseStatus == types.ParseStatusPending || native.ParseStatus == types.ParseStatusProcessing || native.ParseStatus == types.ParseStatusFinalizing) {
+			return fileStorageGroup{}, &fileStorageParsePending{}
+		}
+		return fileStorageGroup{}, fmt.Errorf("original native file application has no ready terminal evidence")
 	}
 	revision := native.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	if item.ObservedAt.IsZero() {
@@ -393,12 +409,16 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	// Parsing can finish after the original receiver grant expired. Its saved
 	// native identity is observed before new discovery; never re-upload to make
 	// an uncertain old invocation appear complete.
+	var pending *fileStorageParsePending
 	for key, item := range state.Applying {
 		if prior, exists := state.Groups[key]; exists && prior.KnowledgeID != item.KnowledgeID {
 			return nil, fmt.Errorf("native application conflicts with its retained source group")
 		}
 		group, err := c.observeApplication(ctx, run, key, &state, h, oldTime)
 		if err != nil {
+			if errors.As(err, &pending) {
+				continue
+			}
 			return nil, err
 		}
 		// A later native sync has another batch ID and may discover a changed
@@ -409,6 +429,9 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
 			return nil, err
 		}
+	}
+	if pending != nil {
+		return nil, pending
 	}
 	// A saved retirement already crossed the side-effect boundary. Observe it
 	// before requesting new source access: revocation must stop new discovery,
@@ -620,9 +643,18 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		}
 		group, err := c.observeApplication(ctx, run, key, &state, h, oldTime)
 		if err != nil {
+			if errors.As(err, &pending) {
+				continue
+			}
 			return nil, err
 		}
 		desired[key] = group
+	}
+	if pending != nil {
+		// All independently admitted creations have their original Applying
+		// identities checkpointed. None of their pending parses can authorize
+		// retiring old content or publishing a completed desired baseline.
+		return nil, pending
 	}
 	// Only ready new groups reach retirement. The original cursor also retains
 	// the native task intent before enqueue, so lost ACK never issues a new task.
@@ -643,6 +675,28 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	state.Retiring = map[string]fileStorageRetirement{}
 	state.Applying = map[string]fileStorageApplication{}
 	return fileStorageCheckpoint(ctx, h, state, completed)
+}
+
+func (s *DataSourceService) acceptFileStorageCreation(ds *types.DataSource, item *types.FetchedItem, current *types.Knowledge) error {
+	if current == nil || current.ID != item.NativeCreationID || !fileStorageUUID(current.ID) || current.TenantID != ds.TenantID ||
+		current.KnowledgeBaseID != ds.KnowledgeBaseID || current.DeletedAt.Valid || current.UpdatedAt.IsZero() || current.UpdatedAt.After(time.Now()) ||
+		current.FileHash+":"+current.FileType != item.ExternalID || current.FileSize != int64(len(item.Content)) {
+		return fmt.Errorf("original native file creation identity or payload is unconfirmed")
+	}
+	metadata := current.GetMetadata()
+	if metadata["datasource_id"] != ds.ID || metadata["external_id"] != item.ExternalID ||
+		metadata["source_content_sha256"] != fileStorageDigest(item.Content) || metadata["source_references"] != item.Metadata["source_references"] {
+		return fmt.Errorf("original native file creation provenance is unconfirmed")
+	}
+	switch current.ParseStatus {
+	case types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing, types.ParseStatusCompleted:
+		// Emit confirms only the already-persisted native creation identity, not
+		// queue delivery or readiness. FetchStream retains Applying and returns
+		// an error until every original native parse is observed completed.
+		return nil
+	default:
+		return fmt.Errorf("original native file creation has no confirmed parse state")
+	}
 }
 
 // Existing native import metadata is changed only inside the native consumer,

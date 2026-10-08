@@ -3514,3 +3514,108 @@ or binding activation, browser/installed-client screenshot, deployment or
 FILE_STORAGE catalog and native identity/config delivery prerequisites are
 not solved by this byte-correlation change. Independent complete service
 pages/data remain unchanged; this is not a production-readiness claim.
+
+## 2026-10-08: complete native file-directory dispatch before parse observation
+
+Four-step implementation impact:
+
+1. Authority: `DD-89`, `.design/13` §4.4–5 and `.design/07` §8.2 keep
+   source authorization/read receipts and native Knowledge/parse/task facts
+   authoritative. Fixed WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/application/service/datasource_service.go::DataSourceService.processSyncStreaming`
+   and `::DataSourceService.ingestItem`, and
+   `internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromFile`
+   provide the original streaming/native creation chain. Its Kailo
+   `CreateKnowledgeFromFileAtID` consumer retains the original native creation
+   ID before any write. This batch reuses that chain, not a new queue,
+   execution authority or copied file store.
+2. Impact: only the existing `datasource_file_storage.go` and
+   `datasource_service.go` production consumers and their original fixtures
+   change. Previously `finishDataSourceIngest` rejected a normally pending
+   asynchronous parse immediately after creation; the stream stopped at its
+   first file. Each original Asynq retry could dispatch only one more pending
+   file, so a larger directory could exhaust its finite native retry budget.
+   The FILE_STORAGE creation consumer now confirms the exact persisted
+   native identity, tenant/KB, live row/revision, hash/type, actual byte
+   size/digest and original provenance before accepting that individual Emit.
+   This confirms native persistence only, not queue delivery, parse success or
+   completed sync. The original eleven credential-based connectors and their
+   completion consumer are unchanged. No schema, stored cursor format, API,
+   credentials, binding lifecycle, native page or menu changes.
+3. Side effects: `FetchStream` dispatches all independently admitted files
+   while keeping each original Applying reference checkpointed. Only the
+   existing pending/processing/finalizing parse states with no already-frozen
+   completion are classified as pending. Recovery observes every retained
+   independent creation and checkpoints ready ones even if another is still
+   parsing; it never requests new SOURCE access or re-uploads on this path.
+   Any remaining pending parse returns an error before retiring old content
+   or advancing the final desired baseline/last-sync time. Failed/unknown
+   states, changed scope/provenance, missing rows and regressed completed
+   observations remain refusals, not fabricated terminal facts.
+4. Boundaries: creation/queue ACK errors still retain the original Applying
+   ID and stop further writes; they do not prove failure or authorize replay.
+   Original SOURCE/RECEIVER receipts, usage confirmation and final cursor
+   checks remain mandatory. Empty-file, revocation, receipt-ACK loss,
+   checkpoint failure and unknown-creation cases remain in the original
+   target. No retry policy or new state is introduced: the existing finite
+   Asynq retry policy, native sync error/log and existing manual sync/resume
+   responsibility remain unchanged. The early pending-Applying return is
+   still before the existing retirement/discovery recovery loops; this batch
+   does not certify independent progress of those other retained operations.
+
+The existing `kailo-knowledge-native-check-wkkigg` was reused, UID 1000:1000,
+4 CPU/8 GiB with no extra swap, existing `/cache/mod` and `/cache/build`,
+and the existing read-only `/workspace/knowledge` candidate source mount.
+Before execution its only active process was `sleep infinity`, MemAvailable
+was 17309 MiB, Data had 284 GiB available, root had 94 GiB available and
+memory pressure was zero. No dependency download, new image, database or
+large source snapshot was created. The four changed input files alone were
+synchronized to the existing candidate. Exact original target:
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  /usr/local/go/bin/go test -mod=readonly ./internal/application/service \
+  -run 'Test(FileStorage|ProcessSync|Stream|Streaming|Ingest|ApplyFetched)' \
+  -count=1 -v
+```
+
+Positive handle 19068 exited 0: 42 top-level + 111 subtests passed, no
+failures/skips. The actual original native creation/storage/Asynq fixture
+dispatches seven distinct files in one invocation, retains all seven pending
+references, then observes six ready/one pending and finally all ready without
+another creation, upload or SOURCE/PEP request. Private production mutation
+handle 58870 exited 1: 40 top-level + 91 subtests passed and 2 top-level + 20
+subtests failed. Three actual production faults were introduced together:
+stop at the first retained pending application, omit the final pending guard,
+and unconditionally accept the persisted creation consumer. These faults
+were only in the private candidate; formal production was never mutated.
+After restoring the four exact formal inputs, handle 23362 exited 0 on the
+same target: 42 top-level + 111 subtests passed, no failures/skips.
+
+Final `cmp` returned 0 for all four changed inputs and the unchanged direct
+`datasource_file_storage_transport.go`, `datasource_replacement.go` and
+`knowledge_create.go` dependencies. Scoped `git diff --check` was empty.
+Final cgroup low/high/max/OOM/OOM-kill counters were all zero; no compiler or
+test remained active. All three handles are terminal. Logs under
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/file-storage-sync-20261008.maEMf2/`:
+
+- `knowledge-complete-directory-positive.log`, SHA-256
+  `ebd4e0c2e5ab2ea91f20e988e5caa4f0af981cf2fce40037441a708848b91909`
+- `knowledge-complete-directory-mutation.log`, SHA-256
+  `52c622e736c95000ddbd5f2cbee5828ceb06610bbf00e88ab0bbc21858a4e9cb`
+- `knowledge-complete-directory-restored.log`, SHA-256
+  `30a1f5db72207ef8c3b9f4dabc8e4d68eda77711539cc9263600e72ee645329f`
+
+No live Cells SOURCE→WeKnora parser/revoke/duplicate-request E2E, complete
+approved FILE_STORAGE release/binding activation, native actor/config
+delivery, browser/installed-client screenshot, image deployment or
+`tools/check.sh --full` was performed. Core historical-version/catalog
+prerequisites, fully lost upload HTTP ACK and the prior Housekeeping writer
+fence gap remain outside this batch. Complete native pages and independent
+data remain intact. Source/checks are +215/-14 before this receipt; no
+commit/push or deployment was performed by this implementation agent, and
+these local fixtures do not establish production readiness.

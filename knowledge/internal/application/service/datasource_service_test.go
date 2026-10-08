@@ -144,6 +144,49 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 	}
 }
 
+func TestFileStorageCreationAcknowledgesOnlyTheOriginalPersistedPayload(t *testing.T) {
+	ds := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(), Type: fileStorageConnectorType}
+	body := []byte("persisted source body")
+	id := uuid.NewString()
+	metadata := map[string]string{"datasource_id": ds.ID, "external_id": "native-hash:txt",
+		"source_content_sha256": fileStorageDigest(body), "source_references": "original source set"}
+	raw, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	original := types.Knowledge{ID: id, TenantID: ds.TenantID, KnowledgeBaseID: ds.KnowledgeBaseID,
+		FileHash: "native-hash", FileType: "txt", FileSize: int64(len(body)), UpdatedAt: time.Now().Add(-time.Second), Metadata: types.JSON(raw)}
+	item := &types.FetchedItem{NativeCreationID: id, ExternalID: metadata["external_id"], Content: body, Metadata: metadata}
+	svc := &DataSourceService{}
+	for _, state := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing, types.ParseStatusCompleted, types.ParseStatusFailed, "UNKNOWN"} {
+		t.Run(state, func(t *testing.T) {
+			current := original
+			current.ParseStatus = state
+			err := svc.acceptFileStorageCreation(ds, item, &current)
+			if state == types.ParseStatusFailed || state == "UNKNOWN" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+	for name, change := range map[string]func(*types.Knowledge){
+		"another-native-id":     func(k *types.Knowledge) { k.ID = uuid.NewString() },
+		"another-tenant":        func(k *types.Knowledge) { k.TenantID++ },
+		"another-kb":            func(k *types.Knowledge) { k.KnowledgeBaseID = uuid.NewString() },
+		"another-content-group": func(k *types.Knowledge) { k.FileHash = "another-hash" },
+		"another-size":          func(k *types.Knowledge) { k.FileSize++ },
+		"missing-revision":      func(k *types.Knowledge) { k.UpdatedAt = time.Time{} },
+		"future-revision":       func(k *types.Knowledge) { k.UpdatedAt = time.Now().Add(time.Hour) },
+		"missing-provenance":    func(k *types.Knowledge) { k.Metadata = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			current := original
+			current.ParseStatus = types.ParseStatusPending
+			change(&current)
+			require.Error(t, svc.acceptFileStorageCreation(ds, item, &current))
+		})
+	}
+}
+
 func TestFileStorageDataSourceRejectsDifferentControlledScope(t *testing.T) {
 	for _, operation := range []string{"create", "edit", "edit-omitted-type-and-config"} {
 		for _, state := range []string{"matching", "different-knowledge-base", "different-tenant", "missing-configuration", "missing-transport"} {

@@ -668,10 +668,46 @@ func TestFileStorageFetchResumesRetirementBeforeNewSourceAdmission(t *testing.T)
 
 type fileStorageApplicationRepo struct {
 	createKnowledgeFileRepoStub
+	rows map[string]*types.Knowledge
+}
+
+func (r *fileStorageApplicationRepo) CreateKnowledge(ctx context.Context, native *types.Knowledge) error {
+	err := r.createKnowledgeFileRepoStub.CreateKnowledge(ctx, native)
+	if r.rows != nil && err == nil {
+		r.rows[native.ID] = r.createdKnowledge
+	}
+	return err
+}
+
+func (r *fileStorageApplicationRepo) UpdateKnowledge(ctx context.Context, native *types.Knowledge) error {
+	err := r.createKnowledgeFileRepoStub.UpdateKnowledge(ctx, native)
+	if r.rows != nil && err == nil {
+		r.rows[native.ID] = r.createdKnowledge
+	}
+	return err
+}
+
+func (r *fileStorageApplicationRepo) GetKnowledgeByID(ctx context.Context, tenant uint64, id string) (*types.Knowledge, error) {
+	if r.rows != nil {
+		if native := r.rows[id]; native != nil && native.TenantID == tenant {
+			copy := *native
+			return &copy, nil
+		}
+	}
+	return r.createKnowledgeFileRepoStub.GetKnowledgeByID(ctx, tenant, id)
 }
 
 func (r *fileStorageApplicationRepo) FindByDataSourceExternalID(_ context.Context, tenant uint64, kb, ds, external string) (*types.Knowledge, error) {
 	native := r.createdKnowledge
+	if r.rows != nil {
+		native = nil
+		for _, candidate := range r.rows {
+			if candidate.GetMetadata()["datasource_id"] == ds && candidate.GetMetadata()["external_id"] == external {
+				native = candidate
+				break
+			}
+		}
+	}
 	if native == nil || native.TenantID != tenant || native.KnowledgeBaseID != kb ||
 		native.GetMetadata()["datasource_id"] != ds || native.GetMetadata()["external_id"] != external {
 		return nil, nil
@@ -701,7 +737,7 @@ func (s *fileStorageApplicationService) CreateKnowledgeFromFileAtID(ctx context.
 }
 
 func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T) {
-	for _, stage := range []string{"parse-pending", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
+	for _, stage := range []string{"parse-pending", "multiple-pending-files", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
 		t.Run(stage, func(t *testing.T) {
 			source, node, root := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			receiverResource := uuid.NewString()
@@ -711,10 +747,24 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 				body = []byte{}
 			}
 			ref := map[string]string{"resourceId": source, "nativeObjectRef": node, "nativeRevision": "source-revision", "displayName": "doc.txt", "mediaType": "text/plain"}
-			items, err := json.Marshal([]map[string]string{ref})
+			references := []map[string]string{ref}
+			bodies := map[string][]byte{node: body}
+			if stage == "multiple-pending-files" {
+				for index := 1; index < 7; index++ {
+					id := uuid.NewString()
+					references = append(references, map[string]string{"resourceId": source, "nativeObjectRef": id,
+						"nativeRevision": "source-revision", "displayName": fmt.Sprintf("doc-%d.txt", index), "mediaType": "text/plain"})
+					bodies[id] = []byte(fmt.Sprintf("independent source body %d", index))
+				}
+			}
+			items, err := json.Marshal(references)
 			require.NoError(t, err)
 			listKey := fileStorageKey(run.syncLogID, source, "discover")
 			readKey := fileStorageKey(run.syncLogID, source, node, ref["nativeRevision"])
+			readRefs := map[string]map[string]string{}
+			for _, reference := range references {
+				readRefs[fileStorageKey(run.syncLogID, source, reference["nativeObjectRef"], reference["nativeRevision"])] = reference
+			}
 			receipts := map[string]map[string]any{}
 			sourceCompletions := map[string]time.Time{}
 			var ds *types.DataSource
@@ -772,14 +822,16 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 						require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": key,
 							"listingDigest": fileStorageDigest(items), "nativeRevision": fileStorageDigest(items), "items": json.RawMessage(items)}))
 					} else {
-						require.Equal(t, readKey, key)
+						reference := readRefs[key]
+						require.NotNil(t, reference)
+						content := bodies[reference["nativeObjectRef"]]
 						w.Header().Set("Content-Type", "application/octet-stream")
-						w.Header().Set("Content-Length", fmt.Sprint(len(body)))
-						w.Header().Set("X-Kailo-Content-Sha256", fileStorageDigest(body))
-						w.Header().Set("X-Kailo-Native-Object-Ref", node)
-						w.Header().Set("X-Kailo-Native-Revision", ref["nativeRevision"])
+						w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+						w.Header().Set("X-Kailo-Content-Sha256", fileStorageDigest(content))
+						w.Header().Set("X-Kailo-Native-Object-Ref", reference["nativeObjectRef"])
+						w.Header().Set("X-Kailo-Native-Revision", reference["nativeRevision"])
 						w.Header().Set("X-Kailo-Operation-Id", key)
-						_, _ = w.Write(body)
+						_, _ = w.Write(content)
 					}
 				case "/service/v1/adapter/read_receipt":
 					key := request["idempotencyKey"].(string)
@@ -824,6 +876,9 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			transport, err := newFileStorageTransport(cfg)
 			require.NoError(t, err)
 			repo, storage, queue := &fileStorageApplicationRepo{}, &createKnowledgeFileServiceStub{}, &createKnowledgeTaskEnqueuerStub{}
+			if stage == "multiple-pending-files" {
+				repo.rows = map[string]*types.Knowledge{}
+			}
 			native := &fileStorageApplicationService{repo: repo, creator: &knowledgeService{repo: repo, fileSvc: storage, task: queue,
 				kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: run.knowledgeBaseID}}}, lostACK: stage == "creation-ack-lost"}
 			if stage == "existing-ready" || stage == "existing-ready-ack-lost" {
@@ -855,15 +910,61 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 				require.NoError(t, err)
 				pending, err := fileStorageState(persisted)
 				require.NoError(t, err)
-				require.Len(t, pending.Applying, 1)
-				for _, intent := range pending.Applying {
-					require.Equal(t, repo.createdKnowledge.ID, intent.KnowledgeID)
-					require.Equal(t, run.syncLogID, intent.BatchID)
-				}
+				intent := pending.Applying[repo.createdKnowledge.FileHash+":"+repo.createdKnowledge.FileType]
+				require.Equal(t, repo.createdKnowledge.ID, intent.KnowledgeID)
+				require.Equal(t, run.syncLogID, intent.BatchID)
 			}
 			ctx := context.WithValue(newCreateKnowledgeFileContext(), fileStorageRunKey{}, run)
 			input := &types.DataSourceConfig{ResourceIDs: []string{source}}
 			next, err := connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			if stage == "multiple-pending-files" {
+				require.Error(t, err)
+				require.Nil(t, next)
+				require.Equal(t, 7, repo.createCalls, "one asynchronous parse cannot strand the remaining independent files")
+				require.Equal(t, 7, storage.saveCalls)
+				require.Equal(t, 7, queue.calls)
+				retained, err := ds.ParseSyncCursor()
+				require.NoError(t, err)
+				tracked, err := fileStorageState(retained)
+				require.NoError(t, err)
+				require.Len(t, tracked.Applying, 7)
+				require.Equal(t, baseline, tracked.Groups["old:txt"])
+				require.Equal(t, at, retained.LastSyncTime)
+				calls, peps := sourceCalls, pepCalls
+				observing = true
+				for _, native := range repo.rows {
+					native.ParseStatus = types.ParseStatusCompleted
+					native.UpdatedAt = time.Now().UTC()
+				}
+				pendingNative := repo.createdKnowledge
+				pendingNative.ParseStatus = types.ParseStatusPending
+				next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+				require.Error(t, err)
+				require.Nil(t, next)
+				retained, err = ds.ParseSyncCursor()
+				require.NoError(t, err)
+				tracked, err = fileStorageState(retained)
+				require.NoError(t, err)
+				require.Len(t, tracked.Applying, 1)
+				require.Len(t, tracked.Groups, 7, "all other original creations must converge even if the pending one is observed first")
+				require.Equal(t, calls, sourceCalls)
+				require.Equal(t, peps, pepCalls)
+				pendingNative.ParseStatus = types.ParseStatusCompleted
+				pendingNative.UpdatedAt = time.Now().UTC()
+				next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+				require.NoError(t, err)
+				final, err := fileStorageState(next)
+				require.NoError(t, err)
+				require.Empty(t, final.Applying)
+				require.Len(t, final.Groups, 8)
+				require.True(t, next.LastSyncTime.After(at))
+				require.Equal(t, 7, repo.createCalls)
+				require.Equal(t, 7, storage.saveCalls)
+				require.Equal(t, 7, queue.calls)
+				require.Equal(t, calls, sourceCalls)
+				require.Equal(t, peps, pepCalls)
+				return
+			}
 			if stage == "existing-ready" || stage == "existing-ready-ack-lost" {
 				if stage == "existing-ready-ack-lost" {
 					require.Error(t, err)

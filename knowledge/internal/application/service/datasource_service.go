@@ -1406,6 +1406,9 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			}
 			return isUpdate, err
 		}
+		if ds.Type == fileStorageConnectorType {
+			return isUpdate, s.acceptFileStorageCreation(ds, item, created)
+		}
 		return isUpdate, s.finishDataSourceIngest(ctx, ds, item, created)
 	}
 
