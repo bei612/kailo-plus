@@ -14,7 +14,10 @@ import { DeployLogRepository } from './apollo/server/repositories/deployLogRepos
 import { ViewRepository } from './apollo/server/repositories/viewRepository';
 import { ModelRepository } from './apollo/server/repositories/modelRepository';
 import { ModelColumnRepository } from './apollo/server/repositories/modelColumnRepository';
-import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
+import {
+  ApiHistoryRepository,
+  ApiType,
+} from './apollo/server/repositories/apiHistoryRepository';
 import {
   ThreadResponse,
   ThreadResponseRepository,
@@ -108,6 +111,135 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
     if (database) await database.destroy();
   });
+
+  it('commits one original summary task owner before POST and returns only one INSERT winner', async () => {
+    const history = new ApiHistoryRepository(tx);
+    const input = {
+      id: randomUUID(),
+      projectId,
+      apiType: ApiType.GENERATE_SUMMARY,
+      governanceBindingId: randomUUID(),
+      threadId: randomUUID(),
+      headers: {},
+      statusCode: 202,
+      durationMs: 0,
+      requestPayload: {
+        question: 'Original',
+        nativeSummary: { taskId: randomUUID() },
+      },
+      responsePayload: { threadId: 'original-thread' },
+    };
+    const first = await history.prepareNativeSummary(input);
+    expect(first.created).toBe(true);
+    const second = await history.prepareNativeSummary(input);
+    expect(second.created).toBe(false);
+    expect(second.record.id).toBe(first.record.id);
+    const stream = await history.advanceNativeSummary(
+      first.record,
+      { summary: '', threadId: input.threadId },
+      202,
+      1,
+    );
+    expect(stream).not.toBeNull();
+    expect(
+      await history.advanceNativeSummary(
+        second.record,
+        { summary: '', threadId: input.threadId },
+        202,
+        1,
+      ),
+    ).toBeNull();
+    const done = await history.advanceNativeSummary(
+      stream,
+      {
+        summary: 'original answer',
+        threadId: input.threadId,
+        nativeSummary: { doneQueryId: input.id },
+      },
+      200,
+      2,
+    );
+    expect(done.statusCode).toBe(200);
+    expect(
+      await history.advanceNativeSummary(
+        stream,
+        { summary: 'late duplicate' },
+        200,
+        3,
+      ),
+    ).toBeNull();
+    expect(
+      (await history.findOneBy({ id: input.id })).responsePayload.summary,
+    ).toBe('original answer');
+  });
+
+  it.each([
+    'requestPayload',
+    'responsePayload',
+    'projectId',
+    'governanceBindingId',
+    'threadId',
+    'apiType',
+    'statusCode',
+  ])(
+    'the original summary JSONB CAS rejects changed %s without replacing the native task/result',
+    async (field) => {
+      const history = new ApiHistoryRepository(tx);
+      const input = {
+        id: randomUUID(),
+        projectId,
+        apiType: ApiType.GENERATE_SUMMARY,
+        governanceBindingId: randomUUID(),
+        threadId: randomUUID(),
+        headers: {},
+        statusCode: 202,
+        durationMs: 0,
+        requestPayload: {
+          question: 'Original',
+          nativeSummary: { taskId: randomUUID() },
+        },
+        responsePayload: { threadId: 'original-thread' },
+      };
+      const first = await history.prepareNativeSummary(input);
+      const changed = {
+        ...first.record,
+        ...(field === 'requestPayload'
+          ? { requestPayload: { question: 'changed' } }
+          : {}),
+        ...(field === 'responsePayload'
+          ? { responsePayload: { summary: 'changed' } }
+          : {}),
+        ...(field === 'projectId' ? { projectId: projectId + 1 } : {}),
+        ...(field === 'governanceBindingId'
+          ? { governanceBindingId: randomUUID() }
+          : {}),
+        ...(field === 'threadId' ? { threadId: randomUUID() } : {}),
+        ...(field === 'apiType' ? { apiType: ApiType.RUN_SQL } : {}),
+        ...(field === 'statusCode' ? { statusCode: 200 } : {}),
+      };
+      expect(
+        await history.advanceNativeSummary(
+          changed,
+          { summary: 'untrusted' },
+          200,
+          1,
+        ),
+      ).toBeNull();
+      expect(
+        (await history.findOneBy({ id: input.id })).responsePayload,
+      ).toEqual(input.responsePayload);
+      if (
+        [
+          'requestPayload',
+          'projectId',
+          'governanceBindingId',
+          'threadId',
+          'apiType',
+        ].includes(field)
+      )
+        expect(await history.prepareNativeSummary(changed)).toBeNull();
+    },
+  );
 
   it('compares actual JSONB snapshots rather than object key ordering', async () => {
     const historyId = randomUUID();

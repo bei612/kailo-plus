@@ -129,6 +129,66 @@ export class NativeHumanQuery {
       selected.governanceBindingId !== this.config.bindingId
     )
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    if (selected.apiType === ApiType.GENERATE_SUMMARY) {
+      const native = selected.requestPayload?.nativeSummary;
+      const source = native?.queryReference;
+      if (
+        !selected.id ||
+        selected.statusCode !== 200 ||
+        native?.taskId !== selected.id ||
+        selected.responsePayload?.nativeSummary?.doneQueryId !==
+          native.taskId ||
+        typeof selected.responsePayload?.summary !== 'string' ||
+        selected.responsePayload.threadId !== selected.threadId ||
+        typeof source?.historyId !== 'string' ||
+        source.key !== selected.id
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      const query = await this.history.findOneBy({
+        id: source.historyId,
+        apiType: ApiType.RUN_SQL,
+        projectId: this.config.projectId,
+        governanceBindingId: this.config.bindingId,
+        governanceKey: source.key,
+        governanceActionExecutionId: source.actionExecutionId,
+        governanceOperationId: source.operationId,
+        governanceParameterHash: source.parameterHash,
+        governanceState: 'SUCCEEDED',
+      });
+      if (
+        !query ||
+        query.requestPayload?.action !== 'data_query.query@v1' ||
+        query.requestPayload.sql !== selected.requestPayload.sql ||
+        query.requestPayload.limit !== selected.requestPayload.sampleSize ||
+        query.threadId !== selected.threadId ||
+        digest(query.requestPayload) !== source.requestHash ||
+        digest(query.responsePayload) !== source.resultHash
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      // The same original AE is re-observed, including every frozen source,
+      // deployment and native reader privilege. No SQL or new command is run.
+      await this.readHistory(token, query);
+      const current = await this.history.findOneBy({
+        id: selected.id,
+        apiType: ApiType.GENERATE_SUMMARY,
+        projectId: this.config.projectId,
+        governanceBindingId: this.config.bindingId,
+      });
+      if (
+        current?.statusCode !== 200 ||
+        current.threadId !== selected.threadId ||
+        canonical(current.requestPayload) !==
+          canonical(selected.requestPayload) ||
+        canonical(current.responsePayload) !==
+          canonical(selected.responsePayload)
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      const { nativeSummary: _requestProof, ...requestPayload } =
+        current.requestPayload;
+      const { nativeSummary: _responseProof, ...responsePayload } =
+        current.responsePayload;
+      return { requestPayload, responsePayload };
+    }
     const action = selected.requestPayload?.action;
     if (
       selected.apiType !== ApiType.RUN_SQL ||

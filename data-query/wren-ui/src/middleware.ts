@@ -198,8 +198,9 @@ export async function middleware(request: NextRequest) {
   headers.delete('x-kailo-native-human-token');
   headers.delete('x-kailo-native-identity-scope');
   const boundSql =
-    request.nextUrl.pathname === '/api/v1/run_sql' &&
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    ['/api/v1/run_sql', '/api/v1/generate_summary'].includes(
+      request.nextUrl.pathname,
+    ) && process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (
     boundSql ||
     ['/api/graphql', '/api/config', '/api/ask_task/streaming_answer'].includes(

@@ -4131,3 +4131,116 @@ the two separate Engine Java edits remain unvalidated. Other original REST
 query consumers (`ask`, `stream/ask`, `generate_summary`, `generate_vega_chart`
 and SQL-pair validation) still require their actual governed consumers; this
 single restored route is not a claim of complete native API integration.
+
+### 2026-10-08 — original REST summary consumes the same HUMAN query and native task
+
+Authority and fixed source: `DD-98`, `SS-WRN-IDENTITY` and `.design/08` §6 keep
+the original query Action and component-native answer generation distinct.
+The fixed official commit `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/pages/api/v1/generate_summary.ts::handler`, executes native SQL,
+creates a text-answer task and writes `GENERATE_SUMMARY` history after streaming.
+Its original request/success fields and standalone implementation are retained.
+The authorized bound difference is real HUMAN admission/disclosure and native
+task ownership, not new pages, simplified answers or another SQL executor.
+
+Impact: the original bound summary handler now consumes
+`NativeHumanQuery.previewSql/readHistory` and `NativeQueryService` for the same
+SQL, deployment, native model/view sources and original AE. Only the verified
+middleware identity hop supplies credentials and scope. Query evidence and
+fresh native reader privileges are checked before sending data to the existing
+AI adaptor, during native streaming and before final disclosure. No HUMAN token
+is forwarded to AI or saved in history. Empty platform delivery cannot enter
+standalone REST or History disclosure. All original API History GraphQL request
+and result fields consume the same source checks for completed summaries.
+
+The original `api_history` table holds the summary's own fixed task ID and
+immutable reference to its admitted query history. `prepareNativeSummary`
+inserts before POST and returns one INSERT winner; its source SQL/result hashes,
+scope, question, language, limit and thread cannot change under that ID. The
+summary does not reuse the query's unique `governance_key` or claim another AE.
+`advanceNativeSummary` locks and compares the original request/response JSONB,
+binding, project, thread and pending status. One winner opens the consuming
+native stream; stale snapshots cannot open it again or replace a terminal body.
+No table/migration, shared contract, public workflow, registry or Core SQL/result
+body copy was introduced. Operator usage is recorded in `docker/README.md`.
+
+Native provenance: the same fixed official commit's
+`wren-ai-service/src/web/v1/routers/sql_answers.py::sql_answer` schedules the
+original `BackgroundTasks` consumer, and
+`wren-ai-service/src/pipelines/generation/sql_answer.py::SQLAnswer.get_streaming_results`
+consumes one per-query queue rather than replayable content. The already accepted
+fork adds the original caller-fixed `native_task_id` and exact completion event;
+this batch consumes those existing producer changes rather than pretending the
+unmodified pin supplies them. Native `SUCCEEDED` means preprocessing is done,
+not that summary text is complete. Only `done:true` with this exact original
+query ID persists summary HTTP 200. Stream closure, missing/expired cache,
+malformed or foreign completion and unknown statuses never fabricate success
+or failed execution. Actual native FAILED records a generic failure without
+provider messages. Re-entry uses the original key/task/history and read-only GET,
+never another native POST or SQL. A pending response's `queryReceipt` describes
+only the SQL action, not completion of the derived summary.
+
+Boundary and convergence: pending summary uses the original HTTP 202 history,
+not a new platform terminal authority. Active streaming uses the original
+`MAX_WAIT_TIME` deadline; failure to receive exact done remains uncertain, and
+the same caller can observe its original task. The native queue/cache does not
+provide durable partial-stream replay after process/cache loss. The Wren instance
+operator owns reconciliation through the original task/history; deleting the row
+or blindly regenerating is forbidden. Automatic recovery for that case is a
+remaining production blocker, not a completed convergence claim. Query denial,
+intent/identity conflict and evidence unavailability retain existing native
+refusals; another user, changed sources or stale deployment cannot disclose the
+original body. A complete query receipt does not prove AI usage/terminal evidence
+for another platform Action. Trusted SERVICE SQL remains separately unclosed.
+
+Actual checks reused the existing 4 CPU / 4 GiB SDK and its cache. The existing
+PostgreSQL container/database were verified as `wren_query_itgs2n` with its
+`isolated-query-fixture` project; the standalone CAS selection used existing
+schema and transaction rollback, without a new database or migrations:
+
+```sh
+WREN_QUERY_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/wren_query_itgs2n node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts --testNamePattern="original Wren native answer PostgreSQL CAS"
+WREN_QUERY_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/wren_query_itgs2n node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/nativeQuery.test.ts
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+```
+
+The original CAS selection passed **20/20** (69 filtered skips), including eight
+new actual summary repository consumers. After production-fault restoration,
+all three original suites passed **318/318**, exit 0 (25.33 s), including real
+Next HTTP, the original API History GraphQL document, current source revocation,
+concurrent summary re-entry and real PostgreSQL consumers. Whole-UI TypeScript
+and original Prettier on all eight TS/check paths exited 0. An intermediate
+GraphQL fixture run had 2 failures / 227 passes because its fake summary rows
+omitted the original database's non-null default timestamps; correcting that
+fixture produced 229/229 before the restored three-suite run. The actual
+PostgreSQL repository checks did not need a production timestamp patch.
+
+Private production changes were deliberately broken, then reverse-patched:
+
+- Allowing every pending re-entry to POST caused **7 failed / 26 passed /
+  137 filtered skips**; the checks observed a second actual adaptor call.
+- Removing exact native done proof from History caused **2 failed /
+  168 filtered skips**; the original reader actually disclosed unverified text.
+- Removing response JSONB comparison caused **2 failed / 6 passed /
+  81 filtered skips** against real PostgreSQL, admitting a second stream claim
+  and overwriting an untrusted result.
+- Removing summary's private identity forwarding caused **1 failed / 2 passed /
+  56 filtered skips** through the real signed-JWT/JWKS middleware.
+- Reintroducing empty-delivery standalone History fallback caused **1 failed /
+  169 filtered skips**, exposing a previously completed summary without admission.
+
+Each restored production file and all eight formal TS/check paths matched the
+private candidate with `cmp` exit 0 before the 318/318 restored run. Logs in the
+same existing private SDK directory:
+`rest-summary-final.log`, `rest-summary-pg.log`, `rest-summary-tsc.log`,
+`rest-summary-format.log`, `rest-summary-post-negative.log`,
+`rest-summary-done-negative.log`, `rest-summary-cas-negative.log`,
+`rest-summary-forward-negative.log`, `rest-summary-config-negative.log` and
+`rest-summary-restored.log`.
+
+No business Wren deployment, ACTIVE binding, provider call, iframe/browser
+screenshot, Desktop/Mobile acceptance or global full check was performed here.
+The old two Java edits remain unvalidated and excluded. Original REST ask,
+stream/ask, chart and SQL-pair consumers, native function/provider provenance,
+trusted SERVICE SQL, independent business-instance rollout and complete visual
+acceptance remain explicit gaps; this batch is not complete Wren integration.

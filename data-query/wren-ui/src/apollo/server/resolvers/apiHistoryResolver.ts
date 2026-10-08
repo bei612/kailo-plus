@@ -66,7 +66,7 @@ export class ApiHistoryResolver {
 
   private async nativeHistory(ctx: IContext) {
     if (
-      !process.env.WREN_PLATFORM_QUERY_CONFIG_FILE &&
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
       !ctx?.nativeIdentityScope &&
       !ctx?.nativeHumanToken
     )

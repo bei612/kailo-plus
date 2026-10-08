@@ -24,8 +24,13 @@ import GraphQLJSON from 'graphql-type-json';
 import { typeDefs } from './apollo/server/schema';
 import { API_HISTORY } from './apollo/client/graphql/apiManagement';
 import { components } from './common';
-import { ChartType } from './apollo/server/models/adaptor';
+import {
+  ChartType,
+  TextBasedAnswerStatus,
+} from './apollo/server/models/adaptor';
 import runSqlHandler from './pages/api/v1/run_sql';
+import generateSummaryHandler from './pages/api/v1/generate_summary';
+import { Readable } from 'node:stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
@@ -1935,9 +1940,17 @@ describe('native saved-view HUMAN query consumer', () => {
   });
 
   describe('original run_sql HTTP HUMAN consumer', () => {
-    let server: Server, endpoint: string, row: any, observed: any;
+    let server: Server,
+      endpoint: string,
+      row: any,
+      observed: any,
+      summaryRow: any;
     let completed: boolean, revoked: boolean;
     let prepared: jest.Mock, appended: jest.Mock, direct: jest.Mock;
+    let summaryCreate: jest.Mock,
+      summaryGet: jest.Mock,
+      summaryStream: jest.Mock;
+    let prepareSummary: jest.Mock, advanceSummary: jest.Mock;
     const originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     const originalComponents = { ...components };
     const originalHistoryMethods = { ...components.apiHistoryRepository };
@@ -1955,6 +1968,17 @@ describe('native saved-view HUMAN query consumer', () => {
         headers: { ...headers, ...changes },
         ...(method !== 'GET' ? { body: JSON.stringify(input) } : {}),
       });
+    const summaryBody = {
+      question: 'Original question',
+      sql: statement,
+      sampleSize: 10,
+    };
+    const sendSummary = (input: any = summaryBody, changes = {}) =>
+      fetch(endpoint.replace('/run_sql', '/generate_summary'), {
+        method: 'POST',
+        headers: { ...headers, ...changes },
+        body: JSON.stringify(input),
+      });
 
     beforeAll(async () => {
       server = createServer((request, response) => {
@@ -1962,7 +1986,11 @@ describe('native saved-view HUMAN query consumer', () => {
           request,
           response,
           {},
-          { default: runSqlHandler },
+          {
+            default: request.url?.endsWith('/generate_summary')
+              ? generateSummaryHandler
+              : runSqlHandler,
+          },
           {
             previewModeId: '',
             previewModeEncryptionKey: '',
@@ -1982,6 +2010,7 @@ describe('native saved-view HUMAN query consumer', () => {
         'fixture-controlled-delivery';
       jest.mocked(loadQueryDelivery).mockResolvedValue(config);
       row = undefined;
+      summaryRow = undefined;
       observed = null;
       completed = true;
       revoked = false;
@@ -1991,6 +2020,52 @@ describe('native saved-view HUMAN query consumer', () => {
         return row;
       });
       appended = jest.fn(async (input) => input);
+      summaryCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
+      summaryGet = jest.fn(async () => ({
+        status: TextBasedAnswerStatus.SUCCEEDED,
+      }));
+      summaryStream = jest.fn(async () =>
+        Readable.from([
+          'data: {"message":"Original "}\n\n',
+          'data: {"message":"summary"}\n\n',
+          `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+        ]),
+      );
+      prepareSummary = jest.fn(async (input) => {
+        const created = !summaryRow;
+        summaryRow ??= {
+          ...structuredClone(input),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        return digest(summaryRow.requestPayload) ===
+          digest(input.requestPayload) &&
+          summaryRow.threadId === input.threadId &&
+          summaryRow.projectId === input.projectId &&
+          summaryRow.governanceBindingId === input.governanceBindingId
+          ? { record: structuredClone(summaryRow), created }
+          : null;
+      });
+      advanceSummary = jest.fn(
+        async (expected, responsePayload, statusCode, durationMs) => {
+          if (
+            summaryRow.statusCode !== 202 ||
+            expected.statusCode !== 202 ||
+            digest(summaryRow.requestPayload) !==
+              digest(expected.requestPayload) ||
+            digest(summaryRow.responsePayload) !==
+              digest(expected.responsePayload)
+          )
+            return null;
+          summaryRow = {
+            ...summaryRow,
+            responsePayload,
+            statusCode,
+            durationMs,
+          };
+          return structuredClone(summaryRow);
+        },
+      );
       const deployment = {
         id: 12,
         projectId: config.projectId,
@@ -2030,15 +2105,25 @@ describe('native saved-view HUMAN query consumer', () => {
             referenceName: 'native_model',
           })),
         },
+        wrenAIAdaptor: {
+          createTextBasedAnswer: summaryCreate,
+          getTextBasedAnswerResult: summaryGet,
+          streamTextBasedAnswer: summaryStream,
+        },
       });
       Object.assign(components.apiHistoryRepository, {
         prepareNativeSql: prepared,
+        prepareNativeSummary: prepareSummary,
+        advanceNativeSummary: advanceSummary,
         createOne: appended,
         findOneBy: jest.fn(async (where) =>
-          row &&
-          Object.entries(where).every(([name, value]) => row[name] === value)
-            ? row
-            : undefined,
+          [row, summaryRow].find(
+            (candidate) =>
+              candidate &&
+              Object.entries(where).every(
+                ([name, value]) => candidate[name] === value,
+              ),
+          ),
         ),
       });
       calls.mockImplementation(async (_config, _operation, input) => {
@@ -2323,6 +2408,372 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(calls).not.toHaveBeenCalled();
       expect(prepared).not.toHaveBeenCalled();
     });
+
+    it('generates the original summary from the same admitted SQL and persists real done before original History disclosure', async () => {
+      const response = await sendSummary({
+        ...summaryBody,
+        threadId: 'original-summary-thread',
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        id: key,
+        summary: 'Original summary',
+        threadId: 'original-summary-thread',
+      });
+      expect(summaryCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryId: key,
+          query: summaryBody.question,
+          sql: statement,
+          sqlData: row.responsePayload,
+          threadId: 'original-summary-thread',
+        }),
+      );
+      expect(summaryRow.apiType).toBe(ApiType.GENERATE_SUMMARY);
+      expect(summaryRow.responsePayload.nativeSummary.doneQueryId).toBe(key);
+      expect(
+        summaryRow.requestPayload.nativeSummary.queryReference.historyId,
+      ).toBe(row.id);
+      expect(summaryRow.governanceKey).toBeUndefined();
+      expect(JSON.stringify(summaryRow)).not.toContain('verified-native-token');
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+      const reader = new NativeHumanQuery(
+        config,
+        new NativeQueryService(
+          config,
+          components.projectRepository,
+          components.deployLogRepository,
+          components.apiHistoryRepository,
+          components.queryService,
+          components.viewRepository,
+          components.modelRepository,
+          components.modelColumnRepository,
+        ),
+        components.apiHistoryRepository,
+      );
+      const history = await reader.readHistory(
+        'verified-native-token',
+        summaryRow,
+      );
+      expect(history.responsePayload).toEqual({
+        summary: 'Original summary',
+        threadId: 'original-summary-thread',
+      });
+      expect(history.requestPayload).not.toHaveProperty('nativeSummary');
+    });
+
+    it('observes a lost summary create ACK under the original task ID, never a second AI POST or SQL', async () => {
+      summaryCreate.mockRejectedValue(new Error('lost ACK'));
+      expect((await sendSummary()).status).toBe(200);
+      const again = await sendSummary();
+      expect(again.status).toBe(200);
+      expect(await again.json()).toEqual({
+        id: key,
+        summary: 'Original summary',
+        threadId: key,
+      });
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+      expect(summaryStream).toHaveBeenCalledTimes(1);
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+      expect(direct).not.toHaveBeenCalled();
+    });
+
+    it('admits only one original summary POST and consuming stream under concurrent HTTP re-entry', async () => {
+      const responses = await Promise.all(
+        Array.from({ length: 8 }, () => sendSummary()),
+      );
+      expect(responses.some((response) => response.status === 200)).toBe(true);
+      expect(
+        responses.every((response) => [200, 202].includes(response.status)),
+      ).toBe(true);
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+      expect(summaryStream).toHaveBeenCalledTimes(1);
+      expect(summaryRow.responsePayload.nativeSummary.doneQueryId).toBe(key);
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+    });
+
+    it.each([false, true])(
+      'discloses summary through the original API History GraphQL document only with current source rights (revoked %s)',
+      async (deny) => {
+        expect((await sendSummary()).status).toBe(200);
+        revoked = deny;
+        calls.mockClear();
+        const ctx = {
+          ...components,
+          deployRepository: components.deployLogRepository,
+          nativeHumanToken: 'verified-native-token',
+          nativeIdentityScope: identityScope,
+          apiHistoryRepository: {
+            count: jest.fn(async () => 1),
+            findAllWithPagination: jest.fn(async () => [summaryRow]),
+          },
+        };
+        const resolver = new ApiHistoryResolver();
+        const graphql = new ApolloServer({
+          typeDefs,
+          resolvers: {
+            JSON: GraphQLJSON,
+            Query: { apiHistory: resolver.getApiHistory },
+            ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+          },
+          context: () => ctx,
+        });
+        try {
+          await graphql.start();
+          const result = await graphql.executeOperation({
+            query: API_HISTORY,
+            variables: { pagination: { offset: 0, limit: 10 } },
+          });
+          const item = result.data.apiHistory.items[0];
+          if (deny) {
+            expect(item.requestPayload).toBeNull();
+            expect(item.responsePayload).toBeNull();
+            expect(result.errors).toHaveLength(2);
+          } else {
+            expect(result.errors).toBeUndefined();
+            expect(item.requestPayload).not.toHaveProperty('nativeSummary');
+            expect(item.responsePayload).toEqual({
+              summary: 'Original summary',
+              threadId: key,
+            });
+          }
+          expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+          expect(summaryCreate).toHaveBeenCalledTimes(1);
+        } finally {
+          await graphql.stop();
+        }
+      },
+    );
+
+    it('does not expose summary History as standalone when the binding delivery is present but empty', async () => {
+      expect((await sendSummary()).status).toBe(200);
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+      jest
+        .mocked(loadQueryDelivery)
+        .mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE'),
+        );
+      const resolver = new ApiHistoryResolver().getApiHistoryNestedResolver();
+      await expect(
+        resolver.responsePayload(summaryRow, null, {} as any),
+      ).rejects.toMatchObject({ status: 503 });
+    });
+
+    it.each([
+      'sql',
+      'result',
+      'sources',
+      'deployment',
+      'missing-done',
+      'foreign-done',
+      'task-id',
+      'reference-key',
+      'summary-type',
+      'thread',
+    ])(
+      'the original summary History consumer rejects changed %s rather than exposing an unverified derived body',
+      async (change) => {
+        expect((await sendSummary()).status).toBe(200);
+        if (change === 'sql') row.requestPayload.sql = 'SELECT changed';
+        if (change === 'result') row.responsePayload.data = [['changed']];
+        if (change === 'sources') row.requestPayload.nativeSources = [];
+        if (change === 'deployment')
+          row.requestPayload.deploymentHash = 'changed';
+        if (change === 'missing-done')
+          delete summaryRow.responsePayload.nativeSummary;
+        if (change === 'foreign-done')
+          summaryRow.responsePayload.nativeSummary.doneQueryId = 'foreign';
+        if (change === 'task-id')
+          summaryRow.requestPayload.nativeSummary.taskId = 'foreign';
+        if (change === 'reference-key')
+          summaryRow.requestPayload.nativeSummary.queryReference.key = resource;
+        if (change === 'summary-type')
+          summaryRow.responsePayload.summary = { unverified: true };
+        if (change === 'thread') summaryRow.threadId = 'foreign';
+        const reader = new NativeHumanQuery(
+          config,
+          new NativeQueryService(
+            config,
+            components.projectRepository,
+            components.deployLogRepository,
+            components.apiHistoryRepository,
+            components.queryService,
+            components.viewRepository,
+            components.modelRepository,
+            components.modelColumnRepository,
+          ),
+          components.apiHistoryRepository,
+        );
+        await expect(
+          reader.readHistory(
+            'verified-native-token',
+            structuredClone(summaryRow),
+          ),
+        ).rejects.toMatchObject({ status: 503 });
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(direct).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      'missing-task',
+      'preprocessing',
+      'unknown-status',
+      'lost-stream',
+      'no-done',
+      'foreign-done',
+      'malformed-event',
+    ])(
+      'does not treat summary %s as completion or repeat its original side effect',
+      async (failure) => {
+        if (failure === 'missing-task')
+          summaryGet.mockRejectedValue(new Error('404 expired cache'));
+        if (failure === 'preprocessing')
+          summaryGet.mockResolvedValue({
+            status: TextBasedAnswerStatus.PREPROCESSING,
+          });
+        if (failure === 'unknown-status')
+          summaryGet.mockResolvedValue({ status: 'FUTURE_UNKNOWN' });
+        if (failure === 'lost-stream')
+          summaryStream.mockRejectedValue(new Error('stream ACK lost'));
+        if (failure === 'no-done')
+          summaryStream.mockResolvedValue(
+            Readable.from(['data: {"message":"partial"}\n\n']),
+          );
+        if (failure === 'foreign-done')
+          summaryStream.mockResolvedValue(
+            Readable.from(['data: {"done":true,"queryId":"foreign"}\n\n']),
+          );
+        if (failure === 'malformed-event')
+          summaryStream.mockResolvedValue(Readable.from(['data: invalid\n\n']));
+        const first = await sendSummary();
+        expect(first.status).toBe(
+          ['foreign-done', 'malformed-event'].includes(failure) ? 503 : 202,
+        );
+        const pending = await first.json();
+        expect(pending).not.toHaveProperty('summary');
+        if (first.status === 202) {
+          expect(pending.queryReceipt.submission.actionKey).toBe(
+            'data_query.query@v1',
+          );
+          expect(pending).not.toHaveProperty('receipt');
+        }
+        expect(summaryRow.statusCode).toBe(202);
+        const again = await sendSummary();
+        expect(again.status).toBe(202);
+        expect(await again.json()).not.toHaveProperty('summary');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(summaryStream.mock.calls.length).toBeLessThanOrEqual(1);
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          1,
+        );
+      },
+    );
+
+    it('keeps SQL UNKNOWN under its original key without starting summary generation', async () => {
+      completed = false;
+      expect((await sendSummary()).status).toBe(202);
+      expect((await sendSummary()).status).toBe(202);
+      expect(summaryCreate).not.toHaveBeenCalled();
+      expect(prepareSummary).not.toHaveBeenCalled();
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+    });
+
+    it.each(['question', 'language', 'thread', 'identity', 'sql'])(
+      'rejects changed summary %s before another generation or output',
+      async (change) => {
+        expect((await sendSummary()).status).toBe(200);
+        const input = {
+          ...summaryBody,
+          ...(change === 'question' ? { question: 'Different' } : {}),
+          ...(change === 'language' ? { language: 'zh-TW' } : {}),
+          ...(change === 'thread' ? { threadId: 'Different' } : {}),
+          ...(change === 'sql'
+            ? { sql: 'SELECT different FROM native_model' }
+            : {}),
+        };
+        const response = await sendSummary(
+          input,
+          change === 'identity'
+            ? { 'x-kailo-native-identity-scope': 'b'.repeat(64) }
+            : {},
+        );
+        expect(response.status).toBe(409);
+        expect(await response.json()).not.toHaveProperty('summary');
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('refuses summary output after current source authorization is revoked, including completed History', async () => {
+      expect((await sendSummary()).status).toBe(200);
+      revoked = true;
+      expect((await sendSummary()).status).toBe(403);
+      const reader = new NativeHumanQuery(
+        config,
+        new NativeQueryService(
+          config,
+          components.projectRepository,
+          components.deployLogRepository,
+          components.apiHistoryRepository,
+          components.queryService,
+          components.viewRepository,
+          components.modelRepository,
+          components.modelColumnRepository,
+        ),
+        components.apiHistoryRepository,
+      );
+      await expect(
+        reader.readHistory('verified-native-token', summaryRow),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+      expect(summaryRow.statusCode).toBe(200);
+    });
+
+    it('records actual native FAILED without calling it successful or regenerating', async () => {
+      summaryGet.mockResolvedValue({
+        status: TextBasedAnswerStatus.FAILED,
+        error: { message: 'private provider message' },
+      });
+      expect((await sendSummary()).status).toBe(409);
+      expect(summaryRow.statusCode).toBe(409);
+      expect((await sendSummary()).status).toBe(409);
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+      expect(summaryStream).not.toHaveBeenCalled();
+      expect(JSON.stringify(summaryRow)).not.toContain(
+        'private provider message',
+      );
+    });
+
+    it.each(['token', 'scope', 'empty-config'])(
+      'does not fall back to standalone summary for missing %s',
+      async (missing) => {
+        const changes =
+          missing === 'token'
+            ? { 'x-kailo-native-human-token': '' }
+            : missing === 'scope'
+              ? { 'x-kailo-native-identity-scope': '' }
+              : {};
+        if (missing === 'empty-config') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(
+              new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE'),
+            );
+        }
+        const response = await sendSummary(summaryBody, changes);
+        expect(response.status).toBe(missing === 'empty-config' ? 503 : 401);
+        expect(summaryCreate).not.toHaveBeenCalled();
+        expect(direct).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('uses Chinese by default and a single English locale for necessary preview guidance', () => {

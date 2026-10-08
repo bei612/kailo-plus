@@ -183,6 +183,74 @@ export class ApiHistoryRepository
     });
   }
 
+  // The original summary history is its native task owner. Persist before
+  // POST, so an absent/lost AI acknowledgement cannot admit another task.
+  public async prepareNativeSummary(
+    record: ApiHistory,
+  ): Promise<{ record: ApiHistory; created: boolean } | null> {
+    return this.knex.transaction(async (tx) => {
+      const inserted = await tx(this.tableName)
+        .insert(this.transformToDBData(record))
+        .onConflict('id')
+        .ignore()
+        .returning('id');
+      const row = await tx(this.tableName)
+        .where({ id: record.id })
+        .first()
+        .forUpdate();
+      if (!row) return null;
+      const current = this.transformFromDBData(row);
+      return record.apiType === ApiType.GENERATE_SUMMARY &&
+        current.apiType === ApiType.GENERATE_SUMMARY &&
+        current.projectId === record.projectId &&
+        current.governanceBindingId === record.governanceBindingId &&
+        current.threadId === record.threadId &&
+        isEqual(current.requestPayload, record.requestPayload)
+        ? { record: current, created: inserted.length === 1 }
+        : null;
+    });
+  }
+
+  public async advanceNativeSummary(
+    expected: ApiHistory,
+    responsePayload: Record<string, unknown>,
+    statusCode: number,
+    durationMs: number,
+  ): Promise<ApiHistory | null> {
+    return this.knex.transaction(async (tx) => {
+      const row = await tx(this.tableName)
+        .where({ id: expected.id })
+        .first()
+        .forUpdate();
+      if (!row) return null;
+      const current = this.transformFromDBData(row);
+      if (
+        current.apiType !== ApiType.GENERATE_SUMMARY ||
+        expected.apiType !== ApiType.GENERATE_SUMMARY ||
+        current.projectId !== expected.projectId ||
+        current.governanceBindingId !== expected.governanceBindingId ||
+        current.threadId !== expected.threadId ||
+        current.statusCode !== 202 ||
+        expected.statusCode !== 202 ||
+        !isEqual(current.requestPayload, expected.requestPayload) ||
+        !isEqual(current.responsePayload, expected.responsePayload)
+      )
+        return null;
+      const [changed] = await tx(this.tableName)
+        .where({ id: expected.id })
+        .update(
+          this.transformToDBData({
+            responsePayload,
+            statusCode,
+            durationMs,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .returning('*');
+      return changed ? this.transformFromDBData(changed) : null;
+    });
+  }
+
   public async completeGovernedQuery(
     id: string,
     parameterHash: string,

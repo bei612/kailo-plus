@@ -93,6 +93,7 @@ describe('native instance identity boundary', () => {
     '/api/graphql',
     '/api/platform-query-reference',
     '/api/v1/run_sql',
+    '/api/v1/generate_summary',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
@@ -108,6 +109,7 @@ describe('native instance identity boundary', () => {
     '/api/platform-query-reference',
     '/api/ask_task/streaming_answer',
     '/api/v1/run_sql',
+    '/api/v1/generate_summary',
   ])(
     'verifies signed entitlement through a real JWKS endpoint and strips credentials for %s',
     async (path) => {
@@ -131,7 +133,7 @@ describe('native instance identity boundary', () => {
         response.headers.get('x-middleware-request-x-kailo-native-human-token'),
       ).toBe(signed);
       expect(response.headers.get('cache-control')).toContain('no-store');
-      if (path === '/api/v1/run_sql') {
+      if (['/api/v1/run_sql', '/api/v1/generate_summary'].includes(path)) {
         expect(
           response.headers.get(
             'x-middleware-request-x-kailo-native-identity-scope',
@@ -153,24 +155,27 @@ describe('native instance identity boundary', () => {
     ).toBeNull();
   });
 
-  it('does not forward private HUMAN credentials or caller-forged scope to independent run_sql', async () => {
-    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    const response = await middleware(
-      request('/api/v1/run_sql', `Bearer ${await token()}`, {
-        method: 'POST',
-        headers: {
-          origin: settings.publicOrigin,
-          'x-kailo-native-human-token': 'forged',
-          'x-kailo-native-identity-scope': 'f'.repeat(64),
-        },
-      }),
-    );
-    expect(response.headers.get('x-middleware-next')).toBe('1');
-    for (const field of ['human-token', 'identity-scope'])
-      expect(
-        response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
-      ).toBeNull();
-  });
+  it.each(['/api/v1/run_sql', '/api/v1/generate_summary'])(
+    'does not forward private HUMAN credentials or caller-forged scope to independent %s',
+    async (path) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      const response = await middleware(
+        request(path, `Bearer ${await token()}`, {
+          method: 'POST',
+          headers: {
+            origin: settings.publicOrigin,
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      for (const field of ['human-token', 'identity-scope'])
+        expect(
+          response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+        ).toBeNull();
+    },
+  );
 
   it('partitions browser intent only from verified subject and instance, never a supplied scope', async () => {
     const read = async (subject: string) => {

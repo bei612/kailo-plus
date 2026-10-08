@@ -371,6 +371,26 @@ necessary preview guidance uses Chinese by default and English when selected;
 this does not claim complete Wren localization or browser visual acceptance.
 These source changes have not been deployed as a Wren business instance.
 
+In a platform-bound instance the original REST `run_sql` and `generate_summary`
+routes also consume this HUMAN admission chain. Supply the current authenticated
+native session and one UUID `Idempotency-Key`; reuse that key, request and thread
+when observing an uncertain request. Middleware supplies the trusted private
+identity hop, not caller-provided identity headers. Empty or invalid platform
+delivery is an error, never a switch to standalone SQL. Successful REST response
+fields are unchanged.
+
+Summary generation stores its fixed AI task ID and query provenance in the
+original `GENERATE_SUMMARY` history before dispatch. HTTP 202 is pending, not a
+generated summary; `queryReceipt` describes only the underlying SQL action and
+does not prove summary completion. Re-entry observes the same AI task without
+another POST. Only its exact native stream completion can persist HTTP 200 and
+the original summary, and History rechecks current source access before showing
+it. A missing AI cache entry, interrupted stream or missing completion remains
+uncertain. The original native queue cannot replay a lost stream: the Wren
+instance operator must reconcile its original task/history rather than delete
+the record or blindly regenerate. Automatic cache/process-loss convergence is
+not accepted, so this source batch is not production readiness for that case.
+
 This covers saved-view reads inside Asking, not complete Asking execution:
 arbitrary generated SQL, AI/native task side effects, dashboard and native write
 authorization are not covered by these metadata readers. See the component
