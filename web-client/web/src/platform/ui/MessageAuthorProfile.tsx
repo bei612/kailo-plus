@@ -6,6 +6,7 @@ import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
 import { useUiT } from "@client-kit/platform/react/context";
 import { TransportError } from "@client-kit/platform/transport";
 import { truncatePubkey } from "@client-kit/platform/format";
+import { UserAvatar, type UserAvatarProps } from "@client-kit/platform/react/messages";
 import { bff } from "../bff-client";
 import { Button } from "@/shared/ui/button";
 
@@ -17,8 +18,8 @@ export type MessageAuthor = {
   pubkey: string;
 };
 
-// Mounted only by the original open/hover surfaces. No per-row request and no
-// Community directory lookup: the current message is the authorization proof.
+// The original avatars and open/hover surfaces share this admitted-event read.
+// No Community directory lookup: the current message is the authorization proof.
 function useMessageAuthor(target: MessageAuthor) {
   return useQuery({
     queryKey: ["platform", "message-author", target.principalId, target.conversationId ? "conversation" : "workspace", target.conversationId ?? target.workspaceId, target.pubkey, target.eventId],
@@ -35,6 +36,15 @@ function useMessageAuthor(target: MessageAuthor) {
 }
 
 const copy = (value: string) => navigator.clipboard.writeText(value);
+
+export function MessageAuthorAvatar({ target, ...props }: {
+  target: MessageAuthor;
+} & Omit<UserAvatarProps, "avatarUrl" | "resolveMediaUrl">) {
+  const query = useMessageAuthor(target);
+  const data = query.isSuccess && !query.isFetching ? query.data : undefined;
+  return <UserAvatar {...props} avatarUrl={data?.avatarUrl ?? null}
+    resolveMediaUrl={(url) => data?.avatarMediaPaths[url] ?? url} />;
+}
 
 export function MessageAuthorIdentity({ target, children, onOpen, triggerElement, triggerClassName }: {
   target: MessageAuthor; children: ReactNode; onOpen: () => void;

@@ -135,8 +135,8 @@ function nativePath(value) {
 function nativeNode(value, id, workspaceId, type) {
   if (!object(value) || value.Uuid !== id || value.Type !== type
     || !object(value.ContextWorkspace) || value.ContextWorkspace.Uuid !== workspaceId
-    || value.IsRecycled === true || value.IsRecycleBin === true) throw new Refused(503);
-  for (const flag of ['IsRecycled', 'IsRecycleBin']) {
+    || value.IsRecycled === true || value.IsRecycleBin === true || value.IsDraft === true) throw new Refused(503);
+  for (const flag of ['IsRecycled', 'IsRecycleBin', 'IsDraft']) {
     if (value[flag] !== undefined && typeof value[flag] !== 'boolean') throw new Refused(503);
   }
   return nativePath(value.Path);
@@ -188,12 +188,13 @@ export async function nativeDocumentTarget(config, deadline, args, claims) {
   const heads = [];
   for (const version of response.Versions) {
     if (!object(version) || !nonempty(version.VersionId) || ids.has(version.VersionId)
-      || (version.IsHead !== undefined && typeof version.IsHead !== 'boolean')) throw new Refused(503);
+      || (version.IsHead !== undefined && typeof version.IsHead !== 'boolean')
+      || (version.Draft !== undefined && typeof version.Draft !== 'boolean')) throw new Refused(503);
     ids.add(version.VersionId);
-    if (version.IsHead === true) heads.push(version.VersionId);
+    if (version.IsHead === true) heads.push(version);
   }
-  if (heads.length !== 1) throw new Refused(503);
-  return { head: heads[0], path: targetPath };
+  if (heads.length !== 1 || heads[0].Draft === true) throw new Refused(503);
+  return { head: heads[0].VersionId, path: targetPath };
 }
 
 async function originalWriteRevision(config, deadline, args, claims) {

@@ -21,7 +21,6 @@ import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
 import { HomeLoadingState, InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
-import { UserAvatar } from "@client-kit/platform/react/messages";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@client-kit/platform/react/sidebar/context-menu";
 import { ExternalLink, MailOpen } from "lucide-react";
@@ -34,7 +33,7 @@ import { hex, inboxEvents, inboxWindowEvents, type Event } from "./inbox-events"
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
-import { MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 
 type Snapshot = {
   mentions: Event[];
@@ -324,7 +323,7 @@ export function InboxPane({
           return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
               sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
-              avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><UserAvatar avatarUrl={null} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
+              avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
               timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
               label={item.channelType === "dm" ? t("inbox.dmFrom", { sender }) : t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}

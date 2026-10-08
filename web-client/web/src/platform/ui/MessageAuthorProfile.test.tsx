@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
-import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 
 const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn()}));
 vi.mock("../bff-client",()=>({bff:api}));
@@ -24,6 +24,90 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();});
 async function render(content:React.ReactNode){await act(async()=>root.render(<QueryClientProvider client={cache}><TooltipProvider>{content}</TooltipProvider></QueryClientProvider>));}
 function profile(pubkey=author){return {pubkey,eventId,displayName:"Message author",about:"Original biography",avatarUrl:null,nip05Handle:"author@example.org",avatarMediaPaths:{}};}
+
+function loadedImages() {
+  vi.stubGlobal("Image", function () {
+    const image = document.createElement("img");
+    let source = "";
+    Object.defineProperties(image, {complete: {value: true}, naturalWidth: {value: 1}});
+    Object.defineProperty(image, "src", {get: () => source, set: (value: string) => {
+      source = value;
+      queueMicrotask(() => image.dispatchEvent(new Event("load")));
+    }});
+    return image;
+  });
+}
+
+it("reads the admitted author's actual avatar into the original inbox avatar without a directory lookup", async () => {
+  loadedImages();
+  const avatarUrl = `https://community.example/media/${eventId}.png`;
+  const mediaPath = `/api/v1/workspaces/${target.workspaceId}/media/${eventId}`;
+  api.messageAuthorProfile.mockResolvedValue({...profile(), avatarUrl, avatarMediaPaths: {[avatarUrl]: mediaPath}});
+  await render(<MessageAuthorAvatar target={target} displayName="Message author" size="md" className="h-9 w-9" shape="squircle" testId="author-avatar" />);
+  await vi.waitFor(() => expect(host.querySelector<HTMLImageElement>('[data-testid="author-avatar-image"]')?.getAttribute("src")).toBe(mediaPath));
+  expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace", eventId);
+  expect(api.conversationMessageAuthorProfile).not.toHaveBeenCalled();
+  const avatar = host.querySelector('[data-testid="author-avatar"]')!;
+  expect(avatar.getAttribute("data-avatar-shape")).toBe("squircle");
+  expect(avatar.className).toContain("h-9 w-9");
+  expect(host.querySelector("img")?.getAttribute("referrerpolicy")).toBe("no-referrer");
+  expect(host.querySelector("img")?.getAttribute("alt")).toBe("Message author Avatar");
+  await act(async () => setLocale("zh-CN"));
+  expect(host.querySelector("img")?.getAttribute("alt")).toBe("Message author 头像");
+});
+
+it("preserves the original animated avatar poster and hover playback through authorized media paths", async () => {
+  loadedImages();
+  const poster = `https://community.example/media/${eventId}.png`;
+  const animation = `https://community.example/media/${other}.png`;
+  const posterPath = `/api/v1/conversations/private/media/${eventId}`;
+  const animationPath = `/api/v1/conversations/private/media/${other}`;
+  api.conversationMessageAuthorProfile.mockResolvedValue({...profile(), avatarUrl: `${poster}#buzz-anim=${encodeURIComponent(animation)}`,
+    avatarMediaPaths: {[poster]: posterPath, [animation]: animationPath}});
+  await render(<MessageAuthorAvatar target={{...target, conversationId: "private"}} displayName="Message author" testId="author-avatar" />);
+  await vi.waitFor(() => expect(host.querySelector("img")?.getAttribute("src")).toBe(posterPath));
+  const avatar = host.querySelector('[data-testid="author-avatar"]')!;
+  await act(async () => avatar.dispatchEvent(new MouseEvent("mouseover", {bubbles: true})));
+  await vi.waitFor(() => expect(host.querySelector("img")?.getAttribute("src")).toBe(animationPath));
+  await act(async () => avatar.dispatchEvent(new MouseEvent("mouseout", {bubbles: true})));
+  await vi.waitFor(() => expect(host.querySelector("img")?.getAttribute("src")).toBe(posterPath));
+  expect(api.conversationMessageAuthorProfile).toHaveBeenCalledWith("private", eventId);
+  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+});
+
+it("never uses a mismatched author's avatar or biography", async () => {
+  loadedImages();
+  const avatarUrl = `https://community.example/media/${other}.png`;
+  api.messageAuthorProfile.mockResolvedValue({...profile(other), avatarUrl, avatarMediaPaths: {[avatarUrl]: `/api/v1/workspaces/${target.workspaceId}/media/${other}`}});
+  await render(<><MessageAuthorAvatar target={target} displayName="Message author" testId="author-avatar" />
+    <MessageAuthorProfile target={target} onClose={() => {}} /></>);
+  await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull());
+  expect(host.querySelector('[data-testid="author-avatar-image"]')).toBeNull();
+  expect(host.textContent).not.toContain("Original biography");
+  expect(api.messageAuthorProfile).toHaveBeenCalledOnce();
+});
+
+it("removes the old avatar on Principal or scope changes and ignores a late prior-scope read", async () => {
+  loadedImages();
+  const avatarUrl = `https://community.example/media/${eventId}.png`;
+  const mediaPath = `/api/v1/workspaces/${target.workspaceId}/media/${eventId}`;
+  const actual = {...profile(), avatarUrl, avatarMediaPaths: {[avatarUrl]: mediaPath}};
+  api.messageAuthorProfile.mockResolvedValue(actual);
+  await render(<MessageAuthorAvatar target={target} displayName="Message author" testId="author-avatar" />);
+  await vi.waitFor(() => expect(host.querySelector("img")?.getAttribute("src")).toBe(mediaPath));
+  let complete!: (value: typeof actual) => void;
+  api.messageAuthorProfile.mockReturnValue(new Promise((resolve) => {complete = resolve;}));
+  await render(<MessageAuthorAvatar target={{...target, principalId: "another-human"}} displayName="Message author" testId="author-avatar" />);
+  expect(host.querySelector("img")).toBeNull();
+  expect(api.messageAuthorProfile).toHaveBeenCalledTimes(2);
+  api.conversationMessageAuthorProfile.mockRejectedValue(new Error("denied"));
+  await render(<><MessageAuthorAvatar target={{...target, principalId: "another-human", conversationId: "not-admitted"}} displayName="Message author" testId="author-avatar" />
+    <MessageAuthorProfile target={{...target, principalId: "another-human", conversationId: "not-admitted"}} onClose={() => {}} /></>);
+  await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull());
+  await act(async () => complete(actual));
+  expect(host.querySelector("img")).toBeNull();
+  expect(host.textContent).not.toContain("Original biography");
+});
 
 it("keeps original author triggers lazy until a real open, without a directory request",async()=>{
   const open=vi.fn();

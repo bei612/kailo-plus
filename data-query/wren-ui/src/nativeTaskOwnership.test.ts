@@ -8,6 +8,16 @@ import { AskResultStatus } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { AdjustmentBackgroundTaskTracker } from './apollo/server/backgrounds/adjustmentBackgroundTracker';
 import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
+import {
+  bindingServiceCall,
+  loadQueryDelivery,
+} from './apollo/server/services/nativeQueryAdmission';
+
+jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
+  ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
+  bindingServiceCall: jest.fn(),
+  loadQueryDelivery: jest.fn(),
+}));
 
 describe('native task ownership consumers', () => {
   const owned = { id: 1, projectId: 7, queryId: 'owned', detail: {} };
@@ -182,8 +192,28 @@ describe('native task ownership consumers', () => {
     expect(service.threadRepository.transaction).not.toHaveBeenCalled();
   });
   it('does not disclose a foreign view through an existing native response nested field', async () => {
+    const config = {
+      projectId: 7,
+      bindingId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: 'owned-instance',
+      nativeScopeRef: '7',
+    };
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config as any);
+    jest.mocked(bindingServiceCall).mockResolvedValue({
+      resource: {
+        resourceId: randomUUID(),
+        resourceVersion: 1,
+        nativeType: 'view',
+        nativeRef: '88',
+        nativeInstanceRef: config.nativeInstanceRef,
+        nativeScopeRef: config.nativeScopeRef,
+      },
+    });
     const view = new AskingResolver().getThreadResponseNestedResolver().view;
     const ctx: any = {
+      nativeHumanToken: 'verified-native-human',
+      nativeIdentityScope: 'a'.repeat(64),
       projectService: service.projectService,
       askingService: {
         getResponse: jest.fn(async () => ({ id: 21, viewId: 88 })),

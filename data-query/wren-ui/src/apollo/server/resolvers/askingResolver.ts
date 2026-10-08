@@ -28,6 +28,16 @@ import {
 } from '../data';
 import { TelemetryEvent, WrenService } from '../telemetry/telemetry';
 import { TrackedAskingResult } from '../services';
+import { View } from '../repositories/viewRepository';
+import {
+  nativePreviewScope,
+  resolveNativeResource,
+} from '../services/nativeHumanQuery';
+import {
+  canonical,
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
 
 const logger = getLogger('AskingResolver');
 logger.level = 'debug';
@@ -83,6 +93,63 @@ export interface RecommendedQuestionsTask {
 }
 
 export class AskingResolver {
+  private async readNativeViews(
+    ctx: IContext,
+    viewIds: number[],
+    expectedProjectId?: number,
+  ): Promise<Map<number, View>> {
+    const project = await ctx.projectService.getCurrentProject();
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    const token = ctx.nativeHumanToken;
+    if (!token)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (
+      config.projectId !== project.id ||
+      (expectedProjectId !== undefined && expectedProjectId !== project.id)
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+
+    const views = new Map<number, View>();
+    const facts = new Map<number, string>();
+    for (const id of new Set(viewIds)) {
+      const resource = await resolveNativeResource(
+        config,
+        token,
+        'view',
+        id,
+        'data_query.describe@v1',
+      );
+      const view = await ctx.viewRepository.findOneBy({
+        id,
+        projectId: project.id,
+      });
+      if (!view || view.id !== id || view.projectId !== project.id)
+        throw new Error('View not found');
+      views.set(id, view);
+      facts.set(id, canonical({ resource, view }));
+    }
+
+    // A cached answer is not permission to disclose its original saved view.
+    // Re-read native facts and current Resource permission before returning.
+    for (const id of views.keys()) {
+      const current = await ctx.viewRepository.findOneBy({
+        id,
+        projectId: project.id,
+      });
+      const resource = await resolveNativeResource(
+        config,
+        token,
+        'view',
+        id,
+        'data_query.describe@v1',
+      );
+      if (!current || canonical({ resource, view: current }) !== facts.get(id))
+        throw new NativeQueryRefusal(409, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+    return views;
+  }
+
   constructor() {
     this.createAskingTask = this.createAskingTask.bind(this);
     this.cancelAskingTask = this.cancelAskingTask.bind(this);
@@ -216,6 +283,8 @@ export class AskingResolver {
       return null;
     }
 
+    const task = await this.transformAskingTask(askResult, ctx);
+
     // telemetry
     const eventName = TelemetryEvent.HOME_ASK_CANDIDATE;
     if (askResult.status === AskResultStatus.FINISHED) {
@@ -238,7 +307,7 @@ export class AskingResolver {
       );
     }
 
-    return this.transformAskingTask(askResult, ctx);
+    return task;
   }
 
   public async createThread(
@@ -301,6 +370,15 @@ export class AskingResolver {
 
     const askingService = ctx.askingService;
     const responses = await askingService.getResponsesWithThread(threadId);
+    await this.readNativeViews(
+      ctx,
+      responses
+        .filter(
+          (response) =>
+            response.viewId !== null && response.viewId !== undefined,
+        )
+        .map((response) => response.viewId),
+    );
     // reduce responses to group by thread id
     const thread = reduce(
       responses,
@@ -623,6 +701,13 @@ export class AskingResolver {
     const { responseId } = args;
     const askingService = ctx.askingService;
     const response = await askingService.getResponse(responseId);
+    if (response)
+      await this.readNativeViews(
+        ctx,
+        response.viewId === null || response.viewId === undefined
+          ? []
+          : [response.viewId],
+      );
 
     return response;
   }
@@ -684,16 +769,14 @@ export class AskingResolver {
   public getThreadResponseNestedResolver = () => ({
     view: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       const viewId = parent.viewId;
-      if (!viewId) return null;
+      if (viewId === null || viewId === undefined) return null;
       const project = await ctx.projectService.getCurrentProject();
       const response = await ctx.askingService.getResponse(parent.id, project);
       if (!response || response.viewId !== viewId)
         throw new Error('Thread response not found');
-      const view = await ctx.viewRepository.findOneBy({
-        id: viewId,
-        projectId: project.id,
-      });
-      if (!view) throw new Error('View not found');
+      const view = (await this.readNativeViews(ctx, [viewId], project.id)).get(
+        viewId,
+      );
       const displayName = view.properties
         ? JSON.parse(view.properties)?.displayName
         : view.name;
@@ -772,15 +855,17 @@ export class AskingResolver {
       return safeFormatSQL(parent.sql);
     },
     view: async (parent: any, _args: any, ctx: IContext) => {
-      const viewId = parent.view?.id;
-      if (!viewId) return parent.view;
-      const view = await ctx.viewRepository.findOneBy({ id: viewId });
+      if (!parent.view) return parent.view;
+      const viewId = parent.view.id;
+      const view = (
+        await this.readNativeViews(ctx, [viewId], parent.view.projectId)
+      ).get(viewId);
 
       const displayName = view.properties
         ? JSON.parse(view.properties).displayName
         : view.name;
       return {
-        ...parent.view,
+        ...view,
         displayName,
       };
     },
@@ -790,31 +875,40 @@ export class AskingResolver {
     askingTask: TrackedAskingResult,
     ctx: IContext,
   ): Promise<AskingTask> {
-    // construct candidates from response
-    const candidates = await Promise.all(
-      (askingTask.response || []).map(async (response) => {
-        const view = response.viewId
-          ? await ctx.viewRepository.findOneBy({
-              id: response.viewId,
-              projectId: askingTask.projectId,
-            })
-          : null;
-        const sqlPair = response.sqlpairId
-          ? await ctx.sqlPairRepository.findOneBy({
-              id: response.sqlpairId,
-              projectId: askingTask.projectId,
-            })
-          : null;
-        if ((response.viewId && !view) || (response.sqlpairId && !sqlPair))
-          throw new Error('Task resource not found');
-        return {
-          type: response.type,
-          sql: response.sql,
-          view,
-          sqlPair,
-        };
-      }),
+    const project = await ctx.projectService.getCurrentProject();
+    if (askingTask.projectId !== project.id)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const responses = askingTask.response || [];
+    const candidates = [];
+    for (const response of responses) {
+      const sqlPair = response.sqlpairId
+        ? await ctx.sqlPairRepository.findOneBy({
+            id: response.sqlpairId,
+            projectId: askingTask.projectId,
+          })
+        : null;
+      if (response.sqlpairId && !sqlPair)
+        throw new Error('Task resource not found');
+      candidates.push({
+        type: response.type,
+        sql: response.sql,
+        view: null,
+        sqlPair,
+      });
+    }
+    const views = await this.readNativeViews(
+      ctx,
+      responses
+        .filter(
+          (response) =>
+            response.viewId !== null && response.viewId !== undefined,
+        )
+        .map((response) => response.viewId),
+      askingTask.projectId,
     );
+    for (let index = 0; index < responses.length; index++) {
+      candidates[index].view = views.get(responses[index].viewId) || null;
+    }
 
     // When the task got cancelled, the type is not set
     // we set it to TEXT_TO_SQL as default

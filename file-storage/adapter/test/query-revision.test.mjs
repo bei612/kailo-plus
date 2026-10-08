@@ -576,6 +576,76 @@ test('HTTP protocol reaches fixed native UUID + NodeVersions and discloses only 
   assert.deepEqual(state.queries, [{ FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] }]);
 });
 
+test('revision query rejects draft nodes and malformed native state before observing a version', async (t) => {
+  for (const field of ['root', 'target', 'authorized']) {
+    const node = field === 'target'
+      ? { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized/file.txt', ContextWorkspace: { Uuid: ids[1] } }
+      : { Uuid: field === 'root' ? ids[2] : ids[10], Type: 'COLLECTION',
+        Path: field === 'root' ? 'documents/root' : 'documents/root/authorized', ContextWorkspace: { Uuid: ids[1] } };
+    for (const flag of [{ IsDraft: true }, { IsDraft: null }, { IsDraft: 'false' },
+      { IsRecycled: null }, { IsRecycleBin: 0 }]) {
+      await t.test(`${field} ${JSON.stringify(flag)}`, async nested => {
+        const fixture = await setup(nested, { [field]: { ...node, ...flag },
+          arguments: { ...args, authorizationTargetNativeRef: ids[10] } });
+        assert.equal((await fixture.invoke()).status, 503);
+        assert.equal(fixture.state.peps, 1);
+        assert.equal(fixture.state.queries.length, 0);
+      });
+    }
+  }
+});
+
+test('revision query requires one published head while allowing an older native draft', async (t) => {
+  for (const versions of [
+    [{ VersionId: 'draft-head', IsHead: true, Draft: true }],
+    [{ VersionId: 'malformed-head', IsHead: true, Draft: null }],
+    [{ VersionId: 'malformed-head', IsHead: true, Draft: 'false' }],
+    [{ VersionId: 'head', IsHead: true }, { VersionId: 'malformed-history', Draft: 0 }],
+  ]) {
+    await t.test(JSON.stringify(versions), async nested => {
+      const fixture = await setup(nested, { versions: { Versions: versions } });
+      const response = await fixture.invoke();
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: 'adapter request refused' });
+      assert.equal(fixture.state.peps, 1);
+    });
+  }
+  const valid = await setup(t, { versions: { Versions: [
+    { VersionId: 'older-draft', Draft: true, IsHead: false },
+    { VersionId: 'published-head', Draft: false, IsHead: true },
+  ] } });
+  const response = await valid.invoke();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { nativeObjectRef: ids[3], nativeRevision: 'published-head' });
+  assert.equal(valid.state.peps, 2);
+});
+
+test('draft native head cannot reach the original document PAT producer', async (t) => {
+  const input = { protocolSessionId: ids[7], reference: { nativeObjectRef: ids[3], nativeRevision: 'draft-head' },
+    authorizationTargetNativeRef: ids[10], admittedMode: 'EDIT', theme: 'LIGHT', locale: 'zh-CN',
+    expiresAt: new Date(Date.now() + 60000).toISOString(), idempotencyKey: ids[7] };
+  const fixture = await setup(t, { operation: 'execute', arguments: input, human: true, documentLaunch: true,
+    target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized/report.docx', ContextWorkspace: { Uuid: ids[1] } },
+    versions: { Versions: [{ VersionId: 'draft-head', IsHead: true, Draft: true }] } });
+  assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/execute' })).status, 503);
+  assert.equal(fixture.state.discoveryReads ?? 0, 0);
+  assert.equal(fixture.state.patCreates?.length ?? 0, 0);
+  assert.equal(fixture.state.peps, 1);
+});
+
+test('SERVICE frozen read refuses an unpublished native node before bytes or receipt', async (t) => {
+  const argumentsValue = { targetType: 'RESOURCE', targetId: ids[10], authorizationTargetNativeRef: ids[2],
+    input: { resourceId: ids[10], nativeObjectRef: ids[3], nativeRevision: 'frozen-version' } };
+  const request = { actionKey: 'file_storage.read@v1', idempotencyKey: ids[7], arguments: argumentsValue };
+  const fixture = await setup(t, { operation: 'execute', arguments: argumentsValue, serviceRead: true,
+    target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt',
+      ContextWorkspace: { Uuid: ids[1] }, IsDraft: true } });
+  assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/execute', key: ids[7], raw: canonical(request) })).status, 503);
+  assert.equal(fixture.state.queries.length, 0);
+  assert.equal(fixture.state.downloads ?? 0, 0);
+  assert.equal(fixture.state.receipts.length, 0);
+});
+
 test('HUMAN execute selects ONLYOFFICE native discovery and posts one scoped native PAT', async (t) => {
   for (const mode of ['VIEW', 'EDIT']) {
     await t.test(mode, async (nested) => {

@@ -279,9 +279,18 @@ revocation or changed Resource/version return an error, not an exported
 reference. Export itself runs no SQL and submits no ActionExecution; subsequent
 query execution retains its existing admission, approval and quota checks.
 
-Asking, dashboard and native write authorization are not covered by these
-metadata readers; see the component verification receipt for the current
-acceptance boundary before publishing the component.
+The original Asking cached-task candidates, candidate view field, thread
+responses and their nested view fields also consume these exact view Resource
+reads. They use the current trusted HUMAN/scope and native project, not a cached
+task permission or caller-supplied view body. Native rows and Resource/version
+are checked again before disclosure; denied views refuse the complete answer,
+and a denied candidate is not first exported through finished-task telemetry.
+Original question, SQL, answer, chart, display-name and GraphQL shapes remain.
+
+This covers saved-view reads inside Asking, not complete Asking execution:
+arbitrary generated SQL, AI/native task side effects, dashboard and native write
+authorization are not covered by these metadata readers. See the component
+verification receipt for the acceptance boundary before publishing a release.
 
 The original modeling diagram additionally checks `data_query.describe@v1`
 read permission for every captured model and saved view before loading its

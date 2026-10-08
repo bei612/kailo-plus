@@ -2500,3 +2500,102 @@ The initial stale-snapshot failures remain in its parent directory's
 This batch is not full-global-check, SQLite migration acceptance, complete
 native write governance, live datasource/model/identity/binding acceptance,
 browser screenshot, Windows/Mobile verification, image build or deployment.
+
+## 2026-10-08: Original Asking saved-view read consumers
+
+### Four-step impact record
+
+1. Authority and status: `.design/08` §6, `SS-WRN-IDENTITY`,
+   `SS-WRN-GOVERNANCE`, `DD-12` and `DD-98` require current native user/project
+   and exact object authorization. The existing `data_query.describe@v1`
+   Resource `read` contract applies to native saved views; no thread resource
+   type, second permission system or private platform action is introduced.
+   Full native Asking execution remains adapter-required and is not accepted
+   by this read-only batch.
+2. Retrieved impact: GraphQL `askingTask`, `thread`, `threadResponse`,
+   `ThreadResponse.view/askingTask` and `ResultCandidate.view` are wired to
+   `AskingResolver` in `wren-ui/src/apollo/server/resolvers.ts`. The fixed
+   official baseline is `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/resolvers/askingResolver.ts`, resolvable symbols
+   `AskingResolver.transformAskingTask`,
+   `AskingResolver.getThreadResponseNestedResolver` and
+   `AskingResolver.getResultCandidateNestedResolver`. This baseline is available
+   in the read-only `WrenAI-ui-0.32.2` evidence repository. It loaded views by
+   globally scoped native ID; prior Kailo project filters alone did not consume
+   object authorization. The original native service/repository remains the
+   body writer/reader. No database, public schema, contract generation or data
+   format changes are made; original pages and result fields remain unchanged.
+   Web/Desktop use the same native page; Mobile gains no component host.
+3. Side effects: existing cached and native consumers now resolve each distinct
+   view with the current request's trusted HUMAN token, identity scope,
+   configured binding/project and exact native ID. They read only
+   `{id, projectId}`, re-read native facts and resolve the same Resource/version
+   before returning. A forged parent view body is replaced by the authorized
+   native row, not merged into the response. Task project mismatches refuse
+   before native view lookup; nested responses keep their original thread
+   ownership check. Candidate telemetry runs only after the guarded transform,
+   so refused content is not first exported via a finished-task event. There
+   is no cross-user authorization cache, SQL execution, new task, reservation,
+   workflow or Core body storage in this batch.
+4. Boundaries and error classes (`apps/06` §4): missing/malformed HUMAN identity,
+   native task/project mismatch, denied or revoked resources are `DENIED`;
+   unavailable delivery/binding/registered object evidence is `PRECONDITION`;
+   changed native rows or Resource/version refuse with the existing
+   `QUERY_EVIDENCE_UNAVAILABLE` conflict rather than returning stale success.
+   Original missing views remain errors. Empty tasks/threads preserve their
+   original shapes but still require trusted current identity; null responses
+   and absent nested views preserve the original null behavior. Duplicate view
+   IDs are deduplicated and authorization reads are sequential, without
+   unbounded request fan-out. Native mutation/deletion, out-of-scope parents,
+   cached permission and read-time revocation refuse the complete result,
+   never silently hide part of an answer. No external write or result-unknown
+   state is added; existing transport failures propagate without a fallback or
+   repeat of native execution.
+
+### Actual scoped evidence
+
+The existing `kailo-wren-query-sdk-itgs2n` was verified idle and retained its
+4 CPU / 4 GiB cgroup, cached dependencies and isolated PostgreSQL delivery.
+No dependency install, image rebuild or extra SDK/database was started.
+From its existing original Wren working directory:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeAskingView.test.ts \
+  src/nativeTaskOwnership.test.ts src/nativeHumanQuery.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The first run passed 86/86 tests, 3/3 suites, 0 skipped, exit 0, 108.419 s.
+The new module's initial read/compile took 101.165 s; this was not an image
+build. Tests exercise the actual resolver and existing native Resource
+consumer with an explicit Core boundary fixture; the existing native task
+migration/conditional-binding cases use real PostgreSQL. This does not prove
+live Wren-to-Core-to-SpiceDB user acceptance. Whole-Wren `tsc --noEmit` emitted
+no diagnostics and exited 0.
+
+Private fault injection replaced the final fresh Resource selection with its
+initial captured fact. The same actual readers incorrectly disclosed revoked
+or changed-version bodies, and the six targeted checks failed, exit 1:
+
+```text
+Received promise resolved instead of rejected
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 23 skipped, 29 total
+Time:        6.469 s
+```
+
+These skips are the deliberate mutation name filter, not unexecuted scoped
+acceptance. The fault was restored and `cmp` confirmed all three source/test
+inputs equal formal source, exit 0. Re-running the original three-suite command
+passed 86/86 again, 0 skipped, exit 0, 9.608 s. Logs are
+`native-asking-view-tests.log`, `native-asking-view-types.log`,
+`native-asking-view-mutation.log` and `native-asking-view-restored.log` in the
+existing Wren candidate directory.
+
+Remaining integration boundaries are arbitrary generated-SQL resource
+provenance/execution admission, native AI task usage/terminal evidence, other
+native writes and actual datasource/identity/catalog/binding delivery. This
+batch adds no release, binding or platform entry and is not full-global-check,
+browser screenshot, Windows/Mobile verification, component image build or
+deployment. Those boundaries must not be reported as completed Asking or
+production Wren acceptance.

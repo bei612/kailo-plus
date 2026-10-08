@@ -1929,3 +1929,66 @@ Mobile 无适用 TS 对象，六类治理错误和 UNKNOWN 表达不变。
 完整 bot owner/presence/运行/活动资料仍缺真实消费，不把角色形状当完整 bot profile。
 本批未部署；新增页面截图验收为零，现有登录页截图不证明弹层呈现。
 全量检查、Windows/Mobile 包与实机验收不在上述窄验证结果中。
+
+### 2026-10-08：原 Inbox 作者真实头像与既有授权资料消费者闭合
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/lib/inbox.ts::buildInboxItems` 从实际作者资料取头像，
+`desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 将 `item.avatarUrl`
+传给 `desktop/src/shared/ui/UserAvatar.tsx::UserAvatar`。本批实际核对上述固定源码，
+关闭 Web `InboxPane` 把所有作者头像写成空值的缺项，不重新设计头像或资料页面。
+
+- 原样保留：共享原 `UserAvatar` 的 36px、circle/squircle、fallback、
+  `no-referrer`、动态头像 poster 与 hover 播放；Inbox 的原包装层与位置不变。
+- 共享迁移：Web 直接调用已有 `@client-kit/platform/react/messages::UserAvatar`，
+  不另造 Web Avatar。现有同源中英 alt 词条实际切换验证，无新增翻译权威。
+- 已授权治理改造：`MessageAuthorProfile.tsx::MessageAuthorAvatar` 与原 hover/panel
+  共用 `useMessageAuthor`，通过既有 Workspace/Conversation 已准入事件查询资料和媒体路径。
+- 缺失需恢复→已接真实消费者：`InboxPane.tsx::InboxPane` 的实际行传入当前
+  `MessageAuthor`，不止增加孤立 helper；列表读头像不隐式打开资料面板或写已读状态。
+
+四步结论（REQ-24、DD-53、DD-74/75、V-REQ-24、SS-WEB-PRESENTATION）：
+
+1. 原头像及资料能力上游支持、设计已定；身份与资源准入仍属于平台与 Relay。
+   现有 `core/crates/platform-core/src/web_transport.rs::message_author_profile_for`
+   按可信上下文准入消息、读真实作者、再次准入并生成 scope 媒体映射，本批没有改变该后端。
+2. 影响面仅是 Web Inbox 实际消费者及既有作者资料适配/检查四文件；共享 Avatar
+   与 Native 实现未改。query key 已含 Principal、scope、作者 pubkey 和事件，头像/hover/panel
+   复用同一 query/cache；既有 `web_profile_view` 契约、API、数据库、Workflow 均未改变，
+   无旧数据迁移或新持久状态。
+3. 返回作者必须匹配已准入事件 pubkey；pending/refetch/error、Principal/scope 切换时
+   不消费旧成功资料，迟到旧 scope 响应不回填当前头像或 biography。媒体继续使用既有授权
+   映射；不复制正文、账户密码、密钥或另造目录。头像仍是资料呈现，不提供执行权限。
+4. 空头像保留原 fallback；读取拒绝/错误不得显示先前头像，空列表无新增调用。
+   原查询去重和原列表限制沿用，不新增写操作、外部副作用或重试状态机。
+   DENIED/BLOCKED/PRECONDITION/LIMIT/CONFLICT/UNKNOWN 六类语义不变，
+   结果不明仍不显示成功或失败。Web 经 BFF、Native 本机凭据边界不变；
+   Mobile 无适用 TS 消费者，不生成新入口。
+
+实现后复用 `kailo-agent-receipt-xvkujx` 与已安装依赖的原候选；实际 inspect 为
+4 CPU、8 GiB cgroup，最终检查前无编译/测试进程，可用内存 27353 MiB。
+没有下载依赖、新建镜像、整树复制、release build 或单独部署。
+日志根为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- 接线前资料适配检查实际 `9 passed`，日志 `inbox-author-avatar-first.log`；
+  分别破坏返回作者校验、头像绑定、Principal query key，均真实退出 1，日志为
+  `inbox-author-identity-mutation.log`、`inbox-author-avatar-mutation.log`、
+  `inbox-author-principal-mutation.log`。恢复后 9 项退出 0，
+  `inbox-author-avatar-restored.log`；不是以 helper-only 宣称 Inbox 功能已交付。
+- 真实 Inbox 接线后 `tsc --noEmit` 与资料 9／Inbox 19 项整条命令退出 0，
+  `inbox-author-consumer-first.log`（session 1367）。覆盖原静态头像、Conversation
+  动态 poster/hover、错误作者、身份/scope 变更及迟到读取边界。
+- 私有 SDK 故意将实际 Inbox 调用方退回 `UserAvatar avatarUrl={null}`，
+  `InboxPane.test.tsx:194` 报 `expected undefined to be '/api/v1/workspaces/…/media/…'`，
+  实际 1 failed／18 skipped、退出 1，`inbox-author-consumer-mutation.log`。
+- 还原后四输入与正式源码 `cmp` 均退出 0；最终 `tsc --noEmit` 与两文件全部
+  `28 passed`、整条命令退出 0（session 77551），
+  `inbox-author-consumer-restored.log`；该最终输入包含中英 alt 实际切换断言。
+  React `act(...)` warning 如实保留在原始 stderr，未隐藏或写成无诊断。
+
+本批源码四文件 `+111/-9`。3307 个全树变动路径仍未逐项全部分类，精确未分类数
+尚未统计；原项目/needs_action/reminders 消费者、完整 bot profile、其余遗留 i18n
+仍未关闭。本批没有新增页面截图；既有登录失效截图不证明新 Inbox 呈现。
+**本批未部署，原版一致性的视觉验收未完成。** 全仓检查、Windows/Mobile 包与
+实机验收本批未执行，由主线集中收口；不能宣称 100% 还原或生产就绪。

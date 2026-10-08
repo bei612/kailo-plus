@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
+const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=()=>null;
 vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,openStream:()=>()=>{}}));
@@ -166,12 +166,19 @@ it("opens the Inbox row's actual author without marking it read and clears the p
   setLocale("en"); localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal("ResizeObserver",class{constructor(private callback:ResizeObserverCallback){} observe(){this.callback([{contentRect:{width:1400}} as ResizeObserverEntry],this as unknown as ResizeObserver);} unobserve(){} disconnect(){}});
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  vi.stubGlobal("Image",function(){
+    const image=document.createElement("img");let source="";
+    Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
+      source=value;queueMicrotask(()=>image.dispatchEvent(new Event("load")));
+    }}});return image;
+  });
   const self="c".repeat(64);
   api.workspaces.mockResolvedValue([{id:"workspace-a",name:"Admitted channel",isMember:true}]);
   api.agentInstallations.mockResolvedValue({ installations: [] });
   api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"},{principalId:"author",displayName:"Author",pubkeys:[event.pubkey],state:"ACTIVE"}]);
   api.workspaceMessages.mockResolvedValue({events:[{...event,tags:[...event.tags,["p",self]]},{...event,id:"d".repeat(64),kind:39006,tags:[...event.tags,["d","workspace-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
-  api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,eventId:"profile",displayName:"Verified author",about:"Scoped biography",avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+  const avatarUrl=`https://community.example/media/${event.id}.png`,mediaPath=`/api/v1/workspaces/workspace-a/media/${event.id}`;
+  api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,eventId:"profile",displayName:"Verified author",about:"Scoped biography",avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
   api.messageAuthorProfile.mockClear(); api.write.mockClear();
   const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -184,9 +191,11 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     expect(avatar.getAttribute("data-avatar-shape")).toBe("circle");
     expect(avatar.classList.contains("h-9")).toBe(true);
     expect(avatar.classList.contains("w-9")).toBe(true);
+    await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(mediaPath));
     expect(host.querySelector('[data-testid="home-inbox-detail"]')).not.toBeNull();
     await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center"}));
-    expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+    expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
+    expect(host.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
     const trigger=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [role="button"][aria-label="Profile"]`)!;
     await act(async()=>trigger.click());
     await vi.waitFor(()=>expect(host.textContent).toContain("Scoped biography"));

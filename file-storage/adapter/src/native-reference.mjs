@@ -26,6 +26,9 @@ function nodePath(node, id, workspace, kind) {
     node.ContextWorkspace?.Uuid !== workspace || node.IsRecycled || node.IsRecycleBin || node.IsDraft ||
     !text(node.Path) || node.Path.startsWith('/') || node.Path.endsWith('/') ||
     node.Path.split('/').some((part) => !part || part === '.' || part === '..')) refused();
+  for (const flag of ['IsRecycled', 'IsRecycleBin', 'IsDraft']) {
+    if (node[flag] !== undefined && typeof node[flag] !== 'boolean') refused();
+  }
   return node.Path;
 }
 
@@ -45,7 +48,9 @@ export async function nativeDocumentSelection(delivery, nodeId, actionKey, read)
   if (!record(versions) || !Array.isArray(versions.Versions)) refused();
   const seen = new Set();
   for (const version of versions.Versions) {
-    if (!record(version) || !text(version.VersionId) || seen.has(version.VersionId)) refused();
+    if (!record(version) || !text(version.VersionId) || seen.has(version.VersionId) ||
+      (version.IsHead !== undefined && typeof version.IsHead !== 'boolean') ||
+      (version.Draft !== undefined && typeof version.Draft !== 'boolean')) refused();
     seen.add(version.VersionId);
   }
   const heads = versions.Versions.filter((version) => version.IsHead === true);

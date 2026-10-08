@@ -40,10 +40,15 @@ test('native denial, escaped scope, ambiguous revision and changed native eviden
   for (const changed of [
     { deny: true }, { node: { ...node, ContextWorkspace: { Uuid: ids[0] } } },
     { node: { ...node, Path: 'documents/root-other/document.docx' } }, { node: { ...node, IsRecycled: true } },
+    { node: { ...node, IsDraft: true } }, { node: { ...node, IsDraft: null } },
+    { node: { ...node, IsRecycled: null } }, { root: { ...root, IsRecycleBin: 0 } },
     { node: { ...node, ContentType: '' } }, { versions: { Versions: [] } },
     { node: { ...node, Path: 'documents/root/control\u0000.docx' } },
     { versions: { Versions: [versions.Versions[1], { ...versions.Versions[1], VersionId: 'another-head' }] } },
     { versions: { Versions: [{ ...versions.Versions[1], Draft: true }] } },
+    { versions: { Versions: [{ ...versions.Versions[1], Draft: null }] } },
+    { versions: { Versions: [{ ...versions.Versions[1], Draft: 'false' }] } },
+    { versions: { Versions: [{ ...versions.Versions[0], IsHead: 'false' }, versions.Versions[1]] } },
     { versions: { Versions: [{ ...versions.Versions[1], ETag: 'another-etag' }] } },
     { current: { ...node, StorageETag: 'changed-after-observation' } },
   ]) await t.test(JSON.stringify(changed), async () => {

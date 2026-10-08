@@ -399,3 +399,46 @@ node --test --test-name-pattern='SERVICE|source bytes' \
 这修复的是来源列表的可核验性遗漏，不声称已经验收“真实 Cells 删除后线上索引不可检索”。
 原 Connector 的退休/删除链仅做源码追踪，本轮未编译 Go，未运行真实跨服务删除、
 Wiki 撤回终态、浏览器、full 或部署；上一节完整 HTTP 套件缺 xml2js 的失败记录保留。
+
+## 2026-10-08 原生已发布 head 的实际读取消费
+
+四步影响结论（DD-89、SS-CEL-MATERIALIZATION、设计 18 原生版本证据）：
+
+1. 权威仍在固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+   `common/proto/rest/cellsapi-rest-v2.proto::Node.IsDraft` 与
+   `common/proto/rest/cellsapi-rest-v2.proto::ContentRevision.Draft/IsHead`、
+   `common/proto/tree/cells-tree.proto::ContentRevision.Draft/IsHead` 定义真实草稿和
+   head 事实；当前适配器原生读取不得把未发布 head 当作成功版本。
+2. 实际读写点是 `src/native-reference.mjs::nativeDocumentSelection`、
+   `src/query-revision.mjs::nativeDocumentTarget` 及其 `nativeNode` 读者。
+   同一原生事实供 revision 查询、在线文档 PAT producer 和 SERVICE 来源读取消费；
+   不新增平台字段、数据库、工作流、凭据、状态库或第二份版本权威，无旧数据迁移。
+3. 原实现只核 head 唯一性，漏核 Draft 和非布尔状态。现在拒绝草稿节点、
+   未发布 head 和未知字段值；拒绝发生在字节读取、PAT 创建或 SOURCE 完成回执前。
+   历史非 head 草稿仍允许存在，不裁减原版本列表。原前后 PEP、精确 UUID 和
+   workspace/subtree 归属不变，不按名称或默认 scope 降级。
+4. 空版本、重复/多个 head、草稿 head 及畸形原生标志走现有 503 来源证据拒绝，
+   不显示已确认版本或推断写入失败；原 UNKNOWN 对账与不重放副作用边界不变。
+   Web/Desktop/Mobile 和原生页面未改，在线编辑继续原 PROTOCOL 生命周期，
+   不为该 PAT 链伪造通用 ExternalExecution observe。
+
+实现后在既有 `kailo-agent-receipt-xvkujx` 的 4 CPU/8 GiB cgroup、非 root
+执行身份和原 Data 缓存运行原 adapter 检查；先核对构建进程与内存压力，
+未安装依赖、整树复制、编译 Go/Rust、新建镜像或重启服务。
+
+```sh
+node --test file-storage/adapter/test/*.test.mjs
+```
+
+实际全部 **170 passed / 0 failed / 0 skipped，退出 0**。新增检查消费真实 HTTP
+revision、PAT producer 与 SERVICE 读取入口，核对拒绝时零版本读取、零 PAT、
+零字节和零 SOURCE 完成回执。私有 SDK 去掉本批原生状态守卫，实际
+**24 个检查失败，退出 1**；原字节还原且四文件 `cmp` 退出 0 后，同一完整
+adapter 命令再次 **170/170，退出 0**。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`，
+日志为 `cells-adapter-published-head-restored-20261008.log` 与
+`cells-adapter-published-head-mutation-20261008.log`。
+这是当前四源码/检查文件 `+88/-7` 的专项证据，不是实际 Cells→WeKnora 同步、
+三组件 release/binding、浏览器/Windows/Mobile、full、镜像或部署验收。
