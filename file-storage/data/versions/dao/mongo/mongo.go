@@ -27,8 +27,10 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -87,9 +89,14 @@ type MongoStore struct {
 	*mongodb.Database
 }
 
-// Migrate implements storage.Migrator but does nothing
-func (m *MongoStore) Migrate(_ context.Context) error {
-	return nil
+// Preserve the original revision collection and enforce its native reference.
+// Existing duplicates stop migration; they are not silently removed or chosen.
+func (m *MongoStore) Migrate(ctx context.Context) error {
+	_, err := m.Collection(collVersions).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "node_uuid", Value: 1}, {Key: "version_id", Value: 1}},
+		Options: options.Index().SetName("native_version_reference").SetUnique(true),
+	})
+	return err
 }
 
 func (m *MongoStore) GetLastVersion(ctx context.Context, nodeUuid string) (*tree.ContentRevision, error) {
@@ -153,6 +160,9 @@ func (m *MongoStore) GetVersion(ctx context.Context, nodeUuid string, versionId 
 }
 
 func (m *MongoStore) StoreVersion(ctx context.Context, nodeUuid string, revision *tree.ContentRevision) error {
+	if nodeUuid == "" || revision == nil || revision.VersionId == "" {
+		return errors.WithMessage(errors.InvalidParameters, "version storage requires a node and version reference")
+	}
 	mv := &mRevision{
 		NodeUuid:        nodeUuid,
 		VersionId:       revision.VersionId,
@@ -162,6 +172,18 @@ func (m *MongoStore) StoreVersion(ctx context.Context, nodeUuid string, revision
 		ContentRevision: revision,
 	}
 	_, e := m.Collection(collVersions).InsertOne(ctx, mv)
+	if mongo.IsDuplicateKeyError(e) {
+		// The unique native key is the concurrency guard. Only acknowledge a
+		// repeated identical revision; never overwrite another owner or result.
+		stored, err := m.GetVersion(ctx, nodeUuid, revision.VersionId)
+		if err != nil {
+			return err
+		}
+		if !proto.Equal(stored, revision) {
+			return errors.WithMessage(errors.StatusConflict, "native version reference already has different evidence")
+		}
+		return nil
+	}
 	return e
 }
 

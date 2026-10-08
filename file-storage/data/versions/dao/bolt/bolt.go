@@ -150,6 +150,9 @@ func (b *BoltStore) GetVersions(ctx context.Context, nodeUuid string, offset int
 
 // StoreVersion stores a version in the node bucket.
 func (b *BoltStore) StoreVersion(ctx context.Context, nodeUuid string, revision *tree.ContentRevision) error {
+	if nodeUuid == "" || revision == nil || revision.VersionId == "" {
+		return errors.WithMessage(errors.InvalidParameters, "version storage requires a node and version reference")
+	}
 
 	return b.Update(func(tx *bbolt.Tx) error {
 
@@ -161,12 +164,36 @@ func (b *BoltStore) StoreVersion(ctx context.Context, nodeUuid string, revision 
 		if err != nil {
 			return err
 		}
+		// A native revision is immutable. Check and insert under the original
+		// Bolt write transaction so concurrent acknowledgements cannot create
+		// a second head or silently change the stored actor/content evidence.
+		var existing *tree.ContentRevision
+		cursor := nodeBucket.Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			stored, err := b.unmarshalRevision(value)
+			if err != nil {
+				return err
+			}
+			if stored.VersionId != revision.VersionId {
+				continue
+			}
+			if existing != nil || !proto.Equal(stored, revision) {
+				return errors.WithMessage(errors.StatusConflict, "native version reference already has different or ambiguous evidence")
+			}
+			existing = stored
+		}
+		if existing != nil {
+			return nil
+		}
 		newValue, e := proto.Marshal(revision)
 		if e != nil {
 			return e
 		}
 
-		objectKey, _ := nodeBucket.NextSequence()
+		objectKey, e := nodeBucket.NextSequence()
+		if e != nil {
+			return e
+		}
 		k := make([]byte, 8)
 		binary.BigEndian.PutUint64(k, objectKey)
 		return nodeBucket.Put(k, newValue)
@@ -195,8 +222,10 @@ func (b *BoltStore) GetVersion(ctx context.Context, nodeUuid string, versionId s
 			if cr, er := b.unmarshalRevision(v); er != nil {
 				return er
 			} else if cr.VersionId == versionId {
+				if version != nil {
+					return errors.WithMessage(errors.StatusConflict, "native version reference has multiple stored results")
+				}
 				version = cr
-				break
 			}
 		}
 		return nil

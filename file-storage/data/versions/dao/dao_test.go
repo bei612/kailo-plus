@@ -25,6 +25,7 @@ package dao
 import (
 	"context"
 	"encoding/binary"
+	"sync"
 	"testing"
 	"time"
 
@@ -239,4 +240,117 @@ func TestDAO_CRUD(t *testing.T) {
 		})
 	})
 
+}
+
+// Exercise the original DAO and storage fixtures rather than a replacement
+// receipt store: the native reference must resolve to one immutable result.
+func TestDAO_NativeReference(t *testing.T) {
+	test.RunStorageTests(testcases, t, func(ctx context.Context) {
+		db, err := manager.Resolve[versions.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision := &tree.ContentRevision{VersionId: "native-reference", OwnerUuid: "native-owner", OwnerName: "native-user",
+			ETag: "native-etag", Size: 7, Event: &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_CREATE}}
+		requests := make([]*tree.ContentRevision, 16)
+		for index := range requests {
+			requests[index] = proto.Clone(revision).(*tree.ContentRevision)
+		}
+		var group sync.WaitGroup
+		results := make(chan error, len(requests))
+		for _, request := range requests {
+			group.Add(1)
+			go func(request *tree.ContentRevision) {
+				defer group.Done()
+				results <- db.StoreVersion(ctx, "native-node", request)
+			}(request)
+		}
+		group.Wait()
+		close(results)
+		for err := range results {
+			if err != nil {
+				t.Errorf("identical concurrent native acknowledgement failed: %v", err)
+			}
+		}
+		stored, err := db.GetVersion(ctx, "native-node", revision.VersionId)
+		if err != nil || !proto.Equal(stored, revision) {
+			t.Fatalf("native reference changed its owner/content: stored=%v err=%v", stored, err)
+		}
+		for _, change := range []func(*tree.ContentRevision){
+			func(other *tree.ContentRevision) { other.OwnerUuid = "other-owner" },
+			func(other *tree.ContentRevision) { other.ETag = "other-content" },
+			func(other *tree.ContentRevision) { other.Size++ },
+			func(other *tree.ContentRevision) { other.Draft = true },
+		} {
+			other := proto.Clone(revision).(*tree.ContentRevision)
+			change(other)
+			if err := db.StoreVersion(ctx, "native-node", other); !errors.Is(err, errors.StatusConflict) {
+				t.Errorf("same native reference accepted changed actor/content: %v", err)
+			}
+		}
+		if err := db.StoreVersion(ctx, "other-node", revision); err != nil {
+			t.Errorf("another node could not use its own native reference: %v", err)
+		}
+		versions, err := db.GetVersions(ctx, "native-node", 0, 0, "", false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for stored := range versions {
+			count++
+			if !proto.Equal(stored, revision) {
+				t.Error("repeated reference replaced the original stored result")
+			}
+		}
+		if count != 1 {
+			t.Errorf("concurrent/repeated native reference created %d stored results", count)
+		}
+		for _, request := range []struct {
+			node     string
+			revision *tree.ContentRevision
+		}{{"", revision}, {"native-node", nil}, {"native-node", &tree.ContentRevision{}}} {
+			if err := db.StoreVersion(ctx, request.node, request.revision); !errors.Is(err, errors.InvalidParameters) {
+				t.Errorf("missing native reference did not refuse deterministically: %v", err)
+			}
+		}
+	})
+}
+
+func TestDAO_AmbiguousNativeReference(t *testing.T) {
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(bolt.NewBoltStore, "versions_ambiguous_")}, t, func(ctx context.Context) {
+		dao, err := manager.Resolve[versions.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		store := dao.(*bolt.BoltStore)
+		revision := &tree.ContentRevision{VersionId: "old-duplicate", OwnerUuid: "native-owner", ETag: "native-etag",
+			Event: &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_CREATE}}
+		if err := store.StoreVersion(ctx, "native-node", revision); err != nil {
+			t.Fatal(err)
+		}
+		// Reproduce the fixed upstream's old duplicate row in its original Bolt
+		// bucket; the public write path must not recreate this ambiguity.
+		if err := store.Update(func(tx *bbolt.Tx) error {
+			bucket := tx.Bucket([]byte("versions")).Bucket([]byte("native-node"))
+			value, err := proto.Marshal(revision)
+			if err != nil {
+				return err
+			}
+			sequence, err := bucket.NextSequence()
+			if err != nil {
+				return err
+			}
+			key := make([]byte, 8)
+			binary.BigEndian.PutUint64(key, sequence)
+			return bucket.Put(key, value)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.GetVersion(ctx, "native-node", revision.VersionId); !errors.Is(err, errors.StatusConflict) {
+			t.Errorf("ambiguous old native results selected a successful version: %v", err)
+		}
+		if err := store.StoreVersion(ctx, "native-node", revision); !errors.Is(err, errors.StatusConflict) {
+			t.Errorf("ambiguous old native results became a confirmed retry: %v", err)
+		}
+	})
 }

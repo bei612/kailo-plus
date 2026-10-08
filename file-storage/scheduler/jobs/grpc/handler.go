@@ -23,9 +23,9 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,7 +38,6 @@ import (
 	proto "github.com/pydio/cells/v5/common/proto/jobs"
 	log2 "github.com/pydio/cells/v5/common/proto/log"
 	"github.com/pydio/cells/v5/common/runtime/manager"
-	"github.com/pydio/cells/v5/common/storage/indexer"
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/common/utils/uuid"
@@ -51,26 +50,13 @@ type JobsHandler struct {
 	proto.UnimplementedJobServiceServer
 	proto.UnimplementedTaskServiceServer
 	logcore.Handler
-
-	jobsBuff     map[string]*proto.Job
-	jobsBuffLock *sync.Mutex
-	stop         chan bool
 }
 
 // NewJobsHandler creates a new JobsHandler
 func NewJobsHandler(runtime context.Context, serviceName string) *JobsHandler {
-	j := &JobsHandler{
-		//putTaskChan:  make(chan *proto.Task),
-		jobsBuff:     make(map[string]*proto.Job),
-		jobsBuffLock: &sync.Mutex{},
-		stop:         make(chan bool),
-	}
+	j := &JobsHandler{}
 	j.Handler.HandlerName = serviceName
 	return j
-}
-
-func (j *JobsHandler) Close() {
-	close(j.stop)
 }
 
 //////////////////
@@ -222,6 +208,9 @@ func (j *JobsHandler) ListJobs(request *proto.ListJobsRequest, streamer proto.Jo
 /////////////////
 
 func (j *JobsHandler) PutTask(ctx context.Context, request *proto.PutTaskRequest) (*proto.PutTaskResponse, error) {
+	if request.GetTask().GetID() == "" || request.GetTask().GetJobID() == "" {
+		return nil, errors.WithMessage(errors.InvalidParameters, "Task and job references are required")
+	}
 	store, err := manager.Resolve[jobs.DAO](ctx)
 	if err != nil {
 		return nil, err
@@ -229,7 +218,7 @@ func (j *JobsHandler) PutTask(ctx context.Context, request *proto.PutTaskRequest
 
 	job, e := store.GetJob(request.Task.JobID, 0)
 	if e != nil {
-		return nil, errors.WithMessagef(errors.JobNotFound, "Cannot append task to a non existing job %s", request.Task.JobID)
+		return nil, errors.WithMessagef(e, "Cannot load job %s for task persistence", request.Task.JobID)
 	}
 
 	//log.Logger(ctx).Debug("Scheduler PutTask", zap.Any("task", request.Task))
@@ -253,117 +242,26 @@ func (j *JobsHandler) PutTask(ctx context.Context, request *proto.PutTaskRequest
 }
 
 func (j *JobsHandler) PutTaskStream(streamer proto.JobService_PutTaskStreamServer) error {
-
 	ctx := streamer.Context()
-
-	store, err := manager.Resolve[jobs.DAO](ctx)
-	if err != nil {
-		return err
-	}
-
-	buffer := make(map[string]map[string]*proto.Task)
-	bufferLength := 0
-
-	batch := indexer.NewBatch(ctx,
-		indexer.WithExpire(2*time.Second),
-		indexer.WithFlushCallback(func() error {
-			if bufferLength == 0 {
-				return nil
-			}
-			if err = store.PutTasks(buffer); err != nil {
-				return err
-			}
-			clear(buffer)
-			bufferLength = 0
-			return nil
-		}),
-		indexer.WithInsertCallback(func(in any) error {
-			task, ok := in.(*proto.Task)
-			if !ok {
-				return errors.New("wrong format")
-			}
-
-			if _, o := buffer[task.JobID]; !o {
-				buffer[task.JobID] = make(map[string]*proto.Task)
-			}
-
-			var storeNow bool
-			if stored, o := buffer[task.JobID][task.ID]; !o || stored.Status == proto.TaskStatus_Finished || task.Status == proto.TaskStatus_Finished {
-				storeNow = true
-			}
-
-			bufferLength++
-			buffer[task.JobID][task.ID] = task
-			if bufferLength > 500 {
-
-				// Flushing now
-				log.Logger(ctx).Debug("Now flushing", zap.Any("j", buffer))
-				if err = store.PutTasks(buffer); err != nil {
-					log.Logger(ctx).Error("Error while flushing tasks to store")
-					return err
-				}
-
-				clear(buffer)
-				bufferLength = 0
-
-			} else if storeNow {
-				log.Logger(ctx).Debug("Quick store of this task as it is new or finished", task.Zap())
-				return store.PutTask(task)
-			}
-
-			return nil
-		}))
-
 	for {
 		request, err := streamer.Recv()
-		if request == nil {
-			break
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
 		if err != nil {
-			log.Logger(ctx).Debug("received an error in PutTaskStream", zap.Error(err))
 			return err
 		}
-		t := request.Task
-		var tJob *proto.Job
-		j.jobsBuffLock.Lock()
-		s, ok := j.jobsBuff[t.JobID]
-		j.jobsBuffLock.Unlock()
-		if !ok {
-			job, e := store.GetJob(t.JobID, 0)
-			if e != nil {
-				return errors.WithMessagef(errors.JobNotFound, "Cannot append task to a non existing job %s", request.Task.JobID)
-			}
-			j.jobsBuffLock.Lock()
-			j.jobsBuff[t.JobID] = job
-			j.jobsBuffLock.Unlock()
-			tJob = job
-		} else {
-			tJob = s
+		// A native task acknowledgement is a durable status receipt. Reuse
+		// the unary writer so errors and terminal states cannot remain only
+		// in a stream-local buffer after the client has received success.
+		response, err := j.PutTask(ctx, request)
+		if err != nil {
+			return err
 		}
-
-		if e := batch.Insert(t); e != nil {
-			_ = streamer.SendMsg(e)
-			continue
-		}
-		sendErr := streamer.Send(&proto.PutTaskResponse{
-			Task: t,
-		})
-		T := lang.Bundle().T()
-		tJob.Label = T(tJob.Label)
-		if !tJob.TasksSilentUpdate {
-			broker.MustPublish(context.WithoutCancel(ctx), common.TopicJobTaskEvent, &proto.TaskChangeEvent{
-				TaskUpdated: request.Task,
-				Job:         tJob,
-				NanoStamp:   time.Now().UnixNano(),
-				StatusMeta:  request.StatusMeta,
-			})
-		}
-		if sendErr != nil {
-			return sendErr
+		if err := streamer.Send(response); err != nil {
+			return err
 		}
 	}
-
-	return nil
 }
 
 func (j *JobsHandler) ListTasks(request *proto.ListTasksRequest, streamer proto.JobService_ListTasksServer) error {

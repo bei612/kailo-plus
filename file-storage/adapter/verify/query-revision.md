@@ -1171,3 +1171,77 @@ StoreVersion 成功路径实际读回原 Bolt 存储；DAO 失败通过原接口
 三包仅执行上述筛选目标，未跑完整 Cells、check.sh --full、Gateway/Codex、
 真实 binding、Cells→WeKnora E2E、浏览器/安装包验收或部署，不将原生修复
 当作平台完整组件上线。
+
+## 原生版本引用与任务持久回执（2026-10-08）
+
+本节记录原生写入依赖链的实施后事实，不代表平台 write/share 或按 key 执行
+去重已经完成。四步影响复核：
+
+1. 权威为 `.design/07` §5.2/§8A 及原生任务作为 ExternalExecution 的边界。
+   固定官方 commit `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的原路径/符号
+   已用只读 git 核验：`data/versions/dao/bolt/bolt.go::BoltStore.StoreVersion`
+   每次 NextSequence 插入，同路径 `BoltStore.GetVersion` 首条匹配即返回；
+   `data/versions/dao/mongo/mongo.go::MongoStore.StoreVersion` 每次 InsertOne，
+   `MongoStore.Migrate` 原为空；`scheduler/jobs/grpc/handler.go::JobsHandler.PutTaskStream`
+   对中间态/Error 先 ACK、后批量落库，断流不 flush，失败还 SendMsg(error)
+   后继续。`scheduler/tasks/reconnecting-client.go::ReconnectingClient.chanToStream`
+   实际等待该 ACK，失败时重送同一原生状态写入；本批直接修真实生产者。
+2. 原 Bolt 节点桶事务内固定 VersionId：完全相同的 ContentRevision 重复确认
+   不新增行或更换 head，变更 owner/content 或已有同 ID 多行返回原 Conflict；
+   GetVersion 不再从歧义旧行中挑一条报成功。Mongo 复用原 versions collection，
+   原 Migrate 建 `(node_uuid, version_id)` 唯一索引；只有真实 duplicate-key
+   且原 GetVersion 精确相同才确认。保留原首次/版本变化 StorageMigration
+   入口，没有新表/账本或修改 Core 合同；Mongo 迁移遇旧重复必须失败停发，
+   不删行、不静默覆盖。该迁移没有在实库运行，不能据编译声称索引已生效。
+3. 原 PutTaskStream 统一调用原 PutTask，所有状态先 DAO 提交，再原事件/ACK；
+   去掉流内旧批缓冲、Job cache 及其死字段/关闭方法。每条重新查原 Job，
+   缺原 task/job 引用拒绝；存储/收流/发 ACK 错误原样返回，Job 读取结果不明
+   不再伪装 JobNotFound。EOF 正常结束，丢 ACK 后原任务记录可读；原客户端
+   重送状态不创建第二原生 task。没有因此保证执行 exactly-once，原事件可
+   重复；没有新增重放、回滚、取消或完成收据权威，也未改变独立原生 ACL/UI。
+4. 检查实际覆盖 16 个并发相同版本、四种 actor/content 冲突、其他节点同 ID、
+   空引用、旧重复行，以及 Running/进度/Error/Interrupted/Finished 的落盘
+   时序、存储失败零 ACK/事件、丢 ACK 后原引用、Job 删除后重新核验和未知
+   Job 读取错误。旧 ChangeLog 编码、CRUD/删除原 33 assertions 保留通过。
+   没有契约、调用字段、SecretRef、平台主体/权限、页面、菜单或部署变更。
+
+复用原 `kailo-cells-native-check-lftow7`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+Go `go1.26.8 linux/amd64`、UID/GID 1000:1000，实际 cgroup CPU=4、memory=8 GiB、
+无额外 swap。每轮先查现有进程及压力，宿主 available 约 17–19 GiB、Data
+约 294 GiB；原缓存/候选继续使用，未创建镜像、数据库、工具链或整树副本。
+只同步五个本批源码/检查输入；恢复后逐文件 cmp=0，检查文件没有参与破坏。
+
+```sh
+CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+go test -mod=readonly -tags=kv ./data/versions/dao ./scheduler/jobs/grpc -count=1 -v
+final positive (handle 18710): exit 0; 5 top-level + 14 subtests passed
+private six-guard mutation (handle 96702): exit 1; 4 top-level + 3 subtests failed
+private pre-commit ACK mutation (handle 77809): exit 1; 4 top-level + 3 subtests failed
+byte-restored same target (handle 94286): exit 0; 5 top-level + 14 subtests passed
+```
+
+六保护破坏仅在私有候选中关闭 Bolt 同键判定/歧义读取、task/job 引用校验，
+吞掉 Task 存储错误、恢复未知 Job 读取伪 missing、吞掉收流错误。第二次在
+同候选真实 DAO 调用上复现“仅 Finished 落库，其余先 ACK/事件”，检查立即
+抓到未持久任务；没有修改检查使其故意失败。两个失败原件和最终恢复均保留。
+实际 fixture 仅 Bolt：原测试会过滤未配置的 Mongo fixture，Go 输出没有 SKIP
+标记不等于 Mongo 实库通过。Mongo runtime/unique-index migration/冲突与
+并发实库验证均明确 SKIP，未新造 Mongo 服务。最终 cgroup oom/oom_kill=0、
+memory.current=1321623552 bytes，所有命令已终态，无在途构建。
+
+日志仍在 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-native-version-task-final-positive.log` | `b7d2f31d18f42f026328953e09f735cbe39f10021c0b61d34d9c5bb7fe5f11d5` |
+| `cells-native-version-task-mutation.log` | `90503a039583f4d0f2f5ff7d0cd16c1d055620da9efe1e63b784fa74d2f2cc41` |
+| `cells-native-version-task-before-commit-ack-mutation.log` | `5e8db68c153363d325ba81fee12cf2f516f9da1bdae511a42203677ac830f683` |
+| `cells-native-version-task-restored.log` | `1ae233ea10b4dc838f2e8415377496ca387430aed788727e2749aa4911321291` |
+
+尚未闭合完整 FILE_STORAGE 七项批准 catalog、平台 write/delete/share 的可信
+actor/generation 与按 key 终态/usage、原子条件删除。版本 DAO 同键确认不
+等于 StoreVersion 发布后的 pruning 或整个对象上传副作用已经幂等；原生
+Task 状态持久化不等于 Job 派发已去重。full、真实 Gateway/Codex、live binding、
+Cells→WeKnora E2E、浏览器/安装包验收、镜像构建与部署均未运行。
