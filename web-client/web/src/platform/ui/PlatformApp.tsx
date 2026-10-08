@@ -20,7 +20,7 @@ import type { ParsedMessageLink } from "@client-kit/platform/react/composer/feat
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
-import { ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
+import { ConversationVisibilityProvider, useConversations, useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
@@ -157,6 +157,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const workspaces = useQuery(platformQueries.workspaces);
   const userState = useInboxState(bff);
   const conversations = useConversations();
+  const directMessage = useDirectMessageOpen(session.tenantPrincipalId);
+  const directMessageOwner = useMemo(() => ({ active: true }),
+    [session.tenantId, session.tenantPrincipalId, session.platformSessionId]);
+  const currentDirectMessageOwner = useRef(directMessageOwner);
+  currentDirectMessageOwner.current = directMessageOwner;
+  useEffect(() => {
+    directMessageOwner.active = true;
+    return () => { directMessageOwner.active = false; };
+  }, [directMessageOwner]);
   const navigation = usePlatformNavigation();
   const { tab, messageTarget } = navigation;
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
@@ -171,7 +180,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
   const settingsVisited=useRef(false);
   if(tab==="settings")settingsVisited.current=true;
-  const [initialRecipientPubkey, setInitialRecipientPubkey] = useState<string>();
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
@@ -186,6 +194,18 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ?? rows.find((workspace) => workspace.isMember === true)
     ?? rows[0];
   const active = activeRow?.id ?? null;
+  async function openDirectMessage(pubkey: string) {
+    const checkCurrent = () => {
+      if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
+        throw new Error(translate(getLocale(), "dm.viewInactive"));
+    };
+    checkCurrent();
+    const conversation = await directMessage.open(pubkey);
+    checkCurrent();
+    await conversations.reload();
+    checkCurrent();
+    await navigation.openConversation(conversation.id);
+  }
   const setTab = (next: Exclude<PlatformTab, "conversation" | "application">) => { void navigation.openTab(next, active); };
   const settingsReturn = useRef<() => void>(() => { void navigation.openTab("channel"); });
   useEffect(() => {
@@ -202,7 +222,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     disabled: tab === "settings",
     onBrowseChannels: () => setCreateChannelOpen(true),
     onCreateChannel: () => setNewChannelOpen(true),
-    onNewMessage: () => { setInitialRecipientPubkey(undefined); setTab("new-message"); },
+    onNewMessage: () => setTab("new-message"),
   });
   useSettingsShortcuts({
     open: tab === "settings",
@@ -274,27 +294,27 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </div> :
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
-      onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
+      onStartDm={openDirectMessage}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
-      onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
+      onStartDm={openDirectMessage}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></> : <Notice text={t("platform.loadFailed")} />
   ) : (
     <MembersPane key={active} workspaceId={active} currentPrincipalId={session.tenantPrincipalId}
-      onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}} />
+      onStartDm={openDirectMessage} />
   );
   const body =
     tab === "application" && navigation.applicationBindingId ? (
       <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} onBack={() => setTab("inbox")} />
     ) : tab === "new-message" ? (
-      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} initialRecipientPubkey={initialRecipientPubkey} onConversationOpened={async (conversation) => {
+      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} onConversationOpened={async (conversation) => {
         await conversations.reload();
         await navigation.openConversation(conversation.id);
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         targetMessageId={messageTarget?.channelId === chosenConversation.id ? messageTarget.messageId : undefined}
-        onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
+        onStartDm={openDirectMessage}
         onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
     ) : tab === "settings" ? (
@@ -302,7 +322,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
-        onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
+        onStartDm={openDirectMessage}
         onUnreadCount={setInboxUnreadCount}
         onOpen={async (channelId, target) => {
           if (target?.conversation) {
@@ -311,9 +331,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         }}
       />
     ) : tab === "pulse" ? (
-      <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={(pubkey)=>{
-        setInitialRecipientPubkey(pubkey);setTab("new-message");
-      }}/>
+      <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={openDirectMessage}/>
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
         selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}
@@ -378,7 +396,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
             <ConversationSidebar currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
-              onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}
+              onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
               onCloseSelected={() => setTab("inbox")}
               onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}

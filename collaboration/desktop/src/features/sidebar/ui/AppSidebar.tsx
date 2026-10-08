@@ -8,8 +8,10 @@ import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-d
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
-import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
-import { translate, resolveLocale } from "@client-kit/platform/i18n";
+import { ConversationList, useConversations, useDirectMessageOpen } from "@client-kit/platform/react/new-message";
+import { translateCurrent as translateUi } from "@client-kit/platform/i18n";
+import { isOutcomeUnknown } from "@client-kit/platform/transport";
+import { toast } from "sonner";
 import { useAppShell } from "@/app/AppShellContext";
 import { useHomeFeedQuery } from "@/features/home/hooks";
 import type { Channel } from "@/shared/api/types";
@@ -95,6 +97,30 @@ export function AppSidebar({
     onNewMessage,
   });
   const queryClient = useQueryClient();
+  const directMessage = useDirectMessageOpen(currentPrincipalId ?? "");
+  const directMessageOwner = React.useMemo(() => ({ active: true }),
+    [activeCommunity.id, activeCommunity.relayUrl, currentPrincipalId, currentPubkey]);
+  const currentDirectMessageOwner = React.useRef(directMessageOwner);
+  currentDirectMessageOwner.current = directMessageOwner;
+  React.useEffect(() => {
+    directMessageOwner.active = true;
+    return () => { directMessageOwner.active = false; };
+  }, [directMessageOwner]);
+  async function openDirectMessage({ pubkeys }: { pubkeys: string[] }) {
+    if (directMessage.busy || !directMessageOwner.active ||
+        currentDirectMessageOwner.current !== directMessageOwner) return;
+    try {
+      const conversation = await directMessage.open(pubkeys[0] ?? "");
+      if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner) return;
+      await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+      if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner) return;
+      onSelectChannel(conversation.channelId);
+    } catch (error) {
+      if (directMessageOwner.active && currentDirectMessageOwner.current === directMessageOwner)
+        toast.error(isOutcomeUnknown(error) ? translateUi("dm.unknown") :
+          error instanceof Error ? error.message : translateUi("dm.unavailable"));
+    }
+  }
   const workspaceDirectory = useWorkspaceChannelDirectory();
   const applicationWorkspace = nativeApplicationWorkspace(workspaceDirectory.data,
     selectedApplicationBindingId ? { workspaceId: applicationWorkspaceId } :
@@ -178,11 +204,14 @@ export function AppSidebar({
     }} scrollRef={scrollRef}
       pinnedHeader={<AppSidebarPinnedHeader
           currentPubkey={currentPubkey}
+          onOpenDm={openDirectMessage}
           currentChannelId={
             selectedView === "channel" ? selectedChannelId : null
           }
           onOpenSearchResult={onOpenSearchResult}
           onSelectChannel={onSelectChannel}
+          onBrowseChannels={() => setCreateChannelOpen(true)}
+          onCreateChannel={() => setNewChannelOpen(true)}
           searchChannels={searchChannels}
           searchFocusRequest={searchFocusRequests[0]}
           scopeSearchFocusRequest={searchFocusRequests[1]}
@@ -310,7 +339,7 @@ export function AppSidebar({
                     selectedChannelId={selectedChannelId}
                     title="Channels"
                     onCreateChannel={() => setCreateChannelOpen(true)}
-                    createChannelLabel={translate(resolveLocale(), "channel.browser.title")}
+                    createChannelLabel={translateUi("channel.browser.title")}
                     unreadChannelIds={unreadChannelIds}
                     mutedChannelIds={mutedChannelIds}
                     onMuteChannel={onMuteChannel}

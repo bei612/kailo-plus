@@ -8,6 +8,12 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/search/*": "./src/react/search/*.ts",
+    "./react/search/TopbarSearch": "./src/react/search/TopbarSearch.tsx",
+    "./react/search/SearchResultItem": "./src/react/search/SearchResultItem.tsx",
+    "./react/search/SearchScopeControls": "./src/react/search/SearchScopeControls.tsx",
+    "./react/search/SearchPromptPlaceholder": "./src/react/search/SearchPromptPlaceholder.tsx",
+    "./react/search/HighlightedSearchText": "./src/react/search/HighlightedSearchText.tsx",
     "./react/sidebar/useUnreadOverflow": "./src/react/sidebar/useUnreadOverflow.ts",
     "./react/sidebar/useSidebarUnreadOverflow": "./src/react/sidebar/useSidebarUnreadOverflow.ts",
     "./react/sidebar/MoreUnreadButton": "./src/react/sidebar/MoreUnreadButton.tsx",

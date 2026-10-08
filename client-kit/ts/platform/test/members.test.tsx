@@ -60,6 +60,31 @@ describe("original member browsing with governed identity",()=>{
     expect(host.querySelector('[data-testid="member-person"]')).toBeNull();
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
   });
+  it("keeps the original member Message pending until the actual DM opens, then closes the panel",async()=>{
+    let finish!:()=>void;
+    const startDm=vi.fn((_pubkey:string)=>new Promise<void>(resolve=>{finish=resolve;}));
+    const m=mount(browse,<MembersPane workspaceId="workspace" currentPrincipalId="viewer" onStartDm={startDm}/>);
+    const host=await m.render();await settle();
+    await click(host.querySelector<HTMLElement>(`span[title="${second}"] [role="button"]`)!);
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!);
+    expect(startDm).toHaveBeenCalledWith(second);
+    expect(host.querySelector('[data-testid="member-profile-panel"]')).not.toBeNull();
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.disabled).toBe(true);
+    await act(async()=>finish());
+    expect(host.querySelector('[data-testid="member-profile-panel"]')).toBeNull();
+  });
+  it("preserves the original member profile when DM confirmation is unknown",async()=>{
+    const startDm=vi.fn().mockRejectedValue(new TransportError("Direct message result unknown"));
+    const m=mount(browse,<MembersPane workspaceId="workspace" currentPrincipalId="viewer" onStartDm={startDm}/>);
+    const host=await m.render();await settle();
+    await click(host.querySelector<HTMLElement>(`span[title="${second}"] [role="button"]`)!);
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!);
+    expect(host.querySelector('[data-testid="member-profile-panel"]')).not.toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Direct message result unknown");
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.disabled).toBe(false);
+  });
   it("does not offer the original Message tile for the current principal's own key",async()=>{
     const startDm=vi.fn();
     const m=mount(browse,<MembersPane workspaceId="workspace" currentPrincipalId="person" onStartDm={startDm}/>);

@@ -3,11 +3,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
-import { NewMessageScreen, ConversationList, ConversationVisibilityProvider, hiddenConversationChannels, DM_VISIBILITY_KIND } from "../src/react/new-message";
+import { NewMessageScreen, ConversationList, ConversationVisibilityProvider, hiddenConversationChannels, DM_VISIBILITY_KIND, useDirectMessageOpen } from "../src/react/new-message";
 import { conversationNotificationMutes } from "../src/inbox";
 import { useConversationState } from "../src/react/conversations/use-conversation-state";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
-import { ItemState, type ConversationView } from "@client-kit/contracts";
+import { ItemState, type ConversationParticipantPage, type ConversationView } from "@client-kit/contracts";
 import { TransportError, type BffRequest } from "../src/transport";
 import { button, click, render, settle } from "./render";
 import { reopenHiddenInboxConversation, type HiddenDmInboxIntent } from "../src/react/conversations/hidden-dm-inbox-action";
@@ -311,5 +311,121 @@ describe("shared original new-message surface", () => {
     expect(transport.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
     expect(host.textContent).toContain("being prepared");
     expect(onReady).not.toHaveBeenCalled();
+  });
+});
+
+describe("original People direct-DM consumer", () => {
+  const charlie = { principalId: "charlie", displayName: "Bob", pubkeys: ["c".repeat(64)] };
+  function setupDirect(options: {
+    directory?: (cursor?: string) => Promise<ConversationParticipantPage>;
+    active?: boolean;
+    unknown?: boolean;
+    visibility?: { read: (conversation: ConversationView) => Promise<ReadonlySet<string>>; prepare: (conversation: ConversationView, hidden: boolean) => Promise<() => Promise<void>> };
+  } = {}) {
+    let active = options.active ?? true;
+    let actor = alice.principalId;
+    let participantIds = [alice.principalId, bob.principalId];
+    let writes = 0;
+    const ready = vi.fn(); const failed = vi.fn();
+    const send = vi.fn(async (request: BffRequest) => {
+      if (request.path === "/api/v1/session") return { status: 200, body: {accessMode: "FULL", tenantPrincipalId: actor} };
+      if (request.path.startsWith("/api/v1/conversation-participants")) {
+        const cursor = new URL(request.path, "http://localhost").searchParams.get("cursor") ?? undefined;
+        return { status: 200, body: options.directory ? await options.directory(cursor) : { items: [alice, bob, charlie], maxParticipants: 9 } };
+      }
+      if (request.path === "/api/v1/actions") {
+        participantIds = (request.body as {conversationOpen: {participantPrincipalIds: string[]}}).conversationOpen.participantPrincipalIds;
+        writes++;
+        if (options.unknown && writes === 1) throw new TransportError("lost action receipt");
+        return { status: 202, body: {actionKey: "conversation.open", actionExecutionId: "execution", operationId: "operation", gateState: "ALLOWED", dispatchState: "DISPATCHED"} };
+      }
+      if (request.path.startsWith("/api/v1/conversations")) return { status: 200, body: { items: [{id: participantIds.join(":"), channelId: "actual-native-channel", state: active ? "ACTIVE" : "PROVISIONING", participantPrincipalIds: participantIds, operationId: "operation", version: 1}] } };
+      throw new Error(request.path);
+    });
+    const client = createBffClient({send});
+    const visibility = options.visibility ?? {read: vi.fn(async () => new Set<string>()), prepare: vi.fn(async () => async () => {})};
+    function People() {
+      const [principal, setPrincipal] = useState(alice.principalId);
+      const dm = useDirectMessageOpen(principal);
+      return <><button onClick={() => void dm.open(bob.pubkeys[0]!).then(ready).catch(failed)}>Open Bob</button>
+        <button onClick={() => void dm.open(charlie.pubkeys[0]!).then(ready).catch(failed)}>Open other Bob</button>
+        <button onClick={() => { actor = charlie.principalId; setPrincipal(charlie.principalId); }}>Switch identity</button>
+        <output>{dm.notice}</output></>;
+    }
+    return {send, ready, failed, activate: () => {active = true;}, changeActor: (id: string) => {actor = id;},
+      mount: () => render(<PlatformProvider client={client}><ConversationVisibilityProvider value={visibility}><People /></ConversationVisibilityProvider></PlatformProvider>)};
+  }
+
+  it("resolves a device pubkey through all admitted pages, never a matching display name", async () => {
+    const direct = setupDirect({directory: async (cursor) => cursor
+      ? {items: [{...bob, pubkeys: ["d".repeat(64), bob.pubkeys[0]!]}], maxParticipants: 9}
+      : {items: [alice, charlie], maxParticipants: 9, nextCursor: "next"}});
+    const host = await direct.mount(); await click(button(host, "Open Bob"));
+    expect(direct.ready).toHaveBeenCalledWith(expect.objectContaining({state: "ACTIVE", participantPrincipalIds: ["alice", "bob"]}));
+    expect(direct.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({conversationOpen: {participantPrincipalIds: ["alice", "bob"]}});
+    expect(direct.send.mock.calls.filter(([request]) => request.path.startsWith("/api/v1/conversation-participants"))).toHaveLength(2);
+  });
+
+  it("rejects missing, ambiguous and self mappings without submitting an action", async () => {
+    for (const items of [[], [{...alice, pubkeys: bob.pubkeys}], [bob, {...charlie, pubkeys: bob.pubkeys}]]) {
+      const direct = setupDirect({directory: async () => ({items, maxParticipants: 9})});
+      const host = await direct.mount(); await click(button(host, "Open Bob"));
+      expect(direct.ready).not.toHaveBeenCalled(); expect(direct.failed).toHaveBeenCalledOnce();
+      expect(direct.send.mock.calls.some(([request]) => request.method === "POST")).toBe(false);
+    }
+  });
+
+  it("rejects a repeated directory cursor and a stale current principal before any action", async () => {
+    const loop = setupDirect({directory: async () => ({items: [bob], maxParticipants: 9, nextCursor: "repeat"})});
+    const host = await loop.mount(); await click(button(host, "Open Bob"));
+    expect(loop.failed).toHaveBeenCalledOnce(); expect(loop.send.mock.calls.some(([request]) => request.method === "POST")).toBe(false);
+    const stale = setupDirect(); stale.changeActor("other-principal");
+    const staleHost = await stale.mount(); await click(button(staleHost, "Open Bob"));
+    expect(stale.failed).toHaveBeenCalledOnce(); expect(stale.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("pins an accepted pending target, then allows the next original People target only after ACTIVE", async () => {
+    const direct = setupDirect({active: false}); const host = await direct.mount();
+    await click(button(host, "Open Bob")); await click(button(host, "Open other Bob"));
+    expect(direct.ready).not.toHaveBeenCalled();
+    expect(direct.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+    direct.activate(); await click(button(host, "Open Bob"));
+    expect(direct.ready).toHaveBeenCalledOnce();
+    await click(button(host, "Open other Bob"));
+    expect(direct.ready).toHaveBeenCalledTimes(2);
+    const writes = direct.send.mock.calls.filter(([request]) => request.method === "POST");
+    expect(writes).toHaveLength(2); expect(writes[1]![0].body).toMatchObject({conversationOpen: {participantPrincipalIds: ["alice", "charlie"]}});
+  });
+
+  it("retains exactly the same unknown command and never replaces it with another People target", async () => {
+    const direct = setupDirect({unknown: true}); const host = await direct.mount();
+    await click(button(host, "Open Bob")); await click(button(host, "Open other Bob"));
+    expect(direct.ready).not.toHaveBeenCalled();
+    expect(direct.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+    await click(button(host, "Open Bob"));
+    const writes = direct.send.mock.calls.filter(([request]) => request.method === "POST");
+    expect(writes).toHaveLength(2); expect(writes[1]![0].body).toEqual(writes[0]![0].body);
+    expect(direct.ready).toHaveBeenCalledOnce();
+  });
+
+  it("does not replay uncertain visibility when the original snapshot already proves the DM visible", async () => {
+    let hidden = true;
+    const publish = vi.fn(async () => {hidden = false; throw new TransportError("visibility receipt lost");});
+    const prepare = vi.fn(async () => publish);
+    const direct = setupDirect({visibility: {read: async () => new Set(hidden ? ["actual-native-channel"] : []), prepare}});
+    const host = await direct.mount(); await click(button(host, "Open Bob"));
+    expect(direct.ready).not.toHaveBeenCalled();
+    await click(button(host, "Open Bob"));
+    expect(direct.ready).toHaveBeenCalledOnce(); expect(publish).toHaveBeenCalledOnce(); expect(prepare).toHaveBeenCalledOnce();
+    expect(direct.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  });
+
+  it("rejects a late directory result after identity replacement before submit or navigation", async () => {
+    let complete!: (value: ConversationParticipantPage) => void;
+    const direct = setupDirect({directory: () => new Promise(resolve => {complete = resolve;})});
+    const host = await direct.mount(); await click(button(host, "Open Bob")); await settle();
+    await click(button(host, "Switch identity"));
+    await act(async () => complete({items: [bob], maxParticipants: 9})); await settle();
+    expect(direct.ready).not.toHaveBeenCalled(); expect(direct.send.mock.calls.some(([request]) => request.method === "POST")).toBe(false);
   });
 });

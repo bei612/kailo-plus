@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx
 // RelayMemberRow / HoverMemberIdentity. Platform membership remains Principal-based.
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Search, Shield } from "lucide-react";
 import { WorkspaceMembershipState, type WorkspaceMemberView, type RoleMemberView } from "@client-kit/contracts";
@@ -46,10 +46,28 @@ export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:Me
     status={!profile?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarget;onClose:()=>void;onStartDm?:(pubkey:string)=>void}) {
+export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarget;onClose:()=>void;onStartDm?:(pubkey:string)=>void|Promise<void>}) {
   const t=useT();const query=useMemberProfile(target);const width=useThreadPanelWidth();
+  const owner=useMemo(()=>({active:true,busy:false}),[target.workspaceId,target.principalId,target.pubkey]);
+  const currentOwner=useRef(owner);currentOwner.current=owner;
+  const [opening,setOpening]=useState(false);const [problem,setProblem]=useState<string|null>(null);
+  useEffect(()=>{owner.active=true;setOpening(false);setProblem(null);return()=>{owner.active=false;};},[owner]);
   useEscapeKey(onClose,true);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
+  async function openMessage() {
+    if(!profile||!onStartDm||owner.busy||!owner.active||currentOwner.current!==owner)return;
+    owner.busy=true;setOpening(true);setProblem(null);
+    try {
+      await onStartDm(profile.pubkey);
+      if(owner.active&&currentOwner.current===owner)onClose();
+    }catch(error){
+      if(owner.active&&currentOwner.current===owner)
+        setProblem(error instanceof Error?error.message:t("platform.loadFailed"));
+    }finally{
+      owner.busy=false;
+      if(owner.active&&currentOwner.current===owner)setOpening(false);
+    }
+  }
   return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="member-profile-panel"
     resizeHandleAriaLabel={t("platform.profile.resize")}
@@ -59,15 +77,16 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6">
       {profile?<ProfileSummaryView profile={profile} displayName={profile.displayName??truncatePubkey(profile.pubkey)}
         pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
-        onMessage={onStartDm?()=>onStartDm(profile.pubkey):undefined}/>
+        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
+      {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;
 }
 
 /** The original row keeps its name/key hover and avatar/profile affordance.
  * No role, presence or created date is inferred from missing directory facts. */
-export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincipalId}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer;onStartDm?:(pubkey:string)=>void;currentPrincipalId?:string}) {
+export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincipalId}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer;onStartDm?:(pubkey:string)=>void|Promise<void>;currentPrincipalId?:string}) {
   const client=useBffClient();const t=useT();const locale=useLocale();
   const [state,reload]=useLoad(`members:${workspaceId}`,()=>client.members(workspaceId));
   const [roles,reloadRoles]=useLoad(`member-actions:${workspaceId}`,async()=>{

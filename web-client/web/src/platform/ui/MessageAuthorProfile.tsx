@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLayoutEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
 import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, useThreadPanelWidth } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
@@ -69,15 +69,35 @@ function MessageAuthorHover({target,...props}: ProfilePopoverBodyProps & {target
 }
 
 export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false}: {
-  target:MessageAuthor;onClose:()=>void;onStartDm?: (pubkey:string)=>void;
+  target:MessageAuthor;onClose:()=>void;onStartDm?: (pubkey:string)=>void|Promise<void>;
   onWidthChange?: (width: number) => void; isSinglePanelView?: boolean;
 }) {
   const t=useUiT();
   const query=useMessageAuthor(target);
+  const owner=useMemo(()=>({active:true,busy:false}),
+    [target.principalId,target.workspaceId,target.conversationId,target.eventId,target.pubkey]);
+  const currentOwner=useRef(owner);currentOwner.current=owner;
+  const [opening,setOpening]=useState(false);
+  const [problem,setProblem]=useState<string|null>(null);
+  useEffect(()=>{owner.active=true;setOpening(false);setProblem(null);return()=>{owner.active=false;};},[owner]);
   const width=useThreadPanelWidth();
   useLayoutEffect(() => { onWidthChange?.(width.widthPx); }, [onWidthChange, width.widthPx]);
   useEscapeKey(onClose,true);
   const data=query.isSuccess&&!query.isFetching?query.data:undefined;
+  async function openMessage() {
+    if(!data||!onStartDm||owner.busy||!owner.active||currentOwner.current!==owner)return;
+    owner.busy=true;setOpening(true);setProblem(null);
+    try {
+      await onStartDm(data.pubkey);
+      if(owner.active&&currentOwner.current===owner)onClose();
+    } catch(error) {
+      if(owner.active&&currentOwner.current===owner)
+        setProblem(error instanceof Error?error.message:t("platform.loadFailed"));
+    } finally {
+      owner.busy=false;
+      if(owner.active&&currentOwner.current===owner)setOpening(false);
+    }
+  }
   return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
     resizeHandleAriaLabel={t("platform.profile.resize")} resizeHandleTestId="user-profile-resize-handle"
@@ -87,9 +107,10 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
         profile={data} pubkey={data.pubkey} copy={copy} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
-        onMessage={onStartDm?()=>onStartDm(data.pubkey):undefined}/>
+        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
         :query.isError?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
         :<p role="status">{t("platform.loading")}</p>}
+      {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;
 }

@@ -2,6 +2,9 @@
 // desktop/src/features/channels/lib/dmParticipantDisplay.ts: original display rule.
 import { translateCurrent } from "../../i18n";
 import type { Translate } from "../context";
+import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
+import { normalizePubkey } from "./pubkey";
+import type { Channel } from "../search/types";
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
 
@@ -26,4 +29,71 @@ export function formatDmParticipantDisplayName(
   return hiddenCount > 0
     ? [...names, t("dm.moreParticipants", { count: hiddenCount })].join(", ")
     : names.join(", ");
+}
+
+export type DirectMessageIntroParticipant = {
+  avatarUrl: string | null;
+  displayName: string;
+  isAgent?: boolean;
+  pubkey: string;
+};
+
+export type DirectMessageIntro = {
+  displayName: string;
+  participants: DirectMessageIntroParticipant[];
+};
+
+export function buildDirectMessageIntro({
+  channel,
+  currentPubkey,
+  profiles,
+}: {
+  channel: Channel | null;
+  currentPubkey?: string;
+  profiles?: UserProfileLookup;
+}): DirectMessageIntro | null {
+  if (channel?.channelType !== "dm") {
+    return null;
+  }
+
+  const participants = channel.participantPubkeys.map((pubkey, index) => ({
+    fallbackName: channel.participants[index] ?? null,
+    pubkey,
+  }));
+  const normalizedCurrentPubkey = currentPubkey
+    ? normalizePubkey(currentPubkey)
+    : null;
+  const otherParticipants = normalizedCurrentPubkey
+    ? participants.filter(
+        (participant) =>
+          normalizePubkey(participant.pubkey) !== normalizedCurrentPubkey,
+      )
+    : participants;
+  const displayParticipants =
+    otherParticipants.length > 0 ? otherParticipants : participants;
+
+  if (displayParticipants.length === 0) {
+    return null;
+  }
+
+  const introParticipants = displayParticipants.map((participant) => {
+    const profile = profiles?.[normalizePubkey(participant.pubkey)] ?? null;
+
+    return {
+      avatarUrl: profile?.avatarUrl ?? null,
+      displayName: resolveUserLabel({
+        currentPubkey,
+        fallbackName: participant.fallbackName,
+        profiles,
+        pubkey: participant.pubkey,
+      }),
+      ...(profile?.isAgent === true ? { isAgent: true } : {}),
+      pubkey: participant.pubkey,
+    };
+  });
+
+  return {
+    displayName: formatDmParticipantDisplayName(introParticipants),
+    participants: introParticipants,
+  };
 }

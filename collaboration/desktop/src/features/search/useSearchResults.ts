@@ -43,6 +43,7 @@ function dedupeSearchHits(hits: SearchHit[]) {
 function resolveChannelIdFromOperator(
   raw: string | null,
   channels: Channel[],
+  channelLabels?: Record<string, string>,
 ): OperatorResolveResult<string> {
   if (!raw) {
     return { status: "none" };
@@ -55,9 +56,10 @@ function resolveChannelIdFromOperator(
     return { status: "resolved", value };
   }
   const needle = value.toLowerCase();
-  const match = channels.find(
-    (channel) => channel.name.toLowerCase() === needle,
-  );
+  const match = channels.find((channel) => {
+    const label = channelLabels?.[channel.id]?.trim() || channel.name;
+    return channel.name.toLowerCase() === needle || label.toLowerCase() === needle;
+  });
   return match
     ? { status: "resolved", value: match.id }
     : { status: "unresolved" };
@@ -87,11 +89,13 @@ function resolveAuthorFromOperator(
 }
 
 export function useSearchResults({
+  channelLabels,
   channels,
   enabled,
   limit = 12,
   scopeChannelId,
 }: {
+  channelLabels?: Record<string, string>;
   channels: Channel[];
   enabled: boolean;
   limit?: number;
@@ -122,8 +126,8 @@ export function useSearchResults({
     () =>
       scopeChannelId
         ? { status: "resolved", value: scopeChannelId }
-        : resolveChannelIdFromOperator(parsedQuery.in, channels),
-    [parsedQuery.in, channels, scopeChannelId],
+        : resolveChannelIdFromOperator(parsedQuery.in, channels, channelLabels),
+    [parsedQuery.in, channels, channelLabels, scopeChannelId],
   );
 
   const ftsQuery = parsedQuery.text;
@@ -224,19 +228,24 @@ export function useSearchResults({
       .flatMap((channel) => {
         if (!channel.isMember) return [];
 
-        const score = scoreChannelMatch(
-          { name: channel.name, description: channel.description },
+        const displayName = channelLabels?.[channel.id]?.trim() || channel.name;
+        const displayScore = scoreChannelMatch(
+          { name: displayName, description: channel.description },
           normalizedQuery,
         );
-        return score === null ? [] : [{ channel, score }];
+        const rawNameScore = scoreChannelMatch(
+          { name: channel.name, description: "" }, normalizedQuery,
+        );
+        const scores = [displayScore, rawNameScore].filter((score): score is number => score !== null);
+        return scores.length === 0 ? [] : [{ channel, displayName, score: Math.min(...scores) }];
       })
       .sort(
         (a, b) =>
-          a.score - b.score || a.channel.name.localeCompare(b.channel.name),
+          a.score - b.score || a.displayName.localeCompare(b.displayName),
       )
       .slice(0, 5)
       .map(({ channel }) => channel);
-  }, [channels, ftsQuery, scopeChannelId]);
+  }, [channelLabels, channels, ftsQuery, scopeChannelId]);
   const userResults = React.useMemo<UserSearchResult[]>(() => {
     if (scopeChannelId || ftsQuery.length < MIN_SEARCH_QUERY_LENGTH) {
       return [];

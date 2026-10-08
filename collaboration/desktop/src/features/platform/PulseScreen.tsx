@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
 import { useNativeSession } from "./activeCommunity";
@@ -10,9 +12,13 @@ import { parseImetaTags } from "@/shared/ui/markdown/parseImeta";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
+import { channelsQueryKey } from "@/features/channels/hooks";
 
 export function PulseScreen() {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
+  const cache=useQueryClient();
+  const platformSession=useQuery({queryKey:["platform","session"],queryFn:()=>session.client.session()});
+  const directMessage=useDirectMessageOpen(platformSession.data?.tenantPrincipalId??"");
   const directory=usePeopleDirectory(session.facts.communityHost+":"+session.devicePubkey);
   const scope=useMemo(()=>({active:true}),[session]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
@@ -22,7 +28,13 @@ export function PulseScreen() {
     const transport=createPulseTransport(session.devicePubkey,limit,()=>scope.active);
     return {scopeKey:`${session.facts.communityHost}:${session.devicePubkey}`,pubkey:session.devicePubkey,...transport,
       mediaUrl:rewriteRelayUrl,copy:writeTextToClipboard,
-      startDm:async(pubkey)=>{if(!scope.active)throw new Error("Relay identity changed");await navigate({to:"/messages/new",search:{pubkey}});},
+      startDm:async(pubkey)=>{
+        const check=()=>{if(!scope.active)throw new Error(t("dm.viewInactive"));};
+        check();
+        const conversation=await directMessage.open(pubkey);
+        check();await cache.invalidateQueries({queryKey:channelsQueryKey});check();
+        await navigate({to:"/channels/$channelId",params:{channelId:conversation.channelId}});
+      },
       renderContent:(content,tags)=><Markdown content={content} imetaByUrl={parseImetaTags(tags??[])} linkPreviewTags={tags}/>,
       renderComposer:(props)=><div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
         containerClassName={props.className} composerHeader={props.header}
@@ -38,7 +50,7 @@ export function PulseScreen() {
           await props.onSubmit(content,mentions,attachments);
         }}/><PeopleDirectoryStatus directory={directory}/></div>,
     };
-  },[session,scope,limit,navigate,t,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
+  },[session,scope,limit,navigate,t,cache,directMessage.open,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
   if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
   return <PulseHostProvider host={host}><PulseView currentPubkey={session.devicePubkey}/></PulseHostProvider>;
 }

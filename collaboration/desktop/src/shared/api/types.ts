@@ -1,25 +1,5 @@
-export type ChannelType = "stream" | "forum" | "dm";
-export type ChannelVisibility = "open" | "private";
-export type ChannelRole = "owner" | "admin" | "member" | "guest" | "bot";
-
-export type Channel = {
-  id: string;
-  name: string;
-  channelType: ChannelType;
-  visibility: ChannelVisibility;
-  description: string;
-  topic: string | null;
-  purpose: string | null;
-  memberCount: number;
-  memberPubkeys: string[];
-  lastMessageAt: string | null;
-  archivedAt: string | null;
-  participants: string[];
-  participantPubkeys: string[];
-  isMember: boolean;
-  ttlSeconds: number | null;
-  ttlDeadline: string | null;
-};
+export type { Channel, ChannelType, ChannelVisibility, ChannelRole } from "@client-kit/platform/react/search/types";
+import type { Channel, ChannelRole } from "@client-kit/platform/react/search/types";
 
 export type ChannelDetail = Channel & {
   createdBy: string;
@@ -75,14 +55,8 @@ export type UsersBatchResponse = {
   missing: string[];
 };
 
-export type UserSearchResult = {
-  pubkey: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-  nip05Handle: string | null;
-  ownerPubkey: string | null;
-  isAgent: boolean;
-};
+export type { UserSearchResult } from "@client-kit/platform/react/search/types";
+import type { UserSearchResult } from "@client-kit/platform/react/search/types";
 
 export type UserSearchPage = {
   users: UserSearchResult[];

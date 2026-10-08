@@ -9,10 +9,14 @@ vi.mock("./ConversationSidebar",()=>({ConversationSidebar:()=> <div data-testid=
 vi.mock("@tanstack/react-router", () => ({ useBlocker: () => ({ status: "idle" }) }));
 vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChannelDialog: () => null }));
 
-const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false }));
+const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false,
+  channelType: "stream", conversationId: null as string | null,
+  startDm: {} as Record<string, (pubkey: string) => void | Promise<void>>,
+  openDm: vi.fn(), reloadConversations: vi.fn(), openConversation: vi.fn(), openTab: vi.fn(),
+}));
 vi.mock("@/app/platform-navigation", () => ({
   usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
-    conversationId: null, messageTarget: null, openTab: vi.fn(), openChannel: vi.fn(), openConversation: vi.fn() }),
+    conversationId: state.conversationId, messageTarget: null, openTab: state.openTab, openChannel: vi.fn(), openConversation: state.openConversation }),
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -45,7 +49,9 @@ vi.mock("@tanstack/react-query", () => ({
             { id: "workspace-a", name: "A", isMember: state.memberA },
             { id: "workspace-b", name: "B", isMember: state.memberB },
           ]
-        : { workspacePreferences: {} },
+        : options.queryKey[1] === "channel-descriptor"
+          ? { channelId: "native-stream", channelType: state.channelType, name: "Actual channel" }
+          : { workspacePreferences: {} },
     isError: false,
     isPending: false,
   }); },
@@ -80,7 +86,8 @@ vi.mock("@client-kit/platform/react/channel-browser", () => ({
 }));
 vi.mock("@client-kit/platform/react/new-message", () => ({
   ConversationVisibilityProvider: ({ children }: { children: React.ReactNode }) => children,
-  useConversations: () => ({ items: [], loading: false, error: null, reload: vi.fn() }),
+  useConversations: () => ({ items: state.conversationId ? [{id: state.conversationId, channelId: "native-private"}] : [], loading: false, error: null, reload: state.reloadConversations }),
+  useDirectMessageOpen: () => ({open: state.openDm}),
   ConversationList: () => <div data-testid="shared-conversation-list" />,
 }));
 vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => null }));
@@ -106,9 +113,10 @@ vi.mock("@client-kit/platform/react/governance", () => ({
 vi.mock("@client-kit/platform/react/pages", () => ({
   NativeApplicationEntries: () => null,
   WorkspaceManagementPanels: ({ children }: { children: React.ReactNode }) => <div data-testid="shared-management-panels">{children}</div>,
-  MembersPane: ({ workspaceId }: { workspaceId: string }) => (
-    <div data-testid="workspace-members" data-workspace={workspaceId} />
-  ),
+  MembersPane: ({ workspaceId, onStartDm }: { workspaceId: string; onStartDm: (pubkey: string) => void | Promise<void> }) => {
+    state.startDm.members = onStartDm;
+    return <div data-testid="workspace-members" data-workspace={workspaceId} />;
+  },
   AuditPage: () => null,
   DevicesPage: () => null,
 }));
@@ -122,12 +130,26 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
   TenantInvitations: () => <div data-testid="tenant-invitations" />,
   RedemptionProgress: () => null,
 }));
-vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: () => null }));
+vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>}) => {
+  state.startDm[conversation ? "conversation" : "stream"] = onStartDm;
+  return null;
+} }));
+vi.mock("@/platform/ui/ForumPane", () => ({ ForumPane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
+  state.startDm.forum = onStartDm;
+  return null;
+} }));
+vi.mock("./PulsePane", () => ({ PulsePane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
+  state.startDm.pulse = onStartDm;
+  return null;
+} }));
 vi.mock("@/platform/ui/InboxPane", async () => {
   const { InboxLayout, InboxEmptyDetail } = await import("@client-kit/platform/react/inbox-surface");
-  return {InboxPane: () => <InboxLayout listWidth={320} showList showDetail onResize={() => {}}>
-    <section data-testid="inbox-list-consumer" /><InboxEmptyDetail />
-  </InboxLayout>};
+  return {InboxPane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
+    state.startDm.inbox = onStartDm;
+    return <InboxLayout listWidth={320} showList showDetail onResize={() => {}}>
+      <section data-testid="inbox-list-consumer" /><InboxEmptyDetail />
+    </InboxLayout>;
+  }};
 });
 vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: ({ active }: { active: boolean }) => <div data-testid="settings-host" data-active={active} /> }));
 vi.mock("./BrowserNotifications", () => ({
@@ -154,6 +176,13 @@ beforeEach(() => {
   state.tab = "members";
   state.workspaceId = null;
   state.channelEnabled = false;
+  state.channelType = "stream";
+  state.conversationId = null;
+  state.startDm = {};
+  state.openDm.mockReset().mockResolvedValue({id: "actual-dm", channelId: "actual-native-dm", state: "ACTIVE"});
+  state.reloadConversations.mockReset().mockResolvedValue(undefined);
+  state.openConversation.mockReset().mockResolvedValue(undefined);
+  state.openTab.mockReset();
   window.history.replaceState({}, "", "/app/");
 });
 it("uses the native shared restricted view without mounting ordinary workspace menus", () => {
@@ -253,4 +282,36 @@ it.each(["agents", "workflows"])("passes the exact %s URL workspace to the share
   const markup = renderToStaticMarkup(<PlatformApp />);
   expect(markup).toContain(`data-testid="${section}-scope" data-workspace="revoked-workspace"`);
   expect(markup).not.toContain('data-workspace="workspace-b"');
+});
+
+it.each(["inbox", "pulse", "stream", "forum", "conversation", "members"])("the actual %s profile consumer opens the confirmed DM, not a new-message page", async (surface) => {
+  state.tab = surface === "stream" || surface === "forum" ? "channel" : surface;
+  state.channelType = surface;
+  if (surface === "conversation") state.conversationId = "current-private";
+  const order: string[] = [];
+  let confirm!: (value: {id: string}) => void;
+  state.openDm.mockImplementation(() => new Promise((resolve) => {confirm = resolve;}));
+  state.reloadConversations.mockImplementation(async () => {order.push("reload");});
+  state.openConversation.mockImplementation(async (id) => {order.push(`navigate:${id}`);});
+  renderToStaticMarkup(<PlatformApp />);
+  const pending = state.startDm[surface]("b".repeat(64));
+  expect(state.openDm).toHaveBeenCalledWith("b".repeat(64));
+  expect(order).toEqual([]);
+  confirm({id: "confirmed-private"});
+  await pending;
+  expect(order).toEqual(["reload", "navigate:confirmed-private"]);
+  expect(state.openTab).not.toHaveBeenCalled();
+});
+
+it.each(["inbox", "pulse", "stream", "forum", "conversation", "members"])("the actual %s profile consumer preserves an unknown DM without navigation", async (surface) => {
+  state.tab = surface === "stream" || surface === "forum" ? "channel" : surface;
+  state.channelType = surface;
+  if (surface === "conversation") state.conversationId = "current-private";
+  const unknown = new Error("Opening outcome unknown");
+  state.openDm.mockRejectedValue(unknown);
+  renderToStaticMarkup(<PlatformApp />);
+  await expect(state.startDm[surface]("b".repeat(64))).rejects.toBe(unknown);
+  expect(state.reloadConversations).not.toHaveBeenCalled();
+  expect(state.openConversation).not.toHaveBeenCalled();
+  expect(state.openTab).not.toHaveBeenCalled();
 });

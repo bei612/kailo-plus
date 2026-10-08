@@ -162,3 +162,46 @@ it("rechecks the actual event and never shows prior-scope profile data after a s
   await vi.waitFor(()=>expect(host.querySelector('[role="alert"]')).not.toBeNull());
   expect(host.textContent).not.toContain("Original biography");
 });
+
+it("keeps the original Message tile pending until actual DM navigation completes, even when its host callback rerenders",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  let finish!:()=>void;
+  const start=vi.fn((_pubkey:string)=>new Promise<void>(resolve=>{finish=resolve;}));
+  const close=vi.fn();
+  await render(<MessageAuthorProfile target={target} onClose={close} onStartDm={start}/>);
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.click());
+  expect(close).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.disabled).toBe(true);
+  await render(<MessageAuthorProfile target={target} onClose={close} onStartDm={async key=>{await start(key);}}/>);
+  await vi.waitFor(()=>expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')?.disabled).toBe(true));
+  await act(async()=>finish());
+  expect(close).toHaveBeenCalledOnce();
+  expect(start).toHaveBeenCalledOnce();
+});
+
+it("keeps the original profile open and shows the unknown DM result without a false close",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  const start=vi.fn().mockRejectedValue(new Error("Direct message result unknown"));
+  const close=vi.fn();
+  await render(<MessageAuthorProfile target={target} onClose={close} onStartDm={start}/>);
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Direct message result unknown");
+  expect(close).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.disabled).toBe(false);
+});
+
+it("does not close a new profile when an old-scope DM completes late",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  let finish!:()=>void;
+  const start=vi.fn((_pubkey:string)=>new Promise<void>(resolve=>{finish=resolve;}));
+  const close=vi.fn();
+  await render(<MessageAuthorProfile target={target} onClose={close} onStartDm={start}/>);
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!.click());
+  await render(<MessageAuthorProfile target={{...target,principalId:"another-viewer"}} onClose={close} onStartDm={start}/>);
+  await act(async()=>finish());
+  expect(close).not.toHaveBeenCalled();
+  await vi.waitFor(()=>expect(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')?.disabled).toBe(false));
+});

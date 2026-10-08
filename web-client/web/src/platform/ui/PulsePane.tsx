@@ -7,7 +7,7 @@ import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Composer } from "./ChannelPane";
 
 /** The original Pulse surface; only transport/signing/media belong to Web. */
-export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubkey:string)=>void}) {
+export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>}) {
   const t=useT();
   const directory=usePeopleDirectory(scopeKey);
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false});
@@ -22,7 +22,7 @@ export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubke
         return page.events;},
       publish:async(request,key)=>{check();const receipt=await publishPulse(request,key);check();return receipt;},
       copy:(text)=>navigator.clipboard.writeText(text),
-      startDm:async(pubkey)=>{check();onStartDm(pubkey);},
+      startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
       renderComposer:(props)=><div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}

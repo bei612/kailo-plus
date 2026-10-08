@@ -34,29 +34,46 @@ const { UserProfilePanel } = await import("./UserProfilePanel.tsx");
 const { UserProfilePopover } = await import("./UserProfilePopover.tsx");
 const { ProfilePanelProvider } = await import("@/shared/context/ProfilePanelContext");
 const { setLocale } = await import("@client-kit/platform/i18n");
+const { createBffClient } = await import("@client-kit/platform/client");
+const { PlatformProvider } = await import("@client-kit/platform/react/context");
+const { ConversationVisibilityProvider } = await import("@client-kit/platform/react/new-message");
 const own = "a".repeat(64), peer = "b".repeat(64);
 const session = (host = "one.test") => ({ facts: { communityHost: host, relayUrl: `wss://${host}` }, devicePubkey: own, displayName: null });
 const profile = (pubkey, name = "Actual peer") => ({ pubkey, display_name: name, avatar_url: null, about: "Public biography", nip05_handle: null, owner_pubkey: null });
 after(() => dom.window.close());
 
-async function mount(pubkey = peer) {
+async function mount(pubkey = peer, options = {}) {
   setLocale("en");
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host); let closed = 0;
+  const requests = [];
+  const client = createBffClient({ send: async (request) => {
+    requests.push(request);
+    if (request.path === "/api/v1/session") return { status: 200, body: { accessMode: "FULL", tenantPrincipalId: "viewer" } };
+    if (request.path.startsWith("/api/v1/conversation-participants")) return { status: 200, body: { maxParticipants: 9,
+      items: [{principalId: "peer", displayName: "Directory identity", pubkeys: [peer]}] } };
+    if (request.method === "POST") return { status: 202, body: {actionKey: "conversation.open", actionExecutionId: "execution", operationId: "operation", gateState: "ALLOWED", dispatchState: "DISPATCHED"} };
+    if (request.path.startsWith("/api/v1/conversations")) return options.conversations?.() ?? { status: 200, body: { items: [{id: "actual-dm", channelId: "actual-native-channel", state: "ACTIVE", participantPrincipalIds: ["peer", "viewer"], operationId: "operation", version: 1}] } };
+    throw new Error(request.path);
+  } });
+  const visibility = { read: async () => new Set(), prepare: async () => async () => {} };
   const base = createRootRoute();
   const panel = createRoute({ getParentRoute: () => base, path: "/", component: () =>
     React.createElement(UserProfilePanel, { pubkey, widthPx: 360, onClose: () => { closed++; } }) });
-  const message = createRoute({ getParentRoute: () => base, path: "/messages/new", validateSearch: (search) => search,
-    component: () => React.createElement("p", null, "Governed new message") });
+  const message = createRoute({ getParentRoute: () => base, path: "/channels/$channelId",
+    component: () => React.createElement("p", null, "Governed actual DM") });
   const router = createRouter({ routeTree: base.addChildren([panel, message]), history: createMemoryHistory({ initialEntries: ["/"] }) });
   await router.load();
   async function render(current) {
+    const nativeSession = { ...current, client: current.client ?? client };
     await act(async () => root.render(React.createElement(QueryClientProvider, { client: cache },
-      React.createElement(ActiveCommunityProvider, { session: current }, React.createElement(RouterProvider, { router })))));
+      React.createElement(PlatformProvider, { client: nativeSession.client },
+        React.createElement(ConversationVisibilityProvider, { value: visibility },
+          React.createElement(ActiveCommunityProvider, { session: nativeSession }, React.createElement(RouterProvider, { router })))))));
   }
   await render(session());
-  return { host, router, render, closed: () => closed, async close() { await act(async () => root.unmount()); cache.clear(); host.remove(); } };
+  return { host, router, render, requests, closed: () => closed, async close() { await act(async () => root.unmount()); cache.clear(); host.remove(); } };
 }
 async function until(check) {
   for (let index = 0; index < 40; index++) {
@@ -66,14 +83,29 @@ async function until(check) {
   assert.ok(check(), "expected mounted profile state");
 }
 
-test("original Message tile navigates using the verified native profile and existing route", async () => {
+test("original Message tile opens the governed ACTIVE DM rather than an empty compose route", async () => {
   readProfile = async (pubkey) => profile(pubkey);
   const view = await mount();
   try {
     await until(() => view.host.querySelector('[data-testid="user-profile-message"]'));
     await act(async () => view.host.querySelector('[data-testid="user-profile-message"]').click());
-    await until(() => view.router.state.location.pathname === "/messages/new");
-    assert.equal(view.router.state.location.search.pubkey, peer);
+    await until(() => view.router.state.location.pathname === "/channels/actual-native-channel");
+    assert.deepEqual(view.requests.find((request) => request.method === "POST").body.conversationOpen.participantPrincipalIds, ["peer", "viewer"]);
+    assert.equal(view.requests.filter((request) => request.method === "POST").length, 1);
+    assert.equal(view.closed(), 1);
+  } finally { await view.close(); }
+});
+
+test("an accepted but unconfirmed DM never navigates or closes the original profile", async () => {
+  readProfile = async (pubkey) => profile(pubkey);
+  const view = await mount(peer, { conversations: () => ({ status: 200, body: { items: [] } }) });
+  try {
+    await until(() => view.host.querySelector('[data-testid="user-profile-message"]'));
+    await act(async () => view.host.querySelector('[data-testid="user-profile-message"]').click());
+    await until(() => view.host.querySelector('[role="alert"]'));
+    assert.equal(view.router.state.location.pathname, "/");
+    assert.equal(view.closed(), 0);
+    assert.equal(view.requests.filter((request) => request.method === "POST").length, 1);
   } finally { await view.close(); }
 });
 

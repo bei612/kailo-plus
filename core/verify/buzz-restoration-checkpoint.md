@@ -3011,3 +3011,302 @@ DesktopConversations 与 useNavigationShortcuts 的 DM 创建调用均保留，�
 未更新安装包。全仓full留主线集中收口，本轮未跑。固定3313快照分类仍25共享／1授权／
 17已知缺失／3270未分类，不作覆盖率。新业务截图、Windows及Mobile验收仍0；旧13张
 live截图不是这批源码的视觉验收。既有完整原版缺项仍按前节明确保留，不声明100%。
+
+### 2026-10-08：原 TopbarSearch 主体共源迁移与 Native 实际消费者恢复
+
+此前29路径已由主线提交；本批另为 **34代码／检查／生成路径 +2524/-1698**，其中
+19跟踪路径+264/-1698、十五新文件2260行，不含本节回执。删除的行是 Native 已迁入
+共享的重复主体，并非删除产品能力。没有新分支／worktree／镜像／搜索权威。
+
+1. 权威仍为用户原版一致性红线与固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503`。直接复用
+   `desktop/src/features/search/ui/TopbarSearch.tsx::TopbarSearch` 的完整原展示主体、
+   `SearchPromptPlaceholder.tsx::SearchPromptPlaceholder` 的五个原提示词与动画、
+   `SearchScopeControls.tsx` 的输入／当前频道动作、`HighlightedSearchText.tsx`、
+   `useSearchMenuKeyboardNavigation.ts`，以及 `lib/parseSearchOperators.ts`、
+   `lib/searchMatch.ts`，迁入 `client-kit/ts/platform/src/react/search/`。
+   `SearchResultItem.tsx` 只迁入有真实调用的结果类型／图标／key／selector；原
+   SearchResultShell、ChannelResultBody、MessageResultBody 在固定树 git grep 只有
+   定义无生产调用，本批没有新增死代码，也不将该文件声称为逐字节完整迁移。
+2. 影响面检索覆盖 Native TopbarSearch、useSearchResults、两层 Sidebar、原 DTO、
+   两宿主共享包与 CSS source 扫描。Native TopbarSearch 现在仅注入已有读 Hook 和
+   rewriteRelayUrl，其他展示／parser 模块是共享 re-export，不再维护第二份页面。
+   Channel／ChannelType／Visibility／Role、UserSearchResult 与 SearchHit 等原字段
+   移入共享 `search/types.ts`，Native 只 import／re-export，未改 JSON Schema、
+   序列化格式、数据库或版本兼容语义。原 buildDirectMessageIntro 迁入已有共享
+   dm-participant-display，复用现有翻译 formatter。Web 尚无真实全局搜索 BFF
+   生产者，本批不挂返回空数组的假引擎；共源可复用不等于 Web 已可用。
+3. Native Sidebar 真实调用 useUsersBatchQuery 和 resolveChannelDisplayLabel，传入
+   当前已授权目录的实际 DM 标签；浏览／创建频道接回现有 ChannelBrowser 与
+   CreateChannelDialog 治理消费者，保留退出动画后的原 openAfterExit 顺序。
+   没有新增 Relay 原始调用、匿名发现、第二 Agent 目录、权限或额度权威；Desktop
+   持钥 Relay 与管理 BFF 边界不变。原 People 点击仍沿已有资料打开，不冒称原
+   直接 DM；原 createAgent 没有治理消费者，未提供回调或伪造可用入口。
+4. 六类原分区 channels／direct-messages／people／agents／messages／actions 恢复；
+   DM 消息显示 Direct message 而非公开 #频道，DM 不显示频道描述；forum kind
+   45003 不依赖 threadRootId 才识别为线程。保留真实目录 member/archive 约束与
+   空查询建议排序、bar／icon、键盘／焦点、频道 scope 和标签匹配。空值、无事实
+   的频道映射与无消费者动作不伪造事实；拒绝／错误仍沿原读链 fail closed，不
+   把未知执行终态渲染成功。没有新执行状态、reservation、投影或待收敛业务数据。
+   `06` §4 六类执行错误链未改；Mobile 非组件宿主边界不变。
+
+共享 i18n 新增34条中英同源词条，含全部五个原提示词和错误／空态／分区；保持默认
+中文。通过既有 tools/gen-platform-i18n.py 生成 Dart platform_text.dart，reason_text
+无差异。两宿主 globals.css 均实际 `@source` 同一共享包，未另写搜索布局／样式。
+
+仍复用原 uid1000／4CPU／8GiB SDK 与缓存，仅投递本批文件，不整树复制或装依赖；
+开始／释放均已通知主线，终态无在途编译，memory.current=292667392、oom／oom_kill=0。
+证据目录仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1`。
+
+- `topbar-search-final.log`：共享 `vitest run test/search.test.tsx
+  test/sidebar-shell.test.tsx`，搜索12＋侧栏8，**20 passed／0 failed**。
+- `topbar-search-native.log`：既有 Node loader 运行 SearchResultItem、searchMatch、
+  parseSearchOperators、channelSearchScore 四文件，**42 passed／0 failed**；包含
+  实际 Native TopbarSearch 建议行与导航，不只是 helper。
+- `topbar-search-shared-tsc-final.log`、`topbar-search-shared-test-tsc.log`、
+  `topbar-search-web-tsc.log`、`topbar-search-native-tsc-final.log`：共享 production／
+  test、Web、Native 四次 `tsc --noEmit` 均退出0。
+- `topbar-search-i18n.log`：显式复用已有 `/usr/lib/dart/bin/dart` 的 PATH，既有
+  生成器生成与 `--check` 均通过，实际输出 `PASS: Mobile platform and reason
+  catalogs match the shared TypeScript source`。没有安装或切换镜像。
+- `topbar-search-dm-mutation.log`：只在私有 SDK 删除真实 DM 上下文分支，
+  **1 failed／11 skipped**，报 `to contain 'Direct message'`，实际错误输出包含
+  `Message in#Raw DM`；这十一项是明确本轮筛选未跑，不是通过。
+- 独立还原后，`topbar-search-browse-mutation.log` 私有 SDK 将真实 browse 回调改为
+  return，**1 failed／11 skipped**，报 `expected vi.fn() to be called once, but got
+  0 times`。正式工作树没有故障改写；两次私有生产破坏均还原，最终 SDK 与正式
+  源码 cmp退出0，恢复后的20项全过。原 Reduced Motion 警告保留，未隐藏。
+
+初验失败如实保留：首轮提示词机械替换遗漏原第五词，产生 SEARCH_PROMPT_WORD_KEYS
+未定义与11 failed／8 passed；核对固定原源码五词后修正。严格共享 tsc 随后发现
+原正则捕获组／有界词条下标的可空推断，只按原已验证边界补非空类型；Native 首轮
+tsc 报 ChannelRole 本地 import 缺失，补原类型 import 后最终通过。生成器首次因
+登录 shell PATH 找不到既有 Dart 失败，恢复已有绝对路径后通过，不把失败冒充通过。
+
+沿同一3313路径原快照派生
+`collaboration-current-20261008.topbar-search-classification.tsv`，SHA-256
+`16b54274b358babdcfeb1b029e67750544972d85cd907cf7fbaa1a039c3fe5fd`。
+本批仅三条有完整调用证据的原 searchMatch／SearchPromptPlaceholder／SearchScopeControls
+由未分类归共享迁移，useSearchResults 由未分类记已知缺失；TopbarSearch、SearchResultItem
+与 PinnedHeader 更新局部恢复证据但仍归缺失，不用目录笼统归类。当前 **共享迁移28、
+已授权治理1、已知缺失18、未分类3266，共3313**；仅47条已分类，不是完整语义验收。
+1980条同路径字节相同在该变动表之外；3313仍是原快照，不冒称当前全树已再验收。
+
+`playwright-cli -s=kailo-ui-status snapshot` 实际仍为正常 Keycloak 登录页；随后截图
+`.playwright-cli/kailo-ui-20261008-search-session-expired.png` 已用 view_image 打开复核，
+1920×1080 IdP 表单，而非业务页。没有传密／注入 Cookie／重置账号／业务写入；旧
+13张 live d313fb 为11类页面＋2状态，不证明本批。新源码业务截图、Windows、Mobile
+实际验收均0，未生成安装包／镜像／部署。本批全仓 full未跑，留主线集中收口。
+
+官方完整缺项继续明确保留：Web 全局搜索真实 BFF／调用者、People 原直接 DM 消费者、
+公共频道发现与合规 Agent 候选／归档事实、原 Agent 创建真实治理执行链，以及其他
+原设置／菜单／页面与 Mobile 全量差异和视觉验收。本批不声称原版100%一致。
+本批34路径及本节回执冻结交主线全 diff复核、提交／push；截至交接尚未提交／部署。
+
+### 2026-10-08：原资料 Message 实际私聊消费者恢复
+
+本批五路径 **+289/-44**，三生产文件与两检查文件；此前34路径搜索批未改。
+不是重写资料页面：保留既有共享 ProfileSummaryView 的原 Message tile、原 pending
+样式与 AuxiliaryPanel 承载，仅将“跳到空 compose”接回真实受治理私聊。
+
+1. 权威是用户原版一致性红线、DD-80 与固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503`。该版本
+   `desktop/src/features/profile/ui/useProfileInteractionActions.ts::handleMessage`
+   实际执行 openDm → goChannel → onClose；
+   `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPinnedHeader`
+   People 行实际 onOpenDm({pubkeys:[user.pubkey]})。当前资料原动作恢复前却只导航
+   /messages/new，本批恢复前者；People 搜索两冻结宿主文件仍待主线释放接线。
+2. 影响面检索覆盖共享 NewMessageScreen/useConversationOpen、Native 原资料面板、
+   session 与频道缓存、Web/Native 两安装包共享入口和真实 ConversationVisibilityHost。
+   在已有 use-conversations.ts 导出 useDirectMessageOpen，资料实际调用该同一引擎，
+   不创建第二私聊注册表、权限判断或执行权威。无契约、数据库、迁移与持久格式改变。
+   Web 同一共享输入经过类型检查，不代表 Web 已有 People 搜索实际消费者。
+3. 原 pubkey 先经可信当前 session 与完整准入目录映射到唯一 principal，不按显示名、
+   不把设备公钥当用户主键。所有分页走完，空值／歧义／自身／循环游标／目录约束变化
+   都在 POST 前拒绝。沿原 conversation.open idempotencyKey、receipt、ACTIVE 读证据
+   与本机签名可见性接缝执行；不走原未治理 open_dm，不共享身份，不复制消息正文。
+4. accepted/UNKNOWN 保留原请求与参与者，未取得 ACTIVE 与可见性证据不能换目标、
+   导航或关闭。同原请求重试保持同一 command；不明可见性写入先读权威快照，已可见
+   不再重放。client/principal/visibility 替换或卸载使迟到目录、收据、读状态和签名
+   返回失效；真实 owner 变化后不导航。六类执行错误沿原 BFF 处理，无新后台脏状态；
+   额度／审批／撤权仍由既有治理链重验，客户端不把“已接受”当成功。Mobile 范围未变。
+
+实现后复用原 uid1000／4CPU／8GiB SDK/cache，只投递五文件与两宿主已安装共享文件，
+无新镜像、依赖安装或整树复制。开始前 host available 23637MiB、Data645MiB，SDK
+memory.current79261696，CPU限额400000/100000、memory.max8589934592，无活跃编译。
+结束无在途检查，memory.current299577344；oom/oom_kill=0，历史 max12244 原样保留。
+证据目录仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1`。
+
+- `people-direct-shared-first.log` 与 `people-direct-shared-restored.log`：共享
+  `vitest run test/new-message.test.tsx` 两次均 **25 passed/0 failed**，退出0；
+  包括原 compose18项及新增直接消费7项，实际分页、公钥映射、UNKNOWN原请求、
+  ACTIVE后切目标、可见性不重放与旧身份迟到返回，不是只检查 helper 文本。
+- `people-direct-native-first.log` 与 `people-direct-native-restored.log`：既有 loader
+  执行 UserProfilePanel.test.mjs，两次均 **6 passed/0 failed**，退出0；原真实
+  Message tile 到实际 /channels/actual-native-channel，accepted未确认不导航／关闭，
+  同时保留原资料拒绝、自身及跨scope旧返回检查。
+- `people-direct-shared-tsc.log`、`people-direct-shared-test-tsc.log`、
+  `people-direct-native-tsc.log`、`people-direct-web-host-tsc.log`：共享 production/test、
+  Native、真实 web-client/web 四次 tsc --noEmit 退出0。最初误将最后一条命令指向
+  collaboration/web，无安装的 tsc 而退出127（people-direct-web-tsc.log），已纠正
+  到实际 Web 宿主与既有缓存，不把该失败当通过。没有新增词条，不需重生成 Dart。
+- `people-direct-ambiguity-mutation.log`：仅私有 SDK 将唯一映射改为允许歧义，
+  检查实际退出1，**1 failed/24 skipped**，报 ready “actually been called 1 times”。
+- `people-direct-close-mutation.log`：独立私有 Native 生产消费者故意在确认前 onClose，
+  实际退出1，**1 failed**，报关闭次数 `1 !== 0`。两处故障均还原，cmp正式源码退出0；
+  还原后的25＋6整批通过。正式工作树未故障改写；git diff --check退出0。
+
+按实际固定源码符号新增两条“缺失需恢复”，没有将局部 Message 恢复冒充整资料面板。
+沿同一3313原快照机械派生 `collaboration-current-20261008.people-direct-classification.tsv`，
+SHA-256 `63733d673520c37c5cae27c709d6deb5a7e03c33b453fc478f38fc187aa43857`；
+旧 Topbar TSV 原样保留。现 **共享28、授权1、缺失20、未分类3264，共3313**，只有
+49条已分类，1980条同路径字节相同另计，不能声明全量语义验收或原版100%一致。
+UserProfilePanel 原完整 tabs/sections、Agent管理与 useProfileInteractionActions 原
+huddle/wave／Agent-owner约束仍缺；Web 搜索真实BFF/消费者与其他旧缺项不因本批删除。
+
+本批未启动登录／截图／发布，没有安全可用的新会话；当前只有正常IdP登录截图，旧
+13张live图不证明新源码。新业务截图、Windows、Mobile实际验收均0，未构建安装包、
+镜像或部署。全仓full、全Web/browser与Native全套未跑，交主线集中收口。本批五路径
+与本节回执冻结交主线；截至交接尚未提交／push／部署，不把源码与局部检查当可用发布。
+
+### 2026-10-08：原 People 搜索实际私聊消费者闭合
+
+本次将前34路径搜索与五路径资料私聊合为同一 **39路径，+2983/-1748** 交付批，
+含24个已跟踪修改与15个原搜索模块共享迁移新文件；不含本文件证据增量。不是新增
+People 页面或替代布局。只在已释放的 AppSidebarPinnedHeader、AppSidebar 与既有
+SearchResultItem.test.mjs 接完原消费者，其他冻结字节不动。原92＋67行回执原样保留。
+
+1. 权威仍为固定 Buzz `779af8886caae1317b4de962082429867ab61503`、用户原版一致性
+   红线和 DD-80。该版本 `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx`
+   的 `AppSidebarPinnedHeader` 原 onOpenUser 调用 onOpenDm({pubkeys:[user.pubkey]})；
+   当前同一原回调已恢复，不再错误打开资料或空 compose。原 search/Sidebar 组件、
+   className、People 行、菜单与点击交互不另造设计，必要执行改走既有 Kailo 治理。
+2. 检索影响面为共享 TopbarSearch、Native useSearchResults/PinnedHeader/AppSidebar、
+   useDirectMessageOpen、真实 session/参与者目录与 ConversationVisibilityHost，以及
+   channelsQueryKey 的实际导航缓存。AppSidebar 消费 currentPrincipalId 与已有共享
+   私聊引擎，完整可信身份映射、原 action/idempotency、ACTIVE 和可见性确认后才导航。
+   Native 本机持钥与 BFF 管理边界不变，无 Core/契约/数据库/持久格式/词条新增。
+3. 结果未知只显示既有中英文 dm.unknown，不导航或当成终态失败；重试保留同一原
+   command。空 principal、公钥歧义、目录分页异常和撤权沿已有引擎拒绝，额度/审批
+   由既有治理链处理，不建立第二份执行或权限权威。频道缓存失效前后分别检查
+   Native community/身份 owner，切换或卸载后迟到返回不改变当前页面。
+4. 共享 compose、资料 Message 与 People 使用同一个准备引擎。Web 尚无完整全局
+   搜索真实 BFF/消费者，本次没有伪造 Web People 入口；Mobile 非组件宿主边界不变。
+   原 create-Agent、完整资料 tabs/Agent/huddle/wave 与旧侧栏缺项继续明确记缺失。
+
+集中窄验复用既有 SDK/cache，无新镜像、安装或整树复制。Root Core 终态释放 SDK
+后仅投递检查文件；前置 CPU限额400000/100000、memory.max8589934592、
+memory.current1298702336、oom/oom_kill=0，无在途 Cargo/tsc。另有76个 dart:test.dart-
+通讯名，未猜来源或终止。本人 Node 全终态后立即释放 SDK给主线，
+memory.current1136697344、oom/oom_kill仍0；历史 max12244 原样保留。
+下列实际日志仍在同一 `workflow-native-template.s3JDP1` 证据目录：
+
+- `people-search-native-tsc-final.log`：实际 Native tsc --noEmit退出0。首轮
+  people-search-native-tsc.log 因旧 translate/resolveLocale import 替换后漏一调用
+  报 TS2304，已改同源 translateCurrent，不改变文案；该失败不记通过。
+- `people-search-consumer-correct-limit.log`：既有 Node loader实际挂载完整 AppSidebar、
+  原 PinnedHeader/TopbarSearch 与 People 行，**5 passed/0 failed，退出0**。实际点击
+  经过可信目录向既有 BFF发送一次原 conversation.open，ACTIVE后导航真实 channel；
+  UNKNOWN不导航，并在再次原 People 点击时复用原 command。
+- `people-search-original-callback-mutation.log`：仅私有 SDK生产 PinnedHeader 将
+  onOpenUser改成 no-op，真实点击检查 **1 failed，退出1**，未达到实际导航。
+- 独立还原后，`people-search-unknown-navigation-mutation.log` 私有生产 AppSidebar
+  故意确认前导航，UNKNOWN检查 **1 failed，退出1**，报实际
+  ['unconfirmed-private-negative'] 与期望 [] 不等。正式生产未被故障改写。
+- 还原三项 SDK输入与正式源码 cmp均退出0；`people-search-native-restored-final.log`
+  同一批原 channelSearchScore/parseSearchOperators/searchMatch/SearchResultItem 与
+  UserProfilePanel五检查文件 **50 passed/0 failed，退出0**。git diff --check退出0。
+  先前共享20、直接私聊25、资料6与四侧 tsc/i18n证据仍见前两节，不重复全仓构建。
+
+初验 fixture失败如实保留：people-search-native-first.log为48通过/2失败，缺 JSDOM
+self；consumer-first缺 IntersectionObserver；consumer-dom-complete与input-diagnostic
+使用旧缓存 limit12，触发未提供宿主 invoke。核对固定原 TopbarSearch 的封闭
+SEARCH_RESULT_LIMIT=40后只修正检查缓存键，consumer-correct-limit才实际通过；没有
+修改生产阈值、给 invoke加旁路或把 fixture失败冒充业务失败/通过。
+
+沿原3313快照派生 `collaboration-current-20261008.people-search-classification.tsv`，
+SHA-256 `80062e892c1c0c46c502e8d01b1502d406825f7827bcd26faee5b359edf20b67`。
+只更新三条实际消费者证据，仍 **共享28、授权1、缺失20、未分类3264，共3313**；
+49条归类不是全量验收。旧派生文件未改，不以局部 People闭合将整个侧栏记已恢复。
+本轮未重新登录/截图、构建安装包、发布镜像或部署；新业务截图、Windows、Mobile
+验收均0，旧13张 live图与正常IdP截图不证明本批。全仓full、原版全量视觉与设备
+验收未跑。39路径及本批三节回执冻结交主线统一复核提交，交接时未提交/push/部署；
+不声称100%还原或生产就绪。
+
+### 2026-10-08：原资料 Message 的两宿主真实消费者闭合
+
+本批只改十路径：共享 members.tsx/test、Native PulseScreen.tsx/test.mjs、Web
+PlatformApp.tsx/test、MessageAuthorProfile.tsx/test、PulsePane.tsx/test；八个已跟踪
+文件 +234/-35、两个实现后检查新文件188行，合计 **十路径 +422/-35**，不含本节。
+前39路径与本文件前3052行保持冻结，未把本批混入此前搜索交接。
+
+1. 权威为用户原版一致性红线、DD-80 与固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/profile/ui/useProfileInteractionActions.ts::handleMessage`：
+   原行为是 await openDm、await goChannel、再 close，runAction 保留 pending/error。
+   本批沿现存原 ProfileSummary Message tile 与完整 Pulse/Profile 实际消费者恢复
+   这条交互，不新建页面、按钮或替代布局，不宣称整资料页原样完成。
+2. 影响面检索覆盖 Web Inbox、Channel、Forum、privateConversation、Members、Pulse
+   六个实际资料直聊调用方及 Native Pulse。Web 统一使用当前可信 session actor 的
+   useDirectMessageOpen，再刷新已有 conversations 并导航已确认的 conversation；
+   删除无实际消费者的 initialRecipientPubkey 影子状态，保留原独立 NewMessage。
+   Native Pulse 同样消费既有平台 session actor、治理私聊引擎、channelsQueryKey 和
+   真实 channelId 导航，不再把资料 Message 错误导向 compose。无 Core/契约/数据库/
+   格式迁移/新词条；Desktop 本机持钥读 Relay、管理面 BFF 与 Mobile 边界均不变。
+3. 未另建身份、目录、权限、执行或会话权威。实际 pubkey→Principal 唯一映射、完整
+   分页、可信 actor、action/idempotency、ACTIVE 与可见性仍由原共享引擎负责。
+   Profile/Member 真正 await 回调，pending 期间不关闭；accepted 结果未确认时保留
+   原资料面板与既有 dm.unknown 文案，不导航、不给终态成功或失败。原 Promise
+   拒绝不会被宿主 catch 后吞成成功；切换作者、scope、session 或卸载后的迟到返回
+   不关闭新目标、不导航新页面。普通父组件 rerender 不清除实际进行中的 pending。
+4. 空 actor/目录歧义/撤权仍拒绝；重复点击由原引擎及当前目标 busy 收敛，UNKNOWN
+   重试沿同一原 command，不重复副作用。额度、审批、generation、暂停及 readiness
+   交既有治理链处理，不在 UI 猜终态。沿 06 §4 保留 DENIED/BLOCKED/PRECONDITION/
+   LIMIT/CONFLICT/UNKNOWN 既有分类，本批不新增 reason code；huddle/wave、Agent
+   owner/runtime、完整 Agent tabs 等缺实际生产者的能力没有生成假按钮或事实。
+
+集中检查复用原 SDK/cache：kailo-agent-receipt-xvkujx，memory.max8589934592、
+cpu.max400000/100000、uid1000。起跑 memory.current1065431040、oom/oom_kill0，
+宿主 available约30GiB、memory PSI avg10/avg60为0，无在途 Cargo/tsc/Node检查。
+只机械投递十输入，未建镜像、安装依赖或复制整树。终态 memory.current324411392，
+oom/oom_kill仍0、历史max12244未变，无在途编译/Node检查，SDK已释放主线。
+日志在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/` 下
+`workflow-native-template.s3JDP1/`，以下均为实际运行终态：
+
+- `profile-dm-web-final.log`：原 Vitest 挂载六个真实宿主回调、原资料 tile 与实际
+  Pulse/Profile，**37 passed，退出0**。最初 profile-dm-web-first.log为35通过/2失败，
+  JSDOM缺原虚拟列表尺寸；只在检查沿已有Members测量fixture补尺寸后通过，未改生产
+  布局/阈值。React act警告原样保留，不当作业务验收或隐藏失败。
+- `profile-dm-shared-final.log`：原 members/Pulse/directDM 三文件 **47 passed，退出0**。
+- `profile-dm-native-first.log`：原 Node loader实际挂载Native PulseScreen与完整共享
+  Pulse/Profile Message，ACTIVE导航真实channel、UNKNOWN不关闭/导航、Community
+  切换后迟到确认拒绝导航，**3 passed，退出0**，未mock关键动作处理器。
+- `profile-dm-shared-tsc.log`、`profile-dm-shared-check-tsc.log`、
+  `profile-dm-web-tsc.log`、`profile-dm-native-tsc.log`：既有四个 production/test
+  tsconfig 的 tsc --noEmit 顺序运行，全部退出0，未重复全仓编译。
+- 私有SDK实际生产故障：PlatformApp提前导航、Web Pulse与资料/Member去掉await、
+  Native Pulse去掉await后的scope fence；正式源码未被破坏。原检查分别在
+  `profile-dm-web-production-mutation.log` **10 failed/退出1**、
+  `profile-dm-member-production-mutation.log` **2 failed/退出1**、
+  `profile-dm-native-scope-mutation.log` **1 failed/退出1**，抓到假导航、假关闭和
+  跨Community迟到导航，不是破坏检查后制造必然失败。
+- 私有生产全部还原，十输入与正式源码cmp均0。还原后顺序重跑日志
+  `profile-dm-web-restored.log` **37 passed**、`profile-dm-member-restored.log`
+  **11 passed**、`profile-dm-native-restored.log` **3 passed**，整组退出0。
+- 本批十路径 `git diff --check -- <十路径>` 退出0。当前全仓 diff --check退出2：
+  既有未提交文件 InlineEmojiPopover.tsx:106、custom-emoji/emoji.ts:118、
+  messages/editAttachments.ts:192、messages/parseImeta.ts:66各报新增EOF空行；这些不在
+  本次冻结49路径内，未修改其字节，不把本批目标通过冒充全仓通过。
+
+沿原3313快照仅派生 `collaboration-current-20261008.profile-consumers-classification.tsv`，
+SHA-256 `1c4831edbc336e699fa868e26422a8bd3b8ce64b998f78f9944887dbeb937ccc`，
+在同一日志目录。只更新原 useProfileInteractionActions 对应真实消费者证据；该行
+因 huddle/wave/Agent-owner未全闭合仍标缺失。**共享28、授权1、缺失20、未分类3264，
+共3313，只有49条已分类**，1980同路径字节相同另计，不是当前全量语义验收。
+Web全局搜索真实BFF、完整Profile/Agent与其他原版缺项仍保留，不宣称100%。
+
+本批未登录/新截图/打包/部署：新业务截图、Windows、Mobile实际验收均0，旧13张
+live d313fb截图与正常IdP过期登录图不证明新源码；全仓full、全量视觉及设备验收未跑。
+十路径及仅本节回执冻结交主线统一review/提交/push，交接时未提交、未部署。

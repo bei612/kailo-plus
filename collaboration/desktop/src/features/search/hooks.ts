@@ -2,12 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { searchMessages } from "@/shared/api/tauri";
 
-export const MIN_SEARCH_QUERY_LENGTH = 2;
-export const MIN_SCOPED_SEARCH_QUERY_LENGTH = 1;
-
-export function getMinimumSearchQueryLength(channelId?: string | null) {
-  return channelId ? MIN_SCOPED_SEARCH_QUERY_LENGTH : MIN_SEARCH_QUERY_LENGTH;
-}
+export { MIN_SEARCH_QUERY_LENGTH, MIN_SCOPED_SEARCH_QUERY_LENGTH, getMinimumSearchQueryLength } from "@client-kit/platform/react/search/searchQueryLimits";
+import { getMinimumSearchQueryLength } from "@client-kit/platform/react/search/searchQueryLimits";
 
 export function useSearchMessagesQuery(
   query: string,

@@ -1,10 +1,11 @@
 import { translateCurrent as translateUi } from "../../i18n";
-import { useCallback, useDeferredValue, useEffect, useRef, useState, type UIEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { ActionCommand, ActionSubmission, ConversationParticipant, ConversationView } from "@client-kit/contracts";
 import { useBffClient } from "../context";
 import { newIdempotencyKey } from "../../governance";
 import { isOutcomeUnknown, TransportError } from "../../transport";
 import { useConversationVisibilityHost, useConversationInvalidation } from "./use-conversation-state";
+import { normalizePubkey } from "./pubkey";
 
 export function formatRecipientName(user: ConversationParticipant) { return user.displayName; }
 export class ConversationPreparationPending extends Error {}
@@ -99,19 +100,33 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
   const client = useBffClient();
   const visibility = useConversationVisibilityHost();
   const invalidation = useConversationInvalidation();
-  const reopen = useRef<(() => Promise<void>) | null>(null);
-  const intent = useRef<{ command: ActionCommand; receipt?: ActionSubmission } | null>(null);
-  const inFlight = useRef(false);
+  const scope = useMemo(() => ({
+    active: true, inFlight: false, completed: false,
+    reopen: null as (() => Promise<void>) | null,
+    intent: null as { command: ActionCommand; receipt?: ActionSubmission } | null,
+  }), [client, currentPrincipalId, visibility]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const [busy, setBusy] = useState(false);
   const [locked, setLocked] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const isCurrent = () => scope.active && currentScope.current === scope;
+  const checkCurrent = () => {
+    if (!isCurrent()) throw new Error(translateUi("dm.viewInactive"));
+  };
+  useEffect(() => {
+    scope.active = true; setBusy(false); setLocked(false); setNotice(null);
+    return () => { scope.active = false; };
+  }, [scope]);
   const readPendingConversation = async (): Promise<ConversationView | undefined> => {
-    const expected = intent.current?.command.conversationOpen?.participantPrincipalIds;
+    const expected = scope.intent?.command.conversationOpen?.participantPrincipalIds;
     if (!expected) return undefined;
     let cursor: string | undefined;
     const seen = new Set<string>();
     do {
+      checkCurrent();
       const page = await client.conversations(cursor);
+      checkCurrent();
       const conversation = page.items.find((item) => item.participantPrincipalIds.length === expected.length &&
         item.participantPrincipalIds.every((id) => expected.includes(id)));
       if (conversation) return conversation;
@@ -124,43 +139,60 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
   // Inspect the existing intent only. In particular, a lost action response must
   // not turn the status button into another conversation.open submission.
   const checkStatus = async (): Promise<void> => {
-    if (inFlight.current || !intent.current) return;
-    inFlight.current = true; setBusy(true);
+    if (!isCurrent() || scope.inFlight || !scope.intent) return;
+    scope.inFlight = true; setBusy(true);
     try {
       const conversation = await readPendingConversation();
       if (conversation?.state === "ACTIVE") setNotice(null);
       else setNotice(translateUi(conversation?.state === "DISABLED" ? "dm.disabled" : "dm.preparationPending"));
     } catch (error) {
-      setNotice(isOutcomeUnknown(error) ? translateUi("dm.retryUnknown") : error instanceof Error ? error.message : translateUi("dm.unavailable"));
-    } finally { inFlight.current = false; setBusy(false); }
+      if (isCurrent()) setNotice(isOutcomeUnknown(error) ? translateUi("dm.retryUnknown") : error instanceof Error ? error.message : translateUi("dm.unavailable"));
+    } finally { scope.inFlight = false; if (isCurrent()) setBusy(false); }
   };
-  const prepareConversation = async (): Promise<ConversationView> => {
-    if (inFlight.current) throw new ConversationPreparationPending(translateUi("dm.preparing"));
-    if (!currentPrincipalId || recipients.length === 0) throw new Error(translateUi("dm.chooseFirst"));
-    inFlight.current = true; setBusy(true); setNotice(null);
-    const ids = [currentPrincipalId, ...recipients.map((item) => item.principalId)].sort();
-    intent.current ??= { command: { actionKey: "conversation.open", idempotencyKey: newIdempotencyKey(), conversationOpen: { participantPrincipalIds: ids } } };
+  const prepareConversation = async (selection = recipients): Promise<ConversationView> => {
+    checkCurrent();
+    if (scope.inFlight) throw new ConversationPreparationPending(translateUi("dm.preparing"));
+    if (!currentPrincipalId || selection.length === 0) throw new Error(translateUi("dm.chooseFirst"));
+    const ids = [currentPrincipalId, ...selection.map((item) => item.principalId)].sort();
+    if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
+      throw new TransportError(translateUi("dm.directoryUnavailable"));
+    const expected = scope.intent?.command.conversationOpen?.participantPrincipalIds;
+    if (expected && (expected.length !== ids.length || expected.some((id, index) => id !== ids[index]))) {
+      // A different People target cannot replace an accepted or uncertain open.
+      if (!scope.completed) throw new ConversationPreparationPending(translateUi("dm.preparationPending"));
+      scope.intent = null; scope.reopen = null; scope.completed = false;
+    }
+    scope.inFlight = true; setBusy(true); setNotice(null);
+    scope.intent ??= { command: { actionKey: "conversation.open", idempotencyKey: newIdempotencyKey(), conversationOpen: { participantPrincipalIds: ids } } };
     setLocked(true);
     try {
-      if (!intent.current.receipt) {
-        const receipt = await client.submitAction(intent.current.command);
+      if (!scope.intent.receipt) {
+        const receipt = await client.submitAction(scope.intent.command);
+        checkCurrent();
         if (receipt.actionKey !== "conversation.open" || !receipt.operationId || !receipt.actionExecutionId)
           throw new TransportError(translateUi("dm.unknown"));
-        intent.current.receipt = receipt;
+        scope.intent.receipt = receipt;
         if (["DENIED", "EXPIRED", "REVOKED"].includes(receipt.gateState)) {
-          intent.current = null; setLocked(false);
+          scope.intent = null; setLocked(false);
           throw new Error(receipt.reason ?? translateUi("dm.denied"));
         }
       }
       const conversation = await readPendingConversation();
         if (conversation?.state === "ACTIVE") {
           if (!visibility) throw new Error(translateUi("dm.visibilityUnavailable"));
-          if (!reopen.current && (await visibility.read(conversation)).has(conversation.channelId))
-            reopen.current = await visibility.prepare(conversation, false);
-          if (reopen.current) {
-            try { await reopen.current(); reopen.current = null; }
-            catch (error) { if (!isOutcomeUnknown(error)) reopen.current = null; throw error; }
+          const hidden = await visibility.read(conversation);
+          checkCurrent();
+          if (!scope.reopen && hidden.has(conversation.channelId)) {
+            const publish = await visibility.prepare(conversation, false);
+            checkCurrent();
+            scope.reopen = publish;
           }
+          if (scope.reopen && !hidden.has(conversation.channelId)) scope.reopen = null;
+          if (scope.reopen) {
+            try { await scope.reopen(); checkCurrent(); scope.reopen = null; }
+            catch (error) { if (!isOutcomeUnknown(error)) scope.reopen = null; throw error; }
+          }
+          scope.completed = true;
           invalidation?.changed();
           return conversation;
         }
@@ -168,10 +200,65 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
       const message = translateUi("dm.preparationPending");
       setNotice(message); throw new ConversationPreparationPending(message);
     } catch (error) {
-      if (!intent.current?.receipt && !isOutcomeUnknown(error)) { intent.current = null; setLocked(false); }
-      if (isOutcomeUnknown(error)) setNotice(translateUi("dm.retryUnknown"));
+      if (isCurrent()) {
+        if (!scope.intent?.receipt && !isOutcomeUnknown(error)) { scope.intent = null; setLocked(false); }
+        if (isOutcomeUnknown(error)) setNotice(translateUi("dm.retryUnknown"));
+      }
       throw error;
-    } finally { inFlight.current = false; setBusy(false); }
+    } finally { scope.inFlight = false; if (isCurrent()) setBusy(false); }
   };
   return { prepareConversation, checkStatus, busy, locked, notice };
+}
+
+/** Original People/Profile open-DM action, using the same governed preparation as compose. */
+export function useDirectMessageOpen(currentPrincipalId: string) {
+  const client = useBffClient();
+  const opening = useConversationOpen(currentPrincipalId, []);
+  const scope = useMemo(() => ({ active: true, busy: false }), [client, currentPrincipalId]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const [resolving, setResolving] = useState(false);
+  useEffect(() => { scope.active = true; setResolving(false); return () => { scope.active = false; }; }, [scope]);
+  const open = async (pubkey: string): Promise<ConversationView> => {
+    const checkCurrent = () => {
+      if (!scope.active || currentScope.current !== scope) throw new Error(translateUi("dm.viewInactive"));
+    };
+    checkCurrent();
+    if (scope.busy) throw new ConversationPreparationPending(translateUi("dm.preparing"));
+    if (!currentPrincipalId) throw new Error(translateUi("dm.viewInactive"));
+    scope.busy = true; setResolving(true);
+    try {
+      const session = await client.session();
+      checkCurrent();
+      if (session.tenantPrincipalId !== currentPrincipalId) throw new Error(translateUi("dm.viewInactive"));
+      const target = normalizePubkey(pubkey);
+      const matches = new Map<string, ConversationParticipant>();
+      let cursor: string | undefined;
+      let maxParticipants: number | undefined;
+      const seen = new Set<string>();
+      do {
+        const page = await client.conversationParticipants(cursor);
+        checkCurrent();
+        if (!Array.isArray(page.items) || !Number.isSafeInteger(page.maxParticipants) || page.maxParticipants < 2 ||
+            (maxParticipants !== undefined && page.maxParticipants !== maxParticipants) || page.items.some((item) =>
+              !item.principalId || !Array.isArray(item.pubkeys) || item.pubkeys.length === 0))
+          throw new TransportError(translateUi("dm.directoryUnavailable"));
+        maxParticipants = page.maxParticipants;
+        for (const participant of page.items) {
+          if (participant.pubkeys.some((key) => normalizePubkey(key) === target)) matches.set(participant.principalId, participant);
+        }
+        cursor = page.nextCursor;
+        if (cursor && seen.has(cursor)) throw new TransportError(translateUi("dm.directoryUnavailable"));
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      const [recipient] = matches.values();
+      if (matches.size !== 1 || !recipient || recipient.principalId === currentPrincipalId)
+        throw new TransportError(translateUi("dm.directoryUnavailable"));
+      return await opening.prepareConversation([recipient]);
+    } finally {
+      scope.busy = false;
+      if (scope.active && currentScope.current === scope) setResolving(false);
+    }
+  };
+  return { ...opening, open, busy: resolving || opening.busy };
 }
