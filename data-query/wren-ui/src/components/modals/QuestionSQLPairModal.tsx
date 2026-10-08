@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { Alert, Button, Form, Input, Modal, Typography } from 'antd';
+import { Alert, Button, Form, Input, Modal, Typography, message } from 'antd';
 import { Logo } from '@/components/Logo';
 import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 import SelectOutlined from '@ant-design/icons/SelectOutlined';
@@ -9,7 +9,7 @@ import { FORM_MODE } from '@/utils/enum';
 import { getDataSourceName } from '@/utils/dataSourceType';
 import useModalAction, { ModalAction } from '@/hooks/useModalAction';
 import SQLEditor from '@/components/editor/SQLEditor';
-import { parseGraphQLError } from '@/utils/errorHandler';
+import { nativeWriteEvidence, parseGraphQLError } from '@/utils/errorHandler';
 import { createSQLPairQuestionValidator } from '@/utils/validator';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import PreviewData from '@/components/dataPreview/PreviewData';
@@ -18,7 +18,8 @@ import ImportDataSourceSQLModal, {
 } from '@/components/modals/ImportDataSourceSQLModal';
 import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
 import { useRouter } from 'next/router';
-import { getQueryPreviewText } from '@/utils/language';
+import { getNativeWriteText, getQueryPreviewText } from '@/utils/language';
+import { getUserConfig } from '@/utils/env';
 import { useGetSettingsQuery } from '@/apollo/client/graphql/settings.generated';
 import { useGenerateQuestionMutation } from '@/apollo/client/graphql/sql.generated';
 import { SqlPair } from '@/apollo/client/graphql/__types__';
@@ -85,6 +86,9 @@ export default function QuestionSQLPairModal(props: Props) {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [generatingQuestion, setGeneratingQuestion] = useState<boolean>(false);
   const [showPreview, setShowPreview] = useState<boolean>(false);
+  const unresolvedWrite = useRef(false);
+  const writing = useRef(false);
+  const [writeUnknown, setWriteUnknown] = useState(false);
 
   // Handle errors via try/catch blocks rather than onError callback
   const [generateQuestionMutation] = useGenerateQuestionMutation({
@@ -95,7 +99,9 @@ export default function QuestionSQLPairModal(props: Props) {
   const query = useGovernedSqlPreview(sqlValue, visible);
   const previewSqlMutation = query.preview;
   const previewSqlResult = query.result;
-  const text = getQueryPreviewText(useRouter().locale);
+  const locale = useRouter().locale;
+  const text = getQueryPreviewText(locale);
+  const writeText = getNativeWriteText(locale);
 
   useEffect(() => {
     if (visible) {
@@ -127,7 +133,13 @@ export default function QuestionSQLPairModal(props: Props) {
 
   const handleError = (error) => {
     const graphQLError = parseGraphQLError(error);
-    setError({ ...graphQLError, shortMessage: 'Invalid SQL syntax' });
+    setError({
+      ...graphQLError,
+      shortMessage:
+        graphQLError?.code === 'INVALID_SQL_ERROR'
+          ? 'Invalid SQL syntax'
+          : graphQLError?.shortMessage || text.unknown,
+    });
     console.error(graphQLError);
   };
 
@@ -153,23 +165,56 @@ export default function QuestionSQLPairModal(props: Props) {
   };
 
   const onSubmitButton = () => {
+    if (unresolvedWrite.current || writing.current) return;
+    writing.current = true;
     setError(null);
     setSubmitting(true);
     setShowPreview(false);
     form
       .validateFields()
       .then(async (values) => {
+        let enteredWrite = false;
+        let guarded = false;
         try {
           if (!(await onValidateSQL())) return;
-          await onSubmit({ data: values, id: defaultValue?.id });
+          const validation = query.validatedSql();
+          if (!validation) return;
+          const config = await getUserConfig();
+          if (config.nativeBindingConfigured !== false) {
+            if (
+              config.nativeBindingConfigured !== true ||
+              config.queryScope !== validation.idempotencyScope
+            )
+              throw new Error('QUERY_IDENTITY_CHANGED');
+            guarded = true;
+          }
+          enteredWrite = true;
+          await onSubmit({
+            data: { ...values, ...validation },
+            id: defaultValue?.id,
+            nativeWriteGuarded: guarded,
+          });
           onClose();
         } catch (error) {
-          handleError(error);
+          if (
+            guarded &&
+            enteredWrite &&
+            nativeWriteEvidence(error)?.outcome !== 'NOT_STARTED'
+          ) {
+            // The dry-run's AE does not make the following native CRUD
+            // idempotent. Without a reliable write reference, do not replay it.
+            unresolvedWrite.current = true;
+            setWriteUnknown(true);
+            setError(null);
+            message.warning(writeText.unresolved);
+          } else handleError(error);
         } finally {
+          writing.current = false;
           setSubmitting(false);
         }
       })
       .catch((err) => {
+        writing.current = false;
         setSubmitting(false);
         console.error(err);
       });
@@ -236,6 +281,7 @@ export default function QuestionSQLPairModal(props: Props) {
                 type="primary"
                 onClick={onSubmitButton}
                 loading={confirmLoading}
+                disabled={writeUnknown}
               >
                 Submit
               </Button>
@@ -348,6 +394,9 @@ export default function QuestionSQLPairModal(props: Props) {
             message={error.shortMessage}
             description={<ErrorCollapse message={error.message} />}
           />
+        )}
+        {writeUnknown && (
+          <Alert type="warning" message={writeText.unresolved} />
         )}
       </Modal>
       {dataSource.isSupportSubstitute && (

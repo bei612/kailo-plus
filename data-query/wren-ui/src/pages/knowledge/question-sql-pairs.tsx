@@ -48,6 +48,7 @@ export default function ManageQuestionSQLPairs() {
   const [createSqlPairMutation, { loading: createSqlPairLoading }] =
     useCreateSqlPairMutation(
       getBaseOptions({
+        onError: undefined,
         onCompleted: () => {
           message.success('Successfully created question-sql pair.');
         },
@@ -65,6 +66,7 @@ export default function ManageQuestionSQLPairs() {
   const [editSqlPairMutation, { loading: editSqlPairLoading }] =
     useUpdateSqlPairMutation(
       getBaseOptions({
+        onError: undefined,
         onCompleted: () => {
           message.success('Successfully updated question-sql pair.');
         },
@@ -179,13 +181,17 @@ export default function ManageQuestionSQLPairs() {
           {...questionSqlPairModal.state}
           onClose={questionSqlPairModal.closeModal}
           loading={createSqlPairLoading || editSqlPairLoading}
-          onSubmit={async ({ id, data }) => {
+          onSubmit={async ({ id, data, nativeWriteGuarded }) => {
             if (id) {
               await editSqlPairMutation({
                 variables: { where: { id }, data },
+                context: { nativeWriteGuarded },
               });
             } else {
-              await createSqlPairMutation({ variables: { data } });
+              await createSqlPairMutation({
+                variables: { data },
+                context: { nativeWriteGuarded },
+              });
             }
           }}
         />

@@ -225,6 +225,8 @@ export type CreateSimpleMetricInput = {
 };
 
 export type CreateSqlPairInput = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   question: Scalars['String'];
   sql: Scalars['String'];
 };
@@ -1592,6 +1594,8 @@ export type UpdateRelationshipMetadataInput = {
 };
 
 export type UpdateSqlPairInput = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   question?: InputMaybe<Scalars['String']>;
   sql?: InputMaybe<Scalars['String']>;
 };

@@ -5482,3 +5482,189 @@ It changes no Core schema/generated contract. The two earlier unverified Java
 provenance candidates remain outside this increment. Mainline submission/push
 and release are owned by the mainline agent; no deployment or activation is
 inferred from these source, SSR/handler and narrow implementation checks.
+
+## Original SQL-pair dry-run and mutation outcome consumers (2026-10-08)
+
+### Authority, original-source evidence and complete impact
+
+The established `.design/07` section 4.6 / DD-87 and `.design/08` section 6
+require retaining the complete native Wren page while consuming current HUMAN
+identity, scope, authorization and governed SQL execution. A successful preview
+is not permission to run another SQL statement or to treat native metadata CRUD
+as an idempotent platform Action. DD-98's existing-reference registration and
+trusted delivery requirements are unchanged; this increment does not manufacture
+dynamic Resource evidence from a returned model/view ID.
+
+The fixed original source is
+`WrenAI-ui-0.32.2@c5f02a0391c87420dba78632dcd86073710deb72`. Source facts were
+read with `git show` from that commit, without executing upstream files:
+
+- `wren-ui/src/apollo/server/resolvers/sqlPairResolver.ts`,
+  `SqlPairResolver.createSqlPair`, `updateSqlPair` and `validateSql`: both native
+  mutations directly called the original QueryService dry-run before the
+  original metadata service. Optional SQL in update could reach that validator
+  as undefined.
+- `wren-ui/src/components/modals/QuestionSQLPairModal.tsx`,
+  `QuestionSQLPairModal`: the original Submit, SQL validation, preview,
+  generate-question, native form, import control and close consumers remain.
+- `wren-ui/src/pages/home/[id].tsx`, `HomeThread`, and
+  `wren-ui/src/pages/knowledge/question-sql-pairs.tsx`,
+  `ManageQuestionSQLPairs`: these are the real original create/update callbacks,
+  not a replacement metadata page.
+- `wren-ui/src/apollo/server/schema.ts`, `typeDefs`: the original
+  `CreateSqlPairInput` / `UpdateSqlPairInput` own this native GraphQL input.
+
+The impact was traced across those actual callers, the existing
+`useGovernedSqlPreview`, `NativeHumanQuery.previewSql` / `disclose`, original
+native SQL history/intent consumers, and the actual Apollo error link. Original
+SqlPairService, its database/repositories, learning behavior, native mutations,
+SQL editor, table, drawer, preview and import implementation are not replaced.
+All changed source differences in this increment are the authorized governance
+consumer, required native GraphQL generation, localized outcome presentation or
+implementation-after checks. There is no new Core/Worker entity, native table,
+workflow, permission ticket, task registry, SQL parser or billing authority.
+
+### Actual implemented consumer and compatibility
+
+The original hook exposes only the completed dry-run's opaque key/scope after
+the existing current-SQL/scope/action/limit checks. Reset, focus revalidation,
+another query/limit or unfinished evidence cannot expose that validation
+identity. The original modal submits it along with its unchanged form values.
+The existing server mutations observe the same `data_query.dry_run@v1` AE using
+`NativeHumanQuery.previewSql` in observation-only mode. Native history still
+fixes the SQL, deployment, connection, parameters and source references; the
+existing HUMAN disclosure path rechecks current source and result-policy
+authorization. No missing AE is repaired by selecting or commanding a second
+SQL execution. Incomplete or mismatched evidence does not reach native metadata
+write. Governance fields are stripped before calling the original SqlPairService.
+
+The original schema gains two optional fields on each existing native input;
+the actual original GraphQL generator emits their client types. This is not a
+change to the four-language platform contracts and requires no database
+migration. The current modal/two callback consumers write the optional fields;
+the server reads them. A bound old caller without them is refused rather than
+allowed to execute bare SQL. A never-configured server keeps its original
+standalone dry-run; a present empty/invalid delivery does not select that path.
+Question-only updates retain the original edit service without submitting an
+undefined SQL. This does not establish full standalone browser acceptance.
+
+The same original modal no longer unconditionally overwrites every caught
+error with `Invalid SQL syntax`. Only original `INVALID_SQL_ERROR` selects that
+message. Before a native metadata mutation it rechecks the current trusted
+browser configuration/scope; the server remains the authorization authority.
+Only a verified native `NOT_STARTED` refusal proves it is safe to retry a
+refused write. Once a bound metadata mutation has been entered, a transport
+exception, missing outcome or native UNKNOWN keeps the original modal open,
+shows a Chinese/English unresolved warning and prevents concurrent/repeated
+Submit in that mounted component. Its original reset/close does not cancel
+native work or clear that instance's uncertainty. The two actual callbacks pass
+only an Apollo presentation-context flag so the original global error link does
+not show an earlier generic failed/retry-network message. That flag is not a
+wire identity, permission, execution key or public Action.
+
+No reliable metadata reference/observe protocol is invented. These SQL-pair
+create/update operations do not acquire native idempotency, durable recovery,
+cross-reload/client fencing or a second ledger from their dry-run AE. Those
+remaining UNKNOWN recovery gaps still block activation. They are not resolved
+by leaving the modal open and are not reported as fully delivered metadata CRUD.
+
+### Boundaries and actual negative evidence
+
+Empty/malformed delivery, missing HUMAN/policy/history and changed native
+connection/deployment/source remain fail-closed. Current authorization refusal
+is `DENIED`; unavailable binding/evidence is `PRECONDITION`; changed identity,
+revision or intent is `CONFLICT`; unconfirmed admitted SQL or native write is
+`UNKNOWN`, never successful or failed. Existing execution/transport bounds
+retain `LIMIT`, and the still-inactive release retains `BLOCKED`, following
+`apps/06` section 4. No new error code or execution state is introduced.
+
+The existing SQL/AE/history chain remains responsible for timeout, duplicate
+delivery, restart and in-flight authorization/usage convergence. This consumer
+does not reissue SQL to repair missing evidence. Unknown enum values and
+unfinished/invalid dry-run receipts refuse metadata write. The original UI
+checks include a pending native write, simultaneous Submit, identity change
+after validation, scope/project mismatch, different SQL under the same key,
+denied source access, no-binding mode, and broken delivery. No such fixture is
+production business data or proof of a deployed component.
+
+The original offline GraphQL generator exited 0; all generated outputs were
+compared and only `src/apollo/client/graphql/__types__.ts` changed, with the two
+optional fields on each input. Actual invocation in the original SDK `/work`:
+
+```sh
+TS_NODE_TRANSPILE_ONLY=1 TS_NODE_COMPILER_OPTIONS='{"module":"CommonJS"}' node -r ts-node/register -e 'const {loadCodegenConfig,generate}=require("@graphql-codegen/cli"); const {print}=require("graphql"); const {typeDefs}=require("./src/apollo/server/schema"); (async()=>{const loaded=await loadCodegenConfig({configFilePath:"codegen.yaml"});await generate({...loaded.config,schema:print(typeDefs)},true)})().catch(e=>{console.error(e);process.exit(1)})'
+```
+
+The first two-suite invocation exited 1 with **11 failed / 8 passed / 279
+filtered skip** and the UI suite unable to load: the added fixture omitted the
+original telemetry decorator's `ctx.telemetry.sendEvent`, and the original
+ErrorCollapse import lacked the test's antd stub. Only those original test
+fixtures were corrected. The next invocation exited 1 with **1 failed / 66
+passed / 300 filtered skip** because its mocked original mutation result omitted
+`reset`; adding that actual original method to the fixture fixed it. The failed
+`sql-pair-positive.log` / `sql-pair-positive-restored-fixture.log` remain.
+
+Private production mutation bypassed `NativeHumanQuery.previewSql`'s
+observation-only guard. The selected original check failed, exit 1. Its first
+fixture stopped at an undefined draft; the fixture was strengthened with actual
+native-source resolution data, not a weaker expectation. Repeating the actual
+production mutation then failed with **1 failed / 297 filtered skip**: the
+original platform call count changed from one observe to six calls including
+source resolution and command. Log:
+`sql-pair-negative-missing-ae-full-source.log`; the earlier
+`sql-pair-negative-missing-ae.log` is retained too. Restored production input
+compared equal to the formal file, exit 0.
+
+Bypassing the actual SqlPairResolver completed/valid receipt guard produced
+**4 failed / 294 filtered skip**, exit 1: the native metadata promises actually
+resolved for incomplete/unknown/invalid evidence. Log:
+`sql-pair-negative-incomplete.log`. That production input was restored and
+compared equal, exit 0. Removing the original modal's unresolved-write replay
+guard produced **3 failed / 76 filtered skip**, exit 1: its actual Submit consumer
+called native mutation twice for UNKNOWN, transport loss and missing outcome.
+Log: `sql-pair-negative-ui-replay.log`. The modal was then restored and compared
+equal, exit 0. Assertions were unchanged during all production mutations.
+
+### Final restored evidence and release boundary
+
+After all private mutations were restored, the actual original two-suite
+target finished **79 passed / 0 failed / 298 filtered skip**, exit 0. This
+includes the original global Apollo UNKNOWN and never-configured create
+consumers as well as the new original SQL-pair consumers. Whole Wren
+`tsc --noEmit --incremental false` exited 0 with no diagnostics. Original
+Prettier checked all 11 handwritten source/check inputs and exited 0:
+`All matched files use Prettier code style!`. All 12 formal source/generated/check
+inputs compared identical to the final SDK candidate, exit 0, and scoped
+`git diff --check` exited 0. Cgroup `oom`, `oom_kill` and `oom_group_kill` were
+zero before and after this batch (all increments zero).
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand --verbose=false src/nativeHumanQuery.test.ts src/viewMetadata.test.ts -t 'SQL-pair|SQL editor|SQL-editor|actual SQL resolver|exact completed dry-run identity|original saved-view preview controls|original global Apollo consumer|original never-configured standalone create'
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/sqlPairResolver.ts src/apollo/server/schema.ts src/apollo/server/services/nativeHumanQuery.ts src/components/modals/QuestionSQLPairModal.tsx src/hooks/useGovernedSqlPreview.ts src/nativeHumanQuery.test.ts 'src/pages/home/[id].tsx' src/pages/knowledge/question-sql-pairs.tsx src/viewMetadata.test.ts src/utils/errorHandler.tsx src/utils/language.ts
+```
+
+All these commands use the existing `kailo-wren-query-sdk-itgs2n` 4 CPU/4 GiB
+cgroup, original installed dependencies and isolated candidate. Evidence logs
+are retained under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`:
+`sql-pair-codegen.log`, `sql-pair-final-restored.log`,
+`sql-pair-final-types.log` (no diagnostics), `sql-pair-final-format-check.log`
+and `sql-pair-final-cgroup.log`, plus the retained failure/mutation logs above.
+The intermediate 67- and 77-passed runs apply only to those earlier input
+snapshots; the 79-passed run is the final restored current-byte evidence.
+No new image, database, dependency, full-tree copy or global build was started.
+The raw first attempt to execute the non-executable upstream manifest Python
+file returned permission denied; the original `python3 -B
+tools/upstream_manifest.py status` invocation then exited 0. Neither changed the
+fixed original source pin or installed anything.
+
+Filtered skips are not passed tests. This batch did not run Java verification,
+`check.sh --full`, a platform-contract four-language matrix, a deployment or
+Playwright/device screenshots. The two earlier unverified Java candidates are
+excluded. Original REST SQL-pair bare validation, trusted SERVICE SQL,
+ordinary-function provenance, dynamic Resource evidence and durable native
+metadata reconciliation remain concrete separate gaps. No live Wren business
+container, ACTIVE binding, iframe, production multi-user function or 100%
+original visual equivalence is claimed. Mainline submission/push and activation
+remain owned by the mainline agent, after integration evidence.

@@ -736,8 +736,8 @@ idempotency, billing or recovery after an unknown write acknowledgement.
 
 Release activation remains blocked by concrete remaining native lifecycle and
 business gaps: reset/data-source replacement must reconcile the original new
-project ID with the fixed binding scope; native SQL-pair validation still needs
-its separate governed dry-run consumer; newly created models/views need genuine
+project ID with the fixed binding scope; the separate REST SQL-pair validation
+consumer remains outside the governed GraphQL dry-run path; newly created models/views need genuine
 Resource registration before their bodies can be disclosed. Trusted SERVICE SQL,
 ordinary-function/provider provenance and live multi-user component acceptance
 are not established by these permission checks. No Wren business instance,
@@ -781,3 +781,38 @@ not gain durable idempotency or a complete recovery path from this increment.
 Those remaining lifecycle/outcome gaps still prevent release activation. This
 increment does not establish a live Wren instance, ACTIVE binding, iframe,
 Playwright/installed Desktop/Mobile or production multi-user acceptance.
+
+## Original question-SQL pair dry-run consumption
+
+The original question-SQL pair modal and its Home/Knowledge create/update
+callbacks retain their original controls. With a configured Kailo binding, the
+modal passes the exact SQL editor dry-run's opaque key and current scope to the
+existing GraphQL mutation. The server only observes that original
+`data_query.dry_run@v1` execution: its original native history fixes SQL, limit,
+deployment and source references, and current HUMAN/source/result checks still
+apply. Missing, changed, unknown or incomplete evidence refuses the native
+metadata write; it does not submit another SQL command. The metadata service
+receives only its original question and SQL, not the governance fields.
+
+The optional GraphQL input fields are emitted by the original generator. A
+bound older caller without the original dry-run identity fails closed; an
+actually never-configured server retains the original independent dry-run
+implementation. An empty or incorrect delivery configuration does not select
+that independent path. Question-only edits do not execute an undefined SQL.
+
+An admission/dependency refusal is not labelled a syntax error. Only the
+original `INVALID_SQL_ERROR` selects that original message. Entering a bound
+native metadata mutation without a verified `NOT_STARTED` refusal leaves its
+result UNKNOWN if the acknowledgement is lost or unreadable. The original
+modal stays open, warns in Chinese/English and blocks concurrent/repeated
+submission in that mounted modal instance; closing it does not cancel native
+work or erase that instance's uncertainty. No native reference is invented,
+and the completed dry-run AE is not a metadata-write idempotency key.
+
+This local UI protection is not durable native CRUD reconciliation. Reloading
+the page, another client, fully lost metadata references and the remaining
+native lifecycle consumers still lack a complete recovery path. The original
+REST SQL-pair `validateSql`, trusted SERVICE SQL, dynamic Resource evidence,
+ordinary-function provenance and real multi-user component acceptance remain
+separate delivery gaps. No Wren business instance, ACTIVE binding, iframe or
+visual/device acceptance is established by these source changes.

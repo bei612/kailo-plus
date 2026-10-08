@@ -1077,11 +1077,15 @@ export const typeDefs = gql`
   input CreateSqlPairInput {
     sql: String!
     question: String!
+    idempotencyKey: String
+    idempotencyScope: String
   }
 
   input UpdateSqlPairInput {
     sql: String
     question: String
+    idempotencyKey: String
+    idempotencyScope: String
   }
 
   input SqlPairWhereUniqueInput {

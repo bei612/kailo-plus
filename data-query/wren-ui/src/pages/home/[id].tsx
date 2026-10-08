@@ -176,7 +176,6 @@ export default function HomeThread() {
     useCreateSqlPairMutation({
       refetchQueries: ['SqlPairs'],
       awaitRefetchQueries: true,
-      onError: (error) => console.error(error),
       onCompleted: () => {
         message.success('Successfully created question-sql pair.');
       },
@@ -493,8 +492,17 @@ export default function HomeThread() {
         {...questionSqlPairModal.state}
         onClose={questionSqlPairModal.closeModal}
         loading={createSqlPairLoading}
-        onSubmit={async ({ data }: { data: CreateSqlPairInput }) => {
-          await createSqlPairMutation({ variables: { data } });
+        onSubmit={async ({
+          data,
+          nativeWriteGuarded,
+        }: {
+          data: CreateSqlPairInput;
+          nativeWriteGuarded?: boolean;
+        }) => {
+          await createSqlPairMutation({
+            variables: { data },
+            context: { nativeWriteGuarded },
+          });
         }}
       />
 

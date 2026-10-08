@@ -16,6 +16,7 @@ import {
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { SqlPairResolver } from './apollo/server/resolvers/sqlPairResolver';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { getQueryPreviewText } from './utils/language';
@@ -620,6 +621,243 @@ describe('native saved-view HUMAN query consumer', () => {
       undefined,
     );
     expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires the original dry-run AE when native SQL-pair validation only observes', async () => {
+    const native = {
+      sqlSelection: jest.fn().mockResolvedValue({ objects: capturedSources }),
+      sqlReference: jest.fn().mockResolvedValue(reference),
+      sqlIntent: jest.fn(),
+    };
+    const human = new NativeHumanQuery(
+      { ...config, dryRunAction: config.humanAction },
+      native as any,
+      { findOneBy: history } as any,
+    );
+    calls.mockImplementation(async (_config, _operation, input) => {
+      const query = input.resolveResource as any;
+      return query
+        ? {
+            resource: {
+              ...resolution.resource,
+              nativeType: query.nativeType,
+              nativeRef: query.nativeRef,
+            },
+          }
+        : null;
+    });
+    await expect(
+      human.previewSql(
+        'verified-native-token',
+        key,
+        statement,
+        1,
+        'c'.repeat(64),
+        true,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(calls.mock.calls[0][2]).toEqual({
+      bindingId: binding,
+      idempotencyKey: key,
+    });
+    expect(native.sqlSelection).not.toHaveBeenCalled();
+    expect(native.sqlReference).not.toHaveBeenCalled();
+    expect(native.sqlIntent).not.toHaveBeenCalled();
+    expect(history).not.toHaveBeenCalled();
+  });
+
+  describe('original SQL-pair dry-run consumers', () => {
+    let original: string | undefined;
+    let ctx: any;
+    let scope: string;
+    let delegated: jest.SpyInstance;
+    const pair = {
+      id: 19,
+      projectId: 3,
+      sql: statement,
+      question: 'Original question',
+    };
+    beforeEach(() => {
+      original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      scope = nativePreviewScope(config, 'a'.repeat(64));
+      delegated = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue({
+          submission: { ...submission, actionKey: 'data_query.dry_run@v1' },
+          terminalStatus: 'COMPLETED',
+          data: { valid: true },
+        });
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      ctx = {
+        telemetry: { sendEvent: jest.fn() },
+        nativeIdentityScope: 'a'.repeat(64),
+        nativeHumanToken: 'verified-native-token',
+        projectService: {
+          getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }),
+        },
+        deployService: {
+          getLastDeployment: jest
+            .fn()
+            .mockResolvedValue({ manifest: 'original-manifest' }),
+        },
+        queryService: { preview: jest.fn().mockResolvedValue({}) },
+        sqlPairService: {
+          createSqlPair: jest.fn().mockResolvedValue(pair),
+          editSqlPair: jest.fn().mockResolvedValue(pair),
+        },
+      };
+    });
+    afterEach(() => {
+      delegated.mockRestore();
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    });
+    const write = (
+      operation: 'create' | 'update',
+      changes: Record<string, any> = {},
+    ) => {
+      const resolver = new SqlPairResolver();
+      const input = {
+        data: {
+          sql: statement,
+          question: pair.question,
+          idempotencyKey: key,
+          idempotencyScope: scope,
+          ...changes,
+        },
+        where: { id: pair.id },
+      };
+      return operation === 'create'
+        ? resolver.createSqlPair(null, input, ctx)
+        : resolver.updateSqlPair(null, input, ctx);
+    };
+    it.each(['create', 'update'] as const)(
+      'observes the same HUMAN dry-run before original %s and never repeats bare SQL',
+      async (operation) => {
+        await expect(write(operation)).resolves.toEqual(pair);
+        expect(delegated).toHaveBeenCalledWith(
+          ctx.nativeHumanToken,
+          key,
+          statement,
+          1,
+          scope,
+          true,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        expect(ctx.deployService.getLastDeployment).not.toHaveBeenCalled();
+        const persist =
+          operation === 'create'
+            ? ctx.sqlPairService.createSqlPair.mock.calls[0][1]
+            : ctx.sqlPairService.editSqlPair.mock.calls[0][2];
+        expect(persist).toEqual({ sql: statement, question: pair.question });
+        expect(JSON.stringify(persist)).not.toContain(key);
+      },
+    );
+    it.each(['create', 'update'] as const)(
+      'refuses changed identity/project before original %s',
+      async (operation) => {
+        await expect(
+          write(operation, { idempotencyScope: 'b'.repeat(64) }),
+        ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+        ctx.projectService.getCurrentProject.mockResolvedValue({ id: 99 });
+        await expect(write(operation)).rejects.toThrow(
+          'QUERY_IDENTITY_CHANGED',
+        );
+        expect(delegated).not.toHaveBeenCalled();
+        expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
+        expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      { terminalStatus: 'RUNNING' },
+      { terminalStatus: 'NEW_STATUS' },
+      { terminalStatus: 'COMPLETED', data: { valid: false } },
+      { terminalStatus: 'COMPLETED' },
+    ])(
+      'does not write metadata from incomplete dry-run evidence %j',
+      async (changes) => {
+        delegated.mockResolvedValue({
+          submission: { ...submission, actionKey: 'data_query.dry_run@v1' },
+          ...changes,
+        });
+        await expect(write('create')).rejects.toThrow(
+          'QUERY_EVIDENCE_UNAVAILABLE',
+        );
+        await expect(write('update')).rejects.toThrow(
+          'QUERY_EVIDENCE_UNAVAILABLE',
+        );
+        expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
+        expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('propagates original same-key input/source authorization refusal without writing metadata', async () => {
+      delegated.mockRejectedValue(
+        new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT'),
+      );
+      await expect(
+        write('create', { sql: 'different native SQL' }),
+      ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+      expect(delegated.mock.calls[0][2]).toBe('different native SQL');
+      expect(delegated.mock.calls[0][1]).toBe(key);
+      delegated.mockRejectedValue(
+        new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+      );
+      await expect(write('update')).rejects.toMatchObject({ status: 403 });
+      expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
+      expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+    it('retains the original no-binding dry run and permits question-only editing without SQL execution', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      await expect(
+        write('create', {
+          idempotencyKey: undefined,
+          idempotencyScope: undefined,
+        }),
+      ).resolves.toEqual(pair);
+      expect(ctx.queryService.preview).toHaveBeenCalledWith(statement, {
+        project: { id: 3 },
+        manifest: 'original-manifest',
+        dryRun: true,
+      });
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      ctx.queryService.preview.mockClear();
+      await expect(write('update', { sql: undefined })).resolves.toEqual(pair);
+      expect(delegated).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(ctx.sqlPairService.editSqlPair).toHaveBeenCalledWith(3, pair.id, {
+        sql: undefined,
+        question: pair.question,
+      });
+    });
+    it('does not fall back to standalone for present but empty or invalid delivery', async () => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+      jest
+        .mocked(loadQueryDelivery)
+        .mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_DELIVERY_UNAVAILABLE'),
+        );
+      await expect(write('create')).rejects.toThrow(
+        'QUERY_DELIVERY_UNAVAILABLE',
+      );
+      expect(delegated).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
+    });
   });
 
   it('routes the actual SQL resolver through current HUMAN scope and never direct QueryService.preview', async () => {

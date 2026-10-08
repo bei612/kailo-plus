@@ -4,6 +4,21 @@ import * as Errors from '@server/utils/error';
 import { TelemetryEvent, TrackTelemetry } from '@server/telemetry/telemetry';
 import { DialectSQL, WrenSQL } from '@server/models/adaptor';
 import { safeFormatSQL } from '@server/utils/sqlFormat';
+import {
+  NativeHumanQuery,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import { NativeQueryService } from '../services/nativeQueryService';
+import {
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
+import { queryReceiptState } from '@/utils/queryReceipt';
+
+type SqlValidation = {
+  idempotencyKey?: string;
+  idempotencyScope?: string;
+};
 
 export class SqlPairResolver {
   constructor() {
@@ -31,13 +46,16 @@ export class SqlPairResolver {
       data: {
         sql: string;
         question: string;
-      };
+      } & SqlValidation;
     },
     ctx: IContext,
   ): Promise<SqlPair> {
     const project = await ctx.projectService.getCurrentProject();
-    await this.validateSql(arg.data.sql, ctx);
-    return await ctx.sqlPairService.createSqlPair(project.id, arg.data);
+    await this.validateSql(arg.data.sql, ctx, arg.data);
+    return await ctx.sqlPairService.createSqlPair(project.id, {
+      sql: arg.data.sql,
+      question: arg.data.question,
+    });
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_UPDATE_SQL_PAIR)
@@ -47,7 +65,7 @@ export class SqlPairResolver {
       data: {
         sql?: string;
         question?: string;
-      };
+      } & SqlValidation;
       where: {
         id: number;
       };
@@ -55,8 +73,12 @@ export class SqlPairResolver {
     ctx: IContext,
   ): Promise<SqlPair> {
     const project = await ctx.projectService.getCurrentProject();
-    await this.validateSql(arg.data.sql, ctx);
-    return ctx.sqlPairService.editSqlPair(project.id, arg.where.id, arg.data);
+    if (arg.data.sql !== undefined)
+      await this.validateSql(arg.data.sql, ctx, arg.data);
+    return ctx.sqlPairService.editSqlPair(project.id, arg.where.id, {
+      sql: arg.data.sql,
+      question: arg.data.question,
+    });
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_DELETE_SQL_PAIR)
@@ -114,8 +136,51 @@ export class SqlPairResolver {
     return safeFormatSQL(wrenSQL, { language: 'postgresql' }) as WrenSQL;
   }
 
-  private async validateSql(sql: string, ctx: IContext) {
+  private async validateSql(
+    sql: string,
+    ctx: IContext,
+    validation: SqlValidation,
+  ) {
     const project = await ctx.projectService.getCurrentProject();
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      const config = await loadQueryDelivery();
+      const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+      if (
+        config.projectId !== project.id ||
+        validation.idempotencyScope !== scope
+      )
+        throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+      const { components } = await import('@/common');
+      const queries = new NativeQueryService(
+        config,
+        ctx.projectRepository,
+        ctx.deployRepository,
+        components.apiHistoryRepository,
+        ctx.queryService,
+        ctx.viewRepository,
+        ctx.modelRepository,
+        ctx.modelColumnRepository,
+      );
+      const receipt = await new NativeHumanQuery(
+        config,
+        queries,
+        components.apiHistoryRepository,
+      ).previewSql(
+        ctx.nativeHumanToken,
+        validation.idempotencyKey,
+        sql,
+        1,
+        scope,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      if (!queryReceiptState(receipt).completed || receipt.data?.valid !== true)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      return;
+    }
     const lastDeployment = await ctx.deployService.getLastDeployment(
       project.id,
     );

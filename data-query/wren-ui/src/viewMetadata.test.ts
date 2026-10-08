@@ -13,12 +13,15 @@ import { message } from 'antd';
 import { webcrypto } from 'node:crypto';
 import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
+import QuestionSQLPairModal from './components/modals/QuestionSQLPairModal';
 import { FORM_MODE } from './utils/enum';
 
 let mockLocale: string | undefined;
 let mockScope: string;
 let mockButtons: any[];
 let mockPreviewResult: any;
+let mockFormValues: any;
+let mockSqlWatch: string;
 const mockPreview = jest.fn();
 const mockConfig = jest.fn();
 jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
@@ -32,6 +35,17 @@ jest.mock('./apollo/client/graphql/model.generated', () => ({
 }));
 jest.mock('./apollo/client/graphql/sql.generated', () => ({
   usePreviewSqlMutation: () => [mockPreview, mockPreviewResult],
+  useGenerateQuestionMutation: () => [jest.fn()],
+}));
+jest.mock('./apollo/client/graphql/settings.generated', () => ({
+  useGetSettingsQuery: () => ({ data: {} }),
+}));
+jest.mock('./components/editor/SQLEditor', () => () => null);
+jest.mock('./components/ErrorCollapse', () => () => null);
+jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
+  __esModule: true,
+  default: () => null,
+  isSupportSubstitute: () => false,
 }));
 jest.mock('antd', () => {
   const React = require('react');
@@ -44,10 +58,12 @@ jest.mock('antd', () => {
   Input.TextArea = () => null;
   const Form: any = field;
   Form.Item = field;
+  Form.useWatch = () => mockSqlWatch;
   Form.useForm = () => [
     {
-      validateFields: async () => ({ name: 'OriginalView' }),
+      validateFields: async () => mockFormValues ?? { name: 'OriginalView' },
       resetFields: jest.fn(),
+      setFieldsValue: jest.fn(),
     },
   ];
   return {
@@ -66,7 +82,7 @@ jest.mock('antd', () => {
     Col: field,
     Input,
     InputNumber: field,
-    Typography: { Text: field, Paragraph: field },
+    Typography: { Text: field, Paragraph: field, Link: field },
     Button: (props: any) => {
       mockButtons.push(props);
       return React.createElement('button', null, props.children);
@@ -107,7 +123,9 @@ describe('original saved-view preview controls', () => {
   beforeEach(() => {
     entries.clear();
     mockButtons = [];
-    mockPreviewResult = {};
+    mockPreviewResult = { reset: jest.fn() };
+    mockFormValues = undefined;
+    mockSqlWatch = undefined;
     mockLocale = undefined;
     mockScope = 'a'.repeat(64);
     mockConfig
@@ -488,6 +506,300 @@ describe('original saved-view preview controls', () => {
           data: dryRun ? { valid: true } : { columns: [], data: [] },
         }
       : {}),
+  });
+  it('passes only the exact completed dry-run identity from the original SQL-pair submit controls', async () => {
+    const sql = 'select original_column from original_model';
+    mockSqlWatch = sql;
+    mockFormValues = { sql, question: 'Original question' };
+    mockConfig.mockResolvedValue({
+      queryScope: mockScope,
+      nativeBindingConfigured: true,
+    });
+    mockPreview.mockImplementation(async ({ variables }) => ({
+      data: {
+        previewSql: {
+          ...sqlReceipt(mockScope, true, true),
+          inputReference: {
+            nativeObjectRef: JSON.stringify({
+              historyId: 'original-history',
+              modelId: 7,
+              limit: variables.data.limit,
+            }),
+          },
+        },
+      },
+    }));
+    const submit = jest.fn().mockResolvedValue(undefined);
+    const close = jest.fn();
+    const markup = renderToStaticMarkup(
+      createElement(QuestionSQLPairModal, {
+        visible: true,
+        formMode: FORM_MODE.CREATE,
+        onSubmit: submit,
+        onClose: close,
+      } as any),
+    );
+    expect(markup).toContain('Submit');
+    expect(markup).toContain('Preview data');
+    mockButtons.find((button) => button.children === 'Submit').onClick();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(submit).toHaveBeenCalledWith({
+      id: undefined,
+      nativeWriteGuarded: true,
+      data: {
+        ...mockFormValues,
+        idempotencyKey:
+          mockPreview.mock.calls[0][0].variables.data.idempotencyKey,
+        idempotencyScope: mockScope,
+      },
+    });
+    expect(mockPreview).toHaveBeenCalledTimes(1);
+    expect(mockPreview.mock.calls[0][0].variables.data).toMatchObject({
+      sql,
+      limit: 1,
+      dryRun: true,
+    });
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify([...entries.entries()])).not.toContain(sql);
+  });
+  describe('original SQL-pair mutation outcome presentation', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+    const setup = (submit = jest.fn(), bindingConfigured = true) => {
+      const sql = 'select original_column from original_model';
+      mockSqlWatch = sql;
+      mockFormValues = { sql, question: 'Original question' };
+      mockConfig.mockResolvedValue({
+        queryScope: mockScope,
+        nativeBindingConfigured: bindingConfigured,
+      });
+      mockPreview.mockImplementation(async ({ variables }) => ({
+        data: {
+          previewSql: {
+            ...sqlReceipt(mockScope, true, true),
+            inputReference: {
+              nativeObjectRef: JSON.stringify({
+                historyId: 'original-history',
+                limit: variables.data.limit,
+              }),
+            },
+          },
+        },
+      }));
+      const close = jest.fn();
+      const changed = jest.fn();
+      const React = require('react');
+      const original = React.useState;
+      const state = jest
+        .spyOn(React, 'useState')
+        .mockImplementation((initial: any) => {
+          const [value, setter] = original(initial);
+          return [
+            value,
+            (next: any) => {
+              changed(next);
+              setter(next);
+            },
+          ];
+        });
+      renderToStaticMarkup(
+        createElement(QuestionSQLPairModal, {
+          visible: true,
+          formMode: FORM_MODE.CREATE,
+          onSubmit: submit,
+          onClose: close,
+        } as any),
+      );
+      state.mockRestore();
+      return {
+        submit,
+        close,
+        changed,
+        click: mockButtons.find((button) => button.children === 'Submit')
+          .onClick,
+      };
+    };
+    beforeEach(() => {
+      jest.mocked(message.warning).mockClear();
+    });
+    it.each(['UNKNOWN', 'transport loss', 'missing native outcome'])(
+      'keeps %s unresolved in the actual original modal and never resubmits or closes it',
+      async (outcome) => {
+        const error =
+          outcome === 'UNKNOWN'
+            ? {
+                graphQLErrors: [
+                  { extensions: { other: { nativeWrite: { outcome } } } },
+                ],
+              }
+            : new Error(outcome);
+        const actual = setup(jest.fn().mockRejectedValue(error));
+        actual.click();
+        await flush();
+        actual.click();
+        await flush();
+        expect(actual.submit).toHaveBeenCalledTimes(1);
+        expect(mockPreview).toHaveBeenCalledTimes(1);
+        expect(actual.close).not.toHaveBeenCalled();
+        expect(message.warning).toHaveBeenCalledWith(
+          getNativeWriteText().unresolved,
+        );
+        expect(actual.changed.mock.calls.flat()).not.toContainEqual(
+          expect.objectContaining({ shortMessage: 'Invalid SQL syntax' }),
+        );
+      },
+    );
+    it.each(['QUERY_SCOPE_DENIED', 'QUERY_EVIDENCE_UNAVAILABLE'])(
+      'preserves an actual NOT_STARTED %s refusal without relabeling it as SQL syntax',
+      async (code) => {
+        const actual = setup(
+          jest.fn().mockRejectedValue({
+            graphQLErrors: [
+              {
+                extensions: {
+                  code,
+                  shortMessage: 'Original admission refusal',
+                  other: { nativeWrite: { outcome: 'NOT_STARTED' } },
+                },
+              },
+            ],
+          }),
+        );
+        actual.click();
+        await flush();
+        actual.click();
+        await flush();
+        expect(actual.submit).toHaveBeenCalledTimes(2);
+        expect(actual.close).not.toHaveBeenCalled();
+        expect(actual.changed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            code,
+            shortMessage: 'Original admission refusal',
+          }),
+        );
+        expect(message.warning).not.toHaveBeenCalled();
+      },
+    );
+    it('keeps original INVALID_SQL_ERROR syntax presentation in never-configured standalone mode', async () => {
+      const actual = setup(
+        jest.fn().mockRejectedValue({
+          graphQLErrors: [
+            {
+              extensions: {
+                code: 'INVALID_SQL_ERROR',
+                shortMessage: 'Original invalid SQL',
+              },
+            },
+          ],
+        }),
+        false,
+      );
+      actual.click();
+      await flush();
+      expect(actual.changed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INVALID_SQL_ERROR',
+          shortMessage: 'Invalid SQL syntax',
+        }),
+      );
+      expect(actual.close).not.toHaveBeenCalled();
+      expect(message.warning).not.toHaveBeenCalled();
+    });
+    it('does not dispatch two concurrent native SQL-pair writes while the original ACK is pending', async () => {
+      let settle: (value?: any) => void;
+      const actual = setup(
+        jest.fn().mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              settle = resolve;
+            }),
+        ),
+      );
+      actual.click();
+      await flush();
+      actual.click();
+      await flush();
+      expect(actual.submit).toHaveBeenCalledTimes(1);
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      settle!();
+      await flush();
+      expect(actual.close).toHaveBeenCalledTimes(1);
+    });
+    it('does not send the original native write when current identity changes after dry-run validation', async () => {
+      const actual = setup(jest.fn());
+      mockConfig
+        .mockResolvedValueOnce({
+          queryScope: mockScope,
+          nativeBindingConfigured: true,
+        })
+        .mockResolvedValueOnce({
+          queryScope: mockScope,
+          nativeBindingConfigured: true,
+        })
+        .mockResolvedValue({
+          queryScope: 'b'.repeat(64),
+          nativeBindingConfigured: true,
+        });
+      actual.click();
+      await flush();
+      expect(actual.submit).not.toHaveBeenCalled();
+      expect(actual.close).not.toHaveBeenCalled();
+      expect(message.warning).not.toHaveBeenCalled();
+    });
+    it.each(['CreateSqlPair', 'UpdateSqlPair'])(
+      'the actual Apollo error consumer renders a guarded %s lost receipt as unknown, not failed',
+      (operationName) => {
+        jest.mocked(message.error).mockClear();
+        errorHandler({
+          operation: {
+            operationName,
+            getContext: () => ({ nativeWriteGuarded: true }),
+          },
+          networkError: new Error('lost ACK'),
+        } as any);
+        expect(message.warning).toHaveBeenCalledWith(
+          getNativeWriteText().unresolved,
+        );
+        expect(message.error).not.toHaveBeenCalled();
+      },
+    );
+  });
+  it('does not expose a SQL-pair validation identity for pending, another limit, query action or reset', async () => {
+    const sql = 'select original_column from original_model';
+    const query = renderSql(sql);
+    expect(query.validatedSql()).toBeUndefined();
+    mockPreview.mockImplementation(async ({ variables }) => ({
+      data: {
+        previewSql: {
+          ...sqlReceipt(mockScope, !!variables.data.dryRun, true),
+          inputReference: {
+            nativeObjectRef: JSON.stringify({
+              historyId: 'original-history',
+              modelId: 7,
+              limit: variables.data.limit,
+            }),
+          },
+        },
+      },
+    }));
+    for (const data of [
+      { sql, limit: 50, dryRun: true },
+      { sql, limit: 1 },
+    ]) {
+      expect(await query.preview({ variables: { data } })).toBe(true);
+      expect(query.validatedSql()).toBeUndefined();
+    }
+    expect(
+      await query.preview({
+        variables: { data: { sql, limit: 1, dryRun: true } },
+      }),
+    ).toBe(true);
+    expect(query.validatedSql()).toEqual({
+      idempotencyScope: mockScope,
+      idempotencyKey:
+        mockPreview.mock.calls[2][0].variables.data.idempotencyKey,
+    });
+    query.result.reset();
+    expect(query.validatedSql()).toBeUndefined();
   });
   it('keeps one opaque SQL-editor key across UNKNOWN and transport loss, without persisting SQL', async () => {
     const sql = 'select original_column from original_model';

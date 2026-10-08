@@ -460,6 +460,7 @@ export class NativeHumanQuery {
     threadId?: string,
     expectedDeploymentHash?: string,
     cache?: GovernedQueryInput['cache'],
+    observationOnly = false,
   ) {
     const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
@@ -490,6 +491,10 @@ export class NativeHumanQuery {
     let receipt = await observe();
     let selectedResource: string | undefined;
     if (!receipt) {
+      // Native metadata consumes the SQL editor's existing dry-run receipt.
+      // Missing history/AE evidence cannot authorize a second query here.
+      if (observationOnly)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       const draft = await this.queries.sqlSelection(
         key,
         sql,

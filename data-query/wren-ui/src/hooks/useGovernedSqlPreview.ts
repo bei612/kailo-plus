@@ -20,10 +20,16 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
   const currentVisibility = useRef(visible);
   currentVisibility.current = visible;
   const selected = useRef<{ sql: string; scope: string }>();
+  const validation = useRef<{
+    sql: string;
+    scope: string;
+    idempotencyKey: string;
+  }>();
   const revision = useRef(0);
   useEffect(() => {
     const refresh = async () => {
       const current = ++revision.current;
+      validation.current = undefined;
       setReceipt(undefined);
       setPreparing(false);
       try {
@@ -54,6 +60,7 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
   }) => {
     if (!currentVisibility.current) return false;
     const current = ++revision.current;
+    validation.current = undefined;
     setPreparing(true);
     setReceipt(undefined);
     const input = options.variables.data;
@@ -133,6 +140,8 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
         return false;
       }
       setReceipt(value);
+      if (state.completed && input.dryRun && input.limit === 1)
+        validation.current = { sql: input.sql, scope, idempotencyKey: key };
       if (state.terminal || state.denied) {
         if (sessionStorage.getItem(slot) === key)
           sessionStorage.removeItem(slot);
@@ -158,10 +167,33 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     data: state.completed ? { previewSql: current.data } : undefined,
     reset: () => {
       ++revision.current;
+      validation.current = undefined;
       original.reset();
       setReceipt(undefined);
       setPreparing(false);
     },
   };
-  return { preview, result, state, scopeError, storageError };
+  return {
+    preview,
+    result,
+    state,
+    scopeError,
+    storageError,
+    // This is the original completed dry-run's opaque identity, not a new
+    // permission ticket. The native mutation observes and rechecks that AE.
+    validatedSql: () => {
+      const current = validation.current;
+      if (
+        current &&
+        currentVisibility.current &&
+        current.sql === currentSql.current &&
+        selected.current?.scope === current.scope
+      )
+        return {
+          idempotencyKey: current.idempotencyKey,
+          idempotencyScope: current.scope,
+        };
+      return undefined;
+    },
+  };
 }

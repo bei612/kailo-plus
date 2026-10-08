@@ -5,6 +5,8 @@ export const getNativeWriteText = (locale?: string) =>
     ? {
         unknown:
           'The original write outcome is unconfirmed. Submit again only to check the recorded object; the write will not be repeated. Without its reference, keep this outcome unresolved.',
+        unresolved:
+          'The original write outcome is unconfirmed. No reliable native reference is available; this form will not submit the write again. Keep it unresolved until reconciliation.',
         scopeError:
           'The current identity or binding could not be verified. No new write was submitted.',
         storageError:
@@ -13,6 +15,8 @@ export const getNativeWriteText = (locale?: string) =>
     : {
         unknown:
           '原写入结果尚未核验。再次提交只检查已记录的原生对象，不重复写入；没有原引用时保留结果不明。',
+        unresolved:
+          '原写入结果尚未核验，且没有可靠的原生引用；当前表单不会再次提交写入，请保留结果不明并进行对账。',
         scopeError: '无法核验当前身份或绑定，未发起新的写入。',
         storageError: '无法保存原写入标识，未发起新的写入。',
       };

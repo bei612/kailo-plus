@@ -6,7 +6,7 @@ import { getUserConfig } from './env';
 import { getNativeWriteText } from './language';
 import type { NativeWriteReference } from '@/apollo/server/utils/error';
 
-const nativeWriteEvidence = (error: any) => {
+export const nativeWriteEvidence = (error: any) => {
   const errors =
     error?.graphQLErrors ||
     (Array.isArray(error?.errors)
@@ -649,20 +649,21 @@ const errorHandler = (error: ErrorResponse) => {
   // This original Apollo context flag changes only error presentation. It is
   // not sent as permission/scope authority; standalone keeps its native errors.
   const guarded = error?.operation?.getContext?.()?.nativeWriteGuarded === true;
-  const nativeCreateUnknown =
+  const sqlPair = ['CreateSqlPair', 'UpdateSqlPair'].includes(operationName);
+  const guardedNativeWriteUnknown =
     guarded &&
-    ['CreateModel', 'CreateView', 'CreateDashboardItem'].includes(
+    (['CreateModel', 'CreateView', 'CreateDashboardItem'].includes(
       operationName,
-    ) &&
+    ) ||
+      sqlPair) &&
     (nativeUnknown?.outcome !== 'NOT_STARTED' || !!error.networkError);
-  if (nativeUnknown?.outcome === 'UNKNOWN' || nativeCreateUnknown) {
-    message.warning(
-      getNativeWriteText(
-        typeof document === 'undefined'
-          ? undefined
-          : document.documentElement.lang,
-      ).unknown,
+  if (nativeUnknown?.outcome === 'UNKNOWN' || guardedNativeWriteUnknown) {
+    const text = getNativeWriteText(
+      typeof document === 'undefined'
+        ? undefined
+        : document.documentElement.lang,
     );
+    message.warning(sqlPair ? text.unresolved : text.unknown);
     return;
   }
   // networkError
