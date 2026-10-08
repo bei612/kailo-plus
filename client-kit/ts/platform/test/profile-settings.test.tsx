@@ -19,6 +19,76 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it("consumes a fresh same-identity host profile rather than pinning the first avatar and metadata", async () => {
+    let refresh!: (next: ProfilePresentation) => void;
+    function Host() {
+      const [current, setCurrent] = useState(profile);
+      refresh = setCurrent;
+      return <ProfileSettingsCard locale="en" profile={current} onCopy={clipboard} onSave={async () => current}
+        avatarPreview={(actual) => <span data-testid="actual-avatar">{actual.avatarUrl}</span>} />;
+    }
+    const host = await render(<Host />);
+    await act(async () => refresh({ ...profile, displayName: "Other device", about: "Fresh biography", avatarUrl: "data:image/png;base64,AA==" }));
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe("Other device");
+    expect(host.querySelector('[data-testid="profile-about-value"]')?.textContent).toBe("Fresh biography");
+    expect(host.querySelector('[data-testid="actual-avatar"]')?.textContent).toBe("data:image/png;base64,AA==");
+  });
+
+  it("preserves an edited draft while consuming another device's metadata and writes only the original edit", async () => {
+    let refresh!: (next: ProfilePresentation) => void;
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => ({ ...profile, displayName: "My edit", about: "Other device biography" }));
+    function Host() {
+      const [current, setCurrent] = useState(profile);
+      refresh = setCurrent;
+      return <ProfileSettingsCard locale="en" profile={current} onCopy={clipboard} onSave={onSave} />;
+    }
+    const host = await render(<Host />);
+    await edit(host, "My edit");
+    await act(async () => refresh({ ...profile, about: "Other device biography" }));
+    expect(host.querySelector<HTMLInputElement>("#profile-display-name")!.value).toBe("My edit");
+    await click(button(host, "Done"));
+    expect(onSave.mock.calls).toHaveLength(1);
+    const request = onSave.mock.calls[0]![0];
+    expect(request).toMatchObject({ expectedPubkey: profile.pubkey, displayName: "My edit" });
+    expect(request).not.toHaveProperty("about");
+  });
+
+  it("lets a newer host read replace the canonical local save snapshot", async () => {
+    let refresh!: (next: ProfilePresentation) => void;
+    const onSave = vi.fn(async () => ({ ...profile, displayName: "Canonical edit" }));
+    function Host() {
+      const [current, setCurrent] = useState(profile);
+      refresh = setCurrent;
+      return <ProfileSettingsCard locale="en" profile={current} onCopy={clipboard} onSave={onSave} />;
+    }
+    const host = await render(<Host />);
+    await edit(host, "My edit");
+    await click(button(host, "Done"));
+    expect(host.textContent).toContain("Canonical edit");
+    await act(async () => refresh({ ...profile, displayName: "Newer canonical read" }));
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe("Newer canonical read");
+    expect(host.textContent).not.toContain("Canonical edit");
+  });
+
+  it("does not overwrite a newer host profile with a delayed older save readback", async () => {
+    let refresh!: (next: ProfilePresentation) => void;
+    let finish!: (next: ProfilePresentation) => void;
+    const onSave = vi.fn(() => new Promise<ProfilePresentation>((resolve) => { finish = resolve; }));
+    function Host() {
+      const [current, setCurrent] = useState(profile);
+      refresh = setCurrent;
+      return <ProfileSettingsCard locale="en" profile={current} onCopy={clipboard} onSave={onSave} />;
+    }
+    const host = await render(<Host />);
+    await edit(host, "My edit");
+    await click(button(host, "Done"));
+    await act(async () => refresh({ ...profile, displayName: "Newer read", about: "Latest biography" }));
+    await act(async () => finish({ ...profile, displayName: "Older save" }));
+    await settle();
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe("Newer read");
+    expect(host.querySelector('[data-testid="profile-about-value"]')?.textContent).toBe("Latest biography");
+  });
+
   it.each(["en", "zh-CN"] as const)("keeps original clipboard feedback for synchronous and asynchronous failures (%s)", async (locale) => {
     copyFeedback.success.mockClear();
     copyFeedback.error.mockClear();

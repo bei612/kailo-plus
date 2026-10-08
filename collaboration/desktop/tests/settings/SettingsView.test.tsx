@@ -14,7 +14,8 @@ import type { SettingsPanelProps, SettingsSection } from "../../src/features/set
 const state = vi.hoisted(() => ({ save: vi.fn(), read: vi.fn() }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => "test" }));
 vi.mock("@/features/profile/hooks", () => ({ useProfileQuery: () => ({ data: state.read(), isPending: false, isError: false }), useUpdateProfileMutation: () => ({ mutateAsync: state.save }) }));
-vi.mock("@/features/platform/activeCommunity", () => ({ useActiveCommunity: () => ({ relayUrl: "wss://community.example" }) }));
+vi.mock("@/features/platform/activeCommunity", () => ({ useActiveCommunity: () => ({ id: "community.example", relayUrl: "wss://community.example" }),
+  useNativeSession: () => ({ client, devicePubkey: profile.pubkey }) }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ isDark: false }) }));
 vi.mock("@/shared/api/tauriProfiles", () => ({ uploadProfileAvatar: vi.fn() }));
 vi.mock("@/shared/lib/mediaUrl", () => ({ rewriteRelayUrl: (url: string) => url }));

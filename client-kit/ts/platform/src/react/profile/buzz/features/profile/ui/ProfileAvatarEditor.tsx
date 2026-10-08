@@ -705,11 +705,12 @@ export function ProfileAvatarEditor({
                       ) : isImageDropActive ? (
                         t("platform.profile.drop")
                       ) : isOnboardingModal ? (
-                        t("platform.profile.browse")
+                        t("platform.profile.avatar.dragOrBrowse")
                       ) : (
                         <>
+                          {t("platform.profile.avatar.dropOr")}
                           <span className="underline underline-offset-2">
-                            {t("platform.profile.browse")}
+                            {t("platform.profile.avatar.browseFile")}
                           </span>
                         </>
                       )}
@@ -760,8 +761,8 @@ export function ProfileAvatarEditor({
                       }}
                       placeholder={
                         isOnboardingModal
-                          ? t("platform.profile.avatarUrl")
-                          : t("platform.profile.avatarUrl")
+                          ? t("platform.profile.avatar.pasteUrl")
+                          : t("platform.profile.avatar.pasteUrlDefault")
                       }
                       spellCheck={false}
                       type="url"

@@ -33,6 +33,7 @@ export function ProfileAvatarModeTabs({
   const isOnboardingInline = presentation === "onboarding-inline";
   const tabs = isOnboardingInline ? (
     <SegmentedControl
+      className="w-full bg-muted"
       disabled={disabled}
       indicatorTestId="onboarding-avatar-mode-indicator"
       legend={t("platform.profile.avatar.avatarType")}

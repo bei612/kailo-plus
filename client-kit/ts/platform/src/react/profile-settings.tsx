@@ -115,7 +115,15 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
 }) {
   const shouldReduceMotion = useReducedMotion();
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
-  const [profile, setProfile] = React.useState(initialProfile);
+  // The original card reads profileQuery.data on every render. A canonical
+  // save can update the view before the host refetches, but must not pin that
+  // snapshot over a newer host read (for example another device's avatar).
+  const [savedProfile, setSavedProfile] = React.useState<{
+    source: ProfilePresentation; value: ProfilePresentation;
+  } | null>(null);
+  const profile = savedProfile?.source === initialProfile ? savedProfile.value : initialProfile;
+  const currentSource = React.useRef(initialProfile);
+  currentSource.current = initialProfile;
   const [busy, setBusy] = React.useState(false);
   const [writeState, setWriteState] = React.useState<"idle" | "saved" | "failed" | "unknown">("idle");
   const intent = React.useRef<WebProfileUpdateRequest | null>(null);
@@ -127,6 +135,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
   const currentDisplayName = profile?.displayName ?? "";
   const currentAvatarUrl = profile?.avatarUrl ?? "";
   const currentAbout = profile?.about ?? "";
+  const metadataSource = React.useRef({ displayName: currentDisplayName, about: currentAbout });
   const [displayNameDraft, setDisplayNameDraft] = React.useState("");
   const [avatarUrlDraft, setAvatarUrlDraft] = React.useState("");
   const [aboutDraft, setAboutDraft] = React.useState("");
@@ -163,22 +172,19 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
   isEditingProfileMetadataRef.current = isEditingProfileMetadata;
 
   React.useEffect(() => {
-    if (!isEditingProfileMetadataRef.current) {
-      setDisplayNameDraft(currentDisplayName);
-    }
-  }, [currentDisplayName]);
+    const previous = metadataSource.current;
+    metadataSource.current = { displayName: currentDisplayName, about: currentAbout };
+    // Refresh untouched fields while keeping the user's actual draft. Merely
+    // receiving another device's update must not create an overwrite intent.
+    setDisplayNameDraft((draft) => !isEditingProfileMetadataRef.current || draft === previous.displayName ? currentDisplayName : draft);
+    setAboutDraft((draft) => !isEditingProfileMetadataRef.current || draft === previous.about ? currentAbout : draft);
+  }, [currentDisplayName, currentAbout]);
 
   React.useEffect(() => {
     if (!isAvatarEditorOpen) {
       setAvatarUrlDraft(currentAvatarUrl);
     }
   }, [currentAvatarUrl, isAvatarEditorOpen]);
-
-  React.useEffect(() => {
-    if (!isEditingProfileMetadataRef.current) {
-      setAboutDraft(currentAbout);
-    }
-  }, [currentAbout]);
 
   React.useEffect(() => {
     if (
@@ -382,10 +388,11 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
       const actual = await onSave(request);
       if (!mounted.current) return false;
       if (actual.pubkey !== initialProfile.pubkey) throw new TransportError("Profile identity changed before readback");
-      setProfile(actual);
-      setDisplayNameDraft(actual.displayName ?? "");
-      setAboutDraft(actual.about ?? "");
-      setAvatarUrlDraft(actual.avatarUrl ?? "");
+      setSavedProfile({ source: initialProfile, value: actual });
+      const visible = currentSource.current === initialProfile ? actual : currentSource.current;
+      setDisplayNameDraft(visible.displayName ?? "");
+      setAboutDraft(visible.about ?? "");
+      setAvatarUrlDraft(visible.avatarUrl ?? "");
       setIsEditingProfileMetadata(false);
       intent.current = null;
       setWriteState("saved");

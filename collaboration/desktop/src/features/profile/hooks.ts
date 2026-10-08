@@ -16,7 +16,6 @@ import type {
   UserProfileSummary,
   UsersBatchResponse,
 } from "@/shared/api/types";
-import { useIdentityQuery } from "@/shared/api/hooks";
 import { getAvatarSnapshotUrl } from "@/shared/lib/animatedAvatar";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import {
@@ -32,31 +31,33 @@ import {
   resolveUserLabelPlaceholderData,
   writeCachedUserLabels,
 } from "@/features/profile/lib/userLabelStorage";
-import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { useActiveCommunity, useNativeSession } from "@/features/platform/activeCommunity";
 
-export const profileQueryKey = ["profile"] as const;
+const profileQueryKey = (community: { id: string; relayUrl: string }, pubkey: string) =>
+  ["profile", community.id, community.relayUrl, pubkey] as const;
 
 /** Restored original native writer; cache only a canonical, same-scope receipt. */
 export function useUpdateProfileMutation() {
   const community = useActiveCommunity();
-  const identity = useIdentityQuery();
+  const session = useNativeSession();
   const queryClient = useQueryClient();
-  const scope = `${community.relayUrl}:${identity.data?.pubkey ?? ""}`;
-  const live = React.useRef(scope);
-  live.current = scope;
-  React.useEffect(() => () => { live.current = ""; }, []);
+  const pubkey = session.devicePubkey;
+  const key = React.useMemo(() => profileQueryKey(community, pubkey), [community.id, community.relayUrl, pubkey]);
+  const owner = React.useMemo(() => ({ active: true }), [session.client, key]);
+  const live = React.useRef(owner);
+  live.current = owner;
+  React.useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
   return useMutation({
     mutationFn: async (request: WebProfileUpdateRequest) => {
-      const pubkey = identity.data?.pubkey;
       if (!pubkey) throw new Error("Profile identity unavailable");
       if (request.expectedPubkey !== pubkey) throw new Error("Profile identity changed before save");
-      await queryClient.cancelQueries({ queryKey: profileQueryKey });
-      if (live.current !== scope) throw new Error("Profile identity changed before save");
+      await queryClient.cancelQueries({ queryKey: key });
+      if (!owner.active || live.current !== owner) throw new Error("Profile identity changed before save");
       const profile = await updateProfile({ ...request, expectedRelayUrl: community.relayUrl, expectedSignerPubkey: pubkey });
-      if (live.current !== scope || profile.pubkey !== pubkey) throw new TransportError("Profile identity changed before readback");
-      await queryClient.cancelQueries({ queryKey: profileQueryKey });
-      if (live.current !== scope) throw new TransportError("Profile identity changed before readback");
-      queryClient.setQueryData(profileQueryKey, profile);
+      if (!owner.active || live.current !== owner || profile.pubkey !== pubkey) throw new TransportError("Profile identity changed before readback");
+      await queryClient.cancelQueries({ queryKey: key });
+      if (!owner.active || live.current !== owner) throw new TransportError("Profile identity changed before readback");
+      queryClient.setQueryData(key, profile);
       void persistSelfProfile(community.relayUrl, pubkey, profile);
       evictUsersBatchEntries(queryClient, [pubkey]);
       void queryClient.invalidateQueries({ queryKey: ["user-profile", pubkey] });
@@ -103,10 +104,15 @@ async function persistSelfProfile(
 
 export function useProfileQuery(enabled = true) {
   const activeCommunity = useActiveCommunity();
-  const identityQuery = useIdentityQuery();
+  const session = useNativeSession();
   const queryClient = useQueryClient();
   const relayUrl = activeCommunity.relayUrl;
-  const pubkey = identityQuery.data?.pubkey ?? "";
+  const pubkey = session.devicePubkey;
+  const key = React.useMemo(() => profileQueryKey(activeCommunity, pubkey), [activeCommunity.id, relayUrl, pubkey]);
+  const owner = React.useMemo(() => ({ active: true }), [session.client, key]);
+  const live = React.useRef(owner);
+  live.current = owner;
+  React.useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
 
   // Parse localStorage once per relayUrl/pubkey pair — not on every render.
   // Cached identity renders instantly and persists through fetch errors (relay
@@ -142,12 +148,12 @@ export function useProfileQuery(enabled = true) {
   // imperatively once they arrive, without ever stomping a real fetch result.
   React.useEffect(() => {
     if (!initialData || !cached) return;
-    if (queryClient.getQueryData(profileQueryKey) === undefined) {
-      queryClient.setQueryData(profileQueryKey, initialData, {
+    if (queryClient.getQueryData(key) === undefined) {
+      queryClient.setQueryData(key, initialData, {
         updatedAt: cached.updatedAt,
       });
     }
-  }, [queryClient, initialData, cached]);
+  }, [queryClient, key, initialData, cached]);
 
   const seedOptions =
     initialData !== undefined
@@ -155,10 +161,12 @@ export function useProfileQuery(enabled = true) {
       : {};
 
   return useQuery({
-    enabled,
-    queryKey: profileQueryKey,
+    enabled: enabled && !!pubkey,
+    queryKey: key,
     queryFn: async () => {
       const profile = await getProfile();
+      if (!owner.active || live.current !== owner || profile.pubkey !== pubkey)
+        throw new TransportError("Profile identity changed during read");
       if (relayUrl && pubkey) {
         void persistSelfProfile(relayUrl, pubkey, profile);
       }
@@ -177,49 +185,30 @@ export function useProfileQuery(enabled = true) {
  */
 export function useSelfProfileCache(): SelfProfileCache | null {
   const activeCommunity = useActiveCommunity();
-  const identityQuery = useIdentityQuery();
+  const session = useNativeSession();
   const relayUrl = activeCommunity.relayUrl;
-  const pubkey = identityQuery.data?.pubkey ?? "";
+  const pubkey = session.devicePubkey;
 
-  const [cache, setCache] = React.useState<SelfProfileCache | null>(() =>
-    relayUrl && pubkey ? readSelfProfileCache(relayUrl, pubkey) : null,
-  );
-
-  // Track whether this is the initial mount so we can skip re-reading the same
-  // localStorage value the useState initializer already parsed.
-  const isFirstRun = React.useRef(true);
+  const source = React.useMemo(() => ({
+    value: relayUrl && pubkey ? readSelfProfileCache(relayUrl, pubkey) : null,
+  }), [relayUrl, pubkey]);
+  const [cache, setCache] = React.useState(() => ({ source, value: source.value }));
 
   React.useEffect(() => {
-    // Skip the redundant read only on the very first run — it sees the same
-    // relayUrl/pubkey the useState initializer already parsed. Consume the
-    // flag before the guard below: if the first run bails out (e.g. identity
-    // still resolving), the run that later receives the values must read.
-    // Accepted: a sub-millisecond unsubscribed window on mount. It is
-    // self-healing — the next SELF_PROFILE_CACHE_EVENT or dep change re-syncs;
-    // with the no-op write skip the event only fires on real changes.
-    const firstRun = isFirstRun.current;
-    isFirstRun.current = false;
-
-    if (!relayUrl || !pubkey) {
-      setCache(null);
-      return;
-    }
-
-    if (!firstRun) {
-      setCache(readSelfProfileCache(relayUrl, pubkey));
-    }
-
     function handleCacheEvent() {
-      setCache(readSelfProfileCache(relayUrl, pubkey));
+      setCache({ source, value: relayUrl && pubkey ? readSelfProfileCache(relayUrl, pubkey) : null });
     }
 
+    handleCacheEvent();
     window.addEventListener(SELF_PROFILE_CACHE_EVENT, handleCacheEvent);
     return () => {
       window.removeEventListener(SELF_PROFILE_CACHE_EVENT, handleCacheEvent);
     };
-  }, [relayUrl, pubkey]);
+  }, [source, relayUrl, pubkey]);
 
-  return cache;
+  // Effects run after the first render for a new identity. Never expose the
+  // previous identity's avatar snapshot in that render (or from its late event).
+  return cache.source === source ? cache.value : source.value;
 }
 
 export function useUserProfileQuery(pubkey?: string, sessionScope?: string) {

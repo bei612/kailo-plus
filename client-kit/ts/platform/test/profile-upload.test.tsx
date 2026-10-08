@@ -1,12 +1,20 @@
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Toaster, toast } from "sonner";
 import { beginAvatarPresentation, getAvatarPresentation, resetAvatarPresentations } from "../src/react/profile/buzz/features/profile/avatarPresentationStore";
 import { AvatarHostProvider } from "../src/react/profile/avatar-host";
 import { useAvatarUpload } from "../src/react/profile/buzz/features/profile/useAvatarUpload";
 import { ProfileAvatar } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatar";
+import { ProfileAvatarEditor } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatarEditor";
+import { EmojiBurstProvider } from "../src/react/profile/buzz/shared/ui/EmojiBurstProvider";
 import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
 import { render, settle } from "./render";
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+});
+afterEach(() => vi.unstubAllGlobals());
 
 function OriginalUpload({ saved }: { saved: (url: string) => void }) {
   const upload = useAvatarUpload({ onUploadSuccess: saved });
@@ -26,6 +34,35 @@ async function select(host: HTMLElement) {
 }
 
 describe("original avatar upload consumes its captured host uploader", () => {
+  it.each([
+    ["en", "default", "Drop or browse", "browse", "Paste a URL (Slack profile, etc.)"],
+    ["zh-CN", "default", "拖入图片或浏览文件", "浏览文件", "粘贴链接（如 Slack 头像）"],
+    ["en", "onboarding-modal", "Drag or browse", null, "Paste a URL"],
+    ["zh-CN", "onboarding-modal", "拖入图片或浏览文件", null, "粘贴链接"],
+  ] as const)("keeps the original %s %s upload caption, underline and URL hint", async (locale, presentation, caption, underlined, placeholder) => {
+    const host = await render(<AvatarHostProvider value={{ locale, rewriteMediaUrl: (url) => url,
+      uploadMediaBytes: async () => { throw new Error("No upload in caption check"); }, performDefaultHaptic: () => {} }}><EmojiBurstProvider>
+      <ProfileAvatarEditor avatarUrl="" previewName="Original" onUrlChange={() => {}} presentation={presentation} />
+    </EmojiBurstProvider></AvatarHostProvider>);
+    const browse = host.querySelector('[data-testid="profile-avatar-upload"]')!;
+    expect(browse.textContent).toBe(caption);
+    expect(browse.querySelector(".underline")?.textContent ?? null).toBe(underlined);
+    expect(host.querySelector<HTMLInputElement>('[data-testid="profile-avatar-url"]')!.placeholder).toBe(placeholder);
+  });
+
+  it("keeps the original inline onboarding mode control full width and opaque muted surface", async () => {
+    const host = await render(<AvatarHostProvider value={{ locale: "en", rewriteMediaUrl: (url) => url,
+      uploadMediaBytes: async () => { throw new Error("No upload in mode check"); }, performDefaultHaptic: () => {} }}><EmojiBurstProvider>
+      <ProfileAvatarEditor avatarUrl="" previewName="Original" onUrlChange={() => {}} presentation="onboarding-inline" />
+    </EmojiBurstProvider></AvatarHostProvider>);
+    const modes = host.querySelector('[data-testid="onboarding-avatar-mode-control"]')!;
+    expect(modes.classList.contains("w-full")).toBe(true);
+    expect(modes.classList.contains("w-60")).toBe(false);
+    expect(modes.classList.contains("bg-muted")).toBe(true);
+    expect(modes.classList.contains("bg-muted/45")).toBe(false);
+    expect(modes.textContent).toBe("Avatar typeImageEmojiAnimated");
+  });
+
   it.each([
     ["zh-CN", "头像未能完成上传", "现显示默认头像。", "重试"],
     ["en", "Avatar couldn’t finish uploading", "Your default avatar is showing instead.", "Try again"],
