@@ -4,7 +4,7 @@ import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard,
 import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import { publishMessage } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
@@ -13,7 +13,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
@@ -23,6 +23,13 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   isFocusMode?: boolean;
   channelName?: string;
   mentions?: readonly MessageMention[];
+  editTarget?: TimelineMessage | null;
+  editAuthorPubkey?: string;
+  editBusy?: boolean;
+  onEdit?: (message: TimelineMessage) => boolean | void;
+  onCancelEdit?: () => void;
+  onEditConfirmed?: (message: TimelineMessage) => void;
+  onEditSendingChange?: (sending: boolean) => void;
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -43,7 +50,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   }, [denied, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
   const rows = useMemo(() => messages.map((event): TimelineMessage => {
     const edge = getThreadReference(event.tags);
-    return {id: event.id, pubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
+    return {id: event.id, pubkey: event.pubkey, signerPubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
       author: members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey),
       body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0, reactions:messageReactions.reactions.get(event.id),
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
@@ -64,10 +71,44 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.();
   }, [unavailable, interrupted, onAuthorScopeUnavailable]);
+  useEffect(() => {
+    if ((unavailable || interrupted || disabled) && editTarget) onCancelEdit?.();
+  }, [unavailable, interrupted, disabled, editTarget, onCancelEdit]);
   const loading = thread.isPending || thread.hasNextPage || thread.isFetchingNextPage;
   const canReply = !disabled && !unavailable && !interrupted && !loading &&
     rows.some((row) => row.id === replyId) &&
     members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
+  const canEdit =
+    canReply &&
+    Boolean(editAuthorPubkey) &&
+    members.some(
+      (member) =>
+        member.principalId === principalId &&
+        member.state === WorkspaceMembershipState.Active &&
+        member.pubkeys.includes(editAuthorPubkey!),
+    );
+  const canSaveEdit = Boolean(
+    editTarget &&
+      canEdit &&
+      rows.some(
+        (row) =>
+          row.id === editTarget.id && row.kind === 9 && row.signerPubkey === editAuthorPubkey,
+      ),
+  );
+  const handleSendingChange = useCallback(
+    (sending: boolean) => {
+      setIsSending(sending);
+      if (editTarget) onEditSendingChange?.(sending);
+    },
+    [editTarget, onEditSendingChange],
+  );
+  const handleSelectReplyTarget = useCallback(
+    (message: TimelineMessage) => {
+      setReplyId((current) => (current === message.id ? rootId : message.id));
+      onCancelEdit?.();
+    },
+    [onCancelEdit, rootId],
+  );
   const panelLayout = {...getThreadPanelLayout({isFocusDrawer:isFocusMode,isSinglePanelView:false,useSplitAuxiliaryPane:false}), onClose, widthPx: width.widthPx,
     onResizeStart: width.onResizeStart, onResetWidth: width.onResetWidth, canResetWidth: width.canReset};
   if (denied || !data.threadHead) {
@@ -81,7 +122,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
     replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
     onScrollTargetResolved={() => setScrollTargetId(null)} onCancelReply={() => setReplyId(rootId)}
-    onSelectReplyTarget={(message) => setReplyId(message.id)}
+    onSelectReplyTarget={handleSelectReplyTarget}
     onExpandReplies={(message) => setExpanded((prior) => {const next = new Set(prior); if (!next.delete(message.id)) next.add(message.id); return next;})}
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
@@ -98,17 +139,23 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
-        onReply={canReply ? (message) => setReplyId(message.id) : undefined} />} />}
-    renderComposer={(composer) => <Composer key={replyId} workspaceId={workspaceId} draftIdentity={principalId}
+        onEdit={canEdit && !editBusy && onEdit && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey
+          ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
+        onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
+    renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={workspaceId} draftIdentity={principalId}
+      editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}
+      onConfirmed={editTarget ? () => onEditConfirmed?.(editTarget) : undefined}
       mentionPeople={mentionPeopleFromMembers(members)}
-      draftKey={`thread:${workspaceId}:${rootId}:${replyId}`} disabled={composer.disabled} onSendingChange={setIsSending}
+      draftKey={editTarget ? `edit:${workspaceId}:${editTarget.id}` : `thread:${workspaceId}:${rootId}:${replyId}`}
+      draftChannelId={workspaceId} disabled={composer.disabled || Boolean(editTarget && !canSaveEdit)}
+      onSendingChange={handleSendingChange}
       containerClassName={composer.containerClassName} layoutMode="dock"
-      replyTarget={composer.replyTarget} onCancelReply={composer.onCancelReply}
+      replyTarget={editTarget ? null : composer.replyTarget} onCancelReply={editTarget ? undefined : composer.onCancelReply}
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}
       onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
-        if (!canReply) throw new Error("Thread admission is unavailable");
+        if (!canReply || (editTarget && !canSaveEdit)) throw new Error("Thread admission is unavailable");
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-          {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys});
+          editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys});
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}

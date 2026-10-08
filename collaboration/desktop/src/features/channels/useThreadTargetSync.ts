@@ -11,6 +11,9 @@ import type { TimelineMessage } from "@/features/messages/types";
  */
 export function useThreadTargetSync({
   clearOptimisticThreadOverride,
+  editTarget,
+  editTargetMessage,
+  clearEditTarget,
   isTimelineLoading,
   openThreadHeadId,
   openThreadHeadMessage,
@@ -22,6 +25,9 @@ export function useThreadTargetSync({
   threadReplyTargetMessage,
 }: {
   clearOptimisticThreadOverride: () => void;
+  editTarget: TimelineMessage | null;
+  editTargetMessage: TimelineMessage | null;
+  clearEditTarget: () => void;
   isTimelineLoading: boolean;
   openThreadHeadId: string | null;
   openThreadHeadMessage: TimelineMessage | null;
@@ -52,8 +58,12 @@ export function useThreadTargetSync({
     if (threadReplyTargetId && !threadReplyTargetMessage) {
       setThreadReplyTargetId(openThreadHeadMessage?.id ?? null);
     }
+    if (editTarget && !editTargetMessage && !isTimelineLoading) clearEditTarget();
   }, [
     clearOptimisticThreadOverride,
+    editTarget,
+    editTargetMessage,
+    clearEditTarget,
     isTimelineLoading,
     openThreadHeadId,
     openThreadHeadMessage,

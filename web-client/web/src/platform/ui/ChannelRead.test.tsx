@@ -205,6 +205,7 @@ it("keeps snapshot and delayed history chronological, deduplicated and stable wi
     .toEqual([early.id, "late-arrival", latest.id, sameSecond.id]);
 });
 beforeEach(() => {
+  threadMessages.splice(0, threadMessages.length, { ...event(10), createdAt: 10 });
   // Virtua ignores ResizeObserver samples from display:none/detached rows.
   // jsdom has no layout and reports offsetParent=null even for our mounted
   // 800px viewport, so supply the same visible-parent fact as the browser.
@@ -265,6 +266,231 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+});
+
+it.each(["confirmed", "missing-receipt", "unknown", "denied"])(
+  "restores the original owned thread editor, leaving guard and real BFF edit receipt: %s",
+  async (outcome) => {
+    state.members.mockResolvedValue([
+      { principalId: "human-a", displayName: "Me", pubkeys: ["mine"], state: "ACTIVE" },
+    ]);
+    const reply = {
+      ...event(20),
+      pubkey: "mine",
+      content: "Original reply",
+      tags: [
+        ["h", "channel-a"],
+        ["e", "event-10", "", "root"],
+        ["e", "event-10", "", "reply"],
+      ],
+    };
+    threadMessages.splice(
+      0,
+      threadMessages.length,
+      { ...event(10), createdAt: 10 },
+      { ...reply, createdAt: 20 },
+    );
+    if (outcome === "missing-receipt")
+      state.publish.mockResolvedValue({ operationId: "operation" });
+    else if (outcome === "unknown")
+      state.publish.mockRejectedValue(new TransportError("lost edit receipt"));
+    else if (outcome === "denied")
+      state.publish.mockRejectedValue(new BffError(403, "edit revoked"));
+    await open();
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click(),
+    );
+    await flush();
+    const panel = () => host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!;
+    const menu = panel().querySelector<HTMLButtonElement>('[data-testid="more-actions-event-20"]');
+    expect(menu).not.toBeNull();
+    await act(async () =>
+      menu!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    await flush();
+    const edit = document.querySelector<HTMLElement>('[data-testid="edit-message-event-20"]');
+    expect(edit).not.toBeNull();
+    await act(async () => edit!.click());
+    await flush();
+    expect(panel().textContent).toContain("Editing message");
+    expect(panel().querySelector('[data-testid="message-input"]')?.textContent).toContain(
+      "Original reply",
+    );
+    await act(async () =>
+      panel().querySelector<HTMLButtonElement>('[data-testid="auxiliary-panel-close"]')!.click(),
+    );
+    await flush();
+    expect(panel()).not.toBeNull();
+    await act(async () => {
+      const input = panel().querySelector<HTMLElement>('[data-testid="message-input"]')!;
+      const paragraph = document.createElement("p");
+      paragraph.textContent = "Updated reply";
+      input.replaceChildren(paragraph);
+      input.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertText", data: "Updated reply" }),
+      );
+    });
+    await flush();
+    await act(async () =>
+      panel().querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click(),
+    );
+    await flush();
+    expect(state.publish).toHaveBeenCalledExactlyOnceWith(
+      "workspace-a",
+      "Updated reply",
+      [],
+      expect.any(String),
+      [],
+      { editEventId: reply.id, mentionPubkeys: [] },
+    );
+    if (outcome === "confirmed") {
+      expect(panel().textContent).not.toContain("Editing message");
+      await act(async () =>
+        panel().querySelector<HTMLButtonElement>('[data-testid="auxiliary-panel-close"]')!.click(),
+      );
+      await flush();
+      expect(panel()).toBeNull();
+    } else {
+      expect(panel().textContent).toContain("Editing message");
+      expect(panel().querySelector('[data-testid="message-input"]')?.textContent).toContain(
+        "Updated reply",
+      );
+      await act(async () =>
+        panel().querySelector<HTMLButtonElement>('[data-testid="auxiliary-panel-close"]')!.click(),
+      );
+      await flush();
+      expect(panel()).not.toBeNull();
+      await act(async () =>
+        panel().querySelector<HTMLButtonElement>('[aria-label="Cancel edit"]')!.click(),
+      );
+      await flush();
+      await act(async () =>
+        panel().querySelector<HTMLButtonElement>('[data-testid="auxiliary-panel-close"]')!.click(),
+      );
+      await flush();
+      expect(panel()).toBeNull();
+    }
+  },
+);
+it("the original thread row Reply leaves editing and publishes to the selected reply, not the edit target", async () => {
+	state.members.mockResolvedValue([
+		{
+			principalId: "human-a",
+			displayName: "Me",
+			pubkeys: ["mine"],
+			state: "ACTIVE",
+		},
+	]);
+	const reply = {
+		...event(20),
+		pubkey: "mine",
+		content: "Original reply",
+		tags: [
+			["h", "channel-a"],
+			["e", "event-10", "", "root"],
+			["e", "event-10", "", "reply"],
+		],
+	};
+  threadMessages.splice(
+    0,
+    threadMessages.length,
+    { ...event(10), createdAt: 10 },
+    { ...reply, createdAt: 20 },
+  );
+	await open();
+	await act(async () =>
+		host
+			.querySelector<HTMLButtonElement>(
+				'[data-testid="reply-message-event-10"]',
+			)!
+			.click(),
+	);
+	await flush();
+	const panel = () =>
+		host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!;
+	await act(async () =>
+		panel()
+			.querySelector<HTMLButtonElement>(
+				'[data-testid="more-actions-event-20"]',
+			)!
+			.dispatchEvent(
+				new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+			),
+	);
+	await flush();
+	await act(async () =>
+		document
+			.querySelector<HTMLElement>('[data-testid="edit-message-event-20"]')!
+			.click(),
+	);
+	await flush();
+	expect(panel().textContent).toContain("Editing message");
+	expect(
+		panel().querySelector('[data-testid="message-input"]')?.textContent,
+	).toContain("Original reply");
+
+	await act(async () =>
+		panel()
+			.querySelector<HTMLButtonElement>(
+				'[data-testid="reply-message-event-20"]',
+			)!
+			.click(),
+	);
+	await flush();
+	expect(panel().textContent).not.toContain("Editing message");
+	expect(
+		panel().querySelector('[data-testid="message-input"]')?.textContent,
+	).not.toContain("Original reply");
+	expect(
+		panel().querySelector('[data-testid="reply-target"]')?.textContent,
+	).toContain("Original reply");
+	await act(async () =>
+		panel()
+			.querySelector<HTMLButtonElement>(
+				'[data-testid="reply-message-event-20"]',
+			)!
+			.click(),
+	);
+	await flush();
+	expect(panel().querySelector('[data-testid="reply-target"]')).toBeNull();
+	await act(async () =>
+		panel()
+			.querySelector<HTMLButtonElement>(
+				'[data-testid="reply-message-event-20"]',
+			)!
+			.click(),
+	);
+	await flush();
+	await act(async () => {
+		const input = panel().querySelector<HTMLElement>(
+			'[data-testid="message-input"]',
+		)!;
+		const paragraph = document.createElement("p");
+		paragraph.textContent = "Reply after editing";
+		input.replaceChildren(paragraph);
+		input.dispatchEvent(
+			new InputEvent("input", {
+				bubbles: true,
+				inputType: "insertText",
+				data: "Reply after editing",
+			}),
+		);
+	});
+	await flush();
+	await act(async () =>
+		panel()
+			.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!
+			.click(),
+	);
+	await flush();
+	expect(state.publish).toHaveBeenCalledExactlyOnceWith(
+		"workspace-a",
+		"Reply after editing",
+		[],
+		expect.any(String),
+		[],
+		{ messageType: "STREAM", parentEventId: reply.id, mentionPubkeys: [] },
+	);
 });
 afterEach(async () => {
   await act(async () => root.unmount());

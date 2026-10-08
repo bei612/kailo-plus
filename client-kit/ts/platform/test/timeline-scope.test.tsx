@@ -5,6 +5,8 @@ import type { TimelineMessage } from "../src/react/messages/types";
 import { render, click } from "./render";
 import { useAnchoredScroll } from "../src/react/messages/thread/useAnchoredScroll";
 import { getRouteMainTimelineTargetId, getThreadRouteTarget } from "../src/react/messages/thread/channelRouteTarget";
+import { useChannelMessageEdit } from "../src/react/messages/thread/useChannelMessageEdit";
+import { toast } from "sonner";
 
 const messages: TimelineMessage[] = [{ id: "message", author: "Alice", time: "", createdAt: 1, depth: 0, body: "Body" }];
 
@@ -81,4 +83,72 @@ it("retains the official root/reply/broadcast projection and refuses missing or 
   expect(getRouteMainTimelineTargetId(null,reply)).toBeNull();
   expect(getRouteMainTimelineTargetId(root.id,root)).toBe(root.id);
   expect(getRouteMainTimelineTargetId(reply.id,{...reply,tags:[["broadcast","1"]]})).toBe(reply.id);
+});
+
+it("preserves the original thread-edit leaving and cross-composer guards until save or cancel", async () => {
+  const info = vi.spyOn(toast, "info").mockImplementation(() => 0);
+  const rootMessage = { ...messages[0]!, id: "root" };
+  const reply = { ...rootMessage, id: "reply", tags: [["e", "root", "", "reply"]] };
+  function EditHost() {
+    const edit = useChannelMessageEdit("identity/channel");
+    const [opened, setOpened] = useState(false);
+    return (
+      <>
+        <button onClick={() => edit.handleEdit(reply)}>Edit reply</button>
+        <button onClick={() => edit.handleEdit(rootMessage)}>Edit root</button>
+        <button
+          onClick={() => {
+            if (edit.requireThreadEditResolution()) {
+              edit.handleCancelEdit();
+              setOpened(true);
+            }
+          }}
+        >
+          Open target
+        </button>
+        <button onClick={edit.handleCancelEdit}>Cancel edit</button>
+        <output>
+          {edit.editTarget?.id ?? "none"}/{opened ? "opened" : "closed"}
+        </output>
+      </>
+    );
+  }
+  const host = await render(<EditHost />);
+  const buttons = host.querySelectorAll("button");
+  await click(buttons[0]!);
+  await click(buttons[2]!);
+  expect(host.querySelector("output")?.textContent).toBe("reply/closed");
+  await click(buttons[1]!);
+  expect(host.querySelector("output")?.textContent).toBe("reply/closed");
+  expect(info).toHaveBeenCalledTimes(2);
+  await click(buttons[3]!);
+  await click(buttons[2]!);
+  expect(host.querySelector("output")?.textContent).toBe("none/opened");
+  info.mockRestore();
+});
+
+it("fences old-owner edit completion and clears the original edit selection on identity or channel change", async () => {
+  let previousOwnerCancel: (() => void) | undefined;
+  function EditHost() {
+    const [scope, setScope] = useState("first");
+    const edit = useChannelMessageEdit(scope);
+    if (!previousOwnerCancel) previousOwnerCancel = edit.handleCancelEdit;
+    return (
+      <>
+        <button onClick={() => edit.handleEdit({ ...messages[0]!, id: scope })}>Edit</button>
+        <button onClick={() => setScope("second")}>Switch owner</button>
+        <button onClick={() => previousOwnerCancel!()}>Old completion</button>
+        <output>{edit.editTarget?.id ?? "none"}</output>
+      </>
+    );
+  }
+  const host = await render(<EditHost />),
+    buttons = host.querySelectorAll("button");
+  await click(buttons[0]!);
+  expect(host.querySelector("output")?.textContent).toBe("first");
+  await click(buttons[1]!);
+  expect(host.querySelector("output")?.textContent).toBe("none");
+  await click(buttons[0]!);
+  await click(buttons[2]!);
+  expect(host.querySelector("output")?.textContent).toBe("second");
 });

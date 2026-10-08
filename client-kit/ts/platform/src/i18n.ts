@@ -798,6 +798,8 @@ export const platformMessages = {
   "buzz.editMessage": { en: "Edit message", "zh-CN": "编辑消息" },
   "buzz.editingMessage": { en: "Editing message", "zh-CN": "正在编辑消息" },
   "buzz.cancelEdit": { en: "Cancel edit", "zh-CN": "取消编辑" },
+  "buzz.finishThreadEdit": { en: "Finish or cancel your edit before leaving the thread.", "zh-CN": "请先完成或取消编辑，再离开此线程。" },
+  "buzz.finishEdit": { en: "Finish or cancel your edit first.", "zh-CN": "请先完成或取消当前编辑。" },
   "platform.linkChannelUnavailable": { en: "This channel is unavailable or you are not a member.", "zh-CN": "该频道不可用，或你不是频道成员。" },
   "platform.linkMessageOutsideHistory": { en: "The linked message is not in the current channel history.", "zh-CN": "当前频道历史中没有该链接指向的消息。" },
   "platform.linkOpenFromChannel": { en: "Open this message from its channel.", "zh-CN": "请从所属频道打开这条消息。" },

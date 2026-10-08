@@ -44,8 +44,8 @@ import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
 import { useMessageReactions } from "./useMessageReactions";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
-import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId } from "@client-kit/platform/react/thread";
-import { isBroadcastReply } from "@client-kit/platform/react/messages/threading";
+import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId, useChannelMessageEdit } from "@client-kit/platform/react/thread";
+import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
@@ -135,7 +135,10 @@ export function ChannelPane({
     return applyMessageEdits(rawEvents.filter(event => (CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !deleted.has(event.id)), rawEvents.filter(event => !deleted.has(event.id)));
   }, [rawEvents]);
   const ownProfile = useQuery({ queryKey: ["platform", "edit-author", myPrincipalId], queryFn: () => bff.profile() });
-  const [editTarget, setEditTarget] = useState<TimelineMessage | null>(null);
+  const {editTarget, setEditTarget, handleEdit, handleCancelEdit, requireThreadEditResolution} =
+    useChannelMessageEdit<TimelineMessage>(JSON.stringify([myPrincipalId, conversation?.id ?? workspaceId]));
+  const mainEditTarget = editTarget && !isThreadReply(editTarget.tags ?? []) ? editTarget : null;
+  const threadEditTarget = editTarget && isThreadReply(editTarget.tags ?? []) ? editTarget : null;
   const [composerBusy, setComposerBusy] = useState(false);
   const restoredEdit = useRef(false);
   const timelineRef = useRef<MessageTimelineHandle>(null);
@@ -147,6 +150,43 @@ export function ChannelPane({
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
   const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
   const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); }, []);
+  const handleOpenAuthor = useCallback(
+    (message: TimelineMessage) => {
+      if (!requireThreadEditResolution()) return;
+      setProfileTarget(message);
+    },
+    [requireThreadEditResolution],
+  );
+  const handleOpenThread = useCallback(
+    (message: TimelineMessage) => {
+      if (!requireThreadEditResolution()) return;
+      handleCancelEdit();
+      setProfileTarget(null);
+      setSystemProfileTarget(null);
+      setReplyTarget(message);
+    },
+    [handleCancelEdit, requireThreadEditResolution],
+  );
+  const handleCloseThread = useCallback(() => {
+    if (requireThreadEditResolution()) setReplyTarget(null);
+  }, [requireThreadEditResolution]);
+  const handleRoutedEdit = useCallback(
+    (message: TimelineMessage) => {
+      if (!handleEdit(message)) return false;
+      if (!isThreadReply(message.tags ?? []) && focusThread) setReplyTarget(null);
+      return true;
+    },
+    [focusThread, handleEdit],
+  );
+  const handleEditConfirmed = useCallback(
+    (message: TimelineMessage) => {
+      setEditTarget((current) => (current?.id === message.id ? null : current));
+    },
+    [setEditTarget],
+  );
+  useEffect(() => {
+    if (denied || !live) handleCancelEdit();
+  }, [denied, live, handleCancelEdit]);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   const visible = useVisible();
@@ -219,22 +259,24 @@ export function ChannelPane({
   useEffect(() => {
     if (!targetMessageId) { handledRouteTarget.current = null; return; }
     const key = JSON.stringify([myPrincipalId, workspaceId, targetMessageId]);
-    if (handledRouteTarget.current === key || !routeContextReady || !routeTarget || composerBusy || editTarget) return;
+    if (handledRouteTarget.current === key || !routeContextReady || !routeTarget || composerBusy) return;
     if (routeTarget.parentId && (isBroadcastReply(routeTarget.tags ?? []) || !getThreadRouteTarget(routeTarget, routeMessageById))) return;
+    if (!requireThreadEditResolution()) return;
     // Original root and reply deep links open the existing reply panel. Its
     // exact selected event resolves ancestors and scrolls in the same read cache.
     setProfileTarget(null); setSystemProfileTarget(null); setReplyTarget(routeTarget);
+    handleCancelEdit();
     handledRouteTarget.current = key;
-  }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget]);
+  }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
   const SystemProfilePopover = useCallback(({pubkey, children, triggerAriaLabel}: {pubkey:string;children:ReactNode;triggerAriaLabel?:string}) => {
     const member = byPubkey.get(pubkey);
     if (conversation || !live || denied || !member || !("state" in member) || member.state !== "ACTIVE") return <>{children}</>;
     const target = {workspaceId, principalId:member.principalId, pubkey};
     return <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerAriaLabel={triggerAriaLabel ?? t("platform.settings.profile")}
-      onOpenProfile={() => {setProfileTarget(null);setSystemProfileTarget(target);}}
+      onOpenProfile={() => {if (!requireThreadEditResolution()) return;setProfileTarget(null);setSystemProfileTarget(target);}}
       renderBody={props=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
-  }, [byPubkey, conversation, live, denied, workspaceId]);
+  }, [byPubkey, conversation, live, denied, workspaceId, requireThreadEditResolution]);
   const selectedSystemMember = systemProfileTarget ? byPubkey.get(systemProfileTarget.pubkey) : undefined;
   const mentions: MessageMention[] = useMemo(() => (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
     let renderProfile: MessageMention["renderProfile"];
@@ -438,12 +480,12 @@ export function ChannelPane({
                 reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
                 renderIdentity={message.pubkey && live && !denied ? (node,kind) => <MessageAuthorIdentity
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
-                  onOpen={() => setProfileTarget(message)}>{kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
+                  onOpen={() => handleOpenAuthor(message)}>{kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
                     target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
                     accent={message.accent} className="shrink-0" displayName={message.author} testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
-                  onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
-                  onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setSystemProfileTarget(null);setReplyTarget(target);} : undefined}
+                  onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
+                  onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 content={message.body}
@@ -454,28 +496,28 @@ export function ChannelPane({
                 onOpenMessageLink={onOpenMessageLink}
               /></div>} />
               {entry.summary && !conversation ? <MessageThreadSummaryRow message={message} summary={entry.summary}
-                onOpenThread={(target) => { setProfileTarget(null); setReplyTarget(target); }} /> : null}
+                onOpenThread={handleOpenThread} /> : null}
             </div>;
           });
         }} />}
       /> : null}
       {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
-      {!denied && editTarget ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+      {!denied && mainEditTarget ? <Composer key={`edit:${mainEditTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
         mentionPeople={mentionPeople}
-        editTarget={editTarget} onCancelEdit={() => setEditTarget(null)} onConfirmed={() => setEditTarget(null)} draftIdentity={myPrincipalId}
-        draftKey={`edit:${workspaceId}:${editTarget.id}`} draftChannelId={workspaceId}
+        editTarget={mainEditTarget} onCancelEdit={handleCancelEdit} onConfirmed={() => handleEditConfirmed(mainEditTarget)} draftIdentity={myPrincipalId}
+        draftKey={`edit:${workspaceId}:${mainEditTarget.id}`} draftChannelId={workspaceId}
         autoSendDraftKey={autoSendDraftKey}
-        disabled={denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== editTarget.signerPubkey}
+        disabled={denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== mainEditTarget.signerPubkey}
         onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
         onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
         onMediaUrl={conversation ? (sha) => mediaUrl(conversation.id, sha, conversation.id) : undefined}
         onPublish={async (content, attachments, key, mentions, mentionPubkeys) => {
-          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, editTarget.id, undefined, mentionPubkeys)
-            : publishMessage(workspaceId, content, attachments, key, mentions, {editEventId: editTarget.id, mentionPubkeys}));
+          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, mainEditTarget.id, undefined, mentionPubkeys)
+            : publishMessage(workspaceId, content, attachments, key, mentions, {editEventId: mainEditTarget.id, mentionPubkeys}));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message edit has no confirmed receipt.");
           return receipt;
         }} /> : null}
-      <div hidden={editTarget !== null}>
+      <div hidden={mainEditTarget !== null}>
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
@@ -495,15 +537,18 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    {!conversation && replyTarget ? <div className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={() => setReplyTarget(null)}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {!conversation && replyTarget ? <div className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
       routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}
       mentions={mentions}
-      onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeProfile}
+      onOpenAuthor={handleOpenAuthor} onAuthorScopeUnavailable={closeProfile}
+      editTarget={threadEditTarget} onEdit={handleRoutedEdit} onCancelEdit={handleCancelEdit} onEditConfirmed={handleEditConfirmed}
+      editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}
+      editBusy={composerBusy} onEditSendingChange={setComposerBusy}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
-      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
+      onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
     </div>
   );
 }

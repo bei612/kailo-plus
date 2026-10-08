@@ -15,6 +15,14 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channelId: string | null;
   channelName: string;
   currentPubkey?: string;
+  editTarget?: TimelineMessage | null;
+  onEdit?: (message: TimelineMessage) => void;
+  onCancelEdit?: () => void;
+  onEditSave?: (
+    content: string,
+    mentionPubkeys: string[],
+    mediaTags?: string[][],
+  ) => Promise<void>;
   disabled?: boolean;
   firstUnreadReplyId?: string | null;
   isSending: boolean;
@@ -86,12 +94,24 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
         onFollowThread={row.message.id === props.threadHead?.id && props.onFollowThread ? () => props.onFollowThread?.() : undefined}
         onUnfollowThread={row.message.id === props.threadHead?.id && props.onUnfollowThread ? () => props.onUnfollowThread?.() : undefined}
         onMarkRead={props.onMarkRead} onMarkUnread={props.onMarkUnread}
+        onEdit={props.disabled ? undefined : props.onEdit}
         onToggleReaction={props.disabled ? undefined : props.onToggleReaction}
         onSendToChannel={row.message.id !== props.threadHead?.id ? stableSendToChannel : undefined}
         videoReviewCommentRootId={props.videoReviewPresentation?.commentRootIdsByMessageId.get(row.message.id)}
         videoReviewContext={props.videoReviewPresentation?.contextsByMessageId.get(row.message.id)}
       />}
-      renderComposer={(composer) => <MessageComposer {...composer} onSend={props.onSend} profiles={props.profiles} />}
+      renderComposer={(composer) => (
+        <MessageComposer
+          {...composer}
+          key={props.editTarget ? `edit:${props.editTarget.id}` : composer.draftKey}
+          editTarget={props.editTarget ?? undefined}
+          onCancelEdit={props.onCancelEdit}
+          onSend={
+            props.editTarget && props.onEditSave ? props.onEditSave : props.onSend
+          }
+          profiles={props.profiles}
+        />
+      )}
     />
   </VideoReviewNavigationProvider>;
 }

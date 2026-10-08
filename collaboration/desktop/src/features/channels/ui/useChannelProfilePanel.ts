@@ -1,6 +1,7 @@
 import * as React from "react";
 
 type UseChannelProfilePanelOptions = {
+  requireThreadEditResolution: () => boolean;
   openProfilePanel: (pubkey: string) => void;
   setExpandedThreadReplyIds: (value: Set<string>) => void;
   setOpenThreadHeadId: (value: string | null) => void;
@@ -10,6 +11,7 @@ type UseChannelProfilePanelOptions = {
 };
 
 export function useChannelProfilePanel({
+  requireThreadEditResolution,
   openProfilePanel,
   setExpandedThreadReplyIds,
   setOpenThreadHeadId,
@@ -19,6 +21,7 @@ export function useChannelProfilePanel({
 }: UseChannelProfilePanelOptions) {
   const handleOpenProfilePanel = React.useCallback(
     (pubkey: string) => {
+      if (!requireThreadEditResolution()) return;
       setOpenThreadHeadId(null);
       setExpandedThreadReplyIds(new Set());
       setThreadScrollTargetId(null);
@@ -27,6 +30,7 @@ export function useChannelProfilePanel({
     },
     [
       openProfilePanel,
+      requireThreadEditResolution,
       setExpandedThreadReplyIds,
       setOpenThreadHeadId,
       setThreadReplyTargetId,

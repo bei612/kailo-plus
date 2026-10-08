@@ -693,6 +693,8 @@ enum PlatformMessageKey {
   buzzEditMessage,
   buzzEditingMessage,
   buzzCancelEdit,
+  buzzFinishThreadEdit,
+  buzzFinishEdit,
   platformLinkChannelUnavailable,
   platformLinkMessageOutsideHistory,
   platformLinkOpenFromChannel,
@@ -3338,6 +3340,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.buzzEditMessage: ('Edit message', '编辑消息'),
   PlatformMessageKey.buzzEditingMessage: ('Editing message', '正在编辑消息'),
   PlatformMessageKey.buzzCancelEdit: ('Cancel edit', '取消编辑'),
+  PlatformMessageKey.buzzFinishThreadEdit: (
+    'Finish or cancel your edit before leaving the thread.',
+    '请先完成或取消编辑，再离开此线程。',
+  ),
+  PlatformMessageKey.buzzFinishEdit: (
+    'Finish or cancel your edit first.',
+    '请先完成或取消当前编辑。',
+  ),
   PlatformMessageKey.platformLinkChannelUnavailable: (
     'This channel is unavailable or you are not a member.',
     '该频道不可用，或你不是频道成员。',

@@ -9,3 +9,4 @@ export { buildThreadPanelData, buildThreadPanelIndex, buildThreadPanelDataFromIn
 export type { MainTimelineEntry } from "./threadPanel";
 export * from "./auxiliary";
 export { getThreadRouteTarget, getRouteMainTimelineTargetId } from "./channelRouteTarget";
+export { useChannelMessageEdit } from "./useChannelMessageEdit";

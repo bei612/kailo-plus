@@ -47,6 +47,8 @@ import { useChannelOpenReadState } from "./useChannelOpenReadState";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { ChannelPane } from "./ChannelScreenLazyViews";
+import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 
 export function ChannelScreen({
   activeChannel,
@@ -109,6 +111,16 @@ export function ChannelScreen({
   const mainInsetRef = useMainInsetRef();
   const currentPubkey = currentIdentity?.pubkey;
   const activeChannelId = activeChannel?.id ?? null;
+  const community = useActiveCommunity();
+  const {
+    editTarget,
+    setEditTarget,
+    handleEdit,
+    handleCancelEdit,
+    requireThreadEditResolution,
+  } = useChannelMessageEdit<TimelineMessage>(
+    JSON.stringify([activeChannelId, community.relayUrl, currentPubkey]),
+  );
   const relaySelfPubkey = useRelaySelfQuery(activeChannel !== null).data;
   const effectiveOpenThreadHeadId =
     optimisticOpenThreadHeadId === undefined
@@ -282,6 +294,8 @@ export function ChannelScreen({
     handleSendThreadReply,
     handleSelectThreadReplyTarget,
   } = useChannelPaneHandlers({
+    handleCancelEdit,
+    requireThreadEditResolution,
     expandedThreadReplyIds,
     getFirstReplyIdForMessage,
     getReplyDescendantIdsForMessage,
@@ -327,6 +341,7 @@ export function ChannelScreen({
       : undefined;
   const { handleOpenProfilePanel, handleCloseProfilePanel } =
     useChannelProfilePanel({
+      requireThreadEditResolution,
       openProfilePanel,
       setExpandedThreadReplyIds,
       setOpenThreadHeadId,
@@ -360,6 +375,8 @@ export function ChannelScreen({
   const mainTimelineTargetMessageId = useChannelRouteTarget({
     activeChannel,
     activeChannelId,
+    clearEditTarget: handleCancelEdit,
+    requireThreadEditResolution,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,
     setProfilePanelPubkey,
@@ -370,7 +387,16 @@ export function ChannelScreen({
   });
   useThreadTargetSync({
     clearOptimisticThreadOverride,
-    isTimelineLoading,
+    editTarget,
+    editTargetMessage: editTarget
+      ? (timelineMessages.find((message) => message.id === editTarget.id) ??
+        threadPanelData.messages.find((message) => message.id === editTarget.id) ??
+        null)
+      : null,
+    clearEditTarget: handleCancelEdit,
+    isTimelineLoading:
+      isTimelineLoading ||
+      (effectiveOpenThreadHeadId !== null && threadRepliesQuery.isPending),
     openThreadHeadId,
     openThreadHeadMessage,
     setExpandedThreadReplyIds,
@@ -424,6 +450,16 @@ export function ChannelScreen({
               autoSendDraftKey={autoSendDraftKey}
               onAutoSendComplete={clearAutoSend}
               currentPubkey={currentPubkey}
+              editTarget={editTarget}
+              onEdit={(message) => {
+                if (handleEdit(message)) setThreadReplyTargetId(effectiveOpenThreadHeadId);
+              }}
+              onCancelEdit={handleCancelEdit}
+              onEditConfirmed={(message) =>
+                setEditTarget((current) =>
+                  current?.id === message.id ? null : current,
+                )
+              }
               canResetThreadPanelWidth={canResetThreadPanelWidth}
               fetchOlder={fetchOlder}
               header={channelHeader}

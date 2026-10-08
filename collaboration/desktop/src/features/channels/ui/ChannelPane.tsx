@@ -3,7 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { editMessage } from "@/shared/api/tauriMessages";
 import { useToggleReactionMutation } from "@/features/messages/hooks";
-import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
+import {
+  channelMessagesKey,
+  threadRepliesKey,
+} from "@/features/messages/lib/messageQueryKeys";
+import { getThreadReference, isThreadReply } from "@/features/messages/lib/threading";
 import type { TimelineMessage } from "@/features/messages/types";
 import { AnimatePresence } from "motion/react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -41,6 +45,10 @@ export const ChannelPane = React.memo(function ChannelPane({
   autoSendDraftKey = null,
   onAutoSendComplete,
   currentPubkey,
+  editTarget,
+  onEdit,
+  onCancelEdit,
+  onEditConfirmed,
   fetchOlder,
   header,
   hasOlderMessages,
@@ -105,13 +113,15 @@ export const ChannelPane = React.memo(function ChannelPane({
   const handleToggleReaction = React.useCallback((message: TimelineMessage, emoji: string, remove: boolean) =>
     toggleReaction.mutateAsync({eventId: message.id, emoji, remove}), [toggleReaction.mutateAsync]);
   const queryClient = useQueryClient();
-  const [editTarget, setEditTarget] = React.useState<TimelineMessage | null>(null);
   const [editing, setEditing] = React.useState(false);
+  const mainEditTarget =
+    editTarget && !isThreadReply(editTarget.tags ?? []) ? editTarget : null;
+  const threadEditTarget =
+    editTarget && isThreadReply(editTarget.tags ?? []) ? editTarget : null;
   const editOwner = React.useMemo(() => ({}), [activeChannel.id, community.relayUrl, currentPubkey]);
   const editOwnerRef = React.useRef(editOwner);
   editOwnerRef.current = editOwner;
   React.useEffect(() => {
-    setEditTarget(null);
     setEditing(false);
   }, [editOwner]);
   const saveEdit = async (content: string, mentions: string[], media: string[][] = []) => {
@@ -132,7 +142,13 @@ export const ChannelPane = React.memo(function ChannelPane({
       // editable-message authority and does not replace the immutable row id.
       if (channelPaneMountedRef.current && editOwnerRef.current === requestedOwner) {
         void queryClient.invalidateQueries({queryKey: channelMessagesKey(activeChannel.id)});
-        setEditTarget((current) => current === captured ? null : current);
+        const rootId = getThreadReference(captured.tags ?? []).rootId;
+        if (rootId) {
+          void queryClient.invalidateQueries({
+            queryKey: threadRepliesKey(activeChannel.id, rootId),
+          });
+        }
+        onEditConfirmed(captured);
       }
     } finally {
       if (channelPaneMountedRef.current && editOwnerRef.current === requestedOwner) {
@@ -168,7 +184,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     () => messageTimelineRef.current?.settleAtBottom() ?? false,
   );
   const isComposerDisabled =
-    !activeChannel.isMember || activeChannel.archivedAt !== null || isSending;
+    !activeChannel.isMember || activeChannel.archivedAt !== null || isSending || editing;
   const handleSendMessage = React.useCallback(
     async (
       content: string,
@@ -246,6 +262,15 @@ export const ChannelPane = React.memo(function ChannelPane({
     Boolean(threadHeadMessage) || shouldShowThreadSkeleton;
   const useFocusThreadDrawer =
     threadViewMode === "focus" && useSplitAuxiliaryPane && hasThreadSurface;
+  const handleRoutedEdit = (message: TimelineMessage) => {
+    if (
+      !isThreadReply(message.tags ?? []) &&
+      (isSinglePanelView || useFocusThreadDrawer)
+    ) {
+      onCloseThread();
+    }
+    onEdit(message);
+  };
   const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(
     useFocusThreadDrawer,
     onCloseThread,
@@ -359,7 +384,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onMarkUnread={onMarkUnread}
               onMarkRead={onMarkRead}
               onReply={timelineReplyHandler}
-              onEdit={isComposerDisabled || editing ? undefined : setEditTarget}
+              onEdit={isComposerDisabled || editing ? undefined : handleRoutedEdit}
               onToggleReaction={isComposerDisabled ? undefined : handleToggleReaction}
               onOpenThread={onOpenThread}
               channelName={activeChannel.name}
@@ -383,13 +408,13 @@ export const ChannelPane = React.memo(function ChannelPane({
               <ComposerUploadProgressOverlay />
               <div className="composer-dock composer-overlay-corner-masks relative pointer-events-auto">
                 <ComposerDockBackdrop gutterClassName="inset-x-5" />
-                {editTarget ? (
+                {mainEditTarget ? (
                   <MessageComposer
-                    key={`edit:${editTarget.id}`}
+                    key={`edit:${mainEditTarget.id}`}
                     channelId={activeChannel.id}
                     channelName={activeChannel.name}
-                    editTarget={editTarget}
-                    onCancelEdit={() => setEditTarget(null)}
+                    editTarget={mainEditTarget}
+                    onCancelEdit={onCancelEdit}
                     containerClassName="px-5 pb-0"
                     layoutMode="dock"
                     profiles={profiles}
@@ -399,7 +424,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                     showBackgroundUploadProgress={false}
                   />
                 ) : null}
-                <div hidden={editTarget !== null}><MessageComposer
+                <div hidden={mainEditTarget !== null}><MessageComposer
                   channelId={activeChannel.id}
                   channelName={activeChannel.name}
                   containerClassName="px-5 pb-0"
@@ -436,11 +461,15 @@ export const ChannelPane = React.memo(function ChannelPane({
                 channelId={activeChannel.id}
                 channelName={activeChannel.name}
                 currentPubkey={currentPubkey}
+                editTarget={threadEditTarget}
+                onEdit={isComposerDisabled || editing ? undefined : handleRoutedEdit}
+                onCancelEdit={onCancelEdit}
+                onEditSave={saveEdit}
                 disabled={isComposerDisabled}
                 firstUnreadReplyId={threadFirstUnreadReplyId}
                 isFollowingThread={isFollowingThread}
                 isMessageUnreadById={isMessageUnreadById}
-                isSending={isSending}
+                isSending={isSending || editing}
                 {...threadLayoutProps}
                 autoSendDraftKey={autoSendDraftKey}
                 onAutoSubmitComplete={onAutoSendComplete}

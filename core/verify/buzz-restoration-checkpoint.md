@@ -4099,6 +4099,118 @@ ProfileAvatarEditor/helpers/types/utils/ModeTabs五模块完整diff；已知完�
   原目标一次重试 `sidebar-id-web-negative-retry.log` exit1、1失败/8通过，
   真正抓住Web生产prop回退工作区ID（预期native-one，实际one）。
 - 恢复原输入后的 `sidebar-id-shared-restored.log` 与
+
+## 2026-10-08 原线程编辑真实消费者与0b线上冷定位复验
+
+### 权威、影响面及边界
+
+本批先对固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/channels/ui/useRoutedMessageEdit.ts::useRoutedMessageEdit`、
+`desktop/src/features/channels/useChannelPaneHandlers.ts::useChannelPaneHandlers`、
+`desktop/src/features/channels/ui/useChannelRouteTarget.ts::useChannelRouteTarget`、
+`desktop/src/features/channels/useThreadTargetSync.ts::useThreadTargetSync` 和
+`desktop/src/features/messages/ui/MessageThreadPanel.tsx::MessageThreadPanel`
+逐模块核对，再恢复已有原编辑组件的真实调用方；没有先写规格或测试。
+`GuardedChannelPane.tsx::GuardedChannelPane` 固定原版仅9行props转发，
+当前Native直接消费同一lazy Pane，不凭名称假造新guard。
+
+影响面是同一共享编辑选择/退出守卫、Native Screen→Pane→ThreadPanel、
+Web Pane→ThreadPane→原Composer、原route/profile/reply切换和两侧既有编辑发布。
+不新增数据库、API、reason code、工具或状态权威；原event/edit标签仍由Relay保存，
+无旧数据迁移和合同格式变更。Web仍经既有BFF，Native仍本机持钥；
+Mobile没有因此出现组件宿主或私钥出口。
+
+新增shared `useChannelMessageEdit` 直接承接原同消息取消/跨主线程编辑互斥、
+线程离开必须先完成或取消、身份/频道变化立即隐藏旧编辑目标；旧scope的异步回执
+不能清掉新owner编辑器。Native恢复真实线程editTarget、原Composer、保存及
+确认回执失效查询，route在loaded target后才清main edit，forum拒绝stream route。
+Web线程行仅当前已验证本人签名者可编辑，沿原publish传准确`editEventId`，
+不冒充普通reply；eventId/operationId齐全才结束，UNKNOWN/拒绝保留编辑与草稿。
+没有绘制新页面、菜单、确认弹窗或空closeAgentSession。
+
+空列表/未加载目标不定位；scope切换render立即fence；编辑进行中不离开线程；
+重复保存受原busy/editing守卫约束，Web复用原request/pending链；迟到回执只清原目标。授权拒绝沿DENIED，
+就绪/投影缺失沿PRECONDITION，额度/容量沿LIMIT，版本/重入沿CONFLICT，
+执行结果不明沿UNKNOWN并保留原待对账证据，不将其渲染为成功或失败。
+缺真实Agent Activity/会话合同的close保持BLOCKED缺项，不造假consumer。
+原空编辑删除确认、deferred focus/本人末条快捷键仍缺，不声称这几个原模块全恢复。
+
+2条提示`buzz.finishThreadEdit`/`buzz.finishEdit`在原TS词条权威追加中英，
+沿原生成器生成Dart；未建立重复翻译源。17源码路径+755/-47，
+包含新62行shared hook；仅格式化新增区段，不整份重排紧凑宿主。
+本批恢复文件不存在过期remove_paths；仍缺的Agent会话/原编辑消费者未从目标删除。
+
+### 实际执行、生产破坏与还原
+
+复用`kailo-agent-receipt-xvkujx`原SDK和候选
+`/evidence/profile-settings-ortsoo.DRR20F/apps`，4 CPU/8 GiB、
+Node堆3072 MiB、Vitest forks/maxWorkers=1，无Cargo/Go/安装/镜像/全仓编译。
+原始日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+
+- Shared实际命令`vitest run test/timeline-scope.test.tsx --pool=forks --maxWorkers=1`：
+  `thread-edit-shared-forks.log`及最终`thread-edit-shared-restored.log`，5/5、exit0。
+- Native实际命令`node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs`：
+  `thread-edit-native.log`及最终`thread-edit-native-restored.log`，4/4、exit0。
+- Web原命令`vitest run src/platform/ui/<目标>.test.tsx --pool=forks --maxWorkers=1`：
+  最终`thread-edit-web-read-restored.log`30/30，`thread-edit-web-pane-restored.log`10/10，
+  `thread-edit-web-thread-restored.log`9/9，串行终态exit0。
+- Shared生产/检查、Web、Native的原`tsc --noEmit`四入口均exit0，日志分别
+  `thread-edit-shared-types.log`、`thread-edit-shared-tests-types.log`（`-p tsconfig.test.json`）、
+  `thread-edit-web-types.log`、`thread-edit-native-types.log`。
+- `PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py`及`--check`均exit0，
+  `thread-edit-i18n-final.log`；reason_text原字节cmp0。首次PATH未投递导致Dart不可用的
+  `thread-edit-i18n.log`真实失败保留，纠正既有PATH而非安装或换工具。
+- 初次Shared threads及Web三文件cold worker超时分别保留在
+  `thread-edit-shared.log`、`thread-edit-web.log`；未执行的目标不计通过。
+  后者仅Thread9项曾执行，随后原目标逐文件串行运行，最终全部实际执行。
+- 私有生产破坏，正式源码和检查未被破坏：删除线程离开guard，
+  `thread-edit-guard-negative.log`1失败；删除旧owner fence，
+  `thread-edit-owner-negative.log`1失败；Native移除root guard及改错forum守卫，
+  `thread-edit-native-negative.log`2失败；Web把真实editEventId错绑root，
+  `thread-edit-web-negative.log`4失败（confirmed/missing/unknown/denied）。
+  四次实际测试exit1，包装调用只确认预期失败，没有拿startup失败充数。
+- 每次破坏后从正式源还原；最终17源码与候选、6处shared实体包副本cmp全0。
+  初轮恢复58项实际通过；末次行回复纠偏后为下述59项；scoped`git diff --check`exit0；
+  cgroup max16751/oom2/oom_kill2均零增量。SDK工具链终态后已释放。
+
+### 新部署浏览器证据与未验范围
+
+正常SSO表单登录沿既有受控输入及官方playwright-cli Session执行；
+无cookie/session注入、账户修改或口令输出。实际读
+`/app/platform-build-info.json`确认固定main
+`0b04bc2654e5f1b8a7942d9966ebe334927e0c86`，Web image
+`sha256:f60b4fe4dbcc9b9caa3f1567e9c5b80ebea0b8db81d49790ad05f20fe1d02f5b`，
+build/source`sha256:a61b2f7db919f3fe9d4aa20b136bcff530a48954847ba096ca22bf5339110672`。
+真实搜索结果点击、冷根消息定位、回复线程定位及两者整页刷新，5张截图均打开复核：
+`/volumes/kailo/apps/.playwright-cli/kailo-ui-20261008-main0b-search-results.png`、
+`kailo-ui-20261008-main0b-search-cold-target.png`、`kailo-ui-20261008-main0b-search-thread-target.png`、
+`kailo-ui-20261008-main0b-search-thread-reloaded.png`、`kailo-ui-20261008-main0b-search-cold-reloaded.png`
+（后4张与首张同目录）。根消息实际y498.75、线程回复y267，
+刷新等待真实virtualizer/RAF后同样在视口，不以人工scroll伪造定位。
+主代理亦逐张打开5图；浏览器只读导航，没有提交新消息或外部动作。
+
+这些图仅验已部署0b的上一批冷定位修复，不验当前17路径线程编辑；
+本批待主代理提交/部署，没有新的Windows/Mobile设备验收或三组件业务页面验收。
+完整diff仍是32971030d1d856b4f26b19fcff02cd4939204864快照3323路径，
+40已分类=32共享迁移+8缺失需恢复，3283未分类；不是当前main逐处验收完成。
+实际TSV为上述日志目录的`collaboration-main.classification.tsv`，SHA256
+`1e576302dab2f1a92f25b32c025afc01c22bcdeae79c23ec8ffa12738f8f3e70`。
+仍未100%还原；原Agent Activity/profile/DM、其余未核路径、全端完整交互
+和三组件业务运行证据不能由本批59项源码检查或5图代替。
+
+收口实际复核发现线程row `onReply` 仅改replyId、未清editTarget，
+与固定原`useChannelPaneHandlers::handleSelectThreadReplyTarget`不一致；
+最终两入口共用实际callback，同目标再次选择回root且取消编辑。
+新增原ChannelRead实际菜单Edit→row Reply→同row取消目标→再选→发送链，
+要求真实BFF参数为STREAM+parentEventId而非editEventId，没有只测helper。
+`thread-edit-row-reply-positive.log`首次39通过/1失败为新增fixture误用展示时间；
+纠正为既有RawEvent秒数后`thread-edit-row-reply-final.log`40/40、exit0。
+私有仅将row `onReply`改回旧直接setReplyId，
+`thread-edit-row-reply-negative.log`实际1失败，明确抓到仍显示Editing message。
+原字节还原后`thread-edit-row-reply-restored.log`Web31+10+9=50/50、exit0；
+加未更改的Shared5/Native4，共59项；两纠偏源与正式cmp全0。
+末次原Web `tsc --noEmit`亦exit0，`thread-edit-row-reply-types.log`；OOM零增量。
   `sidebar-id-web-restored.log` 均exit0，14+9通过。四输入及Web已装共享包
   共五次cmp、scoped git diff --check均0；旧oom/oom_kill=2未增。
 

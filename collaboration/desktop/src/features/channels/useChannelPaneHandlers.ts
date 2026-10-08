@@ -15,6 +15,8 @@ import type { TimelineMessage } from "@/features/messages/types";
  * rather than listing the whole mutation as a dependency.
  */
 export function useChannelPaneHandlers({
+  handleCancelEdit,
+  requireThreadEditResolution,
   expandedThreadReplyIds,
   getFirstReplyIdForMessage,
   getReplyDescendantIdsForMessage,
@@ -28,6 +30,8 @@ export function useChannelPaneHandlers({
   setThreadScrollTargetId,
   threadReplyTargetId,
 }: {
+  handleCancelEdit: () => void;
+  requireThreadEditResolution: () => boolean;
   expandedThreadReplyIds: ReadonlySet<string>;
   getFirstReplyIdForMessage: (messageId: string) => string | null;
   getReplyDescendantIdsForMessage: (messageId: string) => string[];
@@ -84,6 +88,7 @@ export function useChannelPaneHandlers({
   }, [setThreadReplyTargetId]);
 
   const handleCloseThread = React.useCallback(() => {
+    if (!requireThreadEditResolution()) return;
     deferPanelState(() => {
       onOptimisticOpenThreadHeadIdChange(null);
       setOpenThreadHeadId(null);
@@ -94,6 +99,7 @@ export function useChannelPaneHandlers({
   }, [
     deferPanelState,
     onOptimisticOpenThreadHeadIdChange,
+    requireThreadEditResolution,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,
     setThreadReplyTargetId,
@@ -102,6 +108,7 @@ export function useChannelPaneHandlers({
 
   const handleOpenThread = React.useCallback(
     (message: { id: string }) => {
+      if (!requireThreadEditResolution()) return;
       if (openThreadHeadIdRef.current === message.id) {
         deferPanelState(() => {
           onOptimisticOpenThreadHeadIdChange(null);
@@ -110,6 +117,7 @@ export function useChannelPaneHandlers({
           setThreadScrollTargetId(null);
           setExpandedThreadReplyIds(new Set());
         });
+        handleCancelEdit();
         return;
       }
 
@@ -120,9 +128,12 @@ export function useChannelPaneHandlers({
         setThreadScrollTargetId(null);
         setExpandedThreadReplyIds(new Set());
       });
+      handleCancelEdit();
     },
     [
       deferPanelState,
+      handleCancelEdit,
+      requireThreadEditResolution,
       onOptimisticOpenThreadHeadIdChange,
       setExpandedThreadReplyIds,
       setOpenThreadHeadId,
@@ -138,8 +149,9 @@ export function useChannelPaneHandlers({
       } else {
         setThreadReplyTargetId(message.id);
       }
+      handleCancelEdit();
     },
-    [setThreadReplyTargetId],
+    [handleCancelEdit, setThreadReplyTargetId],
   );
 
   const handleExpandThreadReplies = React.useCallback(

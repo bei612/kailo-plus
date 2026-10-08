@@ -9,6 +9,8 @@ import { getThreadRouteTarget, getRouteMainTimelineTargetId } from "@client-kit/
 export function useChannelRouteTarget({
   activeChannel,
   activeChannelId,
+  clearEditTarget,
+  requireThreadEditResolution,
   setExpandedThreadReplyIds,
   setOpenThreadHeadId,
   setProfilePanelPubkey,
@@ -19,6 +21,8 @@ export function useChannelRouteTarget({
 }: {
   activeChannel: Channel | null;
   activeChannelId: string | null;
+  clearEditTarget: () => void;
+  requireThreadEditResolution: () => boolean;
   setExpandedThreadReplyIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setOpenThreadHeadId: PanelValueSetter;
   setProfilePanelPubkey: PanelValueSetter;
@@ -51,7 +55,11 @@ export function useChannelRouteTarget({
       handledThreadRouteTargetRef.current = null;
     }
 
-    if (handledThreadRouteTargetRef.current === targetKey || !activeChannel) {
+    if (
+      handledThreadRouteTargetRef.current === targetKey ||
+      !activeChannel ||
+      activeChannel.channelType === "forum"
+    ) {
       return;
     }
 
@@ -61,6 +69,8 @@ export function useChannelRouteTarget({
     }
 
     if (!targetMessage.parentId) {
+      if (!requireThreadEditResolution()) return;
+      clearEditTarget();
       setProfilePanelPubkey(null, { replace: true });
       // Root message links open the reply panel.
       setOpenThreadHeadId(targetMessage.id, { replace: true });
@@ -82,6 +92,8 @@ export function useChannelRouteTarget({
     if (!routeTarget) {
       return;
     }
+    if (!requireThreadEditResolution()) return;
+    clearEditTarget();
     // Replace so the deep-link entry itself carries the opened thread —
     // back should leave the deep link, not strip the panel from it.
     setProfilePanelPubkey(null, { replace: true });
@@ -93,6 +105,8 @@ export function useChannelRouteTarget({
   }, [
     activeChannel,
     activeChannelId,
+    clearEditTarget,
+    requireThreadEditResolution,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,
     setProfilePanelPubkey,

@@ -19,6 +19,10 @@ export type ChannelPaneProps = {
    */
   onAutoSendComplete: () => void;
   currentPubkey?: string;
+  editTarget: TimelineMessage | null;
+  onEdit: (message: TimelineMessage) => void;
+  onCancelEdit: () => void;
+  onEditConfirmed: (message: TimelineMessage) => void;
   fetchOlder?: () => Promise<void>;
   header?: React.ReactNode;
   hasOlderMessages?: boolean;
