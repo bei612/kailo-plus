@@ -3416,3 +3416,198 @@ navigation/upload/download/revocation screenshots, a real deployed Wren business
 instance and ACTIVE binding, Windows/Mobile acceptance and global `check.sh
 --full` are not accepted by this increment. No deployment, installation package
 or 100% original-feature/style parity is claimed.
+
+### Live PostgreSQL reader-role revalidation (2026-10-08)
+
+Implemented against `.design/08` §6 and DD-98, preserving the original query
+consumer at Wren UI commit `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview`.
+The change reuses Kailo's existing
+`wren-ui/src/apollo/server/services/nativeBindingService.ts::verifyPostgresReader`;
+it does not introduce another database privilege authority or SQL parser.
+
+The four implementation conclusions are:
+
+1. Authority: the original native database remains responsible for its role
+   graph and ACLs; the existing native reader check consumes those current
+   facts. A frozen project/SecretRef fingerprint alone cannot prove the role
+   has not gained write or dangerous function privileges.
+2. Impact: `NativeQueryService.execute` now consumes that same check from its
+   actual `reauthorize` closure, before SQL, after source freezing, after
+   completion and on completed reentry. `completedQuerySources`, consumed
+   twice by the original HUMAN disclosure path, uses the same check. No
+   schema, contract, history format, page, layout or execution authority changed.
+3. Side effects: a pre-SQL refusal preserves the original proven-unsent
+   `FAILED` / `NOT_DISPATCHED` history. Refusal to disclose an already completed
+   result does not rewrite `SUCCEEDED`, discard its body or run SQL again.
+   Metadata-only observation still reports the verified original outcome.
+4. Boundaries: direct grants, inherited writable roles, changes during SQL and
+   changes after the real source-freeze transaction are rejected. Removing
+   the grant restores access to the same successful result without another
+   query; it does not rerun a proven-unsent failed intent. Original UNKNOWN
+   behavior remains unchanged. Native role denial is `DENIED`; connection
+   fingerprint drift is `PRECONDITION`; insufficient outcome evidence remains
+   `UNKNOWN`, following the six classes in `06` §4.
+
+Verification reused the existing `kailo-wren-query-sdk-itgs2n` SDK and cache,
+4 CPU / 4 GiB memory / 4 GiB memory-plus-swap. Before execution, existing
+processes, memory/CPU pressure and Data availability were checked; final Data
+availability was 1.3 GiB. The original isolated PostgreSQL fixture performed
+actual role grants/revocations and ACL queries. The Ibis HTTP boundary was a
+controlled peer, not an accepted running Ibis/Java/business deployment.
+
+Actual original commands inside that SDK:
+
+```sh
+./node_modules/.bin/jest src/nativeQuery.test.ts --runInBand -t 'validates the actual binding route'
+./node_modules/.bin/jest src/nativeQuery.test.ts --runInBand
+./node_modules/.bin/tsc --noEmit --incremental false
+./node_modules/.bin/prettier --check src/nativeQuery.test.ts src/apollo/server/services/nativeQueryService.ts
+```
+
+Four initial candidates each reported 68 passed / 1 failed. These checks had
+incorrect assumptions about refreshed observation timestamps, Date-versus-JSON
+terminal timestamps, a second Analyzer call despite the original cached source
+analysis, and the original `NOT_DISPATCHED` error payload. The checks were
+corrected to consume actual wire semantics and the real source-freeze write;
+production state semantics were not changed to satisfy the checks. The focused
+fixture then passed 1 test / 68 explicitly name-filtered skips, exit 0
+(11.151 s).
+
+Only in the private SDK copy, removing the completed-HUMAN reader recheck caused
+1 failed / 68 explicitly name-filtered skips, exit 1 (10.629 s): a revoked
+source disclosure incorrectly resolved. After restoring it, removing the
+execute recheck caused 1 failed / 68 explicitly name-filtered skips, exit 1
+(10.513 s): revoked reentry returned 200 instead of 403. Both formal inputs
+were restored and compared with `cmp`. The complete restored original native
+query suite passed 69/69, zero skips, exit 0 (24.238 s). Whole-UI TypeScript,
+original Prettier and `git diff --check` also exited 0.
+
+Logs remain in the existing SDK mount directory listed in the preceding
+increment: `native-query-reader-drift-positive.log`,
+`native-query-reader-drift-final-positive.log`,
+`native-query-reader-drift-restored-positive.log`,
+`native-query-reader-drift-positive-final.log` (the four failed candidates),
+`native-query-reader-drift-target-positive.log`,
+`native-query-reader-drift-human-negative.log`,
+`native-query-reader-drift-execute-negative.log`,
+`native-query-reader-drift-restored.log`,
+`native-query-reader-drift-restored-format.log` and
+`native-query-reader-drift-restored-tsc.log` (empty successful compiler output).
+
+This is a live read-only-role integrity check, not proof that a particular
+physical table still grants SELECT. Per-source platform Resource/policy checks
+remain in the original execution/disclosure chain. The separate original API
+History payload-read consumer is being changed; that new increment has not
+been verified by these results. Java function provenance, AI callback identity,
+real Wren instance/binding, native iframe screenshots and a production release
+remain unaccepted. No new image, deployment or installation package was built.
+
+### Original API History governed body consumer (2026-10-08)
+
+The fixed original source is Wren UI commit
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/apiHistoryResolver.ts::ApiHistoryResolver.getApiHistory`
+and `ApiHistoryResolver.getApiHistoryNestedResolver`, with the original client
+document `wren-ui/src/apollo/client/graphql/apiManagement.ts::API_HISTORY`.
+The original nested response sanitizer did not authorize the original SQL
+request or stored result body. Kailo's existing middleware identity alone did
+not supply that missing resource/result decision. These references were
+rechecked with `git cat-file` and `git grep` at the full fixed commit; no code
+from `.references` was executed or changed.
+
+The four implementation conclusions are:
+
+1. Authority: `.design/08` §6 and DD-98 require the existing action receipt and
+   current authorization before native result disclosure. The original
+   `api_history` remains the only Wren query/body authority. The consumer reuses
+   `NativeHumanQuery.disclose`, the original Core same-AE HUMAN observation,
+   frozen source Resource resolution and the read/export policy intersection;
+   no new command, query execution, task, permission ticket or body copy in Core
+   is created when reading history.
+2. Impact: `getApiHistory` keeps original count, pagination, filters and dates
+   while enforcing the configured project and binding. Both original GraphQL
+   `requestPayload` and `responsePayload` fields call `readHistory` for bound
+   HUMAN requests. The existing response sanitizer and the unbound original
+   service behavior remain. The original history page, client query document,
+   schema, layout and controls are unchanged. Credential-bearing headers remain
+   subject to the existing repository's metadata-only allowlist.
+3. Side effects: missing, UNKNOWN, mismatched AE/native history, changed input,
+   changed stored body, stale native sources or current native role denial
+   refuses the body. Reading cannot create an admission or rerun SQL. The final
+   existing native source/reader recheck now occurs after the final Core
+   authorization round trip, so a local role/view change during that round trip
+   cannot borrow an earlier check. The existing successful native terminal is
+   not rewritten into failure merely because disclosure is now refused.
+4. Boundaries: exact project/binding, action, AE, operation, original intent key,
+   parameter digest, native history ID, deployment, SQL revision and frozen
+   source facts are consumed. The selected history request and returned result
+   are compared with the original history again after authorization. Foreign
+   project filters are denied before count/read. Missing trusted HUMAN context
+   is `DENIED`; binding/project drift is `PRECONDITION`; insufficient terminal
+   evidence remains `UNKNOWN`, using `06` §4. Only query/dry-run histories with
+   verified successful evidence are accepted by this body consumer. Native
+   failed/pending and non-query history bodies remain an explicit integration
+   gap, not an invented success or accepted complete history feature.
+
+Verification used the same existing 4 CPU / 4 GiB SDK, cache and isolated
+PostgreSQL fixture from the preceding increment. Pressure, existing processes,
+cgroup limits and Data availability were checked before the final run; Data had
+1.2 GiB available. The original SDL and original `API_HISTORY` client document
+were executed through `ApolloServer` and the actual `ApiHistoryResolver` and
+`NativeHumanQuery` consumers. Core and source-service boundaries in those HUMAN
+checks were controlled fixtures; this is not a deployed Wren/Core/Engine
+end-to-end acceptance.
+
+Actual original commands inside `kailo-wren-query-sdk-itgs2n`:
+
+```sh
+./node_modules/.bin/jest src/nativeHumanQuery.test.ts --runInBand
+./node_modules/.bin/jest src/nativeHumanQuery.test.ts --runInBand -t 'original API History GraphQL document'
+./node_modules/.bin/jest src/nativeHumanQuery.test.ts --runInBand -t 'refuses native history mutation after source authorization'
+./node_modules/.bin/jest src/nativeHumanQuery.test.ts --runInBand -t 'rechecks native reader privileges changed during final same-AE history authorization'
+./node_modules/.bin/jest src/nativeQuery.test.ts src/nativeHumanQuery.test.ts --runInBand
+./node_modules/.bin/tsc --noEmit --incremental false
+./node_modules/.bin/prettier --check src/apollo/server/resolvers/apiHistoryResolver.ts src/apollo/server/services/nativeHumanQuery.ts src/apollo/server/services/nativeQueryService.ts src/nativeHumanQuery.test.ts src/nativeQuery.test.ts
+```
+
+The first history candidate passed 103/103 and TypeScript, exit 0. Removing
+both field-level body checks only in the private SDK copy then caused the
+original GraphQL document check to fail: 1 failed / 1 passed / 101 explicitly
+name-filtered skips, exit 1 (6.946 s), exposing a revoked SQL request body.
+After restoration, removing only the response-field check caused 1 failed /
+1 passed / 101 explicitly name-filtered skips, exit 1 (6.690 s), exposing the
+result despite the still-protected SQL request.
+
+The final Core/native ordering implementation with its additional consumer
+check passed 104/104 and TypeScript, exit 0 (7.220 s). In the private SDK copy,
+removing the selected-request snapshot comparison caused 1 failed / 103
+explicitly name-filtered skips, exit 1 (6.858 s): changed SQL was returned.
+After restoration, removing the final native-reader/source recheck caused
+1 failed / 103 explicitly name-filtered skips, exit 1 (7.173 s): a role changed
+during the final same-AE authorization still disclosed the old body. All five
+formal code inputs were restored and compared with `cmp` before the final
+concentrated run. The complete original query and HUMAN suites then passed
+173/173, zero skips, exit 0 (28.579 s). Whole-UI TypeScript, original Prettier
+and `git diff --check` also exited 0; no failed candidate is treated as passing.
+
+Logs remain in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-api-history-positive.log`, `native-api-history-tsc.log`,
+`native-api-history-graphql-negative.log`,
+`native-api-history-result-negative.log`,
+`native-api-history-latest-positive.log`, `native-api-history-latest-tsc.log`,
+`native-api-history-snapshot-negative.log`,
+`native-api-history-final-acl-negative.log`,
+`native-history-reader-final-positive.log`,
+`native-history-reader-final-format.log` and
+`native-history-reader-final-tsc.log` (empty successful compiler output).
+
+No image, real business instance, ACTIVE binding, deployment or installation
+package was produced. Java function provenance/ordinary aggregate acceptance,
+trusted AI SERVICE callback context, remaining native write consumers,
+non-query/unsuccessful history bodies, complete native Chinese/English and
+original-page screenshot parity remain unaccepted. Global `check.sh --full`,
+Desktop and Mobile acceptance were not run by this increment. Passing the
+original GraphQL document is not browser screenshot or full-feature parity
+evidence.

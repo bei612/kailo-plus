@@ -294,6 +294,27 @@ integration('original Wren query handler, SDK and native history', () => {
       } else if (request.url === '/v1/mdl/dry-run') {
         queries++;
         response.end('[]');
+      } else if (
+        request.url?.startsWith('/v2/connector/postgres/query') ||
+        request.url?.startsWith('/v3/connector/postgres/query')
+      ) {
+        await onQuery?.();
+        queries++;
+        const body = JSON.parse(text);
+        observedManifest = JSON.parse(
+          Buffer.from(body.manifestStr, 'base64').toString(),
+        );
+        expect(body.sql).toBe(expectedSourceSql);
+        expect(body.connectionInfo.connectionUrl).toBeTruthy();
+        if (engineFails) response.writeHead(503).end('{}');
+        else
+          response.end(
+            JSON.stringify({
+              columns: ['one'],
+              dtypes: { one: 'int32' },
+              data: [[1]],
+            }),
+          );
       } else response.writeHead(404).end('{}');
     });
     const source = `http://127.0.0.1:${await listen(upstream)}`;
@@ -869,6 +890,144 @@ integration('original Wren query handler, SDK and native history', () => {
       await source.raw(`alter role "${reader}" reset role`);
       await source.raw(`revoke "${writer}" from "${reader}"`);
       await source.raw(`revoke update on fixture_rows from "${reader}"`);
+
+      // Native ACLs can change without a project/SecretRef revision. Consume
+      // the real reader-role probe on original SQL and stored-result paths.
+      const completed = await humanReference();
+      try {
+        const first = await completed.execute(completed.key);
+        expect(first.status).toBe(200);
+        const result = await first.json();
+        expect(result.execution.platformStatus).toBe('SUCCEEDED');
+        expect(JSON.parse(result.resultJson).data).toEqual([[1]]);
+        expect(queries).toBe(1);
+        const stored = await mockComponents.apiHistoryRepository.findOneBy({
+          governanceBindingId: delivery.bindingId,
+          governanceKey: completed.key,
+        });
+        await source.raw(`grant update on fixture_rows to "${writer}"`);
+        await source.raw(`grant "${writer}" to "${reader}"`);
+        await expect(
+          completed.service.completedQuerySources(stored, completed.reference),
+        ).rejects.toThrow('BINDING_SCOPE_DENIED');
+        expect((await completed.execute(completed.key)).status).toBe(403);
+        expect(queries).toBe(1);
+        expect(
+          await mockComponents.apiHistoryRepository.findOneBy({
+            governanceBindingId: delivery.bindingId,
+            governanceKey: completed.key,
+          }),
+        ).toMatchObject({
+          governanceState: 'SUCCEEDED',
+          responsePayload: stored.responsePayload,
+        });
+        // Metadata-only observation still reconciles the proven native
+        // outcome; refusal to disclose is not a fabricated task failure.
+        const observation = {
+          externalExecutionId: randomUUID(),
+          idempotencyKey: completed.key,
+          nativeType: result.execution.nativeType,
+          nativeId: result.execution.nativeId,
+        };
+        const observed = await completed.service.observe(
+          await completed.signHuman({
+            normalized_parameter_hash: digest({
+              operation: 'observe',
+              arguments: observation,
+            }),
+          }),
+          observation,
+        );
+        expect(JSON.parse(JSON.stringify(observed))).toMatchObject({
+          execution: {
+            idempotencyKey: completed.key,
+            nativeId: result.execution.nativeId,
+            platformStatus: 'SUCCEEDED',
+            nativeStatus: 'SUCCEEDED',
+            terminalAt: result.execution.terminalAt,
+          },
+        });
+        expect(observed).not.toHaveProperty('resultJson');
+        await source.raw(`revoke "${writer}" from "${reader}"`);
+        await source.raw(`revoke update on fixture_rows from "${writer}"`);
+        expect(
+          await completed.service.completedQuerySources(
+            stored,
+            completed.reference,
+          ),
+        ).toEqual(stored.requestPayload.nativeSources);
+        expect((await completed.execute(completed.key)).status).toBe(200);
+        expect(queries).toBe(1);
+      } finally {
+        await source.raw(`revoke "${writer}" from "${reader}"`);
+        await source.raw(`revoke update on fixture_rows from "${writer}"`);
+        await database('view').where({ id: completed.view.id }).delete();
+      }
+
+      const inFlight = await humanReference();
+      try {
+        onQuery = async () => {
+          await source.raw(`grant update on fixture_rows to "${reader}"`);
+        };
+        expect((await inFlight.execute(inFlight.key)).status).toBe(403);
+        expect(queries).toBe(2);
+        const stored = await mockComponents.apiHistoryRepository.findOneBy({
+          governanceBindingId: delivery.bindingId,
+          governanceKey: inFlight.key,
+        });
+        expect(stored.governanceState).toBe('SUCCEEDED');
+        expect(stored.responsePayload.data).toEqual([[1]]);
+        expect((await inFlight.execute(inFlight.key)).status).toBe(403);
+        expect(queries).toBe(2);
+        onQuery = undefined;
+        await source.raw(`revoke update on fixture_rows from "${reader}"`);
+        expect((await inFlight.execute(inFlight.key)).status).toBe(200);
+        expect(queries).toBe(2);
+      } finally {
+        onQuery = undefined;
+        await source.raw(`revoke update on fixture_rows from "${reader}"`);
+        await database('view').where({ id: inFlight.view.id }).delete();
+      }
+
+      const beforeQuery = await humanReference();
+      const history: ApiHistoryRepository = mockComponents.apiHistoryRepository;
+      const originalFreeze = history.freezeGovernedQuerySources.bind(history);
+      const freeze = jest
+        .spyOn(history, 'freezeGovernedQuerySources')
+        .mockImplementation(async (...args) => {
+          const frozen = await originalFreeze(...args);
+          await source.raw(`grant update on fixture_rows to "${reader}"`);
+          return frozen;
+        });
+      try {
+        const rejected = await beforeQuery.execute(beforeQuery.key);
+        expect(rejected.status).toBe(200);
+        const outcome = await rejected.json();
+        expect(outcome.execution.platformStatus).toBe('FAILED');
+        expect(outcome).not.toHaveProperty('resultJson');
+        expect(queries).toBe(2);
+        expect(
+          await mockComponents.apiHistoryRepository.findOneBy({
+            governanceBindingId: delivery.bindingId,
+            governanceKey: beforeQuery.key,
+          }),
+        ).toMatchObject({
+          governanceState: 'FAILED',
+          responsePayload: { error: 'NOT_DISPATCHED' },
+        });
+        freeze.mockRestore();
+        await source.raw(`revoke update on fixture_rows from "${reader}"`);
+        // A proven-unsent failure remains the same native history, not an
+        // invitation to repeat an old admitted intent after privileges change.
+        const replay = await beforeQuery.execute(beforeQuery.key);
+        expect(replay.status).toBe(200);
+        expect((await replay.json()).execution.platformStatus).toBe('FAILED');
+        expect(queries).toBe(2);
+      } finally {
+        freeze.mockRestore();
+        await source.raw(`revoke update on fixture_rows from "${reader}"`);
+        await database('view').where({ id: beforeQuery.view.id }).delete();
+      }
       denyAt = peps + 2;
       expect((await manage('validate_binding', args)).status).toBe(403);
     } finally {

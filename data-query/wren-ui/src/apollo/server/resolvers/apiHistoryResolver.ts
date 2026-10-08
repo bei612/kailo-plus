@@ -1,5 +1,14 @@
 import { ApiType, ApiHistory } from '@server/repositories/apiHistoryRepository';
 import { IContext } from '@server/types';
+import {
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
+import {
+  NativeHumanQuery,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import { NativeQueryService } from '../services/nativeQueryService';
 
 export interface ApiHistoryFilter {
   apiType?: ApiType;
@@ -55,6 +64,41 @@ export class ApiHistoryResolver {
     this.getApiHistory = this.getApiHistory.bind(this);
   }
 
+  private async nativeHistory(ctx: IContext) {
+    if (
+      !process.env.WREN_PLATFORM_QUERY_CONFIG_FILE &&
+      !ctx?.nativeIdentityScope &&
+      !ctx?.nativeHumanToken
+    )
+      return undefined;
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    const project = await ctx.projectService.getCurrentProject();
+    if (config.projectId !== project.id)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const { components } = await import('@/common');
+    const queries = new NativeQueryService(
+      config,
+      ctx.projectRepository,
+      ctx.deployRepository,
+      components.apiHistoryRepository,
+      ctx.queryService,
+      ctx.viewRepository,
+      ctx.modelRepository,
+      ctx.modelColumnRepository,
+    );
+    return {
+      config,
+      reader: new NativeHumanQuery(
+        config,
+        queries,
+        components.apiHistoryRepository,
+      ),
+    };
+  }
+
   /**
    * Get API history with filtering and pagination
    */
@@ -88,6 +132,19 @@ export class ApiHistoryResolver {
       if (filter.projectId) {
         filterCriteria.projectId = filter.projectId;
       }
+    }
+
+    const native = await this.nativeHistory(ctx);
+    if (native) {
+      if (
+        filter?.projectId !== undefined &&
+        filter.projectId !== native.config.projectId
+      )
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      // Keep the original filters/count/page, but never borrow the native
+      // first project or expose another binding's history through a filter.
+      filterCriteria.projectId = native.config.projectId;
+      filterCriteria.governanceBindingId = native.config.bindingId;
     }
 
     // Handle date filtering
@@ -145,18 +202,36 @@ export class ApiHistoryResolver {
         ? new Date(apiHistory.updatedAt).toISOString()
         : null;
     },
-    responsePayload: (apiHistory: ApiHistory) => {
-      if (!apiHistory.responsePayload) return null;
+    requestPayload: async (
+      apiHistory: ApiHistory,
+      _args: unknown,
+      ctx: IContext,
+    ) => {
+      const native = await this.nativeHistory(ctx);
+      if (!native) return apiHistory.requestPayload ?? null;
+      const visible = await native.reader.readHistory(
+        ctx.nativeHumanToken,
+        apiHistory,
+      );
+      return visible.requestPayload;
+    },
+    responsePayload: async (
+      apiHistory: ApiHistory,
+      _args: unknown,
+      ctx: IContext,
+    ) => {
+      const native = await this.nativeHistory(ctx);
+      const payload = native
+        ? (await native.reader.readHistory(ctx.nativeHumanToken, apiHistory))
+            .responsePayload
+        : apiHistory.responsePayload;
+      if (!payload) return null;
 
       // If the response payload is an array, return it as is
-      if (Array.isArray(apiHistory.responsePayload))
-        return apiHistory.responsePayload;
+      if (Array.isArray(payload)) return payload;
 
       // Otherwise, sanitize the response payload
-      return sanitizeResponsePayload(
-        apiHistory.responsePayload,
-        apiHistory.apiType,
-      );
+      return sanitizeResponsePayload(payload, apiHistory.apiType);
     },
   });
 }

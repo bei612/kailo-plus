@@ -1,5 +1,6 @@
 import {
   ApiHistoryRepository,
+  ApiHistory,
   ApiType,
 } from '../repositories/apiHistoryRepository';
 import {
@@ -119,6 +120,91 @@ export class NativeHumanQuery {
     private readonly queries: NativeQueryService,
     private readonly history: ApiHistoryRepository,
   ) {}
+
+  async readHistory(token: string | undefined, selected: ApiHistory) {
+    if (!token)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (
+      selected.projectId !== this.config.projectId ||
+      selected.governanceBindingId !== this.config.bindingId
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const action = selected.requestPayload?.action;
+    if (
+      selected.apiType !== ApiType.RUN_SQL ||
+      selected.governanceState !== 'SUCCEEDED' ||
+      !selected.id ||
+      !selected.governanceActionExecutionId ||
+      !selected.governanceOperationId ||
+      typeof selected.governanceKey !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        selected.governanceKey,
+      ) ||
+      !['data_query.query@v1', 'data_query.dry_run@v1'].includes(action)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    // History is a read of the original admitted intent, never a new preview.
+    // Missing receipts do not admit another command or execute native SQL.
+    const receipt = await bindingServiceCall(
+      this.config,
+      'human-action',
+      {
+        bindingId: this.config.bindingId,
+        idempotencyKey: selected.governanceKey,
+      },
+      token,
+    );
+    const check = (value: any) => {
+      if (
+        !queryReceiptState(value).completed ||
+        value.submission?.actionKey !== action ||
+        value.submission.actionExecutionId !==
+          selected.governanceActionExecutionId ||
+        value.submission.operationId !== selected.governanceOperationId ||
+        value.nativeType !== 'wren.api_history' ||
+        value.nativeId !== selected.id ||
+        typeof value.inputReference?.resourceId !== 'string' ||
+        digest({
+          target: { resourceId: value.inputReference.resourceId },
+          input: value.inputReference,
+        }) !== selected.governanceParameterHash
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      try {
+        return JSON.parse(value.inputReference.nativeObjectRef);
+      } catch {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+    };
+    const visible = await this.disclose(
+      token,
+      selected.governanceKey,
+      receipt,
+      check,
+      action,
+    );
+    const current = await this.history.findOneBy({
+      id: selected.id,
+      projectId: this.config.projectId,
+      governanceBindingId: this.config.bindingId,
+      governanceKey: selected.governanceKey,
+      governanceActionExecutionId: selected.governanceActionExecutionId,
+      governanceOperationId: selected.governanceOperationId,
+      governanceParameterHash: selected.governanceParameterHash,
+      governanceState: 'SUCCEEDED',
+    });
+    if (
+      !current ||
+      canonical(current.requestPayload) !==
+        canonical(selected.requestPayload) ||
+      canonical(current.responsePayload) !== canonical(visible.data)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    return {
+      requestPayload: current.requestPayload,
+      responsePayload: visible.data,
+    };
+  }
 
   async preview(
     token: string | undefined,
@@ -477,17 +563,6 @@ export class NativeHumanQuery {
         source.nativeId,
         action,
       );
-    // A current view/model may change during source authorization. Re-read
-    // the original deployment/source facts, not a new query or a name alias.
-    if (
-      digest(
-        await this.queries.completedQuerySources(
-          record,
-          receipt.inputReference,
-        ),
-      ) !== digest(sources)
-    )
-      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     // Reading native rows does not confer permission. Re-admit immediately
     // before disclosure, including revocation/config generation changes.
     const after = await bindingServiceCall(
@@ -503,6 +578,18 @@ export class NativeHumanQuery {
     check(after);
     if (canonical(after) !== canonical(receipt))
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    // Re-read original source and native-reader facts after the final Core
+    // round trip as well. A local view/role change during that authorization
+    // cannot borrow an earlier native check to disclose stored results.
+    if (
+      digest(
+        await this.queries.completedQuerySources(
+          record,
+          receipt.inputReference,
+        ),
+      ) !== digest(sources)
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     return { ...receipt, data: record.responsePayload };
   }
 }

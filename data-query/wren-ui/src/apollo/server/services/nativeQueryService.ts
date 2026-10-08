@@ -124,6 +124,32 @@ export class NativeQueryService {
     private readonly modelColumns?: IModelColumnRepository,
   ) {}
 
+  private async verifyCurrentNativeReader() {
+    const project = await this.projects.findOneBy({
+      id: this.config.projectId,
+    });
+    if (
+      !project ||
+      digest({
+        type: project.type,
+        connectionInfo: project.connectionInfo,
+        catalog: project.catalog,
+        schema: project.schema,
+      }) !== this.config.projectConnectionDigest
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
+    if (project.type === DataSourceName.POSTGRES) {
+      const connection = toIbisConnectionInfo(
+        project.type,
+        project.connectionInfo,
+      );
+      await verifyPostgresReader(
+        connection.connectionUrl,
+        this.config.requestTimeoutMs,
+      );
+    }
+  }
+
   private async modelQuery(modelId: number) {
     if (!this.models || !this.modelColumns) throw unavailable();
     const model = await this.models.findOneBy({
@@ -780,19 +806,6 @@ export class NativeQueryService {
       record.governanceDeploymentHash !== input.deploymentHash
     )
       throw unavailable();
-    const project = await this.projects.findOneBy({
-      id: this.config.projectId,
-    });
-    if (
-      !project ||
-      digest({
-        type: project.type,
-        connectionInfo: project.connectionInfo,
-        catalog: project.catalog,
-        schema: project.schema,
-      }) !== this.config.projectConnectionDigest
-    )
-      throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
     const deployment = await this.deployments.findOneBy({
       id: input.deploymentId,
       projectId: this.config.projectId,
@@ -804,6 +817,10 @@ export class NativeQueryService {
     const current = await this.querySourceObjects(deployment, input, reference);
     if (digest(current.objects) !== digest(payload.nativeSources))
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    // The same frozen connection can gain native write/function privileges
+    // without changing its fingerprint. HUMAN completed results consume the
+    // original binding's live database ACL check, not its past validation.
+    await this.verifyCurrentNativeReader();
     return current.objects;
   }
 
@@ -971,6 +988,10 @@ export class NativeQueryService {
         )
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       }
+      // Runs before the first native call, after completion and on completed
+      // reentry. A role change after analysis/admission must not borrow the
+      // original binding validation or cause another native query.
+      await this.verifyCurrentNativeReader();
     };
     const rejectUnsentReference = async () => {
       if (referenced) {
@@ -1145,16 +1166,6 @@ export class NativeQueryService {
     // Recheck immediately before the original engine call. Here alone we can
     // prove no native call occurred, unlike an exception from QueryService.
     try {
-      if (project.type === DataSourceName.POSTGRES) {
-        const connection = toIbisConnectionInfo(
-          project.type,
-          project.connectionInfo,
-        );
-        await verifyPostgresReader(
-          connection.connectionUrl,
-          this.config.requestTimeoutMs,
-        );
-      }
       await reauthorize();
       if (!describing) {
         if (

@@ -18,6 +18,12 @@ import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { getQueryPreviewText } from './utils/language';
 import referenceHandler from './pages/api/platform-query-reference';
+import { ApiHistoryResolver } from './apollo/server/resolvers/apiHistoryResolver';
+import { ApolloServer } from 'apollo-server-micro';
+import GraphQLJSON from 'graphql-type-json';
+import { typeDefs } from './apollo/server/schema';
+import { API_HISTORY } from './apollo/client/graphql/apiManagement';
+import { components } from './common';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -108,7 +114,7 @@ describe('native saved-view HUMAN query consumer', () => {
     return {
       projectId: config.projectId,
       governanceBindingId: binding,
-      governanceState: 'SUCCEEDED',
+      governanceState: 'SUCCEEDED' as const,
       apiType: ApiType.RUN_SQL,
       governanceKey: key,
       governanceParameterHash: digest({
@@ -149,6 +155,271 @@ describe('native saved-view HUMAN query consumer', () => {
       } as unknown as NativeQueryService,
       { findOneBy: history } as unknown as ApiHistoryRepository,
     );
+  });
+
+  const originalHistory = (dryRun = false) => {
+    const id = '60c94d6b-9dc1-4b7c-8b55-eb17c5b0de67';
+    const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+    const record = {
+      ...nativeRecord(),
+      id,
+      governanceActionExecutionId: submission.actionExecutionId,
+      governanceOperationId: submission.operationId,
+      createdAt: '2026-10-08T00:00:00.000Z',
+      updatedAt: '2026-10-08T00:00:00.000Z',
+    };
+    record.requestPayload.action = action;
+    if (dryRun)
+      record.responsePayload = {
+        valid: true,
+        deploymentId: selection.deploymentId,
+        deploymentHash: selection.deploymentHash,
+      } as any;
+    const completed = {
+      ...receipt,
+      submission: { ...submission, actionKey: action },
+      terminalStatus: 'COMPLETED',
+      nativeType: 'wren.api_history',
+      nativeId: id,
+    };
+    history.mockResolvedValue(record);
+    calls.mockImplementation(async (_config, _operation, input) => {
+      const query = input.resolveResource as any;
+      if (query)
+        return {
+          resource: {
+            ...resolution.resource,
+            nativeType: query.nativeType,
+            nativeRef: query.nativeRef,
+          },
+        };
+      return completed;
+    });
+    return { record, completed };
+  };
+
+  it.each([false, true])(
+    'reads the original API History query/dry-run body through the same AE and never admits a command (%s)',
+    async (dryRun) => {
+      const { record } = originalHistory(dryRun);
+      expect(
+        await service.readHistory('verified-native-token', record),
+      ).toEqual({
+        requestPayload: record.requestPayload,
+        responsePayload: record.responsePayload,
+      });
+      expect(calls.mock.calls[0][2]).toEqual({
+        bindingId: binding,
+        idempotencyKey: key,
+      });
+      expect(calls.mock.calls.at(-1)[2].sourceResources).toEqual([
+        { nativeType: 'model', nativeRef: '8' },
+        { nativeType: 'view', nativeRef: '7' },
+      ]);
+      expect(calls.mock.calls.every((call) => !('command' in call[2]))).toBe(
+        true,
+      );
+      expect(freeze).not.toHaveBeenCalled();
+      expect(sources).toHaveBeenCalledTimes(2);
+      expect(history).toHaveBeenLastCalledWith({
+        id: record.id,
+        projectId: config.projectId,
+        governanceBindingId: binding,
+        governanceKey: key,
+        governanceActionExecutionId: submission.actionExecutionId,
+        governanceOperationId: submission.operationId,
+        governanceParameterHash: record.governanceParameterHash,
+        governanceState: 'SUCCEEDED',
+      });
+    },
+  );
+
+  it.each(['absent', 'another AE', 'another native row', 'UNKNOWN'])(
+    'refuses %s history receipt without a new command or native query',
+    async (changed) => {
+      const { record, completed } = originalHistory();
+      calls.mockResolvedValue(
+        changed === 'absent'
+          ? null
+          : changed === 'another AE'
+            ? {
+                ...completed,
+                submission: { ...submission, actionExecutionId: binding },
+              }
+            : changed === 'another native row'
+              ? { ...completed, nativeId: binding }
+              : { ...completed, terminalStatus: 'UNKNOWN' },
+      );
+      await expect(
+        service.readHistory('verified-native-token', record),
+      ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(history).not.toHaveBeenCalled();
+      expect(sources).not.toHaveBeenCalled();
+      expect(freeze).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses native history mutation after source authorization instead of returning an earlier unauthorized payload', async () => {
+    const { record } = originalHistory();
+    history.mockResolvedValueOnce(record).mockResolvedValueOnce({
+      ...record,
+      requestPayload: { ...record.requestPayload, sql: 'SELECT changed' },
+    });
+    await expect(
+      service.readHistory('verified-native-token', record),
+    ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+    expect(calls.mock.calls.at(-1)[2].sourceResources).toHaveLength(2);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it('refuses the original API History body when completed native reader privileges drift', async () => {
+    const { record } = originalHistory();
+    sources.mockRejectedValue(
+      new NativeQueryRefusal(403, 'BINDING_SCOPE_DENIED'),
+    );
+    await expect(
+      service.readHistory('verified-native-token', record),
+    ).rejects.toThrow('BINDING_SCOPE_DENIED');
+    expect(calls).toHaveBeenCalledTimes(1);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it('rechecks native reader privileges changed during final same-AE history authorization', async () => {
+    const { record, completed } = originalHistory();
+    const authorize = calls.getMockImplementation();
+    calls.mockImplementation(async (...args) => {
+      if (args[2].sourceResources) {
+        sources.mockRejectedValue(
+          new NativeQueryRefusal(403, 'BINDING_SCOPE_DENIED'),
+        );
+        return completed;
+      }
+      return authorize(...args);
+    });
+    await expect(
+      service.readHistory('verified-native-token', record),
+    ).rejects.toThrow('BINDING_SCOPE_DENIED');
+    expect(sources).toHaveBeenCalledTimes(2);
+    expect(freeze).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'consumes the original API History GraphQL document and gates both SQL request and result fields (revoked %s)',
+    async (revoked) => {
+      const { record } = originalHistory();
+      const oldConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      const sourceReader = jest
+        .spyOn(NativeQueryService.prototype, 'completedQuerySources')
+        .mockImplementation(sources);
+      const nativeHistory =
+        components.apiHistoryRepository as ApiHistoryRepository;
+      const oldReader = nativeHistory.findOneBy;
+      nativeHistory.findOneBy = history;
+      const ctx = {
+        nativeHumanToken: 'verified-native-token',
+        nativeIdentityScope: 'c'.repeat(64),
+        projectService: {
+          getCurrentProject: jest.fn().mockResolvedValue(nativeProject),
+        },
+        apiHistoryRepository: {
+          count: jest.fn().mockResolvedValue(1),
+          findAllWithPagination: jest.fn().mockResolvedValue([record]),
+        },
+      };
+      if (revoked)
+        sources.mockRejectedValue(
+          new NativeQueryRefusal(403, 'BINDING_SCOPE_DENIED'),
+        );
+      const resolver = new ApiHistoryResolver();
+      const server = new ApolloServer({
+        typeDefs,
+        resolvers: {
+          JSON: GraphQLJSON,
+          Query: { apiHistory: resolver.getApiHistory },
+          ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+        },
+        context: () => ctx,
+      });
+      try {
+        await server.start();
+        const result = await server.executeOperation({
+          query: API_HISTORY,
+          variables: { pagination: { offset: 0, limit: 10 } },
+        });
+        expect(ctx.apiHistoryRepository.count).toHaveBeenCalledWith(
+          { projectId: config.projectId, governanceBindingId: binding },
+          {},
+        );
+        expect(result.data.apiHistory.total).toBe(1);
+        const visible = result.data.apiHistory.items[0];
+        if (revoked) {
+          expect(visible.requestPayload).toBeNull();
+          expect(visible.responsePayload).toBeNull();
+          expect(result.errors).toHaveLength(2);
+          expect(
+            result.errors.every(
+              (error) => error.message === 'BINDING_SCOPE_DENIED',
+            ),
+          ).toBe(true);
+        } else {
+          expect(result.errors).toBeUndefined();
+          expect(visible.requestPayload).toEqual(record.requestPayload);
+          expect(visible.responsePayload).toEqual(record.responsePayload);
+        }
+        expect(calls.mock.calls.every((call) => !('command' in call[2]))).toBe(
+          true,
+        );
+        expect(freeze).not.toHaveBeenCalled();
+      } finally {
+        await server.stop();
+        sourceReader.mockRestore();
+        nativeHistory.findOneBy = oldReader;
+        if (oldConfig === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = oldConfig;
+      }
+    },
+  );
+
+  it('rejects a foreign API History project filter before original count or row reads', async () => {
+    const oldConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    const ctx = {
+      nativeHumanToken: 'verified-native-token',
+      nativeIdentityScope: 'c'.repeat(64),
+      projectService: {
+        getCurrentProject: jest.fn().mockResolvedValue(nativeProject),
+      },
+      apiHistoryRepository: {
+        count: jest.fn(),
+        findAllWithPagination: jest.fn(),
+      },
+    };
+    try {
+      await expect(
+        new ApiHistoryResolver().getApiHistory(
+          null,
+          {
+            filter: { projectId: config.projectId + 1 },
+            pagination: { offset: 0, limit: 10 },
+          },
+          ctx as any,
+        ),
+      ).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(ctx.apiHistoryRepository.count).not.toHaveBeenCalled();
+      expect(
+        ctx.apiHistoryRepository.findAllWithPagination,
+      ).not.toHaveBeenCalled();
+    } finally {
+      if (oldConfig === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = oldConfig;
+    }
   });
   it.each([false, true])(
     'submits the original SQL editor with its exact query/dry-run action and policy (%s)',
@@ -644,7 +915,7 @@ describe('native saved-view HUMAN query consumer', () => {
     );
     expect(
       calls.mock.calls.filter((call) => !call[2].resolveResource),
-    ).toHaveLength(1);
+    ).toHaveLength(failure === 'changed sources during authorization' ? 2 : 1);
     expect(freeze).not.toHaveBeenCalled();
   });
 
