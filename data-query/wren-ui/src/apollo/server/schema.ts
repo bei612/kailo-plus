@@ -741,6 +741,8 @@ export const typeDefs = gql`
 
   input PreviewDataInput {
     responseId: Int!
+    idempotencyKey: String
+    idempotencyScope: String
     # Optional, only used for preview data of a single step
     stepIndex: Int
     # It will return default 500 rows if not specified limit

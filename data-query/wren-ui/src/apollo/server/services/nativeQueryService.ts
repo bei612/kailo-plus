@@ -172,7 +172,12 @@ export class NativeQueryService {
   // A browser may export an existing native view's immutable query selection.
   // This is a reference, not platform admission. Core independently verifies
   // the supplied resource's tenant/binding and current caller authorization.
-  async reference(resourceId: string, viewId: number, limit: number) {
+  async reference(
+    resourceId: string,
+    viewId: number,
+    limit: number,
+    expectedStatement?: string,
+  ) {
     if (
       !uuid.test(resourceId) ||
       !Number.isSafeInteger(viewId) ||
@@ -186,6 +191,14 @@ export class NativeQueryService {
       id: viewId,
       projectId: this.config.projectId,
     });
+    // An Asking consumer has already matched this exact native statement to
+    // its response. Never freeze a different statement under the same view ID
+    // between that read and Core command submission, even if it changes back.
+    if (
+      expectedStatement !== undefined &&
+      view?.statement !== expectedStatement
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     const deployment = await this.deployments.findLastProjectDeployLog(
       this.config.projectId,
     );

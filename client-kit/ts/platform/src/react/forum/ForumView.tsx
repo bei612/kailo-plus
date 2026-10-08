@@ -51,7 +51,7 @@ export type ForumViewProps = {
   onCopy?: React.ClipboardEventHandler<HTMLDivElement>;
   labels: ForumLabels;
   formatTime: (createdAt: number) => string;
-  renderAuthor: (message: ForumMessage, large: boolean) => React.ReactNode;
+  renderAuthor: (message: ForumMessage, large: boolean, preview: boolean) => React.ReactNode;
   renderContent: (message: ForumMessage, preview: boolean) => React.ReactNode;
   renderComposer: (postId: string | null, close: () => void) => React.ReactNode;
   renderDelete?: (message: ForumMessage, reply: boolean) => React.ReactNode;
@@ -60,6 +60,18 @@ export type ForumViewProps = {
 
 function Skeleton({ className }: { className: string }) {
   return <div aria-hidden="true" className={cn("t-skel-bar rounded-md bg-primary/10 is-pulsing", className)} />;
+}
+
+// Original author buttons from ForumPostCard, ForumThreadPanel and ReplyRow.
+// Hosts provide the already-admitted identity, avatar and profile interaction.
+export function ForumAuthorButton({ avatar, displayName, large, preview, disabled = false }: {
+  avatar: React.ReactNode; displayName: string; large: boolean; preview: boolean; disabled?: boolean;
+}) {
+  return <button className={cn("flex items-center gap-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+    large ? "rounded-xl" : "rounded-lg")} type="button" disabled={disabled}>
+    {avatar}<span className={cn("text-sm text-foreground hover:underline", large ? "font-semibold" : "font-medium",
+      preview && "truncate")}>{displayName}</span>
+  </button>;
 }
 
 export function ForumView(props: ForumViewProps) {
@@ -98,7 +110,7 @@ function ForumVisit({ channelId, isMember, archived, posts, post, replies, selec
       <div className="flex-1 overflow-y-auto" data-scroll-restoration-id={`forum-thread:${channelId}`}
         onCopy={onCopy} ref={scrollRef}>
         <div className="group border-b border-border/60 p-4" data-forum-event-id={post.eventId}>
-          <div className="flex items-center gap-2">{renderAuthor(post, true)}
+          <div className="flex items-center gap-2">{renderAuthor(post, true, false)}
             <span className="text-xs text-muted-foreground">{formatTime(post.createdAt)}</span>{renderDelete?.(post, false)}
           </div>
           <div className="mt-3">{renderContent(post, false)}</div>
@@ -109,7 +121,7 @@ function ForumVisit({ channelId, isMember, archived, posts, post, replies, selec
         <div className="divide-y divide-border/40">
           {replies.map((reply) => <div className="group content-visibility-auto px-4 py-3" key={reply.eventId}
             data-forum-event-id={reply.eventId}>
-            <div className="flex items-center gap-2">{renderAuthor(reply, false)}
+            <div className="flex items-center gap-2">{renderAuthor(reply, false, false)}
               <span className="text-xs text-muted-foreground">{formatTime(reply.createdAt)}</span>{renderDelete?.(reply, true)}
             </div>
             <div className="mt-1.5 pl-8">{renderContent(reply, false)}</div>
@@ -150,7 +162,7 @@ function ForumVisit({ channelId, isMember, archived, posts, post, replies, selec
               }
             }}>
             <div className="flex items-center gap-2">
-              <div role="presentation" onClick={(event) => event.stopPropagation()}>{renderAuthor(item, false)}</div>
+              <div role="presentation" onClick={(event) => event.stopPropagation()}>{renderAuthor(item, false, true)}</div>
               <span className="text-xs text-muted-foreground">{formatTime(item.createdAt)}</span>
               <div className="ml-auto" role="presentation" onClick={(event) => event.stopPropagation()}>{renderDelete?.(item, false)}</div>
             </div>

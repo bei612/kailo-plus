@@ -1088,6 +1088,8 @@ export type OnboardingStatusResponse = {
 };
 
 export type PreviewDataInput = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   limit?: InputMaybe<Scalars['Int']>;
   responseId: Scalars['Int'];
   stepIndex?: InputMaybe<Scalars['Int']>;

@@ -29,6 +29,7 @@ import {
 import { TelemetryEvent, WrenService } from '../telemetry/telemetry';
 import { TrackedAskingResult } from '../services';
 import { View } from '../repositories/viewRepository';
+import { ModelResolver } from './modelResolver';
 import {
   nativePreviewScope,
   resolveNativeResource,
@@ -714,28 +715,104 @@ export class AskingResolver {
 
   public async previewData(
     _root: any,
-    args: { where: { responseId: number; stepIndex?: number; limit?: number } },
+    args: {
+      where: {
+        responseId: number;
+        stepIndex?: number;
+        limit?: number;
+        idempotencyKey?: string;
+        idempotencyScope?: string;
+      };
+    },
     ctx: IContext,
   ): Promise<any> {
-    const { responseId, limit } = args.where;
-    const askingService = ctx.askingService;
-    const data = await askingService.previewData(responseId, limit);
-    return data;
+    return this.previewResponseData(args.where, ctx, false);
   }
 
   public async previewBreakdownData(
     _root: any,
-    args: { where: { responseId: number; stepIndex?: number; limit?: number } },
+    args: {
+      where: {
+        responseId: number;
+        stepIndex?: number;
+        limit?: number;
+        idempotencyKey?: string;
+        idempotencyScope?: string;
+      };
+    },
     ctx: IContext,
   ): Promise<any> {
-    const { responseId, stepIndex, limit } = args.where;
-    const askingService = ctx.askingService;
-    const data = await askingService.previewBreakdownData(
-      responseId,
-      stepIndex,
-      limit,
+    return this.previewResponseData(args.where, ctx, true);
+  }
+
+  private async previewResponseData(
+    where: {
+      responseId: number;
+      stepIndex?: number;
+      limit?: number;
+      idempotencyKey?: string;
+      idempotencyScope?: string;
+    },
+    ctx: IContext,
+    breakdown: boolean,
+  ) {
+    const config = await loadQueryDelivery();
+    const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (where.idempotencyScope !== scope)
+      throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+    const response = await ctx.askingService.getResponse(where.responseId);
+    if (!response) throw new Error('Thread response not found');
+    if (response.id !== where.responseId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    if (!Number.isSafeInteger(response.viewId) || response.viewId <= 0)
+      throw new NativeQueryRefusal(503, 'QUERY_REFERENCE_UNAVAILABLE');
+
+    const views = await this.readNativeViews(ctx, [response.viewId]);
+    const view = views.get(response.viewId);
+    if (breakdown && !response.breakdownDetail?.steps?.length)
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    const sql = breakdown
+      ? constructCteSql(response.breakdownDetail?.steps, where.stepIndex)
+      : response.sql;
+    // A generated query or a partial CTE is not an authorized saved view.
+    // Reuse the existing view reference only for the same native statement.
+    if (
+      !sql ||
+      !view?.statement ||
+      safeFormatSQL(sql) !== safeFormatSQL(view.statement)
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+
+    const receipt = await new ModelResolver().previewViewSnapshotData(
+      {
+        where: {
+          id: view.id,
+          limit: where.limit,
+          idempotencyKey: where.idempotencyKey,
+          idempotencyScope: where.idempotencyScope,
+        },
+      },
+      ctx,
+      view.statement,
     );
-    return data;
+
+    const current = await ctx.askingService.getResponse(where.responseId);
+    const currentViews = await this.readNativeViews(ctx, [view.id]);
+    const intent = (value: ThreadResponse) => ({
+      id: value.id,
+      threadId: value.threadId,
+      viewId: value.viewId,
+      sql: breakdown
+        ? constructCteSql(value.breakdownDetail?.steps, where.stepIndex)
+        : value.sql,
+    });
+    if (
+      !current ||
+      canonical(intent(current)) !== canonical(intent(response)) ||
+      canonical(currentViews.get(view.id)) !== canonical(view)
+    )
+      throw new NativeQueryRefusal(409, 'QUERY_EVIDENCE_UNAVAILABLE');
+    return { ...receipt, responseId: response.id, viewId: view.id };
   }
 
   public async createInstantRecommendedQuestions(

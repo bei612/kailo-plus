@@ -116,6 +116,7 @@ export class NativeHumanQuery {
     limit: number,
     key: string,
     kind: 'view' | 'model' = 'view',
+    expectedStatement?: string,
   ) {
     const selection = this.config.humanAction;
     if (!token || !selection)
@@ -126,6 +127,10 @@ export class NativeHumanQuery {
       !Number.isSafeInteger(limit) ||
       limit <= 0 ||
       typeof key !== 'string' ||
+      (expectedStatement !== undefined &&
+        (kind !== 'view' ||
+          typeof expectedStatement !== 'string' ||
+          !expectedStatement.trim())) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
         key,
       )
@@ -155,11 +160,19 @@ export class NativeHumanQuery {
         'data_query.query@v1',
       );
       selectedResource = resource.resourceId;
-      const reference = await (
+      const reference =
         kind === 'model'
-          ? this.queries.modelReference.bind(this.queries)
-          : this.queries.reference.bind(this.queries)
-      )(resource.resourceId, viewId, limit);
+          ? await this.queries.modelReference(
+              resource.resourceId,
+              viewId,
+              limit,
+            )
+          : await this.queries.reference(
+              resource.resourceId,
+              viewId,
+              limit,
+              expectedStatement,
+            );
       receipt = await bindingServiceCall(
         this.config,
         'human-action',
@@ -212,6 +225,21 @@ export class NativeHumanQuery {
         frozen.limit !== limit
       )
         throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+      // Observation of an existing key is not permission to substitute a
+      // previously frozen statement for the Asking response's current intent.
+      // Use the same native revision as execute, without storing SQL in Core.
+      if (
+        expectedStatement !== undefined &&
+        value.inputReference.nativeRevision !==
+          digest({
+            bindingId: this.config.bindingId,
+            projectId: this.config.projectId,
+            connection: this.config.projectConnectionDigest,
+            selection: frozen,
+            sql: expectedStatement,
+          })
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     };
     check(receipt);
     if (receipt.terminalStatus !== 'COMPLETED') return receipt;

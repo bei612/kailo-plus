@@ -231,6 +231,9 @@ func (t *fileStorageTransport) grant(ctx context.Context, run fileStorageRun, so
 }
 
 func (t *fileStorageTransport) pep(ctx context.Context, grant *fileStorageGrant) error {
+	if fileStorageText(grant.value, "outcome") != "" {
+		return fmt.Errorf("original read observation cannot authorize another receiver write")
+	}
 	if fileStorageNumber(grant.receiver, "expiresAt") <= time.Now().Unix() {
 		return fmt.Errorf("receiver grant expired")
 	}
@@ -315,5 +318,12 @@ func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGr
 		return fmt.Errorf("native read operation has not confirmed both receipts and committed usage")
 	}
 	completedGrant := &fileStorageGrant{key: grant.key, value: observation}
-	return t.receipt(ctx, completedGrant, nativeID, revision, digest, size, completed)
+	if err := t.receipt(ctx, completedGrant, nativeID, revision, digest, size, completed); err != nil {
+		return err
+	}
+	// Keep only the exact Core-confirmed observation. The old source/receiver
+	// tokens cannot be reused after this operation reached its genuine outcome.
+	grant.value = observation
+	grant.receiver = nil
+	return nil
 }

@@ -2753,3 +2753,206 @@ catalog release/binding, live LLM/datasource, image, deployment or screenshot
 is claimed. The separate saved-view browser/GraphQL integration in progress
 and generated-SQL multi-resource authorization/LLM usage gaps are not included
 in this 94-case receipt.
+
+### 2026-10-08 original Asking saved-view submission and result consumers
+
+Implementation authority and impact, recorded after the source changes:
+
+1. DD-98 and `.design/08` §6 retain Wren's original answer, saved view,
+   deployment and ApiHistory as business authority. The existing HUMAN
+   `data_query.query@v1` action owns admission, approval, quota, audit and
+   reconciliation. The official comparison remains WrenUI
+   `c5f02a0391c87420dba78632dcd86073710deb72`, specifically
+   `wren-ui/src/apollo/server/resolvers/askingResolver.ts::AskingResolver.previewData`,
+   `wren-ui/src/apollo/server/services/askingService.ts::AskingService.previewData`
+   and the original `ViewSQLTabContent`, `TextBasedAnswer` and `ChartAnswer`
+   components under `wren-ui/src/components/pages/home/promptThread/`.
+   Their original pages, styles, chart properties, adjustment/pinning controls,
+   SQL display and automatic preview triggers remain; the authorized difference
+   is their query submission/result consumption and necessary governance states.
+2. Searches covered original GraphQL registrations, generated consumers,
+   service callers and all three live preview controls. `previewData` and
+   `previewBreakdownData` now reuse the existing
+   `ModelResolver.previewViewSnapshotData` → `NativeHumanQuery.preview` chain. The former
+   unmanaged `AskingService` preview implementations had only those resolver
+   callers and were removed, rather than retained as a second execution path.
+   Two optional original GraphQL input fields carry the existing opaque retry
+   key and verified scope. The original cached GraphQL generator ran against
+   the actual local schema: only `__types__.ts` gained the two fields; all
+   `*.generated.ts` files compared byte-identical with formal source. There is
+   no platform contract, native database field/migration, task, public Action,
+   native page or deployment change. Clients that omit/forge the current scope
+   are refused; there is no old unauthenticated fallback.
+3. The actual original response is loaded through project/thread ownership;
+   its exact saved view is freshly described as the current HUMAN. Its SQL
+   must equal the native saved-view statement, not merely an LLM candidate
+   table list. That first native statement snapshot is passed to the actual
+   reference reader before command submission; a different statement under the
+   same view ID is refused before a Core command exists. Existing-key observation
+   must match that snapshot's original native revision as well. The existing
+   frozen view/deployment reference then submits or observes the same Core
+   ActionExecution. Core receives no SQL/body. Results
+   are read only from the original completed native ApiHistory after fresh
+   authorization. Response intent and current native view facts are checked
+   again before disclosure. Unrelated answer-stream content changes are not
+   query-intent changes. No new execution state or cleanup lifecycle is added.
+4. Missing native response/view evidence, changed SQL/CTE, scope mismatch,
+   permission denial, revocation, native-object changes and unavailable
+   authorization refuse submission/disclosure. The existing six-class
+   boundary remains: authentication/scope/permission are DENIED; unavailable
+   admission/reference facts are PRECONDITION; changed identities/intents or
+   evidence are CONFLICT/PRECONDITION, not a completed business failure. The
+   existing Core LIMIT/approval decisions are consumed, never replaced by
+   client counters. An unverified external result remains UNKNOWN with its
+   original key, not success/failure or a fresh native query. Native references
+   and retry keys remain separated by trusted user/binding/scope and native
+   selection. Wrong-object/malformed terminal receipts cannot clear the key.
+   Missing browser storage refuses submission. Original Web/Desktop host
+   boundaries and the Mobile non-component-host boundary are unchanged.
+
+The original SQL/text result controls and chart data consumer use the same
+existing `useGovernedPreview` hook, extended for a response native ID. Only
+verified receipt data renders native rows/charts; pending/UNKNOWN cannot render
+an empty chart as success. Necessary guidance uses the existing Chinese-default
+and English helper, not an alternate page or language authority. This is not
+complete Wren i18n or visual parity acceptance.
+
+Actual validation reused the existing 4 CPU / 4 GiB SDK, installed dependencies
+and isolated PostgreSQL. `docker top` showed only its keeper before each run;
+available host memory was above the actual budget. No image, package or
+database provisioning occurred. Initial implementation acceptance reported
+109/109 in four original suites, but its combined type-check command failed:
+eight mistaken isolated source copies under `/work/data-query/wren-ui/src`
+were also scanned by tsconfig, producing 23 missing-module errors; a wrongly
+escaped shell `PIPESTATUS` then returned exit 2. Formal source never contained
+those copies. The eight known temporary copies were explicitly removed and
+the command corrected; no production check was weakened to accommodate them.
+
+After the final intent and retry-receipt changes, the same concentrated run
+passed 115/115, no skips, exit 0 (105.238 s), followed by whole UI
+`tsc --noEmit`, exit 0 with no diagnostics. Actual command:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeTaskOwnership.test.ts src/nativeHumanQuery.test.ts src/nativeAskingView.test.ts src/viewMetadata.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The real resolver/service path exercised pending and completed queries,
+original deployment/reference replay without native redispatch, refusal before
+command submission, changed response/view/revoked permission before rows,
+partial-CTE refusal, unrelated answer streaming and same-user retry identity.
+The existing native preview-control harness additionally exercised original-key
+retention across remount, another user/selection, and wrong response/native
+selection/scope or malformed terminal evidence. These are execution/control
+checks, not browser screenshots.
+
+Post-implementation negative control changed only the private SDK copy: removed
+the actual response-SQL/view equality and final response-intent checks, and
+replaced the hook's actual selection-aware key clearing with its former
+scope-only behavior. All five targeted checks failed, exit 1 (130.441 s): two
+resolved queries that should have been refused, and three erased retry keys
+after wrong/malformed terminal evidence. The 43 other cases were explicit
+name-filter skips. Faults were restored with `apply_patch`; all 11 source,
+generated and evidence inputs compared byte-identical to formal source.
+
+The original complete four-suite command then passed again:
+
+```text
+Test Suites: 4 passed, 4 total
+Tests:       115 passed, 115 total
+Snapshots:   0 total
+Time:        149.022 s
+```
+
+Whole UI `tsc --noEmit` emitted no diagnostics, exit 0; Prettier passed all ten
+hand-edited inputs (the eleventh is original codegen output), and formal
+`git diff --check` returned 0. Full stdout/stderr evidence is in the existing
+Data candidate:
+
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-preview-restored.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-preview-mutation.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-preview-final.log`
+
+No Wren business instance, catalog release/binding, LLM/datasource end-to-end
+run, browser screenshot, Windows/Mobile validation or deployment is claimed.
+Arbitrary generated SQL and partial CTEs still need exact native source-object
+provenance and multi-resource final authorization; original AI generation and
+other native mutations still need their existing admission/usage/terminal
+association. The Agent raw-SQL branch is not proven resource-scoped by these
+saved-view consumers and must not be activated on that assumption. Existing
+platform task-status enum consumption beyond the exercised preview receipts
+also remains outside this acceptance; the parent owns consolidated review,
+checks and publication.
+
+#### Same-batch cross-review correction: bind the first Asking statement before dispatch
+
+Cross-review found a concrete pre-dispatch race in the initial saved-view
+implementation: Asking checked statement S1 but passed only the view ID to the
+reference reader. That reader could freeze S2 and submit it before the final
+read refused disclosure; S1 → S2 → S1 could even conceal the change entirely.
+The initial 115-case receipt above did not cover this race and is not evidence
+that the original implementation was safe against it.
+
+The actual internal `ModelResolver.previewViewSnapshotData` consumer now passes
+the first checked native statement to `NativeHumanQuery.preview` and the
+existing `NativeQueryService.reference`. The reference reader must match it
+before submitting a Core command, then uses the existing ContentReference
+`nativeRevision` over the original selection and statement. Existing-key
+observation must also match that revision, preventing an older S2 intent from
+being adopted as the current S1 intent. Execution still consumes the original
+revision checks immediately before native SQL; no parser, Action, task, SQL
+copy in Core, browser argument, database field or migration was introduced.
+The optional arguments are internal native-service calls, not a new public
+GraphQL contract or an additional authorization authority.
+
+Three actual Asking → ModelResolver → NativeHumanQuery → NativeQueryService
+consumer scenarios now cover persistent statement changes, S1 → S2 → S1 and
+an existing key frozen for a different statement. The first two assert refusal
+before any command or native history read, not merely failure after dispatch.
+The retained original native-query suite uses real PostgreSQL history and the
+actual HTTP/MCP execution/observation handlers; its original engine HTTP peer
+is an isolated fixture, not a claim that a live Wren datasource ran.
+
+The same existing 4 CPU / 4 GiB SDK and isolated PostgreSQL were reused.
+Before both positive runs and the fault run, the SDK had only its keeper;
+actual host memory exceeded its limit. Data free space was approximately
+292 MiB, so only the changed inputs and small logs were copied; no image,
+dependency, toolchain or database was provisioned. Initial full acceptance was
+5 suites, 158/158, zero skips (128.998 s), followed by whole UI
+`tsc --noEmit` with no diagnostics, combined exit 0.
+
+Only the private SDK copy was then damaged: removed the actual pre-command
+statement comparison and the existing-key revision comparison. All three
+targeted checks failed, exit 1 (6.629 s); 39 other cases were explicit
+name-filter skips. The ABA case returned completed native rows that should
+have been refused; the prior-statement case returned the old receipt; the
+persistent change was caught only after the command, with the wrong evidence
+error. This demonstrates why a final read is not a pre-dispatch guard.
+
+Both guards were restored with `apply_patch`. All 14 implementation/generated
+inputs compared byte-identical to formal source before the final full run:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeTaskOwnership.test.ts src/nativeHumanQuery.test.ts src/nativeAskingView.test.ts src/viewMetadata.test.ts src/nativeQuery.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+```text
+Test Suites: 5 passed, 5 total
+Tests:       158 passed, 158 total
+Snapshots:   0 total
+Time:        20.249 s
+```
+
+Whole UI type checking emitted no diagnostics; all 13 hand-edited inputs
+passed Prettier (the fourteenth is original codegen output), combined exit 0.
+The full stdout/stderr logs are in the same existing Data candidate:
+
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-snapshot-restored.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-snapshot-mutation.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-asking-snapshot-final.log`
+
+This correction is part of the saved-view source batch, not a deployed
+business instance or complete Wren integration. The release/binding,
+datasource/LLM end-to-end, multi-resource authorization, task-status consumer
+and three-client visual acceptance gaps stated above remain open.

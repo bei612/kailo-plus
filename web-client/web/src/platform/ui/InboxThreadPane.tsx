@@ -14,7 +14,7 @@ import { publishMessage, publishConversationMessage, uploadConversationMedia, me
 import { Button } from "@/shared/ui/button";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
-import { MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
 
 export function InboxThreadPane({ principalId, workspaceId, conversation, canInteract = true, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
@@ -90,9 +90,12 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
           return <div key={event.id} data-message-id={event.id}><MessageRowSurface highlighted={event.id === anchor}
             onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
             reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
-            renderIdentity={onOpenAuthor && !interrupted ? (node) => <MessageAuthorIdentity
-              target={{principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey}}
-              onOpen={() => onOpenAuthor({principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey})}>{node}</MessageAuthorIdentity> : undefined}
+            renderIdentity={!interrupted ? (node,kind) => {
+              const target={principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey};
+              const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
+                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></div> : node;
+              return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(target)}>{identity}</MessageAuthorIdentity> : identity;
+            } : undefined}
             message={message}
             renderActions={!interrupted ? (ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
               onReply={canReply && !sending && !unresolved ? (target) => selectReply(target.id) : undefined} /> : undefined}

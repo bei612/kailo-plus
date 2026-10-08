@@ -11,6 +11,7 @@ import {
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { getQueryPreviewText } from './utils/language';
 import referenceHandler from './pages/api/platform-query-reference';
 
@@ -84,7 +85,7 @@ describe('native saved-view HUMAN query consumer', () => {
     expect(await service.preview('verified-native-token', 7, 10, key)).toEqual(
       receipt,
     );
-    expect(freeze).toHaveBeenCalledWith(resource, 7, 10);
+    expect(freeze).toHaveBeenCalledWith(resource, 7, 10, undefined);
     expect(calls.mock.calls[1][2]).toEqual({
       bindingId: binding,
       resolveResource: {
@@ -323,25 +324,372 @@ describe('native saved-view HUMAN query consumer', () => {
   it('routes the actual model resolver through HUMAN admission rather than direct engine preview', async () => {
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
-      nativeIdentityScope: 'a'.repeat(64), nativeHumanToken: 'verified-native-token',
-      projectService: { getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }) },
-      modelRepository: { findOneBy: jest.fn().mockResolvedValue({ id: 7, projectId: 3 }) },
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'verified-native-token',
+      projectService: {
+        getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }),
+      },
+      modelRepository: {
+        findOneBy: jest.fn().mockResolvedValue({ id: 7, projectId: 3 }),
+      },
       queryService: { preview: jest.fn() },
     };
-    const modelReceipt = { ...receipt, inputReference: { ...reference,
-      nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }) } };
+    const modelReceipt = {
+      ...receipt,
+      inputReference: {
+        ...reference,
+        nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }),
+      },
+    };
     calls.mockResolvedValue(modelReceipt);
     const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
-    expect(await new ModelResolver().previewModelData(null, {
-      where: { id: 7, limit: 10, idempotencyKey: key, idempotencyScope: scope },
-    }, ctx)).toEqual({ ...modelReceipt, previewScope: scope });
-    expect(ctx.modelRepository.findOneBy).toHaveBeenCalledWith({ id: 7, projectId: 3 });
+    expect(
+      await new ModelResolver().previewModelData(
+        null,
+        {
+          where: {
+            id: 7,
+            limit: 10,
+            idempotencyKey: key,
+            idempotencyScope: scope,
+          },
+        },
+        ctx,
+      ),
+    ).toEqual({ ...modelReceipt, previewScope: scope });
+    expect(ctx.modelRepository.findOneBy).toHaveBeenCalledWith({
+      id: 7,
+      projectId: 3,
+    });
     expect(ctx.queryService.preview).not.toHaveBeenCalled();
     expect(calls).toHaveBeenCalledTimes(1);
-    await expect(new ModelResolver().previewModelData(null, {
-      where: { id: 7, limit: 10, idempotencyKey: key, idempotencyScope: 'forged' },
-    }, ctx)).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+    await expect(
+      new ModelResolver().previewModelData(
+        null,
+        {
+          where: {
+            id: 7,
+            limit: 10,
+            idempotencyKey: key,
+            idempotencyScope: 'forged',
+          },
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
     expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  describe('original Asking saved-view preview consumer', () => {
+    const view = {
+      id: 7,
+      projectId: 3,
+      name: 'native_view',
+      statement: 'SELECT customer FROM native_model',
+    };
+    let ctx: any, where: any, observed: any, command: any;
+    let completed: boolean;
+    beforeEach(() => {
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      completed = false;
+      observed = null;
+      command = null;
+      const response = { id: 21, threadId: 11, viewId: 7, sql: view.statement };
+      ctx = {
+        nativeIdentityScope: 'a'.repeat(64),
+        nativeHumanToken: 'verified-native-token',
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: 3 })),
+        },
+        askingService: {
+          getResponse: jest.fn(async () => ({ ...response })),
+        },
+        viewRepository: {
+          findOneBy: jest.fn(async () => ({ ...view })),
+        },
+        deployRepository: {
+          findLastProjectDeployLog: jest.fn(async () => ({
+            id: 12,
+            projectId: 3,
+            hash: 'b'.repeat(40),
+            status: 'SUCCESS',
+          })),
+        },
+        queryService: { preview: jest.fn() },
+      };
+      where = {
+        responseId: 21,
+        limit: 10,
+        idempotencyKey: key,
+        idempotencyScope: nativePreviewScope(config, ctx.nativeIdentityScope),
+      };
+      require('./common').components.apiHistoryRepository.findOneBy = history;
+      history.mockResolvedValue({
+        responsePayload: {
+          columns: [{ name: 'customer' }],
+          data: [['native']],
+        },
+      });
+      calls.mockImplementation(async (_config, _operation, input, token) => {
+        expect(token).toBe('verified-native-token');
+        const payload = input as any;
+        if (payload.resolveResource) return resolution;
+        if (payload.command) {
+          command = payload.command;
+          observed = {
+            submission,
+            inputReference: command.componentAction.inputReference,
+            ...(completed
+              ? {
+                  terminalStatus: 'COMPLETED',
+                  nativeType: 'wren.api_history',
+                  nativeId: 'native-result',
+                }
+              : {}),
+          };
+        }
+        return observed;
+      });
+    });
+    it.each([false, true])(
+      'uses real original view reference/admission/result consumers without direct SQL (completed=%s)',
+      async (isCompleted) => {
+        completed = isCompleted;
+        const result = await new AskingResolver().previewData(
+          null,
+          { where },
+          ctx,
+        );
+        expect(result).toMatchObject({
+          responseId: 21,
+          viewId: 7,
+          previewScope: where.idempotencyScope,
+          inputReference: {
+            resourceId: resource,
+            nativeObjectRef: expect.any(String),
+            nativeRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+        });
+        expect(JSON.parse(result.inputReference.nativeObjectRef)).toEqual({
+          viewId: 7,
+          deploymentId: 12,
+          deploymentHash: 'b'.repeat(40),
+          limit: 10,
+        });
+        expect(command).toMatchObject({
+          actionKey: 'data_query.query@v1',
+          idempotencyKey: key,
+          resourceId: resource,
+          resourceVersion: 4,
+        });
+        expect(JSON.stringify(command)).not.toContain(view.statement);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        if (completed) {
+          expect(result.data).toEqual({
+            columns: [{ name: 'customer' }],
+            data: [['native']],
+          });
+          expect(history).toHaveBeenCalledWith({
+            id: 'native-result',
+            projectId: 3,
+            governanceBindingId: binding,
+            governanceActionExecutionId: submission.actionExecutionId,
+            governanceOperationId: submission.operationId,
+            governanceState: 'SUCCEEDED',
+          });
+        } else {
+          expect(result).not.toHaveProperty('data');
+          expect(result).not.toHaveProperty('terminalStatus');
+          expect(history).not.toHaveBeenCalled();
+        }
+        const replay = await new AskingResolver().previewData(
+          null,
+          { where },
+          ctx,
+        );
+        expect(replay).toEqual(result);
+        expect(
+          ctx.deployRepository.findLastProjectDeployLog,
+        ).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['scope', 'missing', 'generated', 'changed-sql', 'denied'])(
+      'refuses %s before submitting a view query',
+      async (failure) => {
+        if (failure === 'scope') where.idempotencyScope = 'forged';
+        if (failure === 'missing')
+          ctx.askingService.getResponse.mockResolvedValue(null);
+        if (failure === 'generated')
+          ctx.askingService.getResponse.mockResolvedValue({
+            id: 21,
+            threadId: 11,
+            viewId: null,
+            sql: 'SELECT private FROM forbidden_model',
+          });
+        if (failure === 'changed-sql')
+          ctx.askingService.getResponse.mockResolvedValue({
+            id: 21,
+            threadId: 11,
+            viewId: 7,
+            sql: 'SELECT private FROM forbidden_model',
+          });
+        if (failure === 'denied')
+          calls.mockRejectedValue(
+            new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+          );
+        await expect(
+          new AskingResolver().previewData(null, { where }, ctx),
+        ).rejects.toThrow();
+        expect(command).toBeNull();
+        expect(history).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['response', 'view', 'revoked'])(
+      'refuses %s changes after a completed query without returning its native rows',
+      async (changed) => {
+        completed = true;
+        const original = ctx.askingService.getResponse.getMockImplementation();
+        ctx.askingService.getResponse.mockImplementation(async () => {
+          const value = await original();
+          if (command && changed === 'response') value.sql = 'SELECT changed';
+          return value;
+        });
+        const originalView =
+          ctx.viewRepository.findOneBy.getMockImplementation();
+        ctx.viewRepository.findOneBy.mockImplementation(async () => {
+          const value = await originalView();
+          if (command && changed === 'view') value.statement = 'SELECT changed';
+          return value;
+        });
+        const originalCall = calls.getMockImplementation();
+        calls.mockImplementation(async (...args) => {
+          if (
+            command &&
+            changed === 'revoked' &&
+            (args[2] as any).resolveResource
+          )
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          return originalCall(...args);
+        });
+        await expect(
+          new AskingResolver().previewData(null, { where }, ctx),
+        ).rejects.toThrow();
+        expect(command.actionKey).toBe('data_query.query@v1');
+        expect(history).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each([false, true])(
+      'refuses a changed view before command submission even if it changes back (ABA=%s)',
+      async (changesBack) => {
+        completed = true;
+        let reads = 0;
+        ctx.viewRepository.findOneBy.mockImplementation(async () => {
+          reads++;
+          // The initial authorized snapshot is S1. The actual reference read
+          // sees S2; an eventual re-read alone would miss S1 -> S2 -> S1.
+          return {
+            ...view,
+            statement:
+              reads >= 3 && (!changesBack || reads === 3)
+                ? 'SELECT private FROM another_model'
+                : view.statement,
+          };
+        });
+        await expect(
+          new AskingResolver().previewData(null, { where }, ctx),
+        ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+        expect(reads).toBe(3);
+        expect(command).toBeNull();
+        expect(history).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('does not reuse a previously frozen view statement for a changed Asking intent under the same key', async () => {
+      let statement = 'SELECT previous FROM native_model';
+      ctx.askingService.getResponse.mockImplementation(async () => ({
+        id: 21,
+        threadId: 11,
+        viewId: 7,
+        sql: statement,
+      }));
+      ctx.viewRepository.findOneBy.mockImplementation(async () => ({
+        ...view,
+        statement,
+      }));
+      const first = await new AskingResolver().previewData(
+        null,
+        { where },
+        ctx,
+      );
+      expect(first).not.toHaveProperty('data');
+      const frozen = first.inputReference.nativeRevision;
+      statement = view.statement;
+      await expect(
+        new AskingResolver().previewData(null, { where }, ctx),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(command.componentAction.inputReference.nativeRevision).toBe(
+        frozen,
+      );
+      expect(
+        ctx.deployRepository.findLastProjectDeployLog,
+      ).toHaveBeenCalledTimes(1);
+      expect(history).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+    it('does not substitute a saved-view reference for a partial CTE', async () => {
+      ctx.askingService.getResponse.mockResolvedValue({
+        id: 21,
+        threadId: 11,
+        viewId: 7,
+        sql: view.statement,
+        breakdownDetail: {
+          steps: [
+            {
+              cteName: 'partial',
+              summary: 'First step',
+              sql: 'SELECT private FROM forbidden_model',
+            },
+          ],
+        },
+      });
+      await expect(
+        new AskingResolver().previewBreakdownData(
+          null,
+          {
+            where: { ...where, stepIndex: 0 },
+          },
+          ctx,
+        ),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(command).toBeNull();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+    it('does not abandon the original preview when an unrelated answer finishes streaming', async () => {
+      completed = true;
+      const original = ctx.askingService.getResponse.getMockImplementation();
+      ctx.askingService.getResponse.mockImplementation(async () => ({
+        ...(await original()),
+        answerDetail: {
+          content: command
+            ? 'Original answer finished'
+            : 'Original answer streaming',
+        },
+      }));
+      const result = await new AskingResolver().previewData(
+        null,
+        { where },
+        ctx,
+      );
+      expect(result.data).toEqual({
+        columns: [{ name: 'customer' }],
+        data: [['native']],
+      });
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(JSON.stringify(command)).not.toContain('Original answer');
+    });
   });
 
   it('retains one person across credential rotation and separates another person or native binding', () => {
@@ -403,47 +751,116 @@ describe('native saved-view HUMAN query consumer', () => {
   it('exports only the resolved native view resource through the actual reference handler', async () => {
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     calls.mockResolvedValue(resolution);
-    const nativeReference = jest.spyOn(NativeQueryService.prototype, 'reference').mockResolvedValue(reference);
-    const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn(), end: jest.fn() };
+    const nativeReference = jest
+      .spyOn(NativeQueryService.prototype, 'reference')
+      .mockResolvedValue(reference);
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      end: jest.fn(),
+    };
     try {
-      await referenceHandler({ method: 'GET', headers: { 'x-kailo-native-human-token': 'verified-native-token' },
-        query: { viewId: '7', limit: '10' } } as any, response);
+      await referenceHandler(
+        {
+          method: 'GET',
+          headers: { 'x-kailo-native-human-token': 'verified-native-token' },
+          query: { viewId: '7', limit: '10' },
+        } as any,
+        response,
+      );
       expect(response.status).toHaveBeenLastCalledWith(200);
       expect(response.json).toHaveBeenCalledWith(reference);
       expect(nativeReference).toHaveBeenCalledWith(resource, 7, 10);
       expect(calls).toHaveBeenCalledTimes(2);
       for (const call of calls.mock.calls) {
-        expect(call[2]).toEqual({ bindingId: binding, resolveResource: {
-          workspaceId: config.workspaceId, actionKey: 'data_query.query@v1', actionVersion: 1,
-          nativeType: 'view', nativeRef: '7',
-        } });
+        expect(call[2]).toEqual({
+          bindingId: binding,
+          resolveResource: {
+            workspaceId: config.workspaceId,
+            actionKey: 'data_query.query@v1',
+            actionVersion: 1,
+            nativeType: 'view',
+            nativeRef: '7',
+          },
+        });
         expect(call[3]).toBe('verified-native-token');
       }
-    } finally { nativeReference.mockRestore(); }
+    } finally {
+      nativeReference.mockRestore();
+    }
   });
 
-  it.each(['missing-token', 'forged-resource', 'denied', 'revoked', 'changed-resource', 'changed-version'])(
-    'does not disclose an exported reference for %s', async (failure) => {
-      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
-      calls.mockResolvedValue(resolution);
-      if (failure === 'denied') calls.mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
-      if (failure === 'revoked') calls.mockResolvedValueOnce(resolution).mockRejectedValueOnce(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
-      if (failure === 'changed-resource' || failure === 'changed-version') calls.mockResolvedValueOnce(resolution).mockResolvedValueOnce({
-        resource: { ...resolution.resource, ...(failure === 'changed-resource' ? { resourceId: binding } : { resourceVersion: 5 }) },
+  it.each([
+    'missing-token',
+    'forged-resource',
+    'denied',
+    'revoked',
+    'changed-resource',
+    'changed-version',
+  ])('does not disclose an exported reference for %s', async (failure) => {
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    calls.mockResolvedValue(resolution);
+    if (failure === 'denied')
+      calls.mockRejectedValue(
+        new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+      );
+    if (failure === 'revoked')
+      calls
+        .mockResolvedValueOnce(resolution)
+        .mockRejectedValueOnce(
+          new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+        );
+    if (failure === 'changed-resource' || failure === 'changed-version')
+      calls.mockResolvedValueOnce(resolution).mockResolvedValueOnce({
+        resource: {
+          ...resolution.resource,
+          ...(failure === 'changed-resource'
+            ? { resourceId: binding }
+            : { resourceVersion: 5 }),
+        },
       });
-      const nativeReference = jest.spyOn(NativeQueryService.prototype, 'reference').mockResolvedValue(reference);
-      const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn(), end: jest.fn() };
-      try {
-        await referenceHandler({ method: 'GET',
-          headers: failure === 'missing-token' ? {} : { 'x-kailo-native-human-token': 'verified-native-token' },
-          query: { viewId: '7', limit: '10', ...(failure === 'forged-resource' ? { resourceId: resource } : {}) },
-        } as any, response);
-        expect(response.status).toHaveBeenLastCalledWith(failure === 'missing-token' ? 401 : failure === 'forged-resource' ? 400 : failure.startsWith('changed-') ? 409 : 403);
-        expect(response.json).not.toHaveBeenCalledWith(reference);
-        if (['missing-token', 'forged-resource', 'denied'].includes(failure)) expect(nativeReference).not.toHaveBeenCalled();
-      } finally { nativeReference.mockRestore(); }
-    },
-  );
+    const nativeReference = jest
+      .spyOn(NativeQueryService.prototype, 'reference')
+      .mockResolvedValue(reference);
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      end: jest.fn(),
+    };
+    try {
+      await referenceHandler(
+        {
+          method: 'GET',
+          headers:
+            failure === 'missing-token'
+              ? {}
+              : { 'x-kailo-native-human-token': 'verified-native-token' },
+          query: {
+            viewId: '7',
+            limit: '10',
+            ...(failure === 'forged-resource' ? { resourceId: resource } : {}),
+          },
+        } as any,
+        response,
+      );
+      expect(response.status).toHaveBeenLastCalledWith(
+        failure === 'missing-token'
+          ? 401
+          : failure === 'forged-resource'
+            ? 400
+            : failure.startsWith('changed-')
+              ? 409
+              : 403,
+      );
+      expect(response.json).not.toHaveBeenCalledWith(reference);
+      if (['missing-token', 'forged-resource', 'denied'].includes(failure))
+        expect(nativeReference).not.toHaveBeenCalled();
+    } finally {
+      nativeReference.mockRestore();
+    }
+  });
 
   it('uses Chinese by default and a single English locale for necessary preview guidance', () => {
     expect(getQueryPreviewText().check).toBe('检查原查询');

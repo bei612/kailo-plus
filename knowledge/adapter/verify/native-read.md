@@ -1514,3 +1514,104 @@ This batch has no adapter image publication, live task invocation, component
 release/binding activation, browser/device acceptance or deployment. Whole
 project/full checks and commit/push belong to the integrated main batch; the
 narrow HTTP/MCP fixture evidence is not reported as native live E2E acceptance.
+
+## Native self-pull preserves the original pending application (2026-10-08)
+
+Authority: `.design/13` §4.4 already requires new Knowledge to be observed to
+ready, retained previous groups on failure and no blind upload after an unknown
+creation. Fixed WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/datasource/connector.go::StreamHandler` and
+`internal/application/service/datasource_service.go::{streamSyncHandler.Emit,streamSyncHandler.Checkpoint,DataSourceService.ingestItem}`
+were rechecked in the read-only reference. The original DataSource, SyncLog,
+Asynq parse, content-hash grouping and native Knowledge remain the consumers
+and authorities. There is no new workflow, queue, resource directory or body
+store in Core.
+
+Impact and cause: `FetchStream` previously called the real native `Emit`, which
+created a Knowledge and returned not-ready while parsing remained pending.
+No recovery reference was checkpointed. The next grant correctly returned
+PENDING/UNKNOWN without usable source/receiver tokens; repeating the old file
+read could never repair that missing native observation. Creation succeeding
+just before a lost response had the same gap. Discovery's snapshot and receiver
+receipt were also saved only after all files were ready, preventing recovery
+of the original complete enumeration.
+
+The native `ConnectorCursor` now checkpoints its complete Discovery snapshot
+before file writes and its original Applying reference before `Emit`. Applying
+contains only the original native creation/existing ID, batch, digest, size and
+source references; it is not proof of successful creation. Native `SaveFile`
+cannot get ahead of the checkpoint. Retry first reads that exact Knowledge,
+requiring the original tenant/KB/import, hash tuple, content size/digest, full
+source references and completed parse. It submits only the original read's
+receiver evidence, then requires Core to confirm both receipts and committed
+usage. There is no source call, receiver PEP, upload or parse enqueue on that
+recovery branch. Unknown creation, failed parsing, provenance drift or refused
+receipt retains the previous groups, old sync time and original intent; normal
+native parse/sync timeout, retry and failure handling is unchanged. Missing
+native evidence requires native-owner reconciliation, not guessed IDs or a
+second creation. Applying is removed only after the whole desired set and
+required retirements converge.
+
+Discovery's persisted observation time and the native Knowledge's `UpdatedAt`
+freeze receipt completion clocks across acknowledgement loss. Recovered grants
+retain the actual Core-confirmed observation, not an invented COMPLETED value;
+PENDING/UNKNOWN/COMPLETED observations cannot authorize a new PEP or source
+call. Old cursors without the new optional fields remain readable; explicit
+null or malformed application references fail closed. This is the native
+connector's existing private JSON cursor, not a new platform contract or
+database table. Rolling back to a consumer that ignores Applying while these
+intents remain would lose recovery semantics; such rollback is not validated
+and must not be used with in-flight intents.
+
+Implementation preceded verification in the original
+`datasource_file_storage_test.go`. The check calls the real streaming handler,
+cursor persistence and `CreateKnowledgeFromFileAtID` implementation, with
+controlled HTTP protocol responders and native repository/file/queue boundaries.
+It covers pending parsing, lost creation ACK, failed checkpoint, lost/refused
+receiver ACK, uncommitted usage, failed parse, provenance drift and a missing
+creation. Assertions verify exact recovery IDs before native save, the retained
+old baseline and one creation/storage save/parse enqueue despite retries.
+
+The existing `kailo-knowledge-native-check-wkkigg` SDK was reused, immutable
+image `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+Go 1.26.8, uid/gid 1000, existing module/build caches, 4 CPU/8 GiB with no extra
+swap. Host process/pressure and cgroup limits were inspected before each run;
+available memory was 25–26 GiB. Only the three changed native files were copied
+and byte-compared; no dependency installation, new image, full-tree copy or
+live service mutation occurred. The initial login-shell attempt failed with
+`go: not found`; using the existing SDK PATH with `sh -c` corrected that
+execution-input mistake without changing production code.
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/application/service \
+  -run 'TestFileStorage|TestStreamHandler|TestDataSourceReplacement|TestCreateKnowledgeFromFileAtID' \
+  -count=1 -v
+```
+
+Final formatted positive and restored runs both exited 0: **15 top-level
+checks and 24 subchecks passed, none skipped**. In the private SDK candidate,
+removing the real `FetchStream → observeApplication` call made the new
+9-subcheck target exit 1 with **3 failed, 6 passed**; the pending, creation-ACK
+and receipt-ACK recovery cases reported
+`original read observation cannot authorize another source call`. The formal
+source was unchanged, restored candidate bytes compared equal and the full
+narrow target above passed again (`0.558s`). `git diff --check` exited 0.
+
+Logs under
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/`:
+
+- `native-self-pull-application-positive-20261008.log`, SHA-256
+  `313bbbd073219d9bc0846c7eb3f9aa729e8b6a5c29776da38239b5601c88d937`.
+- `native-self-pull-application-mutation-20261008.log`, SHA-256
+  `487cf9f7535294932f51826d0ce6904b3e07c6c2770c1ef628247fd758944fed`.
+- `native-self-pull-application-restored-20261008.log`, SHA-256
+  `ed3e21953b92304c0b284bb1925d30950834d1d47075576196964b4244bb62d2`.
+
+This increment does not publish an image, configure a live import or activate a
+component release/binding. Real Cells reads, native parser completion and
+cross-service receipts in the deployed environment are not accepted by these
+controlled checks. There are no client, menu, authentication, credential,
+global-contract or configuration-switch changes. Whole-project/full and docs
+checks, commit/push and deployment belong to the integrated main batch and
+were not run here.

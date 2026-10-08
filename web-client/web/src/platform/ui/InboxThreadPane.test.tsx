@@ -12,11 +12,11 @@ import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string) => key }));
 vi.mock("@client-kit/platform/react/inbox-surface", () => ({ InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header> }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
-vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
+vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
 vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[]}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)}>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
   <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", [], state.mentionPubkeys); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
@@ -43,15 +43,23 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); state.outcome = ""; state.error = null;
   state.mentionPubkeys = [];
   localStorage.clear(); setLocale("en");
+  vi.stubGlobal("Image",function(){
+    const image=document.createElement("img");let source="";
+    Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
+      source=value;queueMicrotask(()=>image.dispatchEvent(new Event("load")));
+    }}});return image;
+  });
   Object.defineProperty(window, "matchMedia", {configurable:true,value:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   state.query.mockResolvedValue({ events: [rootEvent, reply] });
+  const author={pubkey,eventId:"profile",displayName:"Member",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}};
+  state.authorProfile.mockResolvedValue(author);state.dmAuthorProfile.mockResolvedValue(author);
   state.publish.mockResolvedValue({ eventId: "d".repeat(64), operationId: "operation" });
   state.reaction.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); });
+afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 it("reads the true thread and preserves the original selected-reply parent when publishing", async () => {
   await mount();
@@ -215,4 +223,38 @@ it("opens the selected Inbox message author and withdraws that scope on revoked 
   await settle();
   expect(state.unavailable).toHaveBeenCalledWith("workspace");
   expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+});
+
+it("restores the original Inbox detail author avatar through each admitted message and withdraws it on interruption",async()=>{
+  const avatarUrl="https://community.example/media/author.png",mediaPath="/api/v1/workspaces/workspace/media/author";
+  state.authorProfile.mockResolvedValue({pubkey,eventId:"profile",displayName:"Member",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
+  await mount();
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace",rootId);
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace",replyId);
+  const avatars=[...host.querySelectorAll('[data-testid="message-avatar"]')];
+  expect(avatars).toHaveLength(2);
+  for(const avatar of avatars){
+    expect(avatar.classList.contains("h-9")).toBe(true);expect(avatar.classList.contains("w-9")).toBe(true);
+    expect(avatar.querySelector("img")?.getAttribute("src")).toBe(mediaPath);
+  }
+  expect(state.dmAuthorProfile).not.toHaveBeenCalled();expect(state.openAuthor).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"interrupted"}));await settle();
+  expect(host.querySelector("img")).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+});
+
+it("reads Inbox DM avatars only through the admitted conversation and keeps a rejected identity as the original fallback",async()=>{
+  const avatarUrl="https://community.example/media/dm-author.png",mediaPath="/api/v1/conversations/private-binding/media/author";
+  state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
+  state.dmAuthorProfile.mockImplementation(async(_id,eventId)=>({pubkey:eventId===replyId?"f".repeat(64):pubkey,eventId:"profile",displayName:"Peer",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}}));
+  await mountDm();
+  expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding",rootId);
+  expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding",replyId);
+  expect(state.authorProfile).not.toHaveBeenCalled();
+  const row=(id:string)=>host.querySelector(`[data-message-id="${id}"]`)!;
+  expect(row(rootId).querySelector("img")?.getAttribute("src")).toBe(mediaPath);
+  expect(row(replyId).querySelector("img")).toBeNull();
+  expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+  expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+  await act(async()=>state.receive!({type:"closed",reason:"binding-not-active"}));await settle();
+  expect(host.querySelector("img")).toBeNull();expect(host.textContent).not.toContain("selected reply");
 });

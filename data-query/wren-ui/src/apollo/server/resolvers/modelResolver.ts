@@ -1189,10 +1189,21 @@ export class ModelResolver {
     return this.previewNativeData(args, ctx, 'view');
   }
 
+  // Internal Asking consumer, not a browser-supplied GraphQL argument. Bind
+  // its already-checked response/view statement before submitting a command.
+  public async previewViewSnapshotData(
+    args: any,
+    ctx: IContext,
+    expectedStatement: string,
+  ) {
+    return this.previewNativeData(args, ctx, 'view', expectedStatement);
+  }
+
   private async previewNativeData(
     args: any,
     ctx: IContext,
     kind: 'view' | 'model',
+    expectedStatement?: string,
   ) {
     const { id: viewId, limit, idempotencyKey, idempotencyScope } = args.where;
     const config = await loadQueryDelivery();
@@ -1221,6 +1232,7 @@ export class ModelResolver {
       limit ?? DEFAULT_PREVIEW_LIMIT,
       idempotencyKey,
       kind,
+      expectedStatement,
     );
     return { ...receipt, previewScope };
   }

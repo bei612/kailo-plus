@@ -33,7 +33,7 @@ import {
   IViewRepository,
   Project,
 } from '../repositories';
-import { IQueryService, PreviewDataResponse } from './queryService';
+import { IQueryService } from './queryService';
 import { IMDLService } from './mdlService';
 import {
   ThreadRecommendQuestionBackgroundTracker,
@@ -197,12 +197,6 @@ export interface IAskingService {
     status: ThreadResponseAnswerStatus,
     content?: string,
   ): Promise<ThreadResponse>;
-  previewData(responseId: number, limit?: number): Promise<PreviewDataResponse>;
-  previewBreakdownData(
-    responseId: number,
-    stepIndex?: number,
-    limit?: number,
-  ): Promise<PreviewDataResponse>;
 
   /**
    * Recommendation questions
@@ -1010,76 +1004,6 @@ export class AskingService implements IAskingService {
       projectId: currentProject.id,
     });
     return thread ? response : null;
-  }
-
-  public async previewData(responseId: number, limit?: number) {
-    const project = await this.projectService.getCurrentProject();
-    const response = await this.getResponse(responseId, project);
-    if (!response) {
-      throw new Error(`Thread response ${responseId} not found`);
-    }
-    const deployment = await this.deployService.getLastDeployment(project.id);
-    const mdl = deployment.manifest;
-    const eventName = TelemetryEvent.HOME_PREVIEW_ANSWER;
-    try {
-      const data = (await this.queryService.preview(response.sql, {
-        project,
-        manifest: mdl,
-        limit,
-      })) as PreviewDataResponse;
-      this.telemetry.sendEvent(eventName, { sql: response.sql });
-      return data;
-    } catch (err: any) {
-      this.telemetry.sendEvent(
-        eventName,
-        { sql: response.sql, error: err.message },
-        err.extensions?.service,
-        false,
-      );
-      throw err;
-    }
-  }
-
-  /**
-   * this function is used to preview the data of a thread response
-   * get the target thread response and get the steps
-   * construct the CTEs and get the data
-   * @param responseId: the id of the thread response
-   * @param stepIndex: the step in the response detail
-   * @returns Promise<QueryResponse>
-   */
-  public async previewBreakdownData(
-    responseId: number,
-    stepIndex?: number,
-    limit?: number,
-  ): Promise<PreviewDataResponse> {
-    const project = await this.projectService.getCurrentProject();
-    const response = await this.getResponse(responseId, project);
-    if (!response) {
-      throw new Error(`Thread response ${responseId} not found`);
-    }
-    const deployment = await this.deployService.getLastDeployment(project.id);
-    const mdl = deployment.manifest;
-    const steps = response?.breakdownDetail?.steps;
-    const sql = safeFormatSQL(constructCteSql(steps, stepIndex));
-    const eventName = TelemetryEvent.HOME_PREVIEW_ANSWER;
-    try {
-      const data = (await this.queryService.preview(sql, {
-        project,
-        manifest: mdl,
-        limit,
-      })) as PreviewDataResponse;
-      this.telemetry.sendEvent(eventName, { sql });
-      return data;
-    } catch (err: any) {
-      this.telemetry.sendEvent(
-        eventName,
-        { sql, error: err.message },
-        err.extensions?.service,
-        false,
-      );
-      throw err;
-    }
   }
 
   public async createInstantRecommendedQuestions(

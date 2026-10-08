@@ -17,6 +17,9 @@ import PreviewData from '@/components/dataPreview/PreviewData';
 import { AdjustAnswerDropdown } from '@/components/diagram/CustomDropdown';
 import { usePreviewDataMutation } from '@/apollo/client/graphql/home.generated';
 import { ThreadResponseAnswerStatus } from '@/apollo/client/graphql/__types__';
+import useGovernedPreview from '@/hooks/useGovernedPreview';
+import { getQueryPreviewText } from '@/utils/language';
+import { useRouter } from 'next/router';
 
 const { Text } = Typography;
 
@@ -46,6 +49,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   } = usePromptThreadStore();
   const { isLastThreadResponse, onInitPreviewDone, threadResponse } = props;
   const { id } = threadResponse;
+  const text = getQueryPreviewText(useRouter().locale);
   const { content, error, numRowsUsedInLLM, status } =
     threadResponse?.answerDetail || {};
 
@@ -116,11 +120,21 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
   const [previewData, previewDataResult] = usePreviewDataMutation({
     onError: (error) => console.error(error),
   });
-  const hasPreviewData = !!previewDataResult.data?.previewData;
-
-  const onPreviewData = async () => {
-    await previewData({ variables: { where: { responseId: id } } });
-  };
+  const query = useGovernedPreview(
+    'response',
+    id,
+    async (where) => {
+      const { id: responseId, ...identity } = where;
+      const result = await previewData({
+        variables: { where: { responseId, ...identity } },
+      });
+      return result.data?.previewData;
+    },
+    previewDataResult.data?.previewData,
+    previewDataResult.error,
+  );
+  const hasPreviewData = !!query.receipt?.data;
+  const onPreviewData = query.preview;
 
   const autoTriggerPreviewDataButton = async () => {
     await nextTick();
@@ -235,13 +249,32 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
                   }}
                 />
               }
-              loading={previewDataResult.loading}
+              loading={previewDataResult.loading || query.preparing}
               onClick={onPreviewData}
               data-ph-capture="true"
               data-ph-capture-attribute-name="cta_text-answer_preview_data"
             >
-              View results
+              {query.pending || query.error ? text.check : text.results}
             </Button>
+            {query.storageError ? (
+              <Alert type="error" message={text.storageError} />
+            ) : null}
+            {query.scopeError ? (
+              <Alert type="error" message={text.scopeError} />
+            ) : null}
+            {query.pending ? (
+              <Alert type="info" message={text.pending} />
+            ) : null}
+            {query.error ? (
+              <Alert type="warning" message={text.unknown} />
+            ) : null}
+            {query.receipt?.terminalStatus &&
+            query.receipt.terminalStatus !== 'COMPLETED' ? (
+              <Alert type="error" message={text.ended} />
+            ) : null}
+            {query.receipt?.submission?.gateState === 'DENIED' ? (
+              <Alert type="warning" message={text.denied} />
+            ) : null}
 
             <div className="mt-2 mb-3" data-guideid="text-answer-preview-data">
               {hasPreviewData && (
@@ -251,9 +284,13 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
                 </Text>
               )}
               <PreviewData
-                error={previewDataResult.error}
-                loading={previewDataResult.loading}
-                previewData={previewDataResult?.data?.previewData}
+                error={query.error}
+                loading={
+                  previewDataResult.loading ||
+                  query.preparing ||
+                  Boolean(query.pending)
+                }
+                previewData={query.receipt?.data}
               />
             </div>
           </div>

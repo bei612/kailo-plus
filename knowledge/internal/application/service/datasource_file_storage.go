@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -46,19 +47,32 @@ type fileStorageRetirement struct {
 }
 
 type fileStorageCursor struct {
-	Groups   map[string]fileStorageGroup      `json:"groups"`
-	Retiring map[string]fileStorageRetirement `json:"retiring"`
+	Groups   map[string]fileStorageGroup       `json:"groups"`
+	Retiring map[string]fileStorageRetirement  `json:"retiring"`
+	Applying map[string]fileStorageApplication `json:"applying,omitempty"`
 	// Discovery receipts acknowledge a persisted native observation, not a
 	// prematurely replaced desired set. Groups stays the previous baseline
 	// until every required receiver receipt has been accepted.
 	Discovery map[string]fileStorageSavedListing `json:"discovery,omitempty"`
 }
 
+// The native cursor retains the original write identity before Emit. This is
+// not proof of creation: a retry only reads that native reference and refuses
+// if creation, parsing or exact provenance cannot be confirmed.
+type fileStorageApplication struct {
+	KnowledgeID string                       `json:"knowledgeId"`
+	BatchID     string                       `json:"batchId"`
+	Digest      string                       `json:"digest"`
+	Bytes       int64                        `json:"bytes"`
+	References  []map[string]json.RawMessage `json:"references"`
+}
+
 type fileStorageSavedListing struct {
-	Key       string `json:"key"`
-	ItemsJSON string `json:"itemsJson"`
-	Digest    string `json:"digest"`
-	Bytes     int64  `json:"bytes"`
+	Key        string    `json:"key"`
+	ItemsJSON  string    `json:"itemsJson"`
+	Digest     string    `json:"digest"`
+	Bytes      int64     `json:"bytes"`
+	ObservedAt time.Time `json:"observedAt,omitempty"`
 }
 
 type fileStorageConnector struct {
@@ -147,7 +161,7 @@ func fileStorageKey(parts ...string) string {
 }
 
 func fileStorageState(cursor *types.SyncCursor) (fileStorageCursor, error) {
-	state := fileStorageCursor{Groups: map[string]fileStorageGroup{}, Retiring: map[string]fileStorageRetirement{}}
+	state := fileStorageCursor{Groups: map[string]fileStorageGroup{}, Retiring: map[string]fileStorageRetirement{}, Applying: map[string]fileStorageApplication{}}
 	if cursor == nil || len(cursor.ConnectorCursor) == 0 {
 		return state, nil
 	}
@@ -155,12 +169,29 @@ func fileStorageState(cursor *types.SyncCursor) (fileStorageCursor, error) {
 	if err != nil {
 		return state, err
 	}
-	if err = json.Unmarshal(raw, &state); err != nil || state.Groups == nil || state.Retiring == nil {
+	if err = json.Unmarshal(raw, &state); err != nil || state.Groups == nil || state.Retiring == nil || state.Applying == nil {
 		return state, fmt.Errorf("native file-storage cursor is invalid")
 	}
 	for key, group := range state.Groups {
 		if key == "" || !fileStorageUUID(group.KnowledgeID) || group.Revision == "" || len(group.References) == 0 {
 			return state, fmt.Errorf("native file-storage target provenance is unavailable")
+		}
+	}
+	for key, item := range state.Applying {
+		digest, digestErr := hex.DecodeString(item.Digest)
+		if key == "" || !fileStorageUUID(item.KnowledgeID) || !fileStorageUUID(item.BatchID) ||
+			digestErr != nil || len(digest) != sha256.Size || item.Bytes < 0 || len(item.References) == 0 {
+			return state, fmt.Errorf("native file-storage application intent is invalid")
+		}
+		seen := map[string]bool{}
+		for _, ref := range item.References {
+			source, node := fileStorageText(ref, "resourceId"), fileStorageText(ref, "nativeObjectRef")
+			identity := source + ":" + node
+			if !fileStorageUUID(source) || !fileStorageUUID(node) || seen[identity] ||
+				fileStorageText(ref, "nativeRevision") == "" || fileStorageText(ref, "displayName") == "" || fileStorageText(ref, "mediaType") == "" {
+				return state, fmt.Errorf("native file-storage application provenance is invalid")
+			}
+			seen[identity] = true
 		}
 	}
 	return state, nil
@@ -183,11 +214,12 @@ func fileStorageCheckpoint(ctx context.Context, h datasource.StreamHandler, stat
 }
 
 type fileStorageListing struct {
-	grant     *fileStorageGrant
-	items     []map[string]json.RawMessage
-	digest    string
-	bytes     int64
-	itemsJSON string
+	grant      *fileStorageGrant
+	items      []map[string]json.RawMessage
+	digest     string
+	bytes      int64
+	itemsJSON  string
+	observedAt time.Time
 }
 
 func (c *fileStorageConnector) listing(ctx context.Context, run fileStorageRun, source, key, action string, version int64, saved fileStorageSavedListing) (*fileStorageListing, error) {
@@ -196,16 +228,22 @@ func (c *fileStorageConnector) listing(ctx context.Context, run fileStorageRun, 
 	if err != nil {
 		return nil, err
 	}
-	if fileStorageText(grant.value, "outcome") == "COMPLETED" {
+	if outcome := fileStorageText(grant.value, "outcome"); outcome != "" {
 		var items []map[string]json.RawMessage
 		if saved.Key != key || saved.Bytes != int64(len(saved.ItemsJSON)) || saved.Digest != fileStorageDigest([]byte(saved.ItemsJSON)) ||
-			json.Unmarshal([]byte(saved.ItemsJSON), &items) != nil || items == nil {
+			json.Unmarshal([]byte(saved.ItemsJSON), &items) != nil || items == nil ||
+			(outcome != "COMPLETED" && (saved.ObservedAt.IsZero() || saved.ObservedAt.After(time.Now()))) {
 			return nil, fmt.Errorf("completed discovery lacks its native cursor snapshot")
 		}
-		if err := c.transport.receipt(ctx, grant, run.dataSourceID, saved.Digest, saved.Digest, saved.Bytes, time.Now().UTC()); err != nil {
+		at := saved.ObservedAt
+		if at.IsZero() {
+			// Legacy completed snapshots need no second receipt submission.
+			at = time.Now().UTC()
+		}
+		if err := c.transport.receipt(ctx, grant, run.dataSourceID, saved.Digest, saved.Digest, saved.Bytes, at); err != nil {
 			return nil, err
 		}
-		return &fileStorageListing{grant: grant, items: items, digest: saved.Digest, bytes: saved.Bytes, itemsJSON: saved.ItemsJSON}, nil
+		return &fileStorageListing{grant: grant, items: items, digest: saved.Digest, bytes: saved.Bytes, itemsJSON: saved.ItemsJSON, observedAt: at}, nil
 	}
 	raw, headers, err := c.transport.source(ctx, grant)
 	if err != nil {
@@ -238,7 +276,7 @@ func (c *fileStorageConnector) listing(ctx context.Context, run fileStorageRun, 
 		}
 		seen[id] = true
 	}
-	return &fileStorageListing{grant: grant, items: items, digest: fileStorageText(output, "listingDigest"), bytes: int64(len(output["items"])), itemsJSON: string(output["items"])}, nil
+	return &fileStorageListing{grant: grant, items: items, digest: fileStorageText(output, "listingDigest"), bytes: int64(len(output["items"])), itemsJSON: string(output["items"]), observedAt: time.Now().UTC()}, nil
 }
 
 func startsJSON(headers http.Header) bool {
@@ -285,6 +323,34 @@ func (c *fileStorageConnector) completedNative(ctx context.Context, run fileStor
 	return native, receipt, nil
 }
 
+func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileStorageRun, key string, item fileStorageApplication) error {
+	native, err := c.knowledge.GetKnowledgeByID(ctx, item.KnowledgeID)
+	refs, marshalErr := json.Marshal(item.References)
+	if err != nil || marshalErr != nil || native == nil || native.ID != item.KnowledgeID ||
+		native.TenantID != run.tenantID || native.KnowledgeBaseID != run.knowledgeBaseID || native.DeletedAt.Valid ||
+		native.ParseStatus != types.ParseStatusCompleted || native.UpdatedAt.IsZero() || native.UpdatedAt.After(time.Now()) ||
+		native.FileHash+":"+native.FileType != key || native.FileSize != item.Bytes ||
+		native.GetMetadata()["datasource_id"] != run.dataSourceID || native.GetMetadata()["external_id"] != key ||
+		native.GetMetadata()["source_content_sha256"] != item.Digest || native.GetMetadata()["source_references"] != string(refs) {
+		return fmt.Errorf("original native file application is not ready or its provenance requires reconciliation")
+	}
+	priorRun := run
+	priorRun.syncLogID = item.BatchID
+	for _, ref := range item.References {
+		source := fileStorageText(ref, "resourceId")
+		readKey := fileStorageKey(item.BatchID, source, fileStorageText(ref, "nativeObjectRef"), fileStorageText(ref, "nativeRevision"))
+		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.read@v1", c.transport.config.ReadActionVersion,
+			readKey, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, ref)
+		if err != nil {
+			return err
+		}
+		if err := c.transport.receipt(ctx, grant, native.ID, native.UpdatedAt.UTC().Format(time.RFC3339Nano), item.Digest, item.Bytes, native.UpdatedAt.UTC()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataSourceConfig, previous *types.SyncCursor, h datasource.StreamHandler) (*types.SyncCursor, error) {
 	run, ok := ctx.Value(fileStorageRunKey{}).(fileStorageRun)
 	if !ok || !fileStorageUUID(run.dataSourceID) || !fileStorageUUID(run.syncLogID) ||
@@ -298,6 +364,14 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	oldTime := time.Time{}
 	if previous != nil {
 		oldTime = previous.LastSyncTime
+	}
+	// Parsing can finish after the original receiver grant expired. Its saved
+	// native identity is observed before new discovery; never re-upload to make
+	// an uncertain old invocation appear complete.
+	for key, item := range state.Applying {
+		if err := c.observeApplication(ctx, run, key, item); err != nil {
+			return nil, err
+		}
 	}
 	// A saved retirement already crossed the side-effect boundary. Observe it
 	// before requesting new source access: revocation must stop new discovery,
@@ -327,6 +401,25 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			return nil, err
 		}
 		listings[source] = listing
+	}
+	// Persist the complete native observation before any file write. Discovery
+	// completion acknowledges only this snapshot, not a new desired baseline.
+	state.Discovery = map[string]fileStorageSavedListing{}
+	for source, listing := range listings {
+		state.Discovery[source] = fileStorageSavedListing{Key: listing.grant.key, ItemsJSON: listing.itemsJSON, Digest: listing.digest, Bytes: listing.bytes, ObservedAt: listing.observedAt}
+		if fileStorageText(listing.grant.value, "outcome") != "COMPLETED" {
+			if err := c.transport.pep(ctx, listing.grant); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
+		return nil, err
+	}
+	for _, listing := range listings {
+		if err := c.transport.receipt(ctx, listing.grant, run.dataSourceID, listing.digest, listing.digest, listing.bytes, listing.observedAt); err != nil {
+			return nil, err
+		}
 	}
 	groups := map[string][]fileStorageFetched{}
 	for _, source := range cfg.ResourceIDs {
@@ -414,6 +507,23 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 				metadata["source_asset_id"] = asset
 			}
 			creationID := fileStorageKey(run.syncLogID, run.dataSourceID, key, "create")
+			nativeID := creationID
+			prior, err := c.knowledge.GetRepository().FindByDataSourceExternalID(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID, key)
+			if err != nil {
+				return nil, err
+			}
+			if prior != nil {
+				if !fileStorageUUID(prior.ID) || prior.TenantID != run.tenantID || prior.KnowledgeBaseID != run.knowledgeBaseID ||
+					prior.GetMetadata()["datasource_id"] != run.dataSourceID || prior.GetMetadata()["external_id"] != key {
+					return nil, fmt.Errorf("native source-group identity is unconfirmed")
+				}
+				nativeID = prior.ID
+			}
+			state.Applying[key] = fileStorageApplication{KnowledgeID: nativeID, BatchID: run.syncLogID,
+				Digest: digest, Bytes: int64(len(body)), References: refs}
+			if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
+				return nil, err
+			}
 			item := types.FetchedItem{ExternalID: key, Title: fileStorageText(first.ref, "displayName"), FileName: fileStorageText(first.ref, "displayName"),
 				ContentType: fileStorageText(first.ref, "mediaType"), Content: body, SourceResourceID: fileStorageText(first.ref, "resourceId"),
 				Metadata: metadata, NativeCreationID: creationID}
@@ -432,7 +542,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		revision := native.UpdatedAt.UTC().Format(time.RFC3339Nano)
 		desired[key] = fileStorageGroup{KnowledgeID: native.ID, Revision: revision, References: refs}
 		for _, file := range files {
-			if err := c.transport.receipt(ctx, file.grant, native.ID, revision, file.digest, file.size, time.Now().UTC()); err != nil {
+			if err := c.transport.receipt(ctx, file.grant, native.ID, revision, file.digest, file.size, native.UpdatedAt.UTC()); err != nil {
 				return nil, err
 			}
 		}
@@ -451,29 +561,10 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			return nil, err
 		}
 	}
-	for _, listing := range listings {
-		if fileStorageText(listing.grant.value, "outcome") != "COMPLETED" {
-			if err := c.transport.pep(ctx, listing.grant); err != nil {
-				return nil, err
-			}
-		}
-	}
 	completed := time.Now().UTC()
-	state.Discovery = map[string]fileStorageSavedListing{}
-	for source, listing := range listings {
-		state.Discovery[source] = fileStorageSavedListing{Key: listing.grant.key, ItemsJSON: listing.itemsJSON, Digest: listing.digest, Bytes: listing.bytes}
-	}
-	_, err = fileStorageCheckpoint(ctx, h, state, oldTime)
-	if err != nil {
-		return nil, err
-	}
-	for _, listing := range listings {
-		if err := c.transport.receipt(ctx, listing.grant, run.dataSourceID, listing.digest, listing.digest, listing.bytes, completed); err != nil {
-			return nil, err
-		}
-	}
 	state.Groups = desired
 	state.Retiring = map[string]fileStorageRetirement{}
+	state.Applying = map[string]fileStorageApplication{}
 	return fileStorageCheckpoint(ctx, h, state, completed)
 }
 

@@ -1,10 +1,10 @@
 // The original Buzz Forum presentation is shared with Desktop. This host only
 // supplies the existing BFF transport, verified Relay-event projection and composer.
 import { WebMessageType, WorkspaceMembershipState, type WebMessageCursor } from "@client-kit/contracts";
-import { ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
+import { ForumAuthorButton, ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
 import { DeleteActionMenu } from "@client-kit/platform/react/forum/DeleteActionMenu";
 import { parseChannelWindowResponse } from "@client-kit/platform/react/forum/channelWindowResponse";
-import { UserAvatar, MessageAuthorText } from "@client-kit/platform/react/messages";
+import { UserAvatar } from "@client-kit/platform/react/messages";
 import { TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -17,7 +17,7 @@ import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 
 function eventsFrom(value: unknown): BuzzEvent[] {
   if (!Array.isArray(value)) throw new Error("Invalid forum event response.");
@@ -139,9 +139,11 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
         if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
         void queryClient.invalidateQueries({ queryKey: key });
       }} /> : null}
-    renderAuthor={(message, large) => { const name = authors.get(message.pubkey)?.displayName ?? truncatePubkey(message.pubkey);
-      const identity = <div className="flex items-center gap-2"><UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} /><MessageAuthorText>{name}</MessageAuthorText></div>;
+    renderAuthor={(message, large, preview) => { const name = authors.get(message.pubkey)?.displayName ?? truncatePubkey(message.pubkey);
       const target = {principalId:myPrincipalId,workspaceId,eventId:message.eventId,pubkey:message.pubkey};
+      const identity = <ForumAuthorButton displayName={name} large={large} preview={preview} disabled={Boolean(error) || interrupted} avatar={!error && !interrupted
+        ? <MessageAuthorAvatar target={target} displayName={name} size={large ? "md" : "sm"} />
+        : <UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />;
       return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>{identity}</MessageAuthorIdentity> : identity; }}
     renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}

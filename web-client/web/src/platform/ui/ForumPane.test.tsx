@@ -13,9 +13,14 @@ import { ForumPane } from "./ForumPane";
 
 const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messageAuthorProfile:vi.fn(), memberProfile:vi.fn(), profile:vi.fn(), delete:vi.fn(),
   publish:vi.fn(), receive:null as null | ((frame: StreamFrame) => void)}));
-vi.mock("@/platform/bff-client", () => ({bff:api, publishMessage:api.publish, deleteMessage:api.delete,
+vi.mock("@/platform/bff-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/bff-client")>(),
+  bff:api, publishMessage:api.publish, deleteMessage:api.delete,
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {api.receive=receive;return () => {};}}));
-vi.mock("./ChannelPane", () => ({Composer: () => <textarea aria-label="Reply draft" />}));
+vi.mock("./ChannelPane", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./ChannelPane")>(),
+  Composer: () => <textarea aria-label="Reply draft" />,
+}));
 // jsdom has no layout/virtual scroll; keep the original ForumView and its card,
 // keyboard, profile and panel behavior, rendering the supplied list items.
 vi.mock("@tanstack/react-virtual", () => ({useVirtualizer: ({count, getItemKey}: {count:number; getItemKey:(index:number)=>string}) => ({
@@ -52,8 +57,8 @@ afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove
 
 it("opens the actual post author without selecting the post and withdraws on stream interruption",async()=>{
   await mount();
-  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
-  await act(async()=>host.querySelector<HTMLElement>('[role="button"][aria-label="Profile"]')!.click());
+  expect(host.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+  await act(async()=>host.querySelector<HTMLElement>('[role="button"][aria-label="Profile"] > button')!.click());
   await vi.waitFor(()=>expect(host.textContent).toContain("Forum author biography"));
   expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace",postId);
   expect(host.querySelector('[data-forum-event-id]')).toBeNull();
@@ -92,10 +97,61 @@ it("opens a mention using the admitted member profile and removes the panel on r
   await act(async()=>trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
   await vi.waitFor(()=>expect(host.textContent).toContain("Mention member biography"));
   expect(api.memberProfile).toHaveBeenCalledWith("workspace","author",author);
-  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+  expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace",postId);
+  expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace",replyId);
   expect(host.querySelector('[aria-label="Reply draft"]')).not.toBeNull();
   await act(async()=>api.receive!({type:"closed",reason:"scope-revoked"}));
   expect(host.textContent).not.toContain("Mention member biography");
+});
+
+it("uses the admitted author's original avatar in cards, details and replies without opening a panel or starting a DM", async () => {
+  vi.stubGlobal("Image", function () {
+    const image = document.createElement("img"); let source = "";
+    Object.defineProperties(image, {complete: {value: true}, naturalWidth: {value: 1},
+      src: {get: () => source, set: (value: string) => {source = value; queueMicrotask(() => image.dispatchEvent(new Event("load")));}},
+    });
+    return image;
+  });
+  const avatarUrl = `https://community.example/media/${postId}.png`;
+  const mediaPath = `/api/v1/workspaces/workspace/media/${postId}`;
+  api.messageAuthorProfile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Author",about:null,
+    avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
+  await mount();
+  await vi.waitFor(() => expect(host.querySelector("[data-avatar-shape] img")?.getAttribute("src")).toBe(mediaPath));
+  const cardAvatar = host.querySelector("[data-avatar-shape]")!;
+  expect(cardAvatar.classList.contains("h-6")).toBe(true);
+  const cardAuthor = cardAvatar.closest("button")!;
+  expect(cardAuthor.classList.contains("rounded-lg")).toBe(true);
+  expect(cardAuthor.lastElementChild!.classList.contains("truncate")).toBe(true);
+  expect(cardAuthor.lastElementChild!.classList.contains("font-medium")).toBe(true);
+  expect(host.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+  expect(host.querySelector("[data-forum-event-id]")).toBeNull();
+  await act(async () => host.querySelector<HTMLElement>('[role="button"][tabindex="0"]')!.click());
+  const detail = await vi.waitFor(() => {const node=host.querySelector(`[data-forum-event-id="${postId}"] [data-avatar-shape]`); expect(node).not.toBeNull(); return node!;});
+  await vi.waitFor(() => expect(detail.querySelector("img")?.getAttribute("src")).toBe(mediaPath));
+  expect(detail.classList.contains("h-9")).toBe(true);
+  const detailAuthor = detail.closest("button")!;
+  expect(detailAuthor.classList.contains("rounded-xl")).toBe(true);
+  expect(detailAuthor.lastElementChild!.classList.contains("font-semibold")).toBe(true);
+  expect(detailAuthor.lastElementChild!.classList.contains("truncate")).toBe(false);
+  const replyAvatar = host.querySelector(`[data-forum-event-id="${replyId}"] [data-avatar-shape]`)!;
+  await vi.waitFor(() => expect(replyAvatar.querySelector("img")?.getAttribute("src")).toBe(mediaPath));
+  expect(replyAvatar.classList.contains("h-6")).toBe(true);
+  const replyAuthor = replyAvatar.closest("button")!;
+  expect(replyAuthor.classList.contains("rounded-lg")).toBe(true);
+  expect(replyAuthor.lastElementChild!.classList.contains("font-medium")).toBe(true);
+  expect(replyAuthor.lastElementChild!.classList.contains("truncate")).toBe(false);
+  expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace",postId);
+  expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace",replyId);
+  expect(api.memberProfile).not.toHaveBeenCalled();
+  expect(startDm).not.toHaveBeenCalled();
+  expect(api.publish).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+  await act(async () => api.receive!({type:"interrupted"}));
+  expect(host.querySelectorAll("[data-avatar-shape] img")).toHaveLength(0);
+  expect(host.querySelectorAll('[aria-label="Profile"]')).toHaveLength(0);
+  expect(host.querySelector<HTMLButtonElement>(`[data-forum-event-id="${postId}"] [data-avatar-shape]`)!.closest("button")!.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>(`[data-forum-event-id="${replyId}"] [data-avatar-shape]`)!.closest("button")!.disabled).toBe(true);
 });
 
 it("offers deletion only for the actual SERVER signer and invokes the existing publish seam", async () => {

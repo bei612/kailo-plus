@@ -24,6 +24,9 @@ import { Props as AnswerResultProps } from '@/components/pages/home/promptThread
 import usePromptThreadStore from '@/components/pages/home/promptThread/store';
 import PreviewData from '@/components/dataPreview/PreviewData';
 import { usePreviewDataMutation } from '@/apollo/client/graphql/home.generated';
+import useGovernedPreview from '@/hooks/useGovernedPreview';
+import { getQueryPreviewText } from '@/utils/language';
+import { useRouter } from 'next/router';
 
 const SQLCodeBlock = dynamic(() => import('@/components/code/SQLCodeBlock'), {
   ssr: false,
@@ -48,6 +51,8 @@ const StyledToolBar = styled.div`
 
 export default function ViewSQLTabContent(props: AnswerResultProps) {
   const { isLastThreadResponse, onInitPreviewDone, threadResponse } = props;
+  const { id, sql } = threadResponse;
+  const text = getQueryPreviewText(useRouter().locale);
 
   const { onOpenAdjustSQLModal } = usePromptThreadStore();
   const { fetchNativeSQL, nativeSQLResult } = useNativeSQL();
@@ -55,9 +60,20 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
     onError: (error) => console.error(error),
   });
 
-  const onPreviewData = async () => {
-    await previewData({ variables: { where: { responseId: id } } });
-  };
+  const query = useGovernedPreview(
+    'response',
+    id,
+    async (where) => {
+      const { id: responseId, ...identity } = where;
+      const result = await previewData({
+        variables: { where: { responseId, ...identity } },
+      });
+      return result.data?.previewData;
+    },
+    previewDataResult.data?.previewData,
+    previewDataResult.error,
+  );
+  const onPreviewData = query.preview;
 
   const autoTriggerPreviewDataButton = async () => {
     await nextTick();
@@ -72,8 +88,6 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
       autoTriggerPreviewDataButton();
     }
   }, [isLastThreadResponse]);
-
-  const { id, sql } = threadResponse;
 
   const { hasNativeSQL, dataSourceType } = nativeSQLResult;
   const showNativeSQL = hasNativeSQL;
@@ -203,19 +217,34 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
               }}
             />
           }
-          loading={previewDataResult.loading}
+          loading={previewDataResult.loading || query.preparing}
           onClick={onPreviewData}
           data-ph-capture="true"
           data-ph-capture-attribute-name="view_sql_preview_data"
         >
-          View results
+          {query.pending || query.error ? text.check : text.results}
         </Button>
-        {previewDataResult?.data?.previewData && (
+        {query.storageError ? (
+          <Alert type="error" message={text.storageError} />
+        ) : null}
+        {query.scopeError ? (
+          <Alert type="error" message={text.scopeError} />
+        ) : null}
+        {query.pending ? <Alert type="info" message={text.pending} /> : null}
+        {query.error ? <Alert type="warning" message={text.unknown} /> : null}
+        {query.receipt?.terminalStatus &&
+        query.receipt.terminalStatus !== 'COMPLETED' ? (
+          <Alert type="error" message={text.ended} />
+        ) : null}
+        {query.receipt?.submission?.gateState === 'DENIED' ? (
+          <Alert type="warning" message={text.denied} />
+        ) : null}
+        {query.receipt?.data && (
           <div className="mt-2 mb-3">
             <PreviewData
-              error={previewDataResult.error}
+              error={query.error}
               loading={previewDataResult.loading}
-              previewData={previewDataResult?.data?.previewData}
+              previewData={query.receipt.data}
               locale={{
                 emptyText: (
                   <Empty

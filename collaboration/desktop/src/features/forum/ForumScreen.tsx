@@ -2,7 +2,7 @@
 // Shared presentation consumes the original Relay window/thread read models.
 import * as React from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
+import { ForumAuthorButton, ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
 import { DeleteActionMenu } from "@client-kit/platform/react/forum/DeleteActionMenu";
 import { TransportError } from "@client-kit/platform/transport";
 import { deleteMessage } from "@/shared/api/tauriMessages";
@@ -137,15 +137,13 @@ function ForumVisit({ channel, currentPubkey, targetMessageId, targetThreadRootI
           if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
           void queryClient.invalidateQueries({ queryKey: key });
         }} /> : null}
-      renderAuthor={(message, large) => {
+      renderAuthor={(message, large, preview) => {
         const label = resolveUserLabel({ pubkey: message.pubkey, currentPubkey, profiles, preferResolvedSelfLabel: true });
         const author = profiles?.[message.pubkey.toLowerCase()];
         return <UserProfilePopover pubkey={message.pubkey}>
-          <button className="flex items-center gap-2 rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" type="button">
-            <UserAvatar accent={author?.isAgent} avatarUrl={author?.avatarUrl ?? null} displayName={label}
-              shape={author?.isAgent ? "squircle" : "circle"} size={large ? undefined : "sm"} />
-            <span className="truncate text-sm font-medium text-foreground hover:underline">{label}</span>
-          </button>
+          <ForumAuthorButton displayName={label} large={large} preview={preview}
+            avatar={<UserAvatar accent={author?.isAgent} avatarUrl={author?.avatarUrl ?? null} displayName={label}
+              shape={author?.isAgent ? "squircle" : "circle"} size={large ? undefined : "sm"} />} />
         </UserProfilePopover>;
       }} renderContent={(message, preview) => <Markdown className="text-sm" messageId={message.eventId}
         content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}

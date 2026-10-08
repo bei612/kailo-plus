@@ -21,6 +21,9 @@ import {
 import { useCreateDashboardItemMutation } from '@/apollo/client/graphql/dashboard.generated';
 import { DashboardItemType } from '@/apollo/server/repositories';
 import usePromptThreadStore from './store';
+import useGovernedPreview from '@/hooks/useGovernedPreview';
+import { getQueryPreviewText } from '@/utils/language';
+import { useRouter } from 'next/router';
 
 const Chart = dynamic(() => import('@/components/chart'), {
   ssr: false,
@@ -80,6 +83,7 @@ const getDynamicProperties = (chartType: ChartType) => {
 export default function ChartAnswer(props: AnswerResultProps) {
   const { onGenerateChartAnswer, onAdjustChartAnswer } = usePromptThreadStore();
   const { threadResponse } = props;
+  const text = getQueryPreviewText(useRouter().locale);
   const [regenerating, setRegenerating] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [newValues, setNewValues] = useState(null);
@@ -92,6 +96,19 @@ export default function ChartAnswer(props: AnswerResultProps) {
   const [previewData, previewDataResult] = usePreviewDataMutation({
     onError: (error) => console.error(error),
   });
+  const query = useGovernedPreview(
+    'response',
+    threadResponse.id,
+    async (where) => {
+      const { id: responseId, ...identity } = where;
+      const result = await previewData({
+        variables: { where: { responseId, ...identity } },
+      });
+      return result.data?.previewData;
+    },
+    previewDataResult.data?.previewData,
+    previewDataResult.error,
+  );
 
   const [createDashboardItem] = useCreateDashboardItemMutation({
     onError: (error) => console.error(error),
@@ -102,9 +119,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
 
   // initial trigger when render
   useEffect(() => {
-    previewData({
-      variables: { where: { responseId: threadResponse.id } },
-    });
+    void query.preview();
   }, []);
 
   const chartSpec = useMemo(() => {
@@ -133,22 +148,25 @@ export default function ChartAnswer(props: AnswerResultProps) {
   }, [chartOptionValues, newValues]);
 
   const dataValues = useMemo(() => {
-    const { data, columns } = previewDataResult.data?.previewData || {};
+    const { data, columns } = query.receipt?.data || {};
     return (data || []).map((val) => {
       return (columns || []).reduce((acc, col, index) => {
         acc[col.name] = val[index];
         return acc;
       }, {});
     });
-  }, [previewDataResult.data]);
+  }, [query.receipt]);
 
   const dataColumns = useMemo(() => {
-    const { columns } = previewDataResult.data?.previewData || {};
+    const { columns } = query.receipt?.data || {};
     return columns || [];
-  }, [previewDataResult.data]);
+  }, [query.receipt]);
 
   const loading =
-    previewDataResult.loading || !getIsChartFinished(status) || regenerating;
+    previewDataResult.loading ||
+    query.preparing ||
+    !getIsChartFinished(status) ||
+    regenerating;
 
   const DynamicProperties = getDynamicProperties(chartType as ChartType);
 
@@ -241,57 +259,83 @@ export default function ChartAnswer(props: AnswerResultProps) {
     >
       <div className="text-md gray-10 p-6">
         {chartDetail?.description}
-        {chartSpec ? (
-          <ChartWrapper
-            className={clsx(
-              'border border-gray-4 rounded mt-4 pb-3 overflow-hidden',
-              { isEditMode: isEditMode },
-            )}
+        {query.storageError ? (
+          <Alert type="error" message={text.storageError} />
+        ) : null}
+        {query.scopeError ? (
+          <Alert type="error" message={text.scopeError} />
+        ) : null}
+        {query.pending ? <Alert type="info" message={text.pending} /> : null}
+        {query.error ? <Alert type="warning" message={text.unknown} /> : null}
+        {query.receipt?.terminalStatus &&
+        query.receipt.terminalStatus !== 'COMPLETED' ? (
+          <Alert type="error" message={text.ended} />
+        ) : null}
+        {query.receipt?.submission?.gateState === 'DENIED' ? (
+          <Alert type="warning" message={text.denied} />
+        ) : null}
+        {query.pending || query.error ? (
+          <Button
+            onClick={query.preview}
+            loading={previewDataResult.loading || query.preparing}
           >
-            <Toolbar className={clsx({ isEditMode: isEditMode })}>
-              <Form
-                size="small"
-                style={{ width: '100%' }}
-                form={form}
-                initialValues={chartOptionValues}
-                onFieldsChange={onFormChange}
+            {text.check}
+          </Button>
+        ) : null}
+        {chartSpec
+          ? query.receipt?.data && (
+              <ChartWrapper
+                className={clsx(
+                  'border border-gray-4 rounded mt-4 pb-3 overflow-hidden',
+                  { isEditMode: isEditMode },
+                )}
               >
-                <div className="d-flex justify-content-between align-center">
-                  <div className="flex-grow-1">
-                    <DynamicProperties
-                      columns={dataColumns}
-                      titleMap={chartSpecFieldTitleMap}
-                    />
-                  </div>
-                  {isAdjusted && (
-                    <div className="d-flex flex-column">
-                      <Button className="ml-4 mb-2" onClick={onResetAdjustment}>
-                        Reset
-                      </Button>
-                      <Button
-                        className="ml-4"
-                        type="primary"
-                        onClick={onAdjustChart}
-                      >
-                        Adjust
-                      </Button>
+                <Toolbar className={clsx({ isEditMode: isEditMode })}>
+                  <Form
+                    size="small"
+                    style={{ width: '100%' }}
+                    form={form}
+                    initialValues={chartOptionValues}
+                    onFieldsChange={onFormChange}
+                  >
+                    <div className="d-flex justify-content-between align-center">
+                      <div className="flex-grow-1">
+                        <DynamicProperties
+                          columns={dataColumns}
+                          titleMap={chartSpecFieldTitleMap}
+                        />
+                      </div>
+                      {isAdjusted && (
+                        <div className="d-flex flex-column">
+                          <Button
+                            className="ml-4 mb-2"
+                            onClick={onResetAdjustment}
+                          >
+                            Reset
+                          </Button>
+                          <Button
+                            className="ml-4"
+                            type="primary"
+                            onClick={onAdjustChart}
+                          >
+                            Adjust
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </Form>
-            </Toolbar>
-            <Chart
-              width={700}
-              spec={chartSpec}
-              values={dataValues}
-              onEdit={onEdit}
-              onReload={onReload}
-              onPin={onPin}
-            />
-          </ChartWrapper>
-        ) : (
-          chartRegenerateBtn
-        )}
+                  </Form>
+                </Toolbar>
+                <Chart
+                  width={700}
+                  spec={chartSpec}
+                  values={dataValues}
+                  onEdit={onEdit}
+                  onReload={onReload}
+                  onPin={onPin}
+                />
+              </ChartWrapper>
+            )
+          : chartRegenerateBtn}
       </div>
     </StyledSkeleton>
   );

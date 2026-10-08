@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ViewMetadata from './components/pages/modeling/metadata/ViewMetadata';
 import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
+import useGovernedPreview from './hooks/useGovernedPreview';
 
 let mockLocale: string | undefined;
 let mockScope: string;
@@ -20,7 +21,8 @@ jest.mock('antd', () => {
   const React = require('react');
   const field = ({ children }: any) =>
     React.createElement('div', null, children);
-  const Input: any = (props: any) => React.createElement('input', { 'aria-label': props['aria-label'] });
+  const Input: any = (props: any) =>
+    React.createElement('input', { 'aria-label': props['aria-label'] });
   Input.TextArea = () => null;
   return {
     Alert: field,
@@ -65,11 +67,9 @@ describe('original saved-view preview controls', () => {
     mockConfig
       .mockReset()
       .mockImplementation(async () => ({ queryScope: mockScope }));
-    mockPreview
-      .mockReset()
-      .mockResolvedValue({
-        data: { previewViewData: { submission: { gateState: 'ALLOWED' } } },
-      });
+    mockPreview.mockReset().mockResolvedValue({
+      data: { previewViewData: { submission: { gateState: 'ALLOWED' } } },
+    });
     storage.setItem.mockClear();
     storage.getItem.mockClear();
     storage.removeItem.mockClear();
@@ -92,6 +92,20 @@ describe('original saved-view preview controls', () => {
         statement: 'SELECT 1',
       } as any),
     );
+  const renderResponse = () => {
+    const ResponsePreview = () => {
+      const query = useGovernedPreview(
+        'response',
+        21,
+        mockPreview,
+        undefined,
+        undefined,
+      );
+      mockButtons.push({ onClick: query.preview });
+      return createElement('button', null, 'Original response preview');
+    };
+    return renderToStaticMarkup(createElement(ResponsePreview));
+  };
 
   it('keeps the original controls and renders one selected language', () => {
     expect(render()).toContain('预览数据');
@@ -142,14 +156,25 @@ describe('original saved-view preview controls', () => {
   });
 
   it('original model preview isolates its intent from views and observes UNKNOWN across remount', async () => {
-    const renderModel = () => renderToStaticMarkup(createElement(ModelMetadata, {
-      modelId: 7, referenceName: 'orders', displayName: 'Orders', fields: [],
-      calculatedFields: [], relationFields: [],
-    } as any));
+    const renderModel = () =>
+      renderToStaticMarkup(
+        createElement(ModelMetadata, {
+          modelId: 7,
+          referenceName: 'orders',
+          displayName: 'Orders',
+          fields: [],
+          calculatedFields: [],
+          relationFields: [],
+        } as any),
+      );
     expect(renderModel()).toContain('metadata__preview-data');
     await mockButtons[0].onClick();
     const first = mockPreview.mock.calls[0][0].variables.where;
-    expect(first).toMatchObject({ id: 7, idempotencyScope: mockScope, idempotencyKey: expect.any(String) });
+    expect(first).toMatchObject({
+      id: 7,
+      idempotencyScope: mockScope,
+      idempotencyKey: expect.any(String),
+    });
     mockButtons = [];
     renderModel();
     mockPreview.mockRejectedValueOnce(new Error('UNKNOWN'));
@@ -158,12 +183,87 @@ describe('original saved-view preview controls', () => {
     mockButtons = [];
     render();
     await mockButtons[0].onClick();
-    expect(mockPreview.mock.calls[2][0].variables.where.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(
+      mockPreview.mock.calls[2][0].variables.where.idempotencyKey,
+    ).not.toBe(first.idempotencyKey);
     mockButtons = [];
     renderModel();
     mockScope = 'b'.repeat(64);
     await mockButtons[0].onClick();
-    expect(mockPreview.mock.calls[3][0].variables.where.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(
+      mockPreview.mock.calls[3][0].variables.where.idempotencyKey,
+    ).not.toBe(first.idempotencyKey);
     expect(storage.removeItem).not.toHaveBeenCalled();
   });
+
+  it('original Asking preview retains UNKNOWN across remount and separates person and native selection', async () => {
+    renderResponse();
+    await mockButtons[0].onClick();
+    const first = mockPreview.mock.calls[0][0];
+    expect(first).toMatchObject({
+      id: 21,
+      idempotencyScope: mockScope,
+      idempotencyKey: expect.any(String),
+    });
+    mockButtons = [];
+    renderResponse();
+    mockPreview.mockRejectedValueOnce(new Error('UNKNOWN'));
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[1][0]).toEqual(first);
+    mockButtons = [];
+    render();
+    await mockButtons[0].onClick();
+    expect(
+      mockPreview.mock.calls[2][0].variables.where.idempotencyKey,
+    ).not.toBe(first.idempotencyKey);
+    mockButtons = [];
+    renderResponse();
+    mockScope = 'b'.repeat(64);
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[3][0].idempotencyKey).not.toBe(
+      first.idempotencyKey,
+    );
+    mockScope = 'a'.repeat(64);
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[4][0]).toEqual(first);
+    expect(storage.removeItem).not.toHaveBeenCalled();
+  });
+
+  it.each(['wrong-response', 'wrong-native', 'wrong-scope', 'malformed'])(
+    'keeps the original Asking retry key for a %s terminal receipt',
+    async (failure) => {
+      renderResponse();
+      await mockButtons[0].onClick();
+      const first = mockPreview.mock.calls[0][0];
+      const receipt = {
+        terminalStatus: 'COMPLETED',
+        previewScope: mockScope,
+        responseId: 21,
+        viewId: 7,
+        inputReference: { nativeObjectRef: JSON.stringify({ viewId: 7 }) },
+      };
+      const changed = {
+        ...receipt,
+        inputReference: { ...receipt.inputReference },
+      };
+      if (failure === 'wrong-response') changed.responseId = 22;
+      if (failure === 'wrong-native')
+        changed.inputReference.nativeObjectRef = JSON.stringify({ modelId: 7 });
+      if (failure === 'wrong-scope') changed.previewScope = 'b'.repeat(64);
+      if (failure === 'malformed')
+        changed.inputReference.nativeObjectRef = 'invalid';
+      mockPreview.mockResolvedValueOnce(changed);
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[1][0]).toEqual(first);
+      expect(storage.removeItem).not.toHaveBeenCalled();
+      mockPreview.mockResolvedValueOnce(receipt);
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[2][0]).toEqual(first);
+      expect(storage.removeItem).toHaveBeenCalledTimes(1);
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[3][0].idempotencyKey).not.toBe(
+        first.idempotencyKey,
+      );
+    },
+  );
 });

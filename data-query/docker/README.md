@@ -287,6 +287,31 @@ are checked again before disclosure; denied views refuse the complete answer,
 and a denied candidate is not first exported through finished-task telemetry.
 Original question, SQL, answer, chart, display-name and GraphQL shapes remain.
 
+The original Asking SQL, text-answer and chart preview controls now submit
+the existing HUMAN query action with the verified current scope and a durable
+opaque retry key. An answer that references an authorized saved view can query
+that exact view through the existing native reference, deployment and history
+chain. Its SQL must still equal the original saved-view statement; a generated
+query or partial CTE is not silently executed as that view. Core receives the
+reference, not the SQL or result body. The first checked statement is bound to
+the original reference before a command is submitted, so changing the view
+under the same ID cannot substitute another SQL statement, even if it changes
+back before the final read. Retrying an existing key must match that statement's
+frozen native revision rather than adopting a previous query's intent.
+Native rows are shown only after the
+same ActionExecution is complete, its original native history is available,
+and current response/view/resource facts pass fresh checks. An unrelated
+answer-stream update does not change the query intent.
+
+An accepted or pending query is not a result. The existing result controls
+can check the original query; UNKNOWN, transport failure or an invalid
+terminal receipt retain that user's original key rather than starting another
+query. Another user or native selection cannot consume or clear that key.
+Unavailable scope or browser retry-key storage refuses submission. The
+necessary preview guidance uses Chinese by default and English when selected;
+this does not claim complete Wren localization or browser visual acceptance.
+These source changes have not been deployed as a Wren business instance.
+
 This covers saved-view reads inside Asking, not complete Asking execution:
 arbitrary generated SQL, AI/native task side effects, dashboard and native write
 authorization are not covered by these metadata readers. See the component

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ForumView, type ForumViewProps } from "../src/react/forum/ForumView";
+import { ForumAuthorButton, ForumView, type ForumViewProps } from "../src/react/forum/ForumView";
 import { button, click, render } from "./render";
 import { act } from "react";
 import { DeleteActionMenu } from "../src/react/forum/DeleteActionMenu";
@@ -17,6 +17,32 @@ const base: ForumViewProps = {
 };
 
 describe("original Forum presentation with real host adapters", () => {
+  it("preserves the fixed upstream author button typography, corners and truncation", async () => {
+    for (const [large, preview, name] of [[false, true, "Card author"], [false, false, "Reply author"], [true, false, "Post author"]] as const) {
+      const host = await render(<ForumAuthorButton avatar={<span data-testid="admitted-avatar" />} displayName={name} large={large} preview={preview} />);
+      const trigger = button(host, name);
+      const label = trigger.querySelector("span:not([data-testid])")!;
+      expect(trigger.type).toBe("button");
+      expect(trigger.classList.contains(large ? "rounded-xl" : "rounded-lg")).toBe(true);
+      expect(trigger.classList.contains("focus-visible:ring-ring")).toBe(true);
+      expect(label.classList.contains(large ? "font-semibold" : "font-medium")).toBe(true);
+      expect(label.classList.contains("truncate")).toBe(preview);
+      expect(label.classList.contains("hover:underline")).toBe(true);
+      expect(trigger.querySelector('[data-testid="admitted-avatar"]')).not.toBeNull();
+    }
+  });
+  it("keeps root and reply author variants distinct without adding actions", async () => {
+    const renderAuthor = vi.fn<ForumViewProps["renderAuthor"]>((message, large, preview) => <ForumAuthorButton avatar={<span />} displayName={message.pubkey} large={large} preview={preview} />);
+    const reply = {...post, eventId: "reply", pubkey: "Reply author"};
+    const host = await render(<ForumView {...base} selectedPostId="post" post={post} replies={[reply]} renderAuthor={renderAuthor} />);
+    expect(renderAuthor).toHaveBeenCalledWith(post, true, false);
+    expect(renderAuthor).toHaveBeenCalledWith(reply, false, false);
+    const rootLabel = host.querySelector('[data-forum-event-id="post"] button span:last-child')!;
+    const replyLabel = host.querySelector('[data-forum-event-id="reply"] button span:last-child')!;
+    expect(rootLabel.classList.contains("font-semibold")).toBe(true);
+    expect(replyLabel.classList.contains("font-medium")).toBe(true);
+    expect(replyLabel.classList.contains("truncate")).toBe(false);
+  });
   it("keeps the forum composer closed to archived and non-member visits", async () => {
     const host = await render(<ForumView {...base} archived />);
     expect(button(host, "Archived").disabled).toBe(true);

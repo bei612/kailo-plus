@@ -2046,3 +2046,123 @@ Mobile 无适用 TS 对象，六类治理错误和 UNKNOWN 表达不变。
 仍未关闭。本批没有新增页面截图；既有登录失效截图不证明新 Inbox 呈现。
 **本批未部署，原版一致性的视觉验收未完成。** 全仓检查、Windows/Mobile 包与
 实机验收本批未执行，由主线集中收口；不能宣称 100% 还原或生产就绪。
+### 2026-10-08：原 Forum 卡片、详情与回复真实作者头像消费者
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/forum/ui/ForumPostCard.tsx::ForumPostCard` 及
+`desktop/src/features/forum/ui/ForumThreadPanel.tsx::{ForumThreadPanel,ReplyRow}`
+消费真实作者 `avatarUrl`。完整差异续核发现 Web `ForumPane::renderAuthor` 仍固定传
+`avatarUrl={null}`；本批沿现有授权事件读取接回同一原 `UserAvatar`，不是另造头像控件。
+
+- 原样保留：原 ForumView 卡片、详情、回复、Markdown、滚动与资料弹层主体。
+- 共享迁移：继续使用已有共享 ForumView/UserAvatar；没有新增第二份页面或词条。
+- 已授权治理改造：Web 通过原 `MessageAuthorAvatar` 消费已准入事件作者读取，
+  Principal/workspace/event/pubkey 共同约束 query，媒体消费原 scoped media 映射。
+- 缺失需恢复→已接真实消费者：卡片和回复原 sm、详情原 md 头像实际使用返回媒体；
+  不通过打开资料弹层、启动私聊或发布消息触发头像读取。
+
+四步结论（REQ-24、DD-74/75、SS-WEB-PRESENTATION、V-REQ-24）：
+
+1. 原作者头像上游支持，Web/Native 共源呈现已定；本批只恢复 Web 的授权读适配。
+2. 头像子批影响面为 ForumPane 及其既有检查两文件，`+49/-6`。卡片、详情和回复均接回；
+   原作者 hover/panel 共用既有事件 query/cache。无 schema、API、数据库、Workflow、
+   持久状态或四侧生成变化，Native/Mobile 输入不变。
+3. 事件作者不匹配、错误、pending/refetch 不消费旧成功头像；断流立即撤除读取，
+   切换 Principal/scope 继续已有隔离与迟到结果保护。不复制正文或另立资料/权限权威。
+4. 空头像沿原 fallback，读取失败不伪造媒体，零帖子没有新作者调用；分页与背压
+   沿原 Forum 窗口及原虚拟器。无写动作或重试状态机，六类错误和 UNKNOWN 不变。
+
+沿原 SDK/缓存集中验证，实际容器仍 4 CPU/8 GiB，执行前无现存编译/测试进程、
+可用内存 27700 MiB；没有安装依赖、整树复制、打包或部署。日志根沿上一节：
+
+- `forum-author-avatar-first.log`：12 passed/3 failed，旧 ChannelPane 全量 mock
+  遗漏真实 `mentionPeopleFromMembers`；`forum-author-avatar-harness.log` 又明确暴露
+  旧 BFF mock 缺 `fetchUserState`。改为保留原导出的 partial mock，不改生产逻辑
+  迎合检查。`forum-author-avatar-harness-complete.log` 后 Forum 实际 6 passed。
+- `forum-author-avatar-mutation.log`：SDK 真实调用退回 `avatarUrl={null}` 后，
+  媒体断言报 `expected undefined to be '/api/v1/workspaces/…/media/…'`，
+  1 failed/5 skipped、实际退出 1；恢复后正式源码与候选 `cmp` 退出 0。
+- `forum-author-avatar-restored.log`（session 1204）：Web `tsc --noEmit` 与
+  Forum 6/作者资料 9 项合跑，整条命令实际退出 0、`15 passed`。
+  React `act(...)` warning 保留原 stderr；两文件 `git diff --check` 退出 0。
+
+头像子批新代码尚未部署、业务截图为零；过期 OIDC 页面不能代替视觉验收。
+上述 15 项只覆盖头像子批，不覆盖下面随后补齐的原作者按钮文字/圆角；
+完整 bot profile 及全树未分类项仍须继续恢复，不称 Forum 或全平台已 100% 还原。
+全量门禁与 Windows/Mobile 实机本批未执行，
+由主线集中收口，不能把本批窄验当作生产验收。
+
+#### 同批闭合：原作者按钮呈现共源与两个真实宿主
+
+继续完整核对上述固定源码的原按钮，而非只核新增头像 diff：原卡片为
+`rounded-lg`/`font-medium`/`truncate`，原 `ReplyRow` 不截断作者，
+原详情为 `rounded-xl`/`font-semibold`。现行 Native 三处统一卡片样式，
+Web 使用通用 MessageAuthorText，均是原版呈现差异，现按原 JSX 复用闭合。
+
+共享 `ForumView.tsx::ForumAuthorButton` 由 Web `ForumPane` 与 Native
+`ForumScreen::ForumVisit` 两真实消费者共用；`renderAuthor` 内部呈现参数携带
+原 card/detail/reply 区分，不增加平台契约、数据库字段、状态机、持久偏好或新业务动作。
+原 ProfilePopover 与上述准入读取保留；Web 断流撤原 profile trigger，同时禁用原按钮，
+不使缺少读取/会话证明的身份操作重新可达。原 i18n 和用户名字内容不变，无四侧生成。
+完整功能批共五代码/检查路径 `+116/-22`（含头像子批），不是 helper-only：
+共享 ForumView/既有 forum.test、Native ForumScreen、Web ForumPane/既有 ForumPane.test。
+
+最终仍复用原 4 CPU/8 GiB SDK，执行前无构建/检查进程，可用内存 26510 MiB，
+Data 剩 427 MiB；只同步五个精确输入和两份实际安装的共享文件，没有整树复制、
+安装依赖或构建镜像/产物。五输入及两实际安装共享文件与正式源码 `cmp` 均退出 0。
+日志根沿前节：
+
+- `forum-author-original-shared-first.log`：共享 9 项通过后 shell 的 cd 层级错误，
+  命令退出 1，Web 未执行；修正为已核实绝对 SDK 目录，不改产品源码或静默跳过。
+- `forum-author-original-shared-mutation.log`：SDK 故意把详情退回原先统一卡片样式，
+  两项新共享检查真实报 `expected false to be true`，2 failed/7 skipped、退出 1。
+  `forum-author-original-web-mutation.log` 的实际 Web 详情消费者也在 `rounded-xl`
+  断言报同一错误，1 failed/5 skipped、退出 1。原字节恢复后才运行最终链。
+- `forum-author-original-shared-restored.log`（session 71536）：共享 production/test
+  两个 `tsc --noEmit`、共享 Forum 9 项、Web `tsc --noEmit`、Forum/作者 15 项、
+  Native `tsc --noEmit` 整条命令实际退出 0；共 24 项通过，原 React warning 保留。
+- 五路径 `git diff --check` 退出 0。没有再运行全量检查或单独发布。
+
+**本完整功能批仍未部署、无新版实际页面截图和 Windows/Mobile 实机验收。**
+原样式类与实际消费者检查不能冒充截图或全部原版一致性；完整 bot profile、
+原 Inbox 剩余筛选生产者/消费者及其余全树未分类项仍未关闭。
+
+### 2026-10-08：原 Inbox 详情真实作者头像消费者
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow` 已消费原
+`UserAvatar` 的真实头像、`h-9 w-9 shrink-0` 与 `md` 呈现；全树清单续核发现
+Web `InboxThreadPane` 仅构造无头像的 TimelineMessage，并用 identity 槽包资料弹层，
+没有把现存已准入的作者头像读取接给原头像。现直接接回真实槽消费，不发明页面或按钮。
+
+- 原样保留：Inbox 原布局、消息行、回复、私聊、游标、资料弹层及既有 Avatar。
+- 共享迁移：继续消费共享 MessageRowSurface/UserAvatar，Native 原消费者不复制。
+- 已授权治理改造：沿已有 MessageAuthorAvatar，按 Principal、workspace 或 conversation、
+  event 与签名作者解析媒体；不取全局目录、不凭昵称/消息正文推定身份。
+- 缺失需恢复→已接真实消费者：频道与私聊 Inbox 详情恢复原 md 头像；不打开资料、
+  发消息或创建私聊也可完成授权头像读取。
+
+四步结论（REQ-24、DD-74/75）：原头像上游支持；影响面仅 Web InboxThreadPane 及
+既有检查两文件 `+52/-7`，无 schema、API、数据库、Workflow、持久偏好或词条变化。
+Web 仍经 BFF，Native 本机凭据/Relay 原链及 Mobile 均未改动。作者不匹配、读取
+失败或过期返回沿现有 helper 拒绝旧头像；断流立即卸载读取与 profile trigger，
+绑定撤销沿既有消息准入删除详情，零消息没有额外读取。查询 key 隔离 Principal/scope，
+不引入副作用、审批/额度重试或新终态，六类错误与 UNKNOWN 不变。
+
+复用同一 4 CPU/8 GiB SDK 与缓存，只同步以上两精确文件；主线四侧生成结束后才
+启动窄验，未与生成争用候选，未安装依赖、整树复制、打包、清缓存或部署。
+原日志仍在上一节日志根：
+
+- `inbox-detail-avatar-first.log`：Web 类型检查通过，实际 22 passed/2 failed；
+  两个真实媒体 DOM 断言失败为 jsdom 未模拟 Image load。沿已有头像检查补回加载
+  模拟，未改变生产逻辑；`inbox-detail-avatar-harness.log` 实际 15 passed、退出 0。
+- `inbox-detail-avatar-mutation.log`：仅在 SDK 断开实际 Inbox 头像消费者，两个新增
+  检查均报 `expected "vi.fn()" to be called`、Number of calls 0，2 failed/13 skipped、
+  实际退出 1。随后恢复原字节，两正式输入与候选 `cmp` 均退出 0。
+- `inbox-detail-avatar-restored.log`（session 16271）：Web `tsc --noEmit` 与
+  InboxThreadPane 15/作者资料 9 项整条命令实际退出 0、24 passed；原 React
+  `act(...)` warning 保留在 stderr，未静默屏蔽。
+
+本批没有新版业务页面截图、部署或 Windows/Mobile 实机验收；窄验不等于全仓门禁。
+原 Inbox 筛选生产者、完整 bot profile、频道/线程其他头像消费者及全树未分类差异
+仍未全部闭合，不能据此声明所有头像、原版体验或生产目标完成。
