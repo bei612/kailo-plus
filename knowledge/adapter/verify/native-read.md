@@ -2829,3 +2829,82 @@ Cells→WeKnora import/parse/revoke acceptance. No release/binding activation,
 image deployment, authenticated UI8 screenshot, SFC/type check, Windows/Mobile
 or full-project validation ran. The separately frozen ten-Go-path CAS batch
 is also unaccepted; its older passing checks are not evidence for new bytes.
+
+## Native search query normalization without changing signed intent (2026-10-08)
+
+Authority: DD-94/98/108, `.design/13` §5 and the existing
+`knowledge.search@v2` contract. This fixes the original citation search
+consumer, not the search engine or a new synchronization path. Fixed readonly
+WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/mcpserver/tools_retrieve.go::Server.handleSearchKnowledge`, rejects
+empty Go `strings.TrimSpace(query)` and passes that trimmed value through
+`Server.runSearchKnowledgeWithFilter` to the original search tool. The adapter
+previously used the shared strict `nonempty` predicate, which rejected valid
+queries containing boundary whitespace before reaching the native consumer.
+
+Four-step impact review after implementation:
+
+1. The existing contract permits nonempty strings; native whitespace-only
+   queries remain invalid. The adapter now correlates the native query echo
+   using Unicode `White_Space`, matching Go's native trimming. NEL U+0085 is
+   whitespace; BOM U+FEFF is not. JS `trim()` alone does not match that native
+   behavior. No upstream capability or approved action set is extended.
+2. The only production writer/reader change is
+   `knowledge/adapter/src/query-revision.mjs::executeOperation`'s search branch.
+   The original HTTP/MCP fixture in `test/query-revision.test.mjs` consumes the
+   unchanged request. Signatures, parameter hashes, both PEP requests and the
+   original native search call retain the exact supplied query; only response
+   correlation uses its native-normalized form. No contract, migration,
+   database, generated type, UI layout or host adapter changed.
+3. Wrong/missing/non-string query echoes still refuse before reading document
+   provenance. Current KB mapping, hit/count validation, typed source metadata
+   and final disclosure authorization are unchanged. No body copy, source
+   download, new grant, receipt or usage settlement is introduced by search.
+4. ASCII/Unicode padding and BOM input preserve native behavior. Pure ASCII or
+   Unicode whitespace returns the existing 400 without native access. Unknown
+   or unrelated query echoes return the existing 503 without result/citations.
+   Existing duplicate-hit, empty-result, partial-provenance, overflow and
+   revocation behavior remains covered by the same original target. No new
+   task/state or retry side effect is created.
+
+Before execution, process/pressure and mount checks found about 29 GiB host
+available memory, no swap and only 73 MiB Data free. This batch used the existing
+`kailo-wren-query-sdk-itgs2n`, UID 1000:1000, Node v24.21.0, with actual
+`cpu.max=400000 100000`, `memory.max=4294967296`, no additional swap and zero OOM
+events. Only two small source/check inputs were refreshed in the existing
+candidate. All seven actual source/contract inputs were byte-compared to the
+formal tree; no dependencies, image, database or full-tree copy was created.
+
+Final exact target, run for positive, mutation and restored checks:
+
+```sh
+sudo -n docker exec --user 1000:1000 \
+  --workdir /work/knowledge-observation-guard.8QFEVq \
+  --env TMPDIR=/work/knowledge-observation-guard.8QFEVq/tmp \
+  kailo-wren-query-sdk-itgs2n \
+  node --test knowledge/adapter/test/query-revision.test.mjs
+```
+
+Final positive: **152 passed, 0 failed, 0 skipped**, exit 0. In the private
+production consumer only, replacing Unicode `White_Space` normalization with
+JS `trim()` caused **148 passed, 4 failed**, exit 1: NEL-padded and BOM queries
+returned 503 instead of 200, Unicode-blank input returned 503 instead of 400,
+and the enclosing original check failed. Assertions were unchanged. The formal
+production file was copied back, both changed candidate files compared equal
+with `cmp`, and the same target returned **152 passed**, exit 0. Earlier
+150-case logs are retained but are not the final-byte evidence.
+
+Logs are in the existing
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`:
+
+| Log | SHA-256 |
+|---|---|
+| `search-normalization-final-positive.log` | `a0b01ae11752e6bd15a417df0b08857f33b75e9128a4f04aa9b936303c7556a8` |
+| `search-normalization-final-mutation.log` | `a88292c83ae21bb8018de493b184347a1eaf6ed42f362b90d0c82fb764b90dad` |
+| `search-normalization-final-restored.log` | `64320f9822120fbe94ab4f541f5a6d610a2cef179f551865080b763c72a536f5` |
+
+Scoped complete diff and `git diff --check` passed. This is controlled original
+HTTP/MCP citation-consumer evidence, not live Cells→WeKnora import/parse/revoke
+acceptance. No release/binding activation, image deployment, native Go10 or
+UI8 acceptance, authenticated picker screenshot, Windows/Mobile or full-project
+validation ran. No command is left running; no formal mutation remains.

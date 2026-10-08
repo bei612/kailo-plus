@@ -85,6 +85,13 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const revision = '2026-10-06T23:00:00.123456789Z';
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
   const search = action === 'knowledge.search@v2';
+  const searchQueries = {
+    'padded-search': [' \t source search \r\n', 'source search'],
+    'unicode-padded-search': ['\u0085\u3000跨服务来源\u3000\u0085', '跨服务来源'],
+    'bom-search': ['\uFEFFsource search\uFEFF', '\uFEFFsource search\uFEFF'],
+    'blank-search': [' \t\r\n', ''],
+    'unicode-blank-search': ['\u0085\u3000', ''],
+  };
   const reference = searchReference ?? (contractStep && !search ? JSON.parse(contractStep.inputJson)
     : { resourceId: ingest || search ? ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
       displayName: 'native document', mediaType: 'text/markdown' });
@@ -92,7 +99,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
   const intent = managing || mapping ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
-      ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
+      ? contractStep ? JSON.parse(contractStep.inputJson) : { query: searchQueries[mode]?.[0] ?? 'search fixture' } : reference } : args;
   if (['known-native-id','mismatched-native-id'].includes(mode)) {
     intent.nativeId = mode === 'known-native-id' ? ingest ? ids[2] : ids[9] : ingest ? ids[9] : ids[2];
   }
@@ -169,7 +176,9 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
         mode === 'partial-search' ? { ...hit, knowledge_base_id: ids[9] } : hit];
       return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [],
         ...(mode === 'search-error' ? { isError: true } : {}), structuredContent: {
-          query: intent.input.query, knowledge_base_ids: [ids[1]], count: mode === 'count-mismatch' ? 1 : results.length,
+          query: mode === 'missing-query' ? undefined : mode === 'non-string-query' ? 42
+            : mode === 'wrong-query' ? 'unrelated search' : searchQueries[mode]?.[1] ?? intent.input.query,
+          knowledge_base_ids: [ids[1]], count: mode === 'count-mismatch' ? 1 : results.length,
           results: mode === 'missing-results' ? undefined : results,
         } } });
     }
@@ -424,6 +433,37 @@ test('knowledge v2 registered search vector uses citation output rather than raw
   const body = await response.json();
   assert.deepEqual(JSON.parse(body.resultJson), JSON.parse(search.expectedOutputJson));
   assert.deepEqual(body.contentReferences, JSON.parse(search.expectedOutputJson).citations);
+});
+
+test('knowledge v2 search preserves signed input and accepts only the original native Unicode-trimmed query', async t => {
+  for (const mode of ['padded-search', 'unicode-padded-search', 'bom-search',
+    'blank-search', 'unicode-blank-search', 'wrong-query', 'missing-query', 'non-string-query']) {
+    await t.test(mode, async nested => {
+      const { state, reference, invoke } = await fixture(nested, mode, 'knowledge.search@v2');
+      const response = await invoke();
+      const body = await response.json();
+      if (mode.includes('blank')) {
+        assert.equal(response.status, 400);
+        assert.deepEqual(state.methods, []);
+        assert.equal(body.contentReferences, undefined);
+      } else if (['wrong-query', 'missing-query', 'non-string-query'].includes(mode)) {
+        assert.equal(response.status, 503);
+        assert.deepEqual(state.methods, ['search_knowledge']);
+        assert.equal(body.resultJson, undefined);
+        assert.equal(body.contentReferences, undefined);
+      } else {
+        assert.equal(response.status, 200);
+        assert.equal(body.execution.platformStatus, 'SUCCEEDED');
+        assert.deepEqual(body.contentReferences, [reference,
+          { ...reference, nativeObjectRef: 'opaque/source-object', displayName: 'other source' }]);
+        assert.deepEqual(state.methods, ['search_knowledge', 'read_document']);
+        assert.equal(state.peps, 2);
+      }
+      assert.equal(state.grants, 0);
+      assert.equal(state.downloads, 0);
+      assert.deepEqual(state.receipts, []);
+    });
+  }
 });
 
 test('knowledge v2 search permits complete empty results but never missing provenance, wrong scope or revoked disclosure', async t => {

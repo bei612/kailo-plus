@@ -270,11 +270,16 @@ async function executeOperation(config, deadline, request, claims, token) {
     const args = request.arguments;
     if (!exactKeys(args, ['target', 'input']) || !exactKeys(args.target, ['resourceId'])
       || args.target.resourceId !== claims.target_id || !exactKeys(args.input, ['query'])
-      || !nonempty(args.input.query)) throw new Refused(400);
+      || typeof args.input.query !== 'string') throw new Refused(400);
+    // The fixed native handleSearchKnowledge uses Go strings.TrimSpace. Its
+    // Unicode White_Space includes NEL, but not the BOM stripped by JS trim.
+    // Keep the signed input intact; only correlate the native normalized echo.
+    const nativeQuery = args.input.query.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '');
+    if (nativeQuery.length === 0) throw new Refused(400);
     const found = await nativeTool(config, deadline, 'search_knowledge', {
       query: args.input.query, knowledge_base_ids: [config.nativeKnowledgeBaseId],
     });
-    if (found.query !== args.input.query || !Array.isArray(found.knowledge_base_ids)
+    if (found.query !== nativeQuery || !Array.isArray(found.knowledge_base_ids)
       || found.knowledge_base_ids.length !== 1 || found.knowledge_base_ids[0] !== config.nativeKnowledgeBaseId
       || !Array.isArray(found.results) || !Number.isSafeInteger(found.count)
       || found.count !== found.results.length) throw new Refused(503);
