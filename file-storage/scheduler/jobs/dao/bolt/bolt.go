@@ -132,6 +132,20 @@ func (s *boltStore) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 func (s *boltStore) DeleteJob(jobID string) error {
 
 	return s.DB.Update(func(tx *bbolt.Tx) error {
+		if tasks := tx.Bucket([]byte(tasksBucketString + jobID)); tasks != nil {
+			if err := tasks.ForEach(func(_ []byte, data []byte) error {
+				task := &proto.Task{}
+				if err := json.Unmarshal(data, task); err != nil {
+					return err
+				}
+				if jobs.TaskHasClaim(task) {
+					return errors.WithMessage(errors.StatusConflict, "native task operation evidence must be retained")
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
 		bucket := tx.Bucket(jobsBucketKey)
 		err := bucket.Delete([]byte(jobID))
 		if err == nil {
@@ -218,6 +232,9 @@ func (s *boltStore) PutTasks(tasks map[string]map[string]*proto.Task) error {
 				return err
 			}
 			for _, t := range ts {
+				if err := validateTaskUpdate(tx, t); err != nil {
+					return err
+				}
 				jobs.StripTaskData(t)
 				jsonData, err := json.Marshal(t)
 				if err != nil {
@@ -234,12 +251,49 @@ func (s *boltStore) PutTasks(tasks map[string]map[string]*proto.Task) error {
 
 }
 
+func (s *boltStore) ClaimTask(task *proto.Task) error {
+	if task.GetID() == "" || task.GetJobID() == "" {
+		return errors.WithMessage(errors.InvalidParameters, "task and job references are required")
+	}
+	jobs.StripTaskData(task)
+	return s.DB.Update(func(tx *bbolt.Tx) error {
+		// The handler's earlier GetJob is not a writer fence: DeleteJob may
+		// have committed since that read. Recheck in the claim transaction.
+		jobBucket := tx.Bucket(jobsBucketKey)
+		if jobBucket == nil || jobBucket.Get([]byte(task.JobID)) == nil {
+			return errors.WithMessage(errors.JobNotFound, "Job ID not found")
+		}
+		// Task IDs are native operation references, including across jobs. The
+		// absence check and insertion share the original Bolt write transaction.
+		if err := tx.ForEach(func(name []byte, bucket *bbolt.Bucket) error {
+			if strings.HasPrefix(string(name), tasksBucketString) && bucket.Get([]byte(task.ID)) != nil {
+				return errors.WithMessage(errors.StatusConflict, "native task reference already exists")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		bucket, err := tx.CreateBucketIfNotExists([]byte(tasksBucketString + task.JobID))
+		if err != nil {
+			return err
+		}
+		data, err := json.Marshal(task)
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte(task.ID), data)
+	})
+}
+
 func (s *boltStore) PutTask(task *proto.Task) error {
 
 	jobId := task.JobID
 	jobs.StripTaskData(task)
 
 	return s.DB.Update(func(tx *bbolt.Tx) error {
+		if err := validateTaskUpdate(tx, task); err != nil {
+			return err
+		}
 
 		tasksBucket, err := tx.CreateBucketIfNotExists([]byte(tasksBucketString + jobId))
 		if err != nil {
@@ -255,6 +309,32 @@ func (s *boltStore) PutTask(task *proto.Task) error {
 
 }
 
+func validateTaskUpdate(tx *bbolt.Tx, task *proto.Task) error {
+	found := false
+	err := tx.ForEach(func(name []byte, bucket *bbolt.Bucket) error {
+		if !strings.HasPrefix(string(name), tasksBucketString) {
+			return nil
+		}
+		data := bucket.Get([]byte(task.ID))
+		if data == nil {
+			return nil
+		}
+		stored := &proto.Task{}
+		if err := json.Unmarshal(data, stored); err != nil {
+			return err
+		}
+		found = true
+		return jobs.ValidateTaskUpdate(stored, task)
+	})
+	if err != nil {
+		return err
+	}
+	if !found && jobs.TaskHasClaim(task) {
+		return errors.WithMessage(errors.StatusConflict, "native first-dispatch claim is required before status persistence")
+	}
+	return nil
+}
+
 func (s *boltStore) DeleteTasks(jobId string, taskId []string) error {
 
 	return s.DB.Update(func(tx *bbolt.Tx) error {
@@ -264,7 +344,18 @@ func (s *boltStore) DeleteTasks(jobId string, taskId []string) error {
 			return nil
 		}
 		for _, tId := range taskId {
-			tasksBucket.Delete([]byte(tId))
+			if data := tasksBucket.Get([]byte(tId)); data != nil {
+				task := &proto.Task{}
+				if err := json.Unmarshal(data, task); err != nil {
+					return err
+				}
+				if jobs.TaskHasClaim(task) {
+					return errors.WithMessage(errors.StatusConflict, "native task operation evidence must be retained")
+				}
+			}
+			if err := tasksBucket.Delete([]byte(tId)); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

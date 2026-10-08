@@ -22,21 +22,30 @@ package tasks
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth/claim"
+	"github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/jobs"
+	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/common/utils/slug"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 	"github.com/pydio/cells/v5/scheduler/actions"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 type Task struct {
@@ -53,8 +62,10 @@ type Task struct {
 	chi int
 	di  int
 
-	event interface{}
-	task  *jobs.Task
+	event         interface{}
+	task          *jobs.Task
+	claimRequired bool
+	resultMu      sync.Mutex
 
 	lastStatus                    jobs.TaskStatus
 	lastStatusMsg                 string
@@ -66,13 +77,24 @@ type Task struct {
 
 // NewTaskFromEvent creates a task based on incoming job and event
 func NewTaskFromEvent(ctx context.Context, job *jobs.Job, event interface{}) *Task {
+	// Cache refreshes and the incoming broker message must not mutate the
+	// definition/parameters after the native first-dispatch claim is persisted.
+	job = proto.Clone(job).(*jobs.Job)
+	job.Tasks = nil
+	if message, ok := event.(proto.Message); ok {
+		event = proto.Clone(message)
+	}
 	log.Logger(ctx).Debug("NewTaskFromEvent " + job.ID)
 	ctxUserName := claim.UserNameFromContext(ctx)
 	taskID := uuid.New()
 	if trigger, ok := event.(*jobs.JobTriggerEvent); ok && trigger.RunTaskId != "" {
 		taskID = trigger.RunTaskId
 	}
-	operationID := job.ID + "-" + taskID[0:8]
+	prefix := taskID
+	if len(prefix) > 8 {
+		prefix = prefix[:8]
+	}
+	operationID := job.ID + "-" + prefix
 	c := propagator.WithAdditionalMetadata(ctx, map[string]string{common.CtxSchedulerOperationId: operationID})
 
 	span := trace.SpanFromContext(ctx)
@@ -82,6 +104,13 @@ func NewTaskFromEvent(ctx context.Context, job *jobs.Job, event interface{}) *Ta
 	if c.Value(ContextJobParametersKey{}) == nil {
 		params := jobs.RunParametersComputer(c, &jobs.ActionMessage{}, job, event)
 		c = context.WithValue(c, ContextJobParametersKey{}, params)
+	}
+	if params, ok := c.Value(ContextJobParametersKey{}).(map[string]string); ok {
+		frozen := make(map[string]string, len(params))
+		for key, value := range params {
+			frozen[key] = value
+		}
+		c = context.WithValue(c, ContextJobParametersKey{}, frozen)
 	}
 
 	t := &Task{
@@ -100,13 +129,54 @@ func NewTaskFromEvent(ctx context.Context, job *jobs.Job, event interface{}) *Ta
 			CanStop:       true,
 		},
 	}
+	if trigger, ok := event.(*jobs.JobTriggerEvent); ok && trigger.RunTaskId != "" {
+		t.claimRequired = true
+		// Only a digest of the frozen input is retained in the original task;
+		// job parameters and credentials are not copied into its public logs.
+		definition, definitionError := proto.MarshalOptions{Deterministic: true}.Marshal(job)
+		triggerBytes, triggerError := proto.MarshalOptions{Deterministic: true}.Marshal(trigger)
+		parameters, parameterError := json.Marshal(c.Value(ContextJobParametersKey{}))
+		if definitionError != nil || triggerError != nil || parameterError != nil {
+			t.err = errors.WithMessage(errors.InvalidParameters, "native task input cannot be frozen")
+		} else {
+			input, _ := json.Marshal([][]byte{definition, triggerBytes, parameters, []byte(ctxUserName)})
+			digest := sha256.Sum256(input)
+			receipt, _ := json.Marshal(map[string]string{"requestDigest": hex.EncodeToString(digest[:])})
+			t.task.ActionsLogs = []*jobs.ActionLog{{InputMessage: &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{JsonBody: receipt, Vars: map[string]string{jobstore.TaskCreateOnly: "true"}}}}}}
+		}
+	}
 
 	return t
 }
 
 // Queue send this new task to the dispatcher queue.
 // If a second queue is passed, it may differ from main input queue, so it is used for children queuing
-func (t *Task) Queue(queue ...chan RunnerFunc) {
+func (t *Task) Queue(queue ...chan RunnerFunc) (dispatchError error) {
+	defer func() {
+		if dispatchError != nil && t.span != nil {
+			t.span.End()
+		}
+	}()
+	if len(queue) == 0 || queue[0] == nil {
+		return errors.WithMessage(errors.InvalidParameters, "native dispatch queue is required")
+	}
+	if t.err != nil {
+		return t.err
+	}
+	if t.claimRequired {
+		client := jobs.NewJobServiceClient(grpc.ResolveConn(t.context, common.ServiceJobsGRPC))
+		claimed := t.Clone()
+		response, err := client.PutTask(t.context, &jobs.PutTaskRequest{
+			Task: claimed, StatusMeta: map[string]string{jobstore.TaskCreateOnly: "true"},
+		})
+		if err != nil {
+			return err
+		}
+		if !proto.Equal(response.GetTask(), claimed) {
+			return errors.WithMessage(errors.StatusConflict, "native first-dispatch persistence was not acknowledged")
+		}
+		t.context = context.WithValue(t.context, jobstore.ClaimedTaskContextKey{}, true)
+	}
 	if d, o := itemTimeout(t.context, t.Job.Timeout); o {
 		t.context, t.cancel = context.WithTimeout(t.context, d)
 	} else {
@@ -127,6 +197,7 @@ func (t *Task) Queue(queue ...chan RunnerFunc) {
 				return
 			case <-t.context.Done():
 				t.cancel()
+				return
 			case val := <-ch:
 				cmd, ok := val.(*jobs.CtrlCommand)
 				if !ok {
@@ -148,6 +219,8 @@ func (t *Task) Queue(queue ...chan RunnerFunc) {
 	defer func() {
 		if e := recover(); e != nil {
 			log.Logger(t.context).Error("could not enqueue task", zap.Any("e", e))
+			dispatchError = errors.WithMessage(errors.StatusConflict, "native task dispatch was not acknowledged")
+			t.cancel()
 		}
 	}()
 	r := RootRunnable(t.context, t)
@@ -163,6 +236,7 @@ func (t *Task) Queue(queue ...chan RunnerFunc) {
 	queue[0] <- func(queue chan RunnerFunc) {
 		r.Dispatch(msg, t.Actions, secondaryQueue)
 	}
+	return nil
 }
 
 // CleanUp is triggered after a task has no more subroutines running.
@@ -228,11 +302,61 @@ func (t *Task) SaveStatus(runnableContext context.Context, runnableStatus jobs.T
 
 // Clone creates a protobuf clone of this task
 func (t *Task) Clone() *jobs.Task {
+	t.resultMu.Lock()
+	defer t.resultMu.Unlock()
 	bb, _ := protojson.Marshal(t.task)
 	cl := &jobs.Task{}
 	_ = protojson.Unmarshal(bb, cl)
 	return cl
 	//return proto.Clone(t.task).(*jobs.Task)
+}
+
+// AppendResult retains action evidence in the original native task, before the
+// final status is cloned for persistence. It never grants a repeated dispatch.
+func (t *Task) AppendResult(action *jobs.Action, output *jobs.ActionMessage) error {
+	if !t.claimRequired || output == nil {
+		return nil
+	}
+	t.resultMu.Lock()
+	defer t.resultMu.Unlock()
+	for _, entry := range output.OutputChain {
+		if entry.GetVars()[jobstore.NativeVersionResult] != "true" || !entry.Success {
+			continue
+		}
+		revision := &tree.ContentRevision{}
+		if err := protojson.Unmarshal(entry.JsonBody, revision); err != nil || revision.VersionId == "" || revision.OwnerUuid == "" || revision.Size < 0 || revision.Location == nil {
+			return errors.WithMessage(errors.StatusConflict, "native revision result lacks durable identity")
+		}
+		duplicate := false
+		for _, log := range t.task.ActionsLogs {
+			for _, prior := range log.GetOutputMessage().GetOutputChain() {
+				stored := &tree.ContentRevision{}
+				if prior.GetVars()[jobstore.NativeVersionResult] != "true" || protojson.Unmarshal(prior.JsonBody, stored) != nil || stored.VersionId != revision.VersionId {
+					continue
+				}
+				if !proto.Equal(stored, revision) {
+					return errors.WithMessage(errors.StatusConflict, "native revision result changed within the task")
+				}
+				duplicate = true
+			}
+		}
+		if duplicate {
+			continue
+		}
+		// Keep only the original revision receipt. Never copy another action's
+		// raw/string body, parameters, credentials, or inherited result chain.
+		body, err := protojson.Marshal(revision)
+		if err != nil {
+			return err
+		}
+		t.task.ActionsLogs = append(t.task.ActionsLogs, &jobs.ActionLog{
+			Action: &jobs.Action{ID: action.GetID()},
+			OutputMessage: &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{
+				Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeVersionResult: "true"},
+			}}},
+		})
+	}
+	return nil
 }
 
 // GetRunUUID returns the task internal run UUID

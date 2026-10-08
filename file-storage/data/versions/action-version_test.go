@@ -21,7 +21,9 @@ import (
 	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
 	"github.com/pydio/cells/v5/common/utils/openurl"
 	"github.com/pydio/cells/v5/common/utils/propagator"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -61,9 +63,14 @@ type versionActionService struct {
 	stored   []*tree.StoreVersionRequest
 	storeErr error
 	confirm  func(*tree.ContentRevision) *tree.StoreVersionResponse
+	requests []*tree.CreateVersionRequest
 }
 
-func (s *versionActionService) CreateVersion(context.Context, *tree.CreateVersionRequest) (*tree.CreateVersionResponse, error) {
+func (s *versionActionService) CreateVersion(_ context.Context, request *tree.CreateVersionRequest) (*tree.CreateVersionResponse, error) {
+	s.requests = append(s.requests, proto.Clone(request).(*tree.CreateVersionRequest))
+	if request.VersionUuid != "" && s.created.GetVersion().GetVersionId() == "native-version" {
+		s.created.Version.VersionId = request.VersionUuid
+	}
 	return s.created, nil
 }
 func (s *versionActionService) StoreVersion(_ context.Context, request *tree.StoreVersionRequest) (*tree.StoreVersionResponse, error) {
@@ -97,13 +104,19 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 	previousRouter := router
 	defer func() { router = previousRouter }()
 	cases := []struct {
-		name   string
-		size   int64
-		change func(*versionActionService, *versionActionRouter)
-		fail   bool
+		name    string
+		size    int64
+		change  func(*versionActionService, *versionActionRouter)
+		fail    bool
+		claimed bool
 	}{
 		{name: "empty-file", size: 0},
 		{name: "actual-copy-size", size: 7},
+		{name: "claimed-task-empty-version", size: 0, claimed: true},
+		{name: "claimed-task-version", size: 7, claimed: true},
+		{name: "claimed-task-reference-mismatch", size: 7, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) {
+			s.created.Version.VersionId = "unrelated-native-version"
+		}},
 		{name: "native-store-error", size: 7, fail: true, change: func(s *versionActionService, _ *versionActionRouter) {
 			s.storeErr = errors.New("native version store unavailable")
 		}},
@@ -146,6 +159,10 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := claim.ToContext(context.Background(), claim.Claims{Name: "native-user", Subject: "native-user"})
+			if tc.claimed {
+				ctx = context.WithValue(ctx, jobstore.ClaimedTaskContextKey{}, true)
+				ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{common.CtxMetaTaskUuid: "native-operation-key", common.CtxMetaTaskActionPath: "ROOT/version/0"})
+			}
 			store, err := openurl.OpenPool[config.Store](ctx, []string{"mem://"}, config.OpenStore)
 			if err != nil {
 				t.Fatal(err)
@@ -185,7 +202,13 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 			} else if r.copyCount != 1 || len(s.stored) != 1 || s.stored[0].Version.Size != tc.size || len(output.OutputChain) != 1 || !output.OutputChain[0].Success {
 				t.Errorf("native copy/empty version was not exactly persisted: copies=%d stored=%v output=%v", r.copyCount, s.stored, output)
 			}
-			if tc.name == "create-owner-mismatch" || tc.name == "create-reference-missing" {
+			if tc.claimed && !tc.fail {
+				observed := &tree.ContentRevision{}
+				if len(s.requests) != 1 || s.requests[0].VersionUuid == "" || s.requests[0].VersionUuid != s.stored[0].Version.VersionId || output.OutputChain[0].Vars[jobstore.NativeVersionResult] != "true" || protojson.Unmarshal(output.OutputChain[0].JsonBody, observed) != nil || !proto.Equal(observed, s.stored[0].Version) {
+					t.Fatal("claimed task did not retain the exact persisted native revision")
+				}
+			}
+			if tc.name == "create-owner-mismatch" || tc.name == "create-reference-missing" || tc.name == "claimed-task-reference-mismatch" {
 				if r.copyCount != 0 || len(s.stored) != 0 {
 					t.Error("invalid created native actor/reference reached the object writer")
 				}

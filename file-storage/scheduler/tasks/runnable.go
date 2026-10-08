@@ -322,6 +322,9 @@ func (r *Runnable) RunAction(queue chan RunnerFunc) {
 		log.TasksLogger(r.Context).Debug("ZAPS", zap.Object("Output", outputMessage))
 		close(done)
 	}
+	if resultError := r.Task.AppendResult(r.Action, outputMessage); resultError != nil {
+		err = resultError
+	}
 
 	if err != nil {
 		log.TasksLogger(r.Context).Error("Error while running action "+r.ID, zap.Error(err))

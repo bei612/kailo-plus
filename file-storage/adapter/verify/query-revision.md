@@ -1844,3 +1844,133 @@ oom_kill=0；累计 `memory.peak=2538696704` 不是本批独立峰值。
 未运行全量检查、镜像发布、Playwright 或三端验收；没有激活 release/binding。
 多 RPC 的未知副作用、原子 collision 与操作 key/终态/usage 门禁没有因此
 闭合，generic write/share 继续 BLOCKED。本节仅更新实施后的实际验证事实。
+
+## 2026-10-08 原生 Task 首次派发与 Version 持久结果接缝
+
+本批是 `file_storage.write` 的原生前置生产链，不是完整写入能力；没有增加
+Adapter write 入口、批准 FILE_STORAGE release/binding 或部署。原生完整页面
+与独立入口未修改，未新增队列、任务表、平台账本、权限注册表或 protobuf 字段。
+
+### 四步影响结论与实际实现
+
+1. 权威是 `.design/07-组件接入标准.md` §5.2 的稳定 operation key、真实 native
+   terminal 与 UNKNOWN 不重放，及 `.design/08-内置组件与交互场景.md` 的完整
+   FILE_STORAGE 类别门禁。固定官方源码为
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`；以下路径与符号均经该 commit
+   只读 `git grep/show` 核验，不执行或修改 `.references`：
+   `/volumes/kailo/.references/cells/scheduler/jobs/rest/handler.go::SendControlCommand`
+   原样投递 `RunTaskId=cmd.TaskId`；
+   `/volumes/kailo/.references/cells/scheduler/tasks/task.go::NewTaskFromEvent/Task.Queue`
+   原来复用该 ID 后直接排队；
+   `/volumes/kailo/.references/cells/scheduler/jobs/dao/bolt/bolt.go::PutTask` 与
+   `/volumes/kailo/.references/cells/scheduler/jobs/dao/mongo/mongo.go::PutTask`
+   原来可覆盖任务；
+   `/volumes/kailo/.references/cells/data/versions/action-version.go::VersionAction.Run`
+   原来不从 task/action/node 固定版本引用；
+   `/volumes/kailo/.references/cells/scheduler/jobs/dao.go::Migrate` 是原生存储迁移
+   的真实消费者。全部二开仍在 `apps/file-storage` 的上述原模块。
+2. 影响面是原 `RunTaskId`→`Task.Queue`→JobService `PutTask`→原 Task DAO→
+   原状态流，以及 Runnable→VersionAction→原版本 DAO→原 Task.ActionsLogs。
+   显式原生任务 key 的首次派发先以原 `StatusMeta` 的 create-only 分支持久化
+   queued Task，取得完整一致的原 RPC ACK 后才进入原 dispatcher。冻结 Job、
+   event、计算后参数和 native owner 的摘要，不把参数或凭据复制进公开任务日志。
+   同 key、不同 Job/actor/输入或已存在引用均拒绝，不把重复请求当新执行。
+   Bolt 在原单事务内同时重验 jobs bucket、检查原 tasks buckets 并插入；
+   DeleteJob/普通状态写与清理不能删除或替换 claim。原 Migrate 对已有 claim
+   调用原 DAO 的 ClaimTask 保留 status/首次输入/版本回执，冲突立即退出，不用
+   PutTask 覆盖恢复。Mongo 复用原 tasks collection 的唯一 native ID、InsertOne、
+   状态快照条件替换与删除排除条件；没有第二任务存储。
+3. 副作用边界是 claim 必须先落盘再派发。丢失、错误、空或不一致 ACK 均不派发；
+   claim 后进队列前崩溃仍保留 queued 原引用，不假装 Finished 或自动重放。
+   受信的进程内 claimed-task context 才使原 VersionAction 从 task/action/node
+   关联固定 VersionUuid；原 CreateVersion 返回其他引用即拒绝，原 CopyObject
+   和 StoreVersion 完整持久 ACK 后才产生真实 ContentRevision 输出。Runnable
+   只将该类型回执追加到原 Task，不复制任意 raw/string body 或继承输出链；
+   已持久版本证据不可由后续状态写擦除。原无显式 key 的 UI 任务保持原版本路径。
+4. 空引用、未知 create-only 枚举、变更 owner/输入、重复 dispatch、Job 已删除、
+   不完整版本和变更版本证据均有确定拒绝。Bolt 的先读 Job→Job 删除→claim
+   竞争由同事务重验关闭；两个真实 Bolt store 的原迁移、重复迁移冲突及普通
+   task 清理仍被原目标覆盖。Mongo 的跨 collection Job 删除/claim 存活性**未闭合**：
+   删除条件保住了 claim，但 Job 可在 handler 旧读与 InsertOne 之间被删除，
+   不能宣称其 Job 原子性成立。无受控 Mongo fixture，实库/索引迁移明确 SKIP。
+
+### 原受限 SDK 实际验证
+
+沿既有 `kailo-cells-native-check-lftow7`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+UID1000:1000、`cpu.max=400000 100000`、8 GiB、swap0；复用 `/cache/mod` 与
+`/cache/build`，没有新 SDK、镜像、依赖安装或全树复制。开始前 MemAvailable
+约 24 GiB、Data 可用约 283 GiB；窗口间复核约 24 GiB、memory pressure=0、
+OOM/oom_kill=0。首轮原句柄经历 I/O 等待后终结，未重复启动在途编译。
+
+实际同一命令（仅日志目的文件不同）：
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  go test -p=1 -mod=readonly \
+    ./scheduler/jobs/grpc ./scheduler/tasks ./data/versions ./scheduler/jobs/dao/mongo \
+    -run "TestNativeTask|TestVersionActionRequiresExactNativePersistence|TestNewTaskFromEvent|TestTaskSetters" \
+    -count=1 -v
+```
+
+首轮 handle71380 实际 exit1：旧 job-recheck 夹具漏原 TriggerOwner，被不可变
+owner 保护拒绝；新检查误用了原工程并不存在的 JobServiceStub，tasks 编译失败。
+保留失败输出后，只修夹具 owner 和原 RegisterMock 所接受的 ClientConnInterface，
+没有放宽生产保护。同步 Bolt/Migrate 修正后 handle6326 exit0；首次生产破坏
+handle21075 exit1（4 顶层、18 子项失败），还原 handle27264 exit0。该次迁移
+夹具沿嵌套 callback 调外层 Fatal，负向附带 Goexit 测试框架告警；随后改为
+Error+return，并用原 tree.ContentRevision 的 protojson 载荷，保留全部旧日志。
+
+最终字节的集中结果：
+
+- handle59498 正向 exit0：三个原包 9 顶层、46 子项通过；其中 4 子项是原 Bolt
+  fixture 包装，另有原 GoConvey 14 assertions。Mongo 仅编译/no test files。
+- 仅私有候选禁用 6 处真实生产保护：Bolt Job 重验和已有 key 拒绝、Queue 的
+  RPC error 与完整 ACK 拒绝、VersionUuid 因果校验、Migrate 的 claim 选择。
+  三个检查文件与正式源码未破坏。handle26681 实际 exit1：4 顶层、16 子项失败，
+  其余 5 顶层、30 子项通过；无 Goexit 告警。相同 key 真实允许 16 次 claim、
+  丢 ACK 后排队、错误版本关联及迁移错走普通状态写均被原检查捕获。
+- 从正式源码恢复全部 12 输入，逐字节 cmp=0 后同目标复跑；handle46310 实际
+  exit0，9 顶层、46 子项再次通过。最终 12 文件和 go.mod/go.sum cmp=0，
+  镜像内 gofmt-l 空输出/exit0。SDK 无 Go/compile/link 在途，OOM=0；累计
+  `memory.peak=2538696704` 是原容器历史峰值，不冒充本批独立峰值。
+
+负向原输出摘录：
+
+```text
+native claim survived a deleted job's stale read: <nil>
+same native operation permitted 16 first dispatches
+unconfirmed native task entered dispatch: calls=1 queued=1 err=<nil>
+native migration lost existing task evidence: counts=map[Jobs:1 Tasks:2]
+err=native first-dispatch claim is required before status persistence: conflict
+```
+
+原日志与生产破坏 diff 保留于
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| cells-native-task-claim-positive.log | `05fcf720ac7313d8b455cd609a38c2373d442ee5dfb69bd5245202f1838564d1` |
+| cells-native-task-claim-final-positive.log | `d8cc1a7ddeca426742c2a2cbe3dc943fc892a59092dae6bd7590b5a7e4cf2696` |
+| cells-native-task-claim-negative.log | `da9c3d71269fa2df84a25dc7c01764e46b24d695f048e8c5ec03c9870fba608e` |
+| cells-native-task-claim-restored.log | `e83d05885bd88fe10daa3841e46d92dafb5aa246812877f20f720cb8a8db61ca` |
+| cells-native-task-claim-fixture-final-positive.log | `dd28344f9cdfb586fe352c61ef813153a96b334425f19d126812e1e48e818492` |
+| cells-native-task-claim-fixture-final-negative.log | `f96287d724f6928084d69f940497a86a214989d15f5e064cb3a49fa77f634007` |
+| cells-native-task-claim-fixture-final-restored.log | `be3bb04b43f60ab3ebf8f6d61f8ccf5a1314fbb57eee59bbb9c213f3a6760f63` |
+| cells-native-task-claim-fixture-final-production-mutation.diff | `dbc48e09b1be49ea43ad6a04a84c55abdf3dfc0994a9e13caeb8f125fa1b1e3d` |
+
+本候选只保证本批 12 文件及依赖锁一致，不冒充全 main 快照、部署后的原生
+业务 E2E 或线协议准入。实际覆盖原 Bolt、原 Handler、原生成 RPC client/
+RegisterMock 与原 VersionAction 消费者；未运行全局检查、镜像发布、Mongo
+实库、Playwright 或三端验收。没有改变正式业务库或激活 binding。
+
+完整治理写入仍有硬缺口：真实 uploader→claimed Task→Version 因果尚未接通；
+平台 principal/scope/binding generation 到 native write actor、固定输入与终态
+byte/op 用量消费尚未闭合。已保留原生 claim，但安全 dedup 退休窗口、失联
+queued claim 对账期限及责任入口未成立，不能把永久保留记录当作生产收敛。
+Mongo 跨 collection Job 存活性、条件删除原子性和分享多 RPC UNKNOWN 也仍
+是对应发布阻断。本批不宣称 generic write/share、完整 FILE_STORAGE 或生产就绪。

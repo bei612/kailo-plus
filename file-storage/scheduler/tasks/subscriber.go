@@ -230,7 +230,9 @@ func (s *Subscriber) enqueue(ctx context.Context, job *jobs.Job, event proto.Mes
 		_ = dispatcher.fifo.Push(ctx, event)
 	} else {
 		task := NewTaskFromEvent(ctx, job, event)
-		task.Queue(dispatcher.Queue())
+		if err := task.Queue(dispatcher.Queue()); err != nil {
+			log.Logger(ctx).Error("Native task was not dispatched", zap.Error(err))
+		}
 	}
 }
 

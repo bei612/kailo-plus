@@ -24,6 +24,9 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/activity"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/jobs"
@@ -34,6 +37,65 @@ import (
 
 var Drivers = service.StorageDrivers{}
 
+// TaskCreateOnly selects the original task store's first-dispatch claim. It is
+// not a status update: an existing reference never grants another dispatch.
+const TaskCreateOnly = "X-Pydio-Task-Create-Only"
+
+// NativeVersionResult marks a persisted native revision, not an arbitrary
+// action response body. It is consumed by the existing task result store.
+const NativeVersionResult = "nativeVersionResult"
+
+type ClaimedTaskContextKey struct{}
+
+func TaskHasClaim(task *jobs.Task) bool {
+	if task == nil || len(task.ActionsLogs) == 0 {
+		return false
+	}
+	chain := task.ActionsLogs[0].GetInputMessage().GetOutputChain()
+	return len(chain) > 0 && chain[0].GetVars()[TaskCreateOnly] == "true"
+}
+
+// ValidateTaskUpdate keeps a native task reference's owner and frozen claim
+// immutable while the original status stream updates its mutable progress.
+func ValidateTaskUpdate(stored, next *jobs.Task) error {
+	if stored == nil || next == nil || stored.ID == "" || stored.ID != next.ID {
+		return errors.WithMessage(errors.InvalidParameters, "native task identity is missing")
+	}
+	if stored.GetJobID() != next.GetJobID() || stored.GetTriggerOwner() != next.GetTriggerOwner() {
+		return errors.WithMessage(errors.StatusConflict, "native task reference belongs to another job or actor")
+	}
+	if TaskHasClaim(stored) != TaskHasClaim(next) {
+		return errors.WithMessage(errors.StatusConflict, "native first-dispatch claim cannot be installed or removed by a status writer")
+	}
+	if TaskHasClaim(stored) {
+		if len(next.ActionsLogs) == 0 || !proto.Equal(stored.ActionsLogs[0], next.ActionsLogs[0]) {
+			return errors.WithMessage(errors.StatusConflict, "native task frozen input cannot be replaced")
+		}
+		for _, priorLog := range stored.ActionsLogs {
+			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
+				if prior.GetVars()[NativeVersionResult] != "true" {
+					continue
+				}
+				found := false
+				for _, nextLog := range next.ActionsLogs {
+					if priorLog.GetAction().GetID() != nextLog.GetAction().GetID() {
+						continue
+					}
+					for _, result := range nextLog.GetOutputMessage().GetOutputChain() {
+						if proto.Equal(prior, result) {
+							found = true
+						}
+					}
+				}
+				if !found {
+					return errors.WithMessage(errors.StatusConflict, "native task persisted revision evidence cannot be replaced")
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // DAO provides method interface to access the store for scheduler job and task definitions.
 type DAO interface {
 	PutJob(job *jobs.Job) error
@@ -42,6 +104,7 @@ type DAO interface {
 	ListJobs(owner string, eventsOnly bool, timersOnly bool, withTasks jobs.TaskStatus, jobIDs []string, taskCursor ...int32) (chan *jobs.Job, error)
 
 	PutTask(task *jobs.Task) error
+	ClaimTask(task *jobs.Task) error
 	PutTasks(task map[string]map[string]*jobs.Task) error
 	ListTasks(jobId string, taskStatus jobs.TaskStatus, cursor ...int32) (chan *jobs.Task, chan bool, error)
 	DeleteTasks(jobId string, taskId []string) error
@@ -106,7 +169,16 @@ func Migrate(ctx, fromCtx, toCtx context.Context, dryRun bool, status chan servi
 			return out, e
 		}
 		for _, ta := range tasks {
-			if er := to.PutTask(ta); er != nil {
+			// Migrate the existing native claim, including its status and
+			// revision receipts. A status upsert cannot install a first claim,
+			// and a conflicting target reference must not be overwritten.
+			var er error
+			if TaskHasClaim(ta) {
+				er = to.ClaimTask(ta)
+			} else {
+				er = to.PutTask(ta)
+			}
+			if er != nil {
 				return out, er
 			}
 		}

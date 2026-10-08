@@ -22,9 +22,13 @@ package versions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -41,8 +45,10 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/common/utils/i18n/languages"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/data/versions/lang"
 	"github.com/pydio/cells/v5/scheduler/actions"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 type VersionAction struct{}
@@ -118,6 +124,17 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	userId := user.GetUuid()
 	versionClient := tree.NewNodeVersionerClient(grpc.ResolveConn(ctx, common.ServiceVersionsGRPC))
 	request := &tree.CreateVersionRequest{Node: node, OwnerName: userName, OwnerUuid: userId}
+	if claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool); claimed {
+		taskID, hasTask := propagator.CanonicalMeta(ctx, common.CtxMetaTaskUuid)
+		actionPath, hasAction := propagator.CanonicalMeta(ctx, common.CtxMetaTaskActionPath)
+		if !hasTask || taskID == "" || !hasAction || actionPath == "" || node.Uuid == "" {
+			err = errors.WithMessage(errors.InvalidParameters, "claimed version action requires its native task, action and node references")
+			return input.WithError(err), err
+		}
+		reference, _ := json.Marshal([]string{taskID, actionPath, node.Uuid})
+		digest := sha256.Sum256(reference)
+		request.VersionUuid = hex.EncodeToString(digest[:])
+	}
 	if input.Event != nil {
 		ce := &tree.NodeChangeEvent{}
 		if err := anypb.UnmarshalTo(input.Event, ce, proto.UnmarshalOptions{}); err == nil {
@@ -134,6 +151,10 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	}
 	if resp.GetVersion().GetVersionId() == "" || resp.GetVersion().GetOwnerUuid() != userId {
 		err = errors.WithMessage(errors.VersionNotFound, "created revision does not identify the native owner and version")
+		return input.WithError(err), err
+	}
+	if request.VersionUuid != "" && resp.Version.VersionId != request.VersionUuid {
+		err = errors.WithMessage(errors.StatusConflict, "created revision does not identify the claimed native task")
 		return input.WithError(err), err
 	}
 
@@ -187,7 +208,15 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 		return input.WithError(err2), err2
 	}
 	log.TasksLogger(ctx).Info(T("Job.Version.StatusMeta", resp.Version))
-	output.AppendOutput(&jobs.ActionOutput{Success: true})
+	if request.VersionUuid != "" {
+		receipt, err := protojson.Marshal(response.Version)
+		if err != nil {
+			return input.WithError(err), err
+		}
+		output.AppendOutput(&jobs.ActionOutput{Success: true, JsonBody: receipt, Vars: map[string]string{jobstore.NativeVersionResult: "true"}})
+	} else {
+		output.AppendOutput(&jobs.ActionOutput{Success: true})
+	}
 	ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
 	for _, version := range response.PruneVersions {
 		_, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})

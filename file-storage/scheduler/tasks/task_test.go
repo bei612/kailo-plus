@@ -21,17 +21,26 @@
 package tasks
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth/claim"
+	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/utils/propagator"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 
 	_ "github.com/pydio/cells/v5/scheduler/actions/scheduler"
 
@@ -69,6 +78,129 @@ func TestNewTaskFromEvent(t *testing.T) {
 		opId, _ := propagator.CanonicalMeta(task.context, common.CtxSchedulerOperationId)
 		So(opId, ShouldEqual, "ajob-"+task.task.ID[0:8])
 	})
+}
+
+type nativeClaimService struct {
+	grpc.ClientConnInterface
+	put func(context.Context, *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error)
+}
+
+func (s *nativeClaimService) Invoke(ctx context.Context, method string, args, reply interface{}, _ ...grpc.CallOption) error {
+	if method != "/jobs.JobService/PutTask" {
+		return errors.New("unexpected native claim RPC")
+	}
+	response, err := s.put(ctx, args.(*jobs.PutTaskRequest))
+	if err != nil {
+		return err
+	}
+	if response != nil {
+		proto.Merge(reply.(*jobs.PutTaskResponse), response)
+	}
+	return nil
+}
+
+func TestNativeTaskClaimPrecedesDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result func(*jobs.PutTaskRequest) (*jobs.PutTaskResponse, error)
+		fail   bool
+	}{
+		{"exact-native-ack", func(r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+			return &jobs.PutTaskResponse{Task: proto.Clone(r.Task).(*jobs.Task)}, nil
+		}, false},
+		{"lost-ack", func(*jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+			return nil, errors.New("native claim ACK unavailable")
+		}, true},
+		{"already-exists", func(*jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) { return nil, cellserrors.StatusConflict }, true},
+		{"missing-ack", func(*jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) { return &jobs.PutTaskResponse{}, nil }, true},
+		{"wrong-actor-ack", func(r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+			v := proto.Clone(r.Task).(*jobs.Task)
+			v.TriggerOwner = "another-actor"
+			return &jobs.PutTaskResponse{Task: v}, nil
+		}, true},
+		{"wrong-input-ack", func(r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+			v := proto.Clone(r.Task).(*jobs.Task)
+			v.ActionsLogs = nil
+			return &jobs.PutTaskResponse{Task: v}, nil
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := claim.ToContext(context.Background(), claim.Claims{Name: "native-actor", Subject: "native-actor"})
+			task := NewTaskFromEvent(ctx, &jobs.Job{ID: "native-job"}, &jobs.JobTriggerEvent{JobID: "native-job", RunTaskId: "operation-key"})
+			queue := make(chan RunnerFunc, 1)
+			calls := 0
+			grpcclient.RegisterMock(common.ServiceJobsGRPC, &nativeClaimService{put: func(_ context.Context, r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+				calls++
+				if len(queue) != 0 || r.StatusMeta[jobstore.TaskCreateOnly] != "true" || !jobstore.TaskHasClaim(r.Task) || r.Task.Status != jobs.TaskStatus_Queued {
+					t.Error("dispatch preceded native first-claim persistence")
+				}
+				return tc.result(r)
+			}})
+			err := task.Queue(queue)
+			if task.cancel != nil {
+				defer task.cancel()
+			}
+			if (err != nil) != tc.fail || calls != 1 || len(queue) != map[bool]int{true: 0, false: 1}[tc.fail] {
+				t.Fatalf("unconfirmed native task entered dispatch: calls=%d queued=%d err=%v", calls, len(queue), err)
+			}
+		})
+	}
+}
+
+func TestNativeTaskFreezesIntentAndKeepsOnlyRevisionResult(t *testing.T) {
+	params := map[string]string{"source": "original-source"}
+	ctx := context.WithValue(context.Background(), ContextJobParametersKey{}, params)
+	event := &jobs.JobTriggerEvent{JobID: "native-job", RunTaskId: "k", RunParameters: map[string]string{"path": "original-path"}}
+	job := &jobs.Job{ID: "native-job", Actions: []*jobs.Action{{ID: "native-action", Parameters: map[string]string{"version": "original"}}}}
+	task := NewTaskFromEvent(ctx, job, event)
+	initial := task.Clone()
+	job.Actions[0].Parameters["version"] = "changed"
+	event.RunParameters["path"] = "changed"
+	params["source"] = "changed"
+	if task.Actions[0].Parameters["version"] != "original" || task.event.(*jobs.JobTriggerEvent).RunParameters["path"] != "original-path" || task.context.Value(ContextJobParametersKey{}).(map[string]string)["source"] != "original-source" {
+		t.Fatal("claimed native input retained mutable caller aliases")
+	}
+	if !proto.Equal(task.Clone(), initial) {
+		t.Fatal("frozen native task claim changed after caller mutation")
+	}
+	other := NewTaskFromEvent(ctx, job, event)
+	if proto.Equal(other.Clone().ActionsLogs[0], initial.ActionsLogs[0]) {
+		t.Fatal("changed native parameters did not change the persisted input digest")
+	}
+	revision := &tree.ContentRevision{VersionId: "native-version", OwnerUuid: "native-owner", Size: 0, ETag: "native-etag", Location: &tree.Node{Uuid: "native-location"}}
+	body, err := protojson.Marshal(revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{Success: true, RawBody: []byte("secret-body"), StringBody: "secret-body"}, {Success: true, JsonBody: body, RawBody: []byte("secret-body"), Vars: map[string]string{jobstore.NativeVersionResult: "true"}}}}
+	if err := task.AppendResult(job.Actions[0], output); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.AppendResult(job.Actions[0], output); err != nil {
+		t.Fatal(err)
+	}
+	stored := task.Clone()
+	if len(stored.ActionsLogs) != 2 {
+		t.Fatalf("inherited native revision result duplicated: %v", stored)
+	}
+	encoded, _ := protojson.Marshal(stored)
+	if bytes.Contains(encoded, []byte("secret-body")) {
+		t.Fatal("native task copied arbitrary action body")
+	}
+	observed := &tree.ContentRevision{}
+	if err := protojson.Unmarshal(stored.ActionsLogs[1].OutputMessage.OutputChain[0].JsonBody, observed); err != nil || !proto.Equal(observed, revision) {
+		t.Fatalf("durable native revision result changed: %v %v", observed, err)
+	}
+	revision.Size = 1
+	body, _ = protojson.Marshal(revision)
+	output.OutputChain[1].JsonBody = body
+	if err := task.AppendResult(job.Actions[0], output); !cellserrors.Is(err, cellserrors.StatusConflict) {
+		t.Fatalf("same native revision changed its durable evidence: %v", err)
+	}
+	output.OutputChain[1].JsonBody = []byte(`{"VersionId":"unknown"}`)
+	if err := task.AppendResult(job.Actions[0], output); !cellserrors.Is(err, cellserrors.StatusConflict) {
+		t.Fatalf("incomplete native revision became task evidence: %v", err)
+	}
 }
 
 func TestTaskSetters(t *testing.T) {

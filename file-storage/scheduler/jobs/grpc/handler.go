@@ -221,9 +221,17 @@ func (j *JobsHandler) PutTask(ctx context.Context, request *proto.PutTaskRequest
 		return nil, errors.WithMessagef(e, "Cannot load job %s for task persistence", request.Task.JobID)
 	}
 
-	//log.Logger(ctx).Debug("Scheduler PutTask", zap.Any("task", request.Task))
-	if err := store.PutTask(request.Task); err != nil {
-		return nil, err
+	var persistenceError error
+	if mode, exists := request.StatusMeta[jobs.TaskCreateOnly]; exists {
+		if mode != "true" || !jobs.TaskHasClaim(request.Task) || request.Task.Status != proto.TaskStatus_Queued || request.Task.StartTime != 0 || request.Task.EndTime != 0 {
+			return nil, errors.WithMessage(errors.InvalidParameters, "first dispatch requires an unstarted queued task")
+		}
+		persistenceError = store.ClaimTask(request.Task)
+	} else {
+		persistenceError = store.PutTask(request.Task)
+	}
+	if persistenceError != nil {
+		return nil, persistenceError
 	}
 	response := &proto.PutTaskResponse{}
 	response.Task = request.Task
@@ -319,6 +327,9 @@ func (j *JobsHandler) DeleteTasks(ctx context.Context, request *proto.DeleteTask
 				case <-done:
 					break loop
 				case t := <-res:
+					if jobs.TaskHasClaim(t) {
+						continue
+					}
 					var tasks []string
 					var has bool
 					if tasks, has = toDelete[t.JobID]; !has {
@@ -370,7 +381,7 @@ func (j *JobsHandler) DeleteLogsFor(ctx context.Context, job string, tasks ...st
 	} else {
 		var qs []string
 		for _, task := range tasks {
-			qs = append(qs, "OperationUuid:\""+job+"-"+task[0:8]+"\"")
+			qs = append(qs, "OperationUuid:\""+job+"-"+task[:min(len(task), 8)]+"\"")
 		}
 		req.Query = strings.Join(qs, " ")
 	}
@@ -410,7 +421,7 @@ loop:
 	for {
 		select {
 		case t := <-tt:
-			ii = append(ii, t.JobID+"-"+t.ID[0:8])
+			ii = append(ii, t.JobID+"-"+t.ID[:min(len(t.ID), 8)])
 		case <-done:
 			break loop
 		}

@@ -38,8 +38,9 @@ import (
 )
 
 const (
-	collJobs  = "jobs"
-	collTasks = "tasks"
+	collJobs        = "jobs"
+	collTasks       = "tasks"
+	claimMarkerPath = "task.actionslogs.0.inputmessage.outputchain.0.vars." + jobs.TaskCreateOnly
 )
 
 var (
@@ -93,7 +94,20 @@ type mongoImpl struct {
 }
 
 func (m *mongoImpl) Init(ctx context.Context, values kv.Values) error {
-	return model.Init(ctx, m.Database)
+	if err := model.Init(ctx, m.Database); err != nil {
+		return err
+	}
+	return m.Migrate(ctx)
+}
+
+// Duplicated historical references stop startup rather than select or overwrite
+// a task. The unique native key is also the concurrent first-dispatch fence.
+func (m *mongoImpl) Migrate(ctx context.Context) error {
+	_, err := m.Collection(collTasks).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "id", Value: 1}},
+		Options: options.Index().SetName("native_task_reference").SetUnique(true),
+	})
+	return err
 }
 
 func (m *mongoImpl) PutJob(job *proto.Job) error {
@@ -137,9 +151,18 @@ func (m *mongoImpl) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 
 func (m *mongoImpl) DeleteJob(jobId string) error {
 	c := context.Background()
+	protected, err := m.Collection(collTasks).CountDocuments(c, bson.D{{Key: "job_id", Value: jobId}, {Key: claimMarkerPath, Value: "true"}})
+	if err != nil {
+		return err
+	}
+	if protected != 0 {
+		return errors.WithMessage(errors.StatusConflict, "native task operation evidence must be retained")
+	}
 
-	// First delete all children tasks
-	if _, e := m.Collection(collTasks).DeleteMany(context.Background(), bson.D{{"job_id", jobId}}); e != nil {
+	// The predicate is enforced by the actual deletion too: a concurrent claim
+	// must never be removed after the pre-read. Job survival across collections
+	// is not an atomic guarantee on standalone Mongo.
+	if _, e := m.Collection(collTasks).DeleteMany(c, bson.D{{Key: "job_id", Value: jobId}, {Key: claimMarkerPath, Value: bson.M{"$ne": "true"}}}); e != nil {
 		return e
 	}
 
@@ -203,6 +226,20 @@ func (m *mongoImpl) ListJobs(owner string, eventsOnly bool, timersOnly bool, wit
 
 }
 
+func (m *mongoImpl) ClaimTask(task *proto.Task) error {
+	if task.GetID() == "" || task.GetJobID() == "" {
+		return errors.WithMessage(errors.InvalidParameters, "task and job references are required")
+	}
+	jobs.StripTaskData(task)
+	_, err := m.Collection(collTasks).InsertOne(context.Background(), &mongoTask{
+		ID: task.ID, JobId: task.JobID, Status: int(task.Status), Stamp: int64(task.StartTime), Task: task,
+	})
+	if mongo.IsDuplicateKeyError(err) {
+		return errors.WithMessage(errors.StatusConflict, "native task reference already exists")
+	}
+	return err
+}
+
 func (m *mongoImpl) PutTask(task *proto.Task) error {
 	c := context.Background()
 	// do not store tasks inside job
@@ -214,38 +251,46 @@ func (m *mongoImpl) PutTask(task *proto.Task) error {
 		Stamp:  int64(task.StartTime),
 		Task:   task,
 	}
-	upsert := true
-	_, e := m.Collection(collTasks).ReplaceOne(c, bson.D{{"id", task.ID}}, mj, &options.ReplaceOptions{Upsert: &upsert})
-	if e != nil {
-		return e
+	stored := &mongoTask{}
+	err := m.Collection(collTasks).FindOne(c, bson.D{{Key: "id", Value: task.ID}}).Decode(stored)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		if jobs.TaskHasClaim(task) {
+			return errors.WithMessage(errors.StatusConflict, "native first-dispatch claim is required before status persistence")
+		}
+		_, err = m.Collection(collTasks).InsertOne(c, mj)
+		if mongo.IsDuplicateKeyError(err) {
+			return errors.WithMessage(errors.StatusConflict, "native task reference was concurrently created")
+		}
+		return err
 	}
-	//fmt.Println("Upserted task ", task.ID, res.UpsertedCount, res.ModifiedCount)
+	if err != nil {
+		return err
+	}
+	if err := jobs.ValidateTaskUpdate(stored.Task, task); err != nil {
+		return err
+	}
+	// Match the original immutable identity as part of the write, not only a
+	// pre-read. A first-dispatch receipt cannot be replaced by a status writer.
+	filter := bson.D{{Key: "id", Value: task.ID}, {Key: "job_id", Value: stored.JobId}, {Key: "task.triggerowner", Value: stored.Task.TriggerOwner}}
+	filter = append(filter, bson.E{Key: "task.actionslogs", Value: stored.Task.ActionsLogs})
+	result, err := m.Collection(collTasks).ReplaceOne(c, filter, mj)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return errors.WithMessage(errors.StatusConflict, "native task identity changed before persistence")
+	}
 	return nil
 }
 
 func (m *mongoImpl) PutTasks(tasks map[string]map[string]*proto.Task) error {
-	var models []mongo.WriteModel
 	for _, tt := range tasks {
 		for _, t := range tt {
-			mt := &mongoTask{
-				ID:     t.ID,
-				JobId:  t.JobID,
-				Status: int(t.Status),
-				Stamp:  int64(t.StartTime),
-				Task:   t,
+			if err := m.PutTask(t); err != nil {
+				return err
 			}
-			rModel := mongo.NewReplaceOneModel().
-				SetFilter(bson.D{{"id", mt.ID}}).
-				SetReplacement(mt).
-				SetUpsert(true)
-			models = append(models, rModel)
 		}
 	}
-	_, e := m.Collection(collTasks).BulkWrite(context.Background(), models)
-	if e != nil {
-		return e
-	}
-	//fmt.Println("Bulkwrite results modified", res.ModifiedCount, "inserted", res.UpsertedCount)
 	return nil
 }
 
@@ -328,7 +373,16 @@ func (m *mongoImpl) BuildOrphanLogsQuery(since time.Duration, all []string) stri
 }
 
 func (m *mongoImpl) DeleteTasks(jobId string, taskId []string) error {
-	filter := bson.D{{"job_id", jobId}, {"id", bson.M{"$in": taskId}}}
+	filter := bson.D{{Key: "job_id", Value: jobId}, {Key: "id", Value: bson.M{"$in": taskId}}}
+	protectedFilter := append(append(bson.D{}, filter...), bson.E{Key: claimMarkerPath, Value: "true"})
+	protected, err := m.Collection(collTasks).CountDocuments(context.Background(), protectedFilter)
+	if err != nil {
+		return err
+	}
+	if protected != 0 {
+		return errors.WithMessage(errors.StatusConflict, "native task operation evidence must be retained")
+	}
+	filter = append(filter, bson.E{Key: claimMarkerPath, Value: bson.M{"$ne": "true"}})
 	_, e := m.Collection(collTasks).DeleteMany(context.Background(), filter)
 	if e != nil {
 		return e
