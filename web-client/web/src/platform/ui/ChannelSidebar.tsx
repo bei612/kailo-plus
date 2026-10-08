@@ -45,26 +45,26 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     queryKey: ["platform", "sidebar-messages", principalId, ...joined.map((workspace) => workspace.id)],
     enabled: joined.length > 0,
     queryFn: async ({ signal }) => {
-      const pages = new Map<string, ReturnType<typeof inboxWindowEvents>>();
+      const pages = new Map<string, { channelId: string; events: ReturnType<typeof inboxWindowEvents> }>();
       for (const workspace of joined) {
         signal.throwIfAborted();
         const channel = await bff.workspaceChannel(workspace.id);
         signal.throwIfAborted();
         const page = await bff.workspaceMessages(workspace.id);
         signal.throwIfAborted();
-        pages.set(workspace.id, inboxWindowEvents(page.events, channel.channelId));
+        pages.set(workspace.id, { channelId: channel.channelId, events: inboxWindowEvents(page.events, channel.channelId) });
       }
       return pages;
     },
   });
   const preferences = reads.state?.workspacePreferences ?? {};
-  const activity = useMemo(() => new Map([...(!messages.isError ? messages.data ?? [] : [])].map(([id, events]) => {
+  const activity = useMemo(() => new Map([...(!messages.isError ? messages.data ?? [] : [])].map(([id, { events }]) => {
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
     return [id, latest === null ? null : new Date(latest * 1000).toISOString()] as const;
   })), [messages.data, messages.isError]);
   useEffect(() => { onActivity?.(activity); }, [activity, onActivity]);
   const rows = workspaces.map((workspace) => {
-    const events = workspace.isMember === true ? messages.data?.get(workspace.id) ?? [] : [];
+    const events = workspace.isMember === true ? messages.data?.get(workspace.id)?.events ?? [] : [];
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
     return { ...workspace, lastMessageAt: latest === null ? null : new Date(latest * 1000).toISOString() };
   });
@@ -72,12 +72,12 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   const canWriteRead = knownActivity && !reads.pending && !reads.unknown && !preferencePending;
   const canWritePreference = reads.state !== null && !reads.pending && !reads.unknown && !preferencePending;
   const unread = useMemo(() => new Set(knownActivity ? workspaces.filter((row) =>
-    row.isMember === true && messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.eventReadAt(event) ?? -Infinity)),
+    row.isMember === true && messages.data?.get(row.id)?.events.some((event) => event.createdAt > (reads.eventReadAt(event) ?? -Infinity)),
   ).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.eventReadAt]);
   useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
   const mark = (ids: string[], read: boolean) => {
     if (!canWriteRead) return;
-    void reads.write(inboxReadContexts(ids.flatMap((id) => messages.data?.get(id) ?? []), read))
+    void reads.write(inboxReadContexts(ids.flatMap((id) => messages.data?.get(id)?.events ?? []), read))
       .then(() => queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }));
   };
   const updatePreference = (id: string, change: { starred?: boolean; muted?: boolean }) => {
@@ -103,6 +103,8 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
       glyph={(className) => <ChannelGlyph className={className} channel={{ visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />}
     renderContextMenu={(channel) => <ChannelContextMenuItems channel={channel}
+      copyChannelId={messages.isSuccess && !messages.isFetching && joined.some((row) => row.id === channel.id)
+        ? messages.data?.get(channel.id)?.channelId ?? null : null}
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
       isStarred={preferences[channel.id]?.starred} onCopy={copy}
       onMarkChannelRead={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], true) : undefined}

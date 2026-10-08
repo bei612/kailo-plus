@@ -4031,3 +4031,78 @@ SHA256
 整条 IPC/治理差异尚未逐处归档，不能因 sanitizer 迁移把整文件标一致。
 该历史 snapshot 不是当前源码重新导出的完整 diff；全量分类、缺项恢复、
 新部署实际头像功能与三端体验均未完成，不能声明100%原版还原。
+
+### 2026-10-08 当前 main 全量差异重导出及原 Copy channel ID 真实消费者
+
+本批权威是用户原版一致性要求、DD-75、SS-BZ-01 与工程规则8/12。
+固定官方 `779af8886caae1317b4de962082429867ab61503` 的完整路径
+`desktop/src/features/sidebar/ui/ChannelContextMenu.tsx::CopyChannelSubmenu`
+复制的是原生 `channel.id`，不是平台管理工作区 ID。当前共享原菜单保留
+其分组、图标、次序、DOM和同源中英文；不新设计菜单或增加业务动作。
+
+影响面已查 shared ChannelContextMenuItems 两宿主消费者、Web ChannelSidebar
+的 workspaceChannel/messages/activity/unread/mark/preference 读写。
+Web原工作区ID继续用于管理导航及偏好，仅从既有 BFF workspaceChannel
+观察结果保留真实Relay ID，交给原复制动作。Native默认仍取本机原频道ID；
+不改本机持钥/Relay直连边界，不新增后端、schema、权限或正文权威。
+资料/消息请求失败、重新获取中、成员撤销或没有观察到ID时不复制猜测值；
+原名称复制不变，读标记与偏好 UNKNOWN 准入守卫不变。重复复制只有本机
+剪贴板副作用；此批没有新增平台执行状态或需要对账的远端写操作。
+DENIED/PRECONDITION/LIMIT/CONFLICT/UNKNOWN 继续消费既有BFF/读偏好链，
+BLOCKED无新增动作；原section/leave/archive/delete缺项仍未恢复，不能
+因本批Copy接线将完整ChannelContextMenu标记一致。Mobile无适用源码变更。
+
+四个实现后检查路径，合计 `+64/-19`：
+
+- `client-kit/ts/platform/src/react/sidebar/channel-context-menu.tsx`
+- `client-kit/ts/platform/test/sidebar.test.tsx`
+- `web-client/web/src/platform/ui/ChannelSidebar.tsx`
+- `web-client/web/src/platform/ui/ChannelSidebar.test.tsx`
+
+现成 `tools/upstream_manifest.py` 的原 `_Index/diff` 机制本轮重新导出
+**已提交main** `32971030d1d856b4f26b19fcff02cd4939204864`，前后commit相同。
+只对临时index读取该提交的collaboration树并按原工具排除fork，不建worktree、
+不执行references代码，不把继承脏文件或本批未提交改动混称当前main。
+现成status退出0：官方HEAD仍为上述固定commit，没有新的Buzz上游提交。
+证据目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+`collaboration-main.patch` 有**3323差异路径、1040486行、44299036字节**，
+SHA256 `7bdcbc85b0af1bf8f499506d0a759e66c865c18bcf917a8fd9467d5196724d37`。
+原git name-status为M774/D2430/R8/A111；numstat为+37056/-743877，24条二进制。
+官方5195路径中1983条同路径同字节未变，另计，不表示其功能已全验收。
+旧3313快照仅保留历史证据，不再冒称本次当前完整diff。
+
+当前 `collaboration-main.classification.tsv` 为12列：upstream_commit、
+apps_commit、path、change_kind、category、destination、evidence、added_lines、
+deleted_lines、upstream_path、previous_category、previous_evidence。
+SHA256 `8dd62d565f7ebb7c974bd473af9d036911f066ac6105c2c95e28a19e4ef1ce9d`。
+本次固定main逐文件重核**共享30、缺失2、未分类3291，共3323，32条已归档**；
+原样/授权在本差异表本轮尚未归档，不等于没有此类实际差异。
+重核范围包括原样式及纯帮助模块完整字节比对、已交付媒体共源模块和
+ProfileAvatarEditor/helpers/types/utils/ModeTabs五模块完整diff；已知完整
+设置/频道上下文菜单仍记缺失。旧87条只存previous字段作线索，不充作当前
+验收计数。全量分类、所有原功能和三端实际体验仍没有完成。
+
+运行沿既有4CPU/8GiB SDK及独立候选，Node内存3072MiB、maxWorkers=1，
+只投递四源码与Web已装共享模块；未重建镜像、安装依赖或运行Cargo/full。
+同证据目录的实际日志与结果：
+
+- `sidebar-id-shared.log`：首次默认fork池一worker启动timeout，exit1；
+  共享Sidebar6通过但Conversation未执行，不计整批通过。
+- `sidebar-id-shared-threads.log`：原目标以threads池重跑，14通过，exit0。
+- `sidebar-id-shared-tsc.log`、`sidebar-id-shared-test-tsc.log`、
+  `sidebar-id-web-tsc.log`：原三个tsc --noEmit项目均exit0。
+- `sidebar-id-web.log`：Web原实际消费者9通过，exit0。
+- `sidebar-id-shared-negative.log`：私有副本生产Copy改回管理ID，exit1、
+  1失败/5通过，断言明确预期relay-channel-one而收到workspace-one。
+- `sidebar-id-web-negative.log`：worker启动timeout、0项执行，不算负向命中；
+  原目标一次重试 `sidebar-id-web-negative-retry.log` exit1、1失败/8通过，
+  真正抓住Web生产prop回退工作区ID（预期native-one，实际one）。
+- 恢复原输入后的 `sidebar-id-shared-restored.log` 与
+  `sidebar-id-web-restored.log` 均exit0，14+9通过。四输入及Web已装共享包
+  共五次cmp、scoped git diff --check均0；旧oom/oom_kill=2未增。
+
+本批源码验收不等于浏览器或设备验收。根代理刚发布source329的Core/Web，
+本批四路径不在该提交内。原浏览器会话重开进入正常IdP登录表单，将沿既有
+受控正常SSO继续实际头像/搜索验收；此刻没有本批新页面截图，不以旧25状态
+或过去503冒充新功能成功。Windows/Mobile实机仍未验；此批未自行提交/部署。

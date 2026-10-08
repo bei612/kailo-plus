@@ -6,14 +6,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ChannelSidebar } from "./ChannelSidebar";
 
-const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>),
+const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { channelId: string; events: { id: string }[] }>>),
   channel: vi.fn(async (workspace: string) => ({channelId:`native-${workspace}`})), messages: vi.fn(),
-  menus: new Map<string, { mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
+  menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
-    ["one", [{ id: "one-event", channelId: "native-one", createdAt: 30, tags: [] }]],
-    ["two", [{ id: "two-event", channelId: "native-two", createdAt: 10, tags: [] }]],
+    ["one", { channelId: "native-one", events: [{ id: "one-event", channelId: "native-one", createdAt: 30, tags: [] }] }],
+    ["two", { channelId: "native-two", events: [{ id: "two-event", channelId: "native-two", createdAt: 10, tags: [] }] }],
   ]) }); },
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
@@ -27,10 +27,10 @@ vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
     <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
-  ChannelContextMenuItems: ({ channel, onMarkChannelRead, onStarChannel, onMuteChannel, onUnmuteChannel }: {
-    channel: { id: string }; onMarkChannelRead?: unknown; onStarChannel?: unknown;
+  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onStarChannel, onMuteChannel, onUnmuteChannel }: {
+    channel: { id: string }; copyChannelId: string | null; onMarkChannelRead?: unknown; onStarChannel?: unknown;
     onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void;
-  }) => { snapshot.menus.set(channel.id, { mute: onMuteChannel, unmute: onUnmuteChannel }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
+  }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
@@ -83,10 +83,28 @@ it("loads the real sidebar activity query when Core returns original window meta
   ] }));
   markup();
   const result = await snapshot.query!({ signal: new AbortController().signal });
-  expect(result.get("one")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
-  expect(result.get("two")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
-  expect(result.get("one")).toMatchObject([{channelId:"native-one"}]);
+  expect(result.get("one")?.events.map((event) => event.id)).toEqual(["a".repeat(64)]);
+  expect(result.get("two")?.events.map((event) => event.id)).toEqual(["a".repeat(64)]);
+  expect(result.get("one")).toMatchObject({channelId:"native-one", events:[{channelId:"native-one"}]});
   expect(snapshot.channel).toHaveBeenCalledWith("one");
+});
+
+it("passes the observed Relay ID to original Copy while retaining management IDs for other actions", () => {
+  snapshot.failed = false;
+  snapshot.fetching = false;
+  markup();
+  expect(snapshot.menus.get("one")?.copyChannelId).toBe("native-one");
+  expect(snapshot.menus.get("two")?.copyChannelId).toBe("native-two");
+  markup({}, false);
+  expect(snapshot.menus.get("one")?.copyChannelId).toBeNull();
+  snapshot.fetching = true;
+  markup();
+  expect(snapshot.menus.get("one")?.copyChannelId).toBeNull();
+  snapshot.fetching = false;
+  snapshot.failed = true;
+  markup();
+  expect(snapshot.menus.get("one")?.copyChannelId).toBeNull();
+  snapshot.failed = false;
 });
 it("uses native channel/msg/thread markers and does not write from stale activity during refetch", () => {
   const observed = vi.fn((event: {channelId?:string|null}) => event.channelId === "native-one" ? 30 : 10);

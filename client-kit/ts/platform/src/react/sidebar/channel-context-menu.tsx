@@ -30,7 +30,7 @@ import {
  * The channel context menu's Copy actions, grouped under a single
  * "Copy" submenu (channel name / channel ID).
  */
-function CopyChannelSubmenu({ channel, onCopy }: { channel: Channel; onCopy: (text: string, message: string) => void }) {
+function CopyChannelSubmenu({ channel, channelId, onCopy }: { channel: Channel; channelId: string | null; onCopy: (text: string, message: string) => void }) {
   const t = useT();
   return (
     <ContextMenuSub>
@@ -52,8 +52,9 @@ function CopyChannelSubmenu({ channel, onCopy }: { channel: Channel; onCopy: (te
           <span>{t("sidebar.copyName")}</span>
         </ContextMenuItem>
         <ContextMenuItem
+          disabled={channelId === null}
           onSelect={() =>
-            onCopy(channel.id, t("sidebar.copiedId"))
+            channelId !== null && onCopy(channelId, t("sidebar.copiedId"))
           }
         >
           <span>{t("sidebar.copyId")}</span>
@@ -65,6 +66,7 @@ function CopyChannelSubmenu({ channel, onCopy }: { channel: Channel; onCopy: (te
 
 export function ChannelContextMenuItems({
   channel,
+  copyChannelId = channel.id,
   hasUnread,
   isMuted,
   isStarred,
@@ -78,6 +80,8 @@ export function ChannelContextMenuItems({
 }: {
   onCopy: (text: string, message: string) => void;
   channel: Channel;
+  /** Native hosts already use Relay IDs; Web resolves it without replacing its management ID. */
+  copyChannelId?: string | null;
   hasUnread: boolean;
   isMuted?: boolean;
   isStarred?: boolean;
@@ -101,7 +105,7 @@ export function ChannelContextMenuItems({
 
   return (
     <>
-      <CopyChannelSubmenu channel={channel} onCopy={onCopy} />
+      <CopyChannelSubmenu channel={channel} channelId={copyChannelId} onCopy={onCopy} />
       {showReadToggle ? <ContextMenuSeparator /> : null}
       {hasProjectedUnread && onMarkChannelRead ? (
         <ContextMenuItem

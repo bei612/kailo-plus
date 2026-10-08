@@ -77,4 +77,25 @@ describe("shared original Buzz sidebar presentation", () => {
     expect(sortChannelsForSidebar(rows, "recent").map((row) => row.id)).toEqual(["a", "b", "c"]);
     expect(rows.map((row) => row.id)).toEqual(["b", "a", "c"]);
   });
+
+  it.each([undefined, "relay-channel-one", null])("copies the original channel identity without fabricating Web IDs (%s)", async (copyChannelId) => {
+    const copy = vi.fn();
+    const host = await render(<PlatformProvider client={client} locale="en"><TooltipProvider>
+      <ChannelGroupSection title="Channels" items={[channel]} hasUnread={false} isCollapsed={false}
+        onToggleCollapsed={() => {}} listTestId="copy-channel-list" actionsTestId="copy-channel-actions"
+        renderRow={() => <button>Open context</button>}
+        renderContextMenu={() => <ChannelContextMenuItems channel={channel} copyChannelId={copyChannelId}
+          hasUnread={false} onCopy={copy} />} />
+    </TooltipProvider></PlatformProvider>);
+    await act(async () => host.querySelector("li")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 1, clientY: 1 })));
+    const submenu = [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].find((node) => node.textContent === "Copy")!;
+    await act(async () => submenu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    await settle();
+    const item = [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].find((node) => node.textContent === "Copy channel ID")!;
+    expect(item).toBeDefined();
+    expect(item.getAttribute("aria-disabled")).toBe(copyChannelId === null ? "true" : null);
+    await click(item);
+    if (copyChannelId === null) expect(copy).not.toHaveBeenCalled();
+    else expect(copy).toHaveBeenCalledWith(copyChannelId ?? channel.id, "Channel ID copied to clipboard");
+  });
 });
