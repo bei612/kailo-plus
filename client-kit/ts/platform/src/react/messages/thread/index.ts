@@ -8,3 +8,4 @@ export { useIsThreadPanelOverlay } from "./use-thread-overlay";
 export { buildThreadPanelData, buildThreadPanelIndex, buildThreadPanelDataFromIndex } from "./threadPanel";
 export type { MainTimelineEntry } from "./threadPanel";
 export * from "./auxiliary";
+export { getThreadRouteTarget, getRouteMainTimelineTargetId } from "./channelRouteTarget";

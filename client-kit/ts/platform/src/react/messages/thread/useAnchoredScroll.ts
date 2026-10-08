@@ -436,6 +436,12 @@ export function useAnchoredScroll({
     ): boolean => {
       const container = scrollContainerRef.current;
       if (!container) return false;
+      // A delayed default mount pin must not overwrite a later route target.
+      // The virtualizer can need another commit to realize that target's row.
+      if (mountPinRafIdRef.current !== null) {
+        cancelAnimationFrame(mountPinRafIdRef.current);
+        mountPinRafIdRef.current = null;
+      }
       const el = container.querySelector<HTMLElement>(
         `[data-message-id="${messageId}"]`,
       );
@@ -643,7 +649,7 @@ export function useAnchoredScroll({
         ) {
           handledTargetIdRef.current = targetMessageId;
           onTargetReached?.(targetMessageId);
-        } else {
+        } else if (!messages.some((message) => message.id === targetMessageId)) {
           pinToBottomOnMount();
         }
       } else {
@@ -896,31 +902,14 @@ export function useAnchoredScroll({
     void virtualizerRenderVersion;
     const container = scrollContainerRef.current;
     if (!container) return;
-    const el = container.querySelector<HTMLElement>(
-      `[data-message-id="${targetMessageId}"]`,
-    );
-    if (!el && virtualizerOwnsPrependAnchoring) {
-      if (
-        scrollToMessageImperative(targetMessageId, {
-          highlight: highlightTargetMessage,
-        })
-      ) {
-        handledTargetIdRef.current = targetMessageId;
-        onTargetReached?.(targetMessageId);
-      }
-      return;
-    }
-    if (!el) {
-      // Row not in the DOM yet. A cold deep-link target is fetched by id and
-      // spliced into `messages` a render or two later; this effect re-runs on
-      // each `messages` commit and retries until the row exists.
-      return;
-    }
-    handledTargetIdRef.current = targetMessageId;
-    scrollToMessageImperative(targetMessageId, {
+    // A mounted but offscreen row still takes the virtualizer's phase-1 index
+    // jump. Only the subsequent actual center/highlight accepts the target.
+    if (scrollToMessageImperative(targetMessageId, {
       highlight: highlightTargetMessage,
-    });
-    onTargetReached?.(targetMessageId);
+    })) {
+      handledTargetIdRef.current = targetMessageId;
+      onTargetReached?.(targetMessageId);
+    }
   }, [
     highlightTargetMessage,
     isLoading,

@@ -10,6 +10,7 @@ import type { TimelineMessage } from "@client-kit/platform/react/messages";
 import { ItemState } from "@client-kit/contracts";
 import type { MessageAuthor } from "./MessageAuthorProfile";
 import { parseMentionClipboardRecords } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
+import { SETTLE_FRAME_COUNT, SETTLE_MOTION_WINDOW_MS } from "@client-kit/platform/react/messages/timeline/useSettleGatedPrependMessages";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -29,7 +30,11 @@ const state = vi.hoisted(() => ({
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
   mutation: { isPending: false, mutate: vi.fn() },
+  route: {messages:[] as import("./inbox-events").Event[],denied:false,interrupted:false,
+    thread:{isSuccess:true,isError:false,isFetching:false,hasNextPage:false,isFetchingNextPage:false,fetchNextPage:vi.fn()}},
+  routeRead:vi.fn(),
 }));
+vi.mock("./useWorkspaceThread",()=>({useWorkspaceThread:(...args:unknown[])=>{state.routeRead(...args);return state.route;}}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useReasonText: () => state.reason,
@@ -62,11 +67,12 @@ vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
   const { useState } = await import("react");
-  return { ChannelThreadPane: ({selected, onOpenAuthor, onAuthorScopeUnavailable}: {
+  return { ChannelThreadPane: ({selected, routeTargetMessageId, onOpenAuthor, onAuthorScopeUnavailable}: {
     selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
+    routeTargetMessageId?:string;
   }) => {
     const [pending, setPending] = useState(false);
-    return <section data-testid="thread-lifetime">
+    return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId}>
       <button onClick={() => setPending(true)}>pending reply</button>
       <output>{pending ? "reply pending" : "reply idle"}</output>
       <button onClick={() => onOpenAuthor(selected)}>thread author</button>
@@ -87,11 +93,35 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 beforeEach(async () => {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  // Reuse ChannelRead's actual Virtua measurement boundary: jsdom's zero-size
+  // viewport cannot prove that a newly prepended target row is mounted.
+  vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(function (this: HTMLElement) {
+    return this.isConnected && getComputedStyle(this).display !== "none" ? this.parentElement : null;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.style.position === "absolute" ? 40 : 800; });
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1440);
+  vi.stubGlobal("ResizeObserver", class {
+    private targets = new Set<Element>();
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.targets.add(target);
+      queueMicrotask(() => {
+        if (!this.targets.has(target)) return;
+        const height = target instanceof HTMLElement && target.style.position === "absolute" ? 40 : 800;
+        this.callback([{ target, contentRect: new DOMRect(0, 0, 1440, height),
+          borderBoxSize: [{ inlineSize: 1440, blockSize: height }],
+          contentBoxSize: [{ inlineSize: 1440, blockSize: height }], devicePixelContentBoxSize: [] }], this);
+      });
+    }
+    unobserve(target: Element) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+  });
   Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
   Object.defineProperties(Range.prototype, {
     getClientRects: { configurable: true, value: () => [] },
@@ -101,6 +131,9 @@ beforeEach(async () => {
   state.stop.mockClear();
   state.notify.mockClear();
   state.richContent = false;
+  state.route.messages=[];state.route.denied=false;state.route.interrupted=false;
+  state.route.thread.isSuccess=true;state.route.thread.isError=false;state.route.thread.isFetching=false;
+  state.routeRead.mockClear();
   state.members.data = [];
   state.userState.data.conversationPreferences = {};
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -279,4 +312,43 @@ it("keeps the existing reply mounted while an author profile opens and closes", 
   await act(async () => [...thread.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "thread unavailable")!.click());
   expect(host.querySelector('[data-testid="close-author"]')).toBeNull();
   expect(thread.textContent).toContain("reply pending");
+});
+
+it("opens an off-window thread search target only from the freshly admitted original context",async()=>{
+  const rootId="a".repeat(64),replyId="b".repeat(64),pubkey="c".repeat(64);
+  const rootEvent={id:rootId,pubkey,kind:9,created_at:1,createdAt:1,channelId:"workspace-a",category:"activity" as const,tags:[["h","workspace-a"]],content:"Original thread root"};
+  const reply={...rootEvent,id:replyId,createdAt:2,created_at:2,content:"Original thread target",tags:[["h","workspace-a"],["e",rootId,"","root"],["e",rootId,"","reply"]]};
+  state.route.thread.isFetching=true;
+  const mount=()=>act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" targetMessageId={replyId} targetThreadRootId={rootId}/></TooltipProvider>));
+  state.route.messages=[rootEvent,reply];
+  await mount();
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  state.route.thread.isFetching=false;
+  await mount();
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,true);
+  const thread=host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]');
+  expect(thread?.dataset.selectedId).toBe(replyId);expect(thread?.dataset.routeTarget).toBe(replyId);
+  // The original timeline holds older prepends until its quiet-window and
+  // stable-frame conditions agree; do not mistake that real admission delay
+  // for a missing root or replace the gate in this consumer check.
+  await act(async()=>{
+    await new Promise(resolve=>setTimeout(resolve,SETTLE_MOTION_WINDOW_MS));
+    for(let frame=0;frame<SETTLE_FRAME_COUNT;frame++) await new Promise(requestAnimationFrame);
+  });
+  expect(host.querySelector(`[data-message-id="${rootId}"]`)).not.toBeNull();
+  expect(host.querySelector(`[data-message-id="${replyId}"]`)).toBeNull();
+  expect(host.textContent).not.toContain("platform.linkMessageOutsideHistory");
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,false);
+  expect(host.querySelector(`[data-message-id="${rootId}"]`)).toBeNull();
+});
+
+it("does not accept denied or incomplete route ancestry as a usable thread",async()=>{
+  const rootId="d".repeat(64),replyId="e".repeat(64);
+  state.route.messages=[{id:replyId,pubkey:"f".repeat(64),kind:9,created_at:2,createdAt:2,channelId:"workspace-a",category:"activity",content:"Unresolved reply",tags:[["h","workspace-a"],["e",rootId,"","root"],["e",rootId,"","reply"]]}];
+  const mount=()=>act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" targetMessageId={replyId} targetThreadRootId={rootId}/></TooltipProvider>));
+  await mount();expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  state.route.denied=true;
+  await mount();expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  expect(host.textContent).not.toContain("Unresolved reply");
 });

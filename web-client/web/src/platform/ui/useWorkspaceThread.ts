@@ -9,7 +9,7 @@ import { parseChannelWindowResponse, type RelayEvent } from "@client-kit/platfor
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
-export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string) {
+export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string, enabled = true) {
   const client = useBffClient();
   const cache = useQueryClient();
   const [denied, setDenied] = useState(false);
@@ -17,7 +17,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
   const fullChannel = Boolean(conversationId && selectedEventId);
   const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null], [principalId, workspaceId, rootId, conversationId, selectedEventId]);
   const thread = useInfiniteQuery({
-    queryKey: key, enabled: !denied, initialPageParam: null as WebMessageCursor | null,
+    queryKey: key, enabled: enabled && !denied, initialPageParam: null as WebMessageCursor | null,
     queryFn: async ({ pageParam, signal }) => {
       const query = {
         messageType: WebMessageType.Stream, ...(!fullChannel ? { parentEventId: rootId } : {}),
@@ -73,7 +73,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
     },
     getNextPageParam: (page) => page.nextCursor,
   });
-  useEffect(() => openStream(workspaceId, (frame) => {
+  useEffect(() => enabled ? openStream(workspaceId, (frame) => {
     if (frame.type === "event" || frame.type === "snapshot" || frame.type === "live") void cache.invalidateQueries({queryKey: key});
     if (frame.type === "live") setInterrupted(false);
     if (frame.type === "interrupted") setInterrupted(true);
@@ -83,7 +83,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
         setDenied(true); void cache.cancelQueries({queryKey: key}); cache.removeQueries({queryKey: key});
       }
     }
-  }, conversationId), [workspaceId, conversationId, cache, key]);
+  }, conversationId) : undefined, [workspaceId, conversationId, cache, key, enabled]);
   const messages = useMemo(() => {
     const deleted = new Set(thread.data?.pages.flatMap((page) => [...page.deleted]));
     const messages = [...new Map(thread.data?.pages.flatMap((page) => page.events).filter((event) => !deleted.has(event.id)).map((event) => [event.id, event])).values()]

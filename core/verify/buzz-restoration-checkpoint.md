@@ -4106,3 +4106,108 @@ ProfileAvatarEditor/helpers/types/utils/ModeTabs五模块完整diff；已知完�
 本批四路径不在该提交内。原浏览器会话重开进入正常IdP登录表单，将沿既有
 受控正常SSO继续实际头像/搜索验收；此刻没有本批新页面截图，不以旧25状态
 或过去503冒充新功能成功。Windows/Mobile实机仍未验；此批未自行提交/部署。
+
+### 2026-10-08 main329 真实头像验收与原消息/线程搜索定位消费者
+
+本节为实现后回执，沿 REQ-24、DD-75/77、SS-WEB-RELAY 与原版一致性要求。
+动手前查明权威与影响面：URL/搜索仅提供目标引用，实际正文仍经既有 BFF
+授权线程读取；Web 无私钥，Native 保留本机凭据与原路由消费者；Core、契约、
+数据库、Worker、组件与 Mobile 本批不改。原共享滚动、路由根/回复投影、Web
+线程查询及列表/线程/宿主消费者全部检索复核；没有新搜索引擎或读状态权威。
+副作用只涉及客户端读投影、滚动与原面板选择，不发送消息、不复制正文到
+Core、不开放新权限或组件入口。上下文须在当前 principal/workspace/key 下
+重新读成功，等待/分页/错误/撤权不当作目标已可用；缺失祖先和循环祖先按原
+有界遍历拒绝，scope 撤销移除显示、禁止启用新读。原 BFF 六类错误不重新分类，
+读取异常用原 ThreadRepliesErrorCard，不把异常伪装成“消息不存在”或成功。
+原发送中/编辑中守卫保留；跨 scope、空结果、分页未完成、断流恢复继续依既有
+查询/流准入，不从搜索命中缓存恢复失去准入的正文。无契约/旧数据兼容迁移。
+
+固定上游为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+
+- `desktop/src/features/channels/ui/useChannelRouteTarget.ts` 的完整
+  `getThreadRouteTarget` / `getRouteMainTimelineTargetId` 函数原样迁至
+  `client-kit/ts/platform/src/react/messages/thread/channelRouteTarget.ts`，
+  仅路径与 export 适配。Native 删除重复函数并导入同一实现，Web 实际消费
+  原根/回复/broadcast 规则与祖先展开，不造另一个路由规则。
+- `desktop/src/features/messages/ui/useAnchoredScroll.ts::useAnchoredScroll`
+  已迁至共享模块。真实冷搜索暴露虚拟列表 phase-1 返回 false 时仍提前标记
+  handled：本批只在真正居中成功后接受，并取消尚未执行的默认底部 pin；
+  已知但尚未实现到 DOM 的目标不回退底部。原视觉、阈值与布局不改。
+- Web `PlatformApp` 传递现有 threadRootId；`ChannelPane` 经
+  `useWorkspaceThread` 原 BFF/缓存/编辑删除闭包读取上下文，补入真实根消息，
+  原回复面板处理目标回复且默认回复根消息；`ChannelThreadPane` 使用同一
+  祖先解析。新增 enabled 只关闭尚未准入的 URL 读取/流，不产生新 API。
+
+12 条源码/检查路径（新增共享 helper 一条）合计 **+292/-104**；没有自创页面、
+按钮、文案、硬编码业务阈值或新依赖。具体为 shared thread helper/index/scroll、
+timeline-scope 检查、Native 原 useChannelRouteTarget，以及 Web 原
+useWorkspaceThread、ChannelPane/test、ChannelThreadPane/test、PlatformApp/test。
+
+真实浏览器沿现有 playwright-cli `header-restoration` 正常 IdP 表单登录
+seam-verifier，无 cookie/session 注入、改口令或共享身份，凭据不回显。
+实际线上源码是 `32971030d1d856b4f26b19fcff02cd4939204864`，Web artifact
+`sha256:9ce755ef160e985e259f4ecf12fac8739e0afeeef458a731e24be7fffcac24d8`，
+浏览器 buildId/sourceDigest 为
+`sha256:73e57641ff6dc5d09bf7ef07bdb1845826b217751b1d64344cc0ac025e63aba7`。
+下列 **8 个状态**逐张截图并实际打开视觉复核，不等于全站 8 页已验收。
+截图目录 `/volumes/kailo/apps/.playwright-cli/`，共同前缀
+`kailo-ui-20261008-main329-`：
+
+- `profile-before.png`、`avatar-uploaded.png`、`avatar-saved.png`、
+  `avatar-reloaded.png`：原头像选择/上传/完成/保存/刷新真实通过。
+  POST `/api/v1/profile/media` 200，PUT/GET profile 200，UI 原读回确认；
+  刷新后实际图片 GET 200，168×168、5026 bytes，未改其他资料字段。
+- `search-results.png`：POST messages search 200，实际频道/私聊/People/
+  消息/线程分区有真实结果；不能由此宣称所有点击通过。
+- `search-channel-target.png`：冷目标选中正确频道，但目标 y=-923.25，
+  不在视口，真实 **失败**；不是页面 HTTP 成功即功能通过。
+- `search-warm-target.png`：同频道已加载的真实根目标 y=479.25，在视口，
+  暖目标通过；不能代表冷目标通过。
+- `search-thread-missing.png`：URL 已含真实 reply/root，但原线上未消费
+  threadRootId，未打开线程且错误显示未找到，真实 **失败**。
+
+这两项真实失败推动本批实现；本批源码尚未部署，没有以这八张旧源码实拍
+宣称本批修复视觉验收通过。Windows/Mobile 实机仍未验收，组件无可访问
+ACTIVE 业务 binding，本轮组件业务页面截图为0，不生成假入口。
+
+现有证据目录仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+同一固定 main 的完整 patch 仍为3323差异路径；本次继续逐模块核对后分类表
+`collaboration-main.classification.tsv` SHA256 为
+`2c9c09f63cf6d902849daf7ab7cfb86f0b492b48087993c8d8be8f02daef4016`，
+**共享31、缺失3、未分类3289，共3323，34条已重核**。
+原 scroll 共享源码全 blob 对照已记共享，但上述真实行为缺陷没有算已验收；
+原 channel route 完整消费者与设置/频道 context menu 仍记缺失，不把本批
+未提交源码混进固定329分类结果。旧87条只作 previous 线索。没有100%还原。
+
+运行先核 SDK `kailo-agent-receipt-xvkujx` 实际4CPU/8GiB，沿原独立候选与
+缓存，Node3072MiB、Vitest threads/maxWorkers=1；无镜像/安装/Cargo/full。
+原目标命令为 `node node_modules/vitest/vitest.mjs run` 加上述原检查路径，
+类型为各既有 `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`
+及 shared `tsconfig.test.json`。该目录保留以下真实结果：
+
+- `search-target-shared.log`：共享3通过，exit0。
+- `search-target-web.log`：首次18通过/1失败且1 suite未执行，exit1；候选缺
+  已提交 useMarkAsReadShortcuts 输入，未把它算生产失败或通过。
+- `search-target-route-probe.log`：确认 jsdom 零高 Virtua 不挂目标 DOM；
+  保留失败，按原 ChannelRead 检查测量真实视口，不删除根 DOM 断言。
+- `search-target-web-final.log`：最后 ChannelPane10、ThreadPane9、
+  PlatformApp34，共53通过，exit0。
+- `search-target-shared-types.log`、`search-target-web-types.log`、
+  `search-target-native-types.log`、`search-target-shared-test-types.log`：
+  四个既有类型项目全部exit0。
+- 私有生产 scroll 分支改为 phase-1 false 也 accepted，
+  `search-target-shared-negative.log` exit1、1失败/2通过，明确抓过早回执。
+- 私有 PlatformApp 生产 prop 删除 threadRootId，
+  `search-target-web-negative.log` exit1、目标1失败，预期actual-root而收到
+  undefined；不是改检查自身制造失败。
+- 私有 useWorkspaceThread 生产 enabled 守卫撤掉，
+  `search-target-read-negative.log` exit1、目标1失败，明确抓禁用上下文仍发
+  原 workspaceMessages 请求。未向真实业务环境注入故障。
+- 恢复12源码与Web/Native已装共享3模块，18次cmp全0；
+  `search-target-shared-restored.log` 3通过、`search-target-web-restored.log`
+  53通过，均exit0。scoped git diff --check为0，旧oom/oom_kill=2未增。
+
+本批12路径与本节交主代理冻结复核/提交，未自行 stage/push/部署。
+全量官方分类、冷目标/线程的新版本浏览器验收与所有原功能仍未完成；
+全局检查另有已报告真实失败，不以本批窄验冒称生产就绪。

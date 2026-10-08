@@ -1,6 +1,6 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData } from "@client-kit/platform/react/thread";
+import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget } from "@client-kit/platform/react/thread";
 import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
@@ -13,8 +13,9 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
+  routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
   onOpenAuthor?: (message: TimelineMessage) => void;
@@ -28,12 +29,12 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
   const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId);
   const messageReactions = useMessageReactions({principalId,workspaceId,events:reactionEvents ?? messages,
     available:!disabled && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
-  const [replyId, setReplyId] = useState(selected.id);
+  const [replyId, setReplyId] = useState(routeTargetMessageId ? rootId : selected.id);
   const [isSending, setIsSending] = useState(false);
-  const [scrollTargetId, setScrollTargetId] = useState<string | null>(selected.id);
+  const [scrollTargetId, setScrollTargetId] = useState<string | null>(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set([selected.id]));
   const expandedTarget = useRef<string | null>(null);
-  useEffect(() => { setReplyId(selected.id); setScrollTargetId(selected.id); expandedTarget.current = null; }, [selected.id]);
+  useEffect(() => { setReplyId(routeTargetMessageId ? rootId : selected.id); setScrollTargetId(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id); expandedTarget.current = null; }, [selected.id, routeTargetMessageId, rootId]);
   const width = useThreadPanelWidth();
   // Native getThreadReplies traverses the original Relay cursor until complete.
   // Web traverses that same bounded server window, never inventing a time fence.
@@ -48,16 +49,16 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
   }), [messages, members, locale, messageReactions.reactions]);
   useEffect(() => {
-    if (expandedTarget.current === selected.id || !rows.some((row) => row.id === selected.id)) return;
-    const ancestors = new Set<string>();
-    let id: string | null | undefined = selected.id;
-    while (id && !ancestors.has(id)) {
-      ancestors.add(id);
-      id = rows.find((row) => row.id === id)?.parentId;
-    }
-    expandedTarget.current = selected.id;
-    setExpanded((old) => new Set([...old, ...ancestors]));
-  }, [rows, selected.id]);
+    const targetId = routeTargetMessageId ?? selected.id;
+    if (expandedTarget.current === targetId) return;
+    const messageById = new Map(rows.map(row => [row.id, row]));
+    const target = messageById.get(targetId);
+    if (!target) return;
+    const route = target.parentId ? getThreadRouteTarget(target, messageById) : {expandedReplyIds:new Set<string>()};
+    if (!route) return;
+    expandedTarget.current = targetId;
+    setExpanded((old) => new Set([...old, ...route.expandedReplyIds]));
+  }, [rows, selected.id, routeTargetMessageId]);
   const data = useMemo(() => buildThreadPanelData(rows, rootId, replyId, expanded), [rows, rootId, replyId, expanded]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !data.threadHead);
   useEffect(() => {

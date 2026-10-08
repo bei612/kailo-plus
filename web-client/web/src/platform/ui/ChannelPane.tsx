@@ -39,11 +39,13 @@ import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messa
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { useWorkspaceThread } from "./useWorkspaceThread";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
 import { useMessageReactions } from "./useMessageReactions";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
-import { MessageThreadSummaryRow } from "@client-kit/platform/react/thread";
+import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId } from "@client-kit/platform/react/thread";
+import { isBroadcastReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
@@ -95,6 +97,7 @@ export function ChannelPane({
   conversation,
   onOpenMessageLink,
   targetMessageId,
+  targetThreadRootId,
   autoSendDraftKey,
   archived = false,
   metadataPending = false,
@@ -109,6 +112,7 @@ export function ChannelPane({
   conversation?: ConversationView;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   targetMessageId?: string;
+  targetThreadRootId?: string;
   autoSendDraftKey?: string;
   archived?: boolean;
   metadataPending?: boolean;
@@ -187,6 +191,41 @@ export function ChannelPane({
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
     ...getThreadReference(event.tags),
   })), [events, byPubkey, messageReactions.reactions]);
+  // Original ChannelScreen merges freshly read route context with its channel
+  // window. Search results and URL ids are not permission to reuse stale bodies.
+  const routeContextEnabled = Boolean(targetMessageId && !conversation && live && !denied && !metadataPending);
+  const routeContext = useWorkspaceThread(myPrincipalId, workspaceId, targetThreadRootId ?? targetMessageId ?? "", undefined, undefined, routeContextEnabled);
+  useEffect(() => {
+    if (routeContextEnabled && !routeContext.denied && !routeContext.thread.isError && routeContext.thread.hasNextPage && !routeContext.thread.isFetchingNextPage) void routeContext.thread.fetchNextPage();
+  }, [routeContextEnabled, routeContext.denied, routeContext.thread.isError, routeContext.thread.hasNextPage, routeContext.thread.isFetchingNextPage, routeContext.thread.fetchNextPage]);
+  const routeContextReady = routeContextEnabled && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError && !routeContext.thread.isFetching;
+  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextReady ? routeContext.messages.map(event => ({
+    id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
+    author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
+    body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
+    ...getThreadReference(event.tags),
+  })) : [], [routeContextReady, routeContext.messages, byPubkey]);
+  const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
+  const routeTarget = targetMessageId ? routeMessageById.get(targetMessageId) ?? null : null;
+  const mainTimelineTargetMessageId = getRouteMainTimelineTargetId(targetMessageId ?? null, routeTarget);
+  const routedTimelineMessages = useMemo(() => {
+    if (!routeContextReady || !routeTarget) return timelineMessages;
+    const rootId = getRouteMainTimelineTargetId(routeTarget.id, routeTarget);
+    const root = rootId ? routeMessageById.get(rootId) : undefined;
+    if (!root || timelineMessages.some(message => message.id === root.id)) return timelineMessages;
+    return [...timelineMessages, root].sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+  }, [routeContextReady, routeTarget, timelineMessages, routeMessageById]);
+  const handledRouteTarget = useRef<string | null>(null);
+  useEffect(() => {
+    if (!targetMessageId) { handledRouteTarget.current = null; return; }
+    const key = JSON.stringify([myPrincipalId, workspaceId, targetMessageId]);
+    if (handledRouteTarget.current === key || !routeContextReady || !routeTarget || composerBusy || editTarget) return;
+    if (routeTarget.parentId && (isBroadcastReply(routeTarget.tags ?? []) || !getThreadRouteTarget(routeTarget, routeMessageById))) return;
+    // Original root and reply deep links open the existing reply panel. Its
+    // exact selected event resolves ancestors and scrolls in the same read cache.
+    setProfileTarget(null); setSystemProfileTarget(null); setReplyTarget(routeTarget);
+    handledRouteTarget.current = key;
+  }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
   const SystemProfilePopover = useCallback(({pubkey, children, triggerAriaLabel}: {pubkey:string;children:ReactNode;triggerAriaLabel?:string}) => {
     const member = byPubkey.get(pubkey);
@@ -359,12 +398,14 @@ export function ChannelPane({
         <Button disabled={readPending || readRechecking || !live || !visible}
           onClick={() => { void retryRead(); }}>{t("platform.retry")}</Button>
       </div> : null}
-      {targetMessageId && live && !events.some((event) => event.id === targetMessageId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
+      {routeContextEnabled && (routeContext.thread.isError || routeContext.denied || routeContext.interrupted) ? <ThreadRepliesErrorCard
+        onRetry={routeContext.denied ? undefined : () => {void routeContext.thread.refetch();}}/> : null}
+      {targetMessageId && live && !events.some((event) => event.id === targetMessageId) && !routeTarget && (!routeContextEnabled || (routeContextReady && !routeContext.thread.hasNextPage)) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
       {!denied ? <MessageTimelineSurface
         ref={timelineRef}
         channelId={`${myPrincipalId}:${conversation?.id ?? workspaceId}`}
         channelName={channelName}
-        messages={timelineMessages}
+        messages={routedTimelineMessages}
         authoritativeRowIds={window.authoritativeRowIds}
         threadSummaries={window.threadSummaries}
         profiles={profiles}
@@ -375,7 +416,7 @@ export function ChannelPane({
         isError={window.error}
         onRetry={window.retry}
         isLoading={window.isLoading && timelineMessages.length === 0}
-        targetMessageId={targetMessageId}
+        targetMessageId={mainTimelineTargetMessageId}
         hasComposerOverlay={false}
         firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
         unreadCount={unreadFromOthers}
@@ -458,6 +499,7 @@ export function ChannelPane({
       channelName={channelName}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
+      routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}
       mentions={mentions}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeProfile}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}

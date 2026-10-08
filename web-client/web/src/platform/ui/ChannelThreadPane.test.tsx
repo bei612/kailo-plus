@@ -8,6 +8,7 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { useWorkspaceThread } from "./useWorkspaceThread";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
@@ -32,16 +33,17 @@ const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", ro
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() {for (let i = 0; i < 12; i++) await act(async () => {await vi.advanceTimersByTimeAsync(10);});}
-async function mount() {
+async function mount(routeTargetMessageId?:string) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
     <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
+      routeTargetMessageId={routeTargetMessageId}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
       disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
   </TooltipProvider></QueryClientProvider>));
   await settle();
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";
+  vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";state.receive=null;
   vi.stubGlobal("Image",function(){
     const image=document.createElement("img");let source="";
     Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
@@ -67,6 +69,23 @@ it("uses the admitted thread query, original panel and exact selected parent whe
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace", "reply", [], "original-intent", [], {messageType: "STREAM", parentEventId: replyId});
   expect(state.outcome).toBe("confirmed");
+});
+it("opens the original deep-linked reply for reading but leaves the root as the route reply destination",async()=>{
+  await mount(replyId);
+  expect(host.textContent).toContain("Nested body");
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
+  expect(state.publish).toHaveBeenCalledWith("workspace","reply",[],"original-intent",[],{messageType:"STREAM",parentEventId:rootId});
+});
+it("does not request a disabled URL context and starts the existing admitted read only after enablement",async()=>{
+  function Context({enabled}:{enabled:boolean}) {
+    const result=useWorkspaceThread("human","workspace",rootId,undefined,undefined,enabled);
+    return <output>{result.messages.map(message=>message.content).join(" ")}</output>;
+  }
+  const render=(enabled:boolean)=>act(async()=>root.render(<QueryClientProvider client={query}><Context enabled={enabled}/></QueryClientProvider>));
+  await render(false);await settle();expect(state.query).not.toHaveBeenCalled();expect(state.receive).toBeNull();
+  await render(true);await settle();expect(state.query).toHaveBeenCalledExactlyOnceWith("workspace",{messageType:"STREAM",parentEventId:rootId});
+  expect(host.textContent).toContain("Root body");expect(state.receive).not.toBeNull();
 });
 it("retains V2 roots and replies in the same admitted original thread projection", async () => {
   state.query.mockResolvedValue({events:[{...rootEvent,kind:40002},{...reply,kind:40002}]});

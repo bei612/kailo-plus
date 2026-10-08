@@ -4,53 +4,7 @@ import type { TimelineMessage } from "@/features/messages/types";
 import { isBroadcastReply } from "@/features/messages/lib/threading";
 import type { Channel } from "@/shared/api/types";
 import type { PanelValueSetter } from "./useChannelPanelHistoryState";
-
-function getThreadRouteTarget(
-  targetMessage: TimelineMessage,
-  messageById: ReadonlyMap<string, TimelineMessage>,
-): { expandedReplyIds: Set<string>; threadHeadId: string } | null {
-  const threadHeadId = targetMessage.rootId ?? targetMessage.parentId ?? null;
-  if (!threadHeadId || !messageById.has(threadHeadId)) {
-    return null;
-  }
-
-  const expandedReplyIds = new Set<string>();
-  let ancestorId = targetMessage.parentId ?? null;
-  let guard = 0;
-  const maxHops = messageById.size + 1;
-
-  while (ancestorId && ancestorId !== threadHeadId && guard < maxHops) {
-    const ancestor = messageById.get(ancestorId);
-    if (!ancestor) {
-      return null;
-    }
-
-    expandedReplyIds.add(ancestor.id);
-    ancestorId = ancestor.parentId ?? null;
-    guard += 1;
-  }
-
-  if (ancestorId !== threadHeadId) {
-    return null;
-  }
-
-  return { expandedReplyIds, threadHeadId };
-}
-
-function getRouteMainTimelineTargetId(
-  targetMessageId: string | null,
-  targetMessage: TimelineMessage | null,
-): string | null {
-  if (!targetMessageId) {
-    return null;
-  }
-
-  if (!targetMessage?.parentId || isBroadcastReply(targetMessage.tags ?? [])) {
-    return targetMessageId;
-  }
-
-  return targetMessage.rootId ?? targetMessage.parentId;
-}
+import { getThreadRouteTarget, getRouteMainTimelineTargetId } from "@client-kit/platform/react/thread";
 
 export function useChannelRouteTarget({
   activeChannel,

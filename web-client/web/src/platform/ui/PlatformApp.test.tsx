@@ -16,6 +16,8 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   search: null as import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch> | null,
   openChannel: vi.fn(), searchRefetch: vi.fn(),
   headerReady: true, conversationState: "ACTIVE", privateWorkspace: false,
+  messageTarget:null as null|{channelId:string;messageId:string;threadRootId:string|null},
+  paneTarget:null as null|{targetMessageId?:string;targetThreadRootId?:string},
 }));
 const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
 function searchHit(channelId:string,threadRootId:string|null=null):import("@client-kit/platform/react/search/types").SearchHit {
@@ -28,7 +30,7 @@ vi.mock("./search",()=>({useWebSearchDirectory:()=>({data:{channels:[],labels:{}
 vi.mock("./TopbarSearch",()=>({TopbarSearch:(props:import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch>)=>{state.search=props;return <button data-testid="actual-web-search-host"/>;}}));
 vi.mock("@/app/platform-navigation", () => ({
   usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
-    conversationId: state.conversationId, messageTarget: null, openTab: state.openTab, openChannel: state.openChannel, openConversation: state.openConversation }),
+    conversationId: state.conversationId, messageTarget: state.messageTarget, openTab: state.openTab, openChannel: state.openChannel, openConversation: state.openConversation }),
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -143,8 +145,9 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
   TenantInvitations: () => <div data-testid="tenant-invitations" />,
   RedemptionProgress: () => null,
 }));
-vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>}) => {
+vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm, targetMessageId, targetThreadRootId}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>;targetMessageId?:string;targetThreadRootId?:string}) => {
   state.startDm[conversation ? "conversation" : "stream"] = onStartDm;
+  state.paneTarget={targetMessageId,targetThreadRootId};
   return null;
 } }));
 vi.mock("@/platform/ui/ForumPane", () => ({ ForumPane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
@@ -194,6 +197,7 @@ beforeEach(() => {
   state.headerReady = true;
   state.conversationState = "ACTIVE";
   state.privateWorkspace = false;
+  state.messageTarget=null;state.paneTarget=null;
   state.startDm = {};
   state.search = null;
   state.openChannel.mockReset().mockResolvedValue(undefined);
@@ -203,6 +207,16 @@ beforeEach(() => {
   state.openConversation.mockReset().mockResolvedValue(undefined);
   state.openTab.mockReset();
   window.history.replaceState({}, "", "/app/");
+});
+
+it("passes the actual search thread root only to its selected admitted stream workspace",()=>{
+  state.tab="channel";state.workspaceId="workspace-a";
+  state.messageTarget={channelId:"workspace-a",messageId:"actual-reply",threadRootId:"actual-root"};
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.paneTarget).toEqual({targetMessageId:"actual-reply",targetThreadRootId:"actual-root"});
+  state.hook=0;state.workspaceId="workspace-b";
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.paneTarget).toEqual({targetMessageId:undefined,targetThreadRootId:undefined});
 });
 
 it("mounts the actual shared original DM Header from admitted people without splitting their device keys",()=>{
