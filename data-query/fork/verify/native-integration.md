@@ -4523,3 +4523,146 @@ AI billing, independent instance rollout and visual acceptance are not
 claimed complete. Mobile remains a non-component host; no native page/layout
 was deleted or redesigned by this batch. This is source-level partial
 integration, not a 100% upstream restoration or production readiness claim.
+
+## 2026-10-08 Original Ask UI SSE completion and same-ID consumers
+
+This batch changes the existing client consumers, not the native product page
+or another task authority. The fixed official source is
+`/volumes/kailo/.references/WrenAI-ui-0.32.2` at
+`c5f02a0391c87420dba78632dcd86073710deb72`. The original paths and symbols were
+re-read using `git show`/`git grep` before implementation:
+
+- `wren-ui/src/hooks/useAskingStreamTask.tsx::useAskingStreamTask` originally
+  stopped loading for both a truthy `done` and `EventSource.onerror`.
+- `wren-ui/src/hooks/useAskPrompt.tsx::useAskPrompt` selected GENERAL's stream
+  from `createAskingTaskResult`, stopped polling at intent FINISHED and could
+  reopen empty PLANNING streams.
+- `wren-ui/src/components/pages/home/prompt/index.tsx::Prompt` and
+  `wren-ui/src/components/pages/home/prompt/Result.tsx::GeneralAnswer` are the
+  original presentation consumers; GeneralAnswer inferred completion from
+  partial text plus `!loading`.
+
+Four-step impact conclusions, recorded after the actual implementation:
+
+1. Authority is `.design/08`'s full GenBI/native-task boundary, DD-87/DD-98 and
+   the existing no-success-without-evidence rule. The preceding server/native
+   provider batch supplies exact current-owner `done`; the client must consume
+   it rather than treat EOF as native completion. All four production
+   differences are authorized governance adaptations, not missing-page
+   substitutes or a second frontend implementation.
+2. Impact is the existing stream hook → Ask prompt hook → original Prompt →
+   GeneralAnswer. TEXT_TO_SQL's thread PLANNING path and GENERAL's actual
+   observed task ID remain consumers. No SQL schema, migration, GraphQL schema,
+   contract enum, server TaskStatus or workflow changes are introduced. Existing
+   styles, original body, completion text, menus and page structure are retained;
+   unresolved output uses the already imported original loading icon. There are
+   no new user-facing message strings or translation authority.
+3. Stream GETs do not submit SQL or a replacement Ask. The hook keeps one
+   attempted current native ID, closes failed/finished transports and rejects
+   queued old callbacks. Task selection fences stale GraphQL data and late
+   create/rerun acknowledgements. The local `completed` boolean describes only
+   the stream's exact completion frame, not query success, platform TaskStatus
+   or billing. Existing server reads continue current HUMAN/source checks.
+4. Empty output, invalid JSON, null/array/unknown frames, truthy non-boolean
+   `done`, mixed/foreign completion, constructor failure, EOF and timeout do not
+   complete the stream or turn it into business failure. Partial authorized
+   output stays incomplete. GENERAL's existing same-ID GraphQL polling continues
+   until real stream completion, actual task failure/stop or user dismissal;
+   transport loss never automatically creates/reruns an Ask. Reset, task change
+   and unmount fence late events. Dismissal stops observations, not the operation.
+   Missing native queue/cache evidence still needs original same-task operator
+   reconciliation; this is not durable replay or a new recovery authority.
+
+Implementation preceded the checks. Reused the existing 4 CPU / 4 GiB Node SDK
+and local Jest/React/TypeScript/Prettier dependencies, with about 18 GiB host
+memory available and no Wren compile in flight at entry. The unrelated existing
+system index process was not invoked, restarted or used as a gate. No image,
+download, database, whole-tree copy or host toolchain was created.
+
+Actual commands within the original `/work` UI candidate:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/askingStream.test.tsx
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/hooks/useAskingStreamTask.tsx src/hooks/useAskPrompt.tsx src/components/pages/home/prompt/index.tsx src/components/pages/home/prompt/Result.tsx src/askingStream.test.tsx
+```
+
+The first actual Jest invocation failed before running tests with two TS2345
+diagnostics in the check's React overload/readonly dependency substitutions;
+only those check typings were corrected. The next original-hook/body run passed
+**20/20** and whole-UI tsc exited 0. Adding the original Prompt's two actual
+consumers initially returned **21 passed / 1 failed**: the SSR fixture used a
+string for the original numeric PROCESS_STATE enum. It was corrected to import
+the original enum, without changing production behavior. The final pre-fault
+run passed **22/22**, exit 0 (6.937 s).
+
+Private production faults were then injected into those same four actual
+client files: old EOF-as-complete behavior, permissive done frames, missing
+current-source callback fence, missing same-ID attempt latch, old unbound
+polling data, premature GENERAL polling stop, late create ACK adoption, old
+GeneralAnswer `!loading` completion, lost Prompt completion propagation and
+missing close-observation call. The original suite returned **18 failed / 4
+passed / 22**, exit 1 (7.694 s), with actual duplicate EventSource construction,
+stale body/completion, premature poll stop and the extra late-ID observation
+visible in assertions. These were behavior failures, not compiler failures.
+
+Because reverting GeneralAnswer masked the simultaneously removed Prompt
+completion propagation, all other faults were first reversed and that one
+missing propagation was checked alone:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/askingStream.test.tsx -t "passes actual stream completion"
+```
+
+It actually failed **1 / 1**, with **21 filtered skips**, exit 1 (7.239 s): the
+original completed Prompt had no completion footer. After the final reverse
+patch, all five production/check inputs matched formal source with `cmp` exit
+0. The original whole suite passed **22/22**, exit 0 (6.703 s), whole-UI tsc
+again exited 0 and original Prettier check exited 0. The checks substitute only
+React scheduling/browser EventSource for the Node hook execution and unrelated
+SSR dependencies; they exercise the real hook callbacks, GraphQL selection and
+original Prompt/GeneralAnswer render consumers. This is not a browser screenshot
+or real provider acceptance.
+
+Logs remain under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`asking-stream-positive.log`, `asking-stream-positive-final.log`,
+`asking-stream-tsc.log`, `asking-stream-consumers-final.log`,
+`asking-stream-consumers-negative.log`, `asking-stream-prompt-negative.log`,
+`asking-stream-restored.log`, `asking-stream-restored-tsc.log` and
+`asking-stream-format.log`. The two pre-existing unvalidated Java edits remain
+separate and are not claimed accepted by these checks. No real Wren business
+container, ACTIVE binding, live datasource/provider, iframe screenshot,
+Desktop/Mobile or global full acceptance was produced. Trusted SERVICE SQL,
+ordinary-function/provider provenance, AI billing, remaining original native
+consumers and complete instance/visual delivery remain explicit gaps; this is
+not 100% upstream restoration or production readiness.
+
+### Same-batch Close/late-ack correction before commit
+
+Implementation review found one real remaining consumer gap: Prompt called
+`onStopPolling`, but that method stopped only the current Apollo poll. A
+pending create/rerun ACK could still restore `taskId`, fetch the task and later
+reattach a GENERAL stream. The original method now invalidates the observation
+generation, clears the selected ID, stops polling and resets the original
+stream synchronously. It does not call native cancel. The original Home and
+HomeThread response-creation/cleanup callers were re-read; their passed native
+task references and business commands are unchanged, only the obsolete
+observation is terminated.
+
+After that implementation, five cases were added to the same original Jest
+file: both pending create/rerun ACKs, both reads already pending after ACK, and
+the active stream plus old polling data arriving after Close. The whole suite
+actually passed **27/27**, exit 0 (6.252 s), and whole-UI tsc exited 0. Restoring
+the actual old production `onStopPolling` in the private candidate and running
+`-t "after Close|when Close"` produced **5 failed / 22 filtered skips**, exit 1
+(6.420 s). The checks observed the unwanted late native-ID fetch and old
+GENERAL task adoption, not a compiler error. After reversing that production
+fault, all five inputs again matched formal source with `cmp` exit 0; the whole
+suite passed **27/27**, exit 0 (6.409 s), and Prettier on all five inputs exited
+0. Additional logs at the same directory are `asking-stream-close-positive.log`,
+`asking-stream-close-tsc.log`, `asking-stream-close-negative.log`,
+`asking-stream-close-restored.log` and `asking-stream-close-format.log`.
+No broad PostgreSQL suite, image build, deployment, new checking framework or
+visual/device acceptance was added for this correction. The preceding 22-case
+results remain historical evidence, not the final consumer coverage count.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cloneDeep, uniq } from 'lodash';
 import {
   AdjustmentTask,
@@ -27,6 +27,7 @@ export interface AskPromptData {
   originalQuestion: string;
   askingTask?: AskingTask;
   askingStreamTask?: string;
+  askingStreamCompleted?: boolean;
   recommendedQuestions?: RecommendedQuestionsTask;
 }
 
@@ -160,9 +161,16 @@ const handleUpdateRerunAskingTaskCache = (
 export default function useAskPrompt(threadId?: number) {
   const [originalQuestion, setOriginalQuestion] = useState<string>('');
   const [threadQuestions, setThreadQuestions] = useState<string[]>([]);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      ++requestGeneration.current;
+    },
+    [],
+  );
   // Handle errors via try/catch blocks rather than onError callback
-  const [createAskingTask, createAskingTaskResult] =
-    useCreateAskingTaskMutation();
+  const [createAskingTask] = useCreateAskingTaskMutation();
   const [cancelAskingTask] = useCancelAskingTaskMutation({
     onError: (error) => console.error(error),
   });
@@ -183,11 +191,15 @@ export default function useAskPrompt(threadId?: number) {
     });
 
   const askingTask = useMemo(
-    () => askingTaskResult.data?.askingTask || null,
-    [askingTaskResult.data],
+    () =>
+      taskId && askingTaskResult.data?.askingTask?.queryId === taskId
+        ? askingTaskResult.data.askingTask
+        : null,
+    [askingTaskResult.data, taskId],
   );
   const askingTaskType = useMemo(() => askingTask?.type, [askingTask?.type]);
   const askingStreamTask = askingStreamTaskResult.data;
+  const askingStreamCompleted = askingStreamTaskResult.completed;
   const recommendedQuestions = useMemo(
     () =>
       instantRecommendedQuestionsResult.data?.instantRecommendedQuestions ||
@@ -202,9 +214,16 @@ export default function useAskPrompt(threadId?: number) {
       originalQuestion,
       askingTask,
       askingStreamTask,
+      askingStreamCompleted,
       recommendedQuestions,
     }),
-    [originalQuestion, askingTask, askingStreamTask, recommendedQuestions],
+    [
+      originalQuestion,
+      askingTask,
+      askingStreamTask,
+      askingStreamCompleted,
+      recommendedQuestions,
+    ],
   );
 
   const startRecommendedQuestions = useCallback(async () => {
@@ -223,16 +242,23 @@ export default function useAskPrompt(threadId?: number) {
 
   const checkFetchAskingStreamTask = useCallback(
     (task: AskingTask) => {
-      if (!askingStreamTask && task.status === AskingTaskStatus.PLANNING) {
+      if (task.status === AskingTaskStatus.PLANNING) {
         fetchAskingStreamTask(task.queryId);
       }
     },
-    [askingStreamTask],
+    [fetchAskingStreamTask],
   );
 
   useEffect(() => {
     const isFinished = getIsFinished(askingTask?.status);
-    if (isFinished) askingTaskResult.stopPolling();
+    if (
+      isFinished &&
+      (askingTask?.type !== AskingTaskType.GENERAL ||
+        askingTask?.status !== AskingTaskStatus.FINISHED ||
+        askingStreamCompleted)
+    ) {
+      askingTaskResult.stopPolling();
+    }
 
     // handle update cache for preparing component
     if (isNeedPreparing(askingTask)) {
@@ -241,14 +267,21 @@ export default function useAskPrompt(threadId?: number) {
         checkFetchAskingStreamTask(askingTask);
       }
     }
-  }, [askingTask?.status, threadId, checkFetchAskingStreamTask]);
+  }, [
+    askingTask?.queryId,
+    askingTask?.status,
+    askingTask?.type,
+    askingStreamCompleted,
+    threadId,
+    checkFetchAskingStreamTask,
+  ]);
 
   useEffect(() => {
     // handle instant recommended questions
     if (isNeedRecommendedQuestions(askingTask)) {
       startRecommendedQuestions();
     }
-  }, [askingTask?.type]);
+  }, [askingTask?.queryId, askingTask?.type]);
 
   useEffect(() => {
     if (isRecommendedFinished(recommendedQuestions?.status))
@@ -256,17 +289,16 @@ export default function useAskPrompt(threadId?: number) {
   }, [recommendedQuestions]);
 
   useEffect(() => {
-    const taskId = createAskingTaskResult.data?.createAskingTask.id;
-    if (taskId && askingTaskType === AskingTaskType.GENERAL) {
-      fetchAskingStreamTask(taskId);
+    if (askingTask?.queryId && askingTaskType === AskingTaskType.GENERAL) {
+      fetchAskingStreamTask(askingTask.queryId);
     }
-  }, [askingTaskType, createAskingTaskResult.data]);
+  }, [askingTask?.queryId, askingTaskType, fetchAskingStreamTask]);
 
   const onStop = async (queryId?: string) => {
-    const taskId = queryId || createAskingTaskResult.data?.createAskingTask.id;
-    if (taskId) {
-      await cancelAskingTask({ variables: { taskId } }).catch((error) =>
-        console.error(error),
+    const currentTaskId = queryId || taskId;
+    if (currentTaskId) {
+      await cancelAskingTask({ variables: { taskId: currentTaskId } }).catch(
+        (error) => console.error(error),
       );
       // waiting for polling fetching stop
       await nextTick(1000);
@@ -274,15 +306,20 @@ export default function useAskPrompt(threadId?: number) {
   };
 
   const onReRun = async (threadResponse: ThreadResponse) => {
+    const generation = ++requestGeneration.current;
+    setTaskId(null);
     askingStreamTaskResult.reset();
     setOriginalQuestion(threadResponse.question);
     try {
       const response = await rerunAskingTask({
         variables: { responseId: threadResponse.id },
       });
+      if (requestGeneration.current !== generation) return;
+      setTaskId(response.data.rerunAskingTask.id);
       const { data } = await fetchAskingTask({
         variables: { taskId: response.data.rerunAskingTask.id },
       });
+      if (requestGeneration.current !== generation) return;
       // update the asking task in cache manually
       handleUpdateRerunAskingTaskCache(
         threadId,
@@ -296,12 +333,16 @@ export default function useAskPrompt(threadId?: number) {
   };
 
   const onSubmit = async (value) => {
+    const generation = ++requestGeneration.current;
+    setTaskId(null);
     askingStreamTaskResult.reset();
     setOriginalQuestion(value);
     try {
       const response = await createAskingTask({
         variables: { data: { question: value, threadId } },
       });
+      if (requestGeneration.current !== generation) return;
+      setTaskId(response.data.createAskingTask.id);
       await fetchAskingTask({
         variables: { taskId: response.data.createAskingTask.id },
       });
@@ -311,12 +352,20 @@ export default function useAskPrompt(threadId?: number) {
   };
 
   const onFetching = async (queryId: string) => {
+    ++requestGeneration.current;
+    if (queryId !== taskId) askingStreamTaskResult.reset();
+    setTaskId(queryId);
     await fetchAskingTask({
       variables: { taskId: queryId },
     });
   };
 
-  const onStopPolling = () => askingTaskResult.stopPolling();
+  const onStopPolling = () => {
+    ++requestGeneration.current;
+    setTaskId(null);
+    askingTaskResult.stopPolling();
+    askingStreamTaskResult.reset();
+  };
 
   const onStopStreaming = () => askingStreamTaskResult.reset();
 

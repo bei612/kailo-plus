@@ -619,3 +619,19 @@ completion behavior. A failed fresh check before POST keeps the original
 non-dispatched task for operator reconciliation instead of pretending the
 native provider failed. These consumers are not evidence that all remaining
 native mutation, recommendation, SQL-pair or SERVICE execution paths are ready.
+
+The original UI client now consumes that exact `done` separately from connection
+closure. A partial GENERAL answer or reasoning stream followed by EOF, timeout,
+invalid JSON or an unknown frame remains incomplete; the existing loading icon
+and same-ID GraphQL observation are retained, without creating another Ask or
+automatically reopening the once-consumed native stream. Only real `done`
+enables the original completion footer. Queued events from a closed or previous
+task cannot update the current answer. Selecting another task clears the prior
+body and excludes stale polling results; a late create acknowledgement cannot
+replace the selected task. Closing the original prompt stops its observations,
+not the native operation: it invalidates pending create/rerun acknowledgements,
+clears the selected task and closes the current stream, so late polling results
+cannot reattach it. The original Stop/cancel action remains separate.
+Missing native stream/cache evidence still requires
+same-task operator reconciliation; this client does not manufacture replay,
+SQL completion or AI billing evidence.

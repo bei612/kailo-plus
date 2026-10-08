@@ -44,6 +44,7 @@ interface Props {
     type: AskingTaskType;
     originalQuestion: string;
     askingStreamTask: string;
+    askingStreamCompleted?: boolean;
     recommendedQuestions: RecommendedQuestionsTask;
     intentReasoning: string;
   };
@@ -174,7 +175,7 @@ const GeneralAnswer = (props: Props) => {
   const $wrapper = useRef<HTMLDivElement>(null);
 
   const { originalQuestion, askingStreamTask, recommendedQuestions } = data;
-  const isDone = askingStreamTask && !loading;
+  const isDone = askingStreamTask && data.askingStreamCompleted === true;
 
   const scrollBottom = () => {
     if ($wrapper.current) {
@@ -227,6 +228,7 @@ const GeneralAnswer = (props: Props) => {
           style={{ maxHeight: 'calc(100vh - 480px)', overflowY: 'auto' }}
         >
           <MarkdownBlock content={askingStreamTask} />
+          {loading && <LoadingOutlined className="geekblue-6" spin />}
           {isDone && (
             <div className="gray-6">
               <InfoCircleOutlined className="mr-2" />

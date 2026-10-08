@@ -57,6 +57,7 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
     loading,
     onSubmit,
     onStop,
+    onStopPolling,
     onCreateResponse,
     onStopStreaming,
     onStopRecommend,
@@ -68,6 +69,7 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
     originalQuestion,
     askingTask,
     askingStreamTask,
+    askingStreamCompleted,
     recommendedQuestions,
   } = data;
 
@@ -76,6 +78,7 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
       type: askingTask?.type, // question's type
       originalQuestion, // original question
       askingStreamTask, // for general answer
+      askingStreamCompleted,
       recommendedQuestions, // guiding user to ask
       intentReasoning: askingTask?.intentReasoning || '',
     }),
@@ -126,6 +129,7 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
   const closeResult = () => {
     askProcessState.resetState();
     setQuestion('');
+    onStopPolling && onStopPolling();
     onStopStreaming && onStopStreaming();
     onStopRecommend && onStopRecommend();
   };
