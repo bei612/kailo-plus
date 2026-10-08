@@ -3689,3 +3689,58 @@ Web／Desktop 仍使用共同 BFF 接入与完整原生知识页面，Mobile 非
 本批没有改客户端呈现、开启 Mobile WebView 或补建 UI。没有实际执行
 Cells→WeKnora 上传／解析／撤权 E2E，没有解除 release／binding 激活门禁，
 也不宣称生产就绪或各组件全量原版一致。
+
+### 2026-10-08 原生删除保留回执的真实计量消费
+
+1. 权威：`DD-94`／`DD-98`、design 07 §2.4 的既有 knowledge.delete
+   与 Adapter Protocol.extract_usage。固定上游
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/mcpserver/tools_ingest.go::Server.handleDeleteDocument`
+   保留原删除工具；Kailo 现有
+   `internal/application/service/knowledge_delete_task.go::knowledgeService.ObserveKnowledgeDeleteTask`
+   消费原 Asynq 保留任务及原 cleanup/wiki 回执，不以文档消失证明终态。
+   原 adapter 只允许 ingest 提取用量，delete 即使已确认清理仍返回拒绝；
+   现消费同一原删除观察链，不新增删除、账本或工作流权威。
+2. 影响面：`src/query-revision.mjs` 的 observe/extract_usage 共同读取
+   原 delete_document observe_only 回执；现有检查真实调用 HTTP、MCP、
+   JWT 与前后 PEP。v1/v2 原签名 actionKey、执行关联、幂等键和 native task ID
+   不改，协议、schema、数据库、配置接口、页面及四侧类型无变化。
+3. 副作用：只有原 SUCCEEDED、有效原 completed_at 和匹配 nativeId 才能
+   给出用量；COUNT 来自一次真实清理，不虚构删除字节数。既有受控
+   readEdge.usageMeasurements 含 CONTENT_BYTES 时拒绝该删除结算；
+   未配置仅返回空测量，仍由 Core 对冻结 Action 的实际 meter 集核对，
+   不把缺配置当免费或零计量。无需下载、SOURCE 读准入、导入 receipt 或重删。
+4. 异常：RUNNING／UNKNOWN、ACK-only、无终态时间、错误 KB/nativeId、
+   中途撤权、无法证明的 byte meter 均不返回用量；保持原观察与对账入口。
+   原错误分类为 DENIED／UNAVAILABLE，不把观察失败改写原执行成功或失败。
+   重复调用只重读同一保留任务和同一 completed_at，沿原 Core usage outbox
+   去重；清理失败的原 UNKNOWN 及其收敛责任没有被本批伪造解决。
+
+生产与原检查两个文件 +47/-9。复用
+`kailo-client-core-metadata-fxcd9l` 的原不可变检查镜像，实际 4 CPU／8 GiB、
+UID 1000、Data 缓存；未下载新依赖、重建镜像或改用宿主 Node。
+第一轮在既有依赖复制完成前启动，句柄 47230 真实退出 1：
+`ERR_MODULE_NOT_FOUND: @modelcontextprotocol/sdk`；保留失败，不改产品迁就环境。
+复制终态 0、两个源输入 cmp 0 后，原
+`node --test knowledge/adapter/test/query-revision.test.mjs` 句柄 7084
+退出 0，195 项通过；其中 22 项为两版本真实删除结算及拒绝边界。
+
+随后只在私有候选删除真实 SUCCEEDED 门禁，原
+`--test-name-pattern="delete usage observes"` 退出 1，v1/v2 的
+queued／unknown 四项真实抓到错误 HTTP 200，不是编译失败。
+按正式原字节还原、cmp 0 后，句柄 84103 同一完整原目标退出 0：
+195 项通过、0 失败／跳过。日志位于 `/volumes/data/kailo/check-cache/`：
+
+- `knowledge-delete-usage-restored-dependencies-20261008.log`：首次完整通过。
+- `knowledge-delete-usage-mutation-20261008.log`，SHA-256
+  `1cc7f0ff71f28e5615f6c7cb13d51c1990ef61b06823c7097adf85fec2503cbb`。
+- `knowledge-delete-usage-restored-20261008.log`，SHA-256
+  `7dc1a0373db0670fc823ba539d44c1ca9a4327816a5b2f8b5e6639145ec5dc91`。
+
+未部署本批 adapter，未激活 ComponentRelease／ApplicationBinding，未执行
+真实审批／额度／OpenMeter 删除结算、跨服务同步、iframe 或三端设备验收。
+Web／Desktop 仍共用原页面与 BFF；Mobile 非组件宿主，本批不改变 UI。
+专项通过不代替本批 full、原版全量一致性或生产就绪。
+同批原 `tools/check-docs.sh` 在正式源码只读挂载、2 CPU／4 GiB、禁网的原
+不可变镜像中，句柄 74488 终态 0，七段全部通过；原日志为
+`/volumes/data/kailo/check-cache/component-owned-batch-check-docs-20261008.log`。

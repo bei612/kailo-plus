@@ -439,7 +439,7 @@ export function createAdapter(rawConfig) {
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           });
           observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
-        } else if (operation==='observe' && nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
+        } else if (nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
           observed={execution:deletionObservation(await nativeTool(config,deadline,'delete_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           }),config,args.idempotencyKey)};
@@ -447,13 +447,17 @@ export function createAdapter(rawConfig) {
         // A different native object must not settle this frozen execution or
         // its SERVICE read/usage receipts, even when that object is ready.
         if (args.nativeId !== undefined && args.nativeId !== observed.execution.nativeId) throw new Refused(503);
-        if (ingesting) {
-          await recordCreationReceipt(native,observed,config,deadline,args.idempotencyKey);
-          if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
-          value=operation==='observe' ? observed : {
+        if (ingesting) await recordCreationReceipt(native,observed,config,deadline,args.idempotencyKey);
+        if (operation==='extract_usage') {
+          if (observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
+          // The retained native deletion receipt proves one cleanup, not the
+          // deleted file/index byte count. Never invent zero byte usage from
+          // an absent document or replay deletion to obtain measurements.
+          if (!ingesting && config.readEdge?.usageMeasurements?.some(item=>item.quantitySource!=='COUNT')) throw new Refused(503);
+          value={
             externalExecutionId:args.externalExecutionId,idempotencyKey:args.idempotencyKey,
             nativeType:observed.execution.nativeType,nativeId:observed.execution.nativeId,
-            measurements:readMeasurements(config.readEdge?.usageMeasurements,native.source_content_bytes)
+            measurements:readMeasurements(config.readEdge?.usageMeasurements,ingesting?native.source_content_bytes:0)
               .map(entry=>({...entry,occurredAt:observed.execution.terminalAt})),
           };
         } else value=observed;

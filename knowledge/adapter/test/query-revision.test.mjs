@@ -83,6 +83,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     : { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
   const state = { baoReads, peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
+  const completedAt = new Date(Date.now()-1000).toISOString();
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
   const search = action === 'knowledge.search@v2';
   const searchQueries = {
@@ -197,14 +198,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
           parse_status:mode==='queued'||mode.endsWith('-queued')?'pending':mode==='unknown'||mode.endsWith('-unknown')?'failed':'completed'}}}});
     }
     if (body.params.name === 'delete_document') {
-      assert.deepEqual(body.params.arguments, operation === 'observe'
+      assert.deepEqual(body.params.arguments, ['observe','extract_usage'].includes(operation)
         ? {knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true}
         : {knowledge_base_id:ids[1],knowledge_id:ids[2],expected_revision:revision,idempotency_key:args.idempotencyKey});
       const value = mode === 'ack-only' ? {deleted:true} : {
         task_id:ids[9],knowledge_id:ids[2],knowledge_base_id:mode === 'foreign' ? ids[0] : ids[1],
         native_revision:revision,state:mode === 'queued' ? 'RUNNING' : mode === 'unknown' ? 'UNKNOWN' : 'SUCCEEDED',
       };
-      if (value.state === 'SUCCEEDED' && mode !== 'no-terminal') value.completed_at = new Date(Date.now()-1000).toISOString();
+      if (value.state === 'SUCCEEDED' && mode !== 'no-terminal') value.completed_at = completedAt;
       return reply(response,200,{jsonrpc:'2.0',id:body.id,result:{content:[],structuredContent:value}});
     }
     if (body.params.name === 'export_document') {
@@ -246,6 +247,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
   if (ingest) config.readEdge={sourceActionVersion:1,
     usageMeasurements:[{meterKey:'native_import_count',quantitySource:'COUNT'},{meterKey:'native_import_bytes',quantitySource:'CONTENT_BYTES'}]};
+  if (action?.startsWith('knowledge.delete@') && mode!=='unmetered') config.readEdge={sourceActionVersion:1,
+    usageMeasurements:[{meterKey:'native_delete_count',quantitySource:mode==='bytes-meter'?'CONTENT_BYTES':'COUNT'}]};
   if (managing && mode !== 'missing-management') config.management = management;
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
@@ -283,7 +286,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   const token = `${header}.${payload}.${signature}`;
-  return { state, args, reference, revision, invoke: (route = operation, options = {}) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
+  return { state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
     method: 'POST', headers: { authorization: `Bearer ${options.token ?? token}`, 'content-type': 'application/json',
       'idempotency-key': options.key ?? args.idempotencyKey },
     body: options.raw ?? canonical(bodyValue),
@@ -613,6 +616,37 @@ test('conditional delete and observation require retained native terminal eviden
       }
       assert.deepEqual(state.methods,['delete_document']);
     });
+  }
+});
+
+test('delete usage observes the retained native cleanup without replay or fabricated byte counts',async t=>{
+  for (const version of ['v1','v2']) {
+    for (const mode of ['ok','known-native-id','unmetered','queued','unknown','ack-only','no-terminal','foreign','revoke','mismatched-native-id','bytes-meter']) {
+      await t.test(`${version}/${mode}`,async nested=>{
+        const {state,invoke,args,intent,completedAt,taskId}=await fixture(nested,mode,`knowledge.delete@${version}`,'extract_usage');
+        const response=await invoke();
+        const value=await response.json();
+        if (['ok','known-native-id','unmetered'].includes(mode)) {
+          assert.equal(response.status,200);
+          assert.equal(value.externalExecutionId,intent.externalExecutionId);
+          assert.equal(value.idempotencyKey,args.idempotencyKey);
+          assert.equal(value.nativeType,'delete_document');
+          assert.equal(value.nativeId,taskId);
+          assert.deepEqual(value.measurements,mode==='unmetered'?[]:[{
+            meterKey:'native_delete_count',quantity:1,occurredAt:completedAt,
+          }]);
+          assert.deepEqual(Object.keys(value).sort(),['externalExecutionId','idempotencyKey','nativeId','nativeType','measurements'].sort());
+        } else {
+          assert.notEqual(response.status,200);
+          assert.equal(value.measurements,undefined);
+        }
+        assert.deepEqual(state.methods,['delete_document']);
+        assert.equal(state.grants,0);
+        assert.equal(state.downloads,0);
+        assert.deepEqual(state.receipts,[]);
+        assert.equal(state.peps,mode==='revoke'||['ok','known-native-id','unmetered'].includes(mode)?2:1);
+      });
+    }
   }
 });
 
