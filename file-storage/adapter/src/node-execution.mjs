@@ -5,6 +5,7 @@ import { Refused, exactKeys, nonempty, canonical, verifiedClaims, freshPep } fro
 import { nativeListing } from './service-list.mjs';
 import { nativeFile, nativeRevisionListing } from './service-read.mjs';
 import { nativeDocumentNode } from './query-revision.mjs';
+import { actorConfiguration } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const nodeActions = Object.freeze(['file_storage.read@v1', 'file_storage.list@v1',
@@ -72,12 +73,13 @@ export async function executeNode(config, deadline, raw, key, token) {
     || (!Object.hasOwn(claims, 'agent_principal_id') && !UUID.test(claims.external_execution_id))) throw new Refused(401);
   const admitted = await freshPep(config, deadline, token, args, claims, 'execute');
   const resource = resourceForNode(config, admitted, claims, args);
+  const nativeConfig = actorConfiguration(config, token, args, claims);
   const nativeArgs = {input: args.input, authorizationTargetNativeRef: resource.nativeRef};
   let result;
   let references;
   if (listing || revisions) {
-    const list = () => revisions ? nativeRevisionListing(config, deadline, nativeArgs, claims)
-      : nativeListing(config, deadline, nativeArgs);
+    const list = () => revisions ? nativeRevisionListing(nativeConfig, deadline, nativeArgs, claims)
+      : nativeListing(nativeConfig, deadline, nativeArgs);
     const items = await list();
     if (canonical(await list()) !== canonical(items)) throw new Refused(409);
     // Reuse the already-consumed typed citation result, not SERVICE's complete
@@ -86,7 +88,7 @@ export async function executeNode(config, deadline, raw, key, token) {
     result = {citations: items};
     references = items.length === 0 ? {} : {contentReferences: items};
   } else {
-    const file = await nativeFile(config, deadline, nativeArgs, claims);
+    const file = await nativeFile(nativeConfig, deadline, nativeArgs, claims);
     if (exporting) {
       // The existing knowledge export result encodes an immediate authorized
       // response, not another native blob or a Core-persisted body. No lossy
@@ -105,7 +107,7 @@ export async function executeNode(config, deadline, raw, key, token) {
   const disclosed = await freshPep(config, deadline, token, args, current, 'execute');
   if (canonical(resourceForNode(config, disclosed, current, args)) !== canonical(resource)) throw new Refused(403);
   if (!listing) {
-    await nativeDocumentNode(config, deadline, {nativeObjectRef: args.input.nativeObjectRef,
+    await nativeDocumentNode(nativeConfig, deadline, {nativeObjectRef: args.input.nativeObjectRef,
       authorizationTargetNativeRef: resource.nativeRef}, current);
     const final = await claimsForNode(config, token, args, 'execute');
     const admittedFinal = await freshPep(config, deadline, token, args, final, 'execute');

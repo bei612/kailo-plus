@@ -165,6 +165,18 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
+    if (business && operation === 'execute') {
+      const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
+      assert.deepEqual(Object.keys(proof).sort(), ['actionToken','argumentsJson']);
+      assert.equal(proof.argumentsJson, canonical(requestArguments));
+      const actor = JSON.parse(Buffer.from(proof.actionToken.split('.')[1], 'base64url').toString('utf8'));
+      const kind = actor.agent_principal_id === undefined ? 'HUMAN' : 'AGENT';
+      assert.equal(actor.actor_principal_id, changes.businessHuman ? ids[9] : ids[8]);
+      assert.equal(actor.action_key, businessAction);
+      state.nativeActors = [...(state.nativeActors ?? []), {principal:actor.actor_principal_id,kind}];
+      if (!changes.missingActorAck) response.setHeader('x-kailo-native-actor', changes.actorAck ??
+        `${actor.tenant_id}:${ids[0]}:${kind}:${actor.actor_principal_id}`);
+    } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
     if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
       state.rootReads=(state.rootReads??0)+1;
       if (changes.rootAfter && state.rootReads >= (changes.rootAfterRead ?? 2)) return reply(response,200,changes.rootAfter);
@@ -346,6 +358,32 @@ async function setup(t, changes = {}) {
   return { state, token, invoke, target, proofFiles, requestArguments, config, gatewayToken,
     adapterOrigin, privateKey };
 }
+
+test('native actor proof is mandatory on all four business read paths and cannot fall back to SERVICE or initiating HUMAN',async t=>{
+  for (const actionKey of ['file_storage.read@v1','file_storage.list@v1','file_storage.list_revisions@v1','file_storage.export@v1']) {
+    for (const businessHuman of [false,true]) for (const acknowledgement of ['missing','wrong-kind','wrong-principal']) {
+      await t.test(`${actionKey} ${businessHuman?'HUMAN':'AGENT'} ${acknowledgement}`,async nested=>{
+        const listing=actionKey==='file_storage.list@v1';
+        const revisions=actionKey==='file_storage.list_revisions@v1';
+        const input={resourceId:ids[10],...(listing?{}:{nativeObjectRef:ids[3]}),
+          ...(!listing&&!revisions?{nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'}:{})};
+        const fixture=await setup(nested,{operation:'execute',validation:true,businessHuman,
+          ...(listing?{businessList:true}:actionKey==='file_storage.read@v1'?{businessRead:true}:{businessAction:actionKey}),
+          serviceList:listing,serviceRead:!listing&&!revisions,nativeBytes:Buffer.from('text'),
+          arguments:{target:{resourceId:ids[10]},input},missingActorAck:acknowledgement==='missing',
+          ...(acknowledgement==='wrong-kind'?{actorAck:`${ids[4]}:${ids[0]}:${businessHuman?'AGENT':'HUMAN'}:${businessHuman?ids[9]:ids[8]}`}:
+            acknowledgement==='wrong-principal'?{actorAck:`${ids[4]}:${ids[0]}:${businessHuman?'HUMAN':'AGENT'}:${ids[0]}`}:{})});
+        const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+          actionKey,idempotencyKey:ids[7],arguments:fixture.requestArguments})});
+        assert.equal(answer.status,503);
+        assert.deepEqual(await answer.json(),{error:'adapter request refused'});
+        assert.equal(fixture.state.downloads,undefined);
+        assert.equal(fixture.state.receipts.length,0);
+        assert.equal(fixture.state.nativeReads.length,1);
+      });
+    }
+  }
+});
 
 test('native error mapping uses the original scoped Agent policy, six classes and no native read', async t => {
   for (const [nativeStatus, expected] of [
@@ -1487,7 +1525,8 @@ test('MCP transport identity is mandatory on initialization and cannot borrow Ac
     ['absent',undefined],['ActionToken',`Bearer ${fixture.token()}`],
     ['wrong signer',`Bearer ${fixture.gatewayToken({},fixture.privateKey)}`],
     ...[{sub:'another-caller'},{azp:'another-caller'},{iss:`${fixture.config.mcp.gatewayIssuer}/other`},
-      {aud:'another-audience'},{exp:now},{iat:now+1,exp:now+60},{exp:now+90}]
+      {aud:'another-audience'},{exp:now},
+      {iat:now+fixture.config.mcp.gatewayMaxTokenSeconds,exp:now+2*fixture.config.mcp.gatewayMaxTokenSeconds},{exp:now+90}]
       .map(value => [JSON.stringify(value),`Bearer ${fixture.gatewayToken(value)}`]),
   ]) await t.test(label,async nested => {
     await assert.rejects(mcpWireClient(nested,fixture,{'x-kailo-gateway-authorization':authorization}));

@@ -76,6 +76,13 @@ func ResolveNativeOIDCUser(ctx context.Context, issuer, subject string) (*idm.Us
 	if !matched {
 		return nil, errors.New("native OIDC connector is not configured")
 	}
+	return ResolveNativeUser(ctx, nativeUUID)
+}
+
+// ResolveNativeUser consumes an explicit existing UUID, never an email/name
+// fallback. Both browser OIDC and governed native actions use the same native
+// user and lock verifiers before constructing its original ACL context.
+func ResolveNativeUser(ctx context.Context, nativeUUID string) (*idm.User, error) {
 	query, err := anypb.New(&idm.UserSingleQuery{Uuid: nativeUUID, NodeType: idm.NodeType_USER})
 	if err != nil {
 		return nil, err
@@ -87,7 +94,7 @@ func ResolveNativeOIDCUser(ctx context.Context, issuer, subject string) (*idm.Us
 	}
 	user := response.GetUser()
 	if user == nil || user.Uuid != nativeUUID || user.Login == "" || user.IsGroup || user.IsHidden() {
-		return nil, errors.New("native human projection is unavailable")
+		return nil, errors.New("native user projection is unavailable")
 	}
 	if err = VerifyContext(ctx, user); err != nil {
 		return nil, err

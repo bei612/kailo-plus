@@ -49,35 +49,8 @@ func HttpWrapperPolicy(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		subjects := []string{permissions.PolicySubjectProfilePrefix + common.PydioProfileAnon}
-		policyRequestContext := make(map[string]string)
-
-		// Find profile in claims, if any
-		if claims, ok := claim.FromContext(ctx); ok {
-			log.Logger(ctx).Debug("Got Claims", zap.Any("claims", claims))
-			policyRequestContext[HTTPMetaJwtClientApp] = claims.GetClientApp()
-			policyRequestContext[HTTPMetaJwtIssuer] = claims.Issuer
-			subjects = permissions.PolicyRequestSubjectsFromClaims(ctx, claims, false)
-		} else {
-			log.Logger(ctx).Debug("No Claims Found", zap.Any("ctx", ctx))
-		}
-
 		client := idm.NewPolicyEngineServiceClient(grpc.ResolveConn(ctx, common.ServicePolicyGRPC))
-		// we trim the prefix only for DefaultRoute /a - New APIs should be registered **with** their prefix
-		testURI := r.RequestURI
-		if routing.ResolvedURIFromContext(ctx) == common.DefaultRouteREST {
-			testURI = strings.TrimPrefix(testURI, common.DefaultRouteREST)
-		}
-		request := &idm.PolicyEngineRequest{
-			Subjects: subjects,
-			Resource: "rest:" + testURI,
-			Action:   r.Method,
-		}
-
-		permissions.PolicyContextFromMetadata(policyRequestContext, ctx)
-		if len(policyRequestContext) > 0 {
-			request.Context = policyRequestContext
-		}
+		request := HTTPPolicyRequest(r)
 
 		// Effective request to ladon
 		resp, err := client.IsAllowed(ctx, request)
@@ -107,4 +80,31 @@ func HttpWrapperPolicy(h http.Handler) http.Handler {
 
 		h.ServeHTTP(w, r)
 	})
+}
+
+// HTTPPolicyRequest is the original native policy request producer. The
+// original web wrapper and governed actor switch both consume it, so changing
+// identity inside a handler cannot retain the transport user's API privileges.
+func HTTPPolicyRequest(r *http.Request) *idm.PolicyEngineRequest {
+	ctx := r.Context()
+	subjects := []string{permissions.PolicySubjectProfilePrefix + common.PydioProfileAnon}
+	policyRequestContext := make(map[string]string)
+	if claims, ok := claim.FromContext(ctx); ok {
+		log.Logger(ctx).Debug("Got Claims", zap.Any("claims", claims))
+		policyRequestContext[HTTPMetaJwtClientApp] = claims.GetClientApp()
+		policyRequestContext[HTTPMetaJwtIssuer] = claims.Issuer
+		subjects = permissions.PolicyRequestSubjectsFromClaims(ctx, claims, false)
+	} else {
+		log.Logger(ctx).Debug("No Claims Found", zap.Any("ctx", ctx))
+	}
+	testURI := r.RequestURI
+	if routing.ResolvedURIFromContext(ctx) == common.DefaultRouteREST {
+		testURI = strings.TrimPrefix(testURI, common.DefaultRouteREST)
+	}
+	request := &idm.PolicyEngineRequest{Subjects: subjects, Resource: "rest:" + testURI, Action: r.Method}
+	permissions.PolicyContextFromMetadata(policyRequestContext, ctx)
+	if len(policyRequestContext) > 0 {
+		request.Context = policyRequestContext
+	}
+	return request
 }

@@ -2,8 +2,9 @@
 // guessed path. No broker offset, credential or temporary URL is disclosed.
 import { createHash } from 'node:crypto';
 import { Refused, object, exactKeys, nonempty, canonical, fixedUrl, secret,
-  jsonFetch, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
+  freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
 import { claimsForRead } from './service-read.mjs';
+import { nativeJsonFetch } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -34,7 +35,7 @@ export async function nativeListing(config, deadline, args) {
   const getNode = async id => {
     // Explicit WithMetaDefaults asks GetByUuid for folder counts without its
     // empty-flags fallback that also issues presigned URLs.
-    const node = await jsonFetch(config,deadline,new URL(`n/node/${id}?Flags=WithMetaDefaults`,base),{headers});
+    const node = await nativeJsonFetch(config,deadline,new URL(`n/node/${id}?Flags=WithMetaDefaults`,base),{headers});
     if (node?.Uuid !== id) throw new Refused(503);
     nodePath(node,config);
     return node;
@@ -59,7 +60,7 @@ export async function nativeListing(config, deadline, args) {
     const expected = childrenCount(folder);
     // Fixed native LoadNodes: Limit=0 consumes the full children stream. No
     // filtered search, pagination guess or partial desired set is accepted.
-    const response = await jsonFetch(config,deadline,new URL('n/nodes',base),{
+    const response = await nativeJsonFetch(config,deadline,new URL('n/nodes',base),{
       method:'POST',headers,body:JSON.stringify({Scope:{Root:{Uuid:folder.Uuid},Recursive:false},
         Offset:0,Limit:0,Flags:['WithMetaDefaults']}),
     });
@@ -91,7 +92,7 @@ export async function nativeListing(config, deadline, args) {
         queue.push(current);
         continue;
       }
-      const versions = await jsonFetch(config,deadline,new URL(`n/node/${node.Uuid}/versions`,base),{
+      const versions = await nativeJsonFetch(config,deadline,new URL(`n/node/${node.Uuid}/versions`,base),{
         method:'POST',headers,body:JSON.stringify({FilterBy:'VersionsAll',Offset:0,Limit:0,Flags:['WithMetaNone']}),
       });
       if (!Array.isArray(versions?.Versions) || !versions.Versions.length || !nonempty(node.ContentType)) throw new Refused(503);

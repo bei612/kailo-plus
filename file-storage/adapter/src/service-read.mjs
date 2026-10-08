@@ -2,8 +2,9 @@
 // The presigned native URL never leaves this authenticated source Adapter.
 import { createHash } from 'node:crypto';
 import { Refused, object, exactKeys, nonempty, canonical, fixedUrl, boundedBytes,
-  verifiedClaims, jsonFetch, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
 import { nativeDocumentNode, nativeVersionSize } from './query-revision.mjs';
+import { nativeJsonFetch } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -41,7 +42,7 @@ export async function nativeVersions(config, deadline, args, claims, download = 
   const native=await nativeDocumentNode(config,deadline,{
     nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
   },claims);
-  const history=await jsonFetch(config,deadline,new URL(`n/node/${args.input.nativeObjectRef}/versions`,native.base),{
+  const history=await nativeJsonFetch(config,deadline,new URL(`n/node/${args.input.nativeObjectRef}/versions`,native.base),{
     method:'POST',headers:native.headers,
     body:JSON.stringify({FilterBy:'VersionsAll',Offset:0,Limit:0,
       Flags:[download ? 'WithPreSignedURLs' : 'WithMetaNone']}),

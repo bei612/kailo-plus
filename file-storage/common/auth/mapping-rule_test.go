@@ -21,12 +21,66 @@
 package auth
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/pydio/cells/v5/common"
+	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/proto/idm"
 	"gopkg.in/yaml.v2"
 )
+
+type nativeActorUserRead struct {
+	idm.UnimplementedUserServiceServer
+	user *idm.User
+	err  error
+	t    *testing.T
+}
+
+func (s *nativeActorUserRead) SearchOne(_ context.Context, request *idm.SearchUserRequest) (*idm.SearchUserResponse, error) {
+	if len(request.GetQuery().GetSubQueries()) != 1 {
+		s.t.Fatal("native user lookup is not exact")
+	}
+	query := new(idm.UserSingleQuery)
+	if err := request.Query.SubQueries[0].UnmarshalTo(query); err != nil || query.Uuid != "00000000-0000-4000-8000-000000000001" ||
+		query.NodeType != idm.NodeType_USER || query.Login != "" {
+		s.t.Fatalf("native user lookup used a fallback: %v %v", query, err)
+	}
+	return &idm.SearchUserResponse{User: s.user}, s.err
+}
+
+func TestResolveNativeActorUserRejectsMissingChangedAndLockedUsers(t *testing.T) {
+	const id = "00000000-0000-4000-8000-000000000001"
+	for _, scenario := range []string{"missing", "wrong-uuid", "missing-login", "group", "hidden", "locked", "rpc-unavailable"} {
+		t.Run(scenario, func(t *testing.T) {
+			s := &nativeActorUserRead{t: t, user: &idm.User{Uuid: id, Login: "native-user"}}
+			switch scenario {
+			case "missing":
+				s.user = nil
+			case "wrong-uuid":
+				s.user.Uuid = "another-user"
+			case "missing-login":
+				s.user.Login = ""
+			case "group":
+				s.user.IsGroup = true
+			case "hidden":
+				s.user.Attributes = map[string]string{idm.UserAttrHidden: "true"}
+			case "locked":
+				s.user.Attributes = map[string]string{"locks": `["logout"]`}
+			case "rpc-unavailable":
+				s.err = errors.New("native user service unavailable")
+			}
+			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: s})
+			user, err := ResolveNativeUser(context.Background(), id)
+			if err == nil || user != nil {
+				t.Fatalf("unconfirmed/locked native actor was resolved: %v", user)
+			}
+		})
+	}
+}
 
 func TestUnmarshalMappingRuleConfig(t *testing.T) {
 	rawConfig := []byte(`

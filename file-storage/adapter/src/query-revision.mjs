@@ -11,6 +11,7 @@ import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
 import { executeNode, observeNode, nodeActions } from './node-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
+import { nativeJsonFetch } from './native-actor.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
@@ -179,19 +180,19 @@ export async function nativeDocumentNode(config, deadline, args, claims) {
   const nodeUrl = (id) => new URL(`n/node/${id}?Flags=WithVersionsAll`, base);
   // UUID lookup resolves the fixed binding root before reading its member.
   // WithVersionsAll does not request pre-signed URLs; no path comes from input.
-  const root = await jsonFetch(config, deadline, nodeUrl(config.nativeRootRef), { headers });
+  const root = await nativeJsonFetch(config, deadline, nodeUrl(config.nativeRootRef), { headers });
   const rootPath = nativeNode(root, config.nativeRootRef, config.nativeWorkspaceId, 'COLLECTION');
   let authorized;
   let authorizedPath;
   if (args.authorizationTargetNativeRef !== undefined) {
     authorized = args.authorizationTargetNativeRef === config.nativeRootRef ? root
-      : await jsonFetch(config, deadline, nodeUrl(args.authorizationTargetNativeRef), { headers });
+      : await nativeJsonFetch(config, deadline, nodeUrl(args.authorizationTargetNativeRef), { headers });
     if (!['COLLECTION', 'LEAF'].includes(authorized?.Type)) throw new Refused(503);
     authorizedPath = nativeNode(authorized, args.authorizationTargetNativeRef, config.nativeWorkspaceId, authorized.Type);
     if (authorized.Uuid !== config.nativeRootRef && !authorizedPath.startsWith(`${rootPath}/`)) throw new Refused(403);
   }
   const target = authorized?.Uuid === args.nativeObjectRef ? authorized
-    : await jsonFetch(config, deadline, nodeUrl(args.nativeObjectRef), { headers });
+    : await nativeJsonFetch(config, deadline, nodeUrl(args.nativeObjectRef), { headers });
   const targetPath = nativeNode(target, args.nativeObjectRef, config.nativeWorkspaceId, 'LEAF');
   if (!targetPath.startsWith(`${rootPath}/`)) throw new Refused(403);
   if (authorized) {

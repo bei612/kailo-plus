@@ -76,6 +76,15 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 	if err := req.ReadEntity(input); err != nil {
 		return err
 	}
+	if len(req.Request.Header.Values("X-Kailo-Native-Execution")) != 0 {
+		if input.Input != nil || input.Scope == nil || input.Scope.Root == nil || input.Scope.Root.Path != "" ||
+			len(input.Scope.Nodes) != 0 || input.Scope.Recursive || input.Filters != nil {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		if err := h.nativeActor(req, resp, input.Scope.Root.Uuid, "lookup"); err != nil {
+			return err
+		}
+	}
 	ctx := req.Request.Context()
 	coll := &rest.NodeCollection{}
 	var nn []*tree.Node
@@ -337,6 +346,9 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 // GetByUuid is a simple call on a node - it requires default stats
 func (h *Handler) GetByUuid(req *restful.Request, resp *restful.Response) error {
 	nodeUuid := req.PathParameter("Uuid")
+	if err := h.nativeActor(req, resp, nodeUuid, "node"); err != nil {
+		return err
+	}
 	flags := req.QueryParameters("Flags")
 
 	restFlags := h.toRestFlags(flags)

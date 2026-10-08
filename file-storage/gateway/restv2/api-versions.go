@@ -28,6 +28,9 @@ func versionClient(ctx context.Context) tree.NodeVersionerClient {
 func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) error {
 
 	nodeUuid := req.PathParameter("Uuid")
+	if err := h.nativeActor(req, resp, nodeUuid, "versions"); err != nil {
+		return err
+	}
 	ctx := req.Request.Context()
 	filter := &rest.NodeVersionsFilter{}
 	if err := req.ReadEntity(filter); err != nil {

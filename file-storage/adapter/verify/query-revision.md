@@ -1317,3 +1317,122 @@ panic；10086 为空 Path 被原 IgnoreNodeForOutput 当隐藏节点。只修复
 不能借用于 generic write；没有把固定实例 SERVICE bearer 冒充 HUMAN/AGENT。
 write/share、条件删除仍未开放，没有新增或激活完整 FILE_STORAGE release。
 full、Gateway/Codex、live binding、Cells→WeKnora E2E、截图、镜像和部署均未运行。
+
+## 四条平台读取动作的原生当前 actor 消费（2026-10-08）
+
+本批补的是已有 HUMAN/AGENT read、list、list_revisions、export 的真实原生
+身份消费者，不新增业务动作，也不借 DOCUMENT 的浏览器 OIDC 会话。前节
+“generic PEP 尚无可信当前 native actor 事实”不能继续解释这四条读链：当前
+Core `application_binding_pep.rs::check` 已逐一核对冻结 AE 的
+actor/agent/initiating-human，并执行 fresh execution/source PEP；本批直接
+消费该已存在权威，未要求 Core 新建 Cells 用户字段。
+
+四步影响复核：
+
+1. 权威为 `.design/07` §5.2/§8A、DD-89 与 DD-98：平台准入不替代原生 ACL，
+   SERVICE 身份不冒充 HUMAN/AGENT。只读核验固定 Cells commit
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的完整原路径与符号：
+   `common/auth/jwt.go::VerifyContext/WithImpersonate`、
+   `common/middleware/authorizations/web-policy.go::HttpWrapperPolicy`、
+   `gateway/restv2/api-lookup.go::Lookup/GetByUuid`、
+   `gateway/restv2/api-versions.go::NodeVersions`。实现留在原模块/原 REST 路由，
+   不新增影子业务 API、用户生产者、任务表、权限目录或页面。
+2. 影响为原 executeNode→四个已有 native read/list/revisions/export 调用→
+   原 JWT handler→绑定自己的原 OIDC client_credentials/PEP callback→
+   原 User UUID 回读/锁定验证→WithImpersonate→原 API PolicyEngine→原 UUID
+   ACL/router。adapter 在原验签/fresh PEP 之后才附瞬时证明，绑定原 ActionToken
+   与 canonical arguments；原生每次都以该 binding 的受控凭据回调原 Core PEP，
+   并核 AE/Operation/target、tenant、native instance/scope/root 与真实请求
+   UUID。固定账号只认证 transport，映射只接受 exact principal/kind→已有 UUID；
+   AGENT 不借 initiating HUMAN，也不编造 OIDC subject。原 HttpWrapperPolicy
+   的 request producer 提取为两个实际调用者共用的 HTTPPolicyRequest，原 wrapper
+   语义不变；切换 actor 后重新执行原 PolicyEngine，不能遗留 transport 管理权限。
+3. 原生完成上述消费才返回 exact actor ACK；adapter 必须核该 ACK，旧服务器
+   忽略证明时 fail closed，不向调用方披露内容。无证明仍是原独立 native UI 的
+   身份/ACL 路径；SOURCE self-pull、管理动作、DOCUMENT 不被混入这套身份。
+   不新增持久状态、正文副本或清理任务。证明在原 handler 中从 request header
+   移除，异常不给上游 body/凭据；静态核验未见本工程代理/中间件打印全请求
+   header，但未作线上反向代理日志审计，不能宣称全链日志已验收。
+4. 缺映射/锁定用户/错 tenant、kind、principal、scope/重复映射/未知 native
+   类型均拒绝；回调/原 API policy/原 ACL 任一不可确认均不降级。空列表及
+   原空文件合同不变；大小和 deadline 沿原受限读取，重入只作原授权读取，
+   不增加副作用；披露前仍 fresh PEP 与 revision 复核。六类沿 `apps/06` §4
+   既有语义：权限为 DENIED，未开放动作 BLOCKED，配置/投影不成立 PRECONDITION，
+   超限 LIMIT，revision/列表变动 CONFLICT；无按 key 原生终态证据的 observe
+   仍 UNKNOWN，不重读、不重放、不开假成功。该批未修改公共契约或旧数据格式。
+
+原生配置由已有 Cells config store 的
+`services[common.ServiceRestNamespace_+"n"].platform` 受控投递，不从模型、
+浏览器或 native response 选择：沿原 Delivery 的 `bindingId/corePepUrl/oidcTokenUrl/
+clientId/clientSecretFile/instanceServiceUuid/requestTimeout/maxResponseBytes/
+clientSecretMaxBytes`，补实际消费者所需的 `tenantId/nativeInstanceRef/nativeScopeRef/
+nativeRootRef/actors[{principalId,kind,userUuid}]`。映射一对一，拒绝 SERVICE UUID、
+组、隐藏用户、缺失用户和锁定用户；只引用预先存在的 native account，不保存平台
+密码。未投递/未配置时平台证明请求拒绝；不是默认启用开关。未向 iframe 投递
+SERVICE secret 或平台 Cookie。平台的原业务 ActionToken claims/契约没有扩展。
+
+复用原 Node SDK `kailo-wren-query-sdk-itgs2n`（4 CPU/4 GiB/UID1000）与独立
+小候选、原 Go SDK `kailo-cells-native-check-lftow7`（Go 1.26.8，4 CPU/8 GiB，
+无额外 swap，UID1000:1000）、原缓存；没有新镜像/数据库/工具链/全树副本。
+批前及恢复前核现有进程/CPU/内存，宿主 available 约 17–18 GiB、Data 可用
+约 289–309 GiB。最终 Go memory.current=1023315968 bytes，oom/oom_kill=0。
+
+```sh
+node --test --test-skip-pattern="HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects" \
+  file-storage/adapter/test/query-revision.test.mjs
+positive handle 31291: exit 0; tests/pass=360/360, skipped=0
+restored final handle 57096: exit 0; tests/pass=360/360, skipped=0
+node --test --test-name-pattern="native actor proof is mandatory" \
+  file-storage/adapter/test/query-revision.test.mjs
+final-check-byte private production mutation: exit 1; pass=0, fail=25
+byte-restored same target: exit 0; pass=25, fail=0
+
+CELLS_WORKING_DIR=/tmp/cells-native-actor-check \
+CELLS_DATA_DIR=/tmp/cells-native-actor-check \
+go test -mod=readonly ./common/auth ./common/auth/protocol ./gateway/restv2 \
+  -run "TestAuthorizeActionUsesOriginalBindingPEP|TestNativeActorUsesExactControlledUser|TestNativeIndependentReadDoesNotImpersonate|TestNativeActorPolicyDoesNotBorrowTransportProfile|TestResolveNativeActorUserRejectsMissingChangedAndLockedUsers" \
+  -count=1 -v
+positive handle 33814: exit 0; 5 top-level + 26 subtests passed
+private production mutation handle 33616: exit 1; 4 top-level + 4 subtests failed
+byte-restored same target handle 89464: exit 0; 5 top-level + 26 subtests passed
+```
+
+Node 真实破坏 mandatory native actor ACK，24 个四动作×两身份×三种 ACK 异常
+子项及父项全部报错；先前全套负向 handle65825 为 335 pass/25 fail/exit1。
+Go 只在私有候选关闭 AE/Operation 对齐、tenant 匹配、原锁定验证和原 policy
+subjects 生产，检查不变即报错；两候选生产字节逐文件还原并 cmp=0，正式源码
+未受破坏。首轮失败原件保留：Node22934 误重复配置 action metadata，修正夹具
+后通过；Go59742 原 PEP 1+8 通过但原错误符号 AccessDenied 不存在，改回
+StatusForbidden；Go51490 原用户/PEP/映射已通过但新 policy 夹具跳过原 route
+registrar 导致缺上下文，补原 registrar 后通过。Node37423 为原 future-iat
+夹具 `now+1` 跨秒失效，修正为投递 token lifetime 之外的确定 future iat，
+未放宽生产验签；最终检查字节再次实际破坏/还原并通过。
+
+Go 日志根目录为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/`；
+Node 日志根目录为
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`。
+
+| 日志 | SHA-256 |
+|---|---|
+| Go `cells-native-actor-positive.log` | `0c202f9ac0f732ad907d8c1e9e58c0ac8567a405643f6a4e8c3c3b6a89811b70` |
+| Go `cells-native-actor-positive-final.log` | `52913925267df5a97e2b245146da2eab66b4444a73085a93979d72247c9f7361` |
+| Go `cells-native-actor-positive-corrected.log` | `837a60ef307e68a57ccbb9a425b71c4cb2bb21945e1f037ce2487089cd08c4b3` |
+| Go `cells-native-actor-mutation.log` | `86cde090982cb6f8edb29b908572064b4b9fb0909257150396acf7504c360341` |
+| Go `cells-native-actor-restored.log` | `346fe532903a1a2b0ef91e6e6228d5fb0e4558c82b69a766463d20f9acefb5fb` |
+| Node `cells-native-actor-http-positive.log` | `adfc5a468aae8115bc0826ebd7c31fe439be027f2583cf0d426256ec2ed9d5aa` |
+| Node `cells-native-actor-http-positive-final.log` | `eead670af62c517bef03bb0dbadf2a96cb0ff40f69e75a7e97a1188f900e733c` |
+| Node `cells-native-actor-http-mutation.log` | `e5d49a77d3345063bf029a0e10eb5a81666d30e8416542e17575adfc2cd750b8` |
+| Node `cells-native-actor-http-restored.log` | `d8cbdd4cacb311d099dd8a0688ef6da25bdd200ed62eefaa6563bfb502458a7d` |
+| Node `cells-native-actor-http-restored-final.log` | `c678eba936f3ed32a59dceb41715e9de36e93a5e1fbd717bdfccb8e8d90ba48b` |
+| Node `cells-native-actor-final-bytes-mutation.log` | `c749c5ce10fd2969f2b7f665ed0ebaeb9bcfee6de4f2d050ad878cd14b589e91` |
+| Node `cells-native-actor-final-bytes-restored.log` | `d89d840a31756c36df9cb35f5487977c7638d68b3be5b99a6e92cb5382ccc662` |
+
+证据边界：Node 为原 HTTP/MCP suite 的真实 SDK client/adapter 消费，native
+端受控 HTTP；Go 为原 authenticated callback、原 generated RPC stubs、原
+用户/映射/route/policy request 生产检查，不是 Core 真签名联调，也没有跑真实
+Cells UserDB/PolicyEngine/tree ACL 的成功路径或重建原生服务。未部署、未投递
+生产 actor 配置、未激活 release/binding、未做浏览器截图或跨服务 E2E；本批
+不等于完整 FILE_STORAGE 交付。write/share 的操作幂等/终态/usage 仍缺，条件
+删除保持 BLOCKED；没有因这四条读链通过而开放它们。full 与镜像发布本批跳过，
+由主线集中收口，不引用主线旧字节结果冒充本批最终验证。
