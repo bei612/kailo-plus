@@ -635,19 +635,37 @@ pub async fn delete_message(
     headers: HeaderMap,
     body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
+    delete_message_for(state, MessageTarget::Workspace(workspace_id), headers, body).await
+}
+
+pub async fn delete_conversation_message(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    delete_message_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn delete_message_for(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+    body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
     let Ok(Json(request)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     if request.delete_event_id.is_none() {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    publish(
-        state,
-        MessageTarget::Workspace(workspace_id),
-        headers,
-        Publication::Message(request),
-    )
-    .await
+    publish(state, target, headers, Publication::Message(request)).await
 }
 
 pub async fn publish_conversation_message(

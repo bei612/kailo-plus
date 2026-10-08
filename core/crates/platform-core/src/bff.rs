@@ -370,7 +370,7 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/conversations/{conversation_id}/reactions",
             axum::routing::post(crate::web_transport::react_to_conversation_message),
         )
-        .route(
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages/delete",
             axum::routing::post(crate::web_transport::delete_message),
         )
@@ -545,6 +545,10 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/conversations/{conversation_id}/messages",
             get(crate::web_transport::query_conversation_messages)
                 .post(crate::web_transport::publish_conversation_message),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/messages/delete",
+            axum::routing::post(crate::web_transport::delete_conversation_message),
         )
         .exposed_route(
             "/api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile",

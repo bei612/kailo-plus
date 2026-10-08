@@ -313,3 +313,73 @@ Profile/Conversation provider 造成的失败已原样保留；同步真实源�
 隔离夹具后得到上面的通过结果，没有以修改产品行为迁就环境。日志位于
 `/volumes/data/kailo/tmp/oidc-stream-sdk-20261006.36llvb/membership-*.log`。
 本批未构建或部署；当前运行实例的旧 503 不能据源码窄验宣称已线上修复。
+
+## 2026-10-08：原生删除的 Web 私聊作用域接线
+
+权威与状态：按 REQ-24、DD-39/40/81，恢复原版删除入口时继续使用既有
+发布准入、签名与副作用证据，不恢复未经治理的浏览器直连。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-sdk/src/builders.rs::build_delete_message_with_options` 已只读核验：
+原生删除为 kind 9005、空 content、原频道 h 与原事件 e。当前 Core 已具有
+该发布及对账链，本批只补原来缺失的 Conversation 路由，不新建删除执行器。
+
+影响面：`web_transport::delete_message` 与新增
+`delete_conversation_message` 调用同一个 `delete_message_for`，分别保留
+Workspace/Conversation 目标；公共 `publish` 不变。BFF 的两个删除入口沿
+`exposed_route` 读取既有能力目录；Conversation 追溯声明追加原路径后，原
+`tools/gen-registry.py` 生成目录，仅增加私聊删除路由。既有生成请求
+`WebPublishMessageRequest.deleteEventId` 与 `PublicationAccepted` 继续消费，
+不改平台契约、数据库、Workflow kind 或历史读格式。客户端发布须晚于含此
+路由的 Core；本批尚未发布，不能将旧实例的 404 当作已修复。
+
+副作用与异常：删除仍必须由当前受准入的实际作者读取原签名事件并核验
+scope/kind，外部读取后重查成员、binding 与密钥，不以管理可见代替私聊成员。
+缺认证/scope/权限为 DENIED，未开放 exposure 为 BLOCKED/拒绝，缺 binding、
+secret、projection 或无效请求为 PRECONDITION；额度/大小为 LIMIT，同键异意图
+为 CONFLICT。落原 Operation 与 DISPATCH 后丢 ACK 仍为 UNKNOWN，只观察原
+event，不生成替代删除，不因重试新建副作用。无额外持久状态、正文副本或
+公共账本。Web 经 BFF 代签；Desktop/Mobile 原持钥 Relay 链不变，Mobile 不
+增加组件宿主或编辑入口。本项没有放宽原生服务的权限，也没有隐藏原版功能。
+
+实现后的实际证据：使用既有 `kailo-installation-scope-sdk-e4agxd`，UID/GID
+1000、4 CPU/8 GiB cgroup、Data 盘 Cargo registry/git/target 缓存，Cargo
+`-j16`、`CARGO_INCREMENTAL=0`、`SQLX_OFFLINE=true`。执行前查了现有构建、
+CPU/内存压力与缓存挂载；没有安装依赖或创建 SDK，OOM/oom_kill 均为 0。
+私有输入基于 `b7e2c621739edbc12ae1a1d7e042cff7bc7594f1` 加这五个实际
+源/生成文件；最终与正式输入逐字节 cmp，退出 0。
+
+```sh
+cargo test --locked --offline -j16 -p platform-core --bin platform-core web_transport::tests -- --nocapture
+cargo test --locked --offline -j16 -p platform-core --bin platform-core capability_registry::tests -- --nocapture
+```
+
+- `web-transport-positive-final.log`：退出 0，34 passed、1 ignored、362 filtered。
+  ignored 项要求一次性迁移数据库，没有将其算通过。
+- `registry-positive.log`：退出 0，1 passed、396 filtered。
+- 私有副本删除实际生产目录中的 Conversation 删除路由，保持检查不变；
+  `registry-mutation.log` 退出 101，1 failed，明确报
+  `route_exposed("/api/v1/conversations/{conversation_id}/messages/delete")`。
+- 原目录字节恢复后 `registry-restored.log` 退出 0、1 passed；随后
+  `web-transport-restored.log` 再次退出 0、34 passed/1 ignored。正式目录从未
+  被破坏。三 Rust 输入的原 rustfmt check 与选定 diff --check 均退出 0。
+- 原注册表生成输出为 24 capabilities、20 closed workflow kinds，退出 0。
+  第一次正式生成遇到既有单文件 root 所有权而失败；仅将该生成文件归还
+  ubuntu 后，以原 UID 1000 入口重跑成功，没有修改权限语义。
+
+失败保留：首次隔离快照漏交付本地 `collaboration/crates/buzz-core/Cargo.toml`，
+Cargo 退出 101；补齐同一 commit 的原工作区输入后才得到以上通过结果。
+没有改依赖、降低并行度、跳过准入或把编译失败写成通过。
+
+日志位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/dm-delete-20261008.uKVvW2/`。
+最终恢复日志 SHA-256：registry
+`c43d1b8489e623a897e1f4366061c93d561b4c8fc78331f95f351b0ddf5a4cc0`，
+web_transport
+`4941680bd5b2da8143799054f1c86ed82827e831d342c110e9f196b665bda787`；
+实际负向日志为
+`d1c7d60c6b43481bc24dd11d3255b1038987029bd4509272d5fb59e33521b8da`。
+
+边界：这些是既有签名/作用域/意图消费者与实际编译期目录的定向检查，
+不是新路由的真实数据库/HTTP/Relay 删除验收；没有新镜像、部署、Windows/
+Mobile 安装包、截图或新的多人多 Agent 稳定性验收。全量检查尚未在本批运行，
+历史发布阻断未解除，不能声明 100% 还原或生产就绪。

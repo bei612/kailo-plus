@@ -62,6 +62,12 @@ mod tests {
         assert!(route_exposed("/api/v1/session"));
         assert!(route_exposed("/api/v1/platform-info"));
         assert!(route_exposed("/api/v1/custom-emoji"));
+        assert!(route_exposed(
+            "/api/v1/workspaces/{workspace_id}/messages/delete"
+        ));
+        assert!(route_exposed(
+            "/api/v1/conversations/{conversation_id}/messages/delete"
+        ));
         assert!(action_exposed("identity.custom_emoji.publish"));
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));

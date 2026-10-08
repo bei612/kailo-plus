@@ -83,6 +83,7 @@ capabilities:
   - /api/v1/conversations
   - /api/v1/conversation-participants
   - /api/v1/conversations/{conversation_id}/messages
+  - /api/v1/conversations/{conversation_id}/messages/delete
   - /api/v1/conversations/{conversation_id}/reactions
   - /api/v1/conversations/{conversation_id}/stream
   - /api/v1/conversations/{conversation_id}/media
