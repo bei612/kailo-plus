@@ -286,9 +286,6 @@ func (c *fileStorageConnector) completedNative(ctx context.Context, run fileStor
 }
 
 func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataSourceConfig, previous *types.SyncCursor, h datasource.StreamHandler) (*types.SyncCursor, error) {
-	if err := c.Validate(ctx, cfg); err != nil {
-		return nil, err
-	}
 	run, ok := ctx.Value(fileStorageRunKey{}).(fileStorageRun)
 	if !ok || !fileStorageUUID(run.dataSourceID) || !fileStorageUUID(run.syncLogID) ||
 		run.tenantID != c.transport.config.NativeTenantID || run.knowledgeBaseID != c.transport.config.NativeKnowledgeBaseID {
@@ -301,6 +298,26 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	oldTime := time.Time{}
 	if previous != nil {
 		oldTime = previous.LastSyncTime
+	}
+	// A saved retirement already crossed the side-effect boundary. Observe it
+	// before requesting new source access: revocation must stop new discovery,
+	// not strand the original delete's late terminal evidence.
+	for key := range state.Retiring {
+		old, exists := state.Groups[key]
+		if !exists {
+			return nil, fmt.Errorf("native retirement has no retained source group")
+		}
+		if err := c.retire(ctx, run, key, old, nil, &state, h, oldTime); err != nil {
+			return nil, err
+		}
+		delete(state.Groups, key)
+		delete(state.Retiring, key)
+		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
+			return nil, err
+		}
+	}
+	if err := c.Validate(ctx, cfg); err != nil {
+		return nil, err
 	}
 	listings := map[string]*fileStorageListing{}
 	// Finish every source enumeration before applying any missing-item set.

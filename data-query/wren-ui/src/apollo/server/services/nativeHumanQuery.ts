@@ -25,6 +25,83 @@ export function nativePreviewScope(
   ]);
 }
 
+async function resolveNativeResource(
+  config: NativeQueryDelivery,
+  token: string,
+  kind: 'model' | 'view',
+  id: number,
+  actionKey: 'data_query.query@v1' | 'data_query.describe@v1',
+  filterDenied = false,
+) {
+  if (!token || !Number.isSafeInteger(id) || id <= 0)
+    throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+  let resolved;
+  try {
+    resolved = await bindingServiceCall(
+      config,
+      'human-action',
+      {
+        bindingId: config.bindingId,
+        resolveResource: {
+          workspaceId: config.workspaceId,
+          actionKey,
+          actionVersion: 1,
+          nativeType: kind,
+          nativeRef: String(id),
+        },
+      },
+      token,
+    );
+  } catch (error) {
+    // Only an authoritative denial hides an object from the original list.
+    // Outages, malformed responses and stale facts must not become an empty list.
+    if (
+      filterDenied &&
+      error instanceof NativeQueryRefusal &&
+      error.status === 403 &&
+      error.resourcePermissionDenied
+    )
+      return null;
+    throw error;
+  }
+  const resource = resolved?.resource;
+  if (
+    !resource ||
+    typeof resource.resourceId !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      resource.resourceId,
+    ) ||
+    !Number.isSafeInteger(resource.resourceVersion) ||
+    resource.resourceVersion <= 0 ||
+    resource.nativeType !== kind ||
+    resource.nativeRef !== String(id) ||
+    resource.nativeInstanceRef !== config.nativeInstanceRef ||
+    resource.nativeScopeRef !== config.nativeScopeRef
+  )
+    throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+  return resource;
+}
+
+export async function canReadNativeMetadata(
+  config: NativeQueryDelivery,
+  token: string | undefined,
+  kind: 'model' | 'view',
+  id: number,
+): Promise<boolean> {
+  if (!token)
+    throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+  return (
+    (await resolveNativeResource(
+      config,
+      token,
+      kind,
+      id,
+      'data_query.describe@v1',
+      true,
+    )) !== null
+  );
+}
+
 // Request-scoped consumer: the token is neither cached nor written to native history.
 export class NativeHumanQuery {
   constructor(
@@ -70,37 +147,13 @@ export class NativeHumanQuery {
     let receipt = await observe();
     let selectedResource: string | undefined;
     if (!receipt) {
-      const resolved = await bindingServiceCall(
+      const resource = await resolveNativeResource(
         this.config,
-        'human-action',
-        {
-          bindingId: this.config.bindingId,
-          resolveResource: {
-            workspaceId: this.config.workspaceId,
-            actionKey: 'data_query.query@v1',
-            actionVersion: 1,
-            nativeType: kind,
-            nativeRef: String(viewId),
-          },
-        },
         token,
+        kind,
+        viewId,
+        'data_query.query@v1',
       );
-      const resource = resolved?.resource;
-      if (
-        !resource ||
-        typeof resource.resourceId !== 'string' ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          resource.resourceId,
-        ) ||
-        !Number.isSafeInteger(resource.resourceVersion) ||
-        resource.resourceVersion <= 0 ||
-        resource.nativeType !== kind ||
-        resource.nativeRef !== String(viewId) ||
-        resource.nativeInstanceRef !== this.config.nativeInstanceRef ||
-        resource.nativeScopeRef !== this.config.nativeScopeRef
-      ) {
-        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-      }
       selectedResource = resource.resourceId;
       const reference = await (
         kind === 'model'

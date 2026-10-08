@@ -20,7 +20,8 @@ import type { ParsedMessageLink } from "@client-kit/platform/react/composer/feat
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
-import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
+import { ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
+import { ConversationSidebar } from "./ConversationSidebar";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
 import { useHomeShortcut, useHistoryShortcuts } from "@client-kit/platform/react/use-navigation-shortcuts";
@@ -374,7 +375,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               selectedId={navigation.applicationBindingId}
               onSelect={(binding) => { void navigation.openApplication(binding.bindingId, binding.workspaceId); }}
               workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
-            <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
+            <ConversationSidebar currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}
               onCloseSelected={() => setTab("inbox")}

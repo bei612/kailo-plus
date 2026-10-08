@@ -1649,3 +1649,77 @@ Native 原 `node --import ./test-loader.mjs --input-type=module` 实际导入同
 `.playwright-cli/inbox-mention-empty-settled-20261007.png`。
 线上 build 仍为 `sha256:a484ceeba47f06e572461060c2b12353cd4646654d02fd45c04308558ebd7642`，
 不是本批源码；当前中文空态观察不能代替新加载组件部署后的逐页截图。本批源码与窄验完成，部署验收未完成。
+
+### 2026-10-08：原私聊侧栏实际未读、读写菜单与排序共源恢复
+
+沿既有 `collaboration-full-2646.patch` 的 3307 个差异路径继续核对原 sidebar/DM 模块，
+确认原未读数、粗体、右键读/未读、Recent/A–Z 排序在共享 ConversationList 中缺失。
+本批只关闭这些有真实消费者的缺项，不称全树已分类或原版 100% 还原。
+
+1. 权威：`.design/09` §3 的参与者私聊、本人的 SERVER/CLIENT 传输与
+   CollaborationUserState 唯一已读权威；UI 固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503`，
+   `desktop/src/features/sidebar/lib/dmSidebarSort.ts::sortDmChannelsForSidebar`、
+   `desktop/src/features/sidebar/ui/SidebarSection.tsx::SidebarSection/UnreadCountBadge`、
+   `desktop/src/features/sidebar/ui/ChannelContextMenu.tsx::ChannelContextMenuItems`、
+   `desktop/src/features/sidebar/ui/CustomChannelSection.tsx::SectionActionsMenu` 与
+   `desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar` 为来源。
+2. 影响：共享 `conversations/conversation-list.tsx` 消费真实 incoming DM 事件和
+   `useInboxState`，未读按原 Channel 键而非 thread/reply 键聚合；菜单写既有 Core CAS。
+   Web `web-client/web/src/platform/ui/ConversationSidebar.tsx::loadConversationSidebarActivity`
+   使用既有 BFF `conversationMessages`、`inboxWindowEvents`、本人公钥目录与读后准入复核；
+   `PlatformApp` 传已有 Core read projection。Native
+   `collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx::DesktopConversations`
+   复用既有 `collaboration/desktop/src/features/home/hooks.ts::useHomeFeedQuery` →
+   `collaboration/desktop/src/features/home/nativeDmFeed.ts::loadNativeDmFeed` 已验签原 Relay 窗口，仍本机持钥。
+   不改契约、Core、Relay、数据结构、生成物、i18n 或依赖。
+3. 副作用：消息只在已授权客户端消费，Core 不存正文；按 event id 去重、排除本人全部
+   公钥发言，不把私聊 id 当 Workspace。未读数只表示当前可信窗口内已观察到的 incoming
+   消息，不冒充未加载历史总数。菜单复用原组件，顺序为 New message、分隔线、Sort；
+   原 DM section 未提供 mark-all-read，未自行增加。排序仅用已有客户端 presentation
+   preference `buzz-channel-sort.v1`，不是另建读状态权威。
+4. 边界：空/停用/非当前参与者不读取私聊窗口；未知身份、非 hex 公钥、错误 Channel、
+   循环 cursor、读期间撤权/换身份、卸载 abort 均拒绝结果。读回执 UNKNOWN 清除 badge，
+   只允许原只读 refresh，不用新版本静默重写。选择一行只隐藏原 active badge，不凭点击
+   假造已读；真正读/未读用已有 CAS 队列。原 Recent 的无活动/非法日期排到有活动之后，
+   同时刻按真实标签/id 排序，不修改输入。
+
+分类：52 行原 `dmSidebarSort.ts` 为共享迁移，仅来源注释、类型导入和保留行扩展字段的
+TypeScript 泛型有差异，运行正文归一化 SHA-256
+`78a9b9ba73414bdf525ac839a0b4ad1650f8c993a979af926abf17ca83417832` 相同。
+原 badge/粗体、右键菜单及排序菜单为缺失已恢复；Core CAS 和 BFF/本机读取为明确授权治理差异。
+DM 头像/在线状态仍缺可信数据消费，Native 私聊进入后的旧本地自动已读消费者尚未收敛，
+不能因此宣称全部读状态跨端等效。其他未分类路径、分组拖拽、全部页面状态仍未由本批证明。
+
+真实 `playwright-cli -s=kailo-ui-status` 在旧部署打开新消息并筛选真实收件人，
+随后检查无匹配搜索；两张截图均经 `view_image` 打开：
+`.playwright-cli/dm-recipient-search-current-20261008.png`、
+`.playwright-cli/dm-recipient-empty-current-20261008.png`。
+前者只有实际目录的 collab-third-20261005，后者原“没有匹配的用户”空态；未发送消息、
+未伪造私聊。当前 seam-verifier 没有可见私聊，因此没有真实 DM 未读徽章的线上截图。
+线上仍为旧 `sha256:a484ceeba47f06e572461060c2b12353cd4646654d02fd45c04308558ebd7642`，
+上述两图只证明旧部署实际页面行为，不是本批候选部署/Windows/Mobile 验收。
+
+复用受限 SDK `kailo-agent-receipt-xvkujx` 的 `profile-settings-ortsoo.DRR20F/apps`
+（4 CPU / 8 GiB，启动前主机可用内存 23861 MiB），只同步本批前端文件与宿主已有
+platform 依赖副本，不动 Core/契约；没有新快照、下载、镜像构建或全局检查。
+实际命令与结果：共享目录 `node_modules/.bin/tsc --noEmit -p tsconfig.test.json` 0；
+`vitest run test/conversation-sidebar.test.tsx test/new-message.test.tsx` **24 passed**；
+Web `node_modules/.bin/tsc --noEmit` 0；
+`vitest run src/platform/ui/ConversationSidebar.test.tsx src/platform/ui/PlatformApp.test.tsx`
+**21 passed**；Desktop `node_modules/.bin/tsc --noEmit` 0。
+新增 shared 六项实际消费者和 Web 十项读取边界覆盖真实 CAS 请求、UNKNOWN、原菜单操作、
+原 Recent 顺序、本人多身份排除与准入变更；不是只验证 SSR 文案。
+初轮失败保留：`TS6133: 'vi' is declared but its value is never read`、两处错误英文菜单定位
+`TypeError: Cannot read properties of undefined (reading 'click')`；移除测试未用导入并匹配
+真实既有 “Mark unread” / “Try again” 后通过。首轮 Desktop 因 SDK 安装副本旧 i18n
+报 `TS2345: Argument of type '"sidebar.unreadCount"' is not assignable`；正式已有该词条，
+仅同步真实依赖输入后通过，未为通过检查修改产品译文。
+
+私有候选故意翻转读写方向，实际 CAS 断言报预期 20 秒却写入 9 秒，**1 failed / 5 passed**；
+另移除 Web 本人排除后 incoming 列表多出自己发言，**1 failed / 9 passed**。两个变异均退出 1，
+正式文件从未被破坏；还原后与正式逐字 `cmp` 退出 0，最终再次 **shared 24 passed / Web 21 passed**、
+两个命令均退出 0（`*-restored.log`）。原始失败及全部命令输出在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`
+的 `dm-sidebar-*.log`；其中 `*-complete.log` 为集中正式输入验证，`*-mutation.log` 为负例。
+本批无打包、发布及新安装包；全局 `check.sh --full` 本轮未运行，交主线按批次收口。

@@ -30,12 +30,14 @@ import { CompactTable, PreviewDataResponse } from '@server/services';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import {
   NativeHumanQuery,
+  canReadNativeMetadata,
   nativePreviewScope,
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
 import {
   loadQueryDelivery,
   NativeQueryRefusal,
+  NativeQueryDelivery,
 } from '../services/nativeQueryAdmission';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 
@@ -49,6 +51,32 @@ export enum SyncStatusEnum {
 }
 
 export class ModelResolver {
+  private async metadataConfig(ctx: IContext, projectId: number) {
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (config.projectId !== projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    return config;
+  }
+
+  private async readableMetadata<T extends { id: number }>(
+    ctx: IContext,
+    config: NativeQueryDelivery,
+    kind: 'model' | 'view',
+    rows: T[],
+  ): Promise<T[]> {
+    const visible: T[] = [];
+    for (const row of rows) {
+      if (
+        await canReadNativeMetadata(config, ctx.nativeHumanToken, kind, row.id)
+      )
+        visible.push(row);
+    }
+    return visible;
+  }
+
   private async currentColumn(ctx: IContext, id: number, projectId: number) {
     const column = await ctx.modelColumnRepository.findOneBy({ id });
     if (
@@ -327,7 +355,15 @@ export class ModelResolver {
 
   public async listModels(_root: any, _args: any, ctx: IContext) {
     const { id: projectId } = await ctx.projectService.getCurrentProject();
-    const models = await ctx.modelRepository.findAllBy({ projectId });
+    const config = await this.metadataConfig(ctx, projectId);
+    const models = await this.readableMetadata(
+      ctx,
+      config,
+      'model',
+      await ctx.modelRepository.findAllBy({ projectId }),
+    );
+    // The original repository treats empty filters as unfiltered reads.
+    if (!models.length) return [];
     const modelIds = models.map((m) => m.id);
     const modelColumnList =
       await ctx.modelColumnRepository.findColumnsByModelIds(modelIds);
@@ -357,7 +393,7 @@ export class ModelResolver {
         },
       });
     }
-    return result;
+    return this.readableMetadata(ctx, config, 'model', result);
   }
 
   public async getModel(_root: any, args: any, ctx: IContext) {
@@ -370,6 +406,17 @@ export class ModelResolver {
     if (!model) {
       throw new Error('Model not found');
     }
+
+    const config = await this.metadataConfig(ctx, projectId);
+    if (
+      !(await canReadNativeMetadata(
+        config,
+        ctx.nativeHumanToken,
+        'model',
+        model.id,
+      ))
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     const modelColumns = await ctx.modelColumnRepository.findColumnsByModelIds([
       model.id,
@@ -385,15 +432,56 @@ export class ModelResolver {
         ? modelNestedColumns.filter((nc) => nc.columnId === c.id)
         : undefined,
     }));
-    const relations = (
-      await ctx.relationRepository.findRelationsBy({
-        columnIds: modelColumns.map((c) => c.id),
-      })
+    const candidateRelations = (
+      modelColumns.length
+        ? await ctx.relationRepository.findRelationsBy({
+            columnIds: modelColumns.map((c) => c.id),
+          })
+        : []
     ).map((r) => ({
       ...r,
       type: r.joinType,
       properties: r.properties ? JSON.parse(r.properties) : {},
     }));
+    const relations = [];
+    for (const relation of candidateRelations) {
+      if (relation.projectId !== projectId) continue;
+      let visible = true;
+      for (const columnId of new Set([
+        relation.fromColumnId,
+        relation.toColumnId,
+      ])) {
+        const column =
+          modelColumns.find((item) => item.id === columnId) ??
+          (await ctx.modelColumnRepository.findOneBy({ id: columnId }));
+        if (
+          !column ||
+          !(await ctx.modelRepository.findOneBy({
+            id: column.modelId,
+            projectId,
+          })) ||
+          !(await canReadNativeMetadata(
+            config,
+            ctx.nativeHumanToken,
+            'model',
+            column.modelId,
+          ))
+        ) {
+          visible = false;
+          break;
+        }
+      }
+      if (visible) relations.push(relation);
+    }
+    if (
+      !(await canReadNativeMetadata(
+        config,
+        ctx.nativeHumanToken,
+        'model',
+        model.id,
+      ))
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     return {
       ...model,
@@ -887,13 +975,20 @@ export class ModelResolver {
   // list views
   public async listViews(_root: any, _args: any, ctx: IContext) {
     const { id } = await ctx.projectService.getCurrentProject();
-    const views = await ctx.viewRepository.findAllBy({ projectId: id });
-    return views.map((view) => ({
+    const config = await this.metadataConfig(ctx, id);
+    const views = await this.readableMetadata(
+      ctx,
+      config,
+      'view',
+      await ctx.viewRepository.findAllBy({ projectId: id }),
+    );
+    const result = views.map((view) => ({
       ...view,
       displayName: view.properties
         ? JSON.parse(view.properties)?.displayName
         : view.name,
     }));
+    return this.readableMetadata(ctx, config, 'view', result);
   }
 
   public async getView(_root: any, args: any, ctx: IContext) {
@@ -903,6 +998,16 @@ export class ModelResolver {
     if (!view) {
       throw new Error('View not found');
     }
+    const config = await this.metadataConfig(ctx, projectId);
+    if (
+      !(await canReadNativeMetadata(
+        config,
+        ctx.nativeHumanToken,
+        'view',
+        view.id,
+      ))
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const displayName = view.properties
       ? JSON.parse(view.properties)?.displayName
       : view.name;
@@ -1023,7 +1128,11 @@ export class ModelResolver {
     return this.previewNativeData(args, ctx, 'view');
   }
 
-  private async previewNativeData(args: any, ctx: IContext, kind: 'view' | 'model') {
+  private async previewNativeData(
+    args: any,
+    ctx: IContext,
+    kind: 'view' | 'model',
+  ) {
     const { id: viewId, limit, idempotencyKey, idempotencyScope } = args.where;
     const config = await loadQueryDelivery();
     const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);

@@ -10,6 +10,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
+import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { useNativeSession } from "@/features/platform/activeCommunity";
+import { useHomeFeedQuery } from "@/features/home/hooks";
+import type { Channel } from "@/shared/api/types";
 
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { sortChannelsForSidebar } from "@/features/sidebar/lib/channelSortPreference";
@@ -244,7 +248,7 @@ export function AppSidebar({
               {currentPrincipalId ? <NativeApplicationEntries scopeKey={`${activeCommunity.id}:${currentPrincipalId}`}
                 selectedId={selectedApplicationBindingId} onSelect={onSelectApplication}
                 workspace={channels.find((channel) => channel.channelType !== "dm" && channel.id === (selectedApplicationBindingId ? applicationWorkspaceId : selectedView === "channel" ? selectedChannelId : undefined))} /> : null}
-              {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId}
+              {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId} channels={channels}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
                 onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}
               {isLoading ? (
@@ -325,16 +329,23 @@ export function AppSidebar({
   );
 }
 
-function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage, onCloseSelected }: {
+function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage, onCloseSelected, channels }: {
   currentPrincipalId: string; selectedChannelId: string | null;
+  channels: readonly Channel[];
   onSelectChannel: (id: string) => void; onNewMessage: () => void;
   onCloseSelected: () => void;
 }) {
   const conversations = useConversations();
+  const session = useNativeSession();
+  const reads = useInboxState(session.client);
+  const feed = useHomeFeedQuery();
+  const activity = React.useMemo(() => feed.isSuccess ? feed.data.feed.activity.filter(item => item.channelType === "dm") : undefined, [feed.isSuccess, feed.data]);
+  const lastMessageAt = React.useMemo(() => new Map(channels.filter(channel => channel.channelType === "dm").map(channel => [channel.id, channel.lastMessageAt ?? null])), [channels]);
   return <ConversationList currentPrincipalId={currentPrincipalId} items={conversations.items}
-    loading={conversations.loading} error={conversations.error}
+    loading={conversations.loading} error={conversations.error ?? feed.error}
+    events={activity} lastMessageAtByChannelId={lastMessageAt} reads={reads}
     selectedId={conversations.items.find((conversation) => conversation.channelId === selectedChannelId)?.id ?? null}
     onSelect={(conversation) => onSelectChannel(conversation.channelId)} onNewMessage={onNewMessage}
     onCloseSelected={onCloseSelected}
-    onReload={() => { void conversations.reload().catch(() => undefined); }} />;
+    onReload={() => { void conversations.reload().catch(() => undefined); void feed.refetch(); }} />;
 }

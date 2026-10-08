@@ -36,6 +36,7 @@ export class NativeQueryRefusal extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
+    public readonly resourcePermissionDenied = false,
   ) {
     super(code);
   }
@@ -195,6 +196,7 @@ async function jsonResponse(
   url: string,
   init: RequestInit,
   allowMissing = false,
+  denialStatus: 403 | 503 = 403,
 ) {
   const response = await fetch(url, {
     ...init,
@@ -205,9 +207,9 @@ async function jsonResponse(
     await response.body?.cancel();
     return null;
   }
-  if (!response.ok || !response.body) {
+  if (!response.body) {
     throw new NativeQueryRefusal(
-      response.status === 403 ? 403 : 503,
+      response.status === 403 ? denialStatus : 503,
       'QUERY_ADMISSION_UNAVAILABLE',
     );
   }
@@ -226,7 +228,37 @@ async function jsonResponse(
   } finally {
     await reader.cancel();
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  let value;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
+  }
+  if (!response.ok) {
+    // Consume contracts/domain/error.schema.json. Only the exact authoritative
+    // object permission denial may filter a metadata row; identity/binding
+    // failures and malformed error bodies must remain visible failures.
+    const permissionDenied =
+      response.status === 403 &&
+      denialStatus === 403 &&
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(value).every((key) =>
+        ['class', 'reason', 'operationId'].includes(key),
+      ) &&
+      'class' in value &&
+      value.class === 'DENIED' &&
+      'reason' in value &&
+      value.reason === 'PERMISSION_DENIED' &&
+      (!('operationId' in value) || typeof value.operationId === 'string');
+    throw new NativeQueryRefusal(
+      response.status === 403 ? denialStatus : 503,
+      'QUERY_ADMISSION_UNAVAILABLE',
+      permissionDenied,
+    );
+  }
+  return value;
 }
 
 export async function authorizeQuery(
@@ -299,14 +331,20 @@ export async function bindingServiceCall(
   const secret = await readFile(config.serviceClientSecretFile, 'utf8');
   if (!secret || secret.trim() !== secret)
     throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
-  const service = await jsonResponse(config, config.serviceTokenUrl, {
-    method: 'POST',
-    headers: {
-      authorization: `Basic ${Buffer.from(`${encodeURIComponent(config.serviceClientId)}:${encodeURIComponent(secret)}`).toString('base64')}`,
-      'content-type': 'application/x-www-form-urlencoded',
+  const service = await jsonResponse(
+    config,
+    config.serviceTokenUrl,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${encodeURIComponent(config.serviceClientId)}:${encodeURIComponent(secret)}`).toString('base64')}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
     },
-    body: 'grant_type=client_credentials',
-  });
+    false,
+    503,
+  );
   if (
     service.token_type !== 'Bearer' ||
     typeof service.access_token !== 'string' ||

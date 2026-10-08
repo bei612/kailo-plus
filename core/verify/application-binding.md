@@ -891,3 +891,38 @@ Native Go 新 Connector 尚未编译，通用 conformance 对新增原生动作�
   `contracts-v0.1.0` 的 282 个 schema、3 个历史 schema 兼容比对通过；该容器
   的生成子步失败且没有附加诊断，故组合退出 **1**，不记整体通过。四侧生成物
   已另与上述成功 SDK 的输入和产物逐一比较一致；不把两次部分成功写成 full 通过。
+
+## 2026-10-07 原生模型元数据读与执行准入分离
+
+本批修正实际 Wren 模型/视图列表消费者需要的资源选择，而不是增加另一套授权：
+
+1. 权威是 `.design/08` §6、SS-WRN-IDENTITY/GOVERNANCE：模型描述检查原模型
+   Resource 的 `read`，查询检查 `execute`。`resolveResource` 只查询已登记引用，
+   不应强制它成为 Temporal 执行任务；原动作提交仍由原 `facts` 检查执行模式。
+2. 影响面为 Core `application_native_human::resource_facts/resolve_resource` 与
+   Wren 原模型/视图列表、详情消费者。前者直接复用 `definition_for_resource`，
+   后者指定原登记 `data_query.describe@v1`；实际 release 没有该声明即拒绝。
+   无新路由、合同字段、生成物、数据迁移或 Workflow kind，旧查询请求格式不变。
+3. 相同 binding/generation/native type/ref、资源版本和原 ActionDefinition 均保留，
+   仍执行 `Governance.evaluate`，不以实例登录替代用户权限。明确复检请求 Workspace
+   为本 Tenant 的 ACTIVE Workspace；无资源、歧义、暂停或不匹配不回退其他对象。
+4. 纯读取没有新的中间状态或副作用；提交和执行期重验未放宽。原协议只读动作现在
+   能选择授权引用，但仍不能经 Temporal 提交入口执行；模型正文只在 Wren 返回。
+
+在原 4 CPU/8 GiB SDK 与原隔离数据库中，显式执行
+`cargo test -p platform-core --bin platform-core native_resource_selection -- --ignored`：
+1 passed，涵盖 PROTOCOL/read 正向选择、错误对象/作用域拒绝及原执行入口拒绝。
+既有 `application_action::tests` 为 2 passed、1 ignored；该 ignored 未计入已执行。
+私有副本重新施加旧 TEMPORAL-only 条件后，同一 SQL 检查真实失败，退出 101；
+还原后 1 passed。首轮曾试图在夹具内修改已登记 ActionDefinition，数据库以
+`23001 action_definition 的版本内容不可变` 拒绝；改用原 PROTOCOL 夹具，不关闭
+原版本保护。所有夹具事务回滚，没有更改业务库。
+
+同一 SDK 的 `cargo clippy -p platform-core --bin platform-core -- -D warnings`
+退出 0（1m 53s）。正式 Core 文件与复验候选逐字节一致；该结果不替代真实原生
+登录、SpiceDB 逐用户授权或原生页面端到端验收。本批合同未变，不重复生成四侧。
+
+该增量不等于三组件完整可用：原生对象首次 Resource 登记、其余 Asking/dashboard
+及完整 iframe 业务仍须各自闭合；没有部署服务或更新三端安装包。
+本批未重跑全量源码导出及 full：Data 仍约 3.1 GiB 可用，前一批同一入口已在
+导出时中止（退出 143），不能把本批专项通过记录为全量发布门禁通过。

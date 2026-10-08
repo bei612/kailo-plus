@@ -64,6 +64,7 @@ function SectionActionsMenu({
   onOpenChange,
   hasUnread,
   onMarkAllRead,
+  onNewMessage,
   sortMode,
   onSortModeChange,
 }: {
@@ -72,6 +73,7 @@ function SectionActionsMenu({
   onOpenChange: (open: boolean) => void;
   hasUnread?: boolean;
   onMarkAllRead?: () => void;
+  onNewMessage?: () => void;
   sortMode: ChannelSortMode;
   onSortModeChange: (mode: ChannelSortMode) => void;
 }) {
@@ -112,6 +114,13 @@ function SectionActionsMenu({
             <DropdownMenuSeparator />
           </>
         ) : null}
+        {onNewMessage ? <>
+          <DropdownMenuItem onSelect={() => deferMenuAction(onNewMessage)}>
+            <Plus className="h-4 w-4" />
+            <span>{t("sidebar.newMessage")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </> : null}
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <ArrowUpDown className="h-4 w-4" />
@@ -140,7 +149,7 @@ function SectionActionsMenu({
 export function ChannelGroupSection<T extends SidebarChannel>({
   hasUnread, isCollapsed, items, listTestId, onMarkAllRead, onToggleCollapsed,
   sortMode, onSortModeChange, actionsTestId, title, onCreateChannel,
-  createChannelLabel, createTestId = "create-channel", renderRow, renderContextMenu,
+  createChannelLabel, createTestId = "create-channel", onNewMessage, renderRow, renderContextMenu,
 }: {
   hasUnread: boolean;
   isCollapsed: boolean;
@@ -153,6 +162,7 @@ export function ChannelGroupSection<T extends SidebarChannel>({
   actionsTestId: string;
   title: string;
   onCreateChannel?: () => void;
+  onNewMessage?: () => void;
   createChannelLabel?: string;
   createTestId?: string;
   renderRow: (channel: T) => ReactNode;
@@ -203,6 +213,7 @@ export function ChannelGroupSection<T extends SidebarChannel>({
             onOpenChange={setActionsMenuOpen}
             hasUnread={hasUnread}
             onMarkAllRead={onMarkAllRead}
+            onNewMessage={onNewMessage}
             sortMode={sortMode}
             onSortModeChange={onSortModeChange}
           /> : null}

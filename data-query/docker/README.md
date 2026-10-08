@@ -241,6 +241,37 @@ read-only, nor does it manufacture SecretStore request receipts for lifecycle
 validation. Actual native scope/role evidence and the normal binding validation
 consumer remain required before activation. The native browser's original
 internal queries are not automatically governed platform commands.
+
+### Model and saved-view metadata access
+
+The original model/view lists and detail pages keep their existing layout and
+GraphQL data shape. Their server-side readers now resolve each native object
+through the same Core HUMAN resource-selection endpoint, using the registered
+`data_query.describe@v1` action and its `read` permission. Instance login alone
+does not grant these object reads; `data_query.query@v1` execution permission is
+not substituted for read permission. The approved release/action catalog must
+actually contain that describe mapping, and the exact model/view must already
+have an active Resource reference for this binding, native instance and project.
+
+Only a valid Core `ErrorBody` with `DENIED` / `PERMISSION_DENIED` excludes
+that object from the original list; authentication/scope or binding failures,
+empty/malformed error bodies and unavailable SERVICE credentials remain errors;
+direct detail access is refused. Model columns are loaded only for authorized
+model IDs, and relationships require both endpoint models to be readable.
+Reads are checked again before returning assembled model/list metadata. Missing
+authentication, unavailable authorization or mismatched native reference facts
+return an error rather than an apparently empty successful list. There is no
+cross-user authorization cache, new page or duplicate resource directory.
+
+The `humanAction` configuration contains only the existing result-exposure policy
+id/version used by actual queries; do not configure a global Resource id/version
+to bypass per-object lookup. These metadata reads do not execute SQL or create
+an ActionExecution. Unregistered objects remain unavailable: this change does
+not complete the separate REMOTE_ADAPTER native-object registration path.
+Deployment/MDL, Asking, dashboard and native write authorization are not covered
+by these four metadata readers; see the component verification receipt for the
+current acceptance boundary before publishing the component.
+
 ## Binding lifecycle validation
 
 The same optional `query-governance.yaml` overlay now supplies

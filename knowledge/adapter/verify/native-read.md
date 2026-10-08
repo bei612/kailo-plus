@@ -1050,3 +1050,78 @@ the correction: **182 passed, 0 failed**, exit **0**, recorded in
 `knowledge-citations-canonical-restored.log`. This adapter rerun does not
 substitute for the main-agent Catalog registration check; its initial failure
 is not counted as passing evidence.
+
+## 2026-10-08 — resume dispatched native retirement before new discovery
+
+Authority and cause: `.design/13` §4.2–4.4 and §7 require failed discovery to
+retain the previous desired set, while previously dispatched deletes retain
+their original native task for reconciliation. `FetchStream` previously
+requested every new source listing before entering `retire`. Consequently a
+revoked source reader, unavailable listing or changed source configuration
+prevented the existing late-receipt path from ever observing its saved task.
+The fix belongs to the existing native connector, not a platform scheduler.
+The fixed upstream remains WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`:
+`internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+and `DataSourceService.processSyncStreaming` remain the native durable cursor
+and retry consumers. No upstream code was executed or changed.
+
+Impact and implementation: only `datasource_file_storage.go::FetchStream`
+changes production behavior. After the existing run binding/tenant/KB and
+cursor checks, saved `Retiring` entries are observed with their original
+batch/key/target/revision through `retire`. Only an accepted exact terminal
+receipt removes that entry and its retired group, immediately checkpointed
+through the original handler. `LastSyncTime` does not advance. New source
+configuration validation and discovery still reject before any new source
+read or delete. No schema, stored format, public API, UI or task authority
+changes; existing cursors remain readable.
+
+Side effects and boundaries: this path does not start another delete or
+reconstruct expired tokens. `RUNNING`/`UNKNOWN`, receipt failure and checkpoint
+failure retain the original durable intent; no unknown result becomes a
+successful deletion. Orphan intents fail closed before external calls.
+`UpdateDataSource` skips live validation when no native credentials exist, so
+an empty source list can be saved for this credential-free connector. Recovery
+therefore precedes new-config validation, but empty configuration still rejects
+all new work. Source removal and disabling new sync-deletions cannot erase an
+already dispatched task. These are existing UNKNOWN/reconciliation,
+PRECONDITION/configuration and DENIED/new-admission boundaries, not new error
+categories or a relaxation of new deletion authorization.
+
+The existing 4 CPU / 8 GiB `kailo-knowledge-native-check-wkkigg` SDK was idle
+before execution; free Data space was 3.0 GiB. Existing caches were reused with
+`GOPROXY=off`; no installation, image build or full-tree snapshot occurred.
+Initial validation failed because that old SDK snapshot retained six-argument
+`CreateKnowledgeFromFileAtID` callers against the current eight-argument
+interface. After synchronizing those already-committed dependencies, its old
+transport still rejected `UNKNOWN` observations, failing both the previously
+existing retirement test and the new consumer. Synchronizing the committed
+transport corrected the candidate input; neither failure was fixed by changing
+formal product behavior or weakening assertions.
+
+```sh
+gofmt -d internal/application/service/datasource_file_storage.go internal/application/service/datasource_file_storage_test.go
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off go test ./internal/application/service -run 'TestFileStorage|TestStreamHandler|TestDataSourceReplacement|TestCreateKnowledgeFromFileAtID' -count=1 -v
+```
+
+Final and restored runs: **14 top-level tests and 15 subtests passed**, exit
+**0**; gofmt produced no diff. The new seven-case test uses actual
+`FetchStream`, `streamSyncHandler.Checkpoint`, native-task observation and HTTP
+grant/receipt consumers. Private mutation skipping the retirement recovery
+loop made **all seven new cases fail**, exit **1**. Formal source restored
+byte-identically (`cmp` exit 0), the command above passed again, and
+`git diff --check` passed. Logs under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/knowledge-adapter.N8sx1m/`:
+`native-retirement-recovery.log` and `native-retirement-recovery-ready.log`
+(the two candidate-input failures), `native-retirement-recovery-final.log`,
+`native-retirement-recovery-mutation.log`, and
+`native-retirement-recovery-restored.log`.
+
+This does not bypass Core's existing ACTIVE binding/generation requirements
+for observing original read operations, nor restart a deleted data source's
+cancelled scheduler. Binding disable, credential revocation and datasource
+deletion remain distinct lifecycle paths; they are not covered by this
+source-reader/configuration recovery evidence. Full checks, real database
+sync, live Cells/WeKnora indexing, browser acceptance and deployment were not
+run for this bounded change. No release, binding or runtime configuration was
+enabled and no production-readiness claim is made.

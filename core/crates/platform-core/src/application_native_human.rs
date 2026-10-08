@@ -273,7 +273,7 @@ async fn resource_facts(
     binding_id: Uuid,
     current: &Binding,
     query: &Value,
-) -> Result<Facts, Refusal> {
+) -> Result<(Target, crate::application_catalog::ApplicationDefinition), Refusal> {
     let text = |field: &str| {
         query[field]
             .as_str()
@@ -300,6 +300,8 @@ async fn resource_facts(
           and b.active_projection_generation=$5 and b.native_instance_ref=$6 and b.native_scope_ref=$7
           and (r.home_workspace_id is null or r.home_workspace_id=$8)
           and (b.workspace_id is null or b.workspace_id=$8)
+          and ($8::uuid is null or exists(select 1 from identity.workspace w
+            where w.id=$8 and w.tenant_id=r.tenant_id and w.state='ACTIVE'))
         order by r.id limit 2 for share of r,b,p")
         .bind(actor.tenant_id).bind(binding_id).bind(kind).bind(reference).bind(current.generation)
         .bind(&current.native_instance_ref).bind(&current.native_scope_ref).bind(workspace)
@@ -312,11 +314,25 @@ async fn resource_facts(
         version: *resource_version,
         workspace_id: workspace,
     };
-    let admitted = facts(conn, actor.tenant_id, &target, action, version, "RESOURCE").await?;
-    if admitted.binding != binding_id || admitted.generation != current.generation {
+    // Selecting an authorized reference is not dispatch. In particular native
+    // metadata uses its registered read action, not a fabricated Temporal task.
+    // Submit and execution revalidation retain the original facts() gate.
+    let (binding, generation, application) = crate::application_catalog::definition_for_resource(
+        conn,
+        actor.tenant_id,
+        workspace,
+        target.id,
+        action,
+        version,
+    )
+    .await?;
+    if binding != binding_id
+        || generation != current.generation
+        || application.definition.target_type != "RESOURCE"
+    {
         return Err(denied());
     }
-    Ok(admitted)
+    Ok((target, application))
 }
 
 async fn resolve_resource(
@@ -327,10 +343,10 @@ async fn resolve_resource(
     query: &Value,
 ) -> Result<contracts::NativeHumanResourceResult, Refusal> {
     let mut tx = state.pool.begin().await?;
-    let admitted = resource_facts(&mut tx, actor, binding_id, current, query).await?;
+    let (target, application) = resource_facts(&mut tx, actor, binding_id, current, query).await?;
     let evaluation = state
         .governance
-        .evaluate(actor, &admitted.application.definition, &admitted.target)
+        .evaluate(actor, &application.definition, &target)
         .await?;
     if !evaluation.allowed {
         return Err(Refusal::Denied(
@@ -343,7 +359,7 @@ async fn resolve_resource(
     {
         return Err(blocked());
     }
-    let result = serde_json::from_value(json!({"resource":{"resourceId":admitted.target.id,"resourceVersion":admitted.target.version,
+    let result = serde_json::from_value(json!({"resource":{"resourceId":target.id,"resourceVersion":target.version,
         "nativeType":query["nativeType"],"nativeRef":query["nativeRef"],"nativeInstanceRef":current.native_instance_ref,
         "nativeScopeRef":current.native_scope_ref}})).map_err(|_| unavailable())?;
     tx.commit().await?;
@@ -395,12 +411,7 @@ mod tests {
             .replace("\nCOMMIT;\n", "\n");
         sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
         let fixture=include_str!("../../../verify/application-execution-dispatch.sql")
-            .replace("'executionMode','PROTOCOL'","'executionMode','TEMPORAL'")
-            .replace("'workflowType','NONE'","'workflowType','ComponentTaskWorkflow'")
-            .replace("manifest:=jsonb_build_object('componentTypeKey',provider,", "manifest:=jsonb_build_object('executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER'),'componentTypeKey',provider,")
-            .replace("'read','resource','PROTOCOL','NONE'","'read','resource','TEMPORAL','NONE'")
-            .replace("NULL,NULL,'NATIVE',NULL,action", "'ComponentTaskWorkflow','COMPONENT_ACTION','NATIVE',NULL,action")
-            .replace("'COMPONENT_BINDING',tenant,business_ae", "'COMPONENT_ACTION',tenant,business_ae");
+            .replace("manifest:=jsonb_build_object('componentTypeKey',provider,", "manifest:=jsonb_build_object('executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER'),'componentTypeKey',provider,");
         sqlx::raw_sql(&fixture).execute(&mut *tx).await.unwrap();
         let (action, binding_id): (Uuid, Uuid) =
             sqlx::query_as("select child,binding from application_dispatch_fixture")
@@ -428,9 +439,23 @@ mod tests {
         let found = resource_facts(&mut tx, actor, binding_id, &current, &query)
             .await
             .unwrap();
-        assert_eq!(found.target.id, resource);
-        assert_eq!(found.target.version, 2);
-        assert_eq!(found.application.definition.permission, "read");
+        assert_eq!(found.0.id, resource);
+        assert_eq!(found.0.version, 2);
+        assert_eq!(found.1.definition.permission, "read");
+        assert_eq!(found.1.definition.execution_mode, "PROTOCOL");
+        assert!(
+            facts(
+                &mut tx,
+                tenant,
+                &found.0,
+                "isolated.lookup@v1",
+                1,
+                "RESOURCE"
+            )
+            .await
+            .is_err(),
+            "read selection must not enable Temporal dispatch"
+        );
         for field in ["nativeType", "nativeRef", "actionKey"] {
             let mut changed = query.clone();
             changed[field] = json!("unregistered-native-object");

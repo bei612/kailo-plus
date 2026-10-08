@@ -3,11 +3,40 @@ import { AskingService } from './apollo/server/services/askingService';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { DashboardService } from './apollo/server/services/dashboardService';
 import { MDLService } from './apollo/server/services/mdlService';
+import {
+  bindingServiceCall,
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from './apollo/server/services/nativeQueryAdmission';
+
+jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
+  ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
+  bindingServiceCall: jest.fn(),
+  loadQueryDelivery: jest.fn(),
+}));
 
 describe('native bound-project business consumers', () => {
   const resolver = new ModelResolver();
   const projectId = 7;
   let ctx: any;
+  const config: any = {
+    projectId,
+    nativeScopeRef: String(projectId),
+    nativeInstanceRef: 'fixture-instance',
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    workspaceId: '87c27723-e475-4e0b-a0e9-50e5d755fe63',
+  };
+  const authorize = jest.mocked(bindingServiceCall);
+  const selected = (request: any) => ({
+    resource: {
+      resourceId: '09c6b43b-1edf-467d-8e81-e47a3f506c4f',
+      resourceVersion: 1,
+      nativeType: request.resolveResource.nativeType,
+      nativeRef: request.resolveResource.nativeRef,
+      nativeInstanceRef: config.nativeInstanceRef,
+      nativeScopeRef: config.nativeScopeRef,
+    },
+  });
   const repository = (rows: any[]) => ({
     findOneBy: jest.fn(
       async (where) =>
@@ -24,12 +53,19 @@ describe('native bound-project business consumers', () => {
     rollback: jest.fn(),
   });
   beforeEach(() => {
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    authorize.mockReset();
+    authorize.mockImplementation(async (_config, _operation, request) =>
+      selected(request),
+    );
     ctx = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'first-person-token',
       projectService: {
         getCurrentProject: jest.fn(async () => ({ id: projectId })),
       },
       modelRepository: repository([
-        { id: 11, projectId },
+        { id: 11, projectId, properties: '{}' },
         { id: 12, projectId: 8 },
       ]),
       viewRepository: repository([
@@ -56,6 +92,204 @@ describe('native bound-project business consumers', () => {
       },
       deployService: { getMDLByHash: jest.fn() },
     };
+    ctx.modelColumnRepository.findColumnsByModelIds = jest.fn(async () => [
+      {
+        id: 31,
+        modelId: 11,
+        properties: '{}',
+        type: 'STRING',
+        isCalculated: false,
+      },
+    ]);
+    ctx.modelNestedColumnRepository.findNestedColumnsByModelIds = jest.fn(
+      async () => [],
+    );
+    ctx.relationRepository.findRelationsBy = jest.fn(async () => []);
+  });
+  it('filters original model and view list consumers by each HUMAN read grant without changing their shape', async () => {
+    const models = [
+      { id: 11, projectId, properties: '{}' },
+      { id: 13, projectId, properties: '{}' },
+    ];
+    const views = [
+      {
+        id: 21,
+        projectId,
+        name: 'allowed',
+        properties: '{}',
+        statement: 'SELECT original',
+      },
+      {
+        id: 23,
+        projectId,
+        name: 'other',
+        properties: '{}',
+        statement: 'SELECT other',
+      },
+    ];
+    ctx.modelRepository.findAllBy.mockResolvedValue(models);
+    ctx.viewRepository.findAllBy.mockResolvedValue(views);
+    authorize.mockImplementation(
+      async (_config, operation, request: any, token) => {
+        expect(operation).toBe('human-action');
+        expect(request).toEqual({
+          bindingId: config.bindingId,
+          resolveResource: {
+            workspaceId: config.workspaceId,
+            actionKey: 'data_query.describe@v1',
+            actionVersion: 1,
+            nativeType: request.resolveResource.nativeType,
+            nativeRef: request.resolveResource.nativeRef,
+          },
+        });
+        const own =
+          token === 'first-person-token' ? ['11', '21'] : ['13', '23'];
+        if (!own.includes(request.resolveResource.nativeRef))
+          throw new NativeQueryRefusal(
+            403,
+            'QUERY_ADMISSION_UNAVAILABLE',
+            true,
+          );
+        return selected(request);
+      },
+    );
+    expect(
+      (await resolver.listModels(null, {}, ctx)).map((row) => row.id),
+    ).toEqual([11]);
+    expect(
+      ctx.modelColumnRepository.findColumnsByModelIds,
+    ).toHaveBeenCalledWith([11]);
+    expect(await resolver.listViews(null, {}, ctx)).toEqual([
+      { ...views[0], displayName: undefined },
+    ]);
+    const other = {
+      ...ctx,
+      nativeHumanToken: 'second-person-token',
+      nativeIdentityScope: 'b'.repeat(64),
+    };
+    expect(
+      (await resolver.listModels(null, {}, other)).map((row) => row.id),
+    ).toEqual([13]);
+    expect(
+      (await resolver.listViews(null, {}, other)).map((row) => row.id),
+    ).toEqual([23]);
+  });
+  it('refuses in-project model/view detail without object read permission before loading their body dependencies', async () => {
+    authorize.mockRejectedValue(
+      new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true),
+    );
+    await expect(
+      resolver.getModel(null, { where: { id: 11 } }, ctx),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+    await expect(
+      resolver.getView(null, { where: { id: 21 } }, ctx),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+    expect(
+      ctx.modelColumnRepository.findColumnsByModelIds,
+    ).not.toHaveBeenCalled();
+    expect(ctx.relationRepository.findRelationsBy).not.toHaveBeenCalled();
+  });
+  it('does not turn missing identity, unavailable authorization or malformed native facts into an empty successful list', async () => {
+    ctx.modelRepository.findAllBy.mockResolvedValue([
+      { id: 11, projectId, properties: '{}' },
+    ]);
+    await expect(
+      resolver.listModels(null, {}, { ...ctx, nativeHumanToken: undefined }),
+    ).rejects.toThrow('NATIVE_AUTHENTICATION_REQUIRED');
+    expect(authorize).not.toHaveBeenCalled();
+    authorize.mockRejectedValueOnce(
+      new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+    );
+    await expect(resolver.listModels(null, {}, ctx)).rejects.toThrow(
+      'QUERY_ADMISSION_UNAVAILABLE',
+    );
+    authorize.mockImplementationOnce(async (_config, _operation, request) => ({
+      resource: {
+        ...selected(request).resource,
+        nativeRef: 'wrong-object',
+      },
+    }));
+    await expect(resolver.listModels(null, {}, ctx)).rejects.toThrow(
+      'QUERY_SCOPE_DENIED',
+    );
+    expect(
+      ctx.modelColumnRepository.findColumnsByModelIds,
+    ).not.toHaveBeenCalled();
+  });
+  it('does not disclose model data revoked while original column loading was in flight', async () => {
+    ctx.modelRepository.findAllBy.mockResolvedValue([
+      { id: 11, projectId, properties: '{}' },
+    ]);
+    ctx.modelColumnRepository.findColumnsByModelIds.mockImplementation(
+      async () => {
+        authorize.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true),
+        );
+        return [{ id: 31, modelId: 11, properties: '{}', type: 'STRING' }];
+      },
+    );
+    expect(await resolver.listModels(null, {}, ctx)).toEqual([]);
+    authorize.mockImplementation(async (_config, _operation, request) =>
+      selected(request),
+    );
+    await expect(
+      resolver.getModel(null, { where: { id: 11 } }, ctx),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+  });
+  it('does not read an unfiltered column or relation table for an empty authorized model set', async () => {
+    ctx.modelRepository.findAllBy.mockResolvedValue([
+      { id: 11, projectId, properties: '{}' },
+    ]);
+    authorize.mockRejectedValue(
+      new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true),
+    );
+    expect(await resolver.listModels(null, {}, ctx)).toEqual([]);
+    expect(
+      ctx.modelColumnRepository.findColumnsByModelIds,
+    ).not.toHaveBeenCalled();
+    authorize.mockImplementation(async (_config, _operation, request) =>
+      selected(request),
+    );
+    ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue([]);
+    expect(
+      (await resolver.getModel(null, { where: { id: 11 } }, ctx)).relations,
+    ).toEqual([]);
+    expect(ctx.relationRepository.findRelationsBy).not.toHaveBeenCalled();
+  });
+  it('does not use readable model detail to expose a relationship to another denied model', async () => {
+    ctx.modelRepository.findOneBy.mockImplementation(
+      async ({ id, projectId: requested }) =>
+        requested === projectId && [11, 13].includes(id)
+          ? { id, projectId, properties: '{}' }
+          : null,
+    );
+    ctx.modelColumnRepository.findOneBy.mockResolvedValue({
+      id: 33,
+      modelId: 13,
+    });
+    const relation = {
+      id: 51,
+      projectId,
+      fromColumnId: 31,
+      toColumnId: 33,
+      joinType: 'ONE_TO_MANY',
+      properties: '{}',
+    };
+    ctx.relationRepository.findRelationsBy.mockResolvedValue([relation]);
+    authorize.mockImplementation(async (_config, _operation, request: any) => {
+      if (request.resolveResource.nativeRef === '13')
+        throw new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true);
+      return selected(request);
+    });
+    expect(
+      (await resolver.getModel(null, { where: { id: 11 } }, ctx)).relations,
+    ).toEqual([]);
+    authorize.mockImplementation(async (_config, _operation, request) =>
+      selected(request),
+    );
+    expect(
+      (await resolver.getModel(null, { where: { id: 11 } }, ctx)).relations,
+    ).toEqual([{ ...relation, type: relation.joinType, properties: {} }]);
   });
   it.each([{ columnId: null }, {}])(
     'preserves nullable and omitted columnId naming input %j',

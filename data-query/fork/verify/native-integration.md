@@ -1879,3 +1879,113 @@ Resource registration, arbitrary SQL/describe, Asking/dashboard governance,
 per-user native metadata reads, full iframe deployment and browser acceptance
 remain separate open work. No original page or menu was removed/reordered, and
 no screenshot or production release is claimed for this source-only slice.
+
+## 2026-10-08 — original model/view metadata readers consume Resource read authorization
+
+### Authority, complete module comparison and impact
+
+1. Authority: DD-98 and `.design/08` §6 keep Resource/SpiceDB authorization
+   authoritative. The registered `data_query.describe@v1` action uses `read`;
+   query execution permission cannot substitute for metadata read. The fixed
+   official source remains `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver`.
+   The complete module was compared, not only this batch's changed methods.
+   Original serialization, repositories, columns, nested columns, display names
+   and relation representation remain; previously authorized query/project
+   admission changes remain. The previously missing object authorization is
+   now added to `listModels`, `getModel`, `listViews`, and `getView`, without
+   changing GraphQL schema, pages, layout or adding another object registry.
+2. Impact: those four original readers call the existing HUMAN resource-selection
+   path through `canReadNativeMetadata`. `NativeHumanQuery.preview` reuses the
+   same exact-object resolver with its original query action, retaining receipt
+   observation before selection and the existing UNKNOWN retry intent. Native
+   model/view tables remain the business authority; Core returns only registered
+   reference facts. No new schema, storage, execution state or public endpoint
+   was introduced by this Wren slice.
+3. Side effects: this metadata path does not run SQL, submit an ActionExecution,
+   copy business bodies into Core, cache another user's authorization or reuse
+   a global configured Resource. Both relationship endpoint models must be
+   readable in the current native project. Assembled model/list metadata is
+   rechecked before return rather than relying only on an earlier authorization.
+4. Boundaries: missing HUMAN identity, stale/mismatched exact object facts,
+   service authentication failure, binding/scope refusal and transport failure
+   fail closed. Zero authorized models and zero columns do not reach the
+   original repositories' empty-filter/all-rows behavior. Only a complete valid
+   `contracts/domain/error.schema.json` response with `DENIED` and
+   `PERMISSION_DENIED` filters an object from a list. Direct detail denial is an
+   error. Bounded body reading also applies to unsuccessful Core responses;
+   malformed/empty bodies cannot be mistaken for a successful empty list.
+
+The full original module diff is preserved as `native-metadata-original-module.diff`
+in the existing candidate evidence directory below. Upstream-manifest status
+confirmed the fixed Wren source; it did not replace source with a newer version.
+
+### Actual verification and corrective review
+
+The existing `kailo-wren-query-sdk-itgs2n` SDK was inspected before use:
+4 CPU / 4 GiB cgroup, no other process besides its idle supervisor, with existing
+dependencies/cache. No dependency install, new snapshot, image build or release
+was performed. Implementation preceded the added consumer checks.
+
+The first four-suite run passed 98 tests and TypeScript passed. Cross-review
+then found a real error-classification defect: HTTP 403 from the SERVICE-token
+endpoint or from a Core scope/binding failure could be misclassified as an
+object permission denial and silently hide the list. The transport now marks
+only the validated Core ErrorBody permission denial; SERVICE token failure is
+unavailable authorization, not denied-object evidence. The new HTTP test calls
+the real metadata helper and actual token/Core HTTP transport, not a mocked
+`bindingServiceCall`. It exercises permission denial, scope failure, blocked
+binding, empty/malformed/extra-field bodies, invalid optional operationId,
+SERVICE-token failure, service unavailability and valid resource facts.
+
+Final restored command, inside that SDK at `/work`:
+
+```text
+./node_modules/.bin/jest --runInBand src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/nativeProjectScope.test.ts src/viewMetadata.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       99 passed, 99 total
+Time:        13.949 s
+exit 0
+
+./node_modules/.bin/tsc --noEmit
+no diagnostics; exit 0
+```
+
+Private candidate mutations were actually executed and restored:
+
+- Replacing metadata authorization with unconditional acceptance caused six
+  resolver consumer failures (6 failed / 45 passed), exit 1.
+- Treating token endpoint 403 as an object refusal caused the real HTTP test
+  to resolve `false` instead of reject, exit 1.
+- Removing the structured permission-denial condition from the metadata
+  consumer caused the Core scope-failure case to resolve `false` instead of
+  reject (1 failed / 23 deliberately filtered), exit 1.
+
+All five changed TypeScript source/test files were compared between formal and
+candidate trees after restoration (`cmp`, each exit 0). Existing Prettier ran
+on the modified service helpers and project-scope consumer tests. Evidence:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`
+contains `native-metadata-tests.log`, `native-metadata-mutation.log`,
+`native-metadata-transport-tests.log`, `native-metadata-transport-mutation.log`,
+`native-metadata-errorbody-tests.log`, `native-metadata-errorbody-mutation.log`,
+`native-metadata-restored-tests.log`, and `native-metadata-final-types.log`.
+
+Mainline separately corrected Core's existing resource-selection path to use
+the registered action's Governance read evaluation rather than require a
+TEMPORAL execution action. Its PROTOCOL/read isolated SQL check passed;
+privately restoring the old execution-only restriction failed (exit 101), then
+restoring the correction passed. Submit/fresh execution retains its existing
+execution-specific conditions. Mainline owns that Core verification evidence.
+Mainline's centralized original `./tools/check-docs.sh` also exited 0 in the
+existing local-image, offline-cache 2 CPU / 2 GiB checking container. The full
+`./tools/check.sh --full` was not run for this batch; no release was deployed.
+
+### Remaining delivery limits
+
+Only these four original metadata readers now consume per-user Resource read
+authorization. Native creation-to-Resource registration for REMOTE_ADAPTER is
+still incomplete; unregistered objects remain refused, not auto-approved.
+Deployment/MDL, Asking/dashboard, native management writes, arbitrary SQL and
+complete live iframe/SSO acceptance are not proved by this batch. The original
+pages remain intact. This is source and consumer verification, not a production
+deployment, screenshot acceptance or a claim that Wren is fully integrated.

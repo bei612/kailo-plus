@@ -202,3 +202,122 @@ func TestFileStorageExpiredRetirementOnlyObservesOriginalTask(t *testing.T) {
 		})
 	}
 }
+
+func TestFileStorageFetchResumesRetirementBeforeNewSourceAdmission(t *testing.T) {
+	for _, outcome := range []string{"SUCCEEDED", "RUNNING", "UNKNOWN", "checkpoint-failed", "receipt-failed", "orphan-intent", "empty-config"} {
+		t.Run(outcome, func(t *testing.T) {
+			source, operation := uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
+			old := fileStorageGroup{KnowledgeID: uuid.NewString(), Revision: "original-revision",
+				References: []map[string]json.RawMessage{fileStorageTestWire(t, map[string]string{"resourceId": source})}}
+			intent := fileStorageRetirement{Group: old, SourceResourceID: source, BatchID: uuid.NewString(),
+				Key: uuid.NewString(), Digest: fileStorageDigest([]byte("[]")), Bytes: 2}
+			var saved map[string]any
+			var discoveries int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/oidc":
+					_, _ = w.Write([]byte(`{"access_token":"test-service-token","token_type":"Bearer","expires_in":3600}`))
+				case "/service/v1/adapter/request_read_grant":
+					var body map[string]any
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+					if body["idempotencyKey"] != intent.Key {
+						discoveries++
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					require.Equal(t, source, body["sourceResourceId"])
+					require.Equal(t, intent.BatchID, body["nativeBatch"].(map[string]any)["batchId"])
+					status := "UNKNOWN"
+					if saved != nil {
+						status = "COMPLETED"
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": operation, "actionExecutionId": operation,
+						"sourceBindingId": source, "outcome": status, "receiverReceipt": saved}))
+				case "/service/v1/adapter/read_receipt":
+					if outcome == "receipt-failed" {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&saved))
+					require.Equal(t, intent.Key, saved["idempotencyKey"])
+					require.Equal(t, old.KnowledgeID, saved["nativeObjectRef"])
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation, "receiptDigest": intent.Digest}))
+				default:
+					t.Errorf("retirement recovery attempted a new side effect: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "service-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-service-credential"), 0600))
+			cfg := &config.FileStorageSyncConfig{BindingID: uuid.NewString(), ReceiverResourceID: uuid.NewString(), NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID,
+				CorePepURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1, ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1,
+				RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1}
+			transport, err := newFileStorageTransport(cfg)
+			require.NoError(t, err)
+			native := &replacementKnowledgeService{state: outcome}
+			if outcome == "checkpoint-failed" || outcome == "receipt-failed" || outcome == "empty-config" {
+				native.state = "SUCCEEDED"
+			}
+			connector := &fileStorageConnector{transport: transport, knowledge: native}
+			state := fileStorageCursor{Groups: map[string]fileStorageGroup{"group": old}, Retiring: map[string]fileStorageRetirement{"group": intent}}
+			if outcome == "orphan-intent" {
+				delete(state.Groups, "group")
+			}
+			at := time.Now().Add(-time.Hour).UTC()
+			cursor := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: map[string]any{"groups": state.Groups, "retiring": state.Retiring}}
+			initial, err := cursor.ToJSON()
+			require.NoError(t, err)
+			ds := &types.DataSource{ID: run.dataSourceID, LastSyncCursor: initial}
+			repo := &recordingDSRepo{}
+			if outcome == "checkpoint-failed" {
+				repo.updateErr = fmt.Errorf("checkpoint unavailable")
+			}
+			h := newStreamHandler(&DataSourceService{dsRepo: repo,
+				syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}, ds, &types.SyncResult{}, &types.SyncLog{})
+			ctx := context.WithValue(context.Background(), fileStorageRunKey{}, run)
+			// The old source was removed from this configuration; deletion sync is
+			// now disabled. Neither change cancels a deletion already dispatched.
+			input := &types.DataSourceConfig{ResourceIDs: []string{uuid.NewString()}}
+			if outcome == "empty-config" {
+				input.ResourceIDs = nil
+			}
+			next, err := connector.FetchStream(ctx, input, cursor, h)
+			require.Error(t, err)
+			require.Nil(t, next)
+			require.Zero(t, native.starts)
+			if outcome == "SUCCEEDED" || outcome == "empty-config" {
+				require.Equal(t, 1, native.observations)
+				require.NotNil(t, saved)
+				require.Len(t, repo.updated, 1)
+				retained, err := ds.ParseSyncCursor()
+				require.NoError(t, err)
+				resumed, err := fileStorageState(retained)
+				require.NoError(t, err)
+				require.Empty(t, resumed.Groups)
+				require.Empty(t, resumed.Retiring)
+				require.True(t, retained.LastSyncTime.Equal(at))
+				_, err = connector.FetchStream(ctx, input, retained, h)
+				require.Error(t, err)
+				require.Equal(t, 1, native.observations, "the confirmed task must not be re-observed or restarted")
+				if outcome == "empty-config" {
+					require.Zero(t, discoveries, "invalid new source configuration cannot authorize new work")
+				} else {
+					require.Equal(t, 2, discoveries)
+				}
+			} else {
+				require.Empty(t, repo.updated)
+				require.Equal(t, initial, ds.LastSyncCursor)
+				require.Zero(t, discoveries)
+				if outcome == "orphan-intent" {
+					require.Zero(t, native.observations)
+				} else {
+					require.Equal(t, 1, native.observations)
+				}
+			}
+		})
+	}
+}

@@ -17,6 +17,7 @@ import { ModelColumnRepository } from './apollo/server/repositories/modelColumnR
 import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
 import { QueryService } from './apollo/server/services/queryService';
 import { NativeQueryService } from './apollo/server/services/nativeQueryService';
+import { canReadNativeMetadata } from './apollo/server/services/nativeHumanQuery';
 import { WrenEngineAdaptor } from './apollo/server/adaptors/wrenEngineAdaptor';
 import { IbisAdaptor } from './apollo/server/adaptors/ibisAdaptor';
 import { encryptConnectionInfo } from './apollo/server/dataSource';
@@ -58,6 +59,10 @@ integration('original Wren query handler, SDK and native history', () => {
   let observedManifest: unknown;
   let authorizedTarget: Record<string, unknown> | undefined;
   let changeTargetAt = 0;
+  let tokenStatus = 200;
+  let metadataStatus = 200;
+  let metadataErrorBody = '';
+  let metadataReads = 0;
   const serviceSecret = randomUUID();
   const serviceToken = randomUUID();
   const resource = randomUUID();
@@ -144,9 +149,26 @@ integration('original Wren query handler, SDK and native history', () => {
           `Basic ${Buffer.from(`wren-binding:${serviceSecret}`).toString('base64')}`,
         );
         expect(text).toBe('grant_type=client_credentials');
+        if (tokenStatus !== 200) {
+          response.writeHead(tokenStatus).end('{}');
+          return;
+        }
         response.end(
           JSON.stringify({ token_type: 'Bearer', access_token: serviceToken }),
         );
+      } else if (request.url === '/service/v1/adapter/human-action') {
+        metadataReads++;
+        expect(request.headers.authorization).toBe(`Bearer ${serviceToken}`);
+        expect(request.headers['x-kailo-native-human-token']).toBe('fixture-human-token');
+        const body = JSON.parse(text);
+        expect(body).toEqual({ bindingId: delivery.bindingId, resolveResource: {
+          workspaceId: delivery.workspaceId, actionKey: 'data_query.describe@v1',
+          actionVersion: 1, nativeType: 'model', nativeRef: '7',
+        } });
+        if (metadataStatus !== 200) response.writeHead(metadataStatus).end(metadataErrorBody);
+        else response.end(JSON.stringify({ resource: { resourceId: resource, resourceVersion: 1,
+          nativeType: 'model', nativeRef: '7', nativeInstanceRef: delivery.nativeInstanceRef,
+          nativeScopeRef: delivery.nativeScopeRef } }));
       } else if (request.url === '/service/v1/adapter/pep_check') {
         peps++;
         if (changeTargetAt && peps >= changeTargetAt && authorizedTarget)
@@ -269,6 +291,35 @@ integration('original Wren query handler, SDK and native history', () => {
     engineFails = false;
     authorizedTarget = undefined;
     changeTargetAt = 0;
+    tokenStatus = 200;
+    metadataStatus = 200;
+    metadataErrorBody = JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED' });
+    metadataReads = 0;
+  });
+
+  it('distinguishes real service-token HTTP 403 from an object read denial through the actual metadata helper', async () => {
+    tokenStatus = 403;
+    await expect(canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).rejects.toMatchObject({ status: 503 });
+    expect(metadataReads).toBe(0);
+    tokenStatus = 200;
+    metadataStatus = 403;
+    expect(await canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).toBe(false);
+    for (const body of [
+      JSON.stringify({ class: 'DENIED', reason: 'SCOPE_GUARD_FAILED' }),
+      JSON.stringify({ class: 'BLOCKED', reason: 'CAPABILITY_BLOCKED' }),
+      '', '{', '{}',
+      JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED', operationId: 7 }),
+      JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED', extra: true }),
+    ]) {
+      metadataErrorBody = body;
+      await expect(canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).rejects.toMatchObject({ resourcePermissionDenied: false });
+    }
+    metadataErrorBody = JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED', operationId: 'read-operation' });
+    expect(await canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).toBe(false);
+    metadataStatus = 503;
+    await expect(canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).rejects.toMatchObject({ status: 503 });
+    metadataStatus = 200;
+    expect(await canReadNativeMetadata(delivery, 'fixture-human-token', 'model', 7)).toBe(true);
   });
 
   it('loads only the controlled result policy and rejects retired single-resource query delivery', async () => {
