@@ -6180,3 +6180,41 @@ docker compose --project-name platform-local \
 逐图视觉复核和关键交互结果仍在进行，不把已截图数量当作全量页面验收。
 本次未运行 `tools/check.sh --full`；当前主树还含后续未发布输入，不能把
 本产物的固定提交源码摘要冒称当前 dirty 工作树已全部匹配。
+
+### 2026-10-08 22:19 UTC 固定 main 共享 Experiments/Forum 批实际 Web 发布
+
+1. 权威为 REQ-24、DD-74/75、SS-WEB-PRESENTATION；沿固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的原设置、五项功能定义与论坛模块复用。
+   本批只恢复实际消费者，不声明全量差异已经分类或原版百分之百恢复。
+2. 构建输入固定在已提交并推送的
+   `9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf`。从该 commit 导出原 Web 构建输入，
+   不夹带正式工作树的未提交样式/表情或队友外部服务改动，不新建 Git worktree。
+   来源记录仅更新两项实际摘要，Compose 仅更新 Web image pin；无契约或迁移。
+3. 认证、scope、授权、审批、额度、审计、Temporal 与外部副作用链没有改变。
+   实际复用原 Compose、env、网络与 CSP，只滚动 `buzz-web`。更新前后对照项目内
+   24 个运行容器，只有 Web ID 变化，其余 23 个 ID 相同、零新增/缺失。
+   Core/Worker、三个独立业务服务与存储均未更新；旧 Web image 保留可回退。
+4. 匿名 `/app/` 实读 302，正常 SSO 边界保留；healthy 和静态 buildId 回读不是
+   页面功能、绑定、多人多 Agent、Windows/Mobile 或生产验收。UNKNOWN 行为未改。
+
+沿原 `tools/build-upstream.sh web-client`，实际退出 0并推送本地 registry；
+受限 builder 为已有 `kailo-core-data`，8 CPU / 16 GiB，持久缓存仍在 Data 盘。
+原 npm ci 安装 476 包；tsc 通过，Vite 转换 3913 模块并完成，chunk 警告原样保留。
+基础层与依赖缓存不是全部命中，构建访问了远端仓库；不声明完全离线。
+原完整日志：
+`/volumes/data/kailo/tmp/web-main-9bc0-20261008.S0m46C/build-web-client.vTy9gC.log`。
+
+- source/buildId：`sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`。
+- registry/实际运行 image：`sha256:73639ed4a0f91276dc03ca4182de143362a92bc5bd648af1df14100deadd9548`。
+- 实际 Web ID：`88d05857a10776b36e43c50ea85a5c5b2fe3c4622d7692a1562591674e720a11`。
+- StartedAt：`2026-10-08T22:19:30.84039715Z`；原 Compose
+  `up -d --no-deps --no-build --pull never --wait buzz-web` 退出 0、回读 healthy。
+- 容器内原 `/app/platform-build-info.json` 回读与 source digest 逐字一致，入口仍为
+  `http://192.168.0.193:58090/app/`。实际 UI 截图/中英文/刷新状态复核在此回执时尚未完成。
+
+本发布尚无新 Windows 安装包、Mobile 设备或三个组件完整绑定业务证据；
+本批尚未取得 `tools/check.sh --full` 退出 0，不用历史检查或源码专项代替。
+文档最小检查沿原 `tools/check-docs.sh` 在同一不可变检查镜像、2 CPU / 4 GiB、
+只读源码/设计挂载中实际退出 0，全部通过。首次容器漏投递原 npm cache/HOME，
+markdownlint 请求 registry 报 EAI_AGAIN 后该精确容器被终止（137）；补投递既有
+Data cache、设置离线后复用同一原命令通过，未改检查或依赖版本。
