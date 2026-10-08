@@ -195,6 +195,9 @@ export class SqlPairService implements ISqlPairService {
       responseMaxBytes: native.config.responseMaxBytes,
       requestMaxBytes: native.config.requestMaxBytes,
     });
+    const afterEvent = await this.nativeIdentity(native, 'manage');
+    if (afterEvent.generation !== current.generation)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     // FAILED or a lost cache entry cannot prove absence of a partially applied
     // index write. Only the same original event's explicit finish commits the
     // local metadata; observation never starts a replacement native task.
@@ -208,9 +211,6 @@ export class SqlPairService implements ISqlPairService {
           nativeId: proof.after.id,
         },
       );
-    const afterEvent = await this.nativeIdentity(native, 'manage');
-    if (afterEvent.generation !== current.generation)
-      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     const completed = await this.sqlPairRepository.completeNativeWrite(
       this.history,
       record,

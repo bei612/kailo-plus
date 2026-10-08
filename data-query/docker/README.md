@@ -847,10 +847,58 @@ This is not complete cross-client reconciliation. If all keys/references are
 lost, a later client cannot distinguish a new create intent from an old
 completed create; no exactly-once guarantee is inferred. A crash before native
 dispatch, cache expiry or initiating-user revocation leaves the original
-history UNKNOWN without blind redispatch; a bounded operational reconciliation
-consumer is still absent and release activation remains blocked. Other native
+history UNKNOWN without blind redispatch; release activation remains blocked.
+The original API History detail now has a user-selected bounded observation
+consumer for persisted SQL-pair events, described below; that is not an
+automatic operational reconciliation service. Other native
 CRUD, trusted SERVICE SQL, dynamic Resource evidence, ordinary-function
 provenance and real multi-user acceptance remain separate gaps. WebCrypto
 requires the production HTTPS secure context; HTTP LAN UI acceptance is not
 established. No Wren business instance, ACTIVE binding, iframe or visual/device
 acceptance is established by these source changes.
+
+### Original API History: check the recorded SQL-pair request
+
+The original history table and details drawer are retained. Status 202 is
+labelled `结果不明` / `Unconfirmed`, not green success or a definitive failure.
+For original create/update/delete SQL-pair events, the details drawer's
+`核验原请求` / `Check original request` reads that same persisted history ID
+once through the original GraphQL query. It neither submits the CRUD again nor
+creates another task. Listing a page does not poll all pending SQL-pair events,
+and pending request/response JSON is withheld.
+
+The server reuses current binding/project discovery and the original SQL-pair
+proof's initiating identity, scope, generation and event reference. Only an
+explicit native FINISHED followed by the existing metadata/history transaction
+can produce a fresh completed row and readable bodies. A missing native cache,
+unknown/failed provider result or unprovable pre-dispatch crash stays unresolved;
+the check does not infer rollback or repeat POST/DELETE. Revoked membership,
+foreign identity or changed binding cannot use an old result. Closing details
+detaches observation; a late response cannot reopen it. This bounded consumer's
+GraphQL schema/types, original list/detail consumers and targeted positive,
+production-damage/restoration and type evidence are recorded in the
+[History receipt](../fork/verify/native-integration.md#original-api-history-final-generated-and-targeted-evidence).
+Those are SDK source checks, not a deployed business instance or browser
+acceptance.
+
+Both this page's list and selected details now use the original lazy query with
+`no-cache`, not the global Apollo cache's old bodies. Current trusted scope and
+generation are sent in the original `filter.queryScope` and `filter.generation`.
+Before count, page or selected-event reads, the server compares both with the
+request's trusted current identity and fresh binding discovery. Config checks
+before/after reading are additional UI fences; they alone cannot prove the
+identity of an intervening response. The GraphQL fields remain optional only
+for never-configured standalone compatibility: bound native clients must
+upgrade their schema and callers together, and missing/old request facts refuse.
+A table record supplies only its ID; details open only from the fresh same-ID
+response. Page generation,
+Close and unmount detach late responses. Focus/visibility refresh clears private
+display while checking; the existing selected drawer is restored only after
+fresh same-identity list and detail reads. An identity change does not restore
+the prior actor's selection. This is confined to the original history page,
+not a new global authentication/cache layer. The original generated query is
+unchanged; only its generated filter input type expands. The linked evidence
+includes the real original GraphQL and Table/Drawer consumers, revocation,
+request-scope/generation mismatch and no-redispatch checks. It does not establish
+complete Wren functionality, an ACTIVE binding, iframe, screenshot or device
+acceptance.

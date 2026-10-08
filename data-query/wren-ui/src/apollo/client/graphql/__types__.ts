@@ -43,7 +43,10 @@ export type AdjustmentTask = {
 export type ApiHistoryFilterInput = {
   apiType?: InputMaybe<ApiType>;
   endDate?: InputMaybe<Scalars['String']>;
+  generation?: InputMaybe<Scalars['Int']>;
+  id?: InputMaybe<Scalars['String']>;
   projectId?: InputMaybe<Scalars['Int']>;
+  queryScope?: InputMaybe<Scalars['String']>;
   startDate?: InputMaybe<Scalars['String']>;
   statusCode?: InputMaybe<Scalars['Int']>;
   threadId?: InputMaybe<Scalars['String']>;

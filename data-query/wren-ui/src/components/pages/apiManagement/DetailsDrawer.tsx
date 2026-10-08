@@ -1,17 +1,21 @@
-import { Drawer, Typography, Row, Col, Tag } from 'antd';
+import { Drawer, Typography, Row, Col, Tag, Button } from 'antd';
+import { useRouter } from 'next/router';
 import { getAbsoluteTime } from '@/utils/time';
 import { DrawerAction } from '@/hooks/useDrawerAction';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import JsonCodeBlock from '@/components/code/JsonCodeBlock';
-import { ApiHistoryResponse } from '@/apollo/client/graphql/__types__';
+import { ApiHistoryResponse, ApiType } from '@/apollo/client/graphql/__types__';
+import { getApiHistoryText } from '@/utils/language';
 
 type Props = DrawerAction<ApiHistoryResponse> & {
   loading?: boolean;
+  onObserve?: (record: ApiHistoryResponse) => Promise<void>;
 };
 
 export default function DetailsDrawer(props: Props) {
   const { visible, onClose, defaultValue } = props;
+  const text = getApiHistoryText(useRouter().locale);
 
   const {
     threadId,
@@ -25,6 +29,7 @@ export default function DetailsDrawer(props: Props) {
   } = defaultValue || {};
 
   const getStatusTag = (status: number) => {
+    if (status === 202) return <Tag color="warning">{text.unknown}</Tag>;
     const isSuccess = status >= 200 && status < 300;
     return (
       <Tag
@@ -82,7 +87,24 @@ export default function DetailsDrawer(props: Props) {
           <Typography.Text className="d-block gray-7 mb-2">
             Status code
           </Typography.Text>
-          <div>{getStatusTag(statusCode)}</div>
+          <div>
+            {getStatusTag(statusCode)}
+            {statusCode === 202 &&
+              props.onObserve &&
+              [
+                ApiType.CREATE_SQL_PAIR,
+                ApiType.UPDATE_SQL_PAIR,
+                ApiType.DELETE_SQL_PAIR,
+              ].includes(apiType) && (
+                <Button
+                  size="small"
+                  loading={props.loading}
+                  onClick={() => props.onObserve(defaultValue)}
+                >
+                  {text.observe}
+                </Button>
+              )}
+          </div>
         </Col>
       </Row>
 

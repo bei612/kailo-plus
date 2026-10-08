@@ -24,6 +24,9 @@ export const typeDefs = gql`
   }
 
   input ApiHistoryFilterInput {
+    id: String
+    queryScope: String
+    generation: Int
     apiType: ApiType
     statusCode: Int
     threadId: String

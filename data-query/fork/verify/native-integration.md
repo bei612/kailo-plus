@@ -5893,3 +5893,277 @@ tail verification remains outstanding and no image or service deployment is
 claimed. The original PostgreSQL 9 and Python 16 passing results remain valid
 for their unchanged backend bytes; neither was repeated for these UI/private-
 hop corrections. Existing failed logs are retained in the directory above.
+
+### 2026-10-08 restored SQL-pair private-hop request reached terminal
+
+The original in-flight handle **29881** eventually returned **exit 0**:
+**3 suites / 485 passed / 0 failed**, 1826.025 seconds, recorded in the same
+`sql-pair-native-hop-restored-jest.log`. Read-only diagnostic handle **70510**
+also returned exit 0. No duplicate suite, database, image or dependency
+installation was started while these original requests waited on disk I/O.
+
+These restored candidate bytes still predate the final helper's one fresh
+`readScope` line and its one added consumer check; this result does **not**
+certify that last guard or the next API History source batch. Those two
+committed helper/check inputs have now been synced separately into the same
+original 4-CPU/4-GiB SDK for a single selected consumer run, handle **57994**,
+`sql-pair-final-fresh-helper-positive.log`, still in flight at this entry.
+No terminal for that selected run, deployment or release activation is claimed.
+
+## 2026-10-08 original API History exact-event reconciliation source increment
+
+Implementation is written; new generation and targeted execution have not run yet.
+The preceding 485 and in-flight helper check do not certify these new bytes.
+
+1. **Authority and upstream:** DD-87, `.design/08` §6,
+   SS-WRN-IDENTITY/SS-WRN-GOVERNANCE retain native Wren management and require
+   current authorization and real terminal evidence. Fixed upstream
+   `c5f02a0391c87420dba78632dcd86073710deb72` was reread using `git show`:
+   `wren-ui/src/apollo/server/resolvers/apiHistoryResolver.ts::ApiHistoryResolver`,
+   `wren-ui/src/pages/api-management/history.tsx::APIHistory`,
+   `wren-ui/src/components/pages/apiManagement/DetailsDrawer.tsx::DetailsDrawer`,
+   and `wren-ui/src/apollo/client/graphql/apiManagement.ts::API_HISTORY`.
+   The original table, drawer, pagination, fields and JSON sanitization remain;
+   the new explicit readonly check and 202 UNKNOWN labels are necessary
+   authorized governance differences, not replacement pages.
+2. **Impact and compatibility:** optional original `ApiHistoryFilterInput.id`
+   is consumed by the existing history repository's primary-key filtering and
+   the original UI lazy query. No Core contract, table, migration, native ID,
+   Action, task, ledger or SQL parser was added. Old callers omit this optional
+   field. The server's exact row selection retains controlled project/binding
+   and consumes the original SQL-pair proof before returning a selected event,
+   including completed events. Page listing does not poll pending SQL-pair
+   tasks; their nested request/response fields remain null until terminal.
+3. **Side effects and disclosure:** one selected original event invokes the
+   existing `SqlPairService.readNativeWrite`, its timeout/bounded native GET and
+   existing metadata/history CAS transaction. No native POST/DELETE, command,
+   alternate execution authority or Core content copy is introduced. A true
+   FINISHED is reread from the same history row before completed bodies are
+   disclosed; nested completed fields do not issue another native task GET.
+   `SqlPairService.observeNativeWrite`'s existing post-GET fresh identity/manage
+   check was moved before status classification: pending/UNKNOWN native results
+   cannot skip revocation or generation checks that previously ran only after
+   FINISHED. This is the same authority and original consumer, not a wrapper
+   or an added permission system; no metadata is committed on that refusal.
+   Current discovery and original manage/proof checks are server-side. The UI
+   rechecks the trusted config identity/generation before and after reading,
+   uses no Apollo result cache for this exact read and rejects late completion
+   after Close or another selected row.
+4. **Boundaries:** empty IDs are original invalid-parameter refusal; missing
+   rows, missing cache and unknown/failed native events do not become success,
+   failure, rollback or a replacement task. Same-binding foreign actors are
+   rejected by the persisted proof. Current identity is not binding-only:
+   middleware hashes verified issuer/subject/audience/native access, then
+   `nativePreviewScope` adds binding/instance/native scope; config also consumes
+   fresh Core discovery and generation. Explicit never-configured standalone
+   retains its original readonly history path; invalid/configured facts refuse.
+   Concurrent observation uses the original CAS; there is no automatic loop or
+   claim to recover an unprovable pre-dispatch crash. General operational
+   reconciliation/time limits, complete native CRUD, SERVICE SQL, function
+   provenance and dynamic trusted Resource evidence remain release gaps.
+
+   Existing `apps/06` §4 classes are retained: current authentication/scope/read
+   refusal is DENIED; inactive release is BLOCKED; absent valid delivery or
+   terminal evidence is PRECONDITION; original transport byte-size rejection is
+   LIMIT; changed original proof/generation is CONFLICT; a timed-out or
+   otherwise unverified native write remains UNKNOWN. A denied or unavailable
+   check does not rewrite that
+   previously pending business outcome as a failed write. No seventh class or
+   new native reason code was introduced.
+
+New checks were appended to the existing native-HUMAN and original UI targets,
+not a separate framework: same-event single GET/no redispatch, pending-list
+withholding, genuine completed reread, revoked membership/foreign actor,
+revocation/generation change during the actual original pending GET,
+Chinese/English UNKNOWN tags, original Details callback, same-ID lazy query,
+invalid config, standalone, identity switch, Close/late ACK and missing row.
+They are source checks only until actual execution is recorded below. No Wren
+instance, ACTIVE binding, screenshot, full restoration or deployment is claimed.
+
+This source increment is frozen for root review as eight original source/check
+paths plus the two existing README/receipt paths. GraphQL regeneration, types,
+the new targets and production damage/restoration are **not run**, and the old
+helper's handle 57994 remains separate. No new image, database, dependency
+installation, broad suite or replacement SDK was started behind the in-flight
+checks. The root's existing source commit `dfc7a33835174bbaa9e43e0e335c2f12959edfeb`
+remains the submitted boundary; this new increment is unsubmitted/unreleased.
+
+### Original standalone-to-binding helper selected run: terminal evidence
+
+The existing handle **57994** returned **exit 0**: **1 passed / 88 filtered
+skip**, one original `viewMetadata.test.ts` suite, 1359.508 seconds,
+`sql-pair-final-fresh-helper-positive.log` in the same original SDK directory.
+`memory.events` before and after reported zero for low/high/max/oom/oom_kill/
+oom_group_kill. This is the committed `dfc7a33835174bbaa9e43e0e335c2f12959edfeb`
+helper guard and its selected consumer, not the frozen new History source or
+the relocated SQL-pair post-GET authorization. No negative damage/restoration
+or new History generation/check was run as part of this selected positive.
+
+### Same-page cache/list disclosure correction after implementation review
+
+Root review identified the real shared `ApolloClient` singleton cache: the
+selected observation was fenced, but the original `cache-and-network` list and
+direct `openDrawer(record)` still admitted old cached/late bodies. The original
+history page now consumes the same native GraphQL query for both list and
+selection through `no-cache` lazy reads, never through the hook's retained data.
+Each actual response is fenced by before/after trusted identity/generation and
+the current page/request generation. Only a selected opaque history ID crosses
+from Table to the fresh detail read; the old record body is never copied into
+Drawer. Current identity must still match the actual displayed page identity
+before selection. Scope or request failure clears the private page/drawer view,
+without changing the recorded business outcome or dispatching another write.
+
+The existing original Table, pagination/filter controls and Drawer are retained.
+Focus/visibility clears the private display and re-reads the current page;
+same-identity selection is restored only via fresh exact-ID authorization/body
+consumers. A new identity does not inherit the previous actor's selection.
+Close, hidden visibility, pagination change and unmount invalidate old responses.
+Explicit standalone is a verified config case, not a missing-scope fallback.
+No global auth cache, permission source, native task, platform Action or ledger
+was added. This extends the same authorized governance difference in the
+original page, not another page or layout.
+
+Original UI consumer checks now also cover the actual effect/list path,
+no-cache options, actor/generation changes during a list GET, a stale Table
+callback after actor change, same-identity focus/visibility restoration,
+new-identity selection isolation, hidden/unmount late list responses and
+standalone's absent governed scope. They reuse the existing SSR/effect/state
+consumer strategy in `viewMetadata.test.ts`; they are **not run** and are not
+browser screenshots or visual acceptance. The same ten paths are re-frozen;
+the old helper candidate and its 57994 positive evidence remain untouched.
+UI SDK 11961 is still completing its own private damage/restoration sequence,
+so original Wren GraphQL generation has not started and no new environment or
+parallel toolchain request was created.
+
+### Original API History final generated and targeted evidence
+
+This section records the final terminal results for this same History batch.
+Earlier entries above are historical source/in-flight snapshots, not current
+claims that generation or the final selected consumers remain unexecuted.
+The original 57994 helper result remains separate; none of the newer checks
+is substituted for that older candidate or its preserved log.
+
+The final request-correlation correction is an authorized governance seam in
+the original page, not another authorization authority. Its four-step impact
+is:
+
+1. **Authority:** the same DD-87 / SS-WRN-IDENTITY / SS-WRN-GOVERNANCE and fixed
+   upstream `c5f02a0391c87420dba78632dcd86073710deb72` apply. Original
+   `API_HISTORY`, `ApiHistoryResolver`, `APIHistory` and `DetailsDrawer` still
+   provide the list, original table/pagination/filter controls, selected JSON
+   and drawer. The user-selected bounded observation and Chinese/English 202
+   warning are explicitly authorized governance differences.
+2. **Actual request and compatibility:** original `ApiHistoryFilterInput` now
+   includes optional `id`, `queryScope` and `generation`, consumed by the
+   existing GraphQL document and generated input type. The original page sends
+   the trusted config's expected scope/generation on both page and selected-ID
+   reads. Configured `ApiHistoryResolver.getApiHistory` compares them against
+   `nativePreviewScope(config, ctx.nativeIdentityScope)` and the fresh Core
+   `discover` result **before count, list or selected-event reads**. They are
+   correlation facts, not database filter columns or permission tickets. A
+   missing/different expected value refuses with the existing
+   `QUERY_REFERENCE_CHANGED`. Optional fields preserve never-configured
+   standalone compatibility only; bound native clients must upgrade schema
+   and consumers together. No data migration, Core contract, table, ledger,
+   task or new permission authority was added.
+3. **Disclosure and side effects:** before/after config checks cannot by
+   themselves exclude actor/generation A→B→A around the middle request. The
+   server now associates that actual request with its trusted identity/fresh
+   generation, while existing current permission, source and persisted native
+   proof checks still authorize disclosure. The UI uses original no-cache
+   lazy reads and only selected opaque IDs, and refuses old/late responses,
+   partial-error results and a refused intermediate request. Nothing submits
+   native SQL, replacement POST/DELETE or a new command during observation.
+4. **Boundaries:** actual original GraphQL checks cover missing scope,
+   missing generation, changed actor and changed generation, for both page
+   and selected reads, with no repository reads or native observation on
+   refusal. Standalone sends no fabricated scope/generation. Original
+   completed SQL, summary and chart History consumers are upgraded to the
+   same request shape; source refusal and native JSON sanitization remain.
+   Unknown/cache-lost/failed native events remain 202 with no redispatch.
+   A native GET also fresh-rechecks original manage/identity/generation before
+   classifying UNKNOWN, not only after FINISHED. These are original DENIED,
+   PRECONDITION, CONFLICT and UNKNOWN behavior, not a new outcome enum.
+
+All following logs are under the existing
+`/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`. The only SDK is
+the existing `kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, with original `/work`
+Node modules, Jest configuration, TypeScript configuration and formatter. No
+image, dependency download, database or replacement SDK was created. Before
+execution host memory was available and the SDK had no active toolchain;
+`memory.events` before and after reported zero for all six counters.
+
+Preserved earlier attempts and their actual boundaries:
+
+- `history-consumers-positive.log`: suite-load failures, no executed tests;
+  the real UI `QueryResult.error` field and candidate import layout were then
+  corrected. `history-consumers-positive-corrected.log` passed UI 18, but
+  backend loading still failed on duplicate private class identities.
+- `history-native-positive-canonical-input.log` retained that private-layout
+  failure. No diagnostic was disabled and no production type was weakened.
+  The original `/work` single-root layout was reused instead. Its old inputs
+  and original configs remain in `old-work-before-history.tar`, SHA-256
+  `7ce6475a6f708d4565143ce767bd7c25b02c22a3b107dc07716cd54d813ca2a0`.
+- `history-original-root-positive.log`: 36 passed / 7 failed / 387 filtered.
+  Those seven fixture failures lacked the original PostgreSQL row timestamps
+  or counted the preparation create's native GET as a later observation.
+  The fixture now supplies actual row timestamp fields and clears only that
+  preparation call count; no production refusal/assertion was weakened.
+  `history-original-root-native-fixture-corrected.log` then passed 25.
+- `history-ui-identity-mutation.log`: removing the private real UI identity
+  fence caused 4 failures (14 passed), including old body/late list disclosure
+  and stale Table selection. Original bytes were restored. Removing the
+  real post-GET native authorization guard caused 2 failures in
+  `history-original-root-post-get-mutation.log`; it too was restored.
+- `history-original-root-restored.log`: 43 passed / 387 filtered, with original
+  tsc and eight-source format checks exit 0. This result predates the final
+  request-correlation change and does **not** certify its new bytes.
+
+Final original generation and actual selected checks:
+
+- `history-aba-codegen.log`, exit 0: existing
+  `node -r ts-node/register` loads the original `codegen.yaml`, original
+  `@graphql-codegen/cli` `loadCodegenConfig/generate` and printed actual local
+  `schema.typeDefs`. No hand-written generated types or alternative generator
+  were used. Original `__types__.ts` adds the three optional input fields;
+  `apiManagement.generated.ts` remains byte-identical. The original formatter
+  was applied to source/check inputs, not to generated types.
+- The original focused command was:
+
+  ```sh
+  node /work/node_modules/jest/bin/jest.js --runInBand \
+    --runTestsByPath src/nativeHumanQuery.test.ts src/viewMetadata.test.ts \
+    --testNamePattern 'original SQL-pair durable native write consumer|original API History detail bounded native observation consumers|consumes the original API History GraphQL document|rejects a foreign API History project filter|discloses summary through the original API History GraphQL document|consumes original chart History GraphQL'
+  ```
+
+  `history-aba-positive.log`: exit 0, **2 suites / 61 passed / 380 filtered**,
+  10.222 seconds. This executes real original GraphQL list/selected and
+  SQL/summary/chart History consumers, plus original Table/Drawer/effect
+  callbacks. It is not a screenshot or browser installation result.
+- Private production damage removed only the real resolver's five-line
+  expected scope/generation refusal. The same original native-HUMAN target,
+  `--testNamePattern 'the original API History request refuses'`, exited 1:
+  **8 failed / 324 filtered**, `history-aba-server-fence-mutation.log`.
+  Without the guard, missing/ABA page requests returned data or selected
+  requests reached repository reads before later proof refusal. This proves
+  the checks detect the actual production seam, not just a mock assertion.
+  The guard was restored with `apply_patch` and `cmp` before re-execution.
+- `history-aba-restored.log`: exit 0, **2 suites / 61 passed / 380 filtered**,
+  8.704 seconds, same original focused command after restoration.
+  `history-aba-types.log`: original
+  `node /work/node_modules/typescript/bin/tsc --noEmit --incremental false --pretty false`,
+  **exit 0**. `history-aba-format.log`: original Prettier check of eight
+  source/check paths, **exit 0**. Final nine original source/generated/check
+  inputs each `cmp` 0 with the formal tree; the unchanged generated query
+  also `cmp` 0. Final SDK memory counters remained zero.
+
+The final owned scope is eleven paths: eight original source/check files,
+their original generated input types, and the existing Docker README/this
+receipt. The inherited two Java candidates are excluded and unverified.
+This increment is frozen for root's independent main integration; no image,
+Wren business instance, ACTIVE binding, iframe, browser screenshot, Windows
+or Mobile acceptance has been produced by these source checks. General
+operational reconciliation/time limits, unprovable pre-dispatch crashes,
+trusted SERVICE SQL, ordinary-function provenance and dynamic trusted native
+Resource evidence remain release blockers; no complete restoration or
+production-readiness claim is made.

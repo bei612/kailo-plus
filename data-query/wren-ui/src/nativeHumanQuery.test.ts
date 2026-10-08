@@ -115,6 +115,18 @@ describe('original SQL-pair durable native write consumer', () => {
         };
       });
     history = {
+      count: jest.fn(async (filter) =>
+        record &&
+        Object.entries(filter).every(([name, value]) => record[name] === value)
+          ? 1
+          : 0,
+      ),
+      findAllWithPagination: jest.fn(async (filter) =>
+        record &&
+        Object.entries(filter).every(([name, value]) => record[name] === value)
+          ? [JSON.parse(JSON.stringify(record))]
+          : [],
+      ),
       findAllBy: jest.fn(async (filter) =>
         record && record.statusCode === filter.statusCode ? [record] : [],
       ),
@@ -126,6 +138,8 @@ describe('original SQL-pair durable native write consumer', () => {
         record = JSON.parse(
           JSON.stringify({
             ...input,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             requestPayload: {
               nativeSqlPair: {
                 ...input.requestPayload.nativeSqlPair,
@@ -178,6 +192,10 @@ describe('original SQL-pair durable native write consumer', () => {
     sql: 'SELECT native_column FROM native_model',
     question: 'Original question',
   };
+  const historyFence = (identityScope = native.identityScope) => ({
+    queryScope: nativePreviewScope(config, identityScope),
+    generation,
+  });
   it.each(['create', 'update', 'delete'])(
     'persists the original %s task before dispatch and only observes it after ACK loss or process restart',
     async (operation) => {
@@ -284,6 +302,300 @@ describe('original SQL-pair durable native write consumer', () => {
       'QUERY_SCOPE_DENIED',
     );
     expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    SqlPairStatus.INDEXING,
+    SqlPairStatus.FINISHED,
+    SqlPairStatus.UNKNOWN,
+    SqlPairStatus.FAILED,
+  ])(
+    'the original history detail observes exactly one persisted SQL-pair event (%s), while page listing never polls or exposes pending bodies',
+    async (event) => {
+      const service = make();
+      await expect(
+        service.createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      status = event;
+      adaptor.getSqlPairResult.mockClear();
+      const resolver = new ApiHistoryResolver();
+      const graphql = new ApolloServer({
+        typeDefs,
+        resolvers: {
+          JSON: GraphQLJSON,
+          Query: { apiHistory: resolver.getApiHistory },
+          ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+        },
+        context: () => ({
+          nativeHumanToken: native.token,
+          nativeIdentityScope: native.identityScope,
+          projectService: {
+            getCurrentProject: async () => ({ id: config.projectId }),
+          },
+          apiHistoryRepository: history,
+          sqlPairService: service,
+        }),
+      });
+      try {
+        await graphql.start();
+        const list = await graphql.executeOperation({
+          query: API_HISTORY,
+          variables: {
+            filter: historyFence(),
+            pagination: { offset: 0, limit: 10 },
+          },
+        });
+        expect(list.errors).toBeUndefined();
+        expect(list.data.apiHistory.items[0]).toMatchObject({
+          id: key,
+          statusCode: 202,
+          requestPayload: null,
+          responsePayload: null,
+        });
+        expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+        const detail = await graphql.executeOperation({
+          query: API_HISTORY,
+          variables: {
+            filter: { id: key, ...historyFence() },
+            pagination: { offset: 0, limit: 1 },
+          },
+        });
+        expect(detail.errors).toBeUndefined();
+        expect(adaptor.getSqlPairResult).toHaveBeenCalledTimes(1);
+        expect(adaptor.getSqlPairResult).toHaveBeenCalledWith(key, {
+          requestTimeoutMs: config.requestTimeoutMs,
+          responseMaxBytes: config.responseMaxBytes,
+          requestMaxBytes: config.requestMaxBytes,
+        });
+        expect(history.count).toHaveBeenLastCalledWith(
+          {
+            id: key,
+            projectId: config.projectId,
+            governanceBindingId: config.bindingId,
+          },
+          {},
+        );
+        if (event === SqlPairStatus.FINISHED) {
+          expect(detail.data.apiHistory.items[0]).toMatchObject({
+            id: key,
+            statusCode: 200,
+            requestPayload: pair,
+            responsePayload: record.requestPayload.nativeSqlPair.after,
+          });
+          const again = await graphql.executeOperation({
+            query: API_HISTORY,
+            variables: {
+              filter: { id: key, ...historyFence() },
+              pagination: { offset: 0, limit: 1 },
+            },
+          });
+          expect(again.errors).toBeUndefined();
+          expect(adaptor.getSqlPairResult).toHaveBeenCalledTimes(1);
+          expect(repository.completeNativeWrite).toHaveBeenCalledTimes(1);
+        } else {
+          expect(detail.data.apiHistory.items[0]).toMatchObject({
+            id: key,
+            statusCode: 202,
+            requestPayload: null,
+            responsePayload: null,
+          });
+          expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+        }
+        expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+      } finally {
+        await graphql.stop();
+      }
+    },
+  );
+  it('refuses history metadata and exact-event observation when current membership is revoked before the original page read', async () => {
+    const service = make();
+    await expect(
+      service.createSqlPair(config.projectId, pair, native, key),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    revoked = true;
+    adaptor.getSqlPairResult.mockClear();
+    const ctx = {
+      nativeHumanToken: native.token,
+      nativeIdentityScope: native.identityScope,
+      projectService: {
+        getCurrentProject: async () => ({ id: config.projectId }),
+      },
+      apiHistoryRepository: history,
+      sqlPairService: service,
+    };
+    await expect(
+      new ApiHistoryResolver().getApiHistory(
+        null,
+        {
+          filter: { id: key, ...historyFence() },
+          pagination: { offset: 0, limit: 1 },
+        },
+        ctx as any,
+      ),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+    expect(history.count).not.toHaveBeenCalled();
+    expect(history.findAllWithPagination).not.toHaveBeenCalled();
+    expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+    expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+  });
+  it.each([SqlPairStatus.INDEXING, SqlPairStatus.FINISHED])(
+    "does not select another current actor's same-project/same-binding event (%s)",
+    async (event) => {
+      const service = make();
+      await expect(
+        service.createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      status = event;
+      if (status === SqlPairStatus.FINISHED)
+        await service.readNativeWrite(record, native);
+      adaptor.getSqlPairResult.mockClear();
+      const ctx = {
+        nativeHumanToken: native.token,
+        nativeIdentityScope: 'b'.repeat(64),
+        projectService: {
+          getCurrentProject: async () => ({ id: config.projectId }),
+        },
+        apiHistoryRepository: history,
+        sqlPairService: service,
+      };
+      await expect(
+        new ApiHistoryResolver().getApiHistory(
+          null,
+          {
+            filter: { id: key, ...historyFence(ctx.nativeIdentityScope) },
+            pagination: { offset: 0, limit: 1 },
+          },
+          ctx as any,
+        ),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+      expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['revoked', 'generation'])(
+    'refuses pending history observation if %s changes during the actual original native GET',
+    async (change) => {
+      const service = make();
+      await expect(
+        service.createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      adaptor.getSqlPairResult.mockImplementation(async () => {
+        if (change === 'revoked') revoked = true;
+        else generation += 1;
+        return { status: SqlPairStatus.INDEXING };
+      });
+      adaptor.getSqlPairResult.mockClear();
+      const ctx = {
+        nativeHumanToken: native.token,
+        nativeIdentityScope: native.identityScope,
+        projectService: {
+          getCurrentProject: async () => ({ id: config.projectId }),
+        },
+        apiHistoryRepository: history,
+        sqlPairService: service,
+      };
+      await expect(
+        new ApiHistoryResolver().getApiHistory(
+          null,
+          {
+            filter: { id: key, ...historyFence() },
+            pagination: { offset: 0, limit: 1 },
+          },
+          ctx as any,
+        ),
+      ).rejects.toThrow(
+        change === 'revoked' ? 'QUERY_SCOPE_DENIED' : 'QUERY_REFERENCE_CHANGED',
+      );
+      expect(record.statusCode).toBe(202);
+      expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+      expect(adaptor.getSqlPairResult).toHaveBeenCalledTimes(1);
+      expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(
+    [
+      'missing scope',
+      'missing generation',
+      'actor ABA',
+      'generation ABA',
+    ].flatMap((change) =>
+      [false, true].map((selected) => ({ change, selected })),
+    ),
+  )(
+    'the original API History request refuses $change (selected $selected) before count, page or selected-event reads',
+    async ({ change, selected }) => {
+      const service = make();
+      await expect(
+        service.createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      adaptor.getSqlPairResult.mockClear();
+      const filter: any = { ...(selected && { id: key }), ...historyFence() };
+      if (change === 'missing scope') delete filter.queryScope;
+      if (change === 'missing generation') delete filter.generation;
+      if (change === 'generation ABA') generation += 1;
+      // The browser's before/after config can both be A; the actual GraphQL
+      // request must still reject a B identity or generation at the server.
+      const ctx = {
+        nativeHumanToken: native.token,
+        nativeIdentityScope:
+          change === 'actor ABA' ? 'b'.repeat(64) : native.identityScope,
+        projectService: {
+          getCurrentProject: async () => ({ id: config.projectId }),
+        },
+        apiHistoryRepository: history,
+        sqlPairService: service,
+      };
+      const resolver = new ApiHistoryResolver();
+      const graphql = new ApolloServer({
+        typeDefs,
+        resolvers: {
+          JSON: GraphQLJSON,
+          Query: { apiHistory: resolver.getApiHistory },
+          ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+        },
+        context: () => ctx,
+      });
+      try {
+        await graphql.start();
+        const result = await graphql.executeOperation({
+          query: API_HISTORY,
+          variables: { filter, pagination: { offset: 0, limit: 1 } },
+        });
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0].message).toBe('QUERY_REFERENCE_CHANGED');
+        expect(result.data).toBeNull();
+        expect(history.count).not.toHaveBeenCalled();
+        expect(history.findAllWithPagination).not.toHaveBeenCalled();
+        expect(history.findOneBy).not.toHaveBeenCalled();
+        expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+      } finally {
+        await graphql.stop();
+      }
+    },
+  );
+  it('keeps the original never-configured History read compatible without a fabricated request scope or generation', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const count = jest.fn(async () => 0);
+    const rows = jest.fn();
+    const resolver = new ApiHistoryResolver();
+    try {
+      await expect(
+        resolver.getApiHistory(
+          null,
+          { filter: { id: key }, pagination: { offset: 0, limit: 1 } },
+          {
+            apiHistoryRepository: { count, findAllWithPagination: rows },
+          } as any,
+        ),
+      ).resolves.toEqual({ items: [], total: 0, hasMore: false });
+      expect(count).toHaveBeenCalledWith({ id: key }, {});
+      expect(rows).not.toHaveBeenCalled();
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
+    } finally {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    }
   });
   it('uses the actual Ask candidate consumer to withhold a pending native SQL-pair and observes the original event before returning it', async () => {
     const service = make();
@@ -603,6 +915,15 @@ describe('native saved-view HUMAN query consumer', () => {
     };
     history.mockResolvedValue(record);
     calls.mockImplementation(async (_config, _operation, input) => {
+      if (input.authorizeScope)
+        return {
+          scope: {
+            ...config,
+            generation: 2,
+            permission: (input.authorizeScope as any).permission,
+            checkedRevision: 'fresh-scope-fact',
+          },
+        };
       const query = input.resolveResource as any;
       if (query)
         return {
@@ -767,7 +1088,13 @@ describe('native saved-view HUMAN query consumer', () => {
         await server.start();
         const result = await server.executeOperation({
           query: API_HISTORY,
-          variables: { pagination: { offset: 0, limit: 10 } },
+          variables: {
+            filter: {
+              queryScope: nativePreviewScope(config, ctx.nativeIdentityScope),
+              generation: 2,
+            },
+            pagination: { offset: 0, limit: 10 },
+          },
         });
         expect(ctx.apiHistoryRepository.count).toHaveBeenCalledWith(
           { projectId: config.projectId, governanceBindingId: binding },
@@ -805,6 +1132,7 @@ describe('native saved-view HUMAN query consumer', () => {
   );
 
   it('rejects a foreign API History project filter before original count or row reads', async () => {
+    originalHistory();
     const oldConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
@@ -824,7 +1152,11 @@ describe('native saved-view HUMAN query consumer', () => {
         new ApiHistoryResolver().getApiHistory(
           null,
           {
-            filter: { projectId: config.projectId + 1 },
+            filter: {
+              projectId: config.projectId + 1,
+              queryScope: nativePreviewScope(config, ctx.nativeIdentityScope),
+              generation: 2,
+            },
             pagination: { offset: 0, limit: 10 },
           },
           ctx as any,
@@ -3802,6 +4134,15 @@ describe('native saved-view HUMAN query consumer', () => {
         ),
       });
       calls.mockImplementation(async (_config, _operation, input) => {
+        if (input.authorizeScope)
+          return {
+            scope: {
+              ...config,
+              generation: 2,
+              permission: (input.authorizeScope as any).permission,
+              checkedRevision: 'fresh-scope-fact',
+            },
+          };
         if (input.resolveResource) {
           const source = input.resolveResource as any;
           return {
@@ -4449,7 +4790,13 @@ describe('native saved-view HUMAN query consumer', () => {
           await graphql.start();
           const result = await graphql.executeOperation({
             query: API_HISTORY,
-            variables: { pagination: { offset: 0, limit: 10 } },
+            variables: {
+              filter: {
+                queryScope: nativePreviewScope(config, identityScope),
+                generation: 2,
+              },
+              pagination: { offset: 0, limit: 10 },
+            },
           });
           const item = result.data.apiHistory.items[0];
           if (deny) {
@@ -4929,7 +5276,13 @@ describe('native saved-view HUMAN query consumer', () => {
           await graphql.start();
           const result = await graphql.executeOperation({
             query: API_HISTORY,
-            variables: { pagination: { offset: 0, limit: 10 } },
+            variables: {
+              filter: {
+                queryScope: nativePreviewScope(config, identityScope),
+                generation: 2,
+              },
+              pagination: { offset: 0, limit: 10 },
+            },
           });
           const item = result.data.apiHistory.items[0];
           if (deny) {

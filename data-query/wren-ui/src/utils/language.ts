@@ -1,5 +1,19 @@
 import { ProjectLanguage } from '@/apollo/client/graphql/__types__';
 
+export const getApiHistoryText = (locale?: string) =>
+  locale === 'en'
+    ? {
+        unknown: 'Unconfirmed',
+        observe: 'Check original request',
+        scopeError:
+          'The current identity or binding could not be verified. No request was repeated.',
+      }
+    : {
+        unknown: '结果不明',
+        observe: '核验原请求',
+        scopeError: '无法核验当前身份或绑定，未重复提交原请求。',
+      };
+
 export const getNativeWriteText = (locale?: string) =>
   locale === 'en'
     ? {

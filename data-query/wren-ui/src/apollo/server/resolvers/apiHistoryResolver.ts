@@ -6,12 +6,16 @@ import {
 } from '../services/nativeQueryAdmission';
 import {
   NativeHumanQuery,
+  authorizeNativeScope,
   nativePreviewScope,
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
 import { readNativeAskHistory } from '../services/nativeRestAsk';
 
 export interface ApiHistoryFilter {
+  id?: string;
+  queryScope?: string;
+  generation?: number;
   apiType?: ApiType;
   statusCode?: number;
   threadId?: string;
@@ -19,6 +23,13 @@ export interface ApiHistoryFilter {
   startDate?: string;
   endDate?: string;
 }
+
+const isNativeSqlPairWrite = (history: ApiHistory) =>
+  [
+    ApiType.CREATE_SQL_PAIR,
+    ApiType.UPDATE_SQL_PAIR,
+    ApiType.DELETE_SQL_PAIR,
+  ].includes(history.apiType);
 
 export interface ApiHistoryPagination {
   offset: number;
@@ -73,12 +84,17 @@ export class ApiHistoryResolver {
     )
       return undefined;
     const config = await loadQueryDelivery();
-    nativePreviewScope(config, ctx.nativeIdentityScope);
+    const queryScope = nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     const project = await ctx.projectService.getCurrentProject();
     if (config.projectId !== project.id)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const permissionFact = await authorizeNativeScope(
+      config,
+      ctx.nativeHumanToken,
+      'discover',
+    );
     const { components } = await import('@/common');
     const queries = new NativeQueryService(
       config,
@@ -92,6 +108,8 @@ export class ApiHistoryResolver {
     );
     return {
       config,
+      queryScope,
+      generation: permissionFact.generation,
       reader: new NativeHumanQuery(
         config,
         queries,
@@ -105,13 +123,7 @@ export class ApiHistoryResolver {
     native: Awaited<ReturnType<ApiHistoryResolver['nativeHistory']>>,
     apiHistory: ApiHistory,
   ) {
-    if (
-      [
-        ApiType.CREATE_SQL_PAIR,
-        ApiType.UPDATE_SQL_PAIR,
-        ApiType.DELETE_SQL_PAIR,
-      ].includes(apiHistory.apiType)
-    )
+    if (isNativeSqlPairWrite(apiHistory))
       return ctx.sqlPairService.readNativeWrite(apiHistory, {
         config: native.config,
         identityScope: ctx.nativeIdentityScope,
@@ -145,6 +157,11 @@ export class ApiHistoryResolver {
     const filterCriteria: Partial<ApiHistory> = {};
 
     if (filter) {
+      if (filter.id !== undefined) {
+        if (typeof filter.id !== 'string' || !filter.id.trim())
+          throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+        filterCriteria.id = filter.id;
+      }
       if (filter.apiType) {
         filterCriteria.apiType = filter.apiType;
       }
@@ -164,6 +181,11 @@ export class ApiHistoryResolver {
 
     const native = await this.nativeHistory(ctx);
     if (native) {
+      if (
+        filter?.queryScope !== native.queryScope ||
+        filter?.generation !== native.generation
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       if (
         filter?.projectId !== undefined &&
         filter.projectId !== native.config.projectId
@@ -209,6 +231,31 @@ export class ApiHistoryResolver {
       },
     );
 
+    // A user-selected original history ID is the bounded reconciliation entry.
+    // Page listing and nested JSON fields must not poll every pending task (or
+    // poll the same native event twice). Only the recorded event is observed;
+    // neither this GET nor a lost native cache entry dispatches a replacement.
+    if (native && filterCriteria.id && items.length) {
+      if (items.length !== 1 || items[0].id !== filterCriteria.id)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      const item = items[0];
+      if (isNativeSqlPairWrite(item)) {
+        try {
+          await this.visibleHistory(ctx, native, item);
+        } catch (error) {
+          if (error?.message !== 'NATIVE_EXECUTION_UNKNOWN') throw error;
+        }
+        const current = await ctx.apiHistoryRepository.findOneBy({
+          id: item.id,
+          projectId: native.config.projectId,
+          governanceBindingId: native.config.bindingId,
+        });
+        if (!current)
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+        items[0] = current;
+      }
+    }
+
     return {
       items,
       total,
@@ -237,6 +284,8 @@ export class ApiHistoryResolver {
     ) => {
       const native = await this.nativeHistory(ctx);
       if (!native) return apiHistory.requestPayload ?? null;
+      if (isNativeSqlPairWrite(apiHistory) && apiHistory.statusCode === 202)
+        return null;
       const visible = await this.visibleHistory(ctx, native, apiHistory);
       return visible.requestPayload;
     },
@@ -246,6 +295,12 @@ export class ApiHistoryResolver {
       ctx: IContext,
     ) => {
       const native = await this.nativeHistory(ctx);
+      if (
+        native &&
+        isNativeSqlPairWrite(apiHistory) &&
+        apiHistory.statusCode === 202
+      )
+        return null;
       const payload = native
         ? (await this.visibleHistory(ctx, native, apiHistory)).responsePayload
         : apiHistory.responsePayload;

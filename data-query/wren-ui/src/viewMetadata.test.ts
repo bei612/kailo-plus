@@ -15,6 +15,10 @@ import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
 import QuestionSQLPairModal from './components/modals/QuestionSQLPairModal';
 import { FORM_MODE } from './utils/enum';
+import APIHistory from './pages/api-management/history';
+import DetailsDrawer from './components/pages/apiManagement/DetailsDrawer';
+import { ApiType } from './apollo/client/graphql/__types__';
+import { getApiHistoryText } from './utils/language';
 
 let mockLocale: string | undefined;
 let mockScope: string;
@@ -25,6 +29,43 @@ let mockSqlWatch: string;
 const mockPreview = jest.fn();
 const mockConfig = jest.fn();
 const mockSqlPairRead = jest.fn();
+const mockHistoryRead = jest.fn();
+const mockHistoryOpen = jest.fn();
+const mockHistoryClose = jest.fn();
+const mockHistoryUpdate = jest.fn();
+let mockHistoryState: any;
+let mockHistoryTable: any;
+let mockHistoryDrawer: any;
+let mockHistoryQueryOptions: any[];
+jest.mock('./apollo/client/graphql/apiManagement.generated', () => ({
+  useApiHistoryQuery: () => {
+    throw new Error('Original history cache must not bypass current identity');
+  },
+  useApiHistoryLazyQuery: (options: any) => {
+    mockHistoryQueryOptions.push(options);
+    return [mockHistoryRead];
+  },
+}));
+jest.mock('./hooks/useDrawerAction', () => () => ({
+  state: mockHistoryState,
+  openDrawer: mockHistoryOpen,
+  closeDrawer: mockHistoryClose,
+  updateState: mockHistoryUpdate,
+}));
+jest.mock('./components/layouts/SiderLayout', () => ({
+  __esModule: true,
+  default: ({ children }: any) => children,
+}));
+jest.mock('./components/layouts/PageLayout', () => ({
+  __esModule: true,
+  default: ({ children }: any) => children,
+}));
+jest.mock('./utils/table', () => ({ getColumnSearchProps: () => ({}) }));
+jest.mock('./components/code/JsonCodeBlock', () => ({
+  __esModule: true,
+  default: ({ code }: any) =>
+    require('react').createElement('pre', null, JSON.stringify(code)),
+}));
 jest.mock('./apollo/client/graphql/sqlPairs.generated', () => ({
   useSqlPairsLazyQuery: () => [mockSqlPairRead],
 }));
@@ -73,7 +114,20 @@ jest.mock('antd', () => {
   return {
     Form,
     Modal: overlay,
-    Drawer: overlay,
+    Drawer: (props: any) => {
+      if (props.title === 'API details') mockHistoryDrawer = props;
+      return overlay(props);
+    },
+    Tag: (props: any) =>
+      React.createElement(
+        'span',
+        { 'data-tag-color': props.color },
+        props.children,
+      ),
+    Table: (props: any) => {
+      mockHistoryTable = props;
+      return null;
+    },
     Space: field,
     message: { warning: jest.fn(), error: jest.fn(), success: jest.fn() },
     Alert: (props: any) =>
@@ -108,6 +162,364 @@ jest.mock('./components/table/CalculatedFieldTable', () => () => null);
 jest.mock('./components/table/RelationTable', () => () => null);
 jest.mock('./components/table/BaseTable', () => ({ COLUMN: {} }));
 jest.mock('./components/pages/modeling/form/ModelForm', () => () => null);
+
+describe('original API History detail bounded native observation consumers', () => {
+  const pending = {
+    id: 'original-history-id',
+    projectId: 3,
+    apiType: ApiType.CREATE_SQL_PAIR,
+    statusCode: 202,
+    createdAt: '2026-10-08T00:00:00Z',
+    requestPayload: null,
+    responsePayload: null,
+  };
+  const completed = {
+    ...pending,
+    statusCode: 200,
+    requestPayload: { question: 'Original question' },
+    responsePayload: { id: 42 },
+  };
+  let effects: Array<() => void | (() => void)>;
+  let published: any[];
+  let listeners: Map<string, () => void>;
+  let cleanup: (() => void) | undefined;
+  let effect: jest.SpyInstance;
+  let state: jest.SpyInstance;
+  let originalWindow: PropertyDescriptor | undefined;
+  let originalDocument: PropertyDescriptor | undefined;
+  const pageResult = (items: any[]) => ({
+    data: { apiHistory: { items, total: items.length, hasMore: false } },
+  });
+  const flush = async () => {
+    for (let step = 0; step < 12; step += 1) await Promise.resolve();
+  };
+  beforeEach(() => {
+    mockLocale = undefined;
+    mockButtons = [];
+    mockHistoryState = { visible: true, defaultValue: pending };
+    mockHistoryQueryOptions = [];
+    mockHistoryOpen.mockReset().mockImplementation((record) => {
+      mockHistoryState = { visible: true, defaultValue: record };
+    });
+    mockHistoryClose.mockReset().mockImplementation(() => {
+      mockHistoryState = { visible: false, defaultValue: null };
+    });
+    mockHistoryUpdate.mockReset();
+    mockHistoryRead.mockReset().mockResolvedValue(pageResult([pending]));
+    mockConfig.mockReset().mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
+      queryScope: 'a'.repeat(64),
+    });
+    effects = [];
+    published = [];
+    listeners = new Map();
+    cleanup = undefined;
+    effect = jest
+      .spyOn(require('react'), 'useEffect')
+      .mockImplementation((callback: any) => {
+        effects.push(callback);
+      });
+    state = jest
+      .spyOn(require('react'), 'useState')
+      .mockImplementation((initial: any) => [
+        initial,
+        (value: any) => {
+          if (value?.items) published.push(value);
+        },
+      ]);
+    originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+    originalDocument = Object.getOwnPropertyDescriptor(global, 'document');
+    const events = {
+      addEventListener: (name: string, callback: () => void) =>
+        listeners.set(name, callback),
+      removeEventListener: (name: string) => listeners.delete(name),
+    };
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: events,
+    });
+    Object.defineProperty(global, 'document', {
+      configurable: true,
+      value: { ...events, visibilityState: 'visible' },
+    });
+  });
+  afterEach(() => {
+    cleanup?.();
+    effect.mockRestore();
+    state.mockRestore();
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete global.window;
+    if (originalDocument)
+      Object.defineProperty(global, 'document', originalDocument);
+    else delete global.document;
+  });
+  const mount = async () => {
+    renderToStaticMarkup(createElement(APIHistory));
+    cleanup = effects[0]() as () => void;
+    await flush();
+  };
+  const open = async () => {
+    await mount();
+    const action = mockHistoryTable.columns.find(
+      (column: any) => column.key === 'actions',
+    );
+    renderToStaticMarkup(action.render(pending));
+    await mockButtons
+      .findLast((button: any) => button.children?.[1] === ' Details')
+      .onClick();
+    return mockButtons.find(
+      (button: any) =>
+        button.children === getApiHistoryText(mockLocale).observe,
+    );
+  };
+  it.each([undefined, 'en'])(
+    'renders original table/drawer 202 as unconfirmed, never a success or failure (%s)',
+    (locale) => {
+      mockLocale = locale;
+      renderToStaticMarkup(createElement(APIHistory));
+      const status = mockHistoryTable.columns.find(
+        (column: any) => column.key === 'statusCode',
+      );
+      const html = renderToStaticMarkup(status.render(202));
+      expect(html).toContain(getApiHistoryText(locale).unknown);
+      expect(html).toContain('data-tag-color="warning"');
+      expect(html).not.toContain('success');
+      mockButtons = [];
+      const drawer = renderToStaticMarkup(
+        createElement(DetailsDrawer, {
+          visible: true,
+          onClose: jest.fn(),
+          defaultValue: pending as any,
+          onObserve: jest.fn(),
+        }),
+      );
+      expect(drawer).toContain(getApiHistoryText(locale).unknown);
+      expect(drawer).toContain(getApiHistoryText(locale).observe);
+      expect(drawer).not.toContain('data-tag-color="success"');
+    },
+  );
+  it('uses the original Details button and exact-history GraphQL consumer, without another mutation, and only displays the fresh same row', async () => {
+    const button = await open();
+    expect(mockHistoryOpen).toHaveBeenCalledWith(pending);
+    expect(mockHistoryRead.mock.calls[0][0].variables.filter).toEqual({
+      queryScope: 'a'.repeat(64),
+      generation: 2,
+      apiType: undefined,
+      statusCode: undefined,
+      threadId: undefined,
+    });
+    mockHistoryRead.mockResolvedValue(pageResult([completed]));
+    await button.onClick();
+    expect(mockHistoryRead).toHaveBeenCalledTimes(3);
+    expect(mockHistoryRead).toHaveBeenLastCalledWith({
+      variables: {
+        filter: {
+          id: pending.id,
+          queryScope: 'a'.repeat(64),
+          generation: 2,
+        },
+        pagination: { offset: 0, limit: 1 },
+      },
+    });
+    expect(mockHistoryOpen).toHaveBeenLastCalledWith(completed);
+    expect(mockConfig).toHaveBeenCalledTimes(6);
+    expect(
+      mockHistoryQueryOptions.every(
+        (options) => options.fetchPolicy === 'no-cache',
+      ),
+    ).toBe(true);
+  });
+  it('allows the never-configured standalone original history read without inventing a governed scope', async () => {
+    mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+    const button = await open();
+    mockHistoryRead.mockResolvedValue(pageResult([completed]));
+    await button.onClick();
+    expect(mockHistoryOpen).toHaveBeenLastCalledWith(completed);
+    expect(
+      mockHistoryRead.mock.calls.every(
+        ([request]) =>
+          !('queryScope' in request.variables.filter) &&
+          !('generation' in request.variables.filter),
+      ),
+    ).toBe(true);
+  });
+  it.each(['list', 'selected'])(
+    'keeps an actual server refusal private when config returns A both before and after the %s request',
+    async (read) => {
+      if (read === 'list') {
+        mockHistoryRead.mockResolvedValue({
+          data: null,
+          error: new Error('QUERY_REFERENCE_CHANGED'),
+        });
+        await mount();
+        expect(published).toEqual([]);
+      } else {
+        const button = await open();
+        mockHistoryOpen.mockClear();
+        mockHistoryRead.mockResolvedValue({
+          data: null,
+          error: new Error('QUERY_REFERENCE_CHANGED'),
+        });
+        await button.onClick();
+        expect(mockHistoryClose).toHaveBeenCalled();
+      }
+      expect(mockHistoryOpen).not.toHaveBeenCalled();
+      expect(
+        mockHistoryRead.mock.calls.at(-1)[0].variables.filter,
+      ).toMatchObject({
+        queryScope: 'a'.repeat(64),
+        generation: 2,
+      });
+      expect(mockConfig.mock.calls.length).toBeGreaterThanOrEqual(2);
+    },
+  );
+  it.each([
+    {},
+    { nativeBindingConfigured: true, queryScope: '' },
+    { nativeBindingConfigured: true, queryScope: 'a'.repeat(64) },
+  ])(
+    'fails closed before the selected observation with invalid config %j',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      await (await open()).onClick();
+      expect(mockHistoryRead).not.toHaveBeenCalled();
+      expect(mockHistoryOpen).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses a completed body when the current identity changes during its same-ID read', async () => {
+    const button = await open();
+    mockHistoryRead.mockImplementation(async () => {
+      mockConfig.mockResolvedValue({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: 2,
+        queryScope: 'b'.repeat(64),
+      });
+      return { data: { apiHistory: { items: [completed] } } };
+    });
+    await button.onClick();
+    expect(mockHistoryOpen).not.toHaveBeenCalledWith(completed);
+    expect(mockHistoryClose).toHaveBeenCalled();
+  });
+  it('Close detaches a pending original read and ignores its late completed ACK without reopening or disclosing it', async () => {
+    const button = await open();
+    let finish: (value: any) => void;
+    mockHistoryRead.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const observation = button.onClick();
+    await flush();
+    mockHistoryDrawer.onClose();
+    finish({ data: { apiHistory: { items: [completed] } } });
+    await observation;
+    expect(mockHistoryClose).toHaveBeenCalled();
+    expect(mockHistoryOpen).toHaveBeenCalledTimes(1);
+    expect(mockHistoryOpen).not.toHaveBeenCalledWith(completed);
+  });
+  it('a missing native event or a missing history row stays unconfirmed and does not fabricate a completed body', async () => {
+    const button = await open();
+    mockHistoryRead.mockResolvedValue({ data: { apiHistory: { items: [] } } });
+    await button.onClick();
+    expect(mockHistoryOpen).not.toHaveBeenCalledWith(completed);
+    expect(mockHistoryRead).toHaveBeenCalledTimes(3);
+  });
+  it.each(['actor', 'generation'])(
+    'does not publish a late original list body when %s changes while its no-cache page request is in flight',
+    async (change) => {
+      let finish: (value: any) => void;
+      mockHistoryRead.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await mount();
+      mockConfig.mockResolvedValue({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: change === 'generation' ? 3 : 2,
+        queryScope: (change === 'actor' ? 'b' : 'a').repeat(64),
+      });
+      finish(pageResult([completed]));
+      await flush();
+      expect(published).toEqual([]);
+      expect(mockHistoryOpen).not.toHaveBeenCalled();
+    },
+  );
+  it('does not open an old Table record directly after the actor has changed, or issue a selected read under the old page identity', async () => {
+    await mount();
+    mockConfig.mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
+      queryScope: 'b'.repeat(64),
+    });
+    const action = mockHistoryTable.columns.find(
+      (column: any) => column.key === 'actions',
+    );
+    renderToStaticMarkup(action.render(completed));
+    await mockButtons
+      .findLast((button: any) => button.children?.[1] === ' Details')
+      .onClick();
+    expect(mockHistoryRead).toHaveBeenCalledTimes(1);
+    expect(mockHistoryOpen).not.toHaveBeenCalled();
+  });
+  it.each(['focus', 'visibilitychange'])(
+    'clears the original private view at %s and restores only fresh same-identity list and selected bodies',
+    async (boundary) => {
+      await open();
+      const before = mockHistoryClose.mock.calls.length;
+      mockHistoryRead.mockResolvedValue(pageResult([completed]));
+      listeners.get(boundary)();
+      expect(mockHistoryClose.mock.calls.length).toBeGreaterThan(before);
+      await flush();
+      expect(published.at(-1).items).toEqual([completed]);
+      expect(mockHistoryOpen).toHaveBeenLastCalledWith(completed);
+      expect(mockHistoryRead).toHaveBeenCalledTimes(4);
+    },
+  );
+  it("does not reattach the prior actor's selected body when the original page refreshes under a new verified identity", async () => {
+    await open();
+    const count = mockHistoryOpen.mock.calls.length;
+    const other = { ...pending, id: 'other-actor-history' };
+    mockConfig.mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
+      queryScope: 'b'.repeat(64),
+    });
+    mockHistoryRead.mockResolvedValue(pageResult([other]));
+    listeners.get('focus')();
+    await flush();
+    expect(published.at(-1).items).toEqual([other]);
+    expect(mockHistoryOpen).toHaveBeenCalledTimes(count);
+    expect(mockHistoryRead).toHaveBeenCalledTimes(3);
+  });
+  it.each(['hidden', 'unmount'])(
+    'rejects the original late list body after %s without publishing it',
+    async (boundary) => {
+      let finish: (value: any) => void;
+      mockHistoryRead.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await mount();
+      if (boundary === 'hidden') {
+        (document as any).visibilityState = 'hidden';
+        listeners.get('visibilitychange')();
+      } else {
+        cleanup();
+        cleanup = undefined;
+      }
+      finish(pageResult([completed]));
+      await flush();
+      expect(published).toEqual([]);
+      expect(mockHistoryOpen).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe('original saved-view preview controls', () => {
   const entries = new Map<string, string>();
