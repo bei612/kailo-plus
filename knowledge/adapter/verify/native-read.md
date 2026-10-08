@@ -1862,3 +1862,102 @@ Image publication, actual component release/binding activation, live
 Cells-to-WeKnora parsing/deletion and both receipt/usage terminals remain
 separate evidence. Whole-project/full/docs checks, commit/push, deployment,
 screenshots and device acceptance were not run by this subtask.
+
+## Native sync checkpoints retain the loaded data-source version (2026-10-08)
+
+Authority and actual cause: `.design/13` §4.4 leaves the receiver's cursor,
+original native write/delete identities, queue and parsing authority in
+WeKnora. Fixed read-only upstream
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/repository/datasource_repo.go::DataSourceRepository.UpdateSyncState`
+and
+`internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+were rechecked. The original manual/cron queue can deliver overlapping runs.
+The Cells connector checkpoints retained intent before a native side effect,
+but the repository formerly updated by ID alone: a stale run could overwrite
+another run's intent or a subsequent pause/configuration edit. The original
+error-finalization consumer could overwrite it again when reporting failure.
+
+Impact: `DataSourceRepository.UpdateSyncState` now reuses the loaded native
+`UpdatedAt` as an optimistic condition, together with the existing tenant and
+knowledge-base identity. It refuses a missing version or an update affecting
+anything other than one live native row. `RETURNING updated_at` reads the
+database's persisted timestamp precision into that same data-source object
+so its next checkpoint uses the actual native version. Both existing
+consumers, `streamSyncHandler.Checkpoint` and
+`DataSourceService.updateSyncRunResult`, use this repository operation and
+the same loaded object. No interface, schema, migration, lock, queue, task,
+state, credentials, platform content copy or second synchronization authority
+was added; other settings are not overwritten by a sync-only update.
+
+Side effects and boundaries: an overlapping or stale tenant/KB version,
+paused/modified row or deleted row cannot acquire a newer version or replace
+the stored intent/result/status. A refused checkpoint restores that run's
+previous in-memory cursor, and the existing terminal consumer refuses to
+publish a terminal sync log after cursor persistence fails. The native queue,
+retry, parsing deadlines and failure isolation remain unchanged. A lost
+database receipt remains an error; this change does not infer whether a
+native write succeeded or repeat an upload to manufacture evidence. This is
+a native cursor fence, not a global execution lock or proof of exactly-once
+effects across every upstream connector. Existing authorization and the
+connector's pre-side-effect checkpoint remain required.
+
+Implementation preceded checks. The existing repository check now covers
+two owner checkpoints followed by a stale run, pause, soft deletion, tenant
+and KB mismatch, and missing version. The existing SQLite service fixture
+also drives the real `streamSyncHandler.Checkpoint`, repository and
+`updateSyncRunResult`: the losing run cannot replace the winning intent or
+publish a failed terminal, while the owner can checkpoint its ready reference.
+The checks use real SQLite; live PostgreSQL and Cells/parser E2E were not run.
+
+The same existing Go 1.26.8 SDK/cache, UID/GID 1000/1000 and Data temporary
+directory were reused. Each compile preflight checked host processes and
+pressure plus the actual SDK cgroup: 4 CPU, 8 GiB, zero swap, zero OOM
+counters, 2.1–2.3 GiB Data free and 28–30 GiB host memory available. No
+Go/Cargo build overlapped. An unrelated host GitNexus process was observed
+and reported to the parent; this task did not invoke or control it. Only
+three changed Go inputs were copied; all existing repository/service Go
+inputs were byte-compared. No image, dependency, database service, tree
+snapshot or cache purge was created.
+
+```sh
+TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOTMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/application/repository ./internal/application/service \
+  -run 'TestDataSourceRepository|TestSyncLogRepository|TestFileStorage|TestStreamHandler|TestDataSourceReplacement|TestCreateKnowledgeFromFileAtID|TestDataSourceServiceDeleteSQLite|TestDeleteKnowledgeBaseCleansUpSQLite' \
+  -count=1 -v
+```
+
+Positive and byte-restored runs exited 0: **26 top-level checks and 38
+subchecks passed, none failed or skipped**. Repository/service runtimes were
+`0.511s`/`37.576s` and `0.488s`/`5.569s`. In the private candidate only, the
+actual version/scope predicate, missing-version guard and affected-row
+guard were removed. The same command exited 1: **24 top-level checks passed,
+2 failed; 32 subchecks passed, 6 failed**. Its output includes
+`An error is expected but got nil` for all six repository cases and the
+real competing service checkpoint. The failure log is retained. The
+mutation wrapper's final log excerpt had a shell quoting error
+(`/usr/bin/sh: 1: Error: not found`); the actual Go log was read without
+rerunning checks. An initial read-only Docker preflight without `sudo`
+reported socket permission denied; the existing `sudo -n docker` path
+successfully read the cgroup before the restored compile. Formal production
+inputs were not mutated. All candidate repository/service Go inputs were
+byte-compared after restoration, SDK `gofmt -d` was empty,
+`git diff --check` exited 0, OOM counters stayed zero and the Data temporary
+directory was empty.
+
+Logs in the same existing native SDK receipt directory:
+
+- `native-self-pull-version-positive-20261008.log`, SHA-256
+  `1d0e031962fc158941330300c6496583441cf0ac937ef773c0653001c46e316d`.
+- `native-self-pull-version-mutation-20261008.log`, SHA-256
+  `f08cd498dfe9b0eeaf221e276f91ee6fb7b24d493ee78120a2ba85ef034849a3`.
+- `native-self-pull-version-restored-20261008.log`, SHA-256
+  `87feb9414f01df0b674927918348cd8d1afb6eaee2065e65fc00816873cd7a97`.
+
+This increment changes no client, menu, public protocol or deployment.
+Actual component release/binding activation and live source replacement,
+parsing/deletion with terminal receipt/usage remain separate evidence.
+Whole-project/full/docs checks, commit/push, deployment, screenshots and
+device acceptance were not run by this subtask.

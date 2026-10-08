@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, useState } from "react";
+import { act, useState, type ReactNode } from "react";
 import { getLocale, setLocale } from "../src/i18n";
-import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection } from "../src/react/inbox-surface";
+import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxMessageRowSurface, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { click, render, settle } from "./render";
 
@@ -10,6 +10,36 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it.each(["en", "zh-CN"] as const)("preserves original detail row anatomy and date/continuation presentation in %s", async locale => {
+    setLocale(locale);
+    const message={id:"inbox-original-row",author:"Actual author",body:"admitted content",pubkey:"author",depth:0,createdAt:1,time:"absolute time"};
+    const identity=vi.fn((node:ReactNode,kind:"avatar"|"author")=><span data-identity-kind={kind}>{node}</span>);
+    const body=vi.fn((className:string)=><p className={className}>{message.body}</p>);
+    const host=await render(<InboxMessageRowSurface message={message} isSelected isFocusHighlightVisible
+      fullTimestampLabel="absolute original label" renderIdentity={identity} renderBody={body}
+      renderActions={()=> <button>original action</button>} />);
+    const article=host.querySelector<HTMLElement>('[data-testid="home-inbox-selected-message"]')!;
+    expect(article.classList.contains("mx-1")).toBe(true);
+    expect(article.classList.contains("py-conversation-row")).toBe(true);
+    expect(article.parentElement?.className).toBe("relative px-2");
+    expect(article.parentElement?.querySelector('[aria-hidden="true"]')?.classList.contains("inset-x-3")).toBe(true);
+    expect(article.querySelector('[data-testid="inbox-message-timestamp"]')?.getAttribute("title")).toBe("absolute original label");
+    expect(article.querySelector('[data-testid="inbox-message-timestamp"]')?.textContent).toContain("1970");
+    expect(article.querySelector('[data-testid="message-avatar"]')?.classList.contains("h-9")).toBe(true);
+    expect(article.querySelector('[data-identity-kind="author"]')?.textContent).toBe("Actual author");
+    expect(body).toHaveBeenCalledWith("max-w-full text-left text-message text-foreground");
+    const continuation=await render(<InboxMessageRowSurface message={{...message,id:"continuation"}} isContinuation isFirst renderBody={body} renderActions={()=> <button>original action</button>} />);
+    expect(continuation.querySelector('article')?.classList.contains("items-center")).toBe(true);
+    expect(continuation.querySelector('[data-testid="message-header"]')).toBeNull();
+    expect(continuation.querySelector('[data-testid="message-avatar"]')).toBeNull();
+    expect(continuation.querySelector('[class*="absolute right-2"]')?.classList.contains("sm:-translate-y-1/2")).toBe(false);
+    expect(continuation.querySelector('[data-testid="message-body"]')?.className).toBe("mt-0");
+    const emoji=await render(<InboxMessageRowSurface message={{...message,id:"emoji-only",body:"😀 😀"}}
+      renderBody={className=><p className={className}>😀 😀</p>} />);
+    expect(emoji.querySelector('[data-testid="message-body"] p')?.classList.contains("text-4xl")).toBe(true);
+    expect(emoji.querySelector('[data-testid="message-body"] p')?.classList.contains("[&_img[data-custom-emoji]]:h-[1.45em]")).toBe(true);
+  });
+
   it("retains original filter-specific empty states in both languages", async () => {
     const host = await render(<><InboxEmptyList filter="mention" unreadOnly={false} /><InboxEmptyList filter="thread" unreadOnly /><InboxEmptyList filter="all" unreadOnly={false} /></>);
     expect(host.textContent).toContain("No mentions found");

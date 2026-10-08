@@ -14,7 +14,10 @@ import { InboxThreadPane } from "./InboxThreadPane";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string) => key }));
-vi.mock("@client-kit/platform/react/inbox-surface", () => ({ InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header> }));
+vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
+  ...await original<typeof import("@client-kit/platform/react/inbox-surface")>(),
+  InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header>,
+}));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
 vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
 vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[]}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)}>
@@ -68,6 +71,31 @@ it("reads the true thread and preserves the original selected-reply parent when 
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId, mentionPubkeys: [] });
   expect(state.outcome).toBe("confirmed");
+});
+
+it("uses the original Inbox row layout, dated timestamp and actual same-author continuation boundaries", async () => {
+  const follow = {...reply, id:"d".repeat(64), content:"same-author continuation", created_at:3};
+  const later = {...reply, id:"e".repeat(64), content:"later thought", created_at:3600};
+  state.query.mockResolvedValue({events:[rootEvent,reply,follow,later]});
+  await mount();
+  const row = (id:string) => host.querySelector<HTMLElement>(`article[data-message-id="${id}"]`)!;
+  expect(row(replyId).dataset.testid).toBe("home-inbox-selected-message");
+  expect(row(replyId).classList.contains("mx-1")).toBe(true);
+  expect(row(replyId).classList.contains("rounded-2xl")).toBe(true);
+  expect(row(replyId).parentElement?.className).toBe("relative px-2");
+  expect(row(replyId).parentElement?.querySelector('[aria-hidden="true"]')?.classList.contains("inset-x-3")).toBe(true);
+  expect(row(rootId).querySelector('[data-testid="message-header"]')).not.toBeNull();
+  // The original first context boundary is not collapsed even for one author.
+  expect(row(replyId).querySelector('[data-testid="message-header"]')).not.toBeNull();
+  expect(row(follow.id).classList.contains("items-center")).toBe(true);
+  expect(row(follow.id).querySelector('[data-testid="message-header"]')).toBeNull();
+  expect(row(follow.id).querySelector('[data-testid="message-avatar"]')).toBeNull();
+  expect(row(later.id).querySelector('[data-testid="message-header"]')).not.toBeNull();
+  expect(row(replyId).querySelector('[data-testid="inbox-message-timestamp"]')?.textContent).toContain("1970");
+  expect(row(rootId).querySelector('[class*="absolute right-2"]')?.classList.contains("sm:-translate-y-1/2")).toBe(false);
+  expect(row(replyId).querySelector('[class*="absolute right-2"]')?.classList.contains("sm:-translate-y-1/2")).toBe(true);
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace",replyId);
+  expect(state.authorProfile).not.toHaveBeenCalledWith("workspace",follow.id);
 });
 
 it("keeps hidden DM thread read, live subscription and confirmed reply on the existing conversation routes",async()=>{

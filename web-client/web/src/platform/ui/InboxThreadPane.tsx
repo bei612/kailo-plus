@@ -1,8 +1,8 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
-import { MessageRowSurface, MessageActionBarSurface, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { InboxDetailHeader, InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { inboxThread } from "@client-kit/platform/inbox";
@@ -81,25 +81,30 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
     <InboxDetailHeader title={channelName} onBack={onBack} onOpen={onOpen} openLabel={t("inbox.open")} />
     <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
       {unavailable ? <div role="status" className="p-5">{t("platform.loadFailed")}{!denied ? <Button onClick={() => { void thread.refetch(); }}>{t("platform.refresh")}</Button> : null}</div>
-        : thread.isPending ? <p role="status" className="p-5">{t("platform.loading")}</p> : messages.map((event) => {
+        : thread.isPending ? <p role="status" className="p-5">{t("platform.loading")}</p> : messages.map((event, index) => {
           const author = members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey);
           const edge = inboxThread(event.tags);
           const message: TimelineMessage = { id:event.id, author, pubkey:event.pubkey, createdAt:event.createdAt,
             body:event.content, time:relativeTime(locale,new Date(event.createdAt*1000).toISOString()),
             depth:0, tags:event.tags, rootId:edge.rootId, parentId:edge.parentId,kind:event.kind,reactions:messageReactions.reactions.get(event.id) };
-          return <div key={event.id} data-message-id={event.id}><MessageRowSurface highlighted={event.id === anchor}
+          const previous = messages[index - 1];
+          // Original InboxDetailPane keeps the first context boundary distinct.
+          const isContinuation = index !== 1 && !startsNewMessageGroup(event)
+            && hasSameMessageAuthor(previous, event) && isWithinGroupingWindow(previous?.createdAt, event.createdAt);
+          return <InboxMessageRowSurface key={event.id} isSelected={event.id === anchor}
+            isFocusHighlightVisible={event.id === anchor} isContinuation={isContinuation} isFirst={index === 0}
             onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
             reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
             renderIdentity={!interrupted ? (node,kind) => {
               const target={principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey};
-              const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
-                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></div> : node;
+              const identity=kind === "avatar" ? <span className="inline-flex shrink-0"><MessageAuthorAvatar
+                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></span> : node;
               return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(target)}>{identity}</MessageAuthorIdentity> : identity;
             } : undefined}
             message={message}
-            renderActions={!interrupted ? (ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
+            renderActions={!interrupted ? reactions => <MessageActionBarSurface {...reactions} message={message} onCopyMessage={copyMessage}
               onReply={canReply && !sending && !unresolved ? (target) => selectReply(target.id) : undefined} /> : undefined}
-            renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} /></div>;
+            renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>

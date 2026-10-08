@@ -2460,3 +2460,89 @@ InboxDrafts.tsx、InboxDrafts.test.tsx。生成 reason_text.dart 字节未变。
 已有两张 OIDC 边界图不能证明新源码；Windows/Mobile 实机未验收。
 3307 是既有全树差异清单快照，不是已分类完成数；准确未分类数未统计，
 全量原版一致性、逐页面视觉复核和全部缺项尚未闭合，不称 100% 还原。
+
+### 2026-10-08 原 Inbox 消息行两宿主真实消费者恢复与线上视觉复核
+
+固定证据为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow`、
+`desktop/src/features/home/ui/InboxDetailPane.tsx::InboxMessageDetailPane`。
+沿既有全树清单追踪发现 Web 详情错误使用通用 MessageRowSurface，未消费
+原 Inbox 独有的行容器、日期、选中底板、continuation 与动作定位；Native
+已有相同原展示主体。直接共享原模块，非重画页面或新建摘要。
+
+动手前四步与本批分类：
+
+- 权威：用户原版一致性/两宿主共源要求；原上游支持、现有资料读取与
+  回复/反应治理链已支持，缺的是展示消费者。没有为缺生产者的筛选造入口。
+- 影响：检索 InboxDetailPane/InboxMessageRow、Web InboxThreadPane、
+  shared MessageRowSurface、日期/分组/反应处理、资料 BFF 实际消费者。
+  只改六个 UI/检查路径；不改契约、Core、持久化、API、绑定或迁移。
+- 副作用：Web 仍凭 principal/workspace/conversation/event 读取真实作者
+  资料；Native 原资料弹层、Relay scope、媒体改写及反应 callback 保留。
+  不复制正文权威、不创造 owner/在线状态，不放宽鉴权、不引入第二执行器。
+- 边界：空详情、缺资料 fallback、未决发送/反应、撤权/中断、分页及
+  UNKNOWN 意图继续沿原宿主/错误分类处理。本批不新增状态/超时/重试。
+  第一条上下文即使同一作者也不折叠，其后沿原作者与时间窗规则分组。
+- 原样保留：原行 article/间距、36px 头像、完整日期 title、continuation
+  时间 gutter、首行/后续行动作定位与 Unicode 纯 emoji 大字号 class。
+- 共享迁移：新增 `react/inbox-message-row.tsx::InboxMessageRowSurface`；
+  Native `InboxMessageRow` 与 Web `InboxThreadPane` 均实际调用，非 helper-only。
+- 已授权治理适配：反应仍用现有 shared useReactionHandler，真实身份/正文
+  及动作经宿主既有准入链注入，不恢复未经治理的原执行方式。
+- 尚未恢复：原 Agent owner/config-nudge/编辑删除的完整治理消费、custom
+  shortcode emoji-only 处理、Web 原选中高亮消退，以及未支持筛选。Native
+  原已存在的 avatar wrapper flex 修正保持，不据此声称逐字节原版或全量一致。
+
+六个代码/检查路径 `+182/-206`（包含新共享文件 85 行）：
+`client-kit/ts/platform/src/react/inbox-message-row.tsx`、同目录
+`inbox-surface.tsx`、`client-kit/ts/platform/test/inbox-surface.test.tsx`、
+`collaboration/desktop/src/features/home/ui/InboxMessageRow.tsx`、
+`web-client/web/src/platform/ui/InboxThreadPane.tsx` 与其 `.test.tsx`。
+
+沿既有 SDK/cache 与 `kailo-agent-receipt-xvkujx` 4CPU/8GiB cgroup 窄验，
+运行前检查在途构建、CPU/内存、Data 空间；未新镜像、安装依赖、全树复制、
+发布或全仓编译。日志根仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `inbox-original-row-checked.log` 首次退出 2：共享 avatarUrl 可选值与原
+  Avatar null 类型不符；改为明确 null 后继续，不把首次失败算验收。
+- `inbox-original-row-candidate.log` 整链退出 0：shared production/test、
+  Web、Native 四个 tsc --noEmit；共享 `11 passed`、Web 真消费者 `16 passed`。
+- 私有 SDK `mx-1` 改 `mx-0` 后 `inbox-original-row-shared-mutation.log`
+  退出 1，`2 failed / 9 skipped`；删首上下文边界后
+  `inbox-original-row-web-mutation.log` 退出 1，`1 failed / 15 skipped`。
+  恢复后的 `inbox-original-row-restored.log` 退出 0，`11 + 16 passed`。
+- 复核补回纯 emoji 样式后 `inbox-original-row-final.log` 完成 shared 两个
+  tsc 与 `11 passed`，后半因运行命令 cd 多一级退出 2：
+  `sh: 1: cd: can't cd to ../../../../web-client/web`。不改生产代码绕过；
+  `inbox-original-row-hosts-final.log` 从准确 SDK 目录续跑，仅 Web/Native
+  两个 tsc 与 Web `16 passed`，退出 0。
+- 私有副本关闭纯 emoji 大字号，`inbox-original-row-emoji-mutation.log`
+  退出 1、`2 failed / 9 skipped`；恢复后
+  `inbox-original-row-emoji-restored.log` 退出 0、共享 `11 passed`。
+  六正式输入/SDK及两已装共享包共十次 cmp 和 scoped diff --check 均退出 0。
+
+正常 SSO 视觉复核：使用当前 host 受控输入经官方 CLI 已有 Session.run
+交给真实 IdP password 字段，随后正常提交登录。已核现有 daemon 未启用
+saveSession；无口令字面量入 CLI 源码/参数/输出，无明文副本、账号重置、
+Cookie/会话注入或新传密入口。未发送消息、保存头像或修改用户偏好。
+这纠正前小节当时“有效业务截图为零”的历史边界，本轮已有十一张业务状态。
+
+截图在 `apps/.playwright-cli/`，统一前缀 `kailo-ui-20261008-live-`：
+
+- `channel.png`、`inbox.png`、`inbox-filters.png`、`pulse.png`；
+- `projects.png`、`members.png`、`agents.png`、`workflows.png`；
+- `profile-settings.png`、`avatar-dialog.png`、`appearance.png`。
+
+十一张均以 playwright-cli 真实打开并截图，已逐张 view_image 打开复核，
+九类业务视图加两个关键状态，1920×1080。当前线上镜像固定为
+`sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
+OCI revision 为空；是旧部署，不证明本批源码、最新 main 或 Windows 已验收。
+截图可见原样式主体/侧栏/卡片/设置，亦可见部分作者短公钥与空项目/工作流；
+不把列表空态、头像编辑器可打开或 HTTP 成功称作实际写入/工作流执行完成。
+
+仍未截图/操作验收：选中 Inbox 详情、DM、新建消息、workflow 编辑/历史/
+轨迹、Agent 详情、其余设置/弹窗、英文切换、组件 iframe、上传下载/撤权。
+全部页面总数与精确未覆盖数未统计。新六路径未部署/未更新安装包，未运行
+全仓门禁；Windows/Mobile 实机未验收。3307 仍不是逐处分类完成数，准确
+未分类数未统计，不能声明完整原版一致性或生产就绪。

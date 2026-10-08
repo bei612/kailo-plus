@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenu
 import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
 export { HomeLoadingState } from "./home-loading-state";
+export { InboxMessageRowSurface } from "./inbox-message-row";
 
 export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
 

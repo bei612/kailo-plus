@@ -51,6 +51,61 @@ func TestDataSourceRepositoryUpdateSyncStateClearsErrorMessage(t *testing.T) {
 	require.NotNil(t, stored.LastSyncAt)
 }
 
+func TestDataSourceRepositorySyncStateRetainsTheCurrentNativeVersion(t *testing.T) {
+	for _, change := range []string{"overlapping-run", "paused", "deleted", "tenant", "knowledge-base", "missing-version"} {
+		t.Run(change, func(t *testing.T) {
+			db := setupDataSourceRepoTestDB(t)
+			repo := NewDataSourceRepository(db)
+			ctx := context.Background()
+			current := &types.DataSource{ID: "ds-sync-version", TenantID: 1, KnowledgeBaseID: "kb",
+				Type: types.ConnectorTypeFeishu, Status: types.DataSourceStatusActive,
+				LastSyncCursor: types.JSON(`{"intent":"original"}`)}
+			require.NoError(t, repo.Create(ctx, current))
+			stale, err := repo.FindByID(ctx, current.ID)
+			require.NoError(t, err)
+			originalVersion := stale.UpdatedAt
+			switch change {
+			case "overlapping-run":
+				current.LastSyncCursor = types.JSON(`{"intent":"newer-run"}`)
+				require.NoError(t, repo.UpdateSyncState(ctx, current))
+				firstVersion := current.UpdatedAt
+				current.LastSyncCursor = types.JSON(`{"intent":"newer-checkpoint"}`)
+				require.NoError(t, repo.UpdateSyncState(ctx, current))
+				require.False(t, firstVersion.Equal(current.UpdatedAt))
+			case "paused":
+				current.Status = types.DataSourceStatusPaused
+				require.NoError(t, repo.Update(ctx, current))
+			case "deleted":
+				require.NoError(t, repo.Delete(ctx, current.ID))
+			case "tenant":
+				stale.TenantID++
+			case "knowledge-base":
+				stale.KnowledgeBaseID = "other-kb"
+			case "missing-version":
+				stale.UpdatedAt = time.Time{}
+			}
+			var before types.DataSource
+			require.NoError(t, db.Unscoped().First(&before, "id = ?", current.ID).Error)
+			stale.LastSyncCursor = types.JSON(`{"intent":"must-not-overwrite"}`)
+			stale.LastSyncResult = types.JSON(`{"total":99}`)
+			stale.Status = types.DataSourceStatusError
+			stale.ErrorMessage = "stale final failure"
+			require.Error(t, repo.UpdateSyncState(ctx, stale))
+			if change != "missing-version" {
+				require.True(t, originalVersion.Equal(stale.UpdatedAt), "a refused write cannot acquire the newer row version")
+			}
+			var after types.DataSource
+			require.NoError(t, db.Unscoped().First(&after, "id = ?", current.ID).Error)
+			require.Equal(t, before.LastSyncCursor, after.LastSyncCursor)
+			require.Equal(t, before.LastSyncResult, after.LastSyncResult)
+			require.Equal(t, before.Status, after.Status)
+			require.Equal(t, before.ErrorMessage, after.ErrorMessage)
+			require.True(t, before.UpdatedAt.Equal(after.UpdatedAt))
+			require.Equal(t, before.DeletedAt, after.DeletedAt)
+		})
+	}
+}
+
 func TestDataSourceRepositoryUpdatePersistsDisabledSyncDeletions(t *testing.T) {
 	db := setupDataSourceRepoTestDB(t)
 	repo := NewDataSourceRepository(db)

@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DataSourceRepository provides data access for data sources
@@ -97,9 +98,9 @@ func (r *DataSourceRepository) Update(ctx context.Context, ds *types.DataSource)
 	})
 }
 
-// UpdateSyncState updates only fields managed by sync execution. GORM's
-// Updates(struct) skips zero values, so use a map here to persist cleared error
-// messages without broadening the generic Update method.
+// UpdateSyncState advances the loaded native row only if its version is still
+// current. Checkpoints and final results share this fence, so an overlapping
+// run cannot replace retained write/delete intent or a user's newer settings.
 func (r *DataSourceRepository) UpdateSyncState(ctx context.Context, ds *types.DataSource) error {
 	if ds == nil {
 		return errors.New("data source is nil")
@@ -107,9 +108,17 @@ func (r *DataSourceRepository) UpdateSyncState(ctx context.Context, ds *types.Da
 	if ds.ID == "" {
 		return errors.New("data source id is empty")
 	}
-	if err := r.db.WithContext(ctx).
-		Model(&types.DataSource{}).
-		Where("id = ?", ds.ID).
+	if ds.UpdatedAt.IsZero() {
+		return errors.New("native data source version is unavailable")
+	}
+	// Read back the database's actual timestamp precision rather than making
+	// the next checkpoint compare against an unpersisted Go nanosecond value.
+	var stored types.DataSource
+	result := r.db.WithContext(ctx).
+		Model(&stored).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "updated_at"}}}).
+		Where("id = ? AND tenant_id = ? AND knowledge_base_id = ? AND updated_at = ?",
+			ds.ID, ds.TenantID, ds.KnowledgeBaseID, ds.UpdatedAt).
 		Updates(map[string]interface{}{
 			"status":           ds.Status,
 			"last_sync_at":     ds.LastSyncAt,
@@ -117,9 +126,14 @@ func (r *DataSourceRepository) UpdateSyncState(ctx context.Context, ds *types.Da
 			"last_sync_result": ds.LastSyncResult,
 			"error_message":    ds.ErrorMessage,
 			"updated_at":       time.Now().UTC(),
-		}).Error; err != nil {
-		return err
+		})
+	if result.Error != nil {
+		return result.Error
 	}
+	if result.RowsAffected != 1 {
+		return errors.New("native data source changed; retain the original sync intent")
+	}
+	ds.UpdatedAt = stored.UpdatedAt
 	return nil
 }
 

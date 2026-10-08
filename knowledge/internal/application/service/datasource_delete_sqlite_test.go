@@ -164,3 +164,36 @@ func TestDeleteKnowledgeBaseCleansUpSQLiteDataSources(t *testing.T) {
 		assert.Equal(t, types.SyncLogStatusCanceled, log.Status)
 	}
 }
+
+func TestStreamHandlerSQLiteKeepsNewerIntentWhenAnotherRunFinishes(t *testing.T) {
+	fixture := newSQLiteDataSourceDeleteFixture(t)
+	ctx := context.Background()
+	svc := &DataSourceService{dsRepo: fixture.dsRepo, syncLogRepo: fixture.syncLogRepo}
+	first, err := fixture.dsRepo.FindByID(ctx, fixture.ds.ID)
+	require.NoError(t, err)
+	second, err := fixture.dsRepo.FindByID(ctx, fixture.ds.ID)
+	require.NoError(t, err)
+	firstHandler := newStreamHandler(svc, first, &types.SyncResult{}, fixture.runningLog)
+	secondHandler := newStreamHandler(svc, second, &types.SyncResult{}, fixture.pendingLog)
+	cursor := &types.SyncCursor{ConnectorCursor: map[string]interface{}{"applying": "original-native-intent"}}
+	require.NoError(t, firstHandler.Checkpoint(ctx, cursor))
+	confirmed := first.LastSyncCursor
+	require.Error(t, secondHandler.Checkpoint(ctx, &types.SyncCursor{
+		ConnectorCursor: map[string]interface{}{"applying": "competing-native-intent"},
+	}))
+	require.Empty(t, second.LastSyncCursor, "failed checkpoint must restore its own pre-write value")
+	// The original error-finalization path uses the same native row fence. A
+	// losing run cannot replace a newer retained cursor when reporting failure.
+	require.Error(t, svc.updateSyncRunResult(ctx, second, fixture.pendingLog,
+		&types.SyncResult{Failed: 1}, nil, types.SyncLogStatusFailed, "overlapping run", false))
+	stored, err := fixture.dsRepo.FindByID(ctx, fixture.ds.ID)
+	require.NoError(t, err)
+	require.Equal(t, confirmed, stored.LastSyncCursor)
+	require.Equal(t, types.DataSourceStatusActive, stored.Status)
+	log, err := fixture.syncLogRepo.FindByID(ctx, fixture.pendingLog.ID)
+	require.NoError(t, err)
+	require.Equal(t, "pending", log.Status, "failed cursor persistence cannot publish a terminal sync log")
+	require.NoError(t, firstHandler.Checkpoint(ctx, &types.SyncCursor{
+		ConnectorCursor: map[string]interface{}{"groups": "original-ready-native-reference"},
+	}))
+}
