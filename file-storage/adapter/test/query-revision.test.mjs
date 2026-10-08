@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { canonical, createAdapter, queryDigest } from '../src/query-revision.mjs';
+import { canonical, configuration, createAdapter, queryDigest } from '../src/query-revision.mjs';
 
 const ids = Array.from({ length: 12 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
 const args = { idempotencyKey: 'same-original-query', nativeObjectRef: ids[3] };
@@ -96,10 +96,14 @@ async function setup(t, changes = {}) {
   const operation = changes.operation ?? 'query_revision';
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const gateway = changes.mcp ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : undefined;
   const jwksFile = join(directory, 'jwks.json');
   const nativeSecret = randomBytes(32).toString('hex');
   const oidcSecret = randomBytes(32).toString('hex');
   await writeFile(jwksFile, JSON.stringify({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: 'test-current', alg: 'ES256', use: 'sig' }] }), { mode: 0o600 });
+  if (gateway) await writeFile(join(directory, 'gateway-jwks.json'), JSON.stringify({ keys: [
+    { ...gateway.publicKey.export({ format: 'jwk' }), kid: 'test-current', alg: 'ES256', use: 'sig' },
+  ] }), { mode: 0o600 });
   await writeFile(join(directory, 'native-credential'), nativeSecret, { mode: 0o600 });
   await writeFile(join(directory, 'oidc-credential'), oidcSecret, { mode: 0o600 });
   const state = { peps: 0, nativeReads: [], queries: [], redirectReads: 0, receipts: [] };
@@ -267,6 +271,15 @@ async function setup(t, changes = {}) {
       secretRefs: secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience })),
       idempotencyKey: ids[7], ...changes.validationArguments };
   }
+  if (changes.mcp) {
+    const inputSchema = {type:'object',additionalProperties:false,required:Object.keys(requestArguments.input),
+      properties:Object.fromEntries(Object.keys(requestArguments.input).map(key => [key,{type:'string'}]))};
+    config.mcp = {path:'/mcp',gatewayIssuer:`${origin}/gateway-issuer`,gatewayAudience:config.actionTokenAudience,
+      gatewayJwksFile:join(directory,'gateway-jwks.json'),gatewayCaller:'fixture-gateway',gatewayMaxTokenSeconds:61,
+      tools:[{name:changes.businessRead ? 'approved-file-read' : 'approved-file-list',
+        actionKey:changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1',actionVersion:1,
+        inputSchema,inputSchemaDigest:createHash('sha256').update(canonical(inputSchema)).digest('hex')}]};
+  }
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
   t.after(async () => {
@@ -306,10 +319,18 @@ async function setup(t, changes = {}) {
         ...(changes.businessHuman ? {external_execution_id:ids[8]} : {}),
         normalized_parameter_hash:createHash('sha256').update(canonical(operation==='execute'
           ? requestArguments : {operation,arguments:requestArguments})).digest('hex')} : {}), ...change };
+    return signedClaims(claims,key);
+  }
+  function signedClaims(claims,key) {
     const encodedHeader = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test-current', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const signature = sign('sha256', Buffer.from(`${encodedHeader}.${payload}`), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
     return `${encodedHeader}.${payload}.${signature}`;
+  }
+  function gatewayToken(change = {}, key = gateway.privateKey) {
+    const now = Math.floor(Date.now()/1000);
+    return signedClaims({iss:config.mcp.gatewayIssuer,aud:config.mcp.gatewayAudience,
+      sub:config.mcp.gatewayCaller,azp:config.mcp.gatewayCaller,iat:now-1,exp:now+60,...change},key);
   }
   async function invoke(options = {}) {
     return fetch(`${adapterOrigin}${options.path ?? '/platform-adapter/v1/query_revision'}`, {
@@ -317,7 +338,8 @@ async function setup(t, changes = {}) {
         'idempotency-key': options.key ?? requestArguments.idempotencyKey }, body: options.raw ?? canonical(requestArguments),
     });
   }
-  return { state, token, invoke, target, proofFiles, requestArguments };
+  return { state, token, invoke, target, proofFiles, requestArguments, config, gatewayToken,
+    adapterOrigin, privateKey };
 }
 
 test('native error mapping uses the original scoped Agent policy, six classes and no native read', async t => {
@@ -1193,6 +1215,155 @@ test('HUMAN business ContentReference verification retains its policy and exact 
   assert.equal(fixture.state.peps,2);
   assert.equal(fixture.state.receipts.length,0);
   assert.equal((await fixture.invoke({token:fixture.token({result_exposure_policy_id:undefined})})).status,401);
+});
+
+async function mcpWireClient(t, fixture, headers = {}) {
+  const [{Client},{StreamableHTTPClientTransport}] = await Promise.all([
+    import('@modelcontextprotocol/sdk/client/index.js'),
+    import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+  ]);
+  const outgoing = {'x-kailo-gateway-authorization':`Bearer ${fixture.gatewayToken()}`,...headers};
+  const wire = [];
+  const transport = new StreamableHTTPClientTransport(new URL(`${fixture.adapterOrigin}${fixture.config.mcp?.path ?? '/mcp'}`), {
+    fetch:async (url, options) => {
+      const sent = new Headers(options?.headers);
+      for (const [name,value] of Object.entries(outgoing)) {
+        if (value === undefined) sent.delete(name);
+        else sent.set(name,value);
+      }
+      if (typeof options?.body === 'string') wire.push(JSON.parse(options.body));
+      return fetch(url,{...options,headers:sent});
+    },
+  });
+  const client = new Client({name:'cells-native-wire-verifier',version:'1'}, {capabilities:{}});
+  t.after(async () => {await client.close();});
+  await client.connect(transport);
+  return {client,outgoing,wire,transport};
+}
+
+test('pinned SDK MCP init/list/call consumes delivered names and original HUMAN/AGENT file results', async t => {
+  for (const businessRead of [false,true]) for (const businessHuman of [false,true]) {
+    await t.test(`${businessRead ? 'read' : 'list'} ${businessHuman ? 'HUMAN' : 'AGENT'}`,async nested => {
+      const input = businessRead ? {resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',
+        displayName:'file.txt',mediaType:'text/plain'} : {resourceId:ids[10]};
+      const fixture = await setup(nested,{mcp:true,operation:'execute',validation:true,businessHuman,
+        businessRead,businessList:!businessRead,serviceRead:businessRead,serviceList:!businessRead,
+        nativeBytes:Buffer.from('text'),arguments:{target:{resourceId:ids[10]},input}});
+      const {client,outgoing,wire,transport} = await mcpWireClient(nested,fixture);
+      assert.equal(transport.sessionId,undefined);
+      const listed = await client.listTools();
+      const definition = fixture.config.mcp.tools[0];
+      assert.deepEqual(listed,{tools:[{name:definition.name,inputSchema:definition.inputSchema}]});
+      assert.equal(fixture.state.nativeReads.length,0);
+      assert.equal(fixture.state.peps,0);
+      outgoing.authorization = `Bearer ${fixture.token()}`;
+      outgoing['idempotency-key'] = ids[7];
+      const called = await client.callTool({name:definition.name,arguments:input});
+      assert.equal(called.isError,false);
+      assert.deepEqual(called.content,[]);
+      const raw = called.structuredContent;
+      assert.equal(raw.execution.idempotencyKey,ids[7]);
+      assert.equal(raw.execution.platformStatus,'SUCCEEDED');
+      if (businessRead) {
+        assert.deepEqual(JSON.parse(raw.resultJson),{text:'text'});
+        assert.deepEqual(raw.contentReference,input);
+        assert.equal(fixture.state.downloads,1);
+      } else {
+        assert.deepEqual(JSON.parse(raw.resultJson),{citations:raw.contentReferences});
+        assert.equal(raw.contentReferences[0].nativeObjectRef,ids[3]);
+      }
+      assert.deepEqual(wire.find(value => value.method==='tools/call').params,{name:definition.name,arguments:input});
+      assert.equal(fixture.state.receipts.length,0);
+      assert.equal(fixture.state.secretReads.length,0);
+      assert(!JSON.stringify(called).includes('PreSignedGET'));
+    });
+  }
+});
+
+test('MCP transport identity is mandatory on initialization and cannot borrow ActionToken or another Gateway caller',async t => {
+  const fixture = await setup(t,{mcp:true,operation:'execute',validation:true,businessList:true,
+    serviceList:true,arguments:{target:{resourceId:ids[10]},input:{resourceId:ids[10]}}});
+  const now = Math.floor(Date.now()/1000);
+  for (const [label,authorization] of [
+    ['absent',undefined],['ActionToken',`Bearer ${fixture.token()}`],
+    ['wrong signer',`Bearer ${fixture.gatewayToken({},fixture.privateKey)}`],
+    ...[{sub:'another-caller'},{azp:'another-caller'},{iss:`${fixture.config.mcp.gatewayIssuer}/other`},
+      {aud:'another-audience'},{exp:now},{iat:now+1,exp:now+60},{exp:now+90}]
+      .map(value => [JSON.stringify(value),`Bearer ${fixture.gatewayToken(value)}`]),
+  ]) await t.test(label,async nested => {
+    await assert.rejects(mcpWireClient(nested,fixture,{'x-kailo-gateway-authorization':authorization}));
+  });
+  assert.equal(fixture.state.nativeReads.length,0);
+  assert.equal(fixture.state.peps,0);
+  assert.equal(fixture.state.receipts.length,0);
+});
+
+test('MCP discovery is absent without controlled config and rejects schema/action/name drift at startup',async t => {
+  const fixture = await setup(t,{mcp:true,operation:'execute',validation:true,businessList:true,
+    serviceList:true,arguments:{target:{resourceId:ids[10]},input:{resourceId:ids[10]}}});
+  const original = fixture.config.mcp;
+  const tool = original.tools[0];
+  for (const changed of [
+    {...original,gatewayAudience:'unrelated-audience'}, {...original,gatewayMaxTokenSeconds:0},
+    {...original,path:'/platform-adapter/v1/execute'}, {...original,tools:[]},
+    {...original,tools:[{...tool,inputSchemaDigest:'a'.repeat(64)}]},
+    {...original,tools:[{...tool,actionKey:'file_storage.delete@v1'}]},
+    {...original,tools:[{...tool,actionVersion:2}]},
+    {...original,tools:[tool,tool]},
+    {...original,tools:[tool,{...tool,name:'another-name'}]},
+    {...original,tools:[tool,{...tool,actionKey:'file_storage.read@v1'}]},
+  ]) assert.throws(() => configuration({...fixture.config,mcp:changed}), /adapter request refused/);
+  const {client,outgoing} = await mcpWireClient(t,fixture);
+  outgoing['x-kailo-gateway-authorization'] = undefined;
+  await assert.rejects(client.listTools());
+  const absent = await setup(t,{operation:'execute',validation:true,businessList:true,serviceList:true,
+    arguments:{target:{resourceId:ids[10]},input:{resourceId:ids[10]}}});
+  const [{Client},{StreamableHTTPClientTransport}] = await Promise.all([
+    import('@modelcontextprotocol/sdk/client/index.js'),import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+  ]);
+  const absentClient = new Client({name:'absent-wire-verifier',version:'1'}, {capabilities:{}});
+  t.after(async () => {await absentClient.close();});
+  await assert.rejects(absentClient.connect(new StreamableHTTPClientTransport(new URL(`${absent.adapterOrigin}/mcp`),{
+    requestInit:{headers:{'x-kailo-gateway-authorization':`Bearer ${fixture.gatewayToken()}`}},
+  })));
+  assert.equal(absent.state.nativeReads.length,0);
+});
+
+test('MCP calls keep signed action/version/key, target/hash, policy/delegation and final native authorization',async t => {
+  const input = {resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'};
+  for (const label of ['no action','transport as action','no key','key mismatch','version mismatch','action mismatch',
+    'no policy','no delegation','unknown name','forged target','injected native URL']) await t.test(label,async nested => {
+    const fixture = await setup(nested,{mcp:true,operation:'execute',validation:true,businessRead:true,serviceRead:true,
+      nativeBytes:Buffer.from('text'),arguments:{target:{resourceId:ids[10]},input}});
+    const changed = label==='no policy' ? {result_exposure_policy_id:undefined}
+      : label==='no delegation' ? {delegation_id:undefined}
+      : label==='version mismatch' ? {action_definition_version:2}
+      : label==='action mismatch' ? {action_key:'file_storage.list@v1'}
+      : label==='key mismatch' ? {idempotency_key:ids[8]} : {};
+    const {client,outgoing} = await mcpWireClient(nested,fixture);
+    if (label!=='no action') outgoing.authorization = `Bearer ${label==='transport as action' ? fixture.gatewayToken() : fixture.token(changed)}`;
+    if (label!=='no key') outgoing['idempotency-key'] = ids[7];
+    await assert.rejects(client.callTool({name:label==='unknown name' ? 'unapproved-tool' : fixture.config.mcp.tools[0].name,
+      arguments:label==='forged target' ? {...input,resourceId:ids[8]}
+        : label==='injected native URL' ? {...input,nativeUrl:fixture.adapterOrigin} : input}), error => {
+      assert(error.message.includes('adapter request refused'));
+      assert(!error.message.includes('frozen-version'));
+      return true;
+    });
+    assert.equal(fixture.state.nativeReads.length,0);
+    assert.equal(fixture.state.receipts.length,0);
+  });
+  await t.test('Gateway key withdrawal after native read suppresses buffered result',async nested => {
+    const fixture = await setup(nested,{mcp:true,operation:'execute',validation:true,businessRead:true,serviceRead:true,
+      nativeBytes:Buffer.from('text'),arguments:{target:{resourceId:ids[10]},input}});
+    fixture.state.onDownload = () => writeFile(fixture.config.mcp.gatewayJwksFile,JSON.stringify({keys:[]}),{mode:0o600});
+    const {client,outgoing} = await mcpWireClient(nested,fixture);
+    outgoing.authorization = `Bearer ${fixture.token()}`;
+    outgoing['idempotency-key'] = ids[7];
+    await assert.rejects(client.callTool({name:fixture.config.mcp.tools[0].name,arguments:input}),/adapter request refused/);
+    assert.equal(fixture.state.downloads,1);
+    assert.equal(fixture.state.receipts.length,0);
+  });
 });
 
 test('business target facts must be complete and fixed to the delivered instance and native scope', async t => {

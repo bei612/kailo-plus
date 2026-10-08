@@ -894,3 +894,85 @@ transport/工具注册验收；现适配器尚无 MCP server 消费其 Gateway t
 因此通过完整终态 conformance 或强制 ACTIVE。SDK 缺 xml2js，上述两项
 ONLYOFFICE 目标明确排除；full、四侧生成、extract_usage、live release/binding、
 实际 Cells→WeKnora E2E、页面截图、Windows/Mobile、镜像与部署本批未执行。
+
+## 同 Adapter 的真实 Streamable HTTP MCP（2026-10-08，未部署）
+
+本批将前节已核验的原生 read/list 结果生产者接到同一个 adapter HTTP server，
+复用 `knowledge/adapter` 已锁定的 `@modelcontextprotocol/sdk` 1.26.0，而不是
+手写 JSON-RPC、另建 MCP 服务、工具注册表或执行权威。未投递 `mcp` 时没有
+MCP 路由，不改变原 HTTP 协议、SERVICE 读取、独立 Cells UI 或数据库。
+
+四步影响结论：
+
+1. 权威沿 `.design/07` §5 与 `.design/08` §9.2：知识组件继续复用其原生 MCP，
+   本批仅接 Cells 原 REST node 消费者。重新只读核验 AgentGateway 固定
+   `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+   `crates/agentgateway/src/http/auth/jws.rs::JwtSigningAlg::header` 和
+   `SigningKey::encode`；实际 ES256/kid JWT 与原公共 `verifiedClaims` 对齐。
+   Cells UUID/版本仍沿前节固定 `c57f02f4962835447df694c63bd0fd8c22bd7baf`
+   原生接缝，没有新的上游创建、取消或终态声明。
+2. 影响 `src/mcp.mjs`、原 `configuration/createAdapter`、原 HTTP fixture 与包锁。
+   Core `application_binding_gateway::publish` 投递独立 Gateway transport 身份；
+   `service_auth::adapter_backend_auth` 将它放在
+   `x-kailo-gateway-authorization`，受众仍是该 binding 的 adapter audience。
+   `agent_tool_pep::Policy::request` 只转发 input，另投 ActionToken 与执行 key；
+   adapter 按可信 token target 重建原 `{target:{resourceId},input}`，交原
+   `executeNode` 校验 hash、actor/delegation、scope、ResultExposure 与 fresh PEP。
+3. 所有 MCP 请求（含初始化、notification、list）先验 Gateway 签名、独立
+   issuer/JWKS、固定 sub/azp、audience 与投递有效期上限；业务 call 另验原
+   ActionToken、同一 key、批准 name→action/version，再经原生读取后的最终
+   Gateway 身份检查。返回 `content:[]` 与原 AdapterExecutionResponse 的
+   structuredContent，不单独外发未过 Core response PEP 的 text。Core 原
+   `application_tool::list/disclose` 仍核批准 input schema、终态、引用和结果策略。
+   包锁原样复用知识 SDK 依赖树并保留 Cells 的 xml2js/sax/xmlbuilder 锁定项。
+4. actor/transport 混用、缺令牌/key、委托/策略丢失、scope/hash 篡改、action/version
+   错配、未知工具/模型自选 native URL 均在原生读取前拒绝；读后 Gateway key
+   撤销不暴露缓冲结果。SDK 负责 stateless 初始化/HTTP framing，不保存新 session
+   或任务状态；原 node UNKNOWN、丢 ACK 不重放和取消边界不变。原生/鉴权错误
+   只返回固定 redacted 拒绝，不返回 provider body、凭据或结果正文。
+
+实际私有配置由原受控 adapter 投递面提供：可选 `mcp` 包含 `path`、
+`gatewayIssuer`、`gatewayAudience`、`gatewayJwksFile`、`gatewayCaller`、
+`gatewayMaxTokenSeconds`、`tools`；audience 必须等于顶层 actionTokenAudience。
+tools 每项为 `name/actionKey/actionVersion/inputSchemaDigest/inputSchema`，可有
+description；只接受原 management.validation.actionVersions 中已实现的 read/list
+精确映射、唯一 name/action/version 与正确 canonical schema SHA-256。无批准
+元数据、配置缺失或漂移不生成工具入口，不从模型参数取身份、凭据或原生地址。
+
+实现后复用原 SDK/独立候选，实际 Node v24.21.0、UID/GID 1000:1000、
+4 CPU/4 GiB、swap 0；运行前主机约 22 GiB available、Data 294 GiB、根盘
+93 GiB，无本队在途构建。直接使用原 `/work/node_modules` 中 SDK 1.26.0，
+无下载/安装、镜像、数据库、Go/Cargo 构建或全树复制。三个源/检查语法目标
+exit 0；原测试通过真实 `Client/StreamableHTTPClientTransport` 完成 init/list/call，
+不是只构造 raw JSON 冒充 MCP。
+
+```sh
+node --test --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  file-storage/adapter/test/query-revision.test.mjs
+positive (handle 35157): exit 0; 297 passed, 0 failed
+private production mutation (handle 16303): exit 1; 284 passed, 13 failed
+byte-restored (handle 70039): exit 0; 297 passed, 0 failed
+```
+
+私有候选同时破坏五处真实生产保护：批准 schema digest、Gateway caller/TTL、
+ActionToken key 关联、读后 Gateway key 复核及只用 structuredContent 的结果通道。
+原检查和 fixture 未变，捕获 10 个独立失败断言及 3 个父项失败。正式树未破坏；
+恢复后十二个实际源/检查/依赖锁输入逐文件 cmp 一致，同原目标复验通过。
+`git diff --check` exit 0；最终 cgroup OOM 计数均为 0、memory.current 快照
+218112000 bytes，全部本队命令终态。
+
+日志保留在原候选
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-mcp-wire-positive-initial.log` | `8a04c77f7b6ddb01cb526aeea9c24dcaca5fb0ca5379832f9a29787a5c1f543f` |
+| `cells-mcp-wire-mutation.log` | `45539881390edceb62b47187e93941e870274e9a8796a41bedae76950e47585b` |
+| `cells-mcp-wire-restored.log` | `ce5b5aa8974ac32e2efd4f3b999ee9e47669207cbffdafd596f1539c99a4e269` |
+
+边界：这里证明原受限 SDK 客户端与同 adapter 的实际 wire/原生消费者，不是
+真实 Gateway/Codex/live release/binding 全链；批准 FILE_STORAGE 工具登记及
+配置投递仍由原平台目录承接。二进制结果、按 key 证明旧读取终态及完整 usage
+conformance 未在本批补造。SDK 缺 xml2js，上述两项 ONLYOFFICE 目标继续明确
+排除；full、四侧生成、实际 Cells→WeKnora E2E、截图、Windows/Mobile、镜像、
+部署和安装验证未执行；继承的 compose 脏改未修改。

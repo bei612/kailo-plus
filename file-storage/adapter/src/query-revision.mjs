@@ -10,6 +10,7 @@ import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
 import { executeNode, observeNode } from './node-execution.mjs';
+import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
@@ -52,7 +53,7 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management', 'mcp'].includes(key))) throw new Refused(503);
   if (value.management !== undefined && (!exactKeys(value.management,
     ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
       ...(value.management.validation === undefined ? [] : ['validation'])])
@@ -81,7 +82,8 @@ export function configuration(value) {
     credentialFiles: [value.cellsBearerFile, value.oidcClientSecretFile],
     executionMapping: action => executionMapping(action, value),
   });
-  return Object.freeze({ ...value, ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
+  return Object.freeze({ ...value, ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
+    ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
 }
 
@@ -301,6 +303,10 @@ export function createAdapter(rawConfig) {
   const config = configuration(rawConfig);
   const server = createServer(async (request, response) => {
     try {
+      if (config.mcp && request.url === config.mcp.path) {
+        await handleMcp(config, request, response);
+        return;
+      }
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
         '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
         '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
