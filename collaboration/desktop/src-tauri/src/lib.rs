@@ -8,6 +8,7 @@ mod deep_link;
 mod egress_guard;
 mod events;
 mod identity_storage;
+mod key_backup;
 mod initial_window;
 mod link_preview_tags;
 mod linux_media;
@@ -219,6 +220,11 @@ pub fn run() {
             get_events,
             get_feed,
             get_identity,
+            get_nsec,
+            generate_backup_passphrase,
+            create_ncryptsec_backup,
+            verify_ncryptsec_backup,
+            save_ncryptsec_copy,
             get_media_proxy_port,
             get_profile,
             update_profile,

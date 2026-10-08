@@ -106,12 +106,14 @@ function EditProfileMetadataButton({
   );
 }
 
-export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, onCopy, avatarEditor, avatarPreview }: {
+export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, onCopy, avatarEditor, avatarPreview, nativeIdentityDetails }: {
   locale: PlatformLocale; profile: ProfilePresentation;
   onSave: (request: WebProfileUpdateRequest) => Promise<ProfilePresentation>;
   onCopy: (value: string) => Promise<void>;
   avatarEditor?: (props: ProfileAvatarEditorBinding) => React.ReactNode;
   avatarPreview?: (profile: ProfilePresentation) => React.ReactNode;
+  /** Native host only; the browser never supplies a local private-key consumer. */
+  nativeIdentityDetails?: React.ReactNode;
 }) {
   const shouldReduceMotion = useReducedMotion();
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
@@ -761,7 +763,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
                                 testId="profile-nip05"
                                 value={profile.nip05Handle}
                               />
-
+                              {nativeIdentityDetails}
                             </div>
                           </details>
                         </SettingsOptionGroup>

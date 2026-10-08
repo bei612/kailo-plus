@@ -1,8 +1,8 @@
 //! Relay egress guard for NIP-49 key-backup material.
 //!
-//! The app itself produces no `ncryptsec` backup (the device key never leaves
-//! this machine, DD-79), but a user can still paste one obtained
-//! elsewhere; it must NEVER be transmitted to a relay. This module enforces
+//! Native settings can create a local `ncryptsec` backup, and a user can also
+//! paste one obtained elsewhere; neither may be transmitted to a relay.
+//! This module enforces
 //! that contract at runtime, fail-closed, at every relay-bound egress
 //! boundary:
 //!

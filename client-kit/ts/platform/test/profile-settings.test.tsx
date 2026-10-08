@@ -19,6 +19,13 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it.each(["en", "zh-CN"] as const)("does not manufacture a private-key export in the browser host (%s)", async (locale) => {
+    const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={clipboard} onSave={async () => profile} />);
+    expect(host.querySelector('[data-testid="profile-identity-details"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="profile-private-key-row"]')).toBeNull();
+    expect(host.textContent).not.toContain("Private key");
+    expect(host.textContent).not.toContain("私钥");
+  });
   it("consumes a fresh same-identity host profile rather than pinning the first avatar and metadata", async () => {
     let refresh!: (next: ProfilePresentation) => void;
     function Host() {

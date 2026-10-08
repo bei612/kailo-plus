@@ -11,6 +11,7 @@ import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { useProfileQuery, useUpdateProfileMutation } from "@/features/profile/hooks";
 import { useActiveCommunity, useNativeSession } from "@/features/platform/activeCommunity";
+import { PrivateKeyBackupRow } from "./PrivateKeyBackupRow";
 
 export function ProfileSettingsCard() {
   const community = useActiveCommunity();
@@ -38,6 +39,7 @@ export function ProfileSettingsCard() {
     return descriptor;
   };
   return <SharedProfileSettingsCard key={`${community.relayUrl}:${profile.data.pubkey}`} locale={locale} profile={profile.data}
+    nativeIdentityDetails={<PrivateKeyBackupRow />}
     onCopy={writeTextToClipboard}
     avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteRelayUrl} className="h-full w-full rounded-full text-5xl" iconClassName="h-14 w-14" testId="profile-avatar-preview" />}
     avatarEditor={(props) => <ProfileAvatarControls {...props} label={profile.data.displayName ?? profile.data.pubkey} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteRelayUrl} performDefaultHaptic={performDefaultHaptic} />}

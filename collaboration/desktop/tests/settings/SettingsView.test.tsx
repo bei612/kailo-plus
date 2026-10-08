@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SettingsView } from "../../src/features/settings/ui/SettingsView";
+import { EncryptedBackupProvider } from "../../src/features/settings/EncryptedBackupProvider";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
 import { createBffClient } from "@client-kit/platform/client";
@@ -37,7 +38,7 @@ const panelProps: SettingsPanelProps = {
 let root: Root;
 let host: HTMLDivElement;
 async function render(section: SettingsSection, session = "original") {
-  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><SettingsView key={session} active section={section} onClose={() => {}} onSectionChange={() => {}} {...panelProps} /></SidebarProvider></PlatformProvider>));
+  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><EncryptedBackupProvider key={session} onOpenSettings={() => {}}><SettingsView active section={section} onClose={() => {}} onSectionChange={() => {}} {...panelProps} /></EncryptedBackupProvider></SidebarProvider></PlatformProvider>));
 }
 async function click(selector: string) {
   const button = host.querySelector<HTMLButtonElement>(selector);

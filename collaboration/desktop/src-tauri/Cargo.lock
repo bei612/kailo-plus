@@ -666,6 +666,7 @@ dependencies = [
  "webkit2gtk",
  "window-vibrancy",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

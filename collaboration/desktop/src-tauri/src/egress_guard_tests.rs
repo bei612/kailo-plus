@@ -312,15 +312,17 @@ fn inventory_scan_catches_new_unlisted_file() {
     );
 }
 
-/// Source allowlist: NIP-49 material appears only in the egress guard itself.
-/// The app has no key backup, export, or import (the device key never leaves
-/// this machine, DD-79), so anything else touching ncryptsec or the
-/// nip49 codec is structural drift.
+/// Source allowlist: NIP-49 handling is confined to Native identity backup
+/// and the existing Relay guard. Other codec consumers are structural drift.
 #[test]
 fn ncryptsec_handling_is_confined_to_allowlisted_files() {
     let allowlist: &[&str] = &[
+        "src/key_backup.rs",
+        "src/key_backup_tests.rs",
         "src/egress_guard.rs",
         "src/egress_guard_tests.rs",
+        "src/commands/identity.rs",
+        "src/lib.rs", // module registration + invoke handler
     ];
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));

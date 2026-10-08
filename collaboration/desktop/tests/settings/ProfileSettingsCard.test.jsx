@@ -25,13 +25,14 @@ URL.revokeObjectURL = () => {};
 globalThis.Image = class {
   set src(_url) { Promise.resolve().then(() => this.onload?.()); }
 };
-let readProfile, writeProfile, uploadAvatar;
+let readProfile, writeProfile, uploadAvatar, backupCommand;
 window.__TAURI_INTERNALS__ = globalThis.__TAURI_INTERNALS__ = {
   transformCallback: () => 1,
   invoke: async (command, args) => {
     if (command === "get_profile") return readProfile();
     if (command === "update_profile") return writeProfile(args);
     if (command === "upload_profile_avatar") return uploadAvatar(args);
+    if (["get_nsec", "generate_backup_passphrase", "create_ncryptsec_backup", "verify_ncryptsec_backup", "save_ncryptsec_copy"].includes(command)) return backupCommand(command, args);
     if (command.startsWith("plugin:event|")) return 1;
     throw new Error(`Unexpected native command: ${command}`);
   },
@@ -43,6 +44,9 @@ const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query
 const { ActiveCommunityProvider, useNativeSession } = await import("@/features/platform/activeCommunity");
 const { ThemeProvider } = await import("@/shared/theme/ThemeProvider");
 const { ProfileSettingsCard } = await import("../../src/features/settings/ui/ProfileSettingsCard.tsx");
+const { EncryptedBackupProvider } = await import("@/features/settings/EncryptedBackupProvider");
+const { useEncryptedBackup } = await import("@/features/settings/EncryptedBackupProvider");
+const { BackupTestFlow, initialBackupTestProgress } = await import("@/features/settings/ui/BackupTestFlow");
 const { useProfileQuery, useUpdateProfileMutation, useSelfProfileCache } = await import("@/features/profile/hooks");
 const { readSelfProfileCache, writeSelfProfileCache } = await import("@/features/profile/lib/selfProfileStorage");
 const { PlatformProvider } = await import("@client-kit/platform/react/context");
@@ -68,7 +72,9 @@ async function mount(Component = ProfileSettingsCard) {
     await act(async () => root.render(React.createElement(QueryClientProvider, { client: cache },
       React.createElement(PlatformProvider, { client: current.client, locale: "en" },
         React.createElement(ActiveCommunityProvider, { session: current },
-          React.createElement(ThemeProvider, null, React.createElement(Component)))))));
+          React.createElement(ThemeProvider, null,
+            React.createElement(EncryptedBackupProvider, { key: current.devicePubkey + current.facts.relayUrl, onOpenSettings: () => {} },
+              React.createElement(Component))))))));
   }
   await render(session());
   return { host, cache, render, async close() {
@@ -234,5 +240,108 @@ test("the actual sidebar profile cache never renders another identity's offline 
     assert.equal(view.host.textContent, second.displayName);
     await act(async () => writeSelfProfileCache("wss://one.test", own, { ...first, displayName: "Late old cache write" }));
     assert.equal(view.host.textContent, second.displayName);
+  } finally { await view.close(); }
+});
+
+test("original native private-key row is lazy, masked, and rejects an older reveal completion after reopen", async () => {
+  readProfile = async () => profile();
+  const requests = [];
+  backupCommand = (command, args) => {
+    assert.equal(command, "get_nsec");
+    assert.deepEqual(args, { expectedPubkey: own });
+    return new Promise((resolve) => requests.push(resolve));
+  };
+  const view = await mount();
+  try {
+    await until(() => view.host.querySelector('[data-testid="profile-private-key-toggle"]'));
+    assert.equal(requests.length, 0);
+    assert.equal(view.host.querySelector('[data-testid="profile-private-key-row"]').parentElement.dataset.testid, "profile-identity-details");
+    await click(view, "profile-private-key-toggle");
+    await click(view, "profile-private-key-toggle");
+    await click(view, "profile-private-key-toggle");
+    assert.equal(requests.length, 2);
+    await act(async () => requests[0]("nsec1-old-fixture"));
+    assert.equal(Boolean(view.host.querySelector('[data-testid="nsec-value"]')), false);
+    await act(async () => requests[1]("nsec1-current-fixture"));
+    await until(() => view.host.querySelector('[data-testid="nsec-value"]'));
+    assert.equal(view.host.textContent.includes("nsec1-current-fixture"), false);
+    await click(view, "nsec-reveal-toggle");
+    assert.equal(view.host.querySelector('[data-testid="nsec-value"]').textContent, "nsec1-current-fixture");
+    await click(view, "profile-private-key-toggle");
+    assert.equal(Boolean(view.host.querySelector('[data-testid="nsec-value"]')), false);
+  } finally { await view.close(); }
+});
+
+test("native backup provider encrypts and saves once with the real device boundary and ignores completion after sign-out", async () => {
+  let dispatch, state, finishEncrypt;
+  const calls = [];
+  function Consumer() {
+    const value = useEncryptedBackup();
+    dispatch = value.dispatch; state = value.state;
+    return React.createElement("p", null, value.backupAvailable ? "Ready" : "Not ready");
+  }
+  backupCommand = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "create_ncryptsec_backup") return new Promise((resolve) => { finishEncrypt = resolve; });
+    if (command === "save_ncryptsec_copy") return null;
+    throw new Error("unexpected backup command");
+  };
+  const view = await mount(Consumer);
+  try {
+    await act(async () => { dispatch({ type: "set-passphrase", value: "one-two-three-four" }); });
+    await act(async () => { dispatch({ type: "download-clicked" }); });
+    await until(() => finishEncrypt);
+    await act(async () => finishEncrypt("ncryptsec1-fixture"));
+    await until(() => calls.length === 2);
+    assert.deepEqual(calls, [
+      { command: "create_ncryptsec_backup", args: { password: "one-two-three-four", expectedPubkey: own } },
+      { command: "save_ncryptsec_copy", args: { ncryptsec: "ncryptsec1-fixture", expectedPubkey: own } },
+    ]);
+    assert.equal(state.passphrase, "");
+    finishEncrypt = null;
+    await act(async () => { dispatch({ type: "start-new-backup" }); dispatch({ type: "set-passphrase", value: "another-phrase-value" }); });
+    await act(async () => { dispatch({ type: "download-clicked" }); });
+    await until(() => finishEncrypt);
+    await view.render(session("two.test", "b".repeat(64)));
+    await act(async () => finishEncrypt("ncryptsec1-stale-fixture"));
+    assert.equal(calls.filter((call) => call.command === "save_ncryptsec_copy").length, 1);
+    assert.equal(state.ncryptsec, null);
+    assert.equal(state.passphrase, "");
+  } finally { await view.close(); }
+});
+
+test("original backup test clears its password and displays only Rust's verified public identity", async () => {
+  const calls = [];
+  let finish;
+  function Consumer() {
+    const [progress, setProgress] = React.useState(initialBackupTestProgress);
+    return React.createElement(BackupTestFlow, { progress, onProgressChange: setProgress });
+  }
+  backupCommand = (command, args) => {
+    calls.push({ command, args });
+    return new Promise((resolve) => { finish = resolve; });
+  };
+  const view = await mount(Consumer);
+  try {
+    const input = view.host.querySelector('[data-testid="backup-test-file-input"]');
+    const file = new File(["ncryptsec1-fixture"], "identity.ncryptsec");
+    Object.defineProperty(file, "text", { value: async () => "ncryptsec1-fixture" });
+    Object.defineProperty(input, "files", { value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    const password = view.host.querySelector('[data-testid="backup-test-password"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(password, "backup-password");
+      password.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(view, "backup-test-verify");
+    assert.equal(password.value, "");
+    assert.deepEqual(calls, [{ command: "verify_ncryptsec_backup", args: {
+      ncryptsec: "ncryptsec1-fixture", password: "backup-password", expectedPubkey: own,
+    } }]);
+    await act(async () => finish({ pubkey: own, npub: "npub-fixture", matchesCurrentIdentity: true }));
+    assert.ok(view.host.querySelector('[data-testid="backup-test-success"]'));
+    assert.equal(view.host.textContent.includes("This backup works"), true);
+    assert.equal(view.host.textContent.includes("backup-password"), false);
+    assert.equal(view.host.textContent.includes("ncryptsec1-fixture"), false);
   } finally { await view.close(); }
 });

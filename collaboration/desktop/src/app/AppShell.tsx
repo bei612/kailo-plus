@@ -55,6 +55,7 @@ import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { useT } from "@client-kit/platform/react/context";
 import { ReadFailure } from "@client-kit/platform/react/ui";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 
 export function AppShell() {
   const t=useT();
@@ -378,6 +379,8 @@ export function AppShell() {
     selectedView,
   });
   return (
+    <EncryptedBackupProvider key={`${nativeSession.devicePubkey}:${activeCommunity.relayUrl}:${platformSession.data?.platformSessionId ?? ""}`}
+      onOpenSettings={() => handleOpenSettings("profile")}>
     <ChannelNavigationProvider channels={channels}>
       <AppShellProvider
         value={{
@@ -537,5 +540,6 @@ export function AppShell() {
         </div>
       </AppShellProvider>
     </ChannelNavigationProvider>
+    </EncryptedBackupProvider>
   );
 }

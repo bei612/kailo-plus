@@ -3297,100 +3297,6 @@ oom/oom_kill仍0、历史max12244未变，无在途编译/Node检查，SDK已释
   **11 passed**、`profile-dm-native-restored.log` **3 passed**，整组退出0。
 - 本批十路径 `git diff --check -- <十路径>` 退出0。当前全仓 diff --check退出2：
 
-### 2026-10-08 原 Profile 头像编辑与 Native 真实资料消费者
-
-本节为实现后证据；权威是 REQ-08/24、DD-75、设计09 §3「宿主用户资料与头像」
-以及用户固定官方原样恢复要求。固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 已逐文件核对：
-`desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
-`desktop/src/features/profile/ui/ProfileAvatarEditor.tsx::ProfileAvatarEditor`、
-`desktop/src/features/profile/ui/ProfileAvatarModeTabs.tsx::ProfileAvatarModeTabs`、
-`desktop/src/shared/ui/segmented-control.tsx::SegmentedControl`；未把目录直接标为一致。
-
-影响面为 shared 原资料 Card/头像 Editor/模式控件、两宿主实际 Card、Native 资料
-query/mutation 与 SidebarProfileCard 既有离线头像消费；Web 继续经 BFF 代签/上传，
-Desktop 继续本机签名及原 Tauri IPC。只增加同源五条中英文展示词条并由原脚本生成
-Dart，不改 schema/数据库/Workflow/API/运行开关或密钥保管，不建另一份用户资料权威。
-本批12源码/检查路径 **+471/-90**（11已跟踪+233/-90，新Native检查238行）；本节
-只追加owned证据，不吸收本文件的继承删除。
-
-- 原 Card 的 `profileQuery.data` 是响应式资料，而共享迁移曾将首个 prop 固定在
-  useState；现保留当前 canonical save 的回读显示，并消费后续同身份 host 资料。
-  另设备更新的未编辑字段同步、已编辑草稿保留，较新的 host 资料不被旧 save 回执
-  覆盖；原 Edit/Done、预览、过渡、清空限制、稳定意图与 UNKNOWN 行为保留。
-- 原 Editor 的「Drop or 」在 underline 外、仅「browse」下划线及 modal 的
-  「Drag or browse」、两种 URL hint 恢复；中英文同源，不覆盖其他原消费者词条。
-  原 SegmentedControl 的 className 和三个 cn 合并恢复（只迁移 cn import），
-  原 inline AvatarModeTabs 实际传回 `w-full bg-muted`，不再丢宽度和背景覆盖。
-- Native 直接消费可信 NativeSession 的本人 pubkey，既有 query/cache key 按
-  Community id/Relay/pubkey 分区；异步读写在真正更新 query/localStorage 前核对
-  原 owner 和 signer。头像上传前后核同一 owner，迟到旧 scope 的 URL 不进入原
-  全局 avatarPresentationStore。原身份切换不复用全局 `["profile"]`，不借默认租户。
-- 既有 useSelfProfileCache 实际被 SidebarProfileCard 消费；旧逻辑只在 effect 中
-  重读 scope，会先渲染上一身份头像。现首帧只返回当前 Relay/pubkey 的原缓存源，
-  不新建持久格式，原缓存事件/读取方式不变。实际消费者逐渲染核验而非只看最终DOM。
-
-边界沿工程06 §4：认证/scope/权限拒绝为 DENIED，不开放原被阻断能力（BLOCKED）；
-缺投递/资料/上传服务的既有错误仍为 PRECONDITION，不以占位值成功；大小与节流沿
-原 LIMIT，签名/幂等冲突沿原 CONFLICT；已派发后身份变化或网络结果不明仍 UNKNOWN，
-不渲染成功/失败、不再造事件重试。空资料、空头像沿原默认呈现，未知 signer 不缓存，
-组件卸载/切身份后的读写回执不污染当前界面；没有新增持久状态、回收器或后台轮询。
-这些客户端检查不证明 Relay/媒体服务实际认证，也不替代真实账号与设备验收。
-
-沿原4CPU/8GiB SDK/cache，只同步本批小输入与两宿主实际物理包，没有安装、整树
-复制、镜像或 Cargo/Go 构建。清理暂停解除后前置检查无编译进程，实际uid1000:1000、
-memory+swap8GiB，memory.current约535MiB、oom/oom_kill0，Data296GiB；终态无本批
-工具链、memory.current约777MiB、oom/oom_kill0，Data296GiB，SDK正式释放。
-12个正式输入与候选、10个两宿主实际物理包输入最终cmp均0。日志位于既有
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/` 下的
-`workflow-native-template.s3JDP1`：
-
-- `profile-avatar-shared-restored.log`：原 Card 与真实原 Editor **29 passed/退出0**；
-  `profile-avatar-native-restored.log`：实际 Card/hook 与原 SettingsView
-  **7 passed/退出0**；`profile-avatar-web-restored.log`：既有真实 Web Card 消费者
-  **13 passed/退出0**。这是最后离线 cache 首帧修正前的结果，不外推为最终字节验收。
-- 清理后最终 `profile-avatar-final-shared.log` **29 passed**、
-  `profile-avatar-final-web.log` **13 passed**、`profile-avatar-final-native.log`
-  **8 passed**，集中句柄41507退出0；总50项包含最后cache首帧实际消费者。
-- private 实际生产破坏 `profile-avatar-shared-production-fault.log` **4 failed**：
-  固定首资料并移除原模式 className，真实抓到刷新/迟到回执和宽度背景丢失；按原字节
-  还原后上述 shared 29通过。`profile-avatar-native-production-fault.log` **4 failed**：
-  恢复全局 profile key 并移除上传 owner 守卫，抓到实际身份与 cache 串用；还原后7通过。
-  单独只移除实际 post-upload owner 守卫，
-  `profile-avatar-upload-production-fault.log` **1 failed/4 skipped/退出1**，
-  原 presentation store 的 blob 数量实为2而非1；候选已还原，未破坏正式源码。
-- 最后只移除private实际cache源守卫，
-  `profile-avatar-cache-production-fault.log` **1 failed/5 skipped/退出1**，真实
-  抓到切身份首帧返回「First offline identity」而非「Current offline identity」。
-  原字节还原且cmp0后，`profile-avatar-final-native-restored.log` 再 **8 passed/退出0**，
-  包括实际post-upload拒绝与首帧隔离；不以先前7项代替最终字节。
-- shared/test/Web/Native 四个 `profile-avatar-*-tsc*.log` 曾退出0，但运行早于最后
-  SegmentedControl 和 cache 首帧增量，不能写为最终类型验收。原 i18n 生成
-  `profile-avatar-i18n.log` 退出0，生成 platform_text.dart；reason_text.dart cmp0。
-  清理后 `profile-avatar-final-{shared,test,web,native}-tsc.log` 四份最终类型全部退出0；
-  `profile-avatar-final-i18n-check.log` 的原 generator --check 退出0，输出
-  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
-  该集中还原/类型/词条句柄83868实际退出0，替代暂停时尚未验收状态。
-- 首轮原 Node harness 因原 AnimatedAvatarCapture 的 Vite import.meta.env 导入失败；
-  未改生产代码绕过，改用原已安装 Native Vitest 入口。共享首次检查有缺 uploader/
-  浏览器 API 夹具失败，补实际 host/test fixture 后通过；保留全部失败日志。JSDOM 的
-  canvas 提示不算动态头像/摄像头验证。未运行 full、Rust/SQL、真实媒体/Relay 或设备。
-
-同一3313快照派生
-`collaboration-current-20261008.profile-avatar-classification.tsv`（同一日志目录），
-SHA-256 `120a3ef2790f7555853a2686b4714b80dcb7498014f2fea60d9283f87f9cb9e7`；
-列仍为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
-deleted_lines。九条原路径逐项核对后：**共享40、授权1、缺失27、未分类3245，共3313，
-68条已归档**；1980同路径字节相同另计。归档不是完整语义或逐页面验收。
-Profile Card 和原 PrivateKeyBackupRow 仍明确缺失：Native 没有 getNsec/backup 实际链，
-Web 不应取得私钥，但不能用该边界解释 Desktop 也删除备份。未伪造按钮或导出 API；
-Native 原 hooks 其余模块未全核，不计为完整归档。原 Agent profile/DM 仍未补齐。
-
-实际 playwright-cli 旧会话正常转 IdP 登录页，
-`.playwright-cli/kailo-ui-20261008-profile-session-expired.png` 已截图并打开复核；
-没有注入会话、重置账户、输出口令或新登录绕行。当前源码业务截图0、Windows/Mobile
-实际设备验收0；旧live d313fb的13图不证明本批。12路径尚未提交/push/部署或更新包，
-不声称头像线上可用、完整资料恢复或100%原版一致。
   既有未提交文件 InlineEmojiPopover.tsx:106、custom-emoji/emoji.ts:118、
   messages/editAttachments.ts:192、messages/parseImeta.ts:66各报新增EOF空行；这些不在
   本次冻结49路径内，未修改其字节，不把本批目标通过冒充全仓通过。
@@ -3575,3 +3481,207 @@ Playwright实际复查 header-restoration/kailo-visual-release 均正常转到 I
 确认；没有注入会话、重置账户或输出凭据。新业务截图仍0，旧live d313fb的13图
 不能证明本批；Web业务视觉/Windows/Mobile均未验收。本批尚未提交/push/部署，
 五源码路径与本节冻结交主代理，原搜索34及其89行回执未改。
+
+### 2026-10-08 原 Profile 头像编辑与 Native 真实资料消费者
+
+本节为实现后证据；权威是 REQ-08/24、DD-75、设计09 §3「宿主用户资料与头像」
+以及用户固定官方原样恢复要求。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 已逐文件核对：
+`desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
+`desktop/src/features/profile/ui/ProfileAvatarEditor.tsx::ProfileAvatarEditor`、
+`desktop/src/features/profile/ui/ProfileAvatarModeTabs.tsx::ProfileAvatarModeTabs`、
+`desktop/src/shared/ui/segmented-control.tsx::SegmentedControl`；未把目录直接标为一致。
+
+影响面为 shared 原资料 Card/头像 Editor/模式控件、两宿主实际 Card、Native 资料
+query/mutation 与 SidebarProfileCard 既有离线头像消费；Web 继续经 BFF 代签/上传，
+Desktop 继续本机签名及原 Tauri IPC。只增加同源五条中英文展示词条并由原脚本生成
+Dart，不改 schema/数据库/Workflow/API/运行开关或密钥保管，不建另一份用户资料权威。
+本批12源码/检查路径 **+471/-90**（11已跟踪+233/-90，新Native检查238行）；本节
+只追加owned证据，不吸收本文件的继承删除。
+
+- 原 Card 的 `profileQuery.data` 是响应式资料，而共享迁移曾将首个 prop 固定在
+  useState；现保留当前 canonical save 的回读显示，并消费后续同身份 host 资料。
+  另设备更新的未编辑字段同步、已编辑草稿保留，较新的 host 资料不被旧 save 回执
+  覆盖；原 Edit/Done、预览、过渡、清空限制、稳定意图与 UNKNOWN 行为保留。
+- 原 Editor 的「Drop or 」在 underline 外、仅「browse」下划线及 modal 的
+  「Drag or browse」、两种 URL hint 恢复；中英文同源，不覆盖其他原消费者词条。
+  原 SegmentedControl 的 className 和三个 cn 合并恢复（只迁移 cn import），
+  原 inline AvatarModeTabs 实际传回 `w-full bg-muted`，不再丢宽度和背景覆盖。
+- Native 直接消费可信 NativeSession 的本人 pubkey，既有 query/cache key 按
+  Community id/Relay/pubkey 分区；异步读写在真正更新 query/localStorage 前核对
+  原 owner 和 signer。头像上传前后核同一 owner，迟到旧 scope 的 URL 不进入原
+  全局 avatarPresentationStore。原身份切换不复用全局 `["profile"]`，不借默认租户。
+- 既有 useSelfProfileCache 实际被 SidebarProfileCard 消费；旧逻辑只在 effect 中
+  重读 scope，会先渲染上一身份头像。现首帧只返回当前 Relay/pubkey 的原缓存源，
+  不新建持久格式，原缓存事件/读取方式不变。实际消费者逐渲染核验而非只看最终DOM。
+
+边界沿工程06 §4：认证/scope/权限拒绝为 DENIED，不开放原被阻断能力（BLOCKED）；
+缺投递/资料/上传服务的既有错误仍为 PRECONDITION，不以占位值成功；大小与节流沿
+原 LIMIT，签名/幂等冲突沿原 CONFLICT；已派发后身份变化或网络结果不明仍 UNKNOWN，
+不渲染成功/失败、不再造事件重试。空资料、空头像沿原默认呈现，未知 signer 不缓存，
+组件卸载/切身份后的读写回执不污染当前界面；没有新增持久状态、回收器或后台轮询。
+这些客户端检查不证明 Relay/媒体服务实际认证，也不替代真实账号与设备验收。
+
+沿原4CPU/8GiB SDK/cache，只同步本批小输入与两宿主实际物理包，没有安装、整树
+复制、镜像或 Cargo/Go 构建。清理暂停解除后前置检查无编译进程，实际uid1000:1000、
+memory+swap8GiB，memory.current约535MiB、oom/oom_kill0，Data296GiB；终态无本批
+工具链、memory.current约777MiB、oom/oom_kill0，Data296GiB，SDK正式释放。
+12个正式输入与候选、10个两宿主实际物理包输入最终cmp均0。日志位于既有
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/` 下的
+`workflow-native-template.s3JDP1`：
+
+- `profile-avatar-shared-restored.log`：原 Card 与真实原 Editor **29 passed/退出0**；
+  `profile-avatar-native-restored.log`：实际 Card/hook 与原 SettingsView
+  **7 passed/退出0**；`profile-avatar-web-restored.log`：既有真实 Web Card 消费者
+  **13 passed/退出0**。这是最后离线 cache 首帧修正前的结果，不外推为最终字节验收。
+- 清理后最终 `profile-avatar-final-shared.log` **29 passed**、
+  `profile-avatar-final-web.log` **13 passed**、`profile-avatar-final-native.log`
+  **8 passed**，集中句柄41507退出0；总50项包含最后cache首帧实际消费者。
+- private 实际生产破坏 `profile-avatar-shared-production-fault.log` **4 failed**：
+  固定首资料并移除原模式 className，真实抓到刷新/迟到回执和宽度背景丢失；按原字节
+  还原后上述 shared 29通过。`profile-avatar-native-production-fault.log` **4 failed**：
+  恢复全局 profile key 并移除上传 owner 守卫，抓到实际身份与 cache 串用；还原后7通过。
+  单独只移除实际 post-upload owner 守卫，
+  `profile-avatar-upload-production-fault.log` **1 failed/4 skipped/退出1**，
+  原 presentation store 的 blob 数量实为2而非1；候选已还原，未破坏正式源码。
+- 最后只移除private实际cache源守卫，
+  `profile-avatar-cache-production-fault.log` **1 failed/5 skipped/退出1**，真实
+  抓到切身份首帧返回「First offline identity」而非「Current offline identity」。
+  原字节还原且cmp0后，`profile-avatar-final-native-restored.log` 再 **8 passed/退出0**，
+  包括实际post-upload拒绝与首帧隔离；不以先前7项代替最终字节。
+- shared/test/Web/Native 四个 `profile-avatar-*-tsc*.log` 曾退出0，但运行早于最后
+  SegmentedControl 和 cache 首帧增量，不能写为最终类型验收。原 i18n 生成
+  `profile-avatar-i18n.log` 退出0，生成 platform_text.dart；reason_text.dart cmp0。
+  清理后 `profile-avatar-final-{shared,test,web,native}-tsc.log` 四份最终类型全部退出0；
+  `profile-avatar-final-i18n-check.log` 的原 generator --check 退出0，输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+  该集中还原/类型/词条句柄83868实际退出0，替代暂停时尚未验收状态。
+- 首轮原 Node harness 因原 AnimatedAvatarCapture 的 Vite import.meta.env 导入失败；
+  未改生产代码绕过，改用原已安装 Native Vitest 入口。共享首次检查有缺 uploader/
+  浏览器 API 夹具失败，补实际 host/test fixture 后通过；保留全部失败日志。JSDOM 的
+  canvas 提示不算动态头像/摄像头验证。未运行 full、Rust/SQL、真实媒体/Relay 或设备。
+
+同一3313快照派生
+`collaboration-current-20261008.profile-avatar-classification.tsv`（同一日志目录），
+SHA-256 `120a3ef2790f7555853a2686b4714b80dcb7498014f2fea60d9283f87f9cb9e7`；
+列仍为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
+deleted_lines。九条原路径逐项核对后：**共享40、授权1、缺失27、未分类3245，共3313，
+68条已归档**；1980同路径字节相同另计。归档不是完整语义或逐页面验收。
+Profile Card 和原 PrivateKeyBackupRow 仍明确缺失：Native 没有 getNsec/backup 实际链，
+Web 不应取得私钥，但不能用该边界解释 Desktop 也删除备份。未伪造按钮或导出 API；
+Native 原 hooks 其余模块未全核，不计为完整归档。原 Agent profile/DM 仍未补齐。
+
+实际 playwright-cli 旧会话正常转 IdP 登录页，
+`.playwright-cli/kailo-ui-20261008-profile-session-expired.png` 已截图并打开复核；
+没有注入会话、重置账户、输出口令或新登录绕行。当前源码业务截图0、Windows/Mobile
+实际设备验收0；旧live d313fb的13图不证明本批。12路径尚未提交/push/部署或更新包，
+不声称头像线上可用、完整资料恢复或100%原版一致。
+
+### 2026-10-08 原 Native 私钥备份完整设置消费者
+
+本节是实现后回执；权威为 REQ-08/24、DD-75、设计09 §3，以及用户原版恢复要求。
+Native 本机持钥不同于 Web 服务端代签；Browser 不能取私钥，不能用这一边界删除
+Desktop 原本的本地备份。固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+逐文件/符号对照如下，不把整目录记为一致：
+
+- `desktop/src/features/settings/ui/PrivateKeyBackupRow.tsx::PrivateKeyBackupRow`；
+  `desktop/src/features/settings/ui/EncryptedBackupCreator.tsx::EncryptedBackupCreator`；
+  `desktop/src/features/settings/ui/BackupTestFlow.tsx::BackupTestFlow`。
+- `desktop/src/features/settings/EncryptedBackupProvider.tsx::EncryptedBackupProvider`；
+  `desktop/src/features/settings/lib/encryptedBackup.ts::encryptedBackupReducer`；
+  `desktop/src/features/onboarding/ui/NsecMaskedDisplay.tsx::NsecMaskedDisplay`。
+- `desktop/src-tauri/src/key_backup.rs` 的 `create_backup_blob`、`decrypt_ncryptsec`、
+  `write_portable_backup_file`、`generate_passphrase`；
+  `desktop/src-tauri/src/commands/identity.rs` 的 `get_nsec`、`create_ncryptsec_backup`、
+  `verify_ncryptsec_backup`、`save_ncryptsec_copy`；
+  `desktop/src-tauri/src/commands/export_util.rs::pick_save_path`。
+- `desktop/src-tauri/src/egress_guard_tests.rs::
+  ncryptsec_handling_is_confined_to_allowlisted_files`；原现存 Relay 拒绝逻辑与
+  events inventory 不变，只准许实际恢复的 Native backup 四个源码消费者。
+  此文件已有 unconfirmed.rs inventory 两行属继承修改，不在本批 owned 变更。
+
+原 Row/Creator/TestFlow/Provider/MaskedDisplay 的布局、按钮、菜单、弹窗和流程直接
+复用，只将文案迁入现有中英同源词条，并补可信本机身份及异步回执 fencing。
+Native AppShell 按 device pubkey/Relay/PlatformSession key 承载原 Provider；
+共享 Profile Card 只增加 Native 原 Identity details 插槽，Web 不传此槽、不出现
+私钥读取或导出。原 lazy/masked Reveal、Copy、创建、系统另存为、再次下载及测试
+消费者接回，不是无调用方 helper。原 400ms debounce、5分钟内存可用期和口令清空
+沿上游；切身份/卸载清空，过期撤销下载与 toast，不新增持久状态或第二份密钥权威。
+
+Native IPC 从现有 AppState signing_keys 读取，实际公钥必须等于调用方冻结的设备
+公钥。创建/验证与原 identity_mutation 共用锁，原 NIP49 log18 与最短口令保留，
+创建后真正解密核对公钥；验证只返回公钥/npub/是否当前身份，不返回解密私钥。
+不可信备份 KDF 上限直接引用原生成 tier，超出先拒绝，不先分配任意 KDF 内存。
+另存前及选择路径后均重验身份，复用原系统对话框；只写选定路径，create_new 保留
+已有文件、Unix owner-only、sync+reread 后才报成功。取消不是已保存，异常不自动
+覆盖或重复保存。恢复的是本地备份，不恢复未经设计允许的已登记身份替换/import。
+
+影响面限共享展示/i18n、Native原设置/宿主/IPC/codec/依赖锁及既有检查；不改Core、
+数据库、schema、Workflow、HTTP合同、平台quota或管理认证。未增加运行开关或远端
+IPC capability。原 assets/eff_short_wordlist_2_0.txt 与固定官方字节相同，SHA256
+`7aa57a4d3ecf6581729992bad9575bacdebf7c28378af2aec6a50f11aec326f5`。
+本批26源码/检查路径 owned **+4086/-15**：16已跟踪+610/-15、新10文件3476行
+（其中1296行原词表）；继承 inventory 两行不计，代码量不是完成度。
+
+边界按工程06 §4：身份不符/锁定 DENIED，当前无该端能力 BLOCKED，原生缺钥或
+格式/保存前提缺失 PRECONDITION，口令/KDF界限 LIMIT，已有文件 CONFLICT；
+写入或回读无法确证时不报已保存，保持错误与原可用备份，不做盲重放。此为本地
+文件行为，不产生平台 ExternalExecution；原 Relay egress guard 仍禁止备份流出。
+重复点击沿原 isSaving/请求关联；旧 Reveal、生成口令、文件读取或加密完成不污染
+后来的窗口/身份；未知 NIP49结构交给固定 nostr codec 拒绝，不回退明文。
+这些客户端夹具不等于真实IPC、系统保存面板、三账号或设备验收。
+
+验证复用 `kailo-agent-receipt-xvkujx`，实测4CPU/8GiB，Cargo保留-j16、
+/cache/rust-target和离线缓存，不安装、下载、整树复制或新镜像。日志在既有
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/
+workflow-native-template.s3JDP1`：
+
+- `native-key-backup-state.log`：原纯reducer9 passed；命令为desktop下
+  `node --experimental-strip-types --test src/features/settings/lib/encryptedBackup.test.mjs`。
+- `native-key-backup-shared-card-final.log`：shared原Card21 passed，含中英文
+  Web不出现私钥消费者；`native-key-backup-ui-final-bounded-restored.log`：
+  实际Native Card9+SettingsView2，共11 passed。Native命令为
+  `node ../../web-client/web/node_modules/vitest/vitest.mjs run
+  tests/settings/ProfileSettingsCard.test.jsx tests/settings/SettingsView.test.tsx
+  --maxWorkers=1 --no-file-parallelism`。JSDOM canvas提示不算摄像头或视觉验收。
+- `native-key-backup-rust-final-serial-restored.log`：实际生产crypto模块13 passed，
+  包含未降低log18的往返；161.73s是串行运行时间。命令
+  `CARGO_TARGET_DIR=/cache/rust-target cargo test --offline --manifest-path
+  /evidence/workflow-native-template.s3JDP1/native-key-backup-module/Cargo.toml
+  -j16 -- --test-threads=1`。私有receipt manifest 的lib直接指向本批生产
+  key_backup.rs，固定nostr0.44.7/getrandom0.2.17；它不是整个Desktop/Tauri构建。
+- private真实writer改为truncate，`native-key-backup-rust-production-fault.log`
+  1 failed/exit101，原已存在文件保护真实抓到覆盖。private真实Row移除迟到回执守卫，
+  `native-key-backup-ui-production-fault-bounded.log` 1 failed/8 skipped/exit1，
+  原界面中旧私钥存在性true而非false。恢复生产字节后上述11和13再次通过。
+- 前两次UI负向直接断言React DOM与null时worker退出；容器oom和
+  oom_kill从0增加到2，不算mutation命中。将同一对象断言改为Boolean存在性后
+  稳定捕捉真实行为失败；最终串行无新增OOM。不把首次OOM归因并发KDF。
+- `native-key-backup-{shared,web,native}-tsc.log` 三侧类型退出0；
+  `native-key-backup-test-final-tsc.log` shared测试类型退出0。
+  原生成器与最终 `native-key-backup-i18n-final-check.log` 退出0，输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+  原Dart同源生成入库，不改reason_text.dart；rustfmt --check退出0。
+- `native-key-backup-final-inputs-diff.log`：26正式/候选输入与4两宿主物理包输入
+  cmp全0，owned git diff --check退出0。最终串行句柄64323退出0，SDK已无本批
+  工具链，资源终态见native-key-backup-final-resources.log，未清缓存。
+- 首轮Native有Provider夹具缺口/worker启动失败，补原Provider实际上下文后通过；
+  shared初次组合中upload10通过但Card worker失败，组合exit1不计整批通过。
+  保留失败日志，不以初次结果替代上述最后同字节回执。
+
+`native-key-backup-tauri-system-deps.log` 的实际pkg-config退出1，GTK3与
+WebKitGTK4.1不存在；没有安装或伪造.pc绕过。因此完整Tauri IPC、原结构扫描、
+系统save panel、Windows安装包及真实本机设备均未验收。未运行full或发布构建。
+本节源码验收时未提交/push/部署，当前源码业务截图0，旧live d313fb13图与过期登录页不证明
+本批。原Agent profile/DM、身份import、其他原页面及全部截图缺口仍在，不称100%。
+
+同一3313历史全树快照逐路径派生
+`collaboration-current-20261008.native-backup-classification.tsv`，SHA256
+`f546416a2b9c3291ef491cd22e9b720c9bab9afa0b52d49d98bfbdf0654d3aaf`。
+列为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
+deleted_lines；change_kind和行数字段仍是该快照，不冒称重导出的当前全树diff。
+**原样1、共享40、授权9、缺失28、未分类3235，共3313，78条已归档**；
+1980同路径字节相同另计，不能外推全量原样一致。原key_backup.rs/tests整体仍记
+缺失：本批只恢复真实消费的设置备份，不把尚无消费者的原import/canonical cleanup
+冒充已补齐；Profile Card整体仍缺实机/视觉完整证据。本节与26路径冻结交主代理，
+继承checkpoint删除及旧inventory两行不纳入本批。

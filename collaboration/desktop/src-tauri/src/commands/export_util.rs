@@ -3,7 +3,7 @@ use tauri_plugin_dialog::DialogExt;
 
 /// Show a save-file dialog with a custom filter and return the chosen path,
 /// or `None` when the user cancelled. Selection only — no write.
-async fn pick_save_path(
+pub(crate) async fn pick_save_path(
     app: &AppHandle,
     suggested_filename: &str,
     filter_name: &str,
@@ -35,7 +35,8 @@ async fn pick_save_path(
 /// user cancelled the dialog.
 ///
 /// NOT for secrets: the write is plain `std::fs::write` (no atomic commit, no
-/// 0o600). The app exports no secrets.
+/// 0o600). Secret exports go through `pick_save_path` and a dedicated
+/// secret-file writer such as `key_backup::write_portable_backup_file`.
 pub async fn save_bytes_with_dialog(
     app: &AppHandle,
     suggested_filename: &str,
