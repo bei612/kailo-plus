@@ -106,6 +106,58 @@ func TestDataSourceRepositorySyncStateRetainsTheCurrentNativeVersion(t *testing.
 	}
 }
 
+func TestDataSourceRepositorySettingsCannotOverwriteNativeRecovery(t *testing.T) {
+	db := setupDataSourceRepoTestDB(t)
+	repo := NewDataSourceRepository(db)
+	ctx := context.Background()
+	lastSyncAt := time.Now().Add(-time.Hour).UTC()
+	current := &types.DataSource{ID: "ds-settings-recovery", TenantID: 1, KnowledgeBaseID: "kb",
+		Name: "Original", Type: types.ConnectorTypeFeishu, Status: types.DataSourceStatusActive,
+		SyncDeletions: true, LastSyncAt: &lastSyncAt,
+		LastSyncCursor: types.JSON(`{"applying":{"knowledgeId":"original"}}`),
+		LastSyncResult: types.JSON(`{"total":1}`)}
+	require.NoError(t, repo.Create(ctx, current))
+	stale, err := repo.FindByID(ctx, current.ID)
+	require.NoError(t, err)
+	current.LastSyncCursor = types.JSON(`{"retiring":{"taskId":"original-task"}}`)
+	current.LastSyncResult = types.JSON(`{"total":2}`)
+	require.NoError(t, repo.UpdateSyncState(ctx, current))
+	running := *current
+	var before types.DataSource
+	require.NoError(t, db.First(&before, "id = ?", current.ID).Error)
+
+	forgedAt := lastSyncAt.Add(-time.Hour)
+	stale.Name = "Edited"
+	stale.SyncDeletions = false
+	stale.LastSyncAt = &forgedAt
+	stale.LastSyncCursor = types.JSON(`{"groups":{},"applying":{},"retiring":{}}`)
+	stale.LastSyncResult = types.JSON(`{"total":999}`)
+	stale.CreatedAt = forgedAt
+	stale.UpdatedAt = forgedAt
+	stale.DeletedAt = gorm.DeletedAt{Time: forgedAt, Valid: true}
+	require.NoError(t, repo.Update(ctx, stale))
+	var after types.DataSource
+	require.NoError(t, db.Unscoped().First(&after, "id = ?", current.ID).Error)
+	require.Equal(t, "Edited", after.Name)
+	require.False(t, after.SyncDeletions)
+	require.Equal(t, before.LastSyncAt, after.LastSyncAt)
+	require.Equal(t, before.LastSyncCursor, after.LastSyncCursor)
+	require.Equal(t, before.LastSyncResult, after.LastSyncResult)
+	require.Equal(t, before.CreatedAt, after.CreatedAt)
+	require.Equal(t, before.DeletedAt, after.DeletedAt)
+	require.True(t, after.UpdatedAt.After(before.UpdatedAt), "settings changes must invalidate the worker's earlier native version")
+	require.False(t, after.UpdatedAt.Equal(forgedAt))
+	require.True(t, stale.UpdatedAt.Equal(after.UpdatedAt), "the caller must retain the database's actual timestamp precision")
+	running.LastSyncCursor = types.JSON(`{"intent":"stale-worker"}`)
+	require.Error(t, repo.UpdateSyncState(ctx, &running))
+	retained, err := repo.FindByID(ctx, current.ID)
+	require.NoError(t, err)
+	require.Equal(t, before.LastSyncCursor, retained.LastSyncCursor)
+	missing := *stale
+	missing.ID = "ds-settings-missing"
+	require.Error(t, repo.Update(ctx, &missing))
+}
+
 func TestDataSourceRepositoryUpdatePersistsDisabledSyncDeletions(t *testing.T) {
 	db := setupDataSourceRepoTestDB(t)
 	repo := NewDataSourceRepository(db)

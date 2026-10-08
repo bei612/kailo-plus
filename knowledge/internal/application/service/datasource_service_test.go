@@ -87,12 +87,15 @@ func (r *fileStorageConfigRepository) Create(context.Context, *types.DataSource)
 
 func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t *testing.T) {
 	resource := uuid.NewString()
-	for _, name := range []string{"valid-selection", "unchanged-selection", "omitted-config", "empty-selection", "duplicate-selection", "invalid-reference", "native-url-setting", "malformed-config"} {
+	for _, name := range []string{"valid-selection", "valid-selection-omitted-type", "unchanged-selection", "omitted-config", "omitted-config-and-type", "empty-selection", "duplicate-selection", "invalid-reference", "native-url-setting", "malformed-config", "empty-selection-omitted-type", "duplicate-selection-omitted-type", "invalid-reference-omitted-type", "native-url-setting-omitted-type", "malformed-config-omitted-type"} {
 		t.Run(name, func(t *testing.T) {
 			original, err := (&types.DataSourceConfig{ResourceIDs: []string{resource}}).ToJSON()
 			require.NoError(t, err)
 			existing := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(),
 				Type: fileStorageConnectorType, Status: types.DataSourceStatusPaused, Config: original}
+			existing.LastSyncCursor = types.JSON(`{"applying":{"knowledgeId":"original-native-reference"}}`)
+			existing.LastSyncResult = types.JSON(`{"total":1}`)
+			existing.CreatedAt = time.Now().Add(-time.Hour).UTC()
 			repo := &fileStorageConfigRepository{kbDeleteDSRepo: newKBDeleteDSRepo(existing.KnowledgeBaseID, existing)}
 			registry := datasource.NewConnectorRegistry()
 			registry.Register(&fileStorageConnector{transport: &fileStorageTransport{config: &config.FileStorageSyncConfig{
@@ -104,30 +107,37 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 			switch name {
 			case "unchanged-selection":
 				cfg.ResourceIDs = []string{resource}
-			case "empty-selection":
+			case "empty-selection", "empty-selection-omitted-type":
 				cfg.ResourceIDs = nil
-			case "duplicate-selection":
+			case "duplicate-selection", "duplicate-selection-omitted-type":
 				cfg.ResourceIDs = append(cfg.ResourceIDs, cfg.ResourceIDs[0])
-			case "invalid-reference":
+			case "invalid-reference", "invalid-reference-omitted-type":
 				cfg.ResourceIDs = []string{"not-a-platform-resource"}
-			case "native-url-setting":
+			case "native-url-setting", "native-url-setting-omitted-type":
 				cfg.Settings = map[string]interface{}{"native_url": "https://native-source.invalid"}
 			}
 			next := *existing
+			next.LastSyncCursor = types.JSON(`{"applying":{}}`)
+			next.LastSyncResult = types.JSON(`{"total":999}`)
+			next.CreatedAt = time.Now().Add(-2 * time.Hour).UTC()
+			next.DeletedAt.Valid = true
 			next.Config, err = cfg.ToJSON()
 			require.NoError(t, err)
-			if name == "malformed-config" {
+			if name == "malformed-config" || name == "malformed-config-omitted-type" {
 				next.Config = types.JSON(`{"resource_ids":`)
 			}
-			if name == "omitted-config" {
+			if name == "omitted-config" || name == "omitted-config-and-type" {
 				next.Config = nil
 			}
+			if name == "omitted-config-and-type" || strings.HasSuffix(name, "-omitted-type") {
+				next.Type = ""
+			}
 			result, err := svc.UpdateDataSource(context.Background(), &next)
-			if name == "omitted-config" {
+			if name == "omitted-config" || name == "omitted-config-and-type" {
 				require.NoError(t, err)
 				require.Same(t, &next, result)
 				require.Equal(t, 1, repo.writes)
-			} else if name == "valid-selection" || name == "unchanged-selection" {
+			} else if name == "valid-selection" || name == "valid-selection-omitted-type" || name == "unchanged-selection" {
 				require.NoError(t, err)
 				require.Equal(t, 1, repo.writes)
 				actual, parseErr := result.ParseConfig()
@@ -138,6 +148,13 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 				require.Error(t, err)
 				require.Nil(t, result)
 				require.Zero(t, repo.writes, "invalid configuration must not be persisted or scheduled")
+			}
+			if err == nil {
+				require.Equal(t, fileStorageConnectorType, result.Type, "validation, persistence and scheduling must use the same native connector")
+				require.Equal(t, existing.LastSyncCursor, result.LastSyncCursor)
+				require.Equal(t, existing.LastSyncResult, result.LastSyncResult)
+				require.Equal(t, existing.CreatedAt, result.CreatedAt)
+				require.Equal(t, existing.DeletedAt, result.DeletedAt)
 			}
 			require.Equal(t, original, existing.Config, "editing must not mutate the previous native row before validation")
 		})

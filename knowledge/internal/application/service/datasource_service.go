@@ -173,12 +173,21 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	if ds.TenantID != existing.TenantID {
 		return nil, datasource.ErrDataSourceInvalid
 	}
-	connectorType := ds.Type
-	if connectorType == "" {
-		connectorType = existing.Type
+	// Sync observations and deletion are not settings supplied by this caller.
+	// The repository also excludes these columns so a newer worker checkpoint
+	// cannot be overwritten between this read and the settings transaction.
+	ds.LastSyncAt = existing.LastSyncAt
+	ds.LastSyncCursor = existing.LastSyncCursor
+	ds.LastSyncResult = existing.LastSyncResult
+	ds.CreatedAt = existing.CreatedAt
+	ds.DeletedAt = existing.DeletedAt
+	// Partial native edits use the persisted connector for every consumer,
+	// including credential filtering, validation, scheduling and the response.
+	if ds.Type == "" {
+		ds.Type = existing.Type
 	}
-	if connectorType == fileStorageConnectorType {
-		connector, err := s.connectorRegistry.Get(connectorType)
+	if ds.Type == fileStorageConnectorType {
+		connector, err := s.connectorRegistry.Get(ds.Type)
 		if err != nil {
 			return nil, err
 		}

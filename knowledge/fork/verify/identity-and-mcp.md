@@ -1357,3 +1357,124 @@ desc = context canceled`. No new backend digest was recorded or deployed, no
 running application service was stopped, and existing caches were not pruned.
 It will not be restarted in this source-integration checkpoint. This preserves
 the live previous backend; it is not a successful matching backend build.
+
+## Native import settings preserve receiver-owned recovery (2026-10-08)
+
+This increment continues the fixed WeKnora source
+`2be7bd40631dda1dd485306038f07a62e9ee287e`. The read-only original symbols are
+`internal/application/service/datasource_service.go::DataSourceService.UpdateDataSource`,
+`internal/application/repository/datasource_repo.go::DataSourceRepository.Update`,
+`internal/handler/datasource.go::DataSourceHandler.UpdateDataSource`, and
+`internal/types/datasource.go::DataSource`. The original frontend's
+`frontend/src/api/datasource/index.ts::updateDataSource` accepts a partial
+native data-source object; omitted connector type is therefore a real caller
+shape, not an invented platform API.
+
+Four-step impact and boundaries:
+
+1. Authority is `.design/13` sections 3, 4 and 7: native import checkpoints,
+   deduplication and deletion tracking belong to the receiving knowledge
+   service. A settings request must not erase retained native write/delete
+   evidence. No platform entity, workflow, permission authority, queue or
+   component lifecycle is introduced; this does not make an inactive binding
+   available.
+2. The impact search covered every native `dsRepo.Update` caller and the
+   separate `UpdateSyncState` path. Partial settings edits now canonicalize
+   the connector type from the existing authorized native row before binding
+   checks, credential filtering, config validation, persistence and scheduling.
+   The settings repository excludes last-sync observations, creation and
+   deletion columns from its actual SQL update, including when a worker has
+   advanced after the service's read. The existing explicit false-value write
+   for `sync_deletions` remains. Both settings and checkpoints retain the
+   database-returned timestamp precision needed by the existing version fence.
+3. A malformed or empty selected resource set cannot bypass the file-storage
+   validator merely by omitting type. Forged or stale cursor/result fields
+   cannot overwrite the worker's retained native references. The original
+   `UpdateSyncState` remains the runtime write consumer; there is no second
+   synchronization authority and no Core copy of source content. Web and
+   Desktop continue using their existing component pages; Mobile does not gain
+   a component host. No contract, schema or migration is changed.
+4. Invalid configuration and missing native rows remain precondition failures;
+   scope/permission failures remain denied. Concurrent worker checkpoints keep
+   their original version-conflict behavior. Timeout or unknown native side
+   effects remain unknown and are not replayed, cleared or turned into a
+   successful import by this change. Quota/size limits and blocked component
+   gates are unchanged. Native settings do not create a new recovery state,
+   deadline or retry scheduler: retained intents still terminate only through
+   the existing authorized observation/cancellation path.
+
+The four source files are `internal/application/repository/datasource_repo.go`,
+`internal/application/repository/datasource_repo_test.go`,
+`internal/application/service/datasource_service.go`, and
+`internal/application/service/datasource_service_test.go`. The added checks
+follow the implementation. They exercise omitted-type valid and invalid
+configs, attempts to supply runtime observations, a settings/worker interleave,
+false `sync_deletions`, missing rows, and actual database timestamp readback.
+The Cells implementation teammate reviewed the completed production change
+against all existing runtime/settings consumers and found no additional
+determinate issue; that review is not runtime verification.
+
+`git diff --check` on these four source files exited 0. The original
+`kailo-knowledge-native-check-wkkigg` SDK was checked running with its existing
+4-CPU/8-GiB limit, read-only source mount and original Data-backed module/build
+caches. The exact four changed files were synchronized to its existing private
+candidate after the other connector files, `go.mod` and `go.sum` compared
+unchanged. Its single narrow request runs the original `gofmt` on these four
+files, then `go test ./internal/application/repository
+./internal/application/service` with `GOPROXY=off` and the original module/build
+caches. The selected names are
+`TestDataSourceRepositorySettingsCannotOverwriteNativeRecovery`,
+`TestDataSourceRepositorySyncStateRetainsTheCurrentNativeVersion`,
+`TestDataSourceRepositoryUpdatePersistsDisabledSyncDeletions`, and
+`TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials`,
+with `-count=1`. The formatter completed and the four read-only candidate inputs
+compared byte-for-byte with formal source. The original request subsequently
+exited 0, reporting:
+
+```text
+ok github.com/Tencent/WeKnora/internal/application/repository 6.343s
+ok github.com/Tencent/WeKnora/internal/application/service 0.519s
+```
+
+After implementation and that positive result, only the existing private
+candidate was deliberately damaged: the repository's column exclusion and the
+service's omitted-type canonicalization were removed. The same two relevant
+original checks ran with the same offline caches and `-count=1`, and exited 1.
+The repository recovery check rejected the forged deletion/settings result;
+the service check rejected two wrong persisted connector types and five invalid
+omitted-type configurations that incorrectly returned no error:
+
+```text
+FAIL TestDataSourceRepositorySettingsCannotOverwriteNativeRecovery
+FAIL TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials
+FAIL github.com/Tencent/WeKnora/internal/application/repository 0.507s
+FAIL github.com/Tencent/WeKnora/internal/application/service 0.547s
+```
+
+Both private production changes were restored with no formal-source mutation.
+All four candidate/formal files compared byte-for-byte before rerunning the
+full original four selected checks. The restored request exited 0:
+
+```text
+ok github.com/Tencent/WeKnora/internal/application/repository 0.500s
+ok github.com/Tencent/WeKnora/internal/application/service 0.531s
+```
+
+These are native service/repository checks, not a real cross-service import,
+PostgreSQL acceptance, frontend screenshot, or production deployment. The
+native handler's existing HTTP error envelope was not changed; this increment
+does not claim that every native error has been mapped to the platform's six
+error classes. No duplicate in-flight request was started.
+
+The earlier concentrated `./tools/check-docs.sh` launcher subsequently exited
+0; its log `docs-phase.log` under
+`/volumes/data/kailo/tmp/knowledge-main-release-20261008.wtyNzc/` reports all
+seven dimensions passing, including 277 closed design references and zero
+markdownlint issues. That invocation preceded this receipt and does not verify
+this newly appended section. The existing full check against committed
+`dfc7a33835174bbaa9e43e0e335c2f12959edfeb` subsequently exited 2; its final
+output was `Got socket error trying to find package test at https://pub.dev.`
+It does not include these uncommitted source inputs and is not a passing
+production gate. This increment has passed its targeted positive, production
+damage and restoration checks; global acceptance, commit and deployment remain
+separate and are not claimed at this checkpoint.

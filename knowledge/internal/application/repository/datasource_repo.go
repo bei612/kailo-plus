@@ -86,9 +86,20 @@ func (r *DataSourceRepository) Update(ctx context.Context, ds *types.DataSource)
 	if ds.ID == "" {
 		return errors.New("data source id is empty")
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(ds).Updates(ds).Error; err != nil {
-			return err
+	next := *ds
+	next.UpdatedAt = time.Now().UTC()
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Settings edits can race a checkpoint. Never write an old or supplied
+		// runtime cursor/result back over the native worker's retained intent.
+		result := tx.Model(&next).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "updated_at"}}}).
+			Omit("last_sync_at", "last_sync_cursor", "last_sync_result", "created_at", "deleted_at").
+			Updates(&next)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("native data source is unavailable for settings update")
 		}
 		// GORM Updates(struct) deliberately skips zero values, which would make
 		// a user-selected sync_deletions=false impossible to persist.
@@ -96,6 +107,10 @@ func (r *DataSourceRepository) Update(ctx context.Context, ds *types.DataSource)
 			Where("id = ?", ds.ID).
 			UpdateColumn("sync_deletions", ds.SyncDeletions).Error
 	})
+	if err == nil {
+		ds.UpdatedAt = next.UpdatedAt
+	}
+	return err
 }
 
 // UpdateSyncState advances the loaded native row only if its version is still
