@@ -1093,3 +1093,81 @@ Node 日志沿前节原候选，文件名与 SHA-256：
 按 key 观察/完整 usage 仍有缺口，不将四项 node 能力冒充完整 release；原条件
 删除阻断没有重开。full、真实 Gateway/Codex、live release/binding、实际
 Cells→WeKnora E2E、页面截图、Windows/Mobile、构建发布和部署均未执行。
+
+## 原生上传与共享写结果传播（2026-10-08）
+
+本节是实现后的专项事实，不是平台 write/share 完成声明。四步影响复核：
+
+1. 权威仍为 `.design/07` §5.2/§8A、独立组件原生业务边界及固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`。只读核验该 commit 的完整
+   原路径与符号：`common/nodes/version/handler-version.go::Handler.PutObject`、
+   `Handler.MultipartComplete`、`Handler.routeUploadToContentRevision`，
+   `data/versions/grpc/handler.go::Handler.StoreVersion`，以及
+   `idm/share/rest/handler.go::SharesHandler.PutCell`。原版本服务吞掉 DAO 错误，
+   原分片完成错误返回了另一变量，上传不核版本存储确认，原共享根校验也误返
+   旧错误变量；本批直接修正这些已有消费者，没有另造任务或执行权威。
+2. 影响仅为原上传 wrapper、原版本 RPC 和原共享 REST，附三个原模块检查。
+   普通上传/分片完成消费真实 `ObjectInfo.Size`；两调用方共用精确的
+   StoreVersion 确认，要求 Success 和原 ContentRevision 一致。原创建返回的
+   VersionId、Draft、Location/datasource 完整且匹配后才上传。未改契约、表、
+   迁移、认证、原生 ACL、独立入口、UI、配置或上架状态；未碰继承的 compose
+   改动，也没有不安全开关。
+3. StoreVersion 的真实 DAO 错误原样返回，未落盘不报 RPC 成功；共享根目录
+   校验错误不再报空成功。对象写入后存储确认丢失/失败仍可能结果不明，本批
+   不重复上传、不猜版本、不造完成收据或回滚证明。原分片缓存清理行为未改，
+   不因此声称其重试/对账已成为平台可用的 write/share 终态合同。
+4. 实际检查包括空/中文内容、上传前未知 Size、精确 owner/node/version、创建
+   引用畸形、版本存储失败/缺确认/确认错版本或大小、对象写错误与空共享根。
+   原生无 versioning policy 仍返回 Success=false，上传消费者拒绝把它当已
+   存储；没有把拒绝、未知或旧引用转换为假成功。独立 UI 的原功能和 ACL 保留。
+
+沿已有 `kailo-cells-native-check-lftow7`，Go `go1.26.8 linux/amd64`、
+UID/GID 1000:1000，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+实际 cgroup CPU=4、memory=8 GiB、额外 swap=0；每轮先核现有进程和内存，
+可用内存约 10–13 GiB、Data 295 GiB，始终复用原 mod/build cache。没有创建
+镜像、数据库、工具链或全树快照。按主线要求用原 Go 配置补拉已锁定的缺失
+依赖，`-mod=readonly`，正式/候选 go.mod 与 go.sum 最终 cmp=0；没有换版本。
+
+```sh
+CELLS_WORKING_DIR=/tmp/cells-write-check CELLS_DATA_DIR=/tmp/cells-write-check \
+go test -mod=readonly ./common/nodes/version ./data/versions/grpc ./idm/share/rest \
+  -run 'TestDraftUpload|TestKailoNative|TestPutCellRejectsInvalidRoots|TestGetCellRequiresReadAccess' \
+  -count=1 -v
+positive (handle 77985): exit 0; 6 top-level + 27 subtests passed
+private production mutation (handle 11160): exit 1; 4 top-level + 16 subtests failed
+byte-restored (handle 56250): exit 0; 6 top-level + 27 subtests passed
+```
+
+生产破坏只在私有候选三个生产路径中进行：吞掉 DAO 错误、关闭准确存储确认、
+去掉两处真实 Size 回填、恢复分片误返变量、放宽原创建引用、恢复共享根校验
+误返变量，共七处。原检查与夹具字节不变；失败分别抓到两种 draft/published
+DAO 错误、八种坏确认、未知/分片大小、分片对象错误、三种坏创建及空共享根。
+正式树未破坏，恢复后三个生产/三个检查输入逐文件 cmp=0，最终 cgroup
+oom/oom_kill 均为 0，memory.current=1529839616 bytes；全部命令已终态。
+
+首轮 handle 44042 exit 1，临时 GOPROXY=off 使共享包缺已锁依赖，候选漏同步
+已提交 `common/proto/tree/native-head.go`；分片夹具还复用了原 WithBranchInfo
+会改写的请求 context。第二轮 handle 59265 正常拉取依赖后仍 exit 1：新增
+DAO 故障夹具只改变旧实例，而原 manager 每次 Resolve 重建 DAO。分别最小
+同步原文件、按真实分片完成新请求恢复 source context、共享原 factory 故障
+引用后，才形成上述最终字节证据；未以失败轮次冒充验收。原 GetCell 既有
+Role lookup 打印堆栈但原目标 PASS，该输出完整保留，未为本批隐藏或更改。
+StoreVersion 成功路径实际读回原 Bolt 存储；DAO 失败通过原接口故障注入，
+上传/共享检查使用原生成 RPC stub，不把它们称作线上组件 E2E。
+
+日志位于 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-native-write-persistence-positive.log` | `a0b4029a23732523e1e34a54b3410162cc8c6588f5be774651600a6789df1458` |
+| `cells-native-write-persistence-positive-final.log` | `a5a5d7575897119d6be133af0996ddea93b54e7eabe9b2f164928c43d0f9d828` |
+| `cells-native-write-persistence-positive-validated.log` | `10a41406b2e15e0389befc69385afc8ab931b39f5fbdd07fbbc57c8699fda454` |
+| `cells-native-write-persistence-mutation.log` | `181d60b6b5602ec456283fe6c13023c4e641142c027a590cdbd052c1f4491f4b` |
+| `cells-native-write-persistence-restored.log` | `80abde8f3f920a59edf13e96852f660e9a91048e02150847b4d7891ef6129e71` |
+
+本批没有新增/启用 adapter write/delete/share；完整七项 FILE_STORAGE catalog、
+按 key 观察终态、原子条件删除与平台写入幂等/usage 仍按前节缺口处理。
+三包仅执行上述筛选目标，未跑完整 Cells、check.sh --full、Gateway/Codex、
+真实 binding、Cells→WeKnora E2E、浏览器/安装包验收或部署，不将原生修复
+当作平台完整组件上线。

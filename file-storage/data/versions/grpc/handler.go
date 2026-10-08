@@ -258,10 +258,11 @@ func (h *Handler) StoreVersion(ctx context.Context, request *tree.StoreVersionRe
 
 	*/
 
-	if err := dao.StoreVersion(ctx, request.Node.Uuid, request.Version); err == nil {
-		resp.Success = true
-		resp.Version = request.Version
+	if err := dao.StoreVersion(ctx, request.Node.Uuid, request.Version); err != nil {
+		return nil, err
 	}
+	resp.Success = true
+	resp.Version = request.Version
 	if request.Version.Draft {
 		return resp, nil
 	}

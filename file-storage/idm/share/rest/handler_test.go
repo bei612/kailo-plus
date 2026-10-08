@@ -24,21 +24,47 @@ import (
 	"context"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	restful "github.com/emicklei/go-restful/v3"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 	"github.com/pydio/cells/v5/common"
 	claimpkg "github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	serviceproto "github.com/pydio/cells/v5/common/proto/service"
+	"github.com/pydio/cells/v5/common/utils/cache/gocache"
+	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+type shareWriteOwner struct {
+	idm.UnimplementedUserServiceServer
+}
+
+func (*shareWriteOwner) SearchOne(context.Context, *idm.SearchUserRequest) (*idm.SearchUserResponse, error) {
+	return &idm.SearchUserResponse{User: &idm.User{Uuid: "native-owner", Login: "native-owner"}}, nil
+}
+
+func TestPutCellRejectsInvalidRoots(t *testing.T) {
+	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &shareWriteOwner{}})
+	request := httptest.NewRequest("PUT", "/a/share/cell", strings.NewReader(`{"Room":{"RootNodes":[]}}`))
+	request.Header.Set("Content-Type", restful.MIME_JSON)
+	request = request.WithContext(withClaims(request.Context(), "native-owner"))
+	recorder := httptest.NewRecorder()
+	if err := NewSharesHandler().PutCell(restful.NewRequest(request), restful.NewResponse(recorder)); err == nil || !errors.Is(err, errors.InvalidParameters) {
+		t.Fatalf("invalid native share roots became a successful REST call: %v", err)
+	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("failed native share returned a business result: %s", recorder.Body.String())
+	}
+}
 
 func TestGetCellRequiresReadAccess(t *testing.T) {
 	h := NewSharesHandler()

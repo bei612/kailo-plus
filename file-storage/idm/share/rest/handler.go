@@ -101,13 +101,13 @@ func (h *SharesHandler) PutCell(req *restful.Request, rsp *restful.Response) err
 	}
 
 	if err := h.docStoreStatus(ctx); err != nil {
-		return er
+		return err
 	}
 
 	// Init Root Nodes and check permissions
 	hasReadonly, err := h.sc.ParseRootNodes(ctx, shareRequest.Room, shareRequest.CreateEmptyRoot)
 	if err != nil {
-		return er
+		return err
 	}
 
 	// Detect if one root has an access set via policy

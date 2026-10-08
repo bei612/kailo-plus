@@ -311,6 +311,7 @@ func (v *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 			return models.ObjectInfo{}, er
 		}
 		revision.ETag = oi.ETag
+		revision.Size = oi.Size
 		if ex, o := reader.(common.ReaderMetaExtractor); o {
 			if mm, ok := ex.ExtractedMeta(); ok && mm[common.MetaNamespaceHash] != "" {
 				log.Logger(ctx).Debug("Update revision with computed Hash" + mm[common.MetaNamespaceHash])
@@ -318,7 +319,7 @@ func (v *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 			}
 		}
 		// Now store version
-		_, er = v.getVersionClient(ctx).StoreVersion(ctx, &tree.StoreVersionRequest{Node: node, Version: revision})
+		er = v.storeDraftVersion(ctx, node, revision)
 
 		return oi, er
 
@@ -402,17 +403,33 @@ func (v *Handler) MultipartComplete(ctx context.Context, target *tree.Node, uplo
 			}()
 			oi, e := v.Next.MultipartComplete(ctx, newTarget, uploadID, uploadedParts)
 			if e != nil {
-				return oi, err
+				return oi, e
 			}
 			// Now update ETag and Store revision
 			revision.ETag = oi.ETag
+			revision.Size = oi.Size
 			revision.ContentHash = target.GetStringMeta(common.MetaNamespaceHash)
-			_, er = v.getVersionClient(ctx).StoreVersion(ctx, &tree.StoreVersionRequest{Node: target, Version: revision})
+			er = v.storeDraftVersion(ctx, target, revision)
 			return oi, er
 		}
 	}
 
 	return v.Next.MultipartComplete(ctx, target, uploadID, uploadedParts)
+}
+
+// Both original upload paths require the exact native revision acknowledgement.
+// A disabled policy returns Success=false, not proof that a draft was stored.
+// Storage/transport failures leave the already-attempted write uncertain; this
+// helper does not repeat the object upload or synthesize a revision.
+func (v *Handler) storeDraftVersion(ctx context.Context, node *tree.Node, revision *tree.ContentRevision) error {
+	response, err := v.getVersionClient(ctx).StoreVersion(ctx, &tree.StoreVersionRequest{Node: node, Version: revision})
+	if err != nil {
+		return err
+	}
+	if !response.GetSuccess() || !proto.Equal(response.GetVersion(), revision) {
+		return errors.WithMessage(errors.VersionNotFound, "draft revision persistence was not acknowledged")
+	}
+	return nil
 }
 
 func (v *Handler) MultipartAbort(ctx context.Context, target *tree.Node, uploadID string, requestData *models.MultipartRequestData) error {
@@ -461,6 +478,10 @@ func (v *Handler) routeUploadToContentRevision(ctx context.Context, node *tree.N
 		return nil, nil, nodes.LoadedSource{}, er
 	}
 	revision := vr.GetVersion()
+	if vr.GetIgnored() || revision == nil || revision.VersionId != versionId || !revision.Draft ||
+		revision.Location == nil || revision.Location.Path == "" || revision.Location.GetStringMeta(common.MetaNamespaceDatasourceName) == "" {
+		return nil, nil, nodes.LoadedSource{}, errors.WithMessage(errors.VersionNotFound, "draft revision creation was not acknowledged")
+	}
 	revision.MTime = time.Now().Unix()
 	revision.Size = knownSize
 
