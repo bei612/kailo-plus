@@ -34,6 +34,17 @@ export function queryDigest(argumentsValue) {
   return createHash('sha256').update(canonical({ operation: 'query_revision', arguments: argumentsValue })).digest('hex');
 }
 
+export function nativeVersionSize(version) {
+  if (!object(version)) throw new Refused(503);
+  // Fixed Cells Version.Size is a non-optional proto3 int64. Its default
+  // protojson writer omits zero; explicit null/unknown encodings are not zero.
+  if (!Object.hasOwn(version, 'Size')) return 0;
+  if (typeof version.Size !== 'string' || !/^(0|[1-9][0-9]*)$/.test(version.Size)) throw new Refused(503);
+  const size = Number(version.Size);
+  if (!Number.isSafeInteger(size)) throw new Refused(503);
+  return size;
+}
+
 export function configuration(value) {
   const required = ['bindingId', 'tenantId', 'nativeWorkspaceId', 'nativeRootRef',
     'cellsRestBaseUrl', 'cellsBearerFile', 'actionTokenIssuer', 'actionTokenAudience',
@@ -238,9 +249,9 @@ async function originalWriteRevision(config, deadline, args, claims) {
     if (!object(version) || !nonempty(version.VersionId) || ids.has(version.VersionId)) throw new Refused(503);
     ids.add(version.VersionId);
     if (version.VersionId !== evidence.resultRevision) continue;
-    // The native REST schema uses int64 JSON strings. Only an exact canonical
-    // decimal encoding of the bounded metadata is accepted; no number guess.
-    if (version.ETag !== evidence.nativeEtag || version.Size !== String(evidence.bytesWritten)
+    // Compare the actual proto3 size with this writer's retained byte count,
+    // including the native omitted-zero representation of an empty save.
+    if (version.ETag !== evidence.nativeEtag || nativeVersionSize(version) !== evidence.bytesWritten
       || version.Draft === true || (version.Draft !== undefined && typeof version.Draft !== 'boolean')) {
       throw new Refused(503);
     }

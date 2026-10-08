@@ -574,3 +574,70 @@ post-buffer `nativeDocumentNode` 调用（保留最后 PEP、原 fixture 和断�
 其他 native 写操作、浏览器截图、Windows/Mobile、full、镜像和部署均未在本批
 执行。这里不沿用历史 170 项的全部 adapter 验收口径；本批证据精确限于上述
 原 SERVICE/source-bytes/shared-PEP HTTP 消费者。
+
+## 原生零字节版本的来源读取与保存观察（2026-10-08）
+
+真实断点是固定 Cells 默认 protojson 会省略零值 `Version.Size`；此前来源读取把
+缺席当作非法大小，原历史保存观察则要求显式字符串 `"0"`，两者均拒绝真实空文件。
+这是原生编码的消费者遗漏，不是新增上传能力，也不放宽未知字段或业务准入。
+
+四步影响结论：
+
+1. 权威为 `.design/07` §5、§8.2 和 `.design/13` §4.4 的原生版本、受权字节
+   与双边回执。只读 Git 核验 Cells 完整固定 commit
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+   `common/proto/rest/cellsapi-rest-v2.pb.go::Version.Size` 是非 optional proto3
+   int64；`common/middleware/rest-entity-rw.go::ProtoEntityReaderWriter.Write`
+   使用默认 `protojson.Marshal`；`gateway/restv2/api-versions.go::Handler.NodeVersions`
+   经 `gateway/restv2/api.go::Handler.TreeContentRevisionToVersion` 返回该模型。
+   原生产者与 REST 协议不改，未执行上游证据中的代码。
+2. 仅原 `query-revision.mjs::originalWriteRevision` 与
+   `service-read.mjs::readFile` 共用 `nativeVersionSize`，以及原 HTTP 检查修改。
+   缺席 `Size` 按已核实 proto3 零值解码；显式值只接受规范非负 int64 JSON
+   字符串且在 JavaScript 安全整数范围。没有新配置、协议、类型权威、schema、
+   数据迁移或旧读路径；Web/Desktop/Mobile 页面及组件宿主边界不变。
+3. 空值、数字、布尔、空串、前导零、负数、小数、超安全整数均拒绝，绝不以零
+   兜底。来源仍要求确切 VersionId、固定 root/Workspace/已授权子树、非 draft、
+   受控下载 origin、精确实读字节数、三次 fresh PEP 及持久 SOURCE 回执确认。
+   缺席大小但实际有字节仍 503 且没有回执；没有复制正文或追加计量权威。
+4. 零字节成功保留原 SHA-256、版本、长度 `0`、一次读取 count 和零 bytes
+   measurement。原已接受保存仅在同 VersionId、ETag、零 bytesWritten 与原
+   HUMAN observation 关联都匹配时确认；不下载、不新写、不产生 SOURCE 回执。
+   错大小/ETag/版本、撤权、超限、native 拒绝及结果不明沿原错误/UNKNOWN
+   收敛，不把传输失败当空文件；没有引入新状态或期限。
+
+实现先于扩充原检查。执行前核验无构建进程、主机约 30 GiB 可用内存、swap 0、
+Data 271 MiB。复用已存在 `kailo-wren-query-sdk-itgs2n`，UID/GID 1000:1000，
+实际 `cpu.max=400000 100000`、`memory.max=4294967296`、memory+swap 同值；
+Node v24.21.0。仅向上一私有小候选增加六个 Cells 直接源码/检查输入，未改 Wren
+输入、根 SDK、依赖缓存或其他项目；没有安装、下载、镜像、Go 链接或新数据库。
+该 SDK 确实缺 `xml2js`，因此完整编辑器套件没有运行，不冒充全部 adapter 通过。
+
+三轮使用同一原目标：
+
+```sh
+node --test --test-name-pattern='SERVICE|source bytes|accepted zero-byte|original accepted save' \
+  file-storage/adapter/test/query-revision.test.mjs
+positive: exit 0; 85 passed, 0 failed, 0 skipped
+private production mutation: exit 1; 80 passed, 5 failed, 0 skipped
+byte-restored: exit 0; 85 passed, 0 failed, 0 skipped
+```
+
+私有生产破坏把真正缺席零值解码改回拒绝，原检查及 fixture 不变：原空文件读取
+和零字节保存均实际 `503 !== 200`；缺席大小的非空反例仍被拒绝，但提前返回使
+下载次数由 1 变为 0，原调用次数断言也报错；三子项加两父项共五失败。正式源码未破坏；
+回拷正式源字节后三个变更路径 `cmp` 均退出 0，同一目标再次通过。
+完整本批 diff 已复核，`git diff --check` 退出 0，无在途命令。
+
+日志原件在
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-empty-version-positive.log` | `5e0f6375c3d8c0b10b5b30f5a32584de9c303eead28475b15511b8938cc7e4a4` |
+| `cells-empty-version-mutation.log` | `86ead183dc0343a0c0b52b8ac211bd911ea0a3e96ca8c090877a06a027d7dc43` |
+| `cells-empty-version-restored.log` | `90bef8d47cdf8400523dfab4e742e804f5370979bf91aa6b29019db488fd4f0b` |
+
+这些是受控 Cells REST/PEP 的原 HTTP 消费者证据。没有执行实际 Cells 空文件
+跨服务导入/解析/结算、release/binding 激活、原 UI8、Windows/Mobile、full、
+镜像发布或部署；知识库冻结 Go10 的最新字节仍未验收，不借本批结果增加其完成度。

@@ -148,7 +148,7 @@ async function setup(t, changes = {}) {
       assert.equal(request.headers.authorization, undefined);
       state.downloads = (state.downloads ?? 0) + 1;
       response.writeHead(200, {'content-type':'application/octet-stream'});
-      response.end(Buffer.from([0,255,1,254]));
+      response.end(changes.nativeBytes ?? Buffer.from([0,255,1,254]));
       return;
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
@@ -198,7 +198,9 @@ async function setup(t, changes = {}) {
       return reply(response, changes.nativeStatus ?? 200, changes.versions ?? (changes.serviceList
         ? {Versions:[{VersionId:changes.changeDuringList && state.listings>1?'changed-version':'frozen-version',IsHead:true}]}
         : changes.serviceRead
-        ? {Versions:[{VersionId:'frozen-version',Size:'4',PreSignedGET:{Url:`${origin}/native-bytes?versionId=frozen-version`}}]}
+        ? {Versions:[{VersionId:'frozen-version',
+          ...(changes.omitVersionSize?{}:{Size:Object.hasOwn(changes,'versionSize')?changes.versionSize:'4'}),
+          PreSignedGET:{Url:`${origin}/native-bytes?versionId=frozen-version`}}]}
         : versions));
     }
     return reply(response, 404, {});
@@ -527,6 +529,61 @@ test('source bytes require the exact persisted receipt acknowledgment and actual
       if (result.status!==200) assert.deepEqual(await result.json(),{error:'adapter request refused'});
     });
   }
+});
+
+test('SERVICE source read consumes native proto3 omitted zero without accepting malformed size or nonempty bytes',async t=>{
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],
+    input:{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version'}};
+  const request={actionKey:'file_storage.read@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const empty=Buffer.alloc(0);
+  const cases=[
+    ['omitted zero',{omitVersionSize:true,nativeBytes:empty},200,1],
+    ['explicit zero',{versionSize:'0',nativeBytes:empty},200,1],
+    ['nonempty bytes with omitted size',{omitVersionSize:true},503,1],
+    ['nonempty bytes with explicit zero',{versionSize:'0'},503,1],
+    ['empty bytes with nonzero size',{nativeBytes:empty},503,1],
+    ...[null,0,false,'','00','-1','4.0','9007199254740992','65537']
+      .map(value=>[`invalid size ${JSON.stringify(value)}`,{versionSize:value,nativeBytes:empty},503,0]),
+  ];
+  for (const [name,change,status,downloads] of cases) await t.test(name,async nested=>{
+    const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceRead:true,...change,
+      usageMeasurements:[{meterKey:'native_read_count',quantitySource:'COUNT'},{meterKey:'native_read_bytes',quantitySource:'CONTENT_BYTES'}]});
+    const result=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+    assert.equal(result.status,status);
+    assert.equal(fixture.state.downloads??0,downloads);
+    assert.equal(fixture.state.receipts.length,status===200?1:0);
+    if (status===200) {
+      assert.deepEqual(Buffer.from(await result.arrayBuffer()),empty);
+      assert.equal(result.headers.get('content-length'),'0');
+      assert.equal(result.headers.get('x-kailo-native-revision'),'frozen-version');
+      assert.equal(result.headers.get('x-kailo-content-sha256'),createHash('sha256').update(empty).digest('hex'));
+      assert.equal(fixture.state.peps,3);
+      assert.equal(fixture.state.receipts[0].contentBytes,0);
+      assert.deepEqual(fixture.state.receipts[0].measurements,
+        [{meterKey:'native_read_count',quantity:1},{meterKey:'native_read_bytes',quantity:0}]);
+    } else assert.deepEqual(await result.json(),{error:'adapter request refused'});
+  });
+});
+
+test('accepted zero-byte native save observes the exact version and ETag with omitted proto3 size',async t=>{
+  const writeObservation={phase:'ACCEPTED',correlationRef:'zero-byte-write',editors:'human',
+    baseModifiedAt:'2026-10-05T00:00:00Z',bytesWritten:0,nativeEtag:'empty-native-etag',resultRevision:'empty-version'};
+  const argumentsValue={idempotencyKey:ids[7],nativeObjectRef:ids[3],
+    protocolReconcile:{protocolSessionId:ids[7],baseRevision:'original-base',writeObservation}};
+  for (const size of [undefined,'0',null,0,'1']) await t.test(`Size=${JSON.stringify(size)}`,async nested=>{
+    const version={VersionId:'empty-version',ETag:'empty-native-etag',...(size===undefined?{}:{Size:size})};
+    const fixture=await setup(nested,{arguments:argumentsValue,human:true,versions:{Versions:[version]}});
+    const result=await fixture.invoke();
+    assert.equal(result.status,size===undefined||size==='0'?200:503);
+    const value=await result.json();
+    if (result.status===200) {
+      assert.equal(value.nativeRevision,'empty-version');
+      assert.equal(value.protocolSessionId,ids[7]);
+      assert.equal(fixture.state.peps,2);
+    } else assert.deepEqual(value,{error:'adapter request refused'});
+    assert.equal(fixture.state.downloads??0,0);
+    assert.equal(fixture.state.receipts.length,0);
+  });
 });
 
 test('SERVICE source read rechecks native UUID ownership and lifecycle after buffering before publishing a receipt', async (t) => {

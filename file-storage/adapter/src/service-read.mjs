@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { Refused, object, exactKeys, nonempty, canonical, fixedUrl, boundedBytes,
   verifiedClaims, jsonFetch, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
-import { nativeDocumentNode } from './query-revision.mjs';
+import { nativeDocumentNode, nativeVersionSize } from './query-revision.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -61,10 +61,10 @@ export async function readFile(config, deadline, raw, key, token) {
   if (versions.length !== 1) throw new Refused(409);
   const version=versions[0];
   if (version.Draft === true || (version.Draft !== undefined && typeof version.Draft !== 'boolean')
-    || !/^(0|[1-9][0-9]*)$/.test(version.Size) || !object(version.PreSignedGET)
+    || !object(version.PreSignedGET)
     || !nonempty(version.PreSignedGET.Url)) throw new Refused(503);
-  const expected=Number(version.Size);
-  if (!Number.isSafeInteger(expected) || expected > config.maxBodyBytes) throw new Refused(503);
+  const expected=nativeVersionSize(version);
+  if (expected > config.maxBodyBytes) throw new Refused(503);
   const url=new URL(version.PreSignedGET.Url);
   if (url.origin !== config.readEdge.downloadOrigin || url.username || url.password || url.hash
     || url.searchParams.get('versionId') !== version.VersionId) throw new Refused(503);
