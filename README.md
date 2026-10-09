@@ -6,6 +6,15 @@
 
 ## 当前使用与恢复范围（2026-10-09）
 
+- 2026-10-09 04:04 UTC：仅 Web 发布已提交
+  `5baad5e09a6c8abeb33bbfa1904fe0ee77034b78` 的原普通频道读／未读消费者。
+  入口仍为 `http://192.168.0.193:58090/app/`，真实容器及普通 SSO 浏览器
+  build-info 已核对为 `sha256:9985c612c146a9cd611f13457ce699a740354023646d45e26ffb4c107fdfeaaa`。
+  Core／Worker 为 02:39 的 fd110 版本；未更新 Windows／Mobile。
+  当前 Appearance／Inbox 候选和三个业务组件后续源码不在该镜像内。
+  不称全量原版恢复、三组件 ACTIVE 或生产就绪，完整检查最近仍为 exit 1。
+  详见[固定版本、实际部署与失败边界](core/verify/release-20261009-fd110-c309a.md)。
+
 - 2026-10-09 01:49 UTC：仅 Web 更新为固定 main
   `a8c1cc8cc9a61334acf4bb4ed776a16992a37d35`，入口仍为
   `http://192.168.0.193:58090/app/`。实际镜像
