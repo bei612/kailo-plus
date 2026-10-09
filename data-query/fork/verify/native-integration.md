@@ -7796,3 +7796,87 @@ this instruction-only batch does not establish complete native CRUD governance.
 No release was activated, business container deployed, iframe/screenshots or
 multi-human acceptance performed. Root owns final full validation, source diff,
 main commit/push and release; this agent did not operate the Git index.
+
+## Original Model/View deletion final native dispatch guard
+
+This source increment consumes the instruction batch's existing per-call server
+closure; it does not introduce a metadata workflow, write ledger or public field.
+Authority is `.design/07` §4.6 and `SS-WRN-GOVERNANCE`: native internal CRUD keeps
+its own business database and current platform project authorization. The fixed
+official source is `c5f02a0391c87420dba78632dcd86073710deb72`, complete path
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.deleteModel`
+and `ModelResolver.deleteView`, in the read-only WrenAI-ui-0.32.2 evidence tree.
+
+### Actual impact, side effects and boundaries
+
+1. Source search located both original repository deletion consumers and the
+   existing `nativeProjectResolver` wrappers. An outer permission check cannot
+   authorize a later current-project selection or a row read during which the
+   user's permission, delivered binding, identity or generation changes.
+2. Both methods retain their current-project constrained `findOneBy`, original
+   missing-row errors, repository deletion/cascade and Boolean response. They now
+   consume the wrapper's captured project/identity/generation check immediately
+   after the last native row read and before `deleteOne`. The private helper has
+   these two actual callers only. No schema, API, database migration, UI, native
+   cascade, quota authority or execution engine changes.
+3. A configured direct call without the trusted server closure refuses instead
+   of performing an ungoverned deletion. Only the wholly unconfigured independent
+   original remains; configuration arriving during its row read also refuses.
+   The actual wrapper preserves its identical local pre-dispatch NOT_STARTED
+   refusal. A lost response or forged NOT_STARTED after native dispatch remains
+   UNKNOWN, with no second deletion or fabricated terminal native reference.
+4. Missing/foreign rows still stop before deletion. A second project selection,
+   revoked permission, changed generation, binding or identity at the last row
+   read stops before the first native write. The old in-project positive fixture
+   now goes through the real original mutation wrapper and public manage proof,
+   rather than injecting a callback into a raw resolver. Existing read/update
+   assertions and original deletion arguments remain intact.
+
+### Actual concentrated verification
+
+Root reused `kailo-wren-native-sdk-vuc6uo`, its locked dependencies and private
+`/work/native-delete-final.NthCrU` input. Host evidence is
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/native-delete-final.NthCrU`.
+The container's actual limits were 4 CPU, 4 GiB memory and 4 GiB memory+swap;
+the final preflight had 22,037,644 KiB available host memory, memory PSI 0.00 and
+no in-container build process. Its memory/OOM event counters remained all zero.
+Frozen instruction inputs came from main `469aadb58`; the root's three actual
+source/check inputs were compared to the candidate after original formatting.
+No dependencies, extra SDK, full build, image, database or reference executable
+were installed or run. An initial package-byte comparison exposed only JSON
+property ordering; semantic comparison and the existing yarn lock matched, then
+the formal package bytes were used without reinstalling dependencies.
+
+`positive.log`, handle 39759, exited 0 with 22/22 actual Model/View cases.
+Root then removed both private production `verifyMetadataDelete` calls, leaving
+the actual wrappers, rows, authority fixtures and test assertions unchanged.
+`mutation.log`, handle 29098, exited 1 with **16 failed / 6 passed / 22 total**:
+changed-project deletion incorrectly succeeded, revocation/reference changes
+became post-write UNKNOWN instead of pre-write NOT_STARTED, and configured raw
+calls deleted rows. This was a production-consumer failure, not a test, compiler
+or startup mutation. Both calls were restored via `apply_patch`, formal/private
+comparisons returned 0, and `restored.log`, handle 90053, exited 0 with 22/22,
+original TypeScript and Prettier checks passing.
+
+The subsequent integrated original SDK command was:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeHumanQuery.test.ts src/nativeProjectScope.test.ts src/middleware.test.ts src/nativeMetadataDelete.test.ts --runInBand &&
+node node_modules/typescript/bin/tsc --noEmit --incremental false &&
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/nativeProjectScope.test.ts src/nativeMetadataDelete.test.ts
+```
+
+Handle **69103 exited 0**: **4 suites passed, 814/814 cases**, 18.162 s;
+TypeScript and formatting also exited 0. `integrated-restored.log` SHA256 is
+`aa5a26afbed88d1798305cc381cbe3bf799c5988926677a138d5f71539f1d33b`.
+Original native error logging from intentional refusal fixtures remains in the
+logs. These are actual resolver/handler consumers with external authority and
+repositories supplied by fixtures, not live SpiceDB/Wren/database acceptance.
+
+Other model create/update/calculated-field/relation/deployment first-write
+consumers still need their real async authorization boundary closed. Durable
+UNKNOWN metadata recovery, dynamic Resource evidence, provider provenance and
+trusted SERVICE SQL remain separate gaps. This batch neither activates a
+business binding nor proves iframe, deployment, three-user collaboration,
+Windows/Mobile or the full production gate. It does not establish all native
+CRUD governance or 100% original-product parity.

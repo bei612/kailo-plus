@@ -2159,10 +2159,38 @@ describe('native bound-project business consumers', () => {
       name: 'original',
       properties: '{"displayName":"original","description":"original edit"}',
     });
-    expect(await resolver.deleteView(null, { where: { id: 21 } }, ctx)).toBe(
-      true,
-    );
+    const managedDelivery = {
+      ...config,
+      tenantId: 'd8736f48-05b9-4b4e-beca-59f45f8b5a9f',
+    };
+    jest.mocked(loadQueryDelivery).mockResolvedValue(managedDelivery);
+    authorize
+      .mockReset()
+      .mockImplementation(async (current, operation, request, token) => {
+        expect(operation).toBe('human-action');
+        expect(token).toBe(ctx.nativeHumanToken);
+        expect(request).toEqual({
+          bindingId: managedDelivery.bindingId,
+          authorizeScope: { permission: 'manage' },
+        });
+        return {
+          scope: {
+            ...current,
+            generation: 2,
+            permission: 'manage',
+            checkedRevision: 'original-view-delete-management',
+          },
+        };
+      });
+    expect(
+      await originalResolvers.Mutation.deleteView(
+        null,
+        { where: { id: 21 } },
+        ctx,
+      ),
+    ).toBe(true);
     expect(ctx.viewRepository.deleteOne).toHaveBeenCalledWith(21);
+    expect(authorize).toHaveBeenCalledTimes(3);
   });
   it.each(['columns', 'calculatedFields', 'nestedColumns', 'relationships'])(
     'does not use an allowed model to modify foreign %s',

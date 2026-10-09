@@ -122,6 +122,20 @@ export class ModelResolver {
     return relation;
   }
 
+  private async verifyMetadataDelete(ctx: IContext, projectId: number) {
+    if (ctx.nativeProjectCheck) {
+      // This is the first native write. The original project and row reads
+      // cannot authorize deletion after their asynchronous scope has changed.
+      await ctx.nativeProjectCheck(projectId);
+    } else if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      ctx.nativeIdentityScope !== undefined ||
+      ctx.nativeHumanToken !== undefined
+    ) {
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+  }
+
   private async currentLineage(
     ctx: IContext,
     lineage: number[],
@@ -918,6 +932,7 @@ export class ModelResolver {
     }
 
     // related columns and relationships will be deleted in cascade
+    await this.verifyMetadataDelete(ctx, projectId);
     await ctx.modelRepository.deleteOne(modelId);
     return true;
   }
@@ -1352,6 +1367,7 @@ export class ModelResolver {
     if (!view) {
       throw new Error('View not found');
     }
+    await this.verifyMetadataDelete(ctx, projectId);
     await ctx.viewRepository.deleteOne(viewId);
     return true;
   }
