@@ -7,6 +7,7 @@ import { buildMainTimelineEntries } from "@client-kit/platform/react/thread/thre
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
 import { BffError } from "@client-kit/platform/transport";
 import { useChannelWindow } from "./useChannelWindow";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 const state = vi.hoisted(() => ({ streams: [] as ((frame: StreamFrame) => void)[], query: vi.fn(), conversation: vi.fn(), reason: (value: string) => value }));
 vi.mock("@client-kit/platform/react/context", () => ({ useReasonText: () => state.reason }));
@@ -70,6 +71,26 @@ it("clears typing on a real message but does not resuppress a new burst on dupli
   expect(current.typing).toHaveLength(1);
   await send({type:"event",event:completed});
   expect(current.typing).toHaveLength(1);
+});
+
+it("uses only the current admitted bounds signer for delegated typing completion", async()=>{
+  vi.useFakeTimers();vi.setSystemTime(100_000);
+  const secret = new Uint8Array(32).fill(2);
+  const relay = getPublicKey(secret), author = "33".repeat(32);
+  const completed = finalizeEvent({kind:9,created_at:101,content:"done",tags:[["h","channel"],["actor",author]]},secret);
+  const typing = {...event("typing",100,20002,[["h","channel"]]),pubkey:author};
+  await send({type:"snapshot",events:[{...bounds(),pubkey:relay}]});
+  await send({type:"live"});
+  await send({type:"event",event:typing});
+  await send({type:"event",event:completed});
+  expect(current.typing).toEqual([]);
+  await send({type:"interrupted"});
+  await send({type:"snapshot",events:[{...bounds(),pubkey:author}]});
+  await send({type:"live"});
+  await send({type:"event",event:typing});
+  // Freshly signed distinct event avoids testing only the duplicate-ID guard.
+  await send({type:"event",event:finalizeEvent({...completed,content:"after reconnect"},secret)});
+  expect(current.typing).toEqual([{pubkey:author,threadHeadId:null}]);
 });
 
 it("continues the original dense-second cursor and only trusts signed exhaustion", async()=>{

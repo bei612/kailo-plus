@@ -101,6 +101,7 @@
     "./react/messages/dm-header-participants": "./src/react/messages/dm-header-participants.tsx",
     "./react/messages/types": "./src/react/messages/types.ts",
     "./react/messages/typingState": "./src/react/messages/typingState.ts",
+    "./react/messages/authors": "./src/react/messages/authors.ts",
     "./react/messages/TypingIndicatorRow": "./src/react/messages/TypingIndicatorRow.tsx",
     "./react/messages/ComposerActivityAccessory": "./src/react/messages/ComposerActivityAccessory.tsx",
     "./react/messages/parseImeta": "./src/react/messages/parseImeta.ts",

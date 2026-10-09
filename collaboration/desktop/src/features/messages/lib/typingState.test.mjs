@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { emptyTypingState, pruneTypingState, receiveTypingEvent, typingEntries } from "../../../../../../client-kit/ts/platform/src/react/messages/typingState.ts";
 
 const at = 100_000;
@@ -49,4 +50,40 @@ test("completion watermarks and future indicators do not keep state indefinitely
   state = receive(emptyTypingState(), { created_at: 100_000 });
   assert.deepEqual(pruneTypingState(state, at + 8_000), emptyTypingState());
   assert.deepEqual(typingEntries(emptyTypingState()), []);
+});
+
+test("relay-delegated completion clears the original author and suppresses late typing", () => {
+  const secret = new Uint8Array(32).fill(2);
+  const author = "33".repeat(32);
+  const relay = getPublicKey(secret);
+  for (const attribution of [[["actor", author]], [["p", author]]]) {
+    const completed = finalizeEvent({ kind: 9, created_at: 101, content: "done",
+      tags: [...attribution, ["h", "channel"]] }, secret);
+    let state = receive(emptyTypingState(), { pubkey: author });
+    state = receiveTypingEvent(state, completed, "channel", at + 1_000, relay);
+    assert.deepEqual(typingEntries(state), []);
+    state = receive(state, { pubkey: author, created_at: 102 }, at + 2_000);
+    assert.deepEqual(typingEntries(state), []);
+  }
+});
+
+test("untrusted, unsigned, tampered and cross-scope completion cannot clear another author", () => {
+  const secret = new Uint8Array(32).fill(2);
+  const author = "33".repeat(32);
+  const relay = getPublicKey(secret);
+  const completed = finalizeEvent({ kind: 9, created_at: 101, content: "done",
+    tags: [["actor", author], ["h", "channel"]] }, secret);
+  const initial = receive(emptyTypingState(), { pubkey: author });
+  for (const identity of [null, "invalid", author]) {
+    assert.deepEqual(typingEntries(receiveTypingEvent(initial, completed, "channel", at + 1_000, identity)), typingEntries(initial));
+  }
+  // JSON round-trip drops the signing library's local verification cache.
+  const raw = JSON.parse(JSON.stringify(completed));
+  for (const broken of [{ ...raw, content: "tampered" }, { ...raw, sig: undefined },
+    { ...raw, tags: [["actor", author], ["h", "other"]] }]) {
+    assert.deepEqual(typingEntries(receiveTypingEvent(initial, broken, "channel", at + 1_000, relay)), typingEntries(initial));
+  }
+  const indicator = finalizeEvent({ kind: 20002, created_at: 100, content: "",
+    tags: [["actor", author], ["h", "channel"]] }, secret);
+  assert.deepEqual(typingEntries(receiveTypingEvent(emptyTypingState(), indicator, "channel", at, relay)), [{ pubkey: relay, threadHeadId: null }]);
 });

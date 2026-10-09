@@ -4,7 +4,7 @@ import { useReasonText } from "@client-kit/platform/react/context";
 import { parseChannelWindowResponse, parseLiveThreadSummary } from "@client-kit/platform/react/forum/channelWindowResponse";
 import { getThreadReference, isBroadcastReply } from "@client-kit/platform/react/messages/threading";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@client-kit/platform/react/thread/kinds";
-import { KIND_TYPING_INDICATOR } from "@client-kit/platform/react/thread/kinds";
+import { KIND_TYPING_INDICATOR, KIND_CHANNEL_WINDOW_BOUNDS } from "@client-kit/platform/react/thread/kinds";
 import { emptyTypingState, pruneTypingState, receiveTypingEvent, typingEntries, TYPING_PRUNE_INTERVAL_MS } from "@client-kit/platform/react/messages/typingState";
 import { appendOlderChannelWindow, channelWindowHasMore, channelWindowHistoryExhausted, channelWindowThreadSummaries, emptyChannelWindowStore, flattenChannelWindowEvents, mergeLiveChannelWindowEvent, mergeLiveThreadSummary, replaceNewestChannelWindow, type ChannelWindowStore } from "@client-kit/platform/react/messages/timeline/channelWindowStore";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -84,6 +84,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
     if (!channelId) return () => { current.active = false; };
     let ready = false;
     let snapshotAccepted = false;
+    let relaySelfPubkey: string | null = null;
     const seen = new Set<string>();
     const publish = (next: ChannelWindowStore) => {
       current.store = next;
@@ -93,6 +94,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
       if (closed || !current.active || state.current !== current) return;
       switch (frame.type) {
         case "snapshot":
+          relaySelfPubkey = null;
           publishTyping();
           current.ready = false;
           ready = false;
@@ -101,6 +103,10 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           current.fetching = false; setFetching(false);
           try {
             const page = parseChannelWindowResponse(frame.events, channelId, null);
+            // Core verifies this unique bounds event against the active relay
+            // identity before emitting the admitted snapshot. Never infer that
+            // identity from a normal message or an actor/p attribution tag.
+            relaySelfPubkey = frame.events.find(event => event.kind === KIND_CHANNEL_WINDOW_BOUNDS)?.pubkey ?? null;
             publish(replaceNewestChannelWindow(current.store, page));
             for (const event of frame.events) seen.add(event.id);
             snapshotAccepted = true; setError(false); setDenied(false);
@@ -119,7 +125,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           if (!seen.has(event.id)) {
             seen.add(event.id);
             if (ready) {
-              const typing = receiveTypingEvent(current.typing, event, channelId);
+              const typing = receiveTypingEvent(current.typing, event, channelId, Date.now(), relaySelfPubkey);
               if (typing !== current.typing) publishTyping(typing);
               receiveLive(event);
             }
@@ -140,6 +146,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           if (snapshotAccepted) setStatus(t("platform.stream.synced"));
           break;
         case "closed":
+          relaySelfPubkey = null;
           publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; setLive(false); refreshMetadata();
@@ -156,12 +163,14 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           }
           break;
         case "interrupted":
+          relaySelfPubkey = null;
           publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; current.generation += 1;
           current.fetching = false; setFetching(false);
           setLive(false); setStatus(t("platform.stream.reconnecting")); break;
         case "ended":
+          relaySelfPubkey = null;
           publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; current.generation += 1;

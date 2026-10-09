@@ -150,6 +150,8 @@ export type BuzzEvent = {
   kind: number;
   tags: string[][];
   content: string;
+  /** Present on signed Relay events; absence never permits delegated authorship. */
+  sig?: string;
 };
 
 export type UserState = {

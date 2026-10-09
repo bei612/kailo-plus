@@ -2,6 +2,7 @@
 // desktop/src/features/messages/useChannelTyping.ts: original ephemeral state.
 // Transport supplies admitted live events; no message/history store is written.
 import { getChannelIdFromTags, getThreadReference } from "./threading";
+import { resolveEventAuthorPubkey } from "./authors";
 import { KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_V2, KIND_TYPING_INDICATOR } from "./thread/kinds";
 
 export type TypingIndicatorEntry = {
@@ -9,7 +10,10 @@ export type TypingIndicatorEntry = {
   threadHeadId: string | null;
 };
 type TypingEntry = TypingIndicatorEntry & { expiresAt: number; firstSeenAt: number };
-type TypingEvent = { pubkey: string; kind: number; created_at: number; tags: string[][] };
+type TypingEvent = {
+  pubkey: string; kind: number; created_at: number; tags: string[][];
+  id?: string; content?: string; sig?: string;
+};
 export type TypingState = {
   typing: Record<string, TypingEntry>;
   completed: Record<string, { createdAt: number; suppressUntil: number }>;
@@ -43,11 +47,19 @@ export function pruneTypingState(state: TypingState, now = Date.now()): TypingSt
 
 export function receiveTypingEvent(
   state: TypingState, event: TypingEvent, channelId: string, now = Date.now(),
+  relaySelfPubkey?: string | null,
 ): TypingState {
   if (getChannelIdFromTags(event.tags) !== channelId) return state;
   if (![KIND_TYPING_INDICATOR, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_V2].includes(event.kind)) return state;
   const pruned = pruneTypingState(state, now);
-  const pubkey = event.pubkey.toLowerCase();
+  // Original completion resolves delegated authors only with the active relay
+  // identity and a valid event signature; indicators always use their signer.
+  const pubkey = event.kind !== KIND_TYPING_INDICATOR && event.id !== undefined
+    && event.content !== undefined && event.sig !== undefined
+    ? resolveEventAuthorPubkey({
+      event: { ...event, id: event.id, content: event.content, sig: event.sig },
+      preferActorTag: true, relaySelfPubkey, requireChannelTagForPTags: true,
+    }) : event.pubkey.toLowerCase();
   const threadHeadId = getThreadReference(event.tags).parentId;
   const key = `${pubkey}:${threadHeadId ?? "channel"}`;
   if (event.kind !== KIND_TYPING_INDICATOR) {
