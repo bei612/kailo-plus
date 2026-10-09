@@ -2,6 +2,7 @@ export * from "./DayDivider";
 export * from "./ComposerReplyBanner";
 export * from "./MessageActionBarSurface";
 export * from "./DeleteMessageConfirmDialog";
+export * from "./FileCard";
 export * from "./MessageHeader";
 export * from "./MessageRowSurface";
 export * from "./MessageTimestamp";

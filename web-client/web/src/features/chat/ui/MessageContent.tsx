@@ -12,11 +12,14 @@ import {
   PlainCodeBlock,
   SyntaxHighlightedCode,
   extractLanguage,
+  getReactNodeText,
 } from "@client-kit/platform/react/message-body";
 import {
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
-import { Download, ImageOff } from "lucide-react";
+import { ImageOff } from "lucide-react";
+import { FileCard } from "@client-kit/platform/react/messages";
+import { resolveFileCard } from "@client-kit/platform/react/messages/resolveFileCard";
 import { ImageBlock, ImageMosaic } from "@client-kit/platform/react/image-lightbox";
 import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
@@ -256,13 +259,19 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
       />
     );
   }
-  // 附件经 BFF 下载：同源，凭网关 cookie
-  return (
-    <a href={resolveMediaUrl(media.sha256)} download={String(children) || "attachment"}>
-      <Download className="mr-1 inline h-3.5 w-3.5" />
-      {children}
-    </a>
-  );
+  const card = resolveFileCard(entry, href, getReactNodeText(children));
+  if (card) {
+    return <FileCard {...card} href={resolveMediaUrl(media.sha256)}
+      onDownload={async (url, filename) => {
+        // Only this authorized BFF context supplies the download URL. Never
+        // navigate to the sender's imeta origin or expose Desktop IPC.
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+      }} />;
+  }
+  return <a href={resolveMediaUrl(media.sha256)} download={String(children) || "attachment"}>{children}</a>;
 };
 
 function MarkdownMention({ children }: { children?: React.ReactNode }) {

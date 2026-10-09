@@ -6397,3 +6397,32 @@ Web worker timeout／0case、旧检查导入 TS2305／exit2 保留，不把随�
 不是以0字节日志推断通过。纠正后的 Web 类型通过不改变此前0case／旧TS2305／整轮exit1事实。
 结束后 docker top 仅sleep，memory.events仍原旧值无增量；原SDK验证窗口已释放。
 本批两个新增 Web交互case与有效生产负例仍未验证，没有新版实拍／部署或Windows/Mobile设备验收。
+
+## 2026-10-09 原 FileCard 附件卡共源恢复检查点
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503`：`desktop/src/shared/ui/markdown/FileCard.tsx::FileCard/formatFileSize`
+原 blob `889847193ec38b4ecca58fc027c63a1739edb1eb`；`desktop/src/shared/ui/markdownFileCard.ts::resolveFileCard`
+原 blob `05b4f677e5607e4ffe91b2d141c5877a8f71e485`。权威为原版恢复要求、DD-75 与 SS-WEB-RELAY。
+完整卡 markup/class/style/大小算法原样迁入 shared messages；Native 原卡只保留真实 download_file IPC，Web 原 MessageContent 实际附件读方接同一卡。
+原分类/文件名优先级共源，Native 仅 rewriteRelayUrl；Web 仅使用当前已受权 imeta 的 hash 和 Workspace/Conversation BFF 路径，不访问标签的远端 origin。
+原 `desktop/src/shared/ui/markdown.tsx::createMarkdownComponents/MarkdownAnchor` 使用 getReactNodeText；Web 原真实 label 读方现复用已共享原函数，嵌套加粗正文不再变成 [object Object]。
+影响面为共享2模块/export、两 Native 消费者、Web MarkdownLink 与原两个专项，共9路径；起点全部clean，无契约/数据库/新依赖/lock变更。
+共享迁移不复制附件正文或增加权限权威；下载不宣称终态成功、不自动重试。缺 imeta/hash 保持普通链接，缺 MIME 或 image/video 不误分类文件卡，缺 scope 仍拒绝。
+逐差异分类：原 markup/class/size 与纯 resolver 为共享迁移；Native IPC/Web 当前授权 BFF transport 与现有同源 buzz.downloadFailed 词条为授权宿主/中文适配，非整文件笼统授权。
+snapshot Import/完整 resolveSnapshotCard、视频播放器等其它原功能未在本批恢复，不以新增通用文件卡认定它们已完成。
+最终源码 `owned-source.patch` SHA256 `56d7e825c957e7a8825ab53aacdf57edfbf71c8c4998a7d196b905edf7a0d2ee`，9路径 +218/-85、reverse-check0、scoped diff-check0。
+原证据目录：`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/file-card-20261009.6l8WwC`。
+SDK实读4CPU/8GiB/noextraSwap、heap3072；正式9输入与候选/两宿主实际已安装shared副本最小投递cmp0，无新SDK/镜像/安装。
+第一次 formatter 因 Native 目录没有 Biome入口 exit1；第二次原 Web 已安装入口对 Native2文件处理，但 shared 路径误差诊断不能算四文件通过。
+纠正原输入相对路径后 shared2文件 format exit0，Native格式仅回写实际两行，未重排原紧凑Web文件。
+全工作树 diff-check exit2 的4个继承 EOF空行保留批外；upstream_manifest status exit0，Buzz固定基准无新提交，Worker领先75不升级。
+7043 `positive.log` exit0：`python3 tools/gen-platform-i18n.py --check`0、Native原 resolver10/10、Web MessageContent19/19、shared生产/检查/Web/Native四个 tsc0。
+后续仅纠正两Web输入的原嵌套label读方；46575 `final-web-positive.log`最终19/19 exit0，不能拿7043旧两Web字节替代此结果。
+74151 `resolver-negative.log`真实生产filename优先级破坏：9pass/1fail exit1，原断言捕获 Q3-budget.pdf 错变 link text；原字节/Native安装副本cmp0后 `resolver-restored.log`10/10 exit0。
+62996 `web-download-negative.log`仅将真实卡按钮的下载URL改成sender origin，1fail/18filtered exit1，三scope的原BFF地址断言全部捕获远端替换；不是编译失败或0case。
+Web原字节与备份cmp0后85805 `web-download-restored.log`最终19/19、Web tsc各0、整体exit0；两次生产变异均只在私有候选，正式9源未改。
+原目标命令：Native `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/ui/markdownFileCard.test.mjs`；Web `node node_modules/vitest/vitest.mjs run src/features/chat/ui/MessageContent.test.tsx --pool=threads --maxWorkers=1`，负向只加原 `-t "real file-card button"`。
+类型为各原cwd `node node_modules/typescript/bin/tsc --noEmit`，shared检查另加 `-p tsconfig.test.json`；未改超时/断言/runner。jsdom原 canvas getContext 警告保留，不安装替代依赖。
+最终 memory.events仍旧 max16751/oom2/oom_kill2无增量，唯一串行窗口终态后释放；未启动full/bundle/Cargo/Go。
+本批无新版页面实拍/部署、浏览器真实下载终态、Native下载设备或Windows安装包/Mobile验收；当前线上4c与本批源码明确分开。
+历史全量账仍为dd399：5314 union、1970原样blob、115已证共享、0整文件授权、3229尚未证明保留或授权的恢复队列，不是当前main全量覆盖或3229项功能缺失，未声明100%。

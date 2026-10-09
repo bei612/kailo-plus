@@ -1,17 +1,10 @@
+import {
+  resolveFileCard as resolveSharedFileCard,
+  type FileCardImetaEntry,
+  type ResolvedFileCard,
+} from "@client-kit/platform/react/messages/resolveFileCard";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
-
-/** Minimal shape of an imeta entry as consumed by the markdown renderer. */
-export type FileCardImetaEntry = {
-  m?: string;
-  size?: number;
-  filename?: string;
-};
-
-export type ResolvedFileCard = {
-  href: string;
-  filename: string;
-  size?: number;
-};
+export type { FileCardImetaEntry, ResolvedFileCard };
 
 /**
  * Decide whether a markdown link should render as a generic-file download
@@ -28,15 +21,6 @@ export function resolveFileCard(
   href: string | undefined,
   childText: string,
 ): ResolvedFileCard | null {
-  if (
-    !href ||
-    !entry?.m ||
-    entry.m.startsWith("image/") ||
-    entry.m.startsWith("video/")
-  ) {
-    return null;
-  }
-  const filename =
-    entry.filename || childText.trim() || href.split("/").pop() || "file";
-  return { href: rewriteRelayUrl(href), filename, size: entry.size };
+  const card = resolveSharedFileCard(entry, href, childText);
+  return card ? { ...card, href: rewriteRelayUrl(card.href) } : null;
 }

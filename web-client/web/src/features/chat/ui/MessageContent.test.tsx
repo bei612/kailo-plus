@@ -20,6 +20,81 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("restores the original generic file card, filename precedence, byte sizes and exact layout", () => {
+    const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+      content={`[link label](${IMAGE_URL})`} mediaTags={[["imeta", `url ${IMAGE_URL}`,
+        "m application/pdf", `x ${SHA}`, "filename Q3-budget.pdf", "size 2048"]]} />);
+    expect(html).toContain('data-testid="file-card"');
+    expect(html).toContain("Q3-budget.pdf");
+    expect(html).toContain("2.0 KB");
+    expect(html).toContain('class="my-1 inline-flex max-w-sm items-center gap-3 rounded-2xl border border-border/70 bg-muted/40 px-3 py-2 text-left no-underline transition-colors hover:bg-muted/70"');
+    expect(html).toContain('style="border-radius:1rem"');
+    expect(html).not.toContain(IMAGE_URL);
+    expect(html).not.toContain("link label");
+    for (const [size, expected] of [[0, "0 B"], [820, "820 B"], [12700, "12 KB"], [3145728, "3.0 MB"]] as const) {
+      const sized = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+        content={`[notes.txt](${IMAGE_URL})`} mediaTags={[["imeta", `url ${IMAGE_URL}`,
+          "m text/plain", `x ${SHA}`, `size ${size}`]]} />);
+      expect(sized).toContain(expected);
+      expect(sized).toContain("notes.txt");
+    }
+    const nestedLabel = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+      content={`[**notes**.txt](${IMAGE_URL})`} mediaTags={[["imeta", `url ${IMAGE_URL}`,
+        "m text/plain", `x ${SHA}`]]} />);
+    expect(nestedLabel).toContain("notes.txt");
+    expect(nestedLabel).not.toContain("[object Object]");
+    for (const tags of [undefined, [["imeta", `url ${IMAGE_URL}`, "m application/pdf"]]]) {
+      const unvouched = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+        content={`[notes.txt](${IMAGE_URL})`} mediaTags={tags} />);
+      expect(unvouched).not.toContain('data-testid="file-card"');
+      expect(unvouched).toContain(`href="${IMAGE_URL}"`);
+    }
+    for (const mime of ["image/png", "video/mp4", ""]) {
+      const notFile = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+        content={`[poster](${IMAGE_URL})`} mediaTags={[["imeta", `url ${IMAGE_URL}`, `m ${mime}`, `x ${SHA}`]]} />);
+      expect(notFile).not.toContain('data-testid="file-card"');
+    }
+  });
+
+  it("the real file-card button downloads only its current workspace or conversation BFF reference", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const downloads: { href: string; filename: string }[] = [];
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push({ href: this.getAttribute("href")!, filename: this.download });
+    });
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const props = { content: `[link label](${IMAGE_URL})`, mediaTags: [["imeta", `url ${IMAGE_URL}`,
+      "m application/pdf", `x ${SHA}`, "filename Q3-budget.pdf", "size 2048"]] };
+    try {
+      const show = (workspaceId: string, conversationId?: string) => act(async () => root.render(
+        <PlatformProvider client={client} locale="en"><TooltipProvider>
+          <MessageContent {...props} workspaceId={workspaceId} conversationId={conversationId} />
+        </TooltipProvider></PlatformProvider>,
+      ));
+      await show(WORKSPACE);
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="file-card"]')!.click());
+      await show("00000000-0000-4000-8000-000000000002");
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="file-card"]')!.click());
+      await show(WORKSPACE, "00000000-0000-4000-8000-000000000003");
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="file-card"]')!.click());
+      expect(downloads).toEqual([
+        { href: `/api/v1/workspaces/${WORKSPACE}/media/${SHA}`, filename: "Q3-budget.pdf" },
+        { href: `/api/v1/workspaces/00000000-0000-4000-8000-000000000002/media/${SHA}`, filename: "Q3-budget.pdf" },
+        { href: `/api/v1/conversations/00000000-0000-4000-8000-000000000003/media/${SHA}`, filename: "Q3-budget.pdf" },
+      ]);
+      expect(host.innerHTML).not.toContain(IMAGE_URL);
+      expect(host.textContent).not.toContain("Download complete");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      anchorClick.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("renders the complete original audio player and tagged duration through the admitted BFF reference", () => {
     const html = renderToStaticMarkup(
       <MessageContent

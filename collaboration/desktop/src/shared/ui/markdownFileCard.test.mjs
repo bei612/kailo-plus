@@ -65,6 +65,12 @@ test("resolveFileCard: falls back to URL tail when no filename or child text", (
   assert.equal(card?.filename, `${"a".repeat(64)}.pdf`);
 });
 
+test("resolveFileCard: retains the original empty-tail fallback and real zero-byte size", () => {
+  const card = resolveFileCard({ m: "application/octet-stream", size: 0 }, "https://relay.example/media/", "  ");
+  assert.equal(card?.filename, "file");
+  assert.equal(card?.size, 0);
+});
+
 test("resolveFileCard: octet-stream (no magic bytes) is treated as a file", () => {
   // Text/code/data upload with no magic signature — the Slack-like case.
   const url = `https://relay.example/media/${"b".repeat(64)}.txt`;
