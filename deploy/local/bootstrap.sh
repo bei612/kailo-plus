@@ -565,6 +565,189 @@ except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
 PYAUD
   exit 0
 fi
+# SS-WRN-IDENTITY: register only the two explicitly delivered native clients.
+# This does not mint an instance claim, assign a role, or activate a binding.
+if [ "${1:-}" = '--register-wren-native-clients' ] && [ "$#" -eq 1 ]; then
+  WREN_OIDC_CLIENT_ID="${WREN_OIDC_CLIENT_ID:-}" \
+  WREN_NATIVE_IDENTITY_JSON="${WREN_NATIVE_IDENTITY_JSON:-}" \
+  WREN_PUBLIC_ORIGIN="${WREN_PUBLIC_ORIGIN:-}" \
+  WREN_UI_PORT="${WREN_UI_PORT:-}" \
+  WREN_OIDC_SECRET_ENV_FILE="${WREN_OIDC_SECRET_ENV_FILE:-}" \
+  WREN_AI_IDENTITY_DIR="${WREN_AI_IDENTITY_DIR:-}" \
+  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" "$OIDC_ISSUER" "$PUBLIC_ORIGIN" \
+    "${OIDC_SERVICE_CLIENT_ID:?}" "${OIDC_WORKER_CLIENT_ID:?}" \
+    "${OIDC_BROWSER_CLIENT_ID:?}" "${OIDC_NATIVE_CLIENT_ID:?}" <<'PYWRENCLIENTS'
+import json
+import os
+import pathlib
+import stat
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+port, realm, admin, timeout, issuer, platform_origin, *platform_clients = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+
+
+def refuse():
+    raise SystemExit("原生组件客户端投递缺失或不匹配；未生成默认身份、实例授权或 binding")
+
+
+def controlled(path):
+    if not isinstance(path, str) or not os.path.isabs(path):
+        refuse()
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, encoding="utf-8") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            refuse()
+        return stream.read()
+
+
+def text(value):
+    return (isinstance(value, str) and bool(value) and value.strip() == value
+            and not any(ord(c) < 32 or ord(c) == 127 for c in value))
+
+
+try:
+    native = json.loads(os.environ["WREN_NATIVE_IDENTITY_JSON"])
+    fields = {"issuer", "audience", "serviceAudience", "jwksUrl", "accessClaim", "accessValue", "publicOrigin"}
+    browser_id = os.environ["WREN_OIDC_CLIENT_ID"]
+    origin = os.environ["WREN_PUBLIC_ORIGIN"]
+    parsed = urllib.parse.urlsplit(origin)
+    if (not isinstance(native, dict) or set(native) != fields
+            or not all(text(native[k]) for k in fields)
+            or not text(browser_id) or origin == platform_origin
+            or parsed.scheme not in ("http", "https") or not parsed.netloc
+            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment
+            or native["issuer"] != issuer or native["publicOrigin"] != origin
+            or native["audience"] != browser_id
+            or native["jwksUrl"] != issuer + "/protocol/openid-connect/certs"
+            or native["accessClaim"] in {"iss", "sub", "aud", "exp", "iat", "nbf", "jti"}):
+        refuse()
+    service_id = native["serviceAudience"]
+    if browser_id == service_id or {browser_id, service_id}.intersection(platform_clients):
+        refuse()
+    secret_env = controlled(os.environ["WREN_OIDC_SECRET_ENV_FILE"])
+    browser_secrets = {}
+    for line in secret_env.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or key in browser_secrets or not text(value):
+            refuse()
+        browser_secrets[key] = value
+    if set(browser_secrets) != {"WREN_OIDC_CLIENT_SECRET", "OIDC_COOKIE_SECRET"}:
+        refuse()
+    cookie = bytes.fromhex(browser_secrets["OIDC_COOKIE_SECRET"])
+    if len(cookie) != 32:
+        refuse()
+    directory = pathlib.Path(os.environ["WREN_AI_IDENTITY_DIR"])
+    if not directory.is_absolute() or directory.is_symlink():
+        refuse()
+    ai = json.loads(controlled(str(directory / "identity.json")))
+    if (not isinstance(ai, dict)
+            or set(ai) != {"uiEndpoint", "publicOrigin", "tokenEndpoint", "clientId", "secretFile"}
+            or not all(text(v) for v in ai.values())
+            or ai["clientId"] != service_id or ai["publicOrigin"] != origin
+            or ai["tokenEndpoint"] != issuer + "/protocol/openid-connect/token"
+            or ai["uiEndpoint"] != "http://wren-ui:" + os.environ["WREN_UI_PORT"]):
+        refuse()
+    mounted_secret = pathlib.PurePosixPath(ai["secretFile"])
+    if (mounted_secret.parent != pathlib.PurePosixPath("/run/wren-ai-native")
+            or mounted_secret.name in {"identity.json", ".", ".."}):
+        refuse()
+    ai_secret = controlled(str(directory / mounted_secret.name)).removesuffix("\n").removesuffix("\r")
+    browser_secret = browser_secrets["WREN_OIDC_CLIENT_SECRET"]
+    if (not text(ai_secret) or ai_secret == browser_secret
+            or ai_secret == browser_secrets["OIDC_COOKIE_SECRET"]):
+        refuse()
+
+    # Only audience is projected. No hard-coded/user-attribute/role entitlement
+    # mapper is added: configuring a client must not grant native instance access.
+    audience_mapper = {
+        "name": "native-service-audience", "protocol": "openid-connect",
+        "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
+        "config": {"included.custom.audience": service_id, "access.token.claim": "true",
+                   "id.token.claim": "false", "userinfo.token.claim": "false"},
+    }
+    desired = [
+        {"clientId": browser_id, "enabled": True, "protocol": "openid-connect",
+         "publicClient": False, "standardFlowEnabled": True, "directAccessGrantsEnabled": False,
+         "serviceAccountsEnabled": False, "implicitFlowEnabled": False, "fullScopeAllowed": False,
+         "redirectUris": [origin + "/oauth/callback"], "webOrigins": [origin],
+         "attributes": {"pkce.code.challenge.method": "S256"}, "secret": browser_secret},
+        {"clientId": service_id, "enabled": True, "protocol": "openid-connect",
+         "publicClient": False, "standardFlowEnabled": False, "directAccessGrantsEnabled": False,
+         "serviceAccountsEnabled": True, "implicitFlowEnabled": False, "fullScopeAllowed": False,
+         "redirectUris": [], "webOrigins": [], "protocolMappers": [audience_mapper], "secret": ai_secret},
+    ]
+    password = controlled(str(pathlib.Path("secrets/keycloak_admin_password").absolute())).strip()
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    base = "http://127.0.0.1:" + port
+    class NativeAdminRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    # Never forward native client secrets or the admin bearer through a redirect.
+    opener = urllib.request.build_opener(NativeAdminRedirect())
+    with opener.open(base + "/realms/master/protocol/openid-connect/token",
+                     login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    def request(path, body=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method="POST" if body is not None else "GET",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with opener.open(req, timeout=timeout) as response:
+            return json.load(response) if body is None else None
+
+    clients_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/clients"
+    for definition in desired:
+        lookup = clients_path + "?" + urllib.parse.urlencode({"clientId": definition["clientId"]})
+        found = request(lookup)
+        if not isinstance(found, list) or len(found) > 1:
+            refuse()
+        if not found:
+            try:
+                request(clients_path, definition)
+            except (urllib.error.URLError, OSError):
+                # A lost create ACK is never retried here. The native unique
+                # clientId is read back; absence/ambiguity remains unresolved.
+                pass
+            found = request(lookup)
+        if len(found) != 1 or found[0].get("clientId") != definition["clientId"]:
+            refuse()
+        path = clients_path + "/" + urllib.parse.quote(found[0]["id"], safe="")
+        confirmed = request(path)
+        for key, value in definition.items():
+            if key in {"secret", "protocolMappers"}:
+                continue
+            actual = confirmed.get(key)
+            if key == "attributes":
+                if not isinstance(actual, dict) or any(actual.get(k) != v for k, v in value.items()):
+                    refuse()
+            elif actual != value:
+                refuse()
+        if request(path + "/client-secret").get("value") != definition["secret"]:
+            refuse()
+        if "protocolMappers" in definition:
+            mappers = request(path + "/protocol-mappers/models")
+            matches = [m for m in mappers if m.get("name") == audience_mapper["name"]]
+            if (len(matches) != 1 or any(matches[0].get(k) != v for k, v in audience_mapper.items())):
+                refuse()
+    print("原生 browser/AI 专属客户端及 audience 已回读；未授予实例权限或激活 binding")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("原生客户端登记未完成；保留已有身份和密钥，核对真实投递后只读回查") from None
+PYWRENCLIENTS
+  exit 0
+fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
 OIDC_REDIRECT_URI="${PUBLIC_ORIGIN}/oauth/callback"
 RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"

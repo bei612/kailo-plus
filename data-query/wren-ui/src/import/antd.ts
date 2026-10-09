@@ -30,7 +30,7 @@ export { default as Form } from 'antd/lib/form';
 // export { default as Grid } from 'antd/lib/grid';
 export { default as Input } from 'antd/lib/input';
 // export { default as Image } from 'antd/lib/image';
-// export { default as InputNumber } from 'antd/lib/input-number';
+export { default as InputNumber } from 'antd/lib/input-number';
 export { default as Layout } from 'antd/lib/layout';
 // export { default as List } from 'antd/lib/list';
 export { default as message } from 'antd/lib/message';

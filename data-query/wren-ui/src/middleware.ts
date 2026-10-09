@@ -7,6 +7,7 @@ let identity: {
   source: string;
   issuer: string;
   audience: string;
+  serviceAudience?: string;
   accessClaim: string;
   accessValue: string;
   publicOrigin: string;
@@ -59,10 +60,20 @@ function nativeIdentity() {
   ) {
     throw new Error('A dedicated native access claim is required');
   }
+  if (
+    value.serviceAudience !== undefined &&
+    (typeof value.serviceAudience !== 'string' ||
+      !value.serviceAudience ||
+      value.serviceAudience !== value.serviceAudience.trim() ||
+      value.serviceAudience === value.audience)
+  ) {
+    throw new Error('A separate native service audience is required');
+  }
   identity = {
     source,
     issuer: value.issuer,
     audience: value.audience,
+    serviceAudience: value.serviceAudience,
     accessClaim: value.accessClaim,
     accessValue: value.accessValue,
     publicOrigin: value.publicOrigin,
@@ -137,10 +148,23 @@ export async function middleware(request: NextRequest) {
   try {
     const { payload } = await jwtVerify(token, configured.keys, {
       issuer: configured.issuer,
-      audience: configured.audience,
+      audience: configured.serviceAudience
+        ? [configured.audience, configured.serviceAudience]
+        : configured.audience,
       requiredClaims: ['iss', 'sub', 'aud', 'exp'],
     });
     if (typeof payload.sub !== 'string' || !payload.sub.trim()) {
+      return denied(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    }
+    const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    const service =
+      configured.serviceAudience &&
+      audiences.includes(configured.serviceAudience);
+    if (
+      service &&
+      (audiences.includes(configured.audience) ||
+        payload.azp !== configured.serviceAudience)
+    ) {
       return denied(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     }
     const access = payload[configured.accessClaim];
@@ -160,7 +184,7 @@ export async function middleware(request: NextRequest) {
             JSON.stringify([
               configured.issuer,
               payload.sub,
-              configured.audience,
+              service ? configured.serviceAudience : configured.audience,
               configured.accessValue,
             ]),
           ),

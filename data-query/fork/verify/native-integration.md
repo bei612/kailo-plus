@@ -8876,3 +8876,164 @@ still blocked. Root's concurrent UI/AI build is fixed at
 and is not counted as new-code image/deployment evidence here. Root owns the
 selective main commit/push; this batch does not start a native Wren business
 instance, enable a release/binding or claim iframe/three-user acceptance.
+
+## Dedicated native client registration and audience consumption
+
+This implementation adds only the existing bootstrap's dedicated registration
+branch and the original native verifier's actual separate-audience consumer.
+The full Wren page, original gateway and AI provider remain intact. Root owns
+Git and the concurrent fixed-source UI-to-AI build; no live IdP write or native
+business-service startup was performed in this batch.
+
+Four implementation conclusions, taken from actual producers/callers:
+
+- Authority: `.design/08` section 6, SS-WRN-IDENTITY/GOVERNANCE and DD-87's
+  independent native authentication require a dedicated registration without
+  treating SSO/client creation as resource permission. Native origin/identity
+  must be explicitly delivered. The existing public authorizer and binding
+  lifecycle, not an IdP role or this branch, remain permission authority.
+- Impact: sole local `.env` -> original bootstrap admin/controlled-file path ->
+  dedicated browser/AI clients -> existing Gateway/native Next verifier and
+  Python AI client-credentials consumer. Optional native `serviceAudience`
+  leaves old browser-only configuration compatible; the new registration
+  command requires both explicitly delivered clients. No platform schema,
+  database, migration, Task, ledger or page/layout is added. Web/Desktop native
+  page composition and Mobile's non-component-host boundary are unchanged.
+- Side effects: only missing native clients may be created, one POST per client
+  in the invocation; a lost ACK is followed only by unique clientId readback.
+  Existing mismatch is refused, without update/delete/key rotation. No realm,
+  instance/access-claim mapper, role, service-account grant, Resource or binding
+  activation is created. Own audience mapper readback does not verify other
+  existing entitlement mappers or business authorization.
+- Boundaries: incomplete/mixed/shared identity configuration, unsafe files,
+  absent/ambiguous native readback, stale flags/secret/own mapper, redirect,
+  missing instance claim, incorrect `azp`, and mixed audiences fail closed.
+  Login/configuration evidence is not SQL admission or terminal query evidence.
+  UNKNOWN client creation is neither replayed nor cleaned up as failure.
+  Existing DENIED/BLOCKED/PRECONDITION/CONFLICT/UNKNOWN behavior is retained;
+  this command's request timeout comes from the existing deployment input,
+  not a new hard-coded deadline. It adds no queue or public execution limit.
+
+Fixed source facts (reference repositories were read, never executed):
+
+- AgentGateway `1f7ebbf87cbdbe9517f6f181221879d04dc50692`,
+  `crates/agentgateway/src/http/oidc/callback.rs::handle_callback` validates and
+  retains the native ID token; its `start_login` implements the original PKCE
+  callback. `examples/traffic-cross-app-access/keycloak/setup.sh` contains the
+  original top-level `kcadm.sh create clients` / `get .../client-secret`
+  statements. `examples/mcp-authzen/keycloak/bootstrap-authzen.sh` contains
+  the native top-level `protocol-mappers/models` audience registration; its
+  demonstration user/role grants are not reused or executed here.
+- Wren `c5f02a0391c87420dba78632dcd86073710deb72`,
+  `wren-ai-service/src/providers/engine/wren.py::WrenUI.execute_sql` and
+  `wren-ai-service/src/force_deploy.py::force_deploy` are the original actual
+  callback consumers retained by the two forked files. The existing fork's
+  `src/providers/engine/native_identity.py::_delivery` and `NativeIdentity`
+  read the separate controlled client identity/secret. SERVICE SQL remains
+  blocked without its existing actual public admission/Execution consumers;
+  no HUMAN credential or new private ticket is substituted.
+
+The literal private hostname `wren-ui` comes from the existing native Compose
+service/UI endpoint; `/run/wren-ai-native` is that same Compose's read-only
+AI credential mount. The loopback Keycloak admin URL/realm endpoint and
+`admin-cli` follow the original `deploy/local/bootstrap.sh` admin branches,
+with the original delivered port/realm/timeout. These are explicitly inherited
+protocol/deployment seams, not a claim of zero literal configuration or
+invented business identifiers/model facts.
+
+The existing `kailo-wren-query-sdk-itgs2n` was verified as 4 CPU/4 GiB,
+memory+swap 4 GiB, user 1000:1000. Initial memory was about 38 MiB, all cgroup
+memory-event counters zero; host available memory about 23 GiB and I/O full
+about 47%. Root's single 8 CPU/16 GiB fixed-source image build overlapped.
+Six small AI/bootstrap inputs were applied to its existing private candidate;
+middleware and the two root-owned Ant Design inputs used the original canonical
+`/work` and dependencies. No new SDK, dependency installation, database,
+full check or second image build was started.
+
+Actual original commands, in that SDK:
+`bash -n deploy/local/bootstrap.sh` (the private original-layout candidate),
+`python3 tests/pytest/providers/test_native_identity.py -v`, original
+`jest --runInBand --runTestsByPath src/middleware.test.ts src/viewMetadata.test.ts`,
+`tsc --noEmit`, and original `prettier --check` on the four TS inputs.
+
+- First Python execution **22/22**, exit **0**. Initial Jest had **121/122**
+  with one new fixture incorrectly reading the private identity header on HTML
+  `/`, where the real middleware does not emit that header; an archived old
+  `.test.ts` file was also regex-discovered and failed before any cases.
+  No types ran after that failure. The actual request was corrected to
+  `/api/config`; old byte archives were preserved as `.evidence`, and the
+  original explicit-path command passed **122/122**, types **0**. No production
+  protection or diagnostic was weakened.
+- Redirect protection was then added to the actual branch: Python **23/23**,
+  exit **0**. Private audience producer `service_id -> browser_id` corruption
+  produced **1 failure/22 passes**, exit **1**. Removing the actual middleware
+  service `azp` check produced **2 failures/27 passes/93 target-filtered skips**,
+  exit **1**; signed HTTP requests were accepted incorrectly as 200 instead of
+  401. Restoring the original urllib redirect behavior produced exit **1** in
+  its one actual method (**36 failed/24 errored subcases**, repeated checks of
+  each actual opener); no live redirected request was sent. Formal production
+  was not mutated.
+- Exact restoration then passed Python **23/23** and both original Jest suites
+  **300/300**, exit **0**, 551.815 seconds; types **0**. The final Prettier check
+  warned on one new request line's wrapping; the outer command's later cgroup
+  read masked that exit. A dedicated capture confirmed formatting **exit 1**,
+  and the original single-file formatter corrected only that mechanical wrap.
+  This warning is not recorded as a formatting pass.
+- Root's private actual Ant Design alias export corruption produced the two
+  Chinese/English SSR consumer failures, **2 failed/176 target-filtered skips**,
+  exit **1**, at the actual missing export (`undefined`), not a typecheck-only
+  failure. Exact source restoration reran the same target **2 passed/176
+  target-filtered skips**, exit **0**. Latest Python **23/23**, types **0** and
+  four-file formatting **0** were captured separately after restoration.
+  The cold 300-case target was not repeated for a mechanical line wrap.
+- Final direct inputs/dependencies `cmp` **10/10**, all low/high/max/OOM event
+  counters still **0**. The inherited bootstrap dirty baseline was preserved:
+  stripping only this 183-line branch gives the pre-batch SHA-256
+  `713449cdb05d86b7ab7933ccc87dafd7ebd9d622f3f68c0b253aa545fe62b13f`.
+  The original branch syntax check and owned diff whitespace check exited **0**.
+
+Logs, all under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-client-registration.7wMBBd`:
+`positive-python.log`, `positive-jest.log` (the preserved first failure),
+`corrected-jest.log`, `positive-types.log`, `final-python-positive.log`,
+`mutation-registration.log`, `mutation-middleware.log`, `mutation-redirect.log`,
+`restored-python.log`, `integrated-jest.log`, `integrated-types.log`,
+`final-format-before.log`, `mutation-antd-alias.log`, `final-python-restored.log`,
+`restored-antd-alias.log`, `final-types.log`, `final-format-restored.log`.
+Key SHA-256:
+`integrated-jest.log` =
+`f05faeb0ea55a7c0a673024e064c7f2fac2c6f5603be078dc264a4499bdbec33`;
+`final-python-restored.log` =
+`c9ef7590cbf4a2daeb6a1462f3b4b707cde138d0fc9dec37a06a20db31d4a000`;
+`restored-antd-alias.log` =
+`e5a6bc0a30d848c1704476e4f34d04abe4a94628139eae5356b6e5cb53683c74`;
+`final-format-restored.log` =
+`17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+
+Owned source SHA-256: working `deploy/local/bootstrap.sh` =
+`7015f415d9f85bf71a29aa62d3b84de9f0e1c2f26091a94dd95cf74740e47312`
+(includes preserved inherited changes; **not** authority to stage the whole
+file); `data-query/wren-ui/src/middleware.ts` =
+`4900fa3a1709df4610d0925bda80c67612255b7f77c8f2f1812da3df0614866c`;
+`data-query/wren-ui/src/middleware.test.ts` =
+`b58cd1cd5da27ef81b33591ddf2d91e0d779e2af02d0432b4b746bc747ba2a7b`;
+`data-query/wren-ai-service/tests/pytest/providers/test_native_identity.py` =
+`a0c3ba44bee371dd086bafe604881fb8ddefaedc0965058e047bdbf0f15c9957`.
+Only the 183-line owned bootstrap branch is delivered by `owned-bootstrap.patch`
+in the log directory, SHA-256
+`6d40672b972e81de4e89623096590ab813fede48fe4d118c19dd4f183688c93b`.
+The two root-owned Ant Design source/check files are separate production
+ownership, despite sharing this final validation window.
+
+These Python client-registration checks retain the actual embedded branch and
+owner-only native file reader but mock the IdP HTTP boundary. Middleware checks
+use actual signed tokens and a private fixture JWKS HTTP endpoint. The Ant
+Design checks prove actual original component export/render only, not a new
+Next bundle, page screenshot or installed desktop. No live client registration,
+instance grant, provider/model credential, dynamic Resource proof, approved
+binding, native business deployment, iframe or three-user acceptance is
+claimed. Independent runtime/storage/DATA_KEY delivery since the prior
+checkpoint is also not authorization. SS-WRN-IDENTITY/GOVERNANCE, SERVICE SQL,
+ordinary FunctionCall provenance and dynamic Resource adoption retain their
+actual unclosed release boundaries. Root owns selective commit/push and the
+separate fixed-source UI/AI build; full/docs checks are not rerun by this child.

@@ -1456,3 +1456,60 @@ the bound source-analysis producer. Real component OIDC/cookie registration,
 DATA_KEY files, native provider configuration/credentials, AI client identity
 and approved query/binding/Resource evidence still require controlled delivery;
 none is inferred from the project name or generated here.
+
+### Dedicated native browser and AI client registration
+
+The existing local `deploy/local/bootstrap.sh` now exposes
+`--register-wren-native-clients` for the explicitly delivered native browser
+and AI clients. This branch uses the original local IdP admin API and controlled
+secret files; it does not recreate the realm, change existing registrations,
+rotate keys, mint instance claims, assign users/service accounts a role, or
+activate an ApplicationBinding. Do not run it as a substitute for approved
+instance admission. This implementation batch did **not** execute the branch
+against the live IdP.
+
+The existing sole `.env` must deliver `WREN_OIDC_CLIENT_ID`,
+`WREN_NATIVE_IDENTITY_JSON`, `WREN_PUBLIC_ORIGIN`, `WREN_UI_PORT`,
+`WREN_OIDC_SECRET_ENV_FILE` and `WREN_AI_IDENTITY_DIR`. The new registration
+branch requires the original native verifier fields plus a distinct
+`serviceAudience`, matching the existing AI `identity.json` `clientId`.
+Neither native client may be a platform client. The origin/callback, issuer,
+certs/token endpoints, private UI endpoint and mounted secret filename must
+match the existing Compose/Gateway/AI consumers exactly. Owner-only regular
+secret files are required; symlinks, shared native secrets and mismatches fail
+closed before any client creation. No secret values belong in this guide.
+
+The browser client retains confidential authorization-code/PKCE authentication;
+the separate AI client only enables its original client-credentials flow.
+Only the AI audience mapper is added. Its native secret and audience are not
+borrowed from the browser or Core. A lost create ACK leads to native unique-ID
+readback, not a second create in that invocation. Existing incompatible client
+flags, secret or own audience mapper are refused, not overwritten. IdP redirects
+are refused rather than forwarding login/client secrets or the admin bearer.
+Readback does **not** certify other existing entitlement mappers or instance
+authorization.
+
+The original native middleware now consumes the optional separate service
+audience, requires its signed `azp` association, rejects a mixed browser/service
+audience, and retains the existing signed instance-claim requirement. A client
+registration alone therefore still yields a denied native request without a
+real grant. Existing browser-only configuration remains compatible. This does
+not grant SERVICE SQL admission or replace current HUMAN/AGENT Resource,
+scope, generation, approval, quota or result-disclosure checks.
+
+The [actual client-registration receipt](../fork/verify/native-integration.md#dedicated-native-client-registration-and-audience-consumption)
+records Python **23/23**, original middleware/ViewMetadata **300/300**, actual
+production audience/authorized-party/redirect failures and exact restoration;
+the final original TypeScript and four-file formatting commands both exited
+**0**. The root-owned Ant Design alias check also proves its actual Chinese and
+English row-limit component export/render, not a new Next bundle or screenshot.
+
+Runtime delivery has progressed since the preceding bootstrap checkpoint:
+the independent native project/data/UI-env paths and independent DATA_KEY files
+have been delivered through the sole local `.env`. Those non-secret/storage
+steps are not client registration or integration acceptance. Dedicated client
+secret/cookie/AI identity delivery, a genuinely signed instance grant and its
+authorization producer, native model/provider credentials, and approved
+binding/SecretRef/Resource evidence remain separate prerequisites. No native
+business service, ACTIVE binding, iframe or multi-user acceptance is claimed;
+the root-owned fixed-source UI/AI build is independent of this later change.

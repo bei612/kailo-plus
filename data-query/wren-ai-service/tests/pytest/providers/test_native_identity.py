@@ -13,6 +13,9 @@ import tempfile
 import time
 import types
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
 from unittest.mock import patch
 
 
@@ -20,6 +23,205 @@ SOURCE = Path(__file__).resolve().parents[3] / "src/providers/engine"
 spec = importlib.util.spec_from_file_location("native_identity", SOURCE / "native_identity.py")
 identity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(identity)
+
+
+class NativeClientRegistrationTest(unittest.TestCase):
+    """Execute the original bootstrap branch, retaining its actual file reader."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.ai = self.root / "ai"
+        self.ai.mkdir()
+        (self.root / "secrets").mkdir()
+        self.secret_env = self.root / "oidc-env"
+        self.secret_env.write_text("WREN_OIDC_CLIENT_SECRET=fixture-browser-secret\nOIDC_COOKIE_SECRET=" + "a1" * 32 + "\n")
+        self.secret_env.chmod(0o600)
+        self.ai_secret = self.ai / "client-secret"
+        self.ai_secret.write_text("fixture-ai-secret\n")
+        self.ai_secret.chmod(0o600)
+        admin = self.root / "secrets/keycloak_admin_password"
+        admin.write_text("fixture-admin-password")
+        admin.chmod(0o600)
+        self.native = {
+            "issuer": "https://issuer.example/realms/fixture",
+            "audience": "fixture-native-browser", "serviceAudience": "fixture-native-ai",
+            "jwksUrl": "https://issuer.example/realms/fixture/protocol/openid-connect/certs",
+            "accessClaim": "native_instances", "accessValue": "fixture-explicit-instance",
+            "publicOrigin": "https://wren.example",
+        }
+        self.ai_delivery = {
+            "uiEndpoint": "http://wren-ui:3000", "publicOrigin": self.native["publicOrigin"],
+            "tokenEndpoint": self.native["issuer"] + "/protocol/openid-connect/token",
+            "clientId": self.native["serviceAudience"], "secretFile": "/run/wren-ai-native/client-secret",
+        }
+        self.ai_file = self.ai / "identity.json"
+        self.ai_file.write_text(json.dumps(self.ai_delivery))
+        self.ai_file.chmod(0o600)
+        source = (SOURCE.parents[4] / "deploy/local/bootstrap.sh").read_text()
+        self.source = source.split("<<'PYWRENCLIENTS'\n", 1)[1].split("\nPYWRENCLIENTS", 1)[0]
+        self.clients = {}
+        self.calls = []
+        self.lose_ack = False
+        self.unknown_create = False
+        self.openers = []
+
+    def transport(self, request, data=None, **kwargs):
+        if isinstance(request, str):
+            self.calls.append(("POST", urllib.parse.urlsplit(request).path))
+            return io.BytesIO(json.dumps({"access_token": "fixture-admin-token"}).encode())
+        path = urllib.parse.urlsplit(request.full_url)
+        self.calls.append((request.method, path.path))
+        base = "/admin/realms/fixture/clients"
+        if path.path == base and request.method == "POST":
+            body = json.loads(request.data)
+            self.assertNotIn(body["clientId"], self.clients)
+            if not self.unknown_create:
+                self.clients[body["clientId"]] = {**body, "id": body["clientId"]}
+            if self.lose_ack or self.unknown_create:
+                raise urllib.error.URLError("fixture lost ACK")
+            return io.BytesIO()
+        self.assertEqual(request.method, "GET")
+        if path.path == base:
+            client_id = urllib.parse.parse_qs(path.query)["clientId"][0]
+            result = [self.clients[client_id]] if client_id in self.clients else []
+        else:
+            parts = path.path[len(base) + 1:].split("/")
+            client = self.clients[parts[0]]
+            if parts[1:] == ["client-secret"]:
+                result = {"value": client["secret"]}
+            elif parts[1:] == ["protocol-mappers", "models"]:
+                result = client.get("protocolMappers", [])
+            else:
+                self.assertEqual(parts[1:], [])
+                result = client
+        return io.BytesIO(json.dumps(result).encode())
+
+    def run_registration(self):
+        env = {
+            "WREN_OIDC_CLIENT_ID": self.native["audience"],
+            "WREN_NATIVE_IDENTITY_JSON": json.dumps(self.native),
+            "WREN_PUBLIC_ORIGIN": self.native["publicOrigin"], "WREN_UI_PORT": "3000",
+            "WREN_OIDC_SECRET_ENV_FILE": str(self.secret_env), "WREN_AI_IDENTITY_DIR": str(self.ai),
+        }
+        args = ["bootstrap", "8081", "fixture", "admin", "1", self.native["issuer"],
+                "https://platform.example", "platform-core", "platform-worker", "platform-browser", "platform-native"]
+        output = io.StringIO()
+        def open_request(opener, request, data=None, **kwargs):
+            self.openers.append(opener)
+            return self.transport(request, data=data, **kwargs)
+        with patch.dict(os.environ, env), patch.object(sys, "argv", args), \
+                patch("urllib.request.OpenerDirector.open", open_request), contextlib.chdir(self.root), \
+                contextlib.redirect_stdout(output):
+            exec(compile(self.source, "bootstrap:PYWRENCLIENTS", "exec"), {})
+        return output.getvalue()
+
+    def test_registers_two_native_clients_with_separate_secrets_and_no_instance_grant(self):
+        output = self.run_registration()
+        self.assertEqual(set(self.clients), {"fixture-native-browser", "fixture-native-ai"})
+        browser, ai = self.clients[self.native["audience"]], self.clients[self.native["serviceAudience"]]
+        self.assertEqual(browser["redirectUris"], ["https://wren.example/oauth/callback"])
+        self.assertFalse(browser["serviceAccountsEnabled"])
+        self.assertTrue(ai["serviceAccountsEnabled"])
+        self.assertFalse(ai["standardFlowEnabled"])
+        self.assertNotEqual(ai["secret"], browser["secret"])
+        self.assertEqual(ai["protocolMappers"][0]["config"]["included.custom.audience"], self.native["serviceAudience"])
+        self.assertNotIn("protocolMappers", browser)
+        self.assertNotIn(self.native["accessClaim"], json.dumps(browser) + json.dumps(ai))
+        self.assertIn("未授予实例权限", output)
+        self.assertNotIn("fixture-browser-secret", output)
+        self.assertNotIn("fixture-ai-secret", output)
+
+    def test_admin_login_and_client_registration_never_forward_redirected_credentials(self):
+        self.run_registration()
+        self.assertTrue(self.openers)
+        request = urllib.request.Request("http://127.0.0.1:8081/admin/realms/fixture/clients",
+                                         data=b"fixture-client-secret",
+                                         headers={"Authorization": "Bearer fixture-admin-token"})
+        for opener in self.openers:
+            handlers = [handler for handler in opener.handlers
+                        if isinstance(handler, urllib.request.HTTPRedirectHandler)]
+            self.assertEqual(len(handlers), 1)
+            for status in (301, 302, 303, 307, 308):
+                with self.subTest(status=status):
+                    self.assertIsNone(handlers[0].redirect_request(
+                        request, None, status, "redirect", {}, "https://untrusted.invalid/receive"))
+
+    def test_repeat_only_reads_existing_clients_and_does_not_rotate(self):
+        self.run_registration()
+        before = json.dumps(self.clients, sort_keys=True)
+        self.calls.clear()
+        self.run_registration()
+        self.assertEqual(json.dumps(self.clients, sort_keys=True), before)
+        self.assertFalse(any(method == "POST" and path.endswith("/clients") for method, path in self.calls))
+
+    def test_lost_ack_reads_unique_native_client_without_second_create(self):
+        self.lose_ack = True
+        self.run_registration()
+        self.assertEqual(sum(method == "POST" and path.endswith("/clients") for method, path in self.calls), 2)
+
+    def test_absent_native_readback_is_not_failure_cleanup_or_second_dispatch(self):
+        self.unknown_create = True
+        with self.assertRaises(SystemExit):
+            self.run_registration()
+        self.assertEqual(sum(method == "POST" and path.endswith("/clients") for method, path in self.calls), 1)
+
+    def test_existing_disabled_client_and_changed_secret_are_not_overwritten(self):
+        self.run_registration()
+        for kind in ("disabled", "secret", "mapper"):
+            with self.subTest(kind=kind):
+                client = self.clients[self.native["audience"] if kind != "mapper" else self.native["serviceAudience"]]
+                original = dict(client)
+                if kind == "disabled":
+                    client["enabled"] = False
+                elif kind == "secret":
+                    client["secret"] = "fixture-different-secret"
+                else:
+                    client["protocolMappers"] = []
+                self.calls.clear()
+                with self.assertRaises(SystemExit):
+                    self.run_registration()
+                self.assertFalse(any(method != "GET" and path.endswith("/clients") for method, path in self.calls))
+                client.clear()
+                client.update(original)
+
+    def test_incomplete_origin_native_claim_or_shared_client_has_no_idp_side_effect(self):
+        original = dict(self.native)
+        for key, value in (("publicOrigin", ""), ("audience", "platform-browser"),
+                           ("serviceAudience", "platform-core"),
+                           ("serviceAudience", self.native["audience"]), ("accessClaim", "aud")):
+            with self.subTest(key=key, value=value):
+                self.native = {**original, key: value}
+                self.calls.clear()
+                with self.assertRaises(SystemExit):
+                    self.run_registration()
+                self.assertEqual(self.calls, [])
+        self.native = original
+
+    def test_world_readable_secret_and_shared_native_secret_refuse_before_idp(self):
+        self.ai_secret.chmod(0o644)
+        with self.assertRaises(SystemExit):
+            self.run_registration()
+        self.assertEqual(self.calls, [])
+        self.ai_secret.chmod(0o600)
+        self.ai_secret.write_text("fixture-browser-secret")
+        with self.assertRaises(SystemExit):
+            self.run_registration()
+        self.assertEqual(self.calls, [])
+
+    def test_ai_runtime_delivery_mismatch_and_symlink_have_no_idp_side_effect(self):
+        self.ai_file.write_text(json.dumps({**self.ai_delivery, "clientId": self.native["audience"]}))
+        with self.assertRaises(SystemExit):
+            self.run_registration()
+        self.assertEqual(self.calls, [])
+        self.ai_file.write_text(json.dumps(self.ai_delivery))
+        link = self.ai / "linked-secret"
+        link.symlink_to(self.ai_secret)
+        self.ai_file.write_text(json.dumps({**self.ai_delivery, "secretFile": "/run/wren-ai-native/linked-secret"}))
+        with self.assertRaises(SystemExit):
+            self.run_registration()
+        self.assertEqual(self.calls, [])
 
 
 class Response:

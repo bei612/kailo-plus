@@ -974,6 +974,96 @@ describe('native instance identity boundary', () => {
     );
   });
 
+  it('consumes a separately registered AI audience without borrowing the browser audience', async () => {
+    const serviceAudience = randomUUID();
+    const sub = randomUUID();
+    const bearer = await token({
+      aud: serviceAudience,
+      azp: serviceAudience,
+      sub,
+    });
+    expect((await middleware(request('/', `Bearer ${bearer}`))).status).toBe(
+      401,
+    );
+    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
+      ...settings,
+      serviceAudience,
+    });
+    const service = await middleware(
+      request('/api/config', `Bearer ${bearer}`),
+    );
+    const browser = await middleware(
+      request('/api/config', `Bearer ${await token({ sub })}`),
+    );
+    expect(service.status).toBe(200);
+    expect(browser.status).toBe(200);
+    expect(
+      service.headers.get('x-middleware-request-x-kailo-native-identity-scope'),
+    ).not.toBe(
+      browser.headers.get('x-middleware-request-x-kailo-native-identity-scope'),
+    );
+  });
+
+  it('does not grant instance access merely because the AI client was registered', async () => {
+    const serviceAudience = randomUUID();
+    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
+      ...settings,
+      serviceAudience,
+    });
+    const bearer = await token({ aud: serviceAudience, azp: serviceAudience }, [
+      settings.accessClaim,
+    ]);
+    expect((await middleware(request('/', `Bearer ${bearer}`))).status).toBe(
+      403,
+    );
+  });
+
+  it.each(['missing', 'different', 'ambiguous'])(
+    'rejects an AI audience whose authorized-party association is %s',
+    async (kind) => {
+      const serviceAudience = randomUUID();
+      process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
+        ...settings,
+        serviceAudience,
+      });
+      const bearer = await token({
+        aud:
+          kind === 'ambiguous'
+            ? [settings.audience, serviceAudience]
+            : serviceAudience,
+        ...(kind !== 'missing'
+          ? { azp: kind === 'different' ? settings.audience : serviceAudience }
+          : {}),
+      });
+      expect((await middleware(request('/', `Bearer ${bearer}`))).status).toBe(
+        401,
+      );
+    },
+  );
+
+  it.each(['', ' ', null, false])(
+    'rejects malformed service audience %p instead of keeping the cached identity',
+    async (serviceAudience) => {
+      process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
+        ...settings,
+        serviceAudience,
+      });
+      expect(
+        (await middleware(request('/', `Bearer ${await token()}`))).status,
+      ).toBe(503);
+    },
+  );
+
+  it('rejects a service audience shared with the native browser client', async () => {
+    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
+      ...settings,
+      serviceAudience: settings.audience,
+    });
+    expect(
+      (await middleware(request('/', `Bearer ${await token()}`))).status,
+    ).toBe(503);
+  });
+
   it('allows only explicit embedding origins without changing native authentication or CSRF', async () => {
     expect(nativeFrameAncestors(undefined)).toBe("frame-ancestors 'self'");
     expect(nativeFrameAncestors('tauri://localhost')).toBe(

@@ -22,6 +22,27 @@ import { ApiType } from './apollo/client/graphql/__types__';
 import { getApiHistoryText } from './utils/language';
 import HomeThread from './pages/home/[id]';
 
+it.each(['zh-CN', 'en'])(
+  'renders the original row limit input through the real production Ant Design alias (%s)',
+  (locale) => {
+    const actual = jest.requireActual('./import/antd');
+    const native = jest.requireActual('antd/lib/input-number').default;
+    expect(actual.InputNumber).toBe(native);
+    const label = getQueryPreviewText(locale).rowLimit;
+    const html = renderToStaticMarkup(
+      createElement(actual.InputNumber, {
+        'aria-label': label,
+        precision: 0,
+        min: 1,
+        value: 17,
+      }),
+    );
+    expect(html).toContain('ant-input-number');
+    expect(html).toContain(`aria-label="${label}"`);
+    expect(html).toContain('value="17"');
+  },
+);
+
 let mockLocale: string | undefined;
 let mockScope: string;
 let mockButtons: any[];
