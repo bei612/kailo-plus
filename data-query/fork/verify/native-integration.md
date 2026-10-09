@@ -7385,3 +7385,96 @@ Ordinary-function/provider provenance, trusted SERVICE SQL, trusted dynamic
 Resource adoption and cross-client native metadata UNKNOWN reconciliation remain
 release gaps. Root owns repository full checks, independent final diff review,
 main commit/push and deployment; this agent did not run full or operate Git index.
+
+## Original native Engine mode reaches Ibis HTTP consumers
+
+Implementation and evidence collected on 2026-10-09. Owned paths: original
+`wren-ui/src/apollo/server/config.ts`, original
+`wren-ui/src/apollo/server/adaptors/tests/ibisAdaptor.test.ts`, this receipt and
+`docker/README.md`. No page, layout, menu, native operation, platform contract,
+database model, registry or execution authority was added or removed.
+
+### Authority, impact, side effects and boundaries
+
+1. Authority: `.design/08` §6 and `SS-WRN-GOVERNANCE` require the original complete
+   native consumers to use the delivered implementation. At fixed UI commit
+   `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/config.ts::getConfig` filters with `pickBy(config)`;
+   an explicit false is discarded and `defaultConfig` reintroduces true.
+   `wren-ui/src/apollo/server/adaptors/ibisAdaptor.ts::getIbisApiVersion` actually
+   consumes that value. Existing `docker/docker-compose.yaml` delivers the sole
+   Engine-mode environment option; the local deployment template explicitly
+   chooses false. This is a necessary delivered-config adaptation, not a UI
+   redesign or new switch.
+2. Impact: the original merge now excludes only undefined. The same truthiness
+   rule affected Docker/debug booleans, optional telemetry false, zero-valued
+   recommendation counts and explicitly empty strings. Other parsers/default
+   values are unchanged. An absent Engine flag remains undefined until the
+   upstream true default is merged; explicit true/false survives. Empty/unknown
+   Engine flags refuse initialization with a fixed non-sensitive error. This
+   runtime-startup setting requires a process restart; no migration, compatibility
+   window or four-language contract generation applies.
+3. Side effects: no extra SQL is dispatched, no credential or content is copied,
+   and authorization, AE/history, UNKNOWN and resource gates are unchanged. At
+   fixed Engine commit `47ca29ebba291100ba5d70ce1790f9887eaed7a0`,
+   `ibis-server/app/mdl/rewriter.py::Rewriter` chooses `ExternalEngineRewriter`
+   when experiment is false; its `rewrite` calls `JavaEngineConnector.dry_plan`.
+   `ibis-server/app/routers/v2/connector.py::query` and
+   `dry_plan_for_data_source` use that original Java connector; original v3
+   consumers pass experiment=true. These are source facts, not a new claim of
+   live native deployment or ordinary-function authorization.
+4. Boundaries: absent keeps the upstream default, valid false/true selects exact
+   original routes, and invalid mode refuses startup (PRECONDITION), never a
+   guessed successful conversion. Configured false cannot fall back to the
+   experimental path. Metadata version remains v2 in both modes. This does not
+   authorize a release, create a Resource or settle any uncertain native task.
+
+### Actual commands and outcomes
+
+The same existing `kailo-wren-query-sdk-itgs2n` ran the original commands from
+`/work`, with 4 CPU/4 GiB and `NODE_OPTIONS=--max-old-space-size=3072`:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/apollo/server/adaptors/tests/ibisAdaptor.test.ts
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/config.ts src/apollo/server/adaptors/tests/ibisAdaptor.test.ts
+```
+
+Host logs remain in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`.
+
+- Handle 14552 **exit 1**, `native-engine-config-positive.log`: **36 passed,
+  1 failed**. All seven new cases passed. The old MySQL assertion expected
+  `ssl:false`, while the same fixed official
+  `wren-ui/src/apollo/server/dataSource.ts::dataSource[MYSQL].toIbisConnectionInfo`
+  already emits `sslMode:DISABLED`. Only that stale complete-request fixture was
+  corrected; no production MySQL code or assertion was weakened.
+- Handle 54486 **exit 0**: `native-engine-config-positive-final.log` **37/37**,
+  6.169 s, and `native-engine-config-types.log` **0**.
+- Private production damage, handle 5140 **exit 1**,
+  `native-engine-config-filter-negative.log`: restore the original truthy
+  `pickBy(config)` and get **2 failed/35 passed**. The actual adaptor issued all
+  five engine URLs with v3 instead of requested v2; the original HTTP-call
+  assertions caught them. The explicit false/zero/empty config check also failed.
+- Restore the filter, then damage the actual absent-value assignment to false:
+  handle 71884 **exit 1**, `native-engine-config-default-negative.log`,
+  **7 failed/30 passed**, including exact original default-v3 request assertions.
+- Restore the production source byte-for-byte: handle 88433 **exit 0**, final
+  `native-engine-config-restored.log` **37/37**, 6.768 s;
+  `native-engine-config-types-final.log` **0** and
+  `native-engine-config-format-final.log` **0**. Formal/SDK source and original
+  check both `cmp` **0**. `native-engine-config-cgroup-final.log` records
+  `2026-10-09T02:42:17Z`, CPU `400000 100000`, memory `4294967296`, and all memory
+  events, OOM and kills **0**. SDK has only its original sleep process afterward.
+
+Final SHA-256: config
+`f3bfe2627663a4fc40e71b6d3a71faec000840705b77d32a00169f4479f6dc17`;
+original Ibis check
+`4d09dfa3d6b7a3e539793a6939c70c752bf57a3c311288c3fc00be7881ef5629`.
+The original adaptor methods execute against mocked Axios and connection-secret
+fixtures. No real datasource/provider, native Ibis/Engine HTTP deployment,
+browser screenshot, ACTIVE binding, iframe or three-human acceptance was run.
+No image/package/deployment or full check was started in this sub-batch; root
+owns concentrated verification, final diff review, main commit/push and release.
+Dynamic Resource evidence, ordinary-function provenance, trusted SERVICE SQL and
+cross-client native metadata reconciliation remain real release gaps.

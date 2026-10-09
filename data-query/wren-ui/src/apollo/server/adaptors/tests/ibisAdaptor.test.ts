@@ -21,6 +21,7 @@ import {
 import { snakeCase } from 'lodash';
 import { Encryptor } from '../../utils';
 import { DEFAULT_PREVIEW_LIMIT } from '../../services';
+import type { IConfig } from '../../config';
 
 jest.mock('axios');
 jest.mock('@server/utils/encryptor');
@@ -185,10 +186,11 @@ describe('IbisAdaptor', () => {
       DataSourceName.MYSQL,
       mockMySQLConnectionInfo,
     );
-    const expectConnectionInfo = Object.entries(mockMySQLConnectionInfo).reduce(
-      (acc, [key, value]) => ((acc[snakeCase(key)] = value), acc),
-      {},
-    );
+    const { ssl, ...connectionInfo } = mockMySQLConnectionInfo;
+    const expectConnectionInfo = {
+      ...connectionInfo,
+      sslMode: ssl ? 'ENABLED' : 'DISABLED',
+    };
 
     expect(result).toEqual([]);
     expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -1094,5 +1096,126 @@ describe('IbisAdaptor', () => {
         },
       },
     );
+  });
+
+  describe('native engine configuration reaches the original HTTP consumer', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      delete process.env.EXPERIMENTAL_ENGINE_RUST_VERSION;
+      process.env.IBIS_SERVER_ENDPOINT = ibisServerEndpoint;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    const loadNativeConsumer = () => {
+      let consumer: {
+        config: IConfig;
+        adaptor: IbisAdaptor;
+        post: typeof mockedAxios.post;
+      };
+      jest.isolateModules(() => {
+        const { getConfig } = require('../../config');
+        const { IbisAdaptor: NativeIbisAdaptor } = require('../ibisAdaptor');
+        const nativeAxios = require('axios').default;
+        const { Encryptor: NativeEncryptor } = require('../../utils/encryptor');
+        NativeEncryptor.prototype.decrypt.mockReturnValue(
+          JSON.stringify({ password: mockPostgresConnectionInfo.password }),
+        );
+        const nativeConfig = getConfig();
+        consumer = {
+          config: nativeConfig,
+          adaptor: new NativeIbisAdaptor({
+            ibisServerEndpoint: nativeConfig.ibisServerEndpoint,
+          }),
+          post: nativeAxios.post,
+        };
+      });
+      return consumer;
+    };
+
+    it.each([
+      [undefined, true, 'v3'],
+      ['true', true, 'v3'],
+      ['false', false, 'v2'],
+    ])(
+      'delivered %s selects %s in all original engine HTTP operations',
+      async (delivered, enabled, apiVersion) => {
+        if (delivered !== undefined) {
+          process.env.EXPERIMENTAL_ENGINE_RUST_VERSION = delivered;
+        }
+        const { config, adaptor, post } = loadNativeConsumer();
+        post.mockResolvedValue({ data: {}, headers: {} });
+        const options = {
+          dataSource: DataSourceName.POSTGRES,
+          connectionInfo: mockPostgresConnectionInfo,
+          mdl: mockManifest,
+        };
+        const sql = 'SELECT * FROM test_table';
+
+        await adaptor.query(sql, options);
+        await adaptor.dryRun(sql, options);
+        await adaptor.getNativeSql({ ...options, sql });
+        await adaptor.validate(
+          options.dataSource,
+          ValidationRules.COLUMN_IS_VALID,
+          options.connectionInfo,
+          options.mdl,
+          {},
+        );
+        await adaptor.modelSubstitute(sql as DialectSQL, options);
+        await adaptor.getVersion(options.dataSource, options.connectionInfo);
+
+        expect(post.mock.calls.map(([url]) => url)).toEqual([
+          `${ibisServerEndpoint}/${apiVersion}/connector/postgres/query`,
+          `${ibisServerEndpoint}/${apiVersion}/connector/postgres/query?dryRun=true`,
+          `${ibisServerEndpoint}/${apiVersion}/connector/postgres/dry-plan`,
+          `${ibisServerEndpoint}/${apiVersion}/connector/postgres/validate/column_is_valid`,
+          `${ibisServerEndpoint}/${apiVersion}/connector/postgres/model-substitute`,
+          `${ibisServerEndpoint}/v2/connector/postgres/metadata/version`,
+        ]);
+        expect(config.experimentalEngineRustVersion).toBe(enabled);
+      },
+    );
+
+    it.each(['', 'FALSE', 'invalid'])(
+      'rejects invalid delivered engine mode %j before any native HTTP request',
+      (delivered) => {
+        process.env.EXPERIMENTAL_ENGINE_RUST_VERSION = delivered;
+        expect(loadNativeConsumer).toThrow(
+          'Invalid EXPERIMENTAL_ENGINE_RUST_VERSION configuration',
+        );
+        expect(mockedAxios.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not replace explicitly delivered false, zero or empty values with defaults', () => {
+      process.env.EXPERIMENTAL_ENGINE_RUST_VERSION = 'false';
+      process.env.OTHER_SERVICE_USING_DOCKER = 'false';
+      process.env.DEBUG = 'false';
+      process.env.TELEMETRY_ENABLED = 'false';
+      process.env.PROJECT_RECOMMENDATION_QUESTION_MAX_CATEGORIES = '0';
+      process.env.PROJECT_RECOMMENDATION_QUESTIONS_MAX_QUESTIONS = '0';
+      process.env.THREAD_RECOMMENDATION_QUESTION_MAX_CATEGORIES = '0';
+      process.env.THREAD_RECOMMENDATION_QUESTIONS_MAX_QUESTIONS = '0';
+      process.env.WREN_ENGINE_ENDPOINT = '';
+      process.env.ENCRYPTION_PASSWORD = '';
+      const { config } = loadNativeConsumer();
+      expect(config).toMatchObject({
+        experimentalEngineRustVersion: false,
+        otherServiceUsingDocker: false,
+        debug: false,
+        telemetryEnabled: false,
+        projectRecommendationQuestionMaxCategories: 0,
+        projectRecommendationQuestionsMaxQuestions: 0,
+        threadRecommendationQuestionMaxCategories: 0,
+        threadRecommendationQuestionsMaxQuestions: 0,
+        wrenEngineEndpoint: '',
+        encryptionPassword: '',
+      });
+    });
   });
 });

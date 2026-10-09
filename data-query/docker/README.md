@@ -1122,3 +1122,25 @@ existing trusted native-resource evidence, final Resource read remains denied
 and the original write outcome remains UNKNOWN with its returned native ID.
 Dynamic Resource adoption, cross-client metadata reconciliation, ordinary-function
 provenance, trusted SERVICE SQL, ACTIVE binding and full Wren release remain open.
+
+### Deliver the selected native Engine mode
+
+The existing runtime environment option `WREN_EXPERIMENTAL_ENGINE_RUST_VERSION`
+is delivered to the original UI as `EXPERIMENTAL_ENGINE_RUST_VERSION`. Explicit
+`false` now reaches the original Ibis HTTP consumer: query, dry-run, dry-plan,
+validation and model substitution select v2 and its original Java Engine rewriter.
+Explicit `true` selects the original v3 path; it does not certify or activate that
+engine capability. A never-delivered option keeps the upstream default `true`.
+Empty or unknown values refuse UI initialization instead of silently selecting
+another engine. The setting is read at process initialization, so an environment
+change requires restarting the UI through the existing deployment workflow.
+
+The original configuration merge now filters only `undefined`: explicitly
+delivered `false`, zero and empty strings are not replaced by upstream defaults.
+This does not add validation for every other setting or change their parsers.
+The [Engine-mode receipt](../fork/verify/native-integration.md#original-native-engine-mode-reaches-ibis-http-consumers)
+records **37/37** original SDK consumers, types/format exit 0, two actual production
+damages caught and exact restoration. Axios is mocked there; no new UI image,
+live native Ibis/Engine call, datasource, ACTIVE binding or iframe acceptance is
+claimed. Dynamic Resource evidence, ordinary-function provenance and trusted
+SERVICE SQL still remain closed release gaps.

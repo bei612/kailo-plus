@@ -109,8 +109,13 @@ const config = {
   generationModel: process.env.GENERATION_MODEL,
 
   // ibis server
-  experimentalEngineRustVersion:
-    process.env.EXPERIMENTAL_ENGINE_RUST_VERSION === 'true',
+  experimentalEngineRustVersion: (() => {
+    const value = process.env.EXPERIMENTAL_ENGINE_RUST_VERSION;
+    if (value === undefined) return undefined;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    throw new Error('Invalid EXPERIMENTAL_ENGINE_RUST_VERSION configuration');
+  })(),
   ibisServerEndpoint: process.env.IBIS_SERVER_ENDPOINT,
 
   // encryption
@@ -151,5 +156,8 @@ const config = {
 };
 
 export function getConfig(): IConfig {
-  return { ...defaultConfig, ...pickBy(config) };
+  return {
+    ...defaultConfig,
+    ...pickBy(config, (value) => value !== undefined),
+  };
 }
