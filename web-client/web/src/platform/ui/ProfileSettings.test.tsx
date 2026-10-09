@@ -23,8 +23,8 @@ const profile = { pubkey: "a".repeat(64), eventId: "1".repeat(64), displayName: 
 let root: Root;
 let host: HTMLDivElement;
 const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
-async function openProfile(session = "original") {
-  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><SettingsPane key={session} /></SidebarProvider></PlatformProvider>));
+async function openProfile(session = "original", fallbackDisplayName?: string) {
+  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><SettingsPane key={session} fallbackDisplayName={fallbackDisplayName} /></SidebarProvider></PlatformProvider>));
   await click('[data-testid="settings-nav-profile"]');
 }
 async function click(selector: string) {
@@ -55,6 +55,20 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+
+it("passes only the current session identity fallback to the original avatar preview when kind-0 has no name", async () => {
+  state.read.mockResolvedValue({ ...profile, displayName: "" });
+  await openProfile("original", "Authenticated viewer");
+  expect(host.querySelector('[data-testid="profile-avatar-preview-fallback"]')?.textContent).toBe("AV");
+  await click('[data-testid="profile-avatar-edit"]');
+  await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+  expect(host.querySelector('[data-testid="profile-avatar-preview-fallback"]')?.textContent).toBe("AV");
+  state.read.mockResolvedValue({ ...profile, pubkey: "b".repeat(64), displayName: "" });
+  await openProfile("next-session", "Next viewer");
+  expect(host.querySelector('[data-testid="profile-avatar-preview-fallback"]')?.textContent).toBe("NV");
+  expect(state.write).not.toHaveBeenCalled();
+  expect(state.upload).not.toHaveBeenCalled();
+});
 
 it("does not admit a late upload into the original global avatar presentation after the session pane changed", async () => {
   let complete!: (descriptor: { url: string; sha256: string; type: string }) => void;

@@ -21,7 +21,7 @@ import { parseEmojiAvatarDataUrl } from "./profile/buzz/features/profile/ui/Prof
 import type { ProfileAvatarEditorProps } from "./profile/buzz/features/profile/ui/ProfileAvatarEditor.types";
 export { ProfileAvatarControls, ProfileAvatarPreview } from "./profile/profile-avatar-controls";
 export type ProfilePresentation = Pick<WebProfileView, "pubkey" | "displayName" | "avatarUrl" | "about" | "nip05Handle">;
-export type ProfileAvatarEditorBinding = Pick<ProfileAvatarEditorProps, "animatedPreviewContainer" | "modeTabsContainer" | "onAnimatedPreviewActiveChange" | "onAnimatedPreviewCaptionChange" | "onDone" | "onEmojiAvatarChange" | "onUploadedAvatarChange" | "donePending"> & {
+export type ProfileAvatarEditorBinding = Pick<ProfileAvatarEditorProps, "previewName" | "animatedPreviewContainer" | "modeTabsContainer" | "onAnimatedPreviewActiveChange" | "onAnimatedPreviewCaptionChange" | "onDone" | "onEmojiAvatarChange" | "onUploadedAvatarChange" | "donePending"> & {
   avatarUrl: string; onChange: (url: string) => void; disabled: boolean; onUploadingChange: (value: boolean) => void;
 };
 const AVATAR_EDITOR_TRANSITION_MS = 240;
@@ -106,8 +106,9 @@ function EditProfileMetadataButton({
   );
 }
 
-export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, onCopy, avatarEditor, avatarPreview, nativeIdentityDetails }: {
+export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackDisplayName, onSave, onCopy, avatarEditor, avatarPreview, nativeIdentityDetails }: {
   locale: PlatformLocale; profile: ProfilePresentation;
+  fallbackDisplayName?: string;
   onSave: (request: WebProfileUpdateRequest) => Promise<ProfilePresentation>;
   onCopy: (value: string) => Promise<void>;
   avatarEditor?: (props: ProfileAvatarEditorBinding) => React.ReactNode;
@@ -285,6 +286,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
   const resolvedName =
     nextDisplayName ||
     profile?.displayName ||
+    fallbackDisplayName ||
     t("platform.settings.profile");
   // Identity details show and copy the full canonical npub; a key that
   // cannot be encoded renders the neutral label and is never copyable.
@@ -784,7 +786,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
                         inert={isAvatarEditorOpen ? undefined : true}
                       >
                         {avatarEditor?.({
-                          avatarUrl: avatarUrlDraft, onChange: setAvatarUrlDraft,
+                          avatarUrl: avatarUrlDraft, previewName: resolvedName, onChange: setAvatarUrlDraft,
                           disabled: isAvatarEditorSaving || writeLocked,
                           onUploadingChange: setIsUploadingAvatar,
                           donePending: isAvatarEditorSaving,

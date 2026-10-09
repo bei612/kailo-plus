@@ -32,7 +32,7 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
 }
 // The table describes the real shared Tiptap handlers, not new key bindings.
 
-export function SettingsPane({ active = true, onClose }: { active?: boolean; onClose?: () => void }) {
+export function SettingsPane({ active = true, fallbackDisplayName, onClose }: { active?: boolean; fallbackDisplayName?: string; onClose?: () => void }) {
   const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
@@ -42,7 +42,7 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
   return (
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
-      <div hidden={section !== "profile"}><WebProfileSettings /></div>
+      <div hidden={section !== "profile"}><WebProfileSettings fallbackDisplayName={fallbackDisplayName} /></div>
       {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
       {section === "appearance" ? (
         <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
@@ -94,7 +94,7 @@ function WebCustomEmojiSettings() {
   }} />;
 }
 
-function WebProfileSettings() {
+function WebProfileSettings({ fallbackDisplayName }: { fallbackDisplayName?: string }) {
   const client = useBffClient();
   const { isDark } = useTheme();
   const locale = useUiLocale();
@@ -135,6 +135,7 @@ function WebProfileSettings() {
     try { return new URL(poster).origin !== window.location.origin; } catch { return true; }
   };
   return <ProfileSettingsCard key={profile.pubkey} locale={locale} profile={profile}
+    fallbackDisplayName={fallbackDisplayName}
     onCopy={async (value) => {
       if (typeof navigator.clipboard?.writeText === "function") {
         // A denied modern request stays denied; do not retry via another API.
@@ -169,7 +170,7 @@ function WebProfileSettings() {
     }}
     avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteMediaUrl} className="h-full w-full rounded-full text-5xl" iconClassName="h-14 w-14" testId="profile-avatar-preview" />}
     avatarEditor={(props) => <>
-      <ProfileAvatarControls {...props} label={profile.displayName ?? profile.pubkey} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteMediaUrl} />
+      <ProfileAvatarControls {...props} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteMediaUrl} />
       {externalImage(props.avatarUrl) ? <p role="status" className="mt-3 text-sm text-muted-foreground">{translate(locale, "platform.profile.externalImage")}</p> : null}
     </>}
     onSave={async (request) => {

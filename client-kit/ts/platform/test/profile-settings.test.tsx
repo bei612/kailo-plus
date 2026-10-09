@@ -2,7 +2,7 @@ import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { npubEncode } from "nostr-tools/nip19";
 import type { WebProfileUpdateRequest } from "@client-kit/contracts";
-import { ProfileSettingsCard, type ProfilePresentation, type ProfileAvatarEditorBinding } from "../src/react/profile-settings";
+import { ProfileSettingsCard, ProfileAvatarPreview, type ProfilePresentation, type ProfileAvatarEditorBinding } from "../src/react/profile-settings";
 import { TransportError } from "../src/transport";
 import { emojiAvatarDataUrl, DEFAULT_EMOJI_AVATAR_COLOR } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatarEditor.utils";
 import { button, click, render, settle, type } from "./render";
@@ -19,6 +19,28 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it("keeps the original identity fallback and draft priority in the real avatar preview and editor binding", async () => {
+    let editor!: ProfileAvatarEditorBinding;
+    const emptyName = { ...profile, displayName: "" };
+    const onSave = vi.fn(async () => emptyName);
+    const host = await render(<ProfileSettingsCard locale="en" profile={emptyName} fallbackDisplayName="Local identity" onCopy={clipboard} onSave={onSave}
+      avatarPreview={(actual) => <ProfileAvatarPreview locale="en" avatarUrl={actual.avatarUrl} label={actual.displayName ?? ""} upload={vi.fn()} rewriteMediaUrl={(url) => url} testId="actual-avatar" />}
+      avatarEditor={(binding) => { editor = binding; return <button type="button" onClick={binding.onDone}>Finish avatar</button>; }} />);
+    expect(host.querySelector('[data-testid="actual-avatar-fallback"]')?.textContent).toBe("LI");
+    await edit(host, "Draft name");
+    expect(host.querySelector('[data-testid="actual-avatar-fallback"]')?.textContent).toBe("DN");
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    expect(editor.previewName).toBe("Draft name");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps a canonical profile name ahead of the original local identity fallback", async () => {
+    const host = await render(<ProfileSettingsCard locale="en" profile={profile} fallbackDisplayName="Local identity" onCopy={clipboard} onSave={async () => profile}
+      avatarPreview={(actual) => <ProfileAvatarPreview locale="en" avatarUrl={actual.avatarUrl} label={actual.displayName ?? ""} upload={vi.fn()} rewriteMediaUrl={(url) => url} testId="actual-avatar" />} />);
+    expect(host.querySelector('[data-testid="actual-avatar-fallback"]')?.textContent).toBe("O");
+  });
+
   it.each(["en", "zh-CN"] as const)("does not manufacture a private-key export in the browser host (%s)", async (locale) => {
     const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={clipboard} onSave={async () => profile} />);
     expect(host.querySelector('[data-testid="profile-identity-details"]')).not.toBeNull();

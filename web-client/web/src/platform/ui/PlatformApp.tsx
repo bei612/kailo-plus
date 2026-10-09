@@ -523,7 +523,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         </ContentSurface>
             </div>
             {settingsVisited.current ? <div className="flex min-h-0 min-w-0 flex-1" hidden={tab !== "settings"} style={tab === "settings" ? undefined : { display: "none" }}>
-              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} active={tab === "settings"} onClose={() => settingsReturn.current()} />
+              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} active={tab === "settings"} fallbackDisplayName={session.displayName} onClose={() => settingsReturn.current()} />
             </div> : null}
           </div>
         </SidebarProvider>
