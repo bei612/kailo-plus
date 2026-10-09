@@ -49,3 +49,58 @@ rustfmt --edition 2021 --check core/crates/platform-core/src/action_token.rs cor
 日志在 /volumes/data/kailo/check-cache：application-intent-positive-20261009.log、application-intent-mutation-20261009.log、application-intent-restored-20261009.log。首轮编译 4m33s、故障候选 6m56s、恢复后 13.17s；故障轮同时遇到已记录宿主高 I/O 压力，不靠降 Cargo jobs 或无限重试掩盖。
 
 本批没有验证真实 OpenBao 签名/SpiceDB/数据库/Gateway/原生业务服务整条执行链；helper payload 检查不能冒充它。没有重跑完整 check.sh --full，之前失败仍未清除；Core 新镜像未构建、未部署，三个业务组件未因此激活。正式源码提交不等于线上已采用这项修复。
+
+## 后续：HUMAN/AGENT 原生 execute 消费同一个冻结意图
+
+起点 main `784d2ee9e80f09d2f720e5d0e0b85bc71492da01`；仅修改原
+`application_binding_pep.rs::check/dispatched_intent` 及其原 revision 检查模块。
+依据上述 DD-49/90/105、SS-AGW-02 与既有 ExternalExecution 合同：原接收方
+只对 HUMAN execute 比对冻结 EE/key，AGENT 不能只凭父工作流和已签参数获取另一 key
+或借已结算票据开始新请求。本次统一两类 actor 的同一个原业务消费者，不另建执行权威。
+
+四步结论：
+
+1. 权威及影响：原签发器写 EE/key claims，原 dispatch 事务写 ExternalExecution；
+   原 PEP execute 读取精确 tenant/workspace/operation/AE/EE/key/hash、binding/release/generation
+   和 WorkflowRef。HUMAN 仍用 ComponentTaskWorkflow/COMPONENT_ACTION，AGENT 仍用原
+   child→parent AgentTaskWorkflow；HUMAN 原审批消费和 AGENT 原 fresh authorization 不变。
+2. 副作用：预备票据在真实 dispatch 尚未持久化时不能执行，终态票据不能启动第二次原生请求。
+   query_revision、observe、extract_usage、ProtocolPeer、SERVICE_READ 和生命周期消费者未改；
+   不将观察准入当成业务 execute，也不复制文件或查询正文。
+3. 边界：没有 EE、PENDING_DISPATCH、缺 claims、错 key/hash/scope/binding 或终态均拒绝。
+   usage 必须含真实数组 meters；明确 NONE 的空数组合法，缺 meters 的非空对象不等于零用量。
+   数据库错误继续原 Unavailable/UNKNOWN，不猜测终态，不重放旧请求。
+4. 兼容：无契约、字段、迁移、新状态、客户端页面或 Mobile 组件入口变更。
+   原已不完整的 usage 对象不补造零值；由既有对账负责。此处快照校验不单独证明
+   撤权竞争或跨分区 exactly-once，原生 Task 幂等保留和原终态对账仍不可省略。
+
+原 SDK `kailo-installation-scope-sdk-e4agxd`，UID1000，4 CPU/8 GiB，memory+swap 同限，
+Cargo jobs16、Data target/registry/git 缓存；每次先检查进程与宿主压力，没有新 SDK。
+候选导出沿上述起点原树，遗漏 collaboration workspace 和 capabilities.yaml 的两次准备失败
+分别保留 exit101；旧 79 迁移诊断库 SQL 检查因缺 reference_provision 退出3，不记通过。
+随后仅在本批独占的原隔离 PostgreSQL 库运行当前 109 条正式迁移，全部成功。
+初轮真实 SQL 还抓到新增 exists 查询漏闭括号，exit101；修正后才产生以下证据。
+
+```text
+cargo test --locked --offline -p platform-core --bin platform-core execute_ticket_requires_exact_frozen_nonterminal_intent -- --ignored --nocapture
+cargo test --locked --offline -p platform-core --bin platform-core revision_pep_tests -- --nocapture
+cargo test --locked --offline -p platform-core --bin platform-core application_intent_tests -- --nocapture
+rustfmt --edition 2021 --check crates/platform-core/src/application_binding_pep.rs
+```
+
+最终恢复句柄78652退出0：隔离数据库实际查询1项通过、原 revision 2项通过、原签名 payload
+3项通过，共6项；默认目标中同一数据库项显示 ignored，但已另用 --ignored 实跑，不记跳过验收。
+数据库夹具沿原 base/dispatch SQL，在单次外层事务内完整回滚，未关闭任何真实数据库约束。
+它覆盖 HUMAN 形状正向及 AGENT 不得借 HUMAN 根工作流的反向，不冒充真实 Agent 正向端到端。
+
+仅私有实际生产 SQL 将 meters 数组保护退回 is not null，同一检查句柄15683真实退出101，
+断言缺 meters 对象竟可执行而失败；不是编译或加载失败。apply_patch 精确还原，正式与候选
+cmp0 后同一目标重新通过。最终 cgroup oom/oom_kill 均0，max11975为有限内存回收，非全部事件零。
+正式最终源码 SHA256 `8d81d24aea8920d79673e2df9273b6ed72d0a25b658af21a0cd6efdc9a112936`。
+原日志目录：`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/pep-intent-20261009.ETDP5q/`；
+`restored-final-query.log` SHA256 `b1cfa08a2b4d741905fbfd2d192c6fbca220e939e14ad4b15c60c4eaee6f759e`，
+`negative-missing-meters.log` SHA256 `41fec4ebb97a63f486280e5735cc5159e3079ec8f8f89aeab22a4dc882d7cf1c`。
+
+本批仍未构建/部署 Core，未验证真实 Gateway/SpiceDB/组件全链路或三人多 Agent。
+此前固定08c76afd树的原 check-docs.sh 句柄64294已实际退出0；不代表本批 full 通过。
+完整门禁最新仍为失败，线上执行版本未随源码提交变化。

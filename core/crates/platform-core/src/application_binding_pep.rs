@@ -30,6 +30,47 @@ fn business_operation(
     }
 }
 
+// Both actors receive an exact native intent in their signed token. The Agent
+// parent workflow does not authorize a different key, or replay after terminal
+// settlement; observation remains a separate operation below.
+async fn dispatched_intent(
+    conn: &mut sqlx::PgConnection,
+    ae: &crate::governance::Execution,
+    binding: Uuid,
+    claims: &Value,
+    digest: &str,
+) -> Result<bool, Refusal> {
+    Ok(sqlx::query_scalar(
+        "select exists(select 1 from admission.external_execution e
+         join admission.action_execution a on a.id=e.action_execution_id
+           and a.tenant_id=e.tenant_id and a.operation_id=e.operation_id
+           and a.component_binding_id=e.component_binding_id
+           and a.component_release_id=e.component_release_id
+           and a.component_projection_generation=e.component_projection_generation
+         join projection.workflow_ref w on w.workflow_id=e.workflow_id
+           and w.tenant_id=e.tenant_id and w.operation_id=e.operation_id
+           and w.action_execution_id=case when $8 then a.id else a.parent_action_execution_id end
+           and (($8 and w.workflow_type='ComponentTaskWorkflow' and w.kind='COMPONENT_ACTION')
+             or (not $8 and w.workflow_type='AgentTaskWorkflow'))
+         where e.id=$1 and e.idempotency_key=$2 and e.action_execution_id=$3 and e.operation_id=$4
+           and e.component_binding_id=$5 and e.tenant_id=$6 and e.request_digest=$7
+           and e.workspace_id is not distinct from $9
+           and e.protocol_operation='execute' and e.platform_status in ('UNKNOWN','RUNNING')
+           and jsonb_typeof(e.usage_projection->'meters')='array')",
+    )
+    .bind(uuid(claims, "external_execution_id")?)
+    .bind(uuid(claims, "idempotency_key")?)
+    .bind(ae.id)
+    .bind(ae.operation_id)
+    .bind(binding)
+    .bind(ae.tenant_id)
+    .bind(digest)
+    .bind(crate::application_action::is_human(ae))
+    .bind(ae.workspace_id)
+    .fetch_one(conn)
+    .await?)
+}
+
 /// Native object identity comes from the authorized Resource and its current
 /// binding, never from the adapter's submitted arguments or UI configuration.
 async fn authorized_resource(
@@ -227,23 +268,19 @@ pub(crate) async fn check(
                 || (executing && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
             }
-            if crate::application_action::is_human(&ae) && executing {
+            if executing {
                 // A signed preflight ticket is unusable until the original
                 // transaction has frozen this exact EE/key/hash. It cannot be
-                // presented with another key to start a second native request.
-                let frozen:bool=sqlx::query_scalar("select exists(select 1 from admission.external_execution e
-                    join projection.workflow_ref w on w.workflow_id=e.workflow_id and w.action_execution_id=e.action_execution_id
-                      and w.workflow_type='ComponentTaskWorkflow' and w.kind='COMPONENT_ACTION'
-                    where e.id=$1 and e.idempotency_key=$2 and e.action_execution_id=$3 and e.operation_id=$4
-                      and e.component_binding_id=$5 and e.tenant_id=$6 and e.request_digest=$7
-                      and e.platform_status in ('UNKNOWN','RUNNING') and e.usage_projection is not null)")
-                    .bind(uuid(&claims,"external_execution_id")?).bind(uuid(&claims,"idempotency_key")?)
-                    .bind(ae.id).bind(ae.operation_id).bind(binding).bind(ae.tenant_id).bind(&hash)
-                    .fetch_one(&mut *tx).await?;
-                if !frozen{return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));}
-                crate::application_catalog::approval::require_consumed(
-                    &state.governance,&mut tx,&ae,&def,
-                ).await?;
+                // presented with another key, or after a terminal receipt, by
+                // either a HUMAN or an AGENT to start a second native request.
+                if !dispatched_intent(&mut tx,&ae,binding,&claims,&hash).await? {
+                    return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+                }
+                if crate::application_action::is_human(&ae) {
+                    crate::application_catalog::approval::require_consumed(
+                        &state.governance,&mut tx,&ae,&def,
+                    ).await?;
+                }
             }
             tx.commit().await?;
             let revision=if matches!(operation_kind,contracts::AdapterProtocolOperation::Observe|contracts::AdapterProtocolOperation::ExtractUsage) {
@@ -351,5 +388,195 @@ mod revision_pep_tests {
         ] {
             assert!(business_operation(operation, "ACTIVE").is_err());
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated isolated database; all fixtures roll back"]
+    async fn execute_ticket_requires_exact_frozen_nonterminal_intent() {
+        use sqlx::{Acquire, Connection};
+        let mut conn = sqlx::PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL")
+                .expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut outer = Connection::begin(&mut conn).await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;", "\n");
+        sqlx::raw_sql(&base).execute(&mut *outer).await.unwrap();
+        // Retain the original approved, unmetered declaration and all database
+        // guards. This is a PEP intent query check, not an Agent/SSO E2E.
+        let fixture = include_str!("../../../verify/application-execution-dispatch.sql")
+            .replace("'executionMode','PROTOCOL'", "'executionMode','TEMPORAL'")
+            .replace("'workflowType','NONE'", "'workflowType','ComponentTaskWorkflow'")
+            .replace("manifest:=jsonb_build_object('componentTypeKey',provider,",
+                "manifest:=jsonb_build_object('executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER'),'componentTypeKey',provider,")
+            .replace("'read','resource','PROTOCOL','NONE'", "'read','resource','TEMPORAL','NONE'")
+            .replace("NULL,NULL,'NATIVE',NULL,action", "'ComponentTaskWorkflow','COMPONENT_ACTION','NATIVE',NULL,action")
+            .replace(
+                "FOREACH provider IN ARRAY ARRAY['catalog_fixture_two'] LOOP",
+                "FOREACH provider IN ARRAY ARRAY['catalog_fixture_one'] LOOP",
+            )
+            .replace("'COMPONENT_BINDING',tenant,business_ae", "'COMPONENT_ACTION',tenant,business_ae")
+            .replace("parameter_hash,gate_state,dispatch_state,correlation_id,\n     component_binding_kind",
+                "parameter_hash,parameters,gate_state,dispatch_state,correlation_id,\n     component_binding_kind")
+            .replace("resource,repeat('b',64),'ALLOWED','NOT_DISPATCHED'",
+                "resource,repeat('b',64),'{\"componentActionKind\":\"COMPONENT_ACTION\"}','ALLOWED','NOT_DISPATCHED'");
+        sqlx::raw_sql(&fixture).execute(&mut *outer).await.unwrap();
+        let (child, binding, release, workflow, ee): (Uuid, Uuid, Uuid, String, Uuid) =
+            sqlx::query_as(
+                "select child,binding,release,workflow,ee from application_dispatch_fixture",
+            )
+            .fetch_one(&mut *outer)
+            .await
+            .unwrap();
+        sqlx::query(
+            "update admission.action_execution set dispatch_state='DISPATCHED' where id=$1",
+        )
+        .bind(child)
+        .execute(&mut *outer)
+        .await
+        .unwrap();
+        let ae = crate::governance::lock_execution(&mut outer, child)
+            .await
+            .unwrap();
+        assert!(crate::application_action::is_human(&ae));
+        let digest = "b".repeat(64);
+        let claims = json!({"external_execution_id":ee,"idempotency_key":ee});
+        assert!(
+            !dispatched_intent(&mut outer, &ae, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        sqlx::query("insert into admission.external_execution(id,operation_id,workflow_id,action_execution_id,
+            tenant_id,component_binding_id,component_binding_version,component_release_id,component_projection_generation,
+            protocol_operation,native_type,idempotency_key,request_digest,platform_status,cancel_capability)
+            values($1,$2,$3,$2,$4,$5,2,$6,1,'execute','document.lookup',$1,$7,'PENDING_DISPATCH','UNSUPPORTED')")
+            .bind(ee).bind(child).bind(&workflow).bind(ae.tenant_id).bind(binding).bind(release).bind(&digest)
+            .execute(&mut *outer).await.unwrap();
+        assert!(
+            !dispatched_intent(&mut outer, &ae, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        // UNKNOWN without the exact declared usage source is not executable.
+        let mut missing_usage = outer.begin().await.unwrap();
+        sqlx::query(
+            "update admission.external_execution set platform_status='UNKNOWN' where id=$1",
+        )
+        .bind(ee)
+        .execute(&mut *missing_usage)
+        .await
+        .unwrap();
+        assert!(
+            !dispatched_intent(&mut missing_usage, &ae, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        missing_usage.rollback().await.unwrap();
+        // SQL CHECK's null semantics can admit an object missing `meters` for
+        // a declared NONE action; missing is not an explicit empty meter set.
+        let mut missing_meters = outer.begin().await.unwrap();
+        sqlx::query("update admission.external_execution set usage_projection='{}' where id=$1")
+            .bind(ee)
+            .execute(&mut *missing_meters)
+            .await
+            .unwrap();
+        sqlx::query(
+            "update admission.external_execution set platform_status='UNKNOWN' where id=$1",
+        )
+        .bind(ee)
+        .execute(&mut *missing_meters)
+        .await
+        .unwrap();
+        assert!(
+            !dispatched_intent(&mut missing_meters, &ae, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        missing_meters.rollback().await.unwrap();
+        sqlx::query("update admission.external_execution set usage_projection='{\"meters\":[]}' where id=$1")
+            .bind(ee).execute(&mut *outer).await.unwrap();
+        for status in ["UNKNOWN", "RUNNING"] {
+            sqlx::query("update admission.external_execution set platform_status=$2 where id=$1")
+                .bind(ee)
+                .bind(status)
+                .execute(&mut *outer)
+                .await
+                .unwrap();
+            assert!(
+                dispatched_intent(&mut outer, &ae, binding, &claims, &digest)
+                    .await
+                    .unwrap()
+            );
+        }
+        for field in ["external_execution_id", "idempotency_key"] {
+            let mut wrong = claims.clone();
+            wrong[field] = json!(Uuid::new_v4());
+            assert!(
+                !dispatched_intent(&mut outer, &ae, binding, &wrong, &digest)
+                    .await
+                    .unwrap()
+            );
+            wrong.as_object_mut().unwrap().remove(field);
+            assert!(dispatched_intent(&mut outer, &ae, binding, &wrong, &digest)
+                .await
+                .is_err());
+        }
+        assert!(
+            !dispatched_intent(&mut outer, &ae, Uuid::new_v4(), &claims, &digest)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !dispatched_intent(&mut outer, &ae, binding, &claims, &"a".repeat(64))
+                .await
+                .unwrap()
+        );
+        let mut wrong_scope = ae.clone();
+        wrong_scope.workspace_id = Some(Uuid::new_v4());
+        assert!(
+            !dispatched_intent(&mut outer, &wrong_scope, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        wrong_scope = ae.clone();
+        wrong_scope.tenant_id = Uuid::new_v4();
+        assert!(
+            !dispatched_intent(&mut outer, &wrong_scope, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        wrong_scope = ae.clone();
+        wrong_scope.operation_id = Uuid::new_v4();
+        assert!(
+            !dispatched_intent(&mut outer, &wrong_scope, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        // An Agent classification cannot borrow the human root workflow. Its
+        // execute requires the existing child -> parent AgentTaskWorkflow join.
+        let mut agent = ae.clone();
+        agent.actor_principal_id = Uuid::new_v4();
+        assert!(!crate::application_action::is_human(&agent));
+        assert!(
+            !dispatched_intent(&mut outer, &agent, binding, &claims, &digest)
+                .await
+                .unwrap()
+        );
+        for status in ["SUCCEEDED", "FAILED", "CANCELLED"] {
+            let mut terminal = outer.begin().await.unwrap();
+            sqlx::query("update admission.external_execution set platform_status=$2,native_id=id::text,
+                native_status=$2,last_observed_at=now(),terminal_at=now(),response_digest=$3 where id=$1")
+                .bind(ee).bind(status).bind("a".repeat(64)).execute(&mut *terminal).await.unwrap();
+            assert!(
+                !dispatched_intent(&mut terminal, &ae, binding, &claims, &digest)
+                    .await
+                    .unwrap()
+            );
+            terminal.rollback().await.unwrap();
+        }
+        outer.rollback().await.unwrap();
     }
 }
