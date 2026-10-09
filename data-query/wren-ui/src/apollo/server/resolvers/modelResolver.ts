@@ -1779,6 +1779,7 @@ export class ModelResolver {
       properties.columns = viewColumns;
     }
 
+    await this.verifyMetadataWrite(ctx, projectId);
     await ctx.viewRepository.updateOne(viewId, {
       name: newName,
       properties: JSON.stringify(properties),

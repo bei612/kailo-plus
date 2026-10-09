@@ -1328,3 +1328,27 @@ instance/authorization or browser acceptance. Calculated-field SQL admission,
 other native writes and generic metadata ACK/recovery, dynamic Resource evidence,
 function provenance and trusted SERVICE SQL remain release gaps; no deployment,
 ACTIVE binding or full original-product acceptance is established by this batch.
+
+### Original View metadata editor write consumer
+
+The original modeling `EditMetadataModal` still calls `updateViewMetadata` with
+the same name, description and column metadata, and receives its original
+Boolean response. Its existing request-local project/manage and captured
+binding/generation check is now consumed after the native view lookup and
+optional asynchronous name validation, immediately before the only native
+`updateOne`. An entirely unconfigured standalone editor remains unchanged;
+binding or trusted identity appearing during that read cannot adopt its write.
+No SQL validation/preview, new Action, ACL, table or execution record is added.
+
+The [actual View consumer receipt](../fork/verify/native-integration.md#original-view-metadata-editor-native-write-consumer)
+records **34 View + 91 Model Metadata = 125/125**, TypeScript and two-file
+formatting exit 0 after byte-for-byte restoration. Privately removing the one
+new production call caused **20 actual failures**. Lost native responses,
+forged upstream `NOT_STARTED` and post-write permission/identity changes remain
+`UNKNOWN` without a retry; this is not cross-client metadata reconciliation.
+Native databases and authorization transports are fixture-backed, not browser,
+live instance or public authorization acceptance. The separately running
+UI/AI source-build batch is fixed to `661415e9f103bd939d2b70505e64ca188d74bde5`
+and does not include this later View change. No Wren deployment, ACTIVE binding
+or complete-product acceptance is established; the existing Resource evidence,
+function provenance, trusted SERVICE SQL and metadata recovery gaps remain.

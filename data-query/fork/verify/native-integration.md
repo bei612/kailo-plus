@@ -8346,3 +8346,103 @@ generic metadata partial/lost-ACK cross-client recovery, dynamic Resource facts,
 ordinary-function provenance and trusted SERVICE SQL remain release gaps.
 Root owns selective review/commit/push; these checks do not declare Wren or
 Kailo production-ready.
+
+## Original View metadata editor native write consumer
+
+This batch changes the actual original `ModelResolver.updateViewMetadata`
+consumer, not its page, input/response shape or native execution authority.
+At the fixed official `c5f02a0391c87420dba78632dcd86073710deb72`, the evidence is
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::updateViewMetadata`,
+`::validateViewName`, `::determineMetadataValue` and
+`wren-ui/src/pages/modeling.tsx`'s `EditMetadataModal` View submission. The native
+view read and optional name-validation read originally precede the only
+`viewRepository.updateOne`. The original names, blank-to-null removal, unrelated
+properties, column metadata, Boolean return and unconfigured independent editor
+remain intact. The one new pre-write current-permission call is an explicitly
+authorized governance adaptation, not an original layout/function replacement.
+
+Four implementation conclusions:
+
+1. **Authority:** `.design/05` §2.7 and `.design/08` §6,
+   `SS-WRN-IDENTITY/GOVERNANCE` retain internal native metadata CRUD and consume
+   the binding's public project scope. No fabricated query Action is used to
+   authorize metadata writes, and no blocked query/provider capability is opened.
+2. **Impact:** original public `Mutation.updateViewMetadata` already uses
+   `nativeProjectResolver(..., 'manage')`. Its independent per-field dispatch
+   context supplies the existing captured `nativeProjectCheck`; the same
+   `verifyMetadataWrite` is now called after the last original row/name lookup
+   and directly before this method's only native update. No external contract,
+   migration, Core/Worker or original UI change is required. The input fixture
+   explicitly supplies nullable `displayName`, matching the original `isNil`
+   branch instead of making that required TypeScript property optional.
+3. **Side effects:** current authorization, delivery, identity and generation
+   cannot rely only on the earlier wrapper check. A real local pre-dispatch
+   refusal prevents the update and preserves `NOT_STARTED`; a dispatched write,
+   lost response, forged service outcome or failed post-write check remains
+   `UNKNOWN`. No extra write, query/preview, body copy, ACL, ledger or retry is
+   introduced. Production databases and public authority are unchanged.
+4. **Boundaries:** actual consumers check both original asynchronous read
+   branches; revocation, changed generation/delivery/HUMAN/scope, missing raw
+   bound closure and independent-to-bound transitions reject before writing.
+   Native lost ACK, forged `NOT_STARTED`, and post-write identity/permission
+   changes do not become deterministic failure or automatic retry. Original
+   blank metadata removal and standalone behavior are retained. Existing
+   DENIED/PRECONDITION/BLOCKED refusals and UNKNOWN outcomes are reused; the
+   LIMIT/CONFLICT taxonomy and its consumers are unchanged. This adds no state
+   or generic metadata recovery mechanism.
+
+The final actual consumers are `nativeViewMetadataWrite.test.ts` (**34**) and
+the unchanged original `nativeModelMetadataWrite.test.ts` (**91**), calling
+the real public wrapper and original ModelResolver with fixture-backed native
+repositories and authorization transports. In the existing
+`kailo-wren-query-sdk-itgs2n` (**4 CPU / 4 GiB**, heap 3072 MiB), the original
+commands were run serially after resource/process preflight, without a new SDK,
+database, dependency install, global check or image build for this source batch:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeViewMetadataWrite.test.ts src/nativeModelMetadataWrite.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/nativeViewMetadataWrite.test.ts
+```
+
+Original logs under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+
+- `native-view-metadata-positive.log`, handle `75034`, exit **1**: old Model
+  Metadata **91 passed**, View **0 cases**, `TS2322` from optional `displayName`,
+  total 2115.782 s. Chained type/final formatting did not execute.
+- `native-view-metadata-positive-final.log`, handle `4910`, exit **1**: the
+  first fixture edit had changed the expected JSON rather than the input;
+  the same `TS2322` remained, **91 passed / 0 View cases**, 115.421 s. Neither
+  failure is rewritten as business acceptance. The actual nullable input and
+  original conditional metadata expectation were then precisely corrected.
+- `native-view-metadata-positive-nullable.log`, handle `50420`, exit **0**:
+  final **125/125**, two suites, 2710.104 s under cold Data I/O; original
+  TypeScript/two-file formatting **0**, all memory/OOM counters **0**.
+- `native-view-metadata-negative-native-consumer.log`, handle `47158`, exit
+  **1**, **20 failed / 14 passed / 34 total**, 8.21 s. Only the new actual
+  production `verifyMetadataWrite` call immediately before the View update was
+  removed privately. The checks caught stale native writes, wrong outcomes,
+  raw bound calls without their closure, and standalone-to-bound dispatch;
+  no assertion, authorization fixture or prior production guard was weakened.
+- `native-view-metadata-restored.log`, handle `3549`, exit **0**: after restoring
+  that exact production line, final **125/125**, 7.32 s, TypeScript/two-file
+  formatting **0**, all memory/OOM counters **0**. Both formal/private inputs
+  compared equal (`cmp` **0**) before and after this final run.
+
+Final formal source SHA-256 values:
+
+- `modelResolver.ts`: `db2de989305d34ae3467baef2cee6b2be3b59a58ec09c428caa525c40dc4730e`.
+- `nativeViewMetadataWrite.test.ts`: `b54404a966b37dcfa0f9e591950bde80d68ea28275f80e6aab21c27ff1146b60`.
+- Final restored log: `19612e8054d94a285ccdc19a71dce78b35ef0ed46b233370ec0034a468c66ebe`.
+
+These are backend consumer results, not live PostgreSQL/SpiceDB/Core, browser
+UNKNOWN rendering, cross-client/lost-ACK reconciliation or complete native
+product acceptance. The independently running original UI/AI artifact batch
+is fixed to `661415e9f103bd939d2b70505e64ca188d74bde5`; it does not include this
+later View source and is not declared successful here. No Wren product instance,
+ACTIVE release/binding, iframe, three-user/Agent or Desktop/Mobile acceptance was
+performed. Real independent deployment/identity/provider configuration, dynamic
+Resource facts, ordinary-function provenance, trusted SERVICE SQL and remaining
+native metadata recovery still gate release. Root owns selective review and
+commit/push; this four-path batch does not declare Wren/Kailo production-ready.
