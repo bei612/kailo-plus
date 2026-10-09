@@ -28,6 +28,9 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
+import { components } from './common';
+import instructionByIdHandler from './pages/api/v1/knowledge/instructions/[id]';
+import instructionsHandler from './pages/api/v1/knowledge/instructions';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -35,6 +38,587 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+describe('original instructions REST update and delete consumers', () => {
+  const config: any = {
+    projectId: 3,
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    tenantId: 'fixture-tenant',
+    workspaceId: 'fixture-workspace',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '3',
+  };
+  const row = {
+    id: 7,
+    projectId: 3,
+    instruction: 'Original instruction',
+    questions: ['Original question'],
+    isDefault: false,
+  };
+  const headers = {
+    'x-kailo-native-human-token': 'verified-person',
+    'x-kailo-native-identity-scope': 'a'.repeat(64),
+  };
+  let originalComponents: typeof components;
+  let originalHistory: Record<string, unknown>;
+  let previous: string | undefined;
+  let revoked: boolean;
+  let generation: number;
+  let nativeRow: typeof row;
+  let records: any[];
+  const invoke = async (method = 'PUT', overrides: any = {}) => {
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    await instructionByIdHandler(
+      {
+        method,
+        headers: { ...headers },
+        query: { id: String(row.id) },
+        body: { instruction: 'Updated original instruction' },
+        ...overrides,
+      } as any,
+      response,
+    );
+    return response;
+  };
+  beforeEach(() => {
+    originalComponents = { ...components };
+    originalHistory = { ...components.apiHistoryRepository };
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    revoked = false;
+    generation = 2;
+    nativeRow = structuredClone(row);
+    records = [];
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, operation, input, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBe(headers['x-kailo-native-human-token']);
+        expect(input).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'manage' },
+        });
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: 'manage',
+            checkedRevision: 'current-project-management',
+          },
+        };
+      });
+    Object.assign(components, {
+      telemetry: { sendEvent: jest.fn() },
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: config.projectId })),
+      },
+      instructionRepository: {
+        findOneBy: jest.fn(async (filter) =>
+          Object.entries(filter).every(
+            ([key, value]) => nativeRow?.[key] === value,
+          )
+            ? structuredClone(nativeRow)
+            : null,
+        ),
+      },
+      instructionService: {
+        getInstructions: jest.fn(async () => [structuredClone(nativeRow)]),
+        createInstruction: jest.fn(async (input) => ({ id: row.id, ...input })),
+        getInstruction: jest.fn(async () => structuredClone(nativeRow)),
+        updateInstruction: jest.fn(async (input) => ({
+          ...nativeRow,
+          ...input,
+        })),
+        deleteInstruction: jest.fn(async () => undefined),
+      },
+      apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+        createOne: jest.fn(async (input) => {
+          records.push(structuredClone(input));
+          return input;
+        }),
+      }),
+    });
+  });
+  afterEach(() => {
+    for (const key of Object.keys(components.apiHistoryRepository))
+      delete components.apiHistoryRepository[key];
+    Object.assign(components.apiHistoryRepository, originalHistory);
+    for (const key of Object.keys(components)) delete components[key];
+    Object.assign(components, originalComponents);
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+
+  it('updates through the original current-project Mutation with original partial payload and response', async () => {
+    const response = await invoke();
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.json).toHaveBeenCalledWith({
+      id: row.id,
+      instruction: 'Updated original instruction',
+      questions: row.questions,
+      isGlobal: false,
+    });
+    expect(components.instructionRepository.findOneBy).toHaveBeenCalledWith({
+      id: row.id,
+      projectId: config.projectId,
+    });
+    expect(components.instructionService.getInstruction).not.toHaveBeenCalled();
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledWith({
+      id: row.id,
+      projectId: config.projectId,
+      instruction: 'Updated original instruction',
+      questions: row.questions,
+      isDefault: false,
+    });
+    expect(records).toEqual([
+      expect.objectContaining({
+        apiType: ApiType.UPDATE_INSTRUCTION,
+        statusCode: 200,
+      }),
+    ]);
+    expect(bindingServiceCall).toHaveBeenCalledTimes(7);
+  });
+
+  const create = async (overrides: any = {}) => {
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    await instructionsHandler(
+      {
+        method: 'POST',
+        headers: { ...headers },
+        body: {
+          instruction: row.instruction,
+          questions: row.questions,
+          isGlobal: false,
+        },
+        ...overrides,
+      } as any,
+      response,
+    );
+    return response;
+  };
+
+  it('creates through the original current-project Mutation with the unchanged 201 payload and native service', async () => {
+    const response = await create();
+    expect(response.status).toHaveBeenCalledWith(201);
+    expect(response.json).toHaveBeenCalledWith({
+      id: row.id,
+      instruction: row.instruction,
+      questions: row.questions,
+      isGlobal: false,
+    });
+    expect(
+      components.instructionService.createInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      components.instructionService.createInstruction,
+    ).toHaveBeenCalledWith({
+      projectId: config.projectId,
+      instruction: row.instruction,
+      questions: row.questions,
+      isDefault: false,
+    });
+    expect(records).toEqual([
+      expect.objectContaining({
+        apiType: ApiType.CREATE_INSTRUCTION,
+        statusCode: 201,
+      }),
+    ]);
+    expect(components.telemetry.sendEvent).toHaveBeenCalledTimes(1);
+    expect(bindingServiceCall).toHaveBeenCalledTimes(7);
+  });
+
+  it('retains original create validation before any native dispatch', async () => {
+    const invalid = await create({
+      body: { instruction: row.instruction, isGlobal: false, questions: [] },
+    });
+    expect(invalid.status).toHaveBeenCalledWith(400);
+    expect(
+      components.instructionService.createInstruction,
+    ).not.toHaveBeenCalled();
+    expect(records).toHaveLength(0);
+  });
+
+  it('does not create with missing trusted identity, denied management or a foreign current project', async () => {
+    expect((await create({ headers: {} })).status).toHaveBeenCalledWith(401);
+    revoked = true;
+    expect((await create()).status).toHaveBeenCalledWith(403);
+    revoked = false;
+    jest
+      .mocked(components.projectService.getCurrentProject)
+      .mockResolvedValue({ id: 4 } as any);
+    expect((await create()).status).toHaveBeenCalledWith(403);
+    expect(
+      components.instructionService.createInstruction,
+    ).not.toHaveBeenCalled();
+    expect(records).toHaveLength(0);
+  });
+
+  it('withholds create success after original History revocation as UNKNOWN without a second native write', async () => {
+    jest
+      .mocked(components.apiHistoryRepository.createOne)
+      .mockImplementation(async (input) => {
+        records.push(input);
+        revoked = true;
+        return input as any;
+      });
+    const response = await create();
+    expect(response.status).toHaveBeenCalledWith(202);
+    expect(response.status).not.toHaveBeenCalledWith(201);
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'NATIVE_EXECUTION_UNKNOWN',
+      nativeWrite: expect.objectContaining({
+        outcome: 'UNKNOWN',
+        generation: 2,
+      }),
+    });
+    expect(
+      components.instructionService.createInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(records).toHaveLength(1);
+  });
+
+  it('retains never-configured independent creation without synthesizing platform authorization', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const response = await create({ headers: {} });
+    expect(response.status).toHaveBeenCalledWith(201);
+    expect(
+      components.instructionService.createInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+    expect(components.telemetry.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it('preserves the original global instruction merge and removes matching questions', async () => {
+    await invoke('PUT', { body: { isGlobal: true } });
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledWith({
+      id: row.id,
+      projectId: config.projectId,
+      instruction: row.instruction,
+      questions: [],
+      isDefault: true,
+    });
+  });
+
+  it('deletes only the current project native row through the original Mutation and original 204 History', async () => {
+    const response = await invoke('DELETE');
+    expect(response.status).toHaveBeenCalledWith(204);
+    expect(components.instructionRepository.findOneBy).toHaveBeenCalledWith({
+      id: row.id,
+      projectId: config.projectId,
+    });
+    expect(
+      components.instructionService.deleteInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      components.instructionService.deleteInstruction,
+    ).toHaveBeenCalledWith(row.id, config.projectId);
+    expect(records).toEqual([
+      expect.objectContaining({
+        apiType: ApiType.DELETE_INSTRUCTION,
+        statusCode: 204,
+      }),
+    ]);
+  });
+
+  it.each(['PUT', 'DELETE'])(
+    'does not enter %s with missing trusted identity or project permission',
+    async (method) => {
+      const missing = await invoke(method, { headers: {} });
+      expect(missing.status).toHaveBeenCalledWith(401);
+      revoked = true;
+      const denied = await invoke(method);
+      expect(denied.status).toHaveBeenCalledWith(403);
+      expect(components.instructionRepository.findOneBy).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.updateInstruction,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.deleteInstruction,
+      ).not.toHaveBeenCalled();
+      expect(records).toHaveLength(0);
+    },
+  );
+
+  it.each(['PUT', 'DELETE'])(
+    'does not read or write another project instruction through %s',
+    async (method) => {
+      nativeRow.projectId = 4;
+      const response = await invoke(method);
+      expect(response.status).toHaveBeenCalledWith(404);
+      expect(
+        components.instructionService.getInstruction,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.updateInstruction,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.deleteInstruction,
+      ).not.toHaveBeenCalled();
+      expect(records).toHaveLength(0);
+    },
+  );
+
+  it('refuses a permission change during partial-update preparation before entering native write', async () => {
+    jest
+      .mocked(components.instructionRepository.findOneBy)
+      .mockImplementation(async () => {
+        revoked = true;
+        return row as any;
+      });
+    const response = await invoke();
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(response.status).not.toHaveBeenCalledWith(202);
+    expect(
+      components.instructionService.updateInstruction,
+    ).not.toHaveBeenCalled();
+    expect(records).toHaveLength(0);
+  });
+
+  it('retains the original Mutation NOT_STARTED proof if its own pre-dispatch authorization refuses', async () => {
+    const originalAuthority = jest
+      .mocked(bindingServiceCall)
+      .getMockImplementation();
+    let checks = 0;
+    jest.mocked(bindingServiceCall).mockImplementation(async (...args) => {
+      checks++;
+      if (checks === 4) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      return originalAuthority(...args);
+    });
+    const response = await invoke();
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(response.status).not.toHaveBeenCalledWith(202);
+    expect(
+      components.instructionService.updateInstruction,
+    ).not.toHaveBeenCalled();
+    expect(records).toHaveLength(0);
+  });
+
+  it.each(['PUT', 'DELETE'])(
+    'withholds %s success after History revocation as UNKNOWN without re-dispatch',
+    async (method) => {
+      jest
+        .mocked(components.apiHistoryRepository.createOne)
+        .mockImplementation(async (input) => {
+          records.push(input);
+          revoked = true;
+          return input as any;
+        });
+      const response = await invoke(method);
+      expect(response.status).toHaveBeenCalledWith(202);
+      expect(response.status).not.toHaveBeenCalledWith(
+        method === 'PUT' ? 200 : 204,
+      );
+      expect(response.json).toHaveBeenCalledWith({
+        error: 'NATIVE_EXECUTION_UNKNOWN',
+        nativeWrite: expect.objectContaining({
+          outcome: 'UNKNOWN',
+          generation: 2,
+          scope: nativePreviewScope(
+            config,
+            headers['x-kailo-native-identity-scope'],
+          ),
+        }),
+      });
+      expect(
+        components.instructionService[
+          method === 'PUT' ? 'updateInstruction' : 'deleteInstruction'
+        ],
+      ).toHaveBeenCalledTimes(1);
+      expect(records).toHaveLength(1);
+    },
+  );
+
+  it('does not claim a native AI or database exception proves a write failed', async () => {
+    jest
+      .mocked(components.instructionService.updateInstruction)
+      .mockRejectedValue(new Error('private provider/database detail'));
+    const response = await invoke();
+    expect(response.status).toHaveBeenCalledWith(202);
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'NATIVE_EXECUTION_UNKNOWN',
+      nativeWrite: expect.objectContaining({ outcome: 'UNKNOWN' }),
+    });
+    expect(JSON.stringify(response.json.mock.calls)).not.toContain(
+      'private provider',
+    );
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(records).toHaveLength(0);
+  });
+
+  it('does not trust a native service forged NOT_STARTED extension after dispatch', async () => {
+    const upstream = new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    Object.assign(upstream, {
+      extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+    });
+    jest
+      .mocked(components.instructionService.updateInstruction)
+      .mockRejectedValue(upstream);
+    const response = await invoke();
+    expect(response.status).toHaveBeenCalledWith(202);
+    expect(response.status).not.toHaveBeenCalledWith(403);
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'NATIVE_EXECUTION_UNKNOWN',
+      nativeWrite: expect.objectContaining({ outcome: 'UNKNOWN' }),
+    });
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overwrite the shared caller context while parallel original GraphQL fields perform fresh project checks', async () => {
+    const context = {
+      projectService: components.projectService,
+      instructionService: components.instructionService,
+      telemetry: components.telemetry,
+      nativeHumanToken: headers['x-kailo-native-human-token'],
+      nativeIdentityScope: headers['x-kailo-native-identity-scope'],
+    };
+    jest
+      .mocked(bindingServiceCall)
+      .mockImplementation(async (_config, _operation, input) => {
+        expect(input).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        });
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: 'discover',
+            checkedRevision: 'current-project-read',
+          },
+        };
+      });
+    jest
+      .mocked(components.instructionService.getInstructions)
+      .mockImplementation(async () => {
+        expect(context).not.toHaveProperty('nativeProjectCheck');
+        return [row] as any;
+      });
+    await expect(
+      Promise.all([
+        originalResolvers.Query.instructions(undefined, {}, context),
+        originalResolvers.Query.instructions(undefined, {}, context),
+      ]),
+    ).resolves.toEqual([[row], [row]]);
+    expect(context).not.toHaveProperty('nativeProjectCheck');
+  });
+
+  it('retains the original never-configured independent partial update without a synthetic governance result', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const response = await invoke('PUT', { headers: {} });
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(components.instructionService.getInstruction).toHaveBeenCalledWith(
+      row.id,
+    );
+    expect(
+      components.instructionService.updateInstruction,
+    ).toHaveBeenCalledTimes(1);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch a former independent update after configuration arrives during the original read', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    jest
+      .mocked(components.instructionService.getInstruction)
+      .mockImplementation(async () => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+        return row as any;
+      });
+    const response = await invoke('PUT', { headers: {} });
+    expect(response.status).toHaveBeenCalledWith(412);
+    expect(
+      components.instructionService.updateInstruction,
+    ).not.toHaveBeenCalled();
+    expect(records).toHaveLength(0);
+  });
+
+  it.each(['POST', 'PUT', 'DELETE'])(
+    'does not dispatch %s to a project that changes in the original Mutation consumer',
+    async (method) => {
+      let reads = 0;
+      jest
+        .mocked(components.projectService.getCurrentProject)
+        .mockImplementation(async () => {
+          reads++;
+          return { id: reads === 5 ? 4 : config.projectId } as any;
+        });
+      const response =
+        method === 'POST' ? await create() : await invoke(method);
+      expect(response.status).toHaveBeenCalledWith(403);
+      expect(
+        components.instructionService.createInstruction,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.updateInstruction,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.deleteInstruction,
+      ).not.toHaveBeenCalled();
+      expect(records).toHaveLength(0);
+    },
+  );
+
+  it.each(['POST', 'PUT', 'DELETE'])(
+    'freshly refuses %s manage revocation or generation change during the final native project read',
+    async (method) => {
+      for (const change of ['revocation', 'generation']) {
+        let reads = 0;
+        revoked = false;
+        generation = 2;
+        jest
+          .mocked(components.projectService.getCurrentProject)
+          .mockImplementation(async () => {
+            reads++;
+            if (reads === 5) {
+              if (change === 'revocation') revoked = true;
+              else generation++;
+            }
+            return { id: config.projectId } as any;
+          });
+        const response =
+          method === 'POST' ? await create() : await invoke(method);
+        expect(response.status).toHaveBeenCalledWith(
+          change === 'revocation' ? 403 : 412,
+        );
+        expect(response.status).not.toHaveBeenCalledWith(202);
+        expect(
+          components.instructionService.createInstruction,
+        ).not.toHaveBeenCalled();
+        expect(
+          components.instructionService.updateInstruction,
+        ).not.toHaveBeenCalled();
+        expect(
+          components.instructionService.deleteInstruction,
+        ).not.toHaveBeenCalled();
+        expect(records).toHaveLength(0);
+      }
+    },
+  );
+});
 
 describe('original independent Model/View preview business consumers', () => {
   const resolver = new ModelResolver();

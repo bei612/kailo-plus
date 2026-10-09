@@ -1168,3 +1168,48 @@ records this source restoration and its precise validation/release boundary.
 It does not establish dynamic native Resource evidence, ordinary-function
 provider provenance, trusted SERVICE SQL, a live instance, ACTIVE binding or
 iframe acceptance.
+
+### Original instructions REST project read and writes
+
+`GET /api/v1/knowledge/instructions` retains the original complete instruction
+array and API History record. In configured mode its private Next hop carries
+only the verified current HUMAN token and identity partition; the handler uses
+the existing GraphQL `Query.instructions` project `discover` authorization,
+then rechecks the same project, delivery, identity and generation after the
+original asynchronous History write and before disclosing JSON. Missing or
+mixed identity, empty/invalid delivery, revocation and changed generation do
+not fall back to the independent instance. Bound dependency errors are sanitized.
+
+An instance that has never configured the binding and has neither trusted
+private identity header still uses the original native reader and response,
+without a synthetic platform receipt. A binding arriving while the original
+project or History read is pending prevents disclosure. Exact index POST and
+positive-integer-ID PUT/DELETE also consume the verified private hop and the
+original GraphQL mutations' current project `manage` permission. Their original
+payloads, native AI deployment and 201/200/204 responses remain; partial-update
+and deletion reads are constrained to the current native project. Permission,
+identity, binding or generation changes after native entry return the existing
+sanitized 202 UNKNOWN proof, not a definite failure or blind second write.
+The original instruction resolver also performs the wrapper's captured-generation
+fresh check after its final current-project read and before entering the native
+service. A refusal from that trusted server closure remains `NOT_STARTED`;
+upstream error extensions are not accepted as evidence that dispatch did not occur.
+Standalone original writes remain available only with no binding/private inputs.
+
+This does not provide cross-client instruction write idempotency or reconcile
+an UNKNOWN metadata write, activate a release, or prove
+that original instruction History bodies are available through the bound History
+reader. The [implementation and actual check receipt](../fork/verify/native-integration.md#original-instructions-rest-project-read-and-writes)
+records the precise validation and release boundary.
+
+The final original SDK run completed **792/792** checks across the three original
+suites, `tsc --noEmit --incremental false` and all ten source/check Prettier inputs
+with exit **0**. Five private production damages were caught by actual HTTP or
+original resolver assertions and restored byte-for-byte before that final run.
+Earlier zero-case type failures, two old-fixture failures and a format failure
+remain in the receipt; they are not reported as passes. This evidence covers
+these instruction consumers, not all native metadata CRUD: other model
+create/update/calculated-field/relation/deployment first-write consumers still
+need the same current permission/generation check. It does not include the
+separate Model/View delete candidate, live public authority/provider calls, an
+installed business instance, ACTIVE binding or iframe acceptance.

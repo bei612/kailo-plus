@@ -380,6 +380,7 @@ export const respondWithSimple = async ({
   headers,
   requestPayload,
   startTime,
+  beforeResponse,
 }: {
   res: NextApiResponse;
   statusCode: number;
@@ -389,6 +390,7 @@ export const respondWithSimple = async ({
   startTime: number;
   requestPayload?: Record<string, any>;
   headers?: Record<string, string>;
+  beforeResponse?: () => Promise<void>;
 }) => {
   const durationMs = startTime ? Date.now() - startTime : undefined;
   const responseId = uuidv4();
@@ -403,6 +405,7 @@ export const respondWithSimple = async ({
     durationMs,
   });
 
+  await beforeResponse?.();
   return res.status(statusCode).json(responsePayload);
 };
 

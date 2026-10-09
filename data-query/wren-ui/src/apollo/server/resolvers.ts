@@ -70,9 +70,40 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
     } catch (error) {
       throw permission === 'manage' ? nativeWriteNotStarted(error) : error;
     }
+    let preDispatchRefusal: ReturnType<typeof nativeWriteNotStarted>;
+    const dispatchContext = {
+      ...ctx,
+      nativeProjectCheck: async (projectId: number) => {
+        try {
+          if (
+            projectId !== config.projectId ||
+            String(projectId) !== config.nativeScopeRef
+          )
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          if (digest(await loadQueryDelivery()) !== digest(config))
+            throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+          const current = await authorizeNativeScope(config, token, permission);
+          if (
+            current.generation !== generation ||
+            ctx.nativeIdentityScope !== identityScope ||
+            ctx.nativeHumanToken !== token ||
+            dispatchContext.nativeIdentityScope !== identityScope ||
+            dispatchContext.nativeHumanToken !== token
+          )
+            throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        } catch (error) {
+          if (permission !== 'manage') throw error;
+          // Only this exact server closure can establish that its refusal
+          // happened before native service dispatch. Never trust a service's
+          // or upstream's similarly shaped error extension as that evidence.
+          preDispatchRefusal = nativeWriteNotStarted(error);
+          throw preDispatchRefusal;
+        }
+      },
+    };
     let output: Awaited<ReturnType<T>> | undefined;
     try {
-      output = await resolver(root, args, ctx, info);
+      output = await resolver(root, args, dispatchContext, info);
       if (disclose) await disclose(ctx, output);
       if (digest(await loadQueryDelivery()) !== digest(config))
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
@@ -80,12 +111,15 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
       if (
         after.generation !== generation ||
         ctx.nativeIdentityScope !== identityScope ||
-        ctx.nativeHumanToken !== token
+        ctx.nativeHumanToken !== token ||
+        dispatchContext.nativeIdentityScope !== identityScope ||
+        dispatchContext.nativeHumanToken !== token
       )
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return output;
     } catch (error) {
       if (permission !== 'manage') throw error;
+      if (preDispatchRefusal && error === preDispatchRefusal) throw error;
       const id = (output as any)?.id;
       throw nativeWriteUnknown(
         error,

@@ -3,9 +3,20 @@ import { UpdateInstructionInput } from '@server/models';
 import { Instruction } from '@server/repositories/instructionRepository';
 import { getLogger } from '@server/utils';
 import { TelemetryEvent, TrackTelemetry } from '@server/telemetry/telemetry';
+import { NativeQueryRefusal } from '@server/services/nativeQueryAdmission';
 
 const logger = getLogger('InstructionResolver');
 logger.level = 'debug';
+
+export type InstructionContext = Pick<
+  IContext,
+  | 'projectService'
+  | 'instructionService'
+  | 'telemetry'
+  | 'nativeHumanToken'
+  | 'nativeIdentityScope'
+  | 'nativeProjectCheck'
+>;
 
 export class InstructionResolver {
   constructor() {
@@ -15,13 +26,36 @@ export class InstructionResolver {
     this.deleteInstruction = this.deleteInstruction.bind(this);
   }
 
+  private async currentProject(ctx: InstructionContext) {
+    const token = ctx.nativeHumanToken;
+    const identityScope = ctx.nativeIdentityScope;
+    const configured =
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      token !== undefined ||
+      identityScope !== undefined;
+    const project = await ctx.projectService.getCurrentProject();
+    if (!configured) {
+      if (
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+        ctx.nativeHumanToken !== undefined ||
+        ctx.nativeIdentityScope !== undefined
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return project;
+    }
+    if (!ctx.nativeProjectCheck)
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    await ctx.nativeProjectCheck(project.id);
+    return project;
+  }
+
   public async getInstructions(
     _root: any,
     _args: any,
-    ctx: IContext,
+    ctx: InstructionContext,
   ): Promise<Instruction[]> {
     try {
-      const project = await ctx.projectService.getCurrentProject();
+      const project = await this.currentProject(ctx);
       return await ctx.instructionService.getInstructions(project.id);
     } catch (error) {
       logger.error(`Error getting instructions: ${error}`);
@@ -39,10 +73,10 @@ export class InstructionResolver {
         isDefault: boolean;
       };
     },
-    ctx: IContext,
+    ctx: InstructionContext,
   ): Promise<Instruction> {
     const { instruction, questions, isDefault } = args.data;
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.currentProject(ctx);
     return await ctx.instructionService.createInstruction({
       instruction,
       questions,
@@ -61,14 +95,14 @@ export class InstructionResolver {
       >;
       where: { id: number };
     },
-    ctx: IContext,
+    ctx: InstructionContext,
   ): Promise<Instruction> {
     const { id } = args.where;
     const { instruction, questions, isDefault } = args.data;
     if (!id) {
       throw new Error('Instruction ID is required.');
     }
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.currentProject(ctx);
     return await ctx.instructionService.updateInstruction({
       id,
       projectId: project.id,
@@ -82,10 +116,10 @@ export class InstructionResolver {
   public async deleteInstruction(
     _root: any,
     args: { where: { id: number } },
-    ctx: IContext,
+    ctx: InstructionContext,
   ): Promise<boolean> {
     const { id } = args.where;
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.currentProject(ctx);
     await ctx.instructionService.deleteInstruction(id, project.id);
     return true;
   }

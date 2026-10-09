@@ -43,6 +43,9 @@ import { ISqlPairService } from '../services/sqlPairService';
 export interface IContext {
   nativeHumanToken?: string;
   nativeIdentityScope?: string;
+  // Per-resolver server closure; consumes the wrapper's captured generation
+  // immediately after the original native project read, before dispatch.
+  nativeProjectCheck?: (projectId: number) => Promise<void>;
   config: IConfig;
   // telemetry
   telemetry: ITelemetry;

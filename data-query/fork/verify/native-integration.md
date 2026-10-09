@@ -7596,3 +7596,203 @@ dependency installation, full check, Git index operation or deployment was
 started by this agent. Root retains final full/diff/main commit/push and release
 ownership. Ordinary-function provenance, trusted SERVICE SQL and dynamic native
 Resource evidence remain closed release gaps.
+
+## Original instructions REST project read and writes
+
+This is a source increment for `SS-WRN-IDENTITY` / `SS-WRN-GOVERNANCE`, not a live
+Wren release. The fixed upstream is
+`c5f02a0391c87420dba78632dcd86073710deb72` in the read-only
+`/volumes/kailo/.references/WrenAI-ui-0.32.2` tree. Its complete source path
+`wren-ui/src/pages/api/v1/knowledge/instructions/index.ts::handleGetInstructions`
+reads `InstructionService.getInstructions(project.id)`, maps the original
+`id/instruction/questions/isGlobal` response and awaits `respondWithSimple`.
+The original service remains `instructionRepository.findAllBy({projectId})`.
+No reference-tree code was run or changed.
+
+### Actual four-step impact and implementation
+
+1. Authority: `.design/05` §2.7, `.design/07` §4.6 and `.design/08` §6 preserve
+   original native knowledge management and require actual current project
+   authorization. Native instruction management does not automatically become a
+   platform Tool/Action. The existing GraphQL `Query.instructions` is already
+   wrapped by `nativeProjectResolver(..., 'discover')`; this REST consumer now
+   consumes that same public authorization instead of inventing another ACL or
+   borrowing `data_query.describe` permission.
+2. Impact: the original exact REST GET, its private middleware request headers,
+   original instruction reader and three mutations, original response/history
+   function and existing three checks are the production/check inputs. Source search found nine
+   `respondWithSimple` calls across the five original models, SQL-pair and
+   instruction route modules. Its optional `beforeResponse` callback is consumed
+   by the four instruction operations; non-instruction callers keep their original behavior. No schema, generated
+   type, database/table, workflow, native task or platform registry is added.
+   The original POST and ID handlers, all UI/layout and response fields remain.
+   The four original `InstructionResolver` context signatures now use the exact
+   existing `IContext` project/instruction/telemetry/identity members consumed by
+   those functions and their existing wrapper/decorator. REST does not initialize
+   an unrelated `ModelService` or pretend to have a complete GraphQL context.
+   The original server-only context additionally carries `nativeProjectCheck`,
+   populated on an independent per-resolver context copy by the existing
+   `nativeProjectResolver`. All four original instruction methods consume it
+   after their final asynchronous current-project read and before the native
+   service call. It checks the same captured binding/generation and public
+   permission, not a second ACL or client-supplied scope. There is no persistent
+   field or external GraphQL/platform-contract change; a configured direct call
+   without the trusted closure refuses rather than skipping the check.
+3. Side effects: configured GET requires both trusted private inputs before
+   reading a project. The original GraphQL wrapper checks the configured native
+   project and fresh scope around the native instruction read. After the
+   original History `createOne` resolves, the real `respondWithSimple` callback
+   rechecks project, exact delivery digest, private identity/token and fresh
+   generation before JSON. Refusal withholds the body; it does not repeat the
+   native read or falsify its earlier History record. Original repository
+   `transformToDBData` still strips headers except `content-type`/`accept`, so
+   this change does not persist the forwarded HUMAN credential.
+4. Boundaries: empty arrays retain the original response; missing/partial
+   identity is 401, denied or initially foreign current project 403, changed project,
+   identity, delivery or generation 412, and a bound unavailable dependency 503
+   with only the stable refusal code. Never-configured standalone requires all
+   three original configuration/identity facts absent; a newly delivered binding
+   during project loading or History blocks the former independent response.
+   No query SQL, extra native AI invocation or write retry is introduced. The exact middleware
+   consumes only index GET/POST and positive-integer-ID PUT/DELETE. It strips
+   browser-supplied private headers before forwarding a freshly verified token;
+   CSRF origin validation is unchanged. Other methods, lookalikes and ID subpaths
+   do not inherit this private hop.
+
+The original `createInstruction`, `updateInstruction` and `deleteInstruction`
+mutations now serve their REST counterparts through the same existing public
+project `manage` authorization. PUT's partial-payload preparation and DELETE's
+existence read use the original repository with both native ID and current
+project, not the original unscoped `getInstruction(id)`. Original AI deployment,
+native transaction, payloads, creation 201, update 200 and deletion 204 remain.
+The handler rechecks current project/delivery/identity/generation before native
+dispatch and after the original asynchronous History write. A pre-dispatch
+refusal from that final server closure preserves `NOT_STARTED` only when its
+exact caught error object is the wrapper's locally captured refusal; a service
+or upstream cannot establish that outcome by forging an extension. Parallel
+GraphQL fields do not mutate or share their caller context's callback. An exception after
+entry, or a refusal after native mutation/History, yields the existing sanitized
+202 `NATIVE_EXECUTION_UNKNOWN` proof instead of a false success or definite
+failure; it does not dispatch a second write. This is not cross-client idempotency
+or operation recovery: the original instruction service does not persist a
+caller event key or deployment-task reference for that recovery.
+
+This batch does not turn instruction-list equality into proof of a prior
+UNKNOWN write. Original model/view/dashboard metadata lacks a durable native
+operation key for cross-client recovery; SQL-pair's existing same-DB history is
+not a second generic write ledger. Dynamic Resource source evidence, ordinary
+FunctionCall provider provenance, trusted SERVICE SQL, a live Wren business
+container, ACTIVE binding, iframe and full original-product acceptance remain
+separate release gaps. Original bound `GET_INSTRUCTIONS` History body reading
+has not been expanded by this GET consumer. Validation is recorded below only
+after actual terminal results; implementation alone is not acceptance.
+
+### Preserved failed validation
+
+The initial private input copy placed the optional callback destructuring in the
+wrong original response function; that own request (75176) was stopped with exit
+130, with zero executed tests. After correcting the exact inputs and comparing
+them with the formal source, the single 6513 run finished exit 1:
+`Test Suites: 2 failed, 2 total; Tests: 0 total`, 1657.824 s. Both original suites
+stopped at TypeScript TS2352 in the REST handler's pretend full `IContext`; no
+business check passed. The actual diagnostic motivated the narrow original
+InstructionResolver context change above, not an `as unknown` assertion or
+diagnostic suppression. The preserved logs are
+`native-instructions-read-positive.log` and
+`native-instructions-read-positive-corrected.log` under the existing private
+`governance-Itgs2N` evidence directory. They do not certify the subsequent
+read/write source increment. The SDK is shared under one 4 CPU/4 GiB cgroup;
+Cells' independent lightweight VM checks did not modify these inputs or rerun
+the original Jest request.
+
+### Actual terminal validation and restoration
+
+The existing `kailo-wren-query-sdk-itgs2n` `/work` input remained one canonical
+root; no alias, second SDK, dependency installation, database or image build was
+introduced. It is backed by
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`.
+The old 6513 source inputs remain under `instructions-6513-preserved` with
+`.source.txt` suffixes, outside the original TypeScript include pattern.
+At 2026-10-09 05:10:15 UTC, host available memory was 22,539,248 KiB, memory
+PSI `some avg10=0.00`; the SDK had 4 CPU, 4 GiB, 78,946,304 bytes current memory
+and all memory/OOM events zero. The existing independent root build/check
+windows were not stopped or claimed as this agent's results. The first request
+stayed the same 82168 during I/O waiting; its actual terminal result was exit 1,
+not a zero-output pass.
+
+- `native-instructions-crud-positive.log`: 82168 **exit 1**, **790 passed,
+  2 failed, 792 total**, three suites, 2626.303 s. The two existing fixtures had
+  omitted current original dependencies: Save as View now requires a completed
+  same-scope RUN_SQL history instead of bare `describeStatement`, and native
+  model/view preview first loads the selected project. The corrected fixtures
+  provide those original dependencies, check exact history selection and
+  `readHistory` consumption, and retain the UNKNOWN/view-reference and identity
+  refusal assertions. No production refusal or result assertion was weakened.
+- `native-instructions-crud-positive-corrected.log`: 40187 **exit 1** at the
+  final format step. All three original suites actually passed **792/792** and
+  original `tsc --noEmit --incremental false` exited **0** before Prettier
+  reported two handler formatting violations. The original formatter corrected
+  only those two files; `native-instructions-crud-handler-format-write.log` is
+  **exit 0**. The failure log was not overwritten.
+- Private `respondWithSimple` final callback removal:
+  `native-instructions-crud-negative-history.log` **exit 1**, **12 failed,
+  34 passed, 635 filtered skips**. Actual post-History revocation, generation,
+  delivery, project and identity cases incorrectly returned 200; native writes
+  incorrectly returned 201/200/204 instead of UNKNOWN. The original callback was
+  restored and formal/private `cmp` exited **0** before the next damage.
+- Private `InstructionResolver.currentProject` actual callback removal:
+  `native-instructions-crud-negative-dispatch.log` **exit 1**, **6 failed,
+  234 filtered skips**. The original POST/PUT/DELETE entered changed projects or
+  executed after revocation, rather than refusing before the service write.
+  Exact original bytes were restored with `cmp` **0**.
+- Private inner captured-generation comparison removal, retaining current
+  permission authorization and the original after-write check:
+  `native-instructions-crud-negative-generation.log` **exit 1**, **3 failed,
+  237 filtered skips**. All three methods actually returned post-write UNKNOWN
+  202 instead of the required pre-dispatch 412; this checks the new same-request
+  generation consumer, not only the previous outer guard. Exact bytes were
+  restored with `cmp` **0**.
+- Private acceptance of an upstream's shaped NOT_STARTED extension instead of
+  exact locally captured refusal identity:
+  `native-instructions-crud-negative-refusal.log` **exit 1**, **1 failed,
+  239 filtered skips**. The real dispatched native service error incorrectly
+  became 403 instead of UNKNOWN 202. Exact bytes were restored with `cmp` **0**.
+- Private exact instruction middleware-hop removal:
+  `native-instructions-crud-negative-private-hop.log` **exit 1**, **4 failed,
+  107 filtered skips**. The actual signed RSA/JWKS middleware-to-original-handler
+  GET/POST/PUT/DELETE consumers all returned 401 instead of 200/201/200/204.
+  Source restoration and all ten formal/private source/check comparisons exited
+  **0** before the final positive run. Filtered skips are not passes.
+
+The final original SDK command, run serially with Node heap 3072 under the same
+4 CPU/4 GiB cgroup, was:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeHumanQuery.test.ts src/nativeProjectScope.test.ts src/middleware.test.ts --runInBand &&
+node node_modules/typescript/bin/tsc --noEmit --incremental false &&
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers.ts src/apollo/server/types/context.ts src/apollo/server/resolvers/instructionResolver.ts src/apollo/server/utils/apiUtils.ts src/middleware.ts src/middleware.test.ts src/nativeHumanQuery.test.ts src/nativeProjectScope.test.ts src/pages/api/v1/knowledge/instructions/index.ts 'src/pages/api/v1/knowledge/instructions/[id].ts'
+```
+
+`native-instructions-crud-restored.log`, handle **86229 exit 0**, records:
+
+```text
+Test Suites: 3 passed, 3 total
+Tests:       792 passed, 792 total
+Time:        17.366 s
+All matched files use Prettier code style!
+```
+
+The chained original TypeScript command also exited **0**. Final memory events
+remain `low/high/max/oom/oom_kill/oom_group_kill = 0`. The ten formal/private
+source/check inputs were compared exactly, not substituted by an old candidate.
+These checks execute the original REST/Next handler and resolver consumers;
+their repositories, native services and public-authority responses are fixtures,
+not a live datasource/provider or SpiceDB production acceptance.
+
+The separate root-owned Model/View delete candidate is not in this input or its
+792 result. Other native model create/update/calculated-field/relation/deployment
+first-write consumers still have unclosed asynchronous authorization windows;
+this instruction-only batch does not establish complete native CRUD governance.
+No release was activated, business container deployed, iframe/screenshots or
+multi-human acceptance performed. Root owns final full validation, source diff,
+main commit/push and release; this agent did not operate the Git index.

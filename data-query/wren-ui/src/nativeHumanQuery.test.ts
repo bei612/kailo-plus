@@ -58,6 +58,7 @@ import { SqlPairStatus } from './apollo/server/models/adaptor';
 import sqlPairsHandler from './pages/api/v1/knowledge/sql_pairs';
 import sqlPairHandler from './pages/api/v1/knowledge/sql_pairs/[id]';
 import modelsHandler from './pages/api/v1/models';
+import instructionsHandler from './pages/api/v1/knowledge/instructions';
 import { safeFormatSQL } from './apollo/server/utils/sqlFormat';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
@@ -66,6 +67,363 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+describe('original instructions REST project read consumer', () => {
+  const config = {
+    bindingId: '8b066261-f827-462e-95c1-1d596fce1849',
+    projectId: 3,
+    tenantId: 'tenant-fixture',
+    workspaceId: 'workspace-fixture',
+    nativeInstanceRef: 'native-fixture',
+    nativeScopeRef: '3',
+  } as NativeQueryDelivery;
+  const nativeHeaders = {
+    'x-kailo-native-human-token': 'verified-native-token',
+    'x-kailo-native-identity-scope': 'a'.repeat(64),
+  };
+  const rows = [
+    {
+      id: 7,
+      instruction: 'Original global instruction',
+      questions: [],
+      isDefault: 1,
+    },
+    {
+      id: 8,
+      instruction: 'Original matching instruction',
+      questions: ['Original question'],
+      isDefault: false,
+    },
+  ];
+  const result = rows.map(({ isDefault, ...row }) => ({
+    ...row,
+    isGlobal: Boolean(isDefault),
+  }));
+  let server: Server;
+  let endpoint: string;
+  let originalComponents: typeof components;
+  let originalHistory: Record<string, unknown>;
+  let originalConfig: string | undefined;
+  let generation: number;
+  let revoked: boolean;
+  let currentProject: number;
+  let history: any[];
+  beforeAll(async () => {
+    server = createServer((request, response) => {
+      void apiResolver(
+        request,
+        response,
+        {},
+        instructionsHandler,
+        {
+          previewModeId: '',
+          previewModeEncryptionKey: '',
+          previewModeSigningKey: '',
+        },
+        false,
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  });
+  beforeEach(() => {
+    originalComponents = { ...components };
+    originalHistory = { ...components.apiHistoryRepository };
+    originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    generation = 2;
+    revoked = false;
+    currentProject = config.projectId;
+    history = [];
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, operation, input, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBe(nativeHeaders['x-kailo-native-human-token']);
+        expect(input).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        });
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: 'discover',
+            checkedRevision: 'fresh-project-read',
+          },
+        };
+      });
+    Object.assign(components, {
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: currentProject })),
+      },
+      instructionService: {
+        getInstructions: jest.fn(async () => structuredClone(rows)),
+      },
+      apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+        createOne: jest.fn(async (input) => {
+          history.push(structuredClone(input));
+          return input;
+        }),
+      }),
+    });
+  });
+  afterEach(() => {
+    for (const key of Object.keys(components.apiHistoryRepository))
+      delete components.apiHistoryRepository[key];
+    Object.assign(components.apiHistoryRepository, originalHistory);
+    for (const key of Object.keys(components)) delete components[key];
+    Object.assign(components, originalComponents);
+    if (originalConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalConfig;
+  });
+  const read = (headers: Record<string, string> = nativeHeaders) =>
+    fetch(endpoint, { headers });
+
+  it('returns the original instructions array and original History only after current project authorization', async () => {
+    const response = await read();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(await response.json()).toEqual(result);
+    expect(components.instructionService.getInstructions).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(components.instructionService.getInstructions).toHaveBeenCalledWith(
+      config.projectId,
+    );
+    expect(bindingServiceCall).toHaveBeenCalledTimes(5);
+    expect(history).toEqual([
+      expect.objectContaining({
+        projectId: config.projectId,
+        apiType: ApiType.GET_INSTRUCTIONS,
+        requestPayload: {},
+        responsePayload: result,
+        statusCode: 200,
+      }),
+    ]);
+  });
+
+  it.each([
+    {},
+    {
+      'x-kailo-native-human-token': nativeHeaders['x-kailo-native-human-token'],
+    },
+    {
+      'x-kailo-native-identity-scope':
+        nativeHeaders['x-kailo-native-identity-scope'],
+    },
+    { ...nativeHeaders, 'x-kailo-native-identity-scope': 'invalid' },
+  ])(
+    'does not read the shared current project without both trusted inputs %p',
+    async (headers) => {
+      const response = await read(headers);
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: 'NATIVE_AUTHENTICATION_REQUIRED',
+      });
+      expect(
+        components.projectService.getCurrentProject,
+      ).not.toHaveBeenCalled();
+      expect(
+        components.instructionService.getInstructions,
+      ).not.toHaveBeenCalled();
+      expect(history).toHaveLength(0);
+    },
+  );
+
+  it('rejects another current project before reading its instructions', async () => {
+    currentProject = 4;
+    const response = await read();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'QUERY_SCOPE_DENIED' });
+    expect(
+      components.instructionService.getInstructions,
+    ).not.toHaveBeenCalled();
+    expect(history).toHaveLength(0);
+  });
+
+  it.each(['initial', 'native-read', 'history-write'])(
+    'does not disclose after %s revocation',
+    async (phase) => {
+      if (phase === 'initial') revoked = true;
+      if (phase === 'native-read')
+        jest
+          .mocked(components.instructionService.getInstructions)
+          .mockImplementation(async () => {
+            revoked = true;
+            return structuredClone(rows) as any;
+          });
+      if (phase === 'history-write')
+        jest
+          .mocked(components.apiHistoryRepository.createOne)
+          .mockImplementation(async (input) => {
+            history.push(input);
+            revoked = true;
+            return input as any;
+          });
+      const response = await read();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: 'QUERY_SCOPE_DENIED' });
+      expect(history).toHaveLength(phase === 'history-write' ? 1 : 0);
+      expect(
+        components.instructionService.getInstructions,
+      ).toHaveBeenCalledTimes(phase === 'initial' ? 0 : 1);
+    },
+  );
+
+  it.each(['generation', 'delivery', 'project'])(
+    'checks %s again after the asynchronous original History write',
+    async (change) => {
+      jest
+        .mocked(components.apiHistoryRepository.createOne)
+        .mockImplementation(async (input) => {
+          history.push(input);
+          if (change === 'generation') generation++;
+          if (change === 'delivery')
+            jest.mocked(loadQueryDelivery).mockResolvedValue({
+              ...config,
+              bindingId: 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1',
+            });
+          if (change === 'project') currentProject++;
+          return input as any;
+        });
+      const response = await read();
+      expect(response.status).toBe(412);
+      expect(await response.json()).toEqual({
+        error: 'QUERY_REFERENCE_CHANGED',
+      });
+      expect(history).toHaveLength(1);
+      expect(
+        components.instructionService.getInstructions,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not disclose under a changed private identity while History is pending', async () => {
+    const req: any = { method: 'GET', headers: { ...nativeHeaders } };
+    const res: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    jest
+      .mocked(components.apiHistoryRepository.createOne)
+      .mockImplementation(async (input) => {
+        req.headers['x-kailo-native-identity-scope'] = 'b'.repeat(64);
+        return input as any;
+      });
+    await instructionsHandler(req, res);
+    expect(res.status).toHaveBeenCalledWith(412);
+    expect(res.json).toHaveBeenCalledWith({ error: 'QUERY_REFERENCE_CHANGED' });
+    expect(components.instructionService.getInstructions).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('keeps configured empty or unavailable delivery closed without leaking provider errors', async () => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+    jest
+      .mocked(loadQueryDelivery)
+      .mockRejectedValue(new Error('private delivery path and credential'));
+    const response = await read();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: 'QUERY_EVIDENCE_UNAVAILABLE',
+    });
+    expect(
+      components.instructionService.getInstructions,
+    ).not.toHaveBeenCalled();
+    expect(history).toHaveLength(0);
+  });
+
+  it('does not expose a native provider exception as an instruction body', async () => {
+    jest
+      .mocked(components.instructionService.getInstructions)
+      .mockRejectedValue(new Error('private native database detail'));
+    const response = await read();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: 'QUERY_EVIDENCE_UNAVAILABLE',
+    });
+    expect(history).toHaveLength(0);
+  });
+
+  it('preserves the original never-configured independent read and History without a fake governance receipt', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const response = await read({});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(result);
+    expect(history).toEqual([
+      expect.objectContaining({
+        responsePayload: result,
+        apiType: ApiType.GET_INSTRUCTIONS,
+      }),
+    ]);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+    expect(components.instructionService.getInstructions).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('does not turn a mixed trusted identity into an independent read when configuration is absent', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const response = await read({
+      'x-kailo-native-identity-scope':
+        nativeHeaders['x-kailo-native-identity-scope'],
+    });
+    expect(response.status).toBe(401);
+    expect(
+      components.instructionService.getInstructions,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not disclose a former independent read when a binding arrives during History', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    jest
+      .mocked(components.apiHistoryRepository.createOne)
+      .mockImplementation(async (input) => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+        return input as any;
+      });
+    const response = await read({});
+    expect(response.status).toBe(412);
+    expect(await response.json()).toEqual({ error: 'QUERY_REFERENCE_CHANGED' });
+    expect(components.instructionService.getInstructions).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+  });
+
+  it('does not start an independent native read when a binding arrives during project loading', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    jest
+      .mocked(components.projectService.getCurrentProject)
+      .mockImplementation(async () => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+        return { id: config.projectId } as any;
+      });
+    const response = await read({});
+    expect(response.status).toBe(412);
+    expect(await response.json()).toEqual({ error: 'QUERY_REFERENCE_CHANGED' });
+    expect(
+      components.instructionService.getInstructions,
+    ).not.toHaveBeenCalled();
+    expect(history).toHaveLength(0);
+  });
+});
 
 describe('original SQL-pair durable native write consumer', () => {
   const key = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
@@ -2916,7 +3274,11 @@ describe('native saved-view HUMAN query consumer', () => {
         getLastDeployment: jest.fn().mockResolvedValue({ manifest: {} }),
       };
       ctx.askingService = {
-        getResponse: jest.fn().mockResolvedValue({ sql: statement }),
+        getResponse: jest.fn().mockResolvedValue({
+          id: 21,
+          threadId: 31,
+          sql: statement,
+        }),
       };
       ctx.queryService = {
         describeStatement: jest
@@ -2924,19 +3286,68 @@ describe('native saved-view HUMAN query consumer', () => {
           .mockResolvedValue({ columns: [{ name: 'customer' }] }),
       };
       ctx.telemetry = { sendEvent: jest.fn() };
+      const query = {
+        id: key,
+        projectId: scopeConfig.projectId,
+        apiType: ApiType.RUN_SQL,
+        governanceBindingId: scopeConfig.bindingId,
+        governanceState: 'SUCCEEDED',
+        requestPayload: {
+          action: 'data_query.query@v1',
+          sql: statement,
+          limit: 1,
+          previewScope: nativePreviewScope(
+            scopeConfig,
+            ctx.nativeIdentityScope,
+          ),
+        },
+      };
+      const previousHistoryRead = components.apiHistoryRepository.findOneBy;
+      const find = jest.fn(async (where) =>
+        Object.entries(where).every(([field, value]) => query[field] === value)
+          ? query
+          : null,
+      );
+      components.apiHistoryRepository.findOneBy = find as any;
+      const visible = jest
+        .spyOn(NativeHumanQuery.prototype, 'readHistory')
+        .mockResolvedValue({
+          requestPayload: query.requestPayload,
+          responsePayload: { columns: [{ name: 'customer' }], data: [] },
+        });
       calls.mockImplementation(async (_config, _operation, input) => {
         if (input.authorizeScope) return scopeResult('manage');
         throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED', true);
       });
       let refused: any;
       try {
-        await originalResolvers.Mutation.createView(
-          null,
-          { data: { name: 'OriginalView', responseId: 21 } },
-          ctx,
-        );
-      } catch (error) {
-        refused = error;
+        try {
+          await originalResolvers.Mutation.createView(
+            null,
+            {
+              data: {
+                name: 'OriginalView',
+                responseId: 21,
+                queryHistoryId: query.id,
+              },
+            },
+            ctx,
+          );
+        } catch (error) {
+          refused = error;
+        }
+        expect(find).toHaveBeenCalledWith({
+          id: query.id,
+          projectId: scopeConfig.projectId,
+          apiType: ApiType.RUN_SQL,
+          governanceBindingId: scopeConfig.bindingId,
+          governanceState: 'SUCCEEDED',
+        });
+        expect(visible).toHaveBeenCalledWith(ctx.nativeHumanToken, query);
+        expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+      } finally {
+        visible.mockRestore();
+        components.apiHistoryRepository.findOneBy = previousHistoryRead;
       }
       expect(refused).toMatchObject({
         message: 'NATIVE_EXECUTION_UNKNOWN',
@@ -4424,6 +4835,9 @@ describe('native saved-view HUMAN query consumer', () => {
     const ctx: any = {
       nativeIdentityScope: 'b'.repeat(64),
       nativeHumanToken: 'verified-native-token',
+      projectService: {
+        getCurrentProject: jest.fn().mockResolvedValue(nativeProject),
+      },
     };
     for (const idempotencyScope of [
       undefined,

@@ -212,7 +212,13 @@ export async function middleware(request: NextRequest) {
     ].includes(request.nextUrl.pathname) ||
       /^\/api\/v1\/knowledge\/sql_pairs\/[1-9]\d*$/.test(
         request.nextUrl.pathname,
-      )) &&
+      ) ||
+      (['GET', 'POST'].includes(request.method) &&
+        request.nextUrl.pathname === '/api/v1/knowledge/instructions') ||
+      (['PUT', 'DELETE'].includes(request.method) &&
+        /^\/api\/v1\/knowledge\/instructions\/[1-9]\d*$/.test(
+          request.nextUrl.pathname,
+        ))) &&
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (
     boundSql ||

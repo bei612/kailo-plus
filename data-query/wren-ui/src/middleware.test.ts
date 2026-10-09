@@ -6,6 +6,8 @@ import { NextRequest } from 'next/server';
 import { middleware, nativeFrameAncestors } from './middleware';
 import configHandler from './pages/api/config';
 import modelsHandler from './pages/api/v1/models';
+import instructionsHandler from './pages/api/v1/knowledge/instructions';
+import instructionByIdHandler from './pages/api/v1/knowledge/instructions/[id]';
 import { components } from './common';
 import {
   bindingServiceCall,
@@ -119,6 +121,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/stream/generate_sql',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
+    '/api/v1/knowledge/instructions',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
@@ -454,6 +457,288 @@ describe('native instance identity boundary', () => {
       Object.assign(components, originalComponents);
     }
   });
+
+  it('the original instructions GET consumes only the signed middleware private hop and fresh project discovery', async () => {
+    const originalComponents = { ...components };
+    const originalHistory = { ...components.apiHistoryRepository };
+    const signed = await token();
+    const admitted = await middleware(
+      request('/api/v1/knowledge/instructions', `Bearer ${signed}`, {
+        headers: {
+          'x-kailo-native-human-token': 'forged',
+          'x-kailo-native-identity-scope': 'f'.repeat(64),
+          cookie: 'native=synthetic',
+        },
+      }),
+    );
+    const headers = Object.fromEntries(
+      ['human-token', 'identity-scope'].flatMap((field) => {
+        const value = admitted.headers.get(
+          `x-middleware-request-x-kailo-native-${field}`,
+        );
+        return value === null ? [] : [[`x-kailo-native-${field}`, value]];
+      }),
+    );
+    const delivery = {
+      projectId: 3,
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: settings.accessValue,
+      nativeScopeRef: '3',
+    } as NativeQueryDelivery;
+    jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, operation, input, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBe(signed);
+        expect(input).toEqual({
+          bindingId: delivery.bindingId,
+          authorizeScope: { permission: 'discover' },
+        });
+        return {
+          scope: {
+            ...delivery,
+            generation: 2,
+            permission: 'discover',
+            checkedRevision: 'fresh-project-authority',
+          },
+        };
+      });
+    Object.assign(components, {
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: delivery.projectId })),
+      },
+      instructionService: {
+        getInstructions: jest.fn(async () => [
+          {
+            id: 7,
+            instruction: 'Original instruction',
+            questions: [],
+            isDefault: true,
+          },
+        ]),
+      },
+      apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+        createOne: jest.fn(),
+      }),
+    });
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    try {
+      await instructionsHandler({ method: 'GET', headers } as any, response);
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith([
+        {
+          id: 7,
+          instruction: 'Original instruction',
+          questions: [],
+          isGlobal: true,
+        },
+      ]);
+      expect(headers['x-kailo-native-human-token']).toBe(signed);
+      expect(headers['x-kailo-native-identity-scope']).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+      expect(headers['x-kailo-native-identity-scope']).not.toBe('f'.repeat(64));
+      expect(
+        admitted.headers.get('x-middleware-request-authorization'),
+      ).toBeNull();
+      expect(admitted.headers.get('x-middleware-request-cookie')).toBeNull();
+      expect(bindingServiceCall).toHaveBeenCalledTimes(5);
+      expect(components.apiHistoryRepository.createOne).toHaveBeenCalledTimes(
+        1,
+      );
+    } finally {
+      for (const key of Object.keys(components.apiHistoryRepository))
+        delete components.apiHistoryRepository[key];
+      Object.assign(components.apiHistoryRepository, originalHistory);
+      for (const key of Object.keys(components)) delete components[key];
+      Object.assign(components, originalComponents);
+    }
+  });
+
+  it('does not forward private instructions credentials for the original independent GET', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const response = await middleware(
+      request('/api/v1/knowledge/instructions', `Bearer ${await token()}`, {
+        headers: {
+          'x-kailo-native-human-token': 'forged',
+          'x-kailo-native-identity-scope': 'f'.repeat(64),
+        },
+      }),
+    );
+    expect(response.headers.get('x-middleware-next')).toBe('1');
+    for (const field of ['human-token', 'identity-scope'])
+      expect(
+        response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+      ).toBeNull();
+  });
+
+  it.each(['PUT', 'DELETE'])(
+    'does not extend instructions GET credentials to a %s native write',
+    async (method) => {
+      const response = await middleware(
+        request('/api/v1/knowledge/instructions', `Bearer ${await token()}`, {
+          method,
+          headers: {
+            origin: settings.publicOrigin,
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      for (const field of ['human-token', 'identity-scope'])
+        expect(
+          response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+        ).toBeNull();
+    },
+  );
+
+  it.each(['POST', 'PUT', 'DELETE'])(
+    'the exact original instructions %s consumes a signed private hop and current project management',
+    async (method) => {
+      const originalComponents = { ...components };
+      const originalHistory = { ...components.apiHistoryRepository };
+      const signed = await token();
+      const path =
+        '/api/v1/knowledge/instructions' + (method === 'POST' ? '' : '/7');
+      const admitted = await middleware(
+        request(path, `Bearer ${signed}`, {
+          method,
+          headers: {
+            origin: settings.publicOrigin,
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+            cookie: 'native=synthetic',
+          },
+        }),
+      );
+      const headers = Object.fromEntries(
+        ['human-token', 'identity-scope'].flatMap((field) => {
+          const value = admitted.headers.get(
+            `x-middleware-request-x-kailo-native-${field}`,
+          );
+          return value === null ? [] : [[`x-kailo-native-${field}`, value]];
+        }),
+      );
+      const delivery = {
+        projectId: 3,
+        bindingId: randomUUID(),
+        tenantId: randomUUID(),
+        workspaceId: randomUUID(),
+        nativeInstanceRef: settings.accessValue,
+        nativeScopeRef: '3',
+      } as NativeQueryDelivery;
+      const row = {
+        id: 7,
+        projectId: delivery.projectId,
+        instruction: 'Original instruction',
+        questions: ['Original question'],
+        isDefault: false,
+      };
+      jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+      jest
+        .mocked(bindingServiceCall)
+        .mockReset()
+        .mockImplementation(async (_config, operation, input, bearer) => {
+          expect(operation).toBe('human-action');
+          expect(bearer).toBe(signed);
+          expect(input).toEqual({
+            bindingId: delivery.bindingId,
+            authorizeScope: { permission: 'manage' },
+          });
+          return {
+            scope: {
+              ...delivery,
+              generation: 2,
+              permission: 'manage',
+              checkedRevision: 'fresh-project-management',
+            },
+          };
+        });
+      Object.assign(components, {
+        telemetry: { sendEvent: jest.fn() },
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: delivery.projectId })),
+        },
+        instructionRepository: { findOneBy: jest.fn(async () => row) },
+        instructionService: {
+          createInstruction: jest.fn(async (input) => ({
+            id: row.id,
+            ...input,
+          })),
+          updateInstruction: jest.fn(async (input) => ({ ...row, ...input })),
+          deleteInstruction: jest.fn(async () => undefined),
+        },
+        apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+          createOne: jest.fn(),
+        }),
+      });
+      const response: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      try {
+        const handler =
+          method === 'POST' ? instructionsHandler : instructionByIdHandler;
+        await handler(
+          {
+            method,
+            headers,
+            query: { id: '7' },
+            body: {
+              instruction: row.instruction,
+              questions: row.questions,
+              isGlobal: false,
+            },
+          } as any,
+          response,
+        );
+        expect(response.status).toHaveBeenCalledWith(
+          method === 'POST' ? 201 : method === 'PUT' ? 200 : 204,
+        );
+        expect(headers['x-kailo-native-human-token']).toBe(signed);
+        expect(headers['x-kailo-native-identity-scope']).toMatch(
+          /^[a-f0-9]{64}$/,
+        );
+        expect(headers['x-kailo-native-identity-scope']).not.toBe(
+          'f'.repeat(64),
+        );
+        expect(
+          admitted.headers.get('x-middleware-request-authorization'),
+        ).toBeNull();
+        expect(admitted.headers.get('x-middleware-request-cookie')).toBeNull();
+        expect(bindingServiceCall).toHaveBeenCalledTimes(7);
+        expect(
+          components.instructionService[
+            method === 'POST'
+              ? 'createInstruction'
+              : method === 'PUT'
+                ? 'updateInstruction'
+                : 'deleteInstruction'
+          ],
+        ).toHaveBeenCalledTimes(1);
+        expect(components.apiHistoryRepository.createOne).toHaveBeenCalledTimes(
+          1,
+        );
+      } finally {
+        for (const key of Object.keys(components.apiHistoryRepository))
+          delete components.apiHistoryRepository[key];
+        Object.assign(components.apiHistoryRepository, originalHistory);
+        for (const key of Object.keys(components)) delete components[key];
+        Object.assign(components, originalComponents);
+      }
+    },
+  );
+
   it.each([
     '/api/v1/models/extra',
     '/api/v1/models_extra',
@@ -462,7 +747,14 @@ describe('native instance identity boundary', () => {
     '/api/v1/knowledge/sql_pairs/-1',
     '/api/v1/knowledge/sql_pairs/42/other',
     '/api/v1/knowledge/sql_pairs/fake',
+    '/api/v1/knowledge/instructions/0',
+    '/api/v1/knowledge/instructions/-1',
+    '/api/v1/knowledge/instructions/7/other',
+    '/api/v1/knowledge/instructions/fake',
     '/api/v1/knowledge/sql_pairs_extra',
+    '/api/v1/knowledge/instructions/42',
+    '/api/v1/knowledge/instructions/extra',
+    '/api/v1/knowledge/instructions_extra',
   ])(
     'does not spread private native business credentials to unrelated route %s',
     async (path) => {
