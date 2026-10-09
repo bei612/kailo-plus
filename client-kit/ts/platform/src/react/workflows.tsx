@@ -12,13 +12,13 @@ import {
 } from "@client-kit/contracts";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { relativeTime } from "../format";
 import { AutomationManagement, type WorkspaceNavigation } from "./agents";
 import { useBffClient, useLocale, useT } from "./context";
 import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
 import { WorkflowRunTrace } from "./workflow-run-trace";
 import { Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
+import { Skeleton } from "./sidebar/skeleton";
 import type { WorkflowNavigation } from "./workflow-discard-dialog";
 export { workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState } from "./workflow-discard-dialog";
 
@@ -163,7 +163,9 @@ function AutomationRunHistory({
 						{t("platform.refresh")}
 					</Button>
 					{state.status === "pending" ? (
-						<Notice role="status">{t("platform.loading")}</Notice>
+						<div className="space-y-2" aria-label={t("platform.loading")} role="status">
+							<Skeleton className="h-16 w-full rounded-xl" />
+						</div>
 					) : !page ? (
 						<ReadFailure
 							error={state.status === "error" ? state.error : undefined}
@@ -213,11 +215,11 @@ function AutomationRunHistory({
 															<div className="flex items-center gap-2">
 																{isSelected ? <ChevronDown aria-hidden className="h-4 w-4 text-muted-foreground" />
 																	: <ChevronRight aria-hidden className="h-4 w-4 text-muted-foreground" />}
-																<span className="truncate font-mono text-xs font-medium" title={id}>{id}</span>
+																<span className="truncate font-mono text-xs font-medium" title={id}>{id.slice(0, 8)}</span>
 																<TaskStatusBadge task={run.task} />
 															</div>
 															<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-2xs text-muted-foreground">
-																<time dateTime={run.task.createdAt} title={run.task.createdAt}>{relativeTime(locale, run.task.createdAt)}</time>
+																<time dateTime={run.task.createdAt} title={run.task.createdAt}>{new Date(run.task.createdAt).toLocaleString(locale)}</time>
 																{run.progress ? <span>{t("workflows.progress")}: {run.progress}</span> : null}
 																{run.stepApprovalTask ? <TaskStatusBadge task={run.stepApprovalTask} /> : null}
 															</div>

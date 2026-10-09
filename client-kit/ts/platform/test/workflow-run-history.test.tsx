@@ -25,10 +25,10 @@ const task = { ...receipt, actionVersion: 1, targetId: "workflow", workspaceId: 
 const run = { task, usageEventIds: [] };
 const page = { automationResourceId: "workflow", runs: [run] };
 
-async function setup(override: (request: BffRequest) => BffReply | undefined = () => undefined,
+async function setup(override: (request: BffRequest) => BffReply | undefined | Promise<BffReply | undefined> = () => undefined,
   locale: "en" | "zh-CN" = "en") {
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
-    const extra = override(request);
+    const extra = await override(request);
     if (extra) return extra;
     if (request.path === "/api/v1/workspaces") return { status: 200, body: [
       { id: "workspace", name: "Channel", slug: "channel" }, { id: "other", name: "Other", slug: "other" },
@@ -62,6 +62,57 @@ async function trigger(host: HTMLElement) {
 const history = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="workflow-runs"]')!;
 
 describe("original trigger to persisted run selection through governed automation", () => {
+  it.each(["en", "zh-CN"] as const)("keeps the original compact run identity and absolute local timestamp in %s", async (locale) => {
+    const { host } = await setup(undefined, locale);
+    if (locale === "en") await trigger(host);
+    else {
+      await click(button(host, "查看定义"));
+      await click(button(host, "运行一次"));
+      await click(button(document.body, "核对请求"));
+      await click(button(document.body, "提交受治理请求"));
+    }
+    const selected = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
+    const identity = selected.querySelector<HTMLElement>(`span[title="${task.actionExecutionId}"]`)!;
+    expect(identity.textContent).toBe(task.actionExecutionId.slice(0, 8));
+    expect(identity.className).toBe("truncate font-mono text-xs font-medium");
+    expect(selected.getAttribute("aria-label")).toBe(task.actionExecutionId);
+    const createdAt = selected.querySelector("time")!;
+    expect(createdAt.textContent).toBe(new Date(task.createdAt).toLocaleString(locale));
+    expect(createdAt.dateTime).toBe(task.createdAt);
+    expect(createdAt.title).toBe(task.createdAt);
+  });
+
+  it("keeps the original history skeleton until the authorized persisted run arrives", async () => {
+    let resolveHistory!: (reply: BffReply) => void;
+    const awaitingHistory = new Promise<BffReply>((resolve) => { resolveHistory = resolve; });
+    const { host } = await setup((request) => request.path.endsWith("/runs") ? awaitingHistory : undefined);
+    await trigger(host);
+    const pending = history(host).querySelector<HTMLElement>('[role="status"]')!;
+    expect(pending.className).toBe("space-y-2");
+    expect(pending.querySelector('[aria-hidden="true"]')?.className).toContain("h-16 w-full rounded-xl");
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
+    expect(history(host).textContent).not.toContain("No visible runs on this page.");
+    await act(async () => resolveHistory({ status: 200, body: page }));
+    await settle();
+    expect(history(host).querySelector('[role="status"]')).toBeNull();
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).not.toBeNull();
+  });
+
+  it("replaces the original skeleton with a real refusal, not an empty history", async () => {
+    let resolveHistory!: (reply: BffReply) => void;
+    const awaitingHistory = new Promise<BffReply>((resolve) => { resolveHistory = resolve; });
+    const { host } = await setup((request) => request.path.endsWith("/runs") ? awaitingHistory : undefined);
+    await trigger(host);
+    expect(history(host).querySelector('[role="status"]')).not.toBeNull();
+    await act(async () => resolveHistory({ status: 403, body: { reason: "PERMISSION_DENIED" } }));
+    await settle();
+    expect(history(host).querySelector('[role="status"]')).toBeNull();
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
+    expect(history(host).querySelector('[role="alert"]')).not.toBeNull();
+    expect(history(host).textContent).not.toContain("No visible runs on this page.");
+    expect(history(host).textContent).toContain("You do not have permission");
+  });
+
   it("selects the returned execution, opens its real trace and follows the existing task reader", async () => {
     const { host, send } = await setup();
     await trigger(host);

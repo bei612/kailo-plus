@@ -6125,3 +6125,41 @@ memory.events 的旧 max=16751／oom=2／oom_kill=2 未增长，无本批 OOM。
 本批四模块归共享迁移及逐项 i18n／宿主接缝，不用其替代全树逐项授权或实际功能验收；
 历史 a816 全量账 5195 官方／5314 union／1976 相同／112 共享／3226 未证恢复队列
 仍只是历史比较点，3226 不是已实证功能故障数，也不是本批当前 main 全量完成量。
+
+## 2026-10-09 原 Workflow 运行历史加载／摘要恢复（源码检查点，case 未启动）
+
+权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel` 的运行历史分支；
+既定 Temporal／BFF 仍是执行与授权权威，不恢复 Relay 原执行引擎。
+
+影响：两宿主现有 `WorkflowsPage → AutomationManagement → AutomationRunHistory` 共用同一 TS。
+仅恢复原 `Skeleton(h-16 w-full rounded-xl)`、`run.id.slice(0,8)`、绝对本地时间呈现；
+消费真实 `AutomationRunPage.task.actionExecutionId/createdAt`，不新增字段、状态、持久化或 API。
+完整执行 ID 仍用于选择 key、aria-label、title 与 TaskDetail 请求，短摘要不改变目标身份。
+副作用：无写动作或第二权威；i18n 仅沿现有 locale／词条，不改被冻结的录音批。
+边界：原 useLoad 的旧 scope／轮次响应隔离、validAutomationRuns 的 ID／operation／枚举验证、
+拒绝不渲染为空、UNKNOWN 不渲染为完成等原守卫均保留；无假步骤或时长。
+
+先实现，后追加既有 workflow-run-history 专项四个真实页面消费者用例：
+中英摘要各一、等待历史→授权投影、等待历史→明确拒绝。
+原 SDK `kailo-agent-receipt-xvkujx`，4 CPU／8 GiB，Node heap3072；
+真实 cgroup memory.events 仍 max16751／oom2／oom_kill2，均是旧基线，本批无增长。
+单轮 `94718`：`tsc --noEmit` 0；`tsc --noEmit -p tsconfig.test.json` 0；
+`vitest run test/workflow-run-history.test.tsx --pool=threads --maxWorkers=1` 1，
+实际 `Failed to start threads worker / Timeout waiting for worker to respond`，60.30 秒，
+transform／import／tests 均 0ms，0 cases；未改超时、未重跑。
+生产破坏／还原未执行：原 case 未启动，不能将另一次启动失败充作有效负向。
+正式两输入与原候选 cmp0；git diff --check0；无 full／bundle／镜像／安装包。
+
+普通 /app/ 导航真实跳回 IdP 登录页；截图已打开视觉复核：
+`/volumes/kailo/.playwright-cli/kailo-ui-20261009-profile-next-login-required.png`，
+SHA256 `b0099b9e921b5e7c8830994788e8a357229384b4bf5ce0f16c2197c90d5f29d7`。
+无正常业务页面截图；旧 a816 Web 不包含本批；Windows／Mobile 未验收。
+原 RunStatusBadge／Execution Trace 标题、任意步骤轨迹／时长仍是具体恢复缺项，
+不以本批三处呈现迁移或类型通过声称完整 Workflows／全量原版一致。
+
+交接：2 clean 源／检查路径 +59/-6，未含其它继承 dirty；
+证据目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/workflow-history-20261009.4viaON/`，
+含固定原完整模块、原命令、types／失败 log、owned-source.patch、输入 SHA。
+历史 a816 全量账仍是 5314 union／1976 相同／112 共享／3226 未证恢复队列，
+本批不重导全树、不把队列当已实证功能故障数或当前 main 全量验收。
