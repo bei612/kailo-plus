@@ -64,7 +64,7 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
     const edit=host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]');expect(edit).not.toBeNull();
     await act(async()=>edit!.click());
     await vi.waitFor(()=>expect(views.thread).toHaveBeenCalled());
-    expect(views.thread.mock.lastCall?.[0]).toMatchObject({workspaceId:nativeChannel,conversation,rootId:parent,selectedEventId:explicit?reply:parent,replyTargetEventId:explicit?reply:undefined,
+    expect(views.thread.mock.lastCall?.[0]).toMatchObject({workspaceId:nativeChannel,conversation,rootId:parent,selectedEventId:explicit?reply:parent,replyTargetEventId:explicit?reply:parent,restoreDraftKey:entry.key,
       members:[{principalId:"alice"},{principalId:"peer"}]});
     expect(client.workspaceChannel).not.toHaveBeenCalled();
     views.items=[];await render();

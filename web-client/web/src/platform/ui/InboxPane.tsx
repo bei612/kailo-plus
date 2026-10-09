@@ -370,11 +370,12 @@ export function InboxPane({
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
+      senderLabel={(snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))).find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || truncatePubkey(chosen.item.pubkey)}
       channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
       members={snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))} onBack={narrow ? () => setSelected(null) : undefined}
       onOpen={hiddenDm.isReopenPending(chosen.item.channelId) ? undefined : () => openItem(chosen.item)} /></div> : showDetail ? <InboxEmptyDetail /> : null}
     {authorTarget ? <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
-      target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary}
+      target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary} layout="split" transparentChrome
       onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} /> : null}
   </InboxLayout>;
 }

@@ -133,6 +133,26 @@ it("opens the actual message author, uses the private scope and passes the verif
   expect(start).toHaveBeenCalledWith(author);
 });
 
+it("uses the original split profile pane above Inbox's shared blur while keeping its real title, X and resize consumers",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());const close=vi.fn();
+  await render(<MessageAuthorProfile target={target} onClose={close} layout="split" transparentChrome/>);
+  await vi.waitFor(()=>expect(host.textContent).toContain("Original biography"));
+  const pane=host.querySelector<HTMLElement>('[data-testid="home-user-profile-panel"]')!;
+  expect(pane.classList.contains("z-31")).toBe(true);
+  expect(pane.classList.contains("isolate")).toBe(true);
+  expect(pane.classList.contains("buzz-side-panel-enter")).toBe(false);
+  const header=pane.querySelector('[data-testid="user-profile-panel-header"]')!;
+  expect(header.classList.contains("bg-transparent")).toBe(true);
+  expect(header.classList.contains("backdrop-blur-md")).toBe(false);
+  expect(header.querySelector("h2")?.textContent).toBe("Profile");
+  expect(pane.querySelectorAll('[data-testid="right-auxiliary-pane-resize-handle"]')).toHaveLength(1);
+  expect(pane.querySelector('[data-testid="user-profile-resize-handle"]')).toBeNull();
+  const button=pane.querySelector<HTMLButtonElement>('[data-testid="auxiliary-panel-close"]')!;
+  expect(button.querySelector("svg")).not.toBeNull();
+  await act(async()=>button.click());
+  expect(close).toHaveBeenCalledOnce();
+});
+
 it("uses the same original public sections in Chinese without offering unsupported actions",async()=>{
   setLocale("zh-CN");api.messageAuthorProfile.mockResolvedValue(profile());
   await render(<MessageAuthorProfile target={target} onClose={()=>{}} onStartDm={()=>{}}/>);

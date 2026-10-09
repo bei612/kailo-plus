@@ -4,6 +4,7 @@ export { MessageThreadPanelSkeleton, MessageThreadPanelHeader } from "./MessageT
 export { MessageThreadSummaryRow } from "./MessageThreadSummaryRow";
 export { ThreadReplyRegion, ThreadRepliesErrorCard, ThreadRepliesEmptyCard } from "./MessageThreadReplyState";
 export { useThreadPanelWidth } from "./useThreadPanelWidth";
+export { RightAuxiliaryPane } from "./RightAuxiliaryPane";
 export { useIsThreadPanelOverlay } from "./use-thread-overlay";
 export { buildThreadPanelData, buildThreadPanelIndex, buildThreadPanelDataFromIndex } from "./threadPanel";
 export type { MainTimelineEntry } from "./threadPanel";

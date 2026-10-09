@@ -288,14 +288,17 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     expect(host.querySelector('[data-testid="home-inbox-detail"]')).not.toBeNull();
     await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center"}));
     expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
-    expect(host.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+    expect(host.querySelector('[data-testid="home-user-profile-panel"]')).toBeNull();
     const trigger=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [role="button"][aria-label="Profile"]`)!;
     await act(async()=>trigger.click());
     await vi.waitFor(()=>expect(host.textContent).toContain("Scoped biography"));
     expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
     expect(api.write).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="home-inbox"]')?.className).toContain("var(--home-auxiliary-width)");
-    const profilePanel = host.querySelector<HTMLElement>('[data-testid="user-profile-panel"]')!;
+    const profilePanel = host.querySelector<HTMLElement>('[data-testid="home-user-profile-panel"]')!;
+    expect(profilePanel.classList.contains("z-31")).toBe(true);
+    expect(profilePanel.classList.contains("isolate")).toBe(true);
+    expect(profilePanel.querySelector('[data-testid="user-profile-panel-header"]')?.classList.contains("backdrop-blur-md")).toBe(false);
     expect(profilePanel.style.width).toBe(`${AUXILIARY_PANEL_DEFAULT_WIDTH_PX}px`);
     expect(host.querySelector<HTMLElement>('[data-testid="home-inbox"]')?.style.getPropertyValue("--home-auxiliary-width")).toBe(profilePanel.style.width);
     await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-filter-trigger"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
@@ -369,6 +372,7 @@ it.each([true,false])("groups admitted hidden DMs (mention=%s), marks their chan
   setLocale("en");
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  Object.defineProperty(HTMLElement.prototype,"scrollIntoView",{configurable:true,value:vi.fn()});
   const self="c".repeat(64),channel="native-dm";
   const conversation={id:"existing-dm",channelId:channel,participantPrincipalIds:["human","peer"],state:"ACTIVE",version:1,operationId:"op"} as ConversationView;
   api.privateChannels=[conversation];api.workspaces.mockResolvedValue([]);
@@ -388,7 +392,9 @@ it.each([true,false])("groups admitted hidden DMs (mention=%s), marks their chan
     const mark=host.querySelector<HTMLButtonElement>('button[aria-label="Mark as read"]');expect(mark).not.toBeNull();
     await act(async()=>mark!.click());
     expect(api.write).toHaveBeenCalledWith([{key:channel,seconds:2}]);
-    const trigger=host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]');expect(trigger).not.toBeNull();
+    await act(async()=>host.querySelector<HTMLButtonElement>(`[data-testid="home-inbox-item-${event.id}"] > button`)!.click());
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-inbox-detail"] h2')?.textContent).toBe("DM with Peer"));
+    const trigger=host.querySelector<HTMLButtonElement>('button[aria-label="Open conversation"]');expect(trigger).not.toBeNull();
     await act(async()=>trigger!.click());
     expect(open).not.toHaveBeenCalled();expect(prepare).toHaveBeenCalledWith(conversation,false);
     await act(async()=>finish());

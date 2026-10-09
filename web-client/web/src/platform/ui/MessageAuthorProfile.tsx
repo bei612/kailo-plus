@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
-import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, useThreadPanelWidth } from "@client-kit/platform/react/thread";
+import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
 import { useUiT } from "@client-kit/platform/react/context";
 import { TransportError } from "@client-kit/platform/transport";
@@ -68,9 +68,10 @@ function MessageAuthorHover({target,...props}: ProfilePopoverBodyProps & {target
     status={!data?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false}: {
+export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false,layout="standalone",transparentChrome=false}: {
   target:MessageAuthor;onClose:()=>void;onStartDm?: (pubkey:string)=>void|Promise<void>;
   onWidthChange?: (width: number) => void; isSinglePanelView?: boolean;
+  layout?:AuxiliaryPanelLayout;transparentChrome?:boolean;
 }) {
   const t=useUiT();
   const query=useMessageAuthor(target);
@@ -98,10 +99,10 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       if(owner.active&&currentOwner.current===owner)setOpening(false);
     }
   }
-  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
+  const panel = <AuxiliaryPanel className="relative" layout={layout} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
     resizeHandleAriaLabel={t("platform.profile.resize")} resizeHandleTestId="user-profile-resize-handle"
-    header={<AuxiliaryPanelHeader data-testid="user-profile-panel-header" inset="wide" resizeBorder>
+    header={<AuxiliaryPanelHeader data-testid="user-profile-panel-header" inset={layout === "split" ? "default" : "wide"} resizeBorder={!isSinglePanelView && layout !== "split"}>
       <AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>
     </AuxiliaryPanelHeader>}>
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
@@ -113,4 +114,6 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;
+  return layout === "split" ? <RightAuxiliaryPane canResetWidth={width.canReset} constrainToAvailableSpace={false}
+    onResetWidth={width.onResetWidth} onResizeStart={width.onResizeStart} widthPx={width.widthPx} testId="home-user-profile-panel">{panel}</RightAuxiliaryPane> : panel;
 }

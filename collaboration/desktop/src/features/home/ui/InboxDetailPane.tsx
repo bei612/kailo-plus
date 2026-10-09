@@ -320,13 +320,14 @@ function InboxMessageDetailPane({
 
   if (!item) return <InboxEmptyDetail />;
 
+  const isDirectMessage = item.item.channelType === "dm";
   const replyTarget =
     displayMessages.find((message) => message.id === replyTargetId) ?? null;
   // Explicit sub-message reply wins. Otherwise use the captured default parent
   // (derived from the selected-event anchor at conversation entry), which does
   // not change when a live incoming message advances the representative item.
   const composerParentEventId =
-    replyTarget?.id ?? capturedDefaultParentId ?? item.id;
+    replyTarget?.id ?? (isDirectMessage ? null : (capturedDefaultParentId ?? item.id));
   const composerReplyTarget =
     replyTarget && replyTarget.id !== item.id
       ? {
@@ -336,20 +337,22 @@ function InboxMessageDetailPane({
         }
       : null;
   const channelContextName = contextChannelName ?? item.channelLabel;
-  const isThreadContext = hasInboxThreadContext(item, messages);
+  const isThreadContext = !isDirectMessage && hasInboxThreadContext(item, messages);
   const contextLabel = isThreadContext
     ? channelContextName
       ? t("inbox.detailThreadIn", { channel: channelContextName })
       : t("inbox.threadLabel")
-    : channelContextName
-      ? t("inbox.detailMessageIn", { channel: channelContextName })
-      : formatInboxTypeLabel(item, locale);
+    : isDirectMessage
+      ? t("inbox.detailDmWith", { sender: item.senderLabel })
+      : channelContextName
+        ? t("inbox.detailMessageIn", { channel: channelContextName })
+        : formatInboxTypeLabel(item, locale);
   const contextChannelId = item.item.channelId;
   const sourceEventId = selectedEventId ?? item.id;
   const contextThreadRootId = isThreadContext ? item.conversationId : null;
   const openContextLabel = isThreadContext
     ? t("inbox.openFullThread")
-    : t("inbox.open");
+    : isDirectMessage ? t("inbox.openConversation") : t("inbox.open");
 
   const handleSelectReplyTarget = (message: InboxDisplayMessage) => {
     setReplyTargetId((currentReplyTargetId) =>
@@ -473,7 +476,7 @@ function InboxMessageDetailPane({
               channelName={item.channelLabel ?? t("inbox.channelFallback")}
               containerClassName="px-4 pb-4 sm:px-4"
               disabled={!canReply}
-              draftKey={`thread:${item.conversationId}`}
+              draftKey={isDirectMessage ? item.item.channelId ?? item.conversationId : `thread:${item.conversationId}`}
               isSending={isSendingReply}
               onCancelReply={
                 composerReplyTarget ? () => setReplyTargetId(null) : undefined
@@ -488,9 +491,11 @@ function InboxMessageDetailPane({
               }
               placeholder={
                 canReply
-                  ? item.channelLabel
-                    ? t("inbox.replyToChannelThread", { channel: item.channelLabel })
-                    : t("inbox.replyToThread")
+                  ? isDirectMessage
+                    ? t("composer.dmPlaceholder", { name: item.senderLabel })
+                    : item.channelLabel
+                      ? t("inbox.replyToChannelThread", { channel: item.channelLabel })
+                      : t("inbox.replyToThread")
                   : (disabledReplyReason ??
                     t("inbox.replyUnavailable"))
               }

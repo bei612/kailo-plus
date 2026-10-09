@@ -5,7 +5,7 @@ import { InboxDetailHeader, InboxMessageRowSurface, useInboxFocusHighlight } fro
 import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
-import { inboxThread } from "@client-kit/platform/inbox";
+import { inboxReply, inboxThread } from "@client-kit/platform/inbox";
 import { BffError, isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
@@ -17,12 +17,13 @@ import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function InboxThreadPane({ principalId, workspaceId, conversation, canInteract = true, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
-  principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string;
+export function InboxThreadPane({ principalId, workspaceId, conversation, canInteract = true, rootId, selectedEventId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
+  principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
   canInteract?: boolean;
   autoSendDraftKey?: string;
+  restoreDraftKey?: string;
   replyTargetEventId?: string;
   onOpenAuthor?: (target: MessageAuthor) => void;
   onAuthorScopeUnavailable?: (workspaceId: string) => void;
@@ -35,7 +36,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
   const [sending, setSending] = useState(false);
   const [unresolved, setUnresolved] = useState(false);
-  const publication = useRef<{ key: string; parent: string; unknown: boolean } | null>(null);
+  const publication = useRef<{ key: string; parent: string | null; unknown: boolean } | null>(null);
   const composerContainer = useRef<HTMLDivElement>(null);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
@@ -56,11 +57,19 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.(workspaceId);
   }, [unavailable, interrupted, workspaceId, onAuthorScopeUnavailable]);
-  const parentId = replyId ?? replyParent.current;
+  const parentId = replyId ?? (conversation ? null : replyParent.current);
   const replyTarget = replyId ? messages.find((message) => message.id === replyId) : undefined;
-  const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && parentId !== null && (messages.some((message) => message.id === parentId) || contextIds.has(parentId)) && (conversation
+  const hasReplyParent = parentId !== null && (messages.some((message) => message.id === parentId) || contextIds.has(parentId));
+  const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && (conversation && parentId === null || hasReplyParent) && (conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === workspaceId && conversation.participantPrincipalIds.includes(principalId)
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
+  const isThreadContext = !conversation && messages.some(message => inboxReply(message.tags));
+  const directMessageSender = senderLabel ?? (anchoredMessage ? members.find(member => member.pubkeys.includes(anchoredMessage.pubkey))?.displayName || truncatePubkey(anchoredMessage.pubkey) : "");
+  const contextLabel = isThreadContext
+    ? channelName ? t("inbox.detailThreadIn", {channel:channelName}) : t("inbox.threadLabel")
+    : conversation ? t("inbox.detailDmWith", {sender:directMessageSender})
+      : channelName ? t("inbox.detailMessageIn", {channel:channelName}) : channelName;
+  const openContextLabel = isThreadContext ? t("inbox.openFullThread") : conversation ? t("inbox.openConversation") : t("inbox.open");
   const selectReply = (id: string | null) => {
     if (!canReply || sending || publication.current) return;
     setReplyId((current) => current === id ? null : id);
@@ -79,7 +88,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
     } catch { toast.error(t("buzz.copyFailed")); }
   };
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
-    <InboxDetailHeader title={channelName} onBack={onBack} onOpen={onOpen} openLabel={t("inbox.open")} />
+    <InboxDetailHeader title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel} />
     <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
       {unavailable ? <div role="status" className="p-5">{t("platform.loadFailed")}{!denied ? <Button onClick={() => { void thread.refetch(); }}>{t("platform.refresh")}</Button> : null}</div>
         : thread.isPending ? <p role="status" className="p-5">{t("platform.loading")}</p> : messages.map((event, index) => {
@@ -109,22 +118,22 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
-    <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
+    <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
       mentionPeople={mentionPeopleFromMembers(members)}
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onSendingChange={setSending}
       replyTarget={replyTarget ? {id:replyTarget.id, body:replyTarget.content, author:members.find((member) => member.pubkeys.includes(replyTarget.pubkey))?.displayName || truncatePubkey(replyTarget.pubkey)} : null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
-      placeholder={t("inbox.reply")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
-        if (!canReply || !parentId) throw new Error("Inbox reply parent is unavailable.");
+      placeholder={conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
+        if (!canReply || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
         if (prior && (prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};
         try {
-          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId, mentionPubkeys)
+          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId ?? undefined, mentionPubkeys)
             : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-            { messageType: WebMessageType.Stream, parentEventId: parentId, mentionPubkeys }));
+            { messageType: WebMessageType.Stream, parentEventId: parentId ?? undefined, mentionPubkeys }));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Inbox reply has no confirmed receipt.");
           publication.current = null; setUnresolved(false);
           void refresh();

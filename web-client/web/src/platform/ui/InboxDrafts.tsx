@@ -112,7 +112,7 @@ function DraftEditor({ principalId, item, destination, members, autoSend, onBack
     conversation={destination.kind === "conversation" ? destination.conversation : undefined}
     rootId={target.threadRootId ?? target.parentEventId} selectedEventId={target.parentEventId}
     onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
-    replyTargetEventId={target.threadRootId ? target.parentEventId : undefined}
+    replyTargetEventId={target.parentEventId} restoreDraftKey={entry.key}
     channelName={item.channelLabel} members={members} onBack={onBack} onOpen={onBack} autoSendDraftKey={autoSendDraftKey} /></div>
     {profileTarget ? <MessageAuthorProfile target={profileTarget} onClose={() => setProfileTarget(null)}
       onStartDm={members.some((member) => member.principalId === principalId && member.pubkeys.includes(profileTarget.pubkey)) ? undefined : onStartDm} /> : null}</div>;

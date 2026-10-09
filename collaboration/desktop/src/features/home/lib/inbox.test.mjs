@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as React from "react";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+import { translate } from "@client-kit/platform/i18n";
 
 import {
   buildInboxItems,
@@ -8,6 +12,49 @@ import {
   getInboxTypeLabel,
 } from "./inbox.ts";
 import { getHomeMessageCapabilities } from "./homeMessageCapabilities.ts";
+import { hasInboxThreadContext } from "./inboxViewHelpers.ts";
+
+test("Native Inbox's actual detail header and composer restore original DM context, draft and send target", async () => {
+  const file = ts.createSourceFile("InboxDetailPane.tsx", readFileSync(new URL("../ui/InboxDetailPane.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const bindings = new Set(["isDirectMessage", "replyTarget", "composerParentEventId", "composerReplyTarget", "channelContextName", "isThreadContext", "contextLabel", "contextThreadRootId", "openContextLabel"]);
+  const declarations = [];
+  let composer;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && bindings.has(node.name.getText(file))) declarations.push(`const ${node.getText(file)};`);
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === "MessageComposer") composer = node.getText(file);
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  assert.equal(declarations.length, bindings.size);
+  assert.ok(composer);
+  const source = ts.transpile(`${declarations.join("\n")}return {contextLabel,contextThreadRootId,openContextLabel,composer:${composer}};`, {target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
+  const project = new Function("React", "item", "displayMessages", "messages", "replyTargetId", "capturedDefaultParentId", "contextChannelName", "hasInboxThreadContext", "formatInboxTypeLabel", "locale", "t", "MessageComposer", "canReply", "isSendingReply", "disabledReplyReason", "setReplyTargetId", "onSendReply", source);
+  const root = {id:"root",content:"root",authorLabel:"Original sender",tags:[["h",DM_CHANNEL_ID]]};
+  const reply = {id:"reply",content:"reply",authorLabel:"Original sender",tags:[["h",DM_CHANNEL_ID],["e","root","","root"],["e","root","","reply"]]};
+  const row = {id:"root",conversationId:`dm:${DM_CHANNEL_ID}`,channelLabel:"internal channel name",senderLabel:"Original sender",item:{...root,channelId:DM_CHANNEL_ID,channelType:"dm"},groupItems:[root,reply]};
+  for (const locale of ["en","zh-CN"]) {
+    const sends = [];
+    const render = (value,replyId=null,canReply=true) => project(React,value,[root,reply],[root,reply],replyId,"captured-parent",null,hasInboxThreadContext,formatInboxTypeLabel,locale,(key,variables)=>translate(locale,key,variables),()=>null,canReply,false,"Actual refusal",()=>{},async payload=>sends.push(payload));
+    const dm = render(row);
+    assert.equal(dm.contextLabel, locale === "en" ? "DM with Original sender" : "与 Original sender 的私聊");
+    assert.equal(dm.openContextLabel, locale === "en" ? "Open conversation" : "打开会话");
+    assert.equal(dm.contextThreadRootId,null);
+    assert.equal(dm.composer.props.draftKey,DM_CHANNEL_ID);
+    assert.equal(dm.composer.props.placeholder,locale === "en" ? "Message Original sender" : "给 Original sender 发消息");
+    await dm.composer.props.onSend("actual content",[],[]);
+    assert.equal(sends.at(-1).parentEventId,null);
+    const selected = render(row,"reply");
+    await selected.composer.props.onSend("explicit reply",[],[]);
+    assert.equal(sends.at(-1).parentEventId,"reply");
+    assert.equal(selected.composer.props.draftKey,DM_CHANNEL_ID);
+    assert.equal(render(row,null,false).composer.props.placeholder,"Actual refusal");
+    const stream = render({...row,item:{...row.item,channelType:"stream"}});
+    assert.equal(stream.contextLabel,locale === "en" ? "Thread in #internal channel name" : "#internal channel name 中的线程");
+    assert.equal(stream.composer.props.draftKey,`thread:${row.conversationId}`);
+    await stream.composer.props.onSend("stream reply",[],[]);
+    assert.equal(sends.at(-1).parentEventId,"captured-parent");
+  }
+});
 
 const CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const DM_CHANNEL_ID = "8ad375a7-6990-4b22-985f-e3fd34f634d7";

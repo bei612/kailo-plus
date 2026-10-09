@@ -5500,3 +5500,123 @@ union 5314 路径，原样保留 1977、共享迁移 111、整文件已授权治
 原全筛选、完整 DM 详情／消息动作、Agent 资料／会话、原设置剩余分区、
 日期等其他未迁移 i18n 读方仍未完整恢复。不能称整个 Inbox 双语闭合、
 全量原版一致或生产就绪。源码冻结交主代理选择性收口；历史文档 dirty 不纳入。
+
+## 2026-10-09 05:55 UTC 原 Inbox DM 详情与作者资料 split chrome 恢复
+
+本批 15 个源码／原检查／同源生成路径，`+258/-123`，全部冻结交主代理；
+未自行暂存、提交、构建镜像或部署。原件和命令日志统一位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/inbox-dm-context.LHJhoz/`。
+`owned-paths.txt` 列完整 15 路径；`owned-source.patch` SHA256 为
+`5022cec7494d5d5a1a112e489d6e5d5bc5966b2e1a25d03600a2e2d01ded756f`。
+原 `git apply --reverse --check` 退出 0；没有吸收其他 owner 或历史 dirty。
+
+### 固定官方来源、四步影响面与实际消费者
+
+官方固定 `779af8886caae1317b4de962082429867ab61503`，逐模块读取以下真实符号：
+
+- `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxMessageDetailPane`：
+  DM 的上下文／Open conversation／placeholder、默认空 parent、显式行回复、频道级草稿。
+- `desktop/src/features/home/ui/HomeView.tsx::HomeView`：
+  作者资料使用 `RightAuxiliaryPane` 与 split／transparentChrome 的真实组合。
+- `desktop/src/features/channels/ui/RightAuxiliaryPane.tsx::RightAuxiliaryPane`：
+  原完整 resize／reset／detached／约束分支，以及官方注释解释的 isolate／z-31。
+- `desktop/src/features/profile/ui/UserProfilePanelFrame.tsx::UserProfilePanelFrame`，
+  `UserProfilePanelHeaderContent.tsx::getUserProfilePanelHeaderContent`，
+  `UserProfilePanelUtils.ts::PROFILE_PANEL_VIEW_TITLES`：summary 原标题是 Profile，
+  原共享 Header 提供实际 X／关闭回调；并非自行新增标题或关闭按钮。
+
+动手前四步结论：
+
+1. 权威是用户原版恢复要求、REQ-24 与 DD-74/75；纯呈现／默认 reply target
+   原版已支持，身份与成员／Conversation 准入仍沿既有治理，不扩展 Agent 直聊。
+2. 检索 Native detail→HomeView 发送、Web Inbox→InboxThreadPane→Composer／BFF、
+   现有 InboxDrafts→DraftEditor 和所有作者资料调用点。没有改 schema、数据库、
+   Relay 正文、存储格式或旧 API；Web 原契约 optional parent 以 undefined 表达原空 parent。
+3. DM 不能因为 null parent 短路授权：仍要求实际 history 成功、bounds 有效、
+   ACTIVE binding、当前 Principal 是 participant、真实 channelId 相符且未被撤权。
+   名字只来自当前获准目录／原消息作者，缺资料回退其真实短 pubkey，不伪造 owner/presence。
+4. 空／缺 bounds／历史失败／撤权／旧身份迟到继续撤除内容或拒绝发送；
+   未 ACK／UNKNOWN 仍冻结原 idempotencyKey 与 parent，不取消、改目标或重新建意图。
+   旧 reply draft 显式消费其真实 parent 与原 entry.key，不静默移到新 DM 默认草稿。
+   无新外部状态／事务／权威；实际错误与 UNKNOWN 沿原六类错误及既有对账，不降级成功。
+
+Native `InboxDetailPane` 恢复 `!isDirectMessage && hasInboxThreadContext`、
+默认 DM 空 parent、原 header／Open conversation、原频道级 draftKey 和 Message sender。
+Web `InboxThreadPane` 消费同一共享 Composer／原 detail UI，普通 DM 不再默认回复线程；
+真实 row reply 仍发送精确目标，未知回执不能切换目标。`InboxPane` 传当前获准 sender；
+已有 `InboxDrafts::DraftEditor` 同时补回实际 saved parent 和 `restoreDraftKey` 消费。
+没有新建 feed 来源、搜索结果或未接后端按钮。
+
+原 `RightAuxiliaryPane` 完整共享到
+`client-kit/ts/platform/src/react/messages/thread/RightAuxiliaryPane.tsx`；
+Native 原路径转导出，没有双份原组件。仅 import／同源词条接缝变化，原分支／类名保留。
+Web Inbox 作者真实消费者改用 split／transparentChrome 与原 z-31 wrapper，
+不再让 standalone enter transform 形成被 z-30 Inbox blur 压住的 stacking context。
+保留已有宽度与身份／回执 fencing，其他作者资料消费者默认 standalone 不变；
+没有全局取消 blur／pointerEvents、扩大 shared AuxiliaryPanel 默认或自绘新的关闭 icon。
+来源登记未错误 remove 原 `RightAuxiliaryPane`／`InboxDetailPane`；
+`UserProfilePanelFrame` 完整原模块仍未恢复，不能因为本批复用其部分呈现语义而删缺项登记。
+
+### 实际命令、失败、生产破坏与精确还原
+
+复用 `kailo-agent-receipt-xvkujx`，实际 4 CPU／8 GiB、UID 1000，
+`cpu.max=400000 100000`、`memory.max=8589934592`；Node heap 3072 MiB。
+前置实际 top 仅 sleep，Host available 20593 MiB、Data 可用 280 GiB；
+memory.events 旧 oom=2／oom_kill=2，结束无增量。无新 SDK／依赖／Cargo／Go／镜像。
+原 manifests／锁相同，本批 15 输入与两宿主 installed shared 逐字节 cmp 0。
+
+原目标命令：Native 在 desktop 执行
+`node --import ./test-loader.mjs --experimental-strip-types --test src/features/home/lib/inbox.test.mjs`；
+Web 在 web 执行原 `vitest run` 的 InboxPane／InboxThreadPane／MessageAuthorProfile／
+InboxDrafts 四个既有 `.test.tsx`，`--pool=threads --maxWorkers=1`。
+四 types 是 shared 源、shared `-p tsconfig.test.json`、Web 与 Native 的 `tsc --noEmit`；
+词条只沿 `python3 tools/gen-platform-i18n.py` 与 `--check`，未改 contracts Dart。
+
+- 90768 编排 exit 1：原 i18n 生成／check exit 0、Native 19/19、四 types 各 0；
+  首轮 Web 65/68，3 失败。新断言未先点原行和旧 Refresh token 查找保留在日志。
+  93989 Web 66/68 exit 1；80778 Inbox 26/28 exit 1，真正点原 full-row button
+  后暴露 jsdom 缺 scrollIntoView。只修实际点击与既有浏览器 DOM 适配，未删断言或改超时。
+- 新共享文件沿既有 Biome format：40862 exit 0；不整份重排原紧凑宿主。
+  最终 85994 exit 0：Native 19/19，Web 四目标 68/68，原词条 check 0，四 types 各 0。
+  最终实际输入对应 `*-final.log`，不能把前述真实失败改写为通过。
+- 私有候选把两宿主默认 DM parent 改回旧非空分支：49352 编排 exit 0，
+  `native-dm-negative.log` 1 failed／18 passed、真实命令 exit 1；
+  `web-dm-negative.log` 3 failed／17 passed、exit 1，精确命中实际发送 parent。
+  两生产文件立即从正式字节还原 cmp 0，不是编译失败或未运行 case。
+- 私有共享实际 wrapper 移除 z-31，并同步实际 installed shared：47554 编排 exit 0，
+  `web-pane-negative.log` 两个真实 Inbox／Profile 消费者 2 failed／39 passed、exit 1。
+  正式字节、私有源和两宿主 installed shared 已全部还原 cmp 0。
+- 82114 最终恢复编排 exit 0：`native-inbox-restored.log` 19/19、
+  `web-consumers-restored.log` 四目标 68/68、`i18n-check-restored.log` exit 0。
+  原 Avatar／DraftEditor 未包装 act 的 stderr 警告保留，未抑制；不是 full 或 Windows 验收。
+
+### 真实截图、四分类边界与剩余
+
+正常 SSO 会话过期后重新正常登录；首个旧 callback 实际出现 missing transaction，
+正常重进 `/app/` 完成现有 IdP 握手，不注入 Cookie／session 或重置账户。
+浏览器只读 build-info 200，仍是部署
+`5baad5e09a6c8abeb33bbfa1904fe0ee77034b78`，buildId
+`sha256:9985c612c146a9cd611f13457ce699a740354023646d45e26ffb4c107fdfeaaa`。
+本轮两张截图均实际打开，主代理也已逐张打开，确认旧线上失败：
+
+- `/volumes/kailo/.playwright-cli/kailo-ui-20261009-main5ba-dm-context-before.png`，
+  SHA256 `14ad1b20d74cd97eae2d0abd1082033e828573bba6aa767946bd38bddb28bd74`。
+- `/volumes/kailo/.playwright-cli/kailo-ui-20261009-main5ba-author-stacking-before.png`，
+  SHA256 `dcfee1f540f9e3c67f1e7cb6404eeeb27ec9ba63dfd21d8e8fcc2df8308eb814`。
+
+只读真实 computedStyle：资料 enter transform／z-auto 父级、header z-41 被
+Inbox 共享 blur z-30 覆盖，与固定原 RightAuxiliaryPane 注释一致；未改 DOM 样式绕过。
+上述图片证明旧版本缺项，不证明本批修复的图像验收。新源码业务截图仍 0。
+
+四类逐 hunk：原 Header／X／算法未改分支保留；RightAux 全文与真实消费者为共享迁移；
+当前身份／scope／BFF、optional parent 映射和同源中文为逐项授权接缝；
+未恢复的原模块继续在恢复队列，不把 15 文件整体笼统归为治理授权。
+完整可复核全树 TSV 仍是 e5c6ada467063984a4c7f644e17e21f993a5be58 对上述官方：
+union 5314，原样 1977、共享 111、整文件授权 0、尚未证明保留或授权的恢复队列 3226。
+这是历史比较点，非当前 main 全树逐处复核／功能缺失数量或完成率；本批未重导全量。
+
+原 Composer channelType／audienceContext 在当前两宿主接口里仍没有真实消费，
+未写忽略 props 冒充恢复。原 Inbox 编辑／删除及全部筛选／feed 来源、Agent 完整资料／
+会话、其余设置分区和所有页面视觉仍未全面闭合；不称完整 DM 产品／原版 100%。
+候选尚未提交／部署，Windows／Mobile 没有新包或设备验收；等待主线一次集中发布
+后正常 SSO 重拍同两状态，不能把这批定向检查或旧图称生产就绪。
