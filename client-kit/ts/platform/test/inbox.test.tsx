@@ -7,6 +7,8 @@ import {
   inboxReply,
   matchesInbox,
   loadOwnedAgentIdentities,
+  feedHeadline,
+  getInboxTypeLabel,
   type InboxEvent,
 } from "../src/inbox";
 import { InboxRow } from "../src/react/inbox-row";
@@ -33,6 +35,41 @@ const state = (version = 0) => ({
 const workspace = { id: "scope-a", name: "A", slug: "a", isMember: true };
 
 describe("shared upstream Inbox aggregation", () => {
+  it("keeps the original Inbox type-label branches without admitting additional feed kinds", () => {
+    const base = { id: "event", kind: 9, content: "message", category: "activity", tags: [] as string[][] };
+    const item = (overrides: Partial<typeof base> & { channelType?: string } = {}, channelLabel: string | null = "Channel", senderLabel = "Peer") => {
+      const representative = { ...base, ...overrides };
+      return { item: representative, groupItems: [representative], channelLabel, senderLabel };
+    };
+    expect(getInboxTypeLabel(item())).toEqual({ text: "Channel update in", channelLabel: "Channel" });
+    expect(getInboxTypeLabel(item(), "zh-CN")).toEqual({ text: "频道更新于", channelLabel: "Channel" });
+    expect(getInboxTypeLabel(item({}, null))).toEqual({ text: "Channel update", channelLabel: null });
+    expect(getInboxTypeLabel(item({ category: "mention" }))).toEqual({ text: "Mentioned in", channelLabel: "Channel" });
+    expect(getInboxTypeLabel(item({ category: "mention" }, null)).text).toBe("Mentioned");
+    expect(getInboxTypeLabel(item({ category: "needs_action" })).text).toBe("Needs action in");
+    expect(getInboxTypeLabel(item({ category: "needs_action" }, null)).text).toBe("Needs action");
+    const reply = [["e", "root", "", "reply"]];
+    expect(getInboxTypeLabel(item({ tags: reply })).text).toBe("Thread in");
+    expect(getInboxTypeLabel(item({ tags: reply }, null)).text).toBe("Thread");
+    expect(getInboxTypeLabel(item({ tags: [...reply, ["broadcast", "1"]] })).text).toBe("Channel update in");
+    expect(getInboxTypeLabel(item({ tags: [["e", "root"]] })).text).toBe("Channel update in");
+    expect(getInboxTypeLabel(item({ channelType: "dm", tags: reply }))).toEqual({ text: "DM from Peer", channelLabel: null });
+    expect(getInboxTypeLabel(item({ channelType: "dm" }, "Channel", "")).text).toBe("DM");
+    const repo = `30617:${"a".repeat(64)}:repository`;
+    const root = { ...base, id: "review", kind: 1618, tags: [["a", repo]], content: "Review body" };
+    expect(getInboxTypeLabel({ ...item(), groupItems: [base, root] })).toEqual({ text: "Review", channelLabel: null });
+    expect(getInboxTypeLabel(item({ kind: 1621, tags: [["a", repo]] })).text).toBe("Task");
+    expect(getInboxTypeLabel(item({ kind: 1619, tags: [["a", repo], ["e", "review"]] })).text).toBe("Project update");
+    expect(getInboxTypeLabel(item({ kind: 1618, tags: [["a", "invalid-repository"]] })).text).toBe("Channel update in");
+    expect(feedHeadline({ ...root, tags: [...root.tags, ["subject", "  Review title  "]] })).toBe("Review title");
+    expect(feedHeadline({ ...root, content: "" })).toBe("Review");
+    for (const [kind, headline] of [[40007, "Reminder"], [43001, "Job requested"], [43002, "Job accepted"], [43003, "Progress update"], [43004, "Job result"], [43005, "Job cancelled"], [43006, "Job failed"], [45001, "Forum post"], [45003, "Forum reply"], [46010, "Approval requested"]] as const) {
+      expect(getInboxTypeLabel(item({ kind })).text).toBe(`${headline} in`);
+      expect(feedHeadline({ ...base, kind })).toBe(headline);
+    }
+    expect(feedHeadline({ ...base, category: "agent_activity" })).toBe("Agent update");
+    expect(feedHeadline({ ...base, category: "mention" })).toBe("Mention");
+  });
   it("groups a DM by its admitted channel across roots and reads every item through that channel", () => {
     const first = { ...event("first", "private", 10), channelType: "dm", category: "activity" as const };
     const second = { ...first, id: "second", createdAt: 20 };

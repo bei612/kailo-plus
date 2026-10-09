@@ -2,6 +2,105 @@
 // Hosts supply already admitted events. This module grants no access and holds no user state.
 import type { ConversationView } from "@client-kit/contracts";
 import type { BffClient } from "./client";
+import { translate, type PlatformLocale } from "./i18n";
+
+// Buzz 779af8886caae1317b4de962082429867ab61503:
+// desktop/src/features/home/lib/{inbox,projectInbox}.ts. These are display
+// labels, not feed admission: hosts still supply only their authorized events.
+type InboxLabelEvent = {
+  id: string;
+  kind: number;
+  content: string;
+  tags: string[][];
+  category: string;
+  channelType?: string;
+};
+
+export type InboxTypeLabel = { text: string; channelLabel: string | null };
+
+const PROJECT_ROOT_KINDS = new Set([1618, 1621]);
+const PROJECT_ACTIVITY_KINDS = new Set([1, 1619, 1630, 1631, 1632, 1633]);
+const REPO_ADDRESS_PATTERN = /^30617:[0-9a-f]{64}:.+$/i;
+
+function projectTagValue(item: Pick<InboxLabelEvent, "tags">, name: string) {
+  return item.tags.find(
+    (tag) => tag[0] === name && typeof tag[1] === "string" && tag[1].length > 0,
+  )?.[1];
+}
+
+function getProjectInboxReference(item: InboxLabelEvent) {
+  const repoAddress = projectTagValue(item, "a");
+  if (!repoAddress || !REPO_ADDRESS_PATTERN.test(repoAddress)) return null;
+  if (PROJECT_ROOT_KINDS.has(item.kind)) return { repoAddress, rootId: item.id };
+  if (!PROJECT_ACTIVITY_KINDS.has(item.kind)) return null;
+  const rootId = projectTagValue(item, "e") ?? projectTagValue(item, "E");
+  return rootId ? { repoAddress, rootId } : null;
+}
+
+function isProjectInboxItem(item: InboxLabelEvent) {
+  return getProjectInboxReference(item) !== null;
+}
+
+function projectRootItem(item: InboxLabelEvent, groupItems: readonly InboxLabelEvent[]) {
+  return groupItems.find((candidate) => candidate.kind === 1618 || candidate.kind === 1621) ?? item;
+}
+
+function projectTypeLabel(item: InboxLabelEvent, locale: PlatformLocale) {
+  return translate(locale, item.kind === 1618 ? "inbox.reviewLabel" : item.kind === 1621 ? "inbox.taskLabel" : "inbox.projectUpdate");
+}
+
+export function feedHeadline(item: InboxLabelEvent, groupItems: readonly InboxLabelEvent[] = [], locale: PlatformLocale = "en"): string {
+  if (isProjectInboxItem(item)) {
+    const root = projectRootItem(item, groupItems);
+    return (root.tags.find((tag) => tag[0] === "subject")?.[1]?.trim() || root.content.trim().split("\n")[0]) || projectTypeLabel(root, locale);
+  }
+  switch (item.kind) {
+    case 40007: return translate(locale, "inbox.reminderLabel");
+    case 43001: return translate(locale, "inbox.jobRequested");
+    case 43002: return translate(locale, "inbox.jobAccepted");
+    case 43003: return translate(locale, "inbox.progressUpdate");
+    case 43004: return translate(locale, "inbox.jobResult");
+    case 43005: return translate(locale, "inbox.jobCancelled");
+    case 43006: return translate(locale, "inbox.jobFailed");
+    case 45001: return translate(locale, "inbox.forumPost");
+    case 45003: return translate(locale, "inbox.forumReply");
+    case 46010: return translate(locale, "inbox.approvalRequested");
+    default:
+      return translate(locale, item.category === "mention" ? "inbox.mentionLabel" : item.category === "agent_activity" ? "inbox.agentUpdate" : "inbox.channelUpdate");
+  }
+}
+
+export function isThreadActivityItem(item: Pick<InboxLabelEvent, "category" | "tags">) {
+  return item.category === "activity" && inboxReply(item.tags);
+}
+
+export function getInboxTypeLabel(item: {
+  item: InboxLabelEvent;
+  groupItems: readonly InboxLabelEvent[];
+  channelLabel: string | null;
+  senderLabel: string;
+}, locale: PlatformLocale = "en"): InboxTypeLabel {
+  const channelName = item.channelLabel;
+  if (item.groupItems.some(isProjectInboxItem)) {
+    const root = projectRootItem(item.item, item.groupItems);
+    return { text: projectTypeLabel(root, locale), channelLabel: null };
+  }
+  if (item.item.channelType === "dm") {
+    return { text: item.senderLabel ? translate(locale, "inbox.dmFrom", { sender: item.senderLabel }) : translate(locale, "inbox.dmLabel"), channelLabel: null };
+  }
+  const primaryCategory = item.item.category;
+  if (primaryCategory === "mention") {
+    return { text: translate(locale, channelName ? "inbox.mentionedIn" : "inbox.mentionedLabel"), channelLabel: channelName };
+  }
+  if (primaryCategory === "needs_action") {
+    return { text: translate(locale, channelName ? "inbox.needsActionIn" : "inbox.needsActionLabel"), channelLabel: channelName };
+  }
+  if (isThreadActivityItem(item.item)) {
+    return { text: translate(locale, channelName ? "inbox.threadIn" : "inbox.threadLabel"), channelLabel: channelName };
+  }
+  const headline = feedHeadline(item.item, [], locale);
+  return { text: channelName ? translate(locale, "inbox.activityIn", { activity: headline }) : headline, channelLabel: channelName };
+}
 
 /** Original useOwnedAgentPubkeys, resolved from Kailo's existing governed installation directory. */
 export async function loadOwnedAgentIdentities(client: Pick<BffClient, "agentInstallations">, workspaceId: string, ownerPrincipalId: string): Promise<ReadonlyMap<string, string>> {

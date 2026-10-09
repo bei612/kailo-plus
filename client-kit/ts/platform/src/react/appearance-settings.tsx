@@ -30,7 +30,7 @@ export function AppearanceSettings({ name, appearance, glass, hideGlass = false,
           prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
       </ThemeSettingsControls>
       <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
-        <ConversationDisplaySettings locale={locale} />
+        <ConversationDisplaySettings locale={locale} name={name} />
         <LinkPreviewStyleSetting isDark={appearance.isDark} />
         <ThreadLayoutSetting isDark={appearance.isDark} />
       </SettingsOptionGroup>

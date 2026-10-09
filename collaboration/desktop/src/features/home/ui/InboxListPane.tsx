@@ -2,7 +2,7 @@ import { ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
 import { InboxListHeader, InboxEmptyList, InboxRowActionButton, InboxReopenStatus } from "@client-kit/platform/react/inbox-surface";
-import { useT } from "@client-kit/platform/react/context";
+import { useLocale, useT } from "@client-kit/platform/react/context";
 
 import {
   getInboxTypeLabel,
@@ -108,6 +108,7 @@ export function InboxListPane({
   isReopenUnknown,
 }: InboxListPaneProps) {
   const t = useT();
+  const locale = useLocale();
   const isDrafts = filter === "drafts";
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const unreadVisibleItemCount = React.useMemo(
@@ -129,7 +130,7 @@ export function InboxListPane({
     const isReopening = Boolean(item.item.channelId && isReopenPending?.(item.item.channelId));
     const canOpen = Boolean(item.item.channelId) && !isReopening;
     const openLabel = isReopening ? t("inbox.reopening") : canOpen ? t("inbox.open") : "No channel link";
-    const typeLabel = getInboxTypeLabel(item);
+    const typeLabel = getInboxTypeLabel(item, locale);
     const isSenderAgent = agentPubkeys?.has(normalizePubkey(item.item.pubkey)) === true;
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
     const row = (
@@ -147,7 +148,7 @@ export function InboxListPane({
             </span>
           ) : null
         }
-        label={item.item.channelType === "dm" ? t("inbox.dmFrom", { sender: item.senderLabel }) : typeLabel.text}
+        label={typeLabel.text}
         channel={typeLabel.channelLabel}
         avatar={
           <UserProfilePopover

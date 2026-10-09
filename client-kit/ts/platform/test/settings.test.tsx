@@ -329,7 +329,7 @@ describe("shared Buzz settings presentation", () => {
     localStorage.clear();
     initializeFontSizePreference();
     initializeConversationDensityPreference();
-    const host = await render(<ConversationDisplaySettings locale="en" />);
+    const host = await render(<ConversationDisplaySettings locale="en" name="Configured platform" />);
     const control = host.querySelector<HTMLFieldSetElement>('[data-testid="font-size-control"]')!;
     const indicator = host.querySelector<HTMLElement>('[data-testid="font-size-control-indicator"]')!;
     let captured: number | null = null;
@@ -368,7 +368,7 @@ describe("shared Buzz settings presentation", () => {
     localStorage.clear();
     initializeFontSizePreference();
     initializeConversationDensityPreference();
-    const host = await render(<ConversationDisplaySettings locale="zh-CN" />);
+    const host = await render(<ConversationDisplaySettings locale="zh-CN" name="Configured platform" />);
     expect(host.textContent).toContain("字号");
     await click(button(host, "较大"));
     await click(button(host, "宽松"));
@@ -396,10 +396,44 @@ describe("shared Buzz settings presentation", () => {
       host.querySelector('[data-testid="conversation-preview-content"]'),
     ).not.toBeNull();
   });
+  it.each(["en", "zh-CN"] as const)("keeps the original conversation preference rows and preview badge in %s", async (locale) => {
+    localStorage.clear();
+    initializeFontSizePreference();
+    initializeConversationDensityPreference();
+    const host = await render(<ConversationDisplaySettings locale={locale} name="Configured platform" />);
+    const group = host.querySelector<HTMLElement>('[data-testid="conversation-display-group"]')!;
+    expect(group.className).toBe("");
+    for (const testId of ["font-size-row", "conversation-density-row"]) {
+      const row = group.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
+      expect(row.className).toBe("flex min-h-16 items-center justify-between gap-4 px-4 py-3 text-sm [@container(max-width:34rem)]:flex-col [@container(max-width:34rem)]:items-start [@container(max-width:34rem)]:[&>[data-slot=segmented-control]]:w-full");
+      expect(row.querySelector('[data-slot="segmented-control"]')).not.toBeNull();
+    }
+    const preview = group.querySelector('[data-testid="conversation-preview-surface"]')!;
+    const eye = preview.querySelector('span > svg.lucide-eye')!;
+    expect(eye).not.toBeNull();
+    expect(eye.getAttribute("aria-hidden")).toBe("true");
+    expect(eye.classList.contains("size-3")).toBe(true);
+    expect(eye.parentElement!.textContent).toBe(locale === "en" ? "Preview" : "预览");
+    expect(group.querySelector('[data-testid="conversation-density-row"] [data-settings-subcopy]')!.textContent).toBe(locale === "en"
+      ? "Spacing in conversations and Markdown content across Configured platform"
+      : "调整 Configured platform 中会话与 Markdown 内容的间距");
+    expect(preview.textContent).toContain(locale === "en"
+      ? "I added a longer message so you can compare line height and text spacing."
+      : "我添加了这条较长的消息，方便你比较行高和文字间距。");
+    expect(preview.textContent).toContain(locale === "en"
+      ? "The same rhythm carries through channels, threads, DMs, and Inbox."
+      : "频道、线程、私聊和收件箱使用相同的排版节奏。");
+    await click(button(host, locale === "en" ? "Larger" : "较大"));
+    await click(button(host, locale === "en" ? "Spacious" : "宽松"));
+    expect(document.documentElement.getAttribute("data-font-size")).toBe("larger");
+    expect(document.documentElement.getAttribute("data-conversation-density")).toBe("spacious");
+    expect(localStorage.getItem(FONT_SIZE_STORAGE_KEY)).toBe("larger");
+    expect(localStorage.getItem(CONVERSATION_DENSITY_STORAGE_KEY)).toBe("spacious");
+  });
   it("synchronizes storage changes, rejects unknown choices and keeps previews transient", async () => {
     initializeFontSizePreference();
     initializeConversationDensityPreference();
-    const host = await render(<ConversationDisplaySettings locale="en" />);
+    const host = await render(<ConversationDisplaySettings locale="en" name="Configured platform" />);
     await act(async () => {
       setFontSize("default");
       previewFontSize("larger");
@@ -424,7 +458,7 @@ describe("shared Buzz settings presentation", () => {
     expect(button(host, "Comfy").getAttribute("aria-pressed")).toBe("true");
   });
   it("keeps the live settings effective when device storage is unavailable", async () => {
-    const host = await render(<ConversationDisplaySettings locale="en" />);
+    const host = await render(<ConversationDisplaySettings locale="en" name="Configured platform" />);
     const denied = vi
       .spyOn(Storage.prototype, "setItem")
       .mockImplementation(() => {

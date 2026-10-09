@@ -1,5 +1,6 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503: extracted existing settings, not a second preference store.
 import type { ReactNode } from "react";
+import { Eye } from "lucide-react";
 import {
   translate,
   type PlatformLocale,
@@ -18,6 +19,7 @@ import {
   type FontSize,
 } from "../fontSizePreference";
 import { SegmentedControl } from "./segmented-control";
+import { SettingsOptionRow } from "./settings-option-group";
 
 const CONVERSATION_DENSITY_OPTIONS: readonly {
   value: ConversationDensity;
@@ -97,6 +99,7 @@ function ConversationPreview({ locale }: { locale: PlatformLocale }) {
         data-testid="conversation-preview-surface"
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
+          <Eye aria-hidden="true" className="size-3" />
           {translate(locale, "platform.settings.preview")}
         </span>
         <div className="p-4" data-testid="conversation-preview-content">
@@ -126,21 +129,17 @@ function ConversationPreview({ locale }: { locale: PlatformLocale }) {
 /** App-wide type sizing and conversation-specific spacing controls. */
 export function ConversationDisplaySettings({
   locale,
+  name,
 }: {
   locale: PlatformLocale;
+  name: string;
 }) {
   const density = useConversationDensity();
   const fontSize = useFontSize();
 
   return (
-    <div
-      className="[container-type:inline-size]"
-      data-testid="conversation-display-group"
-    >
-      <div
-        className="flex min-h-16 flex-wrap items-center justify-between gap-4 px-4 py-3 text-sm"
-        data-testid="font-size-row"
-      >
+    <div data-testid="conversation-display-group">
+      <SettingsOptionRow data-testid="font-size-row">
         <div className="min-w-0">
           <p className="text-sm font-medium">
             {translate(locale, "platform.settings.fontSize")}
@@ -165,11 +164,8 @@ export function ConversationDisplaySettings({
           testId="font-size-control"
           value={fontSize}
         />
-      </div>
-      <div
-        className="flex min-h-16 flex-wrap items-center justify-between gap-4 px-4 py-3 text-sm"
-        data-testid="conversation-density-row"
-      >
+      </SettingsOptionRow>
+      <SettingsOptionRow data-testid="conversation-density-row">
         <div className="min-w-0">
           <p className="text-sm font-medium">
             {translate(locale, "platform.settings.conversationDensity")}
@@ -178,7 +174,7 @@ export function ConversationDisplaySettings({
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            {translate(locale, "platform.settings.densityDescription")}
+            {translate(locale, "platform.settings.densityDescription", { name })}
           </p>
         </div>
         <SegmentedControl
@@ -194,7 +190,7 @@ export function ConversationDisplaySettings({
           testId="conversation-density-control"
           value={density}
         />
-      </div>
+      </SettingsOptionRow>
       <ConversationPreview locale={locale} />
     </div>
   );

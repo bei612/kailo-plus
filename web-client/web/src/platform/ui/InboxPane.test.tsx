@@ -289,6 +289,9 @@ it("loads owned Agent activity through the admitted author query, never foreign 
   try {
     await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
     await vi.waitFor(()=>expect(host.textContent).toContain("Real owned Agent result"));
+    const label = host.querySelector(`[data-testid="home-inbox-item-${event.id}"] [data-inbox-type-label]`)!;
+    expect(label.textContent).toBe("Channel update in#Channel");
+    expect(label.textContent).not.toContain("Thread");
     const avatar = host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [data-avatar-shape]`)!;
     expect(avatar.getAttribute("data-avatar-shape")).toBe("squircle");
     expect(avatar.classList.contains("h-9")).toBe(true);

@@ -58,6 +58,12 @@ test("mention rows use the channel list when feed channelName is blank", () => {
   });
 });
 
+test("owned top-level activity keeps the original channel label while only replies are threads", () => {
+  const [topLevel] = buildInboxItems({ channels, feed: feedWith({ activity: [item({ category: "activity" })] }) });
+  assert.deepEqual(getInboxTypeLabel(topLevel), { text: "Channel update in", channelLabel: "buzz-bugs" });
+  assert.deepEqual(getInboxTypeLabel(topLevel, "zh-CN"), { text: "频道更新于", channelLabel: "buzz-bugs" });
+});
+
 test("DM rows use directory type, merge roots and select the earliest unread message", () => {
   const events = [1, 2, 3].map(index => item({ id: `dm-${index}`, category: "activity", createdAt: index,
     channelId: DM_CHANNEL_ID, tags: [["h", DM_CHANNEL_ID], ...(index === 3 ? [["e", "dm-1", "", "reply"]] : [])] }));

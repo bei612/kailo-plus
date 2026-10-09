@@ -13,6 +13,7 @@ import {
   inboxThread,
   matchesInbox,
   loadOwnedAgentIdentities,
+  getInboxTypeLabel,
 } from "@client-kit/platform/inbox";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
@@ -335,6 +336,8 @@ export function InboxPane({
           const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
           const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
           const sender = member?.displayName || truncatePubkey(item.pubkey);
+          const typeLabel = getInboxTypeLabel({ item, groupItems: row.items, senderLabel: sender,
+            channelLabel: snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null }, locale);
           const isSenderAgent = snapshot.agentPubkeys.has(item.pubkey);
           const read = isRead(row);
           const mark = () => reads.write(inboxReadContexts(row.items.map(readItem), !read));
@@ -345,8 +348,8 @@ export function InboxPane({
               avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
               timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
-              label={item.channelType === "dm" ? t("inbox.dmFrom", { sender }) : t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
-              channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
+              label={typeLabel.text}
+              channel={typeLabel.channelLabel}
               openLabel={t("inbox.openItem", { sender })}
               onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
               preview={<><MessageContent content={item.content} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}

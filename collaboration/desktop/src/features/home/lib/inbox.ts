@@ -2,10 +2,6 @@ import {
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
-import {
-  getThreadReference,
-  isBroadcastReply,
-} from "@/features/messages/lib/threading";
 import type {
   Channel,
   FeedItem,
@@ -15,7 +11,9 @@ import type {
 } from "@/shared/api/types";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
-import { aggregateInbox, inboxConversation } from "@client-kit/platform/inbox";
+import { aggregateInbox, inboxConversation, feedHeadline, getInboxTypeLabel } from "@client-kit/platform/inbox";
+export { getInboxTypeLabel, isThreadActivityItem } from "@client-kit/platform/inbox";
+export type { InboxTypeLabel } from "@client-kit/platform/inbox";
 import type { TimelineMessage } from "@/features/messages/types";
 
 export type { InboxFilter } from "@client-kit/platform/react/inbox-surface";
@@ -43,11 +41,6 @@ export type InboxItem = {
   subject: string;
   timestampLabel: string;
   unreadCount: number;
-};
-
-export type InboxTypeLabel = {
-  text: string;
-  channelLabel: string | null;
 };
 
 export type InboxReply = {
@@ -85,10 +78,6 @@ const fullTimeFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-function feedHeadline(item: FeedItem) {
-  return item.category === "mention" ? "Mention" : "Channel update";
-}
-
 function feedPreview(item: FeedItem) {
   const content = item.content.trim();
   if (content.length > 0) {
@@ -100,15 +89,6 @@ function feedPreview(item: FeedItem) {
 
 function categoryLabelFor(category: FeedItemCategory) {
   return category === "mention" ? "Mention" : "Activity";
-}
-
-export function isThreadActivityItem(item: FeedItem) {
-  if (item.category !== "activity") {
-    return false;
-  }
-
-  const thread = getThreadReference(item.tags);
-  return thread.parentId !== null && !isBroadcastReply(item.tags);
 }
 
 function resolveItemChannel(
@@ -134,36 +114,6 @@ function resolveGroupChannel(
   }
 
   return resolveItemChannel(primaryItem, channelById);
-}
-
-export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
-  const channelName = item.channelLabel;
-
-  if (item.item.channelType === "dm") {
-    return { text: item.senderLabel ? `DM from ${item.senderLabel}` : "DM", channelLabel: null };
-  }
-
-  const primaryCategory = item.item.category;
-  if (primaryCategory === "mention") {
-    return {
-      text: channelName ? "Mentioned in" : "Mentioned",
-      channelLabel: channelName,
-    };
-  }
-
-  if (isThreadActivityItem(item.item)) {
-    return {
-      text: channelName ? "Thread in" : "Thread",
-      channelLabel: channelName,
-    };
-  }
-
-  return {
-    text: channelName
-      ? `${feedHeadline(item.item)} in`
-      : feedHeadline(item.item),
-    channelLabel: channelName,
-  };
 }
 
 export function formatInboxTypeLabel(item: InboxItem) {

@@ -5270,3 +5270,111 @@ node <各既有工程>/node_modules/typescript/bin/tsc --noEmit -p <各既有工
 9 源码与仅本节 owned EOF 冻结交 root 精确提交，checkpoint 继承删改不纳入。
 本批未构建/部署、对应新版浏览器截图 0；已上线 c309 的正常 SSO 图仅证明其部署版本，
 不覆盖本批读未读恢复。未运行本批 full、Windows/Mobile 设备验收，不声明全部原版还原或生产就绪。
+
+### 2026-10-09：原会话外观行与 Inbox 类型共源恢复（源码候选未部署）
+
+本批 12 个源码/原检查/同源词条路径，+282/-87。源码冻结交 root，未自行提交、构建或部署。
+关联 `DD-40`、`DD-53`、`DD-75`、`DD-111`、`SS-WEB-RELAY` 及用户固定官方原版恢复要求。
+
+#### 权威、影响面、副作用与边界
+
+1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ConversationDisplaySettings/ConversationPreview`
+   与 `desktop/src/features/home/lib/inbox.ts::feedHeadline/getInboxTypeLabel/isThreadActivityItem`。
+   复用原 `SettingsOptionRow`、Eye、预览文案和全部类型分支，不新设计控件或布局。
+2. 影响面：共享 Appearance/Inbox 模块、Native 原 lib 转用同一 formatter 与列表消费者、Web
+   Inbox 实际行消费者、既有专项、TS 单源词条生成的 Dart 投影。所有 `ConversationDisplaySettings`
+   调用处均传现有运行配置 `name`；`DD-111` 品牌差异不改成硬编码。schema/API/数据库/执行权威未改。
+3. 副作用：formatter 只消费宿主已经准入的事件、目录频道名和资料，不扩大 feed admission、增加筛选
+   入口、发现权限或写动作。原本机偏好格式/生命周期不变，不增加第二份账号、权限、读状态或工作流权威。
+4. 边界：保留原项目引用校验、DM 优先、mention/needs_action、仅标记回复且非 broadcast 才算线程、
+   无频道名、空 sender、未知 kind/default、空正文与根 subject 回退；不猜身份。缺生产者的项目/提醒等
+   分支仅原显示函数保留，不代表实际 feed 已接通。UNKNOWN/拒绝入口没有因本批变为成功。
+
+#### 逐项原版差异
+
+- `ConversationDensityPreviewMessage` 和既有 `SettingsOptionRow` 对固定原函数正文比较一致。
+  会话字号/密度行接回原 `SettingsOptionRow`，移除自行包出的 container/flex 布局；会话预览补回原 Eye。
+  英文密度说明、第二段预览和第三段中的 DMs 直接恢复原文，中文沿单源映射；品牌只用运行配置 `{name}`。
+- 原 `desktop/src/features/home/lib/projectInbox.ts::getProjectInboxReference/isProjectInboxItem` 的纯显示
+  引用判断与原 inbox formatter 迁入共享 `src/inbox.ts`，原全部 kind/category 分支保留。
+  Native 删除重复 formatter，`InboxListPane` 和 Web `InboxPane` 均实际消费共享函数与当前 locale。
+  修复 Web 顶层活动错误套用 “Thread in”；真实线程、mention 和 DM 不被错误替换。
+- 22 个原类型词条、3 个已有外观词条由 TS 权威同步到 Dart；原生成器运行，正式生成文件与候选 cmp 0。
+  `reason_text.dart` cmp 0，未改 contracts。Mobile 没有 densityDescription 的页面调用方，不造新页面。
+- 本批不是整个 Inbox 双语闭合：Native `lib/inbox.ts::formatInboxTypeLabel` 仍默认英文；
+  `ui/InboxDetailPane.tsx:343` 实际调用未传 locale，336–349 的 Thread/Message/Open 提示仍原英文。
+  `ui/HomeView.tsx:486–507` 的 Home feed unavailable/Try again 和 625–654 的回复错误/You 仍原英文，
+  未在这 12 路径内修复；不能称 Native Home 全面中文闭合。
+  原详情页其余迁移、缺失 feed 生产者与原 8 筛选完整能力继续列为恢复项，不生成空入口。
+
+#### 实际命令与正反结果
+
+复用 `kailo-agent-receipt-xvkujx`，实际 cgroup 4 CPU/8 GiB，Node heap 3072 MiB、Vitest 1 worker，串行。
+执行前仅 sleep、host available 约 20 GiB、memory pressure 0；IO full 高达 66.97%，不改原超时。
+正式 12 输入与候选 cmp 全 0；共享生产模块及两宿主真实已安装包副本同步，未造 stub/声明补丁。
+最终 `memory.events` oom/oom_kill 仍旧基线 2/2，max 16751，无本批增量。
+
+```text
+pnpm --dir client-kit/ts/platform exec vitest run test/settings.test.tsx test/inbox.test.tsx --maxWorkers=1
+pnpm --dir web-client/web exec vitest run src/platform/ui/InboxPane.test.tsx --maxWorkers=1
+cd collaboration/desktop && node --import ./test-loader.mjs --experimental-strip-types --test src/features/home/lib/inbox.test.mjs
+node client-kit/ts/platform/node_modules/typescript/bin/tsc --noEmit -p client-kit/ts/platform
+node client-kit/ts/platform/node_modules/typescript/bin/tsc --noEmit -p client-kit/ts/platform/tsconfig.test.json
+node web-client/web/node_modules/typescript/bin/tsc --noEmit -p web-client/web
+node collaboration/desktop/node_modules/typescript/bin/tsc --noEmit -p collaboration/desktop
+PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py
+PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py --check
+```
+
+- 首批 78653 terminal 1：共享 Inbox 17/17；Settings fork 启动超时、0 case；Web 启动超时、0 case。
+  Native 16/16；四 types 与生成/检查全部 exit 0。启动失败不算生产破坏命中，也不隐藏。
+- 仅一次获准热缓存补验 76971：共享 Settings 24 + Inbox 17 = 41/41、exit 0；Web 仍启动超时
+  0 case、exit 1，整批 terminal 1。未改 timeout/断言、未重复求绿，Web DOM 消费者专项本批未验。
+- 私有实际生产破坏 33115：移除原 Eye、将原顶层活动回退误标为 Thread；共享真实 3 failed/38 passed、
+  exit 1（中/英 Eye 两项、类型分支一项），Native 1 failed/15 passed、exit 1（真实 buildInboxItems
+  输出后的原 formatter 调用）。没有仅破坏检查自身或用 mock 掩盖生产模块。
+- 精确还原源与两个已安装副本，cmp 全 0；58448 terminal 0：共享 41/41、Native 16/16、
+  i18n check exit 0。候选正式 12 输入再次 cmp 全 0，owned diff --check 0、source patch reverse check 0。
+- 原 SDK 与 I/O 窗口已明确释放给 Wren；无本批在途工具链。不运行本批 full、镜像、Windows/Mobile 验收。
+
+原始目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/appearance-original.osJLfK`。
+日志：`shared-positive.log`、`web-positive.log`、`native-positive.log`、`{shared,shared-test,web,native}-types.log`、
+`i18n-{generate,check}.log`、`{shared,web}-warm-positive.log`、`{shared,native}-negative.log`、
+`{shared,native}-restored.log`、`i18n-restored-check.log`。source patch SHA256
+`29b96e07514ef2e3745352dd143e0756ee08e253043ca28917ebc8dcfc98ffce`；输入清单 SHA256
+`953ec23e1487024f509b8c3588081dd6baf48d02cbd9da5b9163f82bbd35ed88`。
+
+#### 当前固定主干全树比较点
+
+复用已有 `export_main_diff.py`/原 `tools/upstream_manifest.py diff`，固定 main
+`e5c6ada467063984a4c7f644e17e21f993a5be58` 对固定官方 779af，真实 exit 0；不包含这 12 个未提交候选。
+两仓库 `git ls-tree -r` 全树 union 5314：官方 5195、collaboration 2874（排除自有 fork）。
+同路径模式/type/blob 一致 1977；变动路径 3337 = M 778 + D 2440 + A 119。
+原工具 -M patch 统计为 3329 files、+37724/-746261、1043580 行；rename 合并使其文件数与 union 变动路径数不同。
+
+四类：原样保留 1977（仅源码 blob 实证）、共享迁移 111（110 个历史窄证据目的地 blob 逐个未变，
+另 1 个完整 forcedUnreadStore 迁移），整文件已授权治理改造 0、缺失需恢复/尚未证明保留或授权 3226。
+新 store 迁移原 blob `e2b626042afc4a8e72cad92b90b4d759bb2e4517`→共享
+`375849a2e84b74825d0e0deda5658f1f2662317a`，全文仅原 hasOwn 后的类型 `!` 差异；Native 真实转导出。
+3226 是恢复或逐项授权证据队列，不是已证业务缺功能数量。未逐处验收，分类不是完成率。
+旧 a8c 的 5314/1978/110/3226 明确保留为历史，不能当本次主干快照。
+
+完整原件在上述目录的父目录：`collaboration-e5c6ada46706.patch` SHA256
+`838e10cd731855fa479eea0ae1ab41b1001379ae954b746e93458d3dd7f2826d`；
+`collaboration-e5c6ada46706.classification.tsv` SHA256
+`c2b611d26a79bade5cebd94534d4340792de2ef2fe73612f7db1da2f7cabda4e`。
+TSV 14 列保留双方 commit/path/change、四类、双方 mode/type/blob、迁移目的地、证据与历史分类。
+不能把原路径删除直接当功能缺失，也不能把未知差异都写成授权治理。
+
+#### 实拍与仍未覆盖的范围
+
+独立冻结回执 `web-client/fork/verify/screenshots-20261009-c309-settings-readonly.md` 为旧 c309 的 8 个有效状态。
+另 5 个 c309 实拍均已打开：同原件目录 `kailo-ui-20261009-mainc309-` 前缀下的
+`inbox-readonly.png`、`people-readonly.png`、`agents-readonly.png`、`agent-definition-readonly.png`、
+`inbox-filter-readonly.png`，分别为真实 Inbox、2 个已准入成员、空 Installation/1 个 Definition、
+原定义版本读取和仅 5 个已接入筛选。不是完整原 Agent profile 或原 8 筛选恢复。
+独立 `screenshots-20261009-5ba-read-menu.md` 为新 5ba 的 8 张已打开实拍，真实他人既有消息
+正常菜单未读→已读、BFF PUT 200/version 36 与非成员拒绝，最后恢复当前用户已读状态。
+这些线上图片均不含本批外观/Inbox 源码；新版候选浏览器实拍仍 0，不能称 UI 已发布或 100% 还原。
