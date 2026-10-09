@@ -387,6 +387,18 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Native login is not permitted", http.StatusForbidden)
 		return
 	}
+	// Login identity is not a business bearer. A controlled platform binding
+	// requires the separately verified upstream access JWT, never the ID token
+	// or Cells' local refreshable JWT. Verify before minting the native code.
+	var humanAccess *oidc.IDToken
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() != nil {
+		humanAccess, err = provider.Verifier(&oidc.Config{ClientID: c.Config.ClientID}).Verify(ctx, token.AccessToken)
+		if err != nil || token.AccessToken == raw || humanAccess.Issuer != id.Issuer || humanAccess.Subject != id.Subject ||
+			!humanAccess.Expiry.After(time.Now()) {
+			http.Error(w, "Native action identity is unavailable", http.StatusUnauthorized)
+			return
+		}
+	}
 	if challenge == "" {
 		login, err := hydra.CreateLogin(ctx, config.DefaultOAuthClientID, []string{"openid", "profile", "offline"}, nil)
 		if err != nil || login == nil || login.GetChallenge() == "" {
@@ -416,6 +428,16 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 	if err != nil || confirmed.String() != redirect.String() || login.GetChallenge() != before.GetChallenge() {
 		http.Error(w, "Invalid native callback", http.StatusUnauthorized)
 		return
+	}
+	// Only the confirmed native callback may establish the encrypted backend
+	// credential. No raw upstream token enters frontend JSON or localStorage.
+	if humanAccess != nil {
+		if login.GetSessionID() == "" || login.GetSessionID() != before.GetSessionID() ||
+			auth.SaveNativeHumanToken(r.WithContext(ctx), w, token.AccessToken,
+				humanAccess.Issuer, humanAccess.Subject, c.Config.ClientID, user.Uuid, login.GetSessionID(), humanAccess.Expiry) != nil {
+			http.Error(w, "Native action identity is unavailable", http.StatusUnauthorized)
+			return
+		}
 	}
 	values := redirect.Query()
 	values.Set("code", code)

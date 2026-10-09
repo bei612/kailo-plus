@@ -87,6 +87,13 @@ func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) err
 
 func (h *Handler) PromoteVersion(req *restful.Request, resp *restful.Response) error {
 
+	proofs := req.Request.Header.Values("X-Kailo-Native-Execution")
+	req.Request.Header.Del("X-Kailo-Native-Execution")
+	// A write executor is not installed by the HUMAN admission producer. Do not
+	// let an unconsumed platform proof reach native reads, diagnostics or copy.
+	if len(proofs) != 0 {
+		return errors.WithStack(errors.StatusForbidden)
+	}
 	ctx := req.Request.Context()
 	nodeUuid := req.PathParameter("Uuid")
 	r, e := h.UuidClient(true).ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: nodeUuid}})
@@ -98,6 +105,9 @@ func (h *Handler) PromoteVersion(req *restful.Request, resp *restful.Response) e
 	versionUuid := req.PathParameter("VersionId")
 	input := &rest.PromoteParameters{}
 	if err := req.ReadEntity(input); err != nil {
+		return err
+	}
+	if handled, err := h.platformPromoteVersion(req, resp, targetNode, versionUuid, input.Publish); handled {
 		return err
 	}
 

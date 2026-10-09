@@ -24,6 +24,7 @@ import (
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/auth/claim"
 	clientgrpc "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/permissions"
@@ -43,6 +44,8 @@ type nativeOIDCFixture struct {
 	badNonce, revokeDuringExchange        bool
 	denyNativePolicy, unknownNativePolicy bool
 	user                                  *idm.User
+	accessMode                            string
+	accessToken                           string
 	exchanges, nativeCodes                int
 }
 
@@ -137,7 +140,37 @@ func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 				w.WriteHeader(500)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "external-token-never-forwarded", "token_type": "Bearer", "id_token": raw})
+			access := "external-token-never-forwarded"
+			if f.accessMode != "" && f.accessMode != "opaque" {
+				accessClaims := map[string]any{"iss": f.issuer.URL, "sub": f.subject, "aud": f.connector.Config.ClientID,
+					"exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "kailo_access": "native-component"}
+				switch f.accessMode {
+				case "wrong-subject":
+					accessClaims["sub"] = "another-human"
+				case "wrong-audience":
+					accessClaims["aud"] = "another-native-audience"
+				case "expired":
+					accessClaims["exp"] = time.Now().Add(-time.Minute).Unix()
+				}
+				payload, _ := json.Marshal(accessClaims)
+				signed, err := signer.Sign(payload)
+				if err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				access, err = signed.CompactSerialize()
+				if err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				if f.accessMode == "id-token" {
+					access = raw
+				}
+			}
+			f.accessToken = access
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": access, "token_type": "Bearer", "id_token": raw})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -200,7 +233,7 @@ func (f *nativeOIDCFixture) Invoke(ctx context.Context, method string, args any,
 			return errors.New("unknown native challenge")
 		}
 		out := reply.(*pauth.GetLoginResponse)
-		out.Challenge, out.ClientID, out.RequestURL = "native-challenge", config.DefaultOAuthClientID, "https://cells.example.invalid/oauth2/auth"
+		out.Challenge, out.ClientID, out.RequestURL, out.SessionID = "native-challenge", config.DefaultOAuthClientID, "https://cells.example.invalid/oauth2/auth", "native-session"
 	case "/auth.LoginChallengeCode/LoginChallengeCode":
 		in := args.(*pauth.LoginChallengeCodeRequest)
 		if in.Challenge != "native-challenge" || in.Claims["subject"] != f.user.Uuid || in.Claims["name"] != f.user.Login || in.Claims["email"] != f.user.Attributes["email"] || in.Claims["authSource"] != f.connector.ID {
@@ -208,7 +241,7 @@ func (f *nativeOIDCFixture) Invoke(ctx context.Context, method string, args any,
 		}
 		f.nativeCodes++
 		out := reply.(*pauth.LoginChallengeCodeResponse)
-		out.Code, out.LoginResponse = "native-one-use-code", &pauth.GetLoginResponse{Challenge: "native-challenge", ClientID: config.DefaultOAuthClientID, RequestURL: "https://cells.example.invalid/oauth2/auth"}
+		out.Code, out.LoginResponse = "native-one-use-code", &pauth.GetLoginResponse{Challenge: "native-challenge", ClientID: config.DefaultOAuthClientID, RequestURL: "https://cells.example.invalid/oauth2/auth", SessionID: "native-session"}
 	default:
 		return errors.New("unexpected native RPC: " + method)
 	}
@@ -331,6 +364,97 @@ func TestKailoOIDCOneUseExternalCode(t *testing.T) {
 	}
 	if w := f.callback(cookie, state); w.Code != http.StatusUnauthorized || f.nativeCodes != 1 {
 		t.Fatal("replayed external code minted another native code")
+	}
+}
+
+func TestKailoOIDCNativeActionCredential(t *testing.T) {
+	for _, mode := range []string{"valid", "opaque", "wrong-subject", "wrong-audience", "expired", "id-token"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newNativeOIDCFixture(t)
+			f.accessMode = mode
+			if err := config.Set(f.ctx, map[string]any{"bindingId": "controlled"}, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+			cookie, state := f.begin()
+			response := f.callback(cookie, state)
+			if mode != "valid" {
+				if response.Code != http.StatusUnauthorized || f.nativeCodes != 0 {
+					t.Fatalf("untrusted access identity minted a native code: status=%d codes=%d", response.Code, f.nativeCodes)
+				}
+				for _, c := range response.Result().Cookies() {
+					if c.Name == "cells_native_human" && c.MaxAge >= 0 {
+						t.Fatal("refused access token established a credential")
+					}
+				}
+				return
+			}
+			if response.Code != http.StatusSeeOther || f.nativeCodes != 1 {
+				t.Fatalf("confirmed real access JWT did not finish login: %d %s", response.Code, response.Body.String())
+			}
+			var humanCookie *http.Cookie
+			for _, c := range response.Result().Cookies() {
+				if c.Name == "cells_native_human" {
+					humanCookie = c
+				}
+			}
+			if humanCookie == nil || !humanCookie.HttpOnly || !humanCookie.Secure || humanCookie.Path != "/" ||
+				humanCookie.SameSite != http.SameSiteStrictMode || humanCookie.MaxAge <= 0 ||
+				strings.Contains(humanCookie.Value, f.accessToken) || strings.Contains(response.Body.String(), f.accessToken) {
+				t.Fatal("upstream credential was not native-session encrypted/backend-only")
+			}
+			for _, scenario := range []string{"current", "same-session-refresh", "another-session", "another-user", "another-connector", "native-lock", "link-revoked", "audience-changed"} {
+				t.Run(scenario, func(t *testing.T) {
+					ctx := f.ctx
+					claims := claim.Claims{Subject: f.user.Uuid, Name: f.user.Login, SessionID: "native-session", AuthSource: f.connector.ID}
+					connector := f.connector
+					switch scenario {
+					case "same-session-refresh":
+						claims.Expiry = time.Now().Add(time.Hour)
+					case "another-session":
+						claims.SessionID = "another-native-session"
+					case "another-user":
+						claims.Subject = "another-user"
+					case "another-connector":
+						claims.AuthSource = "another-connector"
+					case "native-lock":
+						f.user.Attributes["locks"] = `["logout"]`
+						t.Cleanup(func() { delete(f.user.Attributes, "locks") })
+					case "link-revoked":
+						connector.Config.Users = nil
+					case "audience-changed":
+						connector.Config.ClientID = "rotated-audience"
+					}
+					if err := config.Set(ctx, []kailoOIDCConnector{connector}, "services", "pydio.web.oauth", "connectors"); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() {
+						_ = config.Set(ctx, []kailoOIDCConnector{f.connector}, "services", "pydio.web.oauth", "connectors")
+					})
+					r := httptest.NewRequest(http.MethodPost, "https://cells.example.invalid/n/versions", nil).WithContext(claim.ToContext(ctx, claims))
+					r.AddCookie(humanCookie)
+					actual, err := auth.NativeHumanToken(r)
+					allowed := scenario == "current" || scenario == "same-session-refresh"
+					if allowed && (err != nil || actual != f.accessToken) {
+						t.Fatalf("current native user/session cannot use the original bearer: %v", err)
+					}
+					if !allowed && (err == nil || actual != "") {
+						t.Fatal("changed/revoked native identity reused an upstream bearer")
+					}
+				})
+			}
+			for _, value := range []string{humanCookie.Value, "tampered-native-cookie"} {
+				r := httptest.NewRequest(http.MethodDelete, "https://cells.example.invalid/a/frontend/session", nil).WithContext(f.ctx)
+				r.AddCookie(&http.Cookie{Name: humanCookie.Name, Value: value})
+				w := httptest.NewRecorder()
+				if err := auth.ClearNativeHumanToken(r, w); err != nil {
+					t.Fatal(err)
+				}
+				cookies := w.Result().Cookies()
+				if len(cookies) != 1 || cookies[0].MaxAge >= 0 || strings.Contains(cookies[0].Value, f.accessToken) {
+					t.Fatal("logout retained the native credential")
+				}
+			}
+		})
 	}
 }
 

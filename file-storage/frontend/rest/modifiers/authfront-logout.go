@@ -39,6 +39,9 @@ func LogoutAuth(middleware frontend.AuthMiddleware) frontend.AuthMiddleware {
 		}
 
 		ctx := req.Request.Context()
+		if err := auth.ClearNativeHumanToken(req.Request, rsp.ResponseWriter); err != nil {
+			return err
+		}
 
 		accessToken, ok := session.Values["access_token"]
 		if !ok {

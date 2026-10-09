@@ -79,6 +79,95 @@ func TestAuthorizeActionUsesOriginalBindingPEP(t *testing.T) {
 	}
 }
 
+func TestNativeHumanActionUsesOriginalPrivateTransport(t *testing.T) {
+	const binding = "00000000-0000-4000-8000-000000000001"
+	const key = "00000000-0000-4000-8000-000000000002"
+	for _, scenario := range []string{"observe", "absent", "command", "resource", "denied", "unavailable", "redirect", "malformed", "trailing", "oversized", "ambiguous-intent", "wrong-key"} {
+		t.Run(scenario, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/token" {
+					user, secret, ok := r.BasicAuth()
+					if !ok || user != "binding-client" || secret != "fixture-only" || r.Header.Get("X-Kailo-Native-Human-Token") != "" {
+						t.Error("binding identity transport mixed HUMAN and SERVICE credentials")
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "service-only", "token_type": "Bearer", "expires_in": 60})
+					return
+				}
+				calls++
+				var request map[string]interface{}
+				if r.URL.Path != "/service/v1/adapter/human-action" || r.Method != http.MethodPost ||
+					r.Header.Get("Authorization") != "Bearer service-only" || r.Header.Get("X-Kailo-Native-Human-Token") != "real-human-access-proof" ||
+					json.NewDecoder(r.Body).Decode(&request) != nil || len(request) != 2 || request["bindingId"] != binding {
+					t.Error("original binding/HUMAN authenticated consumer was bypassed")
+				}
+				switch scenario {
+				case "absent":
+					w.WriteHeader(http.StatusNotFound)
+				case "denied":
+					w.WriteHeader(http.StatusForbidden)
+				case "unavailable":
+					w.WriteHeader(http.StatusServiceUnavailable)
+				case "redirect":
+					http.Redirect(w, r, "/disclose", http.StatusTemporaryRedirect)
+					return
+				case "malformed":
+					_, _ = w.Write([]byte("{"))
+					return
+				case "trailing":
+					_, _ = w.Write([]byte(`{} {"credential":"must-not-disclose"}`))
+					return
+				case "oversized":
+					_, _ = w.Write([]byte(strings.Repeat(" ", 4097)))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"submission": map[string]any{"operationId": key}})
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "client-secret")
+			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			d := Delivery{BindingID: binding, InstanceServiceUUID: key, CorePEPURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/token", ClientID: "binding-client", ClientSecretFile: secret,
+				RequestTimeout: "1s", MaxResponseBytes: 4096, ClientSecretMaxBytes: 128}
+			intent := map[string]interface{}{"idempotencyKey": key}
+			switch scenario {
+			case "command":
+				intent = map[string]interface{}{"command": map[string]interface{}{"idempotencyKey": key}}
+			case "resource":
+				intent = map[string]interface{}{"resolveResource": map[string]interface{}{"nativeRef": key}}
+			case "ambiguous-intent":
+				intent["command"] = map[string]interface{}{}
+			case "wrong-key":
+				intent["idempotencyKey"] = "another-request"
+			}
+			answer, exists, err := d.HumanAction(context.Background(), "real-human-access-proof", intent)
+			if scenario == "ambiguous-intent" || scenario == "wrong-key" {
+				if calls != 0 || err == nil || exists || answer != nil {
+					t.Fatal("invalid intent reached an authority")
+				}
+				return
+			}
+			if calls != 1 {
+				t.Fatalf("original intent was replayed or not sent: %d", calls)
+			}
+			if scenario == "absent" {
+				if err != nil || exists || answer != nil {
+					t.Fatal("authoritative absent AE was conflated with unavailable")
+				}
+			} else if scenario == "observe" || scenario == "command" || scenario == "resource" {
+				if err != nil || !exists || answer == nil {
+					t.Fatalf("exact original result was refused: %v", err)
+				}
+			} else if err == nil || exists || answer != nil || strings.Contains(err.Error(), "must-not-disclose") {
+				t.Fatal("uncertain/refused authority result authorized replay or leaked details")
+			}
+		})
+	}
+}
+
 func TestResolveRequiresOriginalHostOrigin(t *testing.T) {
 	for _, origin := range []string{"https://platform.example", "http://192.168.0.193:8080", "", "*", "https://platform.example/path", "https://user@platform.example", "https://platform.example?origin=other"} {
 		t.Run(origin, func(t *testing.T) {

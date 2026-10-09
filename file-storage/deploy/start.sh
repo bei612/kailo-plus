@@ -88,11 +88,20 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and set(delivery) == required, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
             canonical_uuid(delivery[key])
+        if 'workspaceId' in delivery:
+            canonical_uuid(delivery['workspaceId'])
+        if 'write' in delivery:
+            write = delivery['write']
+            require(isinstance(write, dict) and set(write) == {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native write metadata must match the original ActionCommand consumer')
+            canonical_uuid(write['resultExposurePolicyId'])
+            for key in ('actionVersion', 'resultExposurePolicyVersion'):
+                require(type(write[key]) is int and write[key] > 0, 'native write versions must be delivered')
+            require(isinstance(write['nativeType'], str) and write['nativeType'].strip() == write['nativeType'] != '', 'native write resource kind must be delivered')
         for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
             require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
         for key in ('maxResponseBytes', 'clientSecretMaxBytes'):

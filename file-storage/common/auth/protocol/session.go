@@ -143,31 +143,38 @@ func (d Delivery) Resolve(ctx context.Context, sessionID, nodeID, operation stri
 // receipt has a different closed response from an authorization decision and
 // cannot be mistaken for permission to continue reading or writing.
 func (d Delivery) request(ctx context.Context, payload map[string]interface{}, destination interface{}) error {
+	_, err := d.callback(ctx, d.CorePEPURL, "", payload, destination)
+	return err
+}
+
+// callback is shared by the existing PEP and native HUMAN ActionCommand
+// consumers. The endpoint is selected by these methods, never by the browser.
+func (d Delivery) callback(ctx context.Context, target, humanToken string, payload map[string]interface{}, destination interface{}) (int, error) {
 	if err := d.validate(); err != nil {
-		return err
+		return 0, err
 	}
 	timeout, _ := time.ParseDuration(d.RequestTimeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	file, err := os.Open(d.ClientSecretFile)
 	if err != nil {
-		return errors.New("protocol service credential delivery unavailable")
+		return 0, errors.New("protocol service credential delivery unavailable")
 	}
 	secret, err := io.ReadAll(io.LimitReader(file, d.ClientSecretMaxBytes+1))
 	file.Close()
 	if err != nil || int64(len(secret)) > d.ClientSecretMaxBytes || len(strings.TrimSpace(string(secret))) == 0 {
-		return errors.New("invalid protocol service credential delivery")
+		return 0, errors.New("invalid protocol service credential delivery")
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("protocol redirect refused") }}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.OIDCTokenURL, strings.NewReader("grant_type=client_credentials"))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.SetBasicAuth(d.ClientID, strings.TrimSpace(string(secret)))
 	response, err := client.Do(request)
 	if err != nil {
-		return errors.New("protocol service identity unavailable")
+		return 0, errors.New("protocol service identity unavailable")
 	}
 	var token struct {
 		AccessToken      string `json:"access_token"`
@@ -178,24 +185,31 @@ func (d Delivery) request(ctx context.Context, payload map[string]interface{}, d
 		NotBeforePolicy  int64  `json:"not-before-policy,omitempty"`
 	}
 	if err = decode(response, d.MaxResponseBytes, &token); err != nil {
-		return err
+		return 0, err
 	}
 	if token.AccessToken == "" || !strings.EqualFold(token.TokenType, "Bearer") || token.ExpiresIn <= 0 {
-		return errors.New("invalid protocol service identity")
+		return 0, errors.New("invalid protocol service identity")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	request, err = http.NewRequestWithContext(ctx, http.MethodPost, d.CorePEPURL, bytes.NewReader(data))
+	if int64(len(data)) > d.MaxResponseBytes {
+		return 0, errors.New("protocol request exceeds controlled bound")
+	}
+	request, err = http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(data))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	if humanToken != "" {
+		request.Header.Set("X-Kailo-Native-Human-Token", humanToken)
+	}
 	response, err = client.Do(request)
 	if err != nil {
-		return errors.New("protocol PEP unavailable")
+		return 0, errors.New("protocol authority unavailable")
 	}
-	return decode(response, d.MaxResponseBytes, destination)
+	status := response.StatusCode
+	return status, decode(response, d.MaxResponseBytes, destination)
 }

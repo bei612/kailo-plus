@@ -2086,3 +2086,135 @@ partial native history was reported as complete: <nil>
 稳定操作回执。故本批不猜 key/TTL、不启用 generic write/share 或完整 FILE_STORAGE；
 原 Mongo 跨 collection Job 存活性、claim 安全退休/失联对账、条件删除原子性与
 分享多 RPC UNKNOWN 仍保留发布阻断。版本读取修复不代表 uploader 或跨服务 E2E。
+
+## 2026-10-09 原 PromoteVersion 的 HUMAN 准入生产者与真实 HTTP 观察
+
+本批只交付原生已持久 draft 的准入生产者及观察消费者，不是 write executor、
+完整 uploader 或 FILE_STORAGE 批准。源码范围为 12 路径（11 个 Go 文件及原
+`deploy/start.sh`），相对当前 main 新增 1041 行、删除 16 行；本回执另计。
+继承的 `deploy/compose.yaml` 不属于本批。未更改原页面、数据库或部署任何服务。
+
+### 四步影响结论及固定来源
+
+1. 权威：`.design/07` §2 的 `file_storage.write@v1 → update` 与 §5 原
+   COMPONENT_ACTION/Temporal 接缝是已有要求；当前执行者缺失属于需恢复项，
+   不据此把一期永久缩为只读。DD-89/93、SS-CEL-MATERIALIZATION 保持原
+   native Node/Task/Version 与正文权威；Core 只收原 ActionCommand 的引用。
+2. 影响：原 `NativeKailoOIDC` 回调、native session、两条原 logout 调用方、
+   `Handler.PromoteVersion` 与原 binding callback transport；没有新增上传路由、
+   队列、账号、权限目录或任务账本。独立无 platform 投递仍走原 copy/ACL；
+   绑定模式不因凭据缺失退回该路径。公共 write schema 由主线独立生成验收，
+   本批实际消费五字段 ContentReference，不自建 schema 或批准目录。
+3. 副作用：只接受独立验签的真实上游 access JWT，不借 ID token、Cells 本地
+   HS256 JWT、SERVICE 身份或发起者身份。credential 在原 key 加密的 native
+   HttpOnly/Secure/Strict Cookie 内，绑定现有 native user、session、connector
+   和 token expiry；同 session 刷新不延长上游有效期，退出清除该 credential。
+   每次原 Core callback 仍验证 SERVICE transport 及 HUMAN proof。两者不进入
+   页面 JSON、Task.RunParameters 或诊断正文；未消费的 native execution proof
+   在原 route 任何 ReadNode 前摘除并拒绝。
+4. 边界：单个 canonical Idempotency-Key 先走原观察，只有权威 404 才允许确认
+   原 draft owner/location 后提交一次原 ActionCommand；观察不可用、提交 ACK
+   丢失均不 copy、不换 key、不重复提交。目标先由原 current user/scope Resource
+   查询解析，冻结资源版本、binding 实例/scope、原 draft revision 及原 Publish
+   flag。来源资源缺失不能伪造新 Resource。命令 opaque 引用精确编码 node/publish，
+   重复键、未知字段及非 bool 均拒绝；原 revision 保留 opaque 字符串能力。
+
+固定官方源码为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`，本轮只读 git
+核验其完整路径和符号：
+
+- `gateway/restv2/api-versions.go::Handler.PromoteVersion/promoteDraftVersion/publishDraftNode`：
+  原 Promote 是 draft copy，Publish 是另一原 UserMeta 操作；只有实际 Publish
+  成功才可设置 Published，版本存在本身不证明那次发布完成。
+- `common/nodes/version/handler-version.go::Handler.routeUploadToContentRevision` 与
+  `data/versions/grpc/handler.go::Handler.CreateVersion`：原 VersionUuid 可由调用方
+  提供，非空时不强制 UUID。因此仅 node/key 保留其既定 UUID 校验，不额外削减
+  nativeRevision 的 opaque 语义。
+- `idm/oauth/grpc/handler.go::Handler.LoginChallengeCode`：复用实际 native login
+  session，不新建第二会话权威。
+
+COMPLETED 只消费原 Core producer 的三个已定终态之一：ALLOWED/DISPATCHED、
+nativeType=version、真实不同于 draft 的 VersionId、原 HeadVersion owner/非 draft
+全部成立，随后沿原 UuidClient/原 ACL 以显式 StatFlagNone 真正回读当前 Node。
+拒绝不可查、异 UUID、目录及撤权结果，不返回调用前快照。没有独立 publish 因果
+receipt 时 publish=true 明确拒绝；不从请求推断 Published。原 producer 未终态时
+省略 terminalStatus 才返回 202；显式 UNKNOWN/RUNNING/未来枚举/null/空值等不
+冒充 pending，FAILED/CANCELED 拒绝。运行中/结果不明不填 TaskID 充当 nativeId。
+
+按 `06` §4，认证/引用失配属于 DENIED，配置/binding/secret 缺失属于 PRECONDITION，
+响应或请求超过已投递上界属于 LIMIT，确定 FAILED/CANCELED/冲突保留 CONFLICT，
+不明外部结果保留 UNKNOWN、不得重放；执行链未开放属于 BLOCKED。当前只验证
+不明 ACK 不重放，原 uploader 的 UNKNOWN 呈现尚无真实消费者验收，不能据后端
+错误返回声称前端六类状态已经全部闭合。
+
+### 实际命令、失败及还原
+
+复用原 `kailo-cells-native-check-lftow7`，Go 1.26.8、UID 1000、4 CPU/8 GiB、
+无额外 swap；镜像 `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+原候选 `codex-cells-native-identity-20261005.LfTow7/apps/file-storage` 挂到
+`/workspace/file-storage`，独立原缓存投递 `/cache/mod`、`/cache/build`。
+执行前实查无其他 Go/Cargo 编译、MemAvailable 约 24.7 GiB、memory pressure=0，
+回读 cgroup 4 CPU/8 GiB/无额外 swap；本窗口峰值 2632499200 字节、OOM=0。
+
+最终正向、唯一生产破坏及还原复验共用原五包目标：
+
+```sh
+sudo -n docker exec -e GOMODCACHE=/cache/mod -e GOCACHE=/cache/build \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  go test -mod=readonly ./common/auth/protocol ./frontend/web ./gateway/restv2 \
+  ./frontend/rest ./frontend/rest/modifiers \
+  -run 'Test(AuthorizeAction|NativeHumanAction|Resolve|KailoOIDC|NativePromote|NativeActor|NativeIndependent)' \
+  -count=1 -v
+```
+
+- 79495 exit1：最初漏 working/data 投递，原 init 拒绝目录，未进入业务检查。
+- 60232 exit1：原 native OIDC policy fixture 缺真实 PolicyEngine RPC，7 子项拒绝；
+  后补原生成服务 stub 的精确 native user/login allow，没有放宽生产策略。
+- 98563 exit1：原 response 未提供 Content-Type 协商，7 子项 406；另两包因
+  GOPROXY=off 缺锁定依赖 setup failed。随后经批准沿原正常 Go proxy 获取
+  go.sum 固定依赖及其锁定传递依赖，未改 go.mod/go.sum，不能称纯离线。
+- 15349 exit1：真实 MIME 协商揭出 Cells 全局 ProtoEntityReaderWriter 对 pending
+  map 断言 proto.Message 的真实 panic；生产出口改用原 go-restful
+  WriteHeaderAndJson，COMPLETED 仍用原 protobuf 响应。
+- 52913 exit1：剩余 4 子项来自 SourcesPool 只初始化一次、fixture 重换 opener
+  无效及使用普通 JSON 解码原 protobuf int64；修正为原 stable client/原 ACL、
+  原 protojson 与原 Role RPC，未修改生产授权规则。
+- 74907 exit0：最终五包 16 顶层、103 子检查通过。
+- 48475 exit1：只破坏私有两个真实生产文件的五处保护（ID token 冒 access、
+  冻结 native 引用匹配、publish 因果、fresh Node 输出、未知终态拒绝），原目标
+  实际 2 顶层、15 子检查失败；正式源码未破坏。
+- apply_patch 原字节恢复后 38961 exit0：同目标 16 顶层、103 子检查再次通过。
+  12 自有输入及 go.mod/go.sum 正式/候选 cmp=0；原容器 gofmt-l 空输出/exit0，
+  bash-n 与正式 diff --check 均 exit0。frontend/rest 只编译通过、筛选无适用
+  检查，modifiers 无 test files，不把这两包记成新 logout 业务检查。
+
+原部署入口 `bash file-storage/deploy/start.sh --check` 在既有私有无真实凭据
+fixture `cells-native-action-delivery.gJxSPm/upload.env` 上正向 exit0；bool version、
+未知 write 字段、缺 policy、空 workspace 四次输入破坏均 exit2，字节恢复后
+exit0。未启动服务；最初使用不完整 env fixture 的 exit1 原日志保留。
+
+主 Go 日志及生产变异原件均在
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| cells-native-upload-admission-positive.log | `7478e09533f5348b1a50bf2b5641d2190b25a1ad2210f7bb8f341886f4d16eeb` |
+| cells-native-upload-admission-final-positive.log | `24c51118693b3039933786b1c83b92e3902e5e0221685b2c6880cc7c45c14f3c` |
+| cells-native-upload-admission-opaque-positive.log | `232a5d05936585154a78154187b7b6f39f5baab51a848d0d8ff44c3c5c532867` |
+| cells-native-upload-admission-completed-positive.log | `3a525b935e8d7ca6be4a900c77f548a1e86d30832c75537c96dc7fd7d967a809` |
+| cells-native-upload-admission-json-positive.log | `0619bc22d1ad20209a1c9a73f38206a22a18e0ed378f5eb42863fdf8984e17d9` |
+| cells-native-upload-admission-final-byte-positive.log | `b2550cf7a7e2cb0fe2cceca9fcddd484fb3cb237783253be86f06fa4f9e70005` |
+| cells-native-upload-admission-production-negative.log | `54bc6bfbb7c988c81efa431e80a1daf8e27d055c2d0cfae4b622d8643df6b99d` |
+| cells-native-upload-admission-restored.log | `b2a068925cf3dd74d99d594b73dfd139be1330aacc278c512097c4500098122e` |
+| cells-native-upload-admission-production-mutation.diff | `279cc782f8d4c8b99126a0315eab2c8f20b9ecbf577431e0d878ee6e3bf8fe37` |
+
+### 准入生产者不是完整写入交付
+
+尚未实现/验收 native write executor、原 uploader UI 到该 producer、Task 到实际
+published Version/byte-op usage 的端到端因果与 typed 输出引用；publish 副作用仍
+没有原终态 receipt。当前只针对已注册现有 node Resource 的原 draft Promote，
+不能冒充新文件全上传。完整 FILE_STORAGE 七必选键、delete/share、Mongo 跨
+collection Job 存活性、claim 安全退休/失联时限与真实批准 binding 仍为发布缺口。
+本批无 full、镜像/服务更新、真实对象存储写入、业务库改写、浏览器截图、Windows
+或 Mobile 验收。私有原 RPC/HTTP fixture 的通过不等于组件 E2E，不声明 100% 还原。

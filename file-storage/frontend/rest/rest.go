@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
@@ -274,6 +275,9 @@ func (a *FrontendHandler) FrontSession(req *restful.Request, rsp *restful.Respon
 
 // FrontSessionDel logs out user by clearing the associated cookie session.
 func (a *FrontendHandler) FrontSessionDel(req *restful.Request, rsp *restful.Response) error {
+	if err := auth.ClearNativeHumanToken(req.Request, rsp.ResponseWriter); err != nil {
+		return err
+	}
 
 	dao, err := manager.Resolve[sessions.DAO](req.Request.Context())
 	if err != nil {
