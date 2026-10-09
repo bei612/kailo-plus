@@ -6,8 +6,11 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -233,6 +236,159 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
                 await module.force_deploy()
         self.assertEqual(len(session.calls), 2)
         self.assertEqual(sum(url.endswith('/api/graphql') for url, _ in session.calls), 1)
+
+
+class NativeEntrypointTest(unittest.TestCase):
+    """Run the original Bash entrypoint; only its three external commands are fixtures."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name)
+        command = f"""#!{sys.executable}
+import json
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+
+directory = Path(os.environ['NATIVE_ENTRYPOINT_FIXTURE'])
+name = Path(sys.argv[0]).name
+with (directory / (name + '.calls')).open('a') as stream:
+    stream.write(json.dumps(sys.argv[1:]) + '\\n')
+if name == 'uvicorn':
+    def stopped(signum, frame):
+        (directory / 'server.stopped').write_text(str(signum))
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stopped)
+    signal.signal(signal.SIGINT, stopped)
+    (directory / 'server.pid').write_text(str(os.getpid()))
+    if os.environ['FIXTURE_SERVER_MODE'] == 'running':
+        while not (directory / 'server.release').exists():
+            time.sleep(0.01)
+    sys.exit(int(os.environ['FIXTURE_SERVER_EXIT']))
+if name == 'python':
+    if os.environ['FIXTURE_FORCE_RELEASE'] == 'true':
+        (directory / 'server.release').touch()
+    sys.exit(int(os.environ['FIXTURE_FORCE_EXIT']))
+if name == 'nc' and sys.argv[2] == 'localhost':
+    deadline = time.monotonic() + 5
+    while not (directory / 'server.pid').exists():
+        if time.monotonic() >= deadline:
+            sys.exit(1)
+        time.sleep(0.01)
+sys.exit(0)
+"""
+        for name in ('uvicorn', 'nc', 'python'):
+            target = self.path / name
+            target.write_text(command)
+            target.chmod(0o700)
+        self.env = {
+            **os.environ,
+            'PATH': f'{self.path}:{os.defpath}',
+            'NATIVE_ENTRYPOINT_FIXTURE': str(self.path),
+            'QDRANT_HOST': 'fixture-qdrant',
+            'WREN_AI_SERVICE_PORT': '15555',
+            'WREN_UI_PORT': '13000',
+            'SHOULD_FORCE_DEPLOY': '',
+            'FIXTURE_SERVER_MODE': 'exit',
+            'FIXTURE_SERVER_EXIT': '0',
+            'FIXTURE_FORCE_EXIT': '0',
+            'FIXTURE_FORCE_RELEASE': 'false',
+        }
+
+    def launch(self, **env):
+        process = subprocess.Popen(
+            ['/bin/bash', str(SOURCE.parents[2] / 'entrypoint.sh')],
+            env={**self.env, **env},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        def cleanup():
+            if process.poll() is None:
+                process.kill()
+            pid = self.path / 'server.pid'
+            if pid.exists():
+                try:
+                    os.kill(int(pid.read_text()), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            process.communicate(timeout=5)
+
+        self.addCleanup(cleanup)
+        return process
+
+    def wait_for(self, name):
+        deadline = time.monotonic() + 5
+        while not (self.path / name).exists():
+            if time.monotonic() >= deadline:
+                self.fail(f'Original entrypoint did not produce {name}')
+            time.sleep(0.01)
+
+    def calls(self, name):
+        path = self.path / (name + '.calls')
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_native_server_success_preserves_original_command_and_optional_deploy(self):
+        process = self.launch()
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, output)
+        self.assertEqual(self.calls('uvicorn'), [[
+            'src.__main__:app', '--host', '0.0.0.0', '--port', '15555',
+            '--loop', 'uvloop', '--http', 'httptools',
+        ]])
+        self.assertEqual(self.calls('nc'), [['-z', 'fixture-qdrant', '6333']])
+        self.assertEqual(self.calls('python'), [])
+
+    def test_native_server_initialization_failure_is_not_a_successful_bootstrap(self):
+        process = self.launch(FIXTURE_SERVER_EXIT='17')
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 17, output)
+        self.assertEqual(len(self.calls('uvicorn')), 1)
+        self.assertEqual(self.calls('python'), [])
+
+    def test_successful_optional_deploy_does_not_hide_later_server_failure(self):
+        process = self.launch(
+            SHOULD_FORCE_DEPLOY='1', FIXTURE_SERVER_MODE='running',
+            FIXTURE_SERVER_EXIT='19', FIXTURE_FORCE_RELEASE='true',
+        )
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 19, output)
+        self.assertEqual(self.calls('python'), [['-m', 'src.force_deploy']])
+        self.assertIn(['-z', 'localhost', '15555'], self.calls('nc'))
+        self.assertIn(['-z', 'wren-ui', '13000'], self.calls('nc'))
+
+    def test_unknown_optional_deploy_is_not_repeated_and_cleans_up_server(self):
+        process = self.launch(
+            SHOULD_FORCE_DEPLOY='1', FIXTURE_SERVER_MODE='running',
+            FIXTURE_FORCE_EXIT='23',
+        )
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 23, output)
+        self.assertEqual(self.calls('python'), [['-m', 'src.force_deploy']])
+        self.assertEqual(len(self.calls('uvicorn')), 1)
+        self.assertEqual((self.path / 'server.stopped').read_text(), str(signal.SIGTERM))
+
+    def test_compose_term_reaches_server_and_reaps_it(self):
+        process = self.launch(FIXTURE_SERVER_MODE='running')
+        self.wait_for('server.pid')
+        process.send_signal(signal.SIGTERM)
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 143, output)
+        self.assertEqual((self.path / 'server.stopped').read_text(), str(signal.SIGTERM))
+        self.assertEqual(self.calls('python'), [])
+
+    def test_interrupt_reaches_server_and_reaps_it(self):
+        process = self.launch(FIXTURE_SERVER_MODE='running')
+        self.wait_for('server.pid')
+        process.send_signal(signal.SIGINT)
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 130, output)
+        self.assertEqual((self.path / 'server.stopped').read_text(), str(signal.SIGTERM))
+        self.assertEqual(self.calls('python'), [])
 
 
 if __name__ == "__main__":

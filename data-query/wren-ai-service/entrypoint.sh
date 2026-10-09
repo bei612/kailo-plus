@@ -18,8 +18,20 @@ while ! nc -z $QDRANT_HOST 6333; do
 done
 echo "qdrant has started."
 
+server_pid=
+stop_server() {
+    if [[ -n "$server_pid" ]]; then
+        kill -TERM "$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+    fi
+}
+trap stop_server EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
 # Start wren-ai-service in the background
 uvicorn src.__main__:app --host 0.0.0.0 --port $WREN_AI_SERVICE_PORT --loop uvloop --http httptools &
+server_pid=$!
 
 if [[ -n "$SHOULD_FORCE_DEPLOY" ]]; then
 
@@ -56,4 +68,10 @@ if [[ -n "$SHOULD_FORCE_DEPLOY" ]]; then
 fi
 
 # Bring wren-ai-service to the foreground
-wait
+if wait "$server_pid"; then
+    server_pid=
+else
+    server_status=$?
+    server_pid=
+    exit "$server_status"
+fi

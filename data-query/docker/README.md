@@ -1427,3 +1427,32 @@ comparison failures (**8 failed**), exact six-input restoration and the same
 not live Core/SpiceDB, browser/iframe, native product image or deployment
 acceptance. The original Wren UI/AI source build still follows the final
 committed clean source, serially, through the existing constrained builder.
+
+### Original AI bootstrap process outcome
+
+The original AI entrypoint now waits for its actual Uvicorn child PID, preserves
+that process's nonzero exit, and forwards shutdown through cleanup that waits
+for the child. A rejected or unconfirmed optional `force_deploy` exits without
+leaving the AI child running or repeating the mutation. This is process startup
+and shutdown evidence, not a SQL, model-deployment or platform Task terminal
+receipt. Keep `WREN_SHOULD_FORCE_DEPLOY` empty for ordinary starts; enabling it
+still requires inspecting native deployment state before a restart.
+
+The [bootstrap consumer receipt](../fork/verify/native-integration.md#original-ai-bootstrap-process-outcome)
+records the existing Python unittest's **14/14** passing cases, including six
+real Bash/process consumers, deliberate production wait/signal corruption
+causing **4 failures**, and exact five-input restoration with **14/14** passing
+again. External `uvicorn`, `nc` and optional Python commands in these shell
+cases are fixtures; no real model, Qdrant or native business deployment is
+claimed. The concurrent source build remains fixed at `f25ea048`; that fixed
+image input does not contain this later entrypoint change.
+
+The actual sole local deployment file currently delivers only the independent
+Compose project name. The existing `.env.example` already supplies the pinned
+bootstrap/Ibis/Qdrant dependencies and original non-secret ports, versions,
+SQLite and disabled-telemetry settings. These are not identity or permission
+facts. The source-built Engine must replace the original Engine dependency for
+the bound source-analysis producer. Real component OIDC/cookie registration,
+DATA_KEY files, native provider configuration/credentials, AI client identity
+and approved query/binding/Resource evidence still require controlled delivery;
+none is inferred from the project name or generated here.

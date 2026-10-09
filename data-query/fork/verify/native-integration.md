@@ -8766,3 +8766,113 @@ gate release. Root owns the selective main commit/push and single original
 UI-then-AI source build from the final committed source, not old 5b or an
 unverified candidate. Existing standalone operation is not a substitute for
 the missing real bound deployment/authorization evidence.
+
+## Original AI bootstrap process outcome
+
+The fixed official source is WrenAI-ui-0.32.2
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ai-service/entrypoint.sh`: its actual `uvicorn src.__main__:app ... &`
+launch ends in an unqualified `wait`. Bash's no-argument wait returns zero
+after waiting for children; it does not propagate this server's failed
+initialization exit. The existing `docker/docker-compose.yaml` AI service uses
+`restart: on-failure`, so that discarded exit is a real startup consumer issue.
+The original source also has no child cleanup when optional force deployment
+fails or when the entrypoint receives shutdown.
+
+This batch changes only the existing AI entrypoint and its original
+`tests/pytest/providers/test_native_identity.py`, plus two receipt EOFs.
+Capture the one Uvicorn child PID, wait specifically for it, preserve its exit
+code, and clean up/reap that child on EXIT/TERM/INT. The six new post-change
+cases execute the actual Bash script and real subprocesses, with only its
+external `uvicorn`, `nc` and optional `python` command boundaries replaced by
+fixture commands. Existing eight native identity/provider/force-deploy cases
+remain in the same original unittest. No registry, task, workflow, credential,
+account, permission or model default is added.
+
+Four-step implementation conclusions:
+
+- Authority: `08` section 6, SF-WRN-07 and SS-WRN-IDENTITY/GOVERNANCE retain
+  the full original GenBI service pipeline; `07` runtime baseline retains the
+  optional `SHOULD_FORCE_DEPLOY` empty setting. Failed process initialization
+  must not become successful bootstrap evidence. The script delta is an
+  explicitly scoped governance/startup integration difference, not UI redesign.
+- Impact: the original Dockerfile copies this entrypoint to the AI runtime;
+  original Compose launches that runtime and consumes its exit with the same
+  restart policy. The original provider callback and optional mutation stay
+  unchanged. No API/schema/database migration or old data format is changed.
+  Web/Desktop page layouts and Mobile's non-host boundary are unchanged.
+- Side effects: no SQL or model mutation is dispatched by these new consumers;
+  optional `force_deploy` remains one original invocation with no callback
+  retry. Signal cleanup terminates only the captured local server child, not
+  another component or native business task. A process exit is not a verified
+  query/deployment terminal state or permission grant.
+- Boundaries: normal server exit zero is retained; initialization/later failure
+  keeps its nonzero code; TERM/INT preserve interruption status and reap the
+  server. An optional callback failure/unknown exits and cleans the child,
+  without replaying the mutation. Native lost-ACK remains UNKNOWN; restarting
+  with the explicitly enabled optional switch can still invoke it again and
+  requires native reconciliation, not automatic success/failure classification.
+
+The existing SDK `kailo-wren-query-sdk-itgs2n` was verified as user 1000:1000,
+4 CPU/4 GiB with equal memory+swap limit; initially only sleep, 38,551,552 bytes
+memory and all `memory.events` counters zero. Host MemAvailable was
+26,601,256 KiB, memory PSI zero and I/O full avg10 21.67%. Root's one existing
+8 CPU/16 GiB UI-then-AI source build overlapped; this Python target did not
+start another SDK, download, dependency install, database or image build.
+The SDK lacked the AI source directory, so five actual small source/check
+inputs were applied to its existing `/work/native-ai-entrypoint.EdZ7lh`
+private candidate and compared to formal source, without changing the old
+Wren/UI inputs, dependency cache or fixed root build worktree.
+
+Actual original command in that existing SDK/candidate was
+`bash -n entrypoint.sh`, then
+`python3 tests/pytest/providers/test_native_identity.py -v`:
+
+- First execution: **exit 0, 14 tests, OK**, 0.409 seconds. Six actual shell
+  consumers cover the original command/optional-deploy default, initial server
+  exit 17, post-deployment server exit 19, unconfirmed optional operation exit
+  23 without retry/leftover child, and TERM/INT cleanup and interruption codes.
+- Private production corruption: replace the PID-specific wait by the original
+  no-argument wait and change TERM/INT exits to zero. **exit 1, 4 failures /
+  10 passes**, 0.377 seconds, proving actual server and signal failures were
+  falsely reported as success. Formal source was not mutated.
+- Exact five-input restoration: `cmp` **5/5**, shell syntax **0**, same original
+  unittest **exit 0, 14 tests, OK**, 0.388 seconds; cgroup low/high/max/OOM
+  counters still all zero. No full, real Uvicorn/provider, native database,
+  Qdrant, business-service, browser or deployment acceptance is implied.
+
+Logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-ai-entrypoint.EdZ7lh`:
+`positive.log`, `negative.log`, `restored.log`, SHA-256 respectively:
+`3666a5c0b17040df42f09e6070fd26f5ea8f230c9a645ed81f878240a77e16cd`,
+`c49b219e88145dde2a9e04980333023901457c696898e175018a6811a61e8de6`,
+`60844e5c58b03d0417233b0d8f4acc57620d5e94e17b0ce2e855e14ef690d789`.
+Final source SHA-256, under `data-query/wren-ai-service/`:
+`entrypoint.sh` =
+`e39f5d98a13ea2d659c4b012c3c9b55717fb24f8ff0628dd045c6f5ea2ef3937`;
+`tests/pytest/providers/test_native_identity.py` =
+`451d21fc9839067b449dd84093a7f0bd54f0f517252f6f78dc850480043a00b6`.
+
+No deployment assignment was written or secret printed. The existing sole
+`deploy/local/.env` was read as keys/presence only: it contains the delivered
+`WREN_COMPOSE_PROJECT_NAME`, not the other Wren inputs. Existing tracked
+`.env.example` has the fixed original bootstrap/Ibis/Qdrant digest inputs,
+native ports/versions/SQLite and telemetry=false; those can be delivered by
+the existing deployment owner without guessing identity or business facts.
+The source-built Engine, not the template's original Engine image, must
+provide the actual bound source analysis.
+
+Unclosed real producers/consumers remain: dedicated native browser OIDC client
+and signed instance grant plus cookie secret (`native-gateway.yaml` and native
+Next verifier); independent DATA_KEY files (UI original entrypoint); native
+LLM/embedder configuration and credentials (`CONFIG_PATH`/provider loaders);
+native AI client identity/secret (`native_identity.py::_delivery`); approved
+query/binding directory and OpenBao AppRole/SecretRef/current Resource facts
+(existing query-governance overlay and NativeQueryService). No platform HUMAN
+credential, default owner, dynamic native ID proof or fake ACTIVE replaces
+these. Trusted SERVICE SQL and ordinary FunctionCall/provider provenance are
+still blocked. Root's concurrent UI/AI build is fixed at
+`f25ea048d985bb321de0467037d4c3e6a8a714b3`, does not contain this later change,
+and is not counted as new-code image/deployment evidence here. Root owns the
+selective main commit/push; this batch does not start a native Wren business
+instance, enable a release/binding or claim iframe/three-user acceptance.
