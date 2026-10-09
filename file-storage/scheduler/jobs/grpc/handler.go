@@ -32,8 +32,10 @@ import (
 
 	logcore "github.com/pydio/cells/v5/broker/log/grpc"
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
 	proto "github.com/pydio/cells/v5/common/proto/jobs"
 	log2 "github.com/pydio/cells/v5/common/proto/log"
@@ -62,6 +64,54 @@ func NewJobsHandler(runtime context.Context, serviceName string) *JobsHandler {
 //////////////////
 // JOBS STORE
 /////////////////
+
+// EnsureNativeReadJob consumes only the already delivered native Read config.
+// It neither admits an action nor dispatches a Task. Unknown persistence and
+// incompatible existing jobs stop startup instead of overwriting native state.
+func (j *JobsHandler) EnsureNativeReadJob(ctx context.Context) error {
+	value := config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform")
+	if value.Get() == nil {
+		return nil
+	}
+	var delivery auth.NativeActorDelivery
+	if err := value.Scan(&delivery); err != nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	if delivery.Read == nil {
+		return nil
+	}
+	read := delivery.Read
+	deadline, err := time.ParseDuration(delivery.RequestTimeout)
+	if err != nil || deadline <= 0 || read.Validate() != nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	store, err := manager.Resolve[jobs.DAO](ctx)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	prior, err := store.GetJob(read.NativeJobID, proto.TaskStatus_Unknown)
+	if errors.Is(err, errors.JobNotFound) {
+		job := jobs.NativeReadJob(read.NativeJobID)
+		job.CreatedAt = int32(time.Now().Unix())
+		job.ModifiedAt = job.CreatedAt
+		if err = store.ClaimJob(ctx, job); err != nil && !errors.Is(err, errors.StatusConflict) {
+			return err // even a lost insert ACK must not reach another writer
+		}
+		prior, err = store.GetJob(read.NativeJobID, proto.TaskStatus_Unknown)
+	}
+	if err != nil {
+		return err
+	}
+	if !jobs.NativeReadJobMatches(prior, read.NativeJobID) {
+		return errors.WithStack(errors.StatusConflict)
+	}
+	return ctx.Err()
+}
 
 func (j *JobsHandler) PutJob(ctx context.Context, request *proto.PutJobRequest) (*proto.PutJobResponse, error) {
 	store, err := manager.Resolve[jobs.DAO](ctx)

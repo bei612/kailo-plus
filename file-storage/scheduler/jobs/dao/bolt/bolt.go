@@ -99,6 +99,28 @@ func (s *boltStore) PutJob(job *proto.Job) error {
 
 }
 
+// ClaimJob creates only a missing original Job. A startup lookup cannot
+// authorize overwriting a concurrently installed job or its trigger settings.
+func (s *boltStore) ClaimJob(ctx context.Context, job *proto.Job) error {
+	if job == nil || job.ID == "" || len(job.Tasks) != 0 {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	return s.DB.Update(func(tx *bbolt.Tx) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		bucket := tx.Bucket(jobsBucketKey)
+		if bucket.Get([]byte(job.ID)) != nil {
+			return errors.WithStack(errors.StatusConflict)
+		}
+		data, err := json.Marshal(job)
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte(job.ID), data)
+	})
+}
+
 func (s *boltStore) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job, error) {
 
 	j := &proto.Job{}

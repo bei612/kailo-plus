@@ -397,3 +397,102 @@ Core PEP→原 User→PolicyEngine/tree ACL→文件读取或 Cells→WeKnora E2
 不自动擦除已持久原配置，撤权仍走原 binding 生命周期/fresh PEP，不能据此声称停用。
 原生独立完整 UI 保留；generic write/share、原子条件删除、按 key 终态/usage、完整
 FILE_STORAGE 七项及其批准 catalog 仍有缺口，不能以这次配置窄验启用不完整 release。
+
+## 2026-10-09 受控 Read.nativeJobId 的原生启动生产者
+
+已有启动投递能保存 `services/pydio.rest.n/platform.Read.nativeJobId`，但原
+`InitDefaults` 只生产 `GetDefaultJobs` 中的 Job；实际 `CopyNativeRead` 经原
+JobService 读取投递的 ID 后因没有 Job 拒绝。这是缺失需恢复的真实生产者，不是
+另建注册表或批准 FILE_STORAGE 子集。本批在原 Job store 启动路径创建纯持久化
+Job，原 GET/Lookup/NodeVersions 才执行读取；不派发自动任务或生成授权事实。
+
+四步影响说明：
+
+1. 权威为 DD-89、DD-93、`.design/07` §5.2/8A 与既有 native-read/Task 接缝。
+   固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 已只读核验
+   `scheduler/jobs/grpc/service/service.go::InitDefaults`、
+   `scheduler/jobs/grpc/defaults.go::GetDefaultJobs`、
+   `scheduler/jobs/grpc/handler.go::JobsHandler.GetJob/PutJob`、
+   `scheduler/jobs/dao/bolt/bolt.go::boltStore.GetJob/PutJob` 和
+   `scheduler/jobs/dao/mongo/mongo.go::mongoImpl.GetJob/PutJob`。
+   原默认 Job、原独立页面与 ACL 原样保留；新增原启动/DAO 消费者属于已授权治理
+   改造，补齐该缺失接缝。没有页面共享迁移适用对象，不声明原版百分之百一致。
+2. 实际调用为原 `InitDefaults` 及 `WithGRPC` 注册回调 →
+   `JobsHandler.EnsureNativeReadJob` → 原 DAO `GetJob/ClaimJob` → 原存储。
+   运行期 `CopyNativeRead` 再核对该 Job 的完整语义，不能借相同 ID 的别类任务。
+   `NativeReadDelivery.Validate` 同时被真实授权消费者和启动消费者调用。
+   私有配置字段、Job protobuf、公共契约未改变；不涉及四侧生成。
+   Bolt 在原事务内 create-only，Mongo 在原 collection insert-only 并为 `jobs.id`
+   增加唯一索引。历史重复 ID 使迁移失败，不自动删除、选择或覆盖。字段旧读者可读，
+   但旧启动生产者不会应用本次 bootstrap；运行仍须构建投递新源码。
+3. 创建的 Job 只有原 ID/label/system owner 与 silent Task 更新属性；system owner
+   是原 Job 元数据，不是执行 actor。不含 actions/events/schedule/AutoStart、Task 或
+   run parameters。没有权限、quota、binding、正文或第二任务权威。读取仍逐次消费
+   原 ActionToken、scope、generation、fresh PEP、native 当前用户及 ACL。
+   同 ID 漂移拒绝，冲突只回读；写入 ACK 丢失直接阻断启动，不重写，后续启动只读
+   原持久 Job 确认。只有原明确 `JobNotFound` 允许首次创建。
+4. 没有平台配置或没有 Read 时不生成 Job，保留独立启动；空 ID、缺失/null meters、
+   未知或重复 meter、缺失/非法 deadline 拒绝。NONE 仅显式空数组成立，不补默认零。
+   使用原投递的正 `RequestTimeout`，没有新增默认值/阈值。配置缺失映射前置条件，
+   Job 漂移映射冲突；存储/超时未知仍失败关闭，不成为业务成功或确定失败。
+   启动回调错误阻止 JobService 注册/服务 ready；不宣称整个网络 listener 尚未创建。
+   原 DAO `GetJob` 没有 context 参数且 Mongo 使用 background，本批不宣称该读取已
+   全程有界。空 Job 生命周期沿原 JobService，claimed Task 的安全退休与期限仍缺
+   确认协议，保留发布阻断，不发明 TTL 或墓碑表。
+
+实现后复用 `kailo-cells-native-check-lftow7`，UID 1000:1000，实际 4 CPU / 8 GiB，
+`cpu.max=400000 100000`、`memory.max=8589934592`、`memory.swap.max=0`。
+复用原 `/cache/mod`、`/cache/build` 和 Data 私有临时目录，无新镜像、依赖、数据库或
+SDK。最终恢复前宿主 MemAvailable 29,610,808 kB、memory PSI 为 0；root 原 BuildKit
+及两个 Java 进程仍在，共享 Data I/O 高，不伪称独占。终态 cgroup lifetime peak
+2,632,499,200 bytes，全部 memory.events/OOM 为 0；不是本批独立峰值。
+
+实际原五包命令（原目标串行正向、私有生产破坏、还原各一次）：
+
+```sh
+sudo -n docker exec -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_WORKING_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_DATA_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  /usr/local/go/bin/go test -mod=readonly \
+  ./common/auth ./scheduler/jobs/grpc ./scheduler/jobs/grpc/service \
+  ./scheduler/jobs/dao/bolt ./scheduler/jobs/dao/mongo \
+  -run 'TestNativeReadJobStartupConsumesOriginalDelivery|TestNativeReadTaskRecordsActualStreamOnce|TestNativeReadAuthorityConsumesExactActorAndOriginalOperation' \
+  -count=1 -v
+```
+
+原始失败全部保留：`positive.log` 的原 config stub 合并触发 typed-nil panic，且首轮
+未指定 Data TMPDIR，不作为最终合规验收；`positive-corrected.log` 将模块根错误用作
+TMPDIR，Go 忽略 go.mod，未进入检查。`positive-final-input.log` 的 DAO fixture
+每次 Resolve 重置故障/计数，修为原数据库共用 fixture 状态；
+`positive-final-fixture.log` 的 fixture 2s deadline 遇共享 I/O 超时；
+`positive-delivery-window.log` 用投递 1m 仍有四个并发请求明确超时。最终并发断言
+允许原明确 DeadlineExceeded 拒绝，同时仍要求唯一完整 Job、零 PutJob/Task/事件；
+没有扩大生产 deadline，也没有吞其他错误。以上五轮实际退出 1，不算通过。
+
+最终 `positive-delivery-final.log`（handle 55327）退出 0：3 顶层 +80 子项 PASS，
+0 fail/skip。随后仅私有候选将真实 `NativeReadJobMatches` 语义比较改为恒真，并移除
+真实 Bolt `ClaimJob` 同 key 拒绝，`mutation-final.log`（13413）编译成功后退出 1：
+1 顶层 +11 子项失败，2 顶层 +69 子项通过；实际捕获十种 Job 漂移与覆盖同 ID。
+正式源未破坏。精确恢复两生产文件后，同一原命令 `restored-final.log`（37521）
+退出 0：3 顶层 +80 子项 PASS，0 fail/skip，grpc `ok ... 240.045s`。
+顶层/子项是层级统计，不相加成独立验收数。service/Bolt/Mongo 三包显示
+`[no test files]`，仅编译；真实 Bolt DAO 在原 grpc fixture 中调用，Mongo 实库与
+唯一索引迁移因无受控 fixture 明确 SKIP。最终八源码及 go.mod/go.sum 与 SDK
+逐字节 `cmp` 均为 0，八源码 `gofmt -l` 无输出。
+
+原件目录 `/volumes/data/kailo/tmp/cells-native-read-job-startup-20261009.qSbdg9/`：
+
+- `positive-delivery-final.log` SHA-256
+  `4ea4e24d716560451e584dc8c2651eed5b9176ed3d1bed78820f9f90b701d962`；
+- `mutation-final.log` SHA-256
+  `a9205e9439eba4b5f0cb83e6dff0b84b6ba101b5840b25ce222fffa1fe9e78af`；
+- `restored-final.log` SHA-256
+  `e563399ba005eda654996fd6af1e52ad6eb0b4ac2aff88194b9fe8732eefcba8`。
+
+本批未部署、未构建镜像、未跑 full，没有投递真实 native actor/SecretRef、批准或
+激活 release/binding。没有 native HTTP/S3、完整登录页面、实际人类正文交付、
+Cells→WeKnora E2E、Windows/Mobile 验收。原 native Task/IO fixture 不证明用户已
+收到文件。完整 FILE_STORAGE 七项、write/delete/share、Task 退休与 HUMAN 结果消费
+仍有门禁，不因启动 Job 可生产而开放这些能力。继承 `deploy/compose.yaml` 不在本批。

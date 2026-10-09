@@ -26,6 +26,7 @@ import (
 	"github.com/pydio/cells/v5/common/auth/protocol"
 	"github.com/pydio/cells/v5/common/broker"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config"
 	cellserrors "github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -204,7 +205,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 		for index := range ids {
 			ids[index] = fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
 		}
-		job := &jobproto.Job{ID: "existing-read-job", Owner: "native-user"}
+		job := jobstore.NativeReadJob("existing-read-job")
 		if err := store.PutJob(job); err != nil {
 			t.Fatal(err)
 		}
@@ -417,6 +418,229 @@ type taskReceiptStore struct {
 	jobstore.DAO
 	failure     *error
 	loadFailure *error
+}
+
+type nativeReadJobStore struct {
+	jobstore.DAO
+	*nativeReadJobState
+}
+
+type nativeReadJobState struct {
+	mode      string
+	claims    atomic.Int32
+	puts      atomic.Int32
+	readCalls atomic.Int32
+}
+
+func (s *nativeReadJobStore) PutJob(job *jobproto.Job) error {
+	s.puts.Add(1)
+	return s.DAO.PutJob(job)
+}
+
+func (s *nativeReadJobStore) GetJob(id string, status jobproto.TaskStatus) (*jobproto.Job, error) {
+	call := s.readCalls.Add(1)
+	if s.mode == "read-error" || (s.mode == "readback-error" && call > 1) {
+		return nil, errors.New("original native Job read unavailable")
+	}
+	return s.DAO.GetJob(id, status)
+}
+
+func (s *nativeReadJobStore) ClaimJob(ctx context.Context, job *jobproto.Job) error {
+	s.claims.Add(1)
+	if s.mode == "claim-error" {
+		return errors.New("original native Job insert unavailable")
+	}
+	if err := s.DAO.ClaimJob(ctx, job); err != nil {
+		return err
+	}
+	if s.mode == "claim-ACK-lost" {
+		return errors.New("original native Job insert ACK unavailable")
+	}
+	return nil
+}
+
+func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
+	var store *nativeReadJobStore
+	var first sync.Once
+	state := &nativeReadJobState{}
+	constructor := func(db boltdb.DB) jobstore.DAO {
+		// The original manager constructs a DAO on every Resolve. Faults and
+		// counters belong to the same native database, not one wrapper instance.
+		next := &nativeReadJobStore{DAO: bolt.NewBoltDAO(db), nativeReadJobState: state}
+		first.Do(func() { store = next })
+		return next
+	}
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(constructor, "native_read_job_")}, t, func(ctx context.Context) {
+		ctx = config.WithStubStore(ctx)
+		handler := NewJobsHandler(ctx, "native-read-job-startup")
+		configure := func(t *testing.T, value map[string]interface{}) {
+			t.Helper()
+			// The original config store merges maps. Each operator delivery is
+			// independent; a prior case must not fill in its omitted fields.
+			ctx = config.WithStubStore(ctx)
+			if value == nil {
+				return
+			}
+			if err := config.Set(ctx, value, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		delivery := func(id string) map[string]interface{} {
+			return map[string]interface{}{"requestTimeout": "1m", "read": map[string]interface{}{
+				"nativeJobId": id, "usageMeasurements": []interface{}{},
+			}}
+		}
+		for _, scenario := range []string{"absent", "independent-without-read", "blank-id", "spaces-id", "missing-meters", "null-meters", "duplicate-meter", "unknown-meter-source", "missing-deadline", "unknown-deadline"} {
+			t.Run(scenario, func(t *testing.T) {
+				value := delivery("rejected-" + scenario)
+				read := value["read"].(map[string]interface{})
+				switch scenario {
+				case "absent":
+					value = nil
+				case "independent-without-read":
+					delete(value, "read")
+				case "blank-id":
+					read["nativeJobId"] = ""
+				case "spaces-id":
+					read["nativeJobId"] = " padded "
+				case "missing-meters":
+					delete(read, "usageMeasurements")
+				case "null-meters":
+					read["usageMeasurements"] = nil
+				case "duplicate-meter":
+					read["usageMeasurements"] = []interface{}{map[string]interface{}{"meterKey": "count", "quantitySource": "COUNT"}, map[string]interface{}{"meterKey": "count", "quantitySource": "CONTENT_BYTES"}}
+				case "unknown-meter-source":
+					read["usageMeasurements"] = []interface{}{map[string]interface{}{"meterKey": "count", "quantitySource": "NEW"}}
+				case "missing-deadline":
+					delete(value, "requestTimeout")
+				case "unknown-deadline":
+					value["requestTimeout"] = "not-duration"
+				}
+				configure(t, value)
+				before := store.claims.Load()
+				err := handler.EnsureNativeReadJob(ctx)
+				if (scenario == "absent" || scenario == "independent-without-read") != (err == nil) || store.claims.Load() != before {
+					t.Fatalf("missing/invalid delivery created native Job: err=%v claims=%d", err, store.claims.Load()-before)
+				}
+			})
+		}
+		t.Run("create-and-restart-without-task-or-event", func(t *testing.T) {
+			configure(t, delivery("read-job"))
+			previous := broker.Default()
+			broker.Register(&taskReceiptBroker{Broker: previous, publish: func(string, proto.Message) { t.Error("startup dispatched a native event") }})
+			defer broker.Register(previous)
+			if err := handler.EnsureNativeReadJob(ctx); err != nil {
+				t.Fatal(err)
+			}
+			created, err := store.DAO.GetJob("read-job", jobproto.TaskStatus_Unknown)
+			if err != nil || !jobstore.NativeReadJobMatches(created, "read-job") || created.CreatedAt == 0 || created.ModifiedAt != created.CreatedAt {
+				t.Fatal("startup did not persist the original native Job", created, err)
+			}
+			before := store.claims.Load()
+			if err := handler.EnsureNativeReadJob(ctx); err != nil || store.claims.Load() != before || store.puts.Load() != 0 {
+				t.Fatal("restart overwrote/reinserted a native Job", err)
+			}
+			reloaded, err := store.DAO.GetJob("read-job", jobproto.TaskStatus_Any)
+			if err != nil || len(reloaded.Tasks) != 0 {
+				t.Fatal("startup produced a native Task", err)
+			}
+		})
+		for _, change := range []struct {
+			name   string
+			change func(*jobproto.Job)
+		}{
+			{"inactive", func(j *jobproto.Job) { j.Inactive = true }},
+			{"owner", func(j *jobproto.Job) { j.Owner = "foreign-native-owner" }},
+			{"auto-start", func(j *jobproto.Job) { j.AutoStart = true }},
+			{"auto-restart", func(j *jobproto.Job) { j.AutoRestart = true }},
+			{"auto-clean", func(j *jobproto.Job) { j.AutoClean = true }},
+			{"schedule", func(j *jobproto.Job) { j.Schedule = &jobproto.Schedule{Iso8601Schedule: "delivered-original-schedule"} }},
+			{"events", func(j *jobproto.Job) { j.EventNames = []string{"NODE_CREATE"} }},
+			{"actions", func(j *jobproto.Job) { j.Actions = []*jobproto.Action{{ID: "original-action"}} }},
+			{"hooks", func(j *jobproto.Job) { j.Hooks = []*jobproto.JobHook{{ApiSlug: "original-hook"}} }},
+			{"task-events", func(j *jobproto.Job) { j.TasksSilentUpdate = false }},
+		} {
+			t.Run("existing-"+change.name, func(t *testing.T) {
+				id := "drift-" + change.name
+				job := jobstore.NativeReadJob(id)
+				change.change(job)
+				if err := store.DAO.PutJob(job); err != nil {
+					t.Fatal(err)
+				}
+				configure(t, delivery(id))
+				before := store.claims.Load()
+				if err := handler.EnsureNativeReadJob(ctx); !cellserrors.Is(err, cellserrors.StatusConflict) || store.claims.Load() != before {
+					t.Fatal("drifted native Job accepted or replaced", err)
+				}
+				actual, err := store.DAO.GetJob(id, jobproto.TaskStatus_Unknown)
+				if err != nil || !proto.Equal(actual, job) {
+					t.Fatal("incompatible original Job was overwritten", err)
+				}
+			})
+		}
+		t.Run("concurrent-startup-is-create-only", func(t *testing.T) {
+			configure(t, delivery("concurrent-read-job"))
+			var wg sync.WaitGroup
+			for range 16 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if err := handler.EnsureNativeReadJob(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+						t.Error(err)
+					}
+				}()
+			}
+			wg.Wait()
+			job, err := store.DAO.GetJob("concurrent-read-job", jobproto.TaskStatus_Unknown)
+			if err != nil || !jobstore.NativeReadJobMatches(job, "concurrent-read-job") || store.puts.Load() != 0 {
+				t.Fatal("concurrent startup did not keep the original Job", err)
+			}
+		})
+		t.Run("same-native-job-key-cannot-overwrite", func(t *testing.T) {
+			original := jobstore.NativeReadJob("create-only-job")
+			if err := store.DAO.ClaimJob(ctx, original); err != nil {
+				t.Fatal(err)
+			}
+			for _, candidate := range []*jobproto.Job{proto.Clone(original).(*jobproto.Job), {ID: original.ID, AutoStart: true, Owner: "foreign-owner"}} {
+				if err := store.DAO.ClaimJob(ctx, candidate); !cellserrors.Is(err, cellserrors.StatusConflict) {
+					t.Fatal("same native Job key permitted another insertion", err)
+				}
+			}
+			actual, err := store.DAO.GetJob(original.ID, jobproto.TaskStatus_Unknown)
+			if err != nil || !proto.Equal(actual, original) {
+				t.Fatal("native Job claim replaced frozen startup semantics", err)
+			}
+			canceled, cancel := context.WithCancel(ctx)
+			cancel()
+			if err := store.DAO.ClaimJob(canceled, jobstore.NativeReadJob("canceled-before-job-insert")); !errors.Is(err, context.Canceled) {
+				t.Fatal("canceled startup inserted a native Job", err)
+			}
+		})
+		for _, mode := range []string{"read-error", "claim-error", "claim-ACK-lost", "readback-error"} {
+			t.Run(mode, func(t *testing.T) {
+				id := "uncertain-" + mode
+				configure(t, delivery(id))
+				store.mode = mode
+				store.readCalls.Store(0)
+				if err := handler.EnsureNativeReadJob(ctx); err == nil {
+					t.Fatal("unknown persistence was reported as successful startup")
+				}
+				store.mode = ""
+				before := store.claims.Load()
+				persisted, err := store.DAO.GetJob(id, jobproto.TaskStatus_Unknown)
+				if mode == "claim-ACK-lost" || mode == "readback-error" {
+					if err != nil || !jobstore.NativeReadJobMatches(persisted, id) {
+						t.Fatal("actual original persisted Job was lost", err)
+					}
+					if err := handler.EnsureNativeReadJob(ctx); err != nil || store.claims.Load() != before {
+						t.Fatal("persisted Job was reinserted after unknown ACK", err)
+					}
+				} else if !cellserrors.Is(err, cellserrors.JobNotFound) {
+					t.Fatal("failed original probe/insert created a Job", err)
+				}
+			})
+		}
+	})
 }
 
 func (s *taskReceiptStore) PutTask(task *jobproto.Task) error {

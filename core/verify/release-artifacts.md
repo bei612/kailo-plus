@@ -1419,3 +1419,50 @@ Wren 后续沿唯一忽略的 `deploy/local/.env` 投递已核验的非密配置
 默认 grant 填补，未启动半套服务、激活 binding 或声称原生问数/iframe 可用。
 当前 Web 仍为上节 9edf，Windows/Mobile 未更新，三组件完整业务和生产退出
 门禁没有因目录或密钥存在而完成。
+
+## 2026-10-09 Inbox 文档终态与一次真实双 Agent 触发
+
+原 `./tools/check-docs.sh` 句柄 65259 后续已真实终态 exit 0。固定暂存树为
+`50417f81e9b5678b159fec891c91ecb4bfa04b44`，检查容器实际 2 CPU / 4 GiB、
+network none、UID 1000，七项全部通过；启动器原导出目录清理也已经完成。
+`/volumes/data/kailo/tmp/inbox-stage-20261009.oKKFjT/check-docs.log` SHA-256 为
+`4e4cd722631735c40e4ab1a0c76e426e3943ac870476e1d5a94b59a21ac3e8d1`。
+该固定树早于本段、Cells 启动生产者和资料卡恢复，不把它算作后续源码或 full 验收。
+
+13:17 UTC 在既有正常 SSO 浏览器 `kailo-ui-status`、原频道
+`ad9a6443-f0a2-47d2-895d-f11b8fef9e38`，通过原 Composer 的真实提及菜单选择
+两个 ACTIVE Agent，正常 Enter 只发送一次新运算问题 `KAILO-COLLAB-20261009-1317`。
+要求各自计算 27×14−11 并解释，不调用工具或外部动作；不是固定字符串回显验收。
+源事件为 `e23b8483f7fb802745df5c3a9f44e3c98b50597e9cf1113132d0313d029d2a19`，
+由当前独立 HUMAN 正常签发，两 Agent 使用不同 pubkey/installation。
+原菜单目录异步加载期间只先出现人类，加载完成后两 Agent 正常出现；没有修改目录
+或为此新建注册表。等待发送回执脚本误用了 CLI 沙箱不存在的 `URL`，发送已经发生；
+原 BFF `GET /api/v1/workspaces/{workspaceId}/messages` 后续 200、源事件恰好一条，
+没有因此重发。首次只读 SQL 误从 Invocation 取 Session 的 thread 列而退出 3，
+修正真实表/列后只读查询正常；不把这些工具错误归为产品错误。
+
+13:18–13:25 UTC 的原数据库只读事务与正常浏览器观察：
+
+- Agent installation `f66a3b3e-589e-4c27-965c-8d2b4cebb995` 的 Invocation
+  `ab1c154a-58f3-4d9f-bc39-8e87788f21a0` 为 COMPLETED、native completed，
+  capacity RELEASED，具有原 Activity terminal event 13 和 native release 时间。
+  原 turn 为 `01a120cf-ed3c-73e1-aad0-2cf3fd12bf08`，已关联两条实际 token
+  usage（9350、9211，均 COMMITTED），不是由零 usage 或 HTTP 200 推断完成。
+  回复事件 `9340fdd3904f4c2e4af8acfa0d77ce764eaec3f901537523f440d580cc078191`
+  位于原线程；通过源消息的正常“查看话题”进入，实际可见“结果：367”及乘减过程。
+- installation `2989b1ec-f3fa-468d-89c5-4a8be226c97c` 的新 Invocation
+  `1e255507-7462-40b6-8a46-7de28be196f0` 仍 CREATED、原 Task 等待
+  CAPACITY_UNAVAILABLE，没有新 lease/turn。旧 Invocation
+  `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 的 lease 为 UNKNOWN，具有 Activity
+  terminal event 13，但 native release 证据缺失。原池 capacity=2；每 Installation
+  并行界限仍沿 `capacity.rs::Capacity::acquire_or_renew` 和固定 AgentVersion，
+  不以池内有空额为由放过旧未知执行。不重置、扩容、重放或新建 Agent 绕过。
+
+正常原线程截图实际保存并打开视觉复核：
+`/volumes/data/kailo/tmp/kailo-core-agent-reply-20261009-1331.png`，SHA-256
+`fb42bef6c34533958194b2bafef2e3236d6a0f2f7bd4f3c5b628a02c75af7cc4`。
+截图文件名不代表采集时刻；实际采集在 13:27 UTC。频道与线程有原消息布局、头像、
+时间、回复条和 Composer；第二个 Agent 未回复，不能据此宣称双 Agent 稳定协作。
+本次只重新验证一个 HUMAN 的新回合，不把历史三 HUMAN 消息冒充新一轮三账号验收。
+实际运行版本仍是 Web `9edf456a172200fae22adc9ab15e975109ab26b8`、Core/Worker
+`d619b0b06adea393ac21102ac9fe0ff4767981e5`；没有部署此后的 main 或 Windows/Mobile。

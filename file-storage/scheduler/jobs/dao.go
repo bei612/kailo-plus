@@ -99,6 +99,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 // DAO provides method interface to access the store for scheduler job and task definitions.
 type DAO interface {
 	PutJob(job *jobs.Job) error
+	ClaimJob(ctx context.Context, job *jobs.Job) error
 	GetJob(jobId string, withTasks jobs.TaskStatus) (*jobs.Job, error)
 	DeleteJob(jobId string) error
 	ListJobs(owner string, eventsOnly bool, timersOnly bool, withTasks jobs.TaskStatus, jobIDs []string, taskCursor ...int32) (chan *jobs.Job, error)

@@ -27,6 +27,20 @@ type NativeReadMeasurement struct {
 	QuantitySource string `json:"quantitySource"`
 }
 
+func (d *NativeReadDelivery) Validate() error {
+	if d == nil || d.NativeJobID == "" || strings.TrimSpace(d.NativeJobID) != d.NativeJobID || d.UsageMeasurements == nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	meters := map[string]bool{}
+	for _, meter := range d.UsageMeasurements {
+		if meter.MeterKey == "" || meters[meter.MeterKey] || (meter.QuantitySource != "COUNT" && meter.QuantitySource != "CONTENT_BYTES") {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		meters[meter.MeterKey] = true
+	}
+	return nil
+}
+
 type NativeReadExecution struct {
 	Delivery            NativeActorDelivery
 	Claims              map[string]interface{}
@@ -53,19 +67,9 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 	var delivery NativeActorDelivery
 	ctx := request.Context()
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
-		delivery.Read == nil || delivery.Read.NativeJobID == "" || strings.TrimSpace(delivery.Read.NativeJobID) != delivery.Read.NativeJobID ||
+		delivery.Read.Validate() != nil ||
 		delivery.MaxResponseBytes <= 0 || int64(len(raw)) > delivery.MaxResponseBytes {
 		return nil, refused
-	}
-	meters := map[string]bool{}
-	if delivery.Read.UsageMeasurements == nil {
-		return nil, refused
-	}
-	for _, meter := range delivery.Read.UsageMeasurements {
-		if meter.MeterKey == "" || meters[meter.MeterKey] || (meter.QuantitySource != "COUNT" && meter.QuantitySource != "CONTENT_BYTES") {
-			return nil, refused
-		}
-		meters[meter.MeterKey] = true
 	}
 	transport, ok := claim.FromContext(ctx)
 	if !ok {

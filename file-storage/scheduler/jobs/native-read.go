@@ -22,6 +22,22 @@ import (
 
 const NativeReadResult = "nativeReadResult"
 
+// The controlled native read Job only owns Task persistence. Its actual
+// operation runs in the original GET/Lookup/NodeVersions caller, never in the
+// automatic scheduler. Existing jobs are compared without changing their data.
+func NativeReadJob(id string) *jobproto.Job {
+	return &jobproto.Job{ID: id, Label: id, Owner: common.PydioSystemUsername, TasksSilentUpdate: true}
+}
+
+func NativeReadJobMatches(job *jobproto.Job, id string) bool {
+	if job == nil || id == "" || strings.TrimSpace(id) != id || len(job.Tasks) != 0 {
+		return false
+	}
+	actual := proto.Clone(job).(*jobproto.Job)
+	actual.CreatedAt, actual.ModifiedAt = 0, 0
+	return proto.Equal(actual, NativeReadJob(id))
+}
+
 type NativeReadReceipt struct {
 	NativeObjectRef  string                  `json:"nativeObjectRef"`
 	ContentBytes     int64                   `json:"contentBytes"`
@@ -171,7 +187,7 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 	}
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
 	job, err := client.GetJob(ctx, &jobproto.GetJobRequest{JobID: read.Delivery.Read.NativeJobID})
-	if err != nil || job.GetJob().GetID() != read.Delivery.Read.NativeJobID || job.GetJob().GetInactive() {
+	if err != nil || !NativeReadJobMatches(job.GetJob(), read.Delivery.Read.NativeJobID) {
 		return errors.WithStack(errors.StatusForbidden)
 	}
 	task, err := NewNativeReadTask(read, current.Name, current.Subject)

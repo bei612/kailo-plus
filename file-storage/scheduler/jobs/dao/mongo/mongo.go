@@ -103,10 +103,28 @@ func (m *mongoImpl) Init(ctx context.Context, values kv.Values) error {
 // Duplicated historical references stop startup rather than select or overwrite
 // a task. The unique native key is also the concurrent first-dispatch fence.
 func (m *mongoImpl) Migrate(ctx context.Context) error {
-	_, err := m.Collection(collTasks).Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := m.Collection(collTasks).Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "id", Value: 1}},
 		Options: options.Index().SetName("native_task_reference").SetUnique(true),
+	}); err != nil {
+		return err
+	}
+	_, err := m.Collection(collJobs).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "id", Value: 1}},
+		Options: options.Index().SetName("native_job_reference").SetUnique(true),
 	})
+	return err
+}
+
+func (m *mongoImpl) ClaimJob(ctx context.Context, job *proto.Job) error {
+	if job == nil || job.ID == "" || len(job.Tasks) != 0 {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	_, err := m.Collection(collJobs).InsertOne(ctx, &mongoJob{ID: job.ID, Owner: job.Owner,
+		HasEvents: len(job.EventNames) > 0, HasSchedule: job.Schedule != nil, Job: job})
+	if mongo.IsDuplicateKeyError(err) {
+		return errors.WithStack(errors.StatusConflict)
+	}
 	return err
 }
 
