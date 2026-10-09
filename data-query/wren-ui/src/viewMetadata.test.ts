@@ -115,7 +115,9 @@ jest.mock('./utils/table', () => ({ getColumnSearchProps: () => ({}) }));
 jest.mock('./components/code/JsonCodeBlock', () => ({
   __esModule: true,
   default: ({ code }: any) =>
-    require('react').createElement('pre', null, JSON.stringify(code)),
+    jest
+      .requireActual('react')
+      .createElement('pre', null, JSON.stringify(code)),
 }));
 jest.mock('./apollo/client/graphql/sqlPairs.generated', () => ({
   useSqlPairsLazyQuery: () => [mockSqlPairRead],
@@ -146,7 +148,7 @@ jest.mock('./components/modals/ImportDataSourceSQLModal', () => ({
   isSupportSubstitute: () => false,
 }));
 jest.mock('antd', () => {
-  const React = require('react');
+  const React = jest.requireActual('react');
   const field = ({ children }: any) =>
     React.createElement('div', null, children);
   const overlay = ({ children, footer }: any) =>
@@ -204,11 +206,13 @@ jest.mock('./components/code/SQLCodeBlock', () => () => null);
 jest.mock(
   './components/dataPreview/PreviewData',
   () => (props: any) =>
-    require('react').createElement(
-      'div',
-      { 'data-native-preview': true },
-      props.previewData ? JSON.stringify(props.previewData) : null,
-    ),
+    jest
+      .requireActual('react')
+      .createElement(
+        'div',
+        { 'data-native-preview': true },
+        props.previewData ? JSON.stringify(props.previewData) : null,
+      ),
 );
 jest.mock('./components/table/FieldTable', () => () => null);
 jest.mock('./components/table/CalculatedFieldTable', () => () => null);
@@ -246,12 +250,12 @@ describe('original Show original SQL hook identity and late-response consumers',
       .mockResolvedValue({ data: { nativeSql: 'SELECT originalConverted' } });
     jest.mocked(message.error).mockClear();
     effect = jest
-      .spyOn(require('react'), 'useEffect')
+      .spyOn(jest.requireActual('react'), 'useEffect')
       .mockImplementation((callback: any) => {
         effects.push(callback);
       });
     state = jest
-      .spyOn(require('react'), 'useState')
+      .spyOn(jest.requireActual('react'), 'useState')
       .mockImplementation((initial: any) => [
         initial,
         (value: any) => published.push(value),
@@ -489,12 +493,12 @@ describe('original API History detail bounded native observation consumers', () 
     listeners = new Map();
     cleanup = undefined;
     effect = jest
-      .spyOn(require('react'), 'useEffect')
+      .spyOn(jest.requireActual('react'), 'useEffect')
       .mockImplementation((callback: any) => {
         effects.push(callback);
       });
     state = jest
-      .spyOn(require('react'), 'useState')
+      .spyOn(jest.requireActual('react'), 'useState')
       .mockImplementation((initial: any) => [
         initial,
         (value: any) => {
@@ -854,7 +858,7 @@ describe('original independent preview selection and visibility consumers', () =
       configurable: true,
       value: { ...events, visibilityState: 'visible' },
     });
-    const React = require('react');
+    const React = jest.requireActual('react');
     spies = [
       jest.spyOn(React, 'useState').mockImplementation((initial: any) => {
         const slot = stateIndex++;
@@ -1183,7 +1187,7 @@ describe('original saved-view preview controls', () => {
     async (boundary) => {
       const effects: Array<() => void | (() => void)> = [];
       const effect = jest
-        .spyOn(require('react'), 'useEffect')
+        .spyOn(jest.requireActual('react'), 'useEffect')
         .mockImplementation((callback: any) => {
           effects.push(callback);
         });
@@ -1253,7 +1257,7 @@ describe('original saved-view preview controls', () => {
     async (boundary) => {
       const effects: Array<() => void | (() => void)> = [];
       const effect = jest
-        .spyOn(require('react'), 'useEffect')
+        .spyOn(jest.requireActual('react'), 'useEffect')
         .mockImplementation((callback: any) => {
           effects.push(callback);
         });
@@ -1283,7 +1287,7 @@ describe('original saved-view preview controls', () => {
       });
       let stateIndex = 0;
       const state = jest
-        .spyOn(require('react'), 'useState')
+        .spyOn(jest.requireActual('react'), 'useState')
         .mockImplementation((initial: any) => {
           const index = stateIndex++;
           return [
@@ -1511,7 +1515,7 @@ describe('original saved-view preview controls', () => {
       }));
       const close = jest.fn();
       const changed = jest.fn();
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       const state = jest
         .spyOn(React, 'useState')
@@ -2101,7 +2105,7 @@ describe('original saved-view preview controls', () => {
       const rows = { columns: [{ name: 'customer' }], data: [['original']] };
       mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
       const publish = jest.fn();
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       const state = jest
         .spyOn(React, 'useState')
@@ -2149,7 +2153,7 @@ describe('original saved-view preview controls', () => {
       };
       mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
       const publish = jest.fn();
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       const state = jest
         .spyOn(React, 'useState')
@@ -2183,7 +2187,7 @@ describe('original saved-view preview controls', () => {
         columns: [{ name: 'customer' }],
         data: [['original-native-row']],
       };
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       let independent = false;
       const state = jest
@@ -2219,7 +2223,7 @@ describe('original saved-view preview controls', () => {
       };
       mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
       const publish = jest.fn();
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       const state = jest
         .spyOn(React, 'useState')
@@ -2273,7 +2277,7 @@ describe('original saved-view preview controls', () => {
     'does not render an independent result from another native %s selection or kind',
     (kind) => {
       const rows = { columns: [], data: [['another-private-row']] };
-      const React = require('react');
+      const React = jest.requireActual('react');
       const original = React.useState;
       for (const selection of [
         { kind, id: 8 },
@@ -2429,7 +2433,7 @@ describe('original saved-view preview controls', () => {
   it.each(['view', 'model'])(
     'the original %s page renders closed task states, not truthy status strings or stale rows',
     (kind) => {
-      const react = require('react');
+      const react = jest.requireActual('react');
       const originalUseState = react.useState;
       const originalUseRef = react.useRef;
       const state = jest
@@ -2964,7 +2968,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
         .mockResolvedValue({ data: { listViews: [{ id: 99 }] } });
       jest.mocked(message.success).mockClear();
       action = jest
-        .spyOn(require('./hooks/useModalAction'), 'default')
+        .spyOn(jest.requireActual('./hooks/useModalAction'), 'default')
         .mockReturnValue({
           state: {
             visible: true,
@@ -2974,9 +2978,14 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
           openModal: jest.fn(),
           closeModal: close,
         });
-      const original = require('./utils/errorHandler').runNativeMetadataWrite;
+      const original = jest.requireActual(
+        './utils/errorHandler',
+      ).runNativeMetadataWrite;
       prepare = jest
-        .spyOn(require('./utils/errorHandler'), 'runNativeMetadataWrite')
+        .spyOn(
+          jest.requireActual('./utils/errorHandler'),
+          'runNativeMetadataWrite',
+        )
         .mockImplementation((input: any) => {
           pending = original(input);
           return pending;

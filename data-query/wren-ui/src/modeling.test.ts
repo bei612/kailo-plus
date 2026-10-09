@@ -35,7 +35,9 @@ jest.mock('next/navigation', () => ({
 jest.mock(
   'next/dynamic',
   () => () => (props: any) =>
-    require('react').createElement('main', null, JSON.stringify(props.data)),
+    jest
+      .requireActual('react')
+      .createElement('main', null, JSON.stringify(props.data)),
 );
 jest.mock('./apollo/client/graphql/diagram.generated', () => ({
   useDiagramQuery: (options: any) => {
@@ -86,33 +88,37 @@ jest.mock('./hooks/useCombineFieldOptions', () => ({
 jest.mock('./utils/modelingHelper', () => ({ editCalculatedField: jest.fn() }));
 jest.mock('./components/layouts/SiderLayout', () => (props: any) => {
   mockSidebar = props.sidebar;
-  return require('react').createElement(
-    'section',
-    { 'data-loading': String(props.loading) },
-    require('react').createElement(
-      'aside',
-      null,
-      JSON.stringify(props.sidebar.data),
-    ),
-    props.children,
-  );
+  return jest
+    .requireActual('react')
+    .createElement(
+      'section',
+      { 'data-loading': String(props.loading) },
+      jest
+        .requireActual('react')
+        .createElement('aside', null, JSON.stringify(props.sidebar.data)),
+      props.children,
+    );
 });
 jest.mock(
   './components/ErrorCollapse',
   () => (props: any) =>
-    require('react').createElement('div', { role: 'alert' }, props.message),
+    jest
+      .requireActual('react')
+      .createElement('div', { role: 'alert' }, props.message),
 );
 jest.mock(
   './components/pages/modeling/MetadataDrawer',
   () => (props: any) =>
     props.visible
-      ? require('react').createElement('div', null, 'open-metadata-drawer')
+      ? jest
+          .requireActual('react')
+          .createElement('div', null, 'open-metadata-drawer')
       : null,
 );
 jest.mock('./components/pages/modeling/EditMetadataModal', () => () => null);
 jest.mock('./components/pages/modeling/ModelDrawer', () => (props: any) => {
   mockModelDrawer = props;
-  return require('react').createElement('div', {
+  return jest.requireActual('react').createElement('div', {
     'data-model-drawer': String(props.visible),
   });
 });

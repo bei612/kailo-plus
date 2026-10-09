@@ -613,7 +613,6 @@ export class NativeHumanQuery {
       governanceKey: key,
       governanceState: 'SUCCEEDED',
     });
-    const model = Object.hasOwn(frozen, 'modelId');
     const editor = Object.hasOwn(frozen, 'historyId');
     if (
       !nativeQuerySelectionShape(frozen) ||

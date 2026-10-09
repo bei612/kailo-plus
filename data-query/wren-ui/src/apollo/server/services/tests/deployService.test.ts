@@ -228,18 +228,27 @@ databaseTests('original deployment transaction in isolated PostgreSQL', () => {
       searchPath: [schema],
     });
     await database.schema.createSchema(schema);
-    await require(
-      join(process.cwd(), 'migrations/20240125070643_create_project_table.js'),
-    ).up(database);
-    await require(
-      join(process.cwd(), 'migrations/20240319083758_create_deploy_table.js'),
-    ).up(database);
-    await require(
-      join(
-        process.cwd(),
-        'migrations/20261008000000_deployment_native_objects.js',
-      ),
-    ).up(database);
+    await jest
+      .requireActual(
+        join(
+          process.cwd(),
+          'migrations/20240125070643_create_project_table.js',
+        ),
+      )
+      .up(database);
+    await jest
+      .requireActual(
+        join(process.cwd(), 'migrations/20240319083758_create_deploy_table.js'),
+      )
+      .up(database);
+    await jest
+      .requireActual(
+        join(
+          process.cwd(),
+          'migrations/20261008000000_deployment_native_objects.js',
+        ),
+      )
+      .up(database);
     repository = new DeployLogRepository(database);
     projectId = randomInt(1, 2147483647);
     await database('project').insert({
@@ -292,7 +301,7 @@ databaseTests(
     let database: Knex;
     let repository: DeployLogRepository;
     let schema: string;
-    const migrate = require(
+    const migrate = jest.requireActual(
       join(
         process.cwd(),
         'migrations/20261008000000_deployment_native_objects.js',
@@ -306,15 +315,22 @@ databaseTests(
         searchPath: [schema],
       });
       await database.schema.createSchema(schema);
-      await require(
-        join(
-          process.cwd(),
-          'migrations/20240125070643_create_project_table.js',
-        ),
-      ).up(database);
-      await require(
-        join(process.cwd(), 'migrations/20240319083758_create_deploy_table.js'),
-      ).up(database);
+      await jest
+        .requireActual(
+          join(
+            process.cwd(),
+            'migrations/20240125070643_create_project_table.js',
+          ),
+        )
+        .up(database);
+      await jest
+        .requireActual(
+          join(
+            process.cwd(),
+            'migrations/20240319083758_create_deploy_table.js',
+          ),
+        )
+        .up(database);
       repository = new DeployLogRepository(database);
       await database('project').insert({
         id: 1,

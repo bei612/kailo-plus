@@ -1001,7 +1001,7 @@ databaseTests(
   () => {
     let database: Knex, repository: AskingTaskRepository;
     const schema = `task_evidence_${randomUUID().replaceAll('-', '')}`;
-    const migration = require(
+    const migration = jest.requireActual(
       join(process.cwd(), 'migrations/20261007000000_asking_task_project.js'),
     );
     beforeAll(async () => {
@@ -1017,7 +1017,9 @@ databaseTests(
         '20250509000000_create_asking_task.js',
         '20250509000001_add_task_id_to_thread.js',
       ])
-        await require(join(process.cwd(), 'migrations', name)).up(database);
+        await jest
+          .requireActual(join(process.cwd(), 'migrations', name))
+          .up(database);
       await database('project').insert([
         {
           id: 7,
@@ -1140,7 +1142,7 @@ databaseTests(
       );
     });
     it('retains running/unknown task evidence across every native cascade and permits observed terminal cleanup', async () => {
-      const guard = require(
+      const guard = jest.requireActual(
         join(
           process.cwd(),
           'migrations/20261007010000_preserve_running_asking_tasks.js',

@@ -902,7 +902,8 @@ describe('original Save as View consumes the same HUMAN query history', () => {
         ? record
         : null,
     );
-    require('./common').components.apiHistoryRepository.findOneBy = find;
+    jest.requireMock('./common').components.apiHistoryRepository.findOneBy =
+      find;
     disclose = jest
       .spyOn(NativeHumanQuery.prototype, 'readHistory')
       .mockResolvedValue({
@@ -2141,24 +2142,6 @@ describe('native bound-project business consumers', () => {
     expect(
       await resolver.getView(null, { where: { id: 21 } }, ctx),
     ).toMatchObject({ id: 21, displayName: undefined });
-    expect(
-      await resolver.updateViewMetadata(
-        null,
-        {
-          where: { id: 21 },
-          data: {
-            displayName: 'original',
-            columns: [],
-            description: 'original edit',
-          },
-        },
-        ctx,
-      ),
-    ).toBe(true);
-    expect(ctx.viewRepository.updateOne).toHaveBeenCalledWith(21, {
-      name: 'original',
-      properties: '{"displayName":"original","description":"original edit"}',
-    });
     const managedDelivery = {
       ...config,
       tenantId: 'd8736f48-05b9-4b4e-beca-59f45f8b5a9f',
@@ -2178,10 +2161,30 @@ describe('native bound-project business consumers', () => {
             ...current,
             generation: 2,
             permission: 'manage',
-            checkedRevision: 'original-view-delete-management',
+            checkedRevision: 'original-view-metadata-management',
           },
         };
       });
+    expect(
+      await originalResolvers.Mutation.updateViewMetadata(
+        null,
+        {
+          where: { id: 21 },
+          data: {
+            displayName: 'original',
+            columns: [],
+            description: 'original edit',
+          },
+        },
+        ctx,
+      ),
+    ).toBe(true);
+    expect(ctx.viewRepository.updateOne).toHaveBeenCalledWith(21, {
+      name: 'original',
+      properties: '{"displayName":"original","description":"original edit"}',
+    });
+    expect(authorize).toHaveBeenCalledTimes(3);
+    authorize.mockClear();
     expect(
       await originalResolvers.Mutation.deleteView(
         null,

@@ -33,7 +33,7 @@ jest.mock(
   './components/editor/MarkdownBlock',
   () =>
     ({ content }: any) =>
-      require('react').createElement('div', null, content),
+      jest.requireActual('react').createElement('div', null, content),
 );
 jest.mock('./components/ErrorCollapse', () => () => null);
 jest.mock('./components/pages/home/prompt/Input', () => () => null);
@@ -41,7 +41,7 @@ jest.mock('./hooks/useAskProcessState', () => ({
   ...jest.requireActual('./hooks/useAskProcessState'),
   __esModule: true,
   default: () => ({
-    currentState: require('./utils/enum').PROCESS_STATE.FINISHED,
+    currentState: jest.requireActual('./utils/enum').PROCESS_STATE.FINISHED,
     matchedState: jest.fn(),
     transitionTo: jest.fn(),
     resetState: jest.fn(),
@@ -55,7 +55,7 @@ jest.mock('./components/pages/home/RecommendedQuestions', () => ({
 }));
 jest.mock('antd', () => ({
   Button: ({ children }: any) =>
-    require('react').createElement('button', null, children),
+    jest.requireActual('react').createElement('button', null, children),
 }));
 
 class NativeEventSource {

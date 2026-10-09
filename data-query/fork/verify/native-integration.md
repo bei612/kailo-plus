@@ -8446,3 +8446,125 @@ performed. Real independent deployment/identity/provider configuration, dynamic
 Resource facts, ordinary-function provenance, trusted SERVICE SQL and remaining
 native metadata recovery still gate release. Root owns selective review and
 commit/push; this four-path batch does not declare Wren/Kailo production-ready.
+
+## Original native UI source-build lint consumers
+
+The first complete original native UI artifact attempt used the existing
+`tools/build-upstream.sh data-query-ui` on a clean fixed
+`661415e9f103bd939d2b70505e64ca188d74bde5` export. It ran in the existing
+`kailo-core-data` BuildKit builder, **8 CPU / 16 GiB**, with its existing Data
+cache and registry. The actual UI source digest was
+`sha256:41a8420591461588d4aed3c39906ecb6358f81f32834fb04df50a86baa27d79c`;
+this is the failed attempt's source digest, not a successful artifact digest.
+The pinned Node 18 base was
+`sha256:f9ab18e354e6855ae56ef2b290dd225c1e51a564f87584b9bd21dd651838830e`.
+Original Yarn 4.5.3 immutable installation fetched dependencies over the
+network, retaining the original native SQLite/DuckDB/Sharp dependencies.
+Warnings and the network download remain in the original log; this was not an
+offline build and no original feature was removed to shorten it.
+
+Handle `37840` actually exited **1**: original `yarn build`/Next 14.2.32
+reported an unused local Boolean in `NativeHumanQuery.preview` and the
+existing formatting/dynamic-module lint errors. No UI image/digest or private
+manifest pin was produced, and the required serial AI build was not started.
+The failed fixed export and log remain at
+`/volumes/data/kailo/tmp/wren-native-artifacts-661415.ITv4v4/ui-build.log`
+(SHA-256 `9d254c6071c1c3c971768fae161475d09f2295d127bb77769e8d003af1c9dcdd`),
+with the original inner log `/volumes/data/kailo/tmp/build-data-query-ui.bPcJkJ.log`.
+It is not relabeled as containing the subsequent View metadata or lint fixes.
+
+Four implementation conclusions:
+
+1. **Authority:** the existing fixed official UI
+   `c5f02a0391c87420dba78632dcd86073710deb72`, original
+   `wren-ui/package.json` build/lint commands and original Jest/configuration
+   remain the source-build authorities. `.design/05` §2.7 and `.design/08` §6
+   retain the actual public project/manage metadata consumer; no blocked query,
+   provider or resource capability is opened by fixing the build.
+2. **Impact:** thirteen existing source/check files are affected. The actual
+   `NativeHumanQuery.preview` unused `Object.hasOwn` Boolean is removed; its
+   result was never read. The API-reference and browser-session files receive
+   original formatting only. Ten existing Jest consumers use `jest.requireActual`
+   for original real modules/migrations and `jest.requireMock` for their original
+   mocked Axios/Encryptor/common dependencies, retaining `resetModules`, mock
+   factories and `isolateModules`. The existing View edit positive now invokes
+   `originalResolvers.Mutation.updateViewMetadata` with a genuine current manage
+   response, preserving its original inputs, Boolean result, native update and
+   three authorization checks. No contract, database, migration, layout, input,
+   response, dependency or lint/Jest/Next rule changes.
+3. **Side effects:** no authorization, UNKNOWN, generation or first-write guard
+   is weakened. The tests no longer bypass the actual public View closure or
+   accidentally replace mocked native transports with real ones. Production
+   SQL/metadata dispatch, native writes, permissions, use of secrets and public
+   execution authority are unchanged. No retry, second ledger or fake callback
+   is introduced.
+4. **Boundaries:** the existing original Ibis v2/v3 config, native query/task
+   ownership, UI stream/metadata and original deployment/recommendation consumers
+   run under the unchanged checks. Existing denied/missing evidence, delivery
+   switches, revocation and UNKNOWN behavior remain asserted. Browser-session
+   integration and unavailable database prerequisites are explicitly skipped,
+   not claimed as passed. The normal build gate must still reject an actual
+   unused production local, as the private fault below demonstrates.
+
+After process/CPU/memory/I/O preflight, the same original
+`kailo-wren-query-sdk-itgs2n` (**4 CPU / 4 GiB**, heap **3072 MiB**) ran this one
+concentrated corrected input, with no new SDK, dependency install, database or
+global/image build:
+
+```sh
+node node_modules/next/dist/bin/next lint
+node node_modules/jest/bin/jest.js src/apollo/server/adaptors/tests/ibisAdaptor.test.ts src/apollo/server/services/tests/deployService.test.ts src/apollo/server/services/tests/projectRecommendation.test.ts src/askingStream.test.tsx src/modelTree.test.ts src/modeling.test.ts src/nativeHumanQuery.test.ts src/nativeProjectScope.test.ts src/nativeTaskOwnership.test.ts src/viewMetadata.test.ts src/nativeBrowserSession.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/adaptors/tests/ibisAdaptor.test.ts src/apollo/server/services/nativeHumanQuery.ts src/apollo/server/services/tests/deployService.test.ts src/apollo/server/services/tests/projectRecommendation.test.ts src/askingStream.test.tsx src/modelTree.test.ts src/modeling.test.ts src/nativeBrowserSession.test.ts src/nativeHumanQuery.test.ts src/nativeProjectScope.test.ts src/nativeTaskOwnership.test.ts src/pages/api/platform-query-reference.ts src/viewMetadata.test.ts
+```
+
+Actual original logs under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+
+- `native-ui-build-format-write.log`, handle `70105`, exit **0**: original
+  formatter on the thirteen exact inputs; no global formatting pass.
+- `native-ui-build-positive.log`, handle `52405`, exit **1**: an omitted second
+  `common` module load still violated `no-var-requires`; chained Jest/type
+  consumers did not execute. That one real mock load was then corrected.
+- `native-ui-build-positive-final.log`, handle `17977`, exit **1**: original
+  Next lint **0**, **1000 passed / 1 failed / 4 skipped / 1005 total**,
+  2103.748 s under cold Data I/O. The old View positive called the raw resolver
+  without its newly required public manage closure and correctly received
+  `QUERY_EVIDENCE_UNAVAILABLE`; the production rejection was not changed.
+  Chained TypeScript/final formatting did not execute. The actual positive was
+  then wired to the existing public wrapper, not to a dummy PASS callback.
+- `native-ui-build-positive-public-view.log`, handle `13705`, exit **0**:
+  **1001 passed / 4 skipped / 1005 total**, **10 suites passed / 1 skipped**,
+  598.646 s; original Next lint, TypeScript and thirteen-file formatting **0**.
+  All cgroup memory/OOM counters remained **0**.
+- `native-ui-build-negative-unused-production.log`, handle `35058`, exit **1**:
+  privately restoring only the removed production Boolean, then running
+  `node node_modules/eslint/bin/eslint.js src/apollo/server/services/nativeHumanQuery.ts`,
+  produced the actual `616:11 'model' is assigned a value but never used`
+  `@typescript-eslint/no-unused-vars` error. No assertion or lint rule changed.
+- `native-ui-build-restored-unused-production.log`, handle `89912`, exit **0**:
+  exact source restoration, original single-file ESLint/formatting **0**, all
+  memory/OOM counters **0**. All thirteen formal/private source inputs compared
+  equal (`cmp` **0**). The restored bytes are the same bytes accepted by `13705`;
+  no second broad Jest/database run is misrepresented as having occurred.
+
+Final source SHA-256: `nativeHumanQuery.ts`
+`b0e2fab944c5198f5910a3865ff0403aff9ce28c2089a607b9db76dc7c59f2da`,
+`nativeProjectScope.test.ts`
+`db124abbe6d97b5b3c710773c89a12666b3fc25ae991cabd32847a09dd0820c6`.
+Final positive log SHA-256:
+`ebbd2a4d201e3d67e5f3b37fd64122a805b729656a25fc46155f1fe0a772eb03`;
+negative log `039116d17d44b85910f32f9209c73836d8439767910a93a3587a455e7423a176`;
+restored log `ab0893b554c2d125a16bfa94d5ed19fc7e458016a5931506ead8f037d57074a4`.
+
+These source-consumer results do not establish a successful native UI/AI image,
+live PostgreSQL/Core/SpiceDB, browser/iframe/device or multi-user/Agent
+acceptance. The later committed clean source still requires the original
+serial UI then AI artifact build; no formal UI/AI pin or deployed Wren product
+is asserted. Root has separately delivered an independent Compose project
+name, not an identity/binding or permission; the next actual missing deployment
+input is `WREN_BOOTSTRAP_IMAGE`. Real native configuration, current identity and
+scope, datasource/provider/SecretRef inputs, trusted dynamic Resource evidence,
+ordinary-function provenance, SERVICE SQL and remaining metadata recovery still
+gate release. Root owns selective review, commit/push and deployment; this
+batch does not declare Wren or Kailo production-ready.

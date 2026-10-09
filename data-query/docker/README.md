@@ -1352,3 +1352,26 @@ UI/AI source-build batch is fixed to `661415e9f103bd939d2b70505e64ca188d74bde5`
 and does not include this later View change. No Wren deployment, ACTIVE binding
 or complete-product acceptance is established; the existing Resource evidence,
 function provenance, trusted SERVICE SQL and metadata recovery gaps remain.
+
+### Original native UI source-build lint consumers
+
+The first complete native UI source build from
+`661415e9f103bd939d2b70505e64ca188d74bde5`, through the existing
+`tools/build-upstream.sh data-query-ui` and constrained `kailo-core-data`
+builder, exited **1** at the original Next lint stage. No UI image was recorded,
+and the serial AI build was not started. Its dependency installation used the
+network; this is not an offline-build result.
+
+The actual unused local was removed without changing query behavior. Existing
+Jest module loads now explicitly retain their real/mock module ownership and
+reset/isolation semantics, and the existing View edit positive fixture calls
+the real public manage wrapper. Original lint/configuration, pages and feature
+scope are not relaxed. The [source-build consumer receipt](../fork/verify/native-integration.md#original-native-ui-source-build-lint-consumers)
+records **1001 passed / 4 skipped**, ten passing suites and one skipped suite,
+original Next lint/TypeScript/thirteen-file formatting exit **0**, plus one
+actual private production lint failure and exact byte restoration. These are
+source-consumer results, not a successful image, live database/authorization,
+browser or deployment result. The final image must be built from the later
+committed clean source; the failed fixed-661 artifact cannot contain this batch.
+No UI/AI artifact pin, Wren business instance, ACTIVE binding, iframe acceptance
+or complete-product readiness is established here.

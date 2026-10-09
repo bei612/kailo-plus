@@ -204,18 +204,22 @@ databaseTests(
         searchPath: [schema],
       });
       await database.schema.createSchema(schema);
-      await require(
-        join(
-          process.cwd(),
-          'migrations/20240125070643_create_project_table.js',
-        ),
-      ).up(database);
-      await require(
-        join(
-          process.cwd(),
-          'migrations/20241106232204_update_project_table.js',
-        ),
-      ).up(database);
+      await jest
+        .requireActual(
+          join(
+            process.cwd(),
+            'migrations/20240125070643_create_project_table.js',
+          ),
+        )
+        .up(database);
+      await jest
+        .requireActual(
+          join(
+            process.cwd(),
+            'migrations/20241106232204_update_project_table.js',
+          ),
+        )
+        .up(database);
       repository = new ProjectRepository(database);
       await database('project').insert({
         id: projectId,

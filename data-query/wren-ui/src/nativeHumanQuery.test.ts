@@ -4462,7 +4462,8 @@ describe('native saved-view HUMAN query consumer', () => {
         idempotencyKey: key,
         idempotencyScope: nativePreviewScope(config, ctx.nativeIdentityScope),
       };
-      require('./common').components.apiHistoryRepository.findOneBy = history;
+      jest.requireMock('./common').components.apiHistoryRepository.findOneBy =
+        history;
       history.mockImplementation(async () =>
         nativeRecord(
           command.componentAction.inputReference,
@@ -4690,11 +4691,14 @@ describe('native saved-view HUMAN query consumer', () => {
       ctx.deployRepository.findLastProjectDeployLog.mockImplementation(() =>
         ctx.deployRepository.findOneBy(),
       );
-      require('./common').components.apiHistoryRepository.prepareNativeSql =
-        jest.fn(async (record) => {
+      jest.requireMock(
+        './common',
+      ).components.apiHistoryRepository.prepareNativeSql = jest.fn(
+        async (record) => {
           stored ??= structuredClone(record);
           return structuredClone(stored);
-        });
+        },
+      );
       history.mockImplementation(async (filter) => {
         if (!stored) return null;
         if (filter.governanceState === 'SUCCEEDED')
@@ -4850,7 +4854,7 @@ describe('native saved-view HUMAN query consumer', () => {
             calls.mock.calls.filter((call) => call[2].command),
           ).toHaveLength(count);
           expect(
-            require('./common').components.apiHistoryRepository
+            jest.requireMock('./common').components.apiHistoryRepository
               .prepareNativeSql,
           ).toHaveBeenCalledTimes(1);
         } finally {

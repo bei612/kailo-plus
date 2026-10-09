@@ -272,9 +272,13 @@ integration('native browser OIDC and original Next admission', () => {
             incoming.on('error', reject);
           },
         );
-        request.on('error', (error) => reject(new Error(
-          `${error.message}; Gateway exit=${gateway.exitCode}; ${startupError.replaceAll(clientSecret, '[redacted]')}`,
-        )));
+        request.on('error', (error) =>
+          reject(
+            new Error(
+              `${error.message}; Gateway exit=${gateway.exitCode}; ${startupError.replaceAll(clientSecret, '[redacted]')}`,
+            ),
+          ),
+        );
         request.end();
       });
       for (const value of (response.headers.get('set-cookie') || '').split(
@@ -377,7 +381,12 @@ integration('native browser OIDC and original Next admission', () => {
       // Older browsers without Fetch Metadata use the original Origin check.
       const before = backendRequests;
       expect(
-        (await request(path, { method: 'POST', headers: { origin: 'https://attacker.invalid' } })).status,
+        (
+          await request(path, {
+            method: 'POST',
+            headers: { origin: 'https://attacker.invalid' },
+          })
+        ).status,
       ).toBe(403);
       expect(backendRequests).toBe(before);
       expect(

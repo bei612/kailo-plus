@@ -1118,10 +1118,13 @@ describe('IbisAdaptor', () => {
         post: typeof mockedAxios.post;
       };
       jest.isolateModules(() => {
-        const { getConfig } = require('../../config');
-        const { IbisAdaptor: NativeIbisAdaptor } = require('../ibisAdaptor');
-        const nativeAxios = require('axios').default;
-        const { Encryptor: NativeEncryptor } = require('../../utils/encryptor');
+        const { getConfig } = jest.requireActual('../../config');
+        const { IbisAdaptor: NativeIbisAdaptor } =
+          jest.requireActual('../ibisAdaptor');
+        const nativeAxios = jest.requireMock('axios').default;
+        const { Encryptor: NativeEncryptor } = jest.requireMock(
+          '../../utils/encryptor',
+        );
         NativeEncryptor.prototype.decrypt.mockReturnValue(
           JSON.stringify({ password: mockPostgresConnectionInfo.password }),
         );

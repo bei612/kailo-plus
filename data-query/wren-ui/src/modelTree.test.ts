@@ -23,7 +23,7 @@ jest.mock('./hooks/useModalAction', () => () => ({
 }));
 jest.mock('./components/sidebar/Modeling', () => ({
   StyledSidebarTree: (props: any) =>
-    require('react').createElement(
+    jest.requireActual('react').createElement(
       'aside',
       null,
       props.treeData.map((node: any) => node.title),
@@ -40,17 +40,17 @@ jest.mock('./components/sidebar/utils', () => ({
 jest.mock('./components/modals/SchemaChangeModal', () => (props: any) => {
   mockModal = props;
   return props.visible
-    ? require('react').createElement(
-        'div',
-        null,
-        JSON.stringify(props.defaultValue),
-      )
+    ? jest
+        .requireActual('react')
+        .createElement('div', null, JSON.stringify(props.defaultValue))
     : null;
 });
 jest.mock(
   './components/ErrorCollapse',
   () => (props: any) =>
-    require('react').createElement('div', { role: 'alert' }, props.message),
+    jest
+      .requireActual('react')
+      .createElement('div', { role: 'alert' }, props.message),
 );
 
 describe('original modeling sidebar schema-change consumer', () => {
