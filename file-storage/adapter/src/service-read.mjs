@@ -89,7 +89,8 @@ export async function nativeFile(config, deadline, args, claims) {
     || url.searchParams.get('versionId') !== version.VersionId) throw new Refused(503);
   const remaining=deadline-Date.now();
   if (remaining <= 0) throw new Refused(503);
-  const response=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(remaining)});
+  const response=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(remaining),
+    ...(config.readExecution && config.nativeActorContext ? {headers:{'x-kailo-native-execution':config.nativeActorContext.proof, 'idempotency-key':claims.idempotency_key}} : {})});
   if (response.status !== 200 || !response.body || response.headers.has('content-range')) {
     await response.body?.cancel(); throw new Refused(503);
   }

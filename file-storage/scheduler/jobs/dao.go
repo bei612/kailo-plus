@@ -73,7 +73,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 		}
 		for _, priorLog := range stored.ActionsLogs {
 			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
-				if prior.GetVars()[NativeVersionResult] != "true" {
+				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" {
 					continue
 				}
 				found := false

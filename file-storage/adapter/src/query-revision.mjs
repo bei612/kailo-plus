@@ -9,7 +9,7 @@ import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
-import { executeNode, observeNode, nodeActions } from './node-execution.mjs';
+import { executeNode, observeNode, nodeActions, readExecutionConfiguration } from './node-execution.mjs';
 import { writeAction, writeConfiguration, executeWrite, observeWrite } from './write-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { nativeJsonFetch } from './native-actor.mjs';
@@ -56,7 +56,8 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management', 'mcp', 'write'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'readExecution', 'management', 'mcp', 'write'].includes(key))) throw new Refused(503);
+  if (value.readExecution !== undefined && value.readEdge === undefined) throw new Refused(503);
   if (value.write !== undefined) writeConfiguration(value.write, value);
   if (value.management !== undefined && (!exactKeys(value.management,
     ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
@@ -87,6 +88,7 @@ export function configuration(value) {
     executionMapping: action => executionMapping(action, value),
   });
   return Object.freeze({ ...value, ...(value.write === undefined ? {} : {write:writeConfiguration(value.write, value)}),
+    ...(value.readExecution === undefined ? {} : {readExecution:readExecutionConfiguration(value.readExecution)}),
     ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
     ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
@@ -346,8 +348,8 @@ export function createAdapter(rawConfig) {
         try { args = JSON.parse(raw); } catch { throw new Refused(400); }
         const value = ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'version'
           ? await observeWrite(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
-          : operation === 'observe' && args?.nativeType === 'node'
-          ? await observeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7))
+          : ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'node'
+          ? await observeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
           : await documentLifecycle(config, deadline, raw, request.headers['idempotency-key'],
             request.headers.authorization.slice(7), operation);
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });

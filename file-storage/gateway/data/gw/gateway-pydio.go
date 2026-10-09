@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	pathutil "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/minio/minio/pkg/bucket/policy/condition"
 
 	"github.com/pydio/cells/v5/common"
+	cellauth "github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/compose"
@@ -39,6 +41,7 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/telemetry/log"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 const (
@@ -371,6 +374,31 @@ func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string,
 	// log.Println("[GetObject] From Router", bucket, key, startOffset, length)
 
 	path := strings.TrimLeft(key, "/")
+	if read := cellauth.NativeReadFromContext(ctx); read != nil {
+		if startOffset != 0 || opts.VersionID != read.Input["nativeRevision"] {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		// Resolve every native identity through the original ACL router. A URL
+		// for an old path cannot turn the signed node into a different object.
+		identities := compose.UuidClient()
+		root, rootErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Delivery.NativeRootRef}})
+		admitted, admittedErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Target["nativeRef"].(string)}})
+		member, memberErr := identities.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: read.Input["nativeObjectRef"].(string)}})
+		target, targetErr := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
+		r, a, n, m := root.GetNode(), admitted.GetNode(), target.GetNode(), member.GetNode()
+		if rootErr != nil || admittedErr != nil || targetErr != nil || memberErr != nil || r.GetUuid() != read.Delivery.NativeRootRef || r.GetType() != tree.NodeType_COLLECTION ||
+			a.GetUuid() != read.Target["nativeRef"] || n.GetUuid() != read.Input["nativeObjectRef"] || n.GetType() != tree.NodeType_LEAF || n.GetPath() != path ||
+			m.GetUuid() != n.GetUuid() || m.GetType() != tree.NodeType_LEAF || r.GetPath() == "" || m.GetPath() == "" ||
+			pathutil.Clean(r.GetPath()) != r.GetPath() || pathutil.Clean(a.GetPath()) != a.GetPath() || pathutil.Clean(m.GetPath()) != m.GetPath() || pathutil.Clean(path) != path ||
+			strings.ContainsAny(path+r.GetPath()+a.GetPath()+m.GetPath(), "\\\x00\r\n") || pathutil.Base(path) != read.Input["displayName"] || n.GetStringMeta(common.MetaNamespaceMime) != read.Input["mediaType"] ||
+			(a.GetUuid() != r.GetUuid() && !strings.HasPrefix(a.GetPath(), r.GetPath()+"/")) ||
+			(m.GetUuid() != a.GetUuid() && (a.GetType() != tree.NodeType_COLLECTION || !strings.HasPrefix(m.GetPath(), a.GetPath()+"/"))) {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		return jobstore.CopyNativeRead(ctx, read, length, writer, func() (io.ReadCloser, error) {
+			return l.Router.GetObject(ctx, n, &models.GetRequestData{StartOffset: 0, Length: length, VersionId: opts.VersionID})
+		})
+	}
 	objectReader, err := l.Router.GetObject(ctx, &tree.Node{
 		Path: path,
 	}, &models.GetRequestData{

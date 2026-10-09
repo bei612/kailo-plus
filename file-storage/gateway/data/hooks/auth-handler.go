@@ -43,6 +43,12 @@ func GetPydioAuthHandlerFunc(ctx context.Context) mux.MiddlewareFunc {
 
 // handler for validating incoming authorization headers.
 func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Remove the request-local proof before original diagnostics or forwarding.
+	proof, hasProof, proofErr := auth.TakeNativeProof(r)
+	if proofErr != nil {
+		cmd.ExposedWriteErrorResponse(r.Context(), w, cmd.ErrAccessDenied, r.URL)
+		return
+	}
 
 	//var md map[string]string
 	var userName string
@@ -144,6 +150,12 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	newRequest := r.WithContext(ctx)
+	if hasProof {
+		if _, err := auth.NativeReadAuthority(newRequest, proof, "execute", false); err != nil {
+			cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
+			return
+		}
+	}
 	a.handler.ServeHTTP(w, newRequest)
 
 }

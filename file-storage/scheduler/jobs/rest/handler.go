@@ -76,7 +76,7 @@ func (s *JobsHandler) UserListJobs(req *restful.Request, rsp *restful.Response) 
 		return err
 	}
 	if present {
-		return nativeWriteObservation(req, rsp, proof)
+		return nativeTaskObservation(req, rsp, proof)
 	}
 
 	T := lang.Bundle().T(middleware.DetectedLanguages(req.Request.Context())...)

@@ -2868,3 +2868,179 @@ artifact 构建/部署。本批源码是必要错误消费修复，不是原样�
 布局、文案及 UI 功能未改。完整条件删除、失联 writer 退休、首次上传准入与
 generic write/delete/share、七必选 catalog/批准 binding 仍未闭合，不声明
 完整 FILE_STORAGE 已可用、100% 还原或生产就绪。
+
+## 2026-10-09：原生 read/export 的同键 Task 完成及计量消费者
+
+本批直接接入原 data gateway `GetObject`、原 JobService/Task 存储和原
+`/jobs/user`，没有新增上传器、队列、平台 ledger、正文副本或权限权威。
+仅闭合 HUMAN/AGENT read/export 的原生完成证据与计量读取，不声明完整
+FILE_STORAGE、原生下载 UI 或跨服务同步已上线。
+
+实施前四步影响结论：
+
+1. 权威是 `.design/07` §2.1、§5、§8A 的能力键、Adapter 观察、用量及错误
+   合同；ContentReference 沿 DD-90，独立源数据沿 DD-93。DD-89 的 SERVICE
+   自拉读取保持原路径，不借它的凭据或回执完成 HUMAN/AGENT 动作。固定上游
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/data/gw/gateway-pydio.go::(*pydioObjects).GetObject`（369）、
+   `scheduler/jobs/grpc/handler.go::(*JobsHandler).PutTask`（224）、
+   `scheduler/jobs/grpc/handler.go::(*JobsHandler).PutTaskStream`（255）与
+   `scheduler/jobs/rest/handler.go::(*JobsHandler).UserListJobs`（72）仍成立。
+   上游原 GET 没有同 execution key 的持久完成/字节用量消费者；本批是在
+   `apps` 原模块的必要二开，不是原样字节一致性声明。
+2. 原调用链为 adapter `executeNode` → 同键 `/jobs/user` 观察 → 原 presigned
+   GET → `hooks.(*pydioAuthHandler).ServeHTTP` → `NativeReadAuthority` → 原
+   `GetObject` UUID/path/version/ACL 解析 → `CopyNativeRead` → 原 `GetJob`、
+   create-only `PutTask`、Running `PutTask` → 实际 `io.Copy`、source `Close`
+   → 原 Finished Task 的 `NativeReadResult` → `/jobs/user` 观察 → adapter
+   `observeNode`/`extract_usage`。完整引用、scope、actor、binding/generation、
+   EE/key/canonical arguments 与冻结 meter 集合沿原 ActionToken/PEP 验证；
+   `Read.nativeJobId` 与 `usageMeasurements` 必须受控投递，无默认 Job/meter。
+   `deploy/start.sh` 核对 adapter `readExecution` 与原 Cells config store 的
+   `read` 及 scope/instance 完全一致。未携 proof 的独立 native GET 保持原行为。
+3. GET 的 native JWT subject 必须是原映射用户；原任务观察的传输 subject 必须
+   是实例 Service UUID，两者不能互换。回读原 User/锁定/OIDC policy，并沿原
+   `WithImpersonate`/ACL；AGENT 不借发起 HUMAN 或固定 SERVICE roles。proof 在
+   原请求诊断/转发前摘除；不在 Task、日志或错误回包写 ActionToken/secret。
+   原 Task 只留冻结输入引用、digest、字节数、完成时间及用量，不保存正文。
+4. create-only/RUNNING/完成落库 ACK 缺失均不授权第二次 GET；同键已存在只观察。
+   open/copy/close/长度/授权不成立不生成成功回执，撤权前后都 fresh 检查。
+   Task Finished 本身不是成功；必须有同输入、同 key 的唯一真实持久结果。
+   合法零字节及 quantity=0 保留；字段缺失/null 不能经 Go 默认值冒充零。
+   当前列表/list_revisions 没有本批同键原生回执与计量生产者，未补假值。
+
+原 Task 初始 claim 不是字节证据。`CopyNativeRead` 只调用原 PutTask，没有
+触发 `RunJob`/空 steps 调度；现存 `TopicJobTaskEvent` 是原持久更新后通知，
+实际 fixture 检查事件出现前原 DAO 已能读回一致 Task。原 `ValidateTaskUpdate`
+同时保护 version/read 的已有结果，不能通过后续 status update 移除 read 回执。
+原 claimed Task 的 DeleteTasks/DeleteJob 保留防重放；该保留机制不是已经完成
+的安全退休协议，期限、失联 claim 对账和旧 generation 观察仍见下方发布边界。
+
+实际输入闭包及资源：
+
+- Go 复用 `kailo-cells-native-check-lftow7`，UID 1000，4 CPU/8 GiB，无额外 swap；
+  主机 `codex-cells-native-identity-20261005.LfTow7/apps/file-storage` 挂到
+  `/workspace/file-storage`，已有 `/cache/mod`、`/cache/build`，`GOPROXY=off`。
+  未新增 SDK、镜像、DB、依赖或安装。执行前核现有任务、CPU/memory pressure；
+  原句柄等待冷 I/O 时不重启。末次恢复后 10 个 Go 输入正式/SDK `cmp=0`，
+  `gofmt -l` 无输出，退出 0。
+- Node 复用 `kailo-wren-query-sdk-itgs2n`，4 CPU/4 GiB；只用独立
+  `/work/knowledge-observation-guard.8QFEVq/file-storage/adapter`，未碰 Wren
+  `/work` 输入。依赖是原已锁定 SDK/cache；执行时记录共用容器的实际在途
+  轻目标与 memory/oom 计数，不声称独占。4 个 Node 输入末次 `cmp=0`。
+- 原 `bash -n file-storage/deploy/start.sh` 与 owned `git diff --check` 退出 0。
+
+实际命令（每阶段只替换日志文件，负向在私有候选生产源码，正式源码未破坏）：
+
+```sh
+rtk proxy sudo -n docker exec \
+  -e GOPROXY=off \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 sh -c '
+go test -count=1 -v -run "TestNativeRead|TestNativeTaskStreamAcknowledgesPersistence|TestNativeTaskFirstDispatchClaim|TestNativeTaskMigrationPreservesClaim|TestNativeWriteTaskRetainsExactIntentAndVersion" \
+  ./common/auth ./scheduler/jobs/grpc ./scheduler/jobs/rest ./gateway/data/hooks ./gateway/data/gw \
+  > /cache/build/cells-native-read-receipt-20261009.uWm92Y/cells-native-read-final-restored.log 2>&1
+task_status=$?
+tail -n 70 /cache/build/cells-native-read-receipt-20261009.uWm92Y/cells-native-read-final-restored.log
+exit "$task_status"'
+
+rtk proxy sudo -n docker exec \
+  -w /work/knowledge-observation-guard.8QFEVq/file-storage/adapter \
+  kailo-wren-query-sdk-itgs2n sh -c '
+node --test --test-skip-pattern="HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects" \
+  test/query-revision.test.mjs > /cache/cells-native-read-node-final-restored.log 2>&1
+task_status=$?
+tail -n 55 /cache/cells-native-read-node-final-restored.log
+exit "$task_status"'
+```
+
+Go 最终字节真实正向 `32168` 退出 0：6 顶层 / 72 子项 PASS；私有生产负向
+`5291` 退出 1：2 顶层 / 17 子项 FAIL（另 4 顶层 / 55 子项 PASS）；精确
+还原后 `5475` 退出 0：同 6 顶层 / 72 子项 PASS。负向实际破坏 native
+transport subject 边界、claim ACK、copy/close/长度判断、原结果不可移除
+守卫，以及数值存在性解码。原检查命中错误身份、同键重读、部分流假终态、
+持久结果被删及四个 missing/null→0 假计量对象，不以编译失败充当负向。
+`scheduler/jobs/rest`、`gateway/data/hooks`、`gateway/data/gw` 输出
+`[no test files]`，仅编译，不冒充其真实 HTTP/S3 集成验收。
+
+Node 最终字节 `41565` 退出 0：512/512 PASS；私有生产负向 `44893` 退出 1：
+497 PASS / 15 FAIL（4 顶层 / 11 子项 FAIL）；还原后 `35984` 退出 0：512/512
+PASS。实际破坏 readExecution 缺失拒绝、旧 Task found 防第二 GET 与 exact
+frozen measurements 对比；原 HTTP suite 命中这些生产错误，不是 raw JSON
+伪协议检查。命令明确过滤两项 ONLYOFFICE 名称；runner 输出 skipped=0 不
+代表该两项执行，本次不声称全套/完整文档协议已验。
+
+首轮失败原件保留：Go `32188` 退出 1，fixture 引用了不存在的生成 Stub；
+`14473` 退出 1，OIDC fixture 缺原 token `expires_in`；`94564` 退出 1，
+原权限 cache resolver 未装配。均修正原真实 fixture 调用，不弱化生产验证。
+其后 `91210` 的 6/68、`28168` 的 2/13 FAIL 是数值存在性修正前旧字节证据，
+不覆盖最终 6/72 与 2/17。Node 早期正向日志未保存命令 exit，只有 summary，
+不将它声明为 exit 0；旧还原 `45404` 是 505/505。`54589` 退出 1 的 fixture
+校准日志保留：原 SERVICE shared fixture 条件及 invalid config 的 server
+清理不当，精确终止该轮独立 fixture 后修正；不是生产 guard 负向。最终以
+上述最终字节命令为验收证据。
+
+全部日志及真实 Go 生产变异补丁位于：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/cells-native-read-receipt-20261009.uWm92Y/`。
+
+| 日志 / 生产变异补丁 | SHA-256 |
+| --- | --- |
+| cells-native-read-positive.log | `fa6542113c748d09b1a9bdc10d2b3b50aea0d77135f5de8bf17578ba7a18b128` |
+| cells-native-read-calibrated.log | `e3d9f2bec5823edb634ba0547ccdd4b69ce6a6abc5608897ed39ee9228d65f78` |
+| cells-native-read-final-positive.log | `c7c2d506893979d7ce837e135776e2e4039168cc34127bc17cf1646e6206da37` |
+| cells-native-read-cache-calibrated.log | `2944be980e40bf3157c3653d6ba806efc001f719b0c6b42ac4fd07af53fbf988` |
+| cells-native-read-production-negative.log | `2d65b3f896895d1f07c2eb29a6aa5fd88e81a8854bc113b29321bbb3bdc5e7ea` |
+| cells-native-read-production-mutation.patch | `54a1ea03a9036998ebbc082ccb04be24c51c4aff22554dc9626202be30649927` |
+| cells-native-read-final-presence-positive.log | `35544c33f88b4a682396cf57738302566528db68e2d966bf9c730cde661bc491` |
+| cells-native-read-final-production-negative.log | `1b877ef0cab0ccd8bbcf0132c5452621f6cad6dca99106b349352a70daf084ac` |
+| cells-native-read-final-production-mutation.patch | `276a58744381b928585d7f3f812dbffd820adb0b2b3817f0c11f631959b206f0` |
+| cells-native-read-final-restored.log | `af18a9d9f0f11a01735d833b10750e712112afba101a1cbf68b3699c6075d791` |
+| cells-native-read-node-positive.log | `9bd38dbee6e7b9888147f4705f970193530047b31414af23baba1969130cab56` |
+| cells-native-read-node-negative.log | `0adcc1fe6768bbb2315fdd1da0203ed7aae3169e25b2036b7b8648afcdece940` |
+| cells-native-read-node-restored.log | `db93bd0b4650e80c2973ea22b1e02a5090327d287c0e826dd7a43bf42fbad84b` |
+| cells-native-read-node-final-positive.log | `d42a876507b75ba5937bc2a333c42963036d586d0c3de08626987a456f5cf9bd` |
+| cells-native-read-node-final-calibrated.log | `aa6bd19304ec5a7906174fab9b57acde1c9022640a4d822f1970a9ad544e1ae4` |
+| cells-native-read-node-final-negative.log | `84644aa9461db1f7f8fbd14c95be4338abbcbf7935c081ad405e9a3565724293` |
+| cells-native-read-node-final-restored.log | `a350fe75043a6110697a55f2f58ead9bcfdbd44ac45d1e7a8bfb7bfd04372998` |
+
+最终 15 个源码/原检查/投递消费者文件（本表路径均相对 `apps/file-storage/`）：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| common/auth/native-action.go | `dbec4b2b98473887de890843162485a1dc201bce278815dd723b2721c3714d7c` |
+| common/auth/mapping-rule_test.go | `8eaa644f054abe288c64561367a658f452229f38d16075f69c70e246bc5a8ef0` |
+| common/auth/native-read.go | `726476351d3a03e16dd420e01e3934b091e61fafe0d5d83bc66495f2e7c447eb` |
+| gateway/data/hooks/auth-handler.go | `f522ab06e6e394836864228242eed70f33fe5f99bece2d2019faa1a0e6b9d6c8` |
+| gateway/data/gw/gateway-pydio.go | `eb2ec599f89ea2c122e1e3679b1794daebfd19714ba3a07154761e6d39376bae` |
+| scheduler/jobs/dao.go | `3ffd4dfeb91879b142aca1a008b3babec9f7f95d3339ba3d6d0f7c63836d333f` |
+| scheduler/jobs/grpc/task-receipt_test.go | `891bf2517e331e31b74d07301f5ffe1a71929d6f5a242fd9142e008b7b1c5d96` |
+| scheduler/jobs/rest/handler.go | `a31312ecd7d3415835f613f972b0ebc92c8b15af765149b21b79d0182ff3646f` |
+| scheduler/jobs/native-read.go | `10b065bed95ce2164a1938961d9c7f2c65b890c6edd5e0724e568e9fafbc9479` |
+| scheduler/jobs/rest/native-read.go | `51196dbec88a01a423e6f9b2c39dddd3580716ec8b5dd21eddcdd3ec72f15c73` |
+| adapter/src/node-execution.mjs | `27c35d7514bc30aa836f5783228f166f5087c7084cc5418f4103f1b6074ee4a5` |
+| adapter/src/service-read.mjs | `a61414d59af5bb11e0fdcea0f5f945fbfad20097abcc040b8c4829d2fb53d993` |
+| adapter/src/query-revision.mjs | `164d5c618c78a989acd46a519fb7b8d23f74efae7fd6c704e8cd8aedad270ebe` |
+| adapter/test/query-revision.test.mjs | `37d5261225554588e79b913bb115ebecff1aad19f22c0dc3818346e1d00488da` |
+| deploy/start.sh | `04a58075a2d58be291196f6303dc795c2c1fb0133fc2591ad6f6e00bc8159207` |
+
+仍未交付的真实结果/运行边界：
+
+- `io.Copy`/source close 完成仅证明 native producer 已写出该流，不证明客户端
+  收到正文。同键 retained receipt 的 execute 仅回 `{execution}`，不重读正文。
+  Core `application_tool.rs::output_value` 对缺 `resultJson` 拒绝，不冒充 Agent
+  已拿到文件；HUMAN `application_native_human.rs::handle` 当前只消费
+  submission/inputReference/terminalStatus/nativeType/nativeId，没有本批正文
+  下载 UI consumer。两者不能用原 Task SUCCEEDED 伪装成功获取正文。
+- 原 Task 不允许用户 purge 后同键再执行，但失联/部分流 claim 的有界对账与
+  安全退休期限尚无完整消费者。旧 generation 的在途观察也未在真实服务证明。
+  不能无限留任务并称生产就绪，也不能发明 TTL 后删除 key。本批未批准能力。
+- 本批没有 list/list_revisions 同键计量、首次上传准入/Writer 退休、完整
+  generic write/delete/share、七必选 catalog/APPROVED release/ACTIVE binding。
+  原 API/原页面功能保留，但上述治理入口继续关闭；未用部分 read/export
+  子集冒充完整类别批准。独立组件可运行不证明平台绑定已生效。
+- 没有实 S3/原 HTTP PolicyEngine 全链、实 Core/SpiceDB/业务库、Mongo fixture、
+  浏览器截图、Windows/Mobile、全量 conformance、`check.sh --full`、镜像/安装包
+  构建或部署。本批原测试使用受控私有 fixture，原 logger/broker 诊断保留；
+  不是 Cells→WeKnora live E2E 或正式数据库验收。源码写入、目标验收与发布
+  状态分离；本回执不把根代理另外一批 Core PEP 的验证借作本批线上证据。

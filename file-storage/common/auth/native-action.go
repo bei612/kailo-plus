@@ -26,6 +26,7 @@ type NativeActorDelivery struct {
 	NativeScopeRef    string                     `json:"nativeScopeRef"`
 	NativeRootRef     string                     `json:"nativeRootRef"`
 	DraftUploads      *NativeDraftUploadDelivery `json:"draftUploads,omitempty"`
+	Read              *NativeReadDelivery        `json:"read,omitempty"`
 	Actors            []struct {
 		PrincipalID string `json:"principalId"`
 		Kind        string `json:"kind"`

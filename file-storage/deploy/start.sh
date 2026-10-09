@@ -88,7 +88,7 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'draftUploads'}, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
@@ -109,6 +109,15 @@ try:
             for key in ('actionVersion', 'resultExposurePolicyVersion'):
                 require(type(write[key]) is int and write[key] > 0, 'native write versions must be delivered')
             require(isinstance(write['nativeType'], str) and write['nativeType'].strip() == write['nativeType'] != '', 'native write resource kind must be delivered')
+        if 'read' in delivery:
+            read = delivery['read']
+            require(isinstance(read, dict) and set(read) == {'nativeJobId', 'usageMeasurements'}, 'native read metadata must match the original Task consumer')
+            require(isinstance(read['nativeJobId'], str) and read['nativeJobId'].strip() == read['nativeJobId'] != '', 'native read job must be delivered')
+            require(isinstance(read['usageMeasurements'], list), 'native read meters must be explicitly delivered, including NONE')
+            meters = set()
+            for meter in read['usageMeasurements']:
+                require(isinstance(meter, dict) and set(meter) == {'meterKey', 'quantitySource'} and isinstance(meter['meterKey'], str) and meter['meterKey'] != '' and meter['meterKey'] not in meters and meter['quantitySource'] in ('COUNT', 'CONTENT_BYTES'), 'native read meters must match the approved mapping')
+                meters.add(meter['meterKey'])
         for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
             require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
         for key in ('maxResponseBytes', 'clientSecretMaxBytes'):
@@ -184,6 +193,13 @@ try:
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
+    if 'readExecution' in conf:
+        native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
+        require(conf['readExecution'] == native['read'])
+        require(all(conf[key] == native[key] for key in ('bindingId', 'tenantId', 'nativeRootRef')))
+        require(conf.get('workspaceId') == native.get('workspaceId'))
+        require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
+        require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
     if 'write' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['write']['nativeJobId'] == native['write']['nativeJobId'])

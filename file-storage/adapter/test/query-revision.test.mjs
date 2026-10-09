@@ -96,6 +96,8 @@ async function setup(t, changes = {}) {
   const business = changes.businessList || changes.businessRead || changes.businessAction !== undefined;
   const businessAction = changes.businessAction ?? (changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1');
   const operation = changes.operation ?? 'query_revision';
+  if (changes.readExecution === undefined) changes.readExecution = business && operation === 'execute'
+    && ['file_storage.read@v1','file_storage.export@v1'].includes(businessAction);
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const gateway = changes.mcp ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : undefined;
@@ -158,15 +160,28 @@ async function setup(t, changes = {}) {
     }
     if (request.url === `/native-bytes?versionId=${changes.downloadRevision ?? 'frozen-version'}` && changes.serviceRead) {
       assert.equal(request.headers.authorization, undefined);
+      if (changes.readExecution) {
+        const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
+        assert.equal(proof.argumentsJson, canonical(requestArguments));
+        assert.equal(request.headers['idempotency-key'], ids[7]);
+      } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
       state.downloads = (state.downloads ?? 0) + 1;
       await state.onDownload?.();
+      if (changes.readExecution) {
+        const bytes = changes.nativeBytes ?? Buffer.from([0,255,1,254]);
+        state.nativeReadReceipt = {found:true, execution:{idempotencyKey:ids[7], nativeType:'node', nativeId:ids[3],
+          platformStatus:'SUCCEEDED', cancelCapability:'UNSUPPORTED', lastObservedAt:'2026-10-09T00:00:00Z', terminalAt:'2026-10-09T00:00:00Z'},
+          contentBytes:bytes.length, contentSha256:createHash('sha256').update(bytes).digest('hex'),
+          contentReference:requestArguments.input,
+          measurements:[{meterKey:'approved_read_count',quantity:1},{meterKey:'approved_read_bytes',quantity:bytes.length}]};
+      }
       response.writeHead(200, {'content-type':'application/octet-stream'});
       response.end(changes.nativeBytes ?? Buffer.from([0,255,1,254]));
       return;
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
-    if (business && (operation === 'execute' || changes.write)) {
+    if (business && (operation === 'execute' || changes.write || changes.readExecution)) {
       const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
       assert.deepEqual(Object.keys(proof).sort(), ['actionToken','argumentsJson']);
       assert.equal(proof.argumentsJson, canonical(requestArguments));
@@ -178,6 +193,16 @@ async function setup(t, changes = {}) {
       if (!changes.missingActorAck) response.setHeader('x-kailo-native-actor', changes.actorAck ??
         `${actor.tenant_id}:${ids[0]}:${kind}:${actor.actor_principal_id}`);
     } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
+    if (changes.readExecution && request.url === '/v2/jobs/user') {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      assert.equal(request.headers['x-kailo-native-operation'], operation);
+      assert.equal(request.headers['idempotency-key'], ids[7]);
+      assert.deepEqual(JSON.parse(raw), {JobIDs:['delivered-read-job'],LoadTasks:'Any'});
+      state.readTaskQueries=(state.readTaskQueries??0)+1;
+      const value = changes.readResult ? changes.readResult(state) : state.nativeReadReceipt ?? {found:false,
+        execution:{idempotencyKey:ids[7], nativeType:'node', platformStatus:'UNKNOWN', cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'}};
+      return reply(response, changes.readTaskStatus ?? 200, value);
+    }
     if (changes.write && (request.url === `/v2/n/node/${ids[3]}/versions/opaque-draft-v1/promote` || request.url === '/v2/jobs/user')) {
       let raw = ''; for await (const chunk of request) raw += chunk;
       if (operation === 'execute') {
@@ -259,6 +284,7 @@ async function setup(t, changes = {}) {
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const proofFiles = [];
   if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
+  if (changes.readExecution) config.readExecution={nativeJobId:'delivered-read-job',usageMeasurements:[{meterKey:'approved_read_count',quantitySource:'COUNT'},{meterKey:'approved_read_bytes',quantitySource:'CONTENT_BYTES'}],...changes.readExecutionConfig};
   let secretAgent;
   if (changes.validation) {
     const secretSocket = join(directory, 'agent.sock');
@@ -352,7 +378,7 @@ async function setup(t, changes = {}) {
         target_type:'RESOURCE',target_id:ids[10],action_key:businessAction,
         delegation_id:changes.businessHuman ? undefined : ids[11], delegation_version:changes.businessHuman ? undefined : 1,
         result_exposure_policy_id:ids[9],result_exposure_policy_version:1,idempotency_key:ids[7],
-        ...(changes.businessHuman || changes.write ? {external_execution_id:ids[8]} : {}),
+        ...(changes.businessHuman || changes.write || changes.readExecution ? {external_execution_id:ids[8]} : {}),
         normalized_parameter_hash:createHash('sha256').update(canonical(operation==='execute'
           ? requestArguments : {operation,arguments:requestArguments})).digest('hex')} : {}), ...change };
     return signedClaims(claims,key);
@@ -1031,6 +1057,96 @@ test('revision query rejects draft nodes and malformed native state before obser
         assert.equal(fixture.state.queries.length, 0);
       });
     }
+  }
+});
+
+test('native read Task producer closes actual read/export and never repeats the original bytes', async t => {
+  for (const action of ['file_storage.read@v1','file_storage.export@v1']) {
+    for (const human of [true,false]) {
+      await t.test(`${action}:${human?'HUMAN':'AGENT'}`, async nested => {
+        const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'};
+        const argumentsValue={target:{resourceId:ids[10]},input};
+        const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,validation:true,
+          businessRead:action==='file_storage.read@v1',...(action==='file_storage.export@v1'?{businessAction:action}:{}),
+          businessHuman:human,serviceRead:true,readExecution:true,nativeBytes:Buffer.from('test')});
+        const request={path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:action,idempotencyKey:ids[7],arguments:argumentsValue})};
+        const first=await fixture.invoke(request); assert.equal(first.status,200);
+        const result=await first.json(); assert.equal(result.execution.platformStatus,'SUCCEEDED');
+        assert.equal(result.execution.terminalAt,'2026-10-09T00:00:00Z');
+        assert.deepEqual(JSON.parse(result.resultJson),action==='file_storage.read@v1'?{text:'test'}:{contentBase64:Buffer.from('test').toString('base64'),filename:'file.txt',mediaType:'text/plain'});
+        assert.equal(fixture.state.downloads,1); assert.equal(fixture.state.readTaskQueries,2);
+        const repeat=await fixture.invoke(request); assert.equal(repeat.status,200);
+        assert.deepEqual(await repeat.json(),{execution:result.execution});
+        assert.equal(fixture.state.downloads,1); assert.equal(fixture.state.queries.length,1);
+        assert.equal(fixture.state.receipts.length,0);
+      });
+    }
+  }
+});
+
+test('node observe/extract_usage consume exact original Task evidence without any file read', async t => {
+  const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'original-read-version',displayName:'file.txt',mediaType:'text/plain'};
+  const persisted={found:true,execution:{idempotencyKey:ids[7],nativeType:'node',nativeId:ids[3],platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',
+    lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'},contentReference:input,contentBytes:0,
+    contentSha256:createHash('sha256').update(Buffer.alloc(0)).digest('hex'),measurements:[{meterKey:'approved_read_count',quantity:1},{meterKey:'approved_read_bytes',quantity:0}]};
+  for (const operation of ['observe','extract_usage']) {
+    await t.test(operation,async nested=>{
+      const args={externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'node',nativeId:ids[3]};
+      const fixture=await setup(nested,{operation,arguments:args,validation:true,businessRead:true,readExecution:true,readResult:()=>persisted});
+      const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`,key:ids[7]}); assert.equal(response.status,200);
+      const result=await response.json();
+      assert.deepEqual(result,operation==='observe'?{execution:persisted.execution}:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'node',nativeId:ids[3],
+        measurements:persisted.measurements.map(value=>({...value,occurredAt:persisted.execution.terminalAt}))});
+      assert.equal(fixture.state.downloads??0,0); assert.equal(fixture.state.queries.length,0);
+      assert.equal(fixture.state.readTaskQueries,1); assert.equal(fixture.state.receipts.length,0);
+    });
+  }
+  for (const change of [value=>({...value,measurements:[]}),value=>({...value,measurements:[...value.measurements,{meterKey:'foreign',quantity:1}]}),
+    value=>({...value,measurements:value.measurements.map(m=>({...m,quantity:42}))}),value=>({...value,contentBytes:null}),
+    value=>({...value,contentSha256:'not-native-evidence'}),value=>({...value,execution:{...value.execution,nativeId:ids[0]}})]) {
+    await t.test('invalid/missing native evidence is not zero usage',async nested=>{
+      const fixture=await setup(nested,{operation:'extract_usage',arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'node',nativeId:ids[3]},
+        validation:true,businessRead:true,readExecution:true,readResult:()=>change(persisted)});
+      assert.equal((await fixture.invoke({path:'/platform-adapter/v1/extract_usage',key:ids[7]})).status,503);
+      assert.equal(fixture.state.downloads??0,0);
+    });
+  }
+});
+
+test('claimed or unconfirmed native reads never refetch or invent usage', async t=>{
+  for (const status of ['UNKNOWN','RUNNING']) {
+    await t.test(status,async nested=>{
+      const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'};
+      const args={target:{resourceId:ids[10]},input};
+      const fixture=await setup(nested,{operation:'execute',arguments:args,validation:true,businessRead:true,serviceRead:true,readExecution:true,
+        readResult:()=>({found:true,execution:{idempotencyKey:ids[7],nativeType:'node',platformStatus:status,cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'}})});
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:'file_storage.read@v1',idempotencyKey:ids[7],arguments:args})});
+      assert.equal(response.status,200); assert.equal((await response.json()).execution.platformStatus,status);
+      assert.equal(fixture.state.downloads??0,0); assert.equal(fixture.state.queries.length,0);
+    });
+  }
+});
+
+test('business reads without the controlled native Task delivery never start a file fetch',async t=>{
+  for (const action of ['file_storage.read@v1','file_storage.export@v1']) {
+    await t.test(action,async nested=>{
+      const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'};
+      const args={target:{resourceId:ids[10]},input};
+      const fixture=await setup(nested,{operation:'execute',arguments:args,validation:true,readExecution:false,
+        ...(action==='file_storage.read@v1'?{businessRead:true}:{businessAction:action}),serviceRead:true});
+      const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:action,idempotencyKey:ids[7],arguments:args})});
+      assert.equal(answer.status,503); assert.deepEqual(await answer.json(),{error:'adapter request refused'});
+      assert.equal(fixture.state.downloads??0,0); assert.equal(fixture.state.readTaskQueries??0,0);
+      assert.equal(fixture.state.nativeReads.length,0); assert.equal(fixture.state.receipts.length,0);
+    });
+  }
+  for (const readExecutionConfig of [{nativeJobId:''},{usageMeasurements:undefined},{usageMeasurements:null},
+    {usageMeasurements:[{meterKey:'delivered',quantitySource:'UNCONFIRMED'}]}]) {
+    await t.test('missing/invalid controlled native Task fact is not a default',async nested=>{
+      const fixture=await setup(nested,{operation:'execute',validation:true,businessRead:true});
+      assert.throws(()=>createAdapter({...fixture.config,readExecution:{...fixture.config.readExecution,...readExecutionConfig}}),
+        error=>error.status===503);
+    });
   }
 });
 
