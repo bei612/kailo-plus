@@ -18,11 +18,13 @@ import { platformQueries } from "./queries";
 import { Button } from "@/shared/ui/button";
 import { inboxWindowEvents } from "./inbox-events";
 import { FeatureGate } from "@client-kit/platform/react/features";
+import { forcedUnreadMarker, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 
 type Group = "starred" | "channels" | "forums";
 
 export function ChannelSidebar({ principalId, workspaces, selectedId, active, reads, preferencePending,
   onSelect, onCreate, onCreateForum, onSetPreference, onActivity, onUnreadChange,
+  forcedUnread = {}, onMarkChannelUnread, onClearChannelManualUnread,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
@@ -36,6 +38,9 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   onSetPreference: (id: string, next: { starred: boolean; muted: boolean }) => void;
   onActivity?: (activity: ReadonlyMap<string, string | null>) => void;
   onUnreadChange?: (unread: ReadonlySet<string>) => void;
+  forcedUnread?: ForcedUnreadMap;
+  onMarkChannelUnread?: (channelId: string) => void;
+  onClearChannelManualUnread?: (channelId: string) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
@@ -77,14 +82,35 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   const knownActivity = messages.isSuccess && !messages.isFetching && reads.state !== null;
   const canWriteRead = knownActivity && !reads.pending && !reads.unknown && !preferencePending;
   const canWritePreference = reads.state !== null && !reads.pending && !reads.unknown && !preferencePending;
-  const unread = useMemo(() => new Set(knownActivity ? workspaces.filter((row) =>
-    row.isMember === true && messages.data?.get(row.id)?.events.some((event) => event.createdAt > (reads.eventReadAt(event) ?? -Infinity)),
-  ).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.eventReadAt]);
+  const unread = useMemo(() => new Set(knownActivity ? workspaces.filter((row) => {
+    if (row.isMember !== true) return false;
+    const channel = messages.data?.get(row.id);
+    if (!channel) return false;
+    const forced = forcedUnread[channel.channelId];
+    const baseline = forced === undefined ? undefined : forcedUnreadMarker(forced);
+    const observed = reads.readAt(channel.channelId);
+    // Original rail gate: a newer synced marker wins over this local source.
+    return (baseline !== undefined && (baseline === null || observed === null || observed <= baseline)) ||
+      channel.events.some(event => event.createdAt > (reads.eventReadAt(event) ?? -Infinity));
+  }).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.eventReadAt, reads.readAt, forcedUnread]);
   useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
   const mark = (ids: string[], read: boolean) => {
     if (!canWriteRead) return;
+    if (!read) {
+      for (const id of ids) {
+        const channelId = messages.data?.get(id)?.channelId;
+        if (channelId) onMarkChannelUnread?.(channelId);
+      }
+      return;
+    }
     void reads.write(inboxReadContexts(ids.flatMap((id) => messages.data?.get(id)?.events ?? []), read))
-      .then(() => queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }));
+      .then(accepted => {
+        if (accepted) for (const id of ids) {
+          const channelId = messages.data?.get(id)?.channelId;
+          if (channelId) onClearChannelManualUnread?.(channelId);
+        }
+        return queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
+      });
   };
   const updatePreference = (id: string, change: { starred?: boolean; muted?: boolean }) => {
     if (!canWritePreference) return;
@@ -116,7 +142,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
       isStarred={preferences[channel.id]?.starred} onCopy={copy}
       onMarkChannelRead={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], true) : undefined}
-      onMarkChannelUnread={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], false) : undefined}
+      onMarkChannelUnread={canWriteRead && onMarkChannelUnread && joined.some((row) => row.id === channel.id) ? (id) => mark([id], false) : undefined}
       onStarChannel={key !== "forums" && canWritePreference ? (id) => updatePreference(id, { starred: true }) : undefined}
       onUnstarChannel={key !== "forums" && canWritePreference ? (id) => updatePreference(id, { starred: false }) : undefined}
       onMuteChannel={canWritePreference ? (id) => updatePreference(id, { muted: true }) : undefined}

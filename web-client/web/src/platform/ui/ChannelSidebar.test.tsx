@@ -9,7 +9,7 @@ import type { Event as SidebarEvent } from "./inbox-events";
 
 const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { channelId: string; events: SidebarEvent[] }>>),
   channel: vi.fn(async (workspace: string) => ({channelId:`native-${workspace}`, channelType:"stream"})), messages: vi.fn(),
-  menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
+  menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void; markRead?: (id: string) => void; markUnread?: (id: string) => void }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
@@ -29,10 +29,10 @@ vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
     <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
-  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onStarChannel, onMuteChannel, onUnmuteChannel }: {
-    channel: { id: string }; copyChannelId: string | null; onMarkChannelRead?: unknown; onStarChannel?: unknown;
+  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel }: {
+    channel: { id: string }; copyChannelId: string | null; onMarkChannelRead?: (id: string) => void; onMarkChannelUnread?: (id: string) => void; onStarChannel?: unknown;
     onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void;
-  }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
+  }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel, markRead: onMarkChannelRead, markUnread: onMarkChannelUnread }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
@@ -133,6 +133,42 @@ it("retains original channel mute and unmute consumers with the authoritative st
   expect(snapshot.menus.get("one")!.mute).toBeUndefined();
   expect(snapshot.menus.get("one")!.unmute).toBeUndefined();
   expect(write).toHaveBeenCalledTimes(2);
+});
+
+it("the original local manual source uses native channel IDs and yields to a newer synced marker or revoked admission", () => {
+  const page = (marker: number, member = true) => renderToStaticMarkup(<ChannelSidebar principalId="me"
+    workspaces={[{id: "two", name: "Two", slug: "two", isMember: member}]}
+    selectedId="two" active reads={{...reads, readAt: () => marker}} preferencePending={false}
+    forcedUnread={{"native-two": {markerAtWhenForced: 20, sources: ["manual"]}}}
+    onSelect={vi.fn()} onCreate={vi.fn()} onCreateForum={vi.fn()} onSetPreference={vi.fn()} />);
+  snapshot.failed = false; snapshot.fetching = false;
+  expect(page(20)).toContain('data-unread="true"');
+  expect(page(21)).not.toContain('data-unread="true"');
+  expect(page(20, false)).not.toContain('data-unread="true"');
+  snapshot.fetching = true;
+  try { expect(page(20)).not.toContain('data-unread="true"'); }
+  finally { snapshot.fetching = false; }
+});
+
+it("ordinary sidebar mark-unread calls the original manual-source consumer, not a channel CAS rollback", async () => {
+  snapshot.failed = false; snapshot.fetching = false;
+  const write = vi.fn(async () => true);
+  const markManual = vi.fn(); const clearManual = vi.fn();
+  const page = (unknown: boolean) => <ChannelSidebar principalId="me"
+    workspaces={[{id: "one", name: "One", slug: "one", isMember: true}]}
+    selectedId="one" active reads={{...reads, unknown, write}} preferencePending={false}
+    onMarkChannelUnread={markManual} onClearChannelManualUnread={clearManual}
+    onSelect={vi.fn()} onCreate={vi.fn()} onCreateForum={vi.fn()} onSetPreference={vi.fn()} />;
+  renderToStaticMarkup(page(false));
+  snapshot.menus.get("one")!.markUnread!("one");
+  expect(markManual).toHaveBeenCalledExactlyOnceWith("native-one");
+  expect(write).not.toHaveBeenCalled();
+  snapshot.menus.get("one")!.markRead!("one");
+  await Promise.resolve(); await Promise.resolve();
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(clearManual).toHaveBeenCalledExactlyOnceWith("native-one");
+  renderToStaticMarkup(page(true));
+  expect(snapshot.menus.get("one")!.markUnread).toBeUndefined();
 });
 
 it("feeds actual admitted unread destinations to the sidebar observer and clears failed or revoked observations", async () => {

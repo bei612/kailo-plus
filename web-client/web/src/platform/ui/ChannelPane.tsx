@@ -45,7 +45,7 @@ import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
 import { useMessageReactions } from "./useMessageReactions";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
-import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId, useChannelMessageEdit } from "@client-kit/platform/react/thread";
+import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId, useChannelMessageEdit, buildThreadPanelIndex } from "@client-kit/platform/react/thread";
 import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
@@ -101,6 +101,8 @@ export function ChannelPane({
   channelId: admittedChannelId,
   myPrincipalId,
   onReadStateChanged,
+  onMarkChannelUnread,
+  onClearChannelManualUnread,
   conversation,
   onOpenMessageLink,
   targetMessageId,
@@ -116,6 +118,8 @@ export function ChannelPane({
   channelId?: string;
   myPrincipalId: string;
   onReadStateChanged?: () => void | Promise<void>;
+  onMarkChannelUnread?: (channelId: string) => void;
+  onClearChannelManualUnread?: (channelId: string) => void;
   conversation?: ConversationView;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   targetMessageId?: string;
@@ -415,10 +419,30 @@ export function ChannelPane({
   const newest = events.filter(event => isConversationalUnreadKind(event.kind)).at(-1);
 
   const attemptedRead = useRef<ReadMarkRequest | null>(null);
+  const attemptedReadScope = useRef<string | null>(null);
   const [readRechecking, setReadRechecking] = useState(false);
   const rechecking = useRef(false);
-  const readScope = useRef({ active: true, live, visible, denied, channelId });
-  readScope.current = { active: true, live, visible, denied, channelId };
+  const readScopeKey = JSON.stringify([myPrincipalId, workspaceId, conversation?.id, channelId]);
+  const readScope = useRef({ active: true, live, visible, denied, metadataPending, key: readScopeKey });
+  readScope.current = { active: true, live, visible, denied, metadataPending, key: readScopeKey };
+  type MessageReadBatch = {scope: string; read: boolean; ids: string[]; contexts: {key: string; seconds: number}[]; index: number; version: number};
+  const manualReadBatch = useRef<MessageReadBatch | null>(null);
+  const [manualReadPending, setManualReadPending] = useState(false);
+  // Original forcedUnreadMsgRef is a view-only overlay ending on channel leave.
+  // Core remains the persisted read-state authority; the overlay follows ACKs.
+  const [forcedUnread, setForcedUnread] = useState<{scope: string; ids: ReadonlySet<string>}>({scope: readScopeKey, ids: new Set()});
+  const forcedUnreadIds = forcedUnread.scope === readScopeKey ? forcedUnread.ids : new Set<string>();
+  const openedReadScope = useRef<string | null>(null);
+  useEffect(() => {
+    attemptedRead.current = null; attemptedReadScope.current = null;
+    manualReadBatch.current = null; setManualReadPending(false);
+  }, [readScopeKey]);
+  useEffect(() => {
+    if (!conversation && channelId && live && visible && !denied && !metadataPending && userState.isSuccess && !userState.isError && openedReadScope.current !== readScopeKey) {
+      openedReadScope.current = readScopeKey;
+      onClearChannelManualUnread?.(channelId);
+    }
+  }, [conversation, channelId, live, visible, denied, metadataPending, userState.isSuccess, userState.isError, readScopeKey, onClearChannelManualUnread]);
   useEffect(() => {
     readScope.current.active = true;
     return () => { readScope.current.active = false; };
@@ -442,7 +466,8 @@ export function ChannelPane({
   const readMutate = read.mutate;
   useEffect(() => {
     if (!live || !visible || denied || !channelId || !newest || !userState.isSuccess
-      || userState.isFetching || !userState.data || readPending || readRechecking) return;
+      || userState.isFetching || !userState.data || readPending || readRechecking || manualReadPending
+      || manualReadBatch.current?.scope === readScopeKey || forcedUnreadIds.size > 0) return;
     if (newest.created_at <= lastRead) return;
     if (attemptedRead.current && userState.data.version <= attemptedRead.current.version) return;
     const request = {
@@ -451,9 +476,72 @@ export function ChannelPane({
       version: userState.data.version,
     };
     attemptedRead.current = request;
+    attemptedReadScope.current = readScopeKey;
     readMutate(request);
   }, [live, visible, denied, channelId, newest, lastRead, userState.data,
-    userState.isSuccess, userState.isFetching, readPending, readRechecking, readMutate]);
+    userState.isSuccess, userState.isFetching, readPending, readRechecking, readMutate, readScopeKey, manualReadPending, forcedUnreadIds.size]);
+
+  const isMessageUnread = (message: TimelineMessage) => {
+    if (!userState.isSuccess || userState.isError || !userState.data || mine.has(message.pubkey ?? "")) return false;
+    if (forcedUnreadIds.has(message.id)) return true;
+    const rootId = getThreadReference(message.tags ?? []).rootId;
+    const positions = [channelId, `msg:${message.id}`, rootId ? `thread:${rootId}` : null]
+      .flatMap(key => key && userState.data.readContexts[key] ? [Date.parse(userState.data.readContexts[key]) / 1_000] : []);
+    return positions.length === 0 || message.createdAt > Math.max(...positions);
+  };
+  const runMessageReadBatch = async (batch: MessageReadBatch) => {
+    setManualReadPending(true);
+    try {
+      while (batch.index < batch.contexts.length) {
+        const scope = readScope.current;
+        if (manualReadBatch.current !== batch || !scope.active || scope.key !== batch.scope || !scope.live || !scope.visible || scope.denied || scope.metadataPending) return;
+        const context = batch.contexts[batch.index]!;
+        const request = {contextKey: context.key, lastReadAt: toIso(context.seconds), version: batch.version};
+        attemptedRead.current = request; attemptedReadScope.current = batch.scope;
+        const result = await read.mutateAsync(request);
+        if (manualReadBatch.current !== batch || !readScope.current.active || readScope.current.key !== batch.scope) return;
+        batch.version = result.version; batch.index += 1;
+      }
+      const scope = readScope.current;
+      if (manualReadBatch.current !== batch || !scope.active || scope.key !== batch.scope || !scope.live || !scope.visible || scope.denied || scope.metadataPending) return;
+      const ids = new Set(forcedUnreadIds);
+      for (const id of batch.ids) { if (batch.read) ids.delete(id); else ids.add(id); }
+      setForcedUnread({scope: batch.scope, ids});
+      if (!batch.read && channelId) onMarkChannelUnread?.(channelId);
+      else if (ids.size === 0 && channelId) onClearChannelManualUnread?.(channelId);
+      manualReadBatch.current = null;
+    } catch {
+      // The mutation's existing error/recheck surface owns this exact CAS intent.
+      // UNKNOWN keeps the same position/version and never starts another batch.
+    } finally {
+      if (readScope.current.key === batch.scope) setManualReadPending(false);
+    }
+  };
+  const canMarkMessage = !conversation && Boolean(onMarkChannelUnread) && live && visible && !denied && !metadataPending && Boolean(channelId) && userState.isSuccess && !userState.isError && !userState.isFetching &&
+    !readPending && !readRechecking && !manualReadPending && manualReadBatch.current?.scope !== readScopeKey &&
+    (!attemptedRead.current || attemptedReadScope.current !== readScopeKey || userState.data.version > attemptedRead.current.version);
+  const markMessageSubtree = (message: TimelineMessage, messages: readonly TimelineMessage[], markAsRead: boolean) => {
+    if (!canMarkMessage || manualReadBatch.current?.scope === readScopeKey || !channelId) return;
+    const index = buildThreadPanelIndex([...messages]);
+    if (!index.messageById.has(message.id)) return;
+    // Original subtreeCreatedAt::collectReplyDescendantIds walk over the same
+    // shared thread index, including collapsed descendants, not visible rows.
+    const ids = [message.id]; const pending = [...(index.directChildrenByParentId.get(message.id) ?? [])];
+    while (pending.length) {
+      const child = pending.pop()!; ids.push(child.id);
+      pending.push(...(index.directChildrenByParentId.get(child.id) ?? []));
+    }
+    const contexts = new Map<string, number>();
+    for (const id of ids) {
+      const target = index.messageById.get(id)!;
+      // Fixed original ordinary-channel unread is session-local, not a CAS
+      // rollback of the whole channel (which would affect unrelated messages).
+      if (markAsRead) contexts.set(`msg:${id}`, target.createdAt);
+    }
+    const batch = {scope: readScopeKey, read: markAsRead, ids, contexts: [...contexts].map(([key, seconds]) => ({key, seconds})), index: 0, version: userState.data!.version};
+    manualReadBatch.current = batch;
+    void runMessageReadBatch(batch);
+  };
 
   const retryRead = async () => {
     const request = attemptedRead.current;
@@ -463,12 +551,18 @@ export function ChannelPane({
     try {
       const observed = await userState.refetch();
       const scope = readScope.current;
-      if (!scope.active || !scope.live || !scope.visible || scope.denied
-        || scope.channelId !== request.contextKey || !observed.isSuccess) return;
+      if (!scope.active || !scope.live || !scope.visible || scope.denied || scope.metadataPending
+        || scope.key !== attemptedReadScope.current || !observed.isSuccess) return;
       // Explicit retry with the unchanged CAS version is the unchanged intent,
       // even if newer messages arrived while its result was unknown.
-      if (observed.data.version === request.version) readMutate(request);
-      else if (observed.data.version > request.version) read.reset();
+      if (observed.data.version === request.version) {
+        const batch = manualReadBatch.current;
+        if (batch?.scope === scope.key) await runMessageReadBatch(batch);
+        else readMutate(request);
+      } else if (observed.data.version > request.version) {
+        manualReadBatch.current = null;
+        read.reset();
+      }
     } finally {
       rechecking.current = false;
       if (readScope.current.active) setReadRechecking(false);
@@ -517,8 +611,8 @@ export function ChannelPane({
         isLoading={window.isLoading && timelineMessages.length === 0}
         targetMessageId={mainTimelineTargetMessageId}
         hasComposerOverlay={false}
-        firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
-        unreadCount={unreadFromOthers}
+        firstUnreadMessageId={anchor === null || forcedUnreadIds.size > 0 ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
+        unreadCount={forcedUnreadIds.size > 0 ? 0 : unreadFromOthers}
         renderList={props => <ChannelTimelineRows {...props} renderItem={(item, highlightedMessageId) => {
           const entries = item.kind === "system-group" ? item.entries : [item.entry];
           if (entries[0]?.message.kind === 40099) return <div className="flex flex-col gap-1 pb-2.5" data-event-id={entries[0].message.id}>
@@ -543,6 +637,9 @@ export function ChannelPane({
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
                   onDelete={canDelete && message.kind === 9 && message.signerPubkey === ownProfile.data?.pubkey ? deleteMessageDialog.requestDelete : undefined}
+                  isUnread={isMessageUnread(message)}
+                  onMarkRead={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, true) : undefined}
+                  onMarkUnread={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, false) : undefined}
                   onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
@@ -614,7 +711,10 @@ export function ChannelPane({
       editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}
       editBusy={composerBusy || deleteMessageDialog.pending} onEditSendingChange={setComposerBusy}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
-      onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
+      onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink}
+      isMessageUnread={isMessageUnread}
+      onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}
+      onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : null}
     </AnimatePresence>
     {deleteMessageDialog.dialog}
     </div>

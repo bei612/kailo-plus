@@ -13,12 +13,15 @@ import { platformQueries } from "./queries";
 import { setLocale } from "@client-kit/platform/i18n";
 import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import { clearAllDrafts, loadDraftEntry, saveDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { compareRelayOrder } from "@client-kit/platform/react/messages/timeline/channelWindowStore";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   receive: null as null | ((frame: StreamFrame) => void),
   fetch: vi.fn(),
   mark: vi.fn(),
+  markManual: vi.fn(),
+  clearManual: vi.fn(),
   notify: vi.fn(),
   publish: vi.fn(),
   delete: vi.fn(),
@@ -102,11 +105,13 @@ async function flush() {
       }
     });
 }
-async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView } = {}) {
+async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView; key?:string } = {}) {
+  const {key, ...channelProps} = props;
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" channelName="Original channel" myPrincipalId="human-a" {...props} /></TooltipProvider>
+        <TooltipProvider><ChannelPane key={key} workspaceId="workspace-a" channelId="channel-a" channelName="Original channel" myPrincipalId="human-a"
+          onMarkChannelUnread={state.markManual} onClearChannelManualUnread={state.clearManual} {...channelProps} /></TooltipProvider>
       </QueryClientProvider>,
     );
   });
@@ -119,6 +124,134 @@ async function open() {
   });
   await flush();
 }
+async function messageReadMenu(id: string, within: ParentNode = host) {
+  const trigger = within.querySelector<HTMLButtonElement>(`[data-testid="more-actions-${id}"]`);
+  expect(trigger, `${id}: ${within.textContent}`).not.toBeNull();
+  await act(async () => trigger!.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})));
+  await flush();
+  const item = document.querySelector<HTMLElement>(`[data-testid="mark-read-toggle-${id}"]`);
+  expect(item).not.toBeNull();
+  return item!;
+}
+async function toggleMessageRead(id: string, within: ParentNode = host) {
+  const item = await messageReadMenu(id, within);
+  await act(async () => item.click()); await flush();
+}
+function acceptReadMarks() {
+  state.mark.mockImplementation(async (request: ReadMarkRequest) => {
+    expect(request.version).toBe(projection.version);
+    projection = {...projection, version: request.version + 1,
+      readContexts: {...projection.readContexts, [request.contextKey]: request.lastReadAt}};
+    return {version: projection.version};
+  });
+}
+
+it.each(["main", "thread"])("the real %s read/unread row menu preserves the original local subtree, including collapsed same-second descendants", async surface => {
+  projection.readContexts["channel-a"] = new Date(100_000).toISOString();
+  acceptReadMarks();
+  const child = {...event(20), tags: [["h", "channel-a"], ["e", "event-10", "", "root"], ["e", "event-10", "", "reply"]]};
+  const grandchild = {...child, id: "same-second-grandchild", tags: [["h", "channel-a"], ["e", "event-10", "", "root"], ["e", "event-20", "", "reply"]]};
+  const unrelated = {...event(20), id: "same-second-unrelated"};
+  const loaded = [event(10), child, grandchild, unrelated];
+  const wire = windowEvents([...loaded].sort(compareRelayOrder));
+  threadMessages.splice(0, threadMessages.length, ...loaded.map(item => ({...item, createdAt: item.created_at})));
+  state.history.mockResolvedValue({events: wire});
+  await renderChannel();
+  await act(async () => {state.receive!({type: "snapshot", events: wire}); state.receive!({type: "live"});});
+  await flush();
+  if (surface === "thread") {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+    await flush();
+  }
+  const within = surface === "thread" ? host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')! : host;
+  const unread = await messageReadMenu("event-10", within);
+  expect(unread.textContent).toBe("Mark unread");
+  await act(async () => unread.click()); await flush();
+  expect(state.mark).not.toHaveBeenCalled();
+  expect(state.markManual).toHaveBeenCalledExactlyOnceWith("channel-a");
+  expect(projection.readContexts["channel-a"]).toBe(new Date(100_000).toISOString());
+  if (surface === "main") {
+    expect((await messageReadMenu("same-second-unrelated")).textContent).toBe("Mark unread");
+  }
+  const count = state.mark.mock.calls.length;
+  await flush(); await flush();
+  expect(state.mark).toHaveBeenCalledTimes(count); // Auto-read must not erase the deliberate unread action.
+  const read = await messageReadMenu("event-10", within);
+  expect(read.textContent).toBe("Mark read");
+  await act(async () => read.click()); await flush();
+  expect(projection.readContexts["msg:event-10"]).toBe(new Date(10_000).toISOString());
+  expect(projection.readContexts["msg:event-20"]).toBe(new Date(20_000).toISOString());
+  expect(projection.readContexts["msg:same-second-grandchild"]).toBe(new Date(20_000).toISOString());
+  expect(projection.readContexts["msg:same-second-unrelated"]).toBeUndefined();
+  expect(state.mark.mock.calls.map(([request]) => request.contextKey)).toEqual([
+    "msg:event-10", "msg:event-20", "msg:same-second-grandchild",
+  ]);
+  expect((await messageReadMenu("event-10", within)).textContent).toBe("Mark unread");
+  state.mark.mockReset();
+});
+
+it("an UNKNOWN manual CAS retains its exact version and subtree continuation; it neither marks success nor auto-replays", async () => {
+  projection.readContexts["channel-a"] = new Date(100_000).toISOString();
+  acceptReadMarks(); await open();
+  await toggleMessageRead("event-10");
+  state.mark.mockRejectedValueOnce(new TransportError("lost manual read receipt"));
+  const item = await messageReadMenu("event-10");
+  await act(async () => item.click()); await flush();
+  expect(state.mark).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("inbox.readUnknown");
+  expect(projection.readContexts["channel-a"]).toBe(new Date(100_000).toISOString());
+  const first = structuredClone(state.mark.mock.calls[0]![0]);
+  await flush(); await flush();
+  expect(state.mark).toHaveBeenCalledTimes(1);
+  const retry = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "platform.retry")!;
+  await act(async () => retry.click()); await flush();
+  expect(state.mark.mock.calls[1]![0]).toEqual(first);
+  expect(projection.readContexts["msg:event-10"]).toBe(new Date(10_000).toISOString());
+  expect(projection.readContexts["channel-a"]).toBe(new Date(100_000).toISOString());
+  expect((await messageReadMenu("event-10")).textContent).toBe("Mark unread");
+  state.mark.mockReset();
+});
+
+it("revocation after a manual ACK stops remaining subtree writes and cannot render an unread success overlay", async () => {
+  projection.readContexts["channel-a"] = new Date(100_000).toISOString();
+  let accept: ((result: {version: number}) => void) | undefined;
+  state.mark.mockImplementationOnce(() => new Promise(resolve => {accept = resolve;}));
+  await open();
+  await toggleMessageRead("event-10");
+  const item = await messageReadMenu("event-10");
+  await act(async () => item.click()); await flush();
+  expect(state.mark).toHaveBeenCalledTimes(1);
+  await act(async () => state.receive!({type: "closed", reason: "scope-revoked"}));
+  await flush();
+  await act(async () => accept!({version: 4})); await flush();
+  expect(state.mark).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-testid="mark-read-toggle-event-10"]')).toBeNull();
+  state.mark.mockReset();
+});
+
+it("ordinary-channel unread expires on leave and never lowers the canonical channel position", async () => {
+  projection.readContexts["channel-a"] = new Date(100_000).toISOString();
+  await open();
+  await toggleMessageRead("event-10");
+  expect((await messageReadMenu("event-10")).textContent).toBe("Mark read");
+  await renderChannel({key: "reopened"});
+  await act(async () => {state.receive!({type: "snapshot", events: windowEvents([event(10)])}); state.receive!({type: "live"});});
+  await flush();
+  expect((await messageReadMenu("event-10")).textContent).toBe("Mark unread");
+  expect(state.mark).not.toHaveBeenCalled();
+  expect(state.clearManual).toHaveBeenCalledWith("channel-a");
+});
+
+it("does not fabricate a DM mark-unread consumer while the original identity/read transport gap is unresolved", async () => {
+  projection.readContexts["channel-a"] = new Date(100_000).toISOString();
+  await renderChannel({conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ItemState.Active, version: 1, operationId: "op"}});
+  await act(async () => {state.receive!({type: "snapshot", events: windowEvents([event(10)])}); state.receive!({type: "live"});});
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="more-actions-event-10"]')!.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})));
+  await flush();
+  expect(document.querySelector('[data-testid="mark-read-toggle-event-10"]')).toBeNull();
+  expect(state.markManual).not.toHaveBeenCalled();
+});
 function composerPlaceholder() {
   return host.querySelector('[data-testid="message-input"] [data-placeholder]')?.getAttribute("data-placeholder");
 }

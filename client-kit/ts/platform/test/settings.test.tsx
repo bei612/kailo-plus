@@ -465,8 +465,10 @@ describe("shared Buzz settings presentation", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-profile"]')!);
     expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
     expect([...host.querySelectorAll('[data-testid^="settings-nav-"]')].map(node => node.getAttribute("data-testid"))).toEqual([
-      "settings-nav-profile", "settings-nav-appearance", "settings-nav-notifications", "settings-nav-shortcuts", "settings-nav-custom-emoji",
+      "settings-nav-profile", "settings-nav-appearance", "settings-nav-notifications", "settings-nav-shortcuts", "settings-nav-custom-emoji", "settings-nav-experimental",
     ]);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-experimental"]')!);
+    expect(host.querySelector('[data-testid="settings-panel-experimental"]')?.textContent).toBe("experimental");
     expect(host.querySelector('[data-sidebar="menu-label"] [aria-hidden="true"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="settings-content-scroll"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);

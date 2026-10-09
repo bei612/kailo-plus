@@ -56,6 +56,7 @@ import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
+import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
@@ -166,6 +167,25 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
   const workspaces = useQuery(platformQueries.workspaces);
   const userState = useInboxState(bff);
+  // The original per-device manual source is presentation state, not another
+  // read-line authority. Browser partitioning uses its trusted platform scope.
+  const unreadIdentity = JSON.stringify([session.tenantId, session.tenantPrincipalId]);
+  const forcedUnreadIdentity = useRef<string | null>(null);
+  const forcedUnreadRef = useRef<ForcedUnreadMap>({});
+  if (forcedUnreadIdentity.current !== unreadIdentity) {
+    forcedUnreadIdentity.current = unreadIdentity;
+    forcedUnreadRef.current = forcedUnreadStore.read(unreadIdentity);
+  }
+  const [forcedUnreadVersion, setForcedUnreadVersion] = useState(0);
+  const notifyForcedUnread = useCallback(() => setForcedUnreadVersion(version => version + 1), []);
+  const {markChannelUnread, clearChannelUnreadSource} = useForcedUnreadActions(forcedUnreadRef, userState.readAt, unreadIdentity, notifyForcedUnread);
+  const markManualUnread = useCallback((id: string) => {
+    if (forcedUnreadIdentity.current === unreadIdentity) markChannelUnread(id);
+  }, [unreadIdentity, markChannelUnread]);
+  const clearManualUnread = useCallback((id: string) => {
+    if (forcedUnreadIdentity.current === unreadIdentity) clearChannelUnreadSource(id, "manual");
+  }, [unreadIdentity, clearChannelUnreadSource]);
+  const forcedUnread = useMemo(() => ({...forcedUnreadRef.current}), [unreadIdentity, forcedUnreadVersion]);
   const conversations = useConversations();
   const directMessage = useDirectMessageOpen(session.tenantPrincipalId);
   const directMessageOwner = useMemo(() => ({ active: true }),
@@ -348,6 +368,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onStartDm={openDirectMessage}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+      onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
       onStartDm={openDirectMessage}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
       targetThreadRootId={messageTarget?.channelId === active ? messageTarget.threadRootId ?? undefined : undefined} /></> : <Notice text={t("platform.loadFailed")} />
@@ -463,6 +484,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCloseSelected={() => setTab("inbox")}
               onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
+              forcedUnread={forcedUnread} onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
               onActivity={setChannelActivity}
               onUnreadChange={setSidebarUnread}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}

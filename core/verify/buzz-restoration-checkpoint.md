@@ -5196,3 +5196,77 @@ Web Browser 不持钥、管理经 BFF；Desktop 本机持钥／管理 BFF 不变
 已上线 a8c1 的 17 图是失败发现与旧版局部验收，不冒充修复通过；
 待 root 集中发布后，再正常 SSO 复验 dirty discard→个人菜单及 Keep editing 双层状态。
 未运行本批 full、镜像构建、Windows/Mobile 设备验收，不声明完整 Buzz 或生产就绪。
+
+### 2026-10-09：原普通频道消息/子树读未读消费者（未部署）
+
+本批为 9 个源码/原检查路径，+531/-206；未新增布局、菜单类型、业务接口或读状态权威。
+Root 独立修正的 `client-kit/ts/platform/test/settings.test.tsx` 不在本批源码 patch 中。
+
+#### 权威、影响面、副作用与边界
+
+1. 权威：`DD-40`、`DD-75`、`SS-WEB-RELAY` 与 `.design/03` 的 UserState 权威边界不变。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/channels/ui/useChannelUnreadState.ts::handleMarkMessageRead/handleMarkMessageUnread`
+   明确规定普通频道未读是会话覆盖，不向后写持久 marker；离开清除消息覆盖，重开清除本机 manual 来源。
+   `desktop/src/features/channels/lib/subtreeCreatedAt.ts::collectReplyDescendantIds` 为原已加载子树遍历依据。
+2. 影响面：共享 `forcedUnreadStore.ts::useForcedUnreadActions`、Native 原路径转导出、Web 主消息/线程行、
+   SignedIn 可信身份分区及 ChannelSidebar 实际 manual 来源消费者。持久读写仍消费现有 BFF CAS；
+   schema、数据库、Workflow、Core/Worker、Mobile 未改。管理导航仍 Workspace ID，marker 使用已准入真实 Channel ID。
+3. 副作用：普通频道标未读不发 CAS、不降低整个频道位置；标已读逐个真实 `msg:<id>` ACK 后才清覆盖。
+   身份/频道切换、后台、撤权、metadata 未定或 UNKNOWN 时不继续子树写入、不自动重放。
+   UNKNOWN 的显式重试沿原 request/version；更高版本 readback 只 fence 旧意图，不伪造成功。
+4. 边界：实际原行菜单覆盖主面板与线程；已加载折叠后代参与原遍历，同秒无关消息不被标未读。
+   自动读不能立即覆盖手工未读；离开/重开恢复原生命周期；侧栏 manual baseline 遇更新的同步 marker 让位。
+   原 store 保留既有有界本机展示缓存与多来源行为，不同步为第二份 Core 读状态权威。
+
+#### 原版差异与准确缺项
+
+- 原 `desktop/src/features/channels/forcedUnreadStore.ts` 的 blob 为 `e2b626042afc4a8e72cad92b90b4d759bb2e4517`。
+  共享迁移仅在原 `Object.hasOwn` 守卫后的索引新增类型擦除 `!`，适配共享 `noUncheckedIndexedAccess`；
+  原运行逻辑、存储格式与边界不变。精确差异为本批证据目录的 `official-forced-unread.diff`，不声明共享 blob 完全相同。
+- Web 身份键来自可信 tenant/principal；持久写改接既有 BFF CAS，而非原生直接读 marker 传输。
+  两宿主消费同一原 store 与原 MessageActionBar；Native 本机凭据/Relay 边界未改变。
+- DM 的既有 Native `useUnreadChannels.ts::markMessagesUnread` 是 Kailo 改造，不是该固定官方版本的同名实现。
+  Web DM 的可信读传输/同秒边界未在本批闭合，原恢复目标保留为缺项，不用 loaded 集合补写算法冒充等价。
+- 沿用已有全量分类产物；a8c1 快照的 union 5314、原样保留 1978、共享迁移 110、授权整文件 0、
+  缺失需恢复/尚未证明保留或授权 3226 仅是该旧固定比较点，不冒充当前 main 已逐处验完。
+
+#### 实际命令、正反结果与原始日志
+
+既有 SDK `kailo-agent-receipt-xvkujx` 实读 4 CPU/8 GiB；执行前仅 sleep，host available 24.6 GB，
+IO full avg10 7.41，memory pressure avg10 0。Node heap 3072 MiB、Vitest maxWorkers=1，串行，无新 SDK/依赖安装。
+候选既有源码/已安装 file-package 的真实共享闭包做最小同步与 cmp；React 19.2.8、Web Vitest 4.1.11、
+原 dismissable-layer 1.1.19。共享 TS 5.9.3、Web/Native TS 6.0.3 为各自既有实际工具。
+
+原候选 `/evidence/profile-settings-ortsoo.DRR20F/apps` 内运行：
+
+```text
+pnpm exec vitest run src/platform/ui/ChannelRead.test.tsx src/platform/ui/ChannelSidebar.test.tsx --maxWorkers=1  (web-client/web)
+node --import ./collaboration/desktop/test-loader.mjs --experimental-strip-types --test collaboration/desktop/src/features/channels/forcedUnreadStore.test.mjs
+pnpm exec vitest run test/settings.test.tsx --maxWorkers=1  (client-kit/ts/platform)
+node <各既有工程>/node_modules/typescript/bin/tsc --noEmit -p <各既有工程>
+```
+
+- 最终正向/还原：Web 65/65（52+13）、Native 原 store 6/6、Root settings 原目标 22/22，均 exit 0；
+  shared/Web/Native 三 host types 均 exit 0。最终 Web 测试导入原 `compareRelayOrder` 后类型再次 exit 0。
+- 私有生产破坏：断开实际主消息/线程行的 onMarkUnread、破坏侧栏 native-ID manual 来源与实际回调，
+  Web 原两目标真实 7 failed/58 passed、exit 1；未用 helper-only 检查代替行消费者。
+- 私有 settings 仅删除原 App/experimental nav，原目标真实 1 failed/21 passed、exit 1。
+  四生产源恢复与正式字节 cmp 全 0 后，同原目标恢复为 Web 65/65、settings 22/22、exit 0。
+- 初始两轮新增同秒夹具未满足原 Relay 复合排序，Web 各 2 failed/63 passed；原校验正确拒绝，
+  改用原比较函数后通过，没有放宽校验。初轮 shared 严格索引类型失败按上述类型擦除修正。
+  初轮 Native pnpm 尝试其声明的包管理器自投递而 EACCES，未执行 tsc；没有安装，后用既有真实 tsc 验证 0。
+  这些失败原日志保留，不计作生产保护破坏命中。既有 linkify 重复初始化 warning 未隐藏。
+
+原始证据目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/message-read-menu.KK6rmq`。
+关键日志：`final-ordered-web.log`、`final-native.log`、`positive-settings.log`、`final-type-{shared,web,native}.log`、
+`final-ordered-type-web.log`、`negative-web-consumers.log`、`negative-settings-nav.log`、
+`restored-inputs.log`、`restored-web.log`、`restored-settings.log`、`final-cgroup.log`。
+最终 cgroup OOM/oom_kill 仍旧基线 2，无本批增量；原 SDK 已释放。
+
+`owned-source.patch` SHA256 `02e3a8a48aa6f165493af58622ec1197250d98094bf7da44392a26eeb0874838`，reverse check 0。
+`owned-inputs.sha256` SHA256 `3352b8ed9e958f17c34f2052c2cc030b62e9fee2f0a3c151aff87d29d2d11f2e`。
+9 源码与仅本节 owned EOF 冻结交 root 精确提交，checkpoint 继承删改不纳入。
+本批未构建/部署、对应新版浏览器截图 0；已上线 c309 的正常 SSO 图仅证明其部署版本，
+不覆盖本批读未读恢复。未运行本批 full、Windows/Mobile 设备验收，不声明全部原版还原或生产就绪。

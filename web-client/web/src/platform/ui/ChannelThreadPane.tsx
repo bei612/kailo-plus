@@ -13,7 +13,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
@@ -29,6 +29,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   onEdit?: (message: TimelineMessage) => boolean | void;
   onDelete?: (message: TimelineMessage) => void;
   onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
+  isMessageUnread?: (message: TimelineMessage) => boolean;
+  onMarkRead?: (message: TimelineMessage, messages: readonly TimelineMessage[]) => void;
+  onMarkUnread?: (message: TimelineMessage, messages: readonly TimelineMessage[]) => void;
   onCancelEdit?: () => void;
   onEditConfirmed?: (message: TimelineMessage) => void;
   onEditSendingChange?: (sending: boolean) => void;
@@ -154,6 +157,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
+        isUnread={isMessageUnread?.(row.message)}
+        onMarkRead={!disabled && !unavailable && !interrupted && !loading && onMarkRead ? message => onMarkRead(message, rows) : undefined}
+        onMarkUnread={!disabled && !unavailable && !interrupted && !loading && onMarkUnread ? message => onMarkUnread(message, rows) : undefined}
         onDelete={canEdit && !editBusy && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey ? onDelete : undefined}
         onEdit={canEdit && !editBusy && onEdit && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
