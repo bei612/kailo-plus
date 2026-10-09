@@ -422,8 +422,10 @@ export function createAdapter(rawConfig) {
       const token = request.headers.authorization.slice('Bearer '.length);
       const claims = await verifyKnowledgeToken(token, config, intent, operation);
       if (operation === 'execute' && (args.actionKey !== claims.action_key
-        || (claims.agent_principal_id === undefined && (claims.idempotency_key !== args.idempotencyKey
-          || !UUID.test(claims.external_execution_id))))) throw new Refused(401);
+        || claims.idempotency_key !== args.idempotencyKey
+        || args.idempotencyKey === '00000000-0000-0000-0000-000000000000'
+        || !UUID.test(claims.external_execution_id)
+        || claims.external_execution_id === '00000000-0000-0000-0000-000000000000')) throw new Refused(401);
       const admitted = await freshPep(config, deadline, token, intent, claims, operation);
       const searching = operation === 'execute' && claims.action_key === 'knowledge.search@v2';
       if (searching && admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);

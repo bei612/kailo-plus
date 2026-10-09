@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput) {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput, actor = 'HUMAN') {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -81,6 +81,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     idempotencyKey: ids[3] } : handshake ? { idempotencyKey: ids[3], componentReleaseId: ids[9],
     componentTypeKey: mode === 'wrong-release' ? 'foreign-component' : management.componentTypeKey, protocolRange: '1' }
     : { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
+  if (mode === 'nil-signed-execution-key') args.idempotencyKey = '00000000-0000-0000-0000-000000000000';
   const state = { baoReads, peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const completedAt = new Date(Date.now()-1000).toISOString();
@@ -265,6 +266,18 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     result_exposure_policy_id: randomUUID(), result_exposure_policy_version: 1,
     normalized_parameter_hash: createHash('sha256').update(canonical(operation === 'execute' ? intent : { operation, arguments: intent })).digest('hex') };
   if (action) { claims.idempotency_key = args.idempotencyKey; claims.external_execution_id = randomUUID(); }
+  if (actor === 'AGENT') {
+    claims.agent_principal_id = claims.actor_principal_id;
+    claims.initiating_human_principal_id = ids[9];
+    claims.delegation_id = randomUUID();
+    claims.delegation_version = 1;
+  }
+  if (mode === 'missing-execution-key') delete claims.idempotency_key;
+  if (mode === 'foreign-execution-key') claims.idempotency_key = randomUUID();
+  if (mode === 'nil-execution-key') claims.idempotency_key = '00000000-0000-0000-0000-000000000000';
+  if (mode === 'missing-external-execution') delete claims.external_execution_id;
+  if (mode === 'invalid-external-execution') claims.external_execution_id = 'not-an-execution';
+  if (mode === 'nil-external-execution') claims.external_execution_id = '00000000-0000-0000-0000-000000000000';
   if (managing) {
     claims.target_type = 'APPLICATION_BINDING'; claims.target_id = mode === 'wrong-binding' ? ids[8] : ids[0];
     delete claims.result_exposure_policy_id; delete claims.result_exposure_policy_version;
@@ -292,6 +305,35 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     body: options.raw ?? canonical(bodyValue),
   }) };
 }
+
+test('knowledge execute binds the same signed execution intent for HUMAN and delegated AGENT', async t => {
+  for (const actor of ['HUMAN', 'AGENT']) {
+    for (const action of ['knowledge.search@v2', 'knowledge.ingest@v2', 'knowledge.delete@v2']) {
+      await t.test(`${actor}/${action}`, async nested => {
+        const { invoke, state } = await fixture(nested, 'ok', action, undefined, undefined, undefined, undefined, actor);
+        const response = await invoke();
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).execution.platformStatus, 'SUCCEEDED');
+        assert.ok(state.native > 0);
+      });
+    }
+    for (const mode of ['missing-execution-key', 'foreign-execution-key', 'nil-execution-key', 'nil-signed-execution-key',
+      'missing-external-execution', 'invalid-external-execution', 'nil-external-execution']) {
+      await t.test(`${actor}/${mode}`, async nested => {
+        const { invoke, state } = await fixture(nested, mode, 'knowledge.ingest@v2',
+          undefined, undefined, undefined, undefined, actor);
+        const response = await invoke();
+        assert.equal(response.status, 401);
+        assert.deepEqual(await response.json(), { class: 'DENIED' });
+        assert.equal(state.peps, 0);
+        assert.equal(state.native, 0);
+        assert.equal(state.grants, 0);
+        assert.equal(state.downloads, 0);
+        assert.deepEqual(state.receipts, []);
+      });
+    }
+  }
+});
 
 test('native error mapping consumes existing business policy and never reads native MCP or reflects errors', async t => {
   for (const [nativeStatus, expected] of [

@@ -3803,3 +3803,60 @@ cmp=0 后同命令句柄75826 exit0：21顶层、23子检查通过。
 证明消除。之前完全丢失上传 HTTP ACK、跨服务 SOURCE/parse/撤权 E2E、原生写入
 全量批准和真实 ACTIVE binding 缺口仍在。未运行本批 full、镜像构建／部署、浏览器
 截图或三端设备验收，不称生产就绪；不删除任何原页面或原解析功能。
+
+## 2026-10-09：HUMAN 与 AGENT 消费同一冻结执行意图
+
+1. 权威为 `.design/07` §5.2 的执行前 ExternalExecution、稳定幂等键及
+   统一准入，以及既有 `DD-94`。Core 的
+   `6d5fc4ded2d657dd11ef65af3e83d7b0e6039fa7` 已让原 execute 签发端在签名
+   前冻结同一 ExternalExecution/key；此处原 adapter 却只对 HUMAN 检查该关联，
+   AGENT 可跳过，且 UUID 形状检查接受 nil。现直接替换这个错误条件，不增加
+   接口或另一执行路径。固定上游仍为
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`，原消费路径为
+   `internal/mcpserver/tools_ingest.go::Server.handleAddDocument/handleDeleteDocument`
+   及 `internal/mcpserver/tools_retrieve.go::Server.handleSearchKnowledge`；本批
+   不改这些原生能力、页面或业务数据模型。
+2. 影响面为原 execute HTTP 入口、其原 JWT/HTTP/MCP 检查及本回执。
+   两类 actor 均必须携带与请求相同且非 nil 的签名 idempotency_key，以及有效
+   非 nil external_execution_id。原签名参数 hash、delegation、资源、binding、
+   fresh PEP、SOURCE 准入、原 MCP、终态及用量链不变。observe/query_revision/
+   extract_usage 保持原各自签名意图；不强迫不签 execute 字段的观察令牌携带该对。
+   契约和持久字段未改变，无迁移或四侧类型变更。旧的缺关联 execute 令牌拒绝，
+   不降级接受；上线必须与已推送的 Core 签发修复成批交付。
+3. 缺失、错配、非法或 nil 的执行关联在 PEP、SOURCE grant、文件下载及 MCP
+   调用前按既有 DENIED 拒绝；不会重新执行、建立新任务或改变既有 UNKNOWN。
+   空正文、原 pending/parse、重复投递及撤权仍由原处理器决定。该非空关联检查
+   不能单独证明 EE 的数据库归属，归属与代际仍由原 fresh PEP 证明。
+   Web/Desktop/Mobile 不新增入口、不更改呈现或凭据边界。
+4. 实现之后扩充原 HTTP 检查：HUMAN/AGENT 的真实 search/ingest/delete 消费，
+   及两类 actor 的缺 key、异 key、nil key、签名和请求同时 nil、缺 EE、非法 EE、
+   nil EE。签名使用原 ES256/JWKS 消费，不以直接调用条件替代 HTTP。
+
+复用既有 `kailo-wren-query-sdk-itgs2n`，原固定 SDK 镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 UID 1000、4 CPU/4 GiB、无额外 swap、原 MCP SDK 1.26.0 缓存；执行前
+可用内存约23 GiB，未安装依赖或构建镜像。私有输入目录为
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-execute-intent.SoVgAs`。
+
+```sh
+sudo -n docker exec --user 1000:1000 -w /work/knowledge-execute-intent.SoVgAs \
+  kailo-wren-query-sdk-itgs2n sh -c 'node --test knowledge/adapter/test/*.test.mjs'
+```
+
+首次完整目标句柄47699 exit0：214项通过。补上签名和请求同时 nil 的两类 actor
+后，只在私有生产源码恢复原 HUMAN-only 条件，原
+`--test-name-pattern="knowledge execute binds"` exit1：21项中11通过、10失败
+（含父项；9个边界实际返回错误 HTTP 200），不是编译失败。以 apply_patch
+恢复正式生产字节、两个输入 cmp0 后，同一完整原目标句柄94135 exit0：216项
+通过、0失败/跳过；cgroup memory.events 全0。日志 SHA-256：
+
+- `positive.log`：`72be2886c3f75e72027abce6fe4fbe47c7ca5baf3972a820a64b74d5d291be55`。
+- `mutation.log`：`1c17144cf078a23f34671cfbcf9aa6317fa0847c1588befb6576ca28323564c5`。
+- `restored.log`：`3bb7b8e9ba60670184cc1676cfa5de59c731405c38e944f8f83970c4a7e2a060`。
+
+正式生产源码 SHA-256 为
+`2b5c60d5392257d03b888f7e3ea55b79b4cb29779eff849d4ad8ccf9145de0c0`，
+原检查为 `42a8898c3a1259dbd652c9cb9dc39628ef139a46bd3bc22d48ff89dba2edb02b`。
+未运行本批 full、实际 Core/OpenBao 签发到知识库的端到端调用、真实模型/解析/
+计量、镜像构建部署、ACTIVE binding、iframe、截图或设备验收；这里不把模拟
+上游的原 HTTP 检查声称为三组件完整集成或生产就绪。
