@@ -160,23 +160,28 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 	stuck, queueSkipped := h.filterOutQueued(ctx, stuck)
 
 	if len(stuck) > 0 {
-		stuckIDs := make([]string, 0, len(stuck))
+		recovered := int64(0)
 		for _, k := range stuck {
-			stuckIDs = append(stuckIDs, k.ID)
+			// Queue/heartbeat observations describe this exact native row, not
+			// a later parse attempt. Compare at the write so a worker/reparse
+			// that progressed during those probes wins over this stale sweep.
+			res := h.db.WithContext(ctx).Model(&types.Knowledge{}).
+				Where("id = ? AND parse_status = ? AND updated_at = ? AND pending_subtasks_count = ?",
+					k.ID, k.ParseStatus, k.UpdatedAt, k.PendingSubtasksCount).
+				Updates(map[string]interface{}{
+					"parse_status":           types.ParseStatusFailed,
+					"error_message":          "task stuck in processing > " + threshold.String() + ", recovered by housekeeping",
+					"pending_subtasks_count": 0,
+				})
+			if res.Error != nil {
+				logger.Warnf(ctx, "[Housekeeping] knowledge sweep update failed for %s: %v", k.ID, res.Error)
+				continue
+			}
+			recovered += res.RowsAffected
 		}
-		res := h.db.WithContext(ctx).Model(&types.Knowledge{}).
-			Where("id IN ? AND parse_status IN ?", stuckIDs,
-				[]string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing}).
-			Updates(map[string]interface{}{
-				"parse_status":           types.ParseStatusFailed,
-				"error_message":          "task stuck in processing > " + threshold.String() + ", recovered by housekeeping",
-				"pending_subtasks_count": 0,
-			})
-		if res.Error != nil {
-			logger.Warnf(ctx, "[Housekeeping] knowledge sweep update failed: %v", res.Error)
-		} else if res.RowsAffected > 0 {
+		if recovered > 0 {
 			logger.Infof(ctx, "[Housekeeping] recovered %d stuck knowledge rows (threshold=%s)",
-				res.RowsAffected, threshold)
+				recovered, threshold)
 		}
 	}
 	if spanSkipped > 0 {
@@ -239,7 +244,8 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 					continue
 				}
 				res := h.db.WithContext(ctx).Model(&types.Knowledge{}).
-					Where("id = ? AND parse_status = ?", k.ID, types.ParseStatusDeleting).
+					Where("id = ? AND parse_status = ? AND updated_at = ? AND pending_subtasks_count = ?",
+						k.ID, types.ParseStatusDeleting, k.UpdatedAt, k.PendingSubtasksCount).
 					Updates(map[string]interface{}{
 						"parse_status":  types.ParseStatusFailed,
 						"error_message": "delete task stranded (no queued/active delete task) > " + threshold.String() + ", recovered by housekeeping",

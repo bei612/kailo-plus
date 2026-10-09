@@ -135,8 +135,10 @@ type fakeTaskInspector struct {
 	queued map[string]bool
 	// deleteQueued independently controls the delete-task liveness probe;
 	// nil means "no delete task alive" for every ID.
-	deleteQueued map[string]bool
-	err          error
+	deleteQueued  map[string]bool
+	err           error
+	onParseProbe  func(string)
+	onDeleteProbe func(string)
 }
 
 func (f fakeTaskInspector) CancelTasksForKnowledge(
@@ -151,6 +153,9 @@ func (f fakeTaskInspector) HasQueuedTasksForKnowledge(
 	if f.err != nil {
 		return false, f.err
 	}
+	if f.onParseProbe != nil {
+		f.onParseProbe(knowledgeID)
+	}
 	return f.queued[knowledgeID], nil
 }
 
@@ -159,6 +164,9 @@ func (f fakeTaskInspector) HasQueuedDeleteTasksForKnowledge(
 ) (bool, error) {
 	if f.err != nil {
 		return false, f.err
+	}
+	if f.onDeleteProbe != nil {
+		f.onDeleteProbe(knowledgeID)
 	}
 	return f.deleteQueued[knowledgeID], nil
 }
@@ -484,6 +492,52 @@ func TestHousekeeping_PreservesRecentlyTouched(t *testing.T) {
 		"knowledge updated within the cutoff must be left alone")
 }
 
+func TestHousekeeping_PreservesRowChangedDuringParseProbe(t *testing.T) {
+	for _, initial := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing} {
+		t.Run(initial, func(t *testing.T) {
+			for _, change := range []string{"same-state-progress", "reparse-still-stale", "next-stage", "subtask-progress"} {
+				t.Run(change, func(t *testing.T) {
+					db := setupHousekeepingDB(t)
+					stale := time.Now().Add(-3 * time.Hour)
+					insertKnowledge(t, db, "changed", initial, stale)
+					insertKnowledge(t, db, "unchanged", initial, stale)
+					status, updated, count := initial, time.Now(), 0
+					switch change {
+					case "reparse-still-stale":
+						status, updated = types.ParseStatusPending, stale.Add(time.Minute)
+					case "next-stage":
+						status = types.ParseStatusFinalizing
+					case "subtask-progress":
+						updated, count = stale, 2
+					}
+					probes := 0
+					svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{onParseProbe: func(id string) {
+						if id != "changed" {
+							return
+						}
+						probes++
+						// The real queue probe happens after candidate selection.
+						// A native writer can advance the row before its UPDATE.
+						require.NoError(t, db.Exec(`UPDATE knowledges SET parse_status = ?, updated_at = ?,
+							pending_subtasks_count = ?, error_message = ? WHERE id = ?`,
+							status, updated, count, "native progress", id).Error)
+					}})
+					svc.runSweep(context.Background())
+					require.Equal(t, 1, probes)
+					got, message := readKnowledgeStatus(t, db, "changed")
+					assert.Equal(t, status, got)
+					assert.Equal(t, "native progress", message)
+					var gotCount int
+					require.NoError(t, db.Raw(`SELECT pending_subtasks_count FROM knowledges WHERE id = ?`, "changed").Row().Scan(&gotCount))
+					assert.Equal(t, count, gotCount)
+					got, _ = readKnowledgeStatus(t, db, "unchanged")
+					assert.Equal(t, types.ParseStatusFailed, got, "unchanged confirmed orphans still converge")
+				})
+			}
+		})
+	}
+}
+
 // --- Sweep C: stranded "deleting" rows (issues #3338/#3345) --—
 
 func readKnowledgeStatus(t *testing.T, db *gorm.DB, id string) (string, string) {
@@ -567,4 +621,38 @@ func TestHousekeeping_NilInspectorDefersDeletingSweep(t *testing.T) {
 
 	status, _ := readKnowledgeStatus(t, db, "kid-nil-inspector")
 	assert.Equal(t, types.ParseStatusDeleting, status)
+}
+
+func TestHousekeeping_PreservesRowChangedDuringDeleteProbe(t *testing.T) {
+	for _, change := range []string{"new-delete-attempt", "subtask-progress", "native-completed"} {
+		t.Run(change, func(t *testing.T) {
+			db := setupHousekeepingDB(t)
+			stale := time.Now().Add(-3 * time.Hour)
+			insertKnowledge(t, db, "changed-delete", types.ParseStatusDeleting, stale)
+			insertKnowledge(t, db, "unchanged-delete", types.ParseStatusDeleting, stale)
+			status, updated, count := types.ParseStatusDeleting, stale.Add(time.Minute), 0
+			if change == "subtask-progress" {
+				updated, count = stale, 2
+			} else if change == "native-completed" {
+				status = types.ParseStatusCompleted
+			}
+			probes := 0
+			svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{onDeleteProbe: func(id string) {
+				if id != "changed-delete" {
+					return
+				}
+				probes++
+				require.NoError(t, db.Exec(`UPDATE knowledges SET parse_status = ?, updated_at = ?,
+					pending_subtasks_count = ?, error_message = ? WHERE id = ?`,
+					status, updated, count, "native progress", id).Error)
+			}})
+			svc.runSweep(context.Background())
+			require.Equal(t, 1, probes)
+			got, message := readKnowledgeStatus(t, db, "changed-delete")
+			assert.Equal(t, status, got)
+			assert.Equal(t, "native progress", message)
+			got, _ = readKnowledgeStatus(t, db, "unchanged-delete")
+			assert.Equal(t, types.ParseStatusFailed, got)
+		})
+	}
 }

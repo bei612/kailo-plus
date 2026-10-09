@@ -3744,3 +3744,62 @@ Web／Desktop 仍共用原页面与 BFF；Mobile 非组件宿主，本批不改�
 同批原 `tools/check-docs.sh` 在正式源码只读挂载、2 CPU／4 GiB、禁网的原
 不可变镜像中，句柄 74488 终态 0，七段全部通过；原日志为
 `/volumes/data/kailo/check-cache/component-owned-batch-check-docs-20261008.log`。
+
+## 2026-10-09：原清理写入不覆盖扫描后推进的原生行
+
+1. 权威为 `.design/13` §1、§4.4、§7 及 `SS-WEK-MATERIALIZATION`：
+   Knowledge/parse/task 与就绪均由 WeKnora 自身负责。固定上游
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整路径
+   `internal/application/service/knowledge_housekeeping.go::HousekeepingService.runSweep`
+   原先按扫描所得 ID 加宽状态集合执行 UPDATE；扫描后已经重解析、推进到另一个
+   非终态或减少原子计数的行仍可能被它改成 failed 并清零计数。这不是新的恢复流程。
+2. 影响仅原 Sweep A/C 两个写出口及其已有原检查；复用实际
+   `Knowledge.ParseStatus/UpdatedAt/PendingSubtasksCount`，在同一 UPDATE 中比较
+   扫描时的完整状态快照。原 repository 的 `FinalizeSubtask/SetFinalizing`
+   同样在写时推进 updated_at。没有新增模型、迁移、字段、锁、租约、配置、
+   Temporal Workflow、接口或另一任务权威；Summary 的原单语句条件写未改变。
+3. 原宽状态集合条件由精确快照条件替换，不在错误逻辑外另包回退路径。
+   每项原生行分别 CAS，恢复计数只统计真实 RowsAffected；写错误保持原日志，
+   零行冲突不宣称 failed，交原下一次 sweep 重新观察。空候选不写，已完成／取消／
+   删除及并发计数变更均不被旧快照覆盖；同状态重新解析仍由 updated_at 区分。
+   行更新增加为每个原候选一次，与原逐项队列观察同界；没有新增重试或外部副作用。
+4. Web/Desktop/Mobile 均消费原解析状态，不新增页面或入口；没有把结果不明渲染
+   成成功。此处快照冲突按 `06` §4 的 CONFLICT 语义延后重读，数据库／队列探测
+   不可用沿已有 PRECONDITION/UNKNOWN 拒绝作确定终态，不新增公共错误枚举。
+
+实现完成后，在已有原检查文件中补实际队列探测期间推进行的消费者；不是先写失败
+检查再实现。原 orphan 控制行仍必须收敛，不能用一律不写来让保护检查通过。
+仅两个代码／原检查路径，相对 `f5c58c3d3` 为 +111/-17；本回执另计。
+
+复用 `kailo-knowledge-native-check-wkkigg`，固定镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+实际 UID/GID 1000、4 CPU/8 GiB、无额外 swap，原 Data mod/build 缓存及
+`GOPROXY=off`。执行前可用内存约24 GiB、memory pressure=0，未有其他 Go/Cargo
+编译；最终 cgroup `400000 100000`、memory.max=8589934592，memory.events 全0。
+正式／私有两输入及 go.mod/go.sum cmp=0，原 gofmt-d 空输出，diff-check=0。
+
+```sh
+sudo -n docker exec -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod \
+  -e GOPROXY=off -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  go test -mod=readonly ./internal/application/service -run TestHousekeeping_ -count=1 -v
+```
+
+正向句柄37342 exit0：21顶层、23子检查通过。只在私有真实生产两处 UPDATE 删除
+updated_at/count 比较后，同命令句柄13891 exit1：2顶层、13子检查失败，实际抓到
+旧扫描覆盖 native progress 和计数重置，不是编译失败。apply_patch 恢复原字节、
+cmp=0 后同命令句柄75826 exit0：21顶层、23子检查通过。
+原日志均在 `/volumes/data/kailo/check-cache/`：
+
+- `knowledge-housekeeping-cas-positive-20261009.log`，SHA-256
+  `22428e3429211f055ae0a7975e0be86c6f356930fb64e599fc5fa72f2f0c6446`。
+- `knowledge-housekeeping-cas-mutation-20261009.log`，SHA-256
+  `6bcb1c7fb6f56b7feeb4a8591b3214480111af5bc42bf3105f0ade67fb38a162`。
+- `knowledge-housekeeping-cas-restored-20261009.log`，SHA-256
+  `dc0250511391b00eb44d6ac7d6e1cd373fc691fd6f8a8a92663d19a910a511ec`。
+
+该检查使用原 SQLite 原生行与真实条件 UPDATE，不是 PostgreSQL／Redis 生产并发
+验收。远端队列与数据库仍不原子；仅新增 span/队列而未推进父行的竞态不由此 CAS
+证明消除。之前完全丢失上传 HTTP ACK、跨服务 SOURCE/parse/撤权 E2E、原生写入
+全量批准和真实 ACTIVE binding 缺口仍在。未运行本批 full、镜像构建／部署、浏览器
+截图或三端设备验收，不称生产就绪；不删除任何原页面或原解析功能。
