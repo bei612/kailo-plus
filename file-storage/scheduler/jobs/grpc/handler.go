@@ -366,7 +366,8 @@ func (j *JobsHandler) PutTaskStream(streamer proto.JobService_PutTaskStreamServe
 
 func (j *JobsHandler) ListTasks(request *proto.ListTasksRequest, streamer proto.JobService_ListTasksServer) error {
 
-	ctx := streamer.Context()
+	ctx, cancel := context.WithCancel(streamer.Context())
+	defer cancel()
 	log.Logger(ctx).Debug("Scheduler ListTasks")
 
 	store, err := manager.Resolve[jobs.DAO](ctx)
@@ -374,22 +375,17 @@ func (j *JobsHandler) ListTasks(request *proto.ListTasksRequest, streamer proto.
 		return err
 	}
 
-	res, done, err := store.ListTasks(request.JobID, request.Status)
-	defer close(res)
+	res, done, err := store.ListTasks(ctx, request.JobID, request.Status)
 	if err != nil {
 		return err
 	}
 
-	for {
-		select {
-		case <-done:
-			return nil
-		case t := <-res:
-			if e := streamer.Send(&proto.ListTasksResponse{Task: t}); e != nil {
-				return e
-			}
+	for t := range res {
+		if e := streamer.Send(&proto.ListTasksResponse{Task: t}); e != nil {
+			return e
 		}
 	}
+	return <-done
 }
 
 func (j *JobsHandler) DeleteTasks(ctx context.Context, request *proto.DeleteTasksRequest) (*proto.DeleteTasksResponse, error) {
@@ -407,30 +403,26 @@ func (j *JobsHandler) DeleteTasks(ctx context.Context, request *proto.DeleteTask
 		toDelete := make(map[string][]string)
 		for _, status := range request.Status {
 
-			res, done, err := store.ListTasks(request.JobId, status, request.PruneLimit)
-			defer close(res)
+			res, done, err := store.ListTasks(ctx, request.JobId, status, request.PruneLimit)
 			if err != nil {
 				return nil, err
 			}
 
-		loop:
-			for {
-				select {
-				case <-done:
-					break loop
-				case t := <-res:
-					if jobs.TaskHasClaim(t) {
-						continue
-					}
-					var tasks []string
-					var has bool
-					if tasks, has = toDelete[t.JobID]; !has {
-						tasks = []string{t.ID}
-					} else {
-						tasks = append(tasks, t.ID)
-					}
-					toDelete[t.JobID] = tasks
+			for t := range res {
+				if jobs.TaskHasClaim(t) {
+					continue
 				}
+				var tasks []string
+				var has bool
+				if tasks, has = toDelete[t.JobID]; !has {
+					tasks = []string{t.ID}
+				} else {
+					tasks = append(tasks, t.ID)
+				}
+				toDelete[t.JobID] = tasks
+			}
+			if err := <-done; err != nil {
+				return nil, err
 			}
 		}
 		for jId, tasks := range toDelete {
@@ -504,19 +496,16 @@ func (j *JobsHandler) OrphanLogs(ctx context.Context) (int64, error) {
 	}
 
 	// Compute ALL known tasks logs UUIDS
-	tt, done, e := store.ListTasks("", proto.TaskStatus_Any)
+	tt, done, e := store.ListTasks(ctx, "", proto.TaskStatus_Any)
 	if e != nil {
 		return 0, e
 	}
 	var ii []string
-loop:
-	for {
-		select {
-		case t := <-tt:
-			ii = append(ii, t.JobID+"-"+t.ID[:min(len(t.ID), 8)])
-		case <-done:
-			break loop
-		}
+	for t := range tt {
+		ii = append(ii, t.JobID+"-"+t.ID[:min(len(t.ID), 8)])
+	}
+	if err := <-done; err != nil {
+		return 0, err
 	}
 	query := store.BuildOrphanLogsQuery(60*time.Minute, ii)
 
@@ -588,11 +577,15 @@ func (j *JobsHandler) CleanStuckTasks(ctx context.Context, serverStart bool, log
 		if shouldRetry {
 			logger.Info("Some tasks were killed, waiting 5s before retrying clean operation")
 			<-time.After(5 * time.Second)
-			rr, _, _ := j.cleanStuckByStatus(ctx, serverStart, logger, proto.TaskStatus_Running, true, duration...)
+			rr, _, err := j.cleanStuckByStatus(ctx, serverStart, logger, proto.TaskStatus_Running, true, duration...)
+			if err != nil {
+				return fixed, err
+			}
 			fixed = append(fixed, rr...)
 		}
 	} else {
 		logger.Error("Error while cleaning Running tasks", zap.Error(er))
+		return fixed, er
 	}
 
 	if serverStart { // This is launched at startup, clean other stuck statuses as well
@@ -600,6 +593,7 @@ func (j *JobsHandler) CleanStuckTasks(ctx context.Context, serverStart bool, log
 			fixed = append(fixed, paused...)
 		} else {
 			logger.Error("Error while cleaning paused tasks", zap.Error(er))
+			return fixed, er
 		}
 	}
 
@@ -628,83 +622,86 @@ func (j *JobsHandler) cleanStuckByStatus(ctx context.Context, serverStart bool, 
 	}
 
 	var fixedTasks []*proto.Task
-	res, done, err := store.ListTasks("", status)
-	defer close(res)
+	res, done, err := store.ListTasks(ctx, "", status)
 	if err != nil {
 		return fixedTasks, false, err
 	}
-	for {
-		select {
+	for t := range res {
+		// The original claim belongs to an admitted external execution. A local
+		// restart or timeout is not terminal evidence and cannot stop or retire it.
+		if jobs.TaskHasClaim(t) {
+			continue
+		}
 
-		case <-done:
-			for _, t := range fixedTasks {
-				_ = store.PutTask(t)
+		// Ignore if current task is in fact this task !
+		if t.ID == currentTaskID {
+			logger.Info("Ignore my own task!")
+			continue
+		}
+
+		// Load corresponding job
+		job, e := store.GetJob(t.JobID, proto.TaskStatus_Unknown)
+		if e != nil {
+			continue
+		}
+
+		// AutoRestart Jobs Case
+		if job.AutoRestart {
+			if serverStart {
+				logger.Warn("Should now restart " + job.Label)
+				// Mark as complete, not Error
+				t.Status = proto.TaskStatus_Interrupted
+				t.StatusMessage = "Task restarted"
+				t.EndTime = int32(time.Now().Unix())
+				fixedTasks = append(fixedTasks, t)
+			} else {
+				logger.Info("Ignoring running task for " + job.Label + " as it is not stuck ")
 			}
-			return fixedTasks, shouldRetry, nil
+			continue
+		}
 
-		case t := <-res:
-
-			// Ignore if current task is in fact this task !
-			if t.ID == currentTaskID {
-				logger.Info("Ignore my own task!")
-				break
+		var runningTimeOvertime bool
+		if status == proto.TaskStatus_Running && !serverStart {
+			if len(duration) > 0 && t.StartTime > 0 && job.Timeout == "" {
+				check := duration[0]
+				startTime := time.Unix(int64(t.StartTime), 0)
+				runningTimeOvertime = time.Since(startTime) > check
 			}
+			if !runningTimeOvertime {
+				continue
+			}
+		}
 
-			// Load corresponding job
-			job, e := store.GetJob(t.JobID, proto.TaskStatus_Unknown)
+		// Send a stop signal to kill the task and flag a retry is required
+		if !serverStart && !isRetry && runningTimeOvertime {
+			logger.Info("Kill task for job " + job.Label + " as it is running for more than " + duration[0].String() + " (no timeout set)")
+			_, e := tcli.Control(ctx, &proto.CtrlCommand{
+				Cmd:    proto.Command_Stop,
+				JobId:  t.JobID,
+				TaskId: t.ID,
+			})
 			if e != nil {
-				break
+				logger.Warn("Could not send Stop command on stuck running task", zap.Error(e))
 			}
-
-			// AutoRestart Jobs Case
-			if job.AutoRestart {
-				if serverStart {
-					logger.Warn("Should now restart " + job.Label)
-					// Mark as complete, not Error
-					t.Status = proto.TaskStatus_Interrupted
-					t.StatusMessage = "Task restarted"
-					t.EndTime = int32(time.Now().Unix())
-					fixedTasks = append(fixedTasks, t)
-				} else {
-					logger.Info("Ignoring running task for " + job.Label + " as it is not stuck ")
-				}
-				break
-			}
-
-			var runningTimeOvertime bool
-			if status == proto.TaskStatus_Running && !serverStart {
-				if len(duration) > 0 && t.StartTime > 0 && job.Timeout == "" {
-					check := duration[0]
-					startTime := time.Unix(int64(t.StartTime), 0)
-					runningTimeOvertime = time.Since(startTime) > check
-				}
-				if !runningTimeOvertime {
-					break
-				}
-			}
-
-			// Send a stop signal to kill the task and flag a retry is required
-			if !serverStart && !isRetry && runningTimeOvertime {
-				logger.Info("Kill task for job " + job.Label + " as it is running for more than " + duration[0].String() + " (no timeout set)")
-				_, e := tcli.Control(ctx, &proto.CtrlCommand{
-					Cmd:    proto.Command_Stop,
-					JobId:  t.JobID,
-					TaskId: t.ID,
-				})
-				if e != nil {
-					logger.Warn("Could not send Stop command on stuck running task", zap.Error(e))
-				}
-				shouldRetry = true
-				break
-			}
-			// Finally forcefully change task status
-			t.Status = proto.TaskStatus_Error
-			t.StatusMessage = "Task stuck"
-			t.EndTime = int32(time.Now().Unix())
-			logger.Info("Setting task " + job.Label + "/" + t.ID + " in error status as it was saved as running")
-			fixedTasks = append(fixedTasks, t)
+			shouldRetry = true
+			continue
+		}
+		// Finally forcefully change task status
+		t.Status = proto.TaskStatus_Error
+		t.StatusMessage = "Task stuck"
+		t.EndTime = int32(time.Now().Unix())
+		logger.Info("Setting task " + job.Label + "/" + t.ID + " in error status as it was saved as running")
+		fixedTasks = append(fixedTasks, t)
+	}
+	if err := <-done; err != nil {
+		return nil, false, err
+	}
+	for _, t := range fixedTasks {
+		if err := store.PutTask(t); err != nil {
+			return nil, false, err
 		}
 	}
+	return fixedTasks, shouldRetry, nil
 
 }
 

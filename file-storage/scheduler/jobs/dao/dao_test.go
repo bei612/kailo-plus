@@ -316,26 +316,15 @@ func listAndCount(db jo.DAO, owner string, eventsOnly bool, timersOnly bool, wit
 
 func loadTasks(db jo.DAO, jobId string, jobStatus jobs.TaskStatus, offset ...int32) ([]*jobs.Task, error) {
 
-	tasksChan, doneChan, err := db.ListTasks(jobId, jobStatus, offset...)
+	tasksChan, doneChan, err := db.ListTasks(context.Background(), jobId, jobStatus, offset...)
 	var allTasks []*jobs.Task
 	if err != nil {
 		return allTasks, err
 	}
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case t := <-tasksChan:
-				allTasks = append(allTasks, t)
-			case <-doneChan:
-				return
-			}
-		}
-	}()
-	wg.Wait()
-	return allTasks, nil
+	for task := range tasksChan {
+		allTasks = append(allTasks, task)
+	}
+	return allTasks, <-doneChan
 }
 
 func TestDAO_PutTask(t *testing.T) {

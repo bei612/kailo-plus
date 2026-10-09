@@ -158,7 +158,7 @@ func (m *mongoImpl) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 		return nil, er
 	}
 	if withTasks != proto.TaskStatus_Unknown {
-		tt, e := m.listTasks(jobId, withTasks, 0, 0)
+		tt, e := m.listTasks(context.Background(), jobId, withTasks, 0, 0)
 		if e != nil {
 			return nil, e
 		}
@@ -232,7 +232,7 @@ func (m *mongoImpl) ListJobs(owner string, eventsOnly bool, timersOnly bool, wit
 				if co, e := m.countTasksForJob(mj.ID, withTasks); e != nil || (withTasks != proto.TaskStatus_Any && co == 0) {
 					continue
 				}
-				if tt, e := m.listTasks(mj.ID, withTasks, offset, limit); e == nil {
+				if tt, e := m.listTasks(context.Background(), mj.ID, withTasks, offset, limit); e == nil {
 					mj.Job.Tasks = tt
 				}
 			}
@@ -312,7 +312,10 @@ func (m *mongoImpl) PutTasks(tasks map[string]map[string]*proto.Task) error {
 	return nil
 }
 
-func (m *mongoImpl) ListTasks(jobId string, taskStatus proto.TaskStatus, cursor ...int32) (chan *proto.Task, chan bool, error) {
+func (m *mongoImpl) ListTasks(ctx context.Context, jobId string, taskStatus proto.TaskStatus, cursor ...int32) (<-chan *proto.Task, <-chan error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	var offset, limit int64
 	if len(cursor) > 0 {
 		offset = int64(cursor[0])
@@ -325,30 +328,47 @@ func (m *mongoImpl) ListTasks(jobId string, taskStatus proto.TaskStatus, cursor 
 	var er error
 	// If there is a cursor and **jobId is empty**, we want to apply cursor on each task
 	if jobId == "" && len(cursor) > 0 {
-		jj, e := m.ListJobs("", false, false, proto.TaskStatus_Unknown, []string{})
+		jj, e := m.Collection(collJobs).Find(ctx, bson.D{})
 		if e != nil {
 			return nil, nil, e
 		}
-		for j := range jj {
-			if tj, e := m.listTasks(j.ID, taskStatus, offset, limit); e == nil && len(tj) > 0 {
-				//fmt.Printf(" - Listed %d (%d,%d) tasks for job %s (%s)\n", len(tj), offset, limit, j.ID, j.Label)
-				tt = append(tt, tj...)
+		defer jj.Close(ctx)
+		for jj.Next(ctx) {
+			j := &mongoJob{}
+			if err := jj.Decode(j); err != nil {
+				return nil, nil, err
 			}
+			tj, err := m.listTasks(ctx, j.ID, taskStatus, offset, limit)
+			if err != nil {
+				return nil, nil, err
+			}
+			tt = append(tt, tj...)
+		}
+		if err := jj.Err(); err != nil {
+			return nil, nil, err
 		}
 	} else {
-		tt, er = m.listTasks(jobId, taskStatus, offset, limit)
+		tt, er = m.listTasks(ctx, jobId, taskStatus, offset, limit)
 		if er != nil {
 			return nil, nil, er
 		}
 	}
 
 	cj := make(chan *proto.Task)
-	cd := make(chan bool, 1)
+	cd := make(chan error, 1)
 	go func() {
 		defer close(cd)
 		for _, t := range tt {
-			cj <- t
+			select {
+			case cj <- t:
+			case <-ctx.Done():
+				close(cj)
+				cd <- ctx.Err()
+				return
+			}
 		}
+		close(cj)
+		cd <- ctx.Err()
 	}()
 	return cj, cd, nil
 }
@@ -409,7 +429,7 @@ func (m *mongoImpl) DeleteTasks(jobId string, taskId []string) error {
 	return nil
 }
 
-func (m *mongoImpl) listTasks(jobId string, status proto.TaskStatus, offset, limit int64) (tasks []*proto.Task, e error) {
+func (m *mongoImpl) listTasks(c context.Context, jobId string, status proto.TaskStatus, offset, limit int64) (tasks []*proto.Task, e error) {
 	filter := bson.D{}
 	if jobId != "" {
 		filter = append(filter, bson.E{"job_id", jobId})
@@ -426,20 +446,23 @@ func (m *mongoImpl) listTasks(jobId string, status proto.TaskStatus, offset, lim
 	if limit > 0 {
 		findOpts.Limit = &limit
 	}
-	c := context.Background()
 	cursor, e := m.Collection(collTasks).Find(c, filter, findOpts)
 	if e != nil {
 		return tasks, e
 	}
+	defer cursor.Close(c)
 	for cursor.Next(c) {
 		mj := &mongoTask{}
 		if er := cursor.Decode(mj); er != nil {
-			continue
+			return nil, er
+		}
+		if mj.Task == nil || mj.Task.ID == "" || mj.ID != mj.Task.ID || mj.Task.JobID != mj.JobId {
+			return nil, errors.WithStack(errors.StatusConflict)
 		}
 		jobs.StripTaskData(mj.Task)
 		tasks = append(tasks, mj.Task)
 	}
-	return
+	return tasks, cursor.Err()
 }
 
 func (m *mongoImpl) countTasksForJob(jobId string, status proto.TaskStatus) (count int64, e error) {

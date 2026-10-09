@@ -107,7 +107,7 @@ type DAO interface {
 	PutTask(task *jobs.Task) error
 	ClaimTask(task *jobs.Task) error
 	PutTasks(task map[string]map[string]*jobs.Task) error
-	ListTasks(jobId string, taskStatus jobs.TaskStatus, cursor ...int32) (chan *jobs.Task, chan bool, error)
+	ListTasks(ctx context.Context, jobId string, taskStatus jobs.TaskStatus, cursor ...int32) (<-chan *jobs.Task, <-chan error, error)
 	DeleteTasks(jobId string, taskId []string) error
 
 	FindOrphans() ([]*jobs.Task, error)

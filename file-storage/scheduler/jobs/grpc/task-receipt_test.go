@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,12 +35,299 @@ import (
 	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/storage/boltdb"
 	"github.com/pydio/cells/v5/common/storage/test"
+	"github.com/pydio/cells/v5/common/telemetry/log"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"github.com/pydio/cells/v5/scheduler/jobs/dao/bolt"
+	"go.etcd.io/bbolt"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+type taskLookupContextServer struct {
+	*JobsHandler
+	ctx context.Context
+}
+
+type taskLookupUnavailableDB struct {
+	boltdb.DB
+	unavailable *atomic.Bool
+}
+
+func (db *taskLookupUnavailableDB) View(read func(*bbolt.Tx) error) error {
+	if db.unavailable.Load() {
+		return errors.New("original native task database unavailable")
+	}
+	return db.DB.View(read)
+}
+
+type taskLookupServerStream struct {
+	jobproto.JobService_ListTasksServer
+	ctx  context.Context
+	send func(*jobproto.ListTasksResponse) error
+}
+
+func (s *taskLookupServerStream) Context() context.Context { return s.ctx }
+func (s *taskLookupServerStream) Send(response *jobproto.ListTasksResponse) error {
+	if s.send != nil {
+		return s.send(response)
+	}
+	return s.JobService_ListTasksServer.Send(response)
+}
+
+func (s *taskLookupContextServer) ListTasks(request *jobproto.ListTasksRequest, stream jobproto.JobService_ListTasksServer) error {
+	ctx, cancel := context.WithCancel(s.ctx)
+	stop := context.AfterFunc(stream.Context(), cancel)
+	defer stop()
+	defer cancel()
+	return s.JobsHandler.ListTasks(request, &taskLookupServerStream{JobService_ListTasksServer: stream, ctx: ctx})
+}
+
+type taskLookupTruncatedConnection struct {
+	grpc.ClientConnInterface
+}
+
+type taskLookupTruncatedStream struct {
+	grpc.ClientStream
+	received bool
+}
+
+func (c *taskLookupTruncatedConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, options ...grpc.CallOption) (grpc.ClientStream, error) {
+	stream, err := c.ClientConnInterface.NewStream(ctx, desc, method, options...)
+	return &taskLookupTruncatedStream{ClientStream: stream}, err
+}
+
+func (s *taskLookupTruncatedStream) RecvMsg(response interface{}) error {
+	if s.received {
+		return io.ErrUnexpectedEOF
+	}
+	s.received = true
+	return s.ClientStream.RecvMsg(response)
+}
+
+func TestNativeTaskLookupUsesOriginalStreamTermination(t *testing.T) {
+	var raw boltdb.DB
+	// The original manager rebuilds the DAO on each Resolve. The read failure
+	// belongs to the underlying database, not one discarded DAO instance.
+	var unavailable atomic.Bool
+	constructor := func(db boltdb.DB) jobstore.DAO {
+		raw = db
+		observedDB := &taskLookupUnavailableDB{DB: db, unavailable: &unavailable}
+		return bolt.NewBoltDAO(observedDB)
+	}
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(constructor, "native_task_lookup_")}, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jobstore.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := jobstore.NativeReadJob("controlled-native-lookup")
+		if err := store.ClaimJob(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		handler := NewJobsHandler(ctx, "native-task-lookup")
+		listener := bufconn.Listen(65536)
+		server := grpc.NewServer()
+		jobproto.RegisterJobServiceServer(server, &taskLookupContextServer{JobsHandler: handler, ctx: ctx})
+		go server.Serve(listener)
+		defer server.Stop()
+		defer listener.Close()
+		connection, err := grpc.NewClient("passthrough:///native-task-fixture", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close()
+		grpcclient.RegisterMock(common.ServiceJobsGRPC, connection)
+		lookup := func(limit int64) (*jobproto.Task, error) {
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			return jobstore.ReadNativeWriteTask(bounded, job.ID, "stable-operation", limit)
+		}
+		t.Run("fresh-job-without-task-bucket", func(t *testing.T) {
+			if task, err := lookup(65536); err != nil || task != nil {
+				t.Fatal("fresh original Job did not finish its empty Task stream", err)
+			}
+		})
+		task := &jobproto.Task{ID: "stable-operation", JobID: job.ID, Status: jobproto.TaskStatus_Queued}
+		if err := store.PutTask(task); err != nil {
+			t.Fatal(err)
+		}
+		t.Run("original-queued-reference-is-not-terminal", func(t *testing.T) {
+			observed, err := lookup(65536)
+			if err != nil || !proto.Equal(observed, task) {
+				t.Fatal("original native Task was not returned unchanged", err)
+			}
+			if _, err := jobstore.NativeReadTaskReceipt(observed); err == nil {
+				t.Fatal("queued Task became byte completion evidence")
+			}
+		})
+		t.Run("unconfirmed-stream-end-discards-matched-task", func(t *testing.T) {
+			grpcclient.RegisterMock(common.ServiceJobsGRPC, &taskLookupTruncatedConnection{ClientConnInterface: connection})
+			defer grpcclient.RegisterMock(common.ServiceJobsGRPC, connection)
+			if observed, err := lookup(65536); !errors.Is(err, io.ErrUnexpectedEOF) || observed != nil {
+				t.Fatal("truncated original lookup was accepted as complete", err)
+			}
+		})
+		t.Run("budget-refusal-does-not-return-partial-task", func(t *testing.T) {
+			if observed, err := lookup(1); err == nil || observed != nil {
+				t.Fatal("over-budget original stream returned a usable Task")
+			}
+		})
+		t.Run("caller-cancel-terminates-blocked-producer", func(t *testing.T) {
+			bounded, cancel := context.WithCancel(ctx)
+			rows, done, err := store.ListTasks(bounded, job.ID, jobproto.TaskStatus_Any)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cancel()
+			for range rows {
+			}
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatal("canceled Task producer returned success", err)
+			}
+		})
+		t.Run("send-error-does-not-close-producer-channel", func(t *testing.T) {
+			sent := 0
+			writeErr := errors.New("original stream send failed")
+			err := handler.ListTasks(&jobproto.ListTasksRequest{JobID: job.ID, Status: jobproto.TaskStatus_Any}, &taskLookupServerStream{ctx: ctx, send: func(*jobproto.ListTasksResponse) error { sent++; return writeErr }})
+			if !errors.Is(err, writeErr) || sent != 1 {
+				t.Fatal("original send failure was swallowed", err)
+			}
+			// A real Bolt writer cannot finish while the abandoned reader holds its transaction.
+			finished := make(chan error, 1)
+			go func() { finished <- store.PutTask(task) }()
+			select {
+			case err := <-finished:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("failed stream retained the original Bolt read transaction")
+			}
+		})
+		t.Run("corrupt-task-is-not-empty-evidence", func(t *testing.T) {
+			if err := raw.Update(func(tx *bbolt.Tx) error {
+				return tx.Bucket([]byte("tasks-"+job.ID)).Put([]byte("corrupt-row"), []byte("{"))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Update(func(tx *bbolt.Tx) error { return tx.Bucket([]byte("tasks-" + job.ID)).Delete([]byte("corrupt-row")) })
+			if observed, err := lookup(65536); err == nil || observed != nil {
+				t.Fatal("unreadable persisted Task became empty/successful lookup")
+			}
+		})
+		for _, consumer := range []string{"native-observe", "delete-tasks", "orphan-logs", "clean-stuck", "clean-stuck-sweep", "detect-stuck-rpc"} {
+			t.Run("database-read-failure-"+consumer, func(t *testing.T) {
+				unavailable.Store(true)
+				defer unavailable.Store(false)
+				var err error
+				switch consumer {
+				case "native-observe":
+					var observed *jobproto.Task
+					observed, err = lookup(65536)
+					if observed != nil {
+						t.Fatal("unavailable native database returned partial Task evidence")
+					}
+				case "delete-tasks":
+					_, err = handler.DeleteTasks(ctx, &jobproto.DeleteTasksRequest{JobId: job.ID, Status: []jobproto.TaskStatus{jobproto.TaskStatus_Queued}})
+				case "orphan-logs":
+					_, err = handler.OrphanLogs(ctx)
+				case "clean-stuck":
+					_, _, err = handler.cleanStuckByStatus(ctx, true, log.Logger(ctx), jobproto.TaskStatus_Queued, false)
+				case "clean-stuck-sweep":
+					_, err = handler.CleanStuckTasks(ctx, true, log.Logger(ctx))
+				case "detect-stuck-rpc":
+					_, err = handler.DetectStuckTasks(ctx, &jobproto.DetectStuckTasksRequest{})
+				}
+				if err == nil {
+					t.Fatal("unreadable original Task stream allowed reconciliation side effects")
+				}
+			})
+		}
+	})
+}
+
+type taskLookupControlConnection struct {
+	grpc.ClientConnInterface
+	commands []*jobproto.CtrlCommand
+}
+
+func (c *taskLookupControlConnection) Invoke(_ context.Context, method string, input, output interface{}, _ ...grpc.CallOption) error {
+	if method != "/jobs.TaskService/Control" {
+		return errors.New("unexpected original Task control RPC")
+	}
+	c.commands = append(c.commands, proto.Clone(input.(*jobproto.CtrlCommand)).(*jobproto.CtrlCommand))
+	proto.Merge(output.(*jobproto.CtrlCommandResponse), &jobproto.CtrlCommandResponse{Msg: "accepted"})
+	return nil
+}
+
+func TestNativeHousekeepingPreservesAdmittedTask(t *testing.T) {
+	constructor := func(db boltdb.DB) jobstore.DAO { return bolt.NewBoltDAO(db) }
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(constructor, "native_claim_housekeeping_")}, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jobstore.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewJobsHandler(ctx, "native-claim-housekeeping")
+		for _, scenario := range []string{"restart-running", "restart-paused", "elapsed-running"} {
+			for _, admitted := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s-claimed-%t", scenario, admitted), func(t *testing.T) {
+					job := jobstore.NativeReadJob(fmt.Sprintf("original-%s-%t", scenario, admitted))
+					if err := store.ClaimJob(ctx, job); err != nil {
+						t.Fatal(err)
+					}
+					status := jobproto.TaskStatus_Running
+					if scenario == "restart-paused" {
+						status = jobproto.TaskStatus_Paused
+					}
+					var task *jobproto.Task
+					if admitted {
+						task, err = jobstore.NewNativeWriteTask("binding", job.ID, job.ID+"-key", "native-owner", "native-user", map[string]interface{}{"operation_id": "original-operation", "action_execution_id": "original-admitted-execution"}, map[string]interface{}{"nativeRevision": "original-durable-input"})
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := store.ClaimTask(task); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						task = &jobproto.Task{ID: job.ID + "-key", JobID: job.ID, TriggerOwner: "native-owner"}
+					}
+					task.Status, task.StartTime = status, 1
+					if err := store.PutTask(task); err != nil {
+						t.Fatal(err)
+					}
+					before := proto.Clone(task).(*jobproto.Task)
+					controller := &taskLookupControlConnection{}
+					grpcclient.RegisterMock(common.ServiceTasksGRPC, controller)
+					restart := scenario != "elapsed-running"
+					fixed, retry, err := handler.cleanStuckByStatus(ctx, restart, log.Logger(ctx), status, false, time.Second)
+					if err != nil {
+						t.Fatal(err)
+					}
+					observed, err := store.GetJob(job.ID, jobproto.TaskStatus_Any)
+					if err != nil || len(observed.GetTasks()) != 1 {
+						t.Fatal("original Task reference disappeared", err)
+					}
+					after := observed.Tasks[0]
+					if admitted {
+						if len(fixed) != 0 || retry || len(controller.commands) != 0 || !proto.Equal(after, before) {
+							t.Fatal("local housekeeping stopped or rewrote an admitted operation without native terminal evidence")
+						}
+					} else if restart {
+						if !slices.ContainsFunc(fixed, func(task *jobproto.Task) bool { return task.ID == before.ID }) || after.Status != jobproto.TaskStatus_Error || after.EndTime == 0 || retry || len(controller.commands) != 0 {
+							t.Fatal("unclaimed original restart cleanup no longer used its native status path")
+						}
+					} else {
+						if len(fixed) != 0 || !retry || len(controller.commands) != 1 || controller.commands[0].Cmd != jobproto.Command_Stop || controller.commands[0].TaskId != before.ID || !proto.Equal(after, before) {
+							t.Fatal("unclaimed original timeout did not request Stop while retaining unconfirmed status")
+						}
+					}
+				})
+			}
+		}
+	})
+}
 
 func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
 	constructor := func(db boltdb.DB) jobstore.DAO { return bolt.NewBoltDAO(db) }

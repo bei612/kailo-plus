@@ -5,12 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
-	"github.com/pydio/cells/v5/common/client/commons"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
@@ -34,24 +34,37 @@ func NativeWriteJobMatches(job *jobproto.Job, id string) bool {
 // The existing native stream is bounded by the operator's response budget.
 // Exhaustion/unavailable lookup is not evidence that an operation never ran.
 func ReadNativeWriteTask(ctx context.Context, job, key string, limit int64) (*jobproto.Task, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
 	stream, err := client.ListTasks(ctx, &jobproto.ListTasksRequest{JobID: job, Status: jobproto.TaskStatus_Any})
+	if err != nil {
+		return nil, err
+	}
 	var found *jobproto.Task
 	var size int64
-	err = commons.ForEach(stream, err, func(response *jobproto.ListTasksResponse) error {
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return found, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if response.GetTask() == nil || response.Task.ID == "" || response.Task.JobID != job {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
 		size += int64(proto.Size(response))
 		if limit <= 0 || size > limit {
-			return errors.WithMessage(errors.InvalidParameters, "native task lookup exceeds its controlled response budget")
+			return nil, errors.WithMessage(errors.InvalidParameters, "native task lookup exceeds its controlled response budget")
 		}
 		if response.GetTask().GetID() == key {
 			if found != nil {
-				return errors.WithStack(errors.StatusConflict)
+				return nil, errors.WithStack(errors.StatusConflict)
 			}
 			found = response.Task
 		}
-		return nil
-	})
-	return found, err
+	}
 }
 
 // NativeWriteIntent is retained only inside the original Cells Task. It binds

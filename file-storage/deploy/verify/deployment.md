@@ -585,3 +585,103 @@ bytes（不是本批独立峰值）。原件目录
 publish 因果、delete/share、Task 安全退休或 HUMAN 正文交付完成；完整 FILE_STORAGE
 七项仍闭入口，不以 Job 可启动、原夹具通过或旧运行容器证明整类可用。
 继承 `deploy/compose.yaml` 未改、不在本批。
+
+## 2026-10-09 原 Task 查询结束与受治理任务清理消费者
+
+上节纯 Read/Write Job 首次没有 Task bucket；原 Bolt 查询不结束，真实
+`ReadNativeWriteTask` 在第一次派发之前便无法确认是否存在旧引用。本批修原
+JobService/DAO 查询与既有对账调用方，不增加上传器、Task、队列、账本或执行权威。
+
+四步影响说明：
+
+1. 权威为 `.design/07` §5.2/8A、DD-90/93 和原 native Task 持久引用。固定官方
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 已只读核验
+   `scheduler/jobs/dao/bolt/bolt.go::boltStore.ListTasks/tasksToChan`、
+   `scheduler/jobs/dao/mongo/mongo.go::mongoImpl.ListTasks/listTasks`、
+   `scheduler/jobs/grpc/handler.go::JobsHandler.ListTasks/CleanStuckTasks/cleanStuckByStatus`、
+   `common/client/commons/stream-reader.go::ForEach` 和
+   `common/errors/lib.go::IsStreamFinished`。原页面、Task JSON、RPC/protobuf、独立
+   UI/ACL 原样保留；内部错误/取消传播和 admitted claim 保护属于已授权治理改造；
+   本批无页面共享迁移适用对象，不声明全量原版一致或首次上传完成。
+2. 原 `EnsureNativeActionJobs` 生产受控 Job；真实 `executeNativePromote` 与已有原读链
+   → `ReadNativeWriteTask` → 原 JobService.ListTasks → Bolt/Mongo；同一接口的
+   DeleteTasks、OrphanLogs、cleanStuckByStatus 和原 DAO
+   检查全部迁移。内部 DAO 一次改为 caller context、只读结果 channel 和实际 error
+   completion；删除旧 bool completion/消费者 close 及废弃 tasksToChan。缺 bucket
+   正常结束，取消/读取/解码/cursor 错误真实返回；Send 失败取消原生产者而不关闭其
+   channel。原 native observe/execute 只消费持久 Task 元数据，不第二次读取文件。
+3. `ReadNativeWriteTask` 只接受完整 `io.EOF`；部分流、超额、重复/歧义引用、空或
+   外 Job 记录均不返回可用的 partial Task。损坏记录不被跳过、数据库不可读不成为
+   “不存在”。完整空查询只证明没有查到记录，不证明旧副作用未发生，也不授权
+   重放。只有已有 claim/PEP 原链可决定首次派发，Task 退休缺口仍保留。查询错误
+   沿原传输/依赖拒绝，非法或歧义元数据沿原参数/冲突错误；这些非 nil error 不产生
+   平台成功、失败或取消终态。迁移的状态清理和日志对账先完整读取成功再落库/删除。
+4. `TaskHasClaim` 在原 housekeeping 的 GetJob、Stop、Interrupted/Error 改写之前
+   保留受治理 Task 原状态和冻结意图；重启/超时不是 native 终态。原无 claim 任务
+   保留独立原路径。CleanStuckTasks/DetectStuckTasks 不再吞掉原读取/持久化错误。
+   原无 claim Stop 可能已发出后才发现后续流错误，不能报告未执行或全部原子。
+   Bolt 游标/发送和 Mongo 查询消费 caller context；原 Bolt View 取锁、GetJob 无 ctx
+   及 ListJobs 没有异步 error completion 的边界未扩张，不声称全程有界。没有新
+   deadline/默认值/状态/TTL；claimed Task 安全退休、失联对账期限仍未闭合。
+
+复用原 `kailo-cells-native-check-lftow7`、UID 1000:1000，实际
+`cpu.max=400000 100000`、`memory.max=8589934592`、`memory.swap.max=0`，原 Data
+cache/temp。执行前检查真实 Go/link/BuildKit 并发、CPU/内存与 I/O；最终恢复前
+MemAvailable 26,264,644 kB、memory PSI avg10 0，共享两 BuildKit 和另一 Go，不称
+独占。I/O 冷读取保留原句柄，无重启、第二 SDK、镜像、依赖安装或新数据库。
+
+最终正向、实施后生产变异和字节还原复验使用同一原命令：
+
+```sh
+sudo -n docker exec -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_WORKING_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_DATA_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  /usr/local/go/bin/go test -mod=readonly -p 16 -tags kv \
+  ./scheduler/jobs/grpc ./scheduler/jobs/dao ./scheduler/jobs/dao/bolt ./scheduler/jobs/dao/mongo \
+  -run 'TestNativeTaskLookupUsesOriginalStreamTermination|TestNativeHousekeepingPreservesAdmittedTask|TestDAO_PutTask|TestDAO_listTask' \
+  -count=1 -v
+```
+
+首两轮 `positive.log`（1648）、`positive-stream.log`（37703）均 exit 1，原因是执行
+错误地写 `-p16` 而不是原参数 `-p 16`，未正确选定包；原输出包含
+`broker/mailer/templates.go:24:2: module lookup disabled by GOPROXY=off`。不是本目标
+缺依赖，也没有下载补库。修正参数后 `positive-corrected.log`（55153）exit 1，
+grpc 夹具 logger 参数顺序编译错误，原 DAO 两目标通过，不能当生产负向证据。
+`positive-final.log`（75841）编译成功但 5 个子项失败：原 manager.Resolve 每次
+`handlerV.Call` 重建 DAO，夹具只使一个后来被替换的实例不可读。按
+`common/runtime/manager/resolve.go::Resolve` 真实装配，将所有实例共享同一数据库
+读失败信号；未放宽生产规则、未修改原 Task 状态或伪造拒绝。
+
+最终 `positive-final2.log`（30246）exit 0：4 顶层 +23 子项 PASS、0 fail；grpc
+185.893s、DAO 65.071s。仅私有候选将生产 EOF 判断误接受 UnexpectedEOF、坏记录
+拒绝改为跳过、移除真实 claimed housekeeping guard，`mutation-final.log`（55652）
+编译成功 exit 1：2 顶层 +6 子项 FAIL，2 顶层 +17 子项 PASS。真实捕获部分流误判、
+损坏持久引用丢弃及 3 个 admitted 重启/超时误清理；额外无 claim timeout 子项因同
+遍历错误 Stop 了仍在途 claimed Task 也失败，不当作独立新缺口。正式源未破坏。
+精确恢复后 `restored-final.log`（60196）exit 0：4 顶层 +23 子项 PASS、0 fail；
+grpc 11.384s、DAO 4.177s。层级计数不相加。原检查实际用 Bolt、生成的 gRPC client、
+bufconn/原 handler 和真实 Task 查询；Bolt/Mongo 独立包显示 `[no test files]`，仅编译。
+Mongo 原环境 fixture 未投递，Mongo 实库与索引迁移明确 SKIP。原 fixture 日志 syncer
+未装配提示原件保留，不当线上审计验收。最终七源码、go.mod/go.sum 与原候选 cmp
+均 exit 0，gofmt-l 无输出；memory.events 全 0，lifetime peak 2,632,499,200 bytes
+不是本批独立峰值。
+
+原件目录 `/volumes/data/kailo/tmp/cells-native-task-stream-20261009.xDebXu/`：
+
+- `positive.log` SHA-256 `ae872fc1bd017db93a5f278ef2c0abb913ec5b4b2c6017e659fec0cedb8b39c6`；
+- `positive-stream.log` SHA-256 `9c1d449f8b55143a4dfd6b0d6db08c41a7d30633e69771f1d3b8445ee7ef5e2f`；
+- `positive-corrected.log` SHA-256 `0e6aa7ceb7fb65d14d2dee583b79fb5f6e48c5c1a108e39a13368b52887996b1`；
+- `positive-final.log` SHA-256 `4d5fcab63e3fc62a3f12bbe009a677dbe86c9b16e405be8fe5120458a6aaaf6f`；
+- `positive-final2.log` SHA-256 `c64645b5f987f2d169ef877581e0f18a75d5b80daa54393e2fc502bd73ef7cb7`；
+- `mutation-final.log` SHA-256 `5c5a1baa391b8e86aa9cee0bb8289882539954b892b43f6497ceb54b2966c5f9`；
+- `restored-final.log` SHA-256 `6b189bccafcb62aab96623b83713b1ff514dd104d6eede83d7ede94a955e7a7d`。
+
+本批未部署、未构建镜像，没有 native HTTP/S3/Mongo、实际文件交付、浏览器、
+Cells→WeKnora E2E、Windows/Mobile 验收，没有批准/激活 release/binding。
+主线原 `tools/check.sh --full`（22988）实际 exit 2，Dart 依赖获取报
+`Got socket error trying to find package test at https://pub.dev.`；后续门禁未执行，
+不是本批或整个平台 full 通过。首次上传/真正条件 CAS、write/delete/share、Task 安全
+退休、HUMAN 正文交付和完整 FILE_STORAGE 七项仍闭入口，不以 Task 读取可用或原
+夹具通过声明完整组件上线。继承 `deploy/compose.yaml` 未改、不在本批。

@@ -139,7 +139,10 @@ func (s *boltStore) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 			j.Tasks = []*proto.Task{}
 			jobTasksBucket := tx.Bucket([]byte(tasksBucketString + jobId))
 			if jobTasksBucket != nil {
-				j.Tasks = s.tasksToChan(jobTasksBucket, withTasks, nil, 0, 0, j.Tasks)
+				j.Tasks, err = s.tasksFromBucket(context.Background(), jobTasksBucket, withTasks, 0, 0)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -224,7 +227,10 @@ func (s *boltStore) ListJobs(owner string, eventsOnly bool, timersOnly bool, wit
 					j.Tasks = []*proto.Task{}
 					jobTasksBucket := tx.Bucket([]byte(tasksBucketString + j.ID))
 					if jobTasksBucket != nil {
-						j.Tasks = s.tasksToChan(jobTasksBucket, withTasks, nil, offset, limit, j.Tasks)
+						j.Tasks, err = s.tasksFromBucket(context.Background(), jobTasksBucket, withTasks, offset, limit)
+						if err != nil {
+							return err
+						}
 					}
 					if withTasks != proto.TaskStatus_Any {
 						if len(j.Tasks) > 0 {
@@ -384,10 +390,13 @@ func (s *boltStore) DeleteTasks(jobId string, taskId []string) error {
 
 }
 
-func (s *boltStore) ListTasks(jobId string, taskStatus proto.TaskStatus, cursor ...int32) (chan *proto.Task, chan bool, error) {
+func (s *boltStore) ListTasks(ctx context.Context, jobId string, taskStatus proto.TaskStatus, cursor ...int32) (<-chan *proto.Task, <-chan error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 
 	results := make(chan *proto.Task)
-	done := make(chan bool)
+	done := make(chan error, 1)
 	var offset int32
 	var limit int32
 	if len(cursor) > 0 {
@@ -398,29 +407,46 @@ func (s *boltStore) ListTasks(jobId string, taskStatus proto.TaskStatus, cursor 
 	}
 
 	go func() {
-
-		s.DB.View(func(tx *bbolt.Tx) error {
-
+		err := s.DB.View(func(tx *bbolt.Tx) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			send := func(bucket *bbolt.Bucket) error {
+				tasks, err := s.tasksFromBucket(ctx, bucket, taskStatus, offset, limit)
+				if err != nil {
+					return err
+				}
+				for _, task := range tasks {
+					select {
+					case results <- task:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				return ctx.Err()
+			}
 			if len(jobId) > 0 {
 				jobTasksBucket := tx.Bucket([]byte(tasksBucketString + jobId))
 				if jobTasksBucket == nil {
 					return nil
 				}
-				s.tasksToChan(jobTasksBucket, taskStatus, results, offset, limit, nil)
+				return send(jobTasksBucket)
 			} else {
-				tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+				return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
 					if strings.HasPrefix(string(name), tasksBucketString) {
-						s.tasksToChan(b, taskStatus, results, offset, limit, nil)
+						return send(b)
 					}
 					return nil
 				})
 
 			}
-			done <- true
-			close(done)
-			return nil
 		})
-
+		close(results)
+		done <- err
+		close(done)
 	}()
 
 	return results, done, nil
@@ -438,15 +464,21 @@ func (s *boltStore) BuildOrphanLogsQuery(since time.Duration, all []string) stri
 	return strings.Join(ids, " ")
 }
 
-func (s *boltStore) tasksToChan(bucket *bbolt.Bucket, status proto.TaskStatus, output chan *proto.Task, offset int32, limit int32, sliceOutput []*proto.Task) []*proto.Task {
+func (s *boltStore) tasksFromBucket(ctx context.Context, bucket *bbolt.Bucket, status proto.TaskStatus, offset int32, limit int32) ([]*proto.Task, error) {
 
 	c := bucket.Cursor()
 	var all []*proto.Task
 	// Records are not sorted, load the whole bucket
 	for k, v := c.First(); k != nil; k, v = c.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		task := &proto.Task{}
 		if e := json.Unmarshal(v, task); e != nil {
-			continue
+			return nil, e
+		}
+		if task.ID == "" || task.JobID == "" || task.ID != string(k) {
+			return nil, errors.WithStack(errors.StatusConflict)
 		}
 		jobs.StripTaskData(task)
 		if status != proto.TaskStatus_Any && task.Status != status {
@@ -467,15 +499,6 @@ func (s *boltStore) tasksToChan(bucket *bbolt.Bucket, status proto.TaskStatus, o
 	if limit > 0 && int(limit) < len(all) {
 		all = all[:limit]
 	}
-	if sliceOutput != nil {
-		sliceOutput = append(sliceOutput, all...)
-	}
-	if output != nil {
-		for _, t := range all {
-			output <- t
-		}
-	}
-
-	return sliceOutput
+	return all, ctx.Err()
 
 }
