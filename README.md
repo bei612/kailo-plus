@@ -4,7 +4,21 @@
 
 产品语义与可行性结论由相邻的 [`.design`](../.design/README.md) 唯一定义；本目录只回答如何把已经冻结的设计安全地变成可运行系统。实施文档不得重定义 Tenant、Workspace、Resource、Action、Workflow、权限、状态或能力结论。
 
-## 当前使用与恢复范围（2026-10-08）
+## 当前使用与恢复范围（2026-10-09）
+
+- 2026-10-09 00:41 UTC：仅 Web 更新为固定 main
+  `7e1b5db6189a48a654f807be3491c4614cf28051`，入口仍为
+  `http://192.168.0.193:58090/app/`。真实镜像 digest 为
+  `sha256:67532de3101296b6366cc54cba36a11c9ac235924832cd1e3c2d2335acb193d8`，
+  build-info 与原构建来源相符；其他 23 个运行中平台容器未替换。
+  正常 SSO 后 25 张截图已逐张打开复核，范围是 11 组中英文状态及 3 张中文
+  详情，不是 25 个完整页面验收。私聊介绍和输入占位已恢复；设置保存、非空
+  Projects、完整工作流编辑、多人与多 Agent、三组件完整业务和全量原版一致性
+  仍未验收。Core 的 `6d5fc4ded2d657dd11ef65af3e83d7b0e6039fa7` 执行令牌修复
+  已推送 main，但尚未部署；Windows/Mobile 包也未更新。详见
+  [本批实际发布回执](web-client/fork/verify/release-20261009-7e1b.md)、
+  [页面截图与验收边界](web-client/fork/verify/screenshots-20261009-7e1b.md)及
+  [Core 执行关联证据](core/verify/application-agent-intent-20261009.md)。
 
 - 2026-10-08 22:19 UTC：仅 Web 更新为固定 main
   `9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf` 的共享 Experiments／Forum 批，
