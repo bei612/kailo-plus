@@ -317,11 +317,13 @@ pub(crate) async fn issue_application(
     state: &ServiceState,
     ae: &Execution,
     arguments: &Value,
+    external: Uuid,
+    key: Uuid,
 ) -> Result<(String, String), Refusal> {
     if crate::application_action::is_human(ae) {
         return Err(invalid());
     }
-    issue_application_intent(state, ae, arguments, None).await
+    issue_application_intent(state, ae, arguments, external, key).await
 }
 
 pub(crate) async fn issue_component_action(
@@ -331,18 +333,22 @@ pub(crate) async fn issue_component_action(
     external: Uuid,
     key: Uuid,
 ) -> Result<(String, String), Refusal> {
-    if !crate::application_action::is_human(ae) || external.is_nil() || key.is_nil() {
+    if !crate::application_action::is_human(ae) {
         return Err(invalid());
     }
-    issue_application_intent(state, ae, arguments, Some((external, key))).await
+    issue_application_intent(state, ae, arguments, external, key).await
 }
 
 async fn issue_application_intent(
     state: &ServiceState,
     ae: &Execution,
     arguments: &Value,
-    intent: Option<(Uuid, Uuid)>,
+    external: Uuid,
+    key: Uuid,
 ) -> Result<(String, String), Refusal> {
+    if external.is_nil() || key.is_nil() {
+        return Err(invalid());
+    }
     let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;
     let (kind, target) = crate::application_tool::target(arguments)?;
     if target != ae.target_id
@@ -376,16 +382,13 @@ async fn issue_application_intent(
         where a.id=$1 and a.component_binding_kind='APPLICATION'")
         .bind(ae.id).fetch_optional(&state.pool).await?;
     let audience = audience.ok_or(Refusal::Denied(ReasonCode::BindingNotActive))?;
-    let mut claims = application_claims(
+    let claims = application_claims(
         ae,
         parameters,
         parameters["toolParameterHash"].clone(),
         revision,
+        Some((external, key)),
     )?;
-    if let Some((external, key)) = intent {
-        claims["external_execution_id"] = json!(external);
-        claims["idempotency_key"] = json!(key);
-    }
     let token = sign_claims(state, &audience, claims).await?;
     Ok((token, audience))
 }
@@ -449,6 +452,7 @@ pub(crate) async fn issue_query_revision(
             ae.parameters.as_ref().ok_or_else(invalid)?,
             json!(hash),
             revision,
+            None,
         )?,
     )
     .await
@@ -511,6 +515,7 @@ fn application_claims(
     parameters: &Value,
     hash: Value,
     revision: String,
+    intent: Option<(Uuid, Uuid)>,
 ) -> Result<Value, Refusal> {
     let kind = text(parameters, "targetType")?;
     let mut claims = json!({"tenant_id":ae.tenant_id,"actor_principal_id":ae.actor_principal_id,
@@ -529,6 +534,13 @@ fn application_claims(
     }
     if let Some(workspace) = ae.workspace_id {
         claims["workspace_id"] = json!(workspace);
+    }
+    if let Some((external, key)) = intent {
+        if external.is_nil() || key.is_nil() {
+            return Err(invalid());
+        }
+        claims["external_execution_id"] = json!(external);
+        claims["idempotency_key"] = json!(key);
     }
     Ok(claims)
 }
@@ -603,6 +615,7 @@ pub(crate) async fn issue_application_observation(
         ae.parameters.as_ref().ok_or_else(invalid)?,
         hash,
         revision,
+        None,
     )?;
     sign_claims(state, audience, claims).await
 }
@@ -693,4 +706,129 @@ pub(crate) fn verify(token: &str, audience: &str) -> Result<Value, Refusal> {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     Ok(claims)
+}
+
+#[cfg(test)]
+mod application_intent_tests {
+    use super::*;
+
+    fn execution(human: bool) -> Execution {
+        let initiator = Uuid::new_v4();
+        Execution {
+            id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            workspace_id: Some(Uuid::new_v4()),
+            action_key: "fixture.read@v1".into(),
+            action_version: 1,
+            initiator_principal_id: initiator,
+            actor_principal_id: if human { initiator } else { Uuid::new_v4() },
+            target_id: Uuid::new_v4(),
+            parameter_hash: "frozen-admission-hash".into(),
+            parameters: Some(
+                json!({"targetType":"RESOURCE", "delegationId":Uuid::new_v4(),
+                "delegationVersion":3,"resultExposurePolicyId":Uuid::new_v4(),
+                "resultExposurePolicyVersion":2,
+                "componentActionKind":if human {crate::application_action::KIND}else{"AGENT_TOOL"}}),
+            ),
+            temporal_workflow_id: None,
+            cancel_first_run_id: None,
+            approval_workflow_id: None,
+            approval_expires_at: None,
+            gate_state: "ALLOWED".into(),
+            dispatch_state: if human {
+                "DISPATCHED"
+            } else {
+                "NOT_DISPATCHED"
+            }
+            .into(),
+            reason_code: None,
+            correlation_id: Uuid::new_v4(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn both_actors_sign_the_same_native_intent_without_changing_scope_or_delegation() {
+        for human in [false, true] {
+            let ae = execution(human);
+            let parameters = ae.parameters.as_ref().unwrap();
+            let external = Uuid::new_v4();
+            let key = Uuid::new_v4();
+            let arguments =
+                json!({"target":{"resourceId":ae.target_id},"input":{"nativeObjectRef":"fixture"}});
+            let hash = json!(collab_bridge::limits::canonical_digest(&arguments));
+            let claims = application_claims(
+                &ae,
+                parameters,
+                hash.clone(),
+                "fresh".into(),
+                Some((external, key)),
+            )
+            .unwrap();
+            assert_eq!(claims["external_execution_id"], json!(external));
+            assert_eq!(claims["idempotency_key"], json!(key));
+            assert_eq!(claims["normalized_parameter_hash"], hash);
+            assert_eq!(claims["action_execution_id"], json!(ae.id));
+            assert_eq!(claims["operation_id"], json!(ae.operation_id));
+            assert_eq!(claims["tenant_id"], json!(ae.tenant_id));
+            assert_eq!(claims["workspace_id"], json!(ae.workspace_id));
+            assert_eq!(claims["target_id"], json!(ae.target_id));
+            assert_eq!(claims["actor_principal_id"], json!(ae.actor_principal_id));
+            assert_eq!(
+                claims["result_exposure_policy_id"],
+                parameters["resultExposurePolicyId"]
+            );
+            assert_eq!(
+                claims["result_exposure_policy_version"],
+                parameters["resultExposurePolicyVersion"]
+            );
+            if human {
+                assert!(claims.get("agent_principal_id").is_none());
+                assert!(claims.get("delegation_id").is_none());
+                assert!(claims.get("delegation_version").is_none());
+            } else {
+                assert_eq!(claims["agent_principal_id"], json!(ae.actor_principal_id));
+                assert_eq!(claims["delegation_id"], parameters["delegationId"]);
+                assert_eq!(
+                    claims["delegation_version"],
+                    parameters["delegationVersion"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_intent_refuses_nil_execution_or_key_for_both_actors() {
+        for human in [false, true] {
+            let ae = execution(human);
+            for intent in [(Uuid::nil(), Uuid::new_v4()), (Uuid::new_v4(), Uuid::nil())] {
+                assert!(application_claims(
+                    &ae,
+                    ae.parameters.as_ref().unwrap(),
+                    json!("frozen"),
+                    "fresh".into(),
+                    Some(intent)
+                )
+                .is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn revision_and_observation_claims_do_not_create_an_execution_intent() {
+        for human in [false, true] {
+            let ae = execution(human);
+            let claims = application_claims(
+                &ae,
+                ae.parameters.as_ref().unwrap(),
+                json!("signed-read-or-observation-intent"),
+                "fresh".into(),
+                None,
+            )
+            .unwrap();
+            assert!(claims.get("external_execution_id").is_none());
+            assert!(claims.get("idempotency_key").is_none());
+        }
+    }
 }

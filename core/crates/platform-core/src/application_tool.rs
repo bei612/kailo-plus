@@ -61,7 +61,7 @@ pub(crate) fn citation_output(raw: &Value, value: &Value) -> Result<(), Refusal>
             .get("citations")
             .is_some_and(|value| value != &json!([])) =>
         {
-            return Err(invalid())
+            return Err(invalid());
         }
         None => {}
     }
@@ -1679,7 +1679,14 @@ pub(crate) async fn dispatch(
     let connector = connector(&state.pool, child.id).await?;
     let signed = match connector {
         Connector::RemoteAdapter => {
-            Some(crate::action_token::issue_application(state, child, arguments).await?)
+            // Freeze the same native intent in the signed token and the
+            // original EE row. The token remains private until dispatch commits.
+            let external = Uuid::new_v4();
+            let key = Uuid::new_v4();
+            let (token, audience) =
+                crate::action_token::issue_application(state, child, arguments, external, key)
+                    .await?;
+            Some((external, key, token, audience))
         }
         Connector::ProtocolPeer => None,
     };
@@ -1779,7 +1786,7 @@ pub(crate) async fn dispatch(
         tx.commit().await?;
         return Ok(Dispatch::Peer);
     }
-    let (token, audience) = signed.ok_or_else(unavailable)?;
+    let (external, key, token, audience) = signed.ok_or_else(unavailable)?;
     let (binding_version,mappings):(i32,Value)=sqlx::query_as("select b.version,p.observation->'executionMappings'
         from catalog.application_binding b join projection.application_runtime p on p.binding_id=b.id
           and p.generation=b.active_projection_generation and p.component_release_id=b.component_release_id and p.state='ACTIVE'
@@ -1812,8 +1819,6 @@ pub(crate) async fn dispatch(
     .bind(ae.id)
     .execute(&mut *tx)
     .await?;
-    let external = Uuid::new_v4();
-    let key = Uuid::new_v4();
     sqlx::query("insert into admission.external_execution(id,operation_id,workflow_id,action_execution_id,
         tenant_id,workspace_id,component_binding_id,component_binding_version,component_release_id,
         component_projection_generation,protocol_operation,native_type,idempotency_key,request_digest,platform_status,cancel_capability)
