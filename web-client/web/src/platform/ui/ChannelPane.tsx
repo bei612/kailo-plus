@@ -304,6 +304,15 @@ export function ChannelPane({
         </MessageAuthorIdentity>;
       }};
   }, [conversation, live, denied, metadataPending, members.isSuccess, members.isError, members.isFetching, members.data, myPrincipalId, workspaceId, timelineMessages, handleOpenAuthor, uiT]);
+  const composerPlaceholder = archived
+    ? uiT("composer.archivedPlaceholder")
+    : conversation
+      ? directMessageIntro?.displayName.trim()
+        ? uiT("composer.dmPlaceholder", { name: directMessageIntro.displayName })
+        : uiT("search.message")
+      : channelName?.trim()
+        ? uiT("composer.channelPlaceholder", { name: channelName })
+        : uiT("search.message");
   const { handleEditLastOwnMainMessage, routeEdit: handleRoutedEdit } = useRoutedMessageEdit({
     activeChannelId: JSON.stringify([myPrincipalId, conversation?.id ?? workspaceId]),
     channelIsCovered,
@@ -552,6 +561,7 @@ export function ChannelPane({
       /> : null}
       {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
       {!denied && mainEditTarget ? <Composer key={`edit:${mainEditTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+        placeholder={composerPlaceholder}
         mentionPeople={mentionPeople}
         editTarget={mainEditTarget} onCancelEdit={handleCancelEdit} onConfirmed={() => handleEditConfirmed(mainEditTarget)} draftIdentity={myPrincipalId}
         onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
@@ -570,12 +580,14 @@ export function ChannelPane({
       <div hidden={mainEditTarget !== null}>
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
+            placeholder={composerPlaceholder}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
+            placeholder={composerPlaceholder}
             mentionPeople={mentionPeople}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
             disabled={archived || metadataPending}

@@ -135,6 +135,13 @@ export const ChannelPane = React.memo(function ChannelPane({
       }};
     return intro;
   }, [activeChannel.channelType, activeDmHeaderParticipants, t]);
+  const composerPlaceholder = activeChannel.archivedAt
+    ? t("composer.archivedPlaceholder")
+    : activeChannel.channelType === "dm"
+      ? directMessageIntro?.displayName.trim()
+        ? t("composer.dmPlaceholder", { name: directMessageIntro.displayName })
+        : t("search.message")
+      : t("composer.channelPlaceholder", { name: activeChannel.name });
   const community = useActiveCommunity();
   const { recordThreadInteraction } = useAppShell();
   const toggleReaction = useToggleReactionMutation(activeChannel, currentPubkey);
@@ -482,6 +489,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 {mainEditTarget ? (
                   <MessageComposer
                     key={`edit:${mainEditTarget.id}`}
+                    placeholder={composerPlaceholder}
                     channelId={activeChannel.id}
                     channelName={activeChannel.name}
                     editTarget={mainEditTarget}
@@ -511,11 +519,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   onEditLastOwnMessage={handleEditLastOwnMainMessage}
                   profiles={profiles}
                   showBackgroundUploadProgress={false}
-                  placeholder={
-                    activeChannel.archivedAt
-                      ? "Archived channels are read-only."
-                      : `Message #${activeChannel.name}`
-                  }
+                  placeholder={composerPlaceholder}
                   showTopBorder={false}
                 /></div>
               </div>

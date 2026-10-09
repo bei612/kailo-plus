@@ -23,6 +23,7 @@ const state = vi.hoisted(() => ({
   publish: vi.fn(),
   delete: vi.fn(),
   members: vi.fn(),
+  recipients: vi.fn(),
   stream: vi.fn(),
   history: vi.fn(),
   reaction: vi.fn(),
@@ -42,7 +43,7 @@ vi.mock("@/platform/bff-client", async () => ({
   BffError: (await import("@client-kit/platform/transport")).BffError,
   bff: {
     members: () => state.members(),
-    conversationParticipants:async()=>({items:[],nextCursor:null}),
+    conversationParticipants: (...args: unknown[]) => state.recipients(...args),
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
     profile: async () => ({pubkey:"mine"}),
@@ -118,6 +119,42 @@ async function open() {
   });
   await flush();
 }
+function composerPlaceholder() {
+  return host.querySelector('[data-testid="message-input"] [data-placeholder]')?.getAttribute("data-placeholder");
+}
+
+it("the original main editor consumes the channel placeholder and reacts to the shared language", async () => {
+  await open();
+  expect(composerPlaceholder()).toBe("Message #Original channel");
+  await act(async () => setLocale("zh-CN"));
+  await flush();
+  expect(composerPlaceholder()).toBe("给 #Original channel 发消息");
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("the original DM editor consumes admitted people once, not an internal channel name or another own device", async () => {
+  const conversation: ConversationView = { id: "dm-placeholder", channelId: "channel-a", state: ItemState.Active,
+    participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
+  state.recipients.mockResolvedValue({items:[
+    {principalId:"human-a",displayName:"Me",pubkeys:["mine","my-other-device"]},
+    {principalId:"human-b",displayName:"Alice",pubkeys:["other","another-peer-device"]},
+  ],nextCursor:null});
+  await renderChannel({conversation});
+  await act(async () => {
+    state.receive!({type:"snapshot",events:windowEvents([])});
+    state.receive!({type:"live"});
+  });
+  await flush();
+  expect(composerPlaceholder()).toBe("Message Alice");
+  await act(async () => setLocale("zh-CN"));
+  await flush();
+  expect(composerPlaceholder()).toBe("给 Alice 发消息");
+  state.recipients.mockResolvedValue({items:[],nextCursor:null});
+  await act(async () => { await client.invalidateQueries({queryKey:["platform","conversation-members"]}); });
+  await flush();
+  expect(composerPlaceholder()).toBe("消息");
+  expect(state.publish).not.toHaveBeenCalled();
+});
 function retry() {
   const button = [...host.querySelectorAll("button")].find(
     (b) => b.textContent === "platform.retry",
@@ -269,6 +306,7 @@ beforeEach(() => {
   projection = { version: 3, readContexts: {}, workspacePreferences: {} };
   state.fetch.mockImplementation(async () => structuredClone(projection));
   state.members.mockResolvedValue([]);
+  state.recipients.mockResolvedValue({items:[],nextCursor:null});
   state.history.mockResolvedValue({events:windowEvents([event(10)])});
   state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
   state.delete.mockResolvedValue({eventId:"deletion",operationId:"operation"});

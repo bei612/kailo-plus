@@ -329,6 +329,9 @@ enum PlatformMessageKey {
   dmOpenConversation,
   dmIntroPrefix,
   dmIntroSuffix,
+  composerDmPlaceholder,
+  composerChannelPlaceholder,
+  composerArchivedPlaceholder,
   platformNotificationsDescription,
   platformNotificationsUnavailable,
   platformNotificationsBlocked,
@@ -2664,6 +2667,15 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '这是你与',
   ),
   PlatformMessageKey.dmIntroSuffix: ('.', '的私聊开始。'),
+  PlatformMessageKey.composerDmPlaceholder: ('Message {name}', '给 {name} 发消息'),
+  PlatformMessageKey.composerChannelPlaceholder: (
+    'Message #{name}',
+    '给 #{name} 发消息',
+  ),
+  PlatformMessageKey.composerArchivedPlaceholder: (
+    'Archived channels are read-only.',
+    '已归档频道为只读。',
+  ),
   PlatformMessageKey.platformNotificationsDescription: (
     'Desktop alerts are on by default. Fine-tune what gets through below.',
     '桌面提醒默认开启，可在下方调整提醒内容。',

@@ -6476,3 +6476,78 @@ SDK所有本批目标已终态并释放，不存在本批在途检查；root按�
 - 该原件union5314/rawdiff3332：1982原样blob一致、110已证共享迁移、0独立授权归档、6已证残缺、3216未分类；不把未分类笼统归为治理改造。
 - blob相同只证明源码原样，不证明功能/视觉验收；原路径不存在也不自动证明功能缺失。本批只追加上述已定位模块事实，没有重导全量或改旧快照基准。
 - Settings仍7/16及9分区真实缺口、Agent/Activity与其他未恢复模块均保留，不能称100%还原或生产就绪。
+
+## 2026-10-09 原 Composer 私聊姓名与频道占位消费者恢复
+
+本批起点为 main `7e3038873e39b08f8a4f7e20de6cfc15c23716c7`。
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`，
+完整原路径 `desktop/src/features/channels/ui/ChannelPane.tsx::ChannelPane`：
+原 main Composer 的 placeholder 分支使用 `directMessageIntro.displayName` 的
+`Message {name}`、普通频道的 `Message #{name}`、归档的
+`Archived channels are read-only.`，不是统一的 Message，也不是私聊内部频道名。
+
+本批动手前确认的边界与影响：
+
+- 权威是固定原消费者与用户的原版恢复/中文默认要求；不修改 .design 的身份、scope、授权和发送结果语义。
+- 已有真实资料消费者把独立 Principal 对应的多设备公钥归为同一个人；复用同一个原 formatDmParticipantDisplayName 结果，不新增姓名来源、成员发现或资料权限旁路。
+- Web 经现有 BFF，Native 保留本机凭据和 Relay 传输；只改变现有 Composer 的文案 prop，没有新增读写接口、契约字段、数据库或第二读状态。
+- Web 的资料需 ACTIVE/live/未撤权、当前身份与 query fence 通过；无可信姓名、空姓名或资料撤销回中性 Message，不把内部 DM channel name 当人名。
+- 归档只读分支优先于 DM 姓名；沿既有禁用逻辑，不用文案代替授权。多人物溢出继续由原 formatter 同源翻译，不把不同设备重复计为多个人。
+- 不新增执行状态；超时、拒绝、结果不明仍走已有六类错误与发送回执链，未 ACK 不渲染成功。本文案改动不使任何未准入动作可用。
+
+源码/原差异归属：
+
+| 路径 | 本批实际变化 | 原差异分类 |
+|---|---|---|
+| client-kit/ts/platform/src/i18n.ts | 原英文三分支与中文同源词条 | 共享迁移；中文为已授权适配 |
+| client-kit/dart/lib/shared/platform/platform_text.dart | 原生成器生成上述三个 key/value | 共享迁移，不另立翻译权威 |
+| collaboration/desktop/src/features/channels/ui/ChannelPane.tsx | 原 main/edit 两个 MessageComposer 实际消费；恢复 DM 名称，归档中文 | 缺失需恢复的消费者已接回；可信姓名 fallback 为已授权身份接缝 |
+| collaboration/desktop/src/features/channels/ui/ChannelPane.helpers.test.mjs | 原目标后置检查实际生产 initializer 和两个 JSX 接线 | 验证证据，不算新增产品功能 |
+| web-client/web/src/platform/ui/ChannelPane.tsx | 原 Composer 的 edit/DM/channel 三个实际消费者接同源规则 | 共享迁移；保留 BFF 身份/授权接缝 |
+| web-client/web/src/platform/ui/ChannelRead.test.tsx | 原真实 Tiptap DOM 检查频道、人物去重、双语与资料撤销 | 验证证据，不以 mock 回执冒充线上功能 |
+
+六个源码/生成/检查路径实际合计 +101/-6；未包含其他文件的继承脏改动。
+原版 timeout/moderation/forum 等其他分支不因本批能接通的 DM/stream/archive 恢复而被删除，
+尚缺消费者仍如实保留；没有声明整个 ChannelPane 已原样或完整恢复。
+
+实际验证及失败：
+
+- 原 SDK `kailo-agent-receipt-xvkujx`，实际 4 CPU / 8 GiB、UID1000、Node heap3072、Vitest maxWorkers1；无新 SDK、安装、镜像或 bundle。
+- 开跑实际 memory.max=8589934592、cpu.max=400000/100000、oom_kill=2 旧基线，主机 available25GiB；不以重试或调低原 timeout 掩盖问题。
+- handle60226 首轮真实 exit1：生成/check0，shared source/test types0；Native5通过1失败、Web1通过1失败，Web/Native types2。
+- 该轮实际错误是本批 fallback 把 Web 局部 `platform.message` 误当共享 key，产生 `Cannot read properties of undefined (reading 'en')`。
+- 已改为现有共享中性 Message 词条 `search.message`，不新增重复翻译；原失败日志保留，不算通过。
+- handle32971 最终正向 exit0：Native6/6，Web真实 Tiptap2/2；Web/Native types均0。共享 source/test types在同一最终共享输入上均0。
+- 原 `PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py` 与 `--check` 均0；只回写 platform_text.dart，正式文件与生成结果 cmp0，reason_text.dart 未变 cmp0，未改 contracts Dart。
+- 原 Native 命令：`node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs`。
+- 原 Web 命令：`vitest run src/platform/ui/ChannelRead.test.tsx --maxWorkers=1 -t "original.*editor consumes"`；两目标真实执行，另44项未选，不称本文件全部已验。
+- types 实际为 shared `tsc --noEmit`、shared `tsc --noEmit -p tsconfig.test.json`、Web `tsc --noEmit`、Native `tsc --noEmit`，四者0。
+- handle69211 在私有候选删除两个 Native 和三个 Web 的实际 placeholder prop；Native真实1 failed/exit1（0 !== 2），Web真实2 failed/exit1（实际 DOM 回到 generic，而不是姓名/#名称）。
+- handle2430 原字节恢复双 cmp0；原目标恢复 Native6/6、Web2/2，exit0。不是只测未被调用的 helper，不把启动超时当故障命中。
+- 本批 `git diff --check` 0；未重跑 full/check-docs，不声称此前全局 FAIL node --test 或其他未选目标被本批消除。
+
+本批原始日志统一在：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+文件为 `dm-placeholder-i18n.log`、`dm-placeholder-{native,web}-positive.log`、
+`dm-placeholder-{native,web}-corrected.log`、`dm-placeholder-{native,web}-negative.log`、
+`dm-placeholder-{native,web}-restored.log`、`dm-placeholder-{shared,test,web,native}-types.log`
+及两个 host 的 `*-types-corrected.log`。所有本批句柄已终态，原 SDK 已释放并通知 Wren。
+
+实际视觉与版本：
+
+- 既有 `header-restoration` 正常 SSO 会话，只读打开既有 DM；未注入 Cookie、重置身份、直接写业务 API 或执行 Agent。
+- 运行源码仍为 `9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf`，image `sha256:73639ed4a0f91276dc03ca4182de143362a92bc5bd648af1df14100deadd9548`。
+- buildId `sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`；该旧版编辑器实际 data-placeholder 为“消息”，未显示原 DM 人名。
+- 新截图文件 `/volumes/kailo/.playwright-cli/kailo-ui-20261009-main9bc0-dm-placeholder-missing-zh.png` 已实际打开视觉复核，1920×1080。
+- SHA256 `d9b0e37875da8bd399e0b61f3b40757520d5beef3eca912e2d045f7600ea860f`；与前一张旧版 DM 图字节相同，不据重复文件增加页面/状态覆盖。
+- 该图只证明旧版缺项。本批新源码未构建/未部署，新源码浏览器截图0；DM多人物/英文/刷新及本批改后页面尚未实拍。
+- Native源码目标和 Web DOM 检查不是 Windows 安装包/设备验收；Mobile无设备验收。本批不改变 Mobile 非组件宿主边界。
+
+全树 diff 仍不称逐处验完：
+
+- 本批起点7e3038873e39b08f8a4f7e20de6cfc15c23716c7以两仓 `git ls-tree -r` 的原路径/blob ID低写入重核，固定官方仍为779af8886caae1317b4de962082429867ab61503。
+- 官方5195路径、main collaboration2877路径，其中fork证据20路径排除；原样blob1982、modified776、原路径不存在2437、main-only119，union5314/rawdiff3332。
+- 数量恰与旧dfc7原件相同，不等于旧分类已对当前main逐处复验；本批只实证上述原placeholder与实际迁移/授权接缝。
+- 原 ChannelPane blob `ea3c2647865f9c2f356febec24d705108e97f226` 与起点main blob `051661ab68113121787c804daf621ac947735d2c` 不同，仍不能把整个文件称原样保留。
+- 旧 TSV `collaboration-dfc7a3383517.classification.tsv` 的110共享/6残缺/3216未分类仅对应其已登记dfc7比较点；不冒充当前全量功能/视觉验收，也不把modified统称授权治理。
+- Settings仍7/16与9分区真实接缝缺失、Agent/Activity及其他原模块缺项继续保留；不能称100%还原或生产就绪。

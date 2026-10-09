@@ -83,6 +83,32 @@ test("Native's actual timeline prop consumes admitted people once and only opens
   assert.equal(project({...React,useMemo:fn=>fn()},{id:"dm",channelType:"dm"},[],formatDmParticipantDisplayName,Profile,Avatar,()=>""),null);
 });
 
+test("Native's actual composer placeholders use the original DM names and channel hash without exposing unproven recipients", () => {
+  const file = ts.createSourceFile("ChannelPane.tsx", readFileSync(new URL("./ChannelPane.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let initializer, consumers = 0;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(file) === "composerPlaceholder") initializer = node.initializer;
+    if (ts.isJsxAttribute(node) && node.name.text === "placeholder" && node.initializer?.getText(file) === "{composerPlaceholder}") consumers++;
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  assert.ok(initializer);
+  assert.equal(consumers, 2, "both original main/edit MessageComposer consumers receive the actual placeholder");
+  const js = ts.transpile(`const result=${initializer.getText(file)};`, { target: ts.ScriptTarget.ES2022 });
+  const project = new Function("activeChannel", "directMessageIntro", "t", `${js};return result;`);
+  for (const locale of ["en", "zh-CN"]) {
+    const t = (key, variables) => translate(locale, key, variables);
+    const dm = { channelType: "dm", name: "internal-dm-id", archivedAt: null };
+    assert.equal(project(dm, { displayName: "Alice" }, t), locale === "en" ? "Message Alice" : "给 Alice 发消息");
+    assert.equal(project(dm, null, t), t("search.message"));
+    assert.equal(project(dm, { displayName: " " }, t), t("search.message"));
+    const names = formatDmParticipantDisplayName(["Alice", "Bob", "Carol", "Dave"].map(displayName => ({ displayName })), t);
+    assert.equal(project(dm, { displayName: names }, t), locale === "en" ? "Message Alice, Bob, Carol, +1 more" : "给 Alice, Bob, Carol, +1 人 发消息");
+    assert.equal(project({ ...dm, channelType: "stream", name: "General" }, null, t), locale === "en" ? "Message #General" : "给 #General 发消息");
+    assert.equal(project({ ...dm, archivedAt: "actual-archive" }, { displayName: "Alice" }, t), locale === "en" ? "Archived channels are read-only." : "已归档频道为只读。");
+  }
+});
+
 test("native route keeps a real thread editor until cancellation, then opens the pending original target", async () => {
   await withRouteHost("stream", async (host, effects) => {
     await press(host, "Edit reply");
