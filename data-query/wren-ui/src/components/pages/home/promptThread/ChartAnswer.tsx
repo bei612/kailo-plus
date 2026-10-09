@@ -150,19 +150,19 @@ export default function ChartAnswer(props: AnswerResultProps) {
   }, [chartOptionValues, newValues]);
 
   const dataValues = useMemo(() => {
-    const { data, columns } = query.receipt?.data || {};
+    const { data, columns } = query.data || {};
     return (data || []).map((val) => {
       return (columns || []).reduce((acc, col, index) => {
         acc[col.name] = val[index];
         return acc;
       }, {});
     });
-  }, [query.receipt]);
+  }, [query.data]);
 
   const dataColumns = useMemo(() => {
-    const { columns } = query.receipt?.data || {};
+    const { columns } = query.data || {};
     return columns || [];
-  }, [query.receipt]);
+  }, [query.data]);
 
   const loading =
     previewDataResult.loading ||

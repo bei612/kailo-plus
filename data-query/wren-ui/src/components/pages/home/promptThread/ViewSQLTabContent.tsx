@@ -234,12 +234,12 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
         {query.error ? <Alert type="warning" message={text.unknown} /> : null}
         {query.ended ? <Alert type="error" message={text.ended} /> : null}
         {query.denied ? <Alert type="warning" message={text.denied} /> : null}
-        {query.completed && query.receipt?.data && (
+        {query.completed && query.data && (
           <div className="mt-2 mb-3">
             <PreviewData
               error={query.error}
               loading={previewDataResult.loading}
-              previewData={query.receipt.data}
+              previewData={query.data}
               locale={{
                 emptyText: (
                   <Empty

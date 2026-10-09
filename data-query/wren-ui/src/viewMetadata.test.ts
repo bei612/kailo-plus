@@ -1827,6 +1827,105 @@ describe('original saved-view preview controls', () => {
     expect(storage.removeItem).not.toHaveBeenCalled();
   });
 
+  it('original default Asking preview accepts only its same-response frozen native SQL history and retains UNKNOWN', async () => {
+    const historyId = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
+    renderResponse();
+    await mockButtons[0].onClick();
+    const first = mockPreview.mock.calls[0][0];
+    const receipt = {
+      terminalStatus: 'COMPLETED',
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+      previewScope: mockScope,
+      responseId: 21,
+      nativeType: 'wren.api_history',
+      nativeId: historyId,
+      inputReference: {
+        nativeObjectRef: JSON.stringify({ historyId, modelId: 8 }),
+      },
+    };
+    for (const value of [
+      { ...receipt, terminalStatus: 'UNKNOWN' },
+      { ...receipt, responseId: 22 },
+      { ...receipt, nativeId: 'another-native-row' },
+      { ...receipt, nativeType: 'another-native-type' },
+      { ...receipt, previewScope: 'b'.repeat(64) },
+      {
+        ...receipt,
+        inputReference: {
+          nativeObjectRef: JSON.stringify({ historyId, modelId: 8, viewId: 7 }),
+        },
+      },
+      {
+        ...receipt,
+        inputReference: {
+          nativeObjectRef: JSON.stringify({
+            historyId: 'not-an-id',
+            modelId: 8,
+          }),
+        },
+      },
+    ]) {
+      mockPreview.mockResolvedValueOnce(value);
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls.at(-1)[0]).toEqual(first);
+      expect(storage.removeItem).not.toHaveBeenCalled();
+    }
+    mockPreview.mockResolvedValueOnce(receipt);
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls.at(-1)[0]).toEqual(first);
+    expect(storage.removeItem).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])(
+    'original independent Asking preview consumes raw rows without a fabricated receipt or key (becomes bound=%s)',
+    async (becomesBound) => {
+      const rows = { columns: [{ name: 'customer' }], data: [['original']] };
+      mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+      const publish = jest.fn();
+      const React = require('react');
+      const original = React.useState;
+      const state = jest
+        .spyOn(React, 'useState')
+        .mockImplementation((initial: any) =>
+          initial === null ? [null, publish] : original(initial),
+        );
+      try {
+        renderResponse();
+        mockPreview.mockImplementationOnce(async () => {
+          if (becomesBound)
+            mockConfig.mockResolvedValue({
+              nativeBindingConfigured: true,
+              queryScope: mockScope,
+            });
+          return rows;
+        });
+        await mockButtons[0].onClick();
+        expect(mockPreview).toHaveBeenCalledWith({ id: 21 });
+        if (becomesBound)
+          expect(publish).not.toHaveBeenCalledWith({ id: 21, data: rows });
+        else expect(publish).toHaveBeenCalledWith({ id: 21, data: rows });
+        expect(storage.setItem).not.toHaveBeenCalled();
+        expect(storage.removeItem).not.toHaveBeenCalled();
+      } finally {
+        state.mockRestore();
+      }
+    },
+  );
+
+  it.each([undefined, '', 'wrong'])(
+    'original Asking never falls back to independent preview for ambiguous configured state %j',
+    async (configured) => {
+      mockConfig.mockResolvedValue({
+        nativeBindingConfigured: configured,
+        queryScope: mockScope,
+      });
+      renderResponse();
+      await mockButtons[0].onClick();
+      expect(mockPreview).not.toHaveBeenCalled();
+      expect(storage.setItem).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['wrong-response', 'wrong-native', 'wrong-scope', 'malformed'])(
     'keeps the original Asking retry key for a %s terminal receipt',
     async (failure) => {

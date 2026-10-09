@@ -177,6 +177,17 @@ export interface IAskingService {
   ): Promise<ThreadResponse>;
   getResponsesWithThread(threadId: number): Promise<ThreadResponse[]>;
   getResponse(responseId: number, project?: Project): Promise<ThreadResponse>;
+  previewData(
+    responseId: number,
+    limit: number | undefined,
+    assertIndependent: () => void,
+  ): Promise<PreviewDataResponse>;
+  previewBreakdownData(
+    responseId: number,
+    stepIndex: number | undefined,
+    limit: number | undefined,
+    assertIndependent: () => void,
+  ): Promise<PreviewDataResponse>;
   generateThreadResponseBreakdown(
     threadResponseId: number,
     configurations: { language: string },
@@ -1253,6 +1264,80 @@ export class AskingService implements IAskingService {
       projectId: currentProject.id,
     });
     return thread ? response : null;
+  }
+
+  // Fixed upstream previews remain usable only for a genuinely independent
+  // instance. The request consumer rechecks that mode at native SQL dispatch.
+  public async previewData(
+    responseId: number,
+    limit: number | undefined,
+    assertIndependent: () => void,
+  ): Promise<PreviewDataResponse> {
+    const response = await this.getResponse(responseId);
+    if (!response) {
+      throw new Error(`Thread response ${responseId} not found`);
+    }
+    const project = await this.projectService.getCurrentProject();
+    const deployment = await this.deployService.getLastDeployment(project.id);
+    const mdl = deployment.manifest;
+    const eventName = TelemetryEvent.HOME_PREVIEW_ANSWER;
+    try {
+      assertIndependent();
+      const data = (await this.queryService.preview(response.sql, {
+        project,
+        manifest: mdl,
+        limit,
+      })) as PreviewDataResponse;
+      assertIndependent();
+      this.telemetry.sendEvent(eventName, { sql: response.sql });
+      return data;
+    } catch (err: any) {
+      this.telemetry.sendEvent(
+        eventName,
+        { sql: response.sql, error: err.message },
+        err.extensions?.service,
+        false,
+      );
+      throw err;
+    }
+  }
+
+  public async previewBreakdownData(
+    responseId: number,
+    stepIndex: number | undefined,
+    limit: number | undefined,
+    assertIndependent: () => void,
+  ): Promise<PreviewDataResponse> {
+    const response = await this.getResponse(responseId);
+    if (!response) {
+      throw new Error(`Thread response ${responseId} not found`);
+    }
+    const project = await this.projectService.getCurrentProject();
+    const deployment = await this.deployService.getLastDeployment(project.id);
+    const mdl = deployment.manifest;
+    const sql = safeFormatSQL(
+      constructCteSql(response?.breakdownDetail?.steps, stepIndex),
+    );
+    const eventName = TelemetryEvent.HOME_PREVIEW_ANSWER;
+    try {
+      assertIndependent();
+      const data = (await this.queryService.preview(sql, {
+        project,
+        manifest: mdl,
+        limit,
+      })) as PreviewDataResponse;
+      assertIndependent();
+      this.telemetry.sendEvent(eventName, { sql });
+      return data;
+    } catch (err: any) {
+      this.telemetry.sendEvent(
+        eventName,
+        { sql, error: err.message },
+        err.extensions?.service,
+        false,
+      );
+      throw err;
+    }
   }
 
   public async createInstantRecommendedQuestions(

@@ -19,6 +19,10 @@ import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { SqlPairResolver } from './apollo/server/resolvers/sqlPairResolver';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
+import {
+  AskingService,
+  constructCteSql,
+} from './apollo/server/services/askingService';
 import { getQueryPreviewText } from './utils/language';
 import referenceHandler from './pages/api/platform-query-reference';
 import { ApiHistoryResolver } from './apollo/server/resolvers/apiHistoryResolver';
@@ -54,6 +58,7 @@ import { SqlPairStatus } from './apollo/server/models/adaptor';
 import sqlPairsHandler from './pages/api/v1/knowledge/sql_pairs';
 import sqlPairHandler from './pages/api/v1/knowledge/sql_pairs/[id]';
 import modelsHandler from './pages/api/v1/models';
+import { safeFormatSQL } from './apollo/server/utils/sqlFormat';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -3918,19 +3923,12 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(ctx.queryService.preview).not.toHaveBeenCalled();
       },
     );
-    it.each(['scope', 'missing', 'generated', 'changed-sql', 'denied'])(
+    it.each(['scope', 'missing', 'changed-sql', 'denied'])(
       'refuses %s before submitting a view query',
       async (failure) => {
         if (failure === 'scope') where.idempotencyScope = 'forged';
         if (failure === 'missing')
           ctx.askingService.getResponse.mockResolvedValue(null);
-        if (failure === 'generated')
-          ctx.askingService.getResponse.mockResolvedValue({
-            id: 21,
-            threadId: 11,
-            viewId: null,
-            sql: 'SELECT private FROM forbidden_model',
-          });
         if (failure === 'changed-sql')
           ctx.askingService.getResponse.mockResolvedValue({
             id: 21,
@@ -4043,7 +4041,187 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(history).not.toHaveBeenCalled();
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
     });
-    it('does not substitute a saved-view reference for a partial CTE', async () => {
+    const rawPreview = () => {
+      let stored: any;
+      // Raw SQL selects the original full latest deployment, whereas the
+      // saved-view path first selects its ID and then fetches the same row.
+      ctx.deployRepository.findLastProjectDeployLog.mockImplementation(() =>
+        ctx.deployRepository.findOneBy(),
+      );
+      require('./common').components.apiHistoryRepository.prepareNativeSql =
+        jest.fn(async (record) => {
+          stored ??= structuredClone(record);
+          return structuredClone(stored);
+        });
+      history.mockImplementation(async (filter) => {
+        if (!stored) return null;
+        if (filter.governanceState === 'SUCCEEDED')
+          return {
+            ...nativeRecord(
+              command.componentAction.inputReference,
+              stored.requestPayload.sql,
+              [{ name: 'customer', type: 'VARCHAR' }],
+              [['native']],
+            ),
+            id: stored.id,
+            requestPayload: structuredClone(stored.requestPayload),
+          };
+        return Object.entries(filter).every(
+          ([name, value]) => stored[name] === value,
+        )
+          ? structuredClone(stored)
+          : null;
+      });
+      const authority = calls.getMockImplementation();
+      calls.mockImplementation(async (...args) => {
+        const result = await authority(...args);
+        if (command && completed && result?.terminalStatus === 'COMPLETED')
+          result.nativeId = stored.id;
+        return result;
+      });
+      return () => stored;
+    };
+    it.each(['source', 'response', 'identity', 'token', 'delivery'])(
+      'withholds generated response SQL results when %s changes, never falling back to direct SQL',
+      async (change) => {
+        const previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+        rawPreview();
+        ctx.askingService.getResponse.mockImplementation(async () => ({
+          id: 21,
+          threadId: 11,
+          viewId: null,
+          sql:
+            command && change === 'response'
+              ? 'SELECT changed'
+              : view.statement,
+        }));
+        const authority = calls.getMockImplementation();
+        calls.mockImplementation(async (...args) => {
+          if (change === 'source' && args[2].resolveResource)
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          const result = await authority(...args);
+          if (args[2].command) {
+            if (change === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+            if (change === 'token') ctx.nativeHumanToken = 'other-person';
+            if (change === 'delivery')
+              jest
+                .mocked(loadQueryDelivery)
+                .mockResolvedValue({ ...config, bindingId: resource });
+          }
+          return result;
+        });
+        try {
+          await expect(
+            new AskingResolver().previewData(null, { where }, ctx),
+          ).rejects.toBeInstanceOf(NativeQueryRefusal);
+          if (change === 'source') expect(command).toBeNull();
+          expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        } finally {
+          if (previous === undefined)
+            delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+        }
+      },
+    );
+    it('does not reuse a generated response SQL key for an edited native response', async () => {
+      const previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+      rawPreview();
+      let sql = view.statement;
+      ctx.askingService.getResponse.mockImplementation(async () => ({
+        id: 21,
+        threadId: 11,
+        viewId: null,
+        sql,
+      }));
+      try {
+        const first = await new AskingResolver().previewData(
+          null,
+          { where },
+          ctx,
+        );
+        sql = 'SELECT changed FROM native_model';
+        await expect(
+          new AskingResolver().previewData(null, { where }, ctx),
+        ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          1,
+        );
+        expect(command.componentAction.inputReference).toEqual(
+          first.inputReference,
+        );
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+      }
+    });
+    it.each([false, true])(
+      'the original default generated response uses its own native SQL/history admission without a saved view (completed=%s)',
+      async (done) => {
+        const previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+        const stored = rawPreview();
+        completed = done;
+        ctx.askingService.getResponse.mockResolvedValue({
+          id: 21,
+          threadId: 11,
+          viewId: null,
+          sql: view.statement,
+        });
+        try {
+          const result = await new AskingResolver().previewData(
+            null,
+            { where },
+            ctx,
+          );
+          expect(result.responseId).toBe(21);
+          expect(result).not.toHaveProperty('viewId');
+          expect(
+            JSON.parse(result.inputReference.nativeObjectRef),
+          ).toMatchObject({
+            historyId: stored().id,
+            modelId: 8,
+            limit: 10,
+          });
+          expect(command.actionKey).toBe('data_query.query@v1');
+          expect(JSON.stringify(command)).not.toContain(view.statement);
+          expect(stored().requestPayload).toMatchObject({
+            sql: view.statement,
+            previewScope: where.idempotencyScope,
+            nativeSources: [capturedSources[0]],
+          });
+          expect(ctx.queryService.sourceObjects).toHaveBeenCalled();
+          expect(ctx.queryService.preview).not.toHaveBeenCalled();
+          expect(ctx.viewRepository.findOneBy).not.toHaveBeenCalled();
+          if (done) expect(result.data.data).toEqual([['native']]);
+          else expect(result).not.toHaveProperty('data');
+          const count = calls.mock.calls.filter(
+            (call) => call[2].command,
+          ).length;
+          expect(
+            await new AskingResolver().previewData(null, { where }, ctx),
+          ).toEqual(result);
+          expect(
+            calls.mock.calls.filter((call) => call[2].command),
+          ).toHaveLength(count);
+          expect(
+            require('./common').components.apiHistoryRepository
+              .prepareNativeSql,
+          ).toHaveBeenCalledTimes(1);
+        } finally {
+          if (previous === undefined)
+            delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+        }
+      },
+    );
+    it('authorizes the original partial CTE as its own frozen SQL, never as a saved-view query', async () => {
+      const previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+      const stored = rawPreview();
       ctx.askingService.getResponse.mockResolvedValue({
         id: 21,
         threadId: 11,
@@ -4054,22 +4232,44 @@ describe('native saved-view HUMAN query consumer', () => {
             {
               cteName: 'partial',
               summary: 'First step',
-              sql: 'SELECT private FROM forbidden_model',
+              sql: view.statement,
             },
           ],
         },
       });
-      await expect(
-        new AskingResolver().previewBreakdownData(
+      try {
+        const result = await new AskingResolver().previewBreakdownData(
           null,
           {
             where: { ...where, stepIndex: 0 },
           },
           ctx,
-        ),
-      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
-      expect(command).toBeNull();
-      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        );
+        expect(JSON.parse(result.inputReference.nativeObjectRef)).toMatchObject(
+          {
+            historyId: stored().id,
+            modelId: 8,
+          },
+        );
+        expect(result).not.toHaveProperty('viewId');
+        expect(stored().requestPayload.sql).toBe(
+          constructCteSql(
+            [
+              {
+                cteName: 'partial',
+                summary: 'First step',
+                sql: view.statement,
+              },
+            ],
+            0,
+          ),
+        );
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+      }
     });
     it('does not abandon the original preview when an unrelated answer finishes streaming', async () => {
       completed = true;
@@ -4096,6 +4296,110 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
       expect(JSON.stringify(command)).not.toContain('Original answer');
     });
+  });
+
+  describe('original independent Asking preview dispatch', () => {
+    let previous: string | undefined, ctx: any, service: any;
+    const response = {
+      id: 21,
+      threadId: 11,
+      sql: statement,
+      breakdownDetail: {
+        steps: [
+          { cteName: 'partial', summary: 'Original step', sql: statement },
+        ],
+      },
+    };
+    const rows = {
+      columns: [{ name: 'customer', type: 'VARCHAR' }],
+      data: [['original']],
+    };
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      service = Object.assign(Object.create(AskingService.prototype), {
+        getResponse: jest.fn(async () => structuredClone(response)),
+        projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
+        deployService: {
+          getLastDeployment: jest.fn(async () => ({
+            manifest: 'original-manifest',
+          })),
+        },
+        queryService: { preview: jest.fn(async () => rows) },
+        telemetry: { sendEvent: jest.fn() },
+      });
+      ctx = { askingService: service };
+      jest
+        .mocked(loadQueryDelivery)
+        .mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_DELIVERY_UNAVAILABLE'),
+        );
+    });
+    afterEach(() => {
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    const preview = (steps = false) =>
+      new AskingResolver()[steps ? 'previewBreakdownData' : 'previewData'](
+        null,
+        { where: { responseId: 21, stepIndex: 0, limit: 10 } },
+        ctx,
+      );
+    it.each([false, true])(
+      'retains original direct QueryService and response only when genuinely independent (steps=%s)',
+      async (steps) => {
+        expect(await preview(steps)).toEqual(rows);
+        expect(service.queryService.preview).toHaveBeenCalledWith(
+          steps
+            ? safeFormatSQL(constructCteSql(response.breakdownDetail.steps, 0))
+            : statement,
+          { project: { id: 3 }, manifest: 'original-manifest', limit: 10 },
+        );
+        expect(calls).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      'identity',
+      'token',
+      'empty-identity',
+      'empty-token',
+      'delivery',
+      'empty-delivery',
+    ])(
+      'does not select independent native SQL for %s mixed/configured mode',
+      async (change) => {
+        if (change === 'identity') ctx.nativeIdentityScope = 'a'.repeat(64);
+        if (change === 'token') ctx.nativeHumanToken = 'human';
+        if (change === 'empty-identity') ctx.nativeIdentityScope = '';
+        if (change === 'empty-token') ctx.nativeHumanToken = '';
+        if (change === 'delivery')
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'configured';
+        if (change === 'empty-delivery')
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+        await expect(preview()).rejects.toThrow('QUERY_DELIVERY_UNAVAILABLE');
+        expect(service.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each([false, true])(
+      'withholds a newly bound independent preview %s without retrying SQL',
+      async (afterDispatch) => {
+        const method = afterDispatch
+          ? service.queryService.preview
+          : service.deployService.getLastDeployment;
+        const original = method.getMockImplementation();
+        method.mockImplementation(async (...args) => {
+          const result = await original(...args);
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+            'new-controlled-binding';
+          return result;
+        });
+        await expect(preview()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+        expect(service.queryService.preview).toHaveBeenCalledTimes(
+          afterDispatch ? 1 : 0,
+        );
+      },
+    );
   });
 
   it('retains one person across credential rotation and separates another person or native binding', () => {

@@ -137,7 +137,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
     previewDataResult.data?.previewData,
     previewDataResult.error,
   );
-  const hasPreviewData = query.completed && !!query.receipt?.data;
+  const hasPreviewData = query.completed && !!query.data;
   const onPreviewData = query.preview;
 
   const autoTriggerPreviewDataButton = async () => {
@@ -308,9 +308,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
                     query.preparing ||
                     Boolean(query.pending)
                   }
-                  previewData={
-                    query.completed ? query.receipt?.data : undefined
-                  }
+                  previewData={query.completed ? query.data : undefined}
                 />
               </div>
             </div>

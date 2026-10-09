@@ -6899,3 +6899,134 @@ ACTIVE binding or full original parity is established. Five paths are frozen
 for root review/main commit/push; this agent does not operate the Git index or
 deploy. The inherited unverified Java2 are unchanged and excluded. Root owns
 the full-check/release gate.
+
+### Original saved-answer and partial-step previews
+
+2026-10-09, implementation-first batch based on main `7df04b37d` and fixed
+official Wren GenBI source **`c5f02a0391c87420dba78632dcd86073710deb72`**.
+Read-only `git show` confirmed these original actual consumers:
+
+- `wren-ui/src/apollo/server/resolvers/askingResolver.ts::AskingResolver.previewData`
+  and `AskingResolver.previewBreakdownData` dispatch the original native answer
+  and step previews.
+- `wren-ui/src/apollo/server/services/askingService.ts::AskingService.previewData`,
+  `AskingService.previewBreakdownData` and exported `constructCteSql` use the
+  current native project/deployment, original response SQL and QueryService.
+  A single step returns that step's SQL with its original summary comment,
+  not a synthetic one-CTE wrapper.
+- `wren-ui/src/components/pages/home/promptThread/ViewSQLTabContent.tsx::ViewSQLTabContent`,
+  `TextBasedAnswer.tsx::TextBasedAnswer` and `ChartAnswer.tsx::ChartAnswer` are
+  the original result UI consumers; no substitute page or controls were added.
+
+Four findings and the actual implemented seam:
+
+1. **Authority.** `.design/08` §6, `SS-WRN-IDENTITY`/
+   `SS-WRN-GOVERNANCE`, DD-87/98 preserve complete original question/step/native
+   functionality while platform queries consume current HUMAN admission and
+   Resource execution rights. Native metadata/SQL does not become a second
+   platform authority. Existing raw HUMAN SQL preview already has a real
+   `NativeHumanQuery.previewSql` → `NativeQueryService.sqlSelection/sqlReference/
+   sqlIntent` → existing Core action/observation/disclosure consumer.
+2. **Impact.** The previous Asking preview unconditionally required a positive
+   `viewId`, and required even partial CTE SQL to equal the whole saved view.
+   Therefore default generated responses and original step previews could not
+   reach the already-existing raw SQL admission. The shared client also required
+   a view-shaped receipt. This batch changes those actual original consumers,
+   restores two fixed native independent methods and updates three original
+   pages to consume the hook's data without fabricating a platform receipt.
+   No Core/contract, GraphQL field, schema, migration, table, workflow or public
+   identity/permission authority changes. Existing query keys remain compatible;
+   a changed native response SQL cannot reuse the original frozen SQL intent.
+3. **Side effects.** Bound generated/partial-step SQL is derived only from the
+   current original response/steps; clients still send response ID, existing
+   limit and opaque retry key/scope. Native SQL/source/deployment bodies remain
+   in Wren's original history, not Core. Exact saved-view SQL still takes its
+   previous statement-bound consumer. Partial CTEs use their own analyzed
+   sources and history instead of claiming saved-view authorization. The
+   original HUMAN query action, result policy, quota/approval/usage/terminal
+   evidence and source disclosure consumers are unchanged.
+4. **Boundaries.** Missing/foreign response, empty SQL or unusable native source
+   evidence refuses; current actor/token/delivery and native response/view
+   changes withhold results. UNKNOWN keeps the same action key and uses existing
+   observation, never direct QueryService fallback or another command. Only
+   configuration **and both trusted context fields all absent** choose original
+   independent QueryService execution. That branch rechecks the same condition
+   immediately before SQL and after its result; a newly configured binding does
+   not adopt the in-flight read. Defined-empty/mixed fields refuse. The client
+   requires explicit `nativeBindingConfigured=false` for that original branch,
+   rechecks after return and does not create a fake scope/receipt/retry key.
+   Existing six-class refusal/UNKNOWN handling is retained; errors and HTTP/ACK
+   alone are not accepted as bound query success or failure.
+
+Whole owned-source classification relative to the fixed official source:
+**original preserved**: native SQL/CTE construction, project/deployment preview,
+telemetry, result data, and the three complete original page layouts/controls;
+**shared migration**: none, this is Wren's own frontend/service tree;
+**authorized governance**: existing HUMAN raw admission/history/source/result
+consumer, same-response/history client matching and request/mode fences;
+**still missing/unaccepted**: real business deployment/ACTIVE binding and browser
+acceptance, trusted dynamic native Resource adoption, ordinary-function source
+facts and SERVICE SQL. This batch does not claim full original parity.
+
+Actual execution reused `kailo-wren-query-sdk-itgs2n`, UID/GID 1000, original
+single `/work` input, existing dependencies/cache, `NODE_OPTIONS` 3 GiB and
+serial original Jest/TypeScript/Prettier. No SDK/image/DB/dependency installation,
+full check or deployment was started. Preflight `2026-10-09T00:47:34Z`:
+host 23 GiB available, CPU some avg10 1.34%, I/O full 34.42%; root's isolated
+Core target existed, no Cells Go/Node was then running; this SDK only slept.
+Actual `cpu.max=400000 100000`, `memory.max=4294967296`, memory events all zero.
+
+Original commands, container cwd `/work`:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+node /work/node_modules/typescript/bin/tsc \
+  --noEmit --incremental false --pretty false
+node /work/node_modules/prettier/bin/prettier.cjs --check \
+  src/apollo/server/resolvers/askingResolver.ts \
+  src/apollo/server/services/askingService.ts \
+  src/hooks/useGovernedPreview.ts \
+  src/components/pages/home/promptThread/ChartAnswer.tsx \
+  src/components/pages/home/promptThread/TextBasedAnswer.tsx \
+  src/components/pages/home/promptThread/ViewSQLTabContent.tsx \
+  src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+```
+
+Real logs under `/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`:
+
+- Initial formatter invocation referenced the old nonexistent `bin-prettier.js`:
+  exit 1, `MODULE_NOT_FOUND`. Existing installed `bin/prettier.cjs` was used;
+  `ask-preview-format-write.log` exit 0, no install or product workaround.
+- `ask-preview-positive.log`, handle 71293: **exit 1, 550 passed / 5 failed /
+  555 total**, 15.017 s. Four new raw fixtures provided only latest deployment
+  IDs where actual raw `sqlSelection` consumes the full manifest/native refs;
+  one step assertion wrongly expected a CTE alias for the original single step.
+  Only those original fixtures were corrected, not production refusals.
+- A formatting-copy wrapper, handle 46911, stopped on an empty apply-patch hunk
+  after the formatter reported unchanged. No Jest was executed by that wrapper;
+  current formal/private input cmp 0 was confirmed before the actual next run.
+- `ask-preview-positive-final.log`, handle 24997: **exit 0, 555/555**, 11.076 s,
+  both complete original suite files. These execute original resolver/service,
+  actual NativeHumanQuery/NativeQueryService/source/history consumers and the
+  shared original UI hook, with native backend/authorization/repository fixtures.
+- `ask-preview-types.log`, handle 6280: **exit 0**, original TypeScript config,
+  no alias/suppression changes.
+- `ask-preview-mutation.log`, handle 12338: **exit 1, 9 failed / 3 passed /
+  543 filtered / 555 total**, 8.377 s. Only private actual production bytes were
+  damaged: final response/actor/token/delivery protection removed (4 failures),
+  standalone selection reverted to env-only (4), raw history receipt matching
+  removed (1). The original test selector was `withholds generated|mixed/configured
+  mode|original default Asking preview`; tests were not damaged.
+- Both damaged private production files were restored with apply-patch and all
+  **eight** formal/private source/check inputs cmp 0.
+- `ask-preview-restored.log`, handle 70133: **exit 0, 555/555**, 11.793 s, the
+  two full original files after exact restoration. `ask-preview-format.log`:
+  **exit 0**, all eight actual inputs. `ask-preview-cgroup-final.log` at
+  `2026-10-09T00:51:45Z`: same 4 CPU/4 GiB, all memory events still **0**.
+
+This is not actual Engine/function analysis, provider/SQL database execution,
+PostgreSQL migration, browser/screenshots, iframe, three-human or device
+acceptance. No Wren business instance or ACTIVE binding is claimed. Ten owned
+paths are frozen for root's exact review/main commit/push; inherited unverified
+Java2 stay excluded. Root retains the full-check/release authority.

@@ -1051,3 +1051,31 @@ the initial fixture/timer and false-standalone failures. This closes this precis
 native request bypass, not all Wren release gaps: actual business deployment,
 ACTIVE binding, multi-user UI/iframe acceptance, dynamic trusted native Resource
 adoption, ordinary-function provenance and trusted SERVICE SQL remain unproven.
+
+### Original saved-answer and partial-step previews
+
+The original question SQL, text-answer and chart result controls now also consume
+the generated-response path, not only responses already saved as views. The
+server derives SQL from its original `thread_response.sql` or `constructCteSql`
+steps; the browser does not submit replacement SQL through these mutations.
+Ordinary generated SQL and partial CTEs use the existing HUMAN SQL admission,
+native deployment/source analysis, same-key `api_history` input, current Resource
+permissions and verified result disclosure. They do not borrow a saved-view
+ticket. Exact saved-view previews retain their existing snapshot consumer.
+
+The original three pages keep their layout and controls. Their shared preview
+consumer recognizes the same response and native history receipt, retains its
+key for UNKNOWN, and never renders an unverified receipt as completed rows. A
+genuinely never-configured independent instance retains the fixed upstream
+AskingService previews and raw response, without inventing a platform receipt or
+scope. Missing/empty/mixed trusted delivery does not select that branch; a binding
+appearing before SQL dispatch or before return withholds the independent result.
+
+The [saved-answer preview receipt](../fork/verify/native-integration.md#original-saved-answer-and-partial-step-previews)
+records **555/555** original consumer checks, original TypeScript/format exit 0,
+**9** failures after damaging actual private production guards and **555/555**
+after exact restoration. These are SDK consumer checks with native-source and
+authorization fixtures, not a real database/Engine/provider, browser screenshot,
+ACTIVE binding or Wren business deployment. Ordinary-function provenance,
+trusted SERVICE SQL and dynamic native Resource evidence remain fail closed;
+the full original product and multi-user/iframe release are still unaccepted.

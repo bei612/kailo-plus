@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { getUserConfig } from '@/utils/env';
 import { queryReceiptState } from '@/utils/queryReceipt';
 
@@ -15,10 +15,17 @@ const matchesSelection = (
     if (kind === 'response')
       return (
         receipt?.responseId === id &&
-        Number.isSafeInteger(receipt?.viewId) &&
-        receipt.viewId > 0 &&
-        selection.viewId === receipt.viewId &&
-        !('modelId' in selection)
+        ((Number.isSafeInteger(receipt?.viewId) &&
+          receipt.viewId > 0 &&
+          selection.viewId === receipt.viewId &&
+          !('modelId' in selection)) ||
+          (receipt.viewId === undefined &&
+            typeof selection.historyId === 'string' &&
+            uuidValidate(selection.historyId) &&
+            (!queryReceiptState(receipt).completed ||
+              (receipt.nativeType === 'wren.api_history' &&
+                receipt.nativeId === selection.historyId)) &&
+            'modelId' in selection !== 'viewId' in selection))
       );
     return (
       selection[kind === 'model' ? 'modelId' : 'viewId'] === id &&
@@ -36,23 +43,37 @@ export default function useGovernedPreview(
   id: number,
   submit: (where: {
     id: number;
-    idempotencyKey: string;
-    idempotencyScope: string;
+    idempotencyKey?: string;
+    idempotencyScope?: string;
   }) => Promise<any>,
   receipt: any,
   error: any,
 ) {
   const [previewScope, setPreviewScope] = useState<string>();
   const sequence = useRef(0);
+  const selected = useRef({ kind, id });
+  selected.current = { kind, id };
   const submittedScope = useRef<string>();
   const [scopeError, setScopeError] = useState(false);
   const [storageError, setStorageError] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [independentData, setIndependentData] = useState<{
+    id: number;
+    data: any;
+  } | null>(null);
   const readScope = async () => {
     const revision = ++sequence.current;
-    const { queryScope } = await getUserConfig();
+    const config = await getUserConfig();
+    if (
+      revision === sequence.current &&
+      kind === 'response' &&
+      config.nativeBindingConfigured === false
+    )
+      return undefined;
+    const { queryScope } = config;
     if (
       revision !== sequence.current ||
+      config.nativeBindingConfigured !== true ||
       typeof queryScope !== 'string' ||
       !/^[a-f0-9]{64}$/.test(queryScope)
     )
@@ -63,6 +84,7 @@ export default function useGovernedPreview(
     let active = true;
     const refresh = async () => {
       setPreviewScope(undefined);
+      setIndependentData(null);
       try {
         const scope = await readScope();
         if (active) {
@@ -93,6 +115,7 @@ export default function useGovernedPreview(
   const preview = async () => {
     setPreparing(true);
     setPreviewScope(undefined);
+    setIndependentData(null);
     let scope: string;
     try {
       scope = await readScope();
@@ -102,6 +125,30 @@ export default function useGovernedPreview(
       setPreviewScope(undefined);
       setScopeError(true);
       setPreparing(false);
+      return;
+    }
+    if (scope === undefined) {
+      const current = sequence.current;
+      try {
+        const result = await submit({ id });
+        const after = await getUserConfig();
+        if (
+          current !== sequence.current ||
+          selected.current.kind !== kind ||
+          selected.current.id !== id
+        )
+          return;
+        if (after.nativeBindingConfigured !== false) {
+          setScopeError(true);
+          return;
+        }
+        if (Array.isArray(result?.columns) && Array.isArray(result?.data))
+          setIndependentData({ id, data: result });
+      } catch {
+        // Independent native errors retain the original mutation error.
+      } finally {
+        if (current === sequence.current) setPreparing(false);
+      }
       return;
     }
     const slot = `kailo.query.${kind}.${scope}.${id}`;
@@ -152,14 +199,20 @@ export default function useGovernedPreview(
       return { ...selectedReceipt, data: undefined };
     return selectedReceipt;
   }, [selectedReceipt, state.valid, state.completed, currentError]);
+  const independent =
+    kind === 'response' && independentData?.id === id
+      ? independentData.data
+      : undefined;
   return {
     preview,
     preparing,
     scopeError,
     storageError,
     receipt: currentReceipt,
+    // Independent native rows are not a fabricated platform receipt.
+    data: independent ?? currentReceipt?.data,
     pending: state.pending || !!currentError,
-    completed: state.completed && !currentError,
+    completed: (state.completed || !!independent) && !currentError,
     ended: state.ended && !currentError,
     denied: state.denied && !currentError,
     error: currentError,
