@@ -12,9 +12,11 @@
   `sha256:871dc5b0719889d6e4cee4eab17540015c48f58385ce86910680d7e80de00ac1`
   及容器 build-info 已读回；其余 23 个平台容器未替换。
   包含原图片图库共享迁移及原工作流首步骤、Inspector Escape、YAML 编辑区恢复，
-  保留原治理提交链。新版截图和实际业务验收另行进行，旧版截图不能接受本批；
+  保留原治理提交链。新版 17 张实拍已逐张复核，覆盖中英文草稿及真实双图消息；
+  放弃草稿后的页面指针锁和 HTTP 图片复制有真实失败，不能称这些操作已可用。
   不称完整 Buzz 还原、三组件集成完成或生产就绪，Windows/Mobile 未更新。
-  详见[实际构建发布及未验收边界](web-client/fork/verify/release-20261009-a8c1.md)。
+  详见[实际构建发布及未验收边界](web-client/fork/verify/release-20261009-a8c1.md)和
+  [新版实拍、完整差异台账及失败记录](web-client/fork/verify/screenshots-20261009-a8c1.md)。
 
 - 2026-10-09 00:41 UTC：仅 Web 更新为固定 main
   `7e1b5db6189a48a654f807be3491c4614cf28051`，入口仍为

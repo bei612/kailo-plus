@@ -46,7 +46,7 @@ release:
     - name: core
       digest: sha256:2f17c22140f4a71a684ff50c5872a7d72af0d71b878f50cd6b96d81b3303682a
     - name: web-client
-      digest: sha256:f60b4fe4dbcc9b9caa3f1567e9c5b80ebea0b8db81d49790ad05f20fe1d02f5b
+      digest: sha256:871dc5b0719889d6e4cee4eab17540015c48f58385ce86910680d7e80de00ac1
     - name: collaboration-relay
       digest: sha256:c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
   gate: blocked_until_seams_closed
