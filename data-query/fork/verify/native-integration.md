@@ -9373,3 +9373,119 @@ root owns selective phase commit and batch documentation/full gates. This is
 not deployment, browser/iframe pin acceptance, ACTIVE binding, whole Wren
 acceptance or clearance of the preceding six PG migration failures. Native
 function provenance, SERVICE SQL and dynamic Resource adoption remain separate.
+
+### Native model/view facts into the existing DD-98 directory delivery
+
+This increment supplies the missing operator-side evidence producer, not a new
+registry or an automatic grant. The existing `docker-entrypoint.mjs` has the
+explicit `resource-evidence` command; normal startup still uses the original
+Knex migration followed by Next. The command emits the existing
+`ApplicationAdapterDirectory`/`nativeResources` format for the original
+`deploy/local/start-core.sh` adapter-directory consumer and subsequent original
+HUMAN `resource.create`. It never invokes native CREATE or writes Core state.
+
+Implementation authority and impact:
+
+1. DD-98, `.design/07` section 5 and `.design/08` section 6 authorize verified
+   references to independent native objects. Wren original repository tables
+   and native migrations are reused from fixed
+   `c5f02a0391c87420dba78632dcd86073710deb72`:
+   `wren-ui/src/apollo/server/repositories/modelRepository.ts::ModelRepository`,
+   `wren-ui/src/apollo/server/repositories/viewRepository.ts::ViewRepository`,
+   and `wren-ui/knexfile.js::module.exports`. Their original project/object
+   columns are read directly through the same locked Knex dependency.
+2. The explicit operator caller supplies the approved type and exact native
+   selection, not credentials or an owner. Existing query/binding/directory
+   files fix instance, project, artifact, scope, service principal, config and
+   generation. The original project connection digest is checked against the
+   actual native row, then the exact model/view `project_id` is checked in the
+   read-only transaction. Native SQL, model bodies and connection credentials
+   are not exported. Existing CLI startup, UI, original schemas, API contracts,
+   Web/Desktop iframe and Mobile boundaries are unchanged.
+3. Output only appends the five original ResourceCreate fields to the exact
+   existing directory binding. Original files and native rows are not written.
+   Repeating the same proof retains one reference; conflicting proof/duplicate
+   binding refuses rather than overwriting another root. Fresh file reads after
+   the native observation reject configuration changes. Existing Core admission
+   remains the permission, active-binding, owner and Resource/SpiceDB authority.
+   No account, binding, Resource, projection, Workflow or runtime state is
+   synthesized by this operator command.
+4. Missing objects/project, cross-project objects, invalid type/ID, missing or
+   symlinked source files, absent database, conflicting scope/artifact/generation
+   and storage failures exit nonzero without publishing a candidate or claiming
+   business success. No relative database fallback or database creation occurs.
+   PostgreSQL reads use its original native read-only repeatable-read transaction
+   and existing delivered timeout; SQLite uses the original driver's read-only
+   mode. All actual Resource admission errors and UNKNOWN reconciliation remain
+   the existing `resource.create`/`RESOURCE_PROVISION` behavior (`apps/06` §4),
+   not a second CLI business terminal. Operators publish a separate candidate
+   through the existing controlled deployment, never redirect over the input.
+
+This closes native observation to the existing directory format/consumer only.
+An APPROVED release, ACTIVE binding and authorized HUMAN admission remain actual
+runtime prerequisites; no live Resource registration, deployment, owner grant,
+native SERVICE SQL or ordinary-function/provider provenance is claimed here.
+
+Post-implementation verification used the original native SQLite implementation,
+not a replacement in-memory repository. The first existing Node 24 SDK attempt
+(`resource-evidence-positive.log`, session 46600) exited 1: seven original
+startup cases passed but SQLite cases could not load the locked
+`better-sqlite3@9.4.3` native binding. No dependency installation, original
+database engine change or timeout increase was used to conceal that failure.
+
+The already-local original Wren UI image
+`sha256:2676b7ad8b38878419f996150cfc17c491c39cb2092acebcf9c1800c81066882`
+contains Node 18.20.8 / ABI 108, the same locked `better-sqlite3@9.4.3`, Knex
+and SQLite 3.45.1. Its actual native binding was opened before the batch.
+The isolated command uses `--pull=never --network none --cpus 4 --memory 4g
+--memory-swap 4g --user 1000:1000`, with no server, ports, image build or
+dependency installation. Fixtures run the original project/model/view native
+migrations, then invoke both the production export and actual CLI subprocess.
+
+The actual CLI candidate at
+`/volumes/data/kailo/tmp/wren-resource-evidence.wcWpP7/observed-directory.json`
+passed the unchanged `application_adapter_directory` and `resource_create`
+schemas, then the exact existing `start-core.sh` adapter-compose producer
+(extracted identically to the existing `tools/check.sh` check). The producer
+generated only the expected read-only directory and public-JWKS mounts, with
+`create_host_path: false` and the exact original environment reference.
+`consumer-restored.log` exited 0. An initial validator invocation failed on the
+local jsonschema version's relative `$id` resolution; resolving that identifier
+to the actual local schema URI fixed the verifier, without changing either
+contract or the emitted candidate. Its failed output remains in `consumer.log`.
+No live `resource.create` or deployment was run from this fixture. PostgreSQL
+runtime execution remains unverified by this SQLite batch.
+
+The original-image first batch (session 35195) exited 0 with `12 pass, 0 fail`.
+Data-disk I/O delayed its final container exit after TAP completion; that delay
+was not reported as a successful exit before it actually terminated. The final
+fixture retains the same original migrations in one transaction and reuses its
+native database for the configuration matrix, reducing repeated disk commits
+without replacing the database or changing production behavior.
+
+Production negative verification modified only the isolated copy in
+`/volumes/data/kailo/tmp/wren-resource-negative.AuR4e5`: it removed the actual
+project connection-digest guard and both the model/view query's `project_id`
+predicate and returned-row scope guard. Running
+`node --test --test-name-pattern='changed connection|absent and different-project' docker-entrypoint.test.mjs`
+in the same isolated original image exited 1 (session 56969): both selected
+checks failed with `ERR_ASSERTION: Missing expected rejection`; the other ten
+were filtered, not passed. These were actual unsafe native observations, not
+missing modules or compiler failures.
+
+After restoring those production lines, `cmp` confirmed the isolated source
+and final test file exactly matched the formal files. The full
+`node --test docker-entrypoint.test.mjs` then exited 0 (session 35201):
+`12 tests, 12 pass, 0 fail, 0 skipped`, 29447.854112 ms. The final actual CLI
+candidate was again validated by both original contracts and consumed by the
+same original adapter-compose producer, exit 0. `git diff --check` for all four
+owned paths also exited 0. No full build, cold PostgreSQL suite or deployment
+was repeated as part of this narrow JavaScript batch.
+
+Reproducible receipts (all under the isolated negative/restored directory):
+
+- `negative.log`: SHA-256 `6f5e6d4620d365be059b45b43b20b7d08fad6f1f2aeb4c8faba474dc14b82caf`.
+- `restored.log`: SHA-256 `514f0f68d8ae989e110f90463d55a6d9615054a053c32549e93b59f7a9cdfe06`.
+- `consumer.log`: SHA-256 `a791ee537e56cf0871ff8537f628c3739d58904abfc91b91d4c5ce596d6e4114`.
+- Production `docker-entrypoint.mjs`: SHA-256 `d43c25cf124e78cb41af9fc8ddf2050555bee902a526a1d9925ed8d36f6824fa`.
+- Final `docker-entrypoint.test.mjs`: SHA-256 `585b4530f18e9c38e09f3bea15062dfb3b657ea5d456e76c4c0243aa76ee6c30`.

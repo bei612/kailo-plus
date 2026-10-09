@@ -1568,6 +1568,33 @@ suite/database was not restarted. See the
 No native service start, ACTIVE binding, SERVICE SQL, iframe or three-user
 acceptance is claimed.
 
+### Existing native model/view reference delivery
+
+The existing UI image entrypoint also provides the explicit operator command
+`node docker-entrypoint.mjs resource-evidence TYPE_KEY NATIVE_TYPE NATIVE_REF EVIDENCE_REF`.
+`NATIVE_TYPE` is the original `model` or `view`; select `TYPE_KEY` from the approved
+release, not from a guessed product label. Run this inside the selected independent
+UI runtime with its original native database settings, existing
+`WREN_PLATFORM_QUERY_CONFIG_FILE` and `WREN_PLATFORM_BINDING_CONFIG_FILE`, and a
+read-only mount of the actual `APPLICATION_ADAPTER_DIRECTORY_FILE`.
+
+This reads the original native project and object, checks the fixed instance,
+binding, generation and connection digest, and prints the existing complete
+ApplicationAdapterDirectory with the exact `nativeResources` reference appended.
+An existing different proof or duplicate owner is refused. It does not migrate,
+create or update a native object, write the delivered file, register a Resource,
+assign an owner, grant permission, or print native SQL/connection credentials.
+
+Capture stdout to a **new candidate file**, not the input directory path. Feed
+that candidate through the existing controlled directory deployment using
+`deploy/local/start-core.sh --no-build`; then submit the existing HUMAN
+`resource.create` with the generated five-field reference. The original Core
+consumer still requires an APPROVED release, ACTIVE binding, exact scope,
+current authorization and its existing workflow/projection evidence. A command
+exit 0 proves only the native observation, not completion of registration or
+business availability. Missing deployment authority remains a blocker; never
+edit Core database rows or manufacture an ACTIVE binding to advance this step.
+
 ### Original dashboard pin write boundary
 
 The original ChartAnswer pin keeps its native chart, dashboard and layout.
