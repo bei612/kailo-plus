@@ -61,7 +61,7 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:04dc4615b6e39c377339c01120a9311b0c10b3ead6c6a0ec75101335acc16f4c
+      digest: sha256:312afc7902bc754b91307f018b0ce4f7620efbeb42e40d9232a5252e6e270270
     - name: core
       digest: sha256:1d7316086734e513792968ee40e9868807a378f47a1e66bf34bf07093ff049a4
     - name: worker

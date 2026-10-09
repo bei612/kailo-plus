@@ -5620,3 +5620,45 @@ union 5314，原样 1977、共享 111、整文件授权 0、尚未证明保留�
 会话、其余设置分区和所有页面视觉仍未全面闭合；不称完整 DM 产品／原版 100%。
 候选尚未提交／部署，Windows／Mobile 没有新包或设备验收；等待主线一次集中发布
 后正常 SSO 重拍同两状态，不能把这批定向检查或旧图称生产就绪。
+
+## 2026-10-09 06:05 UTC 固定 a816 已提交树全量官方差异账更新
+
+本轮固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 对
+apps `a816ea569acdce060a681c32467e4ebb4235b197` 的完整 `collaboration/` 树；
+不读取 dirty 工作树作为比较对象，`fork/` 按已有工具口径排除。
+原 `tools/upstream_manifest.py::diff` 的临时 index 输入替换为该 commit 的
+`collaboration` tree，仍使用其原 `upstream_tree`、`git diff --cached -M --binary`
+算法；不复制整树、不执行上游文件、不改工具源码、不启动 SDK／构建／图谱。
+原始 diff 实际 exit 0，1,043,931 行；`git apply --stat/--numstat` 只读解析 exit 0：
+rename 口径 3330 files、+37860/-746415，与下述路径 union 不是同一计数口径。
+
+全量原件目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/`。
+
+- `collaboration-a816ea569acd.patch` SHA256 `cae6cd15f7f1fefc4c9627a0fee3d21e926abf9de3ea6bc784551bac39944646`。
+- `collaboration-a816ea569acd.classification.tsv` SHA256 `0899a6ec5b025b4a8b808af8d3d183e4676afe3bd349acd1d76792297b66223b`。
+- `right-auxiliary-official-to-a816.diff` SHA256 `51448008f254b47e4b1d66f2eb41fc17bd802cdfbdfac14ffa60dfd340eddb2d`。
+- `apps-a816ea569acd-collaboration-shared-tree.tsv`／`buzz-779af8886c-a816-compare-tree.tsv`
+  为两个固定 Git 树的 mode/type/blob/path 原件；迁移目标同时纳入共享 TS 与 Web 树。
+- `e5c6-to-a816-classification-changes.tsv` 为旧账到新账 8 个原路径的实际 blob／分类变化。
+
+上游 5195 路径、当前二开树 2874 路径，完整 union 5314：S1976、M779、D2440、A119，
+其中 3338 路径有差异。四类账为原样保留 1976、共享迁移 112、整文件已授权治理改造 0、
+缺失需恢复（尚未证明保留或授权）3226。最后一项是未完成逐处证明的恢复队列，
+不是 3226 个已证功能缺失，也不是完成率／功能验收数量。
+每行 14 列沿旧账：upstream_commit、apps_commit、path、change_kind、category、
+两侧各 mode/type/blob、destination、evidence、historical_category。
+实际机械复核 exit 0：5314 路径无重复、固定 commit 一致、全部 14 列、S 项 mode/type/blob 相同。
+
+111 项旧迁移证据仅在原路径与全部已登记目标的 mode/type/blob 均未变化时延续，
+不是目录授权或整个页面功能认证。新增 1 项是固定官方
+`desktop/src/features/channels/ui/RightAuxiliaryPane.tsx::RightAuxiliaryPane` 全文迁至
+`client-kit/ts/platform/src/react/messages/thread/RightAuxiliaryPane.tsx`：精确 diff 只含
+导入迁移、同源中英词条及格式，Native 转导出与 Web 真实作者栏 split 消费者已在 a816。
+`InboxDetailPane`／`HomeView` 等整文件其他差异仍未证明，不以本批窄接缝将整文件归为治理授权。
+逐 hunk 授权身份／BFF／中文差异沿各已提交回执说明，整文件授权计数 0 不表示这些接缝不存在。
+
+旧 e5c6／a8c1／dfc7 账保留为历史，不再称当前全量；本轮全树源码差异可复核，
+但原页面／交互／非空状态／Settings 其余分区／Agent 资料及会话仍未全面逐处验收。
+当前线上仍固定 5ba，a816 的 DM／作者栏新截图仍 0；等待主线新 digest 实际部署后重拍。
+本轮没有新的 Windows／Mobile 包或设备验收，不声明原版 100% 或生产就绪。
