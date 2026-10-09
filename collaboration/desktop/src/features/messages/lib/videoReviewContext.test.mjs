@@ -397,3 +397,17 @@ test("buildVideoReviewContextsByMessageId includes video replies", () => {
     [comment.id],
   );
 });
+
+test("restored review preserves channel type, Agent comments and actual reaction source", async () => {
+  const video = message({id: "video", body: "![video](https://relay/media/a.mp4)"});
+  const comment = message({id: "comment", parentId: video.id, isAgent: true, reactions: [{emoji: "👍", count: 1, users: []}]});
+  const calls = [];
+  const contexts = buildVideoReviewContextsByMessageId({channelId: "channel", channelType: "dm", messages: [video, comment],
+    onToggleReaction: async (source, emoji, remove) => { calls.push({source, emoji, remove}); }});
+  const context = contexts.get(video.id);
+  assert.equal(context.channelType, "dm");
+  assert.equal(context.comments[0].isAgent, true);
+  assert.deepEqual(context.comments[0].reactions, comment.reactions);
+  await context.onToggleCommentReaction(comment, "👍", true);
+  assert.deepEqual(calls, [{source: comment, emoji: "👍", remove: true}]);
+});

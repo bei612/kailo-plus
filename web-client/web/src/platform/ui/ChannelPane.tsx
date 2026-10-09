@@ -49,6 +49,7 @@ import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messa
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
@@ -605,6 +606,10 @@ export function ChannelPane({
   }, [visible, muted, unreadFromOthers, notifications?.settings.homeBadgeEnabled]);
 
   return (
+    <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeople} principalId={myPrincipalId} workspaceId={workspaceId} conversationId={conversation?.id}
+      channelName={channelName} channelType={conversation ? "dm" : "stream"}
+      messages={[...routeMessageById.values()]} available={live && !denied && !archived && !metadataPending && members.isSuccess && !members.isError}
+      onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl}>
     <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
     <div inert={channelIsCovered ? true : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
       <div className="text-xs text-muted-foreground" role="status">
@@ -672,6 +677,7 @@ export function ChannelPane({
                   onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
+                messageId={message.id}
                 content={message.body}
                 mediaTags={message.tags}
                 mentions={mentions}
@@ -761,6 +767,7 @@ export function ChannelPane({
     </AnimatePresence>
     {deleteMessageDialog.dialog}
     </div>
+    </BffVideoReviewProvider>
   );
 }
 

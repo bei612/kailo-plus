@@ -13,6 +13,7 @@ export type MessageTimelineProps = {
   channelIntro?: ChannelIntro | null;
   directMessageIntro?: { displayName: string; participants: DirectMessageIntroPerson[]; renderParticipant: DirectMessageParticipantRenderer } | null;
   channelName?: string;
+  channelType?: import("../../search/types").ChannelType | null;
   messages: TimelineMessage[];
   mainEntries?: MainTimelineEntry[];
   /** Relay thread summaries (root id → summary) for the deferred-pass entry
@@ -82,6 +83,7 @@ export type TimelineMessageListProps = {
   authoritativeRowIds?: ReadonlySet<string>;
   channelId?: string | null;
   channelName?: string;
+  channelType?: import("../../search/types").ChannelType | null;
   currentPubkey?: string;
   /** Event id of the oldest unread top-level message; renders a "New" divider above it. */
   firstUnreadMessageId?: string | null;

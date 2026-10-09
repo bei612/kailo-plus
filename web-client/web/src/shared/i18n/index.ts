@@ -42,10 +42,6 @@ const messages = {
     "zh-CN": "静音此工作区（标签页标题不显示未读数）",
   },
   "platform.sendFailed": { en: "Send failed", "zh-CN": "发送失败" },
-  "platform.sendUnknown": {
-    en: "Delivery not confirmed yet. If the message shows up in the channel, it was delivered. Reference: {operation}",
-    "zh-CN": "发送结果待确认：若消息稍后出现在频道中，即已送达。操作号 {operation}",
-  },
   "platform.sendRejected": { en: "The message was rejected", "zh-CN": "消息被拒绝" },
   "platform.message": { en: "Message", "zh-CN": "消息" },
   "platform.send": { en: "Send", "zh-CN": "发送" },

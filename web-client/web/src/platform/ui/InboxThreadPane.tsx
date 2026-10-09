@@ -16,6 +16,7 @@ import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
+import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
 export function InboxThreadPane({ principalId, workspaceId, conversation, canInteract = true, rootId, selectedEventId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
@@ -87,7 +88,15 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
       toast.success(t("buzz.copiedMessage"));
     } catch { toast.error(t("buzz.copyFailed")); }
   };
-  return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
+  const videoMessages: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
+    body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0,
+    author: members.find(member => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey),
+    time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()),
+    reactions: messageReactions.reactions.get(event.id), ...inboxThread(event.tags)}));
+  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id}
+    channelName={channelName} channelType={conversation ? "dm" : "stream"} messages={videoMessages}
+    available={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
     <InboxDetailHeader title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel} />
     <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
       {unavailable ? <div role="status" className="p-5">{t("platform.loadFailed")}{!denied ? <Button onClick={() => { void thread.refetch(); }}>{t("platform.refresh")}</Button> : null}</div>
@@ -114,7 +123,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
             message={message}
             renderActions={!interrupted ? reactions => <MessageActionBarSurface {...reactions} message={message} onCopyMessage={copyMessage}
               onReply={canReply && !sending && !unresolved ? (target) => selectReply(target.id) : undefined} /> : undefined}
-            renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
+            renderBody={(className) => <div className={className}><MessageContent messageId={event.id} workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
@@ -149,5 +158,5 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
           throw error;
         }
       }} /></div>
-  </section>;
+  </section></BffVideoReviewProvider>;
 }

@@ -46,6 +46,10 @@ import {
   resolveAudioAttachment,
 } from "@client-kit/platform/react/composer/features/messages/lib/audioAttachment";
 import { BffAudioAttachment } from "./BffAudioAttachment";
+import { BffVideoPlayer, useBffVideoReview } from "./BffVideoReview";
+import { useVideoReviewCommentContent, type VideoReviewContext } from "@client-kit/platform/react/video-review";
+import rehypeLeadingInlineContent from "@client-kit/platform/react/video-review/rehypeLeadingInlineContent";
+import { isVideoMedia } from "@client-kit/platform/react/video-review/mediaEntry";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -61,12 +65,14 @@ export type MessageMention = {
 
 /** 一份由 imeta 背书的媒体：只有它能被当成媒体渲染。 */
 type ImetaMedia = {
+  originalUrl: string;
   sha256: string;
   mime: string;
   dimensions: ImageDimensions | null;
   filename?: string;
   duration?: number;
   size?: number;
+  posterRef?: string;
 };
 
 type MarkdownRenderContextValue = {
@@ -74,6 +80,8 @@ type MarkdownRenderContextValue = {
   mentionsByName: ReadonlyMap<string, MessageMention>;
   resolveMediaUrl: (sha256: string) => string;
   admittedSources: ReadonlySet<string>;
+  reviewContext?: VideoReviewContext;
+  leadingInlineContent?: ReactNode;
   conversationId?: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 };
@@ -102,13 +110,29 @@ function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
       const number = Number(value);
       return Number.isFinite(number) && number >= 0 ? number : undefined;
     };
+    // Original NIP-71 image / legacy thumb, resolved only as an admitted local
+    // content reference. Never load a sender-authored poster origin.
+    let posterRef: string | undefined;
+    const poster = field("image") || field("thumb");
+    if (poster) {
+      try {
+        const parsed = new URL(poster);
+        if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash) {
+          const original = /^\/media\/([a-f0-9]{64})\.(?:jpg|png|gif|webp)$/i.exec(parsed.pathname);
+          if (field("image") && original) posterRef = original[1].toLowerCase();
+          else if (!field("image") && parsed.pathname === `/media/${sha256.toLowerCase()}.thumb.jpg`) posterRef = `${sha256.toLowerCase()}.thumb.jpg`;
+        }
+      } catch { /* Invalid poster metadata never falls back to external media. */ }
+    }
     media.set(url, {
+      originalUrl: url,
       sha256: sha256.toLowerCase(),
       mime: field("m") ?? "",
       dimensions: dimensionsFromDim(field("dim")) ?? null,
       filename: field("filename"),
       duration: numericField("duration"),
       size: numericField("size"),
+      posterRef,
     });
   }
   return media;
@@ -167,6 +191,7 @@ function BffMedia({
   admittedSources: ReadonlySet<string>;
 }) {
   const [failed, setFailed] = useState(false);
+  const { reviewContext } = useMarkdownRenderContext();
   const src = resolveMediaUrl(media.sha256);
   const { copyImageToClipboard, downloadImage } = useBffImageActions(admittedSources, alt);
   const dimensions = media.dimensions;
@@ -180,7 +205,15 @@ function BffMedia({
       }
     : { height: `${IMAGE_MAX_HEIGHT}px`, width: `min(100%, ${IMAGE_MAX_WIDTH}px)` };
 
-  if (!failed && !media.mime.startsWith("video/")) {
+  if (isVideoMedia(media.originalUrl, media.mime)) {
+    return <BffVideoPlayer src={src} downloadUrl={admittedSources.has(src) ? src : undefined}
+      poster={media.posterRef ? resolveMediaUrl(media.posterRef) : undefined}
+      filename={media.filename} aspectRatio={dimensions ? dimensions.width / dimensions.height : undefined}
+      durationSeconds={media.duration} reviewKey={`${reviewContext?.rootEventId ?? ""}:${src}`}
+      reviewContext={reviewContext ? {...reviewContext, title: reviewContext.title ?? media.filename ?? alt ?? t("video.title")} : undefined} />;
+  }
+
+  if (!failed) {
     return <ImageBlock alt={alt || t("message.attachmentImage")}
       copyImageToClipboard={copyImageToClipboard}
       dim={dimensions ? `${dimensions.width}x${dimensions.height}` : undefined}
@@ -199,15 +232,6 @@ function BffMedia({
         <span className="inline-flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
           <ImageOff className="h-4 w-4" /> {t("message.imageFailed")}
         </span>
-      ) : media.mime.startsWith("video/") ? (
-        // biome-ignore lint/a11y/useMediaCaption: 用户上传的视频没有字幕轨可供提供
-        <video
-          className="block h-full w-full object-contain"
-          controls
-          preload="metadata"
-          src={src}
-          onError={() => setFailed(true)}
-        />
       ) : null}
     </span>
   );
@@ -357,6 +381,10 @@ const MARKDOWN_COMPONENTS = {
   img: MarkdownImage,
   a: MarkdownLink,
   mention: MarkdownMention,
+  span: function MarkdownSpan({children, node: _node, ...props}) {
+    const { leadingInlineContent } = useMarkdownRenderContext();
+    return "data-leading-inline-content" in props ? <>{leadingInlineContent}</> : <span {...props}>{children}</span>;
+  },
 } as Components;
 
 function displayContent(content: string): string {
@@ -372,6 +400,7 @@ function displayContent(content: string): string {
 
 export function MessageContent({
   content,
+  messageId,
   workspaceId,
   conversationId,
   onMediaUrl,
@@ -380,6 +409,7 @@ export function MessageContent({
   onOpenMessageLink,
 }: {
   content: string;
+  messageId?: string;
   workspaceId?: string;
   conversationId?: string;
   onMediaUrl?: (sha256: string) => string;
@@ -387,6 +417,8 @@ export function MessageContent({
   mediaTags?: readonly (readonly string[])[];
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 }) {
+  const {reviewContext, videoReviewCommentRootId} = useBffVideoReview(messageId);
+  const reviewComment = useVideoReviewCommentContent({content, videoReviewCommentRootId});
   const mentionsByPubkey = new Map(mentions.map(mention => [mention.pubkey.toLowerCase(), mention]));
   const { mentionNames, mentionPubkeysByName } = resolveMentionProps(
     mediaTags?.map(tag => [...tag]),
@@ -417,15 +449,16 @@ export function MessageContent({
   ]);
 
   return (
-    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink }}>
+    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink, reviewContext, leadingInlineContent: reviewComment.leadingInlineContent }}>
       <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
           remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
+          rehypePlugins={reviewComment.leadingInlineContent != null ? [rehypeLeadingInlineContent] : []}
           components={{ ...MARKDOWN_COMPONENTS, emoji: MarkdownEmoji, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
             <SpoilerInline block={props["data-block-spoiler"] != null}>{children}</SpoilerInline> } as Components}
         >
-          {displayContent(content)}
+          {displayContent(reviewComment.content)}
         </ReactMarkdown>
       </MessageBody>
       {previews.length ? <AttachmentGroup data-link-preview-list=""

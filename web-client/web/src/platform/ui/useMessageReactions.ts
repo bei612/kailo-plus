@@ -52,7 +52,7 @@ export function useMessageReactions({principalId, workspaceId, conversationId, e
   const reactions = useMemo(()=>buildMessageReactions(events,pubkey),[events,pubkey]);
   const toggle = useCallback(async(message: TimelineMessage, emoji: string, remove: boolean) => {
     const admitted = () => mounted.current && current.current.scope === scope && current.current.available && pubkey;
-    if (!admitted() || !eventId.test(message.id) || !emoji.trim() || !current.current.events.some(event=>event.id===message.id && [9,40002,40099].includes(event.kind))) throw new BffError(403,t("platform.loadFailed"));
+    if (!admitted() || !eventId.test(message.id) || !emoji.trim() || !current.current.events.some(event=>event.id===message.id && [9,40002,40099,45001,45003].includes(event.kind))) throw new BffError(403,t("platform.loadFailed"));
     const storageKey = `kailo:message-reaction:${scope}:${message.id}:${encodeURIComponent(emoji)}`;
     if (pending.current.has(storageKey)) throw new TransportError("Reaction is awaiting its original receipt.");
     pending.current.add(storageKey);

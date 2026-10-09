@@ -1,21 +1,12 @@
-import * as React from "react";
-
 import { invokeTauri } from "@/shared/api/tauri";
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
-import {
-  MediaContextMenu,
-  type MediaContextMenuItem,
-  type MediaContextMenuPosition,
-  useDismissMediaContextMenu,
-} from "@/shared/ui/markdown/MediaContextMenu";
-import { resolveVideoDownloadFilename } from "@/shared/ui/videoDownload";
+import { useVideoContextMenu as useSharedVideoContextMenu, type VideoContextMenuActions } from "@client-kit/platform/react/video-review";
 import { toast } from "sonner";
 
-type UseVideoContextMenu = {
-  /** `onContextMenuCapture` handler for the inline video surface. */
-  onContextMenu: (event: React.MouseEvent) => void;
-  /** The positioned menu element while open, or `null`. */
-  menu: React.ReactNode;
+const actions: VideoContextMenuActions = {
+  download: (url, filename) => invokeTauri("download_file", { url, filename }),
+  copyLink: copyTextToClipboard,
+  reportError: (message) => { toast.error(message); },
 };
 
 /**
@@ -33,51 +24,6 @@ export function useVideoContextMenu(
   src: string,
   downloadUrl?: string,
   filename?: string,
-): UseVideoContextMenu {
-  const [position, setPosition] =
-    React.useState<MediaContextMenuPosition | null>(null);
-  const close = React.useCallback(() => setPosition(null), []);
-  useDismissMediaContextMenu(Boolean(position), close);
-
-  const onContextMenu = React.useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    setPosition({ x: event.clientX, y: event.clientY });
-  }, []);
-
-  const items = React.useMemo<MediaContextMenuItem[]>(() => {
-    const entries: MediaContextMenuItem[] = [];
-    if (downloadUrl) {
-      entries.push({
-        label: "Download video",
-        onSelect: () => {
-          close();
-          invokeTauri("download_file", {
-            url: downloadUrl,
-            filename: resolveVideoDownloadFilename(filename),
-          }).catch((err: unknown) => {
-            toast.error(err instanceof Error ? err.message : "Download failed");
-          });
-        },
-      });
-    }
-    entries.push({
-      label: "Copy link",
-      onSelect: () => {
-        close();
-        copyTextToClipboard(downloadUrl ?? src, "Link copied to clipboard");
-      },
-    });
-    return entries;
-  }, [close, downloadUrl, filename, src]);
-
-  return {
-    onContextMenu,
-    menu: position ? (
-      <MediaContextMenu
-        dataAttributes={["data-video-context-menu"]}
-        items={items}
-        position={position}
-      />
-    ) : null,
-  };
+) {
+  return useSharedVideoContextMenu(src, downloadUrl, filename, actions);
 }

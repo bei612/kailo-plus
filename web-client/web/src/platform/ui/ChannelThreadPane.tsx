@@ -13,6 +13,7 @@ import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
+import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
 export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
@@ -139,7 +140,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
       <ThreadRepliesErrorCard onRetry={denied ? undefined : () => {void thread.refetch();}} />
     </AuxiliaryPanel>;
   }
-  return <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
+  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} channelName={channelName} channelType="stream"
+    messages={rows} available={canReply} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
+    <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
     replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
     onScrollTargetResolved={() => setScrollTargetId(null)} onCancelReply={() => setReplyId(rootId)}
@@ -160,7 +163,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
           accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div> : node;
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}
-      renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags}
+      renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
@@ -191,5 +194,5 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}
-  />;
+  /></BffVideoReviewProvider>;
 }

@@ -196,11 +196,13 @@ function InboxMessageDetailPane({
         {
           channelId: item?.item.channelId,
           channelName: contextChannelName ?? item?.channelLabel ?? undefined,
+          channelType: item?.item.channelType === "stream" || item?.item.channelType === "forum" || item?.item.channelType === "dm" ? item.item.channelType : null,
           isSendingVideoReviewComment: isSendingReply,
           messages: videoReviewMessages,
           onSendVideoReviewComment: canReply
             ? handleSendVideoReviewComment
             : undefined,
+          onToggleReaction,
           profiles,
         },
         hasRenderedVideoAttachment,
@@ -210,6 +212,7 @@ function InboxMessageDetailPane({
       contextChannelName,
       handleSendVideoReviewComment,
       isSendingReply,
+      onToggleReaction,
       item,
       profiles,
       videoReviewMessages,

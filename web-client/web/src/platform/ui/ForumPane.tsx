@@ -4,7 +4,7 @@ import { WebMessageType, WorkspaceMembershipState, type WebMessageCursor } from 
 import { ForumAuthorButton, ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
 import { DeleteActionMenu } from "@client-kit/platform/react/forum/DeleteActionMenu";
 import { parseChannelWindowResponse } from "@client-kit/platform/react/forum/channelWindowResponse";
-import { UserAvatar } from "@client-kit/platform/react/messages";
+import { UserAvatar, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -19,6 +19,8 @@ import { t } from "@/shared/i18n";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
+import { useMessageReactions } from "./useMessageReactions";
 
 function eventsFrom(value: unknown): BuzzEvent[] {
   if (!Array.isArray(value)) throw new Error("Invalid forum event response.");
@@ -109,6 +111,13 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const selectedQuery = selectedPostId ? thread : posts;
   const error = denied || members.error || selectedQuery.error ? t("buzz.forumUnavailable")
     : selectedPostId && thread.isSuccess && !root ? t("buzz.forumRootUnavailable") : null;
+  const canReview = !error && !interrupted && !metadataPending && isMember && !archived && selectedQuery.isSuccess;
+  const messageReactions = useMessageReactions({principalId: myPrincipalId, workspaceId, events: all,
+    available: canReview, refresh: () => queryClient.invalidateQueries({queryKey: key})});
+  const videoMessages: TimelineMessage[] = inChannel.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
+    author: authors.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey), body: event.content, tags: event.tags,
+    createdAt: event.created_at, time: relativeTime(event.created_at), depth: 0,
+    reactions: messageReactions.reactions.get(event.id), ...getThreadReference(event.tags)}));
   const authorTarget = !error && !interrupted && profileTarget?.principalId === myPrincipalId && profileTarget.workspaceId === workspaceId
     ? profileTarget : null;
   const mentions: MessageMention[] = (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
@@ -123,7 +132,10 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const activeMemberTarget = !error && !interrupted && memberTarget?.workspaceId === workspaceId &&
     members.isSuccess && authors.get(memberTarget.pubkey)?.principalId === memberTarget.principalId &&
     authors.get(memberTarget.pubkey)?.state === WorkspaceMembershipState.Active ? memberTarget : null;
-  return <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden"><div className="min-h-0 min-w-0 flex-1"><ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
+  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members.data ?? [])} principalId={myPrincipalId} workspaceId={workspaceId} channelName="" channelType="forum"
+    messages={videoMessages} available={canReview}
+    onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={() => queryClient.invalidateQueries({queryKey: key})}>
+    <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden"><div className="min-h-0 min-w-0 flex-1"><ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
     initialComposerOpen={restoreDraftKey === `forum:${workspaceId}:post`}
     targetEventId={targetEventId} onTargetReached={() => setTargetEventId(null)}
     onSelectPost={(id) => { setProfileTarget(null); setMemberTarget(null); setSelectedPostId(id); }} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
@@ -147,7 +159,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
         ? <MessageAuthorAvatar target={target} displayName={name} size={large ? "md" : "sm"} />
         : <UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />;
       return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>{identity}</MessageAuthorIdentity> : identity; }}
-    renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
+    renderContent={(message, preview) => <MessageContent messageId={message.eventId} workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
       mentionPeople={mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : [])}
@@ -165,5 +177,5 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     onStartDm={authors.get(authorTarget.pubkey)?.principalId === myPrincipalId ? undefined : onStartDm} /> : null}
     {activeMemberTarget ? <MemberProfilePanel key={`${myPrincipalId}:${activeMemberTarget.workspaceId}:${activeMemberTarget.pubkey}`}
       target={activeMemberTarget} onClose={() => setMemberTarget(null)}
-      onStartDm={activeMemberTarget.principalId === myPrincipalId ? undefined : onStartDm}/> : null}</div>;
+      onStartDm={activeMemberTarget.principalId === myPrincipalId ? undefined : onStartDm}/> : null}</div></BffVideoReviewProvider>;
 }

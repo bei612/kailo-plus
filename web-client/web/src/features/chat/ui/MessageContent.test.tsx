@@ -429,17 +429,31 @@ describe("MessageContent", () => {
     expect(html).toContain(`href="${IMAGE_URL}"`);
   });
 
-  it("renders video attachments from imeta through the BFF", () => {
+  it("restores the full original video surface and scoped poster instead of native controls", () => {
     const html = renderToStaticMarkup(
       <MessageContent
         content={`![video](${IMAGE_URL})`}
-        mediaTags={[["imeta", `url ${IMAGE_URL}`, "m video/mp4", `x ${SHA}`]]}
+        mediaTags={[["imeta", `url ${IMAGE_URL}`, "m video/mp4", `x ${SHA}`, "dim 1920x1080", "duration 65",
+          `image https://relay.example.com/media/${"cd".repeat(32)}.png`]]}
         workspaceId={WORKSPACE}
       />,
     );
 
     expect(html).toContain("<video");
     expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
+    expect(html).toContain('data-testid="video-player"');
+    expect(html).toContain('data-video-review-launcher=""');
+    expect(html).toContain('aria-label="Open video review"');
+    expect(html).toContain('object-cover');
+    expect(html).not.toContain('controls=""');
+    expect(html).toContain(`poster="/api/v1/workspaces/${WORKSPACE}/media/${"cd".repeat(32)}"`);
+    expect(html).not.toContain("https://relay.example.com");
+    for (const poster of [`https://relay.example.com/media/${SHA}.png?secret=bad`, `https://reader@relay.example.com/media/${SHA}.png`, "https://evil.example/poster.png"]) {
+      const denied = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={`![video](${IMAGE_URL})`}
+        mediaTags={[["imeta", `url ${IMAGE_URL}`, "m video/mp4", `x ${SHA}`, `image ${poster}`]]} />);
+      expect(denied).not.toContain("poster=");
+      expect(denied).not.toContain(poster);
+    }
   });
 
   it("renders the original image-only triptych and block-media paragraph through the shared mosaic", () => {

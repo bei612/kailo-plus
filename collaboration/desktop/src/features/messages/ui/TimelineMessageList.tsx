@@ -22,6 +22,7 @@ import type { TimelineMessageListProps } from "@client-kit/platform/react/messag
 export const TimelineMessageList = React.memo(function TimelineMessageList({
   channelId,
   channelName,
+  channelType,
   currentPubkey,
   firstUnreadMessageId = null,
   followThreadById,
@@ -73,17 +74,21 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
     return buildVideoReviewContextsByMessageId({
       channelId,
       channelName,
+      channelType,
       isSendingVideoReviewComment,
       messages,
       onSendVideoReviewComment,
+      onToggleReaction,
       profiles,
     });
   }, [
     channelId,
     channelName,
+    channelType,
     isSendingVideoReviewComment,
     messages,
     onSendVideoReviewComment,
+    onToggleReaction,
     profiles,
   ]);
 

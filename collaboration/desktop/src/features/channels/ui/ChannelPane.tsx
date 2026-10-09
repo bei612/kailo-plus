@@ -313,14 +313,18 @@ export const ChannelPane = React.memo(function ChannelPane({
     return buildVideoReviewPresentationByMessageId({
       channelId: activeChannel.id,
       channelName: activeChannel.name,
+      channelType: activeChannel.channelType,
       isSendingVideoReviewComment: isSending,
       messages: [...messagesById.values()],
       onSendVideoReviewComment: activeVideoReviewCommentSender,
+      onToggleReaction: isComposerDisabled ? undefined : handleToggleReaction,
       profiles,
     });
   }, [
     activeChannel,
     activeVideoReviewCommentSender,
+    isComposerDisabled,
+    handleToggleReaction,
     isSending,
     messages,
     profiles,
@@ -466,6 +470,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onToggleReaction={isComposerDisabled ? undefined : handleToggleReaction}
               onOpenThread={onOpenThread}
               channelName={activeChannel.name}
+              channelType={activeChannel.channelType}
               isSendingVideoReviewComment={isSending}
               onSendVideoReviewComment={activeVideoReviewCommentSender}
               onTargetReached={onTargetReached}

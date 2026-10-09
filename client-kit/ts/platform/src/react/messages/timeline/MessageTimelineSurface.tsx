@@ -100,6 +100,7 @@ const MessageTimelineBase = React.forwardRef<
     onToggleReaction,
     onOpenThread,
     channelName,
+    channelType,
     isSendingVideoReviewComment = false,
     onSendVideoReviewComment,
     unfollowThreadById,
@@ -523,6 +524,7 @@ const MessageTimelineBase = React.forwardRef<
   const timelineList = showMessageList ? <React.Fragment key={scrollContainerDomKey}>{renderList({
     channelId: channelId,
     channelName: channelName,
+    channelType,
     currentPubkey: currentPubkey,
     firstUnreadMessageId: firstUnreadMessageId,
     followThreadById: followThreadById,
