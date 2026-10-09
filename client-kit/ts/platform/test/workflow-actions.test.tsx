@@ -509,6 +509,7 @@ describe("original workflow action menu with governed consumers", () => {
   });
 
   it("keeps a dirty form intact until explicit discard, then reopens its immutable source", async () => {
+    const initialPointerEvents = document.body.style.pointerEvents;
     const { host, send } = await setup();
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
@@ -520,11 +521,14 @@ describe("original workflow action menu with governed consumers", () => {
     let prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
     expect(prompt.textContent).toContain("Your unsaved workflow changes will be lost.");
     await click(button(prompt, "Keep editing"));
+    expect(document.body.style.pointerEvents).toBe("none");
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Unsaved draft");
     await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
     await click(button(prompt, "Discard changes"));
     expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.body.style.pointerEvents).toBe(initialPointerEvents);
     const afterDiscard = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(afterDiscard);
     expect(afterDiscard.defaultPrevented).toBe(false);
@@ -550,12 +554,16 @@ describe("original workflow action menu with governed consumers", () => {
   });
 
   it("discards a new draft instead of silently reusing it when Create opens again", async () => {
+    const initialPointerEvents = document.body.style.pointerEvents;
     const { host, send } = await setup();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Discarded create draft");
     await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    expect(document.body.style.pointerEvents).toBe(initialPointerEvents);
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const reopened = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     expect(reopened.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");

@@ -81,6 +81,7 @@
     "vitest": "^4.1.11"
   },
   "overrides": {
+    "@radix-ui/react-dismissable-layer": "1.1.19",
     "@tiptap/core": "3.22.5",
     "@tiptap/extension-blockquote": "3.22.5",
     "@tiptap/extension-bold": "3.22.5",

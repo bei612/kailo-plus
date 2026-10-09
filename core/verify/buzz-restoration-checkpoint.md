@@ -5099,3 +5099,100 @@ available 约 22.5 GiB。Node heap 3072 MiB、maxWorkers=1，原缓存未安装�
 现网仍为 7e1b/50c362 的旧版，旧 25 图不能验本批首步骤／Inspector／YAML。
 原 Dialog 父布局、scope 表现、全部步骤／运行详情及真实创建运行尚未完整逐状态视觉验收；
 本批 DOM/类型证据不等于完整外观一致，更不等于 Windows 安装包或 Mobile 设备验收。
+
+### 2026-10-09 工作流放弃草稿后页面指针锁：恢复固定官方单副本约束
+
+#### 权威、根因与完整差异边界
+
+本批由 a8c1 真实中英文截图发现的失败驱动，不是新 UI 设计：
+Dialog/AlertDialog 已关闭，但 body pointer-events 仍为 none，正常个人菜单点击 30 秒超时。
+原图、实际 17 张逐张复核范围及图库四次上传／两图消息事实见
+[本轮实拍](../../web-client/fork/verify/screenshots-20261009-a8c1.md)。
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`pnpm-workspace.yaml::overrides` 已明确将
+`@radix-ui/react-dismissable-layer` 固定为 `1.1.19`。
+其原 #1482 注释直接解释不同副本各自保存 body pointer-events，关闭后可能留 none。
+固定 `pnpm-lock.yaml` 也只有这一层版本。
+Kailo `collaboration/pnpm-workspace.yaml`／其锁已保留该约束；
+迁往 apps 根 pnpm 与独立 Web npm 工作区时漏了它。
+
+修改前实际依赖链是 Dialog 1.2.0→layer 1.1.20，
+AlertDialog 1.1.23→其内部 Dialog 1.1.23→layer 1.1.19。
+本批只迁回官方原约束，不降级或升级 Dialog，不更改
+`AutomationAction::requestClose/onDiscard`、
+`WorkflowDiscardDialog` 或原 Dialog/AlertDialog 生命周期。
+不加 body 样式重置、延时、force click、绕行确认或新控制。
+
+四类：原样保留为当前关闭 JS／布局未改；共享迁移为官方 dependency override
+进入共享工作区与 Web 宿主原锁；没有新增治理改造；完整原工作流／设置／页面差异仍未恢复。
+最新完整 union 仍仅固定 a8c1 比较点：5314 路径，
+1978 原样保留、110 窄共享证据、0 笼统治理授权、3226 尚无充分保留或授权证明。
+不把本次五路径或源码分类称为当前全树功能／像素已验收。
+
+#### 影响面、副作用与异常
+
+五个源码／既有检查路径 `+15/-111`：
+`package.json`、`pnpm-lock.yaml`、`web-client/web/package.json`、
+`web-client/web/package-lock.json`、
+`client-kit/ts/platform/test/workflow-actions.test.tsx`。
+两个 manifest 各加一条官方约束，pnpm 去除 1.1.20 的 package/snapshot，
+四个引用收敛至 1.1.19；Web 去除三个过期嵌套 1.1.20 节点。
+其它已锁 package 版本、原 virtua patch 和其既有 dependencies 分类均保留。
+
+这条约束作用于 Web/Desktop 共源工作区及实际 Dialog、Menu、Popover、Tooltip；
+Native 原 workspace 自有约束已成立，不无故改其版本。
+Web Browser 不持钥、管理经 BFF；Desktop 本机持钥／管理 BFF 不变，Mobile 不增宿主能力。
+不改 Schema/API、数据库、工作流执行、授权／审批／quota／审计和六类错误分类。
+没有新增持久状态、重试或外部副作用。Keep editing 必须继续锁住底层编辑器；
+实际丢弃两层后恢复进入前的 pointer-events。已有 busy/UNKNOWN 不出现丢弃入口，
+原同意图重查保持，不将结果不明转成功／失败。
+
+#### 实际命令、失败、破坏与还原
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/workflow-discard-layer.7LTJMH/`。
+复用原 `kailo-agent-receipt-xvkujx`：4 CPU／8 GiB，Node heap 3072 MiB、单 worker；
+启动前只有 sleep，宿主 available 约 23 GiB、memory PSI 0，IO full avg10 约 2%。
+终态原 cgroup oom/oom_kill 仍为 2/2，无新增 OOM；没有新 SDK、bundle、镜像或 full。
+
+- 原 pnpm 10.33.4 的 offline lock-only 首次缺默认 metadata；
+  指定原 cache 后缺 virtua metadata，两个 exit 1 均保留。
+  同原 resolver 用 prefer-offline lock-only 退出 0，没有全库 update；
+  投递正式 workspace/virtua patch，排除无关 virtua optional 分类漂移。
+- npm 11.19 的 lock-only／定向 update 虽 exit 0，但仍留下失效副本；
+  原 npm ls 实际报 ELSPROBLEMS。dedupe offline 缺 lightningcss metadata，exit 1。
+  只移除三个已证明过期节点后，原 npm lock-only 与 npm ls 均 exit 0，
+  Dialog/Menu/Popover/Tooltip 实际全部 dedupe 到 1.1.19。
+  没有删除其它依赖或手写替代模块。
+- `pnpm install --frozen-lockfile --offline --ignore-scripts` 使用原 store/cache：
+  exit 0，293 包缓存复用、downloaded 0；
+  `npm ci --dry-run --offline --ignore-scripts --no-audit --no-fund` exit 0，
+  计划仅移除三处旧副本，不把 dry-run 称为实际 Web 安装或打包。
+- 原 `vitest run test/workflow-actions.test.tsx test/workflow-definition.test.tsx --maxWorkers=1 --reporter=verbose`：
+  positive-original.log 为 2 files、50 passed、exit 0。
+  既有真实 dirty Edit/Keep editing/Discard/Create 重开消费者检查实际 body 样式，
+  原 UNKNOWN、双语草稿、首步骤和 Inspector 链保持通过。
+- 私有生产破坏只恢复原 root manifest/lock 的依赖分叉，
+  原 frozen/offline resolver 安装 exit 0（5 包缓存、downloaded 0），未改正式源码。
+  同原 actions 目标按两个关闭用例筛选：
+  negative-original-split.log 为 1 failed／1 passed／37 skipped、exit 1；
+  精准命中已无两层 Dialog 但 body 为 none：`expected 'none' to be ''`。
+  第二用例的通过不证明旧分叉安全；第一个真实关闭消费者已抓住目标故障。
+  negative-resolution.log 证明 direct Dialog 为 layer 1.1.20、Alert 内部 Dialog 为 1.1.19。
+- 两私有输入恢复后，原 frozen/offline resolver exit 0，
+  同原完整两目标 restored-original.log 为 50 passed、exit 0。
+  五正式输入逐一 cmp 0；restored-resolution.log 证明两条实际链同指一个 1.1.19 文件。
+- Shared 生产／Shared 检查／Web／Native 四次原 tsc --noEmit 均 exit 0，
+  检查侧加 -p tsconfig.test.json；type-shared.log、type-shared-test.log、
+  type-web.log、type-native.log。源码 diff --check 退出 0。
+- owned-source.patch SHA256：
+  `9adf90b8d1780b492ba67089289c84f2be438efbedd3b811d52b393c0e005e2d`。
+
+#### 提交与实拍边界
+
+五输入与本节新增 EOF 冻结交 root 精确提交；checkpoint 继承删改不纳入。
+本批修复尚未部署，新修复浏览器截图为 0。
+已上线 a8c1 的 17 图是失败发现与旧版局部验收，不冒充修复通过；
+待 root 集中发布后，再正常 SSO 复验 dirty discard→个人菜单及 Keep editing 双层状态。
+未运行本批 full、镜像构建、Windows/Mobile 设备验收，不声明完整 Buzz 或生产就绪。
