@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WorkspaceMembershipState } from "@client-kit/contracts";
+import { ItemState, WorkspaceMembershipState, type ConversationView } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -11,17 +11,18 @@ import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
-  useBffClient: () => ({workspaceMessages: state.query}), useLocale: () => "en", useT: () => (key: string) => key,
+  useBffClient: () => ({workspaceMessages: state.query,conversationMessages:state.conversationQuery}), useLocale: () => "en", useT: () => (key: string) => key,
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content: string}) => <p>{content}</p>}));
 vi.mock("@/platform/bff-client", async(original) => ({
   ...await original<typeof import("@/platform/bff-client")>(),
-  bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args)},
+  bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.conversationProfile(...args)},
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
+  publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
 vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: ({disabled, onPublish}: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
@@ -33,9 +34,10 @@ const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", ro
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() {for (let i = 0; i < 12; i++) await act(async () => {await vi.advanceTimersByTimeAsync(10);});}
-async function mount(routeTargetMessageId?:string) {
+async function mount(routeTargetMessageId?:string, conversation?:ConversationView) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
     <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
+      conversation={conversation} channelId={conversation?.channelId}
       routeTargetMessageId={routeTargetMessageId}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
       disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
@@ -54,9 +56,12 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {configurable: true, value: vi.fn()});
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {configurable: true, value: vi.fn()});
   state.query.mockResolvedValue({events: [rootEvent, reply]});
+  state.conversationQuery.mockResolvedValue({events:[rootEvent,reply]});
+  state.conversationPublish.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   state.publish.mockResolvedValue({eventId: "d".repeat(64), operationId: "operation"});
   state.reaction.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   state.profile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+  state.conversationProfile.mockImplementation((...args:unknown[])=>state.profile(...args));
   query = new QueryClient({defaultOptions: {queries: {retry: false}}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -76,6 +81,33 @@ it("opens the original deep-linked reply for reading but leaves the root as the 
   expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace","reply",[],"original-intent",[],{messageType:"STREAM",parentEventId:rootId});
+});
+it("opens DM deep links in the original reply panel using only the admitted conversation consumers",async()=>{
+  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  await mount(replyId,conversation);
+  expect(state.conversationQuery).toHaveBeenCalledWith("conversation",{messageType:"STREAM",parentEventId:rootId});
+  expect(state.query).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
+  expect(state.conversationProfile).toHaveBeenCalledWith("conversation",rootId);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
+  expect(state.conversationPublish).toHaveBeenCalledWith("conversation","reply",[],"original-intent",undefined,rootId,undefined);
+  expect(state.publish).not.toHaveBeenCalled();expect(state.outcome).toBe("confirmed");
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));await settle();
+  expect(host.textContent).not.toContain("Root body");
+  expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
+});
+it("refuses DM reply publication after participant removal or disablement and requires a terminal receipt",async()=>{
+  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  state.conversationPublish.mockResolvedValue({operationId:"operation"});
+  await mount(replyId,conversation);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
+  expect(state.outcome).toBe("unknown");
+  state.conversationPublish.mockClear();
+  await mount(replyId,{...conversation,participantPrincipalIds:["peer"]});
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
+  await mount(replyId,{...conversation,state:ItemState.Disabled});
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
+  expect(state.conversationPublish).not.toHaveBeenCalled();
 });
 it("does not request a disabled URL context and starts the existing admitted read only after enablement",async()=>{
   function Context({enabled}:{enabled:boolean}) {

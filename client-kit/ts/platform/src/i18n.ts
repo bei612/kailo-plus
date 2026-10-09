@@ -94,6 +94,22 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "messageLink.openLink": { en: "Open link", "zh-CN": "打开链接" },
+  "messageLink.noText": { en: "No message text", "zh-CN": "无消息文本" },
+  "messageLink.deleted": { en: "Message deleted", "zh-CN": "消息已删除" },
+  "messageLink.unavailable": { en: "Message unavailable", "zh-CN": "消息不可用" },
+  "messageLink.justNow": { en: "just now", "zh-CN": "刚刚" },
+  "messageLink.minutesAgo": { en: "{count}m ago", "zh-CN": "{count}分钟前" },
+  "messageLink.hoursAgo": { en: "{count}h ago", "zh-CN": "{count}小时前" },
+  "messageLink.daysAgo": { en: "{count}d ago", "zh-CN": "{count}天前" },
+  "messageLink.weeksAgo": { en: "{count}w ago", "zh-CN": "{count}周前" },
+  "messageLink.threadIn": { en: "Thread in {destination}", "zh-CN": "{destination}中的线程" },
+  "messageLink.directMessageWith": { en: "Direct message with {destination}", "zh-CN": "与{destination}的私聊" },
+  "messageLink.forumPostIn": { en: "Forum post in {destination}", "zh-CN": "{destination}中的论坛帖子" },
+  "messageLink.inChannel": { en: "Message in channel {channel}", "zh-CN": "频道{channel}中的消息" },
+  "messageLink.openDeletedThread": { en: "Open thread in channel {channel}; linked message was deleted", "zh-CN": "打开频道{channel}中的线程；引用的消息已删除" },
+  "messageLink.openDeletedChannel": { en: "Open channel {channel}; linked message was deleted", "zh-CN": "打开频道{channel}；引用的消息已删除" },
+  "messageLink.openMessage": { en: "Open message in channel {channel}", "zh-CN": "打开频道{channel}中的消息" },
   "messages.typing.one": { en: "{first} is typing...", "zh-CN": "{first}正在输入…" },
   "messages.typing.two": { en: "{first} and {second} are typing...", "zh-CN": "{first}和{second}正在输入…" },
   "messages.typing.three": { en: "{first}, {second}, and {third} are typing...", "zh-CN": "{first}、{second}和{third}正在输入…" },

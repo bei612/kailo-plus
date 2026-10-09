@@ -47,6 +47,7 @@ import {
 } from "@client-kit/platform/react/composer/features/messages/lib/audioAttachment";
 import { BffAudioAttachment } from "./BffAudioAttachment";
 import { BffVideoPlayer, useBffVideoReview } from "./BffVideoReview";
+import { BffMessageLinkPill } from "./BffMessageLinkHost";
 import { useVideoReviewCommentContent, type VideoReviewContext } from "@client-kit/platform/react/video-review";
 import rehypeLeadingInlineContent from "@client-kit/platform/react/video-review/rehypeLeadingInlineContent";
 import { isVideoMedia } from "@client-kit/platform/react/video-review/mediaEntry";
@@ -270,10 +271,10 @@ function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
 }
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
-  const { mediaByUrl, resolveMediaUrl, onOpenMessageLink } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl } = useMarkdownRenderContext();
   const messageLink = href ? parseMessageLink(href) : null;
-  if (messageLink?.ok && onOpenMessageLink) {
-    return <a href={href} onClick={(event) => { event.preventDefault(); onOpenMessageLink(messageLink.value); }}>{children}</a>;
+  if (messageLink?.ok) {
+    return <BffMessageLinkPill href={href} link={messageLink.value} />;
   }
   const media = href ? mediaByUrl.get(href) : undefined;
   if (!media) {

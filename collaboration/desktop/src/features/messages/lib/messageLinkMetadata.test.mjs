@@ -12,8 +12,9 @@ test("summarizeMessageLinkContent projects markdown to bounded plain text", () =
   );
   assert.equal(
     summarizeMessageLinkContent("https://example.com"),
-    "No message text",
+    "无消息文本",
   );
+  assert.equal(summarizeMessageLinkContent("https://example.com", "en"), "No message text");
 });
 
 test("summarizeMessageLinkContent truncates on grapheme-safe character boundaries", () => {

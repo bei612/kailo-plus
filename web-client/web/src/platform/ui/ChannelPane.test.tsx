@@ -74,12 +74,13 @@ vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
   const { useState } = await import("react");
-  return { ChannelThreadPane: ({selected, routeTargetMessageId, onOpenAuthor, onAuthorScopeUnavailable}: {
+  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, onOpenAuthor, onAuthorScopeUnavailable}: {
     selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
     routeTargetMessageId?:string;
+    conversation?:{id:string};
   }) => {
     const [pending, setPending] = useState(false);
-    return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId}>
+    return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId} data-conversation-id={conversation?.id}>
       <button onClick={() => setPending(true)}>pending reply</button>
       <output>{pending ? "reply pending" : "reply idle"}</output>
       <button onClick={() => onOpenAuthor(selected)}>thread author</button>
@@ -430,4 +431,22 @@ it("does not accept denied or incomplete route ancestry as a usable thread",asyn
   state.route.denied=true;
   await mount();expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
   expect(host.textContent).not.toContain("Unresolved reply");
+});
+
+it("opens an off-window DM link using the admitted conversation root and the original thread panel",async()=>{
+  const rootId="a".repeat(64),replyId="b".repeat(64),pubkey="c".repeat(64);
+  const conversation={id:"dm",channelId:"channel-a",state:ItemState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
+  const rootEvent={id:rootId,pubkey,kind:9,created_at:1,createdAt:1,channelId:"channel-a",category:"activity" as const,tags:[["h","channel-a"]],content:"Original DM root"};
+  state.route.messages=[rootEvent,{...rootEvent,id:replyId,created_at:2,createdAt:2,content:"Original DM reply",tags:[["h","channel-a"],["e",rootId,"","root"],["e",rootId,"","reply"]]}];
+  await act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} targetMessageId={replyId} targetThreadRootId={rootId}/></TooltipProvider>));
+  await act(async()=>{
+    state.receive!({type:"snapshot",events:[{id:"bounds",pubkey:"relay",kind:39006,created_at:1,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+    state.receive!({type:"live"});
+  });
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,true);
+  const pane=host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]');
+  expect(pane?.dataset.conversationId).toBe("dm");
+  expect(pane?.dataset.selectedId).toBe(replyId);expect(pane?.dataset.routeTarget).toBe(replyId);
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,false);
 });

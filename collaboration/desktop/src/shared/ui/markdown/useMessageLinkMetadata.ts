@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
+import type { PlatformLocale } from "@client-kit/platform/i18n";
 
 import type { ParsedMessageLink } from "@/features/messages/lib/messageLink";
 import { summarizeMessageLinkContent } from "@/features/messages/lib/messageLinkMetadata";
@@ -8,7 +10,7 @@ import { truncateNpub } from "@/shared/lib/pubkey";
 import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
 
 const MESSAGE_METADATA_RETRY_DELAY_MS = 750;
-const PREVIEWABLE_MESSAGE_KINDS = new Set([9, 40002]);
+const PREVIEWABLE_MESSAGE_KINDS = new Set([9, 40002, 45001, 45003]);
 
 function waitForMessageMetadataRetry(): Promise<void> {
   return new Promise((resolve) => {
@@ -51,8 +53,9 @@ export function resetMessageLinkMetadataCache() {
 
 function fetchMetadata(
   link: Pick<ParsedMessageLink, "channelId" | "messageId">,
+  locale: PlatformLocale,
 ): Promise<CachedMessageLinkMetadata> {
-  const key = `${link.channelId}:${link.messageId}`;
+  const key = `${locale}:${link.channelId}:${link.messageId}`;
   let request = metadataCache.get(key);
   if (!request) {
     request = getMessageLinkEvent(link.messageId)
@@ -72,7 +75,7 @@ function fetchMetadata(
             profile?.nip05Handle?.trim() ||
             truncateNpub(event.pubkey),
           createdAt: event.created_at,
-          snippet: summarizeMessageLinkContent(event.content),
+          snippet: summarizeMessageLinkContent(event.content, locale),
         };
       })
       .catch((error) =>
@@ -94,12 +97,13 @@ export function useMessageLinkMetadata(
   link: ParsedMessageLink,
   channelReadable: boolean,
 ): { state: MessageLinkMetadataState } {
+  const locale = useDeviceLocale();
   const [resolved, setResolved] = React.useState<{
     key: string;
     state: CachedMessageLinkMetadata;
   } | null>(null);
   const requestId = React.useRef(0);
-  const key = `${link.channelId}:${link.messageId}`;
+  const key = `${locale}:${link.channelId}:${link.messageId}`;
   React.useEffect(() => {
     requestId.current += 1;
     if (!channelReadable) return;
@@ -109,7 +113,7 @@ export function useMessageLinkMetadata(
       channelId: link.channelId,
       messageId: link.messageId,
     };
-    void fetchMetadata(currentLink).then((metadata) => {
+    void fetchMetadata(currentLink, locale).then((metadata) => {
       if (requestId.current === currentRequest) {
         setResolved({ key, state: metadata });
       }
@@ -117,7 +121,7 @@ export function useMessageLinkMetadata(
     return () => {
       requestId.current += 1;
     };
-  }, [channelReadable, key, link.channelId, link.messageId]);
+  }, [channelReadable, key, link.channelId, link.messageId, locale]);
   if (!channelReadable) return { state: { kind: "idle" } };
   return {
     state: resolved?.key === key ? resolved.state : { kind: "loading" },

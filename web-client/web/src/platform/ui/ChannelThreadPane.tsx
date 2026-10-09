@@ -1,4 +1,4 @@
-import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView } from "@client-kit/contracts";
+import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
 import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
@@ -7,7 +7,7 @@ import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
-import { publishMessage } from "@/platform/bff-client";
+import { publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfile";
@@ -15,8 +15,9 @@ import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPa
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
-  workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+  workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
+  conversation?: ConversationView;
   routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
@@ -42,8 +43,8 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
-  const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId);
-  const messageReactions = useMessageReactions({principalId,workspaceId,events:reactionEvents ?? messages,
+  const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId, conversation?.id);
+  const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:!disabled && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const [replyId, setReplyId] = useState(routeTargetMessageId ? rootId : selected.id);
   const [isSending, setIsSending] = useState(false);
@@ -84,18 +85,16 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
     if ((unavailable || interrupted || disabled) && editTarget) onCancelEdit?.();
   }, [unavailable, interrupted, disabled, editTarget, onCancelEdit]);
   const loading = thread.isPending || thread.hasNextPage || thread.isFetchingNextPage;
+  const currentMember = members.find(member => member.principalId === principalId);
+  const memberActive = conversation
+    ? conversation.state === "ACTIVE" && conversation.channelId === channelId && conversation.participantPrincipalIds.includes(principalId) && Boolean(currentMember)
+    : currentMember && "state" in currentMember && currentMember.state === WorkspaceMembershipState.Active;
   const canReply = !disabled && !unavailable && !interrupted && !loading &&
-    rows.some((row) => row.id === replyId) &&
-    members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
+    rows.some((row) => row.id === replyId) && Boolean(memberActive);
   const canEdit =
     canReply &&
     Boolean(editAuthorPubkey) &&
-    members.some(
-      (member) =>
-        member.principalId === principalId &&
-        member.state === WorkspaceMembershipState.Active &&
-        member.pubkeys.includes(editAuthorPubkey!),
-    );
+    Boolean(currentMember?.pubkeys.includes(editAuthorPubkey!));
   const canSaveEdit = Boolean(
     editTarget &&
       canEdit &&
@@ -140,7 +139,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
       <ThreadRepliesErrorCard onRetry={denied ? undefined : () => {void thread.refetch();}} />
     </AuxiliaryPanel>;
   }
-  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} channelName={channelName} channelType="stream"
+  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id} channelName={channelName} channelType={conversation ? "dm" : "stream"}
     messages={rows} available={canReply} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
@@ -158,12 +157,12 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
       onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
       reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
       renderIdentity={row.message.pubkey && !unavailable && !interrupted ? (node,kind) => {
-        const target={principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!};
+        const target={principalId,workspaceId,conversationId:conversation?.id,eventId:row.message.id,pubkey:row.message.pubkey!};
         const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar target={target}
           accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div> : node;
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}
-      renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags}
+      renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} conversationId={conversation?.id} content={row.message.body} mediaTags={row.message.tags}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
@@ -174,7 +173,10 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         onEdit={canEdit && !editBusy && onEdit && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
-    renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={workspaceId} draftIdentity={principalId}
+    renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={conversation ? undefined : workspaceId} draftIdentity={principalId}
+      channelType={conversation ? "dm" : "stream"}
+      onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
+      onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       audienceContext={editTarget || !data.threadHead?.tags ? null : {type: "thread", rootTags: data.threadHead.tags}}
       editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}
       onRequestEmptyEditDelete={onRequestEmptyEditDelete}
@@ -189,8 +191,10 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}
       onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
         if (!canReply || (editTarget && !canSaveEdit)) throw new Error("Thread admission is unavailable");
-        const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-          editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys});
+        const receipt = await (conversation
+          ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, editTarget?.id, editTarget ? undefined : replyId, mentionPubkeys)
+          : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
+            editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys}));
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}

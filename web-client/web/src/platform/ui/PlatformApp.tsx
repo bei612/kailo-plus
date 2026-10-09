@@ -82,6 +82,7 @@ import { AvatarHostProvider } from "@client-kit/platform/react/profile/avatar-ho
 import { formatDmParticipantDisplayName, resolveConversationHeaderParticipants } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
+import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { TopbarSearch } from "./TopbarSearch";
 import { useWebSearchDirectory } from "./search";
 import type { SearchHit } from "@client-kit/platform/react/search/types";
@@ -237,7 +238,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const active = activeRow?.id ?? null;
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
-  const openSearchChannel = async (channelId:string, hit?:SearchHit) => {
+  const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">) => {
     if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
       throw new TransportError(translate(getLocale(), "dm.viewInactive"));
     const fresh = await searchDirectory.refetch();
@@ -300,12 +301,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     queryFn: () => bff.workspaceChannel(active!),
   });
   const openMessageLink = (link: ParsedMessageLink) => {
-    if (!rows.some((workspace) => workspace.id === link.channelId && workspace.isMember === true)) {
-      setMessageLinkProblem(t("platform.linkChannelUnavailable"));
-      return;
-    }
     setMessageLinkProblem(null);
-    void navigation.openChannel(link.channelId, link);
+    void openSearchChannel(link.channelId, {eventId:link.messageId,threadRootId:link.threadRootId})
+      .catch(() => setMessageLinkProblem(t("platform.linkChannelUnavailable")));
   };
   const preference = useMutation({
     mutationFn: async (next: { id: string; starred: boolean; muted: boolean; version: number }) => {
@@ -387,6 +385,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         targetMessageId={messageTarget?.channelId === chosenConversation.id ? messageTarget.messageId : undefined}
+        targetThreadRootId={messageTarget?.channelId === chosenConversation.id ? messageTarget.threadRootId ?? undefined : undefined}
         onStartDm={openDirectMessage}
         onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
@@ -431,6 +430,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     );
 
   return (
+    <BffMessageLinkHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId}
+      directory={searchDirectory.isError || conversations.error ? undefined : searchDirectory.data}
+      conversations={conversations.items}
+      onOpenMessageLink={openMessageLink}
+      onOpenChannel={id => {void openSearchChannel(id).catch(() => setMessageLinkProblem(t("platform.linkChannelUnavailable")));}}>
     <div className="relative h-dvh overflow-hidden overscroll-none">
       <div className="absolute inset-0 z-10 flex min-h-0 flex-row overflow-hidden bg-background">
         <GradientLayer />
@@ -529,5 +533,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         </SidebarProvider>
       </div>
     </div>
+    </BffMessageLinkHost>
   );
 }

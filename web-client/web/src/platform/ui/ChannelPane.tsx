@@ -197,7 +197,7 @@ export function ChannelPane({
   const handleCloseThread = useCallback(() => {
     if (requireThreadEditResolution()) setReplyTarget(null);
   }, [requireThreadEditResolution]);
-  const useFocusThreadDrawer = Boolean(!conversation && replyTarget && focusThread && !profileTarget && !systemProfileTarget);
+  const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget);
   const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer, handleCloseThread);
   const handleEditConfirmed = useCallback(
     (message: TimelineMessage) => {
@@ -272,8 +272,8 @@ export function ChannelPane({
   })), [events, byPubkey, messageReactions.reactions]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
-  const routeContextEnabled = Boolean(targetMessageId && !conversation && live && !denied && !metadataPending);
-  const routeContext = useWorkspaceThread(myPrincipalId, workspaceId, targetThreadRootId ?? targetMessageId ?? "", undefined, undefined, routeContextEnabled);
+  const routeContextEnabled = Boolean(targetMessageId && live && !denied && !metadataPending);
+  const routeContext = useWorkspaceThread(myPrincipalId, workspaceId, targetThreadRootId ?? targetMessageId ?? "", conversation?.id, undefined, routeContextEnabled);
   useEffect(() => {
     if (routeContextEnabled && !routeContext.denied && !routeContext.thread.isError && routeContext.thread.hasNextPage && !routeContext.thread.isFetchingNextPage) void routeContext.thread.fetchNextPage();
   }, [routeContextEnabled, routeContext.denied, routeContext.thread.isError, routeContext.thread.hasNextPage, routeContext.thread.isFetchingNextPage, routeContext.thread.fetchNextPage]);
@@ -674,7 +674,7 @@ export function ChannelPane({
                   isUnread={isMessageUnread(message)}
                   onMarkRead={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, true) : undefined}
                   onMarkUnread={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, false) : undefined}
-                  onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
+                  onReply={(message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 messageId={message.id}
@@ -685,7 +685,7 @@ export function ChannelPane({
                 conversationId={conversation?.id}
                 onOpenMessageLink={onOpenMessageLink}
               /></div>} />
-              {entry.summary && !conversation ? <MessageThreadSummaryRow message={message} summary={entry.summary}
+              {entry.summary ? <MessageThreadSummaryRow message={message} summary={entry.summary}
                 onOpenThread={handleOpenThread} /> : null}
             </div>;
           });
@@ -746,9 +746,10 @@ export function ChannelPane({
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
     <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
-    {!conversation && replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
-      channelId={channelId}
+      channelId={conversation?.channelId ?? channelId}
+      conversation={conversation}
       onOpenMessageLink={openThreadReference}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
@@ -759,7 +760,7 @@ export function ChannelPane({
       onDelete={canDelete ? deleteMessageDialog.requestDelete : undefined} onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
       editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}
       editBusy={composerBusy || deleteMessageDialog.pending} onEditSendingChange={setComposerBusy}
-      members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
+      members={members.data ?? []} disabled={archived || metadataPending || denied || !live}
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink}
       isMessageUnread={isMessageUnread}
       onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}

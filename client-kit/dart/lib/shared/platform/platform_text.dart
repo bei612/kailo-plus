@@ -4,6 +4,22 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  messageLinkOpenLink,
+  messageLinkNoText,
+  messageLinkDeleted,
+  messageLinkUnavailable,
+  messageLinkJustNow,
+  messageLinkMinutesAgo,
+  messageLinkHoursAgo,
+  messageLinkDaysAgo,
+  messageLinkWeeksAgo,
+  messageLinkThreadIn,
+  messageLinkDirectMessageWith,
+  messageLinkForumPostIn,
+  messageLinkInChannel,
+  messageLinkOpenDeletedThread,
+  messageLinkOpenDeletedChannel,
+  messageLinkOpenMessage,
   messagesTypingOne,
   messagesTypingTwo,
   messagesTypingThree,
@@ -2068,6 +2084,43 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.messageLinkOpenLink: ('Open link', '打开链接'),
+  PlatformMessageKey.messageLinkNoText: ('No message text', '无消息文本'),
+  PlatformMessageKey.messageLinkDeleted: ('Message deleted', '消息已删除'),
+  PlatformMessageKey.messageLinkUnavailable: ('Message unavailable', '消息不可用'),
+  PlatformMessageKey.messageLinkJustNow: ('just now', '刚刚'),
+  PlatformMessageKey.messageLinkMinutesAgo: ('{count}m ago', '{count}分钟前'),
+  PlatformMessageKey.messageLinkHoursAgo: ('{count}h ago', '{count}小时前'),
+  PlatformMessageKey.messageLinkDaysAgo: ('{count}d ago', '{count}天前'),
+  PlatformMessageKey.messageLinkWeeksAgo: ('{count}w ago', '{count}周前'),
+  PlatformMessageKey.messageLinkThreadIn: (
+    'Thread in {destination}',
+    '{destination}中的线程',
+  ),
+  PlatformMessageKey.messageLinkDirectMessageWith: (
+    'Direct message with {destination}',
+    '与{destination}的私聊',
+  ),
+  PlatformMessageKey.messageLinkForumPostIn: (
+    'Forum post in {destination}',
+    '{destination}中的论坛帖子',
+  ),
+  PlatformMessageKey.messageLinkInChannel: (
+    'Message in channel {channel}',
+    '频道{channel}中的消息',
+  ),
+  PlatformMessageKey.messageLinkOpenDeletedThread: (
+    'Open thread in channel {channel}; linked message was deleted',
+    '打开频道{channel}中的线程；引用的消息已删除',
+  ),
+  PlatformMessageKey.messageLinkOpenDeletedChannel: (
+    'Open channel {channel}; linked message was deleted',
+    '打开频道{channel}；引用的消息已删除',
+  ),
+  PlatformMessageKey.messageLinkOpenMessage: (
+    'Open message in channel {channel}',
+    '打开频道{channel}中的消息',
+  ),
   PlatformMessageKey.messagesTypingOne: (
     '{first} is typing...',
     '{first}正在输入…',

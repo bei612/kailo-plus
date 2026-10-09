@@ -9,6 +9,8 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { t } from "@/shared/i18n";
 import { setLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
+import { readMessageLinkMetadata } from "./BffMessageLinkHost";
+import { MessageLinkPillPresentation } from "@client-kit/platform/react/messages/message-link";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -21,6 +23,93 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("message-link restores the original chip and never exposes an unadmitted permalink as an external anchor", () => {
+    const id = "a".repeat(64);
+    const html = renderToStaticMarkup(<MessageContent content={`[reference](buzz://message?channel=channel-one&id=${id})`} />);
+    expect(html).toContain('data-message-link=""');
+    expect(html).not.toContain('target="_blank"');
+    expect(html).not.toContain('role="button"');
+    const admitted = renderToStaticMarkup(<MessageLinkPillPresentation link={{channelId:"channel-one",messageId:id,threadRootId:null}}
+      channelLabel="Original channel" interactive openable metadata={{state:{kind:"deleted"}}}
+      onOpenMessageLink={() => {}} onOpenChannel={() => {}} copyLink={() => {}} />);
+    expect(admitted).toContain('data-message-link-state="deleted"');
+    expect(admitted).toContain('buzz-link-deleted');
+    expect(admitted).toContain('role="button"');
+  });
+
+  it("message-link reads the exact governed root, original author and latest edit without crossing target scope", async () => {
+    const id = "a".repeat(64), editId = "b".repeat(64);
+    const link = {channelId:"native-channel",messageId:id,threadRootId:null};
+    const target: Parameters<typeof readMessageLinkMetadata>[1] = {workspaceId:WORKSPACE,label:"Actual",
+      channel:{id:link.channelId,name:"Actual",channelType:"stream",visibility:"private",description:"",lastMessageAt:null,isMember:true}};
+    const event = {id,pubkey:PERSON,created_at:100,kind:9,tags:[["h",link.channelId]],content:"old"};
+    const paths: string[] = [];
+    const bff = createBffClient({send:async request => {
+      paths.push(request.path);
+      return {status:200,body:request.path.endsWith("/author-profile")
+        ? {pubkey:PERSON,displayName:"Alice",nip05Handle:null}
+        : {events:[event,{...event,id:editId,kind:40003,created_at:101,tags:[["h",link.channelId],["e",id]],content:"**new**"}]}};
+    }});
+    expect(await readMessageLinkMetadata(bff,target,link,()=>{})).toEqual({kind:"ready",author:"Alice",createdAt:100,snippet:"new"});
+    expect(paths[0]).toContain(`/workspaces/${WORKSPACE}/messages?`);
+    expect(paths[0]).toContain(`parentEventId=${id}`);
+    expect(paths[1]).toBe(`/api/v1/workspaces/${WORKSPACE}/messages/${id}/author-profile`);
+    const dm = {...target,workspaceId:undefined,conversationId:"conversation-one",channel:{...target.channel,channelType:"dm" as const}};
+    await readMessageLinkMetadata(bff,dm,link,()=>{});
+    expect(paths[2]).toContain("/conversations/conversation-one/messages?");
+    expect(paths[3]).toContain("/conversations/conversation-one/messages/");
+    const foreign = createBffClient({send:async()=>({status:200,body:{events:[{...event,tags:[["h","foreign-channel"]]}]}})});
+    await expect(readMessageLinkMetadata(foreign,target,link,()=>{})).rejects.toThrow("scope");
+  });
+
+  it("message-link retains original keyboard, deleted-thread/channel fallback and context-menu copy", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const id = "a".repeat(64), rootId = "b".repeat(64);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const open = vi.fn(), channel = vi.fn(), copy = vi.fn();
+    const show = (threadRootId: string | null, deleted: boolean) => act(async () => root.render(
+      <MessageLinkPillPresentation href="buzz://message?original=true" channelLabel="Actual" interactive openable
+        link={{channelId:"native-channel",messageId:id,threadRootId}}
+        metadata={{state:deleted ? {kind:"deleted"} : {kind:"idle"}}}
+        onOpenMessageLink={open} onOpenChannel={channel} copyLink={copy} />,
+    ));
+    try {
+      await show(rootId,false);
+      await act(async () => host.querySelector("[data-message-link]")!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+      expect(open).toHaveBeenLastCalledWith({channelId:"native-channel",messageId:id,threadRootId:rootId});
+      await show(rootId,true);
+      await act(async () => host.querySelector<HTMLElement>("[data-message-link]")!.click());
+      expect(open).toHaveBeenLastCalledWith({channelId:"native-channel",messageId:rootId,threadRootId:rootId});
+      await show(null,true);
+      await act(async () => host.querySelector<HTMLElement>("[data-message-link]")!.click());
+      expect(channel).toHaveBeenLastCalledWith("native-channel");
+      await act(async () => host.querySelector("[data-message-link]")!.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:40,clientY:50})));
+      const menu = document.querySelector("[data-buzz-link-context-menu]")!;
+      expect(menu.querySelectorAll("button")).toHaveLength(2);
+      await act(async () => menu.querySelectorAll("button")[1]!.click());
+      expect(copy).toHaveBeenCalledWith("buzz://message?original=true");
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  });
+
+  it("message-link requires explicit deletion evidence; denial, stale owner and non-advancing pagination cannot return a snippet", async () => {
+    const id = "a".repeat(64), rootId = "b".repeat(64);
+    const link = {channelId:"native-channel",messageId:id,threadRootId:rootId};
+    const target: Parameters<typeof readMessageLinkMetadata>[1] = {workspaceId:WORKSPACE,label:"Actual",
+      channel:{id:link.channelId,name:"Actual",channelType:"forum",visibility:"private",description:"",lastMessageAt:null,isMember:true}};
+    const deleted = createBffClient({send:async()=>({status:200,body:{events:[{id:"c".repeat(64),pubkey:PERSON,created_at:100,kind:5,tags:[["e",id]],content:""}]}})});
+    expect(await readMessageLinkMetadata(deleted,target,link,()=>{})).toEqual({kind:"deleted"});
+    for (const status of [400,403,404,503]) {
+      const denied = createBffClient({send:async()=>({status,body:undefined})});
+      await expect(readMessageLinkMetadata(denied,target,link,()=>{})).rejects.toThrow();
+    }
+    await expect(readMessageLinkMetadata(deleted,target,link,()=>{throw new Error("revoked");})).rejects.toThrow("revoked");
+    const repeated = createBffClient({send:async()=>({status:200,body:{events:[],nextCursor:{createdAt:100,eventId:rootId}}})});
+    await expect(readMessageLinkMetadata(repeated,target,link,()=>{})).rejects.toThrow("advance");
+    const unavailable = createBffClient({send:async()=>({status:200,body:{events:[]}})});
+    expect(await readMessageLinkMetadata(unavailable,target,link,()=>{})).toEqual({kind:"unavailable"});
+  });
   it("restores the original generic file card, filename precedence, byte sizes and exact layout", () => {
     const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
       content={`[link label](${IMAGE_URL})`} mediaTags={[["imeta", `url ${IMAGE_URL}`,
