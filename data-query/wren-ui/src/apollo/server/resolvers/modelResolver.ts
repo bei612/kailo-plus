@@ -1383,6 +1383,7 @@ export class ModelResolver {
     // create view
     try {
       const name = replaceAllowableSyntax(displayName);
+      await this.verifyMetadataWrite(ctx, project.id);
       const view = await ctx.viewRepository.createOne({
         projectId: project.id,
         name,

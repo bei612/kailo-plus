@@ -835,6 +835,8 @@ describe('original Save as View consumes the same HUMAN query history', () => {
   const config: any = {
     projectId: 7,
     bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    tenantId: 'fixture-tenant',
+    workspaceId: 'fixture-workspace',
     nativeInstanceRef: 'fixture-instance',
     nativeScopeRef: '7',
   };
@@ -849,6 +851,10 @@ describe('original Save as View consumes the same HUMAN query history', () => {
   let record: any;
   let disclose: jest.SpyInstance;
   let find: jest.Mock;
+  let generation: number;
+  let revoked: boolean;
+  let events: string[];
+  let created: any;
   const input = () => ({
     data: {
       name: 'OriginalView',
@@ -858,10 +864,62 @@ describe('original Save as View consumes the same HUMAN query history', () => {
     },
   });
   const invoke = () => resolver.createView(null, input(), ctx);
+  const managedInvoke = () =>
+    originalResolvers.Mutation.createView(null, input(), ctx);
+  const managedFailure = async () => {
+    try {
+      await managedInvoke();
+    } catch (error) {
+      return error as any;
+    }
+    throw new Error('Original native Save as View unexpectedly succeeded');
+  };
   beforeEach(() => {
     previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
     jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    generation = 2;
+    revoked = false;
+    events = [];
+    created = undefined;
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (delivery, operation, request, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBe('human-a');
+        if (request.authorizeScope) {
+          events.push('fresh-manage');
+          expect(request.authorizeScope).toEqual({ permission: 'manage' });
+          if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          return {
+            scope: {
+              ...delivery,
+              generation,
+              permission: 'manage',
+              checkedRevision: 'current-original-view-management',
+            },
+          };
+        }
+        expect(request.resolveResource).toMatchObject({
+          workspaceId: config.workspaceId,
+          actionKey: 'data_query.describe@v1',
+          actionVersion: 1,
+          nativeType: 'view',
+          nativeRef: '99',
+        });
+        events.push('read-created-resource');
+        return {
+          resource: {
+            resourceId: '09c6b43b-1edf-467d-8e81-e47a3f506c4f',
+            resourceVersion: 1,
+            nativeType: 'view',
+            nativeRef: '99',
+            nativeInstanceRef: config.nativeInstanceRef,
+            nativeScopeRef: config.nativeScopeRef,
+          },
+        };
+      });
     ctx = {
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'human-a',
@@ -876,7 +934,18 @@ describe('original Save as View consumes the same HUMAN query history', () => {
       },
       viewRepository: {
         findAllBy: jest.fn().mockResolvedValue([]),
-        createOne: jest.fn(async (row) => ({ id: 99, ...row })),
+        findOneBy: jest.fn(async (where) =>
+          created &&
+          where.id === created.id &&
+          where.projectId === created.projectId
+            ? created
+            : null,
+        ),
+        createOne: jest.fn(async (row) => {
+          events.push('write-view');
+          created = { id: 99, ...row };
+          return created;
+        }),
       },
       queryService: {
         describeStatement: jest.fn().mockResolvedValue({ columns }),
@@ -918,7 +987,7 @@ describe('original Save as View consumes the same HUMAN query history', () => {
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
   });
   it('creates the original view with original columns only after observing its same completed query, without another SQL call', async () => {
-    const view = await invoke();
+    const view = await managedInvoke();
     expect(view).toMatchObject({ id: 99, displayName: 'OriginalView' });
     expect(JSON.parse(view.properties)).toEqual({
       displayName: 'OriginalView',
@@ -937,7 +1006,68 @@ describe('original Save as View consumes the same HUMAN query history', () => {
     expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
     expect(ctx.queryService.preview).not.toHaveBeenCalled();
     expect(ctx.viewRepository.createOne).toHaveBeenCalledTimes(1);
+    expect(events[events.indexOf('write-view') - 1]).toBe('fresh-manage');
+    expect(events.filter((event) => event === 'fresh-manage')).toHaveLength(3);
+    expect(events).toContain('read-created-resource');
+    expect(ctx).not.toHaveProperty('nativeProjectCheck');
   });
+  it.each(['revoked', 'generation', 'delivery', 'actor', 'scope'])(
+    'refuses %s after the last original asynchronous project read and before the sole INSERT',
+    async (fault) => {
+      let reads = 0;
+      ctx.projectService.getCurrentProject.mockImplementation(async () => {
+        if (++reads === 4) {
+          if (fault === 'revoked') revoked = true;
+          if (fault === 'generation') generation++;
+          if (fault === 'delivery')
+            jest.mocked(loadQueryDelivery).mockResolvedValue({
+              ...config,
+              nativeInstanceRef: 'changed-instance',
+            });
+          if (fault === 'actor') ctx.nativeHumanToken = 'human-b';
+          if (fault === 'scope') ctx.nativeIdentityScope = 'b'.repeat(64);
+        }
+        return { id: config.projectId };
+      });
+      const error = await managedFailure();
+      expect(reads).toBe(4);
+      expect(error.extensions.other.nativeWrite.outcome).toBe('NOT_STARTED');
+      expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+      expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses a raw bound Save as View without the actual captured permission closure', async () => {
+    await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+    expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+    expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+  });
+  it.each(['lost-ack', 'forged-not-started', 'post-write-revoked'])(
+    'keeps %s UNKNOWN after one native dispatch, without another query or INSERT',
+    async (fault) => {
+      ctx.viewRepository.createOne.mockImplementation(async (row) => {
+        events.push('write-view');
+        created = { id: 99, ...row };
+        if (fault === 'post-write-revoked') {
+          revoked = true;
+          return created;
+        }
+        const failure: any = new Error('Original native response unavailable');
+        if (fault === 'forged-not-started')
+          failure.extensions = {
+            other: { nativeWrite: { outcome: 'NOT_STARTED' } },
+          };
+        throw failure;
+      });
+      const error = await managedFailure();
+      expect(error.extensions.other.nativeWrite.outcome).toBe('UNKNOWN');
+      expect(ctx.viewRepository.createOne).toHaveBeenCalledTimes(1);
+      expect(disclose).toHaveBeenCalledTimes(1);
+      expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     'missing',
     'UNKNOWN',

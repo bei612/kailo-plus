@@ -1375,3 +1375,24 @@ browser or deployment result. The final image must be built from the later
 committed clean source; the failed fixed-661 artifact cannot contain this batch.
 No UI/AI artifact pin, Wren business instance, ACTIVE binding, iframe acceptance
 or complete-product readiness is established here.
+
+### Original Save as View first native INSERT
+
+The original Home Save as View Mutation now consumes its existing request-local
+project/manage permission and captured generation immediately before the sole
+native `viewRepository.createOne`, after its final asynchronous project read.
+It retains the same completed HUMAN query history, SQL/columns and original
+native response; neither creating the view nor retrying an uncertain metadata
+write dispatches another SQL query. A genuine pre-dispatch refusal remains
+`NOT_STARTED`; dispatched/lost-ACK or post-write permission failures remain
+`UNKNOWN`, not a forged failed or successful write.
+
+The [first-INSERT consumer receipt](../fork/verify/native-integration.md#original-save-as-view-first-native-insert)
+records **27 passed / 677 target-filtered skipped**, two original passing suites,
+TypeScript and two-file formatting exit **0**, a real private production guard
+removal producing **7 failures**, and exact byte restoration with the same
+**27 passed**. PostgreSQL/native services and public authorization calls in
+these checks are fixture-backed. This does not establish cross-client metadata
+recovery, dynamic Resource adoption, a native UI/AI image, a running Wren
+instance, ACTIVE binding or browser/iframe/production acceptance. The separate
+query-reference export identity repair is not covered by these results.

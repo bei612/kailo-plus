@@ -8568,3 +8568,88 @@ scope, datasource/provider/SecretRef inputs, trusted dynamic Resource evidence,
 ordinary-function provenance, SERVICE SQL and remaining metadata recovery still
 gate release. Root owns selective review, commit/push and deployment; this
 batch does not declare Wren or Kailo production-ready.
+
+## Original Save as View first native INSERT
+
+Authority and original source: `.design/05` §2.7 and `.design/08` §6 keep native
+metadata management on the current HUMAN/project public authorization chain,
+not a fabricated query Action. Fixed official
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.createView`
+(original lines 804/856), provides the existing full Save as View operation and
+sole `viewRepository.createOne`. The authorized change is one actual consumer
+of the existing `verifyMetadataWrite`/request-local `nativeProjectCheck`, just
+before that INSERT; original layout, fields, SQL formatting, properties and
+native response are retained, not replaced with a simpler product.
+
+Impact and side effects: the original public `Mutation.createView` already
+uses `nativeProjectResolver(..., 'manage')`. Its bound path consumes the same
+completed `data_query.query@v1` history with exact SQL, project, binding, scope
+and limit 1, and `NativeHumanQuery.readHistory`; no second preview/describe or
+SQL dispatch is introduced. After the final project await, the new first-write
+consumer uses the wrapper's captured current identity, delivery, generation and
+fresh manage check. Created-view body disclosure remains a separate original
+`getView`/Resource read check. A query AE is not project write authorization or
+Resource registration. No Core contract, authority, table, ledger or task is
+created by this batch.
+
+Boundary behavior: permission, generation, delivery, actor or scope changes
+during that final native read refuse before the first write as `NOT_STARTED`;
+raw bound resolver calls without the real captured closure are refused. Only a
+never-configured independent instance retains original unmanaged behavior.
+Once INSERT is dispatched, lost ACK, forged upstream `NOT_STARTED`, or revoked
+post-write visibility are `UNKNOWN`, with no automatic query/INSERT retry.
+Empty or mismatched history/columns and changed response remain the existing
+refusals. This does not prove durable cross-client metadata reconciliation or
+dynamic trusted Resource adoption.
+
+Implementation-first verification used existing
+`kailo-wren-query-sdk-itgs2n`, canonical `/work`, **4 CPU / 4 GiB**, Node heap
+3072 MiB, original Jest `--runInBand`, original TypeScript and Prettier. Before
+the post-implementation negative check, MemAvailable was 21 GiB; the SDK had
+only its original sleep process, memory about 180 MiB and OOM counters zero.
+Parent image builds overlapped the positive run and Data I/O was high. The
+original positive Node process was actually observed in `Dl`/
+`folio_wait_bit_common`, CPU cumulative seven seconds after about 28 minutes;
+no duplicate/restarted check or increased limit was used.
+
+Actual terminal results and original commands:
+
+- `7234`, **exit 0**: original
+  `node node_modules/jest/bin/jest.js src/nativeProjectScope.test.ts src/nativeHumanQuery.test.ts --runInBand --testNamePattern="original Save as View consumes|carries only the original created view reference"`
+  gave **2 suites passed, 27 passed / 677 target-filtered skipped / 704 total**,
+  1910.863 seconds. Original `tsc --noEmit --incremental false` and two-file
+  Prettier check both exited **0**; cgroup low/high/max/OOM counters all **0**.
+- `19577`, **exit 1**: in the private candidate only, remove this batch's one
+  production `verifyMetadataWrite` call immediately before `createOne`, then
+  run the same original Save as View describe. It gave **7 failed / 19 passed /
+  223 target-filtered skipped**, 9.953 seconds: the original successful create,
+  all five final-read identity/permission changes, and missing captured closure
+  genuinely detected the lost consumer. Formal source was never mutated.
+- `47863`, **exit 0**: restore the exact production byte, formal/private `cmp`
+  **2/2**, then repeat the original two targeted suites. Actual **27 passed /
+  677 target-filtered skipped**, 9.998 seconds, cgroup counters all **0**.
+  Restored source is identical to the TypeScript/format-accepted positive
+  source; no broad database/full/image run is claimed.
+
+Original log directory:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`.
+Logs `native-save-view-first-insert-positive.log`,
+`native-save-view-first-insert-negative.log`,
+`native-save-view-first-insert-restored.log` have SHA-256, respectively:
+`325dc107385c295ad46ca4964d9d0de2a44e2ca0ef9468e3d3ee424cab9c22b4`,
+`62a0dbfec386064b3ef2d28e0605c7ad917c883098b4d0670fe985d8a1a3429f`,
+`81a98087f3597af55d186b49277bc058a128d7b2be633156a35d92cdd14aec7e`.
+Final source SHA-256: `modelResolver.ts`
+`9e07cc76a8f79afb769dcbbfdb50336cff9e2515c8f174f9024be33ef9e74c0c`;
+`nativeProjectScope.test.ts`
+`9d99f5f82b8a6022011ccbc07f66341d18d1ee35d26fa3674af0ec195eaa2fc0`.
+
+Native persistence, public authorization transport and services are fixtures,
+not live PostgreSQL/Core/SpiceDB or browser/device acceptance. This batch has
+not built/deployed a native UI/AI artifact, registered an ACTIVE binding or
+established a usable iframe. Existing provider/function provenance, SERVICE SQL,
+dynamic Resource evidence and remaining metadata recovery still gate release.
+The newly written query-reference export identity repair is a separate batch
+and is not certified by the 27 old-input results. Root owns selective review,
+main commit/push and the later single serial UI-to-AI source build.
