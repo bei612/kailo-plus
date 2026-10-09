@@ -935,6 +935,38 @@ test("generic audio attachments render outside paragraph markup", () => {
   assert.doesNotMatch(html, /<p[^>]*>\s*<div/);
 });
 
+test("Native markdown keeps the original image trigger through the shared viewer and native media actions", () => {
+  const href = "https://relay.example/media/poster.png";
+  const markdown = renderCachedMarkdown({
+    components: createMarkdownComponents(true, false),
+    content: `![poster](${href})\n![second](${href})\n![third](${href})`,
+    variant: "shared-native-image-lightbox-consumer",
+  });
+  const html = renderToStaticMarkup(
+    React.createElement(MarkdownRuntimeContext.Provider, {
+      value: {
+        channels: [],
+        imetaByUrl: new Map([[href, { m: "image/png", dim: "1080x1920" }]]),
+        onOpenChannel() {},
+        onOpenEntityLink() {},
+        onOpenMessageLink() {},
+        relayOrigin: "https://relay.example",
+      },
+    }, markdown),
+  );
+  assert.match(html, /data-testid="message-image-lightbox-trigger"/);
+  assert.match(html, /data-image-lightbox-trigger=""/);
+  assert.match(html, /data-progressive-image-frame=""/);
+  assert.match(html, /rounded-2xl/);
+  assert.match(html, /width:144px/);
+  assert.match(html, /aria-label="缩放图片：poster"/);
+  assert.match(html, /data-image-lightbox-src="https:\/\/relay.example\/media\/poster.png"/);
+  assert.doesNotMatch(html, /\/api\/v1\//);
+  assert.match(html, /data-image-mosaic-count="3"/);
+  assert.match(html, /h-80 grid-rows-2/);
+  assert.match(html, /data-block-media=""/);
+});
+
 test("bare Buzz permalinks shorten unavailable channel identifiers", () => {
   const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
   const markdown = renderCachedMarkdown({

@@ -17,9 +17,13 @@ import {
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
 import { Download, ImageOff } from "lucide-react";
+import { ImageBlock, ImageMosaic } from "@client-kit/platform/react/image-lightbox";
+import { Children } from "react";
+import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
+import { toast } from "sonner";
 import { MarkdownMentionChip } from "@client-kit/platform/react/messages/MarkdownMentionChip";
 import { resolveMentionProps } from "@client-kit/platform/react/messages/resolveMentionNames";
-import { type ComponentProps, type ReactNode, createContext, useContext, useState } from "react";
+import { type ComponentProps, type ReactNode, createContext, useContext, useEffect, useRef, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import { parseMessageLink, type ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import remarkBreaks from "remark-breaks";
@@ -36,7 +40,6 @@ import { customEmojiFromTags, remarkCustomEmoji, InlineEmojiPopover } from "@cli
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
-const DEFAULT_IMAGE_DIMENSIONS = { width: IMAGE_MAX_WIDTH, height: IMAGE_MAX_HEIGHT };
 
 type ImageDimensions = { width: number; height: number };
 
@@ -89,15 +92,43 @@ function BffMedia({
   media,
   alt,
   resolveMediaUrl,
+  admittedSources,
 }: {
   media: ImetaMedia;
   alt?: string;
   resolveMediaUrl: (sha256: string) => string;
+  admittedSources: ReadonlySet<string>;
 }) {
   const [failed, setFailed] = useState(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const src = resolveMediaUrl(media.sha256);
+  const copyImageToClipboard = async (imageSrc: string | undefined) => {
+    if (!imageSrc || !admittedSources.has(imageSrc)) return;
+    try {
+      // Gallery entries originate only from this authorized BFF render context.
+      // Refetch under the current user before exposing bytes to the clipboard.
+      const response = await fetch(imageSrc, { credentials: "same-origin", redirect: "error" });
+      if (!response.ok) throw new Error("Image read rejected");
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) throw new Error("Image content type missing");
+      if (!active.current) return;
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      if (active.current) toast.success(t("platform.profile.copied"));
+    } catch {
+      if (active.current) toast.error(t("buzz.copyFailed"));
+    }
+  };
+  const downloadImage = (imageSrc: string | undefined) => {
+    if (!imageSrc || !admittedSources.has(imageSrc)) return;
+    // The browser's existing authenticated download, never Desktop IPC or an
+    // imeta URL's remote origin. The BFF rechecks current media read permission.
+    const anchor = document.createElement("a");
+    anchor.href = imageSrc;
+    anchor.download = alt || t("message.attachmentImage");
+    anchor.click();
+  };
   const dimensions = media.dimensions;
-  const intrinsic = dimensions ?? DEFAULT_IMAGE_DIMENSIONS;
   const scale = dimensions
     ? Math.min(1, IMAGE_MAX_WIDTH / dimensions.width, IMAGE_MAX_HEIGHT / dimensions.height)
     : 1;
@@ -107,6 +138,15 @@ function BffMedia({
         width: `min(100%, ${Math.max(1, Math.round(dimensions.width * scale))}px)`,
       }
     : { height: `${IMAGE_MAX_HEIGHT}px`, width: `min(100%, ${IMAGE_MAX_WIDTH}px)` };
+
+  if (!failed && !media.mime.startsWith("video/")) {
+    return <ImageBlock alt={alt || t("message.attachmentImage")}
+      copyImageToClipboard={copyImageToClipboard}
+      dim={dimensions ? `${dimensions.width}x${dimensions.height}` : undefined}
+      downloadImage={downloadImage}
+      onError={() => setFailed(true)}
+      resolvedSrc={src} src={src} />;
+  }
 
   return (
     <span
@@ -127,18 +167,7 @@ function BffMedia({
           src={src}
           onError={() => setFailed(true)}
         />
-      ) : (
-        <img
-          alt={alt || t("message.attachmentImage")}
-          className="block h-full w-full object-contain"
-          decoding="async"
-          height={intrinsic.height}
-          loading="lazy"
-          src={src}
-          width={intrinsic.width}
-          onError={() => setFailed(true)}
-        />
-      )}
+      ) : null}
     </span>
   );
 }
@@ -154,7 +183,10 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
       </a>
     );
   }
-  return <BffMedia media={media} alt={alt} resolveMediaUrl={resolveMediaUrl} />;
+  return <span data-block-media="" className="block min-w-0 max-w-full">
+    <BffMedia key={resolveMediaUrl(media.sha256)} media={media} alt={alt} resolveMediaUrl={resolveMediaUrl}
+      admittedSources={new Set([...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)))} />
+  </span>;
 };
 
 function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
@@ -237,6 +269,17 @@ function MarkdownCode({ children, className, node: _node, ...props }: ComponentP
 
 const MARKDOWN_COMPONENTS = {
   ...MESSAGE_BODY_COMPONENTS,
+  p: function MarkdownParagraph({ children }) {
+    // Original Buzz MarkdownParagraph: media wrappers and block spoilers must
+    // not sit inside a paragraph. Multiple standalone images use its mosaic.
+    const childArray = Children.toArray(children);
+    const { imageChildren } = classifyChildren(childArray);
+    if (isImageOnlyParagraph(childArray)) {
+      return <ImageMosaic>{imageChildren}</ImageMosaic>;
+    }
+    if (hasBlockMedia(childArray)) return <div>{children}</div>;
+    return <p>{children}</p>;
+  },
   code: MarkdownCode,
   img: MarkdownImage,
   a: MarkdownLink,
@@ -293,7 +336,7 @@ export function MessageContent({
   });
 
   return (
-    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, resolveMediaUrl, onOpenMessageLink }}>
+    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, onOpenMessageLink }}>
       <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}

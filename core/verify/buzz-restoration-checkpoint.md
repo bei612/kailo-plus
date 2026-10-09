@@ -4895,3 +4895,98 @@ root投递的Web镜像为
 历史dfc全量索引仍1982原样/110共享/0独立授权/6已证残缺/3216未分类，只对应该历史固定提交；
 本轮不重导快照、不增加源码分类计数，不宣称100%还原或生产门禁通过。
 未重复full/check-docs；由root将本节仅追加hunk集中复核入库，继承checkpoint删除不纳入。
+
+## 2026-10-09 原图片灯箱／图库共享迁移：25 路径源码与定向证据
+
+本节只记录当前图库批，不更改既有继承删除。关联 DD-39、DD-75、
+SS-WEB-RELAY、三端主题／i18n 同源及用户固定官方原版恢复要求。
+固定 Buzz 为 `779af8886caae1317b4de962082429867ab61503`；
+固定 buzz-web 为 `a6766c482533d028582d0efcfd3740769f86217c`。
+生成本批 owned patch 时 main 为 `db03ff3926789c7ca8c850d9f4b0825801522687`。
+本节不是全树差异分类完成、发布或设备验收声明。
+
+### 权威、影响、副作用与异常
+
+- 上游支持：`desktop/src/shared/ui/markdown.tsx::ImageZoomOverlay/ImageBlock`、
+  `markdown/ImageMosaic.tsx::ImageMosaic` 与原图库、渐进图片、菜单、缩放控件。
+  直接迁移这些原完整模块到 `client-kit/ts/platform/src/react/image-lightbox/`，
+  Native 原 Markdown／链接预览消费者仍沿原模块导出；Web 实际消息消费者接同一组件。
+- 影响面：原灯箱开闭、滚动锁、焦点归还、键盘前后图、缩放、拖动、渐进图片、
+  马赛克网格、媒体上下文菜单；两宿主仅提供复制／下载实际动作。
+  13 个词条沿 TS 原权威生成 Dart；无契约、表、API、账本、正文权威或状态机变更。
+- 授权接缝：Browser 仍只消费受当前 scope 约束的 imeta→BFF 内容地址，
+  未背书图片保持链接，图库不加入任意远端图片；Native 保留本机原媒体动作。
+  Web 复制再次经 BFF 读取，scope 替换卸载原灯箱及迟到动作反馈，不引入 Desktop IPC。
+- 异常：缺媒体授权／BFF 拒绝不显示可用图片入口；加载错误撤去触发器并显示原失败态；
+  隐藏剧透不可开启；空图库沿原当前图回退；上下文更换移除旧画面与副作用反馈。
+  读取失败不写业务成功，复制异常仅给失败反馈；服务端既有六类错误及 UNKNOWN 语义不变。
+  本批无执行写入／预留／新持久状态，相关幂等、审批间额度与在途任务无新增适用对象。
+
+### 固定官方差异与实际恢复
+
+新增共享 10 文件：ImageZoomOverlay、ImageBlock、imageLightbox、imageReserve、
+ProgressiveImage、MediaContextMenu、ImageLightboxZoomControls、ImageGalleryStatus、
+ImageMosaic、index。Native 删除的三个旧 UI 文件均已迁往共享完整实现且无旧消费者，
+来源 remove_paths 只登记实际迁移；ImageMosaic、utils、imageLightbox 和菜单原路径保留精确导出。
+新共享包出口、Native Markdown／链接预览、Web MessageContent 均有真实消费者，不是 helper-only。
+
+逐项授权差异仅为共享 imports、宿主复制／下载回调、中文默认／英文词条、严格非空
+图库类型及 Web 已有 BFF 媒体边界。原控件、动画、布局、圆角、键盘和网格顺序不重设计。
+此前已提交 helper 比官方多出的六行 revealed-spoiler opacity 绕过没有授权，
+本次删除并恢复原 `isVisibleImageLightboxTrigger` 的 `Number(style.opacity) === 0` 判定。
+
+实际检查发现 Web 缺原 `MarkdownParagraph→ImageMosaic` 消费，
+图片剧透 div 嵌在默认 p，连续图片也没有原三图网格；现已迁移原 ImageMosaic，
+复用既有 classifyChildren/isImageOnlyParagraph/hasBlockMedia 与原 data-block-media wrapper。
+ImageMosaic 迁移前归一 import／来源头后与固定原件 diff 0，之后只作既有 Biome 格式化。
+该图库批没有重新导出全树清单；历史 dfc7 比较点的
+1982 原样／110 共享／0 独立授权／6 残缺／3216 未分类不能外推为当前 main 分类完成。
+
+### 原命令、实际终态与失败保留
+
+复用原 `kailo-agent-receipt-xvkujx`，实际 4 CPU／8 GiB，
+Node heap 3072 MiB、Vitest maxWorkers=1；启动前 top 仅 sleep，主机 available 24 GiB，
+IO full avg10 4.46，cgroup oom_kill 原基线 2 未增长。没有新 SDK、下载、镜像或 bundle。
+候选为 `/evidence/profile-settings-ortsoo.DRR20F/apps`；正式 25 输入／候选 cmp 全 0。
+
+原命令（均在该受限 SDK／对应候选目录执行）：
+
+- `python3 tools/gen-platform-i18n.py`、`--check`：0；Dart 仅新增本批 13 keys，reason_text cmp 0。
+- Web：`node node_modules/vitest/vitest.mjs run src/features/chat/ui/MessageContent.test.tsx --maxWorkers=1`：
+  最终 14/14，恢复后同目标 14/14，exit 0。
+- Native：`node --import ./test-loader.mjs --experimental-strip-types --test --test-name-pattern="Native markdown keeps the original image trigger" src/shared/ui/markdown.test.mjs`：
+  实际 Markdown SSR、原触发器与三图网格 1/1，恢复后同目标 1/1，exit 0。
+- shared `tsc --noEmit`、`tsc --noEmit -p tsconfig.test.json`、Web／Native `tsc --noEmit`：各 0。
+  加入 ImageMosaic 后又串行验证 shared／Web／Native 类型各 0。
+- `biome format client-kit/ts/platform/src/react/image-lightbox`：最终检查 10 文件 exit 0；
+  原 owned `git diff --check` 0。Native／Web旧大文件没有全份重排。
+- 私有原触发器 onClick 断开：真实 Web 目标 2 failed／12 passed，exit 1。
+  单独断开 Web 图片 onError 消费：真实拒绝图片用例 1 failed／13 skipped，exit 1。
+  断开 Native 实际 SharedImageBlock wrapper：实际 SSR 1 failed，exit 1。
+  三处按原字节还原 cmp 0，恢复后上述 Web14／Native1 均 0。
+- 最早仅去掉共享内层隐藏剧透 guard 的一次试探仍 1 passed，不算负向命中，原日志保留。
+  第一次共享格式检查捕获六行恢复处缩进，exit 1；修复仅空白后最终 0。
+  早先组合格式入口另有缺候选配置／nested-root 配置错误，不记为完整格式通过。
+- jsdom 原 SpoilerParticles 的 canvas getContext 未实现警告仍保留，不安装或模拟 canvas；
+  实际 p/div hydration 警告在原段落消费者恢复后已消失。
+  未运行 full、Cargo、镜像构建、发布或 Windows／Mobile 检查；不以定向目标代替全局门禁。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/image-viewer.SYEpEQ/`。
+包含 i18n-{generate,check}.log、web-positive.log、native-positive.log、四侧 *-types.log、
+web-final-positive.log、native-final-positive.log、三侧 *-final-types.log、
+web-hidden-guard-mutation.log、web-consumer-mutation.log、web-error-consumer-mutation.log、
+native-consumer-mutation.log、web-restored.log、native-restored.log、
+shared-format.log、shared-format-restored.log、i18n-final-check.log。
+
+owned-paths.txt 为 25 路径；owned-source.patch 为 +2561/-2180，SHA-256
+`4aba3d4eff558cfd51d383179180b783360633dc8381e6aeabae03af0b89650f`，
+原工作树 reverse check 0。
+fixed-upstream-owned-ui.patch 为固定 Buzz 8 个原 Native 路径的全文对照，不是全树分类，
+SHA-256 `89e5882f52c6f121837cf60ee6e57e551c4f0af61c8bc817750b37d2ee37ef9f`。
+归类为真实共享迁移和逐项宿主／BFF／i18n 接缝，不能笼统称全部已授权或 100% 一致。
+
+本批 25 源码路径已冻结交 root 复核提交，尚未部署；没有新版业务截图。
+旧线上 7e1b 的 25 张已复核截图只证明旧版已记录状态，不能验本批灯箱／网格新代码。
+真实浏览器缩放、拖拽、复制／下载与当前业务图片的布局、Windows 实包、Mobile 均未验；
+Mobile 不因本批 Web/Desktop 共享而增加组件宿主或绕过持钥边界。

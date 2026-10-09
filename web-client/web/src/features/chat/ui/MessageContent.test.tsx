@@ -7,6 +7,7 @@ import { createBffClient } from "@client-kit/platform/client";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { t } from "@/shared/i18n";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -147,9 +148,11 @@ describe("MessageContent", () => {
       />,
     );
 
-    expect(html).toContain('data-protected-image-frame="true"');
+    expect(html).toContain('data-progressive-image-frame=""');
+    expect(html).toContain('data-image-lightbox-trigger=""');
+    expect(html).toContain('rounded-2xl');
     expect(html).toContain("aspect-ratio:1080 / 1920");
-    expect(html).toContain("width:min(100%, 144px)");
+    expect(html).toContain("width:144px");
     // 平台：媒体按 imeta 的 hash 经 BFF 同源读取，不指向 Relay
     expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
     expect(html).not.toContain(`src="${IMAGE_URL}"`);
@@ -175,5 +178,98 @@ describe("MessageContent", () => {
 
     expect(html).toContain("<video");
     expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
+  });
+
+  it("renders the original image-only triptych and block-media paragraph through the shared mosaic", () => {
+    const urls = [IMAGE_URL, "https://relay.example.com/media/second.png", "https://relay.example.com/media/third.png"];
+    const hashes = [SHA, "cd".repeat(32), "ef".repeat(32)];
+    const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+      content={urls.map((url, index) => `![image ${index}](${url})`).join("\n")}
+      mediaTags={urls.map((url, index) => ["imeta", `url ${url}`, "m image/png", `x ${hashes[index]}`])} />);
+    expect(html).toContain('data-image-mosaic-count="3"');
+    expect(html).toContain("h-80 grid-rows-2");
+    expect(html).toContain("[&amp;_[data-block-media]:first-child]:row-span-2");
+    expect(html.match(/data-block-media=""/g)).toHaveLength(3);
+    expect(html.match(/data-image-lightbox-trigger=""/g)).toHaveLength(3);
+    expect(html).not.toContain("<p>");
+    expect(html).not.toContain(`src="${IMAGE_URL}"`);
+  });
+
+  it("opens the original viewer, navigates only this message's admitted gallery and retains zoom/escape/focus", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const otherSha = "cd".repeat(32);
+    const otherUrl = "https://relay.example.com/media/second.png";
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, toJSON: () => ({}) });
+    // jsdom has no layout; supply only actual visible geometry, not viewer behavior.
+    const getComputedStyle = window.getComputedStyle.bind(window);
+    const style = vi.spyOn(window, "getComputedStyle").mockImplementation(element => {
+      const computed = getComputedStyle(element);
+      // jsdom does not supply the browser's default computed opacity.
+      if (!computed.opacity) computed.opacity = "1";
+      return computed;
+    });
+    try {
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><TooltipProvider><MessageContent workspaceId={WORKSPACE}
+        content={`![poster](${IMAGE_URL})\n\n![second](${otherUrl})\n\n![untrusted](https://untrusted.example/image.png)`}
+        mediaTags={[["imeta", `url ${IMAGE_URL}`, "m image/png", `x ${SHA}`], ["imeta", `url ${otherUrl}`, "m image/png", `x ${otherSha}`]]} /></TooltipProvider></PlatformProvider>));
+      const triggers = host.querySelectorAll<HTMLButtonElement>('[data-image-lightbox-trigger]');
+      expect(triggers).toHaveLength(2);
+      triggers[0].focus();
+      await act(async () => triggers[0].click());
+      let dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
+      expect(dialog).not.toBeNull();
+      expect(dialog.className).toContain("video-review-theme");
+      expect(dialog.querySelector("img")?.getAttribute("src")).toBe(`/api/v1/workspaces/${WORKSPACE}/media/${SHA}`);
+      expect(dialog.querySelector('[role="status"]')?.textContent).toBe("1 / 2");
+      expect(document.body.style.overflow).toBe("hidden");
+      expect(host.getAttribute("inert")).toBe("");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+      expect(dialog.querySelector('[role="status"]')?.textContent).toBe("2 / 2");
+      expect(dialog.querySelector('[aria-label="Next image"]')).toBeNull();
+      const range = dialog.querySelector<HTMLInputElement>('[aria-label="Image zoom"]')!;
+      expect(range.min).toBe("1"); expect(range.max).toBe("3");
+      await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click());
+      expect(Number(range.value)).toBeGreaterThan(1);
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      await act(async () => new Promise(resolve => window.setTimeout(resolve, 300)));
+      dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
+      expect(dialog).toBeNull();
+      expect(document.body.style.overflow).not.toBe("hidden");
+      expect(host.hasAttribute("inert")).toBe(false);
+      expect(document.activeElement).toBe(triggers[0]);
+    } finally {
+      await act(async () => root.unmount()); host.remove(); rect.mockRestore(); style.mockRestore();
+    }
+  });
+
+  it("never opens hidden spoiler media and removes the viewer on scope replacement or denied media reads", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, toJSON: () => ({}) });
+    const render = async (workspaceId: string, hidden = false) => act(async () => root.render(<PlatformProvider client={client} locale="en"><TooltipProvider><MessageContent workspaceId={workspaceId}
+      content={hidden ? `||![poster](${IMAGE_URL})||` : `![poster](${IMAGE_URL})`}
+      mediaTags={[["imeta", `url ${IMAGE_URL}`, "m image/png", `x ${SHA}`]]} /></TooltipProvider></PlatformProvider>));
+    try {
+      await render(WORKSPACE, true);
+      expect(host.querySelector("p .buzz-spoiler--block")).toBeNull();
+      const hidden = host.querySelector<HTMLButtonElement>('[data-image-lightbox-trigger]')!;
+      expect(hidden.tabIndex).toBe(-1);
+      await act(async () => hidden.click());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      await render("00000000-0000-4000-8000-000000000002");
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-image-lightbox-trigger]')!.click());
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      await render(WORKSPACE);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      await act(async () => host.querySelector("img")!.dispatchEvent(new Event("error")));
+      expect(host.querySelector('[data-image-lightbox-trigger]')).toBeNull();
+      expect(host.textContent).toContain(t("message.imageFailed"));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount()); host.remove(); rect.mockRestore();
+    }
   });
 });

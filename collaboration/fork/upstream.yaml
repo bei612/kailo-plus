@@ -62,6 +62,10 @@ remove_paths:
   # Original code-block clipboard is shared; Native UI injects its host fallback.
   - desktop/src/shared/lib/codeBlockClipboard.ts
   - desktop/src/shared/ui/popoverSurface.ts
+  # Original image viewer controls and progressive image now share the complete client-kit viewer.
+  - desktop/src/shared/ui/markdown/ImageGalleryStatus.tsx
+  - desktop/src/shared/ui/markdown/ImageLightboxZoomControls.tsx
+  - desktop/src/shared/ui/markdown/ProgressiveImage.tsx
   - .github/workflows/desktop-release-cache-proof.yml
   - .github/workflows/desktop-release-candidate.yml
   - .github/workflows/linux-canary.yml
