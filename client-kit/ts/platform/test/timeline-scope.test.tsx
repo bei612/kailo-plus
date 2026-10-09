@@ -23,6 +23,44 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
 });
 
+it("restores the original empty DM introduction and overlapping three-person preview in both languages", async () => {
+  const participants = ["Alice", "Bob", "Carol", "Dave", "Eve"].map((displayName, index) => ({id:String(index),displayName,avatarUrl:null}));
+  const renderParticipant = vi.fn((participant, className) => <button className={className}>{participant.displayName}</button>);
+  const intro = {displayName:"Alice, Bob, Carol, +2 more",participants,renderParticipant};
+  const host = await render(<MessageTimelineSurface channelId="dm-intro" messages={[]} directMessageIntro={intro} renderList={() => null}/>);
+  const surface = host.querySelector('[data-testid="message-dm-intro"]')!;
+  expect(surface.className).toBe("mt-auto flex w-full flex-col items-start px-3 py-2 text-left");
+  expect(surface.textContent).toContain("This is the beginning of your direct message with Alice, Bob, Carol, +2 more.");
+  expect(surface.querySelectorAll('[data-testid="message-dm-intro-avatar-stack-participant"]')).toHaveLength(3);
+  expect(surface.querySelector('[data-testid="message-dm-intro-avatar-stack-more"]')?.textContent).toBe("+2");
+  expect(surface.querySelectorAll("button")[0]?.className).toBe("h-[60px] w-[60px] text-base ring-2 ring-background");
+  expect(surface.querySelectorAll("button")[2]?.className).toContain("ring-2 ring-background");
+  expect(host.querySelector('[data-testid="message-empty"]')).toBeNull();
+  await act(async()=>setLocale("zh-CN"));
+  expect(surface.textContent).toContain("这是你与Alice, Bob, Carol, +2 more的私聊开始。");
+});
+
+it("keeps the original DM intro as the first actual list row and suppresses it during loading or terminal empty error", async () => {
+  const intro = {displayName:"Alice",participants:[{id:"alice",displayName:"Alice",avatarUrl:null}],
+    renderParticipant: (_participant: unknown,className:string) => <span className={className}>avatar</span>};
+  function IntroHost() {
+    const [mode,setMode] = useState("list");
+    return <><button onClick={()=>setMode("loading")}>Load</button><button onClick={()=>setMode("error")}>Error</button>
+      <MessageTimelineSurface channelId="dm-intro" messages={mode==="list"?messages:[]} directMessageIntro={intro}
+        isLoading={mode==="loading"} isError={mode==="error"} hasOlderMessages
+        renderList={props=><section data-testid="real-list">{props.leadingContent}<p>message row</p></section>}/></>;
+  }
+  const host = await render(<IntroHost/>);
+  const list=host.querySelector('[data-testid="real-list"]')!;
+  expect(list.firstElementChild?.getAttribute("data-testid")).toBe("message-dm-intro");
+  expect(list.firstElementChild?.className).toBe("mb-2 flex w-full flex-col items-start px-3 pb-2 pt-2 text-left");
+  expect(list.querySelector('[data-testid="message-dm-intro-avatar-stack-participant"] span')?.className).toBe("h-[60px] w-[60px] text-base");
+  await click(host.querySelectorAll("button")[0]!);
+  expect(host.querySelector('[data-testid="message-dm-intro"]')).toBeNull();
+  await click(host.querySelectorAll("button")[1]!);
+  expect(host.querySelector('[data-testid="message-dm-intro"]')).toBeNull();
+});
+
 it("restores the original destructive menu, confirmation and UNKNOWN retry without optimistic deletion", async () => {
   const target={...messages[0]!,id:"delete-target"};
   const remove=vi.fn().mockRejectedValueOnce(new TransportError("Lost receipt")).mockResolvedValueOnce(undefined);

@@ -327,6 +327,8 @@ enum PlatformMessageKey {
   dmAttachmentUnavailable,
   dmSentNavigationFailed,
   dmOpenConversation,
+  dmIntroPrefix,
+  dmIntroSuffix,
   platformNotificationsDescription,
   platformNotificationsUnavailable,
   platformNotificationsBlocked,
@@ -2657,6 +2659,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '消息已发送，但未能打开会话。',
   ),
   PlatformMessageKey.dmOpenConversation: ('Open conversation', '打开会话'),
+  PlatformMessageKey.dmIntroPrefix: (
+    'This is the beginning of your direct message with ',
+    '这是你与',
+  ),
+  PlatformMessageKey.dmIntroSuffix: ('.', '的私聊开始。'),
   PlatformMessageKey.platformNotificationsDescription: (
     'Desktop alerts are on by default. Fine-tune what gets through below.',
     '桌面提醒默认开启，可在下方调整提醒内容。',

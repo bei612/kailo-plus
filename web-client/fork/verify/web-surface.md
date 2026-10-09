@@ -6388,3 +6388,91 @@ Buzz `779af8886caae1317b4de962082429867ab61503`、buzz-web `a6766c482533d028582d
 只点击既有成员页/资料，不写业务 API、不创建数据或调用 Agent；该会话 console0，语言仍中文、实验偏好保持原值。
 本批两源码尚未部署，新源码业务截图0；上述新图是旧9bc的失败/已有能力证据，不能声称头像修复已浏览器验收。
 Windows/Mobile仍无设备验收，不把 Web 或 Native 类型通过算作设备结果；冻结两路径及本节，仅由 root 精确入库提交。
+
+### 2026-10-09 原 DM 时间线介绍共源接回（源码检查点，运行与视觉未全验）
+
+本节仅追加本批事实，不吸收本文件继承删除；源码开始点为 `c57e4e03a40c9811994ece369b58dc6a5891aa6a`，交接时 main 为 `b7b7ae55aa4216478ba3b4eb9889c417bf1710b1`。
+固定官方 Buzz 为 `779af8886caae1317b4de962082429867ab61503`，不是当前精简页面或自行设计的替代品。
+本批10个源码/检查/生成路径共 `+306/-5`；尚未提交、构建或部署，由 root 精确收口，不以写入量计完成率。
+
+权威、影响面和四类差异：
+
+- 官方 `desktop/src/features/messages/ui/DirectMessageIntroAvatarStack.tsx::DirectMessageIntroAvatarStack` 的60×60头像、三人预览、重叠顺序、ring及溢出数量迁移到共享主体。
+- 官方 `desktop/src/features/messages/ui/MessageTimeline.tsx::MessageTimeline` 的私聊介绍标题/正文、空态与列表首行位置、加载/终态错误门控迁移到现有共享时间线。
+- 官方 `desktop/src/features/channels/ui/ChannelPane.tsx::ChannelPane` 的实际私聊介绍消费者在 Web/Native 两宿主接回，不新建介绍页或摘要卡片。
+- 原样保留：复用已有 `getDmParticipantPreview`、`formatDmParticipantLabel`、`selectTimelineIntroSurface` 的原规则；这不是声称这些完整宿主文件逐字相同。
+- 共享迁移：原头像栈与时间线两个介绍位置共用 TypeScript；保持原60×60、`-ml-5`、`mt-4` 标题及单行正文等实际类名，不重设计。
+- 已授权接缝：人员按可信 Core Principal 分区；Native只用已证明的资料公钥；Web按当前会话/身份/真实作者事件消费既有受权资料读取；中英词条由同源生成。
+- 缺失需恢复：整个原 ChannelPane/MessageTimeline 仍有其它接缝，不能凭本批介绍部分把整文件归为已完成；原DM输入框文案、Agent DM、Activity及其未接通消费者不在本批完成范围。
+- 本批没有新增 Core API、实体、契约字段、数据库迁移、权限权威、状态机或秘密存储；共享可选 prop 保持已有非DM调用兼容，非DM不渲染介绍。
+
+可信身份、边界与异常：
+
+- Native复用实际 `useActiveChannelHeader` 的已准入人物/currentPrincipal分区，不把本人另一设备计作另一个人。
+- 有已证明的资料公钥才调用原 `UserProfilePopover`；无公钥保留原 `UserAvatar` 回退，不伪造公钥、presence、owner或Agent身份。
+- Web复用 `resolveConversationHeaderParticipants`；仅ACTIVE会话、当前完成的成员查询、未撤权且元数据已完成时生成介绍。
+- Web成员目录证明人物而非资料读取权；只对真实已准入消息作者事件开放既有作者资料消费者，无作者事件仅显示原头像回退。
+- Web成员查询键保留原 `platform/conversation-members/workspace` 前缀，加入当前Principal、真实conversation.id及participantPrincipalIds。
+- 同workspace切DM、同DM成员变化、旧身份/旧会话迟到响应隔离缓存；不猜workspace/channel等ID，不新建第二scope权威。
+- 缺人物、重复Principal、非ACTIVE、DENIED及元数据未完成时不展示假介绍；加载/终态错误沿原时间线门控，不把未知结果显示成功。
+- 只展示与受权读取，不新增业务写入、Agent turn、收费调用或审批/额度账本；已有读取错误分类保持原语义。
+- 私聊列表介绍按原规则不要求历史已经耗尽；频道介绍仍沿原history门控，未以此放宽频道行为。
+
+精确源码与检查路径：
+
+1. `client-kit/ts/platform/src/react/messages/timeline/DirectMessageIntroAvatarStack.tsx`（新增，+66）。
+2. `client-kit/ts/platform/src/react/messages/timeline/MessageTimelineSurface.tsx`（+25/-3）。
+3. `client-kit/ts/platform/src/react/messages/timeline/types.ts`（+2）。
+4. `client-kit/ts/platform/src/i18n.ts`（+2）。
+5. `client-kit/ts/platform/test/timeline-scope.test.tsx`（+38）。
+6. `collaboration/desktop/src/features/channels/ui/ChannelPane.tsx`（+22）。
+7. `collaboration/desktop/src/features/channels/ui/ChannelPane.helpers.test.mjs`（+38）。
+8. `web-client/web/src/platform/ui/ChannelPane.tsx`（+26/-1）。
+9. `web-client/web/src/platform/ui/ChannelPane.test.tsx`（+80/-1）。
+10. `client-kit/dart/lib/shared/platform/platform_text.dart`（原同源生成，+7）。
+
+仅新增 `dm.introPrefix/dm.introSuffix` 两词条；英文沿原文，中文默认；溢出数量使用现有 `dm.moreParticipants` 并消费响应式语言。
+Dart由原 `tools/gen-platform-i18n.py` 生成，`reason_text.dart`无变化，未改四侧contracts。
+源码完整owned patch：`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/dm-intro-owned.patch`。
+源码patch SHA256：`e42420cbf817f1e8a85fede62d85c683a6fb54ead5dd822c75a3de0d9a9824f7`；反向check0，10文件正式/候选cmp0，owned差异空白检查0。
+
+实际命令与终态（证据在实现之后）：
+
+- 原SDK为 `kailo-agent-receipt-xvkujx`；实际4CPU/8GiB，Node heap3072，Vitest maxWorkers=1，无新SDK、安装、bundle、镜像或Cargo/Go。
+- 原候选 `/evidence/profile-settings-ortsoo.DRR20F/apps`；只向两个已存在file包副本最小投递本批4生产文件，不改依赖/锁。
+- cgroup最终 `oom=2/oom_kill=2/max=16751` 与旧基线相同，没有本批新增OOM。
+- 首次共享时间线11/11（`dm-intro-shared.log`，handle92981 exit0）发生在最终Principal/cache/语言纠正之前，不作为最后字节验收。
+- 集中handle67445 exit1：shared=1、web=1、native=0、shared_types=0、test_types=0、web_types=2、native_types=2、i18n=0、i18n_check=0。
+- 两个最终Vitest命令为原 `vitest run test/timeline-scope.test.tsx --maxWorkers=1` 及 Web `vitest run src/platform/ui/ChannelPane.test.tsx --maxWorkers=1`。
+- `dm-intro-shared-final.log` 与 `dm-intro-web-final.log` 均是 `Failed to start forks worker / Timeout waiting for worker to respond`，分别60.41/60.78秒，0 case执行；不是测试通过，也不是生产负向命中。
+- 保留两个失败，不放宽timeout、不重复启动；共享/Web新增消费者及切DM/成员变化用例只写入，运行验收仍缺。
+- Web首轮types真实发现私有ProfileAvatar导入不可解析及file包旧副本；改用既有公开 `UserAvatar` 并同步真实共享源，而非stub或改生产版本迁就候选。
+- handle32284 exit0：原Web与Native `tsc --noEmit` 均0；日志 `dm-intro-web-types-final.log`、`dm-intro-native-types-final.log`。
+- handle36553 exit0：最终响应式溢出词条修正后的Web `tsc --noEmit` 0，日志 `dm-intro-web-types-locale-final.log`。
+- 四个最终类型目标为shared source、shared test、Web、Native，实际均0；原同源生成及 `--check` 实际0。
+- 原Native `node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs` 实际5/5，日志 `dm-intro-native-final.log`。
+- 私有候选删除真实MessageTimeline的 `directMessageIntro={directMessageIntro}` prop后，同一原consumer目标真实1 failed/exit1，断言 `0 !== 1`，日志 `dm-intro-native-prop-negative.log`。
+- 原字节恢复cmp0后完整Native目标5/5/exit0，日志 `dm-intro-native-restored.log`；36553摘要 `web_types=0 native_negative=1 restore_cmp=0 native_restored=0`。
+- 这项Native检查读取实际生产initializer及JSX消费者，但不是Tauri/Windows设备验收；共享/Web生产变异未运行，明确跳过。
+- 未重跑full/check-docs；此前full的笼统 `FAIL node --test` 未由本批定位，不声称已消除全局失败。
+
+本批日志统一目录：`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+SDK所有本批目标已终态并释放，不存在本批在途检查；root按既有门禁集中复核、提交、push与后续发布。
+
+实际浏览器与版本边界：
+
+- 沿原 `playwright-cli` 的 `header-restoration` 正常SSO会话只读打开既有DM，未注入Cookie/重置身份/写业务API或执行Agent。
+- 实际运行源码仍 `9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf`，image `sha256:73639ed4a0f91276dc03ca4182de143362a92bc5bd648af1df14100deadd9548`。
+- 运行buildId为 `sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`，不是本批新源码。
+- 新图 `/volumes/kailo/.playwright-cli/kailo-ui-20261008-main9bc0-dm-intro-missing-zh.png` 已实际打开复核，1920×1080，既有两条消息前缺原介绍。
+- 图SHA256 `d9b0e37875da8bd399e0b61f3b40757520d5beef3eca912e2d045f7600ea860f`；该会话console0 errors/0 warnings，中文和偏好未改。
+- 此图仅是旧9bc原缺项证据；本批新源码截图0、未部署，不能把旧图称修复通过；新多人物/英文/刷新状态尚未浏览器验收。
+- Windows/Mobile无实际设备验收；Web实拍和Native类型/Node检查均不得冒充Windows或Mobile结果。
+
+全量diff口径仍保留未分类：
+
+- 原全量TSV为 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/collaboration-dfc7a3383517.classification.tsv`。
+- SHA256 `df5d9cc72776323de5f81c379390b55afe64b346ad8cde42fe9a0c152168b3fc`，固定apps比较点 `dfc7a33835174bbaa9e43e0e335c2f12959edfeb`，不是当前b7b7ae55全量已复核。
+- 该原件union5314/rawdiff3332：1982原样blob一致、110已证共享迁移、0独立授权归档、6已证残缺、3216未分类；不把未分类笼统归为治理改造。
+- blob相同只证明源码原样，不证明功能/视觉验收；原路径不存在也不自动证明功能缺失。本批只追加上述已定位模块事实，没有重导全量或改旧快照基准。
+- Settings仍7/16及9分区真实缺口、Agent/Activity与其他未恢复模块均保留，不能称100%还原或生产就绪。

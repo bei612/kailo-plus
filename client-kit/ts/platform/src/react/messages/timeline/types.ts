@@ -4,12 +4,14 @@ import type { MainTimelineEntry } from "../thread/threadPanel";
 import type { ChannelWindowThreadSummary } from "../../forum/channelWindowResponse";
 import type { ChannelIntro } from "./ChannelIntroBlock";
 import type { TimelineVirtualizerApi } from "./VirtualizedTimelineRows";
+import type { DirectMessageIntroPerson, DirectMessageParticipantRenderer } from "./DirectMessageIntroAvatarStack";
 type UserProfileLookup = Record<string, import("../../pulse/host").UserProfileSummary>;
 export type MessageTimelineProps = {
   /** Actual rows admitted by the Relay window, including orphan replies. */
   authoritativeRowIds?: ReadonlySet<string>;
   channelId?: string | null;
   channelIntro?: ChannelIntro | null;
+  directMessageIntro?: { displayName: string; participants: DirectMessageIntroPerson[]; renderParticipant: DirectMessageParticipantRenderer } | null;
   channelName?: string;
   messages: TimelineMessage[];
   mainEntries?: MainTimelineEntry[];

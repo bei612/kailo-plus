@@ -57,6 +57,10 @@ import { useFocusDrawerPresence, useRoutedMessageEdit } from "@client-kit/platfo
 import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
+import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
+import { UserAvatar } from "@client-kit/platform/react/messages";
+import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
+import { useUiT } from "@client-kit/platform/react/context";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
@@ -122,6 +126,7 @@ export function ChannelPane({
   restoreEditEventId?: string;
   onStartDm?: (pubkey: string) => void;
 }) {
+  const uiT = useUiT();
   const queryClient = useQueryClient();
   const threadViewMode = useThreadViewMode();
   const threadOverlay = useIsThreadPanelOverlay();
@@ -202,7 +207,8 @@ export function ChannelPane({
   useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   const visible = useVisible();
   const members = useQuery({
-    queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId],
+    queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId, myPrincipalId,
+      conversation ? {conversationId:conversation.id,participantPrincipalIds:conversation.participantPrincipalIds} : null],
     queryFn: async () => {
       if (!conversation) return bff.members(workspaceId);
       const items: ConversationParticipant[] = [];
@@ -280,6 +286,24 @@ export function ChannelPane({
     handledRouteTarget.current = key;
   }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
+  const directMessageIntro = useMemo<MessageTimelineProps["directMessageIntro"]>(() => {
+    if (!conversation || !live || denied || metadataPending || !members.isSuccess || members.isError || members.isFetching) return null;
+    const people = resolveConversationHeaderParticipants(conversation, myPrincipalId, members.data ?? []);
+    if (!people) return null;
+    const participants = people.map(person => ({id:person.principalId,displayName:person.displayName,avatarUrl:null}));
+    return {displayName:formatDmParticipantDisplayName(participants, uiT), participants,
+      renderParticipant: (participant, className) => {
+        // The directory proves recipients, not profile authority. Only an
+        // admitted author event can open/read a DM participant's profile.
+        const person = people.find(person => person.principalId === participant.id)!;
+        const author = timelineMessages.find(message => message.pubkey && person.pubkeys.includes(message.pubkey));
+        if (!author?.pubkey) return <UserAvatar avatarUrl={null} className={className} displayName={participant.displayName} shape="circle" size="md"/>;
+        const target = {principalId:myPrincipalId,workspaceId,conversationId:conversation.id,eventId:author.id,pubkey:author.pubkey};
+        return <MessageAuthorIdentity target={target} onOpen={() => handleOpenAuthor(author)}>
+          <MessageAuthorAvatar target={target} className={className} displayName={participant.displayName}/>
+        </MessageAuthorIdentity>;
+      }};
+  }, [conversation, live, denied, metadataPending, members.isSuccess, members.isError, members.isFetching, members.data, myPrincipalId, workspaceId, timelineMessages, handleOpenAuthor, uiT]);
   const { handleEditLastOwnMainMessage, routeEdit: handleRoutedEdit } = useRoutedMessageEdit({
     activeChannelId: JSON.stringify([myPrincipalId, conversation?.id ?? workspaceId]),
     channelIsCovered,
@@ -470,6 +494,7 @@ export function ChannelPane({
         ref={timelineRef}
         channelId={`${myPrincipalId}:${conversation?.id ?? workspaceId}`}
         channelName={channelName}
+        directMessageIntro={directMessageIntro}
         messages={routedTimelineMessages}
         authoritativeRowIds={window.authoritativeRowIds}
         threadSummaries={window.threadSummaries}

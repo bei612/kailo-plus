@@ -23,6 +23,7 @@ const state = vi.hoisted(() => ({
   stop: vi.fn(),
   reason: (reason: string) => reason,
   members: { isSuccess: true, data: [] as { principalId: string; pubkeys: string[]; displayName: string }[] },
+  memberReads: [] as (readonly unknown[])[],
   userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {}, conversationPreferences: {} as Record<string, {muted: boolean}> } },
   notify: vi.fn(),
   richContent: false,
@@ -40,7 +41,13 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
   useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) => options.queryKey.some(key => key === "members" || key === "conversation-members") ? state.members : options.queryKey.includes("custom-emoji") ? state.emoji : state.userState,
+  useQuery: (options: { queryKey: readonly unknown[] }) => {
+    if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
+      state.memberReads.push(options.queryKey);
+      return state.members;
+    }
+    return options.queryKey.includes("custom-emoji") ? state.emoji : state.userState;
+  },
   useInfiniteQuery: () => state.infinite,
   useQueryClient: () => state.queryClient,
   useMutation: () => state.mutation,
@@ -135,6 +142,7 @@ beforeEach(async () => {
   state.route.thread.isSuccess=true;state.route.thread.isError=false;state.route.thread.isFetching=false;
   state.routeRead.mockClear();
   state.members.data = [];
+  state.memberReads = [];
   state.userState.data.conversationPreferences = {};
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -220,6 +228,77 @@ it("opens a DM mention against the admitted second-device author event and drops
   expect(host.querySelector('[data-testid="close-author"]')).toBeNull();
   expect(host.querySelector('[data-mention]')).toBeNull();
   expect(render()).not.toContain("admitted second-device message");
+});
+
+it("restores the actual DM intro once per human, using the admitted second-device author for profile access", async () => {
+  const ownKey="11".repeat(32), firstKey="22".repeat(32), secondKey="33".repeat(32);
+  const conversation={id:"dm-intro",channelId:"dm-channel",state:ItemState.Active,
+    participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
+  state.members.data=[{principalId:"human-a",pubkeys:[ownKey,"44".repeat(32)],displayName:"Me"},
+    {principalId:"human-b",pubkeys:[firstKey,secondKey],displayName:"Alice"}];
+  await act(async()=>root.render(<TooltipProvider><ChannelPane key="dm-intro" workspaceId={conversation.id}
+    myPrincipalId="human-a" conversation={conversation}/></TooltipProvider>));
+  await act(async()=>{
+    state.receive!({type:"snapshot",events:[{id:"dm-intro-bounds",pubkey:"relay",kind:39006,created_at:1,
+      tags:[["d",`${conversation.channelId}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+    state.receive!({type:"live"});
+  });
+  let intro=host.querySelector('[data-testid="message-dm-intro"]');
+  expect(state.memberReads).toContainEqual(["platform","conversation-members",conversation.id,"human-a",
+    {conversationId:conversation.id,participantPrincipalIds:conversation.participantPrincipalIds}]);
+  expect(intro?.textContent).toContain("This is the beginning of your direct message with Alice.");
+  expect(intro?.querySelectorAll('[data-testid="message-dm-intro-avatar-stack-participant"]')).toHaveLength(1);
+  expect(intro?.querySelector('[role="button"]')).toBeNull();
+  const author={id:"55".repeat(32),pubkey:secondKey,kind:9,created_at:2,tags:[["h",conversation.channelId]],content:"actual DM author"};
+  await act(async()=>state.receive!({type:"event",event:author}));
+  intro=host.querySelector('[data-testid="message-dm-intro"]');
+  const profileTrigger=intro?.querySelector<HTMLElement>('[role="button"]');
+  expect(profileTrigger).not.toBeNull();
+  await act(async()=>profileTrigger!.click());
+  expect(JSON.parse(host.querySelector<HTMLElement>('[data-testid="close-author"]')!.dataset.authorTarget!)).toEqual({
+    principalId:"human-a",workspaceId:conversation.id,conversationId:conversation.id,eventId:author.id,pubkey:secondKey});
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.querySelector('[data-testid="message-dm-intro"]')).toBeNull();
+});
+
+it.each(["missing-recipient","duplicate-principal","inactive-conversation"])("does not present a DM intro from %s directory facts",async boundary=>{
+  const ownKey="11".repeat(32),peerKey="22".repeat(32);
+  const conversation={id:"dm-untrusted-intro",channelId:"dm-channel",state:boundary==="inactive-conversation"?ItemState.Disabled:ItemState.Active,
+    participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
+  state.members.data=[{principalId:"human-a",pubkeys:[ownKey],displayName:"Me"}];
+  if(boundary!=="missing-recipient")state.members.data.push({principalId:"human-b",pubkeys:[peerKey],displayName:"Alice"});
+  if(boundary==="duplicate-principal")state.members.data.push({principalId:"human-b",pubkeys:[peerKey],displayName:"Fake duplicate"});
+  await act(async()=>root.render(<TooltipProvider><ChannelPane key={boundary} workspaceId={conversation.id} myPrincipalId="human-a" conversation={conversation}/></TooltipProvider>));
+  await act(async()=>{state.receive!({type:"snapshot",events:[{id:"dm-untrusted-bounds",pubkey:"relay",kind:39006,created_at:1,
+    tags:[["d",`${conversation.channelId}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});state.receive!({type:"live"});});
+  expect(host.querySelector('[data-testid="message-dm-intro"]')).toBeNull();
+});
+
+it("partitions the actual recipient read when the same workspace switches DM or that DM's people change", async () => {
+  const ownKey="11".repeat(32),aliceKey="22".repeat(32),bobKey="33".repeat(32),carolKey="44".repeat(32);
+  const first={id:"dm-first",channelId:"channel-first",state:ItemState.Active,
+    participantPrincipalIds:["human-a","alice"],operationId:"op",version:1};
+  const second={...first,id:"dm-second",channelId:"channel-second",participantPrincipalIds:["human-a","bob"]};
+  const changed={...second,participantPrincipalIds:["human-a","bob","carol"]};
+  async function open(conversation: typeof first) {
+    await act(async()=>root.render(<TooltipProvider><ChannelPane key="switch-dm" workspaceId="same-workspace" myPrincipalId="human-a" conversation={conversation}/></TooltipProvider>));
+    await act(async()=>{state.receive!({type:"snapshot",events:[{id:`${conversation.id}-bounds`,pubkey:"relay",kind:39006,created_at:1,
+      tags:[["d",`${conversation.channelId}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});state.receive!({type:"live"});});
+    expect(state.memberReads).toContainEqual(["platform","conversation-members","same-workspace","human-a",
+      {conversationId:conversation.id,participantPrincipalIds:conversation.participantPrincipalIds}]);
+    return host.querySelector('[data-testid="message-dm-intro"]')?.textContent;
+  }
+  state.members.data=[{principalId:"human-a",pubkeys:[ownKey],displayName:"Me"},{principalId:"alice",pubkeys:[aliceKey],displayName:"Alice"}];
+  expect(await open(first)).toContain("with Alice.");
+  state.members.data=[{principalId:"human-a",pubkeys:[ownKey],displayName:"Me"},{principalId:"bob",pubkeys:[bobKey],displayName:"Bob"},
+    {principalId:"carol",pubkeys:[carolKey],displayName:"Carol"}];
+  expect(await open(second)).toContain("with Bob.");
+  expect(await open(changed)).toContain("with Bob, Carol.");
+  state.members.data.push({principalId:"dave",pubkeys:["55".repeat(32)],displayName:"Dave"},
+    {principalId:"eve",pubkeys:["66".repeat(32)],displayName:"Eve"});
+  expect(await open({...second,participantPrincipalIds:["human-a","bob","carol","dave","eve"]})).toContain("with Bob, Carol, Dave, +1 more.");
+  await act(async()=>setLocale("zh-CN"));
+  expect(host.querySelector('[data-testid="message-dm-intro"]')?.textContent).toContain("这是你与Bob, Carol, Dave, +1 人的私聊开始。");
 });
 
 it("copies the actual row's edited reference mention with its exact second-device identity", async () => {

@@ -88,7 +88,8 @@ Desktop／Mobile 的管理面仍经 BFF，Mobile 不成为组件宿主。
 
 原 `tools/check.sh contract` launcher 复用 294 份 pnpm 缓存、下载 0，但
 `dart pub get` 在禁网环境仍尝试 pub.dev 并报 socket error，未执行合同步骤；
-不把此轮算通过。复用上述 SDK 和实际原 `step_contract`，显式回到
+句柄 66916 清理结束后实际退出 2，不把此轮算通过。复用上述 SDK 和实际原
+`step_contract`，显式回到
 `/workspace/apps`，用本批暂存 index 的只读快照核对当前 schema 集；句柄
 62239 终态 0：四侧同步，相对 `contracts-v0.1.0` 的 293 份 schema
 匹配 3 份历史 schema、无破坏性变更。此前旧 index 的 193 份检查和一次错误

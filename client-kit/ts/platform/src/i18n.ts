@@ -417,6 +417,8 @@ export const platformMessages = {
   "dm.attachmentUnavailable": { en: "Attachment was not uploaded in this conversation view.", "zh-CN": "附件并非在当前会话页面上传。" },
   "dm.sentNavigationFailed": { en: "Message sent. The conversation could not be opened.", "zh-CN": "消息已发送，但未能打开会话。" },
   "dm.openConversation": { en: "Open conversation", "zh-CN": "打开会话" },
+  "dm.introPrefix": { en: "This is the beginning of your direct message with ", "zh-CN": "这是你与" },
+  "dm.introSuffix": { en: ".", "zh-CN": "的私聊开始。" },
   "platform.notifications.description": { en: "Desktop alerts are on by default. Fine-tune what gets through below.", "zh-CN": "桌面提醒默认开启，可在下方调整提醒内容。" },
   "platform.notifications.unavailable": { en: "Unavailable", "zh-CN": "不可用" },
   "platform.notifications.blocked": { en: "Blocked", "zh-CN": "已阻止" },

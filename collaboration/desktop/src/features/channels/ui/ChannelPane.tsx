@@ -31,6 +31,12 @@ import {
 import { buildVideoReviewPresentationByMessageId } from "@/features/messages/lib/videoReviewContext";
 import { useComposerHeightPadding } from "@/features/messages/ui/useComposerHeightPadding";
 import { UserProfilePanel } from "@/features/profile/ui/UserProfilePanel";
+import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
+import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
+import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
+import { useUiT } from "@client-kit/platform/react/context";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import { ThreadPanelSurface } from "@/features/channels/ui/ThreadPanelSurface";
 import { ThreadViewModeToggle } from "@/features/channels/ui/ThreadViewModeToggle";
@@ -114,6 +120,21 @@ export const ChannelPane = React.memo(function ChannelPane({
   threadFirstUnreadReplyId,
 }: ChannelPaneProps) {
   const timelineScrollRef = React.useRef<HTMLDivElement>(null);
+  const t = useUiT();
+  const { activeDmHeaderParticipants } = useActiveChannelHeader(activeChannel, currentPubkey);
+  const directMessageIntro = React.useMemo(() => {
+    if (activeChannel.channelType !== "dm" || activeDmHeaderParticipants.length === 0) return null;
+    const participants = activeDmHeaderParticipants.map(person => ({...person,pubkey:person.profilePubkey}));
+    const intro: NonNullable<MessageTimelineProps["directMessageIntro"]> = {
+      displayName:formatDmParticipantDisplayName(participants, t),participants,
+      renderParticipant: (participant, className) => {
+        const avatar=<UserAvatar avatarUrl={participant.avatarUrl} className={className}
+          displayName={participant.displayName} shape="circle" size="md"/>;
+        return participant.pubkey ? <UserProfilePopover pubkey={participant.pubkey} triggerElement="span"
+          triggerAriaLabel={t("members.openProfile",{name:participant.displayName})}>{avatar}</UserProfilePopover> : avatar;
+      }};
+    return intro;
+  }, [activeChannel.channelType, activeDmHeaderParticipants, t]);
   const community = useActiveCommunity();
   const { recordThreadInteraction } = useAppShell();
   const toggleReaction = useToggleReactionMutation(activeChannel, currentPubkey);
@@ -408,6 +429,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               ref={messageTimelineRef}
               channelId={activeChannel.id}
               channelIntro={channelIntro}
+              directMessageIntro={directMessageIntro}
               scrollContainerRef={timelineScrollRef}
               currentPubkey={currentPubkey}
               fetchOlder={fetchOlder}

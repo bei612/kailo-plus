@@ -16,6 +16,7 @@ import { TooltipProvider } from "../../sidebar/tooltip";
 import { useCommittedEmptyTimeline } from "./useCommittedEmptyTimeline";
 import { UnreadPill, unreadCountLabel } from "./UnreadPill";
 import { ChannelIntroBlock } from "./ChannelIntroBlock";
+import { DirectMessageIntroAvatarStack } from "./DirectMessageIntroAvatarStack";
 import { MessageTimelineErrorCard } from "./MessageTimelineErrorCard";
 import { TimelineSkeleton, useTimelineSkeletonRows } from "./TimelineSkeleton";
 import type { MessageTimelineProps, TimelineMessageListProps } from "./types";
@@ -68,6 +69,7 @@ const MessageTimelineBase = React.forwardRef<
   {
     channelId,
     channelIntro = null,
+    directMessageIntro = null,
     messages,
     mainEntries,
     authoritativeRowIds,
@@ -184,7 +186,7 @@ const MessageTimelineBase = React.forwardRef<
     setTimelineVirtualizerApi(null);
   }, [scrollContainerRef, scrollContainerDomKey]);
 
-  const hasPersistentIntro = channelIntro !== null;
+  const hasPersistentIntro = channelIntro !== null || directMessageIntro !== null;
   const timelineIsLoading = isLoading || isDeferredSnapshotStale;
   const preserveSettledEmptyIntro = useCommittedEmptyTimeline({
     channelId: channelId ?? null,
@@ -328,6 +330,7 @@ const MessageTimelineBase = React.forwardRef<
     ? null
     : selectTimelineIntroSurface({
         hasChannelIntro: channelIntro !== null,
+        hasDirectMessageIntro: directMessageIntro !== null,
         hasReachedChannelStart:
           !isRenderedTimelineBehindHistoryPrepend(deferredMessages, messages) &&
           !isHoldingPrepend &&
@@ -335,8 +338,9 @@ const MessageTimelineBase = React.forwardRef<
         isSkeletonVisible: showTimelineSkeleton,
       });
   const showChannelIntro = timelineIntroSurface === "channel-intro";
+  const activeDirectMessageIntro = timelineIntroSurface === "direct-message-intro" ? directMessageIntro : null;
   const activeChannelIntro = showChannelIntro ? channelIntro : null;
-  const showIntro = activeChannelIntro !== null;
+  const showIntro = activeChannelIntro !== null || activeDirectMessageIntro !== null;
   const showGenericEmpty = timelineBodySurface === "empty" && !showIntro;
   const showMessageList = timelineBodySurface === "list";
   const omitHistoryLeadIn = activeChannelIntro !== null && !showMessageList;
@@ -500,8 +504,16 @@ const MessageTimelineBase = React.forwardRef<
     () =>
       activeChannelIntro ? (
         <ChannelIntroBlock className="pb-4 pt-2" intro={activeChannelIntro} />
+      ) : activeDirectMessageIntro ? (
+        <div className="mb-2 flex w-full flex-col items-start px-3 pb-2 pt-2 text-left" data-testid="message-dm-intro">
+          <DirectMessageIntroAvatarStack participants={activeDirectMessageIntro.participants} renderParticipant={activeDirectMessageIntro.renderParticipant}/>
+          <p className="mt-4 max-w-full truncate text-xl font-semibold leading-7 tracking-tight text-foreground">{activeDirectMessageIntro.displayName}</p>
+          <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
+            {t("dm.introPrefix")}<span className="font-medium text-foreground">{activeDirectMessageIntro.displayName}</span>{t("dm.introSuffix")}
+          </p>
+        </div>
       ) : null,
-    [activeChannelIntro],
+    [activeChannelIntro, activeDirectMessageIntro, t],
   );
 
   const handleVirtualizerRangeChanged = React.useCallback(() => {
@@ -661,6 +673,16 @@ const MessageTimelineBase = React.forwardRef<
                 ) : null}
                 {showTimelineError ? (
                   <MessageTimelineErrorCard onRetry={onRetry} />
+                ) : null}
+
+                {activeDirectMessageIntro ? (
+                  <div className="mt-auto flex w-full flex-col items-start px-3 py-2 text-left" data-testid="message-dm-intro">
+                    <DirectMessageIntroAvatarStack participants={activeDirectMessageIntro.participants} renderParticipant={activeDirectMessageIntro.renderParticipant}/>
+                    <p className="mt-4 max-w-full truncate text-xl font-semibold leading-7 tracking-tight text-foreground">{activeDirectMessageIntro.displayName}</p>
+                    <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
+                      {t("dm.introPrefix")}<span className="font-medium text-foreground">{activeDirectMessageIntro.displayName}</span>{t("dm.introSuffix")}
+                    </p>
+                  </div>
                 ) : null}
 
                 {activeChannelIntro ? (
