@@ -12,11 +12,15 @@ import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 
 export function useComposerVoiceNote({
   draftKey,
+  editTargetId,
   media,
+  setEmojiPickerOpen,
   setFormattingOpen,
 }: {
   draftKey: string | null | undefined;
+  editTargetId: string | null;
   media: MediaUploadController;
+  setEmojiPickerOpen: (open: boolean) => void;
   setFormattingOpen: (open: boolean) => void;
 }) {
   const recorder = useVoiceNoteRecorder();
@@ -34,16 +38,17 @@ export function useComposerVoiceNote({
   getAttachmentsRef.current = getAttachments;
   const onBeforeStartRef = React.useRef(() => {});
   onBeforeStartRef.current = () => {
+    setEmojiPickerOpen(false);
     setFormattingOpen(false);
   };
-  const currentDraftKeyRef = React.useRef(draftKey);
-  currentDraftKeyRef.current = draftKey;
-  const recordingDraftKeyRef = React.useRef(draftKey);
+  const currentContextRef = React.useRef({ draftKey, editTargetId });
+  currentContextRef.current = { draftKey, editTargetId };
+  const recordingContextRef = React.useRef({ draftKey, editTargetId });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the composer identity is the cancellation trigger
+  // biome-ignore lint/correctness/useExhaustiveDependencies: composer identity fields are the cancellation triggers
   React.useEffect(() => {
     recorder.cancel();
-  }, [draftKey]);
+  }, [draftKey, editTargetId]);
 
   React.useEffect(() => {
     if (recorder.error) toast.error(recorder.error);
@@ -51,9 +56,12 @@ export function useComposerVoiceNote({
 
   const finish = React.useCallback(async () => {
     const recording = await recorder.stop();
+    const recordingContext = recordingContextRef.current;
+    const currentContext = currentContextRef.current;
     if (
       recording &&
-      recordingDraftKeyRef.current === currentDraftKeyRef.current
+      recordingContext.draftKey === currentContext.draftKey &&
+      recordingContext.editTargetId === currentContext.editTargetId
     ) {
       await media.uploadFile(recording.file);
     }
@@ -82,7 +90,7 @@ export function useComposerVoiceNote({
       toast.error("A voice note must be the only attachment.");
       return;
     }
-    recordingDraftKeyRef.current = currentDraftKeyRef.current;
+    recordingContextRef.current = currentContextRef.current;
     onBeforeStartRef.current();
     void recorder.start();
   }, [finish, recorder.start]);

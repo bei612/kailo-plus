@@ -898,7 +898,12 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     [workspaceId, onUpload, owner],
   );
 
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
+  const handleFormattingToggle = useCallback((pressed: boolean) => {
+    if (pressed) setIsEmojiPickerOpen(false);
+    setIsFormattingOpen(pressed);
+  }, []);
   const sendRef = useRef<() => void>(() => {});
   const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
   onEditLastOwnMessageRef.current = onEditLastOwnMessage;
@@ -1043,6 +1048,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     setHumanNames([...humanBindings.current.keys()]);setHumanQuery(null);
     setSending(false);
     setUploading(0);
+    setIsEmojiPickerOpen(false);
     setProblem(null);
     setProblemNeutral(false);
     setDragging(false);
@@ -1264,9 +1270,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
       extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
-      editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
+      editor: richText.editor, formattingDisabled: disabled || sending, isEmojiPickerOpen, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
-      onFormattingToggle: setIsFormattingOpen,
+      onEmojiPickerOpenChange: setIsEmojiPickerOpen,
+      onFormattingToggle: handleFormattingToggle,
       onCaptureSelection: handleCaptureSelection,
       onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,

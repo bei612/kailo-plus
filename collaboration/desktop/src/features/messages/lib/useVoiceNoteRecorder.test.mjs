@@ -43,8 +43,10 @@ class FakeRecorder extends dom.window.EventTarget {
 }
 
 const decodeResolvers = [];
+let onAudioContextClose;
 class FakeAudioContext {
   close() {
+    onAudioContextClose?.();
     return Promise.resolve();
   }
   createAnalyser() {
@@ -74,7 +76,14 @@ before(() => {
     AudioContext: FakeAudioContext,
     document: dom.window.document,
     DOMException: dom.window.DOMException,
+    CustomEvent: dom.window.CustomEvent,
+    Element: dom.window.Element,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     HTMLElement: dom.window.HTMLElement,
+    HTMLInputElement: dom.window.HTMLInputElement,
+    MutationObserver: dom.window.MutationObserver,
+    Node: dom.window.Node,
+    NodeFilter: dom.window.NodeFilter,
     IS_REACT_ACT_ENVIRONMENT: true,
     MediaRecorder: FakeRecorder,
     window: dom.window,
@@ -96,7 +105,7 @@ before(() => {
 after(() => dom.window.close());
 
 test("the original toolbar emoji trigger follows the real recorder state without changing attachment gating", async () => {
-  const { createElement } = await import("react");
+  const { createElement, useState } = await import("react");
   const { act, cleanup, render } = await import("@testing-library/react");
   const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
   const { MessageComposerToolbar } = await import(
@@ -108,6 +117,7 @@ test("the original toolbar emoji trigger follows the real recorder state without
   let recorder;
   let hasAttachment = false;
   function Composer() {
+    const [emojiOpen, setEmojiOpen] = useState(false);
     recorder = useVoiceNoteRecorder();
     return createElement(
       TooltipProvider,
@@ -116,6 +126,8 @@ test("the original toolbar emoji trigger follows the real recorder state without
         editor: null,
         composerDisabled: false,
         formattingDisabled: false,
+        isEmojiPickerOpen: emojiOpen,
+        onEmojiPickerOpenChange: setEmojiOpen,
         isFormattingOpen: false,
         isSending: false,
         isUploading: false,
@@ -241,6 +253,245 @@ test("a cancelled decode cannot stop or attach over a newer recording", async ()
 
     assert.equal(secondTrack.stopped, false);
     assert.equal(result.current.status, "recording");
+  } finally {
+    unmount();
+    cleanup();
+  }
+});
+
+test("starting the original composer voice note closes the controlled emoji popup and formatting", async () => {
+  const { createElement, useState } = await import("react");
+  const { act, cleanup, render } = await import("@testing-library/react");
+  const { useComposerVoiceNote } = await import(
+    "../ui/useComposerVoiceNote.tsx"
+  );
+  const { MessageComposerToolbar } = await import(
+    "@client-kit/platform/react/composer/features/messages/ui/MessageComposerToolbar"
+  );
+  const { TooltipProvider } = await import(
+    "@client-kit/platform/react/sidebar/tooltip"
+  );
+  const media = {
+    pendingImetaRef: { current: [] },
+    queuedAttachmentsRef: { current: [] },
+    uploadFile: async () => {},
+  };
+  let voiceNote;
+  let emojiOpen;
+  let formattingOpen;
+  const closed = [];
+  function Composer() {
+    const [emoji, setEmoji] = useState(true);
+    const [formatting, setFormatting] = useState(false);
+    emojiOpen = emoji;
+    formattingOpen = formatting;
+    voiceNote = useComposerVoiceNote({
+      draftKey: "recording-draft",
+      editTargetId: null,
+      media,
+      setEmojiPickerOpen: (open) => {
+        closed.push(["emoji", open]);
+        setEmoji(open);
+      },
+      setFormattingOpen: (open) => {
+        closed.push(["formatting", open]);
+        setFormatting(open);
+      },
+    });
+    return createElement(
+      TooltipProvider,
+      null,
+      createElement(MessageComposerToolbar, {
+        editor: null,
+        composerDisabled: false,
+        formattingDisabled: false,
+        isEmojiPickerOpen: emoji,
+        onEmojiPickerOpenChange: setEmoji,
+        isFormattingOpen: formatting,
+        isSending: false,
+        isUploading: false,
+        isVoiceNoteRecording: voiceNote.status !== "idle",
+        sendDisabled: false,
+        onFormattingToggle: setFormatting,
+        onLinkButton() {},
+        onPaperclip() {},
+        onVoiceNote: voiceNote.toggle,
+      }),
+    );
+  }
+  const host = render(createElement(Composer));
+  const trigger = () =>
+    host.container.querySelector('[data-testid="composer-emoji-button"]');
+  const voiceTrigger = () =>
+    host.container.querySelector("svg.lucide-mic")?.closest("button");
+  try {
+    assert.equal(trigger()?.getAttribute("aria-expanded"), "true");
+    await act(async () => {
+      voiceTrigger().click();
+      await Promise.resolve();
+    });
+    assert.equal(voiceNote.status, "recording");
+    assert.equal(emojiOpen, false);
+    assert.equal(formattingOpen, false);
+    assert.deepEqual(closed, [
+      ["emoji", false],
+      ["formatting", false],
+    ]);
+    assert.equal(trigger()?.getAttribute("aria-expanded"), "false");
+    assert.equal(trigger()?.disabled, true);
+  } finally {
+    host.unmount();
+    cleanup();
+  }
+});
+
+test("the original edit-target context cancels recording without changing the draft key", async () => {
+  const { act, cleanup, renderHook } = await import("@testing-library/react");
+  const { useComposerVoiceNote } = await import(
+    "../ui/useComposerVoiceNote.tsx"
+  );
+  const uploaded = [];
+  const media = {
+    pendingImetaRef: { current: [] },
+    queuedAttachmentsRef: { current: [] },
+    uploadFile: async (file) => uploaded.push(file),
+  };
+  const { result, rerender, unmount } = renderHook(
+    ({ editTargetId }) =>
+      useComposerVoiceNote({
+        draftKey: null,
+        editTargetId,
+        media,
+        setEmojiPickerOpen() {},
+        setFormattingOpen() {},
+      }),
+    { initialProps: { editTargetId: "original-edit" } },
+  );
+  try {
+    await act(async () => {
+      result.current.toggle();
+      await Promise.resolve();
+    });
+    const track = streams.at(-1).track;
+    assert.equal(result.current.status, "recording");
+    rerender({ editTargetId: "other-edit" });
+    assert.equal(result.current.status, "idle");
+    assert.equal(track.stopped, true);
+    assert.deepEqual(uploaded, []);
+  } finally {
+    unmount();
+    cleanup();
+  }
+});
+
+test("a completed decode cannot upload into a new edit context even after recorder cancellation is no longer applicable", async () => {
+  const { act, cleanup, renderHook } = await import("@testing-library/react");
+  const { flushSync } = await import("react-dom");
+  const { useComposerVoiceNote } = await import(
+    "../ui/useComposerVoiceNote.tsx"
+  );
+  const uploaded = [];
+  const media = {
+    pendingImetaRef: { current: [] },
+    queuedAttachmentsRef: { current: [] },
+    uploadFile: async (file) => uploaded.push(file),
+  };
+  const { result, rerender, unmount } = renderHook(
+    ({ editTargetId }) =>
+      useComposerVoiceNote({
+        draftKey: "same-draft",
+        editTargetId,
+        media,
+        setEmojiPickerOpen() {},
+        setFormattingOpen() {},
+      }),
+    { initialProps: { editTargetId: "original-edit" } },
+  );
+  try {
+    await act(async () => {
+      result.current.toggle();
+      await Promise.resolve();
+    });
+    let finished;
+    await act(async () => {
+      finished = result.current.finish();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.equal(result.current.status, "processing");
+    assert.equal(decodeResolvers.length, 1);
+    // Audio release precedes the real stop-promise resolution. Switch only
+    // after the recorder completes, before the composer's await resumes.
+    onAudioContextClose = () => {
+      onAudioContextClose = undefined;
+      queueMicrotask(() =>
+        flushSync(() => rerender({ editTargetId: "other-edit" })),
+      );
+    };
+    let recording;
+    await act(async () => {
+      decodeResolvers.shift()({
+        duration: 1,
+        getChannelData: () => new Float32Array([0]),
+        numberOfChannels: 1,
+        sampleRate: 8_000,
+      });
+      recording = await finished;
+    });
+    assert.ok(
+      recording?.file,
+      "the real recorder returned bytes, not a cancelled null result",
+    );
+    assert.equal(result.current.status, "idle");
+    assert.deepEqual(uploaded, []);
+  } finally {
+    onAudioContextClose = undefined;
+    unmount();
+    cleanup();
+  }
+});
+
+test("the unchanged original composer context uploads exactly one completed recording", async () => {
+  const { act, cleanup, renderHook } = await import("@testing-library/react");
+  const { useComposerVoiceNote } = await import(
+    "../ui/useComposerVoiceNote.tsx"
+  );
+  const uploaded = [];
+  const media = {
+    pendingImetaRef: { current: [] },
+    queuedAttachmentsRef: { current: [] },
+    uploadFile: async (file) => uploaded.push(file),
+  };
+  const { result, unmount } = renderHook(() =>
+    useComposerVoiceNote({
+      draftKey: "same-draft",
+      editTargetId: "same-edit",
+      media,
+      setEmojiPickerOpen() {},
+      setFormattingOpen() {},
+    }),
+  );
+  try {
+    await act(async () => {
+      result.current.toggle();
+      await Promise.resolve();
+    });
+    let finished;
+    await act(async () => {
+      finished = result.current.finish();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      decodeResolvers.shift()({
+        duration: 1,
+        getChannelData: () => new Float32Array([0]),
+        numberOfChannels: 1,
+        sampleRate: 8_000,
+      });
+      await finished;
+    });
+    assert.equal(uploaded.length, 1);
+    assert.equal(uploaded[0].type, "audio/wav");
+    assert.equal(result.current.status, "idle");
   } finally {
     unmount();
     cleanup();

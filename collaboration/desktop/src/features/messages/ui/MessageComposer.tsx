@@ -109,7 +109,12 @@ function MessageComposerImpl({
     getLiveCandidates: getLiveLinkPreviewCandidates,
     getReadyTags: getReadyLinkPreviewTags,
   } = useComposerLinkPreviews(previewContent);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = React.useState(false);
   const [isFormattingOpen, setIsFormattingOpen] = React.useState(false);
+  const handleFormattingToggle = React.useCallback((pressed: boolean) => {
+    if (pressed) setIsEmojiPickerOpen(false);
+    setIsFormattingOpen(pressed);
+  }, []);
   const drafts = useDrafts();
   const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
@@ -154,7 +159,9 @@ function MessageComposerImpl({
   const media = mediaController ?? internalMedia;
   const voiceNote = useComposerVoiceNote({
     draftKey: effectiveDraftKey,
+    editTargetId: editTarget?.id ?? null,
     media,
+    setEmojiPickerOpen: setIsEmojiPickerOpen,
     setFormattingOpen: setIsFormattingOpen,
   });
   React.useEffect(() => {
@@ -207,6 +214,7 @@ function MessageComposerImpl({
   // biome-ignore lint/correctness/useExhaustiveDependencies: effectiveDraftKey is the sole trigger
   React.useEffect(() => {
     media.setUploadState({ status: "idle" });
+    setIsEmojiPickerOpen(false);
     channelLinks.clearChannels();
     emojiAutocomplete.clearEmojis();
   }, [effectiveDraftKey]);
@@ -624,12 +632,13 @@ function MessageComposerImpl({
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
       extraActions: toolbarExtraActions, formattingDisabled: composerDisabled,
-      isFormattingOpen, isSending: isSending || mentionSendFlow.isPreparingMentionSend,
+      isEmojiPickerOpen, isFormattingOpen, isSending: isSending || mentionSendFlow.isPreparingMentionSend,
       isUploading: media.isUploading, isVoiceNoteProcessing: voiceNote.status !== "recording",
       isVoiceNoteRecording: voiceNote.status !== "idle", hasVoiceNoteAttachment: voiceNote.hasAttachment,
       voiceNoteRecorder: voiceNote.recorderElement,
       onCaptureSelection: handleCaptureSelection,
-      onFormattingToggle: setIsFormattingOpen, onLinkButton: linkEditor.openFromToolbar,
+      onEmojiPickerOpenChange: setIsEmojiPickerOpen,
+      onFormattingToggle: handleFormattingToggle, onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPicker.openMentionSettings, onPaperclip: handlePaperclipClick,
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle, sendDisabled,
     }}>

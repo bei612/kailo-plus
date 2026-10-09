@@ -38,10 +38,12 @@ describe("original custom emoji composer consumers", () => {
   it("retains every original toolbar selection-capture reader without inventing host selection state", async () => {
     const capture = vi.fn();
     function Composer() {
+      const [emojiOpen, setEmojiOpen] = useState(false);
       const [formatting, setFormatting] = useState(false);
       const editor = useRichTextEditor({readClipboardText:async()=>""});
       return <TooltipProvider><EditorContent editor={editor.editor}/><MessageComposerToolbar
         editor={editor.editor} composerDisabled={false} formattingDisabled={false}
+        isEmojiPickerOpen={emojiOpen} onEmojiPickerOpenChange={setEmojiOpen}
         isFormattingOpen={formatting} isSending={false} isUploading={false} sendDisabled={false}
         onCaptureSelection={capture} onFormattingToggle={setFormatting} onLinkButton={() => {}}
         onPaperclip={() => {}} onVoiceNote={() => {}} onOpenMentionPicker={() => {}}/></TooltipProvider>;
@@ -121,9 +123,11 @@ describe("original custom emoji composer consumers", () => {
   it("inserts the original selectable image atom and retains Markdown and cursor projection", async () => {
     let editor: ReturnType<typeof useRichTextEditor> | undefined;
     function Composer() {
+      const [emojiOpen, setEmojiOpen] = useState(false);
       editor = useRichTextEditor({readClipboardText:async()=>"",customEmoji:custom});
       return <TooltipProvider><EditorContent editor={editor.editor}/><MessageComposerToolbar
         editor={editor.editor} customEmoji={custom} composerDisabled={false} formattingDisabled={false}
+        isEmojiPickerOpen={emojiOpen} onEmojiPickerOpenChange={setEmojiOpen}
         isFormattingOpen={false} isSending={false} isUploading={false} sendDisabled={false}
         onFormattingToggle={() => {}} onLinkButton={() => {}} onPaperclip={() => {}}/></TooltipProvider>;
     }

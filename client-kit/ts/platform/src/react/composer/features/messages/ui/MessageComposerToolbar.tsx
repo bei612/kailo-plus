@@ -55,6 +55,7 @@ export const MessageComposerToolbar = React.memo(
     editor,
     extraActions,
     formattingDisabled,
+    isEmojiPickerOpen,
     isFormattingOpen,
     isSending,
     isUploading,
@@ -62,6 +63,7 @@ export const MessageComposerToolbar = React.memo(
     isVoiceNoteRecording = false,
     hasVoiceNoteAttachment = false,
     voiceNoteRecorder,
+    onEmojiPickerOpenChange,
     onFormattingToggle,
     onLinkButton,
     onOpenMentionPicker,
@@ -84,6 +86,7 @@ export const MessageComposerToolbar = React.memo(
     editor: Editor | null;
     extraActions?: React.ReactNode;
     formattingDisabled: boolean;
+    isEmojiPickerOpen: boolean;
     isFormattingOpen: boolean;
     isSending: boolean;
     isUploading: boolean;
@@ -91,6 +94,7 @@ export const MessageComposerToolbar = React.memo(
     isVoiceNoteRecording?: boolean;
     hasVoiceNoteAttachment?: boolean;
     voiceNoteRecorder?: React.ReactNode;
+    onEmojiPickerOpenChange: (open: boolean) => void;
     onFormattingToggle: (pressed: boolean) => void;
     onLinkButton: () => void;
     onOpenMentionPicker?: () => void;
@@ -101,10 +105,6 @@ export const MessageComposerToolbar = React.memo(
   }) {
     const translateUi = useUiT();
     const shouldReduceMotion = useReducedMotion();
-    const [isEmojiPickerOpen, setIsEmojiPickerOpen] = React.useState(false);
-    React.useEffect(() => {
-      if (isFormattingOpen || composerDisabled) setIsEmojiPickerOpen(false);
-    }, [isFormattingOpen, composerDisabled]);
     const insertEmoji = React.useCallback(
       (emoji: string) => {
         if (!editor || composerDisabled) return;
@@ -125,9 +125,9 @@ export const MessageComposerToolbar = React.memo(
         } else {
           editor.chain().focus().insertContent(emoji).run();
         }
-        setIsEmojiPickerOpen(false);
+        onEmojiPickerOpenChange(false);
       },
-      [editor, composerDisabled, customEmoji],
+      [editor, composerDisabled, customEmoji, onEmojiPickerOpenChange],
     );
 
     return (
@@ -325,7 +325,7 @@ export const MessageComposerToolbar = React.memo(
                   disabled={composerDisabled || isVoiceNoteRecording}
                   customEmoji={customEmoji}
                   open={isEmojiPickerOpen}
-                  onOpenChange={setIsEmojiPickerOpen}
+                  onOpenChange={onEmojiPickerOpenChange}
                   onEmojiSelect={insertEmoji}
                   onTriggerMouseDown={onCaptureSelection}
                   onClose={() => {

@@ -6021,3 +6021,55 @@ restored-native-receiver.log；不是 worker／loader／OOM 失败。
 原 a816／登录页图不验此候选，两个源尚未部署或形成新安装包。
 Web 录音、Native 物理麦克风／完整 Recorder UI、GIF 页面与 Windows/Mobile 均未验，
 不声明原版全量一致／100%／生产就绪。根代理独占提交和集中发布。
+
+## 2026-10-09 原 Composer 受控弹层与录音上下文恢复
+
+权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/useComposerVoiceNote.tsx::useComposerVoiceNote`、
+`desktop/src/features/messages/ui/MessageComposerToolbar.tsx::MessageComposerToolbar`、
+`desktop/src/features/messages/ui/MessageComposer.tsx::MessageComposer`。
+本批归共享迁移／缺失消费者恢复，不是新的界面或执行权威；原菜单、顺序、文案、布局不变。
+
+影响面：共享 Toolbar 改回原宿主受控 emoji state；Native 主／Forum 共用 Composer，
+Web Composer 和两个已有共享检查 harness 全部传原受控 props。Native 录音上下文
+同时消费 draftKey、editTargetId，切换取消，完成后再次比对才交原媒体上传链。
+六条源／检查在接手点 `d619b0b06adea393ac21102ac9fe0ff4767981e5` 均 clean，
+本批 +298/-19，无契约、词条、Dart、依赖、锁、Core 或新增 Web 录音 producer。
+
+副作用／异常：录音开始由真实按钮关闭 emoji／formatting；同 draft 的编辑目标改变
+也取消并释放设备，已停止 WAV 在 await 期间旧编辑上下文迟到不得上传；
+同上下文完成只上传一次。原准入／授权／UNKNOWN 上传语义不变，不重传未知结果。
+本批不新增状态或后台清理：继续原 recorder cancel／stop／release 生命周期。
+
+证据目录：`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/voice-context-20261009.CVigGV`。
+`owned-paths.txt`、`inputs.sha256`、`owned-source.patch` 固定六条最终输入，
+`official-to-current.diff` 保留两个原模块全文差异；所有原命令在对应 `*-command.txt`。
+
+原 4CPU／8GiB SDK `kailo-agent-receipt-xvkujx`，Node heap 3072、
+`node --import ./test-loader.mjs --experimental-strip-types --test --test-concurrency=1 src/features/messages/lib/useVoiceNoteRecorder.test.mjs`：
+首轮 7/8、exit1，真实 Popover 缺 JSDOM getComputedStyle；按已有夹具补全真实 window globals，
+不 mock Toolbar／Popover／hook／recorder，最终 8/8 exit0。
+首轮同批 shared prod／shared test／Web／Native 四 tsc 各 exit0；之后仅检查 MJS 的夹具／格式改变，
+生产类型输入与当时一致。原 Biome 三文件先 exit1（四处新 import 换行），修后 exit0，本批六输入 diff --check0。
+
+私有实际生产破坏与原字节还原：去掉 editTargetId 取消依赖→7/8 exit1（仍 recording）；
+去掉完成后 editTargetId fence→7/8 exit1（旧 WAV 进入 upload）；
+去掉 beforeStart 关闭 emoji→7/8 exit1（popup 仍 true）。
+三次分别恢复 cmp0；最终 `restored-native-voice.log` 为 8/8 exit0。
+最终六输入及 Native／Web 检查环境实际依赖目录中的 Toolbar 均 cmp0；SDK top 仅 sleep，
+memory.current=286277632，原 oom=2／oom_kill=2 未增长。未重跑此前 0-case Vitest、full、bundle、镜像或安装。
+
+全树账仍只到固定 a816 历史 union5314：原样1976／共享112／整文件授权0／恢复队列3226；
+队列包含尚未证明保留或授权，不等同功能缺失数，不称当前 main 全量已逐处核验。
+原 GIF／gifMediaController、setPendingImetaWhenIdle 与实际 paste imeta 消费者、
+原 mention 清理／emoji 关闭其余读方仍有缺项；不把本批两全文模块称 100% 还原。
+
+根代理另在已部署 a816 普通 SSO 会话通过原 Experiments 偏好启用三个原预览菜单，
+并实际打开六张 `/volumes/data/kailo/tmp/kailo-original-*.png`：
+experiments-off-20261009-0957、preview-sidebar-on-20261009-0958、workflows-page-20261009-0959、
+projects-page-20261009-1001、workflow-create-20261009-1003、pulse-page-20261009-1005。
+Pulse SHA256 `6e577b4f0e6d0e0ce913e14eb1ee499a1b72636778f958661af80cc356c068ee`，
+CLI console 0 errors／0 warnings；Workflow 创建仍“本页没有有效执行器”且只四动作选项，
+不能称完整 Workflows。隐藏菜单是固定官方 preview 默认 off，并未改默认值或新增入口。
+这些是根代理已打开的旧 a816 实拍，不证明本批六源；本批无新截图／部署／安装包。
+Web 录音、真实设备麦克风、Tauri／Windows、Mobile、完整 GIF 与全量原版一致性均未验收。
