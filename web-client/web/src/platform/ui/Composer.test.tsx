@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from "react";
+import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { TransportError } from "@client-kit/platform/transport";
 import { setLocale } from "@client-kit/platform/i18n";
@@ -12,20 +13,25 @@ import {
   AgentPrincipalState,
   ResourceState,
   ChannelBindingStatus,
+  AgentRuntimeProjectionState,
   type AgentInstallationView,
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
-import { loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { clearAllDrafts, loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
+import {resetPersistentAgentAudienceStore} from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
+import {setKeepMentionedAgentsPinned} from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
+import {loadComposerAgentDirectory} from "@client-kit/platform/react/composer/features/messages/lib/composerAgentDirectory";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-let mounted: { root: Root; host: HTMLElement } | undefined;
+let mounted: { root: Root; host: HTMLElement; queryClient: QueryClient } | undefined;
 afterEach(() => {
   if (mounted) {
     act(() => mounted!.root.unmount());
     mounted.host.remove();
+    mounted.queryClient.clear();
     mounted = undefined;
   }
   vi.restoreAllMocks();
@@ -35,15 +41,17 @@ async function render(ui: ReactNode) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  mounted = { root, host };
-  await act(async () => root.render(<TooltipProvider>{ui}</TooltipProvider>));
+  const queryClient = new QueryClient({defaultOptions:{queries:{retry:false}}});
+  mounted = { root, host, queryClient };
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>));
+  await settle();
   return host;
 }
 async function settle() {
-  await act(async () => {});
+  await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
 }
 async function rerender(ui: ReactNode) {
-  await act(async () => mounted!.root.render(<TooltipProvider>{ui}</TooltipProvider>));
+  await act(async () => mounted!.root.render(<QueryClientProvider client={mounted!.queryClient}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>));
 }
 function button(host: HTMLElement, label: string) {
   const found = [...host.querySelectorAll("button")].find(
@@ -95,23 +103,21 @@ const state = vi.hoisted(() => ({
   next: false,
   more: vi.fn(),
   publish: vi.fn(),
-}));
-vi.mock("@tanstack/react-query", () => ({
-  useInfiniteQuery: () => ({
-    data: { pages: state.pages },
-    isSuccess: state.success,
-    isPending: false,
-    isError: !state.success,
-    hasNextPage: state.next,
-    isFetchingNextPage: false,
-    fetchNextPage: state.more,
-  }),
-  useMutation: vi.fn(),
-  useQuery: vi.fn(() => ({ data: undefined, isError: false })),
-  useQueryClient: vi.fn(),
+  principal: "human-a",
 }));
 vi.mock("@/platform/bff-client", () => ({
-  bff: {},
+  bff: {
+    session: async () => ({tenantPrincipalId:state.principal}),
+    profile: async () => ({pubkey:"d".repeat(64)}),
+    members: async () => [],
+    customEmoji: async () => ({pubkey:"d".repeat(64),events:[],mediaPaths:{}}),
+    workspaceChannel: async () => ({channelId:"relay-channel-a",channelType:"stream",archived:false}),
+    agentDefinition: async (id:string) => ({resourceId:id,resourceState:"ACTIVE",displayName:id.replace("definition-","")}),
+    agentInstallations: async (_workspace:string,offset=0) => {
+      if (!state.success) throw new Error("Agent directory unavailable");
+      return {...state.pages[offset],nextOffset:offset+1<state.pages.length?offset+1:null};
+    },
+  },
   BffError: class extends Error {},
   publishMessage: state.publish,
   markRead: vi.fn(),
@@ -129,7 +135,10 @@ function installation(resourceId: string): AgentInstallationView {
   return {
     resourceId,
     workspaceId: "workspace-a",
-    agentResourceId: "definition-a",
+    agentResourceId: `definition-${resourceId}`,
+    agentPubkey: ({"agent-a":"1","agent-b":"2","agent-c":"3"}[resourceId] ?? "4").repeat(64),
+    activeProjectionGeneration: 1,
+    projection: {state:AgentRuntimeProjectionState.Active,generation:1,agentVersionAssetId:"version-a",configHash:"hash",runtimeProfileKey:"profile"},
     pinnedVersionAssetId: "version-a",
     agentPrincipalId: resourceId,
     agentPrincipalState: AgentPrincipalState.Active,
@@ -145,18 +154,29 @@ function installation(resourceId: string): AgentInstallationView {
     },
     channelBinding: {
       status: ChannelBindingStatus.Active,
+      channelId: "relay-channel-a",
       triggers: [AgentTrigger.Mention],
     },
   };
 }
 beforeEach(() => {
+  // JSDOM does not implement the browser observer used by the original Switch.
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   // jsdom has no layout engine; ProseMirror's deferred focus reads Range geometry.
   Object.defineProperties(Range.prototype, {
     getClientRects: { configurable: true, value: () => [] },
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
   localStorage.clear();
+  clearAllDrafts();
+  resetPersistentAgentAudienceStore();
+  setKeepMentionedAgentsPinned(false);
   setLocale("en");
+  state.principal = "human-a";
   state.pages = [
     { installations: [installation("agent-b"), installation("agent-a")] },
   ];
@@ -187,7 +207,7 @@ it("restores Pulse compact focus/blur and below-editor autocomplete while retain
   expect(form.dataset.compactCollapsed).toBe("true");
   await act(async()=>host.querySelector<HTMLElement>('[data-testid="message-input"]')!.focus());
   await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
-  const option=host.querySelector('[aria-label="Mention someone Alex"]')!;
+  const option=host.querySelector('[aria-label="Mention Alex"]')!;
   expect(option.closest('[data-testid="mention-autocomplete-layer"]')?.className).toContain("top-full");
   expect(form.className).toContain("overflow-visible");
   await act(async()=>option.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
@@ -234,7 +254,7 @@ it("publishes the explicit human picker identity and retains it with the same UN
   const publish=vi.fn().mockRejectedValue(new TransportError("Unknown"));
   const host=await render(<Composer draftIdentity="pulse-scope" mentionPeople={[{pubkey,displayName:"Alex"}]} onPublish={publish}/>);
   await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
-  await act(async()=>{host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));});
+  await act(async()=>{host.querySelector('[aria-label="Mention Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));});
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
   await click(button(host,"platform.send"));
   await settle();
@@ -441,9 +461,11 @@ it.each(["identity", "channel"])("does not transfer an old draft, attachments, m
   state.publish.mockRejectedValue(new TransportError("lost response"));
   const upload = vi.fn().mockResolvedValue({ sha256: "a".repeat(64), size: 4, type: "text/plain", url: "media:old" });
   const originalIdentity = `alice-${changed}`;
+  state.principal = originalIdentity;
   const host = await render(<Composer workspaceId="workspace-a" draftIdentity={originalIdentity} draftKey="workspace-a" onUpload={upload} />);
   await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "old private draft");
   await select(host, "agent-a");
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "old private draft @agent-a");
   const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
   await act(async () => {
     Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["old"], "old.txt", { type: "text/plain" })] });
@@ -453,6 +475,7 @@ it.each(["identity", "channel"])("does not transfer an old draft, attachments, m
   const oldKey = state.publish.mock.calls[0][3];
   const nextWorkspace = changed === "channel" ? "workspace-b" : "workspace-a";
   const nextIdentity = changed === "identity" ? "bob" : originalIdentity;
+  state.principal = nextIdentity;
   await rerender(<Composer workspaceId={nextWorkspace} draftIdentity={nextIdentity} draftKey={nextWorkspace} onUpload={upload} />);
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
   expect(host.textContent).not.toContain("old.txt");
@@ -463,8 +486,9 @@ it.each(["identity", "channel"])("does not transfer an old draft, attachments, m
   await click(button(host, "platform.send"));
   expect(state.publish.mock.calls[1]).toEqual([nextWorkspace, "new private draft", [], expect.any(String), [], {mentionPubkeys: []}]);
   expect(state.publish.mock.calls[1][3]).not.toBe(oldKey);
+  state.principal = originalIdentity;
   await rerender(<Composer workspaceId="workspace-a" draftIdentity={originalIdentity} draftKey="workspace-a" onUpload={upload} />);
-  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("old private draft");
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("old private draft @agent-a");
   expect(host.textContent).toContain("old.txt");
 });
 
@@ -537,14 +561,23 @@ it("reuses original image preview, spoiler, drawing upload and revert against ad
   expect(host.querySelector('[data-testid="composer-media-attachment"]')).toBeNull();
 });
 async function select(host: HTMLElement, id: string) {
-  await click(button(host, "platform.mentionAgent"));
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector(`[aria-label="Mention ${id}"]`)).not.toBeNull());});
   const option = host.querySelector<HTMLElement>(
-    `[data-testid="mention-suggestion-${id}"] button`,
+    `[aria-label="Mention ${id}"]`,
   )!;
   expect(option).not.toBeNull();
   await act(async () => {
     option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
   });
+}
+function agentComposer() {
+  return <Composer workspaceId="workspace-a" draftIdentity="human-a" draftKey="agent-thread"
+    audienceContext={{type:"thread",rootTags:[]}}/>;
+}
+async function refreshDirectory() {
+  await act(async () => {await mounted!.queryClient.invalidateQueries({queryKey:["platform","composer-agent-directory"]});});
+  await settle();
 }
 
 it("reuses the Buzz picker to send all selected Agents once in canonical order across overlapping pages", async () => {
@@ -552,59 +585,52 @@ it("reuses the Buzz picker to send all selected Agents once in canonical order a
     installations: [installation("agent-b"), installation("agent-c")],
   });
   state.next = true;
-  const host = await render(<Composer workspaceId="workspace-a" />);
+  const host = await render(agentComposer());
   await select(host, "agent-b");
   await select(host, "agent-a");
-  await click(button(host, "platform.mentionAgent"));
-  expect(
-    host.querySelector('[data-testid="mention-suggestion-agent-b"]'),
-  ).toBeNull();
-  expect(host.querySelectorAll("[data-mention-suggestion-index]")).toHaveLength(
-    1,
-  );
-  await click(button(host, "platform.moreMentionAgents"));
-  expect(state.more).toHaveBeenCalledOnce();
+  expect(host.querySelectorAll('[data-testid^="composer-address-lock-remove-"]')).toHaveLength(2);
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);
+  expect(host.querySelectorAll("[data-mention-suggestion-index]")).toHaveLength(3);
   await type(
     host.querySelector<HTMLInputElement>('[data-testid="message-input"]')!,
-    "hello",
+    "@agent-b @agent-a hello",
   );
   await click(button(host, "platform.send"));
   expect(state.publish).toHaveBeenCalledExactlyOnceWith(
     "workspace-a",
-    "hello",
+    "@agent-b @agent-a hello",
     [],
     expect.any(String),
     ["agent-a", "agent-b"],
     {mentionPubkeys: []},
   );
-  expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
 });
 
 it("preserves an UNKNOWN intent and changes its key only when the actual selected set changes", async () => {
   state.publish.mockRejectedValue(new TransportError("lost response"));
-  const host = await render(<Composer workspaceId="workspace-a" />);
+  const host = await render(agentComposer());
   await select(host, "agent-b");
   await select(host, "agent-a");
   await type(
     host.querySelector<HTMLInputElement>('[data-testid="message-input"]')!,
-    "hello",
+    "@agent-b @agent-a hello",
   );
   await click(button(host, "platform.send"));
   const key = state.publish.mock.calls[0][3];
   expect(host.textContent).toContain("platform.sendUnknown");
-  expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(2);
-  await click(button(host, "agent-a"));
-  await select(host, "agent-a");
+  expect(host.querySelectorAll('[data-testid^="composer-address-lock-remove-"]')).toHaveLength(2);
   await click(button(host, "platform.send"));
   expect(state.publish.mock.calls[1][3]).toBe(key);
-  await click(button(host, "agent-b"));
+  await click(host.querySelector<HTMLElement>(`[data-testid="composer-address-lock-remove-${"2".repeat(64)}"]`)!);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "@agent-a hello");
   await click(button(host, "platform.send"));
   expect(state.publish.mock.calls[2][3]).not.toBe(key);
   expect(state.publish.mock.calls[2][4]).toEqual(["agent-a"]);
 });
 
 it("fails closed when any selected Agent is revoked even if an overlapping page still has ACTIVE", async () => {
-  const host = await render(<Composer workspaceId="workspace-a" />);
+  const host = await render(agentComposer());
   await select(host, "agent-a");
   await select(host, "agent-b");
   state.pages = [
@@ -617,23 +643,32 @@ it("fails closed when any selected Agent is revoked even if an overlapping page 
   ];
   await type(
     host.querySelector<HTMLInputElement>('[data-testid="message-input"]')!,
-    "hello",
+    "@agent-a @agent-b hello",
   );
-  expect(button(host, "platform.send").disabled).toBe(true);
   await click(button(host, "platform.send"));
   expect(state.publish).not.toHaveBeenCalled();
-  await click(button(host, "agent-a"));
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "@agent-b hello");
+  await vi.waitFor(() => {
+    expect(host.querySelectorAll('[data-testid^="composer-address-lock-remove-"]')).toHaveLength(1);
+    expect(host.querySelector(`[data-testid="composer-address-lock-remove-${"1".repeat(64)}"]`)).toBeNull();
+  });
+  await refreshDirectory();
   await click(button(host, "platform.send"));
-  await settle();
-  expect(state.publish.mock.calls[0][4]).toEqual(["agent-b"]);
+  await vi.waitFor(() => {
+    expect(state.publish).toHaveBeenCalledTimes(1);
+    expect(state.publish.mock.calls[0][4]).toEqual(["agent-b"]);
+  });
 });
 
 it("selects through the original highlighted picker row with the keyboard", async () => {
-  const host = await render(<Composer workspaceId="workspace-a" />);
-  const trigger = button(host, "platform.mentionAgent");
+  const host = await render(agentComposer());
+  await settle();
+  const trigger = host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!;
   await click(trigger);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector('[aria-label="Mention agent-a"]')).not.toBeNull());});
+  const editor = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
   await act(async () => {
-    trigger.dispatchEvent(
+    editor.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "ArrowDown",
         bubbles: true,
@@ -642,7 +677,7 @@ it("selects through the original highlighted picker row with the keyboard", asyn
     );
   });
   await act(async () => {
-    trigger.dispatchEvent(
+    editor.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "Enter",
         bubbles: true,
@@ -650,7 +685,8 @@ it("selects through the original highlighted picker row with the keyboard", asyn
       }),
     );
   });
-  expect(button(host, "agent-a").getAttribute("aria-pressed")).toBe("true");
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("@agent-a");
+  expect(host.querySelector(`[data-testid="composer-address-lock-${"1".repeat(64)}"]`)).not.toBeNull();
   expect(host.querySelector('[data-testid="mention-autocomplete"]')).toBeNull();
 });
 
@@ -666,24 +702,56 @@ it.each([false, undefined])(
       { installations: [unavailable] },
       { installations: [installation("agent-a"), installation("agent-b")] },
     ];
-    const host = await render(<Composer workspaceId="workspace-a" />);
-    await click(button(host, "platform.mentionAgent"));
-    expect(host.querySelector('[data-testid="mention-suggestion-agent-a"]')).toBeNull();
-    expect(host.querySelector('[data-testid="mention-suggestion-agent-b"]')).not.toBeNull();
+    const host = await render(agentComposer());
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);
+    await act(async () => {await vi.waitFor(() => expect(host.querySelector('[aria-label="Mention agent-b"]')).not.toBeNull());});
+    expect(host.querySelector('[aria-label="Mention agent-a"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Mention agent-b"]')).not.toBeNull();
   },
 );
 
 it("blocks a selected Agent after execution permission is revoked without changing installation state", async () => {
-  const host = await render(<Composer workspaceId="workspace-a" />);
+  const host = await render(agentComposer());
   await select(host, "agent-a");
   const revoked = installation("agent-a");
   revoked.executionPermission!.effective = false;
   state.pages = [{ installations: [revoked, installation("agent-b")] }];
   await type(
     host.querySelector<HTMLInputElement>('[data-testid="message-input"]')!,
-    "hello",
+    "@agent-a hello",
   );
-  expect(button(host, "platform.send").disabled).toBe(true);
   await click(button(host, "platform.send"));
   expect(state.publish).not.toHaveBeenCalled();
+});
+
+it.each(["pubkey","projection","generation","channel","trigger","principal"])("does not display an Agent with an invalid %s admission fact",async fact=>{
+  const invalid = installation("agent-a");
+  if (fact === "pubkey") delete invalid.agentPubkey;
+  if (fact === "projection") delete invalid.projection;
+  if (fact === "generation") invalid.activeProjectionGeneration = 2;
+  if (fact === "channel") invalid.channelBinding!.channelId = "other-channel";
+  if (fact === "trigger") invalid.channelBinding!.triggers = [];
+  if (fact === "principal") invalid.agentPrincipalState = AgentPrincipalState.Disabled;
+  state.pages = [{installations:[invalid,installation("agent-b")]}];
+  const host = await render(agentComposer());
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);
+  await act(async()=>{await vi.waitFor(()=>expect(host.querySelector('[aria-label="Mention agent-b"]')).not.toBeNull());});
+  expect(host.querySelector('[aria-label="Mention agent-a"]')).toBeNull();
+});
+
+it("fences an old identity result and rejects malformed pagination or ambiguous pubkey bindings",async()=>{
+  const base = {session:async()=>({tenantPrincipalId:"human-a"}),workspaceChannel:async()=>({channelId:"relay-channel-a",channelType:"stream",archived:false}),
+    profile:async()=>({pubkey:"d".repeat(64)}),members:async()=>[],agentDefinition:async()=>({resourceId:"definition-agent-a",resourceState:"ACTIVE",displayName:"Planner"}),
+    agentInstallations:async()=>({installations:[installation("agent-a")],nextOffset:null})};
+  let current = true;
+  const scope = {workspaceId:"workspace-a",principalId:"human-a"};
+  const late = {...base,members:async()=>{current=false;return [];}};
+  // The read boundary receives the real generated BffClient method shapes;
+  // only the HTTP reply is a fixture, not the production directory function.
+  await expect(loadComposerAgentDirectory(late as unknown as Parameters<typeof loadComposerAgentDirectory>[0],scope,()=>current)).rejects.toThrow("identity or scope changed");
+  const cursor = {...base,agentInstallations:async()=>({installations:[],nextOffset:0})};
+  await expect(loadComposerAgentDirectory(cursor as unknown as Parameters<typeof loadComposerAgentDirectory>[0],scope,()=>true)).rejects.toThrow("cursor");
+  const duplicate = {...installation("agent-b"),agentPubkey:installation("agent-a").agentPubkey};
+  const ambiguous = {...base,agentInstallations:async()=>({installations:[installation("agent-a"),duplicate],nextOffset:null})};
+  await expect(loadComposerAgentDirectory(ambiguous as unknown as Parameters<typeof loadComposerAgentDirectory>[0],scope,()=>true)).rejects.toThrow("Ambiguous Agent");
 });

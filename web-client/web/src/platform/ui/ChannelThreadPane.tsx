@@ -165,6 +165,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
     renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={workspaceId} draftIdentity={principalId}
+      audienceContext={editTarget || !data.threadHead?.tags ? null : {type: "thread", rootTags: data.threadHead.tags}}
       editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}
       onRequestEmptyEditDelete={onRequestEmptyEditDelete}
       onEditLastOwnMessage={handleEditLastOwnThreadMessage}

@@ -119,6 +119,8 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
     <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
+      channelType={conversation ? "dm" : undefined}
+      audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}

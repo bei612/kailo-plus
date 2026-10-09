@@ -216,6 +216,7 @@ export function reassertMentionCaretAfterFocus(view: {
 
 export type MentionHighlightStorage = {
   names: string[];
+  agentNames: string[];
   channelNames: string[];
 };
 
@@ -229,15 +230,18 @@ function sameNameList(current: string[], next: string[]): boolean {
 export function assignMentionHighlightNames(
   storage: MentionHighlightStorage,
   names: string[],
+  agentNames: string[],
   channelNames: string[],
 ): boolean {
   if (
     sameNameList(storage.names, names) &&
+    sameNameList(storage.agentNames, agentNames) &&
     sameNameList(storage.channelNames, channelNames)
   ) {
     return false;
   }
   storage.names = names;
+  storage.agentNames = agentNames;
   storage.channelNames = channelNames;
   return true;
 }
@@ -262,7 +266,11 @@ export function settleAutocompleteMentionInsert(
   const prefix = mentionInsert[1];
   const label = mentionInsert[2]!;
   if (storage) {
-    const known = [...storage.names, ...storage.channelNames];
+    const known = [
+      ...storage.names,
+      ...storage.agentNames,
+      ...storage.channelNames,
+    ];
     if (!known.some((name) => name.toLowerCase() === label.toLowerCase())) {
       if (prefix === "#") {
         storage.channelNames = [...storage.channelNames, label];
@@ -281,12 +289,18 @@ export function syncMentionHighlightFromProps(
     view: { dispatch: (tr: Transaction) => void };
   },
   names: string[] | undefined,
+  agentNames: string[] | undefined,
   channelNames: string[] | undefined,
 ): void {
   const storage = mentionHighlightStorage(editor);
   if (
     !storage ||
-    !assignMentionHighlightNames(storage, names ?? [], channelNames ?? [])
+    !assignMentionHighlightNames(
+      storage,
+      names ?? [],
+      agentNames ?? [],
+      channelNames ?? [],
+    )
   ) {
     return;
   }
@@ -306,6 +320,7 @@ export const MentionHighlightExtension = Extension.create({
   addStorage() {
     return {
       names: [] as string[],
+      agentNames: [] as string[],
       channelNames: [] as string[],
     };
   },
@@ -315,6 +330,7 @@ export const MentionHighlightExtension = Extension.create({
     const settlement = createMentionCaretSettlement();
     const knownNames = () => [
       ...extension.storage.names,
+      ...extension.storage.agentNames,
       ...extension.storage.channelNames,
     ];
 
@@ -326,6 +342,7 @@ export const MentionHighlightExtension = Extension.create({
             return buildDecorations(
               state.doc,
               extension.storage.names,
+              extension.storage.agentNames,
               extension.storage.channelNames,
             );
           },
@@ -349,6 +366,7 @@ export const MentionHighlightExtension = Extension.create({
               return buildDecorations(
                 tr.doc,
                 extension.storage.names,
+                extension.storage.agentNames,
                 extension.storage.channelNames,
               );
             }
@@ -366,6 +384,7 @@ export const MentionHighlightExtension = Extension.create({
               return buildDecorations(
                 tr.doc,
                 extension.storage.names,
+                extension.storage.agentNames,
                 extension.storage.channelNames,
               );
             }
@@ -376,6 +395,7 @@ export const MentionHighlightExtension = Extension.create({
               return buildDecorations(
                 tr.doc,
                 extension.storage.names,
+                extension.storage.agentNames,
                 extension.storage.channelNames,
               );
             }
@@ -745,13 +765,25 @@ function editIntersectsDecoration(
 function buildDecorations(
   doc: Parameters<typeof DecorationSet.create>[0],
   names: string[],
+  agentNames: string[],
   channelNames: string[],
 ): DecorationSet {
-  if (names.length === 0 && channelNames.length === 0)
+  if (
+    names.length === 0 &&
+    agentNames.length === 0 &&
+    channelNames.length === 0
+  )
     return DecorationSet.empty;
 
   const decorations: Decoration[] = [];
-  const mentionPatterns = buildHighlightPatterns(names, []);
+  const agentNameSet = new Set(
+    agentNames.map((name) => name.trim().toLowerCase()).filter(Boolean),
+  );
+  const nonAgentNames = names.filter(
+    (name) => !agentNameSet.has(name.trim().toLowerCase()),
+  );
+  const mentionPatterns = buildHighlightPatterns(nonAgentNames, []);
+  const agentMentionPatterns = buildHighlightPatterns(agentNames, []);
   const channelPatterns = buildHighlightPatterns([], channelNames);
 
   doc.descendants((node, pos) => {
@@ -763,6 +795,14 @@ function buildDecorations(
       pos,
       mentionPatterns,
       `${MENTION_CHIP_BASE_CLASSES} ${inlineChipIconClasses("human")}`,
+      { hidePrefix: true },
+    );
+    addMatchesForPatterns(
+      decorations,
+      node.text,
+      pos,
+      agentMentionPatterns,
+      `${MENTION_CHIP_BASE_CLASSES} ${inlineChipIconClasses("agent")}`,
       { hidePrefix: true },
     );
     addMatchesForPatterns(

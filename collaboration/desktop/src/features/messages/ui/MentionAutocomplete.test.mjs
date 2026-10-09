@@ -26,6 +26,10 @@ before(() => {
     window: dom.window,
   });
 });
+before(async () => {
+  const {setLocale} = await import("@client-kit/platform/i18n");
+  setLocale("en");
+});
 
 afterEach(async () => {
   const { cleanup } = await import("@testing-library/react");
@@ -143,4 +147,32 @@ test("does not intercept Tab from the editor", async () => {
 
   assert.equal(wasNotCancelled, true);
   assert.equal(document.activeElement, input);
+});
+
+test("restores original Agent row, pin toggle and Options without inventing management provenance", async () => {
+  const React = await import("react");
+  const {act, fireEvent, render} = await import("@testing-library/react");
+  const {TooltipProvider} = await import("@client-kit/platform/react/sidebar/tooltip");
+  const {MentionAutocomplete} = await import("./MentionAutocomplete.tsx");
+  const agent = {pubkey:"b".repeat(64),displayName:"Planner",isAgent:true};
+  const toggles = [], selections = [], preferences = [];
+  const view = render(React.createElement(TooltipProvider,null,React.createElement(MentionAutocomplete,{
+    suggestions:[agent],selectedIndex:0,composerOwnsFocus:true,onSelect:value=>selections.push(value),
+    lockedAgentPubkeys:new Set(),onToggleAlwaysAddressAgent:value=>toggles.push(value),
+    keepMentionedAgentsPinned:false,onKeepMentionedAgentsPinnedChange:value=>preferences.push(value),
+  })));
+  assert.equal(view.getAllByTestId("mention-agent-icon").length,1);
+  assert.equal(view.queryByText(/Managed by/),null);
+  fireEvent.mouseDown(view.getByRole("button",{name:"Mention Planner"}));
+  assert.deepEqual(selections,[agent]);
+  fireEvent.click(view.getByTestId(`mention-always-address-${agent.pubkey}`));
+  assert.deepEqual(toggles,[agent]);
+  fireEvent.click(view.getByTestId("mention-keep-agents-pinned-toggle"));
+  assert.deepEqual(preferences,[true]);
+  assert.match(view.getByTestId("mention-options-settings").className,/w-80 max-w-full/);
+  const {setLocale} = await import("@client-kit/platform/i18n");
+  await act(async () => setLocale("zh-CN"));
+  assert.ok(view.getByRole("button",{name:"提及 Planner"}));
+  assert.ok(view.getByText("自动提及 Agent"));
+  await act(async () => setLocale("en"));
 });

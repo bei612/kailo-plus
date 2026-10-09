@@ -28,6 +28,7 @@ export type PendingMentionSend = {
   } | null;
   trimmed: string;
   mentionPubkeys: string[];
+  verifyMentionRecipients?: (pubkeys: readonly string[]) => Promise<void>;
   outgoingTags?: string[][];
   preparedLinkPreviews?: PreparedBackgroundLinkPreviews | null;
   savedContent: string;
@@ -40,6 +41,8 @@ export type PendingMentionSend = {
 };
 
 export type SendMessageWithMentionFlowInput = {
+  addressedAgentPubkeys?: readonly string[];
+  verifyMentionRecipients?: PendingMentionSend["verifyMentionRecipients"];
   capturedChannelId: string | null;
   capturedThreadContext?: PendingMentionSend["capturedThreadContext"];
   pendingImeta: ImetaMedia[];

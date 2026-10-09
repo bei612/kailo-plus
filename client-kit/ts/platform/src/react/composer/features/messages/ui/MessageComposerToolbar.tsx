@@ -6,8 +6,16 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ALargeSmall, Mic, Paperclip, X } from "lucide-react";
 
 import { Button } from "../../../../profile/buzz/shared/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../../../sidebar/tooltip";
-import { ComposerMentionButton, ComposerSendButton } from "./ComposerControls";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../../../sidebar/tooltip";
+import {
+  ComposerMentionButton,
+  ComposerSendButton,
+  type ComposerAddressAgent,
+} from "./ComposerControls";
 import { FormattingToolbar } from "./FormattingToolbar";
 import { SelectionFormattingTray } from "./SelectionFormattingTray";
 import { ComposerEmojiPicker } from "./ComposerEmojiPicker";
@@ -15,6 +23,7 @@ import type { CustomEmoji } from "../../../../custom-emoji/emoji";
 import { CUSTOM_EMOJI_NODE_NAME } from "../lib/customEmojiNode";
 
 const NO_CUSTOM_EMOJI: CustomEmoji[] = [];
+const NO_ADDRESSED_AGENTS: readonly ComposerAddressAgent[] = [];
 
 /** Spring for enter/exit of button groups — all fire simultaneously. */
 const presenceSpring = {
@@ -32,6 +41,15 @@ const ingressControlVariants = {
 
 export const MessageComposerToolbar = React.memo(
   function MessageComposerToolbar({
+    addressedAgents = NO_ADDRESSED_AGENTS,
+    autoPinConfirmationTitle,
+    onAutoPinConfirmationDismiss,
+    onAutoPinConfirmationHoverChange,
+    onAutoPinConfirmationTurnOff,
+    onCaptureSelection,
+    onRemoveAddressedAgent,
+    pulseVersionByPubkey,
+    shakeVersionByPubkey,
     composerDisabled,
     customEmoji = NO_CUSTOM_EMOJI,
     editor,
@@ -52,6 +70,15 @@ export const MessageComposerToolbar = React.memo(
     onVoiceNote,
     sendDisabled,
   }: {
+    addressedAgents?: readonly ComposerAddressAgent[];
+    autoPinConfirmationTitle?: string | null;
+    onAutoPinConfirmationDismiss?: () => void;
+    onAutoPinConfirmationHoverChange?: (hovered: boolean) => void;
+    onAutoPinConfirmationTurnOff?: () => void;
+    onCaptureSelection?: () => void;
+    onRemoveAddressedAgent?: (pubkey: string) => void;
+    pulseVersionByPubkey?: Readonly<Record<string, number>>;
+    shakeVersionByPubkey?: Readonly<Record<string, number>>;
     composerDisabled: boolean;
     customEmoji?: CustomEmoji[];
     editor: Editor | null;
@@ -78,18 +105,30 @@ export const MessageComposerToolbar = React.memo(
     React.useEffect(() => {
       if (isFormattingOpen || composerDisabled) setIsEmojiPickerOpen(false);
     }, [isFormattingOpen, composerDisabled]);
-    const insertEmoji = React.useCallback((emoji: string) => {
-      if (!editor || composerDisabled) return;
-      const shortcode = /^:([^:\s]+):$/.exec(emoji)?.[1]?.toLowerCase();
-      const known = customEmoji.find((entry) => entry.shortcode.toLowerCase() === shortcode);
-      if (known) {
-        editor.chain().focus().insertContent({ type: CUSTOM_EMOJI_NODE_NAME,
-          attrs: { shortcode: known.shortcode, src: known.url } }).insertContent(" ").run();
-      } else {
-        editor.chain().focus().insertContent(emoji).run();
-      }
-      setIsEmojiPickerOpen(false);
-    }, [editor, composerDisabled, customEmoji]);
+    const insertEmoji = React.useCallback(
+      (emoji: string) => {
+        if (!editor || composerDisabled) return;
+        const shortcode = /^:([^:\s]+):$/.exec(emoji)?.[1]?.toLowerCase();
+        const known = customEmoji.find(
+          (entry) => entry.shortcode.toLowerCase() === shortcode,
+        );
+        if (known) {
+          editor
+            .chain()
+            .focus()
+            .insertContent({
+              type: CUSTOM_EMOJI_NODE_NAME,
+              attrs: { shortcode: known.shortcode, src: known.url },
+            })
+            .insertContent(" ")
+            .run();
+        } else {
+          editor.chain().focus().insertContent(emoji).run();
+        }
+        setIsEmojiPickerOpen(false);
+      },
+      [editor, composerDisabled, customEmoji],
+    );
 
     return (
       <div
@@ -159,7 +198,9 @@ export const MessageComposerToolbar = React.memo(
                         <ALargeSmall />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{translateUi("buzz.formatting")}</TooltipContent>
+                    <TooltipContent>
+                      {translateUi("buzz.formatting")}
+                    </TooltipContent>
                   </Tooltip>
                 </motion.div>
                 <motion.div
@@ -183,7 +224,9 @@ export const MessageComposerToolbar = React.memo(
                         <X />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{translateUi("buzz.closeFormatting")}</TooltipContent>
+                    <TooltipContent>
+                      {translateUi("buzz.closeFormatting")}
+                    </TooltipContent>
                   </Tooltip>
                   <div className="mx-1 h-5 w-px shrink-0 bg-border/60" />
                 </motion.div>
@@ -215,10 +258,22 @@ export const MessageComposerToolbar = React.memo(
                 variants={ingressControlVariants}
                 transition={presenceSpring}
               >
-                {onOpenMentionPicker ? <ComposerMentionButton
-                  disabled={composerDisabled}
-                  onOpen={onOpenMentionPicker}
-                /> : null}
+                {onOpenMentionPicker ? (
+                  <ComposerMentionButton
+                    agents={addressedAgents}
+                    confirmationTitle={autoPinConfirmationTitle}
+                    disabled={composerDisabled}
+                    onConfirmationDismiss={onAutoPinConfirmationDismiss}
+                    onConfirmationHoverChange={onAutoPinConfirmationHoverChange}
+                    onConfirmationTurnOff={onAutoPinConfirmationTurnOff}
+                    onCaptureSelection={onCaptureSelection}
+                    onOpen={onOpenMentionPicker}
+                    onRemove={onRemoveAddressedAgent}
+                    pulseVersionByPubkey={pulseVersionByPubkey}
+                    shakeVersionByPubkey={shakeVersionByPubkey}
+                    showAgents
+                  />
+                ) : null}
                 <Tooltip disableHoverableContent>
                   <TooltipTrigger asChild>
                     <Button
@@ -237,11 +292,20 @@ export const MessageComposerToolbar = React.memo(
                       <Paperclip />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{translateUi("buzz.attachFile")}</TooltipContent>
+                  <TooltipContent>
+                    {translateUi("buzz.attachFile")}
+                  </TooltipContent>
                 </Tooltip>
-                <ComposerEmojiPicker disabled={composerDisabled} customEmoji={customEmoji}
-                  open={isEmojiPickerOpen} onOpenChange={setIsEmojiPickerOpen}
-                  onEmojiSelect={insertEmoji} onClose={() => { editor?.commands.focus(); }} />
+                <ComposerEmojiPicker
+                  disabled={composerDisabled}
+                  customEmoji={customEmoji}
+                  open={isEmojiPickerOpen}
+                  onOpenChange={setIsEmojiPickerOpen}
+                  onEmojiSelect={insertEmoji}
+                  onClose={() => {
+                    editor?.commands.focus();
+                  }}
+                />
                 {onVoiceNote ? (
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>
@@ -258,7 +322,9 @@ export const MessageComposerToolbar = React.memo(
                         </span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{translateUi("buzz.recordVoice")}</TooltipContent>
+                    <TooltipContent>
+                      {translateUi("buzz.recordVoice")}
+                    </TooltipContent>
                   </Tooltip>
                 ) : null}
                 <motion.div
@@ -281,7 +347,9 @@ export const MessageComposerToolbar = React.memo(
                         <ALargeSmall />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{translateUi("buzz.formatting")}</TooltipContent>
+                    <TooltipContent>
+                      {translateUi("buzz.formatting")}
+                    </TooltipContent>
                   </Tooltip>
                 </motion.div>
               </motion.div>

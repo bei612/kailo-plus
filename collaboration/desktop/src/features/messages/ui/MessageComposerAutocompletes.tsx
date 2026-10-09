@@ -23,6 +23,13 @@ type MessageComposerAutocompletesProps = {
   onChannelSelect: (suggestion: ChannelSuggestion) => void;
   onEmojiSelect: (suggestion: EmojiSuggestion) => void;
   onMentionSelect: (suggestion: MentionSuggestion) => void;
+  audienceControlsEnabled?: boolean;
+  lockedAgentPubkeys?: ReadonlySet<string>;
+  onToggleAlwaysAddressAgent?: (suggestion: MentionSuggestion) => void;
+  keepMentionedAgentsPinned?: boolean;
+  onKeepMentionedAgentsPinnedChange?: (enabled: boolean) => void;
+  openOptionsRequest?: number;
+  onOptionsRevealComplete?: (request: number) => void;
 };
 
 /**
@@ -41,6 +48,13 @@ export function MessageComposerAutocompletes({
   onChannelSelect,
   onEmojiSelect,
   onMentionSelect,
+  audienceControlsEnabled,
+  lockedAgentPubkeys,
+  onToggleAlwaysAddressAgent,
+  keepMentionedAgentsPinned,
+  onKeepMentionedAgentsPinnedChange,
+  openOptionsRequest,
+  onOptionsRevealComplete,
 }: MessageComposerAutocompletesProps) {
   return (
     <>
@@ -65,6 +79,12 @@ export function MessageComposerAutocompletes({
         }
       />
       <MentionAutocomplete
+        lockedAgentPubkeys={audienceControlsEnabled ? lockedAgentPubkeys : undefined}
+        onToggleAlwaysAddressAgent={audienceControlsEnabled ? onToggleAlwaysAddressAgent : undefined}
+        keepMentionedAgentsPinned={keepMentionedAgentsPinned}
+        onKeepMentionedAgentsPinnedChange={audienceControlsEnabled ? onKeepMentionedAgentsPinnedChange : undefined}
+        openOptionsRequest={openOptionsRequest}
+        onOptionsRevealComplete={onOptionsRevealComplete}
         position={position}
         composerOwnsFocus={composerOwnsFocus}
         onDismiss={mentions.cancelMentionAutocomplete}

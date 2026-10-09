@@ -15,6 +15,7 @@ export type MentionCandidate = {
   displayName: string | null;
   avatarUrl?: string | null;
   isMember: boolean;
+  isAgent?: boolean;
   role?: ChannelRole | null;
   secondaryLabel?: string | null;
 };

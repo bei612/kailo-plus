@@ -43,6 +43,8 @@ export { subscribeToStore, getStoreSnapshot };
 export type DraftMentionRef = {
   displayName: string;
   pubkey: string;
+  /** Original Agent selection intent, never admission or identity authority. */
+  isAgent?: boolean;
 };
 
 export type DraftState = {
@@ -291,7 +293,8 @@ function isValidDraftState(v: unknown): v is DraftState {
         typeof ref.displayName !== "string" ||
         ref.displayName.trim().length === 0 ||
         typeof ref.pubkey !== "string" ||
-        ref.pubkey.trim().length === 0,
+        ref.pubkey.trim().length === 0 ||
+        (ref.isAgent !== undefined && typeof ref.isAgent !== "boolean"),
     )
   ) {
     return false;
@@ -424,7 +427,7 @@ function draftStatesEqual(a: DraftState, b: DraftState): boolean {
   for (let i = 0; i < aMentionRefs.length; i++) {
     const ar = aMentionRefs[i]!;
     const br = bMentionRefs[i]!;
-    if (ar.displayName !== br.displayName || ar.pubkey !== br.pubkey) {
+    if (ar.displayName !== br.displayName || ar.pubkey !== br.pubkey || ar.isAgent !== br.isAgent) {
       return false;
     }
   }

@@ -1,14 +1,40 @@
 import * as React from "react";
 
-/** Highlighted row in the mention picker, clamped to the current suggestions. */
-export function useMentionSelection(suggestions: readonly unknown[]) {
+export type MentionPickerMode = "first-agent" | "preserve" | null;
+
+export function useMentionSelection(
+  suggestions: readonly { isAgent?: boolean; pubkey?: string }[],
+) {
   const [mentionSelectedIndex, setMentionSelectedIndex] = React.useState(0);
+  const preferAgentSelectionRef = React.useRef(false);
 
   React.useEffect(() => {
-    setMentionSelectedIndex((current) =>
-      suggestions.length === 0 ? 0 : Math.min(current, suggestions.length - 1),
-    );
+    setMentionSelectedIndex((current) => {
+      if (suggestions.length === 0) return 0;
+      if (preferAgentSelectionRef.current) {
+        preferAgentSelectionRef.current = false;
+        const firstAgentIndex = suggestions.findIndex(
+          (suggestion) => suggestion.isAgent && suggestion.pubkey,
+        );
+        if (firstAgentIndex >= 0) return firstAgentIndex;
+      }
+      return Math.min(current, suggestions.length - 1);
+    });
   }, [suggestions]);
 
-  return { mentionSelectedIndex, setMentionSelectedIndex };
+  const clearAgentSelectionPreference = React.useCallback(() => {
+    preferAgentSelectionRef.current = false;
+  }, []);
+  const prepareSelectionPreference = React.useCallback(
+    (preference: MentionPickerMode) => {
+      preferAgentSelectionRef.current = preference === "first-agent";
+    },
+    [],
+  );
+  return {
+    clearAgentSelectionPreference,
+    mentionSelectedIndex,
+    prepareSelectionPreference,
+    setMentionSelectedIndex,
+  };
 }

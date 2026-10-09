@@ -12,6 +12,7 @@ export function mapMentionCandidateToSuggestion(opts: {
   return {
     pubkey: candidate.pubkey,
     displayName: label,
+    isAgent: candidate.isAgent === true,
     avatarUrl:
       candidate.avatarUrl ??
       profiles?.[normalizePubkey(candidate.pubkey)]?.avatarUrl ??

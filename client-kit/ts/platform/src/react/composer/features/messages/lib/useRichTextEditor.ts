@@ -72,6 +72,7 @@ export type RichTextEditorOptions = {
   /** Compact hosts keep focus for retained drafts, not an acknowledged empty form. */
   restoreFocusOnEnable?: () => boolean;
   mentionNames?: string[];
+  agentMentionNames?: string[];
   channelNames?: string[];
   messageLinkChannels?: readonly ComposerMessageLinkChannel[];
   customEmoji?: CustomEmoji[];
@@ -127,6 +128,7 @@ export function useRichTextEditor({
   editable = true,
   restoreFocusOnEnable,
   mentionNames,
+  agentMentionNames,
   channelNames,
   messageLinkChannels,
   customEmoji,
@@ -156,6 +158,7 @@ export function useRichTextEditor({
   const onLinkShortcutRef = React.useRef(onLinkShortcut);
   onLinkShortcutRef.current = onLinkShortcut;
 
+  const addressedAgentMentionNamesRef = React.useRef<readonly string[]>([]);
   const getMentionIdentitiesRef = React.useRef(getMentionIdentities);
   getMentionIdentitiesRef.current = getMentionIdentities;
 
@@ -547,8 +550,13 @@ export function useRichTextEditor({
   // Mutate `editor.storage.mentionHighlight`; the extension getter copies storage.
   React.useEffect(() => {
     if (!editor) return;
-    syncMentionHighlightFromProps(editor, mentionNames, channelNames);
-  }, [editor, mentionNames, channelNames]);
+    syncMentionHighlightFromProps(editor, mentionNames, [...new Set([...(agentMentionNames ?? []), ...addressedAgentMentionNamesRef.current])], channelNames);
+  }, [editor, mentionNames, agentMentionNames, channelNames]);
+  const syncAddressedAgentMentionNames = React.useCallback((names: readonly string[]) => {
+    addressedAgentMentionNamesRef.current = names;
+    if (!editor) return;
+    syncMentionHighlightFromProps(editor, mentionNames, [...new Set([...(agentMentionNames ?? []), ...names])], channelNames);
+  }, [agentMentionNames, channelNames, editor, mentionNames]);
 
   React.useEffect(() => {
     if (!editor) return;
@@ -785,6 +793,7 @@ export function useRichTextEditor({
     focusEnd,
     focusPreserve,
     getPlainTextAndCursor,
+    syncAddressedAgentMentionNames,
     replacePlainTextRange,
     getLinkSelectionInfo,
     applyLink,

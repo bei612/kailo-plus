@@ -1,4 +1,16 @@
 import * as React from "react";
+import { useBffClient } from "@client-kit/platform/react/context";
+import { useNativeSession } from "@/features/platform/activeCommunity";
+import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
+import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
+import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
+import { setKeepMentionedAgentsPinned } from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
+import { useThreadAgentAudience } from "@client-kit/platform/react/composer/features/messages/ui/useThreadAgentAudience";
+import { useAgentAddressLockPicker } from "@client-kit/platform/react/composer/features/messages/ui/useAgentAddressLockPicker";
+import { useAddressMentionPulse } from "@client-kit/platform/react/composer/features/messages/ui/useAddressMentionPulse";
+import { useAutoPinMentionedAgents } from "@client-kit/platform/react/composer/features/messages/ui/useAutoPinMentionedAgents";
+import { useAlwaysAddressShortcut } from "@client-kit/platform/react/composer/features/messages/ui/useAlwaysAddressShortcut";
+import { focusMentionOptionsTrigger } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { useCustomEmojiPalette } from "../lib/useCustomEmojiPalette";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
@@ -34,7 +46,6 @@ import { useComposerSpoilerParticles } from "@/features/messages/lib/useComposer
 import { cn } from "@/shared/lib/cn";
 import { ComposerReplyBanner } from "./ComposerReplyBanner";
 import { ComposerAttachments, DropZoneOverlay } from "./ComposerAttachments";
-import type { MentionSuggestion } from "./MentionAutocomplete";
 import { MessageComposerAutocompletes } from "./MessageComposerAutocompletes";
 import { ComposerUploadProgressPill } from "./ComposerUploadProgressPill";
 import { useComposerVoiceNote } from "./useComposerVoiceNote";
@@ -49,11 +60,13 @@ import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
+  audienceContext = null,
   surface = "stream",
   compact = false,
   autocompleteBelow = false,
   composerHeader,
   channelId = null,
+  channelType = null,
   channelName,
   containerClassName,
   layoutMode = "standalone",
@@ -100,7 +113,39 @@ function MessageComposerImpl({
   const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
   effectiveDraftKeyRef.current = effectiveDraftKey;
-  const mentions = useMentions(channelId, profiles, mentionPeople);
+  const bff = useBffClient();
+  const session = useNativeSession();
+  const workspaces = useWorkspaceChannelDirectory({ enabled: channelType !== "dm" && channelId !== null });
+  const workspace = nativeApplicationWorkspace(workspaces.data, { channelId });
+  const agentDirectory = useComposerAgentDirectory(bff, {
+    workspaceId: workspace?.id, channelId: channelId ?? undefined, ownerPubkey: session.devicePubkey,
+  }, channelType !== "dm" && channelId !== null && workspace !== undefined && !editTarget);
+  const agents = React.useMemo(() => agentDirectory.data?.agents.map(agent => ({
+    pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true,
+  })) ?? [], [agentDirectory.data]);
+  const knownAgentKeys = React.useMemo(() => new Set<string>(), [session.devicePubkey, channelId, effectiveDraftKey]);
+  for (const agent of agents) knownAgentKeys.add(agent.pubkey);
+  const isAgentPubkey = React.useCallback((pubkey: string) => agents.some(agent => agent.pubkey === pubkey.toLowerCase()), [agents]);
+  const audienceScope = !editTarget && audienceContext && channelId && channelType !== "dm"
+    ? getPersistentAgentAudienceScope({ ownerPubkey: session.devicePubkey, channelId, composerKey: effectiveDraftKey }) : null;
+  const { audience, keepMentionedAgentsPinned } = useThreadAgentAudience({
+    isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope,
+  });
+  const admittedPeople = React.useMemo(() => mentionPeople ?? (workspace ? agentDirectory.data?.members.flatMap(member => member.pubkeys.map(pubkey => ({pubkey, displayName: member.displayName}))) ?? [] : undefined), [mentionPeople, workspace?.id, agentDirectory.data]);
+  const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey);
+  for (const ref of mentions.getDraftMentionRefs(contentRef.current)) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
+  const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getDraftMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getDraftMentionRefs, knownAgentKeys]);
+  const agentMentions = {...mentions, getDraftMentionRefs: getAgentDraftMentionRefs};
+  const verifyMentionRecipients = React.useCallback(async (pubkeys: readonly string[]) => {
+    const selected = pubkeys.filter(pubkey => knownAgentKeys.has(pubkey) || audience.pubkeys.includes(pubkey));
+    if (!selected.length) return;
+    const fresh = await agentDirectory.verify();
+    if (fresh.channelId !== channelId || fresh.ownerPubkey !== session.devicePubkey ||
+        selected.some(pubkey => !fresh.agents.some(agent => agent.pubkey === pubkey))) {
+      throw new Error("Agent mention admission changed before publication");
+    }
+  }, [knownAgentKeys, audience.pubkeys, agentDirectory.verify, channelId, session.devicePubkey]);
+  const syncAddressedAgentsFromTextRef = React.useRef<(text: string) => void>(() => {});
   const channelLinks = useChannelLinks();
   const emojiAutocomplete = useEmojiAutocomplete();
   const internalMedia = useMediaUpload({ deferUploadsUntilSend: true });
@@ -210,6 +255,7 @@ function MessageComposerImpl({
     editable: !composerDisabled,
     restoreFocusOnEnable: () => !compact || Boolean(contentRef.current.trim() || media.pendingImetaRef.current.length || media.queuedAttachmentsRef.current.length),
     mentionNames: mentions.knownNames,
+    agentMentionNames: mentions.getDraftMentionRefs(contentRef.current).filter(ref => ref.isAgent === true).map(ref => ref.displayName),
     channelNames: channelLinks.knownChannelNames,
     messageLinkChannels: channelLinks.channels,
     getMentionIdentities: mentions.getMentionIdentities,
@@ -228,6 +274,7 @@ function MessageComposerImpl({
       contentRef.current = text;
       setComposerContentFromText(text);
       setPreviewContent(linkPreviewContent);
+      if (!isSubmitLockedRef.current && !editTargetRef.current) syncAddressedAgentsFromTextRef.current(text);
       mentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
@@ -297,17 +344,21 @@ function MessageComposerImpl({
     },
     [richText.replacePlainTextRange],
   );
-  const selectMentionSuggestion = React.useCallback(
-    (suggestion: MentionSuggestion) => {
-      const { cursor } = richText.getPlainTextAndCursor();
-      applyAutocompleteEdit(mentions.insertMention(suggestion, cursor));
-    },
-    [
-      applyAutocompleteEdit,
-      mentions.insertMention,
-      richText.getPlainTextAndCursor,
-    ],
-  );
+  const addressPulse = useAddressMentionPulse();
+  const autoPin = useAutoPinMentionedAgents({ audienceScope, enabled: keepMentionedAgentsPinned,
+    getDisplayName: mentions.getMentionDisplayName, onPulse: addressPulse.pulseOne,
+    onTurnOff: () => setKeepMentionedAgentsPinned(false), onTurnOn: () => setKeepMentionedAgentsPinned(true),
+  });
+  const addressLock = useAgentAddressLockPicker({ applyAutocompleteEdit, audience, audienceScope, mentions: agentMentions,
+    onAddressAgentMention: suggestion => autoPin.promoteExplicitlyAddressedAgents({pubkeys: [suggestion.pubkey]}),
+    onAutoPinAgentMention: (suggestion, options) => autoPin.promoteMentionedAgents({pubkeys: [suggestion.pubkey], ...options}),
+    onPulseAddressLock: addressPulse.pulseOne, profiles, richText,
+  });
+  const selectMentionSuggestion = addressLock.selectMentionSuggestion;
+  syncAddressedAgentsFromTextRef.current = addressLock.syncAddressedAgentsFromText;
+  React.useEffect(() => {
+    if (!editTarget) addressLock.restoreAddressedAgentMentions();
+  }, [audienceScope, editTarget, addressLock.restoreAddressedAgentMentions]);
   const applyChannelInsert = React.useCallback(
     (suggestion: ChannelSuggestion) => {
       const { cursor } = richText.getPlainTextAndCursor();
@@ -330,7 +381,13 @@ function MessageComposerImpl({
       richText.getPlainTextAndCursor,
     ],
   );
-  const openMentionPicker = useComposerMentionPicker({ mentions, richText });
+  const mentionPicker = useComposerMentionPicker({ mentions, richText, onTurnOffAutoPinConfirmation: autoPin.turnOffConfirmation });
+  const getDefaultAgentSuggestion = React.useCallback(() => agents[0], [agents]);
+  const handleAlwaysAddressShortcut = useAlwaysAddressShortcut({
+    enabled: Boolean(audienceScope && !editTarget), lockedAgent: addressLock.lockedAgents[0],
+    mentions: {...mentions, getDefaultAgentSuggestion}, onOpenPicker: mentionPicker.openMentionPicker,
+    onToggle: addressLock.toggleAlwaysAddressAgent,
+  });
   const submitMessage = React.useCallback(async () => {
     const trimmed = syncComposerContentFromEditor().trim();
     // Normal send
@@ -370,6 +427,8 @@ function MessageComposerImpl({
         ? null
         : prepareBackgroundLinkPreviews(getLiveLinkPreviewCandidates());
       await mentionSendFlow.sendMessageWithMentionFlow({
+        addressedAgentPubkeys: audience.pubkeys,
+        verifyMentionRecipients,
         capturedChannelId: channelId,
         capturedThreadContext,
         pendingImeta: currentPendingImeta,
@@ -406,6 +465,8 @@ function MessageComposerImpl({
     voiceNote.statusRef,
     editTarget,
     onRequestEmptyEditDelete,
+    audience.pubkeys,
+    verifyMentionRecipients,
   ]);
 
   submitMessageRef.current = submitMessage;
@@ -441,6 +502,7 @@ function MessageComposerImpl({
   // handles autocomplete arrow/enter keys and the link card's Tab.
   const handleEditorKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (handleAlwaysAddressShortcut(event)) return;
       // Let autocomplete handle keys first
       const emojiResult = emojiAutocomplete.handleEmojiKeyDown(event);
       if (emojiResult.handled) {
@@ -454,6 +516,10 @@ function MessageComposerImpl({
         if (channelResult.suggestion) {
           applyChannelInsert(channelResult.suggestion);
         }
+        return;
+      }
+      if (event.key === "Tab" && event.shiftKey && mentions.isMentionOpen && focusMentionOptionsTrigger(formRef.current)) {
+        event.preventDefault();
         return;
       }
       const { handled, suggestion } = mentions.handleMentionKeyDown(event, {
@@ -474,6 +540,7 @@ function MessageComposerImpl({
       }
     },
     [
+      handleAlwaysAddressShortcut,
       emojiAutocomplete.handleEmojiKeyDown,
       applyEmojiInsert,
       channelLinks.handleChannelKeyDown,
@@ -541,17 +608,32 @@ function MessageComposerImpl({
       onSubmit: handleSubmit,
     }}
     toolbar={{ layoutMode, composerDisabled, editor: richText.editor, customEmoji,
+      addressedAgents: editTarget || composerDisabled ? [] : addressLock.lockedAgents,
+      autoPinConfirmationTitle: autoPin.confirmationTitle,
+      onAutoPinConfirmationDismiss: autoPin.dismissConfirmation,
+      onAutoPinConfirmationHoverChange: autoPin.setConfirmationHovered,
+      onAutoPinConfirmationTurnOff: mentionPicker.turnOff,
+      onRemoveAddressedAgent: addressLock.removeAddressedAgent,
+      pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
+      shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
       extraActions: toolbarExtraActions, formattingDisabled: composerDisabled,
       isFormattingOpen, isSending: isSending || mentionSendFlow.isPreparingMentionSend,
       isUploading: media.isUploading, isVoiceNoteProcessing: voiceNote.status !== "recording",
       isVoiceNoteRecording: voiceNote.status !== "idle", hasVoiceNoteAttachment: voiceNote.hasAttachment,
       voiceNoteRecorder: voiceNote.recorderElement,
       onFormattingToggle: setIsFormattingOpen, onLinkButton: linkEditor.openFromToolbar,
-      onOpenMentionPicker: openMentionPicker, onPaperclip: handlePaperclipClick,
+      onOpenMentionPicker: mentionPicker.openMentionSettings, onPaperclip: handlePaperclipClick,
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle, sendDisabled,
     }}>
             {acceptsDrop && media.isDragOver && <DropZoneOverlay />}
             <MessageComposerAutocompletes
+              audienceControlsEnabled={Boolean(audienceScope && !editTarget)}
+              lockedAgentPubkeys={addressLock.lockedAgentPubkeys}
+              onToggleAlwaysAddressAgent={suggestion => addressLock.toggleAlwaysAddressAgent(suggestion, {preserveMention: true})}
+              keepMentionedAgentsPinned={keepMentionedAgentsPinned}
+              onKeepMentionedAgentsPinnedChange={setKeepMentionedAgentsPinned}
+              openOptionsRequest={autoPin.openOptionsRequest}
+              onOptionsRevealComplete={autoPin.completeOptionsReveal}
               position={autocompleteBelow ? "below" : "above"}
               channelLinks={channelLinks}
               composerOwnsFocus={composerOwnsFocus}
@@ -561,6 +643,7 @@ function MessageComposerImpl({
               onEmojiSelect={applyEmojiInsert}
               onMentionSelect={selectMentionSuggestion}
             />
+            <output aria-live="polite" className="sr-only" data-testid="composer-address-lock-status">{addressLock.announcement}</output>
             {media.uploadState.status === "error" ? (
               <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 Upload failed: {media.uploadState.message}

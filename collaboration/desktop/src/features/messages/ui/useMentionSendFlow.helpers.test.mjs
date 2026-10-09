@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {JSDOM} from "jsdom";
 
 import {
   formatMessageSendError,
@@ -12,6 +13,41 @@ test("formatMessageSendError preserves the publication failure", () => {
     formatMessageSendError(new Error("relay rejected voice note")),
     "Message failed to send: relay rejected voice note",
   );
+});
+
+test("Native real send flow verifies addressed Agent recipients before publishing and restores rejected drafts", async () => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {url:"http://localhost"});
+  Object.assign(globalThis, {window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,
+    Node:dom.window.Node,IS_REACT_ACT_ENVIRONMENT:true});
+  const {act, cleanup, renderHook} = await import("@testing-library/react");
+  const {useMentionSendFlow} = await import("./useMentionSendFlow.ts");
+  for (const admitted of [true,false]) {
+    const human = "a".repeat(64), agent = "b".repeat(64);
+    const sent = [], order = [], persisted = [];
+    const contentRef = {current:"@Human original"};
+    const options = {channelId:"relay-channel",effectiveDraftKey:"thread-root",getComposerRevision:()=>0,
+      runComposerUpdate:update=>update(),channelLinks:{clearChannels(){}},contentRef,
+      drafts:{loadDraft:()=>undefined,markDraftSent(){},persistDraft:(...args)=>persisted.push(args)},
+      emojiAutocomplete:{clearEmojis(){}},mentions:{clearMentions(){},restoreDraftMentionRefs(){},
+        settlePendingMentionBindings:async()=>{},extractMentionPubkeys:()=>[human],getDraftMentionRefs:()=>[{displayName:"Human",pubkey:human}]},
+      onSendRef:{current:async(...args)=>{order.push("publish");sent.push(args);}},
+      richText:{clearContent(){},setContent(){}},setContent:value=>{contentRef.current=value;},
+      setPendingImeta(){},hasUnsavedMedia:()=>false,clearQueuedAttachments(){},restoreQueuedAttachments(){}};
+    const view = renderHook(()=>useMentionSendFlow(options));
+    await act(async()=>view.result.current.sendMessageWithMentionFlow({trimmed:"@Human original",pendingImeta:[],
+      capturedChannelId:"relay-channel",capturedThreadContext:{parentEventId:"root",threadHeadId:"root"},
+      sentDraftKey:"thread-root",recoveryDraftKey:"thread-root",addressedAgentPubkeys:[agent,agent.toUpperCase()],
+      verifyMentionRecipients:async recipients=>{
+        order.push("verify");assert.deepEqual(recipients,[human,agent]);
+        if (!admitted) throw new Error("Agent admission revoked");
+      }}));
+    assert.deepEqual(order,admitted?["verify","publish"]:["verify"]);
+    assert.equal(sent.length,admitted?1:0);
+    if (admitted) {assert.deepEqual(sent[0][1],[human,agent]);assert.equal(sent[0][3],"relay-channel");}
+    else {assert.equal(contentRef.current,"@Human original");assert.equal(persisted.length,1);}
+    view.unmount();
+  }
+  cleanup();dom.window.close();
 });
 
 test("getErrorMessage preserves Tauri string errors", () => {

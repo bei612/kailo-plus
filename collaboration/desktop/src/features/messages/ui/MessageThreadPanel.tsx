@@ -14,6 +14,7 @@ import { useStableSendToChannel } from "./useStableSendToChannel";
 type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channelId: string | null;
   channelName: string;
+  channelType?: import("@/shared/api/types").ChannelType;
   currentPubkey?: string;
   editTarget?: TimelineMessage | null;
   onEdit?: (message: TimelineMessage) => void;
@@ -116,6 +117,8 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
             props.editTarget && props.onEditSave ? props.onEditSave : props.onSend
           }
           profiles={props.profiles}
+          channelType={props.channelType}
+          audienceContext={props.editTarget || !props.threadHead?.tags ? null : {type: "thread", rootTags: props.threadHead.tags}}
         />
       )}
     />

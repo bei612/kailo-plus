@@ -52,7 +52,7 @@ function normalizeDraftMentionRefs(
     const displayName = ref.displayName.trim();
     const pubkey = normalizePubkey(ref.pubkey);
     if (displayName && pubkey) {
-      normalized.push({ displayName, pubkey });
+      normalized.push({ displayName, pubkey, ...(ref.isAgent === true ? {isAgent: true} : {}) });
     }
   }
   return normalized;

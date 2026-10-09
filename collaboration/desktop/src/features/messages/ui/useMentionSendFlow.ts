@@ -235,6 +235,8 @@ export function useMentionSendFlow({
           );
           if (!finalOutgoingTags || signal?.aborted || isSendCancelled())
             return restoreComposerAfterFailure();
+          await draft.verifyMentionRecipients?.(draft.mentionPubkeys);
+          if (signal?.aborted || isSendCancelled()) return restoreComposerAfterFailure();
           await send(
             finalContent,
             draft.mentionPubkeys,
@@ -331,6 +333,8 @@ export function useMentionSendFlow({
   );
   const sendMessageWithMentionFlow = React.useCallback(
     async ({
+      addressedAgentPubkeys = [],
+      verifyMentionRecipients,
       capturedChannelId,
       capturedThreadContext = null,
       pendingImeta,
@@ -380,8 +384,9 @@ export function useMentionSendFlow({
           capturedThreadContext,
           trimmed,
           mentionPubkeys: uniqueNormalizedPubkeys(
-            mentions.extractMentionPubkeys(trimmed),
+            [...mentions.extractMentionPubkeys(trimmed), ...addressedAgentPubkeys],
           ),
+          verifyMentionRecipients,
           outgoingTags: linkPreviewTags,
           preparedLinkPreviews,
           savedContent: trimmed,

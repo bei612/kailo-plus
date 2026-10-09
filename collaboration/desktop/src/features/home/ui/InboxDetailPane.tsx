@@ -473,6 +473,8 @@ function InboxMessageDetailPane({
           <div className="pointer-events-auto">
             <MessageComposer
               channelId={item.item.channelId}
+              channelType={item.item.channelType === "stream" || item.item.channelType === "forum" || item.item.channelType === "dm" ? item.item.channelType : null}
+              audienceContext={isDirectMessage ? null : {type: "thread", rootTags: messages.find(message => message.id === item.conversationId)?.tags ?? item.groupItems.find(message => message.id === item.conversationId)?.tags ?? []}}
               channelName={item.channelLabel ?? t("inbox.channelFallback")}
               containerClassName="px-4 pb-4 sm:px-4"
               disabled={!canReply}

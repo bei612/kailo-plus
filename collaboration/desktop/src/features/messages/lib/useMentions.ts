@@ -32,19 +32,28 @@ export function useMentions(
   channelId: string | null,
   profiles?: UserProfileLookup,
   people?: readonly MentionSuggestion[],
+  agents?: readonly MentionSuggestion[],
+  ownerPubkey?: string,
 ) {
   const t=useUiT();
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null);
   const [mentionStartIndex, setMentionStartIndex] = React.useState(0);
+  const mentionPickerOriginRef = React.useRef<"inline" | "explicit" | null>(null);
   const [selectedMentionNames, setSelectedMentionNames] = React.useState<
     string[]
   >([]);
   const mentionMapRef = React.useRef<Map<string, string>>(new Map());
+  const selectedAgentKeys = React.useMemo(() => new Set<string>(), [channelId, ownerPubkey]);
+  for (const agent of agents ?? []) selectedAgentKeys.add(agent.pubkey);
   const membersQuery = useChannelMembersQuery(channelId);
   const members = membersQuery.data;
   const mentionCandidates = React.useMemo(
-    () => people?.map(person=>({...person,avatarUrl:person.avatarUrl??null,role:null,secondaryLabel:null,isMember:true})) ?? buildMentionCandidates({ members, profiles }),
-    [members, profiles, people],
+    () => {
+      const admittedAgents = new Map((agents ?? []).map(agent => [agent.pubkey, agent]));
+      const humans = people?.map(person=>({...person,avatarUrl:person.avatarUrl??null,role:null,secondaryLabel:null,isMember:true,isAgent:false})) ?? buildMentionCandidates({ members, profiles });
+      return [...humans.filter(person=>!admittedAgents.has(person.pubkey)), ...[...admittedAgents.values()].map(agent=>({...agent,avatarUrl:agent.avatarUrl??null,role:null,secondaryLabel:null,isMember:true,isAgent:true}))];
+    },
+    [members, profiles, people, agents],
   );
   const searchableNames = React.useMemo(
     () => [
@@ -96,7 +105,7 @@ export function useMentions(
         mapMentionCandidateToSuggestion({ candidate, label, profiles }),
       );
   }, [mentionCandidates, mentionQuery, profiles]);
-  const { mentionSelectedIndex, setMentionSelectedIndex: setSelected } =
+  const { mentionSelectedIndex, setMentionSelectedIndex: setSelected, clearAgentSelectionPreference, prepareSelectionPreference } =
     useMentionSelection(suggestions);
   const isMentionOpen = mentionQuery !== null && suggestions.length > 0;
   // Untrusted clipboard records only become bindable identities once trusted
@@ -141,6 +150,7 @@ export function useMentions(
       pasteBinding.claimMentionIntent(suggestion.displayName);
       pasteBinding.claimMentionIntent(displayName);
       mentionMapRef.current.set(displayName, suggestion.pubkey);
+      if (suggestion.isAgent) selectedAgentKeys.add(suggestion.pubkey);
       trimMapToSize(mentionMapRef.current, 200);
       setSelectedMentionNames((current) =>
         appendUniqueName(current, displayName),
@@ -156,13 +166,13 @@ export function useMentions(
         insertText: `@${displayName} `,
       };
     },
-    [mentionStartIndex, pasteBinding.claimMentionIntent, setSelected],
+    [mentionStartIndex, pasteBinding.claimMentionIntent, setSelected, selectedAgentKeys],
   );
   // Registration is explicit user intent; paste settlement keeps its separate
   // non-bumping write. Reserve the exact label before claiming either name so
   // a pending paste cannot take the original name after a qualified selection.
   const registerMentionPubkey = React.useCallback(
-    (displayName: string, pubkey: string) => {
+    (displayName: string, pubkey: string, flags?: {isAgent: boolean}) => {
       const label = selectedMentionLabel(
         displayName.trim(),
         pubkey,
@@ -172,9 +182,10 @@ export function useMentions(
       pasteBinding.claimMentionIntent(displayName);
       pasteBinding.claimMentionIntent(label);
       writeMentionPubkey(label, pubkey);
+      if (flags?.isAgent) selectedAgentKeys.add(pubkey);
       return label;
     },
-    [pasteBinding.claimMentionIntent, writeMentionPubkey],
+    [pasteBinding.claimMentionIntent, writeMentionPubkey, selectedAgentKeys],
   );
   const getMentionIdentities = React.useCallback((): MentionIdentity[] => {
     const identities: MentionIdentity[] = [];
@@ -220,6 +231,10 @@ export function useMentions(
   const autocompleteGenerationRef = React.useRef(0);
   const updateMentionQuery = React.useCallback(
     (value: string, cursorPosition: number) => {
+      clearAgentSelectionPreference();
+      const activeInlineMention = detectPrefixQuery("@", value, cursorPosition, searchableNamesLowerRef.current);
+      if (activeInlineMention) mentionPickerOriginRef.current = "inline";
+      else if (mentionPickerOriginRef.current === "inline") mentionPickerOriginRef.current = null;
       const generation = ++autocompleteGenerationRef.current;
       latestValueRef.current = value;
       latestCursorRef.current = cursorPosition;
@@ -236,6 +251,7 @@ export function useMentions(
           searchableNamesLowerRef.current,
         );
         if (mention) {
+          mentionPickerOriginRef.current = "inline";
           setMentionQuery(mention.query);
           setMentionStartIndex(mention.startIndex);
           setSelected(0);
@@ -244,21 +260,27 @@ export function useMentions(
         }
       }, MENTION_DEBOUNCE_MS);
     },
-    [setSelected],
+    [clearAgentSelectionPreference, setSelected],
   );
   const openMentionPicker = React.useCallback(
-    (cursorPosition: number) => {
+    (cursorPosition: number, preference?: "preserve" | "first-agent") => {
       autocompleteGenerationRef.current += 1;
       if (debounceTimerRef.current !== null) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
       flushedMentionStartIndexRef.current = null;
+      mentionPickerOriginRef.current = "explicit";
+      if (preference === "preserve") {
+        setMentionStartIndex(cursorPosition);
+        return;
+      }
+      prepareSelectionPreference(preference ?? null);
       setMentionQuery("");
       setMentionStartIndex(cursorPosition);
       setSelected(0);
     },
-    [setSelected],
+    [prepareSelectionPreference, setSelected],
   );
   const extractMentionPubkeysForCurrentMentions = React.useCallback(
     (text: string, competingDisplayNames: readonly string[] = []): string[] => {
@@ -283,9 +305,11 @@ export function useMentions(
       debounceTimerRef.current = null;
     }
     flushedMentionStartIndexRef.current = null;
+    mentionPickerOriginRef.current = null;
+    clearAgentSelectionPreference();
     setMentionQuery(null);
     setSelected(0);
-  }, [setSelected]);
+  }, [clearAgentSelectionPreference, setSelected]);
   const clearMentions = React.useCallback(() => {
     cancelMentionAutocomplete();
     mentionMapRef.current.clear();
@@ -294,13 +318,18 @@ export function useMentions(
     // composer is cleared holds a claim nothing can match afterwards.
     pasteBinding.clearMentionIntents();
   }, [cancelMentionAutocomplete, pasteBinding.clearMentionIntents]);
-  const { getDraftMentionRefs, restoreDraftMentionRefs } =
+  const draftRouting =
     useDraftMentionRouting({
       memberCandidates: mentionCandidates,
       mentionMapRef,
       cancelAutocomplete: cancelMentionAutocomplete,
       setSelectedNames: setSelectedMentionNames,
     });
+  const getDraftMentionRefs = React.useCallback((content: string, fallbackRefs?: readonly import("./useDrafts").DraftMentionRef[], competingDisplayNames?: readonly string[]) => draftRouting.getDraftMentionRefs(content, fallbackRefs, competingDisplayNames).map(ref => ({...ref, ...(selectedAgentKeys.has(ref.pubkey) ? {isAgent: true} : {})})), [draftRouting.getDraftMentionRefs, selectedAgentKeys]);
+  const restoreDraftMentionRefs = React.useCallback((refs: readonly import("./useDrafts").DraftMentionRef[]) => {
+    for (const ref of refs) if (ref.isAgent === true) selectedAgentKeys.add(ref.pubkey);
+    draftRouting.restoreDraftMentionRefs(refs);
+  }, [draftRouting.restoreDraftMentionRefs, selectedAgentKeys]);
   const handleMentionKeyDown = React.useCallback(
     (
       event: React.KeyboardEvent,
@@ -377,6 +406,8 @@ export function useMentions(
       suggestions,
     ],
   );
+  const getMentionDisplayName = React.useCallback((pubkey: string) => mentionCandidates.find(candidate => candidate.pubkey === pubkey)?.displayName ?? undefined, [mentionCandidates]);
+  const isInlineMentionSelection = React.useCallback(() => mentionPickerOriginRef.current === "inline", []);
   return {
     bindPastedMentionIdentities: pasteBinding.bindPastedMentionIdentities,
     cancelMentionAutocomplete,
@@ -384,6 +415,8 @@ export function useMentions(
     extractMentionPubkeys: extractMentionPubkeysForCurrentMentions,
     getDraftMentionRefs,
     getMentionIdentities,
+    getMentionDisplayName,
+    isInlineMentionSelection,
     handleMentionKeyDown,
     insertMention,
     insertResolvedMention,

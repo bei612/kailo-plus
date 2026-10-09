@@ -11,6 +11,8 @@ export type MessageComposerProps = {
   autocompleteBelow?: boolean;
   composerHeader?: ReactNode;
   channelId?: string | null;
+  channelType?: import("@/shared/api/types").ChannelType | null;
+  audienceContext?: { rootTags: readonly string[][]; type: "thread" } | null;
   channelName: string;
   containerClassName?: string;
   /**

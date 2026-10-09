@@ -5662,3 +5662,168 @@ rename 口径 3330 files、+37860/-746415，与下述路径 union 不是同一�
 但原页面／交互／非空状态／Settings 其余分区／Agent 资料及会话仍未全面逐处验收。
 当前线上仍固定 5ba，a816 的 DM／作者栏新截图仍 0；等待主线新 digest 实际部署后重拍。
 本轮没有新的 Windows／Mobile 包或设备验收，不声明原版 100% 或生产就绪。
+
+## 2026-10-09 原 Composer audience／Agent 提及共源真实消费者恢复
+
+本批固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`，
+仅恢复原 Composer Agent autocomplete、address locks、线程 audience、选中和发送真实读方；
+不是原消息产品全量恢复。41 个源码／原检查／同源 Dart 路径冻结，+3136/-280；
+根代理负责选择性提交与发布，本队友没有 stage、commit、push、镜像或 full。
+
+动手前的权威、影响面、副作用与边界结论：
+
+- 权威：原版一致性与中文默认／英文要求；DD-75／
+  `.design/09-统一身份与Buzz协议投影.md` 的三端凭据与传输边界。
+  原控件、布局和交互由下列固定符号决定，候选资格由既有 AgentInstallation 目录决定。
+  Native 仍本机签名直连 Relay；Web 仍 BFF 语义提及与 Core 代签，未另造 resolver／注册表。
+- 全引用追踪：Native ChannelPane／InboxDetailPane／MessageThreadPanel →
+  MessageComposer → shared 原 autocomplete／address／toolbar → useMentionSendFlow；
+  Web ChannelPane Composer／ChannelThreadPane／InboxThreadPane →
+  同一 shared 控件与 audience。共享 use-mention-selection 和真实键盘消费者一并恢复，
+  不是只增加没人读的 channelType／audienceContext props。
+- 写读与兼容：useDrafts／draftMentionRefs 的 optional isAgent 仅保存用户 UI 意图，
+  老草稿缺字段仍可读取，非法 flag 不当资格；不作为身份或权限权威。
+  owner／channel／composer 原分区不共享账号上下文；发送仍 fresh 目录再检查。
+  无数据库／contracts JSON Schema 改动；只沿原生成器生成同源 Dart 词条，
+  不另维护翻译、公共 workflow、账本或 Agent 数据。
+- 副作用：原 persistentAgentAudience 和自动提及偏好只存公钥／UI 选择，
+  原 200 条／确认交互值从固定上游保留，不新增阈值。恢复不读取平台私钥，
+  不将 Agent 当 HUMAN，不用 kind-0／is_agent 或 owner 猜资格／managed provenance，
+  不将 UNKNOWN 当失败或成功，不在 Core 存消息正文。
+- 确定失败边界：目录分页空值／非法或倒退 cursor、重复不同版本同 resource、
+  同公钥歧义绑定、错误 workspace／channel、无 pubkey／projection／generation、
+  disabled／无执行权／非 Mention channel 都拒绝候选；无实际 Workspace 不开启 Agent。
+  旧身份晚到／查询失败／fetching 不暴露旧缓存资格。编辑与 DM 不自动启用线程 audience。
+  发布前重新读取，撤权拒绝发布并按原 owner／revision 恢复草稿；取消／scope 切换
+  不污染新 Composer。UNKNOWN 保留原内容／实际收件人／idempotency key，
+  只在实际意图变化时换 key，不自动重复 Agent turn。
+  错误仍沿原准入／依赖／容量／UNKNOWN 分类，不新建第二套错误权威；
+  原六类完整异常矩阵、quota 在途及多 Agent 稳定运行没有据本批窄验重新宣称完成。
+
+固定官方原模块与完整可复核差异：
+
+- `desktop/src/features/messages/ui/MentionAutocomplete.tsx::MentionAutocomplete`：
+  原行、Pin／Options／Switch／键盘、原类名和英文迁入共享 TS，Native 转导出，
+  Web 删除旧 UUID 选择列表后实际消费相同控件；中文沿同源词条。
+- `desktop/src/features/messages/ui/ComposerAddressControls.tsx` 与
+  `desktop/src/features/messages/ui/MessageComposerToolbar.tsx::MessageComposerToolbar`：
+  迁入共享 ComposerControls／Toolbar，原头像组、移除、pulse／shake、确认／布局真实接线。
+- `desktop/src/features/messages/lib/persistentAgentAudience.ts`、
+  `desktop/src/features/messages/lib/autoPinMentionedAgentsPreference.ts`、
+  `desktop/src/features/messages/lib/stripImplicitAgentMentions.ts`：
+  原全文只加来源记录，已有最大值／本地偏好／精确前缀算法不另重写。
+- `desktop/src/features/messages/ui/useThreadAgentAudience.ts::useThreadAgentAudience`、
+  `useAgentAddressLockPicker.ts::useAgentAddressLockPicker`、
+  `useAddressMentionPulse.ts`、`useAutoPinMentionedAgents.ts::useAutoPinMentionedAgents`、
+  `useAlwaysAddressShortcut.ts` 和
+  `desktop/src/features/messages/lib/useMentionSelection.ts`：
+  按原全文迁移，Native／Web 实际 picker、editor、root p-tags、线程／draft scope、
+  first-agent preference、Cmd／Ctrl+Shift+M 接回，非影子 helper。
+- 授权接缝仅为共享导入、同源中英、可信 Installation 资格／主机传输：
+  新 composerAgentDirectory／useComposerAgentDirectory 消费现有
+  BffClient session／workspaceChannel／members／agentInstallations／agentDefinition，
+  ACTIVE resource／principal／execution／channel Mention／当前 generation 和公钥必须同在。
+  Native sendflow 在原发布前 await fresh verify；Web 只向原 publish 发送实际 Installation IDs，
+  不将 secret／默认租户／旧 profile 当授权。没有新增产品 API／Core 权威。
+- `/volumes/data/kailo/tmp/audience-official-to-shared-final.diff` 为 12 对原模块全文 diff，
+  SHA256 `3589fdd5753ed664bcbe77c6534dfc478c49abdafe6268ffd108fb764ba9245f`。
+  不将其中整文件都归“共享迁移”或“治理授权”；下列剩余原依赖仍缺失需恢复。
+
+精确 owned 源码与归属：
+
+- `/volumes/data/kailo/tmp/audience-owned-source-final.patch`，
+  SHA256 `5323c7b530f361b7be2794c9bcc7ca0d39cf9a1fbed01fa5e272e5feee307987`；
+  `git apply --stat` 41 files、+3136/-280，`git apply --reverse --check` exit 0。
+- 全 41 路径及逐文件 hash 在 `/volumes/data/kailo/tmp/audience-owned-source-final.sha256`，
+  该清单 SHA256 `66450c3b3b40b7e9c252b21ae0c6cf0d8801b6852500eb1c60a89c02def6739c`。
+  package.json 仅 10 原消费者 exports，i18n.ts 仅 21 keys，Dart 仅 84 同源生成行。
+- 本批 tracked 路径在固定 a816 已交付树与冻结时 HEAD 之间的 committed diff 为零。
+  起始记录未将这 41 路径列为 inherited hunk；未额外保存接手前独立 hash 快照，
+  不能从现单份工作树反证未知继承。已明确继承的 custom-emoji／editAttachments／
+  parseImeta 等脏改不在本 patch；checkpoint 继承删除也不纳入提交。
+  以选择性 patch 与逐 hunk review 归属，不整份 stage 历史脏文件。
+- 两宿主安装的 file-package 实际为副本，本轮将最终共享源码／manifest
+  同步到 Web 与 Native 的实际安装包，再运行真实读方；不靠 canonical helper 独自通过。
+  最后 41 formal／private 输入逐项 cmp exit 0，原受限 SDK 只剩 sleep。
+
+原命令与真实终态（实施之后产生的证据）：
+
+原 SDK `kailo-agent-receipt-xvkujx`，实查 4 CPU／8 GiB，Node heap 3072；
+preflight available 24 GiB、memory PSI 0，最终 memory.events oom_kill 保持旧基线 2，
+没有本批增加。无 Cargo／Go／下载／新依赖／镜像／新 SDK／全局编译。
+只用原 Vitest threads／maxWorkers=1 与原 Node --test --test-concurrency=1。
+宿主证据目录
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/audience-final-20261009/`。
+
+- 最终 `75606` 串行批 exit 0：`restored-web-consumer.log` 37/37；
+  `restored-native-consumers.log` 64/64，含原 Agent 行／Pin／Options 英文→中文、
+  原装饰／draft refs、真实 renderHook verify→publish／拒绝草稿恢复消费者。
+  React act warnings 留在 Web 原日志，没有删 assertion／case 或改 timeout。
+- `restored-shared-types.log`、`restored-shared-test-types.log`、
+  `restored-web-types.log`、`restored-native-types.log` 各 exit 0。
+  `restored-format.log` 14 files checked、No fixes、exit 0；
+  `restored-i18n-check.log` exit 0、Mobile platform/reason match shared TS。
+  原 `tools/gen-platform-i18n.py` 和 --check 已 exit 0，不写重复 Dart 词条。
+- Web 生产负向 `18184`：仅私有 canonical＋实际安装 Web 包去掉
+  generation 一致性守卫，原 Composer invalid-generation row 断言真实
+  1 failed／36 skipped、exit 1；错误显示未准入 Agent，不是启动或语法失败。
+  原文件按 formal 精确 cmp 0 恢复；最终同 37 项恢复 exit 0。
+- Native 生产负向 `80255`：只将实际私有 useMentionSendFlow 的 await verify
+  改成不执行验证；原真实 renderHook 消费者 1 failed／exit 1，
+  实际 order=[publish] 与必须 [verify,publish] 不一致。原输入 cmp 0 恢复，
+  最终原 64 项恢复 exit 0。两次破坏均没有改 formal 生产源码。
+- 最终原命令逐字在上述 `restored-command.txt`，
+  SHA256 `11ffc06f8cc0a3e4a0d23e3d9588fa3f928bd350af921487a5628c121d37c2ea`。
+  Web 命令为 `vitest run src/platform/ui/Composer.test.tsx --pool=threads --maxWorkers=1`；
+  Native 为 `node --import ./test-loader.mjs --experimental-strip-types --test
+  --test-concurrency=1` 后接原四个 .test.mjs；四侧类型仍各原 tsc --noEmit，
+  shared test 用原 tsconfig.test.json。
+- 真实前轮失败不覆盖：8504 类型 exit 2；85497 旧安装导出／类型及 Native
+  59/64 exit 1；99486 Web ResizeObserver 13 failures／24 pass exit 1；
+  57172／1416 全 suite 草稿内存串态 36/37 exit 1，已用原 clearAllDrafts
+  补正确夹具 reset，不改生产权限；37631 isolated 1 pass 仅诊断。
+  49267 worker 启动超时 0 case exit 1；57024 原候选缺 .gitignore exit 1，
+  最小补原输入后 59746 format exit 0。首次最终 restore 外层引号错误 exit 2
+  未执行 case，保留 restore-invocation-error.log；正确调用 75606 才是最终恢复。
+  所有失败／早轮通过都不充作最终 source／full 验收。
+
+四类账与仍需恢复的真实范围：
+
+原未改分支“原样保留”；已逐全文 diff 的原算法／控件加两真实宿主读方为“共享迁移”；
+新身份／scope／可信目录与传输／i18n 仅逐 hunk“已授权治理改造”；
+其余原依赖未贯通仍“缺失需恢复”，不因继承已提交就自动授权。
+最近完整 Git 树比较点仍为固定官方 779af… 对 a816ea569acdce060a681c32467e4ebb4235b197：
+union 5314，原样 1976、共享 112、整文件授权 0、尚未证明保留／授权的恢复队列 3226。
+这不是当前 661415e9f103bd939d2b70505e64ca188d74bde5 全树逐处复核，
+3226 也不是已证功能缺失或完成率；本轮没有再重导全树或刷新图谱。
+
+明确原剩余依赖，不冒称“整个模块完整还原”：
+
+- 固定官方 `desktop/src/features/messages/ui/useImplicitAgentMentionProvenance.ts::
+  useImplicitAgentMentionProvenance` → `useDraftPersistSnapshot.ts::persistedContent`
+  原 host provenance 与 generated prefix 的草稿持久化消费者尚未迁移贯通。
+  本批共享 pure strip helper 只由实际 unpin 消费，不能拿它替代该 host 闭环。
+- `MessageComposerToolbar.tsx` 原 onCaptureSelection 若干真实读方、
+  gifMediaController／GIF 分支、emoji 原排序、voice-note 禁用一致性仍缺失恢复，
+  多数在本批前存在；没有将它们删出原目标或笼统归治理授权。
+- MentionAutocomplete／ComposerControls 的原实例 managementMarker provenance
+  没有可信实际消费。保留原插槽而不伪造 managed-here／elsewhere、owner 或头像；
+  原 persona／team 等来源没有据本批虚造。Agent 完整资料／私聊／Activity
+  以及其余设置／页面、Native 历史错误完整中文仍未全面恢复。
+- 本批没有三人／多 Agent 同频道真实持续操作，没有新 Windows 安装包或
+  Tauri IPC／设备证明，没有 Mobile 新包／设备验收；Node Native 不是 Windows。
+
+本次 Avatar 原 UI 实拍尝试：
+
+已完整读取 playwright-cli skill，仍使用独立 header-restoration 普通 seam-verifier 会话。
+07:51 正常读取 /app/platform-build-info.json 实际 Failed to fetch；
+关闭已开作者栏／打开个人菜单后正常 reload 跳回 IdP Sign in，不注入 Cookie、
+不共享别人的会话、不重置账号，不读取／输出口令或上传／保存资料。
+本轮 require／dynamic import 原 CLI 执行上下文不支持，
+没有新造认证路线；AvatarEditor 尚未打开，明确未验收。
+`/volumes/kailo/.playwright-cli/kailo-ui-20261009-avatar-editor-sso-expired.png`
+已 screenshot 且实际 view_image 打开，SHA256
+`b0099b9e921b5e7c8830994788e8a357229384b4bf5ce0f16c2197c90d5f29d7`；
+只证明此次 SSO 登录边界，不算业务／头像／Audience 视觉通过。
+原 a816 三张旧线上实拍沿已提交独立回执；当前新 Audience 业务截图 0，
+源码尚未部署，不能用这些旧图或定向测试宣称原版 100%／生产就绪。

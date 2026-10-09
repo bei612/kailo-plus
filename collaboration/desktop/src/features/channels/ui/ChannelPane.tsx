@@ -491,6 +491,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                     key={`edit:${mainEditTarget.id}`}
                     placeholder={composerPlaceholder}
                     channelId={activeChannel.id}
+                    channelType={activeChannel.channelType}
                     channelName={activeChannel.name}
                     editTarget={mainEditTarget}
                     onCancelEdit={onCancelEdit}
@@ -506,6 +507,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 ) : null}
                 <div hidden={mainEditTarget !== null}><MessageComposer
                   channelId={activeChannel.id}
+                  channelType={activeChannel.channelType}
                   channelName={activeChannel.name}
                   containerClassName="px-5 pb-0"
                   layoutMode="dock"
@@ -536,6 +538,7 @@ export const ChannelPane = React.memo(function ChannelPane({
           ? wrapThreadPanel(
               <MessageThreadPanel
                 channelId={activeChannel.id}
+                channelType={activeChannel.channelType}
                 channelName={activeChannel.name}
                 currentPubkey={currentPubkey}
                 editTarget={threadEditTarget}

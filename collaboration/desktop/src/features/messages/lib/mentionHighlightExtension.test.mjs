@@ -344,14 +344,14 @@ test("positionAfterArrowLeftThroughMentionSpace steps onto the token end", () =>
 });
 
 test("assignMentionHighlightNames skips an unchanged list", () => {
-  const storage = { names: ["bob"], channelNames: [] };
-  assert.equal(assignMentionHighlightNames(storage, ["bob"], []), false);
+  const storage = { names: ["bob"], agentNames: [], channelNames: [] };
+  assert.equal(assignMentionHighlightNames(storage, ["bob"], [], []), false);
 });
 
 test("assignMentionHighlightNames updates when a new mention is added", () => {
-  const storage = { names: ["bob"], channelNames: [] };
+  const storage = { names: ["bob"], agentNames: [], channelNames: [] };
   assert.equal(
-    assignMentionHighlightNames(storage, ["bob", "quinn"], []),
+    assignMentionHighlightNames(storage, ["bob", "quinn"], [], []),
     true,
   );
   assert.deepEqual(storage.names, ["bob", "quinn"]);
@@ -367,7 +367,7 @@ function editorStateWithMentionHighlight(initialText, names) {
   // The plugin factory only reads `this.storage`, so a minimal stand-in is
   // enough to exercise it without constructing a full editor (needs a DOM).
   const plugins = MentionHighlightExtension.config.addProseMirrorPlugins.call({
-    storage: { names, channelNames: [] },
+    storage: { names, agentNames: [], channelNames: [] },
   });
   return EditorState.create({
     doc: document(paragraph(text(initialText))),
@@ -510,7 +510,7 @@ test("a whitespace-run rewrite after a mention pick keeps the draft space", () =
 // Multi-word display names must use the same settlement as single-word names.
 // Simulate the browser remapping the DOM caret to the chip edge before typing.
 test("multi-word autocomplete keeps its separator after a chip-edge remap", () => {
-  const storage = { names: ["Remote Scout"], channelNames: [] };
+  const storage = { names: ["Remote Scout"], agentNames: [], channelNames: [] };
   const plugins = MentionHighlightExtension.config.addProseMirrorPlugins.call({
     storage,
   });
@@ -566,6 +566,7 @@ test("full-name boundaries preserve internal spaces and intentional caret moves"
 
 for (const [kind, label, literal] of [
   ["human", "alice", false],
+  ["agent", "Planner", false],
   ["channel", "general", false],
   ["human", `Scout (${"a".repeat(64)})`, true],
   ["human", `Scout (${"b".repeat(64)}) 2`, true],
@@ -576,6 +577,7 @@ for (const [kind, label, literal] of [
       {
         storage: {
           names: kind === "human" ? [label] : [],
+          agentNames: kind === "agent" ? [label] : [],
           channelNames: kind === "channel" ? [label] : [],
         },
       },
