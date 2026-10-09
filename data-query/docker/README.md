@@ -39,12 +39,25 @@ and its credential agent to an existing private platform protocol network.
    `WREN_*` section; do not create a second `component.env` or overwrite an
    existing deployment file. The native `.env.example` is only a pointer.
    Set an independent `WREN_COMPOSE_PROJECT_NAME` and actual source-built
-   `WREN_UI_IMAGE`, `WREN_AI_IMAGE` and `WREN_GATEWAY_IMAGE` digest references.
-   The fixed Engine/Ibis/bootstrap/Qdrant dependencies preserve the original
-   GenBI recipe, not an original UI/AI replacement. Registered build entries
+   `WREN_UI_IMAGE`, `WREN_AI_IMAGE`, `WREN_ENGINE_IMAGE` and
+   `WREN_GATEWAY_IMAGE` digest references. The fixed Ibis/bootstrap/Qdrant
+   dependencies preserve the original GenBI recipe, not an original UI/AI
+   replacement. Bound queries additionally consume the forked Engine's
+   `/v2/analysis/sql/sources`; the upstream Engine image in the deployment
+   template does not prove that producer exists. Keep the release inactive
+   until its actual source-built Engine digest and compatible native version
+   have been verified and delivered. Registered build entries
    already exist as `tools/build-upstream.sh data-query-ui` and
-   `tools/build-upstream.sh data-query-ai-service`; run them only in the normal
-   resource-checked release batch with the real registry supplied.
+   `tools/build-upstream.sh data-query-ai-service`, plus
+   `tools/build-upstream.sh data-query-engine`; run them only in the normal
+   resource-checked release batch with the real registry supplied. The Engine
+   entry uses its original Maven wrapper/modules/exec-jar and native analysis
+   checks; an unbuilt `none` artifact is not a deployable digest.
+   The actual nonzero TestNG HTTP checks, production fault/restoration results
+   and source-built artifact evidence are in the
+   [Engine receipt](../fork/verify/native-integration.md#original-engine-rendered-source-closure-and-source-build-entry).
+   They do not certify ordinary-function/provider provenance, trusted SERVICE
+   SQL, dynamic native Resource adoption or a deployed/active business binding.
 2. Deliver native OIDC/cookie keys and model provider credentials in the two
    separate component-only files. No platform `.env` is mounted or sourced.
    `WREN_UI_SECRET_ENV_FILE` is a third component-only file: it supplies the

@@ -7030,3 +7030,241 @@ PostgreSQL migration, browser/screenshots, iframe, three-human or device
 acceptance. No Wren business instance or ACTIVE binding is claimed. Ten owned
 paths are frozen for root's exact review/main commit/push; inherited unverified
 Java2 stay excluded. Root retains the full-check/release authority.
+
+## Original Engine rendered-source closure and source-build entry
+
+Implementation diff baseline:
+`db03ff3926789c7ca8c850d9f4b0825801522687` (main, uncommitted Wren batch).
+Implementation authority is `SS-WRN-GOVERNANCE`, `.design/08` §6 and `DD-98`:
+native Engine analysis is evidence consumed by the existing query/source
+authorization chain, not another authorization registry. The fixed UI source
+is `c5f02a0391c87420dba78632dcd86073710deb72`; its actual `wren-engine` gitlink
+is `47ca29ebba291100ba5d70ce1790f9887eaed7a0`, now recorded through the existing
+`source_components` mechanism. Read-only upstream facts were checked with
+`git show` at those full commits, never by executing the evidence tree.
+
+Before taking ownership of the two inherited unverified Java candidates,
+their actual SHA-256 values were captured:
+
+- `wren-core-legacy/wren-main/src/main/java/io/wren/main/web/AnalysisResourceV2.java`:
+  `29ca23f9ef3db977db7289de76d6f302a58b3e870bcf254eef2f6bb5c40385a7`.
+- `wren-core-legacy/wren-tests/src/test/java/io/wren/testing/TestAnalysisResource.java`:
+  `c910601d2d7bb439275bf635f4a7f34153423b26bcc220d441689ecdeba712fe`.
+
+Implementation-after-the-fact impact review:
+
+1. **Authority/source.** Original
+   `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/QueryDescriptor.java::of`,
+   `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/StatementAnalyzer.java::analyze`
+   and `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/Analysis.java::getWrenObjectNames`
+   provide the actual parsed/rendered
+   model, metric and view dependency facts. Declared `getRequiredObjects()`
+   alone can omit a semantic model/view referenced inside a rendered scalar
+   subquery. The existing `/v2/analysis/sql/sources` producer now analyzes every
+   actual descriptor query and expands its semantic dependencies through the
+   existing queue; the inherited hidden-provider AST protection is preserved.
+2. **Readers/writers/compatibility.** Existing
+   `data-query/wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts::WrenEngineAdaptor.getSourceObjects`
+   and `data-query/wren-ui/src/apollo/server/services/nativeQueryService.ts::NativeQueryService`
+   consume the same
+   source-array response. The response schema, SQL execution, Resource/owner
+   data and native query history are unchanged. Physical backing remains owned
+   by its frozen native model; it is not fabricated as another semantic
+   Resource. Original Engine source lacks this forked endpoint, so the native
+   runtime must use the actual forked Engine artifact, not an unchanged image.
+3. **Side effects.** Analysis only uses the original parser/analyzer/descriptor
+   chain; it does not dispatch SQL or write another task/permission ledger.
+   Original
+   `wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/ExpressionAnalyzer.java::visitFunctionCall`
+   only visits expression
+   children: it does not prove provider identity, complete source provenance
+   or absence of external effects. FunctionRelation, PathRelation, FunctionCall
+   and unvisited table scopes remain refused. Ordinary COUNT/SUM availability
+   is consequently still a real release gap, not a guessed name allowlist.
+4. **Boundary/failure behavior.** Descriptor dependency expansion is deduplicated
+   by the existing expanded-name set. Missing/invalid manifest, non-query input,
+   unknown descriptor, unresolved table scope and unsupported provider facts
+   still refuse analysis rather than supply incomplete authorization input.
+   Four original native HTTP cases were added for a model-column subquery,
+   refSql dependency, metric expression and nested saved-view dependency;
+   inherited hidden refSql/column provider refusals remain in the original
+   TestAnalysisResource. At the initial source handoff these Java cases had not
+   been executed; actual later runs and fault/restoration results follow below.
+
+The existing Engine Dockerfile now source-builds the original Maven modules and
+exec-jar, then runs the original `TestAnalysisResource` before copying the JAR
+to the original entrypoint/runtime. The existing artifact mechanism has a real
+`data-query-engine` consumer; initially its digests remained `none` until an
+actual successful build. Real subsequent artifacts are recorded below.
+The original PGDG/postgresql-client-13 runtime recipe is retained; compatibility
+with the resolved JDK base must be established by the real build, not guessed.
+
+First official registry metadata resolution was actually run as
+`docker buildx imagetools inspect eclipse-temurin:21 --format '{{json .Manifest}}'`
+(handle 33687, exit 0). The pinned index digest is
+`sha256:3e3c176ffed168beb42c607be9bc1639b466cf00261a0fb04425562c9d0c5c2b`;
+its linux/amd64 manifest is
+`sha256:442a743d9272be15c9872915eab0f7a1b6bb45b7c16c613acf172e2d7483061d`,
+version `21.0.12.1_1-jdk-resolute`, Ubuntu 26.04. Original
+`wren-core-legacy/.mvn/wrapper/maven-wrapper.properties` fixes Maven 3.9.8. First base/wrapper/
+dependency retrieval is explicitly authorized network access, not an offline
+cache-only acceptance.
+
+Initial source-only checks: `git diff --check` exit 0 for the four implementation
+paths; original `tools/upstream_manifest.py status data-query` exit 0 at the
+fixed UI commit; `plan data-query-engine` exit 0 with source build ID
+`sha256:e98caf0d9a384eb0dfe2383b99418795ea0f2c944519c054b2ad8cd288ac9205`.
+The actual existing `kailo-core-data` builder preflight confirmed 8 CPU/16 GiB,
+no extra swap and Data-backed BuildKit cache. At that initial stage Java
+compilation, native checks, production mutation/restoration and image publication
+were not yet accepted; their actual later evidence is retained below.
+No Compose pin, business instance, credential/data-source provision,
+ACTIVE binding, iframe/browser or multi-user acceptance is claimed.
+
+First actual normal artifact attempt:
+
+```sh
+TMPDIR=/volumes/data/kailo/tmp BUILDX_BUILDER=kailo-core-data \
+  REGISTRY=127.0.0.1:55000 ./tools/build-upstream.sh data-query-engine
+```
+
+Handle 22412, log `/volumes/data/kailo/tmp/build-data-query-engine.h9PVTD.log`,
+**exit 1** at `2026-10-09T01:33:13Z`. The fixed JDK base and original Maven 3.9.8
+distribution were actually fetched. Original root enforcer/version/checkstyle
+checks completed; trino-parser then failed in inherited
+`git-commit-id-maven-plugin:9.0.1:revision`: `.git directory is not found`.
+`wren-base`, `wren-main`, `wren-server` and `wren-tests` were all **SKIPPED**.
+This was not Java business acceptance, a runtime PGDG result, or an image build.
+
+The existing artifact stage intentionally delivers source files, not Git metadata.
+The actual plugin's official
+[`GitCommitIdMojo.java::skipViaCommandLine` at v9.0.1](https://raw.githubusercontent.com/git-commit-id/git-commit-id-maven-plugin/v9.0.1/src/main/java/pl/project13/maven/git/GitCommitIdMojo.java)
+supports `-Dmaven.gitcommitid.skip=true`. Both original Maven invocations now use
+that source-archive setting; it skips Git metadata extraction, not enforcer,
+checkstyle, compiler or the original Java checks. No `.git` or fabricated commit
+property is created. Real provenance remains the existing source/artifact digest
+record. Original failure and first network retrieval evidence are retained.
+
+Second actual normal artifact attempt used the same command, existing builder
+and original Maven cache: handle 97700, log
+`/volumes/data/kailo/tmp/build-data-query-engine.Cv3TW8.log`, **exit 0**.
+Original reactor assembly/install completed all six modules (**BUILD SUCCESS**,
+4 min 53 s), including actual Java 21 compilation of AnalysisResourceV2 and the
+original TestAnalysisResource with the added dependency/provider cases.
+However the actual targeted Surefire invocation selected
+`org.apache.maven.surefire.junitplatform.JUnitPlatformProvider` and reported
+**Tests run: 0, Failures: 0, Errors: 0, Skipped: 0**. This is a genuine missing
+TestNG consumer, **not** Java business acceptance. The original module contains
+TestNG-annotated test sources while also depending on `junit-jupiter-engine`;
+the inherited parent configuration explicitly sets `failIfNoTests=false`.
+
+The original PGDG/postgresql-client-13 runtime recipe actually succeeded on
+the pinned JDK base (postgresql-client-13 `13.23-2.pgdg26.04+2`); it was not
+removed or replaced based on an unsupported compatibility guess. The normal
+artifact helper actually published and recorded:
+`127.0.0.1:55000/data-query-engine:c5f02a0391c8@sha256:baed93a3eeb45dabfa5625700798fcde7026adddc0deffdc3ff964d34f6396c4`.
+This built digest is explicitly **unaccepted**, not deployed and not used to
+activate a release/binding or alter Compose.
+
+The original `wren-core-legacy/wren-tests/pom.xml` now explicitly supplies both
+Surefire TestNG and JUnit Platform providers at the existing inherited
+`${dep.plugin.surefire.version}`. Only this real native test module overrides
+`failIfNoTests` and `failIfNoSpecifiedTests` to true; other modules/frameworks are
+not silently disabled. Its new POM bytes invalidate the earlier artifact's
+source match until the actual original target and next artifact build succeed.
+The prior zero-test output remains evidence of the failure and is not counted
+as a pass. The original builder window was handed to root's concentrated Web
+release first; the next actual invocation resumed only after that build ended.
+
+After root released the same builder, handle 26623 ran the original artifact
+command again, log `/volumes/data/kailo/tmp/build-data-query-engine.M7P0tN.log`,
+**exit 0**. Both configured providers appeared: JUnit Platform legitimately had
+zero matching JUnit tests, then TestNG actually ran `TestAnalysisResource`:
+**Tests run: 6, Failures: 0, Errors: 0, Skipped: 0**, `BUILD SUCCESS` at
+`2026-10-09T01:53:13Z`. This covers the original HTTP analysis/batch calls,
+submitted-query sources, unsupported source refusal, rendered model/refSql/
+metric/view dependencies, and hidden rendered provider refusal. All six reactor
+modules compiled with the original Java 21/checkstyle/enforcer pipeline. The
+normal helper published
+`127.0.0.1:55000/data-query-engine:c5f02a0391c8@sha256:46e6f662406ba3fd2d2e12acdbe8a50bf52a4067444c3fb1dd1a711aa6bd8131`.
+This is a real intermediate artifact, not a deployment: subsequent restoration
+of the original runtime cache order changes its source match.
+
+Implementation-after-verification cross-review found the runtime JAR copy had
+been placed before the inherited apt recipe. It is now restored to the original
+boundary: apt first, then verified JAR copy/`WREN_JAR`, then original entrypoint.
+Changing Java source therefore no longer invalidates the apt layer merely
+because a new JAR is copied. The final normal artifact build must cover this
+necessary correction; no intermediate digest is substituted into Compose.
+
+Two actual private production faults used the existing manifest's `stage`
+operation, the same original Dockerfile `verification` target and the same
+8 CPU/16 GiB BuildKit node/Maven cache. No service, formal Java source, task,
+data source, catalog or business database was mutated. The exact command after
+the existing safety preflight was:
+
+```sh
+sudo -n -H docker buildx build --builder kailo-core-data --target verification \
+  --progress=plain \
+  -f /volumes/data/kailo/tmp/wren-engine-native-mutation.5AS7IQ/data-query/wren-engine/wren-core-legacy/docker/Dockerfile \
+  /volumes/data/kailo/tmp/wren-engine-native-mutation.5AS7IQ/data-query/wren-engine/wren-core-legacy
+```
+
+- Old guard fault, handle 79090, **exit 1**, log
+  `/volumes/data/kailo/tmp/wren-engine-native-mutation.5AS7IQ/ast-guard-negative.log`:
+  remove the real `FunctionCall` refusal predicate (and its now-unused import).
+  TestNG actually ran **6 tests, 2 failures, 0 errors, 0 skipped**;
+  `testIncompleteNativeSourcesRefused` and
+  `testRenderedNativeSourceExpressionsRefused` each received HTTP 200 where
+  refusal was required. This demonstrates the existing guard, not by itself
+  this batch's new descriptor traversal.
+- New consumer fault, handle 93115, **exit 1**, log
+  `/volumes/data/kailo/tmp/wren-engine-native-mutation.5AS7IQ/descriptor-expansion-negative.log`:
+  restore the FunctionCall guard, then revert the descriptor AST/source queue
+  exactly to HEAD's ViewInfo-only implementation (`git show HEAD:... | cmp -`
+  **exit 0**). TestNG actually ran **6 tests, 2 failures, 0 errors, 0 skipped**;
+  `testRenderedNativeSourceDependencies` returned only
+  `wren.test.derived_customer` and omitted required `wren.test.orders`;
+  `testRenderedNativeSourceExpressionsRefused` received HTTP 200. These failures
+  prove the new model/metric/refSql traversal has real consumers, not a test
+  that remains green when that production implementation is removed.
+
+The private Java source was restored with `apply_patch`, then `cmp` against the
+formal `AnalysisResourceV2.java` returned **0**. Final normal restoration and
+artifact handle 77406 is the original `tools/build-upstream.sh data-query-engine`
+command above, log `/volumes/data/kailo/tmp/build-data-query-engine.kHWgNs.log`;
+it completed with **exit 0**. Actual preflight showed about
+24.4 GiB available memory, CPU pressure some avg10 1.99%, memory some avg10 0,
+and the existing builder's actual finite 8 CPU/16 GiB/no-extra-swap limits.
+
+Final formal-source restoration really reran both configured providers and
+TestNG's native HTTP target: **6 tests, 0 failures, 0 errors, 0 skipped**,
+`BUILD SUCCESS` at `2026-10-09T02:01:38Z`. The six-module original assembly,
+checkstyle/enforcer and retained runtime PGDG/client-13 recipe also succeeded.
+The final normal helper loaded, pushed and recorded the actual image:
+
+```text
+127.0.0.1:55000/data-query-engine:c5f02a0391c8@sha256:e726ca12d3476881eed9734777c2ea5338f62378ed8d6eb2e87004667c37446e
+source_digest: sha256:3f1856f5401c4fbe387814e0f0097521990d1055b0b7f9a7d8ef40bc0db43c4e
+image config: sha256:33462742fb4ee0e089ed8cd33ae9e6456a22cc30ac6d78c1dce515054af366c3
+```
+
+Final restored private inputs (`AnalysisResourceV2.java`,
+`TestAnalysisResource.java`, `wren-tests/pom.xml`, `docker/Dockerfile`) all
+matched formal bytes with **cmp exit 0**. Final production SHA-256 values:
+
+- AnalysisResourceV2: `8db4c83ccabde18ac1c61fc42d9f573f456ccc636496dd9a3abbc57556bd8ae4`.
+- TestAnalysisResource: `8b9f7a6089ab2fd1bbf1b897f04fd4d37b7e261c644682438619bb12d8332c38`.
+- wren-tests POM: `5dfa63c45661dda3bf3f131b82df5f39d5b7eb83a4b973d2f73e6511caa6c24d`.
+- Engine Dockerfile: `a87c15f82454f2b95b74c9bb4078ed3f23be3e2f5ccd746a993c042fe38db36d`.
+
+Current acceptance is the real targeted Engine producer and source-built image,
+not all Engine tests or full GenBI availability. Ordinary function/provider
+source evidence (including COUNT/SUM), trusted SERVICE SQL admission, dynamic
+trusted native Resource adoption, actual UI/AI/Engine business-instance delivery,
+native credentials/data source, ACTIVE release/binding, iframe/screenshots and
+three-human runtime acceptance remain unproved. Compose was not changed and
+this image was not deployed. No platform contract changed; four-language
+generation is not applicable. This sub-batch did not run `check.sh --full` or
+browser acceptance; root owns the concentrated repository/release checks and
+main commit/push. Prior failed/zero-test logs above are retained, not overwritten.

@@ -4,6 +4,8 @@ upstream_url: https://github.com/Canner/WrenAI
 evidence_commit: c5f02a0391c87420dba78632dcd86073710deb72
 implementation_base_commit: c5f02a0391c87420dba78632dcd86073710deb72
 base_divergence: none
+source_components:
+  wren-engine: 47ca29ebba291100ba5d70ce1790f9887eaed7a0
 artifacts:
   - name: data-query-ui
     kind: image
@@ -19,6 +21,13 @@ artifacts:
     inputs: [data-query/wren-ai-service/]
     source_digest: none
     artifact_digest: none
+  - name: data-query-engine
+    kind: image
+    build_context: data-query/wren-engine/wren-core-legacy
+    build_dockerfile: data-query/wren-engine/wren-core-legacy/docker/Dockerfile
+    inputs: [data-query/wren-engine/wren-core-legacy/]
+    source_digest: sha256:3f1856f5401c4fbe387814e0f0097521990d1055b0b7f9a7d8ef40bc0db43c4e
+    artifact_digest: sha256:e726ca12d3476881eed9734777c2ea5338f62378ed8d6eb2e87004667c37446e
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
 compatibility_evidence: [data-query/fork/verify/native-integration.md]

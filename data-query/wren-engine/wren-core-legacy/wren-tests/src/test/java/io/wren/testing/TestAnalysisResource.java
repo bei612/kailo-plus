@@ -43,6 +43,8 @@ import static io.airlift.http.client.Request.Builder.prepareGet;
 import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
 import static io.airlift.json.JsonCodec.jsonCodec;
 import static io.airlift.json.JsonCodec.listJsonCodec;
+import static io.wren.base.dto.Metric.metric;
+import static io.wren.base.dto.Model.model;
 import static io.wren.base.dto.Model.onBaseObject;
 import static io.wren.base.dto.Model.onTableReference;
 import static io.wren.base.dto.TableReference.tableReference;
@@ -282,6 +284,70 @@ public class TestAnalysisResource
                 "delete from customer")) {
             assertThat(nativeSourceResponse(manifest, sql).getStatusCode()).isGreaterThanOrEqualTo(400);
         }
+    }
+
+    @Test
+    public void testRenderedNativeSourceDependencies()
+    {
+        Manifest columnSubquery = Manifest.builder(manifest)
+                .setModels(List.of(manifest.getModels().get(0), manifest.getModels().get(1),
+                        onTableReference("derived_customer", tableReference(null, "main", "customer"),
+                                List.of(Column.column("value", WrenTypes.INTEGER, null, true,
+                                        "(select orderkey from orders limit 1)")), null)))
+                .build();
+        assertThat(getNativeSourceObjects(columnSubquery, "select value from derived_customer")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "derived_customer"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders"));
+
+        Manifest refSqlSubquery = Manifest.builder(manifest)
+                .setModels(List.of(manifest.getModels().get(1),
+                        model("derived_ref", "select orderkey as value from orders",
+                                List.of(Column.column("value", WrenTypes.INTEGER, null, true)))))
+                .build();
+        assertThat(getNativeSourceObjects(refSqlSubquery, "select value from derived_ref")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "derived_ref"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders"));
+
+        Manifest metricSubquery = Manifest.builder(manifest)
+                .setMetrics(List.of(metric("derived_metric", "customer", List.of(),
+                        List.of(Column.column("value", WrenTypes.INTEGER, null, true,
+                                "(select orderkey from orders limit 1)")))))
+                .build();
+        assertThat(getNativeSourceObjects(metricSubquery, "select value from derived_metric")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "derived_metric"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "customer"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "orders"));
+
+        Manifest nestedView = Manifest.builder(columnSubquery)
+                .setModels(List.of(manifest.getModels().get(1), manifest.getModels().get(2),
+                        onTableReference("derived_customer", tableReference(null, "main", "customer"),
+                                List.of(Column.column("value", WrenTypes.INTEGER, null, true,
+                                        "(select orderkey from saved_lines limit 1)")), null)))
+                .setViews(List.of(view("saved_lines", "select orderkey from lineitem")))
+                .build();
+        assertThat(getNativeSourceObjects(nestedView, "select value from derived_customer")).containsExactlyInAnyOrder(
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "derived_customer"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "saved_lines"),
+                new CatalogSchemaTableName(manifest.getCatalog(), manifest.getSchema(), "lineitem"));
+    }
+
+    @Test
+    public void testRenderedNativeSourceExpressionsRefused()
+    {
+        // Selecting an innocent model name must not hide the original
+        // planner's provider call in its refSql or physical-column mapping.
+        Manifest refSql = Manifest.builder(manifest)
+                .setModels(List.of(model("hidden_ref", "select query_to_xml('select secret from hidden_source', true, false, '') as value",
+                        List.of(Column.column("value", WrenTypes.VARCHAR, null, true)))))
+                .build();
+        assertThat(nativeSourceResponse(refSql, "select value from hidden_ref").getStatusCode()).isGreaterThanOrEqualTo(400);
+
+        Manifest expression = Manifest.builder(manifest)
+                .setModels(List.of(onTableReference("hidden_column", tableReference("physical", "source", "rows"),
+                        List.of(Column.column("value", WrenTypes.VARCHAR, null, true,
+                                "query_to_xml('select secret from hidden_source', true, false, '')")), null)))
+                .build();
+        assertThat(nativeSourceResponse(expression, "select value from hidden_column").getStatusCode()).isGreaterThanOrEqualTo(400);
     }
 
     private List<CatalogSchemaTableName> getNativeSourceObjects(Manifest mdl, String sql)

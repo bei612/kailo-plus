@@ -132,16 +132,24 @@ public class AnalysisResourceV2
                 }
                 QueryDescriptor descriptor = QueryDescriptor.of(name, analyzed, session);
                 sources.add(new CatalogSchemaTableName(mdl.getCatalog(), mdl.getSchema(), name));
+                Query descriptorQuery = descriptor.getQuery();
+                Analysis descriptorAnalysis = new Analysis(descriptorQuery);
+                StatementAnalyzer.analyze(descriptorAnalysis, descriptorQuery, session, mdl);
                 if (descriptor instanceof ViewInfo) {
                     // ViewInfo's required objects omit direct native tables.
                     // Reuse its real parsed query, including hidden subqueries.
-                    Query viewQuery = descriptor.getQuery();
-                    Analysis viewAnalysis = new Analysis(viewQuery);
-                    StatementAnalyzer.analyze(viewAnalysis, viewQuery, session, mdl);
-                    sources.addAll(viewAnalysis.getTables());
-                    nodes.add(Map.entry(viewQuery, viewAnalysis));
+                    sources.addAll(descriptorAnalysis.getTables());
                 }
+                // The planner also executes rendered model/metric expressions,
+                // not only the submitted SQL and saved views. Their declared
+                // required objects do not include every scalar subquery in a
+                // column/refSql. Analyze the actual rendered AST and expand its
+                // semantic dependencies through the same descriptor queue.
+                // A model's physical backing remains owned by that frozen
+                // model, not a fabricated additional semantic Resource.
+                nodes.add(Map.entry(descriptorQuery, descriptorAnalysis));
                 required.addAll(descriptor.getRequiredObjects());
+                required.addAll(descriptorAnalysis.getWrenObjectNames());
             }
             // The original analyzer intentionally omits native table/path
             // functions from getTables. Scalar functions can also hide
