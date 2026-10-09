@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getSyncLogs, type SyncLog, type SyncItemError } from '@/api/datasource'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{
   dataSourceId: string
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>()
 const visible = defineModel<boolean>('visible', { default: false })
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const logs = ref<SyncLog[]>([])
 const loading = ref(false)
@@ -16,35 +18,52 @@ const loadingMore = ref(false)
 const hasMore = ref(false)
 const expandedId = ref('')
 const pageSize = 50
+let active = true
+let scopeGeneration = 0
+let logRequest = 0
 
 async function fetchLogs(reset = true) {
-  if (!props.dataSourceId) return
+  if (!active || !visible.value || !props.dataSourceId) return
+  const generation = scopeGeneration
+  const request = ++logRequest
+  const dataSourceId = props.dataSourceId
+  const current = () => active && generation === scopeGeneration && request === logRequest
 
   if (reset) {
     loading.value = true
+    loadingMore.value = false
   } else {
     loadingMore.value = true
   }
 
   try {
     const offset = reset ? 0 : logs.value.length
-    const res = await getSyncLogs(props.dataSourceId, pageSize, offset)
+    const res = await getSyncLogs(dataSourceId, pageSize, offset)
+    if (!current()) return
     const items = res?.data || res || []
     logs.value = reset ? items : [...logs.value, ...items]
     hasMore.value = items.length === pageSize
-  } catch { /* ignore */ }
-
-  if (reset) {
-    loading.value = false
-  } else {
-    loadingMore.value = false
+  } catch { /* ignore */ } finally {
+    if (current()) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
-watch(visible, (v) => {
-  if (!v) return
+watch(() => [visible.value, props.dataSourceId, authStore.currentUserId, authStore.effectiveTenantId], () => {
+  scopeGeneration++
+  logs.value = []
+  loading.value = false
+  loadingMore.value = false
+  hasMore.value = false
   expandedId.value = ''
-  fetchLogs(true)
+  if (visible.value) void fetchLogs(true)
+}, { immediate: true, flush: 'sync' })
+
+onBeforeUnmount(() => {
+  active = false
+  scopeGeneration++
 })
 
 function toggleExpand(id: string) {

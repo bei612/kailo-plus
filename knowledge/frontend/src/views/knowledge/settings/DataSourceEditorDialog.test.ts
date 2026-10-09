@@ -9,14 +9,18 @@ import ts from 'typescript'
 import { createRenderer, h, nextTick, reactive, ref, watch } from 'vue'
 
 const require = createRequire(import.meta.url)
-const filename = fileURLToPath(new URL('./DataSourceEditorDialog.vue', import.meta.url))
-const { descriptor } = parse(readFileSync(filename, 'utf8'), { filename })
-const script = compileScript(descriptor, { id: 'datasource-editor-test' }).content
-  .replace('__expose();', '')
-  .replace('return __returned__', '__expose(__returned__); return __returned__')
-const compiled = ts.transpileModule(script, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
+function compileSurface(name: string) {
+  const filename = fileURLToPath(new URL(`./${name}.vue`, import.meta.url))
+  const { descriptor } = parse(readFileSync(filename, 'utf8'), { filename })
+  const script = compileScript(descriptor, { id: 'datasource-editor-test' }).content
+    .replace('__expose();', '')
+    .replace('return __returned__', '__expose(__returned__); return __returned__')
+  return ts.transpileModule(script, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+}
+
+const compiled = compileSurface('DataSourceEditorDialog')
 
 async function fixture({ configured = true, create = false, fileStorage = false, sources = [
   { external_id: 'd0350000-0000-4000-8000-000000000001', name: 'Approved source', type: 'file_storage.folder', description: '', url: '' },
@@ -536,4 +540,252 @@ test('connector changes release the busy form without deleting or syncing an unc
     assert.equal(f.calls.some(call => call.method === 'deleteDataSource'), false)
     assert.equal(f.calls.some(call => call.method === 'triggerSync'), false)
   } finally { f.close() }
+})
+
+async function scopeFixture(name: 'DataSourceSettings' | 'DataSourceSyncLogs', overrides: Record<string, (...args: any[]) => any> = {}) {
+  const calls: Array<{ method: string; args: any[] }> = []
+  const messages: string[] = []
+  const counts: number[] = []
+  const timers = new Map<number, () => void>()
+  let timerId = 0
+  const auth = reactive({ currentUserId: 'user-one', effectiveTenantId: 1, hasRole: () => true })
+  const props = reactive({ kbId: 'kb-one', visible: true, dataSourceId: 'source-one', dataSourceName: 'Source one' })
+  const api: Record<string, (...args: any[]) => any> = {}
+  for (const method of ['listDataSources', 'getSyncLogs', 'triggerSync', 'pauseDataSource', 'resumeDataSource', 'deleteDataSource']) {
+    api[method] = (...args: any[]) => {
+      calls.push({ method, args })
+      return Promise.resolve(overrides[method] ? overrides[method](...args) : { data: [] })
+    }
+  }
+  const exports: any = {}
+  runInNewContext(compileSurface(name), {
+    exports,
+    require(module: string) {
+      if (module === 'vue') return require('vue')
+      if (module === 'vue-i18n') return { useI18n: () => ({ t: (key: string) => key }) }
+      if (module === 'tdesign-vue-next') return { MessagePlugin: {
+        success: (message: string) => messages.push(message), error: (message: string) => messages.push(message),
+      } }
+      if (module === '@/api/datasource') return api
+      if (module === '@/stores/auth') return { useAuthStore: () => auth }
+      return { default: {} }
+    },
+    window: {
+      setTimeout(callback: () => void) { timers.set(++timerId, callback); return timerId },
+      clearTimeout(id: number) { timers.delete(id) },
+    },
+    console: { ...console, error() {} },
+  })
+  const component = exports.default
+  component.render = () => null
+  const renderer = createRenderer<any, any>({
+    createElement: () => ({}), createText: () => ({}), createComment: () => ({}),
+    insert() {}, remove() {}, setElementText() {}, setText() {}, patchProp() {},
+    parentNode: () => null, nextSibling: () => null,
+  })
+  const instance = ref<any>()
+  const app = renderer.createApp({ render: () => h(component, { ...props, ref: instance, onCount: (value: number) => counts.push(value) }) })
+  app.mount({})
+  await nextTick()
+  await nextTick()
+  return { vm: instance.value, props, api, auth, calls, messages, counts, timers, close: () => app.unmount() }
+}
+
+test('data source KB switching clears the old rows and ignores a late running list', async () => {
+  const old = deferred<any>()
+  const current = deferred<any>()
+  const f = await scopeFixture('DataSourceSettings', { listDataSources: (kbId) => kbId === 'kb-one' ? old.promise : current.promise })
+  try {
+    f.vm.editorVisible = true
+    f.vm.logsVisible = true
+    f.vm.logsDsId = 'source-one'
+    f.props.kbId = 'kb-two'
+    await nextTick()
+    assert.equal(f.vm.editorVisible, false)
+    assert.equal(f.vm.logsVisible, false)
+    assert.equal(f.vm.logsDsId, '')
+    old.resolve({ data: [{ id: 'source-one', latest_sync_log: { status: 'running' } }] })
+    await nextTick(); await nextTick()
+    assert.equal(f.vm.dataSources.length, 0)
+    assert.equal(f.vm.loading, true)
+    assert.equal(f.timers.size, 0)
+    const loaded = deferred<void>()
+    const stop = watch(() => f.vm.dataSources[0]?.id, (id) => {
+      if (id === 'source-two') loaded.resolve()
+    })
+    current.resolve({ data: [{ id: 'source-two' }] })
+    await loaded.promise
+    stop()
+    assert.equal(f.vm.dataSources[0].id, 'source-two')
+    assert.equal(f.vm.loading, false)
+    assert.equal(f.counts.at(-1), 1)
+  } finally { f.close() }
+})
+
+test('data source refresh accepts only the latest response, including silent polling', async () => {
+  const f = await scopeFixture('DataSourceSettings')
+  try {
+    const old = deferred<any>()
+    const current = deferred<any>()
+    f.api.listDataSources = () => old.promise
+    const first = f.vm.loadList()
+    f.api.listDataSources = () => current.promise
+    const second = f.vm.loadList(true)
+    old.resolve({ data: [{ id: 'stale', latest_sync_log: { status: 'running' } }] })
+    await first
+    assert.equal(f.vm.loading, true)
+    assert.equal(f.timers.size, 0)
+    current.resolve({ data: [{ id: 'latest' }] })
+    await second
+    assert.equal(f.vm.dataSources[0].id, 'latest')
+    assert.equal(f.vm.loading, false)
+  } finally { f.close() }
+})
+
+test('returning to the same KB cannot accept an earlier response from that KB', async () => {
+  const old = deferred<any>()
+  let first = true
+  const f = await scopeFixture('DataSourceSettings', { listDataSources: () => {
+    if (first) { first = false; return old.promise }
+    return { data: [{ id: 'new-session-list' }] }
+  } })
+  try {
+    f.props.kbId = 'kb-two'; await nextTick()
+    f.props.kbId = 'kb-one'; await nextTick(); await nextTick()
+    old.resolve({ data: [{ id: 'old-list' }] })
+    await nextTick(); await nextTick()
+    assert.equal(f.vm.dataSources[0].id, 'new-session-list')
+  } finally { f.close() }
+})
+
+for (const field of ['currentUserId', 'effectiveTenantId'] as const) {
+  test(`data source lists invalidate on native ${field} changes`, async () => {
+    const f = await scopeFixture('DataSourceSettings')
+    try {
+      const old = deferred<any>()
+      f.api.listDataSources = () => old.promise
+      const pending = f.vm.loadList()
+      f.api.listDataSources = async () => ({ data: [] })
+      if (field === 'currentUserId') f.auth.currentUserId = 'user-two'
+      else f.auth.effectiveTenantId = 2
+      await nextTick(); await nextTick()
+      old.resolve({ data: [{ id: 'old-native-scope' }] })
+      await pending
+      assert.equal(f.vm.dataSources.length, 0)
+    } finally { f.close() }
+  })
+}
+
+for (const [handler, method] of [
+  ['handleSync', 'triggerSync'], ['handlePause', 'pauseDataSource'],
+  ['handleResume', 'resumeDataSource'], ['removeDataSource', 'deleteDataSource'],
+]) {
+  test(`late ${method} ACK does not refresh or notify a different KB, and stale rows cannot dispatch`, async () => {
+    const result = deferred<any>()
+    const f = await scopeFixture('DataSourceSettings', {
+      listDataSources: (kbId) => ({ data: kbId === 'kb-one' ? [{ id: 'source-one' }] : [] }),
+      [method]: () => result.promise,
+    })
+    try {
+      const row = f.vm.dataSources[0]
+      const pending = f.vm[handler](row)
+      f.props.kbId = 'kb-two'
+      await nextTick(); await nextTick()
+      result.resolve({})
+      await pending
+      assert.equal(f.messages.length, 0)
+      assert.equal(f.calls.filter(call => call.method === 'listDataSources').length, 2)
+      await f.vm[handler](row)
+      assert.equal(f.calls.filter(call => call.method === method).length, 1)
+    } finally { f.close() }
+  })
+}
+
+test('unmounted data source lists cannot emit counts or restart polling', async () => {
+  const result = deferred<any>()
+  const f = await scopeFixture('DataSourceSettings', { listDataSources: () => result.promise })
+  const counts = f.counts.length
+  f.close()
+  result.resolve({ data: [{ id: 'late', latest_sync_log: { status: 'running' } }] })
+  await nextTick(); await nextTick()
+  assert.equal(f.counts.length, counts)
+  assert.equal(f.timers.size, 0)
+})
+
+test('changing sync log source clears the old result even if the new request fails', async () => {
+  const f = await scopeFixture('DataSourceSyncLogs', { getSyncLogs: () => ({ data: [{ id: 'old-log' }] }) })
+  try {
+    assert.equal(f.vm.logs[0].id, 'old-log')
+    const result = deferred<any>()
+    f.api.getSyncLogs = () => result.promise
+    f.props.dataSourceId = 'source-two'
+    await nextTick()
+    assert.equal(f.vm.logs.length, 0)
+    assert.equal(f.vm.hasMore, false)
+    result.reject(new Error('native authorization denied'))
+    await nextTick(); await nextTick()
+    assert.equal(f.vm.logs.length, 0)
+    assert.equal(f.vm.loading, false)
+  } finally { f.close() }
+})
+
+test('sync log close and reopen fences an earlier response for the same source', async () => {
+  const old = deferred<any>()
+  const current = deferred<any>()
+  const f = await scopeFixture('DataSourceSyncLogs', { getSyncLogs: () => old.promise })
+  try {
+    f.props.visible = false; await nextTick()
+    f.api.getSyncLogs = () => current.promise
+    f.props.visible = true; await nextTick()
+    old.resolve({ data: [{ id: 'old-log' }] })
+    await nextTick(); await nextTick()
+    assert.equal(f.vm.logs.length, 0)
+    assert.equal(f.vm.loading, true)
+    current.resolve({ data: [{ id: 'current-log' }] })
+    await nextTick(); await nextTick()
+    assert.equal(f.vm.logs[0].id, 'current-log')
+    assert.equal(f.vm.loading, false)
+  } finally { f.close() }
+})
+
+test('sync log refresh supersedes pending pagination without appending stale pages', async () => {
+  const f = await scopeFixture('DataSourceSyncLogs', { getSyncLogs: () => ({ data: Array.from({ length: 50 }, (_, index) => ({ id: `page-${index}` })) }) })
+  try {
+    const page = deferred<any>()
+    f.api.getSyncLogs = (_id, _limit, offset) => { assert.equal(offset, 50); return page.promise }
+    const pending = f.vm.fetchLogs(false)
+    f.api.getSyncLogs = async () => ({ data: [{ id: 'refreshed' }] })
+    await f.vm.fetchLogs(true)
+    page.resolve({ data: [{ id: 'stale-page' }] })
+    await pending
+    assert.equal(f.vm.logs.length, 1)
+    assert.equal(f.vm.logs[0].id, 'refreshed')
+    assert.equal(f.vm.loadingMore, false)
+    assert.equal(f.vm.hasMore, false)
+  } finally { f.close() }
+})
+
+for (const field of ['currentUserId', 'effectiveTenantId'] as const) {
+  test(`sync logs invalidate on native ${field} changes`, async () => {
+    const old = deferred<any>()
+    const f = await scopeFixture('DataSourceSyncLogs', { getSyncLogs: () => old.promise })
+    try {
+      f.api.getSyncLogs = async () => ({ data: [{ id: 'current-scope' }] })
+      if (field === 'currentUserId') f.auth.currentUserId = 'user-two'
+      else f.auth.effectiveTenantId = 2
+      await nextTick(); await nextTick()
+      old.resolve({ data: [{ id: 'old-scope' }] })
+      await nextTick(); await nextTick()
+      assert.equal(f.vm.logs[0].id, 'current-scope')
+    } finally { f.close() }
+  })
+}
+
+test('unmounted sync logs cannot publish a pending result', async () => {
+  const result = deferred<any>()
+  const f = await scopeFixture('DataSourceSyncLogs', { getSyncLogs: () => result.promise })
+  f.close()
+  result.resolve({ data: [{ id: 'late' }] })
+  await nextTick(); await nextTick()
+  assert.equal(f.vm.logs.length, 0)
 })

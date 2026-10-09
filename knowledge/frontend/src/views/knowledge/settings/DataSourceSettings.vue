@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
@@ -34,6 +34,17 @@ const logsVisible = ref(false)
 const logsDsId = ref('')
 const logsDsName = ref('')
 const pollTimer = ref<number | null>(null)
+let active = true
+let scopeGeneration = 0
+let listRequest = 0
+
+function isCurrentScope(generation: number) {
+  return active && generation === scopeGeneration
+}
+
+function isCurrentDataSource(ds: DataSource) {
+  return active && dataSources.value.includes(ds)
+}
 
 function stopPolling() {
   if (pollTimer.value !== null) {
@@ -42,86 +53,108 @@ function stopPolling() {
   }
 }
 
-function schedulePolling() {
+function schedulePolling(generation: number) {
   stopPolling()
   pollTimer.value = window.setTimeout(() => {
-    loadList(true)
+    if (isCurrentScope(generation)) void loadList(true)
   }, 3000)
 }
 
 async function loadList(silent = false) {
+  if (!active || !props.kbId) return
+  const generation = scopeGeneration
+  const request = ++listRequest
+  const kbId = props.kbId
+  const current = () => isCurrentScope(generation) && request === listRequest
+  stopPolling()
   if (!silent) loading.value = true
   try {
-    const res = await listDataSources(props.kbId)
+    const res = await listDataSources(kbId)
+    if (!current()) return
     dataSources.value = res?.data || res || []
     emit('count', dataSources.value.length)
 
     const hasRunningSync = dataSources.value.some(ds => ds.latest_sync_log?.status === 'running')
     if (hasRunningSync) {
-      schedulePolling()
+      schedulePolling(generation)
     } else {
       stopPolling()
     }
   } catch (e: any) {
-    console.error(e)
+    if (current()) console.error(e)
   } finally {
-    if (!silent) loading.value = false
+    if (current()) loading.value = false
   }
 }
 
 function openCreate() {
+  if (!active || !props.kbId || !canManageDataSource.value) return
   editingDs.value = null
   editorVisible.value = true
 }
 
 function openEdit(ds: DataSource) {
+  if (!canManageDataSource.value || !isCurrentDataSource(ds)) return
   editingDs.value = ds
   editorVisible.value = true
 }
 
 function openLogs(ds: DataSource) {
+  if (!isCurrentDataSource(ds)) return
   logsDsId.value = ds.id
   logsDsName.value = ds.name
   logsVisible.value = true
 }
 
 async function removeDataSource(ds: DataSource) {
+  if (!canManageDataSource.value || !isCurrentDataSource(ds)) return
+  const generation = scopeGeneration
   try {
     await deleteDataSource(ds.id)
+    if (!isCurrentScope(generation)) return
     MessagePlugin.success(t('datasource.deleteSuccess'))
     await loadList()
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.deleteFailed'))
+    if (isCurrentScope(generation)) MessagePlugin.error(e?.message || e?.error || t('datasource.deleteFailed'))
   }
 }
 
 async function handleSync(ds: DataSource) {
+  if (!canManageDataSource.value || !isCurrentDataSource(ds)) return
+  const generation = scopeGeneration
   try {
     await triggerSync(ds.id)
+    if (!isCurrentScope(generation)) return
     MessagePlugin.success(t('datasource.syncTriggered'))
     await loadList(true)
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.syncFailed'))
+    if (isCurrentScope(generation)) MessagePlugin.error(e?.message || e?.error || t('datasource.syncFailed'))
   }
 }
 
 async function handlePause(ds: DataSource) {
+  if (!canManageDataSource.value || !isCurrentDataSource(ds)) return
+  const generation = scopeGeneration
   try {
     await pauseDataSource(ds.id)
+    if (!isCurrentScope(generation)) return
     MessagePlugin.success(t('datasource.paused'))
     loadList()
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.pauseFailed'))
+    if (isCurrentScope(generation)) MessagePlugin.error(e?.message || e?.error || t('datasource.pauseFailed'))
   }
 }
 
 async function handleResume(ds: DataSource) {
+  if (!canManageDataSource.value || !isCurrentDataSource(ds)) return
+  const generation = scopeGeneration
   try {
     await resumeDataSource(ds.id)
+    if (!isCurrentScope(generation)) return
     MessagePlugin.success(t('datasource.resumed'))
     loadList()
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.resumeFailed'))
+    if (isCurrentScope(generation)) MessagePlugin.error(e?.message || e?.error || t('datasource.resumeFailed'))
   }
 }
 
@@ -177,8 +210,25 @@ function onEditorSaved() {
   loadList()
 }
 
-onMounted(loadList)
-onBeforeUnmount(stopPolling)
+watch(() => [props.kbId, authStore.currentUserId, authStore.effectiveTenantId], () => {
+  scopeGeneration++
+  stopPolling()
+  dataSources.value = []
+  loading.value = false
+  editorVisible.value = false
+  editingDs.value = null
+  logsVisible.value = false
+  logsDsId.value = ''
+  logsDsName.value = ''
+  emit('count', 0)
+  void loadList()
+}, { immediate: true, flush: 'sync' })
+
+onBeforeUnmount(() => {
+  active = false
+  scopeGeneration++
+  stopPolling()
+})
 </script>
 
 <template>

@@ -3930,3 +3930,96 @@ iframe/截图、镜像构建或部署。正在构建的固定
 `272693d5e1386a352946736c80a2a00ff7c27ff1` 知识库镜像不包含本批。
 批准 release/binding、完整 FILE_STORAGE 七能力与原写入/删除/分享门禁未解除；
 这些专项是原消费者及 HTTP fixture 证据，不是三组件生产就绪或业务已上线。
+
+## 原数据源列表与同步日志的当前 scope 消费（2026-10-09）
+
+本批实施前核对固定官方 WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整
+`frontend/src/views/knowledge/settings/DataSourceSettings.vue::{loadList,onMounted}` 与
+`frontend/src/views/knowledge/settings/DataSourceSyncLogs.vue::{fetchLogs,watch(visible)}`。
+两个正式 SFC 当时与固定官方全文 diff 均为空。原
+`frontend/src/views/knowledge/KnowledgeBaseEditorModal.vue` 未用 key 重建
+`DataSourceSettings`：它的 KB props 可变，但原列表只在 mounted 时读取；
+原日志只监听 visible，不监听来源，也不清理旧来源结果。
+因此旧列表、轮询和日志响应可写入新 KB/来源显示，不是本批证明的后端越权。
+这次属于实际调用与当前身份/scope 的必要接入修复；不称 SFC 全文字节原样保留。
+实施后直接与上述固定源码比较，两个 SFC 从 `<template>` 到 EOF
+（含全部 style）逐字相同：没有增加页面、菜单、文案或重新设计布局。
+
+四步影响复核：
+
+1. 权威为设计 07 §4.6、DD-92/93：完整原生页面使用本服务当前用户、租户和 KB，
+   平台身份/权限不由 iframe 或登录成功代替。现存
+   `internal/handler/datasource.go::{getOwnedKnowledgeBase,getOwnedDataSource,ManualSync,GetSyncLogs}`
+   仍校验当前 tenant、原 KB 归属及 tenant-key KB 限制；
+   `internal/router/routes_infra.go::RegisterDataSourceRoutes` 保留 Viewer 读取和
+   Admin 写入。未更改这些后端守卫，不把本地 role/行检查当权限权威。
+2. 影响面为两个原 SFC、原 Editor SFC 检查。Settings 沿原
+   `listDataSources/triggerSync/pauseDataSource/resumeDataSource/deleteDataSource`：
+   KB、native currentUserId 或 effectiveTenantId 变化同步撤销旧请求/轮询、
+   清空旧行及编辑/日志选择；同 scope 多次请求只接受最后一次。
+   Logs 沿原 `getSyncLogs`：来源、可见性和 native 身份变化清空旧页，
+   refresh 使旧分页失效。API、凭据投递、原连接器、后端状态和存储格式未改；
+   无数据库迁移或客户端双读窗口。
+3. 原已派发操作不被取消、回滚、重新派发或搬到新 scope。
+   旧 ACK/error/finally 只不再更新新页面；不据此猜 FAILED/CANCELED/COMPLETED。
+   旧行不能经残留事件发起新动作。没有新平台正文、身份目录、同步器、
+   队列、权限/工作流/额度/审计权威，也不向前端投递 SERVICE 凭据。
+4. 原检查实际覆盖 KB A→B→A、native 用户/租户切换、空/新列表、
+   同 scope silent refresh 的响应倒序、四写入口晚 ACK 与旧行再触发、
+   unmount 后的 count/轮询、来源切换后读取拒绝、同来源关闭重开、
+   refresh 与 load-more 交错以及旧 finally 不释放新 loading。
+   当前请求错误继续原错误处理；失效请求不裁定远端结果。
+   原轮询周期、日志分页上限和所有执行/状态文案未变。
+
+复用既有 `kailo-native-page-sdk-4rbmbz`，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID/GID 1000:1000、4 CPU/4 GiB、swap.max 0、Node v24.21.0。
+开始时 SDK 只有 sleep，memory.current 约 1.9 MiB；宿主 available 21 GiB、
+memory PSI avg10 0、Data 可用 270 GiB。现存 Vue/compiler-sfc、tsx 和锁定
+node_modules 可解析；未安装、下载依赖或新建镜像/SDK/快照。
+复用 `/work/knowledge-picker-20261008.2BNiWr/frontend`：package/lock 相同，
+源闭包比对只差本批三个输入及原已提交 WikiBrowser；仅同步这些必要文件，
+之后完整 frontend/src checksum 比对为空。没有覆盖原日志或改 Wiki 正式源。
+
+实际原命令：
+
+```sh
+sudo docker exec -w /work/knowledge-picker-20261008.2BNiWr/frontend \
+  kailo-native-page-sdk-4rbmbz \
+  npm test -- src/views/knowledge/settings/DataSourceEditorDialog.test.ts
+sudo docker exec -w /work/knowledge-picker-20261008.2BNiWr/frontend \
+  kailo-native-page-sdk-4rbmbz npm run type-check
+```
+
+首轮 93997 exit 1：37/38，夹具两 tick 假设未等到真实新 KB 结果。
+改为 watch 原组件实际接收 `source-two` 后断言，72787 exit 0：38/38；
+91563 `vue-tsc --build` exit 0。私有候选破坏 Settings scope/list 接受守卫和
+Logs 接受守卫/旧来源清空后，70680 exit 1：29 通过、9 失败。
+该破坏还暴露夹具人为多一层 async Promise adoption 使 7 个断言过早；
+原夹具现返回受控 Promise 本身，不改生产或放宽断言。
+同四处生产故障的 24235 exit 1：22 通过、16 失败，全部新增 16 项命中；
+不是编译失败或修改测试预期造成的负向。
+两私有生产输入经 apply_patch 撤销故障，正式/SDK 三输入 cmp 全 0。
+最终 80580 原同目标 exit 0：**38/38（原 22＋新增 16），0 failed/skip**；
+同句柄 `vue-tsc --build` exit 0。正式生产从未破坏，末次 cgroup
+max/oom/oom_kill 各 0，SDK 只剩 sleep；完整 scoped diff 与 diff --check 通过。
+
+日志保留在主机
+`/volumes/data/kailo/tmp/codex-native-page-navigation-20261005.4rBmBZ/knowledge-picker-20261008.2BNiWr/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `datasource-scope-positive.log`（首轮失败） | `521adb2d7b3f7afaac54e6f3b87706934ac1b6e4cfd3234313d270154eab07e8` |
+| `datasource-scope-positive-corrected.log` | `c26f2a13afcd27fff7fb94625870b6b6726dc30875905039986e2c57473c3fdc` |
+| `datasource-scope-type-check.log` | `a56bb276db4e129b0d23ef978a488dfc6f0845a00550a6cb828699323ac34625` |
+| `datasource-scope-production-mutation.log` | `abe45f30c066784547850a5d9f802b84ef79bf97181ffbb54050cbd99da1e31b` |
+| `datasource-scope-production-mutation-observed.log` | `2c5c75754af792e4904917a85a657e853832945b54acccbc35e95a2d5bfd3a93` |
+| `datasource-scope-restored.log` | `d935d9ec9717985c33bea87dfe7ebee622301aafcddbab127edec23a2f650b1b` |
+| `datasource-scope-type-check-final.log` | `a56bb276db4e129b0d23ef978a488dfc6f0845a00550a6cb828699323ac34625` |
+
+这些是实际原 SFC 编译、Vue watcher/API 消费者与类型检查证据，
+不是浏览器视觉或生产账号授权验收。未运行本批截图、真实手动同步/解析/
+撤权 E2E、实库、full、镜像构建或部署，未批准/激活 release/binding。
+固定 `272693d5e1386a352946736c80a2a00ff7c27ff1` 知识库镜像不含本批。
+完整 FILE_STORAGE 七能力、写入/删除/分享门禁和三组件生产交付未因此解除。
