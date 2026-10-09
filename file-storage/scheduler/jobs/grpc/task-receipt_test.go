@@ -94,6 +94,25 @@ type taskLookupTruncatedStream struct {
 	received bool
 }
 
+// The fixed original service has no TaskID field. Dropping it before the
+// actual ListTasks RPC exercises that service's original full-list behavior.
+type taskLookupLegacyConnection struct{ grpc.ClientConnInterface }
+type taskLookupLegacyStream struct{ grpc.ClientStream }
+
+func (c *taskLookupLegacyConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, options ...grpc.CallOption) (grpc.ClientStream, error) {
+	stream, err := c.ClientConnInterface.NewStream(ctx, desc, method, options...)
+	if err != nil {
+		return nil, err
+	}
+	return &taskLookupLegacyStream{ClientStream: stream}, nil
+}
+
+func (s *taskLookupLegacyStream) SendMsg(input interface{}) error {
+	request := proto.Clone(input.(*jobproto.ListTasksRequest)).(*jobproto.ListTasksRequest)
+	request.TaskID = ""
+	return s.ClientStream.SendMsg(request)
+}
+
 func (c *taskLookupTruncatedConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, options ...grpc.CallOption) (grpc.ClientStream, error) {
 	stream, err := c.ClientConnInterface.NewStream(ctx, desc, method, options...)
 	return &taskLookupTruncatedStream{ClientStream: stream}, err
@@ -174,6 +193,44 @@ func TestNativeTaskLookupUsesOriginalStreamTermination(t *testing.T) {
 				t.Fatal("over-budget original stream returned a usable Task")
 			}
 		})
+		t.Run("exact-key-is-independent-of-unrelated-history", func(t *testing.T) {
+			other := &jobproto.Task{ID: "unrelated-operation", JobID: job.ID, Status: jobproto.TaskStatus_Queued,
+				ActionsLogs: []*jobproto.ActionLog{{InputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{JsonBody: bytes.Repeat([]byte("x"), 65536)}}}}}}
+			if err := store.PutTask(other); err != nil {
+				t.Fatal(err)
+			}
+			defer store.DeleteTasks(job.ID, []string{other.ID})
+			// Only the selected original Task is charged against the same
+			// controlled response budget; no budget limit has been raised.
+			if observed, err := lookup(1024); err != nil || !proto.Equal(observed, task) {
+				t.Fatal("unrelated native history blocked this operation's observation", err)
+			}
+			grpcclient.RegisterMock(common.ServiceJobsGRPC, &taskLookupLegacyConnection{ClientConnInterface: connection})
+			defer grpcclient.RegisterMock(common.ServiceJobsGRPC, connection)
+			if observed, err := lookup(65536 * 2); err == nil || observed != nil {
+				t.Fatal("old service's full list became exact operation evidence")
+			}
+		})
+		t.Run("optional-key-keeps-original-list-and-status-filter", func(t *testing.T) {
+			seen := 0
+			stream := &taskLookupServerStream{ctx: ctx, send: func(response *jobproto.ListTasksResponse) error {
+				if !proto.Equal(response.Task, task) {
+					t.Fatal("original task list changed its payload")
+				}
+				seen++
+				return nil
+			}}
+			if err := handler.ListTasks(&jobproto.ListTasksRequest{JobID: job.ID, Status: jobproto.TaskStatus_Any}, stream); err != nil || seen != 1 {
+				t.Fatal("empty optional key changed original task listing", err, seen)
+			}
+			seen = 0
+			if err := handler.ListTasks(&jobproto.ListTasksRequest{JobID: job.ID, TaskID: task.ID, Status: jobproto.TaskStatus_Finished}, stream); err != nil || seen != 0 {
+				t.Fatal("exact task read ignored original status filtering", err, seen)
+			}
+			if err := handler.ListTasks(&jobproto.ListTasksRequest{TaskID: task.ID, Status: jobproto.TaskStatus_Any}, stream); err == nil || seen != 0 {
+				t.Fatal("exact task read was not scoped to its original Job")
+			}
+		})
 		t.Run("caller-cancel-terminates-blocked-producer", func(t *testing.T) {
 			bounded, cancel := context.WithCancel(ctx)
 			rows, done, err := store.ListTasks(bounded, job.ID, jobproto.TaskStatus_Any)
@@ -207,12 +264,17 @@ func TestNativeTaskLookupUsesOriginalStreamTermination(t *testing.T) {
 			}
 		})
 		t.Run("corrupt-task-is-not-empty-evidence", func(t *testing.T) {
+			var saved []byte
 			if err := raw.Update(func(tx *bbolt.Tx) error {
-				return tx.Bucket([]byte("tasks-"+job.ID)).Put([]byte("corrupt-row"), []byte("{"))
+				bucket := tx.Bucket([]byte("tasks-" + job.ID))
+				saved = bytes.Clone(bucket.Get([]byte(task.ID)))
+				return bucket.Put([]byte(task.ID), []byte("{"))
 			}); err != nil {
 				t.Fatal(err)
 			}
-			defer raw.Update(func(tx *bbolt.Tx) error { return tx.Bucket([]byte("tasks-" + job.ID)).Delete([]byte("corrupt-row")) })
+			defer raw.Update(func(tx *bbolt.Tx) error {
+				return tx.Bucket([]byte("tasks-"+job.ID)).Put([]byte(task.ID), saved)
+			})
 			if observed, err := lookup(65536); err == nil || observed != nil {
 				t.Fatal("unreadable persisted Task became empty/successful lookup")
 			}

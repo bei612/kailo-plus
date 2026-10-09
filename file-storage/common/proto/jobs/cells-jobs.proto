@@ -508,6 +508,8 @@ message ListTasksRequest {
     string JobID = 1;
     // List only tasks with this Status
     TaskStatus Status = 2;
+    // If set, return only this task within JobID. Empty retains the original list.
+    string TaskID = 3;
 }
 
 message ListTasksResponse {

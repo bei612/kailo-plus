@@ -312,6 +312,28 @@ func (m *mongoImpl) PutTasks(tasks map[string]map[string]*proto.Task) error {
 	return nil
 }
 
+func (m *mongoImpl) GetTask(ctx context.Context, jobId, taskId string) (*proto.Task, error) {
+	if jobId == "" || taskId == "" {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	stored := new(mongoTask)
+	err := m.Collection(collTasks).FindOne(ctx, bson.D{{Key: "job_id", Value: jobId}, {Key: "id", Value: taskId}}).Decode(stored)
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if stored.ID != taskId || stored.JobId != jobId || stored.Task == nil || stored.Task.ID != taskId || stored.Task.JobID != jobId {
+		return nil, errors.WithStack(errors.StatusConflict)
+	}
+	jobs.StripTaskData(stored.Task)
+	return stored.Task, nil
+}
+
 func (m *mongoImpl) ListTasks(ctx context.Context, jobId string, taskStatus proto.TaskStatus, cursor ...int32) (<-chan *proto.Task, <-chan error, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err

@@ -390,6 +390,42 @@ func (s *boltStore) DeleteTasks(jobId string, taskId []string) error {
 
 }
 
+// GetTask reads the original per-Job task bucket by its immutable key. A
+// missing entry is not a terminal result; unreadable or conflicting data is
+// never reported as missing.
+func (s *boltStore) GetTask(ctx context.Context, jobId, taskId string) (*proto.Task, error) {
+	if jobId == "" || taskId == "" {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	var task *proto.Task
+	err := s.DB.View(func(tx *bbolt.Tx) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		bucket := tx.Bucket([]byte(tasksBucketString + jobId))
+		if bucket == nil {
+			return nil
+		}
+		data := bucket.Get([]byte(taskId))
+		if data == nil {
+			return nil
+		}
+		task = new(proto.Task)
+		if err := json.Unmarshal(data, task); err != nil {
+			return err
+		}
+		if task.ID != taskId || task.JobID != jobId {
+			return errors.WithStack(errors.StatusConflict)
+		}
+		jobs.StripTaskData(task)
+		return ctx.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
 func (s *boltStore) ListTasks(ctx context.Context, jobId string, taskStatus proto.TaskStatus, cursor ...int32) (<-chan *proto.Task, <-chan error, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err

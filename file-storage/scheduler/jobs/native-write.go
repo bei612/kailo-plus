@@ -34,10 +34,13 @@ func NativeWriteJobMatches(job *jobproto.Job, id string) bool {
 // The existing native stream is bounded by the operator's response budget.
 // Exhaustion/unavailable lookup is not evidence that an operation never ran.
 func ReadNativeWriteTask(ctx context.Context, job, key string, limit int64) (*jobproto.Task, error) {
+	if job == "" || key == "" || limit <= 0 {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
-	stream, err := client.ListTasks(ctx, &jobproto.ListTasksRequest{JobID: job, Status: jobproto.TaskStatus_Any})
+	stream, err := client.ListTasks(ctx, &jobproto.ListTasksRequest{JobID: job, Status: jobproto.TaskStatus_Any, TaskID: key})
 	if err != nil {
 		return nil, err
 	}
@@ -51,19 +54,20 @@ func ReadNativeWriteTask(ctx context.Context, job, key string, limit int64) (*jo
 		if err != nil {
 			return nil, err
 		}
-		if response.GetTask() == nil || response.Task.ID == "" || response.Task.JobID != job {
+		// An older service may ignore the optional TaskID and stream the whole
+		// Job. That is not evidence for this operation: fail closed rather than
+		// exhausting a shared history budget or returning a partial match.
+		if response.GetTask() == nil || response.Task.ID != key || response.Task.JobID != job {
 			return nil, errors.WithStack(errors.StatusConflict)
 		}
 		size += int64(proto.Size(response))
-		if limit <= 0 || size > limit {
+		if size > limit {
 			return nil, errors.WithMessage(errors.InvalidParameters, "native task lookup exceeds its controlled response budget")
 		}
-		if response.GetTask().GetID() == key {
-			if found != nil {
-				return nil, errors.WithStack(errors.StatusConflict)
-			}
-			found = response.Task
+		if found != nil {
+			return nil, errors.WithStack(errors.StatusConflict)
 		}
+		found = response.Task
 	}
 }
 

@@ -375,6 +375,17 @@ func (j *JobsHandler) ListTasks(request *proto.ListTasksRequest, streamer proto.
 		return err
 	}
 
+	if request.TaskID != "" {
+		task, err := store.GetTask(ctx, request.JobID, request.TaskID)
+		if err != nil {
+			return err
+		}
+		if task == nil || (request.Status != proto.TaskStatus_Any && task.Status != request.Status) {
+			return ctx.Err()
+		}
+		return streamer.Send(&proto.ListTasksResponse{Task: task})
+	}
+
 	res, done, err := store.ListTasks(ctx, request.JobID, request.Status)
 	if err != nil {
 		return err

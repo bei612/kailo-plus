@@ -496,3 +496,92 @@ exit 0、1271 ms。末次 memory.current 95.3 MiB、memory.events 全 0。
 Go embed binary、浏览器与部署均未验。实际 live Cells、独立数据库、认证、
 业务数据及原 artifact digest 不变；本节不解除七必选、首传 CAS、writer/
 Task 安全退休、HUMAN 正文交付、批准 release/binding 的既有发布门禁。
+
+## 2026-10-09 原生 TaskID 精确查询（源码与生成链）
+
+四步影响结论：
+
+1. `.design/03` §6 的 ExternalExecution 冻结原生引用与 UNKNOWN 对账、
+   `.design/18` 的 Cells 独立业务权威决定本次边界。固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `scheduler/jobs/dao.go::DAO`、`scheduler/jobs/dao/bolt/bolt.go::ListTasks`、
+   `scheduler/jobs/dao/mongo/mongo.go::ListTasks` 与
+   `scheduler/jobs/grpc/handler.go::JobsHandler.ListTasks` 是原持久化/查询接缝。
+   `tools/upstream_manifest.py status file-storage` 实际输出 HEAD 即上述基准，
+   无新提交。受控 Task 保留历史后，全 Job 枚举会耗尽一次查询的响应预算，
+   不能靠增加 MaxResponseBytes 或提前删除原生回执修复。
+2. 原 `common/proto/jobs/cells-jobs.proto::ListTasksRequest` 新增可选
+   `TaskID=3`，原 JobID/Status 字段不变。两个原 DAO 按同 Job/Task 精确读取，
+   原 gRPC handler 消费字段；`ReadNativeWriteTask` 实际发送固定 key。
+   空 TaskID 的原列表、状态筛选及其他调用方不变；无数据库迁移、新状态、
+   新平台实体或 `contracts/` 四语言数据契约变更。Web/Desktop/Mobile 的
+   管理面和组件宿主边界不变，没有新增客户端入口。
+3. 不复制业务正文到 Core、不改变认证/授权/额度或 Task 生命周期。保留
+   原 StripTaskData 与冻结任务回执。旧服务忽略字段并返回非目标任务、
+   重复任务、截断流或错误流时，不返回已匹配的部分 Task；仍按原预算拒绝。
+   只有正常 EOF 才证明本次查询结束，查询错误不推断副作用失败或允许重放。
+4. 空 Job/key、取消、损坏行、同 key 不同 Job、未知/不匹配结果和超限都有
+   原错误返回；零条目仅在成功结束的原存储查询后返回空。普通列表的未知
+   status 语义未扩大。对应 apps/06 §4：参数/运行前提为 PRECONDITION，
+   大小界限为 LIMIT，引用不匹配为 CONFLICT，外部观察失败维持 UNKNOWN；
+   原 DENIED/BLOCKED 门禁没有解除。并发写、撤权、租户暂停、审批间额度
+   变化仍由原准入与在途对账控制，此只读查询不创建或重放副作用。
+
+生成复用原 jobs `buf.gen.yaml` 与 `buf.gen.tag.yaml`；固定上游未提供
+buf CLI 版本，因此本次工具固定官方
+[buf v1.50.0](https://github.com/bufbuild/buf/releases/tag/v1.50.0)，Linux x86_64
+二进制由同 release 的 sha256.txt 校验，实际 `buf-Linux-x86_64: OK`，摘要
+`154ea883ce098eac4fa106ff9ee4e4964bb97f809dd8ec9c34a432b466ce1494`。
+Go 插件来自本项目 go.mod 的 protoc-gen-go v1.36.11、go-grpc v1.5.1，
+setter 来自本树 `cmd/protoc-gen-go-setter`，没有安装上游脚本中的 stub@main。
+setter 首次 readonly 安装因自身 go.sum 缺三个已锁版本 checksum 失败；
+原私有 SDK 离线 mod=mod 仅补 x/mod v0.35.0、x/text v0.37.0、x/tools v0.44.0
+的 checksum，go.mod 逐字未变，正式 go.sum 与实际产出 cmp 0。
+buf 初次默认缓存写 /.cache 被 UID1000 拒绝，投递
+`XDG_CACHE_HOME=/cache/build/kailo-proto-tools/cache` 后原两模板 generate
+实际 exit 0；setter 生成物与原文件逐字相同。两个 protobuf Go 文件为原工具
+实际输出；生成头从历史 v1.34.2 更新为当前已锁插件，不能手改生成物缩减 diff。
+
+实际复用 `kailo-cells-native-check-lftow7`，UID1000、4 CPU/8 GiB，
+MemorySwap 与 Memory 同为 8589934592；没有新建 SDK 或降 Go 并行度。
+已有 Data module/build cache 保留；执行前核对原 SDK 仅 sleep，宿主可用
+内存约 26 GiB，最终 memory.events 的 max/oom/oom_kill 全为 0。
+初轮编译/链接遇到持续磁盘等待，保留原句柄直到退出，没有重复启动。
+原命令在 SDK `/workspace/file-storage`，投递 `GOPROXY=off`、原
+`GOMODCACHE=/cache/mod`、`GOCACHE=/cache/build` 与
+`CELLS_WORKING_DIR=/cache/build/native-test-state`：
+
+```sh
+go test -mod=readonly -tags=storage ./scheduler/jobs/dao ./scheduler/jobs/grpc \
+  -run 'TestDAO_ExactTask|TestNative' -count=1 -v
+```
+
+74250 正向 exit 0，两个包实际输出 `dao 0.071s`、`grpc 0.903s`，
+10 个顶层、138 个子目标通过。其后仅在私有 SDK apply_patch 撤掉生产
+`ReadNativeWriteTask` 请求的 `TaskID: key`，用同 grpc 原目标
+`-run TestNativeTaskLookupUsesOriginalStreamTermination -count=1 -v`
+重跑；4574 实际 exit 1，准确失败于
+`exact-key-is-independent-of-unrelated-history`，输出
+`unrelated native history blocked this operation's observation conflict`。
+这不是修改断言或让编译报错；真实列表查询漏筛任务造成回归。
+随后 apply_patch 原样恢复生产请求，与正式源 cmp 0，生产文件 SHA-256
+`28de9ff49013ddc066ec98e91f1fb0486e5cb56b178a8a1b77782ba641a4d2bb`。
+补齐原检查文件唯一一处 gofmt 空格后，50730 原完整窄目标复验 exit 0：
+`dao 0.063s`、`grpc 0.944s`，仍为 10 顶层、138 子目标通过，gofmt -l 无输出。
+
+三份完整原件位于
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- `cells-exact-task-positive.log`：
+  `2a0f2da5fbd3a23ee168e8bf562860ba019ce12652b02644149c3b9bcc38687b`。
+- `cells-exact-task-negative.log`：
+  `9418b48d0985fd80279886164973b7abc11f2a96437968365b8f469a8d02e17e`。
+- `cells-exact-task-restored.log`：
+  `184e2d60b1ea78f74bbb95f12f869365e50f40eedd791527f7eded16ccb191d4`。
+
+实际运行原 Bolt 存储与进程内真实 gRPC stream；原 Mongo 实库用例由
+`CELLS_TEST_MONGODB_DSN` 条件控制，本 SDK 未配置而未执行，Mongo 仅编译，
+不能声称实库验收。原 fixture 的日志 driver 未注册警告如实保留，不证明
+运行期审计输出可用。未执行 full、产品镜像、部署、页面截图或平台绑定
+E2E；它们由整体交付另验。本回执不解除 FILE_STORAGE 七必选能力、
+首次上传、writer/Task 安全退休、HUMAN 正文交付与 release/binding 门禁。

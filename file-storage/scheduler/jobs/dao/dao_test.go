@@ -82,6 +82,42 @@ var (
 //
 //}
 
+func TestDAO_ExactTask(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := jo.NativeReadJob("exact-native-task")
+		if err := store.ClaimJob(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		if task, err := store.GetTask(ctx, job.ID, "missing"); err != nil || task != nil {
+			t.Fatal("missing original task is not a successful lookup", task, err)
+		}
+		task := &jobs.Task{ID: "same-native-key", JobID: job.ID, TriggerOwner: "original-user", Status: jobs.TaskStatus_Queued}
+		if err := store.PutTask(task); err != nil {
+			t.Fatal(err)
+		}
+		if found, err := store.GetTask(ctx, job.ID, task.ID); err != nil || !proto.Equal(found, task) {
+			t.Fatal("exact original task changed", found, err)
+		}
+		if found, err := store.GetTask(ctx, "another-job", task.ID); err != nil || found != nil {
+			t.Fatal("task lookup crossed its Job", found, err)
+		}
+		for _, pair := range [][2]string{{"", task.ID}, {job.ID, ""}} {
+			if found, err := store.GetTask(ctx, pair[0], pair[1]); err == nil || found != nil {
+				t.Fatal("unscoped native task lookup was accepted", found, err)
+			}
+		}
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		if found, err := store.GetTask(canceled, job.ID, task.ID); !errors.Is(err, context.Canceled) || found != nil {
+			t.Fatal("canceled original task lookup became usable evidence", found, err)
+		}
+	})
+}
+
 func TestDAO_CRUD(t *testing.T) {
 
 	test.RunStorageTests(testCases, t, func(ctx context.Context) {
