@@ -2571,3 +2571,75 @@ SDK memory.events 全 0；生命周期 memory.peak=3837739008 字节，不是本
 FILE_STORAGE release/binding 仍未验；检查中的 mobile 分支只是原浏览器跳转
 逻辑，绝不冒充 Kailo Mobile 宿主或设备验收。上一节写入退休/清理、上传
 准入、Task/usage、delete/share 及七必选 catalog 原门禁均未解除。
+
+## 2026-10-09 原历史版本与归档下载的目标仓库消费者修复
+
+固定上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`，本批正式
+HEAD 核对为 `5baad5e09a6c8abeb33bbfa1904fe0ee77034b78`。本批不开放
+platform S3 写入、未完成的 uploader、generic share/delete 或 Skills 入口。
+
+1. 权威与来源：`.design/08` §4、DD-90/93 与原版本功能要求读取/恢复的是
+   原目标对象，不是当前活动仓库的同路径对象。固定上游完整路径
+   `frontend/assets/meta.versions/res/js/Revisions.js::load/applyAction` 已按
+   `node.repository_id` 加载历史并把原 node 交给 openVersion/revertToVersion；
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::openVersion/revertToVersion`
+   却直接取 active workspace。这是固定官方原调用缺陷，不是此前迁移删页面。
+   本批复用同文件 `getSlugForNode` 与
+   `frontend/assets/gui.ajax/res/js/core/model/User.js::getRepositoriesList` 的
+   原当前用户目录，不增加第二仓库映射或 native 业务 API。
+2. 影响面：两个原版本入口共用目标仓库解析；显式 repository_id 未知、空值、
+   slug 不可用或无 active workspace 时拒绝，不回退到当前同路径对象。
+   单目录归档构造的原临时 node 保留 repository_id，多选归档在原 selection
+   RPC 前固定 context 仓库/路径并验证可解析。签名 Promise/callback、普通
+   下载、原文本读取/保存的实际错误链接回原 displayMessage，恢复只有原
+   copyObject callback 无错误才回调关闭原版本面板。没有改合同、数据库、
+   平台状态、绑定或客户端传输权限。
+3. 副作用：不新建上传、版本、队列、Task、权限或操作收据；恢复至多原一次
+   copyObject，不因丢失或拒绝响应重发。这里的浏览器仓库目录不是授权权威，
+   原 S3/native ACL 和 platform S3 禁写仍由后端执行；本批不以本地 slug 选择
+   证明 Core 审批/quota 或当前资源授权已验收。
+4. 边界：已知跨仓库、当前仓库、opaque VersionId、文件/目录/多选、预览与
+   cache 原行为保留；未知/已撤销仓库无签名、下载、copy、读取或保存请求。
+   selection 在途切换 workspace 不改变原归档目标；token/loader/copy 失败
+   不调用原成功 callback、不自动重试。没有新错误词条，复用原 core.pydio
+   `391`（zh-cn“没有仓库”、en-us“No Repository”）；原 native 错误继续原 UI
+   错误通道，不能将其当作平台外部副作用确定终态。
+
+原 Revisions.js 与 User.js 分别对固定官方源码完整 cmp 为 0，原版本页面、
+布局、菜单与交互文案未改。PydioApi.js 固定官方源码 SHA-256 为
+`9ef29db86d85f8a20de40527ec10a6b38538e6ef218e2703408e520533d342e8`；
+该文件官方→当前的完整 diff 原件 `cells-native-history-workspace-official-pydio-api.diff`，
+SHA-256 `dfa80e143f9cd38aabe3abe2f9c7c41bef228381112ffd48bea61deda3bcc47a`。
+其中保留上一批签名 Promise 修复，本批差异是上述必要真实调用修正，不声明
+整个 Cells 原样字节一致或全页面视觉验收。
+
+先实现后在原 `query-revision.test.mjs` 中执行完整真实 PydioApi 类；只替换
+浏览器/SDK 环境，不复制下载/恢复实现。原 `kailo-wren-query-sdk-itgs2n`
+SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU/4 GiB、memory+swap 同额、UID/GID 1000；复用原独立候选与现有依赖。
+执行前该 SDK 仅 sleep，宿主 available 22 GiB、memory pressure 0；与 Wren
+协调短窗口，没有 Go/Cargo、镜像、依赖安装、类型全扫或全局检查。
+
+```sh
+cd /work/knowledge-observation-guard.8QFEVq
+node --test --test-name-pattern='original native (download|signing|history|workspace|archive|restore errors)' file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向 64/64（6 顶层、58 子项）退出 0。私有候选中真实改回两个版本消费者取
+active workspace，并给真实 helper 恢复未知仓库 fallback；同命令实际
+43 pass / 21 fail（含 2 个失败分组与 19 子项）退出 1，捕获错对象 copy/下载、
+未知仓库放行与原错误消费者破坏，不是仅改 fixture 或编译失败。apply_patch
+精确还原后两个正式/候选输入 cmp 0，同命令再次 64/64 退出 0。
+memory.events 的 max/oom/oom_kill 均为 0。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq`。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| cells-native-history-workspace-positive.log | `63e8c7ee6cb6297df9ebecdb6275d3539ddd9f9122fb1e4fa206295bcbedad3e` |
+| cells-native-history-workspace-production-negative.log | `484c8a6cbbc8abe3208883156189530adff55319d0b45e4dc044491909a68c33` |
+| cells-native-history-workspace-restored.log | `7f1785661770edb055a5cd0b6d07998f0ff8055507f0d10e08c803cfccf8d191` |
+
+本批没有原浏览器截图、真实 S3/native ACL wire、平台绑定或端到端恢复验收，
+没有构建或部署，不将原回调检查通过称为完整上传、FILE_STORAGE 激活或生产就绪。

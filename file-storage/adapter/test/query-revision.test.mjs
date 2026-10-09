@@ -1874,8 +1874,10 @@ test('Asset scope never becomes a general subtree and authorization root is cove
 // browser/SDK fixture only. No download implementation is copied into checks.
 async function nativeDownloadFixture(failure, mobile = false) {
   const source = await readFile(new URL('../../frontend/assets/gui.ajax/res/js/core/http/PydioApi.js', import.meta.url), 'utf8');
-  const state = { errors: [], downloads: [], signed: [], selections: [] };
+  const state = { errors: [], downloads: [], signed: [], selections: [], copies: [], reads: [], writes: [], activeRepository: ids[9] };
   const cache = new Map();
+  const repositories = new Map([[ids[9], { getSlug: () => 'documents' }],
+    [ids[10], { getSlug: () => 'other-documents' }]]);
   class NativeNode {
     constructor(path, leaf = true) { this.path = path; this.leaf = leaf; this.metadata = new Map([['uuid', ids[3]], ['etag', 'native-etag']]); }
     getPath() { return this.path; }
@@ -1883,12 +1885,16 @@ async function nativeDownloadFixture(failure, mobile = false) {
     getMetadata() { return this.metadata; }
     isLeaf() { return this.leaf; }
   }
+  state.contextNode = new NativeNode('/folder', false);
+  const messages = JSON.parse(await readFile(new URL('../../frontend/assets/core.pydio/i18n/zh-cn.all.json', import.meta.url), 'utf8'));
   const pydio = {
     Parameters: new Map([['ENDPOINT_S3_GATEWAY', '/io']]),
     getFrontendUrl: () => new URL('https://cells.example.invalid'),
     getPluginConfigs: () => new Map([['DOWNLOAD_ARCHIVE_FORMAT', 'zip']]),
-    getContextHolder: () => ({ getContextNode: () => new NativeNode('/folder', false) }),
-    user: { getActiveRepositoryObject: () => ({ getSlug: () => 'documents' }) },
+    MessageHash: { 391: messages[391].other },
+    getContextHolder: () => ({ getContextNode: () => state.contextNode }),
+    user: { getActiveRepository: () => state.activeRepository, getRepositoriesList: () => repositories,
+      getActiveRepositoryObject: () => repositories.get(state.activeRepository) },
     UI: { hasHiddenDownloadForm: () => true,
       sendDownloadToHiddenForm: (_selection, value) => state.downloads.push(value.presignedUrl),
       displayMessage: (kind, message) => state.errors.push({ kind, message }) },
@@ -1903,6 +1909,7 @@ async function nativeDownloadFixture(failure, mobile = false) {
     TreeServiceApi: class { async createSelection(request) {
       state.selections.push(request);
       if (failure === 'selection') throw new Error('native selection rejected');
+      state.beforeSelectionResponse?.();
       return { SelectionUUID: ids[4] };
     } },
     awsLoader: async () => {
@@ -1912,6 +1919,18 @@ async function nativeDownloadFixture(failure, mobile = false) {
           if (failure === 'signer') throw new Error('native signing rejected');
           state.signed.push(JSON.parse(JSON.stringify({ operation, params })));
           return `https://cells.example.invalid/${params.Bucket}/${params.Key}?versionId=${params.VersionId || ''}`;
+        }
+        copyObject(params, callback) {
+          state.copies.push(JSON.parse(JSON.stringify(params)));
+          callback(failure === 'copy' ? new Error('native restore result unconfirmed') : null);
+        }
+        getObject(params, callback) {
+          state.reads.push(JSON.parse(JSON.stringify(params)));
+          callback(null, { Body: Buffer.from('original native text') });
+        }
+        putObject(params, callback) {
+          state.writes.push(JSON.parse(JSON.stringify(params)));
+          callback(null);
         }
       } };
     },
@@ -1926,7 +1945,7 @@ async function nativeDownloadFixture(failure, mobile = false) {
   const node = new NativeNode('/folder/file.txt');
   const selection = (unique = true, selected = node) => ({ isUnique: () => unique,
     getUniqueNode: () => selected, getSelectedNodes: () => [node, new NativeNode('/folder/other.txt')] });
-  return { api, node, selection, state, sandbox, NativeNode };
+  return { api, node, selection, state, sandbox, NativeNode, pydio, repositories };
 }
 
 test('original native download, archive, preview and version consumers use the loaded signer', async t => {
@@ -1956,6 +1975,107 @@ test('original native download, archive, preview and version consumers use the l
       }
       assert.equal(state.signed.length, 1);
       assert.deepEqual(state.errors, []);
+    });
+  }
+});
+
+test('original native history and content consumers use the node workspace, not the active workspace', async t => {
+  for (const mode of ['version', 'restore', 'file', 'folder', 'selection', 'plain read', 'plain write']) {
+    await t.test(mode, async () => {
+      const { api, node, selection, state, NativeNode } = await nativeDownloadFixture();
+      node.getMetadata().set('repository_id', ids[10]);
+      let completed;
+      if (mode === 'version') await api.openVersion(node, 'original-opaque-revision');
+      else if (mode === 'restore') await api.revertToVersion(node, 'original-opaque-revision', value => { completed = value; });
+      else if (mode === 'plain read') await api.getPlainContent(node, value => { completed = value; });
+      else if (mode === 'plain write') await api.postPlainTextContent(node, 'original edited content', value => { completed = value; });
+      else if (mode === 'folder') {
+        const folder = new NativeNode('/folder', false);
+        folder.getMetadata().set('repository_id', ids[10]);
+        await api.downloadSelection(selection(true, folder));
+      } else {
+        state.contextNode.getMetadata().set('repository_id', ids[10]);
+        await api.downloadSelection(selection(mode !== 'selection'));
+      }
+      assert.deepEqual(state.errors, []);
+      if (mode === 'restore') {
+        assert.equal(state.copies.length, 1);
+        assert.equal(state.copies[0].Key, 'other-documents/folder/file.txt');
+        assert.equal(decodeURIComponent(state.copies[0].CopySource), 'io/other-documents/folder/file.txt?versionId=original-opaque-revision');
+        assert.equal(completed, 'Copy version to original node');
+      } else if (mode === 'plain read') {
+        assert.equal(state.reads[0].Key, 'other-documents/folder/file.txt');
+        assert.equal(completed, 'original native text');
+      } else if (mode === 'plain write') {
+        assert.equal(state.writes[0].Key, 'other-documents/folder/file.txt');
+        assert.equal(completed, 'Ok');
+      } else {
+        assert.equal(state.signed.length, 1);
+        assert.match(state.signed[0].params.Key, /^other-documents\//);
+        if (mode === 'version') assert.equal(state.signed[0].params.VersionId, 'original-opaque-revision');
+        if (mode === 'selection') assert.deepEqual(Array.from(state.selections[0].Nodes, value => value.Path),
+          ['other-documents/folder/file.txt', 'documents/folder/other.txt']);
+      }
+    });
+  }
+});
+
+test('original native workspace selection failures never fall back to the active same-path object', async t => {
+  for (const invalid of ['removed', 'empty id', 'empty slug', 'missing active']) {
+    for (const mode of ['version', 'restore', 'folder', 'selection', 'preview', 'plain read', 'plain write']) {
+      await t.test(`${invalid}/${mode}`, async () => {
+        const { api, node, selection, state, NativeNode, repositories, pydio } = await nativeDownloadFixture();
+        const folder = new NativeNode('/folder', false);
+        if (invalid === 'missing active') state.activeRepository = ids[11];
+        else {
+          node.getMetadata().set('repository_id', invalid === 'empty id' ? '' : ids[10]);
+          folder.getMetadata().set('repository_id', node.getMetadata().get('repository_id'));
+          if (invalid === 'removed') repositories.delete(ids[10]);
+          if (invalid === 'empty slug') repositories.set(ids[10], { getSlug: () => '' });
+        }
+        let completed;
+        if (mode === 'version') await api.openVersion(node, 'original-opaque-revision');
+        else if (mode === 'restore') await api.revertToVersion(node, 'original-opaque-revision', value => { completed = value; });
+        else if (mode === 'plain read') await api.getPlainContent(node, value => { completed = value; });
+        else if (mode === 'plain write') await api.postPlainTextContent(node, 'original edited content', value => { completed = value; });
+        else if (mode === 'preview') await assert.rejects(api.buildPresignedGetUrl(node), { message: pydio.MessageHash[391] });
+        else await api.downloadSelection(selection(mode !== 'selection', mode === 'folder' ? folder : node));
+        assert.deepEqual(state.signed, []);
+        assert.deepEqual(state.copies, []);
+        assert.deepEqual(state.reads, []);
+        assert.deepEqual(state.writes, []);
+        assert.deepEqual(state.selections, []);
+        assert.deepEqual(state.downloads, []);
+        assert.equal(completed, mode === 'plain write' ? false : undefined);
+        assert.equal(state.errors.length, mode === 'preview' ? 0 : 1);
+        if (state.errors.length) assert.equal(state.errors[0].message, pydio.MessageHash[391]);
+      });
+    }
+  }
+});
+
+test('original native archive keeps its original context while selection RPC is pending', async () => {
+  const { api, selection, state, NativeNode } = await nativeDownloadFixture();
+  state.beforeSelectionResponse = () => {
+    state.activeRepository = ids[10];
+    state.contextNode = new NativeNode('/other-folder', false);
+  };
+  await api.downloadSelection(selection(false));
+  assert.deepEqual(state.errors, []);
+  assert.equal(state.signed[0].params.Key, `documents/folder/${ids[4]}-selection.zip`);
+});
+
+test('original native restore errors never close the original version panel or repeat copy', async t => {
+  for (const failure of ['token', 'loader', 'copy']) {
+    await t.test(failure, async () => {
+      const { api, node, state } = await nativeDownloadFixture(failure);
+      node.getMetadata().set('repository_id', ids[10]);
+      let completed = false;
+      await api.revertToVersion(node, 'original-opaque-revision', () => { completed = true; });
+      assert.equal(completed, false);
+      assert.equal(state.copies.length, failure === 'copy' ? 1 : 0);
+      assert.equal(state.errors.length, 1);
+      assert.equal(state.errors[0].kind, 'ERROR');
     });
   }
 });
