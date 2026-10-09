@@ -2643,3 +2643,90 @@ memory.events 的 max/oom/oom_kill 均为 0。
 
 本批没有原浏览器截图、真实 S3/native ACL wire、平台绑定或端到端恢复验收，
 没有构建或部署，不将原回调检查通过称为完整上传、FILE_STORAGE 激活或生产就绪。
+
+## 2026-10-09 原 multipart 上传错误、取消与晚回包消费者修复
+
+固定官方仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。本批是在原生完整
+上传器内修复真实错误调用，不新增上传页面、平台状态或业务能力，不开放平台
+S3 写入。五个源码/原检查路径 +375/-47，以下四步均在实现后核对：
+
+1. 权威与来源：`.design/07`、`.design/08` 与 `06` §4 要求未知副作用不得
+   自动重放。固定官方 `frontend/assets/gui.ajax/res/js/core/http/RestClient.js::
+   getAuthToken/getOrUpdateJwt` 原刷新 catch 吞错，`PydioApi.js::uploadMultipart`
+   的外层 Promise 只 resolve，`awsLoader.js::ManagedMultipart.uploadPart/
+   finishMultiPart/abort/cleanup` 不消费 JWT 拒绝，原
+   `frontend/assets/uploader.html/res/js/model/UploadItem.js::_doProcess/
+   _doAbort/uploadPresigned` 可整文件自动重传或在取消后继续派发。这些是固定
+   官方原缺陷，不是缺页面。差异归为恢复实际调用可用性所必需的失败收敛改造，
+   不声称四文件原样字节一致；原页面、布局、文案及已有独立入口均保留。
+2. 影响面：原 UploadItem → PydioApi.uploadMultipart → awsLoader → 原
+   AWS ManagedUpload 同链闭合；RestClient 仍沿原 refresh/logout/remove，
+   明确拒绝空凭据，不共享身份或回退 token。原匿名 callApi 的既有处理未改。
+   multipart 在 send 前已确认失败仍保留原有界初始化重试；进入 send 后的
+   transport/JWT/Complete 结果不明不再由外层重传整文件，收到原 401 拒绝
+   仍可沿原同 part 刷新重试。没有改 schema、DB、配置阈值或执行权威。
+3. 副作用：取消意图先于异步 JWT 刷新设置；实际 SDK failed 标记与本地取消
+   意图共同阻止后续 part/complete。原 `frontend/assets/pnpm-lock.yaml`
+   锁定 aws-sdk 2.1693.0，其 [原 ManagedUpload.cleanup](https://raw.githubusercontent.com/aws/aws-sdk-js/v2.1693.0/lib/s3/managed_upload.js)
+   设置 failed，而非上游 wrapper 先前读取的 _aborted，不能以不存在的属性
+   证明取消。cleanup 刷新拒绝仍把原错误交原 SDK callback，longtask 收尾一次。
+   本地 attempt 对象只隔离旧浏览器回调，不是 native Task、操作 key 或收据；
+   新手动 attempt 不被旧 JWT/完成回包覆盖，取消后不调用原 loaded 出口。
+4. 异常：刷新拒绝/空 token、模块加载失败、两个 part JWT 交错、part/complete
+   丢 ACK、send 同步抛错、abort 刷新拒绝以及取消后晚回包均有原消费者检查。
+   认证错误属于既有 DENIED；派发前依赖失败保留原 PRECONDITION/修复后重试
+   边界；派发后结果不明仍是 UNKNOWN，不生成平台 FAILED/CANCELED/usage。
+   原 native 独立上传器只显示原错误，不具平台待对账终态视图，本批没有把
+   该 UI error 冒充平台确定失败；这仍不能替代平台上传闭环与准入。
+
+四个生产文件各自固定官方→当前的完整 diff 原件保留在下述候选目录，包含
+PydioApi 已提交的下载/仓库修复，不仅看本批修改：
+
+| 文件差异原件 | SHA-256 |
+| --- | --- |
+| cells-native-multipart-official-RestClient.js.diff | `a3f370047e7144481830d66d26e3d01ec1133a1a5cee2a6ea450f5ef00bc338a` |
+| cells-native-multipart-official-awsLoader.js.diff | `3389839ba9bd32553abbf9cef343f50932f428dadf7060f6be779cb58fc877f9` |
+| cells-native-multipart-official-PydioApi.js.diff | `9d41d91fbd55400480053d5631ef6ab247eee7fca22bb5bf7544d18d750b9046` |
+| cells-native-multipart-official-UploadItem.js.diff | `90fe660300feee919ece6fa931f52e3cd08561eacc8079da74dc8c0bfcf62b7f` |
+
+复用既有 `kailo-wren-query-sdk-itgs2n`、4 CPU/4 GiB、memory+swap 同额、
+UID/GID 1000。03:56 UTC preflight：memory.current=1486286848 字节，
+memory.events 全 0，宿主 MemAvailable=22990436 kB、内存 PSI avg10=0；
+原 Wren Jest PID15422 为 Dl、RSS 1354164 kB，与本批轻目标实际叠加，不是
+独占 SDK。未停止或修改其输入，未新增容器/SDK、依赖、镜像、Go/Cargo 或
+全局构建。仅把自身五输入和未改 StatusItem.js 同步到原独立候选，cmp=0。
+
+```sh
+cd /work/knowledge-observation-guard.8QFEVq
+node --test --test-name-pattern='original native (refresh|multipart|download|signing|history|workspace|archive|restore errors)' file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向实际 exit0：92/92（11 顶层、81 子项），其中本批新增 5 顶层、23 子项。
+原 VM 执行完整 RestClient/PydioApi/awsLoader/UploadItem/StatusItem，只有
+浏览器、REST transport 与外部 AWS SDK 为 fixture；没有复制实际重试/认证
+实现。SDK fixture 按其真实 failed 标记，不以 _aborted 假造终态。
+
+只在私有生产输入破坏四处：删除 RestClient 原 catch 的 throw；删除
+ManagedMultipart.cleanup 的即时取消意图；取消 PydioApi send 前取消检查；
+取消 UploadItem 的结果不明整文件重试拒绝。原目标实际 exit1：78 pass /
+14 fail（4 顶层、10 子项），命中吞刷新错误、晚 part 派发、UNKNOWN 重传与
+取消后/旧 attempt 派发；不是改断言或编译失败。六输入含未改 StatusItem
+按正式原字节恢复、cmp=0 后同目标 exit0：92/92；正式源码从未变异。
+正式 diff --check exit0；SDK 还原终态 memory.events 全 0，memory.current
+116502528 字节（共享容器当时值，不当本批独立峰值）。无本批在途命令。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq`。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| cells-native-multipart-positive.log | `862c6e3e84908b950c42d745eab528204d713129c49f250e4dda4c093f0c1772` |
+| cells-native-multipart-production-negative.log | `b9f249e91da35ee61ea113fe6a5c96c806a96e4c1b9e83c0c7109b6053f83208` |
+| cells-native-multipart-restored.log | `4a58940403fb441917f515caeb5b81943739c0302d223ee695533d4a25d5404f` |
+
+本批未执行前端 bundler、原页面浏览器/设备截图、真实 AWS SDK/S3 wire、
+对象存储撤权/取消与完整上传 E2E，未构建 artifact、未部署、未跑 full。
+原 SDK 仍可能在远端已派发后晚写；本地 abort/cleanup/error 不证明远端没有
+副作用。平台 staging/writer 退休、Task 失联与旧代对账、publish 独立因果、
+generic write/delete/share 和七必选 catalog/批准 binding 原门禁不变；
+本批不声称完整 FILE_STORAGE 可用、100% 还原或生产就绪。

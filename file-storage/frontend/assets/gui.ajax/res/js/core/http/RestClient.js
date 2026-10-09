@@ -201,8 +201,9 @@ class RestClient extends ApiClient{
         return RestClient._updating.then(() => {
             RestClient._updating = null;
             return this.getAuthToken()
-        }).catch(() => {
-            RestClient._updating = null
+        }).catch(error => {
+            RestClient._updating = null;
+            throw error;
         })
     }
 
@@ -210,7 +211,12 @@ class RestClient extends ApiClient{
      * @return {Promise}
      */
     getOrUpdateJwt(){
-        return this.getAuthToken().then(token => token)
+        return this.getAuthToken().then(token => {
+            if (typeof token !== 'string' || !token.length) {
+                return Promise.reject('invalid token');
+            }
+            return token;
+        })
     }
 
     /**

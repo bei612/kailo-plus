@@ -7,6 +7,7 @@ export default () => {
         class ManagedMultipart extends aws.S3.ManagedUpload{
 
             _partsRetries = []
+            _abortRequested = false
 
             progress(info, data) {
                 const upload = this._managedUpload;
@@ -44,16 +45,22 @@ export default () => {
             }
 
             uploadPart(chunk, partNumber) {
+                if(this.failed || this._abortRequested){
+                    return;
+                }
                 if(this._pause){
                     setTimeout(()=>{
-                        if(!this._aborted){
+                        if(!this.failed && !this._abortRequested){
                             this.uploadPart(chunk, partNumber);
                         }
                     }, 1000);
                     return;
                 }
                 // Make sure to reupdate JWT after long uploads
-                PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                    if(this.failed || this._abortRequested){
+                        return;
+                    }
                     // Update accessKeyId
                     this.service.config.credentials.accessKeyId = jwt;
 
@@ -75,6 +82,9 @@ export default () => {
                     req._managedUpload = self;
                     req.on('httpUploadProgress', self.progress);
                     req.send(function(err, data) {
+                        if(self.failed || self._abortRequested){
+                            return;
+                        }
                         delete self.parts[partParams.PartNumber];
                         self.activeParts--;
 
@@ -89,8 +99,10 @@ export default () => {
                             });
                         }
                         if(err) {
-                            // Retry 3 times to renew the token on failure
-                            if ((err.retryable || err.statusCode === 401) && self._partsRetries[partNumber] <= 3) {
+                            // A received authentication refusal can renew its
+                            // token. A timeout/retryable transport error is not
+                            // evidence that the native part was never written.
+                            if (err.statusCode === 401 && self._partsRetries[partNumber] <= 3) {
                                 self.uploadPart(chunk, partNumber);
                                 return err
                             } else {
@@ -110,32 +122,39 @@ export default () => {
                     });
 
 
-                });
+                }).catch(err => this.cleanup(err));
             }
 
             finishMultiPart(){
-                PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                if(this.failed || this._abortRequested){
+                    return;
+                }
+                return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                    if(this.failed || this._abortRequested){
+                        return;
+                    }
                     // Update accessKeyId
                     this.service.config.credentials.accessKeyId = jwt;
                     super.finishMultiPart();
-                });
+                }).catch(err => this.cleanup(err));
             }
 
             abort(){
-                PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                this._abortRequested = true;
+                return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
                     // Update accessKeyId
                     this.service.config.credentials.accessKeyId = jwt;
                     super.abort();
-                    this._aborted = true;
-                });
+                }).catch(err => super.cleanup(err));
             }
 
             cleanup(err){
-                PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+                this._abortRequested = true;
+                return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
                     // Update accessKeyId
                     this.service.config.credentials.accessKeyId = jwt;
                     super.cleanup(err);
-                });
+                }).catch(tokenError => super.cleanup(err || tokenError));
             }
 
         }

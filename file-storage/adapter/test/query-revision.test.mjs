@@ -1948,6 +1948,266 @@ async function nativeDownloadFixture(failure, mobile = false) {
   return { api, node, selection, state, sandbox, NativeNode, pydio, repositories };
 }
 
+// The four original browser consumers run together. Only browser storage, the
+// REST transport and the external AWS SDK are fixtures; no upload/retry/auth
+// implementation is copied from the production methods into the assertions.
+async function nativeMultipartFixture() {
+  const fixture = await nativeDownloadFixture();
+  const {api, pydio, state, sandbox} = fixture;
+  Object.assign(state, {notifications:[], parts:[], partCallbacks:[], completions:[], cleanups:[],
+    sends:0, aborts:0, loads:0, refreshed:0, finished:0, timers:[], logout:[]});
+  const messages = {210:'Upload error', 'html_uploader.status.error.aborted':'Upload aborted'};
+  const uploaderConfig = new Map([['MULTIPART_UPLOAD_THRESHOLD','2'], ['MULTIPART_UPLOAD_PART_SIZE','2'],
+    ['MULTIPART_UPLOAD_QUEUE_SIZE','1'], ['MULTIPART_UPLOAD_TIMEOUT_MINUTES','1']]);
+  pydio.getPluginConfigs = () => uploaderConfig;
+  pydio.notify = event => state.notifications.push(event);
+  pydio.getController = () => ({fireAction:action => state.logout.push(action)});
+  pydio.MessageHash['html_uploader.status.error.aborted'] = messages['html_uploader.status.error.aborted'];
+  const Pydio = {getInstance:() => pydio, getMessages:() => messages};
+  sandbox.Pydio = Pydio;
+  const restSource = await readFile(new URL('../../frontend/assets/gui.ajax/res/js/core/http/RestClient.js', import.meta.url), 'utf8');
+  const RestClient = runInNewContext(restSource.replace(/^import .+$/gm, '').replace(/^export .+$/gm, 'RestClient;'), {
+    ApiClient:class {}, RestFrontSessionRequest:class {}, window:{location:{}},
+  });
+  const rest = new RestClient(pydio);
+  state.token = {ExpiresAt:Math.floor(Date.now()/1000)+3600, AccessToken:'original-current-user'};
+  rest.get = () => state.token;
+  rest.store = token => {state.token=token;};
+  rest.remove = () => {state.token=null;};
+  rest.jwtEndpoint = async request => {
+    assert.equal(request.AuthInfo.type,'refresh');
+    state.refreshed++;
+    return state.refresh ? state.refresh() : {data:{Token:{ExpiresAt:Math.floor(Date.now()/1000)+3600, AccessToken:'original-refreshed-user'}}};
+  };
+  api.constructor._PydioRestClient = rest;
+  api.constructor._PydioClient = api;
+  const credentials = {accessKeyId:'original-current-user'};
+  class ManagedUpload {
+    constructor(options) {
+      this.options=options; this.parts={}; this.completeInfo={}; this.activeParts=1; this.doneParts=0;
+      this.totalPartNumbers=1; this.isDoneChunking=true;
+      this.service={config:{credentials}, uploadPart:params => {
+        state.parts.push(params);
+        return {on(){}, send:callback => state.partCallbacks.push(callback)};
+      }};
+      state.managed=this;
+    }
+    on() {}
+    send(callback) {
+      state.sends++; this.callback=callback;
+      if(state.sendFailure) throw state.sendFailure;
+      this.uploadPart(this.options.params.Body,1);
+      if(state.concurrentPart) this.uploadPart(this.options.params.Body,2);
+    }
+    finishMultiPart() {state.completions.push(this.callback);}
+    abort() {state.aborts++; this.cleanup(new Error(messages['html_uploader.status.error.aborted']));}
+    cleanup(error) {
+      if(this.failed) return;
+      this.failed=true; state.cleanups.push(error); this.callback?.(error);
+    }
+    fillQueue() {}
+  }
+  const awsSdk={S3:{ManagedUpload}, config:{update:value => Object.assign(credentials,{accessKeyId:value.accessKeyId})},
+    util:{string:{byteLength:value => value.length}, isBrowser:() => true,
+      error:(error,properties) => Object.assign(error,properties)}};
+  const loaderSource = await readFile(new URL('../../frontend/assets/gui.ajax/res/js/core/http/awsLoader.js',import.meta.url),'utf8');
+  const load = runInNewContext(loaderSource.replace(/^import .+$/gm,'').replace('export default','')
+    .replace("import(/* webpackChunkName: 'aws-sdk' */ 'aws-sdk')",'Promise.resolve(awsSdk)'), {
+      PydioApi:api.constructor, awsSdk, setTimeout:callback => state.timers.push(callback),
+    });
+  sandbox.awsLoader = async () => {
+    state.loads++;
+    if(state.loaderFailure) throw state.loaderFailure;
+    return load();
+  };
+  const observable = class {notify() {}};
+  const statusSource = await readFile(new URL('../../frontend/assets/uploader.html/res/js/model/StatusItem.js',import.meta.url),'utf8');
+  const StatusItem = runInNewContext(statusSource.replace(/^import .+$/gm,'').replace(/^export .+$/gm,'StatusItem;'), {
+    Observable:observable, Pydio,
+  });
+  const itemSource = await readFile(new URL('../../frontend/assets/uploader.html/res/js/model/UploadItem.js',import.meta.url),'utf8');
+  const UploadItem = runInNewContext(itemSource.replace(/^import .+$/gm,'').replace(/^export .+$/gm,'UploadItem;'), {
+    StatusItem, Pydio, PydioApi:api.constructor,
+    PartItem:class {getStatus() {return 'new';}},
+    Configs:{getInstance:() => ({extensionAllowed(){}})},
+    addEventListener(){}, window:{setTimeout:callback => state.timers.push(callback)},
+  });
+  const item = new UploadItem({name:'original-file.txt',size:4,length:4},fixture.node);
+  item.getFullPath = () => 'documents/original-file.txt';
+  const start = () => {
+    const nextTimer=state.timers.length;
+    item.process(() => {state.finished++;});
+    // Advance only this call's original first-attempt browser timer.
+    state.timers.splice(nextTimer,1)[0]();
+  };
+  const flush = async () => {await new Promise(resolve => setImmediate(resolve));};
+  return {...fixture,rest,item,start,flush,load};
+}
+
+test('original native refresh rejects its real failure and clears the shared refresh promise', async t => {
+  await t.test('refresh failure remains the original rejection, not an undefined credential',async () => {
+    const {state,rest}=await nativeMultipartFixture();
+    const refusal=new Error('original native refresh refused');
+    state.token.ExpiresAt=0; state.refresh=async () => {throw refusal;};
+    await assert.rejects(rest.getAuthToken(),error=>error===refusal);
+    assert.deepEqual(state.logout,['logout']);
+    state.token={ExpiresAt:0, AccessToken:'expired-original-user'}; state.refresh=null;
+    assert.equal(await rest.getOrUpdateJwt(),'original-refreshed-user');
+    assert.equal(state.refreshed,2);
+  });
+  for(const token of ['',undefined,null]) await t.test(`empty access token ${String(token)}`,async () => {
+    const {state,rest}=await nativeMultipartFixture(); state.token.AccessToken=token;
+    await assert.rejects(rest.getOrUpdateJwt(),error=>error==='invalid token');
+  });
+});
+
+test('original native multipart session and initialization failures leave the real upload queue', async t => {
+  for(const failure of ['refresh','empty token','signer loader']) await t.test(failure,async () => {
+    const {state,rest,start,item,flush}=await nativeMultipartFixture();
+    if(failure==='refresh') {
+      state.token.ExpiresAt=0;
+      state.refresh=async () => {throw new Error('native session revoked');};
+    } else if(failure==='empty token') state.token.AccessToken='';
+    else state.loaderFailure=new Error('original SDK unavailable');
+    start(); await flush();
+    assert.equal(state.sends,0);
+    // Only the original bounded retry may run, and only before SDK dispatch.
+    while(state.timers.length) {state.timers.shift()(); await flush();}
+    assert.equal(state.sends,0);
+    assert.equal(item.getStatus(),'error');
+    assert.equal(state.finished,1);
+    assert.equal(state.notifications.filter(value=>value==='longtask_starting').length,
+      state.notifications.filter(value=>value==='longtask_finished').length);
+    if(failure==='refresh') {
+      assert.deepEqual(state.logout,['logout']);
+      await assert.rejects(rest.getOrUpdateJwt());
+    }
+  });
+  await t.test('confirmed pre-dispatch initialization failure retains original retry',async () => {
+    const {state,start,flush,item}=await nativeMultipartFixture();
+    state.loaderFailure=new Error('original SDK unavailable'); start(); await flush();
+    assert.equal(state.timers.length,1); assert.equal(state.sends,0);
+    state.loaderFailure=null; state.timers.shift()(); await flush();
+    assert.equal(state.sends,1); assert.equal(state.parts.length,1);
+    state.partCallbacks.shift()(null,{ETag:'original-part-etag'}); await flush();
+    state.completions.shift()(null,{VersionId:'original-native-version'}); await flush();
+    assert.equal(item.getStatus(),'loaded'); assert.equal(state.finished,1);
+  });
+});
+
+test('original native multipart uncertain outcomes never automatically replay the whole file', async t => {
+  for(const failure of ['part transport','complete transport','JWT before part','JWT before complete','send throw']) await t.test(failure,async () => {
+    const {state,start,item,flush,rest}=await nativeMultipartFixture();
+    if(failure==='JWT before part') {
+      let calls=0; const original=rest.getOrUpdateJwt.bind(rest);
+      rest.getOrUpdateJwt=() => ++calls===1 ? original() : Promise.reject(new Error('native session revoked'));
+    }
+    if(failure==='send throw') state.sendFailure=new Error('native dispatch result unconfirmed');
+    start(); await flush();
+    if(failure==='part transport') state.partCallbacks.shift()({message:'native part result unconfirmed',retryable:true},null);
+    else if(failure==='JWT before complete') {
+      rest.getOrUpdateJwt=() => Promise.reject(new Error('native session revoked'));
+      state.partCallbacks.shift()(null,{ETag:'original-part-etag'});
+    } else if(failure==='complete transport') {
+      state.partCallbacks.shift()(null,{ETag:'original-part-etag'}); await flush();
+      state.completions.shift()(new Error('native completion result unconfirmed'));
+    }
+    await flush();
+    assert.equal(state.sends,1); assert.equal(state.parts.length,failure==='JWT before part'||failure==='send throw'?0:1);
+    assert.equal(state.timers.length,0); assert.equal(item.getStatus(),'error'); assert.equal(state.finished,1);
+    assert.equal(state.notifications.filter(value=>value==='longtask_finished').length,1);
+  });
+  await t.test('received authentication refusal retains same native part retry',async () => {
+    const {state,start,item,flush}=await nativeMultipartFixture(); start(); await flush();
+    state.partCallbacks.shift()({message:'native authentication refused',statusCode:401},null); await flush();
+    assert.equal(state.sends,1); assert.equal(state.parts.length,2);
+    assert.equal(state.parts[0].PartNumber,state.parts[1].PartNumber);
+    state.partCallbacks.shift()(null,{ETag:'original-part-etag'}); await flush();
+    state.completions.shift()(null,{VersionId:'original-native-version'}); await flush();
+    assert.equal(item.getStatus(),'loaded'); assert.equal(state.finished,1);
+  });
+});
+
+test('original native multipart token failure fences another pending part before SDK cleanup finishes', async t => {
+  for(const outcome of ['pending cleanup refresh','rejected cleanup refresh']) await t.test(outcome,async () => {
+    const {state,start,item,flush,rest}=await nativeMultipartFixture();
+    state.concurrentPart=true;
+    let calls=0, releasePart, releaseCleanup;
+    const original=rest.getOrUpdateJwt.bind(rest);
+    rest.getOrUpdateJwt=() => {
+      calls++;
+      if(calls===1) return original();
+      if(calls===2) return Promise.reject(new Error('first part authentication refused'));
+      if(calls===3) return new Promise(resolve=>{releasePart=resolve;});
+      if(outcome==='pending cleanup refresh') return new Promise(resolve=>{releaseCleanup=resolve;});
+      return Promise.reject(new Error('native cleanup authentication refused'));
+    };
+    start(); await flush();
+    releasePart('late-other-part-token'); await flush();
+    assert.equal(state.parts.length,0);
+    if(releaseCleanup) {releaseCleanup('original-cleanup-token'); await flush();}
+    assert.equal(state.managed.failed,true);
+    assert.equal(state.managed._abortRequested,true);
+    assert.equal(item.getStatus(),'error'); assert.equal(state.finished,1);
+    assert.equal(state.sends,1); assert.equal(state.timers.length,0);
+  });
+});
+
+test('original native multipart cancellation fences late token, part and completion callbacks', async t => {
+  for(const phase of ['initial refresh','part refresh','part response','complete response','abort refresh rejection']) await t.test(phase,async () => {
+    const {state,start,item,flush,rest}=await nativeMultipartFixture();
+    let release;
+    if(phase==='initial refresh') {
+      state.token.ExpiresAt=0;
+      state.refresh=() => new Promise(resolve=>{release=resolve;});
+    } else if(phase==='part refresh') {
+      let calls=0; const original=rest.getOrUpdateJwt.bind(rest);
+      rest.getOrUpdateJwt=() => ++calls===2 ? new Promise(resolve=>{release=resolve;}) : original();
+    }
+    start(); await flush();
+    if(phase==='complete response') {
+      state.partCallbacks.shift()(null,{ETag:'original-part-etag'}); await flush();
+    }
+    if(phase==='abort refresh rejection') rest.getOrUpdateJwt=() => Promise.reject(new Error('native session revoked'));
+    item.abort();
+    if(phase==='initial refresh') release({data:{Token:{ExpiresAt:Math.floor(Date.now()/1000)+3600,AccessToken:'original-refreshed-user'}}});
+    if(phase==='part refresh') release('original-refreshed-user');
+    if(phase==='part response'||phase==='abort refresh rejection') state.partCallbacks.shift()({message:'late transport result',retryable:true},null);
+    if(phase==='complete response') state.completions.shift()(null,{VersionId:'late-native-version'});
+    await flush();
+    assert.equal(item.getStatus(),'error'); assert.equal(state.finished,1); assert.equal(state.timers.length,0);
+    assert.equal(state.sends,phase==='initial refresh'?0:1);
+    assert.equal(state.parts.length,phase==='initial refresh'||phase==='part refresh'?0:1);
+    assert.equal(state.completions.length,0);
+    if(state.managed) {state.managed.uploadPart('late-part',2); state.managed.finishMultiPart(); await flush();}
+    assert.equal(state.parts.length,phase==='initial refresh'||phase==='part refresh'?0:1);
+  });
+  for(const phase of ['initial refresh','complete response']) await t.test(`new manual attempt fences old ${phase}`,async () => {
+    const {state,start,item,flush}=await nativeMultipartFixture();
+    let release, oldCompletion;
+    if(phase==='initial refresh') {
+      state.token.ExpiresAt=0;
+      state.refresh=() => new Promise(resolve=>{release=resolve;});
+    }
+    start(); await flush();
+    if(phase==='complete response') {
+      state.partCallbacks.shift()(null,{ETag:'first-original-part'}); await flush();
+      oldCompletion=state.completions.shift();
+    }
+    item.abort(); start();
+    if(release) release({data:{Token:{ExpiresAt:Math.floor(Date.now()/1000)+3600,AccessToken:'original-refreshed-user'}}});
+    await flush();
+    if(oldCompletion) oldCompletion(null,{VersionId:'old-late-version'});
+    await flush();
+    assert.equal(item.getStatus(),'loading'); assert.equal(state.finished,0);
+    assert.equal(state.sends,phase==='initial refresh'?1:2);
+    assert.equal(item.xhr,state.managed);
+    state.partCallbacks.shift()(null,{ETag:'new-original-part'}); await flush();
+    state.completions.shift()(null,{VersionId:'new-original-version'}); await flush();
+    assert.equal(item.getStatus(),'loaded'); assert.equal(state.finished,1);
+  });
+});
+
 test('original native download, archive, preview and version consumers use the loaded signer', async t => {
   for (const mode of ['file', 'folder', 'selection', 'mobile', 'preview', 'version', 'cache']) {
     await t.test(mode, async () => {

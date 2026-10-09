@@ -287,7 +287,7 @@ class PydioApi{
 
     }
 
-    uploadMultipart(file, path, onComplete=()=>{}, onError=()=>{}, onProgress=() => {}, userMeta = {}) {
+    uploadMultipart(file, path, onComplete=()=>{}, onError=()=>{}, onProgress=() => {}, userMeta = {}, isAborted = () => false) {
         let targetPath = path;
         if (path.normalize){
             targetPath = path.normalize('NFC');
@@ -303,28 +303,42 @@ class PydioApi{
             Metadata:{'pydio-clear-size':'' + file.size, ...userMeta},
         };
         this.getPydioObject().notify('longtask_starting');
-        return new Promise(resolve => {
-            PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
-                awsLoader().then(({config, ManagedMultipart}) => {
-                    config.update(this.s3Options(jwt, PydioApi.getMultipartUploadTimeout()))
-                    const managed = new ManagedMultipart({
-                        params: {...params, Body: file},
-                        partSize: PydioApi.getMultipartPartSize(),
-                        queueSize: PydioApi.getMultipartPartQueueSize(),
-                        leavePartsOnError:false,
-                    });
-                    managed.on('httpUploadProgress', onProgress);
-                    managed.send((e,d) => {
-                        this.getPydioObject().notify('longtask_finished');
-                        if(e){
-                            onError(e);
-                        } else {
-                            onComplete(d);
-                        }
-                    });
-                    resolve(managed);
-                })
+        let started = false;
+        let finished = false;
+        const finish = (error, data, retrySafe = false) => {
+            if(finished){
+                return;
+            }
+            finished = true;
+            this.getPydioObject().notify('longtask_finished');
+            if(error){
+                onError(error, retrySafe);
+            } else {
+                onComplete(data);
+            }
+        };
+        return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
+            return awsLoader().then(({config, ManagedMultipart}) => {
+                if(isAborted()){
+                    throw new Error(this.getPydioObject().MessageHash['html_uploader.status.error.aborted']);
+                }
+                config.update(this.s3Options(jwt, PydioApi.getMultipartUploadTimeout()))
+                const managed = new ManagedMultipart({
+                    params: {...params, Body: file},
+                    partSize: PydioApi.getMultipartPartSize(),
+                    queueSize: PydioApi.getMultipartPartQueueSize(),
+                    leavePartsOnError:false,
+                });
+                managed.on('httpUploadProgress', onProgress);
+                // Once send is entered, an error is not evidence that no bytes
+                // or CompleteMultipartUpload reached the native service.
+                started = true;
+                managed.send((e,d) => finish(e,d));
+                return managed;
             });
+        }).catch(error => {
+            finish(error, undefined, !started);
+            return null;
         });
 
     }

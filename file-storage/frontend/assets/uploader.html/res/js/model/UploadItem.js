@@ -92,15 +92,24 @@ class UploadItem extends StatusItem {
     }
     _doProcess(completeCallback){
         this._userAborted = false;
+        const attempt = this._uploadAttempt = {};
+        const isAborted = () => this._userAborted || this._uploadAttempt !== attempt;
 
         const complete = ()=>{
+            if(this._uploadAttempt !== attempt){
+                return;
+            }
+            if(this._userAborted){
+                completeCallback();
+                return;
+            }
             this.setStatus(StatusItem.StatusLoaded);
             this._parseXHRResponse();
             completeCallback();
         };
 
         const progress = (computableEvent)=>{
-            if (this._status === StatusItem.StatusError) {
+            if (this._uploadAttempt !== attempt || this._status === StatusItem.StatusError) {
                 return;
             }
             if(!computableEvent.total){
@@ -136,7 +145,10 @@ class UploadItem extends StatusItem {
 
         const messages = Pydio.getMessages();
         const error = (e)=>{
-            this.onError(messages[210]+": " +e.message);
+            if(this._uploadAttempt !== attempt){
+                return;
+            }
+            this.onError(messages[210]+": " +(e.message || e));
             completeCallback();
         };
 
@@ -144,7 +156,10 @@ class UploadItem extends StatusItem {
         const BACK_OFF = 150;
         const retry = (count)=>{
             this.setRetry(count-1)
-            return (e)=>{
+            return (e, retrySafe = false)=>{
+                if(this._uploadAttempt !== attempt){
+                    return;
+                }
                 if (e && e.indexOf) {
                     if(e.indexOf('422') >= 0){
                         error(new Error(messages['html_uploader.status.error.422'] + ' (422)'));
@@ -162,11 +177,17 @@ class UploadItem extends StatusItem {
                     }
                     return;
                 }
+                if(e && this.getSize() >= PydioApi.getMultipartThreshold() && retrySafe !== true){
+                    error(e);
+                    return;
+                }
                 if (count >= MAX_RETRIES) {
                     error(e)
                 } else {
                     window.setTimeout(()=>{
-                        this.uploadPresigned(complete, progress, retry(++count));
+                        if(!isAborted()){
+                            this.uploadPresigned(complete, progress, retry(++count), isAborted);
+                        }
                     }, BACK_OFF * count);
                 }
             };
@@ -195,10 +216,10 @@ class UploadItem extends StatusItem {
         if(this._status === StatusItem.StatusLoaded) {
             return
         }
+        this._userAborted = true;
         if(this.xhr){
             try{
                 //console.log('Should abort', this.getFullPath());
-                this._userAborted = true;
                 this.xhr.abort();
             }catch(e){}
         }
@@ -227,7 +248,7 @@ class UploadItem extends StatusItem {
         }
     }
 
-    uploadPresigned(completeCallback, progressCallback, errorCallback){
+    uploadPresigned(completeCallback, progressCallback, errorCallback, isAborted = () => this._userAborted){
 
         let fullPath;
         try{
@@ -248,11 +269,19 @@ class UploadItem extends StatusItem {
         // For encrypted datasource, do not use multipart!
         if (this.getSize() < PydioApi.getMultipartThreshold()) {
             PydioApi.getClient().uploadPresigned(this._file, fullPath, completeCallback, errorCallback, progressCallback, userData).then(xhr => {
-                this.xhr = xhr;
+                if(isAborted()){
+                    if(xhr){xhr.abort();}
+                } else {
+                    this.xhr = xhr;
+                }
             });
         } else {
-            PydioApi.getClient().uploadMultipart(this._file, fullPath, completeCallback, errorCallback, progressCallback, userData).then(managed => {
-                this.xhr = managed;
+            PydioApi.getClient().uploadMultipart(this._file, fullPath, completeCallback, errorCallback, progressCallback, userData, isAborted).then(managed => {
+                if(isAborted()){
+                    if(managed){managed.abort();}
+                } else {
+                    this.xhr = managed;
+                }
             });
         }
     }
