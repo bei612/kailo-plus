@@ -9489,3 +9489,159 @@ Reproducible receipts (all under the isolated negative/restored directory):
 - `consumer.log`: SHA-256 `a791ee537e56cf0871ff8537f628c3739d58904abfc91b91d4c5ce596d6e4114`.
 - Production `docker-entrypoint.mjs`: SHA-256 `d43c25cf124e78cb41af9fc8ddf2050555bee902a526a1d9925ed8d36f6824fa`.
 - Final `docker-entrypoint.test.mjs`: SHA-256 `585b4530f18e9c38e09f3bea15062dfb3b657ea5d456e76c4c0243aa76ee6c30`.
+
+## Original dashboard scheduler SQL admission boundary
+
+The original scheduler was still unconditionally instantiated by
+`wren-ui/src/common.ts::initComponents`; its
+`wren-ui/src/apollo/server/backgrounds/dashboardCacheBackgroundTracker.ts::refreshDashboardCache`
+directly invoked `QueryService.preview` without a HUMAN/AGENT Action. A prior
+release-gap note did not itself stop this execution. The implementation now
+retains the original independent scheduler but does not start its timer for a
+configured binding. Existing timers stop scanning when a binding appears.
+The actual dispatch checks standalone mode again after native reads and after
+the original job INSERT, immediately before original SQL. A switched invocation
+does not advance `nextScheduledAt` or report successful schedule completion.
+The original refresh now returns its completion fact; an exception handled
+inside it or an overlapping invocation returns false, so the outer scanner no
+longer turns a swallowed refusal into a `Finished Refreshing` log.
+
+Authority, impact and boundaries:
+
+1. `.design/08` section 6 requires QueryService SQL to pass existing query/dry-run
+   Resource execution and public-service admission. The current
+   `native_human_action_request` contract uses SERVICE transport plus an
+   independently verified HUMAN token; SERVICE transport alone is not a SQL
+   actor. This change does not invent that missing actor/admission contract.
+2. Fixed official source is
+   `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/backgrounds/dashboardCacheBackgroundTracker.ts::DashboardCacheBackgroundTracker`.
+   The existing repositories, job rows, timer cadence, independent QueryService
+   call and native completion are retained. No original page, menu, setting,
+   schedule, record, Web/Desktop shared code or HUMAN manual refresh is removed.
+   There is no new workflow, credential, registry, database field or contract.
+3. Before this correction, merely configuring a binding could leave a restored
+   native schedule able to send bare SQL through Ibis. Missing, empty and invalid
+   configured delivery now remain closed, not standalone fallbacks. Checks after
+   awaited storage prevent an independent timer from borrowing an old mode.
+4. Native jobs created but refused before dispatch use the original FAILED
+   status and `QUERY_ADMISSION_UNAVAILABLE`; no SQL was sent. Native queries
+   already dispatched while independent are not cancellable by this guard;
+   their real known native results retain original completion semantics, not
+   invented platform terminal evidence. Pending sibling items cannot send SQL
+   after the mode changes. No schedule is advanced after that switch, and the
+   original `finally` removes in-process reentry locks. No new durable state is
+   introduced. Storage/query failures otherwise keep the original independent
+   behavior. This is fail-closed execution integration, not complete governed
+   scheduled-refresh delivery or proof that SERVICE SQL is implemented.
+
+The first verification command targeted the existing large
+`src/nativeProjectScope.test.ts` with a test-name filter. It reached no cases:
+the actual Node process spent over 26 minutes blocked on Data I/O, with only
+seven seconds of CPU; its current descriptor was reading
+`node_modules/@styled-icons/material-outlined/Replay10/package.json` through
+that test file's unrelated frontend import graph. Only this owned Jest was
+terminated after locating that cause: session 71085 exited 143 with zero cases,
+and its chained TypeScript check did not run. The failure/termination log is
+`/volumes/data/kailo/tmp/wren-resource-evidence.wcWpP7/scheduler-positive.log`.
+The ten post-implementation checks were moved to
+`src/nativeDashboardSchedule.test.ts`, directly importing the real production
+tracker, native status enum and logger. `nativeProjectScope.test.ts` was
+restored byte-for-byte to its original source; no production exports or
+execution dependencies were replaced to make the check lighter.
+
+The direct-file retry (session 78114) also reached zero cases and exited 143
+after stopping only its owned Jest process. Its open descriptor was a Next.js
+`.d.ts` file: installed `ts-jest` 29.1.1 defaults its transformer-level
+`isolatedModules` option to false, even when the application's TypeScript
+configuration enables that option. The original retry log is
+`/volumes/data/kailo/tmp/wren-resource-evidence.wcWpP7/scheduler-focused-positive.log`.
+The next runtime check supplies the installed transformer's supported
+`isolatedModules: true` option explicitly, retaining its original `react-jsx`
+setting. Installed `ts-jest`'s transformer option merge, `ConfigSet` and
+`TsCompiler` branches were checked before execution: that mode uses
+`transpileModule`, not the whole-application language-service Program. This
+runtime choice is not TypeScript acceptance; the original `tsc --noEmit`
+remains a separate verification step.
+
+Actual post-implementation runtime verification used the existing
+`kailo-wren-query-sdk-itgs2n` container (4 CPU, 4 GiB memory limit), with no image
+build, dependency install or PostgreSQL restart:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeDashboardSchedule.test.ts \
+  --runInBand \
+  --transform '{"^.+\\.tsx?$": ["ts-jest", {"isolatedModules": true, "tsconfig": {"jsx": "react-jsx"}}]}'
+```
+
+The first runtime result was 9 passed / 1 failed (session 10249, exit 1): the
+check attached its log spy to a new `log4js` Logger instance, while production
+correctly emitted `Finished Refreshing` through its own instance. The check
+now observes the original Logger prototype, not a replacement production
+logger. The corrected positive run exited 0 with 10 passed / 0 failed.
+
+Two independent production mutations in the private SDK copy then proved
+the checks reject the actual defects, rather than only matching a fixture:
+
+1. Removing the two configured-mode early returns and the actual
+   `assertIndependentQuery` refusal made nine cases fail, exit 1: timers,
+   native job creation and pending SQL dispatch were no longer blocked.
+2. After restoring all admission checks, reverting only the outer scanner to
+   unconditional `Finished Refreshing` made five cases fail, exit 1. Each
+   caught the false completion log after a refused refresh.
+
+The production private copy was restored byte-for-byte (`cmp` exit 0) and
+the complete ten-case run again exited 0: `10 passed, 10 total`, 0.398 seconds.
+The checks include original independent SQL arguments and native success,
+configured/empty/missing delivery, an existing timer, delivery appearing at
+each original item/project/deployment read and job INSERT, and a pending
+sibling after another independent SQL has already been sent. The first
+query's known native completion is preserved, while the unsent sibling is
+refused. All switched cases reject schedule advancement and false completion.
+
+Runtime logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+
+- `scheduler-isolated-positive.log`: initial 9/10 spy failure retained.
+- `scheduler-positive-final.log`: SHA-256 `7ee794b939120a223e2df8924f2e8607eaf5dd3673cc1be99db60d16af56d00f`.
+- `scheduler-admission-negative.log`: SHA-256 `19bb166649f551bd8aa4e3c69917286f9f5414c5f5657bd5f54dcf7184dc58c2`.
+- `scheduler-completion-negative.log`: SHA-256 `477d1e0c9ac1180a5564621af8384f1f50bb63ab97d6d38759a8f2e2402ae636`.
+- `scheduler-restored.log`: SHA-256 `e81050a768e152af8d3daeb89677e1febaf45a9a28bab21a9278f480b06a3f60`.
+- Restored production tracker: SHA-256 `22ced0734ce584fa104581869ddc256b1dadb346fdaa0fe42d0d90d949123315`.
+- Final direct-consumer check: SHA-256 `388ef12b58f0d92aa715de06a38ca392a2ecfc475735cfa29065e63f450db324`.
+
+At this source checkpoint, the original `tsc --noEmit` session 8555 is still
+running against its frozen scheduler input; it has no terminal result and is
+not counted as passed. The concurrent platform full-check uses an earlier
+commit and does not verify this batch. This checkpoint records the observed
+runtime results, not completion of the full acceptance gate.
+
+No browser/desktop/mobile acceptance, full integration suite, deployment or
+SERVICE scheduled-query capability is claimed by these runtime receipts.
+
+An accompanying read-only deployment-source check corrected the earlier
+"only the Compose project name is delivered" snapshot. The actual
+`deploy/local/.env` now has the original non-secret Wren defaults,
+`WREN_PROJECT_DIR=/volumes/data/kailo/components/wren-native`,
+`WREN_LOCAL_STORAGE`, `WREN_UI_SECRET_ENV_FILE` and
+`WREN_NATIVE_DATA_KEY_DIR`. Only paths, key presence and file metadata were
+read for this check: the component directory contains `data/`, mode-0600
+`ui-database`, and mode-0600 `data-keys/encryption-password` and
+`data-keys/encryption-salt` in owner-only directories. No secret values were
+printed or inserted into this receipt.
+
+The actual environment does not yet deliver `WREN_AI_IMAGE`, `WREN_UI_IMAGE`,
+`WREN_AI_SECRET_ENV_FILE`, `WREN_AI_IDENTITY_DIR`,
+`WREN_OIDC_SECRET_ENV_FILE`, `WREN_NATIVE_IDENTITY_JSON` or `WREN_QUERY_*`
+locator/version parameters. The configured component directory has no
+`config.yaml`, AI identity directory or OIDC secret delivery file. This is a
+local-delivery finding, not a claim that no external secret exists anywhere.
+The checked sources were the sole local environment, ignored local secret
+filenames, component directory metadata, `deploy/local/bootstrap.sh`'s
+existing `--register-wren-native-clients` consumer,
+`deploy/local/secret-store-init.sh`, `data-query/docker/query-governance.yaml`
+and its existing templates, and the component fork/traceability scripts.
+No supplied component model credential locator was found in those sources.
+The original registration command consumes delivered identities; it cannot
+select a model provider or supply query authorization. No registration,
+service start, arbitrary Vault enumeration or new ModelRoute was performed.

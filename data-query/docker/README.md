@@ -1447,15 +1447,18 @@ cases are fixtures; no real model, Qdrant or native business deployment is
 claimed. The concurrent source build remains fixed at `f25ea048`; that fixed
 image input does not contain this later entrypoint change.
 
-The actual sole local deployment file currently delivers only the independent
-Compose project name. The existing `.env.example` already supplies the pinned
-bootstrap/Ibis/Qdrant dependencies and original non-secret ports, versions,
-SQLite and disabled-telemetry settings. These are not identity or permission
-facts. The source-built Engine must replace the original Engine dependency for
-the bound source-analysis producer. Real component OIDC/cookie registration,
-DATA_KEY files, native provider configuration/credentials, AI client identity
-and approved query/binding/Resource evidence still require controlled delivery;
-none is inferred from the project name or generated here.
+The actual sole local deployment file now includes the independent Compose
+project name, original non-secret dependency images, ports, versions, SQLite
+and disabled-telemetry settings, plus the component directory, UI database
+delivery file and native DATA_KEY directory. The database delivery file and
+both owner-only DATA_KEY files exist. These are not identity or permission
+facts and do not complete native deployment. Source-built UI/AI artifact
+references, the native provider configuration and its credential delivery,
+dedicated component OIDC/cookie registration, AI client identity and approved
+query/binding/JWKS/Resource evidence still require controlled delivery. The
+bound source-analysis producer also requires the source-built Engine rather
+than an unmodified dependency image. None of those facts is inferred from
+the project name, a configuration example or a shared platform credential.
 
 ### Dedicated native browser and AI client registration
 
@@ -1567,6 +1570,18 @@ suite/database was not restarted. See the
 [bound HUMAN access receipt](../fork/verify/native-integration.md#bound-human-native-access-source-checkpoint).
 No native service start, ACTIVE binding, SERVICE SQL, iframe or three-user
 acceptance is claimed.
+
+### Original dashboard scheduler admission boundary
+
+The original dashboard scheduled-cache worker runs only in a genuinely
+independent instance without `WREN_PLATFORM_QUERY_CONFIG_FILE`. A configured
+binding does not start that standalone timer; existing timers also stop new SQL
+dispatch if configuration changes while native storage calls are pending.
+Schedules, pages and native records are retained. The existing governed HUMAN
+manual refresh is unchanged. This closes unadmitted background execution, not
+SERVICE SQL delivery: the binding SERVICE transport credential does not grant
+autonomous SQL. Already-dispatched independent queries cannot be cancelled by
+this guard and are not claimed as governed executions.
 
 ### Existing native model/view reference delivery
 
