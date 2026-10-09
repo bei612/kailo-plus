@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { Refused, exactKeys, object, nonempty, canonical, boundedBody,
   fixedUrl, verifiedClaims } from '../../../client-kit/adapter/protocol.mjs';
 import { executeNode, nodeActions } from './node-execution.mjs';
+import { executeWrite, writeAction } from './write-execution.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const transportHeader = 'x-kailo-gateway-authorization';
@@ -18,7 +19,7 @@ export function mcpConfiguration(value, config) {
     || value.path.startsWith('/platform-adapter/') || !value.gatewayJwksFile.startsWith('/')
     || value.gatewayAudience !== config.actionTokenAudience
     || !Number.isSafeInteger(value.gatewayMaxTokenSeconds) || value.gatewayMaxTokenSeconds <= 0
-    || !config.management?.validation || !config.readEdge
+    || !config.management?.validation
     || !Array.isArray(value.tools) || !value.tools.length) throw new Refused(503);
   fixedUrl(value.gatewayIssuer);
   const names = new Set();
@@ -26,7 +27,8 @@ export function mcpConfiguration(value, config) {
   for (const tool of value.tools) {
     if (!exactKeys(tool, ['name', 'actionKey', 'actionVersion', 'inputSchemaDigest', 'inputSchema',
       ...(Object.hasOwn(tool ?? {}, 'description') ? ['description'] : [])])
-      || !nonempty(tool.name) || names.has(tool.name) || !nodeActions.includes(tool.actionKey)
+      || !nonempty(tool.name) || names.has(tool.name)
+      || (nodeActions.includes(tool.actionKey) ? !config.readEdge : tool.actionKey !== writeAction || !config.write)
       || !Number.isSafeInteger(tool.actionVersion) || tool.actionVersion <= 0
       || !object(tool.inputSchema) || tool.inputSchema.type !== 'object'
       || (tool.description !== undefined && !nonempty(tool.description))
@@ -97,7 +99,8 @@ export async function handleMcp(config, request, response) {
       // ExtMcp forwards only input. The authenticated target, original hash,
       // HUMAN/AGENT delegation and all fresh PEP checks remain executeNode's.
       const args = { target: { resourceId: claims.target_id }, input: value.params.arguments };
-      const structuredContent = await executeNode(config, deadline, canonical({ actionKey: tool.actionKey,
+      const execute = tool.actionKey === writeAction ? executeWrite : executeNode;
+      const structuredContent = await execute(config, deadline, canonical({ actionKey: tool.actionKey,
         idempotencyKey: key, arguments: args }), key, token);
       await gatewayIdentity(config, request);
       // Core's response PEP consumes the original AdapterExecutionResponse;

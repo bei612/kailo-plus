@@ -20,16 +20,7 @@ import (
 // nativeWriteDelivery is operator-delivered approved Action/result-policy
 // metadata, not another action/identity registry. Its absence in an explicitly
 // platform-bound installation cannot fall back to the independent native copy.
-type nativeWriteDelivery struct {
-	nativeActorDelivery
-	WorkspaceID string `json:"workspaceId"`
-	Write       struct {
-		ActionVersion               int64  `json:"actionVersion"`
-		NativeType                  string `json:"nativeType"`
-		ResultExposurePolicyID      string `json:"resultExposurePolicyId"`
-		ResultExposurePolicyVersion int64  `json:"resultExposurePolicyVersion"`
-	} `json:"write"`
-}
+type nativeWriteDelivery = auth.NativeWriteDelivery
 
 // The opaque ContentReference freezes the original PromoteParameters.Publish
 // alongside the exact native node. A canonical encoding also rejects duplicate

@@ -80,6 +80,20 @@ func TestKailoNativeVersionStoreAcknowledgesPersistence(t *testing.T) {
 			t.Errorf("acknowledgement did not match the actual Bolt revision: version=%v err=%v", persisted, err)
 			return
 		}
+		// Same content may still be a different claimed operation. An explicit
+		// native task reference must not disappear behind ordinary ETag dedup.
+		node.Etag = revision.ETag
+		created, err := handler.CreateVersion(ctx, &tree.CreateVersionRequest{Node: node,
+			VersionUuid: "claimed-operation-version", OwnerUuid: "native-owner"})
+		if err != nil || created.GetIgnored() || created.GetVersion().GetVersionId() != "claimed-operation-version" {
+			t.Errorf("claimed operation was erased by content dedup: response=%v err=%v", created, err)
+			return
+		}
+		ordinary, err := handler.CreateVersion(ctx, &tree.CreateVersionRequest{Node: node})
+		if err != nil || !ordinary.GetIgnored() {
+			t.Errorf("ordinary native content dedup changed: response=%v err=%v", ordinary, err)
+			return
+		}
 		failure := errors.New("native version persistence unavailable")
 		storageFailure = failure
 		for _, draft := range []bool{true, false} {

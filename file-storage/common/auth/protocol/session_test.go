@@ -79,6 +79,57 @@ func TestAuthorizeActionUsesOriginalBindingPEP(t *testing.T) {
 	}
 }
 
+func TestAuthorizeOperationObservesOriginalExecutionWithoutResourceBody(t *testing.T) {
+	const binding = "00000000-0000-4000-8000-000000000001"
+	const execution = "00000000-0000-4000-8000-000000000002"
+	const operationID = "00000000-0000-4000-8000-000000000003"
+	for _, operation := range []string{"observe", "extract_usage"} {
+		for _, scenario := range []string{"allowed", "denied", "wrong-ae", "resource-body", "empty-zed"} {
+			t.Run(operation+"/"+scenario, func(t *testing.T) {
+				payload, _ := json.Marshal(map[string]interface{}{"action_execution_id": execution, "operation_id": operationID})
+				token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if r.URL.Path == "/token" {
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "fixture-only", "token_type": "Bearer", "expires_in": 60})
+						return
+					}
+					var request map[string]interface{}
+					if r.Header.Get("Authorization") != "Bearer fixture-only" || json.NewDecoder(r.Body).Decode(&request) != nil || request["operation"] != operation || request["bindingId"] != binding || request["actionToken"] != token {
+						t.Error("observation did not consume original binding callback")
+					}
+					result := map[string]interface{}{"actionExecutionId": execution, "operationId": operationID, "authorizationMinZedToken": "fresh"}
+					switch scenario {
+					case "denied":
+						w.WriteHeader(403)
+					case "wrong-ae":
+						result["actionExecutionId"] = binding
+					case "resource-body":
+						result["targetResource"] = map[string]interface{}{}
+					case "empty-zed":
+						result["authorizationMinZedToken"] = ""
+					}
+					_ = json.NewEncoder(w).Encode(result)
+				}))
+				defer server.Close()
+				secret := filepath.Join(t.TempDir(), "secret")
+				if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				delivery := Delivery{BindingID: binding, InstanceServiceUUID: binding, CorePEPURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/token", ClientID: "fixture", ClientSecretFile: secret, RequestTimeout: "1s", MaxResponseBytes: 4096, ClientSecretMaxBytes: 128}
+				claims, target, err := delivery.AuthorizeOperation(context.Background(), token, `{}`, operation)
+				if scenario == "allowed" {
+					if err != nil || claims["action_execution_id"] != execution || target != nil {
+						t.Fatal("original receipt authority was refused", err)
+					}
+				} else if err == nil || claims != nil || target != nil {
+					t.Fatal("foreign/unknown observation authority was accepted")
+				}
+			})
+		}
+	}
+}
+
 func TestNativeHumanActionUsesOriginalPrivateTransport(t *testing.T) {
 	const binding = "00000000-0000-4000-8000-000000000001"
 	const key = "00000000-0000-4000-8000-000000000002"

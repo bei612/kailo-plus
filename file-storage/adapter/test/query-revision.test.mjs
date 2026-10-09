@@ -137,7 +137,7 @@ async function setup(t, changes = {}) {
       if (changes.pep) return changes.pep(state, response, parsed);
       return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}`,
         ...(business && operation === 'execute' ? {targetResource: {
-          resourceId: ids[10], nativeType: 'folder', nativeRef: ids[2],
+          resourceId: ids[10], nativeType: changes.write ? 'node' : 'folder', nativeRef: changes.write ? ids[3] : ids[2],
           nativeInstanceRef: 'delivered-instance', nativeScopeRef: ids[1],
         }} : {}) });
     }
@@ -165,7 +165,7 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
-    if (business && operation === 'execute') {
+    if (business && (operation === 'execute' || changes.write)) {
       const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
       assert.deepEqual(Object.keys(proof).sort(), ['actionToken','argumentsJson']);
       assert.equal(proof.argumentsJson, canonical(requestArguments));
@@ -177,6 +177,23 @@ async function setup(t, changes = {}) {
       if (!changes.missingActorAck) response.setHeader('x-kailo-native-actor', changes.actorAck ??
         `${actor.tenant_id}:${ids[0]}:${kind}:${actor.actor_principal_id}`);
     } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
+    if (changes.write && (request.url === `/v2/n/node/${ids[3]}/versions/opaque-draft-v1/promote` || request.url === '/v2/jobs/user')) {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      if (operation === 'execute') {
+        assert.equal(request.headers['idempotency-key'],ids[7]);
+        assert.deepEqual(JSON.parse(raw),{Publish:false});
+        state.promotions=(state.promotions??0)+1;
+      } else {
+        assert.equal(request.url,'/v2/jobs/user');
+        assert.equal(request.headers['x-kailo-native-operation'],operation);
+        assert.deepEqual(JSON.parse(raw),{JobIDs:['delivered-version-job'],LoadTasks:'Any'});
+      }
+      return reply(response,changes.nativeStatus??200,changes.writeResult??{
+        execution:{idempotencyKey:ids[7],nativeType:'version',nativeId:'published-native-version',platformStatus:'SUCCEEDED',
+          cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'},
+        contentReference:{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'published-native-version',displayName:'file.txt',mediaType:'text/plain'},contentBytes:0,
+      });
+    }
     if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
       state.rootReads=(state.rootReads??0)+1;
       if (changes.rootAfter && state.rootReads >= (changes.rootAfterRead ?? 2)) return reply(response,200,changes.rootAfter);
@@ -240,6 +257,7 @@ async function setup(t, changes = {}) {
     ...(changes.serviceRead || changes.serviceList || changes.validation ? {readEdge:{downloadOrigin:origin,
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const proofFiles = [];
+  if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
   let secretAgent;
   if (changes.validation) {
     const secretSocket = join(directory, 'agent.sock');
@@ -333,7 +351,7 @@ async function setup(t, changes = {}) {
         target_type:'RESOURCE',target_id:ids[10],action_key:businessAction,
         delegation_id:changes.businessHuman ? undefined : ids[11], delegation_version:changes.businessHuman ? undefined : 1,
         result_exposure_policy_id:ids[9],result_exposure_policy_version:1,idempotency_key:ids[7],
-        ...(changes.businessHuman ? {external_execution_id:ids[8]} : {}),
+        ...(changes.businessHuman || changes.write ? {external_execution_id:ids[8]} : {}),
         normalized_parameter_hash:createHash('sha256').update(canonical(operation==='execute'
           ? requestArguments : {operation,arguments:requestArguments})).digest('hex')} : {}), ...change };
     return signedClaims(claims,key);
@@ -358,6 +376,76 @@ async function setup(t, changes = {}) {
   return { state, token, invoke, target, proofFiles, requestArguments, config, gatewayToken,
     adapterOrigin, privateKey };
 }
+
+test('native write executes the frozen opaque draft and only discloses a durable version reference',async t=>{
+ for (const businessHuman of [false,true]) for (const mcp of [false,true]) await t.test(`${businessHuman?'HUMAN':'AGENT'} ${mcp?'SDK MCP':'HTTP'}`,async nested=>{
+  const input={resourceId:ids[10],nativeObjectRef:canonical({nodeUuid:ids[3],publish:false}),nativeRevision:'opaque-draft-v1',displayName:'file.txt',mediaType:'text/plain'};
+  const fixture=await setup(nested,{write:true,mcp,operation:'execute',validation:true,businessHuman,businessAction:'file_storage.write@v1',arguments:{target:{resourceId:ids[10]},input}});
+  let result;
+  if (mcp) {
+   const {client,outgoing}=await mcpWireClient(nested,fixture);
+   const listed=await client.listTools();assert.equal(listed.tools.length,1);
+   outgoing.authorization=`Bearer ${fixture.token()}`;outgoing['idempotency-key']=ids[7];
+   const called=await client.callTool({name:listed.tools[0].name,arguments:input});
+   assert.deepEqual(called.content,[]);assert.equal(called.isError,false);result=called.structuredContent;
+  } else {
+   const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:'file_storage.write@v1',idempotencyKey:ids[7],arguments:fixture.requestArguments})});
+   assert.equal(response.status,200);result=await response.json();
+  }
+  assert.equal(result.execution.nativeType,'version');assert.equal(result.execution.platformStatus,'SUCCEEDED');
+  assert.equal(result.execution.nativeId,'published-native-version');assert.equal(result.resultJson,'{}');
+  assert.deepEqual(result.contentReference,{...input,nativeObjectRef:ids[3],nativeRevision:'published-native-version'});
+  assert.equal(fixture.state.promotions,1);assert.equal(fixture.state.nativeReads.length,1);assert.equal(fixture.state.peps,2);
+ });
+});
+
+test('native write observation and usage query original Task without replay, including empty file',async t=>{
+ for (const operation of ['observe','extract_usage']) for (const businessHuman of [false,true]) await t.test(`${operation} ${businessHuman?'HUMAN':'AGENT'}`,async nested=>{
+  const fixture=await setup(nested,{write:true,operation,validation:true,businessHuman,businessAction:'file_storage.write@v1',arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'version',nativeId:'published-native-version'}});
+  const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`});assert.equal(response.status,200);
+  const result=await response.json();
+  if (operation==='observe') {assert.equal(result.execution.platformStatus,'SUCCEEDED');assert.equal(result.contentReference.nativeObjectRef,ids[3]);}
+  else assert.deepEqual(result,{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'version',nativeId:'published-native-version',measurements:[{meterKey:'approved_write_count',quantity:1,occurredAt:'2026-10-09T00:00:00Z'},{meterKey:'approved_write_bytes',quantity:0,occurredAt:'2026-10-09T00:00:00Z'}]});
+  assert.equal(fixture.state.promotions,undefined);assert.deepEqual(fixture.state.nativeReads,['/v2/jobs/user']);assert.equal(fixture.state.peps,2);
+ });
+ for (const operation of ['observe','extract_usage']) for (const platformStatus of ['RUNNING','UNKNOWN']) await t.test(`${operation} ${platformStatus}`,async nested=>{
+  const execution={idempotencyKey:ids[7],nativeType:'version',platformStatus,cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'};
+  const fixture=await setup(nested,{write:true,operation,validation:true,businessAction:'file_storage.write@v1',arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'version'},writeResult:{execution}});
+  const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`});
+  assert.equal(response.status,operation==='observe'?200:503);
+  assert.deepEqual(await response.json(),operation==='observe'?{execution}:{error:'adapter request refused'});
+  assert.equal(fixture.state.promotions,undefined);assert.deepEqual(fixture.state.nativeReads,['/v2/jobs/user']);
+ });
+});
+
+test('native write refuses forged references, missing signed key, unknown native receipt and post-copy revocation',async t=>{
+ const input={resourceId:ids[10],nativeObjectRef:canonical({nodeUuid:ids[3],publish:false}),nativeRevision:'opaque-draft-v1',displayName:'file.txt',mediaType:'text/plain'};
+ for (const scenario of ['different-node','publish-unproved','duplicate-reference-key','unknown-reference-field','missing-key-claim','wrong-key-claim','missing-ee','missing-actor-ack','native-unavailable','native-running','native-unknown','foreign-content-resource','foreign-content-node','wrong-content-version','wrong-idempotency-key','unknown-native-status','unconfirmed-native-id','missing-terminal-time','unexpected-body','revoked-after-native']) await t.test(scenario,async nested=>{
+  const args={target:{resourceId:ids[10]},input:{...input}};
+  if (scenario==='different-node') args.input.nativeObjectRef=canonical({nodeUuid:ids[2],publish:false});
+  if (scenario==='publish-unproved') args.input.nativeObjectRef=canonical({nodeUuid:ids[3],publish:true});
+  if (scenario==='duplicate-reference-key') args.input.nativeObjectRef=`{"nodeUuid":"${ids[3]}","nodeUuid":"${ids[3]}","publish":false}`;
+  if (scenario==='unknown-reference-field') args.input.nativeObjectRef=canonical({nodeUuid:ids[3],publish:false,secret:'forged'});
+  const pending=['native-running','native-unknown','unconfirmed-native-id'].includes(scenario);
+  const execution={idempotencyKey:ids[7],nativeType:'version',platformStatus:pending?(scenario==='native-running'?'RUNNING':'UNKNOWN'):'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',...(!pending||scenario==='unconfirmed-native-id'?{nativeId:'published-native-version'}:{}),...(!pending?{terminalAt:'2026-10-09T00:00:00Z'}:{})};
+  const result={execution,...(!pending?{contentReference:{...input,nativeObjectRef:ids[3],nativeRevision:'published-native-version'},contentBytes:0}:{})};
+  if (scenario==='foreign-content-resource') result.contentReference.resourceId=ids[2];
+  if (scenario==='foreign-content-node') result.contentReference.nativeObjectRef=ids[2];
+  if (scenario==='wrong-content-version') result.contentReference.nativeRevision='other';
+  if (scenario==='wrong-idempotency-key') execution.idempotencyKey=ids[8];
+  if (scenario==='unknown-native-status') execution.platformStatus='FUTURE';
+  if (scenario==='missing-terminal-time') delete execution.terminalAt;
+  if (scenario==='unexpected-body') result.token='must-not-disclose';
+  const fixture=await setup(nested,{write:true,operation:'execute',validation:true,businessAction:'file_storage.write@v1',arguments:args,
+    missingActorAck:scenario==='missing-actor-ack',nativeStatus:scenario==='native-unavailable'?503:200,writeResult:result,
+    ...(scenario==='revoked-after-native'?{pep:(state,response)=>reply(response,state.peps===1?200:403,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',targetResource:{resourceId:ids[10],nativeType:'node',nativeRef:ids[3],nativeInstanceRef:'delivered-instance',nativeScopeRef:ids[1]}})}:{})});
+  const change=scenario==='missing-key-claim'?{idempotency_key:undefined}:scenario==='wrong-key-claim'?{idempotency_key:ids[8]}:scenario==='missing-ee'?{external_execution_id:undefined}:{};
+  const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],token:fixture.token(change),raw:canonical({actionKey:'file_storage.write@v1',idempotencyKey:ids[7],arguments:args})});
+  if (scenario==='native-running'||scenario==='native-unknown') {assert.equal(response.status,200);assert.deepEqual(await response.json(),{execution});}
+  else {assert.notEqual(response.status,200);assert.deepEqual(await response.json(),{error:'adapter request refused'});}
+  assert((fixture.state.promotions??0)<=1,'unknown native response was replayed');
+ });
+});
 
 test('native actor proof is mandatory on all four business read paths and cannot fall back to SERVICE or initiating HUMAN',async t=>{
   for (const actionKey of ['file_storage.read@v1','file_storage.list@v1','file_storage.list_revisions@v1','file_storage.export@v1']) {
@@ -450,6 +538,18 @@ test('native error mapping retains the original HUMAN business policy without bo
   assert.deepEqual(await response.json(), { class: 'DENIED', reason: 'PERMISSION_DENIED' });
   assert.equal(fixture.state.peps, 2);
   assert.deepEqual(fixture.state.nativeReads, []);
+});
+
+test('native write error mapping retains its delivered HUMAN policy without executing the writer', async t => {
+  const fixture = await setup(t, { operation:'map_native_status_error', write:true, validation:true,
+    businessHuman:true, businessAction:'file_storage.write@v1',
+    arguments:{idempotencyKey:ids[7],nativeStatus:409} });
+  const response = await fixture.invoke({path:'/platform-adapter/v1/map_native_status_error'});
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{class:'CONFLICT',reason:'TARGET_STATE_CONFLICT'});
+  assert.equal(fixture.state.peps,2);
+  assert.deepEqual(fixture.state.nativeReads,[]);
+  assert.equal(fixture.state.promotions,undefined);
 });
 
 test('binding validation observes original Cells workspace and actual delivered credential receipts', async (t) => {

@@ -11,14 +11,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const nodeActions = Object.freeze(['file_storage.read@v1', 'file_storage.list@v1',
   'file_storage.list_revisions@v1', 'file_storage.export@v1']);
 
-async function claimsForNode(config, token, args, operation) {
+export async function claimsForNode(config, token, args, operation, actions = nodeActions) {
   const claims = await verifiedClaims(token, config);
   for (const key of ['jti', 'tenant_id', 'actor_principal_id', 'initiating_human_principal_id',
     'operation_id', 'action_execution_id', 'target_id', 'result_exposure_policy_id']) {
     if (!UUID.test(claims[key])) throw new Refused(401);
   }
   if (claims.tenant_id !== config.tenantId || claims.target_type !== 'RESOURCE'
-    || !nodeActions.includes(claims.action_key)
+    || !actions.includes(claims.action_key)
     || (config.workspaceId !== undefined && claims.workspace_id !== config.workspaceId)
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0

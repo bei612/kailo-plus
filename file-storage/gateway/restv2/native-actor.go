@@ -8,12 +8,10 @@ import (
 	"strings"
 
 	restful "github.com/emicklei/go-restful/v3"
-	"github.com/pborman/uuid"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
-	"github.com/pydio/cells/v5/common/auth/protocol"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
@@ -25,47 +23,14 @@ import (
 // This is controlled native delivery, not another identity or permission
 // directory. It links exact platform actors to pre-existing Cells users. Native
 // user locks and native ACLs remain authoritative inside this service.
-type nativeActorDelivery struct {
-	protocol.Delivery
-	TenantID          string `json:"tenantId"`
-	NativeInstanceRef string `json:"nativeInstanceRef"`
-	NativeScopeRef    string `json:"nativeScopeRef"`
-	NativeRootRef     string `json:"nativeRootRef"`
-	Actors            []struct {
-		PrincipalID string `json:"principalId"`
-		Kind        string `json:"kind"`
-		UserUUID    string `json:"userUuid"`
-	} `json:"actors"`
-}
+type nativeActorDelivery auth.NativeActorDelivery
 
 func actorUUID(value string) bool {
-	id := uuid.Parse(value)
-	return id != nil && id.String() == value && value != "00000000-0000-0000-0000-000000000000"
+	return auth.NativeActorUUID(value)
 }
 
 func (d nativeActorDelivery) user(tenant, principal, kind string) (string, error) {
-	refused := errors.WithStack(errors.StatusForbidden)
-	if !actorUUID(d.TenantID) || tenant != d.TenantID || !actorUUID(principal) ||
-		!actorUUID(d.NativeScopeRef) || !actorUUID(d.NativeRootRef) || d.NativeInstanceRef == "" {
-		return "", refused
-	}
-	principals, users := map[string]bool{}, map[string]bool{}
-	selected := ""
-	for _, link := range d.Actors {
-		if !actorUUID(link.PrincipalID) || !actorUUID(link.UserUUID) ||
-			(link.Kind != "HUMAN" && link.Kind != "AGENT") || principals[link.PrincipalID] || users[link.UserUUID] ||
-			link.UserUUID == d.InstanceServiceUUID {
-			return "", refused
-		}
-		principals[link.PrincipalID], users[link.UserUUID] = true, true
-		if link.PrincipalID == principal && link.Kind == kind {
-			selected = link.UserUUID
-		}
-	}
-	if selected == "" {
-		return "", refused
-	}
-	return selected, nil
+	return auth.NativeActorDelivery(d).User(tenant, principal, kind)
 }
 
 // nativeActor runs inside the original JWT-authenticated handler, never in an
@@ -121,7 +86,8 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	}
 	action := stringClaim(claims, "action_key")
 	listing := action == "file_storage.list@v1"
-	if !listing && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
+	writing := action == "file_storage.write@v1"
+	if !listing && !writing && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
 		return refused
 	}
 	var args map[string]interface{}
@@ -138,8 +104,10 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	}
 	if !inputOK || !targetOK || len(argumentTarget) != 1 || argumentTarget["resourceId"] != target["resourceId"] || input["resourceId"] != target["resourceId"] ||
 		len(input) != inputSize ||
-		(!listing && !actorUUID(stringClaim(input, "nativeObjectRef"))) ||
-		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions") {
+		(!listing && !writing && !actorUUID(stringClaim(input, "nativeObjectRef"))) ||
+		(writing && (!validWriteReference(stringClaim(input, "nativeObjectRef"), requested, false) || operation != "promote" || requested != target["nativeRef"])) ||
+		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions" && operation != "promote") ||
+		(operation == "promote" && !writing) {
 		return refused
 	}
 	nativeUUID, err := delivery.user(tenant, principal, kind)
@@ -196,7 +164,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	if operation == "node" && requested == root.GetUuid() {
 		within = true
 	}
-	if !within || (operation == "lookup" && node.GetType() != tree.NodeType_COLLECTION) ||
+	if !within || (operation == "promote" && node.GetType() != tree.NodeType_LEAF) || (operation == "lookup" && node.GetType() != tree.NodeType_COLLECTION) ||
 		(operation == "versions" && (node.GetType() != tree.NodeType_LEAF || (!listing && requested != input["nativeObjectRef"]))) ||
 		(operation == "node" && !listing && requested != root.GetUuid() && requested != admitted.GetUuid() && requested != input["nativeObjectRef"]) {
 		return refused

@@ -2218,3 +2218,146 @@ published Version/byte-op usage 的端到端因果与 typed 输出引用；publi
 collection Job 存活性、claim 安全退休/失联时限与真实批准 binding 仍为发布缺口。
 本批无 full、镜像/服务更新、真实对象存储写入、业务库改写、浏览器截图、Windows
 或 Mobile 验收。私有原 RPC/HTTP fixture 的通过不等于组件 E2E，不声明 100% 还原。
+
+## 2026-10-09 原 Promote → native Task → published Version 写入消费者
+
+本节追加的是上一批准入生产者之后的真实执行消费者，不把旧批的成功数字计入
+新字节。原页面、上传器、独立入口与 native ACL 均未重新设计；仅在已投递的
+write 配置及可信原生执行证明存在时进入平台执行分支，无证明继续原独立流程。
+完整 FILE_STORAGE 仍未批准或激活，本批不修改业务库状态。
+
+### 权威、影响、副作用与异常
+
+1. 权威：`.design/07` §2、§5/5.2 的 `file_storage.write@v1 → update` 与
+   原 COMPONENT_ACTION/Temporal 执行已经确定，本批补实际消费者，不缩成永久
+   只读目标。固定官方 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api-versions.go::Handler.PromoteVersion`、
+   `data/versions/action-version.go::VersionAction.Run`、
+   `scheduler/jobs/rest/handler.go::JobsHandler.UserListJobs` 是复用入口；
+   原 live 文件 CopyObject 消费当前 native actor ACL，版本归档和已归属 draft
+   清理沿固定原实现的 system version router。publish 是另一副作用，不能靠
+   请求标志、版本存在或任务排队推断成功，本分支仍明确拒绝 publish=true。
+2. 影响：既有 adapter 的 HTTP/MCP execute、observe、extract_usage、原 Promote
+   REST、原 Job/Task、原 VersionAction/CreateVersion、受控 start 投递共用同一
+   输入和结果。沿已存在的五字段 ContentReference 消费，不改公共合同、Core、
+   Worker、原数据库结构或 native Task/Version 权威。原 node actor 映射移到有
+   两个真实消费者的 common/auth 模块，仍只关联既有独立 native 用户；
+   不共享 SERVICE 角色、不借 initiating HUMAN 身份、不在前端投递凭据。
+3. 副作用：execute 的签名 key、AE/Operation、actor、binding、target 和冻结
+   参数必须精确相等，fresh Core PEP 后再由原 HTTP Policy/root/ACL 消费。
+   原 Task 的 create-only 原子 claim 及完整落盘 ACK 是唯一首次 copy 准入；
+   原任务已存在只读回相同 intent/receipt，不再次 copy。task 只存 scope、
+   输入引用及摘要，不写 ActionToken、SERVICE secret、Job.RunParameters 或
+   文件正文。execute 前后和输出披露前均保留授权检查；不明写入不结算用量。
+4. 异常：原 draft 先按 owner、opaque revision、Size/ETag/Location 实查，
+   归档只读取该 revision，不把另一次上传的新 head 当输入。原 VersionAction
+   普通事件即使携 version 元数据也仍走原 head 路径。显式 claimed VersionId
+   不会被同 ETag 的原 dedup 吞掉，普通无显式 key 的 dedup 不变。发布结果须
+   原 StoreVersion ACK、同 task/action/node 的稳定 VersionId、原 draft 清理
+   ACK、最后 HeadVersion 回读以及 Finished Task 完整落盘全部成立；零字节
+   使用真实 Size=0，不据字段缺失伪造非零或终态。中途撤权、RPC/claim ACK
+   不明、部分 copy/清理成功均保留原 Task RUNNING/UNKNOWN，不重放副作用。
+
+Core 原 EE 从始至终 nativeType=version；只有确定的 published Version 才填
+nativeId，不能先填 TaskID 再换 ID。typed 输出 nativeObjectRef 是真实 node UUID，
+不是输入命令 JSON；resultJson 为原空 metadata 对象，不复制正文到 Core。
+观察与用量调用沿原 `/jobs/user` 和已持久 Task/ContentRevision，只带原 AE/key
+及可选已知 nativeId，既不重读 SOURCE 字节也不再次执行。CONTENT_BYTES/COUNT
+只取已完成 Task 的原 published Size/EndTime 与受控 meter 投递。
+
+按 `06` §4，签名、actor、目标与冻结引用失配为 DENIED；缺配置/secret/native
+Job/版本条件为 PRECONDITION；超投递响应预算为 LIMIT；同 key 异 intent、
+已知 nativeId 不一致为 CONFLICT；未知外部结果为 UNKNOWN；未闭合的完整
+FILE_STORAGE/delete/share/publish 能力维持 BLOCKED，不借 NONE 管理 token
+执行业务或把前置条件缺失降级为原独立执行。
+
+### 验证范围与仍保留的发布门禁
+
+验证复用原受限 `kailo-cells-native-check-lftow7`（Go 1.26.8、UID1000、4CPU/
+8GiB、无额外 swap、原 /cache/mod 与 /cache/build）和原
+`kailo-wren-query-sdk-itgs2n` 的独立小候选（4CPU/4GiB、锁定 MCP SDK 1.26.0）。
+执行前实际回读 cgroup/原构建进程/CPU内存及 I/O 压力；没有新镜像、依赖
+安装、数据库、全树副本或 full。原 Go 首次运行因 auth/authorizations 导入环
+exit1，保留 `cells-native-write-positive.log`；随后把 Policy 留在实际 REST
+调用方而非共享 auth 中，修正后原六包目标 exit0。jobs/rest 原包无 test files，
+其编译通过不计作真实原生观察端到端通过。
+
+尚未验收真实对象存储/原生 HTTP 多 RPC 纵切、原 uploader UI → Core →
+Temporal → native executor → 页面观察闭环；本批原 native fixture、真实 Bolt
+Task 持久化检查与 HTTP/真实 MCP SDK wire 检查是分层证据，不冒充 live E2E。
+Mongo 跨 collection Job 存活性与 claim 安全退休仍未闭合；已 claim 在副作用
+中断后没有安全的终态对账及失联收敛时限，保持 UNKNOWN 且不重放，构成发布
+阻断。当前 native 配置/action/result-policy 更换后旧 Task 观察可因精确匹配
+拒绝，旧代投递保留与生命周期对账仍须真实运营验证，不能称完整 generation
+切换已验收。delete/share、publish 因果、完整七必选 catalog、批准 binding 与
+实际部署继续为门禁；本批不更新服务/安装包、不改线上业务数据，不声明生产
+就绪或 100% 原版还原。
+
+原 HTTP 与实际锁定 SDK Streamable HTTP client-wire 使用同一目标：
+
+```sh
+sudo -n docker exec \
+  -w /work/knowledge-observation-guard.8QFEVq/file-storage/adapter \
+  kailo-wren-query-sdk-itgs2n node --test \
+  --test-name-pattern='native write|pinned SDK MCP|MCP transport|MCP discovery|MCP calls' \
+  test/query-revision.test.mjs
+```
+
+最终正向 exit0，66/66；只在独立候选破坏 signed key、typed node 引用关联和
+末次 PEP 三处真实生产保护，原目标 exit1，10 项失败、56 项通过；apply_patch
+原字节还原、5 个实际 adapter 输入 cmp=0 后同目标 exit0，66/66。
+覆盖 HUMAN/AGENT 的 HTTP 与真实 MCP SDK 调用、observe/extract_usage、空文件
+真实 byte-op 用量、无完成证据时不计量，以及 HUMAN write 的原 map 错误策略
+消费者；错误映射不调用 native writer，不借 DOCUMENT/NONE 身份。
+
+本批 Node 证据仍在原 Cells 候选根目录：
+
+| 文件 | SHA-256 |
+|---|---|
+| cells-native-write-http-final-map-positive.log | `e5aaad4bf9b58ffaf9ff9b5ee65b3dc8d381bb09e98a92d3b1388c5bbfccba03` |
+| cells-native-write-http-final-production-negative.log | `490b16f3f746ddeacaf68ea95e43b0b0af0430f084f53583616394042d45bb25` |
+| cells-native-write-http-final-restored.log | `87f626e1d6e246086098353646704c2d8cac1bc0d197fade0a995afe090e7ae0` |
+| cells-native-write-http-final-production-mutation.diff | `204deac28d332a603bb817c5ee1162ce41627a6f91794ca4a31989d85b9a2de1` |
+
+原 Go 正向、有效生产破坏和最终还原共用原六包目标：
+
+```sh
+sudo -n docker exec -e GOMODCACHE=/cache/mod -e GOCACHE=/cache/build \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  go test -mod=readonly ./common/auth/protocol ./data/versions \
+  ./data/versions/grpc ./scheduler/jobs/grpc ./scheduler/jobs/rest ./gateway/restv2 \
+  -run 'Test(AuthorizeAction|AuthorizeOperation|VersionAction|KailoNative|NativeWriteTask|NativeTask|NativePromote|NativeActor|NativeIndependent)' \
+  -count=1 -v
+```
+
+- 60915 exit1：最初 auth/authorizations 导入环，非通过；原日志保留。
+- 60932 exit0：修正导入边界后的六包通过。随后集中加入普通 event 与显式
+  Version key 的原消费者检查、原 system version router 与 terminal HeadVersion
+  回读，97562 exit0：14 顶层、134 子检查通过。
+- 77401 的最初私有变异误删 `zed` 唯一使用，原编译真实失败；没有冒充保护
+  命中。确认精确自有 Go 进程后终止该无效运行，终态 exit143，原日志保留。
+- 修正变异为可编译的真实保护绕过，仅私有三生产文件：空 PEP revision、
+  frozen draft CopyObject 与 Task→Version 稳定引用。24619 exit1，实际 4 顶层、
+  6 子检查失败；不是 fixture 断言自改或只编译失败。
+- apply_patch 原字节恢复后 45566 exit0：同六包 14 顶层、134 子检查通过。
+  最终包含 HUMAN/AGENT 两种 actor 共用的 native signed EE/key 严格要求，
+  15 个 Go 输入正式/SDK cmp=0；gofmt-l 空输出/exit0，bash-n、diff --check
+  均 exit0。jobs/rest 无 test files，仅编译，不将其计作新 native E2E。
+
+本窗口未新拉依赖、未改 go.mod/go.sum。原 SDK 最终 memory.events 各项均 0；
+生命周期 memory.peak=2632499200 字节，不能将该既有容器累计值冒称本批独立
+峰值。Go 在途实查宿主 I/O full 曾超过 60%，保留原有效句柄等待，没有因 I/O
+重启有效检查或另建环境。部署 start 的新 nativeJob/binding 配对仅 bash-n
+通过；本批没有运行新的 --check 配置 fixture 或实际启动，明确未验收该投递。
+
+| Go 文件 | SHA-256 |
+|---|---|
+| cells-native-write-positive.log | `ab6798f770b41df5166355d0904bae5459d43d45665c4c041482c406bf18ed65` |
+| cells-native-write-corrected-positive.log | `554915094b41bcb2a43dde3a3cdb82e3c2432432c4ed33ad12846860df71d49a` |
+| cells-native-write-final-positive.log | `c0d6fd6b1451e4c639c5253802d3fa6895641774a5ddcce90185ee5b588713d7` |
+| cells-native-write-final-production-negative.log | `6a34e2bcf9203d2ccd8952a707296cc9be905da86182cb28a9e823416259f482` |
+| cells-native-write-effective-production-negative.log | `052d383505831c63b41a9c0a6c2c790be5e88192b928c24b361470b0bb5fea06` |
+| cells-native-write-effective-production-mutation.diff | `0973a7fc266843a6f35a37c29254c03d5ccb97bc8a79c6aefa6c855ade932241` |
+| cells-native-write-final-restored.log | `19ec3797326a4bbebfc1e216c1a885760e44c53158b6faf4cd81c41d6d33d23c` |

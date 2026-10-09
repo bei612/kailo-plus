@@ -201,7 +201,9 @@ func (h *Handler) CreateVersion(ctx context.Context, request *tree.CreateVersion
 	}
 	node := request.GetNode()
 
-	if !request.Draft {
+	// An explicit native revision identifies a claimed task result. Content
+	// equality with the previous head cannot erase that operation's receipt.
+	if !request.Draft && request.VersionUuid == "" {
 		if last, er := dao.GetLastVersion(ctx, request.Node.Uuid); er != nil {
 			return nil, er
 		} else if last != nil && last.ETag == node.Etag {

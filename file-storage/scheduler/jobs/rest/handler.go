@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/client/commons"
@@ -70,6 +71,13 @@ func (s *JobsHandler) Filter() func(string) string {
 }
 
 func (s *JobsHandler) UserListJobs(req *restful.Request, rsp *restful.Response) error {
+	proof, present, err := auth.TakeNativeProof(req.Request)
+	if err != nil {
+		return err
+	}
+	if present {
+		return nativeWriteObservation(req, rsp, proof)
+	}
 
 	T := lang.Bundle().T(middleware.DetectedLanguages(req.Request.Context())...)
 

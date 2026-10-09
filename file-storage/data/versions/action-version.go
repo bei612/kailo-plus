@@ -95,6 +95,21 @@ func (c *VersionAction) Init(ctx context.Context, job *jobs.Job, action *jobs.Ac
 
 // Run processes the actual action code
 func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChannels, input *jobs.ActionMessage) (*jobs.ActionMessage, error) {
+	return c.run(ctx, input, getRouter(), "")
+}
+
+// PromoteRevision uses the original version action with an exact, owner-bound
+// draft. It never snapshots a mutable head after another upload has raced the
+// promotion. The caller must already hold the native first-dispatch claim.
+func (c *VersionAction) PromoteRevision(ctx context.Context, input *jobs.ActionMessage, handler nodes.Client) (*jobs.ActionMessage, error) {
+	if claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool); !claimed || handler == nil || len(input.GetNodes()) != 1 || input.Nodes[0].GetStringMeta(common.MetaNamespaceVersionId) == "" {
+		err := errors.WithMessage(errors.InvalidParameters, "native promotion requires its claimed task and exact source revision")
+		return input.WithError(err), err
+	}
+	return c.run(ctx, input, handler, input.Nodes[0].GetStringMeta(common.MetaNamespaceVersionId))
+}
+
+func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, handler nodes.Client, sourceRevision string) (*jobs.ActionMessage, error) {
 
 	if len(input.Nodes) == 0 {
 		return input.WithIgnore(), nil // Ignore
@@ -123,6 +138,23 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	}
 	userId := user.GetUuid()
 	versionClient := tree.NewNodeVersionerClient(grpc.ResolveConn(ctx, common.ServiceVersionsGRPC))
+	if sourceRevision != "" {
+		claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool)
+		source, er := versionClient.HeadVersion(ctx, &tree.HeadVersionRequest{NodeUuid: node.Uuid, VersionId: sourceRevision})
+		revision := source.GetVersion()
+		if er != nil {
+			return input.WithError(er), er
+		}
+		if !claimed || !revision.GetDraft() || revision.GetVersionId() != sourceRevision || revision.GetOwnerUuid() != userId || revision.GetSize() < 0 || revision.GetLocation() == nil || revision.GetETag() == "" {
+			er = errors.WithMessage(errors.StatusForbidden, "native source revision is not this claimed actor's persisted draft")
+			return input.WithError(er), er
+		}
+		node = node.Clone()
+		node.Size, node.Etag, node.MTime = revision.Size, revision.ETag, revision.MTime
+		if revision.ContentHash != "" {
+			node.MustSetMeta(common.MetaNamespaceHash, revision.ContentHash)
+		}
+	}
 	request := &tree.CreateVersionRequest{Node: node, OwnerName: userName, OwnerUuid: userId}
 	if claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool); claimed {
 		taskID, hasTask := propagator.CanonicalMeta(ctx, common.CtxMetaTaskUuid)
@@ -162,13 +194,17 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	branchInfo := nodes.BranchInfo{LoadedSource: source}
 	ctx = nodes.WithBranchInfo(ctx, "to", branchInfo)
 
-	handler := getRouter()
-	// Reload node, do not rely on incoming event if something has changed
-	rr, re := handler.ReadNode(ctx, &tree.ReadNodeRequest{Node: node.Clone()})
-	if re != nil {
-		return input.WithError(re), re
+	// Ordinary event versioning still snapshots current native content. A
+	// promotion copies the frozen draft instead, through the original version
+	// reader and the original native version-store router.
+	sourceNode := node
+	if sourceRevision == "" {
+		rr, re := handler.ReadNode(ctx, &tree.ReadNodeRequest{Node: node.Clone()})
+		if re != nil {
+			return input.WithError(re), re
+		}
+		sourceNode = rr.GetNode()
 	}
-	sourceNode := rr.GetNode()
 	targetNode := resp.Version.GetLocation()
 	if targetNode == nil {
 		er := errors.WithMessage(errors.NodeNotFound, "no content revision location found")
@@ -176,7 +212,7 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 		return input.WithError(er), er
 	}
 
-	objectInfo, err := handler.CopyObject(ctx, sourceNode, targetNode, &models.CopyRequestData{})
+	objectInfo, err := handler.CopyObject(ctx, sourceNode, targetNode, &models.CopyRequestData{SrcVersionId: sourceRevision})
 	if err != nil {
 		err = errors.WithMessage(err, fmt.Sprintf("Copying %s -> %s", sourceNode.GetPath(), targetNode.GetUuid()))
 		return input.WithError(err), err
@@ -185,7 +221,7 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	output := input
 	log.TasksLogger(ctx).Info(T("Job.Version.StatusFile", resp.Version))
 
-	if objectInfo.Size < 0 {
+	if objectInfo.Size < 0 || (sourceRevision != "" && objectInfo.Size != node.Size) {
 		err = errors.WithMessage(errors.StatusConflict, "native copied version has an unknown size")
 		return input.WithError(err), err
 	}

@@ -97,7 +97,9 @@ try:
             canonical_uuid(delivery['workspaceId'])
         if 'write' in delivery:
             write = delivery['write']
-            require(isinstance(write, dict) and set(write) == {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native write metadata must match the original ActionCommand consumer')
+            require(isinstance(write, dict) and {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'} <= set(write) <= {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion', 'nativeJobId'}, 'native write metadata must match the original ActionCommand consumer')
+            if 'nativeJobId' in write:
+                require(isinstance(write['nativeJobId'], str) and write['nativeJobId'].strip() == write['nativeJobId'] != '', 'native write job must be delivered')
             canonical_uuid(write['resultExposurePolicyId'])
             for key in ('actionVersion', 'resultExposurePolicyVersion'):
                 require(type(write[key]) is int and write[key] > 0, 'native write versions must be delivered')
@@ -177,6 +179,14 @@ try:
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
+    if 'write' in conf:
+        native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
+        require(conf['write']['nativeJobId'] == native['write']['nativeJobId'])
+        require(all(conf[key] == native[key] for key in ('bindingId', 'tenantId', 'nativeRootRef')))
+        require(conf.get('workspaceId') == native.get('workspaceId'))
+        require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
+        require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
+        require(any(action['actionKey'] == 'file_storage.write@v1' and action['actionVersion'] == native['write']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     for key in ('cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile'):
         delivered(conf[key])
     for item in conf['management']['validation']['secretDeliveries']:

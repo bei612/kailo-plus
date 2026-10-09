@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/commons"
 	"github.com/pydio/cells/v5/common/client/grpc"
@@ -87,12 +88,12 @@ func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) err
 
 func (h *Handler) PromoteVersion(req *restful.Request, resp *restful.Response) error {
 
-	proofs := req.Request.Header.Values("X-Kailo-Native-Execution")
-	req.Request.Header.Del("X-Kailo-Native-Execution")
-	// A write executor is not installed by the HUMAN admission producer. Do not
-	// let an unconsumed platform proof reach native reads, diagnostics or copy.
-	if len(proofs) != 0 {
-		return errors.WithStack(errors.StatusForbidden)
+	proof, present, proofError := auth.TakeNativeProof(req.Request)
+	if proofError != nil {
+		return proofError
+	}
+	if present {
+		return h.executeNativePromote(req, resp, proof)
 	}
 	ctx := req.Request.Context()
 	nodeUuid := req.PathParameter("Uuid")

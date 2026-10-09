@@ -2,6 +2,9 @@ package grpc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -22,6 +25,105 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
+	constructor := func(db boltdb.DB) jobstore.DAO { return bolt.NewBoltDAO(db) }
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(constructor, "native_write_task_")}, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jobstore.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := &jobproto.Job{ID: "existing-version-job", Owner: "native-user"}
+		if err = store.PutJob(job); err != nil {
+			t.Fatal(err)
+		}
+		claims := map[string]interface{}{"tenant_id": "tenant", "actor_principal_id": "actor", "initiating_human_principal_id": "actor", "action_execution_id": "execution", "operation_id": "operation", "action_key": "file_storage.write@v1", "target_id": "resource", "target_type": "RESOURCE", "action_definition_version": float64(1), "result_exposure_policy_id": "policy", "result_exposure_policy_version": float64(1), "jti": "transient", "authorization_min_zed_token": "transient"}
+		input := map[string]interface{}{"resourceId": "resource", "nativeObjectRef": `{"nodeUuid":"native-node","publish":false}`, "nativeRevision": "opaque-draft", "displayName": "file.txt", "mediaType": "text/plain"}
+		task, err := jobstore.NewNativeWriteTask("binding", job.ID, "native-operation-key", "native-user", "native-user-uuid", claims, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(task); err != nil {
+			t.Fatal(err)
+		}
+		relation, _ := json.Marshal([]string{task.ID, "actions.versioning.create", "native-node"})
+		digest := sha256.Sum256(relation)
+		revision := &tree.ContentRevision{VersionId: hex.EncodeToString(digest[:]), OwnerUuid: "native-user-uuid", ETag: "native-etag", Size: 0, Location: &tree.Node{Uuid: "version-location"}}
+		body, _ := protojson.Marshal(revision)
+		task.Status, task.StartTime, task.EndTime = jobproto.TaskStatus_Finished, 1, 2
+		task.ActionsLogs = append(task.ActionsLogs, &jobproto.ActionLog{Action: &jobproto.Action{ID: "actions.versioning.create"}, OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeVersionResult: "true"}}}}})
+		if err = store.PutTask(task); err != nil {
+			t.Fatal(err)
+		}
+		persisted, err := store.GetJob(job.ID, jobproto.TaskStatus_Any)
+		if err != nil || len(persisted.Tasks) != 1 {
+			t.Fatal("native task reference was not persisted", err)
+		}
+		retained := persisted.Tasks[0]
+		observed, err := jobstore.NativeWriteRevision(retained)
+		if err != nil || !proto.Equal(observed, revision) || !jobstore.NativeWriteTaskMatches(retained, "binding", "native-user-uuid", claims) {
+			t.Fatal("persisted write did not retain original frozen intent and exact version", err)
+		}
+		intent, err := jobstore.NativeWriteTaskIntent(retained)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := intent.Scope["jti"]; exists {
+			t.Fatal("transient proof entered native task")
+		}
+		for _, scenario := range []string{"changed-binding", "changed-actor", "changed-operation", "changed-policy", "changed-input-digest", "wrong-version-cause", "wrong-native-owner", "draft-not-terminal", "failed-output", "queued-not-terminal", "missing-end", "missing-receipt"} {
+			t.Run(scenario, func(t *testing.T) {
+				candidate := proto.Clone(retained).(*jobproto.Task)
+				binding, user := "binding", "native-user-uuid"
+				frozen := make(map[string]interface{})
+				for key, value := range claims {
+					frozen[key] = value
+				}
+				switch scenario {
+				case "changed-binding":
+					binding = "other"
+				case "changed-actor":
+					user = "other"
+				case "changed-operation":
+					frozen["operation_id"] = "other"
+				case "changed-policy":
+					frozen["result_exposure_policy_id"] = "other"
+				case "changed-input-digest":
+					candidate.ActionsLogs[0].InputMessage.OutputChain[0].JsonBody = []byte(`{"requestDigest":"invalid","intent":{"scope":{},"inputReference":{}}}`)
+				case "queued-not-terminal":
+					candidate.Status = jobproto.TaskStatus_Queued
+				case "missing-end":
+					candidate.EndTime = 0
+				case "missing-receipt":
+					candidate.ActionsLogs = candidate.ActionsLogs[:1]
+				default:
+					changed := proto.Clone(revision).(*tree.ContentRevision)
+					switch scenario {
+					case "wrong-version-cause":
+						changed.VersionId = "another-version"
+					case "wrong-native-owner":
+						changed.OwnerUuid = "other"
+					case "draft-not-terminal":
+						changed.Draft = true
+					case "failed-output":
+						candidate.ActionsLogs[1].OutputMessage.OutputChain[0].Success = false
+					}
+					candidate.ActionsLogs[1].OutputMessage.OutputChain[0].JsonBody, _ = protojson.Marshal(changed)
+				}
+				if scenario == "changed-binding" || scenario == "changed-actor" || scenario == "changed-operation" || scenario == "changed-policy" || scenario == "changed-input-digest" {
+					if jobstore.NativeWriteTaskMatches(candidate, binding, user, frozen) {
+						t.Fatal("foreign or mutable original intent was accepted")
+					}
+				} else if receipt, err := jobstore.NativeWriteRevision(candidate); err == nil || receipt != nil {
+					t.Fatal("unconfirmed native task produced a successful revision")
+				}
+			})
+		}
+		if err := store.ClaimTask(retained); err == nil {
+			t.Fatal("repeat operation was granted a second native first-dispatch claim")
+		}
+	})
+}
 
 type taskReceiptStore struct {
 	jobstore.DAO

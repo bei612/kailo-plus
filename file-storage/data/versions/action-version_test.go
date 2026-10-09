@@ -40,6 +40,7 @@ type versionActionRouter struct {
 	copyErr    error
 	copyCount  int
 	pruneCount int
+	copies     []*models.CopyRequestData
 }
 
 func (*versionActionRouter) GetClientsPool(context.Context) nodes.SourcesPool {
@@ -48,8 +49,9 @@ func (*versionActionRouter) GetClientsPool(context.Context) nodes.SourcesPool {
 func (r *versionActionRouter) ReadNode(context.Context, *tree.ReadNodeRequest, ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
 	return &tree.ReadNodeResponse{Node: r.node.Clone()}, nil
 }
-func (r *versionActionRouter) CopyObject(context.Context, *tree.Node, *tree.Node, *models.CopyRequestData) (models.ObjectInfo, error) {
+func (r *versionActionRouter) CopyObject(_ context.Context, _ *tree.Node, _ *tree.Node, data *models.CopyRequestData) (models.ObjectInfo, error) {
 	r.copyCount++
+	r.copies = append(r.copies, data)
 	return models.ObjectInfo{Size: r.copySize}, r.copyErr
 }
 func (r *versionActionRouter) DeleteNode(context.Context, *tree.DeleteNodeRequest, ...grpc.CallOption) (*tree.DeleteNodeResponse, error) {
@@ -64,6 +66,11 @@ type versionActionService struct {
 	storeErr error
 	confirm  func(*tree.ContentRevision) *tree.StoreVersionResponse
 	requests []*tree.CreateVersionRequest
+	source   *tree.ContentRevision
+}
+
+func (s *versionActionService) HeadVersion(_ context.Context, request *tree.HeadVersionRequest) (*tree.HeadVersionResponse, error) {
+	return &tree.HeadVersionResponse{Version: s.source}, nil
 }
 
 func (s *versionActionService) CreateVersion(_ context.Context, request *tree.CreateVersionRequest) (*tree.CreateVersionResponse, error) {
@@ -109,11 +116,20 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 		change  func(*versionActionService, *versionActionRouter)
 		fail    bool
 		claimed bool
+		draft   bool
 	}{
 		{name: "empty-file", size: 0},
 		{name: "actual-copy-size", size: 7},
+		{name: "original-event-version-metadata", size: 7},
 		{name: "claimed-task-empty-version", size: 0, claimed: true},
 		{name: "claimed-task-version", size: 7, claimed: true},
+		{name: "claimed-draft-empty", size: 0, claimed: true, draft: true},
+		{name: "claimed-draft-exact-not-live-head", size: 7, claimed: true, draft: true},
+		{name: "draft-without-native-claim", size: 7, draft: true, fail: true},
+		{name: "draft-foreign-owner", size: 7, draft: true, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) { s.source.OwnerUuid = "foreign-owner" }},
+		{name: "draft-not-persisted-draft", size: 7, draft: true, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) { s.source.Draft = false }},
+		{name: "draft-reference-mismatch", size: 7, draft: true, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) { s.source.VersionId = "other-draft" }},
+		{name: "draft-copy-byte-mismatch", size: 7, draft: true, claimed: true, fail: true, change: func(_ *versionActionService, r *versionActionRouter) { r.copySize++ }},
 		{name: "claimed-task-reference-mismatch", size: 7, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) {
 			s.created.Version.VersionId = "unrelated-native-version"
 		}},
@@ -182,11 +198,25 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 			}}, confirm: func(v *tree.ContentRevision) *tree.StoreVersionResponse {
 				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision)}
 			}}
+			if tc.draft {
+				node.MustSetMeta(common.MetaNamespaceVersionId, "opaque-native-draft")
+				s.source = &tree.ContentRevision{VersionId: "opaque-native-draft", Draft: true, OwnerUuid: "native-user", ETag: "frozen-draft-etag", Size: tc.size, Location: &tree.Node{Uuid: "native-draft-location"}}
+				s.created.Version.ETag, s.created.Version.Size = s.source.ETag, s.source.Size
+			}
 			if tc.change != nil {
 				tc.change(s, r)
 			}
+			if tc.name == "original-event-version-metadata" {
+				node.MustSetMeta(common.MetaNamespaceVersionId, "ordinary-event-revision")
+			}
 			grpcclient.RegisterMock(common.ServiceVersionsGRPC, &tree.NodeVersionerStub{NodeVersionerServer: s})
-			output, err := new(VersionAction).Run(ctx, nil, &jobs.ActionMessage{Nodes: []*tree.Node{node}})
+			input := &jobs.ActionMessage{Nodes: []*tree.Node{node}}
+			var output *jobs.ActionMessage
+			if tc.draft {
+				output, err = new(VersionAction).PromoteRevision(ctx, input, r)
+			} else {
+				output, err = new(VersionAction).Run(ctx, nil, input)
+			}
 			if (err != nil) != tc.fail {
 				t.Fatalf("native action completion mismatch: output=%v err=%v", output, err)
 			}
@@ -207,6 +237,12 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 				if len(s.requests) != 1 || s.requests[0].VersionUuid == "" || s.requests[0].VersionUuid != s.stored[0].Version.VersionId || output.OutputChain[0].Vars[jobstore.NativeVersionResult] != "true" || protojson.Unmarshal(output.OutputChain[0].JsonBody, observed) != nil || !proto.Equal(observed, s.stored[0].Version) {
 					t.Fatal("claimed task did not retain the exact persisted native revision")
 				}
+			}
+			if tc.draft && !tc.fail && (len(r.copies) != 1 || r.copies[0].SrcVersionId != "opaque-native-draft" || s.requests[0].Node.Etag != "frozen-draft-etag" || s.requests[0].Node.Size != tc.size) {
+				t.Fatal("claimed promotion copied the mutable head instead of its frozen draft")
+			}
+			if tc.name == "original-event-version-metadata" && (len(r.copies) != 1 || r.copies[0].SrcVersionId != "") {
+				t.Fatal("ordinary native event was mistaken for a governed draft promotion")
 			}
 			if tc.name == "create-owner-mismatch" || tc.name == "create-reference-missing" || tc.name == "claimed-task-reference-mismatch" {
 				if r.copyCount != 0 || len(s.stored) != 0 {

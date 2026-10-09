@@ -10,6 +10,7 @@ import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
 import { executeNode, observeNode, nodeActions } from './node-execution.mjs';
+import { writeAction, writeConfiguration, executeWrite, observeWrite } from './write-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { nativeJsonFetch } from './native-actor.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
@@ -25,6 +26,7 @@ function executionMapping(action, config) {
   if (nodeActions.includes(action.actionKey) && config.readEdge) {
     return { ...action, nativeType: 'node', cancelCapability: 'UNSUPPORTED' };
   }
+  if (action.actionKey === writeAction && config.write) return {...action, nativeType:'version', cancelCapability:'UNSUPPORTED'};
   if (['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(action.actionKey) && config.documentLaunch) {
     return { ...action, nativeType: 'document.pat', cancelCapability: 'SUPPORTED' };
   }
@@ -54,7 +56,8 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management', 'mcp'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management', 'mcp', 'write'].includes(key))) throw new Refused(503);
+  if (value.write !== undefined) writeConfiguration(value.write, value);
   if (value.management !== undefined && (!exactKeys(value.management,
     ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
       ...(value.management.validation === undefined ? [] : ['validation'])])
@@ -83,7 +86,8 @@ export function configuration(value) {
     credentialFiles: [value.cellsBearerFile, value.oidcClientSecretFile],
     executionMapping: action => executionMapping(action, value),
   });
-  return Object.freeze({ ...value, ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
+  return Object.freeze({ ...value, ...(value.write === undefined ? {} : {write:writeConfiguration(value.write, value)}),
+    ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
     ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
 }
@@ -137,7 +141,8 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
         || (operation === 'query_revision' && nodeActions.includes(claims.action_key))) {
         // HUMAN business contexts have the same required policy pair as
         // Agent calls. This cannot borrow a DOCUMENT/PAT NONE context.
-        if (!nodeActions.includes(claims.action_key)
+        if (!(nodeActions.includes(claims.action_key)
+          || (operation === 'map_native_status_error' && config.write && claims.action_key === writeAction))
           || !UUID.test(claims.result_exposure_policy_id) || !Number.isSafeInteger(claims.result_exposure_policy_version)
           || claims.result_exposure_policy_version <= 0) throw new Refused(401);
       } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
@@ -309,7 +314,7 @@ export function createAdapter(rawConfig) {
         return;
       }
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
-        '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
+        '/platform-adapter/v1/observe', '/platform-adapter/v1/extract_usage', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
         '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
@@ -335,11 +340,13 @@ export function createAdapter(rawConfig) {
         response.end(JSON.stringify(value));
         return;
       }
-      if (['/platform-adapter/v1/observe', '/platform-adapter/v1/cancel'].includes(request.url)) {
+      if (['/platform-adapter/v1/observe', '/platform-adapter/v1/extract_usage', '/platform-adapter/v1/cancel'].includes(request.url)) {
         const operation = request.url.slice('/platform-adapter/v1/'.length);
         let args;
         try { args = JSON.parse(raw); } catch { throw new Refused(400); }
-        const value = operation === 'observe' && args?.nativeType === 'node'
+        const value = ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'version'
+          ? await observeWrite(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
+          : operation === 'observe' && args?.nativeType === 'node'
           ? await observeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7))
           : await documentLifecycle(config, deadline, raw, request.headers['idempotency-key'],
             request.headers.authorization.slice(7), operation);
@@ -350,6 +357,12 @@ export function createAdapter(rawConfig) {
       if (request.url === '/platform-adapter/v1/execute') {
         let body;
         try { body=JSON.parse(raw); } catch { throw new Refused(400); }
+        if (body?.actionKey === writeAction) {
+          const value = await executeWrite(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+          response.writeHead(200, {'content-type':'application/json', 'cache-control':'no-store'});
+          response.end(canonical(value));
+          return;
+        }
         if (nodeActions.includes(body?.actionKey)
           && object(body?.arguments) && Object.hasOwn(body.arguments, 'target')) {
           const value = await executeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
