@@ -103,7 +103,11 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+  if (
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+    req.headers['x-kailo-native-human-token'] !== undefined ||
+    req.headers['x-kailo-native-identity-scope'] !== undefined
+  )
     return handleNativeSqlPairRequest(req, res);
   const startTime = Date.now();
   let project;

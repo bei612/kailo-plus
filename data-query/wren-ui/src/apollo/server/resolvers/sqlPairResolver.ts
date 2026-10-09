@@ -25,6 +25,7 @@ export type SqlPairContext = Pick<
   IContext,
   | 'nativeHumanToken'
   | 'nativeIdentityScope'
+  | 'nativeProjectCheck'
   | 'telemetry'
   | 'projectService'
   | 'sqlPairService'
@@ -49,17 +50,27 @@ export class SqlPairResolver {
 
   private async nativeContext(
     ctx: SqlPairContext,
+    writing = false,
+    projectId?: number,
   ): Promise<NativeSqlPairContext | undefined> {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
+      ctx.nativeIdentityScope === undefined &&
+      ctx.nativeHumanToken === undefined
+    )
       return undefined;
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (writing && typeof ctx.nativeProjectCheck !== 'function')
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    if (writing) await ctx.nativeProjectCheck(projectId);
     return {
       config,
       identityScope: ctx.nativeIdentityScope,
       token: ctx.nativeHumanToken,
+      ...(writing ? { beforeWrite: ctx.nativeProjectCheck } : {}),
     };
   }
 
@@ -94,7 +105,7 @@ export class SqlPairResolver {
         sql: arg.data.sql,
         question: arg.data.question,
       },
-      await this.nativeContext(ctx),
+      await this.nativeContext(ctx, true, project.id),
       arg.data.idempotencyKey,
     );
   }
@@ -123,7 +134,7 @@ export class SqlPairResolver {
         sql: arg.data.sql,
         question: arg.data.question,
       },
-      await this.nativeContext(ctx),
+      await this.nativeContext(ctx, true, project.id),
       arg.data.idempotencyKey,
     );
   }
@@ -143,7 +154,7 @@ export class SqlPairResolver {
     return ctx.sqlPairService.deleteSqlPair(
       project.id,
       arg.where.id,
-      await this.nativeContext(ctx),
+      await this.nativeContext(ctx, true, project.id),
       arg.where.idempotencyKey,
     );
   }
@@ -195,7 +206,11 @@ export class SqlPairResolver {
     validation: SqlValidation,
   ) {
     const project = await ctx.projectService.getCurrentProject();
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      ctx.nativeIdentityScope !== undefined ||
+      ctx.nativeHumanToken !== undefined
+    ) {
       const config = await loadQueryDelivery();
       const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
       if (

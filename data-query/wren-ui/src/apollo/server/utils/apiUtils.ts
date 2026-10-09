@@ -37,6 +37,7 @@ export async function handleNativeSqlPairRequest(
       '../services/nativeQueryService'
     );
     const resolver = new SqlPairResolver();
+    const { default: originalResolvers } = await import('../resolvers');
     const token = req.headers['x-kailo-native-human-token'];
     const identityScope = req.headers['x-kailo-native-identity-scope'];
     const key = req.headers['idempotency-key'];
@@ -128,8 +129,12 @@ export async function handleNativeSqlPairRequest(
       };
       const pair =
         req.method === 'POST'
-          ? await resolver.createSqlPair(undefined, { data }, ctx)
-          : await resolver.updateSqlPair(
+          ? await originalResolvers.Mutation.createSqlPair(
+              undefined,
+              { data },
+              ctx,
+            )
+          : await originalResolvers.Mutation.updateSqlPair(
               undefined,
               { where: { id: nativeId }, data },
               ctx,
@@ -138,7 +143,7 @@ export async function handleNativeSqlPairRequest(
       return;
     }
     if (req.method === 'DELETE' && nativeId) {
-      const removed = await resolver.deleteSqlPair(
+      const removed = await originalResolvers.Mutation.deleteSqlPair(
         undefined,
         { where: { id: nativeId, idempotencyKey: key } },
         ctx,

@@ -16,7 +16,6 @@ import {
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
-import { SqlPairResolver } from './apollo/server/resolvers/sqlPairResolver';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import {
@@ -54,6 +53,7 @@ import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 import { defaultApolloErrorHandler } from './apollo/server/utils/error';
 import configHandler from './pages/api/config';
 import { SqlPairService } from './apollo/server/services/sqlPairService';
+import { SqlPairRepository } from './apollo/server/repositories/sqlPairRepository';
 import { SqlPairStatus } from './apollo/server/models/adaptor';
 import sqlPairsHandler from './pages/api/v1/knowledge/sql_pairs';
 import sqlPairHandler from './pages/api/v1/knowledge/sql_pairs/[id]';
@@ -499,8 +499,9 @@ describe('original SQL-pair durable native write consumer', () => {
       findOneBy: jest.fn(async () => record),
     };
     repository = {
-      prepareNativeWrite: jest.fn(async (_history, input) => {
+      prepareNativeWrite: jest.fn(async (_history, input, beforeWrite) => {
         if (record) return { record, created: false };
+        if (beforeWrite) await beforeWrite(input.projectId);
         record = JSON.parse(
           JSON.stringify({
             ...input,
@@ -562,6 +563,206 @@ describe('original SQL-pair durable native write consumer', () => {
     queryScope: nativePreviewScope(config, identityScope),
     generation,
   });
+  const publicWrite = (operation: 'create' | 'update' | 'delete', ctx: any) =>
+    originalResolvers.Mutation[
+      operation === 'create'
+        ? 'createSqlPair'
+        : operation === 'update'
+          ? 'updateSqlPair'
+          : 'deleteSqlPair'
+    ](
+      null,
+      {
+        data: {
+          ...pair,
+          idempotencyKey: key,
+          idempotencyScope: nativePreviewScope(config, native.identityScope),
+        },
+        where: { id: 42, idempotencyKey: key },
+      },
+      ctx,
+    );
+  const publicContext = (service = make()) => ({
+    nativeHumanToken: native.token,
+    nativeIdentityScope: native.identityScope,
+    telemetry: { sendEvent: jest.fn() },
+    projectService: {
+      getCurrentProject: jest.fn(async () => ({ id: config.projectId })),
+    },
+    sqlPairService: service,
+  });
+  const completedDryRun = {
+    submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    terminalStatus: 'COMPLETED',
+    data: { valid: true },
+  };
+  it.each(['create', 'update', 'delete'] as const)(
+    'refuses a late native project change before the original %s service or intent',
+    async (operation) => {
+      const ctx = publicContext();
+      ctx.projectService.getCurrentProject
+        .mockResolvedValueOnce({ id: config.projectId })
+        .mockResolvedValueOnce({ id: 99 });
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue(completedDryRun as any);
+      try {
+        await expect(publicWrite(operation, ctx)).rejects.toMatchObject({
+          status: 403,
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        });
+        expect(repository.prepareNativeWrite).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+        expect(record).toBeUndefined();
+      } finally {
+        preview.mockRestore();
+      }
+    },
+  );
+  it.each(['create', 'update'] as const)(
+    'consumes the original captured generation after %s dry-run observation, not the newly current generation',
+    async (operation) => {
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockImplementation(async () => {
+          generation++;
+          return completedDryRun as any;
+        });
+      try {
+        await expect(
+          publicWrite(operation, publicContext()),
+        ).rejects.toMatchObject({
+          status: 412,
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        });
+        expect(preview).toHaveBeenCalledTimes(1);
+        expect(repository.prepareNativeWrite).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+      } finally {
+        preview.mockRestore();
+      }
+    },
+  );
+  it.each(['create', 'update', 'delete'] as const)(
+    'keeps a persisted %s intent UNKNOWN without AI dispatch when generation changes during prepare, and never resubmits it',
+    async (operation) => {
+      const prepare = repository.prepareNativeWrite.getMockImplementation();
+      repository.prepareNativeWrite.mockImplementation(async (...args) => {
+        const result = await prepare(...args);
+        generation++;
+        return result;
+      });
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue(completedDryRun as any);
+      try {
+        await expect(
+          publicWrite(operation, publicContext()),
+        ).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(record.statusCode).toBe(202);
+        expect(record.requestPayload.nativeSqlPair.generation).toBe(2);
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+        expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+        await expect(publicWrite(operation, publicContext())).rejects.toThrow(
+          'NATIVE_EXECUTION_UNKNOWN',
+        );
+        expect(record.statusCode).toBe(202);
+        expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+      } finally {
+        preview.mockRestore();
+      }
+    },
+  );
+  it.each(['create', 'update', 'delete'] as const)(
+    'checks the captured request identity before the original %s AI dispatch after its durable intent, never treating it as NOT_STARTED',
+    async (operation) => {
+      const ctx = publicContext();
+      const prepare = repository.prepareNativeWrite.getMockImplementation();
+      repository.prepareNativeWrite.mockImplementation(async (...args) => {
+        const result = await prepare(...args);
+        ctx.nativeIdentityScope = 'b'.repeat(64);
+        return result;
+      });
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue(completedDryRun as any);
+      try {
+        await expect(publicWrite(operation, ctx)).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(record.statusCode).toBe(202);
+        expect(record.requestPayload.nativeSqlPair.identityScope).toBe(
+          native.identityScope,
+        );
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+        expect(adaptor.getSqlPairResult).not.toHaveBeenCalled();
+        await expect(publicWrite(operation, ctx)).rejects.toThrow(
+          'NATIVE_EXECUTION_UNKNOWN',
+        );
+        expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+      } finally {
+        preview.mockRestore();
+      }
+    },
+  );
+  it.each(['create', 'update', 'delete'] as const)(
+    'the original %s repository consumes the request closure after transaction reads and before any row/history INSERT',
+    async (operation) => {
+      const tx = jest.fn(() => ({
+        where: () => ({
+          first: () => ({ forUpdate: async () => ({ id: config.projectId }) }),
+        }),
+      }));
+      const repo = new SqlPairRepository({
+        transaction: async (run: any) => run(tx),
+      } as any);
+      const row = { id: 42, projectId: config.projectId, ...pair };
+      const insert = jest.spyOn(repo, 'createOne').mockResolvedValue(row);
+      jest.spyOn(repo, 'findOneBy').mockResolvedValue(row);
+      history.createOne = jest.fn(
+        async (input) => (record = structuredClone(input)),
+      );
+      history.findAllBy.mockImplementation(async () => {
+        generation++;
+        return [];
+      });
+      const service = new SqlPairService({
+        sqlPairRepository: repo,
+        apiHistoryRepository: history,
+        wrenAIAdaptor: adaptor,
+        ibisAdaptor: {} as any,
+      });
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue(completedDryRun as any);
+      try {
+        await expect(
+          publicWrite(operation, publicContext(service)),
+        ).rejects.toMatchObject({
+          status: 412,
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        });
+        expect(tx).toHaveBeenCalledWith('project');
+        expect(history.findAllBy).toHaveBeenCalledTimes(1);
+        expect(insert).not.toHaveBeenCalled();
+        expect(history.createOne).not.toHaveBeenCalled();
+        expect(adaptor.deploySqlPair).not.toHaveBeenCalled();
+        expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+        expect(record).toBeUndefined();
+      } finally {
+        preview.mockRestore();
+      }
+    },
+  );
   it.each(['create', 'update', 'delete'])(
     'persists the original %s task before dispatch and only observes it after ACK loss or process restart',
     async (operation) => {
@@ -1083,6 +1284,26 @@ describe('original SQL-pair durable native write consumer', () => {
           ).toBe(true);
         revoked = true;
         expect((await send()).status).toBe(403);
+        expect(
+          operation === 'delete'
+            ? adaptor.deleteSqlPairs
+            : adaptor.deploySqlPair,
+        ).toHaveBeenCalledTimes(1);
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(
+            new NativeQueryRefusal(503, 'QUERY_DELIVERY_UNAVAILABLE'),
+          );
+        const preparedCount = repository.prepareNativeWrite.mock.calls.length;
+        const unconfigured = await send();
+        expect(unconfigured.status).toBe(503);
+        expect(await unconfigured.json()).toEqual({
+          error: 'QUERY_DELIVERY_UNAVAILABLE',
+        });
+        expect(repository.prepareNativeWrite).toHaveBeenCalledTimes(
+          preparedCount,
+        );
         expect(
           operation === 'delete'
             ? adaptor.deleteSqlPairs
@@ -2175,6 +2396,14 @@ describe('native saved-view HUMAN query consumer', () => {
           data: { valid: true },
         });
       jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      calls.mockImplementation(async (_config, _operation, input) => ({
+        scope: {
+          ...config,
+          generation: 2,
+          permission: (input.authorizeScope as any).permission,
+          checkedRevision: 'fresh-scope-fact',
+        },
+      }));
       ctx = {
         telemetry: { sendEvent: jest.fn() },
         nativeIdentityScope: 'a'.repeat(64),
@@ -2204,7 +2433,6 @@ describe('native saved-view HUMAN query consumer', () => {
       operation: 'create' | 'update',
       changes: Record<string, any> = {},
     ) => {
-      const resolver = new SqlPairResolver();
       const input = {
         data: {
           sql: statement,
@@ -2216,8 +2444,8 @@ describe('native saved-view HUMAN query consumer', () => {
         where: { id: pair.id },
       };
       return operation === 'create'
-        ? resolver.createSqlPair(null, input, ctx)
-        : resolver.updateSqlPair(null, input, ctx);
+        ? originalResolvers.Mutation.createSqlPair(null, input, ctx)
+        : originalResolvers.Mutation.updateSqlPair(null, input, ctx);
     };
     it.each(['create', 'update'] as const)(
       'observes the same HUMAN dry-run before original %s and never repeats bare SQL',
@@ -2250,11 +2478,9 @@ describe('native saved-view HUMAN query consumer', () => {
       async (operation) => {
         await expect(
           write(operation, { idempotencyScope: 'b'.repeat(64) }),
-        ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+        ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
         ctx.projectService.getCurrentProject.mockResolvedValue({ id: 99 });
-        await expect(write(operation)).rejects.toThrow(
-          'QUERY_IDENTITY_CHANGED',
-        );
+        await expect(write(operation)).rejects.toThrow('QUERY_SCOPE_DENIED');
         expect(delegated).not.toHaveBeenCalled();
         expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
         expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
@@ -2273,10 +2499,10 @@ describe('native saved-view HUMAN query consumer', () => {
           ...changes,
         });
         await expect(write('create')).rejects.toThrow(
-          'QUERY_EVIDENCE_UNAVAILABLE',
+          'NATIVE_EXECUTION_UNKNOWN',
         );
         await expect(write('update')).rejects.toThrow(
-          'QUERY_EVIDENCE_UNAVAILABLE',
+          'NATIVE_EXECUTION_UNKNOWN',
         );
         expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
         expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
@@ -2289,19 +2515,21 @@ describe('native saved-view HUMAN query consumer', () => {
       );
       await expect(
         write('create', { sql: 'different native SQL' }),
-      ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
       expect(delegated.mock.calls[0][2]).toBe('different native SQL');
       expect(delegated.mock.calls[0][1]).toBe(key);
       delegated.mockRejectedValue(
         new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
       );
-      await expect(write('update')).rejects.toMatchObject({ status: 403 });
+      await expect(write('update')).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
       expect(ctx.sqlPairService.createSqlPair).not.toHaveBeenCalled();
       expect(ctx.sqlPairService.editSqlPair).not.toHaveBeenCalled();
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
     });
     it('retains the original no-binding dry run and permits question-only editing without SQL execution', async () => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeHumanToken;
+      delete ctx.nativeIdentityScope;
       await expect(
         write('create', {
           idempotencyKey: undefined,
@@ -2315,6 +2543,8 @@ describe('native saved-view HUMAN query consumer', () => {
       });
       process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
         'fixture-controlled-delivery';
+      ctx.nativeHumanToken = 'verified-native-token';
+      ctx.nativeIdentityScope = 'a'.repeat(64);
       ctx.queryService.preview.mockClear();
       await expect(write('update', { sql: undefined })).resolves.toEqual(pair);
       expect(delegated).not.toHaveBeenCalled();
@@ -2330,6 +2560,7 @@ describe('native saved-view HUMAN query consumer', () => {
           config,
           identityScope: ctx.nativeIdentityScope,
           token: ctx.nativeHumanToken,
+          beforeWrite: expect.any(Function),
         },
         key,
       );

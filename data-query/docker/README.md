@@ -1213,3 +1213,38 @@ create/update/calculated-field/relation/deployment first-write consumers still
 need the same current permission/generation check. It does not include the
 separate Model/View delete candidate, live public authority/provider calls, an
 installed business instance, ACTIVE binding or iframe acceptance.
+
+### SQL-pair native first-write request fence
+
+Configured SQL-pair REST create/update/delete now call the same original public
+GraphQL mutations as the native controls. The original resolver consumes that
+request wrapper's captured project, trusted HUMAN identity and binding generation
+after project/SQL observation, then passes the same server closure to the existing
+native service. The original same-database row/API History transaction checks it
+after its final asynchronous reads, before the first row/history INSERT. The
+existing native AI dispatch checks it again after preparing the durable intent.
+This is an authorized identity/governance seam, not a new Action, task ledger,
+permission authority, SQL execution or product page.
+
+Refusal before any native row/history write remains the original trusted
+`NOT_STARTED`. If an intent already exists, a later identity/generation refusal
+remains 202 UNKNOWN under that same event: it is not cleared, resubmitted or
+declared failed. Existing same-event GET observation and confirmed-finish metadata
+commit remain unchanged. Missing native event evidence cannot prove that an
+uncertain intent was never dispatched. Neither an in-process closure nor 202 is
+proof of a native terminal outcome.
+
+Only an instance with no binding configuration and neither private trusted
+identity input follows the original standalone CRUD and dry run. Present-empty,
+invalid or missing delivery with either trusted input does not use that path.
+Original payloads, native AI calls, 201/200/204 responses and complete controls
+remain; there is no UI/schema change in this batch.
+
+The [actual source and check receipt](../fork/verify/native-integration.md#original-sql-pair-native-first-write-request-fence)
+records **455/455** original-suite cases, TypeScript/format exit 0, and three
+private production mutations caught then restored byte-for-byte. These are
+fixture-backed actual original resolver/REST/repository/service consumers, not a
+new live PostgreSQL rollback, public authorization/provider or installed-instance
+acceptance. Dynamic Resource adoption, ordinary-function provenance, trusted
+SERVICE SQL and other native metadata first-write/UNKNOWN recovery gaps still
+prevent a claim of complete Wren integration or an ACTIVE release.

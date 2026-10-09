@@ -34,6 +34,9 @@ export type NativeSqlPairContext = {
   config: NativeQueryDelivery;
   identityScope: string;
   token: string;
+  // The original request wrapper's captured-generation check, not a second
+  // permission or task authority. History-only observations do not dispatch.
+  beforeWrite?: (projectId: number) => Promise<void>;
 };
 
 const logger = getLogger('SqlPairService');
@@ -122,6 +125,7 @@ export class SqlPairService implements ISqlPairService {
   private async nativeIdentity(
     native: NativeSqlPairContext,
     permission: string,
+    writing = false,
   ) {
     const { config, identityScope, token } = native;
     if (digest(await loadQueryDelivery()) !== digest(config))
@@ -132,6 +136,8 @@ export class SqlPairService implements ISqlPairService {
       token,
       permission,
     );
+    if (writing && native.beforeWrite)
+      await native.beforeWrite(config.projectId);
     return { scope, generation: permissionFact.generation };
   }
 
@@ -272,13 +278,18 @@ export class SqlPairService implements ISqlPairService {
           },
         },
       },
+      native.beforeWrite,
     );
     if (!prepared) throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
     const record = prepared.record;
     const pair = record.requestPayload.nativeSqlPair.after;
     try {
       if (prepared.created) {
-        const beforeDispatch = await this.nativeIdentity(native, 'manage');
+        const beforeDispatch = await this.nativeIdentity(
+          native,
+          'manage',
+          true,
+        );
         if (beforeDispatch.generation !== identity.generation)
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
         const transport = {

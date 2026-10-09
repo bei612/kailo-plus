@@ -7880,3 +7880,142 @@ trusted SERVICE SQL remain separate gaps. This batch neither activates a
 business binding nor proves iframe, deployment, three-user collaboration,
 Windows/Mobile or the full production gate. It does not establish all native
 CRUD governance or 100% original-product parity.
+
+## Original SQL-pair native first-write request fence
+
+2026-10-09. Authority: `.design/05` §2.7, `.design/08` §6 and the existing
+SS-WRN-IDENTITY/GOVERNANCE seam. Native SQL-pair management is the original native
+function, not a fabricated query Action. Fixed official evidence is commit
+`c5f02a0391c87420dba78632dcd86073710deb72`, paths
+`wren-ui/src/apollo/server/resolvers/sqlPairResolver.ts::{createSqlPair,updateSqlPair,deleteSqlPair,validateSql}`
+and `wren-ui/src/apollo/server/services/sqlPairService.ts::{createSqlPair,editSqlPair,deleteSqlPair}`.
+Their original current-project, SQL-validation, native deployment and response
+semantics are retained. All six production source differences below are
+authorized identity/governance adaptations; no original page, label, layout,
+GraphQL schema or business control was replaced.
+
+Implementation impact and failure boundary, established before the source edit:
+
+1. The original resolver awaited project and dry-run reads, then built native
+   context from current delivery. Although the service already reauthorized
+   `manage`, that fresh fact could adopt a newer generation than the public
+   wrapper had captured. REST also called the raw resolver rather than its
+   existing public mutation. The resolver now consumes the wrapper's existing
+   `nativeProjectCheck`, and REST uses those same public mutations.
+2. Service `nativeWrite` remains the existing same-database
+   `prepareNativeWrite` → one native POST/DELETE → same-event GET → confirmed
+   finish/CAS. The ephemeral server closure is actually consumed after the
+   repository's project-lock/history/pending/native-row awaits, before its first
+   row/history INSERT, and again before AI dispatch after the intent is durable.
+   It is not persisted, exposed to clients or copied into Core. Read-only History
+   observations retain their existing native identity/current permission proof.
+   The original transaction callback and standalone commit/rollback paths remain.
+3. Only an exact refusal from the captured server closure before row/history
+   write is `NOT_STARTED`. A persisted intent followed by changed identity or
+   generation remains UNKNOWN, without AI dispatch, record erasure or replacement
+   task. A failed/missing native cache entry still cannot prove non-dispatch;
+   neither repeated requests nor process restart invent terminal evidence.
+   Unknown/reference-changed inputs continue the existing error classification.
+4. Never-configured standalone means configuration, trusted HUMAN token and
+   trusted identity scope are all absent. Both original REST handlers and the
+   resolver reject mixed/missing delivery rather than falling back to original
+   bare validation. Present-empty/invalid delivery stays closed. The original
+   controls and complete native CRUD payloads/201/200/204 responses remain.
+
+The final owned source/check inputs are:
+
+```text
+data-query/wren-ui/src/apollo/server/repositories/sqlPairRepository.ts
+data-query/wren-ui/src/apollo/server/resolvers/sqlPairResolver.ts
+data-query/wren-ui/src/apollo/server/services/sqlPairService.ts
+data-query/wren-ui/src/apollo/server/utils/apiUtils.ts
+data-query/wren-ui/src/pages/api/v1/knowledge/sql_pairs/index.ts
+data-query/wren-ui/src/pages/api/v1/knowledge/sql_pairs/[id].ts
+data-query/wren-ui/src/nativeHumanQuery.test.ts
+```
+
+Existing dry-run fixtures now invoke the actual public mutations, not the raw
+class bypass: dispatched-context refusals remain UNKNOWN, while the trusted
+closure's actual pre-write refusals remain NOT_STARTED. Their assertions still
+require no metadata write/bare SQL and the exact original dry-run key/input.
+The standalone fixture now actually has neither trusted header, rather than
+supplying a pretend bound identity. New cases execute the actual wrapper,
+resolver, service and original repository implementation. Transaction I/O and
+public authority/provider replies are fixture seams, not live acceptance.
+
+Execution used the existing `kailo-wren-query-sdk-itgs2n` single `/work` root,
+4 CPU / 4 GiB memory / 4 GiB memory+swap, UID/GID 1000:1000, Node heap 3072 MiB.
+Preflight had 26,959 MiB host available memory, memory PSI 0.00, I/O full avg10
+17.01%; that SDK had only its original sleep process. No environment/dependency,
+database, SDK, mirror, image or whole-tree copy was created. Prior changed input
+deltas remain in `sqlpair-previous-input/**/*.reverse.patch.txt`. Root's separate
+Model/View delete source/tests were not synchronized into this candidate or
+counted as these passes. No GraphQL/platform contract changed, so there was no
+generation step.
+
+Evidence root:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`.
+Actual original commands, inside that existing limited SDK:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeHumanQuery.test.ts --runInBand &&
+node node_modules/typescript/bin/tsc --noEmit --incremental false &&
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/sqlPairResolver.ts src/apollo/server/services/sqlPairService.ts src/apollo/server/repositories/sqlPairRepository.ts src/apollo/server/utils/apiUtils.ts src/pages/api/v1/knowledge/sql_pairs/index.ts 'src/pages/api/v1/knowledge/sql_pairs/[id].ts' src/nativeHumanQuery.test.ts
+```
+
+Handle 14887, `sqlpair-captured-dispatch-positive.log`, exited **0**:
+**452/452**, original TypeScript and seven formatting inputs passed. This was
+before the final three identity-interleave cases. Handle 33039,
+`sqlpair-captured-dispatch-identity-positive.log`, exited **0**: those **3 passed**,
+452 filtered skips, not another full pass.
+
+Three real private production branches were removed without changing assertions:
+
+- Repository's last transaction-read → first-write callback removed: handle
+  50906, `sqlpair-captured-dispatch-negative-transaction.log`, exit **1**,
+  **3 failed / 452 filtered skips**. Row/history effects incorrectly advanced
+  to UNKNOWN instead of rejecting before write. Original repository restored,
+  formal/private `cmp` exit 0.
+- Resolver's captured closure consumption/forwarding removed: handle 87372,
+  `sqlpair-captured-dispatch-negative-resolver.log`, exit **1**,
+  **5 failed / 450 filtered skips**, 196.191 s. Late project/generation changes
+  were no longer pre-write NOT_STARTED. Its one MainThread was observed waiting
+  for disk I/O, not restarted or called passing while pending. Source restored,
+  formal/private `cmp` exit 0.
+- Service's captured request check before AI dispatch removed, leaving the
+  existing generation comparison intact: handle 55944,
+  `sqlpair-captured-dispatch-negative-service.log`, exit **1**,
+  **3 failed / 452 filtered skips**. Actual original POST/DELETE spies recorded
+  an unauthorized first dispatch after request identity changed. Original
+  service restored; all seven formal/private sources compared equal.
+
+Handle **11943**, `sqlpair-captured-dispatch-restored.log`, exited **0**:
+**1 suite / 455 passed / 455 total**, 15.927 s; original TypeScript and seven
+formatting inputs passed. The SDK's `memory.events` low/high/max/oom/oom_kill/
+oom_group_kill counters remained zero. The final suite includes original REST
+201/200/204 recovery, same-event observations, no second POST/DELETE, empty/missing
+delivery rejection, project/generation and post-intent identity interleaves.
+Seven formal/private sources were byte-equal before the final run; no production
+input changed afterward.
+
+The raw SqlPairResolver fixture import became unused after switching those
+checks to the actual public mutation, so it was removed from both formal/private
+test inputs. Handle **55113**, `sqlpair-captured-dispatch-final-cleanup.log`,
+then exited **0** on those exact final bytes: **455/455**, 20.617 s, original
+TypeScript, final check formatting and zero memory/OOM events. No production
+branch changed in that cleanup; all seven formal/private inputs again compared
+equal after its terminal result. It is not a full repository or deployment check.
+
+Knex's actual installed `lib/execution/transaction.js` chains a rejected async
+transaction callback to `transactor.rollback(err)`; the implementation preserves
+that call chain. This batch did **not** run a live PostgreSQL transaction/rollback
+or a crash test and does not count the fixture as one. A process crash or intent
+persisted before an unprovable dispatch still cannot be cleared as failed.
+
+No full check, image build, deployment, new business instance, ACTIVE binding,
+iframe/screenshot, live credential/provider, three-user collaboration or desktop/
+mobile acceptance was run. Other native metadata first-write/UNKNOWN recovery,
+dynamic Resource evidence, ordinary-function provenance and trusted SERVICE SQL
+remain actual release gaps. This is source plus scoped evidence, not all native
+CRUD governance, complete Wren integration, original-product 100% parity or
+production readiness. Root retains index/commit/push ownership.

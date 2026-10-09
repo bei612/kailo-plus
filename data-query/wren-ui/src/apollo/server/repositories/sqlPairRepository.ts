@@ -17,6 +17,7 @@ export interface ISqlPairRepository extends IBasicRepository<SqlPair> {
   prepareNativeWrite(
     history: IApiHistoryRepository,
     record: ApiHistory,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<{ record: ApiHistory; created: boolean } | undefined>;
   completeNativeWrite(
     history: IApiHistoryRepository,
@@ -38,6 +39,7 @@ export class SqlPairRepository
   public async prepareNativeWrite(
     history: IApiHistoryRepository,
     record: ApiHistory,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ) {
     return this.knex.transaction(async (tx) => {
       const project = await tx('project')
@@ -91,6 +93,10 @@ export class SqlPairRepository
           )
         : undefined;
       if (intent.operation !== 'create' && !before) return undefined;
+      // Native row/history are the first write. Check the original request's
+      // captured project/generation after the asynchronous transaction reads,
+      // not only before waiting for the project lock or looking up the row.
+      if (beforeWrite) await beforeWrite(record.projectId);
       const after = before
         ? { ...before, ...intent.changes }
         : await this.createOne(
