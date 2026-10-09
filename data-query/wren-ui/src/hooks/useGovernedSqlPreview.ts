@@ -29,11 +29,17 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     scope: string;
     idempotencyKey: string;
   }>();
+  const completedQuery = useRef<{
+    sql: string;
+    scope: string;
+    historyId: string;
+  }>();
   const revision = useRef(0);
   useEffect(() => {
     const refresh = async () => {
       const current = ++revision.current;
       validation.current = undefined;
+      completedQuery.current = undefined;
       setReceipt(undefined);
       setPreparing(false);
       try {
@@ -68,6 +74,7 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     if (!currentVisibility.current) return false;
     const current = ++revision.current;
     validation.current = undefined;
+    completedQuery.current = undefined;
     setPreparing(true);
     setReceipt(undefined);
     const input = options.variables.data;
@@ -189,6 +196,12 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
       setReceipt(value);
       if (state.completed && input.dryRun && input.limit === 1)
         validation.current = { sql: input.sql, scope, idempotencyKey: key };
+      if (state.completed && !input.dryRun && input.limit === 1)
+        completedQuery.current = {
+          sql: input.sql,
+          scope,
+          historyId: selection.historyId,
+        };
       if (state.terminal || state.denied) {
         if (sessionStorage.getItem(slot) === key)
           sessionStorage.removeItem(slot);
@@ -221,6 +234,7 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     reset: () => {
       ++revision.current;
       validation.current = undefined;
+      completedQuery.current = undefined;
       original.reset();
       setReceipt(undefined);
       setPreparing(false);
@@ -246,6 +260,19 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
           idempotencyKey: current.idempotencyKey,
           idempotencyScope: current.scope,
         };
+      return undefined;
+    },
+    // Save as View consumes columns from this same completed native history;
+    // its metadata resolver must re-observe the original AE, not query again.
+    completedQuery: () => {
+      const current = completedQuery.current;
+      if (
+        current &&
+        currentVisibility.current &&
+        current.sql === currentSql.current &&
+        selected.current?.scope === current.scope
+      )
+        return { historyId: current.historyId, scope: current.scope };
       return undefined;
     },
   };

@@ -1,6 +1,10 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import originalResolvers from './apollo/server/resolvers';
-import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
+import {
+  NativeHumanQuery,
+  nativePreviewScope,
+} from './apollo/server/services/nativeHumanQuery';
+import { ApiType } from './apollo/server/repositories/apiHistoryRepository';
 import { ApolloServer } from 'apollo-server-micro';
 import { gql } from '@apollo/client';
 import GraphQLJSON from 'graphql-type-json';
@@ -31,6 +35,201 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+describe('original Save as View consumes the same HUMAN query history', () => {
+  const resolver = new ModelResolver();
+  const config: any = {
+    projectId: 7,
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '7',
+  };
+  const response = {
+    id: 21,
+    threadId: 11,
+    sql: 'SELECT customer FROM original_model',
+  };
+  const columns = [{ name: 'customer', type: 'STRING' }];
+  let previous: string | undefined;
+  let ctx: any;
+  let record: any;
+  let disclose: jest.SpyInstance;
+  let find: jest.Mock;
+  const input = () => ({
+    data: {
+      name: 'OriginalView',
+      responseId: response.id,
+      rephrasedQuestion: 'Original question',
+      queryHistoryId: record.id,
+    },
+  });
+  const invoke = () => resolver.createView(null, input(), ctx);
+  beforeEach(() => {
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    ctx = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'human-a',
+      projectService: {
+        getCurrentProject: jest.fn().mockResolvedValue({ id: 7 }),
+      },
+      deployService: {
+        getLastDeployment: jest.fn().mockResolvedValue({ manifest: {} }),
+      },
+      askingService: {
+        getResponse: jest.fn().mockResolvedValue({ ...response }),
+      },
+      viewRepository: {
+        findAllBy: jest.fn().mockResolvedValue([]),
+        createOne: jest.fn(async (row) => ({ id: 99, ...row })),
+      },
+      queryService: {
+        describeStatement: jest.fn().mockResolvedValue({ columns }),
+        preview: jest.fn(),
+      },
+      telemetry: { sendEvent: jest.fn() },
+    };
+    record = {
+      id: '3b41671e-d794-46fa-a8c1-b287fe3ebdbb',
+      projectId: 7,
+      apiType: ApiType.RUN_SQL,
+      governanceBindingId: config.bindingId,
+      governanceState: 'SUCCEEDED',
+      requestPayload: {
+        action: 'data_query.query@v1',
+        sql: response.sql,
+        limit: 1,
+        previewScope: nativePreviewScope(config, ctx.nativeIdentityScope),
+      },
+    };
+    find = jest.fn(async (where) =>
+      Object.entries(where).every(([key, value]) => record[key] === value)
+        ? record
+        : null,
+    );
+    require('./common').components.apiHistoryRepository.findOneBy = find;
+    disclose = jest
+      .spyOn(NativeHumanQuery.prototype, 'readHistory')
+      .mockResolvedValue({
+        requestPayload: record.requestPayload,
+        responsePayload: { columns, data: [['original']] },
+      });
+  });
+  afterEach(() => {
+    disclose.mockRestore();
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+  it('creates the original view with original columns only after observing its same completed query, without another SQL call', async () => {
+    const view = await invoke();
+    expect(view).toMatchObject({ id: 99, displayName: 'OriginalView' });
+    expect(JSON.parse(view.properties)).toEqual({
+      displayName: 'OriginalView',
+      columns,
+      responseId: response.id,
+      question: 'Original question',
+    });
+    expect(find).toHaveBeenCalledWith({
+      id: record.id,
+      projectId: config.projectId,
+      apiType: ApiType.RUN_SQL,
+      governanceBindingId: config.bindingId,
+      governanceState: 'SUCCEEDED',
+    });
+    expect(disclose).toHaveBeenCalledWith(ctx.nativeHumanToken, record);
+    expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    expect(ctx.viewRepository.createOne).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    'missing',
+    'UNKNOWN',
+    'project',
+    'binding',
+    'scope',
+    'sql',
+    'action',
+    'limit',
+  ])(
+    'refuses %s history before native INSERT or implicit SQL',
+    async (fault) => {
+      if (fault === 'missing') find.mockResolvedValue(null);
+      if (fault === 'UNKNOWN') record.governanceState = 'UNKNOWN';
+      if (fault === 'project') record.projectId++;
+      if (fault === 'binding') record.governanceBindingId = 'another-binding';
+      if (fault === 'scope')
+        record.requestPayload.previewScope = 'b'.repeat(64);
+      if (fault === 'sql')
+        record.requestPayload.sql = 'SELECT private FROM another_model';
+      if (fault === 'action')
+        record.requestPayload.action = 'data_query.dry_run@v1';
+      if (fault === 'limit') record.requestPayload.limit = 2;
+      await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(disclose).not.toHaveBeenCalled();
+      expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+      expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    },
+  );
+  it('does not create a view after current source permission or completed-query exposure is revoked', async () => {
+    disclose.mockRejectedValue(
+      new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+    );
+    await expect(invoke()).rejects.toThrow('QUERY_SCOPE_DENIED');
+    expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+    expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+  });
+  it.each(['response', 'actor', 'token', 'delivery', 'project'])(
+    'refuses a %s change while the same original AE is being observed',
+    async (fault) => {
+      disclose.mockImplementation(async () => {
+        if (fault === 'response')
+          ctx.askingService.getResponse.mockResolvedValue({
+            ...response,
+            sql: 'SELECT changed FROM another_model',
+          });
+        if (fault === 'actor') ctx.nativeIdentityScope = 'b'.repeat(64);
+        if (fault === 'token') ctx.nativeHumanToken = 'human-b';
+        if (fault === 'delivery')
+          jest.mocked(loadQueryDelivery).mockResolvedValue({
+            ...config,
+            nativeInstanceRef: 'changed-instance',
+          });
+        if (fault === 'project')
+          ctx.projectService.getCurrentProject.mockResolvedValue({ id: 8 });
+        return {
+          requestPayload: record.requestPayload,
+          responsePayload: { columns, data: [] },
+        };
+      });
+      await expect(invoke()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+      expect(ctx.queryService.describeStatement).not.toHaveBeenCalled();
+    },
+  );
+  it('retains the original independent describe/INSERT without fabricated history or HUMAN identity', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete ctx.nativeIdentityScope;
+    delete ctx.nativeHumanToken;
+    await expect(invoke()).resolves.toMatchObject({ id: 99 });
+    expect(ctx.queryService.describeStatement).toHaveBeenCalledTimes(1);
+    expect(disclose).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+  });
+  it('does not adopt an independent describe result if a binding is configured during that original SQL call', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete ctx.nativeIdentityScope;
+    delete ctx.nativeHumanToken;
+    ctx.queryService.describeStatement.mockImplementation(async () => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+      return { columns };
+    });
+    await expect(invoke()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+    expect(ctx.viewRepository.createOne).not.toHaveBeenCalled();
+  });
+});
 
 describe('native bound-project business consumers', () => {
   const resolver = new ModelResolver();

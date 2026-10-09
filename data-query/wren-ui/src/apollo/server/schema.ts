@@ -450,6 +450,7 @@ export const typeDefs = gql`
     name: String!
     responseId: Int!
     rephrasedQuestion: String!
+    queryHistoryId: String
   }
 
   input ValidateViewInput {

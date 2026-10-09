@@ -1200,7 +1200,12 @@ export class ModelResolver {
 
   // create view from sql of a response
   public async createView(_root: any, args: any, ctx: IContext) {
-    const { name: displayName, responseId, rephrasedQuestion } = args.data;
+    const {
+      name: displayName,
+      responseId,
+      rephrasedQuestion,
+      queryHistoryId,
+    } = args.data;
 
     // validate view name
     const validateResult = await this.validateViewName(displayName, ctx);
@@ -1210,7 +1215,9 @@ export class ModelResolver {
 
     // create view
     const project = await ctx.projectService.getCurrentProject();
-    const { manifest } = await ctx.deployService.getLastDeployment(project.id);
+    const config = await this.metadataConfig(ctx, project.id);
+    const identity = ctx.nativeIdentityScope;
+    const token = ctx.nativeHumanToken;
 
     // get sql statement of a response
     const response = await ctx.askingService.getResponse(responseId, project);
@@ -1221,15 +1228,74 @@ export class ModelResolver {
     // construct cte sql and format it
     const statement = safeFormatSQL(response.sql);
 
-    // describe columns
-    const { columns } = await ctx.queryService.describeStatement(statement, {
-      project,
-      limit: 1,
-      modelingOnly: false,
-      manifest,
-    });
+    let columns: PreviewDataResponse['columns'];
+    if (config) {
+      const { components } = await import('@/common');
+      const history = components.apiHistoryRepository;
+      const query =
+        typeof queryHistoryId === 'string'
+          ? await history.findOneBy({
+              id: queryHistoryId,
+              projectId: project.id,
+              apiType: ApiType.RUN_SQL,
+              governanceBindingId: config.bindingId,
+              governanceState: 'SUCCEEDED',
+            })
+          : undefined;
+      if (
+        !query ||
+        query.requestPayload?.action !== 'data_query.query@v1' ||
+        query.requestPayload.limit !== 1 ||
+        query.requestPayload.previewScope !==
+          nativePreviewScope(config, identity) ||
+        typeof query.requestPayload.sql !== 'string' ||
+        safeFormatSQL(query.requestPayload.sql) !== statement
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      const native = new NativeQueryService(
+        config,
+        ctx.projectRepository,
+        ctx.deployRepository,
+        history,
+        ctx.queryService,
+        ctx.viewRepository,
+        ctx.modelRepository,
+        ctx.modelColumnRepository,
+      );
+      const visible = await new NativeHumanQuery(
+        config,
+        native,
+        history,
+      ).readHistory(token, query);
+      columns = visible.responsePayload?.columns;
+      const current = await ctx.askingService.getResponse(responseId, project);
+      if (
+        !current ||
+        current.id !== response.id ||
+        current.threadId !== response.threadId ||
+        current.sql !== response.sql ||
+        ctx.nativeIdentityScope !== identity ||
+        ctx.nativeHumanToken !== token ||
+        canonical(await loadQueryDelivery()) !== canonical(config) ||
+        (await ctx.projectService.getCurrentProject()).id !== project.id
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    } else {
+      const { manifest } = await ctx.deployService.getLastDeployment(
+        project.id,
+      );
+      // The independent original path has no platform identity or history.
+      await this.readableMetadata(ctx, config, 'view', []);
+      ({ columns } = await ctx.queryService.describeStatement(statement, {
+        project,
+        limit: 1,
+        modelingOnly: false,
+        manifest,
+      }));
+      await this.readableMetadata(ctx, config, 'view', []);
+    }
 
-    if (isEmpty(columns)) {
+    if (!Array.isArray(columns) || isEmpty(columns)) {
       throw new Error('Failed to describe statement');
     }
 

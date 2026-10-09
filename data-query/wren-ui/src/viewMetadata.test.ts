@@ -20,6 +20,7 @@ import APIHistory from './pages/api-management/history';
 import DetailsDrawer from './components/pages/apiManagement/DetailsDrawer';
 import { ApiType } from './apollo/client/graphql/__types__';
 import { getApiHistoryText } from './utils/language';
+import HomeThread from './pages/home/[id]';
 
 let mockLocale: string | undefined;
 let mockScope: string;
@@ -32,6 +33,8 @@ const mockConfig = jest.fn();
 const mockSqlPairRead = jest.fn();
 const mockHistoryRead = jest.fn();
 const mockNativeSqlRead = jest.fn();
+const mockCreateView = jest.fn();
+const mockViewRead = jest.fn();
 let mockNativeSqlOptions: any[];
 jest.mock('./apollo/client/graphql/home.generated', () => ({
   useGetNativeSqlLazyQuery: (options: any) => {
@@ -41,7 +44,43 @@ jest.mock('./apollo/client/graphql/home.generated', () => ({
       { data: { nativeSql: 'old shared Apollo cache' } },
     ];
   },
+  useThreadQuery: () => ({ data: {}, updateQuery: jest.fn() }),
+  useCreateThreadResponseMutation: () => [jest.fn()],
+  useUpdateThreadResponseMutation: () => [jest.fn(), {}],
+  useThreadResponseLazyQuery: () => [jest.fn(), { stopPolling: jest.fn() }],
+  useGenerateThreadRecommendationQuestionsMutation: () => [jest.fn()],
+  useGetThreadRecommendationQuestionsLazyQuery: () => [
+    jest.fn(),
+    { stopPolling: jest.fn() },
+  ],
+  useGenerateThreadResponseAnswerMutation: () => [jest.fn()],
+  useGenerateThreadResponseChartMutation: () => [jest.fn()],
+  useAdjustThreadResponseChartMutation: () => [jest.fn()],
 }));
+jest.mock('./apollo/client', () => ({
+  __esModule: true,
+  default: { query: (...args: any[]) => mockViewRead(...args) },
+}));
+jest.mock('next/navigation', () => ({ useParams: () => ({ id: '11' }) }));
+jest.mock('./hooks/useHomeSidebar', () => () => ({}));
+jest.mock('./hooks/useAskPrompt', () => ({
+  __esModule: true,
+  default: () => ({ data: {} }),
+}));
+jest.mock('./hooks/useAdjustAnswer', () => () => ({}));
+jest.mock('./components/pages/home/prompt', () => () => null);
+jest.mock('./components/pages/home/promptThread', () => () => null);
+jest.mock('./components/pages/home/promptThread/TextBasedAnswer', () => ({
+  getAnswerIsFinished: () => true,
+}));
+jest.mock('./components/pages/home/promptThread/ChartAnswer', () => ({
+  getIsChartFinished: () => true,
+}));
+jest.mock('./components/pages/home/promptThread/store', () => ({
+  PromptThreadProvider: ({ children }: any) => children,
+}));
+jest.mock('./components/modals/AdjustReasoningStepsModal', () => () => null);
+jest.mock('./components/modals/AdjustSQLModal', () => () => null);
 const mockHistoryOpen = jest.fn();
 const mockHistoryClose = jest.fn();
 const mockHistoryUpdate = jest.fn();
@@ -80,12 +119,14 @@ jest.mock('./components/code/JsonCodeBlock', () => ({
 }));
 jest.mock('./apollo/client/graphql/sqlPairs.generated', () => ({
   useSqlPairsLazyQuery: () => [mockSqlPairRead],
+  useCreateSqlPairMutation: () => [jest.fn(), {}],
 }));
 jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
 jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
 jest.mock('./apollo/client/graphql/view.generated', () => ({
   usePreviewViewDataMutation: () => [mockPreview, mockPreviewResult],
   useValidateViewMutation: () => [jest.fn()],
+  useCreateViewMutation: () => [mockCreateView, {}],
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
   usePreviewModelDataMutation: () => [mockPreview, mockPreviewResult],
@@ -2512,4 +2553,159 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
       }
     },
   );
+  describe('original Home Save as View governed column query', () => {
+    const sql = 'SELECT customer FROM original_model';
+    const historyId = '3b41671e-d794-46fa-a8c1-b287fe3ebdbb';
+    let pending: Promise<any>;
+    let prepare: jest.SpyInstance;
+    let action: jest.SpyInstance;
+    let close: jest.Mock;
+    const completed = () => ({
+      data: {
+        previewSql: {
+          previewScope: scope,
+          terminalStatus: 'COMPLETED',
+          submission: {
+            actionKey: 'data_query.query@v1',
+            gateState: 'ALLOWED',
+            dispatchState: 'DISPATCHED',
+          },
+          inputReference: {
+            nativeObjectRef: JSON.stringify({ historyId, limit: 1 }),
+          },
+          data: {
+            columns: [{ name: 'customer', type: 'STRING' }],
+            data: [['original']],
+          },
+        },
+      },
+    });
+    const click = async () => {
+      const save = mockButtons.find((button) => button.children === 'Save');
+      save.onClick();
+      await Promise.resolve();
+      return pending;
+    };
+    beforeEach(() => {
+      close = jest.fn();
+      mockFormValues = { name: 'OriginalView' };
+      mockPreviewResult = { reset: jest.fn() };
+      mockPreview.mockReset().mockResolvedValue(completed());
+      mockCreateView
+        .mockReset()
+        .mockResolvedValue({ data: { createView: { id: 99 } } });
+      mockViewRead
+        .mockReset()
+        .mockResolvedValue({ data: { listViews: [{ id: 99 }] } });
+      jest.mocked(message.success).mockClear();
+      action = jest
+        .spyOn(require('./hooks/useModalAction'), 'default')
+        .mockReturnValue({
+          state: {
+            visible: true,
+            defaultValue: { sql, responseId: 21 },
+            payload: { rephrasedQuestion: 'Original question' },
+          },
+          openModal: jest.fn(),
+          closeModal: close,
+        });
+      const original = require('./utils/errorHandler').runNativeMetadataWrite;
+      prepare = jest
+        .spyOn(require('./utils/errorHandler'), 'runNativeMetadataWrite')
+        .mockImplementation((input: any) => {
+          pending = original(input);
+          return pending;
+        });
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      renderToStaticMarkup(createElement(HomeThread));
+    });
+    afterEach(() => {
+      prepare.mockRestore();
+      action.mockRestore();
+      jest.mocked(console.error).mockRestore();
+    });
+    it('the actual Home Save button passes only the completed same-query history to native createView', async () => {
+      await click();
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(mockPreview.mock.calls[0][0].variables.data).toMatchObject({
+        sql,
+        limit: 1,
+        idempotencyScope: scope,
+      });
+      expect(mockCreateView).toHaveBeenCalledWith({
+        variables: {
+          data: {
+            name: 'OriginalView',
+            responseId: 21,
+            rephrasedQuestion: 'Original question',
+            queryHistoryId: historyId,
+          },
+        },
+        context: { nativeWriteGuarded: true },
+      });
+      await Promise.resolve();
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(message.success).toHaveBeenCalledWith(
+        'Successfully created view.',
+      );
+    });
+    it('UNKNOWN leaves the original modal open and a later check retains the same query key before any native INSERT', async () => {
+      const pendingReceipt = completed();
+      delete pendingReceipt.data.previewSql.terminalStatus;
+      mockPreview.mockResolvedValueOnce(pendingReceipt);
+      await expect(click()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(mockCreateView).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+      expect(message.success).not.toHaveBeenCalled();
+      expect(message.warning).toHaveBeenCalledWith(
+        getQueryPreviewText().unknown,
+      );
+      expect(message.error).not.toHaveBeenCalled();
+      await click();
+      expect(mockPreview.mock.calls[1][0]).toEqual(
+        mockPreview.mock.calls[0][0],
+      );
+      expect(mockCreateView).toHaveBeenCalledTimes(1);
+    });
+    it('a native create ACK with an original reference is reconciled by readonly view lookup, without a second preview or INSERT', async () => {
+      mockCreateView.mockRejectedValueOnce(evidence('view', 99));
+      await expect(click()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      expect(close).not.toHaveBeenCalled();
+      await click();
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(mockCreateView).toHaveBeenCalledTimes(1);
+      expect(mockViewRead).toHaveBeenCalledWith(
+        expect.objectContaining({ fetchPolicy: 'no-cache' }),
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+    it('keeps never-configured native Save as View unchanged, without an extra browser SQL query or fake history', async () => {
+      mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+      await click();
+      expect(mockPreview).not.toHaveBeenCalled();
+      expect(mockCreateView).toHaveBeenCalledWith({
+        variables: {
+          data: {
+            name: 'OriginalView',
+            responseId: 21,
+            rephrasedQuestion: 'Original question',
+          },
+        },
+      });
+      expect(entries.size).toBe(0);
+    });
+    it('does not create or close when the HUMAN identity changes while the original column query completes', async () => {
+      mockPreview.mockImplementationOnce(async () => {
+        mockConfig.mockResolvedValue({
+          nativeBindingConfigured: true,
+          nativeBindingGeneration: 2,
+          queryScope: 'b'.repeat(64),
+        });
+        return completed();
+      });
+      await expect(click()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(mockCreateView).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+    });
+  });
 });

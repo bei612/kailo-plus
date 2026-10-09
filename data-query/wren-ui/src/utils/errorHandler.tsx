@@ -149,6 +149,13 @@ export const runNativeMetadataWrite = async ({
   // pre-dispatch refusal, not evidence of an uncertain write.
   try {
     await beforeSubmit?.();
+  } catch (error) {
+    sessionStorage.removeItem(slot);
+    // The original caller presents its query/validation outcome. A pending
+    // admitted query is not an identity denial or a failed metadata write.
+    throw error;
+  }
+  try {
     if (!(await sameIdentity())) throw new Error(text.scopeError);
   } catch (error) {
     sessionStorage.removeItem(slot);

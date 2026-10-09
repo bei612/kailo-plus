@@ -248,6 +248,7 @@ export type CreateThreadResponseInput = {
 
 export type CreateViewInput = {
   name: Scalars['String'];
+  queryHistoryId?: InputMaybe<Scalars['String']>;
   rephrasedQuestion: Scalars['String'];
   responseId: Scalars['Int'];
 };

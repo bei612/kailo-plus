@@ -54,6 +54,8 @@ import { useCreateSqlPairMutation } from '@/apollo/client/graphql/sqlPairs.gener
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfig } from '@/utils/env';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
+import { getQueryPreviewText } from '@/utils/language';
 
 // Reuse the original response polling cadence for the admitted SQL receipt.
 const RESPONSE_POLL_INTERVAL = 1000;
@@ -88,6 +90,10 @@ export default function HomeThread() {
   const askPrompt = useAskPrompt(threadId);
   const adjustAnswer = useAdjustAnswer(threadId);
   const saveAsViewModal = useModalAction();
+  const saveViewQuery = useGovernedSqlPreview(
+    saveAsViewModal.state.defaultValue?.sql,
+    !!saveAsViewModal.state.visible,
+  );
   const questionSqlPairModal = useModalAction();
   const adjustReasoningStepsModal = useModalAction();
   const adjustSqlModal = useModalAction();
@@ -463,13 +469,48 @@ export default function HomeThread() {
         loading={creating}
         onClose={saveAsViewModal.closeModal}
         onSubmit={async (values) => {
+          let queryHistoryId: string | undefined;
           await runNativeMetadataWrite({
             nativeType: 'view',
             variables: { data: values },
             locale: router.locale,
+            beforeSubmit: async () => {
+              const before = await getUserConfig();
+              if (before.nativeBindingConfigured === false) return;
+              if (
+                !(await saveViewQuery.preview({
+                  variables: {
+                    data: {
+                      sql: saveAsViewModal.state.defaultValue?.sql,
+                      limit: 1,
+                    },
+                  },
+                }))
+              ) {
+                message.warning(getQueryPreviewText(router.locale).unknown);
+                throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
+              }
+              const completed = saveViewQuery.completedQuery();
+              const after = await getUserConfig();
+              if (
+                !completed ||
+                after.nativeBindingConfigured !== true ||
+                before.queryScope !== completed.scope ||
+                after.queryScope !== completed.scope ||
+                after.nativeBindingGeneration !== before.nativeBindingGeneration
+              )
+                throw new Error('QUERY_IDENTITY_CHANGED');
+              queryHistoryId = completed.historyId;
+            },
             submit: (variables, guarded) =>
               createViewMutation({
-                variables,
+                variables: {
+                  ...variables,
+                  data: {
+                    ...variables.data,
+                    ...(queryHistoryId ? { queryHistoryId } : {}),
+                  },
+                },
                 ...(guarded ? { context: { nativeWriteGuarded: true } } : {}),
               }),
             observe: async (nativeId) => {

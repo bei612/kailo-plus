@@ -1092,3 +1092,33 @@ authorization fixtures, not a real database/Engine/provider, browser screenshot,
 ACTIVE binding or Wren business deployment. Ordinary-function provenance,
 trusted SERVICE SQL and dynamic native Resource evidence remain fail closed;
 the full original product and multi-user/iframe release are still unaccepted.
+
+### Original Save as View: consume its admitted column query
+
+The original Home Save as View button, modal, validation, SQL, native metadata
+and returned view shape remain. In configured mode, obtaining its column list
+is a real `data_query.query@v1` execution: the original shared SQL-preview hook
+admits `limit=1` under the current HUMAN and retains the same native history/key
+through UNKNOWN. Only its completed history ID is passed to `createView`.
+The native resolver checks that history's project, binding, caller scope, SQL,
+action and limit, then re-observes the original AE through `readHistory` before
+using its columns. It never calls the original `describeStatement` to execute
+the SQL a second time. Changed response, identity, project or delivery refuses
+before native INSERT; an unverified query never closes the modal as success.
+
+Metadata-write UNKNOWN re-entry keeps its existing original-reference read-back
+and does not run the query or INSERT again. A never-configured independent
+instance retains the original single native describe/INSERT, without a fabricated
+scope or query history. Optional `CreateViewInput.queryHistoryId` preserves that
+standalone compatibility only; bound GraphQL clients must upgrade together.
+
+The [Save as View receipt](../fork/verify/native-integration.md#original-save-as-view-consumes-the-admitted-column-query)
+records original GraphQL generation, **330/330** original consumer checks,
+TypeScript/format checks, **20** failures under actual private production damage,
+and exact restoration followed by **330/330** and types/format exit 0. These are
+SDK consumers, not browser/screenshots, actual provider execution or deployment.
+This does not register a newly created native view as a Resource: without the
+existing trusted native-resource evidence, final Resource read remains denied
+and the original write outcome remains UNKNOWN with its returned native ID.
+Dynamic Resource adoption, cross-client metadata reconciliation, ordinary-function
+provenance, trusted SERVICE SQL, ACTIVE binding and full Wren release remain open.
