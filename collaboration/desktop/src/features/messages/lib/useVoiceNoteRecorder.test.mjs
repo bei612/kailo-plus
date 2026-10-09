@@ -107,7 +107,9 @@ after(() => dom.window.close());
 test("the original toolbar emoji trigger follows the real recorder state without changing attachment gating", async () => {
   const { createElement, useState } = await import("react");
   const { act, cleanup, render } = await import("@testing-library/react");
-  const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
+  const { useVoiceNoteRecorder } = await import(
+    "@client-kit/platform/react/composer/features/messages/lib/useVoiceNoteRecorder"
+  );
   const { MessageComposerToolbar } = await import(
     "@client-kit/platform/react/composer/features/messages/ui/MessageComposerToolbar"
   );
@@ -172,7 +174,9 @@ test("the original toolbar emoji trigger follows the real recorder state without
 
 test("permission acquisition is visible, cancellable, and releases a late stream", async () => {
   const { act, cleanup, renderHook } = await import("@testing-library/react");
-  const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
+  const { useVoiceNoteRecorder } = await import(
+    "@client-kit/platform/react/composer/features/messages/lib/useVoiceNoteRecorder"
+  );
   const { result, unmount } = renderHook(() => useVoiceNoteRecorder());
   const stream = new FakeStream();
   let resolvePermission;
@@ -207,7 +211,9 @@ test("permission acquisition is visible, cancellable, and releases a late stream
 test("remains usable after Strict Mode replays the mount effect", async () => {
   const { StrictMode, createElement } = await import("react");
   const { act, cleanup, renderHook } = await import("@testing-library/react");
-  const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
+  const { useVoiceNoteRecorder } = await import(
+    "@client-kit/platform/react/composer/features/messages/lib/useVoiceNoteRecorder"
+  );
   const { result, unmount } = renderHook(() => useVoiceNoteRecorder(), {
     wrapper: ({ children }) => createElement(StrictMode, null, children),
   });
@@ -224,7 +230,9 @@ test("remains usable after Strict Mode replays the mount effect", async () => {
 
 test("a cancelled decode cannot stop or attach over a newer recording", async () => {
   const { act, cleanup, renderHook } = await import("@testing-library/react");
-  const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
+  const { useVoiceNoteRecorder } = await import(
+    "@client-kit/platform/react/composer/features/messages/lib/useVoiceNoteRecorder"
+  );
   const { result, unmount } = renderHook(() => useVoiceNoteRecorder());
 
   try {
@@ -263,7 +271,7 @@ test("starting the original composer voice note closes the controlled emoji popu
   const { createElement, useState } = await import("react");
   const { act, cleanup, render } = await import("@testing-library/react");
   const { useComposerVoiceNote } = await import(
-    "../ui/useComposerVoiceNote.tsx"
+    "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote"
   );
   const { MessageComposerToolbar } = await import(
     "@client-kit/platform/react/composer/features/messages/ui/MessageComposerToolbar"
@@ -348,7 +356,7 @@ test("starting the original composer voice note closes the controlled emoji popu
 test("the original edit-target context cancels recording without changing the draft key", async () => {
   const { act, cleanup, renderHook } = await import("@testing-library/react");
   const { useComposerVoiceNote } = await import(
-    "../ui/useComposerVoiceNote.tsx"
+    "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote"
   );
   const uploaded = [];
   const media = {
@@ -388,7 +396,7 @@ test("a completed decode cannot upload into a new edit context even after record
   const { act, cleanup, renderHook } = await import("@testing-library/react");
   const { flushSync } = await import("react-dom");
   const { useComposerVoiceNote } = await import(
-    "../ui/useComposerVoiceNote.tsx"
+    "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote"
   );
   const uploaded = [];
   const media = {
@@ -453,7 +461,7 @@ test("a completed decode cannot upload into a new edit context even after record
 test("the unchanged original composer context uploads exactly one completed recording", async () => {
   const { act, cleanup, renderHook } = await import("@testing-library/react");
   const { useComposerVoiceNote } = await import(
-    "../ui/useComposerVoiceNote.tsx"
+    "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote"
   );
   const uploaded = [];
   const media = {

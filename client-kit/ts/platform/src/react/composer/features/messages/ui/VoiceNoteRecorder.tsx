@@ -1,13 +1,19 @@
+// Shared migration from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/VoiceNoteRecorder.tsx.
 import * as React from "react";
+import { useUiT } from "../../../../context";
 import { useReducedMotion } from "motion/react";
 import { X } from "lucide-react";
 
 import {
   formatVoiceNoteDuration,
   voiceNoteBarHeight,
-} from "@/features/messages/lib/audioAttachment";
-import { Button } from "@/shared/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+} from "../lib/audioAttachment";
+import { Button } from "../../../../profile/buzz/shared/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../../../sidebar/tooltip";
 
 const BAR_PITCH_PX = 5;
 
@@ -32,6 +38,7 @@ export function VoiceNoteRecorder({
   processing: boolean;
   requesting: boolean;
 }) {
+  const translateUi = useUiT();
   const waveformRef = React.useRef<HTMLDivElement | null>(null);
   const trackRef = React.useRef<HTMLDivElement | null>(null);
   const previousFrameRef = React.useRef({ barCount: 0, levelCount: 0 });
@@ -103,15 +110,15 @@ export function VoiceNoteRecorder({
     >
       <legend className="sr-only">
         {requesting
-          ? "Waiting for microphone access"
+          ? translateUi("buzz.waitMicrophoneAccess")
           : processing
-            ? "Preparing voice note"
-            : "Recording voice note"}
+            ? translateUi("buzz.preparingVoice")
+            : translateUi("buzz.recordingVoice")}
       </legend>
       <Tooltip disableHoverableContent>
         <TooltipTrigger asChild>
           <Button
-            aria-label="Discard voice note"
+            aria-label={translateUi("buzz.discardVoice")}
             className="shrink-0"
             onClick={onCancel}
             size="icon"
@@ -121,12 +128,14 @@ export function VoiceNoteRecorder({
             <X />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Discard voice note</TooltipContent>
+        <TooltipContent>{translateUi("buzz.discardVoice")}</TooltipContent>
       </Tooltip>
       <div className="mx-1 h-5 w-px shrink-0 bg-border/60" />
       {requesting || processing ? (
         <span className="shrink-0 whitespace-nowrap text-xs font-medium text-muted-foreground">
-          {requesting ? "Waiting for microphone…" : "Preparing voice note…"}
+          {requesting
+            ? translateUi("buzz.waitMicrophone")
+            : translateUi("buzz.preparingVoiceShort")}
         </span>
       ) : (
         <span className="shrink-0 whitespace-nowrap text-xs font-medium tabular-nums text-foreground">

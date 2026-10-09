@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { encodeVoiceNoteWav } from "./voiceNoteWav.ts";
+import { encodeVoiceNoteWav } from "@client-kit/platform/react/composer/features/messages/lib/voiceNoteWav";
 
 test("encodeVoiceNoteWav emits canonical mono PCM with no metadata chunks", () => {
   const bytes = encodeVoiceNoteWav(

@@ -1,13 +1,15 @@
+// Shared migration from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/useComposerVoiceNote.tsx.
 import * as React from "react";
+import { useUiT } from "../../../../context";
 import { toast } from "sonner";
 
 import {
   isVoiceNoteAttachment,
   isVoiceNoteFile,
   VOICE_NOTE_MAX_DURATION_SECONDS,
-} from "@/features/messages/lib/audioAttachment";
-import { useVoiceNoteRecorder } from "@/features/messages/lib/useVoiceNoteRecorder";
-import type { MediaUploadController } from "@/features/messages/lib/useMediaUpload";
+} from "../lib/audioAttachment";
+import { useVoiceNoteRecorder } from "../lib/useVoiceNoteRecorder";
+import type { ImetaMedia } from "../lib/imetaMediaMarkdown";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 
 export function useComposerVoiceNote({
@@ -19,10 +21,18 @@ export function useComposerVoiceNote({
 }: {
   draftKey: string | null | undefined;
   editTargetId: string | null;
-  media: MediaUploadController;
+  media: {
+    pendingImetaRef: React.RefObject<
+      readonly Pick<ImetaMedia, "type" | "filename">[]
+    >;
+    /** Real queued Native files or Web files awaiting the BFF upload receipt. */
+    queuedAttachmentsRef: React.RefObject<readonly { file: File }[]>;
+    uploadFile: (file: File) => Promise<unknown>;
+  };
   setEmojiPickerOpen: (open: boolean) => void;
   setFormattingOpen: (open: boolean) => void;
 }) {
+  const translateUi = useUiT();
   const recorder = useVoiceNoteRecorder();
   const limitReachedRef = React.useRef(false);
   const statusRef = React.useRef(recorder.status);
@@ -87,13 +97,13 @@ export function useComposerVoiceNote({
     }
     const attachments = getAttachmentsRef.current();
     if (attachments.pending.length > 0 || attachments.queued.length > 0) {
-      toast.error("A voice note must be the only attachment.");
+      toast.error(translateUi("buzz.voiceOnlyAttachment"));
       return;
     }
     recordingContextRef.current = currentContextRef.current;
     onBeforeStartRef.current();
     void recorder.start();
-  }, [finish, recorder.start]);
+  }, [finish, recorder.start, translateUi]);
 
   const cancel = recorder.cancel;
   const attachments = getAttachments();
@@ -119,13 +129,13 @@ export function useComposerVoiceNote({
     if (statusRef.current !== "idle" || hasVoiceNoteAttachment) {
       toast.error(
         statusRef.current === "idle"
-          ? "A voice note must be the only attachment."
-          : "Finish or discard the voice note before attaching a file.",
+          ? translateUi("buzz.voiceOnlyAttachment")
+          : translateUi("buzz.voiceFinishBeforeAttach"),
       );
       return false;
     }
     return true;
-  }, []);
+  }, [translateUi]);
 
   const uploadFileWhenIdle = React.useCallback(
     async (file: File) => {

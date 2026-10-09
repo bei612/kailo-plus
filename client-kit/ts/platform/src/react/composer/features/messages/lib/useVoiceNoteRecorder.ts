@@ -1,4 +1,6 @@
+// Shared migration from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/lib/useVoiceNoteRecorder.ts.
 import * as React from "react";
+import { useUiT } from "../../../../context";
 
 import { encodeVoiceNoteWav } from "./voiceNoteWav";
 
@@ -40,6 +42,7 @@ function releaseSessionAudio(session: RecordingSession) {
 }
 
 export function useVoiceNoteRecorder() {
+  const translateUi = useUiT();
   const mountedRef = React.useRef(true);
   const sessionRef = React.useRef<RecordingSession | null>(null);
   const [status, setStatus] = React.useState<
@@ -69,7 +72,7 @@ export function useVoiceNoteRecorder() {
     if (status !== "idle" || sessionRef.current) return;
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setError("Voice recording is not available in this environment.");
+      setError(translateUi("buzz.voiceUnavailable"));
       return;
     }
 
@@ -156,7 +159,7 @@ export function useVoiceNoteRecorder() {
                 mountedRef.current &&
                 sessionRef.current === session
               ) {
-                setError("Buzz could not prepare this voice note for upload.");
+                setError(translateUi("buzz.voicePreparationFailed"));
               }
             }
           }
@@ -174,7 +177,7 @@ export function useVoiceNoteRecorder() {
       });
       recorder.addEventListener("error", () => {
         if (mountedRef.current && sessionRef.current === session) {
-          setError("The voice recording was interrupted.");
+          setError(translateUi("buzz.voiceInterrupted"));
         }
       });
       recorder.start(250);
@@ -218,11 +221,11 @@ export function useVoiceNoteRecorder() {
         (cause.name === "NotAllowedError" || cause.name === "SecurityError");
       setError(
         denied
-          ? "Allow Buzz to access your microphone to record a voice note."
-          : "Buzz could not start the voice recorder.",
+          ? translateUi("buzz.allowMicrophone")
+          : translateUi("buzz.voiceStartFailed"),
       );
     }
-  }, [status]);
+  }, [status, translateUi]);
 
   const stop = React.useCallback(
     (discard = false): Promise<VoiceNoteRecording | null> => {

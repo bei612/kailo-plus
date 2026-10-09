@@ -6073,3 +6073,55 @@ CLI console 0 errors／0 warnings；Workflow 创建仍“本页没有有效执�
 不能称完整 Workflows。隐藏菜单是固定官方 preview 默认 off，并未改默认值或新增入口。
 这些是根代理已打开的旧 a816 实拍，不证明本批六源；本批无新截图／部署／安装包。
 Web 录音、真实设备麦克风、Tauri／Windows、Mobile、完整 GIF 与全量原版一致性均未验收。
+
+## 2026-10-09 原 Web 录音生产者共源接线（源码检查点，浏览器未验）
+
+权威与影响：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/lib/useVoiceNoteRecorder.ts::useVoiceNoteRecorder`、
+`desktop/src/features/messages/lib/voiceNoteWav.ts::encodeVoiceNoteWav`、
+`desktop/src/features/messages/ui/VoiceNoteRecorder.tsx::VoiceNoteRecorder`、
+`desktop/src/features/messages/ui/useComposerVoiceNote.tsx::useComposerVoiceNote`
+迁到 `client-kit/ts/platform/src/react/composer/features/messages/` 同名四模块。
+原 Native `MessageComposer` 与 Web `ChannelPane.tsx::Composer` 实际消费共享 hook，
+原 Native 四实现已删除并同步来源登记；无未来兼容副本、无共享层反向 Tauri 依赖。
+WAV 除来源注释外字节 hash 与官方 blob `0f41c88da77e9165226c8138b69fae8d5ae4048e` 相同；
+其余模块的固定官方全文差异见本批 `official-four-modules.diff`，不宣称全 Composer 一致。
+
+允许差异：原错误、录音 legend／按钮词条沿同一 TS 权威默认中文／英文，Dart 同源生成
+新增 13 keys，reason 词条原件 cmp 0。共享媒体只读实际 pending／queued Files 与 uploadFile；
+Native 队列保留原语义，Web queued 仅是正在真实 BFF 上传且尚未得到回执的 File，
+入／出均在原 upload 的开始与 finally，按实际 owner 分区，不伪造已上传 imeta／空队列。
+原 Mic／完成／取消／波形组件、PCM WAV 编码与时长限制不重设计、不另设阈值。
+
+副作用与异常：DD-75 Browser 仍只调用既有 `bff-client.ts::uploadMedia`／各目的地 onUpload，
+不持钥／裸连 Relay；Native 保留自己的原本机签名媒体链。无 schema、API 或执行权威变化。
+实际共享 cancel／stop 保留权限请求、Strict Mode、卸载、迟到解码及 editTargetId fencing；
+Web 上传 owner 包含 workspace／actor／draft／edit，旧回执不能追加进新草稿，
+录音与待回执期间发送禁用，原独占语音附件判断覆盖 paste／drop／file input。
+确定拒绝与 UNKNOWN 沿原媒体消费者区分；缺回执不生成卡片、不伪装成功、不自动重传。
+HTTP／设备不支持 getUserMedia 沿原不可用错误，不添加浏览器 flag 或鉴权旁路。
+
+实际验证：复用 `kailo-agent-receipt-xvkujx`，inspect／cgroup 4 CPU、8 GiB，
+Node heap 3072；启动前 top 仅 sleep、host available 24 GiB、memory PSI 0；未新增环境。
+最终 `64825` exit 0：原 Native 录音 8＋WAV 3 共 11/11，
+shared／shared-test／Web／Native 四个 tsc 均 0；原格式六文件 0；同源生成 --check 0。
+原格式第一次 exit 1 的三处新增 import／换行已按原配置修正，不整份重排宿主文件。
+私有生产破坏 `76075`：WAV 头 RIFF→RIFX 触发原断言 1 fail／2 pass、exit 1；
+去除 editTargetId fence 触发真实迟到录音上传断言 1 fail、exit 1；两文件精确恢复 cmp 0，
+恢复原 11 项 exit 0，正式 13 个存在文件与候选 cmp 0、四删除路径双方确实不存在。
+memory.events 的旧 max=16751／oom=2／oom_kill=2 未增长，无本批 OOM。
+
+失败／未验：`88679` 与最终修正后的 `72347` Web Composer Vitest 均 worker 启动超时，
+0 case、exit 1，不计通过或生产负向命中；新五个 Web 实际消费者用例均未运行。
+第一次 Web tsc 的 node:buffer 类型错误已改为浏览器 FileReader 夹具，不加依赖，最终 tsc 0。
+本批无新 Playwright 截图、真实麦克风／HTTP 上传回执／Windows／Mobile 设备验收。
+线上仍 a816，不能用旧图证明本批；原 GIF、setPendingImetaWhenIdle／对应 paste 消费者等
+既有缺项保留。无 full／bundle／镜像／安装包／部署，本批源码冻结交 root 提交。
+
+交接：17 个源／原检查／生成／来源路径 `+945/-686`，不含其它继承 dirty 或 checkpoint 删除。
+证据目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/web-voice-20261009.5QxZOG/` 的原 command／正负／恢复 logs、
+`source-sha256.txt` 与 `owned-source.patch`；源码 patch SHA256
+`84f176cbe863a6528c8a13dee3ec0ca74880aa6c09695543dcfb50ae2319ce94`。
+本批四模块归共享迁移及逐项 i18n／宿主接缝，不用其替代全树逐项授权或实际功能验收；
+历史 a816 全量账 5195 官方／5314 union／1976 相同／112 共享／3226 未证恢复队列
+仍只是历史比较点，3226 不是已实证功能故障数，也不是本批当前 main 全量完成量。

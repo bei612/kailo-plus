@@ -49,7 +49,7 @@ import { ComposerReplyBanner } from "./ComposerReplyBanner";
 import { ComposerAttachments, DropZoneOverlay } from "./ComposerAttachments";
 import { MessageComposerAutocompletes } from "./MessageComposerAutocompletes";
 import { ComposerUploadProgressPill } from "./ComposerUploadProgressPill";
-import { useComposerVoiceNote } from "./useComposerVoiceNote";
+import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
 import { useMentionSendFlow } from "./useMentionSendFlow";
 import { useComposerMentionPicker } from "./useComposerMentionPicker";
 import { useComposerAttachmentSpoilers } from "./useComposerAttachmentSpoilers";

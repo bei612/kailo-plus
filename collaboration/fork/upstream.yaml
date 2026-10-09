@@ -57,6 +57,11 @@ remove_paths:
   - desktop/src/features/settings/ui/AppearanceSettingsControls.tsx
   # Original picker selection and popover surface are shared by Web and Desktop.
   - desktop/src/features/messages/lib/useMentionSelection.ts
+  # Original recorder, WAV encoder, waveform and composer hook now share client-kit implementations.
+  - desktop/src/features/messages/lib/useVoiceNoteRecorder.ts
+  - desktop/src/features/messages/lib/voiceNoteWav.ts
+  - desktop/src/features/messages/ui/VoiceNoteRecorder.tsx
+  - desktop/src/features/messages/ui/useComposerVoiceNote.tsx
   # Original copy resolver now shared; both hosts consume useMessageMentionClipboard.
   - desktop/src/features/messages/lib/useMessageMentionIdentities.ts
   # Original code-block clipboard is shared; Native UI injects its host fallback.

@@ -1,3 +1,4 @@
+// Shared migration from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/lib/voiceNoteWav.ts.
 const DEFAULT_OUTPUT_SAMPLE_RATE = 24_000;
 
 function writeAscii(view: DataView, offset: number, value: string) {

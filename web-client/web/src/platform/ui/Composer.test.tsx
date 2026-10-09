@@ -22,6 +22,7 @@ import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/f
 import {resetPersistentAgentAudienceStore} from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import {setKeepMentionedAgentsPinned} from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
 import {loadComposerAgentDirectory} from "@client-kit/platform/react/composer/features/messages/lib/composerAgentDirectory";
+import { toast } from "sonner";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -73,6 +74,128 @@ async function type(input: HTMLElement, value: string) {
   });
 }
 
+function voiceDevices() {
+  // JSDOM supplies FileReader, but not the modern Blob.arrayBuffer API.
+  const readArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+      else reject(new Error("FileReader did not return audio bytes"));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+  class RecordingBlob extends Blob { arrayBuffer() { return readArrayBuffer(this); } }
+  class RecordingFile extends File { arrayBuffer() { return readArrayBuffer(this); } }
+  const track = { stop: vi.fn() };
+  const stream = { getTracks: () => [track] };
+  const getUserMedia = vi.fn().mockResolvedValue(stream);
+  class Recorder extends EventTarget {
+    static isTypeSupported() { return true; }
+    mimeType = "audio/webm";
+    state = "inactive";
+    start() { this.state = "recording"; }
+    stop() {
+      if (this.state === "inactive") return;
+      this.state = "inactive";
+      const data = new Event("dataavailable");
+      Object.defineProperty(data, "data", {value: new RecordingBlob([new Uint8Array([1])], {type: this.mimeType})});
+      this.dispatchEvent(data);
+      this.dispatchEvent(new Event("stop"));
+    }
+  }
+  class Audio {
+    close() { return Promise.resolve(); }
+    createAnalyser() { return {fftSize:0,smoothingTimeConstant:0,getByteTimeDomainData() {}}; }
+    createMediaStreamSource() { return {connect() {}}; }
+    async decodeAudioData() {
+      return {numberOfChannels:1,sampleRate:24000,duration:0.01,getChannelData:()=>new Float32Array(240)};
+    }
+  }
+  vi.stubGlobal("MediaRecorder", Recorder);
+  vi.stubGlobal("AudioContext", Audio);
+  vi.stubGlobal("Blob", RecordingBlob);
+  vi.stubGlobal("File", RecordingFile);
+  const microphoneNavigator = Object.create(navigator);
+  Object.defineProperty(microphoneNavigator, "mediaDevices", {value: {getUserMedia}});
+  vi.stubGlobal("navigator", microphoneNavigator);
+  return {track, getUserMedia};
+}
+
+it("the real Web voice toolbar records one original WAV, uploads through its existing media host and only publishes after acknowledgement", async () => {
+  const {track, getUserMedia} = voiceDevices();
+  let acknowledge: ((value: {sha256:string;size:number;type:string;url:string}) => void) | undefined;
+  const upload = vi.fn((_file: File) => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve => {acknowledge=resolve;}));
+  state.upload.mockImplementation((workspace: string, file: File) => {expect(workspace).toBe("workspace-a"); return upload(file);});
+  const publish = vi.fn().mockResolvedValue({eventId:"voice-message",operationId:"voice-operation"});
+  const host = await render(<Composer workspaceId="workspace-a" draftIdentity="human-a" draftKey="voice" onPublish={publish}/>);
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="Record voice note"]')!);
+  expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({audio:{autoGainControl:true,echoCancellation:true,noiseSuppression:true}});
+  expect(host.querySelector('[data-testid="voice-note-recorder"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="Discard voice note"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="finish-voice-note"]')).not.toBeNull();
+  expect(host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!.disabled).toBe(true);
+  expect(publish).not.toHaveBeenCalled();
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="finish-voice-note"]')!);
+  await settle();
+  expect(track.stop).toHaveBeenCalledTimes(1);
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(state.upload).toHaveBeenCalledTimes(1);
+  const recording = upload.mock.calls[0]![0];
+  expect(recording.name).toMatch(/^voice-note-\d+\.wav$/);
+  expect(recording.type).toBe("audio/wav");
+  expect(new TextDecoder().decode((await recording.arrayBuffer()).slice(0,4))).toBe("RIFF");
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.disabled).toBe(true);
+  expect(host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!.disabled).toBe(true);
+  expect(host.querySelector('[data-testid="remove-composer-voice-note"]')).toBeNull();
+  expect(publish).not.toHaveBeenCalled();
+  const descriptor = {sha256:"a".repeat(64),size:recording.size,type:recording.type,url:`https://relay.invalid/media/${"a".repeat(64)}.wav`};
+  await act(async () => acknowledge!(descriptor)); await settle();
+  expect(host.querySelector('[data-testid="remove-composer-voice-note"]')).not.toBeNull();
+  expect(host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!.disabled).toBe(true);
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0]![1]).toEqual([{...descriptor,filename:recording.name,spoiler:false}]);
+  expect(host.querySelector('[data-testid="remove-composer-voice-note"]')).toBeNull();
+});
+
+it("the real Web discard control releases the microphone without uploading or publishing", async () => {
+  const {track} = voiceDevices();
+  const upload = vi.fn(); const publish = vi.fn();
+  const host = await render(<Composer draftIdentity="human-a" draftKey="voice-discard" onUpload={upload} onPublish={publish}/>);
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="Record voice note"]')!);
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="Discard voice note"]')!);
+  expect(track.stop).toHaveBeenCalledTimes(1);
+  expect(upload).not.toHaveBeenCalled(); expect(publish).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull();
+});
+
+it("a Web recording upload acknowledgement from an old actor cannot enter the next actual draft", async () => {
+  voiceDevices();
+  let acknowledge: ((value:{sha256:string;size:number;type:string;url:string})=>void) | undefined;
+  const upload = vi.fn((_file: File) => new Promise<{sha256:string;size:number;type:string;url:string}>(resolve=>{acknowledge=resolve;}));
+  const host = await render(<Composer draftIdentity="human-a" draftKey="same-draft" onUpload={upload}/>);
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="Record voice note"]')!);
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="finish-voice-note"]')!); await settle();
+  expect(upload).toHaveBeenCalledTimes(1);
+  await rerender(<Composer draftIdentity="human-b" draftKey="same-draft" onUpload={upload}/>); await settle();
+  await act(async () => acknowledge!({sha256:"b".repeat(64),size:524,type:"audio/wav",url:`https://relay.invalid/media/${"b".repeat(64)}.wav`}));
+  await settle();
+  expect(host.querySelector('[data-testid="remove-composer-voice-note"]')).toBeNull();
+  expect(loadDraftEntry("same-draft")?.pendingImeta ?? []).toEqual([]);
+});
+
+it.each(["en","zh-CN"] as const)("Web unsupported microphone state keeps the original error in %s without media writes", async locale => {
+  setLocale(locale); vi.stubGlobal("MediaRecorder", undefined);
+  const error = vi.spyOn(toast,"error");
+  const upload = vi.fn();
+  const host = await render(<Composer draftIdentity="human-a" draftKey="voice-unavailable" onUpload={upload}/>);
+  await click(host.querySelector<HTMLButtonElement>(locale === "en" ? '[aria-label="Record voice note"]' : '[aria-label="录制语音"]')!);
+  expect(error).toHaveBeenCalledWith(locale === "en" ? "Voice recording is not available in this environment." : "当前环境不支持录音。");
+  expect(upload).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull();
+});
+
 function paste(host: HTMLElement, text: string, html: string) {
   // jsdom has no system pasteboard; only the browser event payload is supplied.
   class PasteData {
@@ -103,6 +226,7 @@ const state = vi.hoisted(() => ({
   next: false,
   more: vi.fn(),
   publish: vi.fn(),
+  upload: vi.fn(),
   principal: "human-a",
 }));
 vi.mock("@/platform/bff-client", () => ({
@@ -122,7 +246,7 @@ vi.mock("@/platform/bff-client", () => ({
   publishMessage: state.publish,
   markRead: vi.fn(),
   openStream: vi.fn(),
-  uploadMedia: vi.fn(),
+  uploadMedia: state.upload,
   fetchUserState: vi.fn(),
   mediaUrl: (workspace: string, sha256: string) => `/api/v1/workspaces/${workspace}/media/${sha256}`,
 }));
@@ -183,6 +307,7 @@ beforeEach(() => {
   state.success = true;
   state.next = false;
   state.more.mockReset();
+  state.upload.mockReset();
   state.publish
     .mockReset()
     .mockResolvedValue({ eventId: "event", operationId: "operation" });

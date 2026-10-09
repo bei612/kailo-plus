@@ -75,6 +75,7 @@ import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, 
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
+import { useComposerVoiceNote } from "@client-kit/platform/react/composer/features/messages/ui/useComposerVoiceNote";
 import { MAX_TRACKED_INTENTS, useMentionPasteBinding } from "@client-kit/platform/react/composer/features/messages/lib/mentionPasteBinding";
 import { trimMapToSize } from "@client-kit/platform/react/composer/shared/lib/trimMapToSize";
 import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
@@ -820,8 +821,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
   const intent = useRef<{ key: string; signature: string } | null>(null);
-  const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey]);
+  const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey, editTarget?.id]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
+  // Files awaiting this owner's real BFF upload receipt are not yet imeta.
+  const queuedAttachmentsRef = useMemo(() => ({ current: [] as { file: File }[] }), [owner]);
   const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.descriptor, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
     setPending((items) => items.filter((item) => item.descriptor.url !== url));
@@ -876,6 +879,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     async (files: FileList | readonly File[] | null) => {
       for (const file of Array.from(files ?? [])) {
         if (!owner.active) return;
+        const queuedAttachment = { file };
+        queuedAttachmentsRef.current.push(queuedAttachment);
         setUploading((n) => n + 1);
         try {
           if (!onUpload && !workspaceId) throw new Error("Message destination is unavailable.");
@@ -891,11 +896,12 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
               : t("platform.uploadFailed"),
           );
         } finally {
+          queuedAttachmentsRef.current = queuedAttachmentsRef.current.filter((entry) => entry !== queuedAttachment);
           if (owner.active) setUploading((n) => n - 1);
         }
       }
     },
-    [workspaceId, onUpload, owner],
+    [workspaceId, onUpload, owner, queuedAttachmentsRef],
   );
 
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -904,6 +910,20 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     if (pressed) setIsEmojiPickerOpen(false);
     setIsFormattingOpen(pressed);
   }, []);
+  const pendingImetaRef = useRef<readonly ImetaMedia[]>([]);
+  pendingImetaRef.current = pending.map(asBlob);
+  const uploadVoiceFile = useCallback((file: File) => attach([file]), [attach]);
+  const voiceNote = useComposerVoiceNote({
+    // Original recording context is also partitioned by this BFF actor/scope.
+    draftKey: JSON.stringify([workspaceId, draftIdentity, draftKey]),
+    editTargetId: editTarget?.id ?? null,
+    media: { pendingImetaRef, queuedAttachmentsRef, uploadFile: uploadVoiceFile },
+    setEmojiPickerOpen: setIsEmojiPickerOpen,
+    setFormattingOpen: setIsFormattingOpen,
+  });
+  const attachFilesWhenIdle = useCallback(async (files: FileList | readonly File[] | null) => {
+    for (const file of Array.from(files ?? [])) await voiceNote.uploadFileWhenIdle(file);
+  }, [voiceNote.uploadFileWhenIdle]);
   const sendRef = useRef<() => void>(() => {});
   const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
   onEditLastOwnMessageRef.current = onEditLastOwnMessage;
@@ -1016,7 +1036,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   }, [richText.editor]);
   useComposerPasteHandler({ editor: richText.editor,
     bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
-    scrollToBottom: scrollAfterPaste, uploadFile: (file) => attach([file]),
+    scrollToBottom: scrollAfterPaste, uploadFile: voiceNote.uploadFileWhenIdle,
   });
   const linkEditor = useLinkEditor(richText, {
     openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
@@ -1081,7 +1101,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
   const send = useCallback(async () => {
-    if (sending || owner.sending || disabled || uploading > 0 || !mentionVerified) return;
+    if (sending || owner.sending || disabled || uploading > 0 || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
     if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
       if (!intent.current) onRequestEmptyEditDelete(editTarget);
       else {setProblemNeutral(true);setProblem(t("platform.sendUnknown", {operation: ""}));}
@@ -1207,13 +1227,13 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify]);
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
   useEffect(() => {
     if (!autoSendDraftKey || autoSendDraftKey !== draftKey || autoSent.current === owner ||
-        loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || !mentionVerified ||
+        loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified ||
         (!richText.getMarkdown().trim() && pending.length === 0)) return;
     autoSent.current = owner;
     if (intent.current) {
@@ -1224,7 +1244,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       return;
     }
     send();
-  }, [autoSendDraftKey, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, mentionVerified, pending.length, richText.getMarkdown, send]);
+  }, [autoSendDraftKey, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, voiceNote.status, mentionVerified, pending.length, richText.getMarkdown, send]);
 
   // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
   const handleCaptureSelection = useCallback(() => {}, []);
@@ -1242,11 +1262,12 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       onSubmit: (event) => { event.preventDefault(); send(); },
       onPasteCapture: (event) => {
         if (disabled || sending || !event.clipboardData.files.length) return;
-        event.preventDefault(); void attach(event.clipboardData.files);
+        event.preventDefault();
+        void attachFilesWhenIdle(event.clipboardData.files);
       },
-      onDragOver: (event) => { if (!disabled && !sending && event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } },
+      onDragOver: (event) => { if (!disabled && !sending && voiceNote.acceptsAttachment && event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } },
       onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
-      onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files); } },
+      onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attachFilesWhenIdle(event.dataTransfer.files); } },
     }}
     onEditorKeyDown={(event) => {
       if (handleAlwaysAddressShortcut(event)) return;
@@ -1272,13 +1293,18 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
       editor: richText.editor, formattingDisabled: disabled || sending, isEmojiPickerOpen, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
+      isVoiceNoteProcessing: voiceNote.status !== "recording",
+      isVoiceNoteRecording: voiceNote.status !== "idle",
+      hasVoiceNoteAttachment: voiceNote.hasAttachment,
+      voiceNoteRecorder: voiceNote.recorderElement,
       onEmojiPickerOpenChange: setIsEmojiPickerOpen,
       onFormattingToggle: handleFormattingToggle,
       onCaptureSelection: handleCaptureSelection,
       onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
-      onPaperclip: () => picker.current?.click(),
-      sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0),
+      onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
+      onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
+      sendDisabled: disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0),
     }}>
       {dragging ? <DropZoneOverlay /> : null}
       {mentionPeople || workspaceId ?<div className={surface === "forum" ? undefined : "relative"}><MentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
@@ -1312,9 +1338,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
           multiple
           hidden
           data-testid="attach-input"
-          disabled={disabled || sending}
+          disabled={disabled || sending || !voiceNote.acceptsAttachment}
           onChange={(e) => {
-            void attach(e.target.files);
+            void attachFilesWhenIdle(e.target.files);
             e.target.value = "";
           }}
         />
