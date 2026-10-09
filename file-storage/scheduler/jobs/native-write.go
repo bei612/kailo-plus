@@ -17,6 +17,20 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 )
 
+// This is the original VersionAction identifier. The controlled write Job
+// freezes that sole action but has no scheduler trigger or automatic dispatch.
+const NativeVersionActionID = "actions.versioning.create"
+
+func NativeWriteJob(id string) *jobproto.Job {
+	job := NativeReadJob(id)
+	job.Actions = []*jobproto.Action{{ID: NativeVersionActionID}}
+	return job
+}
+
+func NativeWriteJobMatches(job *jobproto.Job, id string) bool {
+	return nativeActionJobMatches(job, NativeWriteJob(id))
+}
+
 // The existing native stream is bounded by the operator's response budget.
 // Exhaustion/unavailable lookup is not evidence that an operation never ran.
 func ReadNativeWriteTask(ctx context.Context, job, key string, limit int64) (*jobproto.Task, error) {

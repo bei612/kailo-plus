@@ -69,17 +69,7 @@ func (h *Handler) executeNativePromote(req *restful.Request, resp *restful.Respo
 	}
 	client := jobs.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
 	job, err := client.GetJob(ctx, &jobs.GetJobRequest{JobID: delivery.Write.NativeJobID})
-	if err != nil || job.GetJob().GetID() != delivery.Write.NativeJobID || job.GetJob().GetInactive() {
-		return refused
-	}
-	// The original version action must actually belong to this native Job.
-	hasVersionAction := false
-	for _, action := range job.GetJob().GetActions() {
-		if action.GetID() == (&versions.VersionAction{}).GetName() {
-			hasVersionAction = true
-		}
-	}
-	if !hasVersionAction {
+	if err != nil || !jobstore.NativeWriteJobMatches(job.GetJob(), delivery.Write.NativeJobID) {
 		return refused
 	}
 	task, err := jobstore.ReadNativeWriteTask(ctx, delivery.Write.NativeJobID, key[0], delivery.MaxResponseBytes)

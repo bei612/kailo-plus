@@ -72,7 +72,7 @@ func (c *VersionAction) GetParametersForm(context.Context) *forms.Form {
 }
 
 var (
-	versionActionName = "actions.versioning.create"
+	versionActionName = jobstore.NativeVersionActionID
 	router            nodes.Client
 )
 

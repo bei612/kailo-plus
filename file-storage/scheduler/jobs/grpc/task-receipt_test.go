@@ -47,8 +47,18 @@ func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		job := &jobproto.Job{ID: "existing-version-job", Owner: "native-user"}
-		if err = store.PutJob(job); err != nil {
+		ctx = config.WithStubStore(ctx)
+		if err := config.Set(ctx, map[string]interface{}{"requestTimeout": "1m", "write": map[string]interface{}{
+			"nativeJobId": "existing-version-job", "actionVersion": 1, "nativeType": "native-file",
+			"resultExposurePolicyId": "99e784d0-58d7-4d2e-8b04-d2bdc3f8d7f1", "resultExposurePolicyVersion": 1,
+		}}, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+			t.Fatal(err)
+		}
+		if err := NewJobsHandler(ctx, "native-write-task").EnsureNativeActionJobs(ctx); err != nil {
+			t.Fatal(err)
+		}
+		job, err := store.GetJob("existing-version-job", jobproto.TaskStatus_Unknown)
+		if err != nil || !jobstore.NativeWriteJobMatches(job, "existing-version-job") {
 			t.Fatal(err)
 		}
 		claims := map[string]interface{}{"tenant_id": "tenant", "actor_principal_id": "actor", "initiating_human_principal_id": "actor", "action_execution_id": "execution", "operation_id": "operation", "action_key": "file_storage.write@v1", "target_id": "resource", "target_type": "RESOURCE", "action_definition_version": float64(1), "result_exposure_policy_id": "policy", "result_exposure_policy_version": float64(1), "jti": "transient", "authorization_min_zed_token": "transient"}
@@ -60,12 +70,12 @@ func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
 		if err = store.ClaimTask(task); err != nil {
 			t.Fatal(err)
 		}
-		relation, _ := json.Marshal([]string{task.ID, "actions.versioning.create", "native-node"})
+		relation, _ := json.Marshal([]string{task.ID, jobstore.NativeVersionActionID, "native-node"})
 		digest := sha256.Sum256(relation)
 		revision := &tree.ContentRevision{VersionId: hex.EncodeToString(digest[:]), OwnerUuid: "native-user-uuid", ETag: "native-etag", Size: 0, Location: &tree.Node{Uuid: "version-location"}}
 		body, _ := protojson.Marshal(revision)
 		task.Status, task.StartTime, task.EndTime = jobproto.TaskStatus_Finished, 1, 2
-		task.ActionsLogs = append(task.ActionsLogs, &jobproto.ActionLog{Action: &jobproto.Action{ID: "actions.versioning.create"}, OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeVersionResult: "true"}}}}})
+		task.ActionsLogs = append(task.ActionsLogs, &jobproto.ActionLog{Action: &jobproto.Action{ID: jobstore.NativeVersionActionID}, OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeVersionResult: "true"}}}}})
 		if err = store.PutTask(task); err != nil {
 			t.Fatal(err)
 		}
@@ -459,7 +469,7 @@ func (s *nativeReadJobStore) ClaimJob(ctx context.Context, job *jobproto.Job) er
 	return nil
 }
 
-func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
+func TestNativeActionJobStartupConsumesOriginalDelivery(t *testing.T) {
 	var store *nativeReadJobStore
 	var first sync.Once
 	state := &nativeReadJobState{}
@@ -490,6 +500,138 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				"nativeJobId": id, "usageMeasurements": []interface{}{},
 			}}
 		}
+		writeDelivery := func(id string) map[string]interface{} {
+			return map[string]interface{}{"requestTimeout": "1m", "write": map[string]interface{}{
+				"nativeJobId": id, "actionVersion": 1, "nativeType": "native-file",
+				"resultExposurePolicyId": "99e784d0-58d7-4d2e-8b04-d2bdc3f8d7f1", "resultExposurePolicyVersion": 1,
+			}}
+		}
+		for _, scenario := range []string{"admission-only", "empty-optional-id", "spaces-id", "wrong-id-type", "missing-action-version", "unknown-action-version", "missing-native-type", "padded-native-type", "unknown-policy", "missing-policy-version", "same-read-write-id", "missing-deadline"} {
+			t.Run("write-"+scenario, func(t *testing.T) {
+				value := writeDelivery("write-rejected-" + scenario)
+				write := value["write"].(map[string]interface{})
+				switch scenario {
+				case "admission-only":
+					delete(write, "nativeJobId")
+				case "empty-optional-id":
+					write["nativeJobId"] = ""
+				case "spaces-id":
+					write["nativeJobId"] = " padded "
+				case "wrong-id-type":
+					write["nativeJobId"] = 1
+				case "missing-action-version":
+					delete(write, "actionVersion")
+				case "unknown-action-version":
+					write["actionVersion"] = "unknown"
+				case "missing-native-type":
+					delete(write, "nativeType")
+				case "padded-native-type":
+					write["nativeType"] = " native-file "
+				case "unknown-policy":
+					write["resultExposurePolicyId"] = "unknown"
+				case "missing-policy-version":
+					delete(write, "resultExposurePolicyVersion")
+				case "same-read-write-id":
+					value["read"] = delivery(write["nativeJobId"].(string))["read"]
+				case "missing-deadline":
+					delete(value, "requestTimeout")
+				}
+				// A valid Read beside bad Write must not be inserted first.
+				if scenario != "admission-only" && scenario != "empty-optional-id" && scenario != "same-read-write-id" {
+					value["read"] = delivery("read-beside-" + scenario)["read"]
+				}
+				configure(t, value)
+				before := store.claims.Load()
+				err := handler.EnsureNativeActionJobs(ctx)
+				if (scenario == "admission-only" || scenario == "empty-optional-id") != (err == nil) || store.claims.Load() != before {
+					t.Fatalf("invalid/optional write configuration changed a native Job: err=%v claims=%d", err, store.claims.Load()-before)
+				}
+			})
+		}
+		t.Run("read-and-write-create-and-restart-without-dispatch", func(t *testing.T) {
+			value := writeDelivery("paired-write-job")
+			value["read"] = delivery("paired-read-job")["read"]
+			configure(t, value)
+			previous := broker.Default()
+			broker.Register(&taskReceiptBroker{Broker: previous, publish: func(string, proto.Message) { t.Error("startup dispatched a native event") }})
+			defer broker.Register(previous)
+			before := store.claims.Load()
+			if err := handler.EnsureNativeActionJobs(ctx); err != nil || store.claims.Load() != before+2 {
+				t.Fatal("controlled jobs were not both create-only persisted", err)
+			}
+			for _, expected := range []*jobproto.Job{jobstore.NativeReadJob("paired-read-job"), jobstore.NativeWriteJob("paired-write-job")} {
+				actual, err := store.DAO.GetJob(expected.ID, jobproto.TaskStatus_Unknown)
+				if err != nil || !nativeActionJobMatches(actual, expected) || actual.CreatedAt == 0 || actual.ModifiedAt != actual.CreatedAt {
+					t.Fatal("controlled native Job has incompatible semantics", actual, err)
+				}
+				loaded, err := store.DAO.GetJob(expected.ID, jobproto.TaskStatus_Any)
+				if err != nil || len(loaded.Tasks) != 0 {
+					t.Fatal("bootstrap dispatched a native Task", err)
+				}
+			}
+			before = store.claims.Load()
+			if err := handler.EnsureNativeActionJobs(ctx); err != nil || store.claims.Load() != before || store.puts.Load() != 0 {
+				t.Fatal("restart replaced or dispatched controlled native Jobs", err)
+			}
+		})
+		for _, change := range []struct {
+			name   string
+			change func(*jobproto.Job)
+		}{
+			{"auto-start", func(j *jobproto.Job) { j.AutoStart = true }},
+			{"inactive", func(j *jobproto.Job) { j.Inactive = true }},
+			{"events", func(j *jobproto.Job) { j.EventNames = []string{"NODE_CREATE"} }},
+			{"schedule", func(j *jobproto.Job) { j.Schedule = &jobproto.Schedule{Iso8601Schedule: "delivered-original-schedule"} }},
+			{"unknown-action", func(j *jobproto.Job) { j.Actions[0].ID = "unknown-native-action" }},
+			{"extra-action", func(j *jobproto.Job) {
+				j.Actions = append(j.Actions, &jobproto.Action{ID: jobstore.NativeVersionActionID})
+			}},
+			{"action-parameters", func(j *jobproto.Job) { j.Actions[0].Parameters = map[string]string{"node": "untrusted-node"} }},
+		} {
+			t.Run("write-existing-"+change.name, func(t *testing.T) {
+				id := "write-drift-" + change.name
+				job := jobstore.NativeWriteJob(id)
+				change.change(job)
+				if err := store.DAO.PutJob(job); err != nil {
+					t.Fatal(err)
+				}
+				value := writeDelivery(id)
+				value["read"] = delivery("read-with-write-drift-" + change.name)["read"]
+				configure(t, value)
+				before := store.claims.Load()
+				if err := handler.EnsureNativeActionJobs(ctx); !cellserrors.Is(err, cellserrors.StatusConflict) || store.claims.Load() != before {
+					t.Fatal("incompatible Write Job accepted or partial Read Job inserted", err)
+				}
+				actual, err := store.DAO.GetJob(id, jobproto.TaskStatus_Unknown)
+				if err != nil || !proto.Equal(actual, job) || jobstore.NativeWriteJobMatches(actual, id) {
+					t.Fatal("drifted Write Job overwritten or executable", err)
+				}
+			})
+		}
+		for _, mode := range []string{"read-error", "claim-error", "claim-ACK-lost", "readback-error"} {
+			t.Run("write-"+mode, func(t *testing.T) {
+				id := "write-uncertain-" + mode
+				configure(t, writeDelivery(id))
+				store.mode = mode
+				store.readCalls.Store(0)
+				if err := handler.EnsureNativeActionJobs(ctx); err == nil {
+					t.Fatal("unknown Write Job persistence was reported as startup success")
+				}
+				store.mode = ""
+				before := store.claims.Load()
+				persisted, err := store.DAO.GetJob(id, jobproto.TaskStatus_Unknown)
+				if mode == "claim-ACK-lost" || mode == "readback-error" {
+					if err != nil || !jobstore.NativeWriteJobMatches(persisted, id) {
+						t.Fatal("original persisted Write Job was lost", err)
+					}
+					if err := handler.EnsureNativeActionJobs(ctx); err != nil || store.claims.Load() != before {
+						t.Fatal("Write Job was reinserted after unknown ACK", err)
+					}
+				} else if !cellserrors.Is(err, cellserrors.JobNotFound) {
+					t.Fatal("failed original probe or insert created a Write Job", err)
+				}
+			})
+		}
 		for _, scenario := range []string{"absent", "independent-without-read", "blank-id", "spaces-id", "missing-meters", "null-meters", "duplicate-meter", "unknown-meter-source", "missing-deadline", "unknown-deadline"} {
 			t.Run(scenario, func(t *testing.T) {
 				value := delivery("rejected-" + scenario)
@@ -518,7 +660,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				}
 				configure(t, value)
 				before := store.claims.Load()
-				err := handler.EnsureNativeReadJob(ctx)
+				err := handler.EnsureNativeActionJobs(ctx)
 				if (scenario == "absent" || scenario == "independent-without-read") != (err == nil) || store.claims.Load() != before {
 					t.Fatalf("missing/invalid delivery created native Job: err=%v claims=%d", err, store.claims.Load()-before)
 				}
@@ -529,7 +671,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 			previous := broker.Default()
 			broker.Register(&taskReceiptBroker{Broker: previous, publish: func(string, proto.Message) { t.Error("startup dispatched a native event") }})
 			defer broker.Register(previous)
-			if err := handler.EnsureNativeReadJob(ctx); err != nil {
+			if err := handler.EnsureNativeActionJobs(ctx); err != nil {
 				t.Fatal(err)
 			}
 			created, err := store.DAO.GetJob("read-job", jobproto.TaskStatus_Unknown)
@@ -537,7 +679,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				t.Fatal("startup did not persist the original native Job", created, err)
 			}
 			before := store.claims.Load()
-			if err := handler.EnsureNativeReadJob(ctx); err != nil || store.claims.Load() != before || store.puts.Load() != 0 {
+			if err := handler.EnsureNativeActionJobs(ctx); err != nil || store.claims.Load() != before || store.puts.Load() != 0 {
 				t.Fatal("restart overwrote/reinserted a native Job", err)
 			}
 			reloaded, err := store.DAO.GetJob("read-job", jobproto.TaskStatus_Any)
@@ -569,7 +711,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				}
 				configure(t, delivery(id))
 				before := store.claims.Load()
-				if err := handler.EnsureNativeReadJob(ctx); !cellserrors.Is(err, cellserrors.StatusConflict) || store.claims.Load() != before {
+				if err := handler.EnsureNativeActionJobs(ctx); !cellserrors.Is(err, cellserrors.StatusConflict) || store.claims.Load() != before {
 					t.Fatal("drifted native Job accepted or replaced", err)
 				}
 				actual, err := store.DAO.GetJob(id, jobproto.TaskStatus_Unknown)
@@ -585,7 +727,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					if err := handler.EnsureNativeReadJob(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+					if err := handler.EnsureNativeActionJobs(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 						t.Error(err)
 					}
 				}()
@@ -622,7 +764,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 				configure(t, delivery(id))
 				store.mode = mode
 				store.readCalls.Store(0)
-				if err := handler.EnsureNativeReadJob(ctx); err == nil {
+				if err := handler.EnsureNativeActionJobs(ctx); err == nil {
 					t.Fatal("unknown persistence was reported as successful startup")
 				}
 				store.mode = ""
@@ -632,7 +774,7 @@ func TestNativeReadJobStartupConsumesOriginalDelivery(t *testing.T) {
 					if err != nil || !jobstore.NativeReadJobMatches(persisted, id) {
 						t.Fatal("actual original persisted Job was lost", err)
 					}
-					if err := handler.EnsureNativeReadJob(ctx); err != nil || store.claims.Load() != before {
+					if err := handler.EnsureNativeActionJobs(ctx); err != nil || store.claims.Load() != before {
 						t.Fatal("persisted Job was reinserted after unknown ACK", err)
 					}
 				} else if !cellserrors.Is(err, cellserrors.JobNotFound) {

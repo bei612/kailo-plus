@@ -65,24 +65,42 @@ func NewJobsHandler(runtime context.Context, serviceName string) *JobsHandler {
 // JOBS STORE
 /////////////////
 
-// EnsureNativeReadJob consumes only the already delivered native Read config.
+// EnsureNativeActionJobs consumes one already delivered native config snapshot.
 // It neither admits an action nor dispatches a Task. Unknown persistence and
 // incompatible existing jobs stop startup instead of overwriting native state.
-func (j *JobsHandler) EnsureNativeReadJob(ctx context.Context) error {
+func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 	value := config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform")
 	if value.Get() == nil {
 		return nil
 	}
-	var delivery auth.NativeActorDelivery
+	var delivery auth.NativeWriteDelivery
 	if err := value.Scan(&delivery); err != nil {
 		return errors.WithStack(errors.InvalidParameters)
 	}
-	if delivery.Read == nil {
+	// An optional, absent write Job preserves the original admission-only
+	// delivery. The native execute consumer still refuses without that Job ID.
+	if delivery.Read == nil && delivery.Write.NativeJobID == "" {
 		return nil
 	}
-	read := delivery.Read
+	var expected []*proto.Job
+	if delivery.Read != nil {
+		if delivery.Read.Validate() != nil {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		expected = append(expected, jobs.NativeReadJob(delivery.Read.NativeJobID))
+	}
+	write := delivery.Write
+	if write.NativeJobID != "" {
+		if strings.TrimSpace(write.NativeJobID) != write.NativeJobID || write.ActionVersion <= 0 ||
+			write.NativeType == "" || strings.TrimSpace(write.NativeType) != write.NativeType ||
+			!auth.NativeActorUUID(write.ResultExposurePolicyID) || write.ResultExposurePolicyVersion <= 0 ||
+			(delivery.Read != nil && delivery.Read.NativeJobID == write.NativeJobID) {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		expected = append(expected, jobs.NativeWriteJob(write.NativeJobID))
+	}
 	deadline, err := time.ParseDuration(delivery.RequestTimeout)
-	if err != nil || deadline <= 0 || read.Validate() != nil {
+	if err != nil || deadline <= 0 {
 		return errors.WithStack(errors.InvalidParameters)
 	}
 	ctx, cancel := context.WithTimeout(ctx, deadline)
@@ -94,23 +112,47 @@ func (j *JobsHandler) EnsureNativeReadJob(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	prior, err := store.GetJob(read.NativeJobID, proto.TaskStatus_Unknown)
-	if errors.Is(err, errors.JobNotFound) {
-		job := jobs.NativeReadJob(read.NativeJobID)
+	// Validate every present Job before inserting any missing one. A drifted
+	// Write Job must not leave a newly created Read Job behind (or vice versa).
+	missing := make([]*proto.Job, 0, len(expected))
+	for _, job := range expected {
+		prior, err := store.GetJob(job.ID, proto.TaskStatus_Unknown)
+		if errors.Is(err, errors.JobNotFound) {
+			missing = append(missing, job)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !nativeActionJobMatches(prior, job) {
+			return errors.WithStack(errors.StatusConflict)
+		}
+	}
+	for _, job := range missing {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		job.CreatedAt = int32(time.Now().Unix())
 		job.ModifiedAt = job.CreatedAt
-		if err = store.ClaimJob(ctx, job); err != nil && !errors.Is(err, errors.StatusConflict) {
+		if err := store.ClaimJob(ctx, job); err != nil && !errors.Is(err, errors.StatusConflict) {
 			return err // even a lost insert ACK must not reach another writer
 		}
-		prior, err = store.GetJob(read.NativeJobID, proto.TaskStatus_Unknown)
-	}
-	if err != nil {
-		return err
-	}
-	if !jobs.NativeReadJobMatches(prior, read.NativeJobID) {
-		return errors.WithStack(errors.StatusConflict)
+		prior, err := store.GetJob(job.ID, proto.TaskStatus_Unknown)
+		if err != nil {
+			return err
+		}
+		if !nativeActionJobMatches(prior, job) {
+			return errors.WithStack(errors.StatusConflict)
+		}
 	}
 	return ctx.Err()
+}
+
+func nativeActionJobMatches(actual, expected *proto.Job) bool {
+	if len(expected.Actions) == 0 {
+		return jobs.NativeReadJobMatches(actual, expected.ID)
+	}
+	return jobs.NativeWriteJobMatches(actual, expected.ID)
 }
 
 func (j *JobsHandler) PutJob(ctx context.Context, request *proto.PutJobRequest) (*proto.PutJobResponse, error) {

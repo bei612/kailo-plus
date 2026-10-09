@@ -496,3 +496,92 @@ TMPDIR，Go 忽略 go.mod，未进入检查。`positive-final-input.log` 的 DAO
 Cells→WeKnora E2E、Windows/Mobile 验收。原 native Task/IO fixture 不证明用户已
 收到文件。完整 FILE_STORAGE 七项、write/delete/share、Task 退休与 HUMAN 结果消费
 仍有门禁，不因启动 Job 可生产而开放这些能力。继承 `deploy/compose.yaml` 不在本批。
+
+## 2026-10-09 同一受控投递的 Read/Write Job → 原 VersionAction 消费者
+
+原 `executeNativePromote` 已读取 `Write.nativeJobId`，但启动只生产 Read Job 和默认
+Jobs；控制面投递的 Write Job 没有真实生产者。本批原地将上节
+`EnsureNativeReadJob` 重构为 `EnsureNativeActionJobs`，删除旧函数并迁移原
+`InitDefaults/WithGRPC` 两个调用方，不再各自扫描配置或维护两套 bootstrap。
+
+四步影响说明：
+
+1. 权威为 `.design/07` §2.1/2.4、§5.2/8A、DD-89/93 与原 Task/Version 接缝。
+   固定官方 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 已只读核验
+   `data/versions/action-version.go::VersionAction.GetName/Init`、
+   `data/versions/grpc/jobs.go::GetVersioningJob`、
+   `data/versions/grpc/service/service.go::RegisterJobs` 和
+   `scheduler/jobs/grpc/service/service.go::InitDefaults`。
+   原 `actions.versioning.create` 标识原样保留，现由原 VersionAction 和受控 Job
+   两个真实生产者共用；默认版本 Job、独立 UI/ACL 原样保留。受控启动与严格 Job
+   消费属于已授权治理改造；无页面共享迁移适用对象，不声明全量原版一致。
+2. 原启动两调用方 → 一次 typed `NativeWriteDelivery` 扫描 → Read/Write 全组配置
+   验证及已有 Job 回读 → 原 `DAO.ClaimJob` → 原 JobService；真正执行仍是
+   `executeNativePromote` → 原 create-only Task → owned draft/VersionAction → 原持久
+   ContentRevision/Task 观察。受控 Write Job 只有原 VersionAction，配置的自动、
+   定时、事件、参数或额外 action 均不被借用。运行期不再仅验证“含某个 action”，
+   而复用同一完整 Job 语义比较。protobuf、公共契约、四侧类型、数据库结构不变。
+3. 同 Read/Write ID 或任何已投递配置错误在第一次 claim 前拒绝；全部已有 Job
+   先核对完整语义，只归零原 CreatedAt/ModifiedAt，不覆盖漂移对象。只有原明确
+   JobNotFound 允许 create-only；冲突只回读，陌生 ACK 错误停止启动且不再次 insert。
+   若 Read 已持久而 Write insert/ACK 失败，留下的是无执行的原 Job，不删除、不
+   派发；后续启动先精确回读已有 Job，再补仍缺失的一项。没有新 registry、Task
+   队列、账本、平台权限、正文、token 或 secret 落入 Job。system owner 只为原 Job
+   元数据，实际写仍原逐次 ActionToken、actor、scope、generation、fresh PEP/ACL。
+4. 未投递平台配置不生产；可选 Write.nativeJobId 缺失或 Go string 零值保持既有
+   admission-only 兼容，不产生 Write Job，原 execute 仍拒绝缺 ID。原 typed string
+   不能区分缺失与显式空，本批不新增字段或迁移声称已区分；原文件投递入口仍拒绝
+   显式空。非空 ID/资源类型带空白、无效 action/policy version、policy UUID 格式非法、
+   Read meters 缺失/null/重复/未知、同 ID、非法 deadline、已有 Job 漂移均确定拒绝。
+   配置缺失/错误属前置条件/参数，漂移属冲突，存储与 deadline 不明失败关闭，不成为
+   业务成功或确定失败。沿原 RequestTimeout，无默认值/新阈值；DAO GetJob 无 ctx
+   的原边界仍保留，不宣称全程有界。空 Job 沿原服务生命周期，claimed Task 退休
+   及失联对账期限仍未闭合，不能任意 TTL 删除键后允许重复执行。
+
+复用原 `kailo-cells-native-check-lftow7`（UID 1000:1000），实际
+`cpu.max=400000 100000`、`memory.max=8589934592`、`memory.swap.max=0`，原 Data
+模块/cache/temp。13:52:51Z 宿主 MemAvailable 24,174,824 kB、memory PSI avg10 0.02；
+共享 Wren BuildKit/Jest/UI 检查在途，不伪称独占。首轮一命令三包链接遇共享 Data I/O
+等待，保持原 90378 不重启、不增 timeout。负向/还原加入原 service 包，实际编译
+两个真实启动调用方；不是新目标框架。无新 SDK、镜像、依赖、数据库或网络安装。
+
+负向与还原实际命令（首次正向同式仅不含 `./scheduler/jobs/grpc/service`）：
+
+```sh
+sudo -n docker exec -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_WORKING_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -e CELLS_DATA_DIR=/workspace/file-storage/native-read-job-tmp.rY97lf \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  /usr/local/go/bin/go test -mod=readonly -p 16 \
+  ./scheduler/jobs/grpc ./scheduler/jobs/grpc/service ./data/versions ./gateway/restv2 \
+  -run 'TestNativeActionJobStartupConsumesOriginalDelivery|TestNativeWriteTaskRetainsExactIntentAndVersion|TestNativeReadTaskRecordsActualStreamOnce|TestVersionActionRequiresExactNativePersistence|TestNativePromoteUsesOriginalHumanAction' \
+  -count=1 -v
+```
+
+实际正向 `positive.log`（90378）exit 0，5 顶层 +154 子项 PASS、0 fail/skip；grpc
+165.018s、versions 0.023s、restv2 3.691s。实施后仅私有候选将生产
+`NativeWriteJobMatches` 改为恒真并删除同 Read/Write ID 生产 guard，`mutation.log`
+（54177）编译成功后 exit 1：1 顶层 +8 子项 FAIL，4 顶层 +146 子项 PASS。
+真实捕获同 ID 先落 Job，以及 autoStart/inactive/events/schedule、未知/额外 action
+和 action 参数漂移。正式源未破坏。精确恢复七输入及 go.mod/go.sum 后，同一四包
+`restored.log`（53012）exit 0：5 顶层 +154 子项 PASS、0 fail/skip；grpc 86.460s、
+versions 0.022s、restv2 3.688s。层级计数不相加成独立验收数。service 显示
+`[no test files]`，仅编译；原 grpc 检查真实调用 Bolt/ClaimJob/Task，原版本和人类
+Promote fixtures 是原生产方法回归，不是 live Promote/文件复制 E2E。
+
+七正式源码及 go.mod/go.sum 与还原 SDK 的 cmp 均 exit 0，gofmt -l 无输出，源码
+diff --check exit 0。终态 memory.events 全 0，cgroup lifetime peak 2,632,499,200
+bytes（不是本批独立峰值）。原件目录
+`/volumes/data/kailo/tmp/cells-native-write-job-startup-20261009.JorIx3/`：
+
+- `positive.log` SHA-256 `7990de25aa50a455b85206661426721b73780c7100178ae19b95d6f3fe5a615e`；
+- `mutation.log` SHA-256 `d52dad464623088121483de6f85255a703a88b51d096f978baceeb4139c5dd77`；
+- `restored.log` SHA-256 `415ad2878ad7ef2e8e5519f390e8a4602f0be69bf417712d32935c3785c9f6ac`。
+
+本批未部署、未构建镜像、未跑 full，没有 native HTTP/S3/Mongo 实库或索引迁移、
+浏览器/Windows/Mobile、Cells→WeKnora E2E 验收，没有批准/激活 release/binding。
+这是配置 → 原 Job → 已有 Promote 消费者的接通，不是首传、条件 CAS、完整 write、
+publish 因果、delete/share、Task 安全退休或 HUMAN 正文交付完成；完整 FILE_STORAGE
+七项仍闭入口，不以 Job 可启动、原夹具通过或旧运行容器证明整类可用。
+继承 `deploy/compose.yaml` 未改、不在本批。

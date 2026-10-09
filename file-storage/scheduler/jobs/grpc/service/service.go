@@ -98,9 +98,9 @@ func init() {
 			service.WithGRPC(func(ctx context.Context, server grpc.ServiceRegistrar) error {
 
 				handler := grpc3.NewJobsHandler(ctx, Name)
-				// Re-read operator delivery before this listener opens, including
+				// Re-read operator delivery before registering JobService, including
 				// config changes on an unchanged source release. No Task is run.
-				if err := handler.EnsureNativeReadJob(ctx); err != nil {
+				if err := handler.EnsureNativeActionJobs(ctx); err != nil {
 					return err
 				}
 				// Used by the upper-level logcore.Handler to resolve the storage driver
@@ -124,7 +124,7 @@ func InitDefaults(ctx context.Context) error {
 		}
 	}
 
-	return handler.EnsureNativeReadJob(ctx)
+	return handler.EnsureNativeActionJobs(ctx)
 }
 
 func Migration140(ctx context.Context) error {

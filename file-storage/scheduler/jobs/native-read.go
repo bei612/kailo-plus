@@ -30,12 +30,16 @@ func NativeReadJob(id string) *jobproto.Job {
 }
 
 func NativeReadJobMatches(job *jobproto.Job, id string) bool {
-	if job == nil || id == "" || strings.TrimSpace(id) != id || len(job.Tasks) != 0 {
+	return nativeActionJobMatches(job, NativeReadJob(id))
+}
+
+func nativeActionJobMatches(job, expected *jobproto.Job) bool {
+	if job == nil || expected.ID == "" || strings.TrimSpace(expected.ID) != expected.ID || len(job.Tasks) != 0 {
 		return false
 	}
 	actual := proto.Clone(job).(*jobproto.Job)
 	actual.CreatedAt, actual.ModifiedAt = 0, 0
-	return proto.Equal(actual, NativeReadJob(id))
+	return proto.Equal(actual, expected)
 }
 
 type NativeReadReceipt struct {
