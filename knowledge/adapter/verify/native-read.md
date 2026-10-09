@@ -3860,3 +3860,73 @@ sudo -n docker exec --user 1000:1000 -w /work/knowledge-execute-intent.SoVgAs \
 未运行本批 full、实际 Core/OpenBao 签发到知识库的端到端调用、真实模型/解析/
 计量、镜像构建部署、ACTIVE binding、iframe、截图或设备验收；这里不把模拟
 上游的原 HTTP 检查声称为三组件完整集成或生产就绪。
+
+## 2026-10-09：慢解析不得阻塞已派发任务与旧批读取对账
+
+本批修正原 `fileStorageConnector.FetchStream` 的实际调用顺序：原生 Knowledge
+仍在解析时，仅停止新 Validate、列举、SOURCE 读取与写入；同一持久游标中已有
+`Retiring` 与旧批 `Discovery` 先沿原 task/key、read-grant、双边 receipt 和 usage
+完成观察。原提前返回会使无关慢解析阻塞这些已经派发的动作。这属于已授权治理
+改造中的接收方导入器修复，不是原版页面恢复，也不声称与官方逐字节一致。
+
+四步影响结论：
+
+1. 权威为 `.design/07` §8.2、`.design/13` §4.4/§7、DD-89/93 和
+   SS-WEK-MATERIALIZATION。固定官方
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::DataSourceService.processSyncStreaming`
+   与 `internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromFile`
+   仍是原原生同步/写入调用方；本连接器沿其既有消费者接入，不建第二同步权威。
+2. 影响面仅原 FetchStream 的恢复顺序、原 TestFileStorage 与本回执。游标的
+   Applying/Groups/Retiring/Discovery 字段、旧 task/Knowledge/batch/key、绑定
+   tenant/KB 核验、原创建/解析/删除、Checkpoint 与源端业务权威均不变。
+   未改契约、存储格式、旧数据读法或三端页面，无迁移或四侧生成变化。
+3. 不跳过原 read-grant/receipt/usage 校验，不调用新 PEP/SOURCE/Emit 或重新
+   StartKnowledgeDeleteTask。pending 仍不能提交新完成游标；对账只清理已确认的
+   原引用，保留 Applying 和旧 LastSyncTime。撤权/拒绝不解释为内容删除。
+4. 原检查覆盖独立旧任务完成、RUNNING、UNKNOWN、grant/receipt 拒绝、usage
+   未确认、Checkpoint 失败以及重复观察。故障保留原引用；独立删除已确认时可先
+   收敛，旧 Discovery 未确认时继续保留，不把部分成功当整批成功。解析与失败
+   收敛仍属于原 Asynq/Housekeeping，本批不引入状态、队列、期限或自动重放。
+
+复用原 `kailo-knowledge-native-check-wkkigg`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+实际 UID 1000、4 CPU/8 GiB、无额外 swap、Go 1.26.8；开跑前约19 GiB 可用内存，
+memory PSI avg10 约0，Data 270 GiB 可用。其他受限构建在途，不声称独占。
+原 internal Go 输入 checksum 核对仅本批两文件不同，go.mod/go.sum cmp0，随后
+精确同步两个输入；未安装依赖、启动新 SDK/数据库或构建镜像。
+
+```sh
+sudo -n docker exec --user 1000:1000 -w /workspace/knowledge \
+  kailo-knowledge-native-check-wkkigg sh -c '
+  export PATH=/usr/local/go/bin:$PATH GOMODCACHE=/cache/mod GOCACHE=/cache/build \
+    GOPROXY=off TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2
+  go test -mod=readonly ./internal/application/service -run TestFileStorage -count=1 -v'
+```
+
+同一原目标：1371 正向 exit0，14顶层/125子检查全部通过；6079 仅在私有生产
+源码恢复旧 early-pending return 后 exit1，13顶层通过/1失败、121子检查通过/
+4失败。失败实际命中原 native observe 0≠1 及旧 Retiring 未收敛，不是编译失败。
+以 apply_patch 撤回该破坏，两源码正式/SDK cmp0 后，89202 还原复跑 exit0，
+14顶层/125子检查通过，0失败/跳过。顶层与子项不相加计数。原 cold-page/link
+等待保留同一句柄，未重复启动；最终 gofmt -d 无输出、diff --check exit0，
+cgroup memory.events 的 max/oom/oom_kill 均0。
+
+日志位于原 SDK `/cache/build/file-storage-sync-20261008.maEMf2`；主机对应
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/file-storage-sync-20261008.maEMf2`。
+SHA-256：
+
+- `pending-recovery-positive.log`：`f08c234d8f457d96d0829c85e7028c3cb65cabd4c61729f17a3f1cc33eeddd27`。
+- `pending-recovery-mutation.log`：`3f28f552095e8ec53b5f71f8af216a462efa03f23f723ad62a5e4d0ac1c47fdf`。
+- `pending-recovery-restored.log`：`528b7d2a54e4b61c72447dcff60c2210c4483fcdcbc96a0abfb2dc421583ee0a`。
+
+最终生产源码 SHA-256：
+`db7024250748d3e571cacbe0aeed2ec732bb08bfd761537a6646c5916c2d1e83`；
+原检查：`3b452722990e3ec5de29c349615d3260c5254747072126fc8dcc4e4c2d714280`。
+私有破坏字节：`ca7ff8978280ddb8f56bb9565ec67bce58860cebc42fcd98d8973aca52d736db`。
+
+未运行本批 full、实库/真实 Cells→WeKnora 端到端同步、模型解析、生产撤权、
+iframe/截图、镜像构建或部署。正在构建的固定
+`272693d5e1386a352946736c80a2a00ff7c27ff1` 知识库镜像不包含本批。
+批准 release/binding、完整 FILE_STORAGE 七能力与原写入/删除/分享门禁未解除；
+这些专项是原消费者及 HTTP fixture 证据，不是三组件生产就绪或业务已上线。

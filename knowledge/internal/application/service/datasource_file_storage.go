@@ -430,9 +430,6 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			return nil, err
 		}
 	}
-	if pending != nil {
-		return nil, pending
-	}
 	// A saved retirement already crossed the side-effect boundary. Observe it
 	// before requesting new source access: revocation must stop new discovery,
 	// not strand the original delete's late terminal evidence.
@@ -488,6 +485,12 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
 			return nil, err
 		}
+	}
+	// An unrelated pending parse prevents new discovery or writes, not the
+	// late confirmation of already-persisted delete and discovery operations.
+	// Their original native identities must converge even while parsing waits.
+	if pending != nil {
+		return nil, pending
 	}
 	if err := c.Validate(ctx, cfg); err != nil {
 		return nil, err

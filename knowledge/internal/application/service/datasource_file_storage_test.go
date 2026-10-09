@@ -1076,3 +1076,162 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 		})
 	}
 }
+
+func TestFileStoragePendingParseDoesNotStrandDispatchedRecovery(t *testing.T) {
+	for _, outcome := range []string{"completed", "delete-running", "delete-unknown", "delete-grant-refused",
+		"delete-receipt-refused", "discovery-grant-refused", "discovery-receipt-refused", "usage-pending", "checkpoint-failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			source, receiver, receiverRoot := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
+			batch := uuid.NewString()
+			at := time.Now().Add(-time.Hour).UTC()
+			old := fileStorageGroup{KnowledgeID: uuid.NewString(), Revision: "original-revision",
+				References: []map[string]json.RawMessage{fileStorageTestWire(t, map[string]string{"resourceId": source})}}
+			intent := fileStorageRetirement{Group: old, SourceResourceID: source, BatchID: batch,
+				Key: uuid.NewString(), Digest: fileStorageDigest([]byte("[]")), Bytes: 2}
+			discovery := fileStorageSavedListing{Key: fileStorageKey(batch, source, "discover"), BatchID: batch,
+				ItemsJSON: "[]", Digest: intent.Digest, Bytes: 2, ObservedAt: at}
+			body := []byte("pending source bytes")
+			groupKey := fmt.Sprintf("%x:txt", md5.Sum(body))
+			refs := []map[string]json.RawMessage{fileStorageTestWire(t, map[string]string{"resourceId": source,
+				"nativeObjectRef": uuid.NewString(), "nativeRevision": "pending-source-revision", "displayName": "pending.txt", "mediaType": "text/plain"})}
+			refJSON, err := json.Marshal(refs)
+			require.NoError(t, err)
+			metadata, err := json.Marshal(map[string]string{"datasource_id": run.dataSourceID, "external_id": groupKey,
+				"source_content_sha256": fileStorageDigest(body), "source_references": string(refJSON)})
+			require.NoError(t, err)
+			pending := &types.Knowledge{ID: uuid.NewString(), TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID,
+				FileHash: fmt.Sprintf("%x", md5.Sum(body)), FileType: "txt", FileSize: int64(len(body)), ParseStatus: types.ParseStatusPending,
+				UpdatedAt: time.Now().Add(-time.Minute).UTC(), Metadata: types.JSON(metadata)}
+			state := fileStorageCursor{Groups: map[string]fileStorageGroup{"old:txt": old}, Retiring: map[string]fileStorageRetirement{"old:txt": intent},
+				Applying:  map[string]fileStorageApplication{groupKey: {KnowledgeID: pending.ID, BatchID: batch, Digest: fileStorageDigest(body), Bytes: int64(len(body)), References: refs}},
+				Discovery: map[string]fileStorageSavedListing{source: discovery}}
+			fields := map[string]interface{}{}
+			raw, err := json.Marshal(state)
+			require.NoError(t, err)
+			require.NoError(t, json.Unmarshal(raw, &fields))
+			cursor := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: fields}
+			initial, err := cursor.ToJSON()
+			require.NoError(t, err)
+			ds := &types.DataSource{ID: run.dataSourceID, LastSyncCursor: initial}
+			repo := &recordingDSRepo{}
+			if outcome == "checkpoint-failed" {
+				repo.updateErr = fmt.Errorf("native checkpoint unavailable")
+			}
+			nativeDelete := &replacementKnowledgeService{state: "SUCCEEDED"}
+			if outcome == "delete-running" {
+				nativeDelete.state = "RUNNING"
+			} else if outcome == "delete-unknown" {
+				nativeDelete.state = "UNKNOWN"
+			}
+			native := &fileStorageApplicationService{KnowledgeService: nativeDelete,
+				repo: &fileStorageApplicationRepo{rows: map[string]*types.Knowledge{pending.ID: pending}}}
+			accepted := map[string]map[string]any{}
+			grants := map[string]int{}
+			receipts := map[string]int{}
+			newCalls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/oidc" {
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
+				require.Equal(t, "Bearer receiver-service-token", r.Header.Get("Authorization"))
+				var request map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				key, _ := request["idempotencyKey"].(string)
+				if key != intent.Key && key != discovery.Key {
+					newCalls++
+					t.Errorf("pending parse attempted new work: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				switch r.URL.Path {
+				case "/service/v1/adapter/request_read_grant":
+					grants[key]++
+					require.Equal(t, source, request["sourceResourceId"])
+					require.Equal(t, batch, request["nativeBatch"].(map[string]any)["batchId"])
+					if (key == intent.Key && outcome == "delete-grant-refused") || (key == discovery.Key && outcome == "discovery-grant-refused") {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					response := map[string]any{"operationId": key, "actionExecutionId": key, "sourceBindingId": source, "outcome": "UNKNOWN"}
+					if accepted[key] != nil && !(key == discovery.Key && outcome == "usage-pending") {
+						response["outcome"], response["receiverReceipt"] = "COMPLETED", accepted[key]
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+				case "/service/v1/adapter/read_receipt":
+					receipts[key]++
+					if (key == intent.Key && outcome == "delete-receipt-refused") || (key == discovery.Key && outcome == "discovery-receipt-refused") {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					if key == intent.Key {
+						require.Equal(t, old.KnowledgeID, request["nativeObjectRef"])
+						require.Equal(t, old.Revision, request["nativeRevision"])
+					} else {
+						require.Equal(t, run.dataSourceID, request["nativeObjectRef"])
+						require.Equal(t, discovery.Digest, request["nativeRevision"])
+						require.Equal(t, at.Format(time.RFC3339Nano), request["completedAt"])
+					}
+					accepted[key] = request
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": intent.Digest}))
+				default:
+					newCalls++
+					t.Errorf("recovery must not read SOURCE bytes, invoke PEP or dispatch a write: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "receiver-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-recovery-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: receiver, ReceiverResourceID: receiverRoot,
+				NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID, CorePepURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1,
+				ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1})
+			require.NoError(t, err)
+			connector := &fileStorageConnector{transport: transport, knowledge: native}
+			result := &types.SyncResult{}
+			h := newStreamHandler(&DataSourceService{dsRepo: repo, syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}, ds, result, &types.SyncLog{})
+			ctx := context.WithValue(context.Background(), fileStorageRunKey{}, run)
+			// A removed source configuration cannot cancel an already-dispatched
+			// task, and pending parsing must still prevent any new discovery.
+			next, err := connector.FetchStream(ctx, &types.DataSourceConfig{}, cursor, h)
+			require.Error(t, err)
+			require.Nil(t, next)
+			require.Zero(t, newCalls)
+			require.Zero(t, nativeDelete.starts)
+			require.Zero(t, result.Total)
+			retained, parseErr := ds.ParseSyncCursor()
+			require.NoError(t, parseErr)
+			resumed, parseErr := fileStorageState(retained)
+			require.NoError(t, parseErr)
+			require.Len(t, resumed.Applying, 1)
+			require.Equal(t, pending.ID, resumed.Applying[groupKey].KnowledgeID)
+			require.Equal(t, at, retained.LastSyncTime)
+			if outcome == "completed" {
+				var stillPending *fileStorageParsePending
+				require.ErrorAs(t, err, &stillPending)
+				require.Equal(t, 1, nativeDelete.observations)
+				require.Empty(t, resumed.Retiring)
+				require.Empty(t, resumed.Groups)
+				require.Empty(t, resumed.Discovery)
+				require.Equal(t, 1, receipts[intent.Key])
+				require.Equal(t, 1, receipts[discovery.Key])
+				before := grants[intent.Key] + grants[discovery.Key]
+				_, err = connector.FetchStream(ctx, &types.DataSourceConfig{}, retained, h)
+				require.ErrorAs(t, err, &stillPending)
+				require.Equal(t, before, grants[intent.Key]+grants[discovery.Key], "confirmed recovery must not obtain another grant")
+				require.Equal(t, 1, nativeDelete.observations, "confirmed deletion must not repeat")
+			} else if outcome == "discovery-grant-refused" || outcome == "discovery-receipt-refused" || outcome == "usage-pending" {
+				require.Empty(t, resumed.Retiring, "confirmed independent deletion can converge before the discovery refusal")
+				require.Len(t, resumed.Discovery, 1)
+			} else {
+				require.Equal(t, initial, ds.LastSyncCursor)
+				require.Len(t, resumed.Retiring, 1)
+				require.Len(t, resumed.Discovery, 1)
+			}
+		})
+	}
+}
