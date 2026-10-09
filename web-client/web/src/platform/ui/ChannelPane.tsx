@@ -52,6 +52,9 @@ import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
+import { TypingIndicatorRow } from "@client-kit/platform/react/messages/TypingIndicatorRow";
+import { ComposerActivityAccessory } from "@client-kit/platform/react/messages/ComposerActivityAccessory";
+import { ComposerDockBackdrop } from "@client-kit/platform/react/thread/ComposerDockBackdrop";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
@@ -257,6 +260,9 @@ export function ChannelPane({
     () => new Set((members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkeys),
     [members.data, myPrincipalId],
   );
+  const typingPubkeys = window.typing
+    .filter(entry => entry.threadHeadId === null && !mine.has(entry.pubkey) && entry.pubkey !== ownProfile.data?.pubkey)
+    .map(entry => entry.pubkey);
   const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
@@ -697,9 +703,11 @@ export function ChannelPane({
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message edit has no confirmed receipt.");
           return receipt;
         }} /> : null}
-      <div hidden={mainEditTarget !== null}>
+      <div hidden={mainEditTarget !== null} className={`composer-dock composer-overlay-corner-masks relative pointer-events-auto${typingPubkeys.length ? " composer-dock--with-activity" : ""}`}>
+      <ComposerDockBackdrop gutterClassName="inset-x-5" />
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
+            containerClassName="px-5 pb-0" layoutMode="dock"
             channelType="dm"
             placeholder={composerPlaceholder}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
@@ -708,6 +716,7 @@ export function ChannelPane({
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
+            containerClassName="px-5 pb-0" layoutMode="dock"
             placeholder={composerPlaceholder}
             mentionPeople={mentionPeople}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
@@ -715,6 +724,14 @@ export function ChannelPane({
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
             autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
+      <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row"
+        visible={typingPubkeys.length > 0}>
+        <div className="flex w-full items-center gap-2 overflow-visible pl-2">
+          <TypingIndicatorRow channel={null} currentPubkey={ownProfile.data?.pubkey} profiles={profiles}
+            className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
+            typingPubkeys={typingPubkeys} />
+        </div>
+      </ComposerActivityAccessory>
       </div>
     </div>
     {systemProfileTarget && systemProfileTarget.workspaceId === workspaceId && selectedSystemMember?.principalId === systemProfileTarget.principalId && "state" in selectedSystemMember && selectedSystemMember.state === "ACTIVE" && live && !denied && !conversation ? <MemberProfilePanel key={`${myPrincipalId}:${systemProfileTarget.workspaceId}:${systemProfileTarget.pubkey}`}

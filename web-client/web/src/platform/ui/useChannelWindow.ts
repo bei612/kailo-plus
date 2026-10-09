@@ -4,6 +4,8 @@ import { useReasonText } from "@client-kit/platform/react/context";
 import { parseChannelWindowResponse, parseLiveThreadSummary } from "@client-kit/platform/react/forum/channelWindowResponse";
 import { getThreadReference, isBroadcastReply } from "@client-kit/platform/react/messages/threading";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@client-kit/platform/react/thread/kinds";
+import { KIND_TYPING_INDICATOR } from "@client-kit/platform/react/thread/kinds";
+import { emptyTypingState, pruneTypingState, receiveTypingEvent, typingEntries, TYPING_PRUNE_INTERVAL_MS } from "@client-kit/platform/react/messages/typingState";
 import { appendOlderChannelWindow, channelWindowHasMore, channelWindowHistoryExhausted, channelWindowThreadSummaries, emptyChannelWindowStore, flattenChannelWindowEvents, mergeLiveChannelWindowEvent, mergeLiveThreadSummary, replaceNewestChannelWindow, type ChannelWindowStore } from "@client-kit/platform/react/messages/timeline/channelWindowStore";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { bff, openStream, type BuzzEvent } from "@/platform/bff-client";
@@ -25,8 +27,9 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
   const empty = useMemo(emptyChannelWindowStore, [scope]);
   const [projection, setProjection] = useState({ scope, store: empty });
   const store = projection.scope === scope ? projection.store : empty;
-  const state = useRef({ scope, store, active: false, ready: false, generation: 0, fetching: false });
-  if (state.current.scope !== scope) state.current = { scope, store: empty, active: false, ready: false, generation: state.current.generation + 1, fetching: false };
+  const [typingProjection, setTypingProjection] = useState({ scope, typing: emptyTypingState() });
+  const state = useRef({ scope, store, typing: emptyTypingState(), active: false, ready: false, generation: 0, fetching: false });
+  if (state.current.scope !== scope) state.current = { scope, store: empty, typing: emptyTypingState(), active: false, ready: false, generation: state.current.generation + 1, fetching: false };
   const [status, setStatus] = useState(t("platform.stream.connecting"));
   const [live, setLive] = useState(false);
   const [denied, setDenied] = useState(false);
@@ -39,6 +42,11 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
   useEffect(() => {
     let closed = false;
     const current = state.current;
+    const publishTyping = (typing = emptyTypingState()) => {
+      current.typing = typing;
+      setTypingProjection({ scope, typing });
+    };
+    publishTyping();
     current.active = true;
     current.ready = false;
     current.generation += 1;
@@ -85,6 +93,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
       if (closed || !current.active || state.current !== current) return;
       switch (frame.type) {
         case "snapshot":
+          publishTyping();
           current.ready = false;
           ready = false;
           snapshotAccepted = false;
@@ -102,7 +111,19 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
         case "event": {
           if (!snapshotAccepted) break;
           const event = frame.event;
-          if (!seen.has(event.id)) { seen.add(event.id); if (ready) receiveLive(event); }
+          // Ephemeral events never become rows, notifications or retained IDs.
+          if (event.kind === KIND_TYPING_INDICATOR) {
+            if (ready) publishTyping(receiveTypingEvent(current.typing, event, channelId));
+            break;
+          }
+          if (!seen.has(event.id)) {
+            seen.add(event.id);
+            if (ready) {
+              const typing = receiveTypingEvent(current.typing, event, channelId);
+              if (typing !== current.typing) publishTyping(typing);
+              receiveLive(event);
+            }
+          }
           const summary = parseLiveThreadSummary(event);
           if (summary) { publish(mergeLiveThreadSummary(current.store, summary.rootId, summary.live)); break; }
           const isRow = rows.has(event.kind);
@@ -119,6 +140,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           if (snapshotAccepted) setStatus(t("platform.stream.synced"));
           break;
         case "closed":
+          publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; setLive(false); refreshMetadata();
           current.generation += 1; current.fetching = false; setFetching(false);
@@ -134,11 +156,13 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
           }
           break;
         case "interrupted":
+          publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; current.generation += 1;
           current.fetching = false; setFetching(false);
           setLive(false); setStatus(t("platform.stream.reconnecting")); break;
         case "ended":
+          publishTyping();
           current.ready = false;
           ready = false; snapshotAccepted = false; current.generation += 1;
           current.fetching = false; setFetching(false);
@@ -147,6 +171,22 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
     }, conversationId);
     return () => { closed = true; current.active = false; current.generation += 1; stop(); };
   }, [scope, workspaceId, conversationId, channelId, archived, retry, reasonText, empty]);
+
+  const typingState = typingProjection.scope === scope ? typingProjection.typing : emptyTypingState();
+  const hasTypingState = Object.keys(typingState.typing).length > 0 || Object.keys(typingState.completed).length > 0;
+  useEffect(() => {
+    if (!live || !hasTypingState) return;
+    const current = state.current;
+    const timer = globalThis.setInterval(() => {
+      if (!current.active || !current.ready || state.current !== current) return;
+      const typing = pruneTypingState(current.typing);
+      if (typing !== current.typing) {
+        current.typing = typing;
+        setTypingProjection({ scope, typing });
+      }
+    }, TYPING_PRUNE_INTERVAL_MS);
+    return () => globalThis.clearInterval(timer);
+  }, [scope, live, hasTypingState]);
 
   const fetchOlder = useCallback(async () => {
     const current = state.current;
@@ -179,6 +219,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
   const threadSummaries = useMemo(() => channelWindowThreadSummaries(store), [store]);
   const authoritativeRowIds = useMemo(() => new Set(store.pages.flatMap(page => page.rows.map(row => row.event.id))), [store]);
   return { events, threadSummaries, authoritativeRowIds, status, live, denied, error,
+    typing: live && !archived && !denied ? typingEntries(typingState) : [],
     isLoading: !error && !live && store.pages.length === 0,
     fetchOlder, isFetchingOlder: fetching, hasOlderMessages: channelWindowHasMore(store),
     historyExhausted: channelWindowHistoryExhausted(store), retry: () => setRetry(value => value + 1) };

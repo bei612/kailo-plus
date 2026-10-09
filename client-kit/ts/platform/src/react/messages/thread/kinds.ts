@@ -4,11 +4,13 @@ export const KIND_HUDDLE_STARTED = 48100;
 export const KIND_DELETION = 5;
 export const KIND_REACTION = 7;
 export const KIND_STREAM_MESSAGE = 9;
+export const KIND_TYPING_INDICATOR = 20002;
 // Buzz-native deletion. The relay soft-deletes the target and emits a
 // kind:40099 system message. Treated as a deletion marker alongside kind:5.
 export const KIND_NIP29_DELETE_EVENT = 9005;
 export const KIND_STREAM_MESSAGE_V2 = 40002;
 export const KIND_STREAM_MESSAGE_EDIT = 40003;
+export const KIND_STREAM_MESSAGE_DIFF = 40008;
 export const KIND_CHANNEL_THREAD_SUMMARY = 39005;
 export const KIND_CHANNEL_WINDOW_BOUNDS = 39006;
 export const KIND_SYSTEM_MESSAGE = 40099;

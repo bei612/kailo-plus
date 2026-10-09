@@ -91,6 +91,9 @@ impl StreamScope {
             collab_bridge::bridge::KIND_REACTION as u16,
             collab_bridge::bridge::KIND_NIP29_DELETE_EVENT as u16,
             collab_bridge::bridge::KIND_THREAD_SUMMARY as u16,
+            // Ephemeral presence shares this admitted NIP-42 connection, never
+            // the persisted channel-window snapshot or history cursor.
+            collab_bridge::bridge::KIND_TYPING_INDICATOR as u16,
         ]);
         kinds.sort_unstable();
         kinds.dedup();
@@ -676,7 +679,7 @@ mod tests {
                 .sign_with_keys(keys)
                 .unwrap()
         };
-        let kinds = vec![9, 39005, 40099];
+        let kinds = vec![9, 20002, 39005, 40099];
         let check = |event: nostr::Event| {
             valid_live_event(
                 &serde_json::json!(event),
@@ -686,6 +689,8 @@ mod tests {
             )
         };
         assert!(check(sign(9, &channel, &human)));
+        assert!(check(sign(20002, &channel, &human)));
+        assert!(!check(sign(20002, "different-channel", &human)));
         assert!(check(sign(39005, &channel, &relay)));
         assert!(check(sign(40099, &channel, &relay)));
         assert!(!check(sign(39005, &channel, &human)));
@@ -717,11 +722,11 @@ mod tests {
         });
         assert_eq!(
             workspace.message_kinds(),
-            vec![5, 7, 9, 9005, 39005, 40002, 40003, 40099, 45001, 45003]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40099, 45001, 45003]
         );
         assert_eq!(
             conversation.message_kinds(),
-            vec![5, 7, 9, 9005, 39005, 40002, 40003, 40099]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40099]
         );
         assert!(!workspace.same_admission(&conversation));
     }

@@ -4,6 +4,10 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  messagesTypingOne,
+  messagesTypingTwo,
+  messagesTypingThree,
+  messagesTypingMany,
   platformBackupPrivateKey,
   platformBackupHideKey,
   platformBackupRevealKey,
@@ -2024,6 +2028,22 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.messagesTypingOne: (
+    '{first} is typing...',
+    '{first}正在输入…',
+  ),
+  PlatformMessageKey.messagesTypingTwo: (
+    '{first} and {second} are typing...',
+    '{first}和{second}正在输入…',
+  ),
+  PlatformMessageKey.messagesTypingThree: (
+    '{first}, {second}, and {third} are typing...',
+    '{first}、{second}和{third}正在输入…',
+  ),
+  PlatformMessageKey.messagesTypingMany: (
+    '{first}, {second}, and {count} others are typing...',
+    '{first}、{second}及其他{count}人正在输入…',
+  ),
   PlatformMessageKey.platformBackupPrivateKey: ('Private key', '私钥'),
   PlatformMessageKey.platformBackupHideKey: ('Hide private key', '隐藏私钥'),
   PlatformMessageKey.platformBackupRevealKey: ('Reveal private key', '显示私钥'),

@@ -20,7 +20,8 @@ use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
 pub use buzz_core::kind::{
     KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
+    KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_TYPING_INDICATOR,
+    KIND_WINDOW_BOUNDS,
 };
 pub use buzz_core::nip10::parse_thread_markers;
 pub use buzz_core::relay::{

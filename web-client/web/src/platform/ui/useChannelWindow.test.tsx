@@ -35,7 +35,42 @@ beforeEach(async()=>{
   host=document.createElement("div");document.body.append(host);root=createRoot(host);
   await act(async()=>root.render(<Probe/>));
 });
-afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();});
+
+it("keeps live typing out of history and expires the original indicator", async()=>{
+  vi.useFakeTimers();vi.setSystemTime(100_000);
+  await head([event("head",99)]);
+  await send({type:"event",event:event("typing",100,20002,[["h","channel"]])});
+  expect(current.typing).toEqual([{pubkey:"author",threadHeadId:null}]);
+  expect(current.events.map(row=>row.id)).toEqual(["head"]);
+  await act(async()=>vi.advanceTimersByTime(8_000));
+  expect(current.typing).toEqual([]);
+});
+
+it.each(["scope-revoked","session-revoked","scope-changed","interrupted","ended"])("drops transient typers immediately after %s", async(reason)=>{
+  await head([event("head")]);
+  await send({type:"event",event:event("typing",Math.floor(Date.now()/1000),20002,[["h","channel"]])});
+  expect(current.typing).toHaveLength(1);
+  await send(reason==="interrupted" || reason==="ended" ? {type:reason} : {type:"closed",reason});
+  expect(current.typing).toEqual([]);
+  await send({type:"event",event:event("late",Math.floor(Date.now()/1000),20002,[["h","channel"]])});
+  expect(current.typing).toEqual([]);
+});
+
+it("clears typing on a real message but does not resuppress a new burst on duplicate delivery", async()=>{
+  vi.useFakeTimers();vi.setSystemTime(100_000);
+  await head([event("head",99)]);
+  const typing=event("typing",100,20002,[["h","channel"]]);
+  await send({type:"event",event:typing});
+  const completed=event("completed",101,9,[["h","channel"]]);
+  await send({type:"event",event:completed});
+  expect(current.typing).toEqual([]);
+  await act(async()=>vi.advanceTimersByTime(3_000));
+  await send({type:"event",event:{...typing,id:"new-typing",created_at:103}});
+  expect(current.typing).toHaveLength(1);
+  await send({type:"event",event:completed});
+  expect(current.typing).toHaveLength(1);
+});
 
 it("continues the original dense-second cursor and only trusts signed exhaustion", async()=>{
   await head([event("a"),event("b")],{created_at:10,id:"b"});

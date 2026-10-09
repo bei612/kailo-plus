@@ -94,6 +94,10 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "messages.typing.one": { en: "{first} is typing...", "zh-CN": "{first}正在输入…" },
+  "messages.typing.two": { en: "{first} and {second} are typing...", "zh-CN": "{first}和{second}正在输入…" },
+  "messages.typing.three": { en: "{first}, {second}, and {third} are typing...", "zh-CN": "{first}、{second}和{third}正在输入…" },
+  "messages.typing.many": { en: "{first}, {second}, and {count} others are typing...", "zh-CN": "{first}、{second}及其他{count}人正在输入…" },
   "platform.backup.privateKey": { en: "Private key", "zh-CN": "私钥" },
   "platform.backup.hideKey": { en: "Hide private key", "zh-CN": "隐藏私钥" },
   "platform.backup.revealKey": { en: "Reveal private key", "zh-CN": "显示私钥" },
