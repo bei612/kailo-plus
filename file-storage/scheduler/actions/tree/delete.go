@@ -23,6 +23,7 @@ package tree
 import (
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/broker"
+	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/forms"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/proto/jobs"
@@ -137,7 +139,7 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 
 	readR, readE := cli.ReadNode(ctx, &tree.ReadNodeRequest{Node: sourceNode})
 	if readE != nil {
-		if ignore, _ := jobs.EvaluateFieldBool(ctx, input, c.ignoreNonExisting); ignore {
+		if ignore, _ := jobs.EvaluateFieldBool(ctx, input, c.ignoreNonExisting); ignore && (errors.Is(readE, errors.NodeNotFound) || errors.Is(readE, errors.ObjectNotFound)) {
 			log.TasksLogger(ctx).Info("No file found, ignoring")
 			return input.WithIgnore(), nil
 		}
@@ -145,6 +147,19 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 		return input.WithError(readE), readE
 	}
 	sourceNode = readR.GetNode()
+	if sourceNode == nil {
+		err := errors.WithStack(errors.StatusInternalServerError)
+		return input.WithError(err), err
+	}
+	// Only an acknowledged native deletion is a completed action. This is not
+	// a conditional delete or evidence that an uncertain request may be replayed.
+	deleteNode := func(node *tree.Node, session string) error {
+		response, err := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: node, IndexationSession: session})
+		if err == nil && !response.GetSuccess() {
+			err = errors.WithStack(errors.StatusInternalServerError)
+		}
+		return err
+	}
 
 	var isFlat bool
 	var firstLevelFolders []*tree.Node
@@ -157,7 +172,7 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 	}
 
 	if sourceNode.IsLeaf() {
-		_, err := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: sourceNode})
+		err := deleteNode(sourceNode, "")
 		if err != nil {
 			return input.WithError(err), err
 		}
@@ -172,19 +187,39 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 				})
 			}()
 		}
-		var delErr error
+		var listErr error
+		// Keep one native processing error without retaining a result per node.
+		// Every worker still logs its error, and all dispatched workers are joined.
+		deletionErrors := make(chan error, 1)
+		recordDeletionError := func(err error) {
+			select {
+			case deletionErrors <- err:
+			default:
+			}
+		}
 		wg := &sync.WaitGroup{}
 		throttle := make(chan struct{}, 4)
 		list, e := cli.ListNodes(ctx, &tree.ListNodesRequest{Node: sourceNode, Recursive: true})
 		if e != nil {
 			return input.WithError(e), e
 		}
+		if list == nil {
+			err := errors.WithStack(errors.StatusInternalServerError)
+			return input.WithError(err), err
+		}
 		for {
 			resp, e := list.Recv()
 			if e != nil {
+				if e != io.EOF {
+					listErr = e
+				}
 				break
 			}
-			n := resp.Node
+			n := resp.GetNode()
+			if n == nil {
+				listErr = errors.WithStack(errors.StatusInternalServerError)
+				break
+			}
 			if n.Path == path.Join(sourceNode.Path, common.PydioSyncHiddenFile) && childrenOnly {
 				// Do not delete first .pydio!
 				continue
@@ -202,7 +237,7 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 
 			wg.Add(1)
 			throttle <- struct{}{}
-			go func() {
+			go func(n *tree.Node) {
 				defer func() {
 					<-throttle
 					wg.Done()
@@ -212,29 +247,43 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 				if path.Base(statusPath) == common.PydioSyncHiddenFile {
 					statusPath = path.Dir(statusPath)
 				}
-				channels.StatusMsg <- strings.Replace(T("Jobs.User.DeletingItem"), "%s", statusPath, -1)
-				_, er := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: n, IndexationSession: iSess})
+				select {
+				case channels.StatusMsg <- strings.Replace(T("Jobs.User.DeletingItem"), "%s", statusPath, -1):
+				case <-ctx.Done():
+					recordDeletionError(ctx.Err())
+					return
+				}
+				er := deleteNode(n, iSess)
 				if er != nil {
-					delErr = fmt.Errorf("Cannot delete "+n.GetPath()+": %v", er)
+					delErr := fmt.Errorf("Cannot delete "+n.GetPath()+": %w", er)
+					recordDeletionError(delErr)
 					log.TasksLogger(ctx).Error(delErr.Error(), zap.Error(delErr))
 					log.Logger(ctx).Error(delErr.Error(), zap.Error(delErr))
 				}
-			}()
+			}(n)
 		}
 		wg.Wait()
-		if delErr != nil {
+		if listErr != nil {
+			return input.WithError(listErr), listErr
+		}
+		select {
+		case delErr := <-deletionErrors:
 			return input.WithError(delErr), delErr
+		default:
+		}
+		if err := ctx.Err(); err != nil {
+			return input.WithError(err), err
 		}
 		if isFlat {
 			if !childrenOnly {
 				log.Logger(ctx).Info("Deleting sourceNode", sourceNode.ZapPath())
-				if _, e := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: sourceNode}); e != nil {
+				if e := deleteNode(sourceNode, ""); e != nil {
 					return input.WithError(e), e
 				}
 			} else {
 				for _, n := range firstLevelFolders {
 					log.Logger(ctx).Info("Deleting first level of nodes", n.ZapPath())
-					if _, e := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: n}); e != nil {
+					if e := deleteNode(n, ""); e != nil {
 						return input.WithError(e), e
 					}
 				}

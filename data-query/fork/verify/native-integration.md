@@ -8238,3 +8238,111 @@ evidence, calculated-field SQL admission, other metadata/deployment writes,
 ordinary-function provenance and trusted SERVICE SQL remain release gaps.
 This is a scoped native write-consumer increment, not complete Wren delivery or
 production readiness. Root owns the subsequent selective commit and push.
+
+## Original model metadata editor native write consumers
+
+Owned baseline: `dd097b3fdcd852f902f71d68542e3b0d75d01852`, after the preceding
+Model create/edit batch was actually pushed and Root released its five paths.
+This batch owns only the original `modelResolver.ts` metadata editor methods,
+new original Jest consumer `src/nativeModelMetadataWrite.test.ts` and these two
+existing documentation EOFs. It does not rewrite the prior create/edit,
+Relation/delete guard, UI, schema, Core, Worker or original SQL consumers.
+
+### Four-step implementation conclusion
+
+1. Authority: `.design/05` §2.7 and `.design/08` §6,
+   `SS-WRN-IDENTITY/GOVERNANCE`, keep native modeling/metadata administration
+   with real project/user permissions, not invented query Actions. Fixed pin
+   `c5f02a0391c87420dba78632dcd86073710deb72` resolves
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::updateModelMetadata`
+   and its existing `handleUpdateModelMetadata`, `handleUpdateColumnMetadata`,
+   `handleUpdateNestedColumnMetadata`, `handleUpdateCFMetadata`,
+   `handleUpdateRelationshipMetadata`. The actual current consumer is original
+   `wren-ui/src/pages/modeling.tsx::EditMetadataModal.onSubmit` → original
+   `updateModelMetadata` GraphQL mutation → public `nativeProjectResolver`.
+   The metadata controls/payloads and native behavior are retained; only the
+   stated actual current permission and outcome differences are governance
+   adaptations. No UI/visual/whole-product consistency claim is made.
+2. Impact: each of the five existing private helpers receives the same existing
+   request's `beforeWrite` closure; it runs **after** its own native row await
+   and immediately before each original repository `updateOne`. The operation's
+   local `alreadyDispatched` becomes true only after the first fresh check,
+   immediately before its first native invocation. Thus empty model metadata
+   does not pretend to have written before the column/other helper's first
+   check, while an actual prior model/column write remains relevant across a
+   later helper's row lookup. Existing original child/project ownership checks
+   remain intact. This ephemeral call-boundary value is not a task, persisted
+   state or permission authority. No migration, client/schema/contract or
+   generated-type change; original native input/output formats are unchanged.
+3. Side effects: the existing `verifyMetadataWrite` consumes the public
+   wrapper's captured project/manage, generation, delivery and current HUMAN
+   context. Missing trusted closure in configured/mixed identity mode refuses,
+   never falling back to standalone. Late configuration/identity at the
+   independent native read refuses before the first write. After any earlier
+   dispatch, the same exact server-local refusal cannot escape as
+   `NOT_STARTED`; it is the existing `UNKNOWN`. No second write attempt,
+   query, registry, ACL, Core body or native reconciliation ledger is created.
+   CF metadata only updates properties.description: it does **not** call
+   `ModelService.createCalculatedField/updateCalculatedField`,
+   `checkCalculatedFieldCanQuery`, QueryService validate/preview or Engine SQL.
+4. Boundaries: each helper's last native lookup is followed by the current
+   permission consumer, including two same-kind updates and the transition
+   from a prior model write to another helper. Manage revoked, generation,
+   delivery, HUMAN or identity-scope changed before first dispatch gives the
+   actual local `NOT_STARTED`; equivalent later refusals stop remaining writes
+   with `UNKNOWN`. Lost replies/forged service markers never establish success
+   or no-write proof. Blank values remain null, null/empty editor input remains
+   the original native no-op, unrelated original properties and complete
+   five-helper order/boolean/telemetry remain intact. Existing authentication,
+   authorization, changed-reference, absent-evidence and native-UNKNOWN consumers
+   keep the `apps/06` §4 classifications. This adds neither multi-table
+   transactionality nor rollback/terminal evidence for prior partial writes.
+
+### Actual original consumer validation and production fault restoration
+
+Preflight: **32,323 MiB** host available, memory PSI avg10 **0**, CPU some
+**1.75%**, I/O full **52.29%**. Existing `kailo-wren-query-sdk-itgs2n` was only
+`sleep`, limited to 4 CPU/4 GiB memory and swap, all memory/OOM counters **0**.
+Only the two current owned inputs were applied to its original single `/work`
+root; no new SDK/alias/database/dependency installation. Original cached
+Prettier formatted the new check, then its bytes were applied back formally.
+Node heap **3072 MiB** and serial Jest were unchanged. Commands in `/work`:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeModelMetadataWrite.test.ts src/nativeModelWrite.test.ts src/nativeRelationWrite.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/nativeModelMetadataWrite.test.ts
+```
+
+Original logs under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+
+- `native-model-metadata-positive.log`, handle `37895`, exit **0**,
+  **91 Metadata + 52 Model + 44 Relation = 187/187**, three suites, 10.417 s;
+  original TypeScript/two-file formatting **0**, memory/OOM counters all **0**.
+- `native-model-metadata-negative-native-consumers.log`, handle `15644`, exit
+  **1**, **75 failed / 16 passed / 91 total**, 6.458 s. Only the five actual
+  production helper `beforeWrite` calls were removed privately. Native writes
+  after the final-read revocation, extra subsequent writes, incorrect outcomes
+  and independent-to-bound dispatch were actually caught. Assertions stayed
+  intact; this was not a test-data mutation or fabricated denial fixture.
+- `native-model-metadata-negative-partial-evidence.log`, handle `20508`, exit
+  **1**, **24 failed / 67 passed / 91 total**, 7.210 s. After restoring all five
+  calls, only the actual production first-dispatch assignment was removed.
+  Current public consumers then incorrectly received `NOT_STARTED` after
+  prior native writes, including transitions across helpers; it was caught.
+- `native-model-metadata-restored.log`, handle `30949`, exit **0**, final
+  **187/187**, 7.807 s, TypeScript/two-file formatting **0**, all memory/OOM
+  counters **0**. Both real production mutations were restored and both latest
+  formal/private inputs compared equal (`cmp` **0**) before the final run.
+
+These are actual original public wrapper/ModelResolver/repository consumers
+with fixture-backed native database and public authorization transports, not
+live PostgreSQL/SpiceDB/Core or visual browser acceptance. No global check,
+new environment, build/image, deployment, ACTIVE binding/iframe, three-user/
+Agent scenario, Desktop/Mobile installation or complete-product acceptance
+was run. Definition-level calculated-field SQL validation, other native writes,
+generic metadata partial/lost-ACK cross-client recovery, dynamic Resource facts,
+ordinary-function provenance and trusted SERVICE SQL remain release gaps.
+Root owns selective review/commit/push; these checks do not declare Wren or
+Kailo production-ready.

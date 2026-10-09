@@ -2730,3 +2730,141 @@ ManagedMultipart.cleanup 的即时取消意图；取消 PydioApi send 前取消�
 副作用。平台 staging/writer 退休、Task 失联与旧代对账、publish 独立因果、
 generic write/delete/share 和七必选 catalog/批准 binding 原门禁不变；
 本批不声称完整 FILE_STORAGE 可用、100% 还原或生产就绪。
+
+### 2026-10-09 完整上传的实际写者边界复核
+
+固定 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`frontend/assets/uploader.html/res/js/model/UploadItem.js::uploadPresigned` →
+`frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::uploadPresigned` →
+`gateway/data/gw/gateway-pydio.go::pydioObjects.PutObject` 是原文件字节入口。
+`common/nodes/models/structs.go::PutRequestData/PutMeta/CopyRequestData` 未传递
+目标预期 revision 或原子写条件；`common/nodes/core/handler-exec.go::Executor.PutObject/CopyObject`
+及 `common/nodes/objects/mc/client.go::Client.PutObject/putMetaToMinioOpts`
+未消费目标条件。对上述固定树执行条件写符号检索未发现该原生消费者；这是需要
+二开补齐的既定能力缺口，不是把 `file_storage.write@v1` 从交付目标删除。
+
+`go.mod/go.sum` 锁定的 `github.com/minio/minio-go/v7 v7.0.99` 原 SDK 在现有
+受限容器缓存内具有 `PutObjectOptions.SetMatchETag/SetMatchETagExcept`，但发出
+条件头不等于条件已被写者执行。锁定的 `github.com/pydio/minio
+v0.0.0-20251127102432-d3b575770589` 的
+`cmd/object-handlers.go::objectAPIHandlers.PutObjectHandler` 未消费该条件；
+Cells 自身 `pydioObjects.PutObject` 也未向原 Router 传递它。因此不得用 HTTP
+header 或写前 `ReadNode/HeadVersion` 冒充跨对象写入及索引更新的原子边界。
+
+当前 `contracts/adapter/file_storage.v1/write_input.schema.json` 明确消费已持久
+输入 revision，必选五字段为 `resourceId/nativeObjectRef/nativeRevision/displayName/mediaType`，
+不接受其他字段。`adapter/src/write-execution.mjs::executeWrite` 及
+`gateway/restv2/native-human-upload.go::platformPromoteVersion` 消费已有 draft；
+它们不是完整首次上传。原 `Version` 预留、ACK CAS 与清理 fence 也未证明远端
+失联 writer 已退休，不能将本地超时、取消或删除 ACK 作为不会晚写的证据。
+继续保留 `common/auth/native-action.go::AuthorizeNativeDataMutation` 的 platform
+S3 禁写；没有新增入口、模型、执行账本、契约字段、批准 binding 或部署。
+原完整独立上传页面与其 native ACL 未删减。后续补齐必须让真实原生写者消费
+已准入的冻结操作及条件，不重放 UNKNOWN，不借只读子集批准完整七项能力。
+
+本轮权威定界保持上述五字段与“确切已持久原生输入 revision”语义；
+本动作输入的 `nativeObjectRef` 是不透明服务引用，可在 Cells 原 Upload/Task 模型的私有引用中
+冻结来源及目标条件，并由 Core canonical arguments 绑定，但实际原生消费者仍须
+验证来源与真正的目标原子条件。它不单独证明第一步上传已通过准入/额度或失联
+writer 已退休。本批没有把 v1 改为 raw-byte 上传，没有扩展公共 required 或
+预建 v2；完整上传仍属于既定交付范围，当前缺口不能用 opaque 包装消除。
+
+### 2026-10-09 原生删除任务的真实 ACK 与列举错误消费
+
+实施后的四步影响结论：
+
+1. 权威是 `07` §5.2 的真实终态/UNKNOWN 边界及 §2.1 的七个必选键，固定
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `scheduler/actions/tree/init.go` 原 `DeleteAction` 注册与
+   `scheduler/actions/tree/delete.go::DeleteAction.Run` 是已存在调用者。
+   原 `common/nodes/core/handler-exec.go::Executor.DeleteNode` 在原
+   `RemoveObject` 返回后产出 `DeleteNodeResponse.Success`；本批直接修消费方，
+   没有新建删除 API、平台动作或原生任务。
+2. 影响只在原任务读取目标、递归列举及四个 `DeleteNode` 调用点：单文件、
+   原递归 worker、flat 根目录及 `childrenOnly` 一级目录。忽略不存在只接受
+   原 `common/errors/errors.go` 的 `NodeNotFound/ObjectNotFound`，撤权、
+   scope 缺失及超时继续返回原错误；空节点/空流拒绝。`Recv` 只有 `io.EOF`
+   可结束完整列举，中途错误在已派发 worker 收口后原样返回，不删父目录。
+   多 worker 不再并发写同一个错误变量，首个实际处理错误经单项有界通道归集，
+   每个 worker 的原错误仍留日志，在原 `Wait` 后读回，不按节点数留存结果。
+   原并发数量和索引会话机制未改；状态通道在 context 取消时退出。
+3. 没有改身份、scope、native ACL、平台 PEP、binding generation 或数据权威，
+   没有增加重发。无删除 ACK 不写原 `Success=true`，沿原 internal error 返回，
+   不把它归为确定冲突。`scheduler/tasks/runnable.go` 原错误消费仍写 native
+   `TaskStatus_Error`；这只表达该原任务处理错误，不证明远端未执行，更不能
+   映射为平台已核验的 `FAILED/CANCELED`。generic delete 入口仍关闭。
+4. 已确认不存在可按原选项忽略；未知/撤权不能忽略。无 ACK、nil 回包、
+   非 EOF 流中断、部分原生删除、并发 worker 错误及状态通道取消均不能走本任务的
+   成功出口。原多 RPC 删除仍不是预期版本的原子条件删除，没有可安全重放的
+   operation-key 终态查询；本批没有将它宣布为完整 `file_storage.delete@v1`，
+   也没有改变其发布门禁或批准残缺的 FILE_STORAGE 类别。
+
+实际执行复用 `kailo-cells-native-check-lftow7`：UID `1000:1000`，
+4 CPU / 8 GiB，`cpu.max=400000 100000`，`memory.max=8589934592`，
+无额外 swap，`/cache/mod` 与 `/cache/build` 是原缓存。第一次执行前实际
+MemAvailable 约 31 GiB、memory PSI avg10=0；root 另一受限 full 的 Clippy
+在途，本批不是独占宿主。最终窄批 MemAvailable 约 32 GiB、memory PSI
+avg10=0，SDK `memory.events` 全部为 0；没有新 SDK、镜像、依赖安装或数据库。
+同步只覆盖本工程原 Go 源与 `go.mod/go.sum`，最终 `rsync -anic` checksum
+比对只有 mtime/目录元数据差异，没有 Go 文件内容或大小差异。
+
+原目标的实际命令（通过、真实生产变异及还原使用同一个命令）：
+
+```sh
+rtk proxy sudo docker exec --user 1000:1000 -w /workspace/file-storage \
+  kailo-cells-native-check-lftow7 \
+  env PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  GOMODCACHE=/cache/mod GOCACHE=/cache/build GOPROXY=off \
+  TMPDIR=/cache/build/cells-delete-task-20261009.7dbx3E \
+  CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  go test -mod=readonly ./scheduler/actions/tree -run TestDeleteAction -count=1 -v
+```
+
+日志目录为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/cells-delete-task-20261009.7dbx3E`。
+所有命令均已终结，结果依真实输入字节区分如下，顶层与子项不相加：
+
+| 日志 / 原句柄 | 实际结果 |
+| --- | --- |
+| cells-delete-task-positive.log / 25948 | exit 1：新增夹具误用不存在的 `BranchInfo.FlatStorage` 字段，编译失败；已按原 `LoadedSource.DataSource.FlatStorage` 修正，不计生产负向 |
+| cells-delete-task-final-positive.log / 75754 | exit 1：漏投递上述 Cells 可写目录环境变量，原初始化拒绝默认 `/.config/pydio/cells`；尚未进入用例 |
+| cells-delete-task-configured-positive.log / 44696 | exit 0：4 顶层 / 25 子项 PASS；此版本尚使用每节点错误结果，不作最终字节验收 |
+| cells-delete-task-production-negative.log / 43900 | exit 1：移除实际 ACK、NotFound 判定及流错误传播，1 顶层 / 10 子项 FAIL；其余 3 顶层 / 15 子项 PASS |
+| cells-delete-task-restored.log / 93741 | exit 0：精确还原该版本，4 顶层 / 25 子项 PASS；之后收口复核发现新增 O(节点数) 错误归集，已删去并改为有界首错通道 |
+| cells-delete-task-bounded-positive.log / 79787 | exit 0：最终有界生产版本，4 顶层 / 25 子项 PASS |
+| cells-delete-task-bounded-negative.log / 48322 | exit 1：私有候选移除实际 ACK、NotFound、非 EOF 传播并切断实际 worker 错误归集，1 顶层 / 11 子项 FAIL；其余 3 顶层 / 14 子项 PASS |
+| cells-delete-task-bounded-restored.log / 56336 | exit 0：`apply_patch` 精确还原后，4 顶层 / 25 子项 PASS；两原源码与正式树 `cmp` 均为 0，`gofmt -l` 无输出 |
+
+负向仅改私有候选的生产 `DeleteAction.Run`，没有改检查断言、正式源码或
+真实业务数据；原检查实际抓到了缺 ACK 假成功、撤权/超时/scope 被忽略、
+非 EOF 中断和 worker 错误被吞掉，不以编译或环境失败充当负向证据。
+并发错误的原返回只要求保留一个真实可解析原因，不承诺 worker 到达顺序；
+多错误用例验证返回原因属于实际 native 错误且不走 Success，所有已派发 worker
+仍先 `Wait` 收口。错误通道只留一项，不保留按节点增长的错误结果切片。
+
+最终原源码 SHA-256：`delete.go` 为
+`ca2aff7f541b122006c94b9e908d03f9406c6421c07a26710d75612dc19cb541`，
+`delete_test.go` 为
+`8e20885d81fd7b12bfcbe4efe2a0c0142bc0951e59c7f2c758690b95ad77f4e2`。
+
+| 原日志 / 生产变异补丁 | SHA-256 |
+| --- | --- |
+| cells-delete-task-positive.log | `4704fcb8201a733f43d29aa9b90ee5691707dbb4852e15eabb253899b5ee0b53` |
+| cells-delete-task-final-positive.log | `b598c1eca4adfa3771dedb57e2f9c5192bcbdca7344fbde58eb52cd5f9412545` |
+| cells-delete-task-configured-positive.log | `33ced2665593c51e8309fd4f3eafd2488ae7a5864ec012022fcc26665cf1161a` |
+| cells-delete-task-production-negative.log | `643ff0c320ab11800ffb28429ac25d1cdea59a15a8d0f156904ee6ba815f87f6` |
+| cells-delete-task-restored.log | `33ced2665593c51e8309fd4f3eafd2488ae7a5864ec012022fcc26665cf1161a` |
+| cells-delete-task-production-mutation.patch | `badd0c588d34edc88c159c235c1f9c43f39445dd48a81f30f274245e10a73147` |
+| cells-delete-task-bounded-positive.log | `a7367801c18cb870f80ff699b7b3455a28efb536c1ee2310306f69a1de4316b1` |
+| cells-delete-task-bounded-negative.log | `ae494068bd3038e8a7d2202f369698e3b097110ea30d8f3da9f49102170febd8` |
+| cells-delete-task-bounded-restored.log | `55ef47871b9272f6d1be0aace9e000d0e5cb85423207c1bb947b139bcd3d810b` |
+| cells-delete-task-bounded-production-mutation.patch | `c9fde139066c4d1fb5f2573da6e42ca09b64a50aad013307358cba279e39e1af` |
+
+上述原检查使用原 `Run` 与 native Handler fixture。日志保留原 logger/broker
+的 `no driver registered` 诊断，故没有验证真实索引会话消息投递；未执行实 S3、
+Mongo/业务库、持久 Task 终态、删除并发 writer fence、浏览器/设备、full 或
+artifact 构建/部署。本批源码是必要错误消费修复，不是原样字节保留；原页面、
+布局、文案及 UI 功能未改。完整条件删除、失联 writer 退休、首次上传准入与
+generic write/delete/share、七必选 catalog/批准 binding 仍未闭合，不声明
+完整 FILE_STORAGE 已可用、100% 还原或生产就绪。

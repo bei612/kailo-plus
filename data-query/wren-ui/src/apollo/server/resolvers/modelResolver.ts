@@ -1009,30 +1009,40 @@ export class ModelResolver {
     }
     for (const requested of data.relationships ?? [])
       await this.currentRelation(ctx, requested.id, projectId);
+    let alreadyDispatched = false;
+    const beforeWrite = async () => {
+      await this.verifyMetadataWrite(ctx, projectId, alreadyDispatched);
+      alreadyDispatched = true;
+    };
     try {
       // update model metadata
-      await this.handleUpdateModelMetadata(data, model, ctx, modelId);
+      await this.handleUpdateModelMetadata(
+        data,
+        model,
+        ctx,
+        modelId,
+        beforeWrite,
+      );
 
-      // todo: considering using update ... from statement to do a batch update
       // update column metadata
       if (!isEmpty(data.columns)) {
         // find the columns that match the user requested columns
-        await this.handleUpdateColumnMetadata(data, ctx);
+        await this.handleUpdateColumnMetadata(data, ctx, beforeWrite);
       }
 
       // update nested column metadata
       if (!isEmpty(data.nestedColumns)) {
-        await this.handleUpdateNestedColumnMetadata(data, ctx);
+        await this.handleUpdateNestedColumnMetadata(data, ctx, beforeWrite);
       }
 
       // update calculated field metadata
       if (!isEmpty(data.calculatedFields)) {
-        await this.handleUpdateCFMetadata(data, ctx);
+        await this.handleUpdateCFMetadata(data, ctx, beforeWrite);
       }
 
       // update relationship metadata
       if (!isEmpty(data.relationships)) {
-        await this.handleUpdateRelationshipMetadata(data, ctx);
+        await this.handleUpdateRelationshipMetadata(data, ctx, beforeWrite);
       }
 
       ctx.telemetry.sendEvent(eventName, { data });
@@ -1053,6 +1063,7 @@ export class ModelResolver {
     model: Model,
     ctx: IContext,
     modelId: number,
+    beforeWrite: () => Promise<void>,
   ) {
     const modelMetadata: any = {};
 
@@ -1072,6 +1083,7 @@ export class ModelResolver {
     }
 
     if (!isEmpty(modelMetadata)) {
+      await beforeWrite();
       await ctx.modelRepository.updateOne(modelId, modelMetadata);
     }
   }
@@ -1079,6 +1091,7 @@ export class ModelResolver {
   private async handleUpdateRelationshipMetadata(
     data: UpdateModelMetadataInput,
     ctx: IContext,
+    beforeWrite: () => Promise<void>,
   ) {
     const relationshipIds = data.relationships.map((r) => r.id);
     const relationships =
@@ -1097,6 +1110,7 @@ export class ModelResolver {
       }
 
       if (!isEmpty(relationMetadata)) {
+        await beforeWrite();
         await ctx.relationRepository.updateOne(rel.id, relationMetadata);
       }
     }
@@ -1105,6 +1119,7 @@ export class ModelResolver {
   private async handleUpdateCFMetadata(
     data: UpdateModelMetadataInput,
     ctx: IContext,
+    beforeWrite: () => Promise<void>,
   ) {
     const calculatedFieldIds = data.calculatedFields.map((c) => c.id);
     const modelColumns =
@@ -1127,6 +1142,7 @@ export class ModelResolver {
       }
 
       if (!isEmpty(columnMetadata)) {
+        await beforeWrite();
         await ctx.modelColumnRepository.updateOne(col.id, columnMetadata);
       }
     }
@@ -1135,6 +1151,7 @@ export class ModelResolver {
   private async handleUpdateColumnMetadata(
     data: UpdateModelMetadataInput,
     ctx: IContext,
+    beforeWrite: () => Promise<void>,
   ) {
     const columnIds = data.columns.map((c) => c.id);
     const modelColumns =
@@ -1160,6 +1177,7 @@ export class ModelResolver {
       }
 
       if (!isEmpty(columnMetadata)) {
+        await beforeWrite();
         await ctx.modelColumnRepository.updateOne(col.id, columnMetadata);
       }
     }
@@ -1168,6 +1186,7 @@ export class ModelResolver {
   private async handleUpdateNestedColumnMetadata(
     data: UpdateModelMetadataInput,
     ctx: IContext,
+    beforeWrite: () => Promise<void>,
   ) {
     const nestedColumnIds = data.nestedColumns.map((nc) => nc.id);
     const modelNestedColumns =
@@ -1195,6 +1214,7 @@ export class ModelResolver {
       }
 
       if (!isEmpty(nestedColumnMetadata)) {
+        await beforeWrite();
         await ctx.modelNestedColumnRepository.updateOne(
           col.id,
           nestedColumnMetadata,

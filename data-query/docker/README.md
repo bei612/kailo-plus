@@ -1304,3 +1304,27 @@ not live instance or browser acceptance. This does not provide generic metadata
 lost-ACK/cross-client reconciliation, calculation-field SQL admission, deployment
 or all other modeling mutations, dynamic Resource evidence, ordinary-function
 provenance, trusted SERVICE SQL, an ACTIVE release or a deployed Wren instance.
+
+### Original model metadata editor write consumers
+
+The original modeling `EditMetadataModal` still calls the same
+`updateModelMetadata` mutation, with its complete model, ordinary-column,
+nested-column, calculated-field **description** and relationship metadata.
+The five original private helpers now consume one request-local current
+project/manage and captured binding/generation check immediately before each
+actual native `updateOne`, including after their own asynchronous row lookup.
+An earlier native update in any helper prevents a later refusal from being
+relabeled `NOT_STARTED`; it remains `UNKNOWN`, with no automatic write retry.
+
+Original blank-to-null metadata removal, unrelated properties, native write
+order, telemetry, `true` response and entirely unconfigured standalone editor
+are preserved. This does not call calculated-field expression validation,
+query/preview or create a new Action, database table, ACL or execution record.
+The [actual five-helper receipt](../fork/verify/native-integration.md#original-model-metadata-editor-native-write-consumers)
+records **91 Metadata + 52 Model + 44 Relation = 187/187**, original TypeScript
+and two-file formatting exit 0, with two actual private production mutations
+caught and restored byte-for-byte. Transports are fixture-backed, not live
+instance/authorization or browser acceptance. Calculated-field SQL admission,
+other native writes and generic metadata ACK/recovery, dynamic Resource evidence,
+function provenance and trusted SERVICE SQL remain release gaps; no deployment,
+ACTIVE binding or full original-product acceptance is established by this batch.

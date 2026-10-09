@@ -31,9 +31,9 @@ artifacts:
     build_context: knowledge/frontend
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/]
-    source_digest: sha256:f6cf1238013fa17ffecaa1b1396a1b3ff71c512196d1c891f42604e6ab913438
-    artifact_digest: sha256:dd0d8c706573854c6d07aecb8f2295aa3385071013e577eebe1fd446910cf31b
-    blocked: Source-matched full native UI is deployed with digest readback and selected native page screenshots; complete business/browser acceptance, unresolved dependency vulnerabilities and full component activation remain unverified.
+    source_digest: sha256:8ed14452498e8236df9d87c9157cb2de9d99f9c38033087f9621e2d0c6dde124
+    artifact_digest: sha256:0d6f4235a9beebccb8167f851ca749d332852fcf4b45800680c0d55a4186671b
+    blocked: The full native UI from Kailo commit e71757861238eeaa4473a1b09e35db251fcac1e8 is deployed with digest readback and selected Chinese/English page screenshots. Live data-source scope-switch/log acceptance has no populated native knowledge base; complete business/browser acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261009-e717-ui.md.
   - name: knowledge-document-reader
     kind: image
     build_context: knowledge
