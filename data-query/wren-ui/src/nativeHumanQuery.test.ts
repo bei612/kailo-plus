@@ -2992,6 +2992,8 @@ describe('native saved-view HUMAN query consumer', () => {
     });
     it('retains the original never-configured standalone project mutation', async () => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
       expect(await update()).toBe(true);
       expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
       expect(calls).not.toHaveBeenCalled();

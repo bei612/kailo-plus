@@ -6781,3 +6781,121 @@ projection/native registration still require runtime acceptance. No production
 Wren instance or ACTIVE binding is established; full restoration/production
 readiness is not claimed. Fourteen paths are frozen for root main review/commit/
 push; this agent does not stage/commit/push/deploy. Root owns full-check/release.
+
+## Original project boundary: explicit independent mode and one trusted identity
+
+Fixed official baseline: `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers.ts::resolvers.Query.settings`,
+`resolvers.Mutation.updateCurrentProject` and
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::ProjectResolver.getSettings`
+/ `ProjectResolver.updateCurrentProject`. Those original complete consumers and
+registered project/model/view/dashboard native operations remain. The affected
+Kailo adapter is the existing
+`data-query/wren-ui/src/apollo/server/resolvers.ts::nativeProjectResolver`;
+it is not claimed as an upstream function. No reference file was changed/run.
+
+Implementation four-step findings:
+
+1. Authority: `.design/05` §2.7 and `.design/08` §6 / SS-WRN-IDENTITY require
+   actual current HUMAN/project/public authorization, not instance entitlement
+   alone. Original native metadata management is not automatically a new platform
+   query Action. The wrapper already uses the existing binding's public discover/
+   manage permissions and fixed native project; this fixes its real selection
+   and asynchronous request consumers, not the permission authority.
+2. Impact: all already-registered native project discover/manage wrappers use
+   the same existing function. Previously undefined delivery alone bypassed them,
+   even with trusted native identity fields. Standalone now requires delivery,
+   identity scope and HUMAN token all undefined; empty/mixed fields do not count
+   as absence. Bound calls retain initial trusted identity/token, original Core
+   authorization, fixed project and generation. After asynchronous project read,
+   current controlled delivery and identity must still match before native
+   dispatch; final authorization consumes the same token and rejects changed
+   identity before returning. Original per-Resource disclosure and SQL admission
+   consumers remain separate. No API/schema/generated type/database migration,
+   state/permission/registry/lifecycle or frontend change is introduced.
+3. Side effects: missing delivery cannot borrow standalone current-project writes
+   through an already authenticated native request. Native headers are still
+   produced by original middleware from a verified JWT after removing browser
+   internal headers; this wrapper does not fabricate or duplicate identity.
+   Its digest is request association, not authorization. Core still verifies
+   the same HUMAN token and scope each time. No token/body is added to persistent
+   native history, error metadata, Core or a second store. Native methods run
+   once; configured pre-dispatch refusal is existing NOT_STARTED, not UNKNOWN.
+4. Boundaries: genuine independent settings/project editing preserve full native
+   responses and original repository writes without fabricated scope. Empty/bad
+   delivery is PRECONDITION; missing identity/current project is DENIED; switched
+   delivery/identity is CONFLICT before dispatch. After native entry the existing
+   nativeWriteUnknown consumer retains UNKNOWN and original scope/generation,
+   never claims rollback or retries. Original authorization outages, revocation,
+   generation changes and Resource body denials remain closed. No new lease,
+   queue, quota/backpressure limit, reconciliation state or external SQL task
+   requires a new termination mechanism.
+
+Difference classification: original registered native operations, response/body/
+layout and genuine independent mode are **原样保留**; shared migration is **无适用对象**.
+Strict standalone selection, same trusted request/delivery before native entry
+and same-identity final response are precise **已授权治理改造**. No new UI or product
+name branch/Action/permission authority is added. Full release and live multi-user
+acceptance remain **缺失需恢复**, including existing dynamic native Resource evidence,
+ordinary-function provenance and trusted SERVICE SQL gaps.
+
+Only the existing `kailo-wren-query-sdk-itgs2n` original `/work` / dependencies
+were used. UI's Node window finished before this one started. Actual preflight
+`2026-10-09T00:32:15Z`: SDK idle, uid 1000, CPU `400000 100000`, memory
+`4294967296`, all memory events 0; host memory available about 24 GiB, CPU some
+avg10 0.87%, I/O full avg10 5.03%, no concurrent Cargo/Go/Node build found.
+No SDK/image/download/new database/global check or production service was started.
+Logs below: `/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeProjectScope.test.ts
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeHumanQuery.test.ts \
+  --testNamePattern 'original native project scope permission consumers'
+node /work/node_modules/typescript/bin/tsc \
+  --noEmit --incremental false --pretty false
+```
+
+- `project-boundary-positive.log`: all 175 assertions passed, but importing the
+  original resolver registration also initialized common's recommendation
+  timers; Jest did not exit and logged unavailable observations. Only the exact
+  owned SDK Jest process was terminated (exit 143); this is not a passing
+  terminal check. The existing nativeHumanQuery fixture's common isolation was
+  reused, without forceExit, changing product code or adding a test framework.
+- `project-boundary-positive-isolated.log`: **exit 0**, **175 passed / 175 total**,
+  10.24 seconds, complete original project file including 38 new real exported
+  settings/project-mutation consumers and existing original source readers.
+- `project-boundary-existing-scope.log`: **exit 1**, **1 failed / 33 passed /
+  371 filtered**, 8.901 seconds. The old standalone fixture removed only delivery
+  but retained verified native headers, precisely relying on the bypass being
+  closed. Its only two changed lines now remove both trusted fields for genuine
+  independent mode; denied/UNKNOWN/resource assertions were not weakened.
+- `project-boundary-existing-scope-final.log`: **exit 0**, **34 passed /
+  371 filtered**, 7.037 seconds, same original scope target. This is not a pass
+  of the other 371 checks, nor production membership/permission evidence.
+- `project-boundary-types.log`: original tsc command above, **exit 0**,
+  unchanged configuration and no suppressed diagnostics.
+- `project-boundary-mutation.log`: **exit 1**, **22 failed / 16 passed /
+  137 filtered**, 6.783 seconds, original nested project-boundary target.
+  Private production damage restored env-only standalone selection, removed
+  the pre-dispatch delivery/identity fence and final identity comparison.
+  Actual exported consumers caught twelve missing-delivery bypasses, six
+  project-load switches and four late disclosure/write-UNKNOWN faults.
+  Formal production bytes were never damaged. Private resolver restored via
+  apply_patch and cmp 0 before the full restoration run.
+- `project-boundary-restored.log`: **exit 0**, **175 passed / 175 total**,
+  10.29 seconds, full original project command on restored final bytes.
+  All three formal/private source/check inputs cmp 0; no delayed native replay.
+- `project-boundary-format.log`: original Prettier check on three inputs,
+  **exit 0**. Final batch diff-check **exit 0**.
+- `project-boundary-cgroup-final.log`: `2026-10-09T00:35:58Z`, same CPU/memory
+  bounds and low/high/max/oom/oom_kill/oom_group_kill all **0**.
+
+These are real exported native resolver consumers with original repository/
+authorization fixtures, not business provider, PostgreSQL, browser/screenshots,
+iframe, Desktop/Mobile or three-user acceptance. No production Wren instance,
+ACTIVE binding or full original parity is established. Five paths are frozen
+for root review/main commit/push; this agent does not operate the Git index or
+deploy. The inherited unverified Java2 are unchanged and excluded. Root owns
+the full-check/release gate.

@@ -37,19 +37,21 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
   nativeType?: NativeWriteReference['nativeType'],
 ): T {
   return (async (root: any, args: any, ctx: IContext, info: any) => {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+    const identityScope = ctx.nativeIdentityScope;
+    const token = ctx.nativeHumanToken;
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
+      identityScope === undefined &&
+      token === undefined
+    )
       return resolver(root, args, ctx, info);
     let config: NativeQueryDelivery;
     let scope: string;
     let generation: number;
     try {
       config = await loadQueryDelivery();
-      scope = nativePreviewScope(config, ctx.nativeIdentityScope);
-      const before = await authorizeNativeScope(
-        config,
-        ctx.nativeHumanToken,
-        permission,
-      );
+      scope = nativePreviewScope(config, identityScope);
+      const before = await authorizeNativeScope(config, token, permission);
       generation = before.generation;
       const project = await ctx.projectService.getCurrentProject();
       if (
@@ -57,6 +59,14 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
         String(project.id) !== config.nativeScopeRef
       )
         throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      // Native project loading is asynchronous: its result cannot dispatch
+      // under a different delivery or another trusted request identity.
+      if (
+        digest(await loadQueryDelivery()) !== digest(config) ||
+        ctx.nativeIdentityScope !== identityScope ||
+        ctx.nativeHumanToken !== token
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     } catch (error) {
       throw permission === 'manage' ? nativeWriteNotStarted(error) : error;
     }
@@ -66,12 +76,12 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
       if (disclose) await disclose(ctx, output);
       if (digest(await loadQueryDelivery()) !== digest(config))
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-      const after = await authorizeNativeScope(
-        config,
-        ctx.nativeHumanToken,
-        permission,
-      );
-      if (after.generation !== generation)
+      const after = await authorizeNativeScope(config, token, permission);
+      if (
+        after.generation !== generation ||
+        ctx.nativeIdentityScope !== identityScope ||
+        ctx.nativeHumanToken !== token
+      )
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return output;
     } catch (error) {

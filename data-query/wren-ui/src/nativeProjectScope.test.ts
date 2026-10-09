@@ -1,4 +1,5 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import originalResolvers from './apollo/server/resolvers';
 import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
 import { ApolloServer } from 'apollo-server-micro';
 import { gql } from '@apollo/client';
@@ -29,6 +30,7 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   bindingServiceCall: jest.fn(),
   loadQueryDelivery: jest.fn(),
 }));
+jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
 describe('native bound-project business consumers', () => {
   const resolver = new ModelResolver();
@@ -2230,4 +2232,272 @@ describe('native bound-project business consumers', () => {
     expect(await service.deleteDashboardItem(91)).toBe(true);
     expect(dashboardItemRepository.deleteOne).toHaveBeenCalledWith(91);
   });
+});
+
+describe('original project resolver native delivery and identity boundary', () => {
+  const config: any = {
+    projectId: 7,
+    tenantId: 'a153ac6a-c04e-4d35-bb3e-15c01a9c38b7',
+    workspaceId: '87c27723-e475-4e0b-a0e9-50e5d755fe63',
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '7',
+  };
+  const project = {
+    id: config.projectId,
+    type: 'POSTGRES',
+    sampleDataset: 'fixture',
+    displayName: 'Original data source',
+    language: 'en',
+  };
+  const scope = (permission: string) => ({
+    scope: {
+      bindingId: config.bindingId,
+      generation: 2,
+      tenantId: config.tenantId,
+      workspaceId: config.workspaceId,
+      nativeInstanceRef: config.nativeInstanceRef,
+      nativeScopeRef: config.nativeScopeRef,
+      permission,
+      checkedRevision: 'fresh-public-scope',
+    },
+  });
+  let previous: string | undefined;
+  let ctx: any;
+  const calls = jest.mocked(bindingServiceCall);
+  const invoke = (kind: 'read' | 'write') =>
+    kind === 'read'
+      ? originalResolvers.Query.settings(null, {}, ctx)
+      : originalResolvers.Mutation.updateCurrentProject(
+          null,
+          { data: { language: 'zh-TW' } },
+          ctx,
+        );
+  beforeEach(() => {
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    calls.mockReset().mockImplementation(async (_config, operation, input) => {
+      expect(operation).toBe('human-action');
+      expect(input).toHaveProperty('authorizeScope');
+      return scope((input.authorizeScope as { permission: string }).permission);
+    });
+    ctx = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'first-person-token',
+      projectService: {
+        getCurrentProject: jest.fn().mockResolvedValue(project),
+        getGeneralConnectionInfo: jest.fn().mockReturnValue({}),
+        generateProjectRecommendationQuestions: jest.fn(),
+      },
+      projectRepository: { updateOne: jest.fn() },
+      config: { wrenProductVersion: 'fixture-original-version' },
+    };
+  });
+  afterEach(() => {
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+  it.each(['read', 'write'] as const)(
+    'keeps original never-configured native %s without fabricated identity or public permission',
+    async (kind) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
+      const result = await invoke(kind);
+      if (kind === 'read')
+        expect(result).toMatchObject({
+          language: project.language,
+          dataSource: {
+            type: project.type,
+            properties: { displayName: project.displayName },
+          },
+        });
+      else {
+        expect(result).toBe(true);
+        expect(ctx.projectRepository.updateOne).toHaveBeenCalledWith(7, {
+          language: 'zh-TW',
+        });
+      }
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
+      expect(calls).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    (['read', 'write'] as const).flatMap((kind) =>
+      [
+        'identity-only',
+        'token-only',
+        'empty-identity',
+        'empty-token',
+        'both',
+        'empty-both',
+      ].map((fault) => ({ kind, fault })),
+    ),
+  )(
+    'refuses missing delivery for original $kind with $fault instead of entering standalone native code',
+    async ({ kind, fault }) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      if (fault === 'identity-only' || fault === 'empty-identity')
+        delete ctx.nativeHumanToken;
+      if (fault === 'token-only' || fault === 'empty-token')
+        delete ctx.nativeIdentityScope;
+      if (fault === 'empty-identity' || fault === 'empty-both')
+        ctx.nativeIdentityScope = '';
+      if (fault === 'empty-token' || fault === 'empty-both')
+        ctx.nativeHumanToken = '';
+      jest
+        .mocked(loadQueryDelivery)
+        .mockImplementation(
+          jest.requireActual('./apollo/server/services/nativeQueryAdmission')
+            .loadQueryDelivery,
+        );
+      await expect(invoke(kind)).rejects.toMatchObject({
+        message: 'QUERY_ADMISSION_UNAVAILABLE',
+        ...(kind === 'write' && {
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        }),
+      });
+      expect(loadQueryDelivery).toHaveBeenCalledTimes(1);
+      expect(calls).not.toHaveBeenCalled();
+      expect(ctx.projectService.getCurrentProject).not.toHaveBeenCalled();
+      expect(
+        ctx.projectService.getGeneralConnectionInfo,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    (['read', 'write'] as const).flatMap((kind) =>
+      [
+        'missing-identity',
+        'missing-token',
+        'empty-identity',
+        'empty-token',
+        'invalid-identity',
+        'empty-delivery',
+      ].map((fault) => ({ kind, fault })),
+    ),
+  )(
+    'refuses configured $fault before original $kind work',
+    async ({ kind, fault }) => {
+      if (fault === 'missing-identity') delete ctx.nativeIdentityScope;
+      if (fault === 'missing-token') delete ctx.nativeHumanToken;
+      if (fault === 'empty-identity') ctx.nativeIdentityScope = '';
+      if (fault === 'empty-token') ctx.nativeHumanToken = '';
+      if (fault === 'invalid-identity') ctx.nativeIdentityScope = 'not-trusted';
+      if (fault === 'empty-delivery') {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+        jest
+          .mocked(loadQueryDelivery)
+          .mockImplementation(
+            jest.requireActual('./apollo/server/services/nativeQueryAdmission')
+              .loadQueryDelivery,
+          );
+      }
+      await expect(invoke(kind)).rejects.toBeInstanceOf(NativeQueryRefusal);
+      expect(calls).not.toHaveBeenCalled();
+      expect(ctx.projectService.getCurrentProject).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    (['read', 'write'] as const).flatMap((kind) =>
+      ['identity', 'token', 'delivery'].map((fault) => ({ kind, fault })),
+    ),
+  )(
+    'refuses a $fault switch during native project loading before dispatching original $kind',
+    async ({ kind, fault }) => {
+      ctx.projectService.getCurrentProject.mockImplementationOnce(async () => {
+        if (fault === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+        if (fault === 'token') ctx.nativeHumanToken = 'second-person-token';
+        if (fault === 'delivery')
+          jest.mocked(loadQueryDelivery).mockResolvedValue({
+            ...config,
+            bindingId: 'd75d1c3d-c74e-4d37-b08b-56513146225d',
+          });
+        return project;
+      });
+      await expect(invoke(kind)).rejects.toMatchObject({
+        message: 'QUERY_REFERENCE_CHANGED',
+        ...(kind === 'write' && {
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        }),
+      });
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+      expect(
+        ctx.projectService.getGeneralConnectionInfo,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['read', 'write'] as const)(
+    'refuses a foreign current project before original %s work',
+    async (kind) => {
+      ctx.projectService.getCurrentProject.mockResolvedValue({
+        ...project,
+        id: 8,
+      });
+      await expect(invoke(kind)).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(
+        ctx.projectService.getGeneralConnectionInfo,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['identity', 'token'])(
+    'does not disclose original metadata after %s changes while final authorization is pending',
+    async (fault) => {
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (calls.mock.calls.length === 2) {
+          if (fault === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+          else ctx.nativeHumanToken = 'second-person-token';
+        }
+        return scope(
+          (input.authorizeScope as { permission: string }).permission,
+        );
+      });
+      await expect(invoke('read')).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.projectService.getGeneralConnectionInfo).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(calls.mock.calls.map((entry) => entry[3])).toEqual([
+        'first-person-token',
+        'first-person-token',
+      ]);
+    },
+  );
+  it.each(['identity', 'token'])(
+    'retains UNKNOWN after one original write when %s changes during final authorization, without re-dispatch',
+    async (fault) => {
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (calls.mock.calls.length === 2) {
+          if (fault === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+          else ctx.nativeHumanToken = 'second-person-token';
+        }
+        return scope(
+          (input.authorizeScope as { permission: string }).permission,
+        );
+      });
+      await expect(invoke('write')).rejects.toMatchObject({
+        message: 'NATIVE_EXECUTION_UNKNOWN',
+        extensions: {
+          other: {
+            nativeWrite: {
+              outcome: 'UNKNOWN',
+              scope: nativePreviewScope(config, 'a'.repeat(64)),
+              generation: 2,
+            },
+          },
+        },
+      });
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+      expect(calls.mock.calls.map((entry) => entry[3])).toEqual([
+        'first-person-token',
+        'first-person-token',
+      ]);
+    },
+  );
 });

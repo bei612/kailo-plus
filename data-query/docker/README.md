@@ -1024,3 +1024,30 @@ These are SDK GraphQL/hook and real local HTTP transport consumers, not business
 provider, browser, iframe, multi-user or device acceptance. Dynamic trusted
 native Resource adoption, ordinary-function provenance, trusted SERVICE SQL,
 a live Wren business instance and ACTIVE binding remain unestablished.
+
+### Original project boundary: explicit independent mode and one trusted identity
+
+Original native project reads and metadata writes select independent mode only
+when delivery configuration and both trusted identity fields have never been
+set. A missing delivery file with either native identity field, even an empty
+field, now refuses rather than entering the original ungoverned current-project
+path. Configured calls retain the existing public discover/manage authorization,
+fixed native project and separate per-Resource body checks.
+
+The original request boundary retains the verified initial identity/token.
+After asynchronous project loading it rechecks controlled delivery and that
+same identity before entering native code. Final authorization uses the same
+token; a changed identity cannot receive a successful body. Refusal before
+native writing is NOT_STARTED; refusal after entering it remains UNKNOWN with
+the original scope/generation, without replay or invented rollback evidence.
+No query Action, new identity/permission store, native task, table or page was
+introduced. Never-configured original settings and project editing remain.
+
+The [project-boundary receipt](../fork/verify/native-integration.md#original-project-boundary-explicit-independent-mode-and-one-trusted-identity)
+records final **175/175** original project consumers, **34** selected existing
+scope checks, original TypeScript/format passes, **22** actual protection
+failures under private production damage and exact restoration. It preserves
+the initial fixture/timer and false-standalone failures. This closes this precise
+native request bypass, not all Wren release gaps: actual business deployment,
+ACTIVE binding, multi-user UI/iframe acceptance, dynamic trusted native Resource
+adoption, ordinary-function provenance and trusted SERVICE SQL remain unproven.
