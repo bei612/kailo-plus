@@ -233,6 +233,8 @@
     "./react/composer/features/messages/ui/useAddressMentionPulse": "./src/react/composer/features/messages/ui/useAddressMentionPulse.ts",
     "./react/composer/features/messages/ui/useAutoPinMentionedAgents": "./src/react/composer/features/messages/ui/useAutoPinMentionedAgents.ts",
     "./react/composer/features/messages/ui/useAlwaysAddressShortcut": "./src/react/composer/features/messages/ui/useAlwaysAddressShortcut.ts",
+    "./react/composer/features/messages/ui/useImplicitAgentMentionProvenance": "./src/react/composer/features/messages/ui/useImplicitAgentMentionProvenance.ts",
+    "./react/composer/features/messages/lib/stripImplicitAgentMentions": "./src/react/composer/features/messages/lib/stripImplicitAgentMentions.ts",
     "./react/composer/features/messages/lib/persistentAgentAudience": "./src/react/composer/features/messages/lib/persistentAgentAudience.ts",
     "./react/composer/features/messages/lib/autoPinMentionedAgentsPreference": "./src/react/composer/features/messages/lib/autoPinMentionedAgentsPreference.ts",
     "./react/composer/features/messages/lib/composerAgentDirectory": "./src/react/composer/features/messages/lib/composerAgentDirectory.ts",

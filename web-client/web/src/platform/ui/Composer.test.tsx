@@ -755,3 +755,41 @@ it("fences an old identity result and rejects malformed pagination or ambiguous 
   const ambiguous = {...base,agentInstallations:async()=>({installations:[installation("agent-a"),duplicate],nextOffset:null})};
   await expect(loadComposerAgentDirectory(ambiguous as unknown as Parameters<typeof loadComposerAgentDirectory>[0],scope,()=>true)).rejects.toThrow("Ambiguous Agent");
 });
+
+it("persists authored drafts without automatic addressing and restores the original prefix once", async () => {
+  setKeepMentionedAgentsPinned(true);
+  const props = {workspaceId:"workspace-a",draftIdentity:"human-a",draftKey:"prefix-thread",audienceContext:{type:"thread" as const,rootTags:[["p","1".repeat(64)]]}};
+  let host = await render(<Composer {...props}/>);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("@agent-a "));});
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "@agent-a authored body");
+  expect(loadDraftEntry(props.draftKey)?.content).toBe("authored body");
+  await act(async () => mounted!.root.unmount());
+  mounted!.host.remove(); mounted!.queryClient.clear(); mounted = undefined;
+  host = await render(<Composer {...props}/>);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("@agent-a authored body"));});
+  expect(loadDraftEntry(props.draftKey)?.content).toBe("authored body");
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("preserves identical authored mentions and the full captured UNKNOWN intent instead of stripping its retry", async () => {
+  setKeepMentionedAgentsPinned(true);
+  state.publish.mockRejectedValue(new TransportError("lost response"));
+  const props = {workspaceId:"workspace-a",draftIdentity:"human-a",draftKey:"prefix-unknown",audienceContext:{type:"thread" as const,rootTags:[["p","1".repeat(64)]]}};
+  let host = await render(<Composer {...props}/>);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("@agent-a "));});
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "@agent-a @agent-a authored body");
+  expect(loadDraftEntry(props.draftKey)?.content).toBe("@agent-a authored body");
+  await click(button(host, "platform.send"));
+  expect(state.publish.mock.calls[0][1]).toBe("@agent-a @agent-a authored body");
+  const key = state.publish.mock.calls[0][3];
+  expect(loadDraftEntry(props.draftKey)?.content).toBe("@agent-a @agent-a authored body");
+  expect(loadDraftEntry(props.draftKey)?.sendIntent?.key).toBe(key);
+  await act(async () => mounted!.root.unmount());
+  mounted!.host.remove(); mounted!.queryClient.clear(); mounted = undefined;
+  host = await render(<Composer {...props} autoSendDraftKey={props.draftKey}/>);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("@agent-a @agent-a authored body");
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  await click(button(host, "platform.send"));
+  expect(state.publish.mock.calls[1][1]).toBe("@agent-a @agent-a authored body");
+  expect(state.publish.mock.calls[1][3]).toBe(key);
+});

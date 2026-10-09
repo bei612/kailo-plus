@@ -35,6 +35,38 @@ beforeEach(() => {
 });
 
 describe("original custom emoji composer consumers", () => {
+  it("retains every original toolbar selection-capture reader without inventing host selection state", async () => {
+    const capture = vi.fn();
+    function Composer() {
+      const [formatting, setFormatting] = useState(false);
+      const editor = useRichTextEditor({readClipboardText:async()=>""});
+      return <TooltipProvider><EditorContent editor={editor.editor}/><MessageComposerToolbar
+        editor={editor.editor} composerDisabled={false} formattingDisabled={false}
+        isFormattingOpen={formatting} isSending={false} isUploading={false} sendDisabled={false}
+        onCaptureSelection={capture} onFormattingToggle={setFormatting} onLinkButton={() => {}}
+        onPaperclip={() => {}} onVoiceNote={() => {}} onOpenMentionPicker={() => {}}/></TooltipProvider>;
+    }
+    const host = await render(<Composer/>);
+    expect([...host.querySelectorAll('[data-testid="composer-ingress-controls"] button')].map(target => target.getAttribute("aria-label"))).toEqual([
+      "Mention someone", "Attach file", "Record voice note", "Insert emoji", "Toggle formatting",
+    ]);
+    async function press(label: string, reader?: HTMLElement | null) {
+      const target = reader ?? host.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
+      expect(target).not.toBeNull();
+      await act(async () => {target.dispatchEvent(new MouseEvent("mousedown", {bubbles:true}));});
+      return target;
+    }
+    await press("Mention someone");
+    await press("Attach file");
+    await press("Record voice note");
+    await press("Insert emoji");
+    const expand = await press("Toggle formatting");
+    await click(expand);
+    const expanded = host.querySelector<HTMLElement>('[aria-label="Close formatting"]')!.parentElement!.parentElement!;
+    await press("Toggle formatting", expanded.querySelector<HTMLElement>('[aria-label="Toggle formatting"]'));
+    await press("Close formatting");
+    expect(capture).toHaveBeenCalledTimes(7);
+  });
   it("uses the original empty-editor ArrowUp callback without taking drafted, modified or autocomplete keys", async () => {
     const selected=vi.fn(()=>true), autocomplete={current:false};
     let editor:ReturnType<typeof useRichTextEditor>|undefined;

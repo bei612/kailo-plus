@@ -5827,3 +5827,110 @@ union 5314，原样 1976、共享 112、整文件授权 0、尚未证明保留�
 只证明此次 SSO 登录边界，不算业务／头像／Audience 视觉通过。
 原 a816 三张旧线上实拍沿已提交独立回执；当前新 Audience 业务截图 0，
 源码尚未部署，不能用这些旧图或定向测试宣称原版 100%／生产就绪。
+
+### 2026-10-09：原隐式 Agent 前缀→草稿快照与 Toolbar 原选择回调恢复（10 路径冻结）
+
+本批起点为已推送 main `784d2ee9e80f09d2f720e5d0e0b85bc71492da01`。
+10 个源码／原检查路径接手时均无未提交改动；package.json 只新增两个现存模块 export，
+无依赖／lock／契约／词条／Dart 变更，不吸收其它工作树继承修改。
+本批源码 +248/-15；只由 root 选择性提交，不自行 stage／commit／push。
+
+四步影响面与确定行为：
+
+1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/ui/useImplicitAgentMentionProvenance.ts::useImplicitAgentMentionProvenance`、
+   `desktop/src/features/messages/ui/useDraftPersistSnapshot.ts::useDraftPersistLifecycle/persistedContent`、
+   `desktop/src/features/messages/ui/MessageComposer.tsx::MessageComposerImpl/handleCaptureSelection`、
+   `desktop/src/features/messages/ui/MessageComposerToolbar.tsx::MessageComposerToolbar`、
+   `desktop/src/features/messages/ui/ComposerEmojiPicker.tsx::ComposerEmojiPicker`。
+   复用固定实现，保持 DD-75 Native 本机签名直连与 SS-WEB-01 Browser 经 BFF，
+   不改 Core／Worker／Relay 准入、注册表或执行权威。
+2. 影响：共享 provenance 的 add/remove/getPrefix→两宿主真实 addressLock 回调→
+   Native lifecycle cleanup 和 Web persistDraft；Toolbar→EmojiPicker trigger。
+   数据写方仍原草稿 store，读方仍原编辑器恢复及发送消费者，字段形状不变。
+   原 strip helper 只删除可信已记录且确实位于开头的自动 prefix，
+   相同手工 @mention 保留；空 key／空 prefix 不删正文。
+3. 副作用：provenance 用既有受权 audienceScope 的 owner/channel/draft 分区，
+   不信 kind0/is_agent，不生成第二 scope 或自动绑定；无有效 scope 时保持空 prefix。
+   Web 已捕获 publication／UNKNOWN 的 intent 仍持原完整内容和 idempotencyKey，
+   不将正常草稿净化套到重放快照，不自动重发；此 Web 新专项未运行 case，不能称已验。
+4. 边界：原 prepend/dedup/remove 与原 Map 淘汰规则原样复用；跨 owner/draft 不串前缀。
+   原 StrictMode／A-B-A／清空权威／图片和文件保留算法不变。
+   既有旧草稿格式无需迁移；没有可信 provenance 的旧正文保持原值，不猜测 @mention。
+   无网络新状态或失败分类变更，原 UNKNOWN／撤权／身份切换 fence 继续 fail closed。
+
+本批四类逐符号边界：
+
+- 原样保留：固定原 `MessageComposer.tsx:816::handleCaptureSelection` 本来就是
+  `React.useCallback(() => {}, [])`。两宿主恢复相同回调，不发明 selection 快照／权威；
+  这不是新增选择能力，更不以原空 callback 声称修好了原版未提供的实现。
+- 共享迁移：原 provenance 函数迁到 client-kit 单主体，只有 import/export 接缝；
+  Native 原 persistedContent 与 cleanup 恢复共享 strip helper，Web 对正常草稿消费同一 helper；
+  Toolbar 七处真实 mousedown／trigger 读方恢复，并恢复原 voice→emoji 顺序。
+- 已授权治理改造：provenance key 用既有可信 owner/channel/draft audienceScope；
+  Web 仅在非 intent 的正常草稿净化，捕获发送／UNKNOWN 快照不变，Browser 不取本机密钥。
+  只归上述确定接缝，不将整份 Toolbar／EmojiPicker 残余差异概括为治理授权。
+- 缺失需恢复：Toolbar 原 GIF／gifMediaController 分支、emoji 原排序、
+  voice-note 禁用一致性、managementMarker 的实例 provenance 消费仍未闭合；
+  本批只有 selection 调用和顺序／草稿 prefix 闭环，不称整份 Composer 原版一致。
+
+冻结范围索引和源码原件：
+
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/prefix-draft-20261009.C3rjzQ`
+
+该目录 `owned-paths.txt` 精确 10 路径，`inputs.sha256` 对应正式最终字节；
+`owned-source.patch` SHA256
+`abe3fce4bc152968f3566e4a1a48cbd03425d00eb8b0a934069ec9e7668ee376`，
+reverse check／cached check 均 0，正式与候选 10 路径逐项 cmp 0。
+`official-to-current.diff` 是四个原模块完整全文 diff（588 行），SHA256
+`eddb61c0dea59cd33125ebc1ba3b4b7f6ccfea88f2990b13c7665f959348bf91`；
+不是只有本批 hunk，也不把其余残差默认授权。
+
+实际运行（复用原 SDK，不新建／安装／bundle／full）：
+
+`kailo-agent-receipt-xvkujx` 原 4 CPU／8 GiB，cpu.max=400000 100000，
+memory.max=8589934592，Node heap3072，原 Vitest threads／maxWorkers=1，
+原 Node test-concurrency=1；开始与结束 memory.events 的 oom=2／oom_kill=2 不增，
+最终 docker top 只有原 sleep。开始时 host available 30 GiB，
+I/O full avg10=56.42%，保留 I/O 与真实启动失败，不改任何检查超时。
+
+原目标命令（工作目录分别为候选 Native/Web/client-kit）：
+
+```sh
+node --import ./test-loader.mjs --experimental-strip-types --test --test-concurrency=1 src/features/messages/ui/MessageComposerDraftImagePersist.test.mjs
+node_modules/.bin/vitest run src/platform/ui/Composer.test.tsx --pool=threads --maxWorkers=1
+node_modules/.bin/vitest run test/custom-emoji-composer.test.tsx --pool=threads --maxWorkers=1
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+```
+
+- 原集中句柄 88941 终态 1：Native 实际 hook/store/StrictMode 13/13、exit 0；
+  shared production/test、Web、Native 四组 types 各 0；
+  Web 与 Toolbar 两目标均 worker 启动超时、0 case、各 exit 1，不记通过。
+- 88941 终态后仅校准原 voice→emoji 顺序、实际七 reader 检查与原 hook 注释／格式；
+  最小同步 28946 终态 0。暖尾 93986 启动时同步请求尚未由调用侧收回终态，
+  下一次读取确认同步 0；该时点尚无 case，最终 10 字节 cmp 0。
+- 暖尾 93986 终态 1：shared production/test types 各 0；
+  Web／Toolbar 仍各 worker 启动超时 0 case／exit 1，不重复冷扫，不改 runner／超时。
+  对应 `positive-*.log` 与 `final-*.log` 保留原始输出；
+  两个新增 Web 的正常草稿／UNKNOWN 原 consumer 和七 reader 专项明确运行未验收。
+- 真生产破坏 56135：仅私有 Native 实际安装 shared-hook 的 getPrefix 置空，
+  同原目标 11 pass／2 assertion fail，exit 1；确实抓到重复自动 prefix 被落入草稿，
+  不是 loader／编译／OOM 失败。正式源码没有改动。
+- 原字节 apply_patch 还原、formal／installed private cmp 0 后同原目标
+  13/13、exit 0。两项失败与还原见 `mutation-native-prefix.log`、
+  `restored-native-prefix.log`，实际原命令分别入 `mutation-command.txt`／
+  `restored-command.txt`。Web／Toolbar 没有执行 case，未把启动失败当变异命中。
+
+全量和实际交付边界：
+
+最近完整官方→已提交源码 union 仍固定于 a816ea569acdce060a681c32467e4ebb4235b197：
+5195 原路径／2874 当前 collaboration 路径／union 5314；
+原样 1976、已证共享 112、整文件已授权 0、恢复队列 3226。
+该 3226 包括尚未证明保留或授权，不能当 3226 项已证功能缺失；
+本批逐符号恢复证据不能冒充当前 main 全树已经归类／验收完成，不重导百万行快照。
+
+本批无新 Playwright 业务图，原 header-restoration SSO 已过期，未继续工具排障，
+不注入 Cookie／重置账号／借其它身份。线上仍 a816 buildId 88591b4d…，
+此前登录页或旧业务图不验本批源码。新 10 路径未部署，Toolbar/Web 实际运行未验，
+Windows／Mobile／完整 Tauri 与生产全检均未执行，不声明原版 100%／生产就绪。

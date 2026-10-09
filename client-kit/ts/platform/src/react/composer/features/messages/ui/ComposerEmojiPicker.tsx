@@ -10,15 +10,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../../../../sidebar/too
 import { useUiT } from "../../../../context";
 
 export function ComposerEmojiPicker({ disabled, customEmoji, onClose, onEmojiSelect,
-  onOpenChange, open }: {
+  onOpenChange, onTriggerMouseDown, open }: {
   disabled: boolean; customEmoji: CustomEmoji[]; onClose: () => void;
   onEmojiSelect: (value: string) => void; onOpenChange: (open: boolean) => void; open: boolean;
+  onTriggerMouseDown?: () => void;
 }) {
   const t = useUiT();
   return <Popover onOpenChange={onOpenChange} open={open}>
     <Tooltip disableHoverableContent><TooltipTrigger asChild><PopoverTrigger asChild>
       <Button aria-label={t("buzz.insertEmoji")} data-testid="composer-emoji-button"
-        disabled={disabled} size="icon" type="button" variant="ghost"><SmilePlus /></Button>
+        disabled={disabled} onMouseDown={onTriggerMouseDown} size="icon" type="button" variant="ghost"><SmilePlus /></Button>
     </PopoverTrigger></TooltipTrigger><TooltipContent>{t("platform.profile.avatar.emoji")}</TooltipContent></Tooltip>
     <PopoverContent align="start"
       className="w-auto p-0 rounded-2xl overflow-hidden border-0 bg-transparent shadow-none"

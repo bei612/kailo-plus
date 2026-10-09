@@ -8,6 +8,8 @@ import { useAgentAddressLockPicker } from "@client-kit/platform/react/composer/f
 import { useAddressMentionPulse } from "@client-kit/platform/react/composer/features/messages/ui/useAddressMentionPulse";
 import { useAutoPinMentionedAgents } from "@client-kit/platform/react/composer/features/messages/ui/useAutoPinMentionedAgents";
 import { useAlwaysAddressShortcut } from "@client-kit/platform/react/composer/features/messages/ui/useAlwaysAddressShortcut";
+import { useImplicitAgentMentionProvenance } from "@client-kit/platform/react/composer/features/messages/ui/useImplicitAgentMentionProvenance";
+import { stripImplicitAgentMentionPrefix } from "@client-kit/platform/react/composer/features/messages/lib/stripImplicitAgentMentions";
 // 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 //
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -792,6 +794,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const isAgentPubkey = useCallback((pubkey: string) => agentPeople.some(agent => agent.pubkey === pubkey.toLowerCase()), [agentPeople]);
   const audienceScope = audienceContext && !editTarget && agentDirectory.data && channelType !== "dm"
     ? getPersistentAgentAudienceScope({ownerPubkey: agentDirectory.data.ownerPubkey, channelId: agentDirectory.data.channelId, composerKey: draftKey}) : null;
+  const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const {audience, keepMentionedAgentsPinned} = useThreadAgentAudience({isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope});
   const humanSuggestions = useMemo(()=>mentionCandidates.filter(person=>humanQuery!==null && person.displayName.toLowerCase().includes(humanQuery.query.toLowerCase())),[mentionCandidates,humanQuery]);
   const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
@@ -979,6 +982,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const autoPin = useAutoPinMentionedAgents({audienceScope, enabled:keepMentionedAgentsPinned, getDisplayName:getMentionDisplayName,
     onPulse:addressPulse.pulseOne, onTurnOff:() => setKeepMentionedAgentsPinned(false), onTurnOn:() => setKeepMentionedAgentsPinned(true)});
   const addressLock = useAgentAddressLockPicker({audience, audienceScope, applyAutocompleteEdit, richText,
+    onImplicitPrefixInserted: implicitAgentMentionProvenance.add,
+    onImplicitPrefixRemoved: implicitAgentMentionProvenance.remove,
     mentions:{getDraftMentionRefs, getMentionDisplayName, isInlineMentionSelection, isMentionOpen:humanQuery !== null && humanSuggestions.length > 0,
       mentionStartIndex:humanQuery?.startIndex ?? 0, openMentionPicker, registerMentionPubkey, insertMention},
     onAddressAgentMention:suggestion => autoPin.promoteExplicitlyAddressedAgents({pubkeys:[suggestion.pubkey]}),
@@ -1050,8 +1055,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   useEffect(() => {
     if (loadedDraftOwner === owner && !editTarget) addressLock.restoreAddressedAgentMentions();
   }, [loadedDraftOwner, owner, editTarget, audienceScope, addressLock.restoreAddressedAgentMentions]);
-  const persistDraft = useCallback((content: string, attachments: Pending[], installationIds = mentionInstallationIds) => {
+  const persistDraft = useCallback((editorContent: string, attachments: Pending[], installationIds = mentionInstallationIds) => {
     if (!draftReady.current || !draftKey || !owner.active || loadedDraftOwner !== owner) return;
+    // Normal drafts retain authored text, not the original addressing prefix.
+    // A captured publication/UNKNOWN retry retains its exact content and key.
+    const content = intent.current ? editorContent : stripImplicitAgentMentionPrefix(editorContent, implicitAgentMentionProvenance.getPrefix());
     if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
@@ -1063,7 +1071,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       mentionInstallationIds: installationIds,
       mentionRefs: [...humanBindings.current].map(([displayName, pubkey]) => ({displayName, pubkey, ...(knownAgentKeys.has(pubkey) ? {isAgent:true} : {})})),
     });
-  }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls, knownAgentKeys]);
+  }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls, knownAgentKeys, implicitAgentMentionProvenance.getPrefix]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
   const send = useCallback(async () => {
@@ -1212,6 +1220,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     send();
   }, [autoSendDraftKey, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, mentionVerified, pending.length, richText.getMarkdown, send]);
 
+  // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
+  const handleCaptureSelection = useCallback(() => {}, []);
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
     {...(surface === "forum" ? { compact, confirmedSendRevision,
@@ -1257,6 +1267,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
       onFormattingToggle: setIsFormattingOpen,
+      onCaptureSelection: handleCaptureSelection,
       onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => picker.current?.click(),

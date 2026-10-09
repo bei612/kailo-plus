@@ -1,4 +1,5 @@
 import * as React from "react";
+import { stripImplicitAgentMentionPrefix } from "@client-kit/platform/react/composer/features/messages/lib/stripImplicitAgentMentions";
 
 import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
 import type { QueuedMediaAttachment } from "@/features/messages/lib/backgroundMediaUploadStore";
@@ -60,6 +61,8 @@ type UseDraftPersistLifecycleParams = {
    * closure to capture the latest text before the effect fires.
    */
   syncComposerContentFromEditor: () => string;
+  /** Exact editor prefix inserted by automatic addressing, including separator. */
+  getImplicitAgentMentionPrefix?: () => string;
 };
 
 type UseDraftPersistLifecycleResult = {
@@ -119,7 +122,16 @@ export function useDraftPersistLifecycle({
   setSpoileredAttachmentUrls,
   spoileredAttachmentUrlsRef,
   syncComposerContentFromEditor,
+  getImplicitAgentMentionPrefix,
 }: UseDraftPersistLifecycleParams): UseDraftPersistLifecycleResult {
+  const persistedContent = React.useCallback(
+    (content: string) =>
+      stripImplicitAgentMentionPrefix(
+        content,
+        getImplicitAgentMentionPrefix?.() ?? "",
+      ),
+    [getImplicitAgentMentionPrefix],
+  );
   // Each visit keeps its own accessor identity (visible ownership), but reads
   // the store's shared key authority, including later visits and absent values.
   const authority = React.useMemo(
@@ -226,7 +238,7 @@ export function useDraftPersistLifecycle({
         }
         const content = emptyContentIsAuthoritativeRef.current
           ? ""
-          : syncComposerContentFromEditor();
+          : persistedContent(syncComposerContentFromEditor());
         persistDraft(
           effectiveDraftKey,
           content,

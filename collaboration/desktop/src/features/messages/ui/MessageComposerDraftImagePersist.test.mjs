@@ -233,6 +233,7 @@ import { act } from "react";
 // Production hook under test — owns the restore effect, cleanup, and the
 // synchronous ref write that is the StrictMode fix.
 import { useDraftPersistLifecycle } from "./useDraftPersistSnapshot.ts";
+import { useImplicitAgentMentionProvenance } from "@client-kit/platform/react/composer/features/messages/ui/useImplicitAgentMentionProvenance";
 
 // Real storage functions — the test uses them, not a replica.
 import {
@@ -880,4 +881,72 @@ test("discarding_a_draft_drops_its_retained_local_files", () => {
   deleteDraftEntry("chan-deleted");
 
   assert.deepEqual(takeQueuedAttachmentsForDraft("chan-deleted"), []);
+});
+
+test("draft_lifecycle_strips_only_generated_prefix_and_preserves_the_identical_authored_mention", async () => {
+  setupStore("pubkey-prefix-owner");
+  let draftKey = "prefix-draft-a";
+  let editorContent = "";
+  let provenance;
+  let lifecycle;
+  let refsContent;
+  const spoileredRef = { current: new Set() };
+  function HarnessComposer() {
+    provenance = useImplicitAgentMentionProvenance(draftKey);
+    lifecycle = useDraftPersistLifecycle({
+      effectiveDraftKey: draftKey,
+      channelId: draftKey,
+      loadDraft: loadDraftEntry,
+      persistDraft: persistDraftEntry,
+      getMentionRefs: (content) => { refsContent = content; return []; },
+      restoreMentionRefs: () => {},
+      livePendingImeta: [],
+      setPendingImeta: () => {},
+      setContent: (content) => { editorContent = content; },
+      clearContent: () => { editorContent = ""; },
+      setSpoileredAttachmentUrls: () => {},
+      spoileredAttachmentUrlsRef: spoileredRef,
+      syncComposerContentFromEditor: () => editorContent,
+      getImplicitAgentMentionPrefix: provenance.getPrefix,
+    });
+    return null;
+  }
+  const handle = await mountStrictMode(HarnessComposer);
+  provenance.add([{ pubkey: "agent-a", prefix: "@Agent A " }]);
+  editorContent = "@Agent A @Agent A authored message";
+  lifecycle.trackAuthoredContent(editorContent);
+  draftKey = "prefix-draft-b";
+  await handle.rerender();
+  assert.equal(loadDraftEntry("prefix-draft-a")?.content, "@Agent A authored message");
+  assert.equal(refsContent, "@Agent A authored message");
+  assert.equal(provenance.getPrefix(), "", "another draft does not inherit generated addressing");
+  editorContent = "@Agent A authored in B";
+  lifecycle.trackAuthoredContent(editorContent);
+  await handle.unmount();
+  assert.equal(loadDraftEntry("prefix-draft-b")?.content, "@Agent A authored in B");
+});
+
+test("generated_prefix_provenance_preserves_original_prepend_dedup_remove_and_null_scope", async () => {
+  let scope = "owner-a-draft";
+  let provenance;
+  function Harness() { provenance = useImplicitAgentMentionProvenance(scope); return null; }
+  const handle = await mountStrictMode(Harness);
+  provenance.add([{ pubkey: "agent-a", prefix: "@A " }]);
+  provenance.add([{ pubkey: "agent-b", prefix: "@B " }, { pubkey: "agent-a", prefix: "@Changed A " }]);
+  assert.equal(provenance.getPrefix(), "@B @A ");
+  provenance.remove("agent-b");
+  assert.equal(provenance.getPrefix(), "@A ");
+  scope = "owner-b-draft";
+  await handle.rerender();
+  assert.equal(provenance.getPrefix(), "");
+  scope = null;
+  await handle.rerender();
+  provenance.add([{ pubkey: "agent-c", prefix: "@C " }]);
+  assert.equal(provenance.getPrefix(), "");
+  scope = "owner-a-draft";
+  await handle.rerender();
+  assert.equal(provenance.getPrefix(), "@A ");
+  provenance.remove("agent-a");
+  assert.equal(provenance.getPrefix(), "");
+  await handle.unmount();
 });

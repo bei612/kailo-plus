@@ -10,6 +10,7 @@ import { useAgentAddressLockPicker } from "@client-kit/platform/react/composer/f
 import { useAddressMentionPulse } from "@client-kit/platform/react/composer/features/messages/ui/useAddressMentionPulse";
 import { useAutoPinMentionedAgents } from "@client-kit/platform/react/composer/features/messages/ui/useAutoPinMentionedAgents";
 import { useAlwaysAddressShortcut } from "@client-kit/platform/react/composer/features/messages/ui/useAlwaysAddressShortcut";
+import { useImplicitAgentMentionProvenance } from "@client-kit/platform/react/composer/features/messages/ui/useImplicitAgentMentionProvenance";
 import { focusMentionOptionsTrigger } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
 import { useCustomEmojiPalette } from "../lib/useCustomEmojiPalette";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
@@ -128,6 +129,7 @@ function MessageComposerImpl({
   const isAgentPubkey = React.useCallback((pubkey: string) => agents.some(agent => agent.pubkey === pubkey.toLowerCase()), [agents]);
   const audienceScope = !editTarget && audienceContext && channelId && channelType !== "dm"
     ? getPersistentAgentAudienceScope({ ownerPubkey: session.devicePubkey, channelId, composerKey: effectiveDraftKey }) : null;
+  const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const { audience, keepMentionedAgentsPinned } = useThreadAgentAudience({
     isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope,
   });
@@ -200,6 +202,7 @@ function MessageComposerImpl({
       setSpoileredAttachmentUrls,
       spoileredAttachmentUrlsRef,
       syncComposerContentFromEditor,
+      getImplicitAgentMentionPrefix: implicitAgentMentionProvenance.getPrefix,
     });
   // biome-ignore lint/correctness/useExhaustiveDependencies: effectiveDraftKey is the sole trigger
   React.useEffect(() => {
@@ -352,6 +355,8 @@ function MessageComposerImpl({
   const addressLock = useAgentAddressLockPicker({ applyAutocompleteEdit, audience, audienceScope, mentions: agentMentions,
     onAddressAgentMention: suggestion => autoPin.promoteExplicitlyAddressedAgents({pubkeys: [suggestion.pubkey]}),
     onAutoPinAgentMention: (suggestion, options) => autoPin.promoteMentionedAgents({pubkeys: [suggestion.pubkey], ...options}),
+    onImplicitPrefixInserted: implicitAgentMentionProvenance.add,
+    onImplicitPrefixRemoved: implicitAgentMentionProvenance.remove,
     onPulseAddressLock: addressPulse.pulseOne, profiles, richText,
   });
   const selectMentionSuggestion = addressLock.selectMentionSuggestion;
@@ -566,6 +571,8 @@ function MessageComposerImpl({
     (!(editTarget && onRequestEmptyEditDelete) && isContentEmpty &&
       media.pendingImeta.length === 0 &&
       media.queuedAttachments.length === 0);
+  // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
+  const handleCaptureSelection = React.useCallback(() => {}, []);
   const handlePaperclipClick = React.useCallback(() => {
     if (!voiceNote.hasAttachmentRef.current) void media.handlePaperclip();
   }, [media.handlePaperclip, voiceNote.hasAttachmentRef]);
@@ -621,6 +628,7 @@ function MessageComposerImpl({
       isUploading: media.isUploading, isVoiceNoteProcessing: voiceNote.status !== "recording",
       isVoiceNoteRecording: voiceNote.status !== "idle", hasVoiceNoteAttachment: voiceNote.hasAttachment,
       voiceNoteRecorder: voiceNote.recorderElement,
+      onCaptureSelection: handleCaptureSelection,
       onFormattingToggle: setIsFormattingOpen, onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPicker.openMentionSettings, onPaperclip: handlePaperclipClick,
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle, sendDisabled,

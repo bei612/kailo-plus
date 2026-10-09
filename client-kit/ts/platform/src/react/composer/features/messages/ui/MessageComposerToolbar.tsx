@@ -191,6 +191,7 @@ export const MessageComposerToolbar = React.memo(
                         aria-pressed={isFormattingOpen}
                         disabled={composerDisabled}
                         onClick={() => onFormattingToggle(!isFormattingOpen)}
+                        onMouseDown={onCaptureSelection}
                         size="icon"
                         type="button"
                         variant={isFormattingOpen ? "default" : "ghost"}
@@ -216,6 +217,7 @@ export const MessageComposerToolbar = React.memo(
                         aria-label={translateUi("buzz.closeFormatting")}
                         disabled={composerDisabled}
                         onClick={() => onFormattingToggle(false)}
+                        onMouseDown={onCaptureSelection}
                         size="icon"
                         type="button"
                         variant="ghost"
@@ -285,6 +287,7 @@ export const MessageComposerToolbar = React.memo(
                         hasVoiceNoteAttachment
                       }
                       onClick={onPaperclip}
+                      onMouseDown={onCaptureSelection}
                       size="icon"
                       type="button"
                       variant="ghost"
@@ -296,16 +299,6 @@ export const MessageComposerToolbar = React.memo(
                     {translateUi("buzz.attachFile")}
                   </TooltipContent>
                 </Tooltip>
-                <ComposerEmojiPicker
-                  disabled={composerDisabled}
-                  customEmoji={customEmoji}
-                  open={isEmojiPickerOpen}
-                  onOpenChange={setIsEmojiPickerOpen}
-                  onEmojiSelect={insertEmoji}
-                  onClose={() => {
-                    editor?.commands.focus();
-                  }}
-                />
                 {onVoiceNote ? (
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>
@@ -313,6 +306,7 @@ export const MessageComposerToolbar = React.memo(
                         aria-label={translateUi("buzz.recordVoice")}
                         disabled={composerDisabled || isUploading}
                         onClick={onVoiceNote}
+                        onMouseDown={onCaptureSelection}
                         size="icon"
                         type="button"
                         variant="ghost"
@@ -327,6 +321,17 @@ export const MessageComposerToolbar = React.memo(
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
+                <ComposerEmojiPicker
+                  disabled={composerDisabled}
+                  customEmoji={customEmoji}
+                  open={isEmojiPickerOpen}
+                  onOpenChange={setIsEmojiPickerOpen}
+                  onEmojiSelect={insertEmoji}
+                  onTriggerMouseDown={onCaptureSelection}
+                  onClose={() => {
+                    editor?.commands.focus();
+                  }}
+                />
                 <motion.div
                   initial={{ x: -8, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -340,6 +345,7 @@ export const MessageComposerToolbar = React.memo(
                         aria-pressed={isFormattingOpen}
                         disabled={composerDisabled}
                         onClick={() => onFormattingToggle(!isFormattingOpen)}
+                        onMouseDown={onCaptureSelection}
                         size="icon"
                         type="button"
                         variant={isFormattingOpen ? "default" : "ghost"}
