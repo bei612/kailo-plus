@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   buildInboxItems,
+  formatInboxTypeLabel,
   getInboxConversationId,
   getInboxTypeLabel,
 } from "./inbox.ts";
+import { getHomeMessageCapabilities } from "./homeMessageCapabilities.ts";
 
 const CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
 const DM_CHANNEL_ID = "8ad375a7-6990-4b22-985f-e3fd34f634d7";
@@ -43,6 +45,46 @@ function item(overrides) {
     category: overrides.category ?? "mention",
   };
 }
+
+test("the real Inbox row producer consumes locale without changing admitted identities or user content", () => {
+  const feed = feedWith({ mentions: [item({ content: " \n " })], activity: [item({ id: "activity", category: "activity", content: "user text" })] });
+  const english = buildInboxItems({ channels, feed });
+  const chinese = buildInboxItems({ channels, feed, locale: "zh-CN" });
+  const enMention = english.find(row => row.id === "event-1");
+  const zhMention = chinese.find(row => row.id === "event-1");
+  assert.equal(enMention.subject, "Mention");
+  assert.equal(enMention.categoryLabel, "Mention");
+  assert.equal(enMention.preview, "No additional details were attached to this event.");
+  assert.equal(formatInboxTypeLabel(enMention), "Mentioned in #buzz-bugs");
+  assert.equal(zhMention.subject, "提及");
+  assert.equal(zhMention.categoryLabel, "提及");
+  assert.equal(zhMention.preview, "此事件没有附加详情。");
+  assert.equal(formatInboxTypeLabel(zhMention, "zh-CN"), "提及于 #buzz-bugs");
+  assert.equal(chinese.find(row => row.id === "activity").preview, "user text");
+  assert.equal(chinese.find(row => row.id === "activity").subject, "频道更新");
+  assert.equal(chinese.find(row => row.id === "activity").categoryLabel, "动态");
+  assert.deepEqual(chinese.map(row => [row.id, row.conversationId, row.groupItems, row.unreadCount]),
+    english.map(row => [row.id, row.conversationId, row.groupItems, row.unreadCount]));
+});
+
+test("localized disabled-reply reasons preserve the actual admitted-channel guard", () => {
+  const [row] = buildInboxItems({ channels, feed: feedWith({ mentions: [item({})] }) });
+  assert.deepEqual(getHomeMessageCapabilities(row, new Set(), "en"), {
+    canReply: false, disabledReplyReason: "Open the linked channel to reply.",
+  });
+  assert.deepEqual(getHomeMessageCapabilities(row, new Set(), "zh-CN"), {
+    canReply: false, disabledReplyReason: "打开关联频道以回复。",
+  });
+  const noTarget = { ...row, item: { ...row.item, channelId: null } };
+  assert.deepEqual(getHomeMessageCapabilities(noTarget, new Set([CHANNEL_ID]), "en"), {
+    canReply: false, disabledReplyReason: "This inbox item does not have a reply target.",
+  });
+  assert.deepEqual(getHomeMessageCapabilities(noTarget, new Set([CHANNEL_ID]), "zh-CN"), {
+    canReply: false, disabledReplyReason: "此收件箱条目没有可回复的目标。",
+  });
+  assert.deepEqual(getHomeMessageCapabilities(row, new Set([CHANNEL_ID]), "zh-CN"), { canReply: true, disabledReplyReason: null });
+  assert.deepEqual(getHomeMessageCapabilities(null, new Set(), "zh-CN"), { canReply: false, disabledReplyReason: null });
+});
 
 test("mention rows use the channel list when feed channelName is blank", () => {
   const [inboxItem] = buildInboxItems({

@@ -11,7 +11,8 @@ import type {
 } from "@/shared/api/types";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
-import { aggregateInbox, inboxConversation, feedHeadline, getInboxTypeLabel } from "@client-kit/platform/inbox";
+import { aggregateInbox, inboxConversation, feedHeadline, feedPreview, categoryLabelFor, getInboxTypeLabel } from "@client-kit/platform/inbox";
+import type { PlatformLocale } from "@client-kit/platform/i18n";
 export { getInboxTypeLabel, isThreadActivityItem } from "@client-kit/platform/inbox";
 export type { InboxTypeLabel } from "@client-kit/platform/inbox";
 import type { TimelineMessage } from "@/features/messages/types";
@@ -78,19 +79,6 @@ const fullTimeFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-function feedPreview(item: FeedItem) {
-  const content = item.content.trim();
-  if (content.length > 0) {
-    return content;
-  }
-
-  return "No additional details were attached to this event.";
-}
-
-function categoryLabelFor(category: FeedItemCategory) {
-  return category === "mention" ? "Mention" : "Activity";
-}
-
 function resolveItemChannel(
   item: FeedItem,
   channelById: ReadonlyMap<string, InboxChannel>,
@@ -116,8 +104,8 @@ function resolveGroupChannel(
   return resolveItemChannel(primaryItem, channelById);
 }
 
-export function formatInboxTypeLabel(item: InboxItem) {
-  const label = getInboxTypeLabel(item);
+export function formatInboxTypeLabel(item: InboxItem, locale: PlatformLocale = "en") {
+  const label = getInboxTypeLabel(item, locale);
   return label.channelLabel
     ? `${label.text} #${label.channelLabel}`
     : label.text;
@@ -183,6 +171,7 @@ export function buildInboxItems({
   getMessageReadAt,
   getThreadReadAt,
   getChannelReadAt,
+  locale = "en",
   profiles,
 }: {
   channels?: InboxChannel[];
@@ -190,6 +179,7 @@ export function buildInboxItems({
   feed?: InboxFeed;
   getMessageReadAt?: (messageId: string) => number | null;
   getChannelReadAt?: (channelId: string) => number | null;
+  locale?: PlatformLocale;
   getThreadReadAt?: (
     rootId: string,
     channelId?: string | null,
@@ -224,8 +214,8 @@ export function buildInboxItems({
         profiles,
         preferResolvedSelfLabel: true,
       });
-      const subject = feedHeadline(item);
-      const preview = feedPreview(item);
+      const subject = feedHeadline(item, group.items, locale);
+      const preview = feedPreview(item, locale);
       const { mentionNames, mentionPubkeysByName } = resolveMentionProps(
         item.tags,
         profiles,
@@ -237,7 +227,7 @@ export function buildInboxItems({
         channelName: channelLabel ?? item.channelName,
         channelType: item.channelType ?? groupChannel.type,
       };
-      const categoryLabel = categoryLabelFor(categories[0] ?? item.category);
+      const categoryLabel = categoryLabelFor(categories[0] ?? item.category, locale);
 
       return {
         avatarUrl: profiles?.[item.pubkey.toLowerCase()]?.avatarUrl ?? null,

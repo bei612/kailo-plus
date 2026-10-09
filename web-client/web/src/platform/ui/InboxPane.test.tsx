@@ -98,6 +98,44 @@ describe("Inbox uses the original shared HomeLoadingState at the real read bound
 });
 
 describe("Web Inbox's actual BFF page scope consumer", () => {
+  it("renders the original empty preview through the shared locale consumer and updates it without refetching identity", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    setLocale("en"); localStorage.clear(); sessionStorage.clear();
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    const self = "c".repeat(64);
+    api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+    api.readFailed = false; api.readUnknown = false;
+    api.workspaces.mockResolvedValue([{ id: "workspace-a", name: "Channel", isMember: true }]);
+    api.agentInstallations.mockResolvedValue({ installations: [] });
+    api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+    api.workspaceMessages.mockReset().mockResolvedValue({ events: [
+      { ...event, content: " \n ", tags: [...event.tags, ["p", self]] },
+      { ...event, id: "e".repeat(64), content: "    User-authored content  \n", tags: [...event.tags, ["p", self]] },
+      { ...event, id: "d".repeat(64), kind: 39006, tags: [...event.tags, ["d", "workspace-a:head"]], content: JSON.stringify({ has_more: false, next_cursor: null }) },
+    ] });
+    api.messageAuthorProfile.mockResolvedValue({ pubkey: event.pubkey, eventId: "profile", displayName: "Author", about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const render = (locale: "en" | "zh-CN") => act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+    try {
+      await render("en");
+      const row = () => host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`);
+      await vi.waitFor(() => expect(row()?.textContent).toContain("No additional details were attached to this event."));
+      expect(row()?.querySelector("[data-inbox-type-label]")?.textContent).toBe("Mentioned in#Channel");
+      const originalPreview = () => host.querySelector(`[data-testid="home-inbox-item-${"e".repeat(64)}"]`);
+      expect(originalPreview()?.querySelector("p")?.textContent).toBe("User-authored content");
+      expect(originalPreview()?.querySelector("pre")).toBeNull();
+      const admittedReads = api.workspaceMessages.mock.calls.length;
+      expect(admittedReads).toBeGreaterThan(0);
+      await render("zh-CN");
+      expect(row()?.textContent).toContain("此事件没有附加详情。");
+      expect(row()?.querySelector("[data-inbox-type-label]")?.textContent).toBe("提及于#Channel");
+      expect(originalPreview()?.querySelector("p")?.textContent).toBe("User-authored content");
+      expect(originalPreview()?.querySelector("pre")).toBeNull();
+      expect(api.workspaceMessages).toHaveBeenCalledTimes(admittedReads);
+    } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
+  });
   it("retains only the exact admitted Workspace identity", () => {
     expect(inboxEvents([event], "workspace-a")[0]?.channelId).toBe("workspace-a");
     expect(() => inboxEvents([event], "workspace-b")).toThrow();

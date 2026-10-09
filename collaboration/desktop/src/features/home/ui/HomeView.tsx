@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw } from "lucide-react";
 
 import { inboxReadContext } from "@client-kit/platform/inbox";
-import { useT } from "@client-kit/platform/react/context";
+import { useLocale, useT } from "@client-kit/platform/react/context";
 import { useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { useChannelsQuery } from "@/features/channels/hooks";
@@ -86,6 +86,7 @@ export function HomeView({
   onRefresh,
 }: HomeViewProps) {
   const t = useT();
+  const locale = useLocale();
   const relaySelfPubkey = useRelaySelfQuery().data;
   const [homeInboxRef, homeInboxWidthPx] = useElementWidth<HTMLDivElement>();
   const isNarrowHomeViewport =
@@ -290,6 +291,7 @@ export function HomeView({
         getMessageReadAt,
         getThreadReadAt,
         getChannelReadAt: coreReads.readAt,
+        locale,
         profiles: feedProfiles,
       }),
     [
@@ -303,6 +305,7 @@ export function HomeView({
       readStateVersion,
       coreReads.state,
       coreReads.visibleChannels,
+      locale,
     ],
   );
   const effectiveDoneSet = React.useMemo(
@@ -483,7 +486,7 @@ export function HomeView({
         <div className="flex w-full max-w-3xl flex-col gap-4">
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-5">
             <p className="text-base font-semibold tracking-tight">
-              Home feed unavailable
+              {t("inbox.homeUnavailable")}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
               {coreReads.failed || coreReads.unknown || ownedAgents.isError
@@ -492,7 +495,7 @@ export function HomeView({
                       ? "inbox.readUnknown"
                       : "inbox.readUnavailable",
                   )
-                : (errorMessage ?? "The relay did not return a feed response.")}
+                : (errorMessage ?? t("inbox.feedMissing"))}
             </p>
             <Button
               className="mt-5"
@@ -504,7 +507,7 @@ export function HomeView({
               type="button"
             >
               <RefreshCcw className="h-4 w-4" />
-              Try again
+              {t("platform.retry")}
             </Button>
           </div>
         </div>
@@ -515,6 +518,7 @@ export function HomeView({
   const { canReply, disabledReplyReason } = getHomeMessageCapabilities(
     selectedItem,
     new Set([...availableChannelIds].filter(id => coreReads.visibleChannels.has(id))),
+    locale,
   );
   const detailMode = isDrafts || selectedDraftItem ? "drafts" : "messages";
   const {
@@ -622,7 +626,7 @@ export function HomeView({
               }) => {
                 const channelId = selectedItem?.item.channelId;
                 if (!selectedItem || !channelId || !canReply) {
-                  throw new Error("Replies are not available for this item.");
+                  throw new Error(t("inbox.replyUnavailable"));
                 }
 
                 const itemToReply = selectedItem;
@@ -650,7 +654,7 @@ export function HomeView({
                           profiles: feedProfiles,
                           pubkey: authorPubkey,
                         })
-                      : "You",
+                      : t("messages.system.you"),
                     authorPubkey,
                     avatarUrl:
                       currentPubkey && feedProfiles

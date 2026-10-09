@@ -1,5 +1,6 @@
 import * as React from "react";
 import { MailOpen } from "lucide-react";
+import { useUiLocale, useUiT } from "@client-kit/platform/react/context";
 
 import { useAppShell } from "@/app/AppShellContext";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -68,13 +69,14 @@ function ThreadPreviewRow({
   onMarkRead: () => void;
   onOpen: () => void;
 }) {
+  const t = useUiT();
   return (
     <div
       className="group/activity-row relative border-t border-border/50 first:border-t-0"
       data-testid={`channel-activity-item-${item.conversationId}`}
     >
       <button
-        aria-label={`Open thread from ${item.senderLabel}`}
+        aria-label={t("inbox.openThreadFrom", { sender: item.senderLabel })}
         className="absolute inset-0 z-0 w-full text-left"
         onClick={onOpen}
         type="button"
@@ -97,11 +99,11 @@ function ThreadPreviewRow({
             </span>
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-            <span>Thread</span>
+            <span>{t("inbox.threadLabel")}</span>
             {item.unreadCount > 1 ? (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{item.unreadCount} unread</span>
+                <span>{t("inbox.unreadCount", { count: item.unreadCount })}</span>
               </>
             ) : null}
           </div>
@@ -114,7 +116,7 @@ function ThreadPreviewRow({
         </div>
       </div>
       <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-0.5 rounded-full bg-muted/95 p-0.5 opacity-0 shadow-xs transition-opacity group-hover/activity-row:pointer-events-auto group-hover/activity-row:opacity-100 group-focus-within/activity-row:pointer-events-auto group-focus-within/activity-row:opacity-100">
-        <RowActionButton label="Mark as read" onClick={onMarkRead}>
+        <RowActionButton label={t("inbox.markRead")} onClick={onMarkRead}>
           <MailOpen />
         </RowActionButton>
       </div>
@@ -129,6 +131,8 @@ export function ChannelActivityPopover({
   channel: Channel;
   children: React.ReactNode;
 }) {
+  const t = useUiT();
+  const locale = useUiLocale();
   const [open, setOpen] = React.useState(false);
   const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -177,6 +181,7 @@ export function ChannelActivityPopover({
       feed: buildChannelActivityFeed(unreadChannelFeedItems),
       getMessageReadAt: (messageId) =>
         activityReadAtByMessageId.get(messageId) ?? null,
+      locale,
       profiles,
     });
   }, [
@@ -186,6 +191,7 @@ export function ChannelActivityPopover({
     open,
     profiles,
     unreadChannelFeedItems,
+    locale,
   ]);
   const hasContent = unreadChannelFeedItems.length > 0;
 
@@ -283,14 +289,14 @@ export function ChannelActivityPopover({
         style={ACTIVITY_POPOVER_MOTION_STYLE}
       >
         <section
-          aria-label="Channel activity"
+          aria-label={t("inbox.channelActivity")}
           className="flex max-h-96 min-h-0 flex-col overflow-hidden"
         >
           <h3
             className="relative z-20 shrink-0 border-b border-border/70 bg-background/95 px-3 py-2 text-sm font-semibold text-foreground backdrop-blur-md supports-[backdrop-filter]:bg-background/90"
             data-testid="channel-activity-header"
           >
-            Channel activity
+            {t("inbox.channelActivity")}
           </h3>
           <div
             className="buzz-channel-activity-scrollbar min-h-0 overflow-y-auto overscroll-contain"

@@ -14,6 +14,7 @@ import {
   matchesInbox,
   loadOwnedAgentIdentities,
   getInboxTypeLabel,
+  feedPreview,
 } from "@client-kit/platform/inbox";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
@@ -352,7 +353,7 @@ export function InboxPane({
               channel={typeLabel.channelLabel}
               openLabel={t("inbox.openItem", { sender })}
               onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
-              preview={<><MessageContent content={item.content} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
+              preview={<><MessageContent content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
                 <InboxRowActionButton disabled={hiddenDm.isReopenPending(item.channelId)} label={t(hiddenDm.isReopenPending(item.channelId) ? "inbox.reopening" : "inbox.open")} onClick={() => openItem(item)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>

@@ -8,6 +8,8 @@ import {
   matchesInbox,
   loadOwnedAgentIdentities,
   feedHeadline,
+  feedPreview,
+  categoryLabelFor,
   getInboxTypeLabel,
   type InboxEvent,
 } from "../src/inbox";
@@ -35,6 +37,26 @@ const state = (version = 0) => ({
 const workspace = { id: "scope-a", name: "A", slug: "a", isMember: true };
 
 describe("shared upstream Inbox aggregation", () => {
+  it("preserves every original empty preview and category branch in both supported locales without translating message content", () => {
+    expect(feedPreview({ kind: 9, content: "  User-authored content  " }, "zh-CN")).toBe("User-authored content");
+    for (const [kind, en, zh] of [
+      [46010, "A workflow is waiting for approval.", "有一个工作流正在等待审批。"],
+      [40007, "A reminder is waiting for you.", "有一条提醒等待你查看。"],
+      [9, "No additional details were attached to this event.", "此事件没有附加详情。"],
+    ] as const) {
+      expect(feedPreview({ kind, content: " \n " })).toBe(en);
+      expect(feedPreview({ kind, content: " \n " }, "zh-CN")).toBe(zh);
+    }
+    for (const [category, en, zh] of [
+      ["needs_action", "Needs Action", "需要处理"],
+      ["mention", "Mention", "提及"],
+      ["agent_activity", "Agent update", "Agent 更新"],
+      ["activity", "Activity", "动态"],
+    ] as const) {
+      expect(categoryLabelFor(category)).toBe(en);
+      expect(categoryLabelFor(category, "zh-CN")).toBe(zh);
+    }
+  });
   it("keeps the original Inbox type-label branches without admitting additional feed kinds", () => {
     const base = { id: "event", kind: 9, content: "message", category: "activity", tags: [] as string[][] };
     const item = (overrides: Partial<typeof base> & { channelType?: string } = {}, channelLabel: string | null = "Channel", senderLabel = "Peer") => {

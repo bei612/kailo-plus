@@ -129,7 +129,7 @@ export function InboxListPane({
     const isDone = doneSet.has(item.id);
     const isReopening = Boolean(item.item.channelId && isReopenPending?.(item.item.channelId));
     const canOpen = Boolean(item.item.channelId) && !isReopening;
-    const openLabel = isReopening ? t("inbox.reopening") : canOpen ? t("inbox.open") : "No channel link";
+    const openLabel = isReopening ? t("inbox.reopening") : canOpen ? t("inbox.open") : t("inbox.noChannelLink");
     const typeLabel = getInboxTypeLabel(item, locale);
     const isSenderAgent = agentPubkeys?.has(normalizePubkey(item.item.pubkey)) === true;
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);

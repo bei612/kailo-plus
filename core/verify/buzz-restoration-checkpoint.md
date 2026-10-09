@@ -5378,3 +5378,125 @@ TSV 14 列保留双方 commit/path/change、四类、双方 mode/type/blob、迁
 独立 `screenshots-20261009-5ba-read-menu.md` 为新 5ba 的 8 张已打开实拍，真实他人既有消息
 正常菜单未读→已读、BFF PUT 200/version 36 与非成员拒绝，最后恢复当前用户已读状态。
 这些线上图片均不含本批外观/Inbox 源码；新版候选浏览器实拍仍 0，不能称 UI 已发布或 100% 还原。
+
+## 2026-10-09 原 Inbox 双语真实消费者集中恢复（源码验收，未部署）
+
+### 权威、影响面、副作用与边界
+
+1. 权威是用户原版一致性／中文默认英文适配要求、`V-REQ-24`、
+   `SS-WEB-PRESENTATION` 与 `DD-75`；固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/home/lib/inbox.ts::{feedHeadline,feedPreview,categoryLabelFor,formatInboxTypeLabel,buildInboxItems}`
+   为原英语与分支依据。本批只复用显示逻辑、传递 locale；不改已定治理。
+2. `rg` 找到 `buildInboxItems` 两个实际生产读方
+   `desktop/src/features/home/ui/HomeView.tsx::HomeView` 与
+   `desktop/src/features/sidebar/ui/ChannelActivityPopover.tsx::ChannelActivityPopover`，
+   均接同源 locale。`InboxDetailPane.tsx::InboxMessageDetailPane` 消费
+   `formatInboxTypeLabel(item, locale)`；`InboxListPane` 的原缺频道提示同源。
+   Web `InboxPane` 行预览直接消费共享 `feedPreview(item, locale)`。
+3. 本批不改身份、scope、授权、read CAS、hover、UNKNOWN、发送或事件准入；
+   不增加筛选、feed 生产者、页面、接口、注册表或状态权威。需要处理的
+   原禁回复原因只换同源文案，不把不可用能力变成临时按钮。
+4. 原空内容与首尾空白处理全部保留，正文不翻译；原 `feedPreview` 的 trim
+   必须实际进入 Web 的同一消息渲染器，否则四空格正文会成为 Markdown 代码块。
+   locale 切换不重取身份；频道不存在仍禁回复。超时、撤权、旧身份迟到、
+   幂等和未确认写回执沿已有治理消费者，本批没有改变其终结规则。
+
+### 本批写入与固定源码差异归类
+
+13 个源码／原检查／生成路径，合计 **+275/-46**；起点这些路径均无继承 dirty。
+共享 `client-kit/ts/platform/src/inbox.ts::{feedPreview,categoryLabelFor}`
+迁移原全部分支，删除 Native 两个缩水副本；
+`buildInboxItems` 将 locale 同时送入原 headline、preview 与 category。
+这部分归共享迁移，不将原路径迁移等同功能缺失。
+
+固定原 `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxMessageDetailPane`
+的 Thread／Message／上下文加载／禁回复文案和
+`desktop/src/features/sidebar/ui/ChannelActivityPopover.tsx::{ThreadPreviewRow,ChannelActivityPopover}`
+的频道活动／未读／读标记文案保持原英语、布局和行为，只增中文适配。
+原 `homeMessageCapabilities.ts::getHomeMessageCapabilities` 的既有准入 guard 未改变。
+21 个同源键由原 `tools/gen-platform-i18n.py` 生成 Dart；
+`reason_text.dart` 与正式文件 cmp 0，未修改 contracts 或手写第二份词条。
+这部分是逐项授权的 i18n 差异，不称整文件全部治理授权。
+
+Web 最初非空预览绕过原 trim 已纠正为直接 `feedPreview`；
+实际 Inbox 行专项覆盖空态中英、首尾空白的正常段落／非代码块、语言切换不重取身份。
+Native 专项覆盖实际行生产者／类型标签及真实禁回复 guard；
+不是 Native 安装包或整个原 HomeView 的浏览器验收。
+
+精确源码补丁在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/inbox-locale.Ol1Dhm/owned-source.patch`，
+SHA256 `1d3637903fef8e2ff09b2c383db7fcfe5db9d17c14b3ceeccb99d0af2c7aee9d`，
+`git apply --reverse --check` exit 0。
+
+### 原始运行结果与真实破坏／还原
+
+复用 `kailo-agent-receipt-xvkujx`、候选
+`/evidence/profile-settings-ortsoo.DRR20F/apps`，实际 4 CPU／8 GiB、
+Node heap 3072 MiB、同一原依赖缓存；无安装、新 SDK、Cargo、bundle 或 full。
+执行前容器仅 sleep，回读 `cpu.max=400000 100000`、
+`memory.max=8589934592`；各阶段 `oom/oom_kill=2/2` 旧基线未增加。
+冻结源码、锁定 manifests、候选和两宿主 installed shared 副本已逐字节 cmp。
+
+原目标命令（分别在共享／Web／Native 目录执行）：
+
+```sh
+./node_modules/.bin/vitest run test/inbox.test.tsx --pool=threads --maxWorkers=1
+./node_modules/.bin/vitest run src/platform/ui/InboxPane.test.tsx --pool=threads --maxWorkers=1
+node --import ./test-loader.mjs --experimental-strip-types --test src/features/home/lib/inbox.test.mjs
+python3 tools/gen-platform-i18n.py
+python3 tools/gen-platform-i18n.py --check
+node client-kit/ts/platform/node_modules/typescript/bin/tsc --noEmit -p client-kit/ts/platform
+node client-kit/ts/platform/node_modules/typescript/bin/tsc --noEmit -p client-kit/ts/platform/tsconfig.test.json
+node web-client/web/node_modules/typescript/bin/tsc --noEmit -p web-client/web
+node collaboration/desktop/node_modules/typescript/bin/tsc --noEmit -p collaboration/desktop
+```
+
+日志原件目录为上述 `inbox-locale.Ol1Dhm`。
+
+- 64806 编排 exit 1：gen／check exit 0；Native 18/18 exit 0；
+  共享／共享检查／Web／Native 四项 `tsc --noEmit` 各 exit 0。
+  共享与 Web 默认 fork worker 分别 64.12s／61.01s 启动超时，0 case、各 exit 1；
+  `shared-positive.log`、`web-positive.log` 保留，不算通过。
+- 29207 编排 exit 1：固定 Vitest 4.1.11 不接受 `--minWorkers`，
+  两目标解析阶段 0 case、各 exit 1。保留 `shared-final-positive.log`、
+  `web-final-positive.log`；Native 18/18、最终 trim 字节下 Web 类型与 i18n check exit 0。
+- 核对固定原 CLI `pool/maxWorkers` 后，仅撤无效参数：
+  41399 exit 0，`shared-threads-positive.log` 为 18/18，
+  `web-threads-positive.log` 为实际 Inbox 28/28。
+  原目标／断言／超时未放宽，threads 成功不改写旧失败或 full 结论。
+- 私有原 `feedPreview` 去 trim，真实能力 guard 去掉频道集合校验；
+  69150 编排 exit 0，shared 1 failed/17 passed exit 1，
+  Native 2 failed/16 passed exit 1。原预览与未准入可回复被实际断言抓到，
+  不是启动／类型错误，见 `shared-negative.log`、`native-negative.log`。
+- 恢复共享及能力字节 cmp 0，再只把实际 Web 预览改回旧非空旁路；
+  59162 编排 exit 0，Web 1 failed/27 passed exit 1，精准命中实际行
+  `p` 文本断言，见 `web-negative.log`，并非只破坏未消费 helper。
+- 全部 13 路径及两宿主 installed shared 恢复 cmp 0 后，
+  51413 exit 0：`shared-restored.log` 18/18、
+  `native-restored.log` 18/18、`web-restored.log` 28/28、
+  `i18n-restored-check.log` exit 0。
+  Web 目标的既有 Avatar 未包装 act 的 stderr 警告保留，未抑制。
+  这 64 项定向检查不是全仓检查，也不证明未连接的 feed 来源可运行。
+
+### 实拍、全量差异与明确剩余
+
+独立 `web-client/fork/verify/screenshots-20261009-5ba-inbox-readonly.md`
+记录本轮 5 个实际状态原件，已逐张打开；正常 SSO 的 build-info
+仍是部署 `5baad5e09a6c8abeb33bbfa1904fe0ee77034b78`，
+`sha256:9985c612c146a9cd611f13457ce699a740354023646d45e26ffb4c107fdfeaaa`。
+实际 Inbox、筛选菜单、空草稿、作者资料及空审批只证明这些旧版本状态；
+DM 线程提示、仅 5 筛选和资料标题遮挡仍是明确未验收项。
+
+当前可复核全树快照仍是前节固定
+`e5c6ada467063984a4c7f644e17e21f993a5be58` 对上述官方 779：
+union 5314 路径，原样保留 1977、共享迁移 111、整文件已授权治理 0、
+恢复队列／尚未证明保留或授权 3226；不是当前 main 全树逐处已验收。
+本批只有上述原函数／实际读方的逐 hunk 证据，不将这 13 个路径或未知目录
+整体重归为授权；3226 是未证明差异队列，不是业务功能缺失数。
+
+本批尚未提交／部署，新源码业务截图 0；没有 Windows／Mobile 新包或设备验收。
+原 Project／Needs Action／Reminder 的显示分支保留不等于 feed 生产者已接入；
+原全筛选、完整 DM 详情／消息动作、Agent 资料／会话、原设置剩余分区、
+日期等其他未迁移 i18n 读方仍未完整恢复。不能称整个 Inbox 双语闭合、
+全量原版一致或生产就绪。源码冻结交主代理选择性收口；历史文档 dirty 不纳入。

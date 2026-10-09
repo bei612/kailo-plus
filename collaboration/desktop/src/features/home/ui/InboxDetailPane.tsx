@@ -1,4 +1,5 @@
 import { InboxEmptyDetail, InboxDetailHeader, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
+import { useLocale, useT } from "@client-kit/platform/react/context";
 import {
   AlertCircle,
   LoaderCircle,
@@ -115,6 +116,8 @@ function InboxMessageDetailPane({
   onOpenContext,
   onSendReply,
 }: InboxDetailPaneProps) {
+  const t = useT();
+  const locale = useLocale();
   const detailPaneRef = React.useRef<HTMLElement | null>(null);
   // Refs for the shared anchored-scroll hook's container and content roots.
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -336,17 +339,17 @@ function InboxMessageDetailPane({
   const isThreadContext = hasInboxThreadContext(item, messages);
   const contextLabel = isThreadContext
     ? channelContextName
-      ? `Thread in #${channelContextName}`
-      : "Thread"
+      ? t("inbox.detailThreadIn", { channel: channelContextName })
+      : t("inbox.threadLabel")
     : channelContextName
-      ? `Message in #${channelContextName}`
-      : formatInboxTypeLabel(item);
+      ? t("inbox.detailMessageIn", { channel: channelContextName })
+      : formatInboxTypeLabel(item, locale);
   const contextChannelId = item.item.channelId;
   const sourceEventId = selectedEventId ?? item.id;
   const contextThreadRootId = isThreadContext ? item.conversationId : null;
   const openContextLabel = isThreadContext
-    ? "Open full thread"
-    : "Open in channel";
+    ? t("inbox.openFullThread")
+    : t("inbox.open");
 
   const handleSelectReplyTarget = (message: InboxDisplayMessage) => {
     setReplyTargetId((currentReplyTargetId) =>
@@ -385,7 +388,7 @@ function InboxMessageDetailPane({
                 data-testid="home-inbox-context-loading"
               >
                 <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
-                <span>Loading surrounding context...</span>
+                <span>{t("inbox.contextLoading")}</span>
               </div>
             ) : null}
             {hasThreadContextLoadError ? (
@@ -394,7 +397,7 @@ function InboxMessageDetailPane({
                 data-testid="home-inbox-context-error"
               >
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>Some message context could not be loaded.</span>
+                <span>{t("inbox.contextUnavailable")}</span>
               </div>
             ) : null}
             {displayMessages.map((message, index) => {
@@ -467,7 +470,7 @@ function InboxMessageDetailPane({
           <div className="pointer-events-auto">
             <MessageComposer
               channelId={item.item.channelId}
-              channelName={item.channelLabel ?? "channel"}
+              channelName={item.channelLabel ?? t("inbox.channelFallback")}
               containerClassName="px-4 pb-4 sm:px-4"
               disabled={!canReply}
               draftKey={`thread:${item.conversationId}`}
@@ -485,9 +488,11 @@ function InboxMessageDetailPane({
               }
               placeholder={
                 canReply
-                  ? `Send reply to ${item.channelLabel ? `#${item.channelLabel} thread` : "channel thread"}`
+                  ? item.channelLabel
+                    ? t("inbox.replyToChannelThread", { channel: item.channelLabel })
+                    : t("inbox.replyToThread")
                   : (disabledReplyReason ??
-                    "Replies are not available for this item.")
+                    t("inbox.replyUnavailable"))
               }
               replyTarget={composerReplyTarget}
             />

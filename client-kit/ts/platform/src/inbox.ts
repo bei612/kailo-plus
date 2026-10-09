@@ -70,6 +70,20 @@ export function feedHeadline(item: InboxLabelEvent, groupItems: readonly InboxLa
   }
 }
 
+export function feedPreview(item: Pick<InboxLabelEvent, "content" | "kind">, locale: PlatformLocale = "en"): string {
+  const content = item.content.trim();
+  if (content.length > 0) return content;
+  if (item.kind === 46010) return translate(locale, "inbox.previewApproval");
+  if (item.kind === 40007) return translate(locale, "inbox.previewReminder");
+  return translate(locale, "inbox.previewEmpty");
+}
+
+export function categoryLabelFor(category: string, locale: PlatformLocale = "en"): string {
+  return translate(locale, category === "needs_action" ? "inbox.categoryNeedsAction"
+    : category === "mention" ? "inbox.mentionLabel"
+    : category === "agent_activity" ? "inbox.agentUpdate" : "inbox.categoryActivity");
+}
+
 export function isThreadActivityItem(item: Pick<InboxLabelEvent, "category" | "tags">) {
   return item.category === "activity" && inboxReply(item.tags);
 }
