@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { Refused, exactKeys, nonempty, canonical, verifiedClaims, freshPep, fixedUrl, secret, readMeasurements } from '../../../client-kit/adapter/protocol.mjs';
 import { nativeFile, nativeRevisionListing } from './service-read.mjs';
+import { nativeTaskListing, nativeTaskListingTarget } from './service-list.mjs';
 import { nativeDocumentNode } from './query-revision.mjs';
 import { actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
 
@@ -17,11 +18,11 @@ export function readExecutionConfiguration(value) {
   return Object.freeze(JSON.parse(canonical(value)));
 }
 
-function readTaskResult(native, key, target, input, nativeId, revisions) {
+function readTaskResult(native, key, target, input, nativeId, enumeration, expectedNativeId) {
   const execution = native?.execution;
   const terminal = execution?.platformStatus === 'SUCCEEDED';
   if (!exactKeys(native, terminal ? ['execution', 'found', 'contentBytes', 'contentSha256', 'measurements',
-    ...(revisions ? [] : ['contentReference'])] : ['execution', 'found'])
+    ...(enumeration ? [] : ['contentReference'])] : ['execution', 'found'])
     || typeof native.found !== 'boolean' || !exactKeys(execution, ['idempotencyKey', 'nativeType', 'platformStatus', 'cancelCapability', 'lastObservedAt',
       ...(terminal ? ['nativeId', 'terminalAt'] : [])]) || execution.idempotencyKey !== key || execution.nativeType !== 'node'
     || execution.cancelCapability !== 'UNSUPPORTED' || !['UNKNOWN', 'RUNNING', 'SUCCEEDED'].includes(execution.platformStatus)
@@ -33,17 +34,18 @@ function readTaskResult(native, key, target, input, nativeId, revisions) {
   const reference = native.contentReference;
   if (!native.found || !UUID.test(execution.nativeId) || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
     || !Number.isSafeInteger(native.contentBytes) || native.contentBytes < 0 || !/^[a-f0-9]{64}$/.test(native.contentSha256)
-    || !Array.isArray(native.measurements) || (revisions && native.contentBytes <= 0)
-    || (!revisions && (!exactKeys(reference, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
+    || !Array.isArray(native.measurements) || (enumeration && native.contentBytes <= 0)
+    || (!enumeration && (!exactKeys(reference, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
       || reference.resourceId !== target || reference.nativeObjectRef !== execution.nativeId
       || !['nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(reference[field]))
       || (input && canonical(reference) !== canonical(input))))
-    || (revisions && input && execution.nativeId !== input.nativeObjectRef)
+    || (enumeration && input?.nativeObjectRef !== undefined && execution.nativeId !== input.nativeObjectRef)
+    || (expectedNativeId !== undefined && execution.nativeId !== expectedNativeId)
     || (nativeId !== undefined && execution.nativeId !== nativeId)) throw new Refused(503);
   return native;
 }
 
-async function nativeReadTask(config, deadline, token, args, claims, key, operation) {
+async function nativeReadTask(config, deadline, token, args, claims, key, operation, expectedNativeId) {
   const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline, new URL('jobs/user', base), {
     method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json',
@@ -51,7 +53,7 @@ async function nativeReadTask(config, deadline, token, args, claims, key, operat
     body:canonical({JobIDs:[config.readExecution.nativeJobId], LoadTasks:'Any'}),
   });
   const result = readTaskResult(native, key, claims.target_id, operation === 'execute' ? args.input : undefined, args.nativeId,
-    claims.action_key === 'file_storage.list_revisions@v1');
+    ['file_storage.list@v1','file_storage.list_revisions@v1'].includes(claims.action_key), expectedNativeId);
   if (result.execution.platformStatus === 'SUCCEEDED'
     && canonical(readMeasurements(config.readExecution.usageMeasurements, result.contentBytes)) !== canonical(result.measurements)) throw new Refused(503);
   return result;
@@ -119,26 +121,24 @@ export async function executeNode(config, deadline, raw, key, token) {
     || (!Object.hasOwn(claims, 'agent_principal_id') && !UUID.test(claims.external_execution_id))) throw new Refused(401);
   const admitted = await freshPep(config, deadline, token, args, claims, 'execute');
   const resource = resourceForNode(config, admitted, claims, args);
-  // The recursive directory operation still has no one-key native completion
-  // producer. Two matching current traversals are not a retained execution.
-  // SERVICE's separately receipted desired-set listing is unchanged.
-  if (listing || !config.readExecution) throw new Refused(503);
+  if (!config.readExecution) throw new Refused(503);
   const nativeConfig = actorConfiguration(config, token, args, claims);
   const nativeArgs = {input: args.input, authorizationTargetNativeRef: resource.nativeRef};
   let result;
   let references;
   let readReceipt;
   if (!UUID.test(claims.external_execution_id)) throw new Refused(401);
-  const previous = await nativeReadTask(config, deadline, token, args, claims, key, 'execute');
+  const previous = await nativeReadTask(config, deadline, token, args, claims, key, 'execute', listing ? resource.nativeRef : undefined);
   if (previous.found) {
     const current = await claimsForNode(config, token, args, 'execute');
     await freshPep(config, deadline, token, args, current, 'execute');
     // The retained receipt is evidence, not permission to fetch bytes again.
     return {execution: previous.execution};
   }
-  if (revisions) {
-    const listed = await nativeRevisionListing(nativeConfig, deadline, nativeArgs, claims);
-    readReceipt = await nativeReadTask(config, deadline, token, args, claims, key, 'execute');
+  if (listing || revisions) {
+    const listed = listing ? await nativeTaskListing(nativeConfig, deadline, nativeArgs, claims)
+      : await nativeRevisionListing(nativeConfig, deadline, nativeArgs, claims);
+    readReceipt = await nativeReadTask(config, deadline, token, args, claims, key, 'execute', listing ? resource.nativeRef : undefined);
     if (readReceipt.execution.platformStatus !== 'SUCCEEDED' || readReceipt.contentBytes !== listed.bytes.length
       || readReceipt.contentSha256 !== createHash('sha256').update(listed.bytes).digest('hex')) throw new Refused(503);
     const items = listed.items;
@@ -169,8 +169,12 @@ export async function executeNode(config, deadline, raw, key, token) {
   const current = await claimsForNode(config, token, args, 'execute');
   const disclosed = await freshPep(config, deadline, token, args, current, 'execute');
   if (canonical(resourceForNode(config, disclosed, current, args)) !== canonical(resource)) throw new Refused(403);
-  await nativeDocumentNode(nativeConfig, deadline, {nativeObjectRef: args.input.nativeObjectRef,
-    authorizationTargetNativeRef: resource.nativeRef}, current);
+  if (listing) {
+    if (await nativeTaskListingTarget(nativeConfig, deadline, nativeArgs) !== resource.nativeRef) throw new Refused(403);
+  } else {
+    await nativeDocumentNode(nativeConfig, deadline, {nativeObjectRef: args.input.nativeObjectRef,
+      authorizationTargetNativeRef: resource.nativeRef}, current);
+  }
   const final = await claimsForNode(config, token, args, 'execute');
   const admittedFinal = await freshPep(config, deadline, token, args, final, 'execute');
   if (canonical(resourceForNode(config, admittedFinal, final, args)) !== canonical(resource)) throw new Refused(403);
@@ -192,7 +196,7 @@ export async function observeNode(config, deadline, raw, key, token, operation =
   if (!['observe', 'extract_usage'].includes(operation)) throw new Refused(400);
   const claims = await claimsForNode(config, token, args, operation);
   await freshPep(config, deadline, token, args, claims, operation);
-  if (config.readExecution && ['file_storage.read@v1', 'file_storage.export@v1', 'file_storage.list_revisions@v1'].includes(claims.action_key)) {
+  if (config.readExecution && nodeActions.includes(claims.action_key)) {
     const native = await nativeReadTask(config, deadline, token, args, claims, key, operation);
     const current = await claimsForNode(config, token, args, operation);
     await freshPep(config, deadline, token, args, current, operation);

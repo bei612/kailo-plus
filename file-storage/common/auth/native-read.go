@@ -83,7 +83,8 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 	}
 	claims, target, err := delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
 	revisions := claims["action_key"] == "file_storage.list_revisions@v1"
-	if err != nil || (!revisions && claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1") ||
+	listing := claims["action_key"] == "file_storage.list@v1"
+	if err != nil || (!listing && !revisions && claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1") ||
 		claims["tenant_id"] != delivery.TenantID || claims["target_type"] != "RESOURCE" {
 		return nil, refused
 	}
@@ -121,14 +122,17 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 		inputSize := 5
 		if revisions {
 			inputSize = 2
+		} else if listing {
+			inputSize = 1
 		}
 		if len(args) != 2 || !inputOK || len(input) != inputSize || !targetOK || len(argumentTarget) != 1 ||
 			argumentTarget["resourceId"] != claims["target_id"] || input["resourceId"] != claims["target_id"] ||
 			target["nativeInstanceRef"] != delivery.NativeInstanceRef || target["nativeScopeRef"] != delivery.NativeScopeRef ||
-			!NativeActorUUID(text(input, "nativeObjectRef")) || !NativeActorUUID(text(claims, "external_execution_id")) || !NativeActorUUID(text(claims, "idempotency_key")) {
+			(listing && !NativeActorUUID(text(target, "nativeRef"))) || (!listing && !NativeActorUUID(text(input, "nativeObjectRef"))) ||
+			!NativeActorUUID(text(claims, "external_execution_id")) || !NativeActorUUID(text(claims, "idempotency_key")) {
 			return nil, refused
 		}
-		if !revisions {
+		if !listing && !revisions {
 			for _, key := range []string{"nativeRevision", "displayName", "mediaType"} {
 				if text(input, key) == "" {
 					return nil, refused
@@ -136,7 +140,7 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 			}
 		}
 		keys := request.Header.Values("Idempotency-Key")
-		if len(keys) != 1 || keys[0] != claims["idempotency_key"] || (revisions && (!service || request.Method != http.MethodPost)) || (!service && (request.Method != http.MethodGet || request.Header.Get("Range") != "")) {
+		if len(keys) != 1 || keys[0] != claims["idempotency_key"] || ((listing || revisions) && (!service || request.Method != http.MethodPost)) || (!service && (request.Method != http.MethodGet || request.Header.Get("Range") != "")) {
 			return nil, refused
 		}
 		if !service {
@@ -146,6 +150,11 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 			}
 		}
 		result.Input, result.Key, result.ExternalExecutionID = input, keys[0], text(claims, "external_execution_id")
+		if listing {
+			// The directory belongs to the freshly authorized Resource, not a
+			// caller-selected native UUID absent from this action's input.
+			result.Input = map[string]interface{}{"resourceId": input["resourceId"], "nativeObjectRef": target["nativeRef"]}
+		}
 	} else {
 		if !service || (operation != "observe" && operation != "extract_usage") || (len(args) != 3 && len(args) != 4) ||
 			args["nativeType"] != "node" || !NativeActorUUID(text(args, "externalExecutionId")) || !NativeActorUUID(text(args, "idempotencyKey")) {
@@ -162,7 +171,7 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 		result.Input, result.Key, result.ExternalExecutionID = args, text(args, "idempotencyKey"), text(args, "externalExecutionId")
 	}
 	ctx = WithImpersonate(ctx, user)
-	if operation == "execute" && (!service || revisions) {
+	if operation == "execute" && (!service || listing || revisions) {
 		ctx = context.WithValue(ctx, nativeReadContextKey{}, result)
 	}
 	*request = *request.WithContext(ctx)

@@ -224,13 +224,16 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 			t.Error("original read Task event preceded durable persistence", err)
 		}})
 		defer broker.Register(previousBroker)
-		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost"} {
+		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost", "directory-complete", "directory-empty", "directory-response-failed", "directory-source-failed", "directory-completion-ACK-lost"} {
 			t.Run(scenario, func(t *testing.T) {
 				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+30)
 				claims := map[string]interface{}{"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[2], "action_execution_id": ids[3], "target_id": ids[4], "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "action_definition_version": float64(1), "result_exposure_policy_id": ids[5], "result_exposure_policy_version": float64(1), "external_execution_id": ids[6], "idempotency_key": key}
 				revisions := strings.HasPrefix(scenario, "versions-")
+				listing := strings.HasPrefix(scenario, "directory-")
 				if revisions {
 					claims["action_key"] = "file_storage.list_revisions@v1"
+				} else if listing {
+					claims["action_key"] = "file_storage.list@v1"
 				}
 				target := map[string]interface{}{"resourceId": ids[4], "nativeType": "folder", "nativeRef": ids[7], "nativeInstanceRef": "native-instance", "nativeScopeRef": ids[8]}
 				pepCalls := 0
@@ -262,6 +265,8 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					Input: map[string]interface{}{"resourceId": ids[4], "nativeObjectRef": ids[11], "nativeRevision": "original-persisted-version", "displayName": "file.txt", "mediaType": "text/plain"}, Key: key, ExternalExecutionID: ids[6], Token: "header." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture-proof", Args: `{"target":{},"input":{}}`}
 				if revisions {
 					read.Input = map[string]interface{}{"resourceId": ids[4], "nativeObjectRef": ids[11]}
+				} else if listing {
+					read.Input = map[string]interface{}{"resourceId": ids[4], "nativeObjectRef": ids[7]}
 				}
 				serverJobs := &readReceiptJobServer{JobsHandler: NewJobsHandler(ctx, "native-read-receipt")}
 				switch scenario {
@@ -269,7 +274,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					serverJobs.loseACK = 1
 				case "running-ACK-lost":
 					serverJobs.loseACK = 2
-				case "completion-ACK-lost", "versions-completion-ACK-lost":
+				case "completion-ACK-lost", "versions-completion-ACK-lost", "directory-completion-ACK-lost":
 					serverJobs.loseACK = 3
 				}
 				grpcclient.RegisterMock(common.ServiceJobsGRPC, serverJobs)
@@ -277,6 +282,11 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				body := []byte("actual bytes")
 				if revisions {
 					body = []byte(`{"Versions":[{"VersionId":"opaque-version","IsHead":true}]}`)
+				} else if listing {
+					body = []byte(`{"Nodes":[{"Uuid":"original-native-file","Versions":[{"VersionId":"opaque-version","IsHead":true}]}]}`)
+					if scenario == "directory-empty" {
+						body = []byte(`{}`)
+					}
 				}
 				if scenario == "empty" {
 					body = []byte{}
@@ -285,7 +295,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				var output bytes.Buffer
 				open := func() (io.ReadCloser, error) {
 					opens++
-					if scenario == "source-open-failed" || scenario == "versions-source-failed" {
+					if scenario == "source-open-failed" || scenario == "versions-source-failed" || scenario == "directory-source-failed" {
 						return nil, errors.New("native source unavailable")
 					}
 					var source io.Reader = bytes.NewReader(body)
@@ -300,14 +310,14 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				}
 				expected := int64(len(body))
 				var writer io.Writer = &output
-				if revisions {
+				if revisions || listing {
 					expected = -1
 				}
-				if scenario == "versions-response-failed" {
+				if scenario == "versions-response-failed" || scenario == "directory-response-failed" {
 					writer = readReceiptErrorWriter{}
 				}
 				err := jobstore.CopyNativeRead(actor, read, expected, writer, open)
-				complete := scenario == "complete" || scenario == "empty" || scenario == "versions-complete"
+				complete := scenario == "complete" || scenario == "empty" || scenario == "versions-complete" || scenario == "directory-complete" || scenario == "directory-empty"
 				if (err == nil) != complete {
 					t.Fatalf("source completion error mismatch: %v", err)
 				}
@@ -325,12 +335,12 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					t.Fatal("original first-dispatch claim was not retained")
 				}
 				receipt, receiptErr := jobstore.NativeReadTaskReceipt(retained)
-				terminal := complete || scenario == "completion-ACK-lost" || scenario == "versions-completion-ACK-lost"
+				terminal := complete || scenario == "completion-ACK-lost" || scenario == "versions-completion-ACK-lost" || scenario == "directory-completion-ACK-lost"
 				if (receiptErr == nil) != terminal {
 					t.Fatalf("unknown/partial stream was asserted terminal: %v", receiptErr)
 				}
 				if terminal {
-					if revisions && receipt.ContentReference != nil {
+					if (revisions || listing) && receipt.ContentReference != nil {
 						t.Fatal("native listing payload entered the Task as content")
 					}
 					digest := sha256.Sum256(body)
@@ -395,7 +405,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				if err := store.DeleteJob(job.ID); err == nil {
 					t.Fatal("native job cleanup removed claimed read keys")
 				}
-				if opens > 0 && scenario != "source-open-failed" && scenario != "versions-source-failed" && closes != 1 {
+				if opens > 0 && scenario != "source-open-failed" && scenario != "versions-source-failed" && scenario != "directory-source-failed" && closes != 1 {
 					t.Fatal("source was not closed exactly once")
 				}
 			})

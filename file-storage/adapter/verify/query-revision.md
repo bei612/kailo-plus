@@ -3180,3 +3180,164 @@ binding 本批未成立，相关生产入口仍不得开放。
 正式业务库、Cells→WeKnora live E2E、浏览器截图、Windows/Mobile、完整
 conformance、`check.sh --full`、镜像构建、安装包或部署验收；本批原
 测试与真实 SDK client-wire 证据不冒充这些发布条件。
+
+## 2026-10-09：原 Lookup 单次目录列举、同键 Task 与真实用量
+
+### 实施后四步影响结论
+
+- 权威：`.design/07-组件接入标准.md` §2.1/2.4、§5.2、§8A 与
+  `.design/13-业务能力增量更新与跨服务数据获取.md` 的既有源读取边界。
+  `file_storage.list@v1` 为必选 discover 动作；本批恢复此前缺失的原生
+  单次列举、持久完成与计量消费者，不用两次当前目录遍历推断原执行。
+  固定只读官方基准为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+  `gateway/restv2/api-lookup.go::Handler.Lookup`、
+  `data/meta/rest/handler.go::Handler.LoadNodes/fillChildren`、
+  `common/nodes/abstract/handler-abstract-filter.go::BranchFilter.ListNodes`、
+  `common/nodes/acl/handler-acl-filter.go::FilterHandler.ListNodes`、
+  `common/nodes/put/handler-put.go::Handler.ListNodes`、
+  `common/nodes/put/handler-hash.go::HashHandler.ListNodes`。
+  原包装层 `IsStreamFinished` 接受 `io.ErrUnexpectedEOF`，原 fillChildren
+  对任意 Recv 错误结束循环；不能据此证明完整平台目录响应。
+- 影响面：原 `executeNode` → `nativeTaskListing` 单次递归 POST →
+  原 `Lookup`/UUID+ACL/PathClient/`LoadNodes` → 原 create-only JobService
+  Task/`CopyNativeRead` → 实际响应 protojson、io.Copy、close、fresh PEP、
+  Task FINISHED 收据 → 原 `/jobs/user` → `observeNode`/`extract_usage`。
+  list 输入仍是既有 `{resourceId}`；内部 native root 仅从 fresh PEP
+  的 `Resource.nativeRef` 重建，模型不能增添 native UUID。每个原返回
+  节点经 UUID/native ACL 回读，leaf 复用原 NodeVersions，实际 head 的
+  ETag/Size 必须与当前原节点一致。当前节点使用原 StatFlagMetaMinimal
+  取得 MIME；固定 `common/proto/tree/node.go::Flags.Metas` 与
+  `data/tree/grpc/handler.go::TreeServer.ReadNode` 明确 StatFlagNone 会跳过
+  原 metadata loader，不能一边禁加载一边把缺失 MIME 当业务故障。
+- 副作用：Task 沿原 key/actor/scope/binding/generation/EE/input/meters
+  create-only；claim/Running 未持久确认不查询目录。同 key 已存在只观察
+  原 Task，不再遍历、不查当前树补证、不保存目录正文。首次临时结果
+  必须与该 Task 实际 bytes/SHA 完全相等，随后仍走原 result PEP。
+  COUNT 为该次操作 1、CONTENT_BYTES 为实际写出的 JSON 字节，均由原
+  受控映射投递；NONE 只能显式空数组，缺失/null 不当零。空目录原
+  protojson `{}` 是真实两字节响应，不是缺失正文。
+- 异常与三端边界：完整原流只接受 literal EOF；截断、未知尾错、取消、
+  nil node、输出映射失败、超限、源打开/关闭失败、部分响应、保存 ACK
+  丢失、撤权、错误 native root/Workspace/version/receipt/meters 均不
+  伪造完成；原 Task 非终态与 UNKNOWN 保持。原独立 Lookup、Path/UUID
+  ACL、原 UI 和 DD-89 SERVICE 自拉列表不变，严格流处理仅在可信原
+  NativeReadExecution 上下文生效。没有 Web/Desktop 新页面或 Mobile
+  组件入口、公共契约/数据库迁移、第二注册表/队列/计量账本。
+
+### 当前实际 HTTP/MCP 专项目标
+
+复用 `kailo-wren-query-sdk-itgs2n`（UID1000，4 CPU/4 GiB，原缓存）中
+独立 `/work/knowledge-observation-guard.8QFEVq/file-storage/adapter` 输入；
+不改 Wren `/work`。首次 preflight 该 SDK 为约 130 MiB/4 GiB、OOM 计数
+全部 0；Cells 原 4 CPU/8 GiB Go SDK 及其他已有构建在途，并非独占主机。
+没有安装依赖、拉镜像、复制整树或另起服务。
+
+```text
+node --test --test-reporter=spec \
+  --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  test/query-revision.test.mjs
+```
+
+- 首轮 `node-positive.log` 真实 exit 1：538 项中 530 通过、8 失败
+  （5 个子检查、3 个父项）。旧检查仍断言 list 关闭/二次遍历，新的
+  observe fixture 重复 actionVersions；修正原检查事实，未放宽生产
+  唯一性、身份、PEP 或摘要检查。失败 setup 留下原 HTTP fixture handle，
+  精确 TERM 此轮自己的 PID 17133 后保留实际失败输出；不是正常首轮通过。
+- 最终 `node-positive-final.log` exit 0：538/538。覆盖 HUMAN/AGENT、
+  同 key 仅 receipt 且原目录只查询一次、空目录、原 source scope、
+  missing/different receipt/bytes/digest/meters、分页/重复/越界/未知类型、
+  head 缺失/草稿、撤权/移动、原 observe/extract，以及锁定 MCP SDK 的
+  真 init/list/call client-wire；不是手写 JSON MCP 仿真。
+- 仅私有候选 `node-execution.mjs` 禁用真实 previous.found 和响应 SHA
+  守卫，原三个组定点检查 exit 1：26 项中 19 通过、7 失败（4 子/3 父）。
+  HUMAN/AGENT 同 key 重查、wrong-digest 和不同 native receipt 被实际抓住。
+  正式源码未破坏；逆补丁精确还原、cmp exit 0，完整原目标
+  `node-restored.log` 再次 exit 0，538/538。
+
+证据原件目录：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/cells-native-directory-task-20261009.ZHGr0R`。
+
+```text
+7b23fcef46368fbc54aac15cf4a79e7f89a033b0b8137ace5e9ceda080f446be node-positive.log
+11a978653838b99f1df0dad364877819bd3f613f437a3ac78b0e6602ddd49aa0 node-positive-final.log
+d22ba380c7a7b1f62ba26d79f17af7098fc2ffd5454366a85a850b571ee82dce node-production-negative.log
+17804cbe5ccd4d6e8beff5fb1760e60023efee1f05116485457ec119a742d26b node-restored.log
+```
+
+### 明确发布边界
+
+首次临时目录结果和持久原执行/用量证据分开；同 key 只有 execution
+并不表示客户端拿到目录正文，不能第二次 GET/Lookup 追回结果。Agent
+原 output_value 对缺失 resultJson 拒绝，不推广为 HUMAN 正文消费者已
+完成。原 Task 安全退休/失联期限/旧 generation 回读、HUMAN 原正文交付
+仍缺确定权威，不任意清除 marker 或发明 TTL。完整首次上传/write、原子
+条件 delete、share、七必选完整 catalog/APPROVED release/ACTIVE binding
+仍未成立，相关批准/入口保持关闭。本批没有真实 native HTTP/S3/Mongo/
+PolicyEngine 全链、正式业务库、Cells→WeKnora live E2E、浏览器截图、
+Desktop/Mobile、完整 conformance、full、镜像构建或部署验收。
+
+### 最终原 Go 消费者、生产破坏及字节还原
+
+复用既有 `kailo-cells-native-check-lftow7`（UID1000、4 CPU/8 GiB、无额外
+swap），仅同步本批 13 个 Go 文件到 `/workspace/file-storage`；原
+`GOMODCACHE=/cache/mod`、`GOCACHE=/cache/build`、`GOPROXY=off`，未安装依赖。
+`TMPDIR=/cache/build/cells-native-directory-task-20261009.ZHGr0R`；原检查需要的
+`CELLS_WORKING_DIR` 与 `CELLS_DATA_DIR` 均为既有隔离
+`/tmp/cells-version-task-key-check`，不是正式业务配置或数据库。
+最后恢复目标开始前宿主可用内存约 21.7 GiB、memory PSI some/full 为
+0.58/0.52、I/O some 约 22；该 SDK `memory.current=1438273536`，OOM 计数
+全部 0，无其他 Go/Cargo 构建。此前原构建与 Data I/O 在途，不能称独占。
+
+```text
+go test -mod=readonly -count=1 -timeout=30m -v \
+  -run 'TestNativeRead|TestNativeActor|TestNativeIndependent|TestNativeTaskStreamAcknowledgesPersistence|TestNativeTaskFirstDispatchClaim|TestNativeTaskMigrationPreservesClaim|TestNativeWriteTaskRetainsExactIntentAndVersion' \
+  ./common/auth ./scheduler/jobs/grpc ./gateway/restv2 ./scheduler/jobs/rest ./data/meta/rest
+```
+
+- 首轮 `go-positive.log` exit 1：新增原 meta fixture 缺 `nodes.Adapter.Adapt`；
+  原 grpc 目标又在默认 10 分钟超时，实际栈为 `bbolt.Fdatasync` →
+  `bolt.newBoltStore` → 原 `JobsHandler.GetJob`/`CopyNativeRead`。保留原输出，
+  未把编译失败或 I/O 超时冒充生产负向。随后只把原定向检查执行期限明确
+  为 30 分钟，没有修改生产超时、并行度、cgroup 或幂等语义。
+- 第二轮 `go-positive-final.log` exit 1：10 个顶层/111 个子项通过，原
+  Task 五组已通过；meta fixture 缺原 cache resolver 而 panic（1 顶层/
+  1 子项失败）。复用原 auth fixture 的 `cache_helper.SetStaticResolver`
+  注册，未弱化原 PolicyEngine、用户/PEP 或 stream 规则。
+- 最终源码修正原 MIME 加载后，`go-directory-positive.log` 原 gateway/meta
+  两包 exit 0，5 顶层/30 子项通过；原完整/空目录、截断、尾错、nil、
+  输出转换错误、容量、取消与独立模式分支均由真实原消费者运行。
+- 仅私有生产候选禁用 `Handler.fillChildren` 非 EOF 错误返回及
+  `CopyNativeRead` 的 copyErr 守卫。`go-production-negative.log` exit 1，
+  原 meta 5 个子项实际失败：unexpected-eof、unknown-tail、nil-node、
+  output-error、canceled。该轮分层 `-run` 未命中 Task 的响应失败子项，
+  不据此声称已检查 copy 守卫。
+- 独立修正原检查选择，仅在私有候选禁用 copyErr 守卫：
+  `go test -mod=readonly -count=1 -timeout=30m -v
+  -run '^TestNativeReadTaskRecordsActualStreamOnce$/^(Boltdb|directory-response-failed)$'
+  ./scheduler/jobs/grpc`。`go-copy-production-negative.log` exit 1，真实
+  directory-response-failed 报 `source completion error mismatch: <nil>`；
+  1 顶层/1 子项失败，原 Bolt setup 子项通过。不是修改检查期待的假负向。
+- 两个私有生产文件逆补丁还原并与正向快照 cmp exit 0；最后 13 个 Go
+  正式/SDK 输入逐字节一致。最终同五包 `go-restored.log`（句柄 50309）
+  真实 exit 0：11 顶层/120 子项全部通过。此前失败日志仍保留；不把
+  父项与子项相加、旧字节通过或原节点 Task 初始状态当成本批完成证据。
+- Node 三文件正式/候选 cmp exit 0；全部 owned 差异 `git diff --check`
+  exit 0。原真实 HTTP/MCP 分发仍经 `executeNode`，同 key 只观察这同一
+  原 Task；数据源 SERVICE 列表、文档 PAT 观察不被借用为文件操作证据。
+
+原 Go 日志与上述 Node 日志在同一证据目录；SHA-256：
+
+```text
+a1ee6e70fe9fcd8b8eb0b7650ba9da9c7c08b5bda33111129f66d4a029704316 go-positive.log
+19626e04f5d3a265d993235aea5855099d46e0ffe4572b80a0b91d5a25e4f65e go-positive-final.log
+dbeca8082f763dbb82c3915ed575e019891199e2827a73496d34597524d9a7a5 go-directory-positive.log
+dc184f62178c68b10d565810551a675eb00c12545d1b0b26e47b35ff71404d67 go-production-negative.log
+e2c0d787c946330251d666e7f57661fb4556b55530b086d9b618f9020134b02f go-copy-production-negative.log
+12789ac2ab5300ad344a93691a57e06d099c1051ac31ad0ffdbd0e421772b865 go-restored.log
+```
+
+本批 16 个最终源码/检查文件 SHA 原件为同目录 `source-final.sha256`，
+完整 owned 差异为 `owned-directory-final.patch`（包含新增原 meta 检查，
+不含继承 `deploy/compose.yaml`）；回执自身 SHA 在冻结交接时单独核对。
+以上仅为原受控 fixture、真实 Bolt/Job/stream 与锁定 MCP client-wire
+验收；不是 native HTTP/S3/Mongo 实库、浏览器或七必选批准/部署证据。

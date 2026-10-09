@@ -109,7 +109,7 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 	nodeID := "00000000-0000-4000-8000-000000000005"
 	key := "00000000-0000-4000-8000-000000000006"
 	ee := "00000000-0000-4000-8000-000000000007"
-	for _, scenario := range []string{"HUMAN", "AGENT", "service-observe", "service-extract", "revision-execute", "revision-observe", "revision-unsigned-key", "revision-GET", "missing-job", "missing-meter-map", "locked", "unavailable", "foreign-native-user", "SERVICE-as-GET", "HUMAN-as-observer", "wrong-key", "wrong-version", "range", "unsigned-EE", "wrong-actor", "wrong-tenant", "wrong-native-scope", "PEP-denied"} {
+	for _, scenario := range []string{"HUMAN", "AGENT", "service-observe", "service-extract", "revision-execute", "revision-observe", "revision-unsigned-key", "revision-GET", "list-execute", "list-observe", "list-unsigned-key", "list-GET", "list-model-native-ref", "missing-job", "missing-meter-map", "locked", "unavailable", "foreign-native-user", "SERVICE-as-GET", "HUMAN-as-observer", "wrong-key", "wrong-version", "range", "unsigned-EE", "wrong-actor", "wrong-tenant", "wrong-native-scope", "PEP-denied"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := config.WithStubStore(context.Background())
 			user := &nativeActorUserRead{t: t, user: &idm.User{Uuid: nativeUser, Login: "native-user"}}
@@ -123,10 +123,13 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadOIDCPolicy{}})
 			claims := map[string]interface{}{"tenant_id": targetID, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.read@v1", "target_type": "RESOURCE", "target_id": targetID, "operation_id": key, "action_execution_id": ee, "result_exposure_policy_id": key, "external_execution_id": ee, "idempotency_key": key}
 			revisions := strings.HasPrefix(scenario, "revision-")
+			listing := strings.HasPrefix(scenario, "list-")
 			if revisions {
 				claims["action_key"] = "file_storage.list_revisions@v1"
+			} else if listing {
+				claims["action_key"] = "file_storage.list@v1"
 			}
-			if scenario == "revision-unsigned-key" {
+			if scenario == "revision-unsigned-key" || scenario == "list-unsigned-key" {
 				delete(claims, "idempotency_key")
 			}
 			kind := "HUMAN"
@@ -166,7 +169,7 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 					return
 				}
 				value := map[string]interface{}{"actionExecutionId": ee, "operationId": key, "authorizationMinZedToken": "fresh"}
-				if scenario != "service-observe" && scenario != "service-extract" && scenario != "HUMAN-as-observer" && scenario != "revision-observe" {
+				if scenario != "service-observe" && scenario != "service-extract" && scenario != "HUMAN-as-observer" && scenario != "revision-observe" && scenario != "list-observe" {
 					value["targetResource"] = target
 				}
 				json.NewEncoder(w).Encode(value)
@@ -188,9 +191,9 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
 				t.Fatal(err)
 			}
-			service := scenario == "service-observe" || scenario == "service-extract" || scenario == "HUMAN-as-observer" || revisions
+			service := scenario == "service-observe" || scenario == "service-extract" || scenario == "HUMAN-as-observer" || revisions || listing
 			operation := "execute"
-			if service && (!revisions || scenario == "revision-observe") {
+			if service && (!(revisions || listing) || scenario == "revision-observe" || scenario == "list-observe") {
 				operation = "observe"
 			}
 			if scenario == "service-extract" {
@@ -207,6 +210,11 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			args := map[string]interface{}{"target": map[string]interface{}{"resourceId": targetID}, "input": map[string]interface{}{"resourceId": targetID, "nativeObjectRef": nodeID, "nativeRevision": "original-version", "displayName": "file.txt", "mediaType": "text/plain"}}
 			if revisions {
 				args["input"] = map[string]interface{}{"resourceId": targetID, "nativeObjectRef": nodeID}
+			} else if listing {
+				args["input"] = map[string]interface{}{"resourceId": targetID}
+				if scenario == "list-model-native-ref" {
+					args["input"].(map[string]interface{})["nativeObjectRef"] = nodeID
+				}
 			}
 			if operation != "execute" {
 				args = map[string]interface{}{"nativeType": "node", "idempotencyKey": key, "externalExecutionId": ee}
@@ -215,7 +223,7 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			arguments, _ := json.Marshal(args)
 			encoded, _ := json.Marshal(map[string]interface{}{"actionToken": "header." + base64.RawURLEncoding.EncodeToString(payload) + ".signed-by-authority", "argumentsJson": string(arguments)})
 			request := httptest.NewRequest(http.MethodGet, "http://native.invalid/file?versionId=original-version", nil).WithContext(ctx)
-			if revisions && scenario != "revision-GET" {
+			if (revisions || listing) && scenario != "revision-GET" && scenario != "list-GET" {
 				request.Method = http.MethodPost
 			}
 			request.Header.Set("Idempotency-Key", key)
@@ -229,7 +237,7 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 				request.Header.Set("Range", "bytes=0-1")
 			}
 			read, err := NativeReadAuthority(request, base64.RawURLEncoding.EncodeToString(encoded), operation, service)
-			allowed := scenario == "HUMAN" || scenario == "AGENT" || scenario == "service-observe" || scenario == "service-extract" || scenario == "revision-execute" || scenario == "revision-observe"
+			allowed := scenario == "HUMAN" || scenario == "AGENT" || scenario == "service-observe" || scenario == "service-extract" || scenario == "revision-execute" || scenario == "revision-observe" || scenario == "list-execute" || scenario == "list-observe"
 			if (err == nil) != allowed {
 				if allowed {
 					var actual NativeActorDelivery
@@ -250,8 +258,11 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			}
 			if allowed {
 				native, _ := claim.FromContext(request.Context())
-				if read.ExternalExecutionID != ee || native.Subject != nativeUser || ((!service || scenario == "revision-execute") && NativeReadFromContext(request.Context()) != read) {
+				if read.ExternalExecutionID != ee || native.Subject != nativeUser || ((!service || scenario == "revision-execute" || scenario == "list-execute") && NativeReadFromContext(request.Context()) != read) {
 					t.Fatal("verified actor/operation did not reach original GET context")
+				}
+				if scenario == "list-execute" && (read.Input["nativeObjectRef"] != target["nativeRef"] || len(read.Input) != 2 || string(arguments) != read.Args) {
+					t.Fatal("directory root was not reconstructed from the original authorized Resource")
 				}
 			}
 		})

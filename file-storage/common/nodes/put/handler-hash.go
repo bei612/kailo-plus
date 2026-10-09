@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/abstract"
@@ -199,16 +200,23 @@ func (m *HashHandler) ListNodes(ctx context.Context, in *tree.ListNodesRequest, 
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				if !errors.IsStreamFinished(err) {
+				if err != io.EOF && (auth.NativeReadFromContext(ctx) != nil || !errors.IsStreamFinished(err)) {
 					_ = s.SendError(err)
 				}
+				break
+			}
+			if auth.NativeReadFromContext(ctx) != nil && (resp == nil || resp.Node == nil) {
+				_ = s.SendError(errors.WithStack(errors.StatusConflict))
 				break
 			}
 			if resp == nil {
 				continue
 			}
 			m.hashAsETag(resp.Node)
-			_ = s.Send(resp)
+			if err := s.Send(resp); err != nil && auth.NativeReadFromContext(ctx) != nil {
+				_ = s.SendError(err)
+				break
+			}
 		}
 	}()
 	return s, nil

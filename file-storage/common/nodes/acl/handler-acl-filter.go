@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/abstract"
@@ -145,9 +146,13 @@ func (a *FilterHandler) ListNodes(ctx context.Context, in *tree.ListNodesRequest
 		for {
 			resp, er := stream.Recv()
 			if er != nil {
-				if !errors.IsStreamFinished(er) {
+				if er != io.EOF && (auth.NativeReadFromContext(ctx) != nil || !errors.IsStreamFinished(er)) {
 					_ = s.SendError(er)
 				}
+				break
+			}
+			if auth.NativeReadFromContext(ctx) != nil && (resp == nil || resp.Node == nil) {
+				_ = s.SendError(errors.WithStack(errors.StatusConflict))
 				break
 			}
 			if resp == nil {
@@ -169,7 +174,10 @@ func (a *FilterHandler) ListNodes(ctx context.Context, in *tree.ListNodesRequest
 				resp.Node = n
 			}
 
-			_ = s.Send(resp)
+			if err := s.Send(resp); err != nil && auth.NativeReadFromContext(ctx) != nil {
+				_ = s.SendError(err)
+				break
+			}
 		}
 	}()
 

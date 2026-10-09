@@ -169,7 +169,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		(operation == "node" && !listing && requested != root.GetUuid() && requested != admitted.GetUuid() && requested != input["nativeObjectRef"]) {
 		return refused
 	}
-	if operation == "versions" && action == "file_storage.list_revisions@v1" {
+	if (operation == "versions" && action == "file_storage.list_revisions@v1") || (operation == "lookup" && listing) {
 		// This original handler, not an adapter assertion, owns the single
 		// complete enumeration and its original create-only native Task.
 		if _, err := auth.NativeReadAuthority(req.Request, proofs[0], "execute", true); err != nil {

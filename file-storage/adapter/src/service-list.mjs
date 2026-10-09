@@ -28,7 +28,7 @@ function childrenCount(node) {
   return count;
 }
 
-export async function nativeListing(config, deadline, args) {
+async function listingRoot(config, deadline, args) {
   const base = fixedUrl(config.cellsRestBaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const headers = {authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json'};
@@ -49,6 +49,11 @@ export async function nativeListing(config, deadline, args) {
   const admittedPath = nodePath(admittedRoot,config);
   if (admittedRoot.Type !== 'COLLECTION' || admittedRoot.IsRecycled || admittedRoot.IsRecycleBin || admittedRoot.IsDraft
     || (admittedRoot.Uuid !== bindingRoot.Uuid && !admittedPath.startsWith(`${bindingPath}/`))) throw new Refused(403);
+  return {base,headers,getNode,admittedRoot,admittedPath};
+}
+
+export async function nativeListing(config, deadline, args) {
+  const {base,headers,getNode,admittedRoot,admittedPath}=await listingRoot(config,deadline,args);
   const queue = [admittedRoot];
   const seen = new Set([admittedRoot.Uuid]);
   const items = [];
@@ -116,6 +121,48 @@ export async function nativeListing(config, deadline, args) {
   }
   items.sort((a,b) => a.nativeObjectRef.localeCompare(b.nativeObjectRef));
   return items;
+}
+
+// HUMAN/AGENT's original Lookup producer owns this one complete enumeration
+// and its native Task. SERVICE self-pull above retains its separate contract.
+export async function nativeTaskListing(config, deadline, args, claims) {
+  const {base,headers,admittedRoot,admittedPath}=await listingRoot(config,deadline,args);
+  const response=await nativeJsonFetch(config,deadline,new URL('n/nodes',base),{
+    method:'POST',headers:{...headers,'idempotency-key':claims.idempotency_key},
+    body:JSON.stringify({Scope:{Root:{Uuid:admittedRoot.Uuid},Recursive:true},Offset:0,Limit:0,Flags:['WithMetaDefaults']}),
+  },true);
+  const collection=response.value;
+  const nodes=object(collection) && Object.keys(collection).length === 0 ? [] : collection?.Nodes;
+  if (!Array.isArray(nodes) || !object(collection) || Object.keys(collection).some(key => key !== 'Nodes')) throw new Refused(503);
+  const seen=new Set([admittedRoot.Uuid]);
+  const items=[];
+  for (const node of nodes) {
+    const path=nodePath(node,config);
+    if (seen.has(node.Uuid) || node.ContextWorkspace?.Uuid !== config.nativeWorkspaceId || !path.startsWith(`${admittedPath}/`)
+      || node.IsRecycleBin || node.IsRecycled || node.IsDraft) throw new Refused(503);
+    seen.add(node.Uuid);
+    if (node.Type === 'COLLECTION') continue;
+    if (!Array.isArray(node.Versions) || !node.Versions.length || !nonempty(node.ContentType)) throw new Refused(503);
+    const ids=new Set();
+    const heads=[];
+    for (const version of node.Versions) {
+      if (!nonempty(version?.VersionId) || ids.has(version.VersionId)
+        || (version.IsHead !== undefined && typeof version.IsHead !== 'boolean')
+        || (version.Draft !== undefined && typeof version.Draft !== 'boolean')) throw new Refused(503);
+      ids.add(version.VersionId);
+      if (version.IsHead === true) heads.push(version);
+    }
+    if (heads.length !== 1 || heads[0].Draft === true) throw new Refused(503);
+    items.push({resourceId:args.input.resourceId,nativeObjectRef:node.Uuid,nativeRevision:heads[0].VersionId,
+      displayName:path.slice(path.lastIndexOf('/')+1),mediaType:node.ContentType});
+  }
+  items.sort((a,b) => a.nativeObjectRef.localeCompare(b.nativeObjectRef));
+  return {items,bytes:response.bytes};
+}
+
+export async function nativeTaskListingTarget(config, deadline, args) {
+  const {admittedRoot}=await listingRoot(config,deadline,args);
+  return admittedRoot.Uuid;
 }
 
 export async function listFiles(config, deadline, raw, key, token) {

@@ -21,8 +21,10 @@
 package restv2
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strings"
@@ -32,6 +34,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/proto/rest"
@@ -39,6 +42,8 @@ import (
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/idm/meta"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 var (
@@ -78,7 +83,7 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 	}
 	if len(req.Request.Header.Values("X-Kailo-Native-Execution")) != 0 {
 		if input.Input != nil || input.Scope == nil || input.Scope.Root == nil || input.Scope.Root.Path != "" ||
-			len(input.Scope.Nodes) != 0 || input.Scope.Recursive || input.Filters != nil {
+			len(input.Scope.Nodes) != 0 || input.Filters != nil {
 			return errors.WithStack(errors.StatusForbidden)
 		}
 		if err := h.nativeActor(req, resp, input.Scope.Root.Uuid, "lookup"); err != nil {
@@ -86,6 +91,25 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 		}
 	}
 	ctx := req.Request.Context()
+	if read := auth.NativeReadFromContext(ctx); read != nil {
+		if read.Claims["action_key"] != "file_storage.list@v1" || input.Scope == nil || input.Scope.Root == nil || !input.Scope.Recursive ||
+			input.Scope.Root.Uuid != read.Input["nativeObjectRef"] || input.Offset != 0 || input.Limit != 0 ||
+			input.SortField != "" || input.SortDirDesc || len(input.Flags) != 1 || input.Flags[0] != rest.Flag_WithMetaDefaults {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		resp.Header().Set("Content-Type", "application/json")
+		return jobstore.CopyNativeRead(ctx, read, -1, resp, func() (io.ReadCloser, error) {
+			collection, err := h.nativeLookupCollection(ctx, req, read)
+			if err != nil {
+				return nil, err
+			}
+			body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(collection)
+			if err != nil || int64(len(body)) > read.Delivery.MaxResponseBytes {
+				return nil, errors.WithStack(errors.StatusConflict)
+			}
+			return io.NopCloser(bytes.NewReader(body)), nil
+		})
+	}
 	coll := &rest.NodeCollection{}
 	var nn []*tree.Node
 	var er error
@@ -341,6 +365,89 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 
 	return resp.WriteEntity(coll)
 
+}
+
+// The original Lookup/LoadNodes producer, not an adapter traversal, owns this
+// complete native enumeration. Its original UUID/ACL router also rechecks each
+// returned node so recursive ancestors cannot borrow the root's permissions.
+func (h *Handler) nativeLookupCollection(ctx context.Context, req *restful.Request, read *auth.NativeReadExecution) (*rest.NodeCollection, error) {
+	refused := errors.WithStack(errors.StatusConflict)
+	router := h.UuidClient(true)
+	rootUUID := read.Input["nativeObjectRef"].(string)
+	rootResponse, err := router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: rootUUID}, StatFlags: tree.Flags{tree.StatFlagNone}})
+	if err != nil {
+		return nil, err
+	}
+	root := rootResponse.GetNode()
+	if root == nil || root.Uuid != rootUUID || root.Type != tree.NodeType_COLLECTION {
+		return nil, refused
+	}
+	nn, pagination, err := h.TreeHandler.LoadNodes(ctx, &rest.GetBulkMetaRequest{NodePaths: []string{strings.TrimRight(root.Path, "/") + "/*"},
+		SortField: tree.MetaSortNatural}, tree.Flags{}, true)
+	if err != nil {
+		return nil, err
+	}
+	if pagination != nil {
+		return nil, refused
+	}
+	collection := &rest.NodeCollection{}
+	seen := map[string]bool{rootUUID: true}
+	var measured int64
+	for _, listed := range nn {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if listed == nil || !actorUUID(listed.Uuid) || seen[listed.Uuid] ||
+			(listed.Type != tree.NodeType_COLLECTION && listed.Type != tree.NodeType_LEAF) ||
+			!strings.HasPrefix(listed.Path, strings.TrimRight(root.Path, "/")+"/") {
+			return nil, refused
+		}
+		seen[listed.Uuid] = true
+		current, err := router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: listed.Uuid}, StatFlags: tree.Flags{tree.StatFlagMetaMinimal}})
+		if err != nil {
+			return nil, err
+		}
+		if current.GetNode() == nil || current.Node.Uuid != listed.Uuid || current.Node.Path != listed.Path || current.Node.Type != listed.Type {
+			return nil, refused
+		}
+		node := h.TreeNodeToNode(ctx, current.Node)
+		if node.ContextWorkspace.GetUuid() != read.Delivery.NativeScopeRef {
+			return nil, refused
+		}
+		if node.IsRecycleBin || node.IsRecycled || node.IsDraft {
+			continue
+		}
+		if node.Type == tree.NodeType_LEAF {
+			versions, err := h.nodeVersions(ctx, req, node.Uuid,
+				&rest.NodeVersionsFilter{FilterBy: rest.VersionsTypes_VersionsAll, Flags: []rest.Flag{rest.Flag_WithMetaNone}}, read.Delivery.MaxResponseBytes-measured)
+			if err != nil {
+				return nil, err
+			}
+			node.Versions = versions.Versions
+			var heads int
+			for _, version := range node.Versions {
+				if version.IsHead {
+					if version.Draft || version.ETag == "" || version.ETag != node.StorageETag || version.Size != node.Size {
+						return nil, refused
+					}
+					heads++
+				}
+			}
+			if heads != 1 || node.ContentType == "" {
+				return nil, refused
+			}
+		}
+		body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(node)
+		if err != nil {
+			return nil, err
+		}
+		measured += int64(len(body)) + 1
+		if measured >= read.Delivery.MaxResponseBytes {
+			return nil, refused
+		}
+		collection.Nodes = append(collection.Nodes, node)
+	}
+	return collection, nil
 }
 
 // GetByUuid is a simple call on a node - it requires default stats

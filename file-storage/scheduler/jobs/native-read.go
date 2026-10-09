@@ -64,7 +64,7 @@ func NativeReadTaskMatches(task *jobproto.Task, read *auth.NativeReadExecution, 
 	}
 	intent, err := NativeWriteTaskIntent(task)
 	inputSize := 7
-	if read.Claims["action_key"] == "file_storage.list_revisions@v1" {
+	if read.Claims["action_key"] == "file_storage.list_revisions@v1" || read.Claims["action_key"] == "file_storage.list@v1" {
 		inputSize = 4
 	}
 	if err != nil || len(intent.InputReference) != inputSize {
@@ -80,12 +80,12 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 	if err != nil {
 		return nil, refused
 	}
-	revisions := intent.Scope["action_key"] == "file_storage.list_revisions@v1"
+	enumeration := intent.Scope["action_key"] == "file_storage.list_revisions@v1" || intent.Scope["action_key"] == "file_storage.list@v1"
 	inputSize := 7
-	if revisions {
+	if enumeration {
 		inputSize = 4
 	}
-	if (!revisions && intent.Scope["action_key"] != "file_storage.read@v1" && intent.Scope["action_key"] != "file_storage.export@v1") ||
+	if (!enumeration && intent.Scope["action_key"] != "file_storage.read@v1" && intent.Scope["action_key"] != "file_storage.export@v1") ||
 		task.GetStatus() != jobproto.TaskStatus_Finished || task.GetEndTime() <= 0 || len(intent.InputReference) != inputSize {
 		return nil, refused
 	}
@@ -130,11 +130,11 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 			when, timeErr := time.Parse(time.RFC3339Nano, value.CompletedAt)
 			_, hashErr := hex.DecodeString(value.ContentSHA256)
 			if value.NativeObjectRef != intent.InputReference["nativeObjectRef"] || !auth.NativeActorUUID(value.NativeObjectRef) ||
-				value.ContentBytes < 0 || (revisions && value.ContentBytes == 0) || len(value.ContentSHA256) != sha256.Size*2 || hashErr != nil ||
-				timeErr != nil || when.Unix() != int64(task.EndTime) || (revisions && value.ContentReference != nil) || (!revisions && len(value.ContentReference) != 5) {
+				value.ContentBytes < 0 || (enumeration && value.ContentBytes == 0) || len(value.ContentSHA256) != sha256.Size*2 || hashErr != nil ||
+				timeErr != nil || when.Unix() != int64(task.EndTime) || (enumeration && value.ContentReference != nil) || (!enumeration && len(value.ContentReference) != 5) {
 				return nil, refused
 			}
-			if !revisions {
+			if !enumeration {
 				for _, key := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
 					actual, actualOK := value.ContentReference[key].(string)
 					expected, expectedOK := intent.InputReference[key].(string)
@@ -160,13 +160,13 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 	return receipt, nil
 }
 
-// CopyNativeRead is called only by the original data gateway GetObject after
-// its native UUID/path/version/ACL resolution. Claim ACK loss never grants a
+// CopyNativeRead is called by the original GetObject, Lookup and NodeVersions
+// consumers after their native UUID/path/version/ACL resolution. Claim ACK loss never grants a
 // read. A partial stream or failed close leaves its original Task non-terminal.
 func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expectedBytes int64, writer io.Writer, open func() (io.ReadCloser, error)) error {
 	current, ok := claim.FromContext(ctx)
-	revisions := read.Claims["action_key"] == "file_storage.list_revisions@v1"
-	if !ok || (expectedBytes < 0 && (!revisions || expectedBytes != -1)) || read.Delivery.Read == nil {
+	enumeration := read.Claims["action_key"] == "file_storage.list_revisions@v1" || read.Claims["action_key"] == "file_storage.list@v1"
+	if !ok || (expectedBytes < 0 && (!enumeration || expectedBytes != -1)) || read.Delivery.Read == nil {
 		return errors.WithStack(errors.StatusForbidden)
 	}
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
@@ -203,7 +203,7 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 	if closeErr != nil {
 		return closeErr
 	}
-	if (expectedBytes >= 0 && copied != expectedBytes) || (revisions && (copied <= 0 || copied > read.Delivery.MaxResponseBytes)) {
+	if (expectedBytes >= 0 && copied != expectedBytes) || (enumeration && (copied <= 0 || copied > read.Delivery.MaxResponseBytes)) {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	if err := read.Fresh(ctx, "execute"); err != nil {
@@ -211,7 +211,7 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 	}
 	completed := time.Now().UTC()
 	var reference map[string]interface{}
-	if !revisions {
+	if !enumeration {
 		reference = make(map[string]interface{}, len(read.Input))
 		for key, value := range read.Input {
 			reference[key] = value

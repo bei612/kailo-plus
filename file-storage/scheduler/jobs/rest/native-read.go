@@ -44,7 +44,7 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 		}
 		payload, er := base64.RawURLEncoding.DecodeString(parts[1])
 		var claims map[string]interface{}
-		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1" && claims["action_key"] != "file_storage.list_revisions@v1") {
+		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1" && claims["action_key"] != "file_storage.list_revisions@v1" && claims["action_key"] != "file_storage.list@v1") {
 			return errors.WithStack(errors.StatusForbidden)
 		}
 	}

@@ -97,7 +97,7 @@ async function setup(t, changes = {}) {
   const businessAction = changes.businessAction ?? (changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1');
   const operation = changes.operation ?? 'query_revision';
   if (changes.readExecution === undefined) changes.readExecution = business && operation === 'execute'
-    && ['file_storage.read@v1','file_storage.export@v1','file_storage.list_revisions@v1'].includes(businessAction);
+    && ['file_storage.read@v1','file_storage.export@v1','file_storage.list_revisions@v1','file_storage.list@v1'].includes(businessAction);
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const gateway = changes.mcp ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : undefined;
@@ -230,9 +230,20 @@ async function setup(t, changes = {}) {
     }
     if (changes.serviceList && request.url === '/v2/n/nodes') {
       let body=''; for await (const chunk of request) body+=chunk;
-      assert.deepEqual(JSON.parse(body),{Scope:{Root:{Uuid:ids[2]},Recursive:false},Offset:0,Limit:0,Flags:['WithMetaDefaults']});
+      const nativeTask=business && changes.readExecution;
+      assert.deepEqual(JSON.parse(body),{Scope:{Root:{Uuid:ids[2]},Recursive:nativeTask?true:false},Offset:0,Limit:0,Flags:['WithMetaDefaults']});
       state.listings=(state.listings??0)+1;
-      return reply(response,changes.listStatus??200,changes.listResponse ?? {Nodes:[changes.target ?? {...target,ContentType:'text/plain'}]});
+      const value=changes.listResponse ?? {Nodes:[{...(changes.target ?? {...target,ContentType:'text/plain'}),
+        ...(nativeTask?{Versions:[{VersionId:'frozen-version',IsHead:true}]}:{})}]};
+      if (nativeTask) {
+        assert.equal(request.headers['idempotency-key'],ids[7]);
+        const bytes=Buffer.from(JSON.stringify(value));
+        state.nativeReadReceipt={found:true,execution:{idempotencyKey:ids[7],nativeType:'node',nativeId:ids[2],
+          platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'},
+          contentBytes:bytes.length,contentSha256:createHash('sha256').update(bytes).digest('hex'),
+          measurements:[{meterKey:'approved_read_count',quantity:1},{meterKey:'approved_read_bytes',quantity:bytes.length}]};
+      }
+      return reply(response,changes.listStatus??200,value);
     }
     if (request.url === '/v2/auth/token/document') {
       assert.equal(request.method, 'POST');
@@ -327,7 +338,7 @@ async function setup(t, changes = {}) {
         normalizedConfig: { nativeWorkspaceId: ids[1], nativeRootRef: ids[2] }, secretDeliveries,
         actionVersions: [{ actionKey: 'file_storage.read@v1', actionVersion: 1 },
           { actionKey: 'file_storage.list@v1', actionVersion: 1 },
-          ...(changes.businessAction === undefined ? [] : [{actionKey:changes.businessAction,actionVersion:1}])],
+          ...(changes.businessAction === undefined || ['file_storage.read@v1','file_storage.list@v1'].includes(changes.businessAction) ? [] : [{actionKey:changes.businessAction,actionVersion:1}])],
       } };
     const fixed = config.management.validation;
     if (!business) requestArguments = { bindingId: config.bindingId, bindingVersion: fixed.bindingVersion,
@@ -503,7 +514,7 @@ test('native actor proof is mandatory on all four business read paths and cannot
         assert.deepEqual(await answer.json(),{error:'adapter request refused'});
         assert.equal(fixture.state.downloads,undefined);
         assert.equal(fixture.state.receipts.length,0);
-        assert.equal(fixture.state.nativeReads.length,listing ? 0 : 1);
+        assert.equal(fixture.state.nativeReads.length,1);
       });
     }
   }
@@ -1335,7 +1346,7 @@ test('shared PEP consumer accepts optional complete native target facts and reje
   }
 });
 
-test('HUMAN and AGENT directory lists stay closed without a same-key native enumeration receipt', async t => {
+test('HUMAN and AGENT directory lists consume the original single enumeration receipt without replay', async t => {
   const argumentsValue = {target:{resourceId:ids[10]},input:{resourceId:ids[10]}};
   for (const businessHuman of [true,false]) await t.test(businessHuman ? 'HUMAN' : 'AGENT', async nested => {
     const fixture = await setup(nested, {operation:'execute',arguments:argumentsValue,validation:true,
@@ -1345,13 +1356,33 @@ test('HUMAN and AGENT directory lists stay closed without a same-key native enum
     const answer = await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:JSON.stringify({
       idempotencyKey:ids[7],actionKey:'file_storage.list@v1',arguments:argumentsValue,
     })});
-    assert.equal(answer.status,503);
-    assert.deepEqual(await answer.json(),{error:'adapter request refused'});
-    assert.equal(fixture.state.listings,undefined);
-    assert.equal(fixture.state.peps,1);
+    assert.equal(answer.status,200);
+    const result=await answer.json();
+    const references=[{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'}];
+    assert.deepEqual(JSON.parse(result.resultJson),{citations:references});
+    assert.deepEqual(result.contentReferences,references);
+    assert.equal(result.execution.nativeId,ids[2]);
+    assert.equal(result.execution.platformStatus,'SUCCEEDED');
+    assert.equal(fixture.state.listings,1);
+    assert.equal(fixture.state.peps,3);
     assert.equal(fixture.state.receipts.length,0);
     assert.equal(fixture.state.secretReads.length,0);
     assert.equal(fixture.state.queries.length,0);
+    const repeated=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+      idempotencyKey:ids[7],actionKey:'file_storage.list@v1',arguments:argumentsValue,
+    })});
+    assert.equal(repeated.status,200);
+    assert.deepEqual(await repeated.json(),{execution:result.execution});
+    assert.equal(fixture.state.listings,1);
+    assert.equal(fixture.state.queries.length,0);
+  });
+  await t.test('missing original Task delivery stays closed',async nested=>{
+    const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,validation:true,
+      serviceList:true,businessList:true,readExecution:false});
+    const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+      actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue,
+    })});
+    assert.equal(response.status,503);assert.equal(fixture.state.nativeReads.length,0);
   });
 });
 
@@ -1447,7 +1478,7 @@ test('business read suppresses buffered text after native move, platform revocat
   });
 });
 
-test('an empty directory does not waive the missing native operation receipt',async t=>{
+test('an empty directory requires the same actual native Task byte evidence',async t=>{
   const argumentsValue={target:{resourceId:ids[10]},input:{resourceId:ids[10]}};
   const fixture=await setup(t,{operation:'execute',arguments:argumentsValue,validation:true,
     serviceList:true,businessList:true,root:{Uuid:ids[2],Type:'COLLECTION',Path:'documents/root',
@@ -1455,10 +1486,65 @@ test('an empty directory does not waive the missing native operation receipt',as
   const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
     actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue,
   })});
-  assert.equal(answer.status,503);
-  assert.deepEqual(await answer.json(),{error:'adapter request refused'});
-  assert.equal(fixture.state.nativeReads.length,0);
+  assert.equal(answer.status,200);
+  const result=await answer.json();
+  assert.deepEqual(JSON.parse(result.resultJson),{citations:[]});
+  assert.equal(result.contentReferences,undefined);
+  assert.equal(result.execution.nativeId,ids[2]);
+  assert.equal(fixture.state.nativeReadReceipt.contentBytes,2);
+  assert.equal(fixture.state.listings,1);
   assert.equal(fixture.state.receipts.length,0);
+});
+
+test('directory receipt and result validation do not guess completion from a partial native response',async t=>{
+ const actionKey='file_storage.list@v1';
+ const argumentsValue={target:{resourceId:ids[10]},input:{resourceId:ids[10]}};
+ for (const scenario of ['no-receipt','wrong-bytes','wrong-digest','foreign-root','missing-meter','pagination','duplicate-node','outside-scope','foreign-workspace','missing-head','draft-head','unknown-type','revoked-after-list','root-moved']) await t.test(scenario,async nested=>{
+  const node={Uuid:ids[3],Type:'LEAF',Path:'documents/root/file.txt',ContentType:'text/plain',ContextWorkspace:{Uuid:ids[1]},Versions:[{VersionId:'frozen-version',IsHead:true}]};
+  const changes={operation:'execute',arguments:argumentsValue,validation:true,serviceList:true,businessList:true};
+  if (scenario==='pagination') changes.listResponse={Nodes:[node],Pagination:{NextOffset:1}};
+  if (scenario==='duplicate-node') changes.listResponse={Nodes:[node,node]};
+  if (scenario==='outside-scope') changes.listResponse={Nodes:[{...node,Path:'documents/foreign/file.txt'}]};
+  if (scenario==='foreign-workspace') changes.listResponse={Nodes:[{...node,ContextWorkspace:{Uuid:ids[5]}}]};
+  if (scenario==='missing-head') changes.listResponse={Nodes:[{...node,Versions:[{VersionId:'older'}]}]};
+  if (scenario==='draft-head') changes.listResponse={Nodes:[{...node,Versions:[{VersionId:'draft',IsHead:true,Draft:true}]}]};
+  if (scenario==='unknown-type') changes.listResponse={Nodes:[{...node,Type:'FUTURE'}]};
+  if (['no-receipt','wrong-bytes','wrong-digest','foreign-root','missing-meter'].includes(scenario)) changes.readResult=state=>{
+    if (!state.nativeReadReceipt || scenario==='no-receipt') return {found:false,execution:{idempotencyKey:ids[7],nativeType:'node',platformStatus:'UNKNOWN',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'}};
+    const receipt=structuredClone(state.nativeReadReceipt);
+    if (scenario==='wrong-bytes') receipt.contentBytes++;
+    if (scenario==='wrong-digest') receipt.contentSha256='0'.repeat(64);
+    if (scenario==='foreign-root') receipt.execution.nativeId=ids[3];
+    if (scenario==='missing-meter') receipt.measurements=[];
+    return receipt;
+  };
+  if (scenario==='revoked-after-list') changes.pep=(state,response)=>reply(response,state.listings?403:200,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',targetResource:{resourceId:ids[10],nativeType:'folder',nativeRef:ids[2],nativeInstanceRef:'delivered-instance',nativeScopeRef:ids[1]}});
+  if (scenario==='root-moved') changes.rootAfterRead=2,changes.rootAfter={Uuid:ids[2],Type:'COLLECTION',Path:'documents/elsewhere',ContextWorkspace:{Uuid:ids[5]}};
+  const fixture=await setup(nested,changes);
+  const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey,idempotencyKey:ids[7],arguments:argumentsValue})});
+  assert.notEqual(response.status,200);assert.deepEqual(await response.json(),{error:'adapter request refused'});
+  assert.equal(fixture.state.listings,1);assert.equal(fixture.state.queries.length,0);assert.equal(fixture.state.receipts.length,0);
+ });
+ for (const operation of ['observe','extract_usage']) await t.test(operation,async nested=>{
+  const observation={externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'node',nativeId:ids[2]};
+  const receipt={found:true,execution:{idempotencyKey:ids[7],nativeType:'node',nativeId:ids[2],platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'},contentBytes:2,contentSha256:createHash('sha256').update('{}').digest('hex'),measurements:[{meterKey:'approved_read_count',quantity:1},{meterKey:'approved_read_bytes',quantity:2}]};
+  const fixture=await setup(nested,{operation,arguments:observation,validation:true,businessAction:actionKey,readExecution:true,readResult:()=>receipt});
+  const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`});assert.equal(response.status,200);
+  const result=await response.json();
+  if (operation==='observe') assert.deepEqual(result,{execution:receipt.execution});
+  else assert.deepEqual(result.measurements,receipt.measurements.map(value=>({...value,occurredAt:receipt.execution.terminalAt})));
+  assert.deepEqual(fixture.state.nativeReads,['/v2/jobs/user']);assert.equal(fixture.state.listings,undefined);
+ });
+ await t.test('actual SDK MCP client consumes approved directory references',async nested=>{
+  const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,validation:true,serviceList:true,businessList:true,mcp:true});
+  const {client,outgoing}=await mcpWireClient(nested,fixture);const listed=await client.listTools();
+  outgoing.authorization=`Bearer ${fixture.token()}`;outgoing['idempotency-key']=ids[7];
+  const called=await client.callTool({name:listed.tools[0].name,arguments:argumentsValue.input});
+  assert.equal(called.isError,false);assert.deepEqual(called.content,[]);
+  assert.equal(called.structuredContent.execution.nativeId,ids[2]);
+  assert.equal(JSON.parse(called.structuredContent.resultJson).citations[0].nativeObjectRef,ids[3]);
+  assert.equal(fixture.state.listings,1);assert.equal(fixture.state.queries.length,0);
+ });
 });
 
 test('HUMAN business ContentReference verification retains its policy and exact native revision query',async t=>{
@@ -1747,12 +1833,6 @@ test('pinned SDK MCP init/list/call consumes delivered names and original HUMAN/
       assert.equal(fixture.state.peps,0);
       outgoing.authorization = `Bearer ${fixture.token()}`;
       outgoing['idempotency-key'] = ids[7];
-      if (!businessRead) {
-        await assert.rejects(client.callTool({name:definition.name,arguments:input}),/adapter request refused/);
-        assert.equal(fixture.state.nativeReads.length,0);
-        assert.equal(fixture.state.receipts.length,0);
-        return;
-      }
       const called = await client.callTool({name:definition.name,arguments:input});
       assert.equal(called.isError,false);
       assert.deepEqual(called.content,[]);
@@ -1884,10 +1964,12 @@ test('business target facts must be complete and fixed to the delivered instance
   }
 });
 
-test('changed native list or final business PEP never publishes a terminal observation', async t => {
+test('different native directory receipt or final business PEP never discloses an unconfirmed result', async t => {
   const argumentsValue = {target:{resourceId:ids[10]},input:{resourceId:ids[10]}};
   for (const changes of [
-    {changeDuringList:true},
+    {readResult:state=>state.nativeReadReceipt ? {...state.nativeReadReceipt,contentSha256:'0'.repeat(64)} : {
+      found:false,execution:{idempotencyKey:ids[7],nativeType:'node',platformStatus:'UNKNOWN',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'},
+    }},
     {pep:(state,response)=>reply(response,state.peps===2 ? 403 : 200,{
       actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',
       targetResource:{resourceId:ids[10],nativeType:'folder',nativeRef:ids[2],

@@ -22,15 +22,18 @@ package rest
 
 import (
 	"context"
+	"io"
 	"path"
 	"path/filepath"
 	"strings"
 
 	restful "github.com/emicklei/go-restful/v3"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
@@ -274,6 +277,8 @@ func (h *Handler) fillChildren(ctx context.Context, listRequest *tree.ListNodesR
 	offset := listRequest.Offset
 	limit := listRequest.Limit
 	lr := proto.Clone(listRequest).(*tree.ListNodesRequest)
+	read := auth.NativeReadFromContext(ctx)
+	var measured int64
 
 	for {
 
@@ -285,15 +290,37 @@ func (h *Handler) fillChildren(ctx context.Context, listRequest *tree.ListNodesR
 			return oo, countDiffers, err
 		}
 		for {
+			if read != nil && ctx.Err() != nil {
+				return nil, countDiffers, ctx.Err()
+			}
 			r, er := streamer.Recv()
 			if er != nil {
+				if read != nil && er != io.EOF {
+					return nil, countDiffers, er
+				}
 				break
 			}
 			if r == nil {
+				if read != nil {
+					return nil, countDiffers, errors.WithStack(errors.StatusConflict)
+				}
 				continue
+			}
+			if read != nil && r.Node == nil {
+				return nil, countDiffers, errors.WithStack(errors.StatusConflict)
 			}
 			if strings.HasPrefix(path.Base(r.Node.GetPath()), ".") {
 				continue
+			}
+			if read != nil {
+				body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(r.Node)
+				if err != nil {
+					return nil, countDiffers, err
+				}
+				measured += int64(len(body)) + 1
+				if measured > read.Delivery.MaxResponseBytes {
+					return nil, countDiffers, errors.WithStack(errors.StatusConflict)
+				}
 			}
 			oo = append(oo, r.Node)
 		}
