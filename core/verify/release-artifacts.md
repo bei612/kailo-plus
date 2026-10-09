@@ -1322,3 +1322,65 @@ UNKNOWN 任务保留，没有强制 ACTIVE、补写成功、重放模型或执�
 Agent 初始化仍报 DependencyUnavailable；另一个既有线程的 THREAD_NOT_FOUND
 及 Gateway 用量缺 Core trace / BILLING_UNAVAILABLE 仍未收敛，不能报稳定协作。
 本批不新增安全开关；原全量检查退出 1 的状态不因局部运行回读改写。
+
+## 2026-10-09 Worker 与 Web 固定版本实际发布
+
+原 Core→Worker `tools/release.sh` 句柄 62818 最终真实 exit 0；固定源码
+`d619b0b06adea393ac21102ac9fe0ff4767981e5`。Worker 与此前 fd110/e717
+之间的 `worker/` diff 均为空；本批不修改执行逻辑或重放 UNKNOWN 动作。
+实际 Worker registry/artifact 为
+`sha256:db4375fc135555a98551ffe638278aa74aafa0380e35f4d9e6edccd7d483c9c7`。
+原生成 SPDX/provenance 精确复制到忽略的 `dist/` 并 cmp0，SHA-256 分别为
+`9e24c7d0c8c6ae9a643a4e351ac0336895bfd7aaa9d6fb65274a98f2c7818c02`、
+`f2b091c0fce1eb4c79e7f37e187a1cd3787213fbeca92ea7321712102d66cca1`。
+原 Worker log `release-worker.GvgwRv.log` SHA 为
+`bbea8f0f7973c4801e9f598b93918695c3b0ea4bda742db3be3daa745c114315`。
+
+仅沿原 compose `up -d --no-deps --no-build --pull never worker` 更新 Worker，
+实际于 `2026-10-09T11:28:20.2651509Z` 启动，running/exit0/restarts0；
+原 `kailo-component-task` Temporal 队列已处理既有工作。Started 与队列有日志
+不证明 Agent 安装完成或稳定协作。Core/Web 的前后容器 ID 和启动时间不变。
+
+Web 原 `tools/build-upstream.sh web-client` 句柄 46429 最终 exit 0；真实
+worktree 固定 `9edf456a172200fae22adc9ab15e975109ab26b8`，官方 Web 基准
+`a6766c482533d028582d0efcfd3740769f86217c`，原 builder 为 8 CPU/16 GiB。
+原生成 source digest 为
+`sha256:c3763fade6473c689a81b44070488c678e4c492fa84757909df16da73efe317a`；
+实际本机 registry 与镜像 digest 为
+`sha256:bf7f0b6925730f4615565c8c2a61f40c515bfb4a40cd3662a6518f21abb4d0f2`。
+只登记原构建实际产物，不将后续 main 的录音/历史/音频候选算入该版本。
+Node/Caddy 基础层及 npm ci 此轮发生下载，不能报告完全离线或缓存全命中。
+原 `build-web-client.t9tGZk.log` SHA 为
+`c17b4fd780795fc6708ea935a3bb8008bc8b9a74a77a8770ae9d45e7b7b33e09`。
+
+首次部署前只读检查误用服务名 `core`，真实 exit 1 `no such service: core`，
+未执行更新；改用实际 `core-bff` 后，原 compose 配置检查和仅 `buzz-web`
+更新 exit 0。Web 实际于 `2026-10-09T11:41:57.001461599Z` 启动，healthy、
+running/exit0/restarts0；Core/Worker 的前后容器 ID 和启动时间不变。
+一次内部读误用端口 80 报 Connection refused；按原 Dockerfile 的 8080
+读取成功。现有 SSO 会话过期，沿原表单登录成功，无注入 Cookie/token。
+普通浏览器 `/app/platform-build-info.json` HTTP 200，与上述 source digest 一致。
+
+playwright-cli 实拍并打开视觉复核（原件均在 Data `tmp/`）：
+Agent `kailo-web-9edf-agents-20261009.png` SHA
+`a9f5d130c0ce40615b090412f4fc549a46ffd60754ef0a4de14c178ed7c1933b`；
+Inbox `kailo-web-9edf-inbox-20261009.png` SHA
+`c31fc8070628dc9e9171bf8ef039a2793e90a2080c90fcdd698bd6f310bb618a`；
+原表情弹层 `kailo-web-9edf-composer-emoji-20261009.png` SHA
+`ab2b7fd071b73c8f38d4e416a4b94d5f32e5004409fb36bce5a19d69b0e31a5b`。
+实际点选 👍 后草稿更新、弹层关闭、发送启用；清空本地草稿后发送禁用。
+未发送消息、执行模型或修改业务对象。这是三个局部状态，不是全页面/原版
+100%、Windows、Mobile、录音或三组件完整 iframe/业务验收。
+
+原文档检查 10137 已终态 exit 0，log `core-components-docs-20261009.log`
+SHA `ec211d42245e0224bfb12cd2965b0f6293be2b97403f35d6291f9b88de6bbcdd`；
+其快照早于本节及 README 当前插入，不声称新字节已被该旧快照验收。
+原完整检查最近仍 exit 1；后续 main 已有变化，当前来源记录也不证明当前
+全部 inputs 已重建。没有新增安全开关、DB 迁移、强制 ACTIVE 或虚构完成。
+
+随后原 `tools/check-docs.sh` 句柄 60256 终态 exit 0，固定本批暂存树
+`845d5eed90b0b5da9e53b5ce913cf4ff6bac98c0`，实际检查容器为 2 CPU/4 GiB、
+network none；七项全部通过。`worker-web-docs-20261009.log` SHA 为
+`184e5e058889df3aba655421e96d021505c0696bb461425fcb3a30321a1d4c20`。
+该快照包括上述 README 与部署 pins，不包括本段后置记录；文档检查范围不
+覆盖 `verify/` 证据正文，也不替代全量门禁、源码一致性或三端功能验收。

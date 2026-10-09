@@ -6,6 +6,18 @@
 
 ## 当前使用与恢复范围（2026-10-09）
 
+- 2026-10-09 11:42 UTC：Core、Worker 已沿原发布入口更新为固定
+  `d619b0b06adea393ac21102ac9fe0ff4767981e5`。Core health 200、正常 SSO 读取
+  与 Pulse／Agent 两张实拍已复核；Worker 已接回原 Temporal 队列。
+  Web 已发布固定 `9edf456a172200fae22adc9ab15e975109ab26b8`，实际容器与普通
+  SSO 浏览器 build-info 一致；Agent、Inbox、表情弹层已截图并打开复核。
+  入口为 `http://192.168.0.193:58090/app/`；Windows／Mobile 没有更新。
+  原录音四模块的 Web／Desktop 共源迁移已推送 main，原生专项与四侧类型检查
+  通过，但不在这个 Web 镜像内；Web 录音专项用例未启动，不声称浏览器录音已验收。
+  三组件完整绑定与业务、多人与多 Agent 稳定协作、全量原版一致性及生产门禁
+  仍未完成；最近完整检查仍退出 1，前一固定快照文档检查退出 0。实际 digest、来源证明、
+  启动失败与验收边界见[发布记录](core/verify/release-artifacts.md)。
+
 - 2026-10-09 04:04 UTC：仅 Web 发布已提交
   `5baad5e09a6c8abeb33bbfa1904fe0ee77034b78` 的原普通频道读／未读消费者。
   入口仍为 `http://192.168.0.193:58090/app/`，真实容器及普通 SSO 浏览器

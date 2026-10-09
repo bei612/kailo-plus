@@ -727,7 +727,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:b357ebf9e83ffe0ba267f31da5c832ce67f515d90cb7b94e29911917a523294b
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:db4375fc135555a98551ffe638278aa74aafa0380e35f4d9e6edccd7d483c9c7
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -778,7 +778,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:312afc7902bc754b91307f018b0ce4f7620efbeb42e40d9232a5252e6e270270
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:bf7f0b6925730f4615565c8c2a61f40c515bfb4a40cd3662a6518f21abb4d0f2
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
