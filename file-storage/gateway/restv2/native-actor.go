@@ -169,7 +169,15 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		(operation == "node" && !listing && requested != root.GetUuid() && requested != admitted.GetUuid() && requested != input["nativeObjectRef"]) {
 		return refused
 	}
-	req.Request = req.Request.WithContext(ctx)
+	if operation == "versions" && action == "file_storage.list_revisions@v1" {
+		// This original handler, not an adapter assertion, owns the single
+		// complete enumeration and its original create-only native Task.
+		if _, err := auth.NativeReadAuthority(req.Request, proofs[0], "execute", true); err != nil {
+			return err
+		}
+	} else {
+		req.Request = req.Request.WithContext(ctx)
+	}
 	resp.Header().Set("X-Kailo-Native-Actor", tenant+":"+delivery.BindingID+":"+kind+":"+principal)
 	return nil
 }

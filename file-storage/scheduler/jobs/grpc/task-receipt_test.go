@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -182,6 +183,12 @@ func (s *readReceiptSource) Close() error { *s.closes++; return s.closeErr }
 
 type readReceiptErrorReader struct{}
 
+type readReceiptErrorWriter struct{}
+
+func (readReceiptErrorWriter) Write(body []byte) (int, error) {
+	return len(body) / 2, errors.New("native response write unconfirmed")
+}
+
 func (readReceiptErrorReader) Read([]byte) (int, error) {
 	return 0, errors.New("original source stream failed")
 }
@@ -217,10 +224,14 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 			t.Error("original read Task event preceded durable persistence", err)
 		}})
 		defer broker.Register(previousBroker)
-		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy"} {
+		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost"} {
 			t.Run(scenario, func(t *testing.T) {
 				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+30)
 				claims := map[string]interface{}{"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[2], "action_execution_id": ids[3], "target_id": ids[4], "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "action_definition_version": float64(1), "result_exposure_policy_id": ids[5], "result_exposure_policy_version": float64(1), "external_execution_id": ids[6], "idempotency_key": key}
+				revisions := strings.HasPrefix(scenario, "versions-")
+				if revisions {
+					claims["action_key"] = "file_storage.list_revisions@v1"
+				}
 				target := map[string]interface{}{"resourceId": ids[4], "nativeType": "folder", "nativeRef": ids[7], "nativeInstanceRef": "native-instance", "nativeScopeRef": ids[8]}
 				pepCalls := 0
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -249,18 +260,24 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				payload, _ := json.Marshal(claims)
 				read := &auth.NativeReadExecution{Delivery: auth.NativeActorDelivery{Delivery: protocol.Delivery{BindingID: ids[9], InstanceServiceUUID: ids[10], CorePEPURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/token", ClientID: "native-binding", ClientSecretFile: secret, RequestTimeout: "2s", MaxResponseBytes: 65536, ClientSecretMaxBytes: 256}, Read: &auth.NativeReadDelivery{NativeJobID: job.ID, UsageMeasurements: []auth.NativeReadMeasurement{{MeterKey: "approved-count", QuantitySource: "COUNT"}, {MeterKey: "approved-bytes", QuantitySource: "CONTENT_BYTES"}}}}, Claims: claims, Target: target,
 					Input: map[string]interface{}{"resourceId": ids[4], "nativeObjectRef": ids[11], "nativeRevision": "original-persisted-version", "displayName": "file.txt", "mediaType": "text/plain"}, Key: key, ExternalExecutionID: ids[6], Token: "header." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture-proof", Args: `{"target":{},"input":{}}`}
+				if revisions {
+					read.Input = map[string]interface{}{"resourceId": ids[4], "nativeObjectRef": ids[11]}
+				}
 				serverJobs := &readReceiptJobServer{JobsHandler: NewJobsHandler(ctx, "native-read-receipt")}
 				switch scenario {
 				case "claim-ACK-lost":
 					serverJobs.loseACK = 1
 				case "running-ACK-lost":
 					serverJobs.loseACK = 2
-				case "completion-ACK-lost":
+				case "completion-ACK-lost", "versions-completion-ACK-lost":
 					serverJobs.loseACK = 3
 				}
 				grpcclient.RegisterMock(common.ServiceJobsGRPC, serverJobs)
 				actor := claim.ToContext(ctx, claim.Claims{Subject: ids[1], Name: "native-user"})
 				body := []byte("actual bytes")
+				if revisions {
+					body = []byte(`{"Versions":[{"VersionId":"opaque-version","IsHead":true}]}`)
+				}
 				if scenario == "empty" {
 					body = []byte{}
 				}
@@ -268,7 +285,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				var output bytes.Buffer
 				open := func() (io.ReadCloser, error) {
 					opens++
-					if scenario == "source-open-failed" {
+					if scenario == "source-open-failed" || scenario == "versions-source-failed" {
 						return nil, errors.New("native source unavailable")
 					}
 					var source io.Reader = bytes.NewReader(body)
@@ -281,8 +298,16 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					}
 					return &readReceiptSource{Reader: source, closeErr: closeErr, closes: &closes}, nil
 				}
-				err := jobstore.CopyNativeRead(actor, read, int64(len(body)), &output, open)
-				complete := scenario == "complete" || scenario == "empty"
+				expected := int64(len(body))
+				var writer io.Writer = &output
+				if revisions {
+					expected = -1
+				}
+				if scenario == "versions-response-failed" {
+					writer = readReceiptErrorWriter{}
+				}
+				err := jobstore.CopyNativeRead(actor, read, expected, writer, open)
+				complete := scenario == "complete" || scenario == "empty" || scenario == "versions-complete"
 				if (err == nil) != complete {
 					t.Fatalf("source completion error mismatch: %v", err)
 				}
@@ -300,11 +325,14 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					t.Fatal("original first-dispatch claim was not retained")
 				}
 				receipt, receiptErr := jobstore.NativeReadTaskReceipt(retained)
-				terminal := complete || scenario == "completion-ACK-lost"
+				terminal := complete || scenario == "completion-ACK-lost" || scenario == "versions-completion-ACK-lost"
 				if (receiptErr == nil) != terminal {
 					t.Fatalf("unknown/partial stream was asserted terminal: %v", receiptErr)
 				}
 				if terminal {
+					if revisions && receipt.ContentReference != nil {
+						t.Fatal("native listing payload entered the Task as content")
+					}
 					digest := sha256.Sum256(body)
 					if receipt.ContentBytes != int64(len(body)) || receipt.ContentSHA256 != hex.EncodeToString(digest[:]) {
 						t.Fatal("actual native byte evidence was not retained")
@@ -358,7 +386,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					}
 				}
 				before := opens
-				if err := jobstore.CopyNativeRead(actor, read, int64(len(body)), &output, open); err == nil || opens != before {
+				if err := jobstore.CopyNativeRead(actor, read, expected, writer, open); err == nil || opens != before {
 					t.Fatal("same-key request reopened the source")
 				}
 				if err := store.DeleteTasks(job.ID, []string{key}); err == nil {
@@ -367,7 +395,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				if err := store.DeleteJob(job.ID); err == nil {
 					t.Fatal("native job cleanup removed claimed read keys")
 				}
-				if opens > 0 && scenario != "source-open-failed" && closes != 1 {
+				if opens > 0 && scenario != "source-open-failed" && scenario != "versions-source-failed" && closes != 1 {
 					t.Fatal("source was not closed exactly once")
 				}
 			})

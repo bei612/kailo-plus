@@ -12,7 +12,7 @@ export function actorConfiguration(config, token, args, claims) {
   })});
 }
 
-export async function nativeJsonFetch(config, deadline, url, options) {
+export async function nativeJsonFetch(config, deadline, url, options, captureBody = false) {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Refused(503);
   const context = config.nativeActorContext;
@@ -29,6 +29,10 @@ export async function nativeJsonFetch(config, deadline, url, options) {
       await response.body?.cancel();
       throw new Refused(503);
     }
-    return JSON.parse(await boundedBody(response.body, config.maxBodyBytes));
+    const body = await boundedBody(response.body, config.maxBodyBytes);
+    const value = JSON.parse(body);
+    // The original revision-list consumer verifies the exact bytes its native
+    // Task producer copied, not a reconstruction of today's metadata.
+    return captureBody ? {value, bytes:Buffer.from(body, 'utf8')} : value;
   } catch { throw new Refused(503); }
 }

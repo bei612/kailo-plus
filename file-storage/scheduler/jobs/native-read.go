@@ -27,7 +27,7 @@ type NativeReadReceipt struct {
 	ContentBytes     int64                   `json:"contentBytes"`
 	ContentSHA256    string                  `json:"contentSha256"`
 	CompletedAt      string                  `json:"completedAt"`
-	ContentReference map[string]interface{}  `json:"contentReference"`
+	ContentReference map[string]interface{}  `json:"contentReference,omitempty"`
 	Measurements     []NativeReadMeasurement `json:"measurements"`
 }
 
@@ -63,7 +63,11 @@ func NativeReadTaskMatches(task *jobproto.Task, read *auth.NativeReadExecution, 
 		return false
 	}
 	intent, err := NativeWriteTaskIntent(task)
-	if err != nil || len(intent.InputReference) != 7 {
+	inputSize := 7
+	if read.Claims["action_key"] == "file_storage.list_revisions@v1" {
+		inputSize = 4
+	}
+	if err != nil || len(intent.InputReference) != inputSize {
 		return false
 	}
 	return intent.InputReference["externalExecutionId"] == read.ExternalExecutionID
@@ -73,8 +77,16 @@ func NativeReadTaskMatches(task *jobproto.Task, read *auth.NativeReadExecution, 
 func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 	refused := errors.WithStack(errors.StatusConflict)
 	intent, err := NativeWriteTaskIntent(task)
-	if err != nil || (intent.Scope["action_key"] != "file_storage.read@v1" && intent.Scope["action_key"] != "file_storage.export@v1") ||
-		task.GetStatus() != jobproto.TaskStatus_Finished || task.GetEndTime() <= 0 || len(intent.InputReference) != 7 {
+	if err != nil {
+		return nil, refused
+	}
+	revisions := intent.Scope["action_key"] == "file_storage.list_revisions@v1"
+	inputSize := 7
+	if revisions {
+		inputSize = 4
+	}
+	if (!revisions && intent.Scope["action_key"] != "file_storage.read@v1" && intent.Scope["action_key"] != "file_storage.export@v1") ||
+		task.GetStatus() != jobproto.TaskStatus_Finished || task.GetEndTime() <= 0 || len(intent.InputReference) != inputSize {
 		return nil, refused
 	}
 	encoded, encodeErr := json.Marshal(intent.InputReference["usageMeasurements"])
@@ -118,15 +130,17 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 			when, timeErr := time.Parse(time.RFC3339Nano, value.CompletedAt)
 			_, hashErr := hex.DecodeString(value.ContentSHA256)
 			if value.NativeObjectRef != intent.InputReference["nativeObjectRef"] || !auth.NativeActorUUID(value.NativeObjectRef) ||
-				value.ContentBytes < 0 || len(value.ContentSHA256) != sha256.Size*2 || hashErr != nil ||
-				timeErr != nil || when.Unix() != int64(task.EndTime) || len(value.ContentReference) != 5 {
+				value.ContentBytes < 0 || (revisions && value.ContentBytes == 0) || len(value.ContentSHA256) != sha256.Size*2 || hashErr != nil ||
+				timeErr != nil || when.Unix() != int64(task.EndTime) || (revisions && value.ContentReference != nil) || (!revisions && len(value.ContentReference) != 5) {
 				return nil, refused
 			}
-			for _, key := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
-				actual, actualOK := value.ContentReference[key].(string)
-				expected, expectedOK := intent.InputReference[key].(string)
-				if !actualOK || !expectedOK || actual == "" || actual != expected {
-					return nil, refused
+			if !revisions {
+				for _, key := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
+					actual, actualOK := value.ContentReference[key].(string)
+					expected, expectedOK := intent.InputReference[key].(string)
+					if !actualOK || !expectedOK || actual == "" || actual != expected {
+						return nil, refused
+					}
 				}
 			}
 			expected, _ := json.Marshal(nativeReadMeasurements(mapping, value.ContentBytes))
@@ -151,7 +165,8 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 // read. A partial stream or failed close leaves its original Task non-terminal.
 func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expectedBytes int64, writer io.Writer, open func() (io.ReadCloser, error)) error {
 	current, ok := claim.FromContext(ctx)
-	if !ok || expectedBytes < 0 || read.Delivery.Read == nil {
+	revisions := read.Claims["action_key"] == "file_storage.list_revisions@v1"
+	if !ok || (expectedBytes < 0 && (!revisions || expectedBytes != -1)) || read.Delivery.Read == nil {
 		return errors.WithStack(errors.StatusForbidden)
 	}
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
@@ -188,16 +203,19 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 	if closeErr != nil {
 		return closeErr
 	}
-	if copied != expectedBytes {
+	if (expectedBytes >= 0 && copied != expectedBytes) || (revisions && (copied <= 0 || copied > read.Delivery.MaxResponseBytes)) {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	if err := read.Fresh(ctx, "execute"); err != nil {
 		return err
 	}
 	completed := time.Now().UTC()
-	reference := make(map[string]interface{}, len(read.Input))
-	for key, value := range read.Input {
-		reference[key] = value
+	var reference map[string]interface{}
+	if !revisions {
+		reference = make(map[string]interface{}, len(read.Input))
+		for key, value := range read.Input {
+			reference[key] = value
+		}
 	}
 	body, err := json.Marshal(NativeReadReceipt{NativeObjectRef: read.Input["nativeObjectRef"].(string), ContentBytes: copied,
 		ContentSHA256: hex.EncodeToString(digest.Sum(nil)), CompletedAt: completed.Format(time.RFC3339Nano), ContentReference: reference,

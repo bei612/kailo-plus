@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -75,17 +76,22 @@ func (*uploadNativeRoles) SearchRole(_ *idm.SearchRoleRequest, _ idm.RoleService
 
 type uploadNativeTree struct {
 	tree.NodeProviderClient
-	node  *tree.Node
-	err   error
-	reads int
+	node              *tree.Node
+	err               error
+	reads             int
+	allowDefaultFlags bool
 }
+
+// SourcesPool is process-wide and lazily opened once, including when these
+// original route fixtures are selected separately or run together.
+var nativeVersionsTree = new(uploadNativeTree)
 
 func (s *uploadNativeTree) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
 	s.reads++
 	if s.err != nil {
 		return nil, s.err
 	}
-	if len(request.StatFlags) != 1 || request.StatFlags[0] != tree.StatFlagNone {
+	if !(s.allowDefaultFlags && len(request.StatFlags) == 0) && (len(request.StatFlags) != 1 || request.StatFlags[0] != tree.StatFlagNone) {
 		return nil, fmt.Errorf("completion must explicitly reload native metadata")
 	}
 	return &tree.ReadNodeResponse{Node: s.node.Clone()}, nil
@@ -106,6 +112,140 @@ func (s *uploadNativeVersion) HeadVersion(_ context.Context, request *tree.HeadV
 		Draft: request.VersionId == s.draft, Size: 0, Location: &tree.Node{Uuid: "native-draft-location", Type: tree.NodeType_LEAF}}}, nil
 }
 
+type nativeRevisionStream struct {
+	grpc.ClientStream
+	ctx      context.Context
+	nodeUUID string
+	versions []*tree.ContentRevision
+	ending   error
+	openErr  error
+	queries  int
+	position int
+}
+
+func (s *nativeRevisionStream) Invoke(context.Context, string, interface{}, interface{}, ...grpc.CallOption) error {
+	return fmt.Errorf("unexpected unary version call")
+}
+
+func (s *nativeRevisionStream) NewStream(ctx context.Context, _ *grpc.StreamDesc, method string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
+	if method != "/tree.NodeVersioner/ListVersions" {
+		return nil, fmt.Errorf("unexpected version method")
+	}
+	if s.openErr != nil {
+		return nil, s.openErr
+	}
+	s.ctx = ctx
+	return s, nil
+}
+
+func (s *nativeRevisionStream) Context() context.Context { return s.ctx }
+func (s *nativeRevisionStream) CloseSend() error         { return nil }
+func (s *nativeRevisionStream) SendMsg(message interface{}) error {
+	request, ok := message.(*tree.ListVersionsRequest)
+	if !ok || request.GetNode().GetUuid() != s.nodeUUID || request.Limit != 0 || request.Offset != 0 || request.SortField != "" || request.SortDesc || len(request.Filters) != 0 {
+		return fmt.Errorf("not the original complete native version query")
+	}
+	s.queries++
+	return nil
+}
+
+func (s *nativeRevisionStream) RecvMsg(message interface{}) error {
+	if s.position == len(s.versions) {
+		if s.ending != nil {
+			return s.ending
+		}
+		return io.EOF
+	}
+	response, ok := message.(*tree.ListVersionsResponse)
+	if !ok {
+		return fmt.Errorf("unexpected version response type")
+	}
+	response.Version = s.versions[s.position]
+	s.position++
+	return nil
+}
+
+func TestNativeReadRevisionStreamRequiresActualEOF(t *testing.T) {
+	// Exercise the original UUID/ACL route and generated version client. The
+	// generic generated server stub loses a late stream error, so the existing
+	// ResolveConn mock supplies that real client-stream error directly here.
+	nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
+		return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(nativeVersionsTree, nil))
+	})
+	for _, scenario := range []string{"complete", "empty", "unexpected-eof", "canceled", "unknown-open", "unknown-tail", "nil-version", "empty-version", "bounded", "independent-unexpected-eof"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			user := &idm.User{Uuid: "00000000-0000-4000-8000-000000000003", Login: "native-user"}
+			ctx = claim.ToContext(ctx, claim.Claims{Subject: user.Uuid, Name: user.Login})
+			grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadNativeRoles{}})
+			node := &tree.Node{Uuid: "00000000-0000-4000-8000-000000000004", Path: "native/current-name.txt", Type: tree.NodeType_LEAF, Size: 17, Etag: "native-etag"}
+			*nativeVersionsTree = uploadNativeTree{node: node, allowDefaultFlags: true}
+			root := &tree.Node{Uuid: "00000000-0000-4000-8000-000000000008", Path: "native", Type: tree.NodeType_COLLECTION}
+			workspace := &idm.Workspace{UUID: root.Uuid, Slug: "workspace", RootUUIDs: []string{root.Uuid}}
+			access := permissions.NewAccessList(&idm.Role{Uuid: user.Uuid})
+			access.AppendACLs(&idm.ACL{RoleID: user.Uuid, WorkspaceID: workspace.UUID, NodeID: root.Uuid, Action: permissions.AclRead})
+			access.Flatten(ctx)
+			access.GetWorkspaces()[workspace.UUID] = workspace
+			ctx = acl.WithPresetACL(ctx, access)
+			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{Workspace: workspace,
+				LoadedSource:  nodes.LoadedSource{Client: omock.New("native")},
+				AncestorsList: map[string][]*tree.Node{"": {node, root}, node.Path: {node, root}}})
+			stream := &nativeRevisionStream{nodeUUID: node.Uuid, versions: []*tree.ContentRevision{
+				{VersionId: "published-native-version", OwnerUuid: user.Uuid, IsHead: true, Size: node.Size, ETag: node.Etag},
+				{VersionId: "own-native-draft", OwnerUuid: user.Uuid, Draft: true},
+				{VersionId: "foreign-native-draft", OwnerUuid: "another-native-user", Draft: true},
+			}}
+			maxBytes := int64(4096)
+			switch scenario {
+			case "empty":
+				stream.versions = nil
+			case "unexpected-eof", "independent-unexpected-eof":
+				stream.ending = io.ErrUnexpectedEOF
+				if scenario == "independent-unexpected-eof" {
+					maxBytes = 0 // retain the original independent native behavior
+				}
+			case "canceled":
+				stream.ending = context.Canceled
+			case "unknown-open":
+				stream.openErr = fmt.Errorf("native stream opening unknown")
+			case "unknown-tail":
+				stream.ending = fmt.Errorf("native stream tail unknown")
+			case "nil-version":
+				stream.versions = []*tree.ContentRevision{nil}
+			case "empty-version":
+				stream.versions = []*tree.ContentRevision{{}}
+			case "bounded":
+				maxBytes = 1
+			}
+			grpcclient.RegisterMock(common.ServiceVersionsGRPC, stream)
+			request := restful.NewRequest(httptest.NewRequest(http.MethodPost, "/a/tree/versions/"+node.Uuid, nil).WithContext(ctx))
+			collection, err := (&Handler{}).nodeVersions(ctx, request, node.Uuid,
+				&rest.NodeVersionsFilter{FilterBy: rest.VersionsTypes_VersionsAll, Flags: []rest.Flag{rest.Flag_WithMetaNone}}, maxBytes)
+			accepted := scenario == "complete" || scenario == "empty" || scenario == "independent-unexpected-eof"
+			if !accepted {
+				if err == nil || collection != nil {
+					t.Fatalf("an incomplete native stream became completed: collection=%v error=%v", collection, err)
+				}
+			} else {
+				want := 2
+				if scenario == "empty" {
+					want = 0
+				}
+				if err != nil || collection == nil || len(collection.Versions) != want {
+					t.Fatalf("original authorized complete versions not returned: collection=%v error=%v", collection, err)
+				}
+			}
+			wantQueries := 1
+			if scenario == "unknown-open" {
+				wantQueries = 0
+			}
+			if stream.queries != wantQueries || nativeVersionsTree.reads != 1 {
+				t.Fatalf("not one original authorized stream: queries=%d nodeReads=%d", stream.queries, nativeVersionsTree.reads)
+			}
+		})
+	}
+}
+
 func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 	ids := make([]string, 8)
 	for index := range ids {
@@ -113,7 +253,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 	}
 	// The original SourcesPool is lazily opened once. Keep its native fixture
 	// client stable and replace that client's data between serial scenarios.
-	freshTree := new(uploadNativeTree)
+	freshTree := nativeVersionsTree
 	nodes.SetSourcesPoolOpener(func(c context.Context) *openurl.Pool[nodes.SourcesPool] {
 		return nodes.NewTestPool(c, nodes.MakeFakeClientsPool(freshTree, nil))
 	})

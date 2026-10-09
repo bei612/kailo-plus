@@ -3044,3 +3044,139 @@ frozen measurements 对比；原 HTTP suite 命中这些生产错误，不是 ra
   构建或部署。本批原测试使用受控私有 fixture，原 logger/broker 诊断保留；
   不是 Cells→WeKnora live E2E 或正式数据库验收。源码写入、目标验收与发布
   状态分离；本回执不把根代理另外一批 Core PEP 的验证借作本批线上证据。
+
+## 2026-10-09：原 NodeVersions 同键任务、真实响应计量与观察消费者
+
+### 实施后权威、影响及异常结论
+
+- 权威是 `.design/07-组件接入标准.md` §2.1/2.4、§5.2、§8A：
+  `file_storage.list_revisions@v1` 是必选 read 动作，必须有真实原生完成、
+  稳定 key、明确用量与受控结果；部分类别不能批准。固定只读证据为
+  `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+  `gateway/restv2/api-versions.go::Handler.NodeVersions`、
+  `gateway/restv2/api.go::Handler.TreeContentRevisionToVersion`、
+  `scheduler/jobs/grpc/handler.go::JobsHandler.PutTaskStream`、
+  `common/client/commons/stream-reader.go::ForEach`、
+  `common/errors/lib.go::IsStreamFinished`。后两者原本接受
+  `io.ErrUnexpectedEOF`；不能用它证明平台完整版本列举完成。
+- 实际调用闭包是 `executeNode` → 原 `nativeVersions` 单次 POST →
+  原 `Handler.NodeVersions`/UUID+ACL/NodeVersioner.ListVersions →
+  既有 `CopyNativeRead`/原 JobService create-only Task →
+  实际 protojson 响应 `io.Copy`、关闭、fresh PEP、持久 FINISHED 收据 →
+  原 `/jobs/user` → `observeNode`/`extract_usage`。不建第二队列、执行器、
+  平台账本或文件目录；原 Task 只保存冻结输入、字节/SHA、时间及 meter，
+  不保存版本正文或列表。新终态不附虚假 ContentReference。
+- 四类差异：原独立 NodeVersions 筛选、排序、ACL、当前用户草稿隔离、
+  节点/版本转换及 `WriteEntity` 路径原样保留；该原业务实现提取到同一
+  `nodeVersions` 函数复用，不另写页面；受控 HUMAN/AGENT 的原验签、
+  actor→native User、scope/binding/generation/key/hash/fresh PEP 和
+  Task 关联是已授权治理改造；同键原生完成与计量此前缺失，本批恢复。
+  严格 EOF/非空原生版本字段检查仅应用受控完整枚举，不改变独立原生
+  `ForEach` 行为。没有 UI/template/style、公共 schema、数据库迁移。
+- 先原 Task claim/Running 持久 ACK 后才查询版本；同 key 已有 Task 只读
+  原收据，不能第二次 ListVersions。首次临时结果须与同 Task 原始响应
+  bytes/SHA 完全相等，再走原授权结果通道；不由当前文件或再次查询补证。
+  actor、目标、generation、参数、冻结 meter 不一致即拒绝。
+  COUNT/CONTENT_BYTES 使用已投递的原映射：COUNT 为这次操作 1，
+  CONTENT_BYTES 为实际写出的原 JSON 字节；NONE 只允许显式 `[]`。
+  空/missing/null meter 不当 0，合法零字节文件行为保持。
+- 受控版本流只接受真实 `io.EOF`；截断、取消、未知尾错、打开失败、空
+  version、超限、部分响应写入、源关闭失败、Running/完成保存 ACK 丢失、
+  fresh PEP 拒绝均不伪造完成。原 Task/receipt 保持可观察，未知不重查或
+  重放。同键仅回 execution 是原执行证据，不表示客户端拿到版本正文。
+  此前 HUMAN/AGENT directory list 的双遍历假完成已移除：没有一键原生
+  producer 时在实际遍历前拒绝；DD-89 SERVICE 自拉列表消费者未改变。
+
+### 原受限目标、真实生产变异与还原
+
+- 复用原 `kailo-cells-native-check-lftow7`（UID1000，4 CPU/8 GiB，
+  memorySwap=8 GiB）与 `/workspace/file-storage`；
+  `GOMODCACHE=/cache/mod`、`GOCACHE=/cache/build`、`GOPROXY=off`，
+  `CELLS_WORKING_DIR=CELLS_DATA_DIR=/tmp/cells-version-task-key-check`。
+  临时输出在原 Data cache 的
+  `cells-native-revision-task-20261009.k83bJD`，未安装依赖、新 SDK、镜像、
+  数据库或整仓快照。只读 preflight 90516 的 `printenv` 因容器未预设
+  CELLS 两路径 exit 1；本批测试沿原入口显式投递，不伪称其默认存在。
+- Node 复用 `kailo-wren-query-sdk-itgs2n`（UID1000，4 CPU/4 GiB，
+  memorySwap=4 GiB）原独立候选
+  `/work/knowledge-observation-guard.8QFEVq/file-storage/adapter` 和既有
+  MCP SDK 1.26.0。与 Wren 原 Jest/tsc 在途重叠但不修改 `/work` 输入；
+  实查当时约 388.5 MiB/4 GiB，非独占。执行前宿主 MemAvailable
+  约 24–31 GiB、memory PSI avg10=0；Data I/O 等待如实保留同句柄，
+  不重启检查。2026-10-09T10:16:50Z 两 SDK memory.events 全为 0。
+- Go 原命令（正向、生产负向、恢复完全相同）：
+
+  ```sh
+  go test -mod=readonly -count=1 -v -run 'TestNativeRead|TestNativeActor|TestNativeIndependent|TestNativeTaskStreamAcknowledgesPersistence|TestNativeTaskFirstDispatchClaim|TestNativeTaskMigrationPreservesClaim|TestNativeWriteTaskRetainsExactIntentAndVersion' ./common/auth ./scheduler/jobs/grpc ./gateway/restv2 ./scheduler/jobs/rest
+  ```
+
+  首轮旧字节 44571 exit 0：9 顶层/91 子项；增加真实严格流消费者后
+  最终正向 47829 exit 0：10 顶层/101 子项。私有候选仅破坏原
+  `CopyNativeRead` 的 revision copyErr 保护及原 `nodeVersions` 的 EOF
+  保护，68643 exit 1：2 顶层/2 子项失败，其余 8 顶层/99 子项通过。
+  实际失败为 `versions-response-failed`（部分 JSON 写出后错误 FINISHED）
+  和 `unexpected-eof`（截断流错误产生完成集合），不是编译失败。
+  精确字节还原后 20863 exit 0：10 顶层/101 子项，gofmt -l 为空。
+  `scheduler/jobs/rest` 无原测试，仅本批编译，不冒称 HTTP 原生验收。
+- Node 原命令（最终正向、生产负向、恢复相同）：
+
+  ```sh
+  node --test --test-reporter=spec --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' test/query-revision.test.mjs
+  ```
+
+  18234 首轮错误过滤和旧 directory 调用数断言真实 exit 1，525 检查
+  513 通过/12 失败，原日志保留；本批只纠正已闭入口的调用数及恢复原有
+  两个 ONLYOFFICE 排除项，不放宽生产声明，未验全 ONLYOFFICE 目标。
+  最终正向 40788 exit 0：519/519。私有生产移除同 key 重读保护和
+  原响应 bytes/SHA 比较，65887 exit 1：506 通过/13 失败
+  （9 叶子/4 父项）；精确还原 12415 exit 0：519/519。
+  真实 SDK MCP client-wire 也在这个原目标内；不是手写 raw JSON MCP。
+- 12 个源码/检查正式树与两 SDK 输入最终 cmp 全部 0；生产变异只在私有
+  候选，正式树未破坏。完整本批 diff --check exit 0，不包括继承的
+  `file-storage/deploy/compose.yaml`。本批尚未提交或部署，交根代理收口。
+
+原完整日志/变异 patch 目录：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/cells-native-revision-task-20261009.k83bJD/`。
+
+```text
+3d357aae331ab66d166483425666b90394369eea17f35671afe458952d00d96b go-positive.log
+9c88c6454b4b01dd0bdf2614c800877aa001d3b39c30e2c106cdd5dc66e9899b go-final-positive.log
+cf4a2f89992f74d614bb0af94fef106d5ba448681ff5b72e3dfd026910470308 go-negative.log
+322b141e0e23d4e4b299f88b67484e59323fd0db170d0eac0f9ca60b99846c3b go-restored.log
+b1eb3b14b438899b58b09fec50778dc327d4670f61b516a2ca80fa6e5c8ff3b8 go-production-mutation.patch
+28250d83783c4d5adcbb6a200613e022f792b2a9bed77d4ae81020ff02289abb node-positive.log
+0eb90bfcf0351eaa9d0f0453c67056b1654d0f027b89ec3757bf13ed004f859e node-final-positive.log
+55fac15e284632d5b35516f2e0f68ee1f82be489c1167b0e1c9ba8bacd589486 node-negative.log
+eafea630ca1411fbc55678b28fe31b30bf5a1ef4eda006c364030658424ff91e node-restored.log
+729f6649b0caa38d974437682471ec55c6414ccf8a90936e30315fba4c4418a8 node-production-mutation.patch
+```
+
+12 个最终源输入 SHA-256（本节不把自身递归计入）：
+
+```text
+6ee02d763a083220c8100df9d36b663f22494a76d4d7c202326463b688acbad5 common/auth/native-read.go
+ed98825114d01f4350d83eeeb9638b78ee45bfc13e6a8372f424fcf873647fda common/auth/mapping-rule_test.go
+0c58438f9e11ce6dc940ddaa0b366f488c4db43af473acef65091495747457af gateway/restv2/native-actor.go
+579b53025e3b490010954f22f801c4deadbe2409e0a71f5fa4194ca47f60e61d gateway/restv2/api-versions.go
+864e48f5b8572abd492b72c1cbe0cedf3ca84d2933c0c55c7c6ee032502bd535 gateway/restv2/api-versions_test.go
+208eb75422240d47624f346b06b85bc67497a2578e0393f2ec051ba59405c715 scheduler/jobs/native-read.go
+727e4330106d8b0eb47f4d0e7d67085e23dbabd480224418a7fb0b1d922c3a8d scheduler/jobs/grpc/task-receipt_test.go
+a54c957b90bce4a6dcbf72393654412683271951611376f1055e8c8d8d6415f1 scheduler/jobs/rest/native-read.go
+dae36cc6db53d0fc75f9dc096971a2bd00cf692133a714310f235a4eb215c7f0 adapter/src/node-execution.mjs
+e6ab271c0ec90273e5b66eb9cb97046ab2327834b6b37f6407172b1980365db0 adapter/src/native-actor.mjs
+f1ba1981f7257f924a5b6c95d7edb36d3f0925295129fbbddf77186ca47cb8bf adapter/src/service-read.mjs
+9d6b900e8c350e01cd8c38ebefdd9bf1216b038f5f5025b42c69b3e8d8d1c611 adapter/test/query-revision.test.mjs
+```
+
+### 明确保留的交付边界
+
+directory list 的原一键 native producer/计量仍缺；Task 原安全退休、失联
+对账期限及旧 generation 回读边界、HUMAN 原正文披露仍未闭合，不自行
+删除 key 或发明 TTL。原用量/终态可核不等于客户端拿到正文，已有 Task
+仅返回 execution 时绝不第二 GET/ListVersions。generic 首次上传、write、
+原子条件 delete、share 和七必选完整 catalog/APPROVED release/ACTIVE
+binding 本批未成立，相关生产入口仍不得开放。
+没有实 native HTTP/S3/PolicyEngine 全链、Mongo fixture、Core/SpiceDB/
+正式业务库、Cells→WeKnora live E2E、浏览器截图、Windows/Mobile、完整
+conformance、`check.sh --full`、镜像构建、安装包或部署验收；本批原
+测试与真实 SDK client-wire 证据不冒充这些发布条件。

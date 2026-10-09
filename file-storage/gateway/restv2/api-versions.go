@@ -1,10 +1,13 @@
 package restv2
 
 import (
+	"bytes"
 	"context"
+	"io"
 
 	restful "github.com/emicklei/go-restful/v3"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
@@ -19,6 +22,7 @@ import (
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/telemetry/log"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 func versionClient(ctx context.Context) tree.NodeVersionerClient {
@@ -38,9 +42,40 @@ func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) err
 		return err
 	}
 
+	read := auth.NativeReadFromContext(ctx)
+	if read != nil {
+		// A partial/filter/sorted query is not the approved complete revision
+		// enumeration. Its native Task must precede the actual ListVersions.
+		if filter.FilterBy != rest.VersionsTypes_VersionsAll || filter.Offset != 0 || filter.Limit != 0 || filter.SortField != "" || filter.SortDirDesc ||
+			len(filter.Flags) != 1 || filter.Flags[0] != rest.Flag_WithMetaNone {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		resp.Header().Set("Content-Type", "application/json")
+		return jobstore.CopyNativeRead(ctx, read, -1, resp, func() (io.ReadCloser, error) {
+			collection, err := h.nodeVersions(ctx, req, nodeUuid, filter, read.Delivery.MaxResponseBytes)
+			if err != nil {
+				return nil, err
+			}
+			body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(collection)
+			if err != nil || int64(len(body)) > read.Delivery.MaxResponseBytes {
+				return nil, errors.WithStack(errors.StatusConflict)
+			}
+			return io.NopCloser(bytes.NewReader(body)), nil
+		})
+	}
+	collection, err := h.nodeVersions(ctx, req, nodeUuid, filter, 0)
+	if err != nil {
+		return err
+	}
+	return resp.WriteEntity(collection)
+}
+
+// The independent native UI and governed original route share the exact same
+// ACL-backed version stream and conversion; only the latter persists evidence.
+func (h *Handler) nodeVersions(ctx context.Context, req *restful.Request, nodeUuid string, filter *rest.NodeVersionsFilter, maxBytes int64) (*rest.VersionCollection, error) {
 	rn, er := h.UuidClient(true).ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: nodeUuid}})
 	if er != nil {
-		return er
+		return nil, er
 	}
 	var mapFilter map[string]string
 	if filter.FilterBy != rest.VersionsTypes_VersionsAll {
@@ -62,7 +97,7 @@ func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) err
 	})
 	claims, ok := claim.FromContext(ctx)
 	if !ok {
-		return errors.WithStack(errors.MissingClaims)
+		return nil, errors.WithStack(errors.MissingClaims)
 	}
 
 	// Extract flags and build options for presigned URLs
@@ -70,20 +105,60 @@ func (h *Handler) NodeVersions(req *restful.Request, resp *restful.Response) err
 
 	var versions []*rest.Version // Create an empty array on purpose
 	node := rn.GetNode()
-	err := commons.ForEach(st, er, func(response *tree.ListVersionsResponse) error {
+	var measured int64
+	consume := func(response *tree.ListVersionsResponse) error {
 		// Show only current user's drafts
 		vr := response.GetVersion()
+		if maxBytes > 0 && (vr == nil || vr.VersionId == "") {
+			return errors.WithStack(errors.VersionNotFound)
+		}
 		if vr.Draft && vr.OwnerUuid != claims.Subject {
 			return nil
 		}
-		versions = append(versions, h.TreeContentRevisionToVersion(ctx, vr, node, oo...))
+		version := h.TreeContentRevisionToVersion(ctx, vr, node, oo...)
+		if maxBytes > 0 {
+			body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(version)
+			if err != nil {
+				return err
+			}
+			measured += int64(len(body)) + 1
+			if measured > maxBytes {
+				return errors.WithStack(errors.StatusConflict)
+			}
+		}
+		versions = append(versions, version)
 		return nil
-	})
-	if err != nil {
-		return err
 	}
-	return resp.WriteEntity(&rest.VersionCollection{Versions: versions})
-
+	var err error
+	if maxBytes > 0 {
+		// The original generic iterator treats UnexpectedEOF as completion.
+		// A governed complete-list receipt requires the actual stream EOF;
+		// partial/canceled/unknown streams cannot finish this native Task.
+		if er != nil {
+			return nil, er
+		}
+		if st == nil {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		for {
+			response, streamErr := st.Recv()
+			if streamErr == io.EOF {
+				break
+			}
+			if streamErr != nil {
+				return nil, streamErr
+			}
+			if err = consume(response); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		err = commons.ForEach(st, er, consume)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &rest.VersionCollection{Versions: versions}, nil
 }
 
 func (h *Handler) PromoteVersion(req *restful.Request, resp *restful.Response) error {

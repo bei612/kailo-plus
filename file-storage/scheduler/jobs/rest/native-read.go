@@ -44,7 +44,7 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 		}
 		payload, er := base64.RawURLEncoding.DecodeString(parts[1])
 		var claims map[string]interface{}
-		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1") {
+		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1" && claims["action_key"] != "file_storage.list_revisions@v1") {
 			return errors.WithStack(errors.StatusForbidden)
 		}
 	}
@@ -90,7 +90,10 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 				return errors.WithStack(errors.StatusConflict)
 			}
 			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = receipt.NativeObjectRef, "SUCCEEDED", receipt.CompletedAt
-			response["contentBytes"], response["contentSha256"], response["contentReference"] = receipt.ContentBytes, receipt.ContentSHA256, receipt.ContentReference
+			response["contentBytes"], response["contentSha256"] = receipt.ContentBytes, receipt.ContentSHA256
+			if receipt.ContentReference != nil {
+				response["contentReference"] = receipt.ContentReference
+			}
 			response["measurements"] = receipt.Measurements
 		} else if task.Status == jobs.TaskStatus_Running && task.StartTime > 0 && task.EndTime == 0 {
 			answer["platformStatus"] = "RUNNING"
