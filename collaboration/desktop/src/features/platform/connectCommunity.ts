@@ -3,7 +3,7 @@
 import type { NativeCommunityFacts } from "@client-kit/contracts";
 
 import { clearSearchHitEventCache } from "@/app/navigation/searchHitEventCache";
-import { resetAudioMediaLoadScheduler } from "@/features/messages/lib/audioMediaLoadScheduler";
+import { resetAudioMediaLoadScheduler } from "@client-kit/platform/react/messages/audio/audioMediaLoadScheduler";
 import { resetBackgroundMediaUploads } from "@/features/messages/lib/backgroundMediaUploadStore";
 import { resetLinkPreviewPreparations } from "@/features/messages/lib/linkPreviewPreparationStore";
 import {

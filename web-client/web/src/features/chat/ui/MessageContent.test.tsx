@@ -20,6 +20,127 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("renders the complete original audio player and tagged duration through the admitted BFF reference", () => {
+    const html = renderToStaticMarkup(
+      <MessageContent
+        workspaceId={WORKSPACE}
+        content={`[meeting.mp3](${IMAGE_URL})`}
+        mediaTags={[
+          [
+            "imeta",
+            `url ${IMAGE_URL}`,
+            "m audio/mpeg",
+            `x ${SHA}`,
+            "filename meeting.mp3",
+            "duration 65.9",
+            "size 2048",
+          ],
+        ]}
+      />,
+    );
+    expect(html).toContain('data-testid="audio-message-attachment"');
+    expect(html).toContain('aria-label="Play voice note"');
+    expect(html).toContain('data-testid="voice-note-playback-waveform"');
+    expect(html).toContain('aria-label="Voice note playback position"');
+    expect(html).toContain('aria-label="Playback speed 1×; next 1.5×"');
+    expect(html).toContain('aria-label="Download meeting.mp3"');
+    expect(html).toContain("1:05");
+    expect(html).not.toContain("<p>");
+    expect(html).not.toContain(IMAGE_URL);
+  });
+
+  it("keeps original packaged MP4 voice notes on the player path but unvouched links as links", () => {
+    const html = renderToStaticMarkup(
+      <MessageContent
+        workspaceId={WORKSPACE}
+        content={`[Voice note](${IMAGE_URL})`}
+        mediaTags={[
+          [
+            "imeta",
+            `url ${IMAGE_URL}`,
+            "m video/mp4",
+            `x ${SHA}`,
+            "filename voice-note-123.mp4",
+            "duration 7.2",
+          ],
+        ]}
+      />,
+    );
+    expect(html).toContain('data-testid="audio-message-attachment"');
+    expect(html).toContain("0:07");
+    expect(html).not.toContain("<video");
+    expect(html).not.toContain('aria-label="Download');
+    const unvouched = renderToStaticMarkup(
+      <MessageContent workspaceId={WORKSPACE} content={`[meeting.mp3](${IMAGE_URL})`} />,
+    );
+    expect(unvouched).not.toContain('data-testid="audio-message-attachment"');
+    expect(unvouched).toContain(`href="${IMAGE_URL}"`);
+  });
+
+  it("uses the real audio host's current scoped BFF read and original rejection/retry controls without remote fallback", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const request = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <PlatformProvider client={client} locale="en">
+            <TooltipProvider>
+              <MessageContent
+                workspaceId={WORKSPACE}
+                content={`[Voice note](${IMAGE_URL})`}
+                mediaTags={[
+                  [
+                    "imeta",
+                    `url ${IMAGE_URL}`,
+                    "m audio/wav",
+                    `x ${SHA}`,
+                    "filename voice-note-123.wav",
+                  ],
+                ]}
+              />
+            </TooltipProvider>
+          </PlatformProvider>,
+        ),
+      );
+      expect(request).toHaveBeenCalledExactlyOnceWith(
+        `/api/v1/workspaces/${WORKSPACE}/media/${SHA}`,
+        expect.objectContaining({
+          credentials: "same-origin",
+          redirect: "error",
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+        "Audio unavailable. Retry playback.",
+      );
+      expect(host.querySelector("audio")?.getAttribute("src")).toBeNull();
+      const retry = host.querySelector<HTMLButtonElement>('button[aria-label="Retry voice note"]');
+      expect(retry).not.toBeNull();
+      await act(async () => retry!.click());
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(
+        request.mock.calls.every(([url]) => url === `/api/v1/workspaces/${WORKSPACE}/media/${SHA}`),
+      ).toBe(true);
+      expect(host.innerHTML).not.toContain(IMAGE_URL);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("copies the fenced message's actual code through the shared original control", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const writeText = vi.fn().mockResolvedValue(undefined);

@@ -6163,3 +6163,61 @@ SHA256 `b0099b9e921b5e7c8830994788e8a357229384b4bf5ce0f16c2197c90d5f29d7`。
 含固定原完整模块、原命令、types／失败 log、owned-source.patch、输入 SHA。
 历史 a816 全量账仍是 5314 union／1976 相同／112 共享／3226 未证恢复队列，
 本批不重导全树、不把队列当已实证功能故障数或当前 main 全量验收。
+
+## 2026-10-09 原完整音频播放器共享迁移（源码检查点，Web 页面 case 未启动）
+
+权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/messages/ui/AudioMessageAttachment.tsx::AudioMessageAttachment/renderAudioMessageAttachment`、
+`desktop/src/features/messages/ui/MorphingPlayPauseIcon.tsx::MorphingPlayPauseIcon`、
+`desktop/src/features/messages/lib/audioMediaLoadScheduler.ts::scheduleAudioMediaLoad/resetAudioMediaLoadScheduler`；
+并按原 `desktop/src/shared/ui/markdown.tsx::createMarkdownComponents` 恢复音频段落承载。
+三份原完整模块实际复制到共享 TS，不另写播放器；15 个静态 className 字面量原样相同，
+波形／播放暂停／seek／速率／等待点击／失败重试／下载与移除的原布局和交互 body 保留。
+全文差异逐项仅共享 import、同源中英词条与下述真实宿主接缝；源码相同不等于视觉验收。
+
+影响：Native 原 Markdown 与 ComposerAttachments 真消费者经薄本机 IPC 适配接共享组件；
+原 connectCommunity 仍真实消费同一共享 scheduler reset；两旧纯模块删除，无重复实现。
+Web MessageContent 对已背书 imeta 使用原 resolveAudioAttachment／voice-note 排他／段落算法，
+ChannelPane 原 ComposerAttachments 接同一 AudioAttachment；未背书远端链接仍是普通链接。
+Web 只读当前 scope 的已解析同源 BFF reference，带同源凭据、拒绝 redirect，
+不接 Desktop IPC、不降级到 imeta 原远端 origin。纯 hash BFF URL 没有格式扩展名：
+host 消费实际已授权 imeta MIME 生成真实 Blob；Native 保留原 URL MIME 与原本机 fallback。
+副作用：无 Core／Relay API／合同／注册表／账本／数据库改动；11 词条沿原生成器同步 Dart，
+reason_text cmp0，未改 contracts；下载仅现有合法宿主，读取失败保留原 Retry，不报成功。
+边界：原三任务上限、排队取消、活动 abort、迟到 active fence、unmount URL 回收、
+一个播放源、解码失败／波形失败分别呈现均保留；旧 scope 不因重试获得新准入。
+普通读失败不当外部写 UNKNOWN；本批未新增发消息或执行动作，也未变更 Web 录音安全上下文。
+
+原 SDK kailo-agent-receipt-xvkujx，实际 4 CPU／8 GiB cgroup，Node heap3072；
+memory.events max16751／oom2／oom_kill2 是旧基线，本批无增长。
+24698：原 i18n generate/check 0；Native 原 audioAttachment＋scheduler 14/14 exit0；
+Shared production/test、Web、Native 四 types 各0；同轮 Web MessageContent 原 Vitest
+`--pool=threads --maxWorkers=1` 60.08s worker 启动超时，0 case exit1，整批exit1；
+保留 web-audio.log，不改超时、不重复启动、不以类型代替这3个真实 Web 消费者 case。
+私有原已安装共享 scheduler 去除实际并发守卫，原2/2检查真实失败exit1（7≠3／5≠4）；
+apply_patch 精确还原 cmp0。37825：同原14/14恢复exit0，i18n check及四types均0。
+最后 MIME 三输入修正后，84945 只做必要 Shared生产／Web类型，各exit0；
+Native调用文件与已验字节不变、host字段可选，无再次 Native／Vitest冷扫描。
+正式14个现存输入与候选cmp0、2个删除路径无旧读方；git diff --check0，
+owned-source.patch reverse check0；无 full／bundle／镜像／安装包。
+
+正常 SSO 真实回调阶段一次 build fetch 失败保留；正常 /app/ 后读回已部署9edf
+buildId `sha256:c3763fade6473c689a81b44070488c678e4c492fa84757909df16da73efe317a`。
+该版本不含本批或 dd399 录音／dd3 History；只读两张截图均已实际打开：
+`/volumes/data/kailo/tmp/kailo-audio-lane-9edf-channel-20261009-1159.png`，
+SHA256 `992c14eb2fd7622b6ce884cd2f1a2ea0acb66d9c32d68bb1e40fbc23ab3b0f6c`；
+`/volumes/data/kailo/tmp/kailo-audio-lane-9edf-avatar-picker-20261009-1200.png`，
+SHA256 `6f92f2660caa9a3b0715e820408227cf332528a0f2f983165c86a4efbbc384b9`。
+真实频道头像／两图网格／Composer及原头像选择器展开→正常完成退出可见；
+未上传或改资料，bootstrap无既有图片，裁剪Editor未进入；不是本批音频浏览器验收。
+本批未部署，Web真实播放／速率／seek／授权撤回实操、Windows／Mobile均未验收。
+
+交接16 clean源码／检查／生成输入 +1093/-758，无继承hunk；目录
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/audio-playback-20261009.eBLpWN/`
+含三份固定原完整源码及共享全文diff、owned-paths、input SHA、原命令和正／负／还原log。
+owned-source.patch SHA256 `13881b35c15b9a472edb400dc603770a79d1606c6d9429d0b6a662881c598e63`。
+当前保留的全树账比较点 dd399f93f584b30d4a6301a5024c3959d4d420e6：
+5314 union／1970原blob相同／115有证共享／0整文件治理授权／3229未证恢复队列；
+这是历史源码比较，不是当前main全量功能／视觉验收，3229也不是已实证功能故障数。
+本批三原模块归共享迁移，拒绝远端降级／MIME及中英宿主差异逐项记明，
+其余原 Settings／Workflows／GIF等未恢复消费者仍保留缺口，不声称100%。

@@ -93,6 +93,8 @@
     "./react/use-resizable-inbox-list-width": "./src/react/use-resizable-inbox-list-width.ts",
     "./react/forum/channelWindowResponse": "./src/react/forum/channelWindowResponse.ts",
     "./react/messages": "./src/react/messages/index.ts",
+    "./react/messages/audio/AudioMessageAttachment": "./src/react/messages/audio/AudioMessageAttachment.tsx",
+    "./react/messages/audio/audioMediaLoadScheduler": "./src/react/messages/audio/audioMediaLoadScheduler.ts",
     "./react/messages/messageOrder": "./src/react/messages/messageOrder.ts",
     "./react/messages/chat-header": "./src/react/messages/chat-header.tsx",
     "./react/messages/dm-header-participants": "./src/react/messages/dm-header-participants.tsx",

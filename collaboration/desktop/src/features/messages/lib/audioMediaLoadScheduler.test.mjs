@@ -6,7 +6,7 @@ import {
   MAX_CONCURRENT_AUDIO_MEDIA_LOADS,
   resetAudioMediaLoadScheduler,
   scheduleAudioMediaLoad,
-} from "./audioMediaLoadScheduler.ts";
+} from "@client-kit/platform/react/messages/audio/audioMediaLoadScheduler";
 
 function abortablePendingTask(onStart) {
   return (signal) =>

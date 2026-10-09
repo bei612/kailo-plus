@@ -62,6 +62,9 @@ remove_paths:
   - desktop/src/features/messages/lib/voiceNoteWav.ts
   - desktop/src/features/messages/ui/VoiceNoteRecorder.tsx
   - desktop/src/features/messages/ui/useComposerVoiceNote.tsx
+  # Original audio playback scheduler and morphing icon share the complete player; Native keeps only media IPC.
+  - desktop/src/features/messages/lib/audioMediaLoadScheduler.ts
+  - desktop/src/features/messages/ui/MorphingPlayPauseIcon.tsx
   # Original copy resolver now shared; both hosts consume useMessageMentionClipboard.
   - desktop/src/features/messages/lib/useMessageMentionIdentities.ts
   # Original code-block clipboard is shared; Native UI injects its host fallback.

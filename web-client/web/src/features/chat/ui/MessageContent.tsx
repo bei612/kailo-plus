@@ -18,7 +18,7 @@ import {
 } from "@client-kit/platform/theme/theme-loader";
 import { Download, ImageOff } from "lucide-react";
 import { ImageBlock, ImageMosaic } from "@client-kit/platform/react/image-lightbox";
-import { Children } from "react";
+import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
 import { toast } from "sonner";
 import { MarkdownMentionChip } from "@client-kit/platform/react/messages/MarkdownMentionChip";
@@ -37,6 +37,12 @@ import { useTheme } from "@/shared/theme/ThemeProvider";
 import { LinkPreviewAttachmentPresentation, parseLinkPreviewTextSnapshots, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 import { AttachmentGroup } from "@client-kit/platform/react/composer/shared/ui/attachment";
 import { customEmojiFromTags, remarkCustomEmoji, InlineEmojiPopover } from "@client-kit/platform/react/custom-emoji";
+import {
+  isAudioAttachment,
+  isVoiceNoteAttachment,
+  resolveAudioAttachment,
+} from "@client-kit/platform/react/composer/features/messages/lib/audioAttachment";
+import { BffAudioAttachment } from "./BffAudioAttachment";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -51,7 +57,14 @@ export type MessageMention = {
 };
 
 /** 一份由 imeta 背书的媒体：只有它能被当成媒体渲染。 */
-type ImetaMedia = { sha256: string; mime: string; dimensions: ImageDimensions | null };
+type ImetaMedia = {
+  sha256: string;
+  mime: string;
+  dimensions: ImageDimensions | null;
+  filename?: string;
+  duration?: number;
+  size?: number;
+};
 
 type MarkdownRenderContextValue = {
   mediaByUrl: ReadonlyMap<string, ImetaMedia>;
@@ -79,10 +92,19 @@ function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
     const url = field("url");
     const sha256 = field("x");
     if (!url || !sha256 || !/^[0-9a-f]{64}$/i.test(sha256)) continue;
+    const numericField = (name: string) => {
+      const value = field(name);
+      if (value == null || !value.trim()) return undefined;
+      const number = Number(value);
+      return Number.isFinite(number) && number >= 0 ? number : undefined;
+    };
     media.set(url, {
       sha256: sha256.toLowerCase(),
       mime: field("m") ?? "",
       dimensions: dimensionsFromDim(field("dim")) ?? null,
+      filename: field("filename"),
+      duration: numericField("duration"),
+      size: numericField("size"),
     });
   }
   return media;
@@ -218,6 +240,22 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
       </a>
     );
   }
+  const entry = {
+    m: media.mime,
+    filename: media.filename,
+    duration: media.duration,
+    size: media.size,
+  };
+  const attachment = resolveAudioAttachment(entry, resolveMediaUrl(media.sha256), String(children));
+  if (attachment) {
+    return (
+      <BffAudioAttachment
+        {...attachment}
+        mimeType={media.mime}
+        downloadUrl={isVoiceNoteAttachment(entry) ? undefined : attachment.href}
+      />
+    );
+  }
   // 附件经 BFF 下载：同源，凭网关 cookie
   return (
     <a href={resolveMediaUrl(media.sha256)} download={String(children) || "attachment"}>
@@ -273,11 +311,21 @@ const MARKDOWN_COMPONENTS = {
     // Original Buzz MarkdownParagraph: media wrappers and block spoilers must
     // not sit inside a paragraph. Multiple standalone images use its mosaic.
     const childArray = Children.toArray(children);
+    const { mediaByUrl } = useMarkdownRenderContext();
+    // Original MarkdownParagraph audio guard: the complete attachment card
+    // contains block elements and cannot be nested in a Markdown paragraph.
+    const hasAudio = childArray.some((child) => {
+      if (!isValidElement<{ href?: string }>(child) || typeof child.props.href !== "string") {
+        return false;
+      }
+      const media = child.props.href ? mediaByUrl.get(child.props.href) : undefined;
+      return media ? isAudioAttachment({ m: media.mime, filename: media.filename }) : false;
+    });
     const { imageChildren } = classifyChildren(childArray);
     if (isImageOnlyParagraph(childArray)) {
       return <ImageMosaic>{imageChildren}</ImageMosaic>;
     }
-    if (hasBlockMedia(childArray)) return <div>{children}</div>;
+    if (hasBlockMedia(childArray) || hasAudio) return <div>{children}</div>;
     return <p>{children}</p>;
   },
   code: MarkdownCode,

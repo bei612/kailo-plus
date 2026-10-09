@@ -53,6 +53,7 @@ import { useWorkspaceThread } from "./useWorkspaceThread";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
 import { useMessageReactions } from "./useMessageReactions";
+import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
 import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId, useChannelMessageEdit, buildThreadPanelIndex } from "@client-kit/platform/react/thread";
 import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
@@ -1327,7 +1328,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         </div>
       ) : null}
       <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
-        fetchMediaBytes={fetchMediaBytes} isUploading={uploading > 0} uploadingCount={uploading}
+        fetchMediaBytes={fetchMediaBytes} AudioAttachment={BffAudioAttachment} isUploading={uploading > 0} uploadingCount={uploading}
         onRemove={attachmentActions.handleRemoveAttachment} onEditSave={attachmentActions.handleAttachmentEditSave}
         onRevert={attachmentActions.handleAttachmentRevert} onToggleSpoiler={attachmentActions.handleToggleAttachmentSpoiler}
         spoileredUrls={attachmentActions.spoileredAttachmentUrls}

@@ -1,3 +1,4 @@
+// Shared from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/MorphingPlayPauseIcon.tsx.
 import { motion, useReducedMotion } from "motion/react";
 
 const PLAY_PATHS = [
