@@ -9645,3 +9645,41 @@ No supplied component model credential locator was found in those sources.
 The original registration command consumes delivered identities; it cannot
 select a model provider or supply query authorization. No registration,
 service start, arbitrary Vault enumeration or new ModelRoute was performed.
+
+### 2026-10-09 original AI feedback fixed-ID producer and missing observation
+
+Existing SDK `kailo-wren-query-sdk-itgs2n` (4 CPU, 4 GiB memory and total
+memory/swap limit) executed the original
+`tests/pytest/providers/test_native_sql_answer_stream.py` consumer against
+the separate native AI source copy with
+`sudo docker exec -u 1000:1000 -w /cache/wren-adjustment.nrkaVe/ai kailo-wren-query-sdk-itgs2n python3 tests/pytest/providers/test_native_sql_answer_stream.py`.
+No image, dependency installation or service start was required. The optional
+`native_task_id` field retains the original caller-without-ID behavior, and
+the existing UI adaptor propagates HTTP 404 while its tracker retains the
+original unresolved task rather than inventing a failed result. Its original
+producer checks now include
+`ask_feedback`: fixed ID, duplicate refusal, read-only observation and the
+unchanged independent allocation behavior. The additional missing-task check
+asserts HTTP 404 rather than accepting a fabricated failed task. The initial
+run exited 0 (`Ran 17 tests`, `OK`). In the private production copy only,
+replacing the caller's native ID with `uuid4()` and replacing missing-task
+HTTP 404 with `AskFeedbackResultResponse(status="failed")` made that same
+command exit 1 with two specific failures: returned ID mismatch and
+`HTTPException not raised`. Both production files were restored byte-for-byte
+from the implementation (`cmp` exit 0); the restored run exited 0 with
+`Ran 17 tests in 0.036s`, `OK`.
+
+These logs are in `/volumes/data/kailo/check-cache/wren-adjustment.nrkaVe/`:
+
+- `adjustment-python-positive.log`: SHA-256 `47113d86d45204af6c5ad4ad4a68bfe60ca74cb213af7e8d0f22ccac66b4bb9e`.
+- `adjustment-python-negative.log`: SHA-256 `05d1aafa3da17a31a0200dc28cd19a6e994b9d12718e44af4d68e6107d75942f`.
+- `adjustment-python-restored.log`: SHA-256 `ba551e957f4043de3ef7e8a2ca27e31e0f3cae5d9c8d490805cda5759bc190ef`.
+
+Restored production `src/web/v1/services/ask_feedback.py` SHA-256 is
+`a06c0158789eba2bbf4965413362672853f69b33c24339c59e7265a14a88b6cb`;
+`src/web/v1/routers/ask_feedbacks.py` is
+`4f63f87191ee704e25b48430387ccc491a47c1773869ed519afd69f2780425d8`.
+The original consumer file SHA-256 is
+`c136644387d900e682bd014c74ee37d37488cb99a3afdf6aec890a9f1958816f`.
+This is the existing dependency-boundary Python check, not an HTTP deployment
+or a claim that the missing native AI artifact has been built.

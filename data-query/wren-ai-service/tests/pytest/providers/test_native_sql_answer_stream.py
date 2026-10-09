@@ -103,6 +103,11 @@ adjustment_router = load_router("native_adjustment_router", "src/web/v1/routers/
 ask_module = load_original("native_ask_service", "src/web/v1/services/ask.py")
 ask_router = load_router("native_ask_router", "src/web/v1/routers/ask.py",
     "src.web.v1.services.ask", ask_module)
+feedback_module = load_original("native_feedback_service", "src/web/v1/services/ask_feedback.py", {
+    "src.web.v1.services.ask": ask_module,
+})
+feedback_router = load_router("native_feedback_router", "src/web/v1/routers/ask_feedbacks.py",
+    "src.web.v1.services.ask_feedback", feedback_module)
 sql_pairs_module = load_original("native_sql_pairs_service", "src/web/v1/services/sql_pairs.py", {
     "src.web.v1.services": types.SimpleNamespace(BaseRequest=Model, MetadataTraceable=type("MetadataTraceable", (), {})),
     "src.pipelines.indexing.sql_pairs": types.SimpleNamespace(SqlPair=Model),
@@ -173,6 +178,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
             (chart_router, chart_module.ChartService({}), "chart_service", "chart", "get_chart_result"),
             (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment", "get_chart_adjustment_result"),
             (ask_router, ask_module.AskService({}), "ask_service", "ask", "get_ask_result"),
+            (feedback_router, feedback_module.AskFeedbackService({}), "ask_feedback_service", "ask_feedback", "get_ask_feedback_result"),
         ]:
             with self.subTest(create=create):
                 identifier = uuid4()
@@ -186,7 +192,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(scheduled), 1)
                 self.assertEqual(scheduled[0][0][0], getattr(service, create))
                 observed = await getattr(router, read)(str(identifier), container)
-                self.assertIn(observed.status, ["preprocessing", "fetching", "understanding"])
+                self.assertIn(observed.status, ["preprocessing", "fetching", "understanding", "searching"])
                 # Simulate loss of the HTTP create acknowledgement: only GET the
                 # already persisted ID. Observation never schedules native work.
                 self.assertIs(await getattr(router, read)(str(identifier), container), observed)
@@ -203,6 +209,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
             (chart_router, chart_module.ChartService({}), "chart_service", "chart"),
             (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment"),
             (ask_router, ask_module.AskService({}), "ask_service", "ask"),
+            (feedback_router, feedback_module.AskFeedbackService({}), "ask_feedback_service", "ask_feedback"),
         ]:
             with self.subTest(create=create):
                 scheduled = []
@@ -213,6 +220,15 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 self.assertNotEqual(first.query_id, second.query_id)
                 self.assertEqual(str(UUID(first.query_id)), first.query_id)
                 self.assertEqual(len(scheduled), 2)
+
+    async def test_original_feedback_missing_observation_cannot_invent_a_failed_result(self):
+        service = feedback_module.AskFeedbackService({})
+        with self.assertRaises(HTTPException) as caught:
+            await feedback_router.get_ask_feedback_result(
+                str(uuid4()), types.SimpleNamespace(ask_feedback_service=service)
+            )
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertEqual(service._ask_feedback_results, {})
 
     def pipeline(self):
         pipeline = object.__new__(pipeline_module.SQLAnswer)

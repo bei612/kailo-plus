@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import asdict
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from src.globals import (
     ServiceContainer,
@@ -28,7 +28,9 @@ async def ask_feedback(
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
 ) -> AskFeedbackResponse:
-    query_id = str(uuid.uuid4())
+    query_id = str(ask_feedback_request.native_task_id or uuid.uuid4())
+    if query_id in service_container.ask_feedback_service._ask_feedback_results:
+        raise HTTPException(status_code=409, detail="Native task ID already registered")
     ask_feedback_request.query_id = query_id
     service_container.ask_feedback_service._ask_feedback_results[
         query_id

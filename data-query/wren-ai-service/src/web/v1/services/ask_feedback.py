@@ -1,8 +1,10 @@
 import asyncio
 import logging
 from typing import Dict, List, Literal, Optional
+from uuid import UUID
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import BaseModel
 
@@ -16,6 +18,7 @@ logger = logging.getLogger("wren-ai-service")
 
 # POST /v1/ask-feedbacks
 class AskFeedbackRequest(BaseRequest):
+    native_task_id: Optional[UUID] = None
     question: str
     tables: List[str]
     sql_generation_reasoning: str
@@ -313,12 +316,8 @@ class AskFeedbackService:
             logger.exception(
                 f"ask feedback pipeline - OTHERS: {ask_feedback_result_request.query_id} is not found"
             )
-            return AskFeedbackResultResponse(
-                status="failed",
-                error=AskError(
-                    code="OTHERS",
-                    message=f"{ask_feedback_result_request.query_id} is not found",
-                ),
+            raise HTTPException(
+                status_code=404, detail="Native adjustment task unavailable"
             )
 
         return result
