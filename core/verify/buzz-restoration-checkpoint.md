@@ -4990,3 +4990,112 @@ SHA-256 `89e5882f52c6f121837cf60ee6e57e551c4f0af61c8bc817750b37d2ee37ef9f`。
 旧线上 7e1b 的 25 张已复核截图只证明旧版已记录状态，不能验本批灯箱／网格新代码。
 真实浏览器缩放、拖拽、复制／下载与当前业务图片的布局、Windows 实包、Mobile 均未验；
 Mobile 不因本批 Web/Desktop 共享而增加组件宿主或绕过持钥边界。
+
+
+### 2026-10-09 原 Workflows 首步骤／Inspector Escape／YAML 消费者恢复：7 路径
+
+本批基于已推送源码 `75614a341a4f4c444bcbf28a351ea6a2c5dafe13` 的现有共享工作流实现，
+直接核对固定 Buzz `779af8886caae1317b4de962082429867ab61503`；
+不是将当前表单当成恢复基准，也不以本批七路径代表完整 Workflows。
+
+#### 权威、全模块对照与四类差异
+
+固定官方 `desktop/src/features/workflows/` 的 `git ls-tree -r` 为 67 个路径。
+本批实际逐处对照的是以下原符号及现有真实消费者，没有宣称这 67 个路径均已验收：
+
+- `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog`：
+  原空步骤 primary action 的 `addFirstStep`、`Add first step` 标签及首个 Escape 收起 Inspector。
+- `desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::WorkflowFormBuilder/WorkflowFormBuilderHandle`：
+  原 `addFirstStep -> insertStep(0, "send_message")`、`closeInspector` 返回值，
+  原 YAML 包装层、Textarea 的 `autoCapitalize="off"`、disabled 和原帮助文案。
+- `desktop/src/shared/ui/textarea.tsx::Textarea`：
+  复用已迁移的 `profile/buzz/shared/ui/textarea.tsx`，删除 YAML 模块内重复实现。
+- `desktop/src/features/workflows/ui/workflowFormTypes.ts::TRIGGER_TYPES/ACTION_TYPES/SELECTABLE_ACTION_TYPES`：
+  核实当前合同范围与原版仍有缺口，未通过隐藏或删除原目标将其计为完成。
+
+四类逐项结论：
+
+1. 原样保留：本批没有新的 whole-file 同 blob 声明；已有原 Textarea 的属性和类保持。
+2. 共享迁移：原 Dialog 首步骤／Escape 与 FormBuilder handle、YAML 子树进入同一 TypeScript 主体。
+   Web `PlatformApp -> WorkflowsPage -> AutomationManagement` 与
+   Desktop `platform.$section -> WorkflowsPage -> AutomationManagement` 均消费此主体。
+3. 已授权接缝：草稿仍为现有受控 typed/YAML 状态，不另建第二份定义；
+   原首步骤按钮沿现有 workspace、创建准入、executor、任务忙态 gate，
+   不能触发 Governed Action。提交／审批／quota／Temporal 链未改；
+   原文案进入既有中英目录，Dart 只由原生成器投影新增两个 key。
+4. 缺失需恢复：不能由本批证明完整原触发器、步骤字段、Webhook 编辑／密钥及运行轨迹。
+   固定原 `TRIGGER_TYPES` 含 `reaction_added/diff_posted/webhook`，当前
+   `AutomationTriggerKind` 仅 `CHANNEL_MESSAGE/MENTION/SCHEDULE`；
+   原 `ACTION_TYPES` 含 `send_dm/call_webhook`，当前 `ActionEnum` 未包含二者。
+   这些仍是恢复／接缝缺项，不称设计已阻断，不生成空执行入口，也不删除交付目标。
+
+完整工程历史全量表仍为 `collaboration-dfc7a3383517.classification.tsv` 的固定比较点，
+不是本批 main 的完整复核。未重导大树、不新增分类覆盖率、不声称原版 100%。
+
+#### 影响面、副作用与边界
+
+本批七个源码／既有检查路径 `+121/-34`，没有修改 Core、Worker、Schema、API 或数据库：
+
+- `client-kit/ts/platform/src/react/agents.tsx`
+- `client-kit/ts/platform/src/react/workflow-form-canvas.tsx`
+- `client-kit/ts/platform/src/react/workflow-yaml-editor.tsx`
+- `client-kit/ts/platform/src/i18n.ts`
+- `client-kit/dart/lib/shared/platform/platform_text.dart`
+- `client-kit/ts/platform/test/workflow-form-canvas.test.tsx`
+- `client-kit/ts/platform/test/workflow-definition.test.tsx`
+
+实际链为原创建卡片、已有准入 executor、原首步骤按钮、同一 draft/Inspector、
+Escape 收起 Inspector、切 YAML 读取同一真实草稿。中英检查均无非 GET 请求。
+disabled draft 不得经 handle 写入；无选中节点 closeInspector 返回 false。
+忙态／已准备 intent 仍拦截关闭，原 filter picker Escape 先消费，不触发丢弃草稿。
+YAML 继续沿原解析和 immutable version/pin guard；撤权、version 改变、pin 缺失不打开陈旧正文。
+没有新增异步状态、外部副作用、重试、投影或额度状态，不引入新迁移／错误码。
+沿 06 §4 原分类：认证／scope／权限为 DENIED；既有明确设计阻断为 BLOCKED；
+executor／任务 readiness 为 PRECONDITION；quota／容量为 LIMIT；版本／幂等并发为 CONFLICT；
+副作用不明仍为 UNKNOWN，既有显示／准入不变，不把不明结果变成功或失败。
+Web 管理仍经 BFF、浏览器不持钥；Desktop 管理同样经 BFF，Relay 本机持钥链未改。
+Mobile 仅同源文案生成，不增加工作流宿主／组件页或 WebView。
+
+#### 实际命令、正反结果与还原
+
+证据目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/workflow-editor.yrqvYl/`。
+
+复用 `kailo-agent-receipt-xvkujx`，实际 inspect 为 4 CPU／8 GiB，
+`cpu.max=400000 100000`、`memory.max=8589934592`；启动前只有 sleep，
+available 约 22.5 GiB。Node heap 3072 MiB、maxWorkers=1，原缓存未安装／替换。
+终态 cgroup `oom=2/oom_kill=2` 与旧基线相同，无新增 OOM。
+
+- 原目标：`vitest run test/workflow-form-canvas.test.tsx test/workflow-definition.test.tsx --maxWorkers=1`，
+  `positive-original.log`：2 files、34 passed，exit 0。
+- 私有生产破坏一：只移除实际 AutomationAction 到 Canvas 的 `ref={formBuilderRef}`，
+  原实际弹窗中英目标各失败，节点数应为 2 实为 1；
+  `negative-dialog-ref.log`：2 failed／9 skipped，exit 1，不是只破坏 helper。
+- 私有生产破坏二：恢复 ref 后，只绕过实际 Dialog `closeInspector` 消费分支，
+  中英目标均因 Inspector 仍存在失败；
+  `negative-dialog-escape.log`：2 failed／9 skipped，exit 1。
+- 两处按正式原字节还原，七输入逐一 `cmp` exit 0。
+  同原两目标 `restored-original.log`：34 passed、exit 0；没有改 timeout 或放宽断言。
+- Shared 生产、Shared 检查、Web、Native 依次 `tsc --noEmit`
+  （检查侧另加 `-p tsconfig.test.json`）：四个 exit 0，
+  `type-shared.log/type-shared-test.log/type-web.log/type-native.log`。
+  两宿主实际安装的共享包四个生产文件同步且 cmp 0。
+- 原 `python3 tools/gen-platform-i18n.py` 与 `--check` 均 exit 0；
+  `reason_text.dart` cmp 0；只有 `workflows.addFirstStep/workflows.yamlDirect` 的 Dart 同源生成。
+- 首次 Dart 尾验未设原 PUB_CACHE，`dart-i18n.log` exit 1：
+  `PathAccessException: Creation failed, path = '/.pub-cache' (Permission denied)`。
+  此次失败完整保留、不算通过；查明原 `tools/check.sh` 投递为 `PUB_CACHE=/cache/pub` 后，
+  沿现有已缓存目录执行
+  `PUB_CACHE=/cache/pub dart test --no-chain-stack-traces test/platform_i18n_test.dart`，
+  `dart-i18n-original-cache.log`：8 passed、exit 0，没有安装依赖或新建缓存。
+- 七路径 `git diff --check` 与源码 patch reverse check 均 exit 0。
+  `owned-source.patch` SHA256：
+  `2f1b88e6b8d3a6ac09871609d89adf064a05f54ea97340e1c9ef963f9639f0c6`。
+
+#### 提交、视觉及设备边界
+
+七源码与本段新增 EOF 冻结交 root 选择性提交，既有 checkpoint 删除不纳入。
+本批没有 bundle、镜像构建、full 或部署。新源码 Playwright 业务截图为 0；
+现网仍为 7e1b/50c362 的旧版，旧 25 图不能验本批首步骤／Inspector／YAML。
+原 Dialog 父布局、scope 表现、全部步骤／运行详情及真实创建运行尚未完整逐状态视觉验收；
+本批 DOM/类型证据不等于完整外观一致，更不等于 Windows 安装包或 Mobile 设备验收。

@@ -49,7 +49,7 @@ import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
-import { WorkflowFormCanvas } from "./workflow-form-canvas";
+import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "./workflow-form-canvas";
 import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import type { ParsedConditionExpression } from "./workflow-condition-expression";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
@@ -740,6 +740,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
   const [yamlText, setYamlText] = useState("");
   const formDraftYaml = useRef("");
+  const formBuilderRef = useRef<WorkflowFormCanvasHandle>(null);
   const [draftEpoch, setDraftEpoch] = useState(0);
   const [initialDraft, setInitialDraft] = useState<{ form: string; yaml: string } | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -795,6 +796,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const version = versions.find((row) => row.assetId === versionId);
   const grant = grants.find((row) => row.delegationId === grantId);
   const contentAction = creating || edit.action === "publish_version";
+  const addingFirstStep = creating && editorMode === "form"
+    && actionKind !== ActionKind.AgentTurn && steps.length === 0 && !template;
   const scheduleSpec = { ...(scheduleMode === "cron" ? { cron, kind: ScheduleSpecKind.Cron } : {
     ...(intervalTagged ? { kind: ScheduleSpecKind.Interval } : {}),
     everySeconds: parseDurationSeconds(interval) ?? 0, offsetSeconds: Number(offsetSeconds) }), catchupWindowSeconds: Number(catchupWindowSeconds) };
@@ -1022,7 +1025,16 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     <Dialog open={open || !!intent} onOpenChange={(next) => { if (!next) requestClose(); }}>
     <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
       showCloseButton={false} data-testid="workflow-editor-dialog"
-      onEscapeKeyDown={(event) => { if (intent || busy) event.preventDefault(); }}
+      onEscapeKeyDown={(event) => {
+        if (intent || busy) { event.preventDefault(); return; }
+        if (event.target instanceof HTMLElement
+          && event.target.closest("[data-workflow-filter-picker-search]")) {
+          event.preventDefault(); return;
+        }
+        if (formBuilderRef.current?.closeInspector()) {
+          event.preventDefault(); event.stopPropagation();
+        }
+      }}
       onInteractOutside={(event) => event.preventDefault()}>
     <DialogHeader className="flex flex-shrink-0 flex-row items-center justify-between gap-6 space-y-0 px-6 pt-3 pb-2 text-left">
       <div className="min-w-0 space-y-0"><DialogTitle className="text-lg leading-tight">{t(title)}</DialogTitle>
@@ -1060,7 +1072,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       {contentAction ? <>
         {!creating && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
         {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
-        {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
+        {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} disabled={busy || !!intent || unknown}
+          onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
         {actionKind === ActionKind.AgentTurn ? triggerFields : null}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
@@ -1082,7 +1095,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         </label>
         {actionKind === ActionKind.AgentTurn ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
-        </label> : <WorkflowFormCanvas key={draftEpoch} trigger={trigger} triggerFields={triggerFields}
+        </label> : <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields}
           disabled={busy || !!intent || unknown} policies={policies}
           steps={steps.length ? steps : template && actionKind === ActionKind.PostMessage
             ? [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}] : []}
@@ -1132,8 +1145,11 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           <Button className={editorMode === "yaml" ? "h-7 gap-1.5 bg-background px-3 text-xs shadow-xs" : "h-7 gap-1.5 border-transparent px-3 text-xs"} aria-pressed={editorMode === "yaml"} onClick={() => changeEditor("yaml")}><Code aria-hidden className="h-3.5 w-3.5" />{t("agents.automation.yaml")}</Button>
         </div> : null}
         <div className="flex items-center gap-2">
-        {!creating || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
-          || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
+        {addingFirstStep ? <WorkflowButton aria-label={t("workflows.addFirstStep")} data-testid="workflow-dialog-primary-action"
+          disabled={!canCreate || !executor || requestBlocked || busy} onClick={() => formBuilderRef.current?.addFirstStep()} type="button">
+          {t("workflows.addStep")}</WorkflowButton>
+          : !creating || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
+            || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
         <Button onClick={requestClose}>{t("buzz.close")}</Button>
         </div>
       </div>

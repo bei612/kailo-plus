@@ -905,6 +905,8 @@ enum PlatformMessageKey {
   workflowsStepsDelay,
   workflowsStepsRequestApproval,
   workflowsAddStep,
+  workflowsAddFirstStep,
+  workflowsYamlDirect,
   workflowsAddAfter,
   workflowsCloseInspector,
   workflowsCloseInspectorOverlay,
@@ -3835,6 +3837,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '请求审批',
   ),
   PlatformMessageKey.workflowsAddStep: ('Add step', '添加步骤'),
+  PlatformMessageKey.workflowsAddFirstStep: ('Add first step', '添加第一个步骤'),
+  PlatformMessageKey.workflowsYamlDirect: (
+    'Edit the raw YAML definition directly.',
+    '直接编辑原始 YAML 定义。',
+  ),
   PlatformMessageKey.workflowsAddAfter: ('Add after {step}', '在{step}后添加'),
   PlatformMessageKey.workflowsCloseInspector: ('Close inspector', '关闭检查器'),
   PlatformMessageKey.workflowsCloseInspectorOverlay: (

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import { createBffClient } from "../src/client";
 import { AutomationManagement } from "../src/react/agents";
 import { PlatformProvider } from "../src/react/context";
 import type { BffReply, BffRequest } from "../src/transport";
-import { button, click, render, settle } from "./render";
+import { button, click, render, settle, type } from "./render";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -77,7 +78,42 @@ describe("original complete Definition view with immutable pinned governance", (
     expect(dialog.textContent).not.toContain(latest.content.name);
     await click(button(dialog, "Workflow YAML"));
     expect(parse(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value)).toEqual(content);
+    expect(dialog.querySelector("textarea")!.getAttribute("autocapitalize")).toBe("off");
+    expect(dialog.textContent).toContain("Edit the raw YAML definition directly.");
+    expect(dialog.querySelector("textarea")!.parentElement!.className).toBe("flex min-h-0 flex-1 flex-col gap-1.5");
     expect(send.mock.calls.filter(([request]) => request.path.startsWith("/api/v1/automations/workflow?")).length).toBe(reads + 1);
+    expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
+  });
+
+  it.each(["en", "zh-CN"] as const)("adds the first step from the actual dialog and closes its inspector before the dirty editor in %s", async locale => {
+    const {host, send} = await setup(undefined, locale);
+    await click(host.querySelector<HTMLElement>('[data-testid="new-workflow-card"]')!);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    const action = [...dialog.querySelectorAll("label")].find(label => label.textContent?.startsWith(locale === "en" ? "Action" : "执行动作"))!.querySelector("select")!;
+    await act(async () => { action.value = "POST_MESSAGE"; action.dispatchEvent(new Event("change", {bubbles:true})); });
+    const primary = dialog.querySelector<HTMLButtonElement>('[data-testid="workflow-dialog-primary-action"]')!;
+    expect(primary.getAttribute("aria-label")).toBe(locale === "en" ? "Add first step" : "添加第一个步骤");
+    expect(primary.textContent).toBe(locale === "en" ? "Add step" : "添加步骤");
+    expect(primary.disabled).toBe(true);
+    const executor = [...dialog.querySelectorAll("select")].find(select => [...select.options].some(option => option.value === "executor"))!;
+    await act(async () => { executor.value = "executor"; executor.dispatchEvent(new Event("change", {bubbles:true})); });
+    expect(primary.disabled).toBe(false);
+    await click(primary);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    expect(dialog.querySelectorAll('ol > li')).toHaveLength(2);
+    const draft = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+    await type(draft, "Kept real draft");
+    const escape = new KeyboardEvent("keydown", {key:"Escape",bubbles:true,cancelable:true});
+    await act(async () => document.dispatchEvent(escape));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    expect(escape.defaultPrevented).toBe(true);
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBe(dialog);
+    expect(dialog.querySelector('[data-testid="workflow-node-inspector"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    await click(button(dialog, locale === "en" ? "Workflow YAML" : "工作流 YAML"));
+    const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(parse(yaml.value).steps).toEqual([{id:"step_1",action:"send_message",text:"Kept real draft"}]);
+    expect(dialog.textContent).toContain(locale === "en" ? "Edit the raw YAML definition directly." : "直接编辑原始 YAML 定义。");
     expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
   });
 

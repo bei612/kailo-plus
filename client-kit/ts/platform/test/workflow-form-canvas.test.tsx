@@ -1,11 +1,11 @@
-import { act, useState } from "react";
+import { act, createRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActionEnum, AutomationTriggerKind, type AutomationStep, type WebCustomEmojiView } from "@client-kit/contracts";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
-import { WorkflowFormCanvas } from "../src/react/workflow-form-canvas";
+import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "../src/react/workflow-form-canvas";
 import { supportedSteps } from "../src/react/workflow-steps";
 import { click, render, settle, type } from "./render";
 
@@ -19,9 +19,10 @@ const second: AutomationStep = { id: "second", action: ActionEnum.SendMessage, t
 const policy = { id: "5d302c74-7f3f-49d5-9583-616e6c9a32a7", version: 1 };
 async function setup(initial: AutomationStep[], options: { disabled?: boolean; policies?: boolean; schedule?: boolean; locale?: "en" | "zh-CN"; emojiView?: WebCustomEmojiView } = {}) {
   const changes = vi.fn();
+  const handle = createRef<WorkflowFormCanvasHandle>();
   function Editor() {
     const [steps, setSteps] = useState(initial);
-    return <><WorkflowFormCanvas steps={steps} onStepsChange={next => { changes(next); setSteps(next); }}
+    return <><WorkflowFormCanvas ref={handle} steps={steps} onStepsChange={next => { changes(next); setSteps(next); }}
       trigger={options.schedule ? AutomationTriggerKind.Schedule : AutomationTriggerKind.ChannelMessage}
       triggerFields={<input aria-label="Actual trigger draft" defaultValue="Kept" />}
       policies={options.policies ? [policy] : []} disabled={options.disabled} /><output>{JSON.stringify(steps)}</output></>;
@@ -30,7 +31,7 @@ async function setup(initial: AutomationStep[], options: { disabled?: boolean; p
     <PlatformProvider locale={options.locale ?? "en"} client={createBffClient({send: async request => request.path === "/api/v1/custom-emoji" && options.emojiView
       ? {status:200,body:options.emojiView} : {status:503,body:undefined}})}><Editor /></PlatformProvider>
   </QueryClientProvider>);
-  return {host, changes};
+  return {host, changes, handle};
 }
 const read = (host: HTMLElement): AutomationStep[] => JSON.parse(host.querySelector("output")!.textContent!);
 async function settledMotion() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); }); }
@@ -50,6 +51,21 @@ async function add(host: HTMLElement, position: number, action: string) {
 }
 
 describe("original workflow sequence and actual governed draft consumer", () => {
+  it("uses the original dialog handle to add a first real step and close the inspector without changing that draft", async () => {
+    const {host, changes, handle} = await setup([]);
+    expect(handle.current!.closeInspector()).toBe(false);
+    await act(async () => handle.current!.addFirstStep());
+    await settledMotion();
+    expect(read(host)).toEqual([{id:"step_1",action:ActionEnum.SendMessage,text:""}]);
+    expect(changes).toHaveBeenCalledOnce();
+    expect(host.querySelector('[data-testid="workflow-node-inspector"]')).not.toBeNull();
+    await act(async () => expect(handle.current!.closeInspector()).toBe(true));
+    await settledMotion();
+    expect(host.querySelector('[data-testid="workflow-node-inspector"]')).toBeNull();
+    expect(read(host)).toEqual([{id:"step_1",action:ActionEnum.SendMessage,text:""}]);
+    expect(changes).toHaveBeenCalledOnce();
+  });
+
   it.each([
     [{id:"step", action:ActionEnum.SendMessage, name:"Release", text:"  Hello\n  world  "}, "Release · “Hello world”", "Send message"],
     [{id:"step", action:ActionEnum.Delay, duration:"1h 2m 1s"}, "1 hour 2 minutes 1 second", "Delay"],
@@ -203,9 +219,10 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it("keeps the disabled draft read-only", async () => {
-    const {host, changes} = await setup([first], {disabled:true});
+    const {host, changes, handle} = await setup([first], {disabled:true});
     expect([...host.querySelectorAll<HTMLButtonElement>('ol button')].every(button => button.disabled)).toBe(true);
     await click(host.querySelector<HTMLElement>('ol button')!);
+    await act(async () => handle.current!.addFirstStep());
     expect(changes).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="workflow-node-inspector"]')).toBeNull();
   });

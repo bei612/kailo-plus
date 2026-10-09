@@ -4,7 +4,7 @@
 import { ArrowDown, CalendarClock, Check, ChevronDown, MessageSquare, Plus, Trash2, X } from "lucide-react";
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, type ReactNode, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { ActionEnum, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import { useT, type Translate } from "./context";
 import { ActionEmoji } from "./workflow-card-actions";
@@ -101,11 +101,18 @@ function WorkflowNode({ description, label, disabled, icon, title, number, showT
   </li>;
 }
 
-export function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerFields, policies, disabled }: {
+// Original WorkflowFormBuilderHandle consumers: the dialog owns Escape and
+// its primary empty-sequence action; this is not another draft authority.
+export type WorkflowFormCanvasHandle = {
+  addFirstStep: () => void;
+  closeInspector: () => boolean;
+};
+
+export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   steps: AutomationStep[]; onStepsChange: (steps: AutomationStep[]) => void;
   trigger: AutomationTriggerKind; triggerFields: ReactNode;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
-}) {
+}>(function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerFields, policies, disabled }, ref) {
   const t = useT();
   const [pane, setPane] = useState<Pane>(null);
   const [selectionDirection, setSelectionDirection] = useState<1 | -1>(1);
@@ -159,6 +166,14 @@ export function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerField
     const next = [...steps]; next.splice(index, 0, step);
     onStepsChange(next); selectNode({type: "step", stepId: step.id});
   };
+  useImperativeHandle(ref, () => ({
+    addFirstStep: () => insertStep(0, ActionEnum.SendMessage),
+    closeInspector: () => {
+      if (!selectedNode) return false;
+      setPane(null);
+      return true;
+    },
+  }));
   const triggerLabel = t(trigger === AutomationTriggerKind.Schedule ? "agents.automation.schedule"
     : trigger === AutomationTriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage");
   const actionLabel = (step: AutomationStep) => t(actionKeys[step.action as DraftAction]);
@@ -259,4 +274,4 @@ export function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerField
       </AnimatePresence>
     </div></div>
   </div>;
-}
+});

@@ -1046,6 +1046,8 @@ export const platformMessages = {
   "workflows.steps.delay": { en: "Delay", "zh-CN": "延时" },
   "workflows.steps.requestApproval": { en: "Request approval", "zh-CN": "请求审批" },
   "workflows.addStep": { en: "Add step", "zh-CN": "添加步骤" },
+  "workflows.addFirstStep": { en: "Add first step", "zh-CN": "添加第一个步骤" },
+  "workflows.yamlDirect": { en: "Edit the raw YAML definition directly.", "zh-CN": "直接编辑原始 YAML 定义。" },
   "workflows.addAfter": { en: "Add after {step}", "zh-CN": "在{step}后添加" },
   "workflows.closeInspector": { en: "Close inspector", "zh-CN": "关闭检查器" },
   "workflows.closeInspectorOverlay": { en: "Close inspector overlay", "zh-CN": "关闭检查器遮罩" },
