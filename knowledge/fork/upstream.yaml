@@ -23,9 +23,9 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:2dbd78795c9ff1135e6e8d33e1d02a2d15ce7eb444dd2baf6bcaf8866b3cdc4e
-    artifact_digest: sha256:5771d363eba6eb9b12c474ee40ecbdb8398137aa55a8be357ce832e496558d6c
-    blocked: Previously recorded backend remains deployed healthy; the current backend rebuild was cancelled during disk-I/O contention and has no completed matching artifact. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified.
+    source_digest: sha256:2ca62e5ae4ade1cda4a033418d7150df76a944ffa92489717c25ac88e4037023
+    artifact_digest: sha256:8057b274fba99141ce5f9619afa20f1acb006977985da5cf07764cbc95b0cdcf
+    blocked: The full native backend built from Kailo commit 272693d5e1386a352946736c80a2a00ff7c27ff1 is deployed healthy with immutable digest readback. Later pending-sync recovery changes are not in that artifact; frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend
