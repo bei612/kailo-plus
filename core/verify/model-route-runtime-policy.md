@@ -164,3 +164,77 @@ Runtime 变异日志
 
 本批没有运行 full、重新构建镜像、发布、实际 Codex config/read 或 Agent 首 turn，
 不据窄检查宣称模型/工具/计量联合验收或生产就绪。
+
+## 已派发且原生 ID 不明的凭据退休拒绝（2026-10-09）
+
+源码基准 `272693d5e1386a352946736c80a2a00ff7c27ff1`。本批只修
+`core/crates/platform-core/src/model_route.rs::retire_credentials` 的真实退休
+消费者，不重发旧创建、不修改线上意图、租约、线程或 Installation 状态。
+
+1. 权威：DD-48、DD-70 与 `.design/17` §9/§10 要求已派发外部副作用的结果
+   不明保持可对账，不能以当前缺失判定旧请求不会晚到。固定 AgentGateway
+   `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+   `crates/agentgateway/src/config_store.rs::prepare_resource` 在 LlmApiKey
+   创建时生成随机 UUID；`crates/agentgateway/src/ui.rs::update_config_resource`
+   对不存在的指定 API key 返回 NotFound。相同 metadata/generation 不是原生
+   创建幂等键，当前零条目或密钥返回 401 都不能证明旧派发已终结。
+2. 影响面：`tenant_delete.rs` 的 Tenant 销毁与 `agent_installation.rs` 的
+   旧 generation 退休共用该消费者。`FrozenCredential::retirement_key` 统一选择
+   原观察或冻结的精确 ID/revision；已派发且二者均缺失时先返回原 Unavailable，
+   不进入删除、absence/401 确认或 SUPERSEDED 写入。已知 ID 的原删除/确认链保留。
+   没有新增契约、迁移、状态、Workflow、凭据或三端调用路径。
+3. 副作用：不把当前 absence 当 native create 的退休栅栏，不增加第二执行或
+   凭据权威。原恢复查询、SecretRef 固定版本和已知响应先持久化规则未变。
+   旧 UNKNOWN 保留；本批不能解除目标 Installation 的上线阻断。
+4. 边界：未派发且无原生响应仍沿原无 key 路径；精确恢复/冻结响应沿原退休；
+   ID/revision 冲突或半对引用按原 TargetStateConflict 拒绝；派发无响应重复调用
+   仍拒绝且不改冻结引用。原 Unavailable 映射 UNKNOWN/DependencyUnavailable，
+   不新增错误码，不把观察失败渲染成成功或确定失败。
+
+实施后在原模块追加四项检查，覆盖派发不明重入、未派发、精确响应和冲突/半对
+引用。实际 `model_route::` 过滤同时命中原 provider 与 application 子模块，
+最终为 11 passed、1 ignored、392 filtered out；不能把预估九项当实际计数。
+忽略项 `original_projection_refuses_unproved_model_activation_and_drain` 要求
+独立迁移库及原 fixture，本批没有运行，不计通过。
+
+原受限 SDK `kailo-client-core-full-fxcd9l`，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU、8 GiB、memory+swap 同额、UID/GID 1000；Cargo jobs=16、
+`CARGO_INCREMENTAL=0`、`CARGO_TARGET_DIR=/cache/rust-target`、`TMPDIR=/tmp`。
+执行前宿主 MemAvailable 23 GiB、memory pressure 0；主线 full 已离开 Rust，
+只剩 added-lines 扫描，没有并发 Cargo/rustc。将其固定 272693 快照的 core、
+collaboration Rust crates/manifest、contracts、registry 与 Gateway proto 实际
+依赖机械同步到本 SDK 独立候选，只覆盖正式本批 model_route；checksum dry-run
+唯一源差异为该文件，不借旧 SDK 源码宣称当前实现通过。
+
+实际同一命令三次串行执行（不是 workspace/full）：
+
+```sh
+cd /workspace/apps/core
+cargo test -j16 --offline --locked -p platform-core --bin platform-core model_route:: -- --nocapture
+```
+
+- 正向句柄 69028：编译 2m01s，11 passed / 1 ignored，退出 0。
+- 私有生产变异句柄 32329：仅将 `retirement_key` 的 dispatched 分支由
+  `Err(unavailable())` 改为 `Ok(None)`；编译成功后真实断言
+  `dispatched_create_without_native_response_cannot_retire_on_absence` 失败，
+  10 passed / 1 failed / 1 ignored，退出 101，不把编译失败冒充负向。
+- apply_patch 精确还原后句柄 91574：同一命令编译 1m13s，11 passed / 1 ignored，
+  退出 0。正式/候选 cmp 0，源码 SHA-256 均为
+  `ccef7a7656db1451b94b6eb36e87ac32fa4dee0c15dec0b0253d005f0fbe3520`。
+
+正式源码 `git diff --check` 为 0；同 SDK stdin
+`rustfmt --check --edition 2021` 最终无输出、退出 0。结束时容器只剩原 sleep；
+memory.events 的 oom/oom_kill 均为 0，历史 max 计数执行前后均为 776。
+
+日志原件目录：
+`/volumes/data/kailo/tmp/codex-client-core-delivery-20261004.fXcD9L/apps/.model-route-retirement-20261009.ifnddu`。
+`positive.log` SHA-256
+`684f63137cf2ba0214186a5bb130a2fcaa3c55fcce3dbd82612f39654cfcfe3e`；
+`negative.log` SHA-256
+`4b02ddf9d03b8614cf558be3d1b1ab4d9b3fc721a5abbcfb44d6fb2a98051012`；
+`restored.log` SHA-256
+`953e66fb3a2ed2574cc2170017f5423beac02b620ed472e7334bc8db4dc0b6c6`。
+
+本批未运行真实 Gateway/数据库退休端到端验收、未部署，也未重放目标旧创建。
+主线 full 固定的是原 272693，不包含本次新字节；其结果不能充当本批 full 证据。

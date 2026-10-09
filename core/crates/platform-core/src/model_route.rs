@@ -1006,6 +1006,28 @@ pub(crate) struct FrozenCredential {
     pub native_key_revision: Option<i64>,
 }
 
+impl FrozenCredential {
+    fn retirement_key(
+        &self,
+        observed: Option<(String, i64)>,
+    ) -> Result<Option<(String, i64)>, Refusal> {
+        let frozen = match (&self.native_key_id, self.native_key_revision) {
+            (Some(id), Some(revision)) => Some((id.clone(), revision)),
+            (None, None) => None,
+            _ => return Err(conflict()),
+        };
+        match (observed, frozen) {
+            (Some(observed), Some(frozen)) if observed != frozen => Err(conflict()),
+            (Some(observed), _) => Ok(Some(observed)),
+            (None, Some(frozen)) => Ok(Some(frozen)),
+            // A missing random native ID cannot fence a previously dispatched create.
+            // Current absence/rejection is not evidence that the old request cannot arrive later.
+            (None, None) if self.native_dispatch_started => Err(unavailable()),
+            (None, None) => Ok(None),
+        }
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FrozenRoute {
     pub resource_id: Uuid,
@@ -1306,17 +1328,8 @@ async fn retire_credentials(
                 .await?;
             None
         };
+        let retirement_key = credential.retirement_key(stored.clone())?;
         if let Some((id, revision)) = stored {
-            if credential
-                .native_key_id
-                .as_deref()
-                .is_some_and(|frozen| frozen != id)
-                || credential
-                    .native_key_revision
-                    .is_some_and(|frozen| frozen != revision)
-            {
-                return Err(conflict());
-            }
             // Persist an observed response before deletion; replay must not lose a recovered random ID.
             sqlx::query(
                 "update catalog.agent_model_binding set native_key_id=$3,native_key_revision=$4
@@ -1330,17 +1343,8 @@ async fn retire_credentials(
             .execute(&state.pool)
             .await?;
             gateway.delete("llm.apiKey", &id).await?;
-            deleted.push(NativeAbsence {
-                kind: "llm.apiKey".into(),
-                id,
-                revision,
-                absent: true,
-            });
-        } else if let Some((id, revision)) = credential
-            .native_key_id
-            .clone()
-            .zip(credential.native_key_revision)
-        {
+        }
+        if let Some((id, revision)) = retirement_key {
             deleted.push(NativeAbsence {
                 kind: "llm.apiKey".into(),
                 id,
@@ -2942,5 +2946,93 @@ mod provider_auth_checks {
             .unwrap()
             .remove("providerCredentialMode");
         assert!(frozen_creation_input(&input).is_err());
+    }
+}
+
+#[cfg(test)]
+mod credential_retirement_checks {
+    use super::*;
+
+    fn credential(dispatched: bool, native: Option<(String, i64)>) -> FrozenCredential {
+        // Frozen references only; these checks create no Gateway key or business row.
+        FrozenCredential {
+            installation_resource_id: Uuid::new_v4(),
+            projection_generation: 1,
+            workspace_id: Uuid::new_v4(),
+            agent_principal_id: Uuid::new_v4(),
+            action_execution_id: Uuid::new_v4(),
+            gateway_principal_id: Uuid::new_v4(),
+            secret_locator: Uuid::new_v4().to_string(),
+            secret_version: Some(1),
+            secret_audience: Uuid::new_v4().to_string(),
+            secret_status: "PENDING".into(),
+            native_dispatch_started: dispatched,
+            native_key_id: native.as_ref().map(|(id, _)| id.clone()),
+            native_key_revision: native.map(|(_, revision)| revision),
+        }
+    }
+
+    #[test]
+    fn dispatched_create_without_native_response_cannot_retire_on_absence() {
+        let mut credential = credential(true, None);
+        for status in ["PENDING", "SUPERSEDED"] {
+            credential.secret_status = status.into();
+            let frozen = credential.clone();
+            for _ in 0..2 {
+                assert!(matches!(
+                    credential.retirement_key(None),
+                    Err(Refusal::Unavailable(_))
+                ));
+                assert!(credential == frozen);
+            }
+        }
+    }
+
+    #[test]
+    fn undispatched_create_can_confirm_no_native_key() {
+        assert!(credential(false, None)
+            .retirement_key(None)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn recovered_and_frozen_native_keys_remain_exact_retirement_targets() {
+        let native = (Uuid::new_v4().to_string(), 1);
+        assert_eq!(
+            credential(true, None)
+                .retirement_key(Some(native.clone()))
+                .unwrap(),
+            Some(native.clone())
+        );
+        let credential = credential(true, Some(native.clone()));
+        assert_eq!(
+            credential.retirement_key(None).unwrap(),
+            Some(native.clone())
+        );
+        assert_eq!(
+            credential.retirement_key(Some(native.clone())).unwrap(),
+            Some(native)
+        );
+    }
+
+    #[test]
+    fn changed_or_incomplete_native_response_cannot_retire() {
+        let native = (Uuid::new_v4().to_string(), 1);
+        let mut credential = credential(true, Some(native.clone()));
+        for observed in [
+            (Uuid::new_v4().to_string(), native.1),
+            (native.0.clone(), native.1 + 1),
+        ] {
+            assert!(matches!(
+                credential.retirement_key(Some(observed)),
+                Err(Refusal::Conflict(ReasonCode::TargetStateConflict))
+            ));
+        }
+        credential.native_key_revision = None;
+        assert!(credential.retirement_key(Some(native)).is_err());
+        credential.native_key_revision = Some(1);
+        credential.native_key_id = None;
+        assert!(credential.retirement_key(None).is_err());
     }
 }
