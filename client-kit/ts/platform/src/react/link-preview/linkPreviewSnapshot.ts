@@ -2,8 +2,23 @@
 import {
   extractSupportedLinkPreviews,
   parseSupportedLinkPreview,
+  type SupportedLinkPreview,
 } from "./linkPreview";
 import type { ResolvedLinkPreview } from "./types";
+
+// Original desktop/src/shared/ui/markdown/useMessageLinkPreviews.ts.
+export function mergeMessageLinkPreviews(
+  candidates: SupportedLinkPreview[],
+  snapshots: ResolvedLinkPreview[],
+): ResolvedLinkPreview[] {
+  const snapshotsByHref = new Map(
+    snapshots.map((preview) => [preview.href, preview]),
+  );
+  return candidates.flatMap((candidate) => {
+    const preview = snapshotsByHref.get(candidate.href);
+    return preview ? [preview] : [];
+  });
+}
 
 export const LINK_PREVIEW_SNAPSHOT_VERSION = "1";
 const MAX_SNAPSHOTS = 8;
@@ -65,58 +80,45 @@ function validText(value: string, max: number, allowNewlines = false): boolean {
   );
 }
 
-function isRelayMediaPair(
+/** Native retains its trusted Relay-origin check. Web resolves only the hash
+ * through its admitted BFF scope; an authored URL is never a proxy target. */
+type SnapshotMediaHost = string | ((sha256: string) => string | null);
+
+function resolveRelayMediaPair(
   url: string,
   sha256: string,
-  relayOrigin: string,
-): boolean {
-  if (!url && !sha256) return true;
-  if (!url || !SHA256_RE.test(sha256)) return false;
+  host: SnapshotMediaHost,
+): string | null {
+  if (!url && !sha256) return "";
+  if (!url || !SHA256_RE.test(sha256)) return null;
   try {
     const parsed = new URL(url);
     if (
-      parsed.origin !== relayOrigin ||
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      (typeof host === "string" && parsed.origin !== host) ||
       parsed.username ||
       parsed.password ||
       parsed.search ||
       parsed.hash
     )
-      return false;
+      return null;
     const match = /^\/media\/([0-9a-f]{64})\.([a-z0-9]{1,8})$/.exec(
       parsed.pathname,
     );
-    return Boolean(
-      match && match[1] === sha256 && IMAGE_EXT_RE.test(match[2] ?? ""),
-    );
+    if (!match || match[1] !== sha256 || !IMAGE_EXT_RE.test(match[2] ?? ""))
+      return null;
+    return typeof host === "string" ? url : host(sha256);
   } catch {
-    return false;
+    return null;
   }
 }
 
 export function parseLinkPreviewSnapshots(
   tags: readonly (readonly string[])[] | undefined,
   content: string,
-  relayOrigin: string | null,
+  host: SnapshotMediaHost | null,
 ): ResolvedLinkPreview[] {
-  return parseSnapshots(tags, content, relayOrigin, false);
-}
-
-/** BFF-authenticated signed event text only. This path never returns media URLs:
- * it has no trusted Relay origin and must not infer one from attacker-controlled tags. */
-export function parseLinkPreviewTextSnapshots(
-  tags: readonly (readonly string[])[] | undefined,
-  content: string,
-): ResolvedLinkPreview[] {
-  return parseSnapshots(tags, content, null, true);
-}
-
-function parseSnapshots(
-  tags: readonly (readonly string[])[] | undefined,
-  content: string,
-  relayOrigin: string | null,
-  textOnly: boolean,
-): ResolvedLinkPreview[] {
-  if ((!textOnly && !relayOrigin) || !tags) return [];
+  if (!host || !tags) return [];
   const contentUrls = new Set(
     extractSupportedLinkPreviews(content).map((preview) => preview.href),
   );
@@ -158,21 +160,19 @@ function parseSnapshots(
       !validText(description, 1000, true)
     )
       continue;
-    if (
-      !textOnly && (!relayOrigin || !isRelayMediaPair(imageUrl, imageSha256, relayOrigin) ||
-      !isRelayMediaPair(faviconUrl, faviconSha256, relayOrigin))
-    )
-      continue;
+    const image = resolveRelayMediaPair(imageUrl, imageSha256, host);
+    const favicon = resolveRelayMediaPair(faviconUrl, faviconSha256, host);
+    if (image === null || favicon === null) continue;
     seen.add(canonicalUrl);
     snapshots.push({
       ...parsed,
       title: title || parsed.title,
       provider: siteName || parsed.provider,
       description: description || null,
-      faviconDataUrl: textOnly ? null : faviconUrl || null,
-      imageDataUrl: textOnly ? null : imageUrl || null,
-      imageDomain: !textOnly && imageUrl ? new URL(imageUrl).hostname : null,
-      imageState: !textOnly && imageUrl ? "image" : "none",
+      faviconDataUrl: favicon || null,
+      imageDataUrl: image || null,
+      imageDomain: imageUrl ? new URL(imageUrl).hostname : null,
+      imageState: image ? "image" : "none",
     });
   }
   return snapshots;

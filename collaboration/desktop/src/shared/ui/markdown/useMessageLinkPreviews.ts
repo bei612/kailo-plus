@@ -1,11 +1,12 @@
 import * as React from "react";
 
+import { extractSupportedLinkPreviews } from "@/shared/lib/linkPreview";
 import {
-  extractSupportedLinkPreviews,
-  type SupportedLinkPreview,
-} from "@/shared/lib/linkPreview";
-import { parseLinkPreviewSnapshots } from "@/shared/lib/linkPreviewSnapshot";
+  mergeMessageLinkPreviews,
+  parseLinkPreviewSnapshots,
+} from "@/shared/lib/linkPreviewSnapshot";
 import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
+export { mergeMessageLinkPreviews } from "@/shared/lib/linkPreviewSnapshot";
 
 /**
  * Resolve the link-preview cards for a rendered message.
@@ -15,20 +16,6 @@ import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
  * privacy model shipped in the rich-link-previews work: recipients never
  * contact external sites.
  */
-export function mergeMessageLinkPreviews(
-  candidates: SupportedLinkPreview[],
-  snapshots: ResolvedLinkPreview[],
-): ResolvedLinkPreview[] {
-  const snapshotsByHref = new Map(
-    snapshots.map((preview) => [preview.href, preview]),
-  );
-
-  return candidates.flatMap((candidate) => {
-    const preview = snapshotsByHref.get(candidate.href);
-    return preview ? [preview] : [];
-  });
-}
-
 export function useMessageLinkPreviews({
   content,
   interactive,

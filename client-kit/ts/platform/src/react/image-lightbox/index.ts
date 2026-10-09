@@ -7,3 +7,4 @@ export * from "./MediaContextMenu";
 export * from "./ImageLightboxZoomControls";
 export * from "./ImageGalleryStatus";
 export * from "./ImageMosaic";
+export * from "./LinkPreviewImageLightbox";

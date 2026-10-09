@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { t } from "@/shared/i18n";
+import { setLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -243,19 +244,84 @@ describe("MessageContent", () => {
     expect(outside).not.toContain("<img");
     expect(outside).toContain(":party:");
   });
-  it("renders admitted snapshot text through the original preview without remote images", () => {
+  it("renders the complete original snapshot card with scope-bound images and lightbox trigger", () => {
     const href = "https://example.com/product";
-    const snapshot = ["link-preview", "snapshot", "1", href, "Signed title", "Example", "Signed description", IMAGE_URL, SHA, IMAGE_URL, SHA];
+    const imageUrl = `https://relay.example.com/media/${SHA}.png`;
+    const snapshot = ["link-preview", "snapshot", "1", href, "Signed title", "Example", "Signed description", imageUrl, SHA, imageUrl, SHA];
+    setLinkPreviewStyle("rich");
     const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[snapshot]} />);
     expect(html).toContain('data-link-preview="generic-link"');
     expect(html).toContain("Signed title");
     expect(html).toContain("Signed description");
-    expect(html).not.toContain("<img");
-    expect(html).not.toContain(IMAGE_URL);
+    expect(html).toContain('data-link-preview-favicon=""');
+    expect(html).toContain('data-link-preview-thumbnail=""');
+    expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
+    expect(html).toContain('data-image-lightbox-trigger=""');
+    expect(html).not.toContain('data-link-preview-skeleton');
+    expect(html).not.toContain(imageUrl);
     const suppressed = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[snapshot, ["link-preview", "none"]]} />);
     expect(suppressed).not.toContain("data-link-preview=");
     expect(suppressed).toContain(href);
+    const noScope = renderToStaticMarkup(<MessageContent content={href} mediaTags={[snapshot]} />);
+    expect(noScope).not.toContain("<img");
+    const dm = renderToStaticMarkup(<MessageContent content={href} conversationId={WORKSPACE} mediaTags={[snapshot]} />);
+    expect(dm).toContain(`src="/api/v1/conversations/${WORKSPACE}/media/${SHA}"`);
+    expect(dm).not.toContain("/workspaces/");
+    const bad = [...snapshot]; bad[8] = "ff".repeat(32);
+    expect(renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[bad]} />)).not.toContain("<img");
   });
+  it("opens original snapshot lightbox, keeps gallery/zoom/focus, and drops it when scope changes", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    setLinkPreviewStyle("rich");
+    const hrefs = ["https://example.com/first", "https://example.com/second"];
+    const hashes = [SHA, "cd".repeat(32)];
+    const tags = hrefs.map((href, index) => ["link-preview", "snapshot", "1", href, `Preview ${index}`, "Example", "Details",
+      `https://relay.example.com/media/${hashes[index]}.png`, hashes[index], "", ""]);
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, toJSON: () => ({}) });
+    const getComputedStyle = window.getComputedStyle.bind(window);
+    const style = vi.spyOn(window, "getComputedStyle").mockImplementation(element => {
+      const computed = getComputedStyle(element);
+      if (!computed.opacity) computed.opacity = "1";
+      return computed;
+    });
+    const show = (scope: string) => act(async () => root.render(<PlatformProvider client={client} locale="en"><TooltipProvider>
+      <MessageContent workspaceId={scope} content={hrefs.join("\n\n")} mediaTags={[...tags].reverse()} />
+    </TooltipProvider></PlatformProvider>));
+    try {
+      await show(WORKSPACE);
+      const triggers = host.querySelectorAll<HTMLButtonElement>('[data-image-lightbox-trigger]');
+      expect(triggers).toHaveLength(2);
+      expect(triggers[0].querySelector("img")?.getAttribute("src")).toBe(`/api/v1/workspaces/${WORKSPACE}/media/${SHA}`);
+      triggers[0].focus();
+      await act(async () => triggers[0].click());
+      let dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
+      expect(dialog).not.toBeNull();
+      expect(dialog.querySelector('[role="status"]')?.textContent).toBe("1 / 2");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+      expect(dialog.querySelector('[role="status"]')?.textContent).toBe("2 / 2");
+      const range = dialog.querySelector<HTMLInputElement>('[aria-label="Image zoom"]')!;
+      await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click());
+      expect(Number(range.value)).toBeGreaterThan(1);
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      await act(async () => new Promise(resolve => window.setTimeout(resolve, 300)));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.activeElement).toBe(triggers[0]);
+      await act(async () => triggers[0].click());
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      await show("00000000-0000-4000-8000-000000000002");
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(host.innerHTML).not.toContain(`/api/v1/workspaces/${WORKSPACE}/media/`);
+      await act(async () => host.querySelector('[data-link-preview-thumbnail] img')!.dispatchEvent(new Event("error")));
+      expect(host.querySelectorAll('[data-image-lightbox-trigger]')).toHaveLength(1);
+      expect(host.querySelector('[data-link-preview-image-fallback]')).not.toBeNull();
+      expect(host.innerHTML).not.toContain('src="https://relay.example.com');
+    } finally {
+      await act(async () => root.unmount()); host.remove(); rect.mockRestore(); style.mockRestore();
+    }
+  });
+
   it("keeps original image and text spoilers hidden while preserving admitted media reads", () => {
     const html = renderToStaticMarkup(
       <MessageContent

@@ -20,7 +20,7 @@ import {
 import { ImageOff } from "lucide-react";
 import { FileCard } from "@client-kit/platform/react/messages";
 import { resolveFileCard } from "@client-kit/platform/react/messages/resolveFileCard";
-import { ImageBlock, ImageMosaic } from "@client-kit/platform/react/image-lightbox";
+import { ImageBlock, ImageMosaic, ImageZoomOverlay, createLinkPreviewImageLightbox, type ImageActions } from "@client-kit/platform/react/image-lightbox";
 import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
 import { toast } from "sonner";
@@ -37,7 +37,7 @@ import remarkMentions from "@/features/chat/lib/remark-mentions";
 import { mediaUrl } from "@/platform/bff-client";
 import { t } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
-import { LinkPreviewAttachmentPresentation, parseLinkPreviewTextSnapshots, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
+import { LinkPreviewAttachmentPresentation, parseLinkPreviewSnapshots, mergeMessageLinkPreviews, extractSupportedLinkPreviews, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 import { AttachmentGroup } from "@client-kit/platform/react/composer/shared/ui/attachment";
 import { customEmojiFromTags, remarkCustomEmoji, InlineEmojiPopover } from "@client-kit/platform/react/custom-emoji";
 import {
@@ -73,6 +73,7 @@ type MarkdownRenderContextValue = {
   mediaByUrl: ReadonlyMap<string, ImetaMedia>;
   mentionsByName: ReadonlyMap<string, MessageMention>;
   resolveMediaUrl: (sha256: string) => string;
+  admittedSources: ReadonlySet<string>;
   conversationId?: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 };
@@ -113,21 +114,9 @@ function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
   return media;
 }
 
-function BffMedia({
-  media,
-  alt,
-  resolveMediaUrl,
-  admittedSources,
-}: {
-  media: ImetaMedia;
-  alt?: string;
-  resolveMediaUrl: (sha256: string) => string;
-  admittedSources: ReadonlySet<string>;
-}) {
-  const [failed, setFailed] = useState(false);
+function useBffImageActions(admittedSources: ReadonlySet<string>, alt?: string): ImageActions {
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const src = resolveMediaUrl(media.sha256);
   const copyImageToClipboard = async (imageSrc: string | undefined) => {
     if (!imageSrc || !admittedSources.has(imageSrc)) return;
     try {
@@ -153,6 +142,33 @@ function BffMedia({
     anchor.download = alt || t("message.attachmentImage");
     anchor.click();
   };
+  return { copyImageToClipboard, downloadImage };
+}
+
+function BffLinkPreviewOverlay(
+  props: Omit<ComponentProps<typeof ImageZoomOverlay>, keyof ImageActions>,
+) {
+  const { admittedSources } = useMarkdownRenderContext();
+  const actions = useBffImageActions(admittedSources, props.alt);
+  return <ImageZoomOverlay {...props} {...actions} />;
+}
+
+const BffLinkPreviewImageLightbox = createLinkPreviewImageLightbox(BffLinkPreviewOverlay);
+
+function BffMedia({
+  media,
+  alt,
+  resolveMediaUrl,
+  admittedSources,
+}: {
+  media: ImetaMedia;
+  alt?: string;
+  resolveMediaUrl: (sha256: string) => string;
+  admittedSources: ReadonlySet<string>;
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = resolveMediaUrl(media.sha256);
+  const { copyImageToClipboard, downloadImage } = useBffImageActions(admittedSources, alt);
   const dimensions = media.dimensions;
   const scale = dimensions
     ? Math.min(1, IMAGE_MAX_WIDTH / dimensions.width, IMAGE_MAX_HEIGHT / dimensions.height)
@@ -198,7 +214,7 @@ function BffMedia({
 }
 
 const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
-  const { mediaByUrl, resolveMediaUrl } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl, admittedSources } = useMarkdownRenderContext();
   const media = src ? mediaByUrl.get(src) : undefined;
   // 没有 imeta 背书的图片地址不加载：退回成一条普通链接
   if (!media) {
@@ -210,7 +226,7 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
   }
   return <span data-block-media="" className="block min-w-0 max-w-full">
     <BffMedia key={resolveMediaUrl(media.sha256)} media={media} alt={alt} resolveMediaUrl={resolveMediaUrl}
-      admittedSources={new Set([...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)))} />
+      admittedSources={admittedSources} />
   </span>;
 };
 
@@ -385,15 +401,23 @@ export function MessageContent({
   }));
   const mediaByUrl = imetaMedia(mediaTags);
   const previewStyle = useLinkPreviewStyle();
-  const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
-    ? [] : parseLinkPreviewTextSnapshots(mediaTags, content);
   const resolveMediaUrl = onMediaUrl ?? ((sha256: string) => {
     if (!workspaceId && !conversationId) throw new Error("Message media scope missing");
     return mediaUrl(workspaceId ?? conversationId!, sha256, conversationId);
   });
+  // Relay validates sender-authored snapshot URL/hash pairs at ingestion. Only
+  // the hash reaches our existing BFF media route, which rechecks the current
+  // actor/scope and reads this community's sidecar. Never fetch the tag's URL.
+  const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
+    ? [] : mergeMessageLinkPreviews(extractSupportedLinkPreviews(content),
+      parseLinkPreviewSnapshots(mediaTags, content, workspaceId || conversationId || onMediaUrl ? resolveMediaUrl : null));
+  const admittedSources = new Set([
+    ...[...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)),
+    ...previews.flatMap(preview => preview.imageDataUrl ? [preview.imageDataUrl] : []),
+  ]);
 
   return (
-    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, onOpenMessageLink }}>
+    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink }}>
       <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
@@ -406,7 +430,8 @@ export function MessageContent({
       </MessageBody>
       {previews.length ? <AttachmentGroup data-link-preview-list=""
         className={previewStyle === "compact" ? "max-w-full flex-row flex-wrap items-start overflow-visible pb-0" : "max-w-full flex-col items-start overflow-visible pb-0"}>
-        {previews.map((preview, index) => <LinkPreviewAttachmentPresentation key={preview.href} preview={preview} style={previewStyle} showControls={index === 0} />)}
+        {previews.map((preview, index) => <LinkPreviewAttachmentPresentation key={preview.href} preview={preview} style={previewStyle} showControls={index === 0}
+          ImageLightbox={BffLinkPreviewImageLightbox} />)}
       </AttachmentGroup> : null}
     </MarkdownRenderContext.Provider>
   );

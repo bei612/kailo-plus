@@ -114,3 +114,36 @@ test("messages without authored snapshots never create recipient previews", () =
   assert.deepEqual(parseLinkPreviewSnapshots([], CONTENT, ORIGIN), []);
   assert.deepEqual(parseLinkPreviewSnapshots(undefined, CONTENT, ORIGIN), []);
 });
+
+test("the Web host receives only matching original blob hashes, never an authored URL", () => {
+  const requested = [];
+  const resolve = (hash) => { requested.push(hash); return `/api/v1/workspaces/current/media/${hash}`; };
+  const previews = parseLinkPreviewSnapshots([valid], CONTENT, resolve);
+  assert.deepEqual(requested, [HASH]);
+  assert.equal(previews[0].imageDataUrl, `/api/v1/workspaces/current/media/${HASH}`);
+  assert.equal(previews[0].imageState, "image");
+  for (const image of [
+    `${ORIGIN}/media/${HASH}.svg`, `${ORIGIN}/media/${HASH}.png?token=leak`,
+    `${ORIGIN}/media/${HASH}.png#fragment`, `https://user@relay.example/media/${HASH}.png`,
+    `${ORIGIN}/media/${HASH}.png/extra`, `${ORIGIN}/media/${HASH}.thumb.jpg`,
+    `file:///media/${HASH}.png`, `${ORIGIN}/media/${"b".repeat(64)}.png`,
+  ]) {
+    requested.length = 0;
+    const tag = [...valid]; tag[7] = image;
+    assert.deepEqual(parseLinkPreviewSnapshots([tag], CONTENT, resolve), [], image);
+    assert.deepEqual(requested, [], image);
+  }
+  assert.deepEqual(parseLinkPreviewSnapshots([valid], CONTENT, () => null), []);
+  assert.deepEqual(parseLinkPreviewSnapshots([valid], CONTENT, () => { throw new Error("scope unavailable"); }), []);
+});
+
+test("snapshot version, UTF-8 limits, suppression candidates and repeated tags retain native bounds", () => {
+  const wrongVersion = [...valid]; wrongVersion[2] = "unknown";
+  const oversized = [...valid]; oversized[4] = "😀".repeat(76);
+  const missingHash = [...valid]; missingHash[8] = "";
+  for (const tag of [wrongVersion, oversized, missingHash, valid.slice(0, -1)]) {
+    assert.deepEqual(parseLinkPreviewSnapshots([tag], CONTENT, ORIGIN), []);
+  }
+  assert.equal(parseLinkPreviewSnapshots([valid, valid], CONTENT, ORIGIN).length, 1);
+  assert.deepEqual(parseLinkPreviewSnapshots([valid], `||${URL}||`, ORIGIN), []);
+});

@@ -6426,3 +6426,27 @@ Web原字节与备份cmp0后85805 `web-download-restored.log`最终19/19、Web t
 最终 memory.events仍旧 max16751/oom2/oom_kill2无增量，唯一串行窗口终态后释放；未启动full/bundle/Cargo/Go。
 本批无新版页面实拍/部署、浏览器真实下载终态、Native下载设备或Windows安装包/Mobile验收；当前线上4c与本批源码明确分开。
 历史全量账仍为dd399：5314 union、1970原样blob、115已证共享、0整文件授权、3229尚未证明保留或授权的恢复队列，不是当前main全量覆盖或3229项功能缺失，未声明100%。
+
+## 2026-10-09 已部署旧版设置页面截图复核
+
+复用既存 playwright-cli 会话 `avatar-seam-restoration`，正常 SSO 重新登录，无 Cookie 注入或认证绕过。
+实际 `/api/v1/build-info` 返回 BUZZ_WEB、buildId `sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`，
+reportedAt `2026-10-09T15:39:24.407Z`；部署来源仍为 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，不代表后续 FileCard 与链接预览源码已发布。
+证据 `/volumes/data/kailo/tmp/ui-live-settings-20261009.4hedkD/receipt.md` 及同目录 9 张 PNG 均实际打开视觉复核；有效覆盖 8 个页面/语言状态。
+Shortcuts、Custom emoji、Invites、Experiments 各检查中文/英文；键帽分类、表情上传表单与空态、四个实验开关布局可见。
+旧邀请页依旧有重复标题/说明及简化表格，不能据此验收新共享邀请页。未上传表情、创建邀请、切换实验开关或逐一触发快捷键。
+`06-custom-emojis-en.png` 实为错误定位后重复的英文 Shortcuts，明确不计入表情页覆盖；正确英文表情页为 `07-custom-emoji-en-actual.png`。
+错误 testid/英文定位器曾真实失败，详见原回执。正常 Appearance 切换英文后已恢复简体中文；没有把 Web 实拍称为 Windows 或 Mobile 验收。
+
+## 2026-10-09 原链接快照媒体与完整预览灯箱共享恢复
+
+权威为 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/shared/lib/linkPreviewSnapshot.ts::parseLinkPreviewSnapshots`、`desktop/src/shared/ui/markdown/useMessageLinkPreviews.ts::mergeMessageLinkPreviews`、`desktop/src/shared/ui/markdown/LinkPreviewImageLightbox.tsx::LinkPreviewImageLightbox`，与 DD-80/81 的 Web 代签及租户媒体准入。不是另写页面或用摘要代替原卡片。
+本批 9 源路径 +331/-208：原解析/消息顺序合并及完整画廊迁入共享主体，Native 使用薄导出；Web 恢复原图、favicon、原多图/缩放/焦点/Escape 灯箱和原 spoiler 抑制。唯一治理差异为只将严格匹配原图哈希交给当前 scope BFF，不将 authored URL 作为代理目标。不变更契约、数据库、Relay 正文或新建媒体权威。
+影响面逐一检索 7 个 Web 生产 MessageContent 消费者：ChannelPane、ChannelThreadPane、InboxPane、InboxThreadPane、ForumPane 有 workspace/conversation；Pulse 经实际 onMediaUrl；InboxDrafts 有 draft.channelId 且无 snapshot tags。没有实际无 scope 的合法文本快照消费者，既有合法无媒体快照在已准入 host 下保留。
+准入核对 `core/crates/platform-core/src/web_transport.rs::fetch_media_for`、Relay `handlers/ingest.rs::validate_link_preview_tags`、`handlers/imeta.rs::validate_local_image_media_pair` 与 `api/media.rs::serve_blob_for_tenant`。无 host、错误版本、缺失哈希、不匹配原图路径、缩略图/SVG、凭据/query/fragment、resolver 拒绝或抛错均不产生媒体预览；切 scope 重建 overlay，未知媒体不回退 sender origin；批内无新增持久状态。
+冻结补丁 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/link-preview-20261009.4Q77e6/owned-source.patch`；该目录保存本批原输出。仅运行原 SDK `kailo-agent-receipt-xvkujx`，4 CPU/8 GiB，未起镜像/全量编译。源码写入不等于运行验收或部署。
+第一次 `positive.log`（14698）整体 exit1：Native 6pass/2fail，原因是 `file:` 安装副本仍是旧 parser/merge；Web/shared Vitest worker 未启动、0 cases。核对后只同步已有候选的安装副本并 cmp；未改超时、runner 或降低断言。
+第二次 `resolved-positive.log`（62808）真实整体 exit1：Native parser/merge 8/8；Web production、shared production、shared test、Native 四个 tsc 全 exit0；Web 与 shared Vitest 都因 worker 启动超时 exit1、0 cases，因此新画廊交互断言仍未执行，不报通过，不第三次盲重试。
+原命令为 Native `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/lib/linkPreviewSnapshot.test.mjs src/shared/ui/markdown/useMessageLinkPreviews.test.mjs`；Web `node node_modules/vitest/vitest.mjs run src/features/chat/ui/MessageContent.test.tsx --pool=threads --maxWorkers=1`；shared `node node_modules/vitest/vitest.mjs run test/settings.test.tsx --pool=threads --maxWorkers=1`；类型检查为各自 `node node_modules/typescript/bin/tsc --noEmit` 及 shared `-p tsconfig.test.json`。
+负向仅在私有 Native 安装的真实共享 parser 将 `return typeof host === "string" ? url : host(sha256)` 改为 `return url`；`negative-resolver.log` 7pass/1fail、exit1，`the Web host receives only matching original blob hashes, never an authored URL` 实际断言抓住绕过 hash resolver，不是编译错误或 0case。还原真实实现后 `restored-resolver.log` 8/8、exit0。
+尚未验收：新 Web gallery DOM 交互、新版浏览器媒体读取及截图、Windows 实机与 Mobile；未部署或发布新版包。后续完整视频审阅模块属于独立进行中的批次，不混入上述 9 源补丁，也不能把旧 4c 页面当此批新证据。

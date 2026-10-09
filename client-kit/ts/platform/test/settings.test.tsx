@@ -37,7 +37,7 @@ import type { BffRequest } from "../src/transport";
 import { ThreadLayoutSetting } from "../src/react/thread-layout-settings";
 import { FocusThreadDrawer } from "../src/react/messages/thread/FocusThreadDrawer";
 import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "../src/react/messages/thread/threadViewModePreference";
-import { parseLinkPreviewSnapshots, parseLinkPreviewTextSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
+import { parseLinkPreviewSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
 import { Sidebar, SidebarProvider, SidebarTrigger } from "../src/react/sidebar/sidebar";
 
 function SettingsPage(props: ComponentProps<typeof SettingsPageView>) {
@@ -221,7 +221,7 @@ describe("shared Buzz settings presentation", () => {
   it("applies the original link-preview setting to a real mounted message card", async () => {
     const href = "https://example.com/product";
     const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Full description", "", "", "", ""];
-    const preview = parseLinkPreviewTextSnapshots([snapshot], href)[0]!;
+    const preview = parseLinkPreviewSnapshots([snapshot], href, "https://relay.example")[0]!;
     setLinkPreviewStyle("compact");
     function Message() {
       const style = useLinkPreviewStyle();
@@ -237,18 +237,24 @@ describe("shared Buzz settings presentation", () => {
     expect(expand.getAttribute("aria-expanded")).toBe("false");
     expect(host.querySelector('[data-testid="message-preview"]')?.textContent).not.toContain("Full description");
   });
-  it("does not infer a media origin for Web snapshot text or relax Native validation", () => {
+  it("resolves Web snapshot media only by hash without relaxing Native origin validation", () => {
     const href = "https://example.com/product";
     const hash = "a".repeat(64);
-    const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Description", `https://untrusted.example/media/${hash}.png`, hash, "https://untrusted.example/favicon.png", hash];
-    const text = parseLinkPreviewTextSnapshots([snapshot], href);
-    expect(text).toHaveLength(1);
-    expect(text[0]).toMatchObject({ title: "Product", imageDataUrl: null, faviconDataUrl: null, imageState: "none" });
-    expect(parseLinkPreviewSnapshots([snapshot], href, "https://relay.example")).toEqual([]);
+    const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Description", `https://relay.example/media/${hash}.png`, hash, "", ""];
+    const resolveMedia = vi.fn((sha256: string) => `/api/v1/workspaces/current/media/${sha256}`);
+    const previews = parseLinkPreviewSnapshots([snapshot], href, resolveMedia);
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatchObject({ title: "Product", imageDataUrl: `/api/v1/workspaces/current/media/${hash}`, faviconDataUrl: null, imageState: "image" });
+    expect(resolveMedia).toHaveBeenCalledExactlyOnceWith(hash);
+    expect(parseLinkPreviewSnapshots([snapshot], href, "https://different.example")).toEqual([]);
+    const badFavicon = [...snapshot];
+    badFavicon[9] = "https://untrusted.example/favicon.png";
+    badFavicon[10] = hash;
+    expect(parseLinkPreviewSnapshots([badFavicon], href, resolveMedia)).toEqual([]);
     expect(parseLinkPreviewSnapshots([snapshot], href, null)).toEqual([]);
-    expect(parseLinkPreviewTextSnapshots([snapshot], "unrelated content")).toEqual([]);
-    expect(parseLinkPreviewTextSnapshots([snapshot], `||${href}||`)).toEqual([]);
-    expect(parseLinkPreviewTextSnapshots([[...snapshot.slice(0, 2), "unknown", ...snapshot.slice(3)]], href)).toEqual([]);
+    expect(parseLinkPreviewSnapshots([snapshot], "unrelated content", resolveMedia)).toEqual([]);
+    expect(parseLinkPreviewSnapshots([snapshot], `||${href}||`, resolveMedia)).toEqual([]);
+    expect(parseLinkPreviewSnapshots([[...snapshot.slice(0, 2), "unknown", ...snapshot.slice(3)]], href, resolveMedia)).toEqual([]);
   });
   it("updates a memoized Buzz primitive and honors an explicit host locale", async () => {
     localStorage.clear();
