@@ -340,3 +340,56 @@ app/session 均 HTTP 302 到既有 OIDC。其余 27 个 Compose 容器的 ID/ima
 `receipt.md` SHA-256 为
 `7b6dacfa3db39ffb0b111d8b8b0557a6a05d66665d8fa1c5e27b107ab20731ea`。
 此处新增的是 Web 投递和 HTTP 观察，不是浏览器登录 E2E、Win11/手机安装或 Agent 首轮验收。
+
+### 2026-10-09 Core 凭据失效后的同镜像恢复
+
+本次是 DD-70 原运行恢复，不是 `f1862706d4a9d3de146e316f12f0730293c8eac7`
+新源码发布。实际 `docker inspect platform-local-core-bff-1` 返回 exited、exit 1、
+OOMKilled=false，结束时间为 18:05:32 UTC。原末段日志显示 OpenBao renew-self 请求
+失败，随后 service token 失效，Core 拒绝继续运行；退出时 audit/platform/provisioner
+撤销请求未获确认。该事实不证明旧 token 已撤销，不以新投递代替撤销证据。
+当时同一宿主数据库与 Temporal 请求也变慢；资源压力是观察结果，不冒称唯一根因。
+
+恢复前 OpenBao、Core 数据库、Temporal、SpiceDB 四容器均 running/healthy。
+停止容器与当前 Compose 的 Core digest 精确相同：
+`sha256:e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65`。
+在 apps 根执行原 `deploy/local/start-core.sh --no-build`，经现有受控文件重新取得
+三份一次性 wrapping，实际退出 0；没有直接 restart、复用旧 wrapping、编译、迁移、
+新建身份或人工更改 UNKNOWN。新 Core 的 StartedAt 为 19:32:31 UTC，仍是上述 digest；
+启动日志确认三个 service token 换取成功、audit device 启用和监听建立。
+
+健康探针从当前 `.env` 的 BFF_CONTAINER_PORT 与 `docker port` 的实际宿主绑定取地址，
+运行 `curl --fail --silent --show-error --output /dev/null --write-out 'HTTP %{http_code}'`
+访问该地址的 `/healthz`，真实返回 HTTP 200、退出 0。
+两个既有 Agent 随后仍出现初始化 DependencyUnavailable，其中一个 initialize RPC
+READ/TIMEOUT；未制造完成结果、清理 lease 或重放任务。因此此记录只证明 Core 进程与
+HTTP 健康恢复，不证明 Agent 协作、业务组件、浏览器会话、旧 token 撤销或一期发布完成。
+未重跑工程 full：此前 full 的 exit 1 与源/产物不一致仍有效；此次未增加镜像或安装包。
+
+20:29 UTC 续查不能沿用上述健康结果：同一 Core 已于 19:51:27 UTC 再次 exit 1、
+OOMKilled=false。末段仍为 renew-self 不可达、service token 失效与撤销未确认；
+OpenBao 同时留有 OIDC key 操作 context deadline exceeded。UI 的正常原账号登录
+后实际 `/api/v1/session` 为 503，不能把 IdP 登录成功等同可进入频道。
+当时健康恢复不构成稳定运行证据。
+
+本次重投递前宿主 MemAvailable=27623404 kB，memory PSI avg10=0，IO PSI
+some avg10=3.49 / full avg10=3.04；这些是观察，不推定故障已根治。再次执行同一
+`deploy/local/start-core.sh --no-build`，原句柄 80785 实际退出 0，Core
+StartedAt=2026-10-09T20:29:51.838385181Z，image 仍为上述 e78afc digest。
+再次从实际绑定执行 `/healthz` 得 HTTP 200、退出 0。没有修改 token 生命周期、
+权限、业务状态或重试外部动作；旧 token 撤销与连续稳定会话仍未被该探针证明。
+
+随后经原账号正常 SSO，playwright-cli 真实读取 `/api/v1/session` 为 HTTP 200 / FULL，
+现有频道显示「已同步」、历史消息与两张图片；从原个人菜单进入 Settings，Profile
+真实读取成功。本次未发送消息、修改资料、上传头像或修改权限。主线与页面执行者均打开
+以下两张截图作视觉复核，未以 DOM 代替截图。两图均在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/sent-from-thread-20261009.MXo6jp/`：
+
+- `core-recovery-channel-4c-20261009.png`，SHA-256
+  `91c4c73d588a3a3ce8af1c633eb76dff4cdc2bc4c6021dad9473db66a7bb6ba3`。
+- `core-recovery-settings-4c-20261009.png`，SHA-256
+  `34878722728e71cf208fd30e8b347b2f0fbd0f61bd893f474743e7f75bfd2c71`。
+
+浏览器 build-info 仍对应 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，不是
+`f1862706…` 或其后源码。这两页证明旧发布的会话与读取在本次恢复后可用，不证明
+全页面还原、最新 Cells/Wren 功能、三用户多 Agent 持续协作或 Windows/Mobile 验收。

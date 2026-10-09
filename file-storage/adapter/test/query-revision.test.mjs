@@ -2177,7 +2177,8 @@ async function nativeDownloadFixture(failure, mobile = false) {
         }
         putObject(params, callback) {
           state.writes.push(JSON.parse(JSON.stringify(params)));
-          callback(null);
+          if (state.holdWrite) { state.writeCallback = callback; return; }
+          callback(failure === 'write' ? new Error('native write result unconfirmed') : null);
         }
       } };
     },
@@ -2886,6 +2887,84 @@ test('original native editors never consume another scope or moved node from a l
     assert.equal(state.reads.length, 1);
     assert.deepEqual(state.errors, [{kind:'ERROR',message:'native read result unconfirmed'}]);
   });
+});
+
+test('original native editor saves freeze the target before refresh and never retarget a dispatched PUT', async t => {
+  for (const phase of ['token', 'loader', 'ACK', 'error ACK']) {
+    for (const change of ['move', 'uuid', 'repository', 'user', 'user id', 'slug', 'removed repository']) {
+      await t.test(`${phase}/${change}`, async () => {
+        const {api, node, state, pydio, repositories} = await nativeDownloadFixture();
+        let release;
+        if (phase === 'token') state.tokenPending = new Promise(resolve => {release = resolve;});
+        if (phase === 'loader') state.loaderPending = new Promise(resolve => {release = resolve;});
+        if (phase.endsWith('ACK')) state.holdWrite = true;
+        const completed = [];
+        const request = api.postPlainTextContent(node, 'original edited content', value => completed.push(value));
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(completed, []);
+        if (change === 'move') node.path = '/moved/file.txt';
+        if (change === 'uuid') node.getMetadata().set('uuid', ids[4]);
+        if (change === 'repository') node.getMetadata().set('repository_id', ids[10]);
+        if (change === 'user') pydio.user = {...pydio.user};
+        if (change === 'user id') pydio.user.id = 'different-native-user';
+        if (change === 'slug') repositories.set(ids[9], {getSlug:() => 'changed-documents'});
+        if (change === 'removed repository') repositories.delete(ids[9]);
+        if (release) release();
+        if (phase.endsWith('ACK')) state.writeCallback(phase === 'error ACK' ? new Error('late native PUT result unconfirmed') : null);
+        await request;
+        assert.equal(state.writes.length, phase.endsWith('ACK') ? 1 : 0);
+        for (const write of state.writes) assert.deepEqual(write,
+          {Bucket:'io', Key:'documents/folder/file.txt', Body:'original edited content'});
+        assert.deepEqual(completed, phase.endsWith('ACK') ? [] : [false]);
+        assert.deepEqual(state.errors, phase.endsWith('ACK') ? [] : [{kind:'ERROR',message:pydio.MessageHash[391]}]);
+      });
+    }
+  }
+  await t.test('explicit original workspace remains valid when an unrelated active workspace changes', async () => {
+    const {api, node, state} = await nativeDownloadFixture();
+    node.getMetadata().set('repository_id', ids[9]);
+    state.holdWrite = true;
+    const completed = [];
+    const request = api.postPlainTextContent(node, 'original edited content', value => completed.push(value));
+    await new Promise(resolve => setImmediate(resolve));
+    state.activeRepository = ids[10];
+    state.writeCallback(null);
+    await request;
+    assert.deepEqual(completed, ['Ok']);
+    assert.equal(state.writes.length, 1);
+    assert.equal(state.writes[0].Key, 'documents/folder/file.txt');
+    assert.deepEqual(state.errors, []);
+  });
+});
+
+test('original four native editor save actions consume the actual PUT ACK once without automatic retry', async t => {
+  for (const editor of ['editor.text','editor.codemirror','editor.ckeditor','editor.bnote']) {
+    for (const failure of [undefined, 'write', 'token', 'loader']) await t.test(`${editor}/${failure ?? 'ACK'}`, async () => {
+      const {api, node, state, pydio} = await nativeDownloadFixture(failure);
+      const source = await readFile(new URL(`../../frontend/assets/${editor}/res/js/actions.js`, import.meta.url), 'utf8');
+      const messages = [];
+      const onSave = runInNewContext(source.replace(/^import .+$/gm, '').replace(/export const /g, 'const ') + '\nonSave;', {
+        pydio,
+        Pydio:{getInstance:() => ({ApiClient:api}), getMessages:() => ({115:'original saved message',210:'original native save error'}),
+          requireLib:() => ({EditorActions:{tabModify:value => value}})},
+      });
+      pydio.ApiClient = api;
+      if (!['token','loader'].includes(failure)) state.holdWrite = true;
+      const request = onSave({tab:{id:'original-editor-tab', node, content:'original edited content'},dispatch:value => messages.push(value)})();
+      await new Promise(resolve => setImmediate(resolve));
+      if (state.holdWrite) {
+        assert.deepEqual(messages, []);
+        state.writeCallback(failure === 'write' ? new Error('native write result unconfirmed') : null);
+      }
+      await request;
+      const expected = editor === 'editor.ckeditor'
+        ? failure ? [{id:'original-editor-tab',error:'There was an error while saving'}] : []
+        : [{id:'original-editor-tab',message:failure ? 'original native save error' : 'original saved message'}];
+      assert.deepEqual(JSON.parse(JSON.stringify(messages)), expected);
+      assert.equal(state.writes.length, ['token','loader'].includes(failure) ? 0 : 1);
+      assert.equal(state.errors.length, failure ? 1 : 0);
+    });
+  }
 });
 
 test('original native signing failures reject or reach the existing UI without hanging a download', async t => {

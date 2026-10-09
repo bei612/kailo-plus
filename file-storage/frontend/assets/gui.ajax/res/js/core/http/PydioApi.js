@@ -546,24 +546,30 @@ class PydioApi{
 
     postPlainTextContent(node, content, finishedCallback){
 
-        return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
-            return awsLoader().then(({S3}) => {
-                const params = {
-                    Bucket: this.getBucket(),
-                    Key: this.getSlugForNode(node) + node.getPath(),
-                    Body: content,
-                };
-                const s3 = new S3(this.s3Options(jwt));
-                s3.putObject(params, (err) => {
-                    if (err) {
-                        this.getPydioObject().UI.displayMessage('ERROR', err.message);
-                        finishedCallback(false);
-                    } else {
-                        finishedCallback('Ok');
+        let target, dispatched = false;
+        return new Promise(resolve => resolve(this.getVersionTarget(node))).then(frozen => {
+            target = frozen;
+            return PydioApi.getRestClient().getOrUpdateJwt().then(jwt =>
+                awsLoader().then(({S3}) => new Promise((resolve, reject) => {
+                    if (!this.isVersionTargetCurrent(node, target)) {
+                        throw new Error(this.getPydioObject().MessageHash[391]);
                     }
-                })
-            })
+                    const params = {
+                        Bucket: this.getBucket(),
+                        Key: target.slug + target.path,
+                        Body: content,
+                    };
+                    const s3 = new S3(this.s3Options(jwt));
+                    dispatched = true;
+                    s3.putObject(params, err => err ? reject(err) : resolve());
+                }))
+            ).then(() => {
+                if (this.isVersionTargetCurrent(node, target)) finishedCallback('Ok');
+            });
         }).catch(error => {
+            // A late native ACK belongs to the old editor's target. Do not
+            // report success/failure in a different user's or node's editor.
+            if (dispatched && !this.isVersionTargetCurrent(node, target)) return;
             this.getPydioObject().UI.displayMessage('ERROR', error.message || error);
             finishedCallback(false);
         });

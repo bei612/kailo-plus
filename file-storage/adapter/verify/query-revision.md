@@ -3490,3 +3490,67 @@ native Go 镜像证明本批浏览器已采用。原独立页面/ACL、平台 S3
 原 `./tools/check-docs.sh` 首轮实际 exit 2：
 `容器执行拒绝：必须由执行配置提供 TMPDIR`，七项文档检查未启动；未把
 host launcher 拒绝记为通过，合批文档门禁仍需沿主线已投递运行配置执行。
+
+## 2026-10-09 原四编辑器保存目标与 native PUT ACK 消费
+
+本批相对 `f1862706d4a9d3de146e316f12f0730293c8eac7`，只改原
+`PydioApi.postPlainTextContent`、原 `query-revision.test.mjs` 与本节。
+这不是通用 `file_storage.write` 或首次上传接通，不修改平台准入、Task、
+版本、quota、批准记录或原生独立页面布局。
+
+1. 权威为 `.design/07` §4.6 的真实当前主体/业务请求及 §5 的外部副作用
+   边界；固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::postPlainTextContent`
+   在 JWT/loader 返回后才从可变 node 重算写目标。这是固定上游已有消费者
+   缺口，本批按已授权身份/目标接入修复，不声称该方法原样字节一致。
+2. 实际调用者为原 `editor.text`、`editor.codemirror`、`editor.ckeditor`、
+   `editor.bnote` 的 `res/js/actions.js::onSave`；四文件与固定上游字节
+   一致，未改页面、文案或 callback 约定。复用既有 `getVersionTarget` 与
+   `isVersionTargetCurrent`：等待 JWT/原 AWS loader 前冻结目标，发送前核对，
+   Key 不再转向新的路径/仓库/用户。返回 Promise 现在等待原 PUT callback，
+   原 `'Ok'` 只在同目标收到成功 ACK 后交给原编辑器。
+3. 已派发 PUT 的晚 ACK/error 不更新已经改变的用户或节点编辑器，也不重新
+   PUT；这不裁定原写未执行，不把本机 callback 转换成平台成功/失败。
+   同目标的 token/loader/native 错误继续原独立 UI 错误表现；原网络全 ACK
+   丢失没有确定性查询，本批没有创造 UNKNOWN 状态/重试队列或宣称其已收敛。
+4. 实际覆盖等待 token/loader、成功/错误 ACK 时的移动、UUID 替换、仓库
+   换绑/卸载、slug 和用户对象/id 变化；显式所属仓库不受无关 active
+   workspace 切换影响。原四 `onSave` 消费者确认 ACK 前无已保存提示，错误
+   沿原 callback 表现且不自动重复写入。无 schema/持久状态/迁移；平台
+   S3 禁写、首次上传 CAS/writer 终结、Task 退休与七必选批准门禁未解除。
+
+复用 `kailo-wren-query-sdk-itgs2n` 的原 4 CPU/4 GiB、UID 1000，候选仍为
+`/work/knowledge-observation-guard.8QFEVq`；与 Wren 原两套 Jest 的 I/O
+等待进程重叠，不冒称独占。preflight memory.current=485011456，宿主
+MemAvailable=26660728 kB，memory PSI avg10=0；cgroup max/oom/oom_kill
+全 0。只同步实际源闭包、原四 actions 与既有 fixture，无依赖安装、
+新 SDK、Go、镜像或 full。
+
+原实施后命令（候选 `file-storage/adapter`）：
+
+```text
+node --test --test-name-pattern='original (native (editor saves|history and content consumers|workspace selection failures)|four native editor save actions)' test/query-revision.test.mjs
+```
+
+正向句柄 47352 实际 exit 0：4 顶层、80 子检查，合计 84/84；私有原
+`postPlainTextContent` 的发送前 target 守卫与 ACK target 守卫实际移除后，
+同目标 exit 1：84 项中 22 失败、62 通过（1 顶层与 21 子检查命中），
+不是修改断言或编译失败。恢复原字节后两输入 cmp=0，同目标实际 exit 0、
+84/84。原完整 API class 和四个原 actions 被执行，JWT/S3/browser 为
+fixture，不称真实 HTTP、S3、浏览器或多账号验收。
+
+三日志位于原主机证据目录
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/`：
+
+```text
+ec0c21b99dba2e66e2da53f87a55a910b24121b93befcb6be26846a05e8d3ef6 cells-native-editor-save-positive.log
+fb6aee0ef1a572d89427c43fbce0cd659820c95473bff1b89e1cf44f737a596d cells-native-editor-save-negative.log
+4de1e353fe5de9577dff6b312f65056de4795cdee00b87435eda1569cfb4091b cells-native-editor-save-restored.log
+4a35c9d808b79ab121054726a8d50d443a9c564efd2d05d47db194b07468f0f8 frontend/assets/gui.ajax/res/js/core/http/PydioApi.js
+545061f6604f60abaca4c10b4c5e1f53032e6221fa70b17a055c625b3e6dcbbb adapter/test/query-revision.test.mjs
+```
+
+本批未 bundle/部署/截图，仍是源码与消费者定点证据。另一个正在验证的
+完整 frontend producer 固定 `f1862706…`，未混入本批新保存字节；不得以其
+成功或失败代替本批页面验收。全量/文档门禁未在本批重复运行，沿主线集中
+收口；先前 full 的失败未由这 84 项替代。

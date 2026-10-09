@@ -6380,3 +6380,20 @@ Web threads worker `Timeout waiting for worker to respond`、0 case、exit1，�
 最终12源码补丁 `owned-source-final.patch` SHA256
 `ded118e8237df248fe56bd952b321cf2a824f22fa71a91e37e777ba94101c25f`，reverse-check0；
 唯一改动检查文件 SHA256 `62642175525cd5a05ba7c648ec4ece67dd9c03ad7cb589b9369dbcb779c97079`。
+
+### 原后置终态与无效负例边界
+
+43372 最后 Native tsc 真实 exit0，整轮 exit1；原 shared14/14、shared两tsc0、Native10/10及tsc0不变。
+Web worker timeout／0case、旧检查导入 TS2305／exit2 保留，不把随后单项修正冒作整轮通过。
+59154 私有候选将原来源 `messageId/threadRootId` 从 rootEventId 破坏成 channelId，
+原 `target.sh shared` 又因 threads worker 启动超时执行0case、exit1，不能作为生产保护命中。
+已 apply_patch 精确恢复原 root 字节，与破坏前备份及正式源两次cmp0；不重复此worker目标造绿。
+正式12路径逐项 SHA256 全部OK；纠正后的 ChannelRead检查最小投递私有候选cmp0。
+70849 仅原 Web `tsc --noEmit`／heap3072在途，无重复suite或第二类型进程，未有退出码不算通过。
+原SDK仍4CPU／8GiB，后置 memory.events max16751／oom2／oom_kill2无增量。
+原始负例 `negative-root.log`、最小类型 `final-web-types.log` 在同证据目录；后续终态另行追加。
+
+70849 随后真实 terminal exit0；原命令 `node node_modules/typescript/bin/tsc --noEmit` 经 pipefail控制流捕获，
+不是以0字节日志推断通过。纠正后的 Web 类型通过不改变此前0case／旧TS2305／整轮exit1事实。
+结束后 docker top 仅sleep，memory.events仍原旧值无增量；原SDK验证窗口已释放。
+本批两个新增 Web交互case与有效生产负例仍未验证，没有新版实拍／部署或Windows/Mobile设备验收。
