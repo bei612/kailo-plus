@@ -23,9 +23,10 @@ import {
 import { safeFormatSQL } from '@server/utils/sqlFormat';
 import { isEmpty, isNil } from 'lodash';
 import { replaceAllowableSyntax, validateDisplayName } from '../utils/regex';
-import { Model, ModelColumn } from '../repositories';
+import { Model, ModelColumn, View } from '../repositories';
 import {
   findColumnsToUpdate,
+  getPreviewColumnsStr,
   handleNestedColumns,
   replaceInvalidReferenceName,
   updateModelPrimaryKey,
@@ -1389,7 +1390,51 @@ export class ModelResolver {
     expectedStatement?: string,
   ) {
     const { id: viewId, limit, idempotencyKey, idempotencyScope } = args.where;
-    const config = await loadQueryDelivery();
+    const project = await ctx.projectService.getCurrentProject();
+    const config = await this.metadataConfig(ctx, project.id);
+    if (config === undefined) {
+      if (idempotencyKey !== undefined || idempotencyScope !== undefined)
+        throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+      const row = await (
+        kind === 'model' ? ctx.modelRepository : ctx.viewRepository
+      ).findOneBy({ id: viewId, projectId: project.id });
+      if (!row)
+        throw new Error(
+          kind === 'model' ? 'Model not found' : 'View not found',
+        );
+      if (
+        expectedStatement !== undefined &&
+        (kind !== 'view' || (row as View).statement !== expectedStatement)
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      const { manifest } = await ctx.mdlService.makeCurrentModelMDL(project);
+      let sql: string;
+      if (kind === 'model') {
+        const columns = await ctx.modelColumnRepository.findColumnsByModelIds([
+          row.id,
+        ]);
+        sql = `select ${getPreviewColumnsStr(columns)} from "${(row as Model).referenceName}"`;
+      } else {
+        sql = (row as View).statement;
+      }
+      // Keep the fixed original native preview only while this remains an
+      // independent instance. A new binding cannot adopt its in-flight SQL.
+      const beforeQuery = await ctx.projectService.getCurrentProject();
+      if (beforeQuery.id !== project.id)
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      await this.readableMetadata(ctx, undefined, kind, [row]);
+      const data = await ctx.queryService.preview(sql, {
+        project,
+        manifest,
+        modelingOnly: false,
+        ...(kind === 'view' ? { limit } : {}),
+      });
+      const currentProject = await ctx.projectService.getCurrentProject();
+      if (currentProject.id !== project.id)
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      await this.readableMetadata(ctx, undefined, kind, [row]);
+      return data;
+    }
     const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);
     if (idempotencyScope !== previewScope) {
       throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');

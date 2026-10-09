@@ -53,11 +53,16 @@ export default function useGovernedPreview(
   const sequence = useRef(0);
   const selected = useRef({ kind, id });
   selected.current = { kind, id };
-  const submittedScope = useRef<string>();
+  const submitted = useRef<{
+    selection: { kind: typeof kind; id: number };
+    scope: string | undefined;
+    revision: number;
+  }>();
   const [scopeError, setScopeError] = useState(false);
   const [storageError, setStorageError] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [independentData, setIndependentData] = useState<{
+    kind: 'view' | 'model' | 'response';
     id: number;
     data: any;
   } | null>(null);
@@ -66,7 +71,6 @@ export default function useGovernedPreview(
     const config = await getUserConfig();
     if (
       revision === sequence.current &&
-      kind === 'response' &&
       config.nativeBindingConfigured === false
     )
       return undefined;
@@ -128,6 +132,11 @@ export default function useGovernedPreview(
       return;
     }
     if (scope === undefined) {
+      submitted.current = {
+        selection: { kind, id },
+        scope,
+        revision: sequence.current,
+      };
       const current = sequence.current;
       try {
         const result = await submit({ id });
@@ -143,7 +152,7 @@ export default function useGovernedPreview(
           return;
         }
         if (Array.isArray(result?.columns) && Array.isArray(result?.data))
-          setIndependentData({ id, data: result });
+          setIndependentData({ kind, id, data: result });
       } catch {
         // Independent native errors retain the original mutation error.
       } finally {
@@ -163,7 +172,11 @@ export default function useGovernedPreview(
     }
     setStorageError(false);
     setPreparing(false);
-    submittedScope.current = scope;
+    submitted.current = {
+      selection: { kind, id },
+      scope,
+      revision: sequence.current,
+    };
     try {
       const result = await submit({
         id,
@@ -190,7 +203,12 @@ export default function useGovernedPreview(
   }, [receipt, previewScope, kind, id]);
   const state = queryReceiptState(selectedReceipt);
   const currentError =
-    submittedScope.current === previewScope ? error : undefined;
+    submitted.current?.scope === previewScope &&
+    submitted.current?.revision === sequence.current &&
+    submitted.current?.selection.kind === kind &&
+    submitted.current?.selection.id === id
+      ? error
+      : undefined;
   const currentReceipt = useMemo(() => {
     if (!state.valid || currentError) return undefined;
     // Even a known RUNNING receipt cannot carry an earlier result into a new
@@ -200,7 +218,7 @@ export default function useGovernedPreview(
     return selectedReceipt;
   }, [selectedReceipt, state.valid, state.completed, currentError]);
   const independent =
-    kind === 'response' && independentData?.id === id
+    independentData?.kind === kind && independentData.id === id
       ? independentData.data
       : undefined;
   return {
@@ -211,7 +229,8 @@ export default function useGovernedPreview(
     receipt: currentReceipt,
     // Independent native rows are not a fabricated platform receipt.
     data: independent ?? currentReceipt?.data,
-    pending: state.pending || !!currentError,
+    governed: previewScope !== undefined,
+    pending: state.pending || (previewScope !== undefined && !!currentError),
     completed: (state.completed || !!independent) && !currentError,
     ended: state.ended && !currentError,
     denied: state.denied && !currentError,

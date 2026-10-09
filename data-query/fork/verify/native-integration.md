@@ -7478,3 +7478,121 @@ No image/package/deployment or full check was started in this sub-batch; root
 owns concentrated verification, final diff review, main commit/push and release.
 Dynamic Resource evidence, ordinary-function provenance, trusted SERVICE SQL and
 cross-client native metadata reconciliation remain real release gaps.
+
+## Original independent Model and View previews
+
+Implementation on 2026-10-09; original production consumers are
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::previewNativeData`,
+`wren-ui/src/hooks/useGovernedPreview.ts`, and original
+`ModelMetadata.tsx` / `ViewMetadata.tsx` in
+`wren-ui/src/components/pages/modeling/metadata/`. Checks extend the existing
+`wren-ui/src/nativeProjectScope.test.ts` and `wren-ui/src/viewMetadata.test.ts`;
+the remaining owned paths are this receipt and `docker/README.md`.
+
+### Authority, impact, side effects and boundaries
+
+1. Authority: `.design/07` §4.6 and `.design/08` §6 preserve the complete native
+   independent service and original product, while configured public-service
+   queries retain `SS-WRN-IDENTITY` / `SS-WRN-GOVERNANCE`. At fixed UI
+   `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::previewModelData` uses
+   the native model columns and reference name, `makeCurrentModelMDL`, then
+   `QueryService.preview(sql,{project,modelingOnly:false,manifest})`. It does
+   **not** pass `args.where.limit`. Original `previewViewData` uses the saved
+   statement and passes the requested limit. This batch restores those same
+   original options, not the governed path's default-limit contract.
+2. Impact: an independent branch exists only when the delivery environment and
+   both trusted native identity fields are all undefined. It uses the original
+   repositories with the captured current project's ID, and the existing
+   `MDLService.makeCurrentModelMDL(project)` selected-project consumer. The
+   existing metadata helper fences configuration/identity appearance before
+   SQL and before result return; the current project is also rechecked. The
+   original metadata controls consume the hook's raw data, keep aliases and
+   their full original layout. Stored observation selection now includes
+   kind/ID; the existing submitted ref also includes the same kind/ID and
+   sequence so old native mutation errors cannot attach after focus or selection
+   changes. There is no schema, generated type, persisted row or migration.
+3. Side effects: bound calls still enter `NativeHumanQuery.preview` with the
+   exact current HUMAN, same key/scope, original native task/history and source
+   authorization. A bound retry intent cannot enter standalone SQL. Undefined,
+   empty or invalid identity/delivery is not a default tenant/instance. No
+   Resource, permission authority, query task, registry, workflow, usage ledger
+   or provider-function allowlist was added. Standalone raw data is not a
+   fabricated platform receipt or proof of passed governance.
+4. Boundaries: independent query/provider failures preserve their original native
+   error; a changed project, newly configured binding or changed trusted identity
+   is PRECONDITION and withholds rows, without a repeat query. A configured
+   UNKNOWN preserves the original governed key and observation path. Empty
+   native columns retain the upstream wildcard. Late rows from a different
+   kind/ID, unmounted observation or focus/visibility refresh are not published.
+   The independent result is not a platform terminal-status claim. Dynamic
+   Resource adoption, trusted SERVICE SQL and cross-client metadata UNKNOWN
+   recovery remain unclosed.
+
+The requested ordinary-function provenance was checked against fixed Engine
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0` before selecting this original
+product consumer. In
+`wren-core-legacy/wren-base/src/main/java/io/wren/base/sqlrewrite/analyzer/ExpressionAnalyzer.java::visitFunctionCall`,
+argument/window/filter/order traversal is not a provider/read-effect guarantee.
+`wren-core/core/src/mdl/function.rs::RemoteFunction`,
+`wren-core-py/src/remote_functions.rs::PyRemoteFunction`, and
+`wren-core-py/src/context.rs::get_available_functions` provide native function
+type/signature/description, not trustworthy hidden-source or provider provenance;
+`ibis-server/app/routers/v3/connector.py::functions` consumes that catalog without
+adding those facts. Scalar/aggregate/window classification alone cannot authorize
+an unknown UDF or hidden data access. Those functions remain refused rather than
+being enabled by a guessed COUNT/SUM list. The evidence directory was not executed
+or changed.
+
+### Actual original checks and private production damage
+
+Only the existing `kailo-wren-query-sdk-itgs2n`, canonical `/work` and cached
+dependencies were used, under 4 CPU/4 GiB and
+`NODE_OPTIONS=--max-old-space-size=3072`. The original commands were:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeProjectScope.test.ts src/viewMetadata.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/hooks/useGovernedPreview.ts src/components/pages/modeling/metadata/ModelMetadata.tsx src/components/pages/modeling/metadata/ViewMetadata.tsx src/nativeProjectScope.test.ts src/viewMetadata.test.ts
+```
+
+Logs are retained under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`.
+
+- Original positive handle **58496 exit 0**, from 2026-10-09 03:01:03 UTC:
+  `native-independent-model-preview-positive.log`, **373/373**, 2/2 suites,
+  224.262 s including cold I/O. These include the unchanged prior bound UNKNOWN
+  consumers and new actual independent resolver, original page/alias and hook
+  selection/visibility consumers, not merely mocked configuration fields.
+- Handle **55713 exit 0**: `native-independent-model-preview-types.log` and
+  `native-independent-model-preview-format.log`, original types/format **0**.
+- Private damage **55683 exit 1**: remove the actual SQL-before/return-before
+  `readableMetadata` consumers from `previewNativeData` in the private candidate.
+  `native-independent-model-preview-fence-negative.log` records **5 failed,
+  16 passed**, **192 filtered skips**. A newly delivered binding, identity or
+  token wrongly returned rows, and both late model/view results were exposed;
+  the real resolver-consumer assertions caught all five. No formal source was
+  damaged.
+- Restore that source, then private damage **82433 exit 1**: revert both actual
+  Model/View raw-result consumers to `receipt.data`.
+  `native-independent-model-preview-ui-negative.log` records **2 failed** and
+  **158 filtered skips**. The real original metadata markup lost its native rows
+  and model aliases, exactly the restored consumer regression; no assertion was
+  relaxed. Filtered skips are not passes or acceptance.
+- Exact source restoration: all six formal/SDK source/check inputs `cmp` **0**
+  before and after the last run. Final handle **78309 exit 0**:
+  `native-independent-model-preview-restored.log` **373/373**, 2/2 suites,
+  11.579 s; `native-independent-model-preview-types-final.log` **0** and
+  `native-independent-model-preview-format-final.log` **0**. At
+  2026-10-09 03:07:51 UTC, cgroup CPU was `400000 100000`, memory `4294967296`,
+  all memory events/OOM/kills **0**; afterward the SDK only had its original
+  sleep process.
+
+Repositories, authorization and native query responses are fixtures; the
+original UI consumers execute as SSR/hooks, not browser screenshots. This batch
+does not certify real datasource/provider SQL, a deployed Wren business service,
+ACTIVE binding, iframe, three humans or Desktop/Mobile. No image, database,
+dependency installation, full check, Git index operation or deployment was
+started by this agent. Root retains final full/diff/main commit/push and release
+ownership. Ordinary-function provenance, trusted SERVICE SQL and dynamic native
+Resource evidence remain closed release gaps.

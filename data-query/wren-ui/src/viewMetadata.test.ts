@@ -794,6 +794,169 @@ describe('original API History detail bounded native observation consumers', () 
   );
 });
 
+describe('original independent preview selection and visibility consumers', () => {
+  let hook: ReturnType<typeof useGovernedPreview>;
+  let kind: 'model' | 'view';
+  let id: number;
+  let error: Error | undefined;
+  let stateSlots: any[];
+  let refSlots: any[];
+  let stateIndex: number;
+  let refIndex: number;
+  let effects: Array<() => void | (() => void)>;
+  let listeners: Map<string, () => void>;
+  let cleanup: void | (() => void);
+  let spies: jest.SpyInstance[];
+  let originalWindow: PropertyDescriptor | undefined;
+  let originalDocument: PropertyDescriptor | undefined;
+  const rows = {
+    columns: [{ name: 'customer' }],
+    data: [['original-native-row']],
+  };
+  const render = () => {
+    stateIndex = 0;
+    refIndex = 0;
+    const Consumer = () => {
+      hook = useGovernedPreview(kind, id, mockPreview, undefined, error);
+      return createElement('button', null, 'Original native preview');
+    };
+    renderToStaticMarkup(createElement(Consumer));
+    return hook;
+  };
+  const flush = async () => {
+    for (let index = 0; index < 12; index++) await Promise.resolve();
+  };
+  beforeEach(async () => {
+    kind = 'model';
+    id = 7;
+    error = undefined;
+    stateSlots = [];
+    refSlots = [];
+    effects = [];
+    listeners = new Map();
+    cleanup = undefined;
+    mockConfig
+      .mockReset()
+      .mockResolvedValue({ nativeBindingConfigured: false });
+    mockPreview.mockReset().mockResolvedValue(rows);
+    originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+    originalDocument = Object.getOwnPropertyDescriptor(global, 'document');
+    const events = {
+      addEventListener: (name: string, listener: () => void) =>
+        listeners.set(name, listener),
+      removeEventListener: (name: string) => listeners.delete(name),
+    };
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: events,
+    });
+    Object.defineProperty(global, 'document', {
+      configurable: true,
+      value: { ...events, visibilityState: 'visible' },
+    });
+    const React = require('react');
+    spies = [
+      jest.spyOn(React, 'useState').mockImplementation((initial: any) => {
+        const slot = stateIndex++;
+        if (!(slot in stateSlots)) stateSlots[slot] = initial;
+        return [
+          stateSlots[slot],
+          (value: any) => {
+            stateSlots[slot] = value;
+          },
+        ];
+      }),
+      jest.spyOn(React, 'useRef').mockImplementation((initial: any) => {
+        const slot = refIndex++;
+        if (!(slot in refSlots)) refSlots[slot] = { current: initial };
+        return refSlots[slot];
+      }),
+      jest
+        .spyOn(React, 'useEffect')
+        .mockImplementation((effect: () => void | (() => void)) => {
+          if (!effects.length) effects.push(effect);
+        }),
+    ];
+    render();
+    cleanup = effects[0]();
+    await flush();
+    render();
+  });
+  afterEach(() => {
+    if (typeof cleanup === 'function') cleanup();
+    for (const spy of spies) spy.mockRestore();
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete (global as any).window;
+    if (originalDocument)
+      Object.defineProperty(global, 'document', originalDocument);
+    else delete (global as any).document;
+  });
+  it('publishes original independent rows without claiming platform governance', async () => {
+    await hook.preview();
+    expect(render()).toMatchObject({
+      data: rows,
+      completed: true,
+      governed: false,
+      pending: false,
+    });
+    expect(hook.receipt).toBeUndefined();
+    expect(mockPreview).toHaveBeenCalledWith({ id: 7 });
+  });
+  it.each(['kind', 'id', 'focus', 'visibility', 'unmount'])(
+    'does not publish late independent rows after %s changes the active observation',
+    async (change) => {
+      let resolve: (value: any) => void;
+      mockPreview.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const request = hook.preview();
+      await flush();
+      if (change === 'kind') {
+        kind = 'view';
+        render();
+      }
+      if (change === 'id') {
+        id = 8;
+        render();
+      }
+      if (change === 'focus') listeners.get('focus')();
+      if (change === 'visibility') listeners.get('visibilitychange')();
+      if (change === 'unmount' && typeof cleanup === 'function') cleanup();
+      resolve(rows);
+      await request;
+      await flush();
+      expect(render().data).toBeUndefined();
+      expect(hook.completed).toBe(false);
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['kind', 'id', 'focus', 'visibility'])(
+    'preserves the original native error only for its submitted selection, not after %s',
+    async (change) => {
+      error = new Error('Original provider refusal');
+      mockPreview.mockRejectedValueOnce(error);
+      await hook.preview();
+      expect(render()).toMatchObject({
+        error,
+        governed: false,
+        pending: false,
+        completed: false,
+      });
+      if (change === 'kind') kind = 'view';
+      if (change === 'id') id = 8;
+      if (change === 'focus') listeners.get('focus')();
+      if (change === 'visibility') listeners.get('visibilitychange')();
+      await flush();
+      expect(render().error).toBeUndefined();
+      expect(hook.pending).toBe(false);
+      expect(hook.data).toBeUndefined();
+    },
+  );
+});
+
 describe('original saved-view preview controls', () => {
   const entries = new Map<string, string>();
   const storage = {
@@ -868,6 +1031,21 @@ describe('original saved-view preview controls', () => {
     };
     return renderToStaticMarkup(createElement(ResponsePreview));
   };
+  const renderNativeMetadata = (kind: 'model' | 'view') =>
+    kind === 'view'
+      ? render()
+      : renderToStaticMarkup(
+          createElement(ModelMetadata, {
+            modelId: 7,
+            referenceName: 'orders',
+            displayName: 'Orders',
+            fields: [
+              { referenceName: 'customer', displayName: 'Customer alias' },
+            ],
+            calculatedFields: [],
+            relationFields: [],
+          } as any),
+        );
   const renderSql = (
     sql = 'select original_column from original_model',
     visible = true,
@@ -1943,13 +2121,194 @@ describe('original saved-view preview controls', () => {
         await mockButtons[0].onClick();
         expect(mockPreview).toHaveBeenCalledWith({ id: 21 });
         if (becomesBound)
-          expect(publish).not.toHaveBeenCalledWith({ id: 21, data: rows });
-        else expect(publish).toHaveBeenCalledWith({ id: 21, data: rows });
+          expect(publish).not.toHaveBeenCalledWith({
+            kind: 'response',
+            id: 21,
+            data: rows,
+          });
+        else
+          expect(publish).toHaveBeenCalledWith({
+            kind: 'response',
+            id: 21,
+            data: rows,
+          });
         expect(storage.setItem).not.toHaveBeenCalled();
         expect(storage.removeItem).not.toHaveBeenCalled();
       } finally {
         state.mockRestore();
       }
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'original independent %s Preview consumes native rows with no fabricated scope, receipt or retry key',
+    async (kind) => {
+      const rows = {
+        columns: [{ name: 'customer' }],
+        data: [['original-native-row']],
+      };
+      mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+      const publish = jest.fn();
+      const React = require('react');
+      const original = React.useState;
+      const state = jest
+        .spyOn(React, 'useState')
+        .mockImplementation((initial: any) =>
+          initial === null ? [null, publish] : original(initial),
+        );
+      try {
+        renderNativeMetadata(kind);
+        mockPreview.mockResolvedValueOnce({
+          data: {
+            [kind === 'model' ? 'previewModelData' : 'previewViewData']: rows,
+          },
+        });
+        await mockButtons[0].onClick();
+        expect(mockPreview).toHaveBeenCalledWith({
+          variables: { where: { id: 7 } },
+        });
+        expect(publish).toHaveBeenCalledWith({ kind, id: 7, data: rows });
+        expect(storage.setItem).not.toHaveBeenCalled();
+        expect(storage.removeItem).not.toHaveBeenCalled();
+      } finally {
+        state.mockRestore();
+      }
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'the original independent %s page renders native rows and original aliases, without platform success or pending',
+    (kind) => {
+      const rows = {
+        columns: [{ name: 'customer' }],
+        data: [['original-native-row']],
+      };
+      const React = require('react');
+      const original = React.useState;
+      let independent = false;
+      const state = jest
+        .spyOn(React, 'useState')
+        .mockImplementation((initial: any) => {
+          if (initial === null && !independent) {
+            independent = true;
+            return [{ kind, id: 7, data: rows }, jest.fn()];
+          }
+          return original(initial);
+        });
+      try {
+        const html = renderNativeMetadata(kind);
+        expect(html).toContain('original-native-row');
+        if (kind === 'model') expect(html).toContain('Customer alias');
+        const text = getQueryPreviewText(undefined);
+        expect(html).not.toContain(text.pending);
+        expect(html).not.toContain(text.ended);
+        expect(html).not.toContain(text.denied);
+        expect(mockButtons[0].children).toBe(text.preview);
+      } finally {
+        state.mockRestore();
+      }
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'withholds late original independent %s rows if the configuration becomes bound, without another SQL request',
+    async (kind) => {
+      const rows = {
+        columns: [{ name: 'customer' }],
+        data: [['original-native-row']],
+      };
+      mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+      const publish = jest.fn();
+      const React = require('react');
+      const original = React.useState;
+      const state = jest
+        .spyOn(React, 'useState')
+        .mockImplementation((initial: any) =>
+          initial === null ? [null, publish] : original(initial),
+        );
+      try {
+        renderNativeMetadata(kind);
+        mockPreview.mockImplementationOnce(async () => {
+          mockConfig.mockResolvedValue({
+            nativeBindingConfigured: true,
+            queryScope: mockScope,
+          });
+          return {
+            data: {
+              [kind === 'model' ? 'previewModelData' : 'previewViewData']: rows,
+            },
+          };
+        });
+        await mockButtons[0].onClick();
+        expect(mockPreview).toHaveBeenCalledTimes(1);
+        expect(publish).not.toHaveBeenCalledWith({ kind, id: 7, data: rows });
+        expect(storage.setItem).not.toHaveBeenCalled();
+      } finally {
+        state.mockRestore();
+      }
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'refuses every ambiguous configured state in the original %s Preview rather than calling independent SQL',
+    async (kind) => {
+      renderNativeMetadata(kind);
+      for (const config of [
+        {},
+        { nativeBindingConfigured: '' },
+        { nativeBindingConfigured: 'wrong' },
+        { nativeBindingConfigured: true },
+        { nativeBindingConfigured: true, queryScope: '' },
+        { nativeBindingConfigured: true, queryScope: 'invalid' },
+      ]) {
+        mockConfig.mockResolvedValue(config);
+        await mockButtons[0].onClick();
+      }
+      expect(mockPreview).not.toHaveBeenCalled();
+      expect(storage.setItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'does not render an independent result from another native %s selection or kind',
+    (kind) => {
+      const rows = { columns: [], data: [['another-private-row']] };
+      const React = require('react');
+      const original = React.useState;
+      for (const selection of [
+        { kind, id: 8 },
+        { kind: kind === 'model' ? 'view' : 'model', id: 7 },
+      ]) {
+        let independent = false;
+        const state = jest
+          .spyOn(React, 'useState')
+          .mockImplementation((initial: any) => {
+            if (initial === null && !independent) {
+              independent = true;
+              return [{ ...selection, data: rows }, jest.fn()];
+            }
+            return original(initial);
+          });
+        try {
+          expect(renderNativeMetadata(kind)).not.toContain(
+            'another-private-row',
+          );
+        } finally {
+          state.mockRestore();
+        }
+      }
+    },
+  );
+
+  it.each(['model', 'view'] as const)(
+    'preserves the original independent %s error presentation instead of fabricating an UNKNOWN AE',
+    (kind) => {
+      mockPreviewResult = { error: new Error('Original native query refused') };
+      const html = renderNativeMetadata(kind);
+      const text = getQueryPreviewText(undefined);
+      expect(html).not.toContain(text.pending);
+      expect(html).not.toContain(text.ended);
+      expect(mockButtons[0].children).toBe(text.preview);
     },
   );
 
@@ -2084,7 +2443,13 @@ describe('original saved-view preview controls', () => {
         .spyOn(react, 'useRef')
         .mockImplementation((initial: any) =>
           initial === undefined
-            ? { current: mockScope }
+            ? {
+                current: {
+                  scope: mockScope,
+                  revision: 0,
+                  selection: { kind, id: 7 },
+                },
+              }
             : originalUseRef(initial),
         );
       try {

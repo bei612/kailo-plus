@@ -44,13 +44,13 @@ export default function ModelMetadata(props: Props) {
   const fieldsMap = useMemo(() => keyBy(fields, 'referenceName'), [fields]);
   const previewData = useMemo(() => {
     if (!query.completed) return undefined;
-    const previewModelData = query.receipt?.data;
+    const previewModelData = query.data;
     const columns = (previewModelData?.columns || []).map((column) => {
       const alias = fieldsMap[column.name]?.displayName;
       return { ...column, name: alias || column.name };
     });
     return { ...previewModelData, columns };
-  }, [fieldsMap, query.receipt, query.completed]);
+  }, [fieldsMap, query.data, query.completed]);
 
   return (
     <>
@@ -108,7 +108,9 @@ export default function ModelMetadata(props: Props) {
           onClick={query.preview}
           loading={previewModelDataResult.loading || query.preparing}
         >
-          {query.pending || query.error ? text.check : text.preview}
+          {query.pending || (query.governed && query.error)
+            ? text.check
+            : text.preview}
         </Button>
         {query.storageError ? (
           <Alert type="error" message={text.storageError} />

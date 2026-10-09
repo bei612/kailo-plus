@@ -36,6 +36,216 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
+describe('original independent Model/View preview business consumers', () => {
+  const resolver = new ModelResolver();
+  const project = { id: 7 };
+  const manifest = { models: [{ name: 'orders' }], views: [] };
+  const rows = { columns: [{ name: 'customer' }], data: [['original']] };
+  const config: any = {
+    projectId: project.id,
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: String(project.id),
+  };
+  let previous: string | undefined;
+  let ctx: any;
+  let governed: jest.SpyInstance;
+  const invoke = (kind: 'model' | 'view', where: any = { id: 11, limit: 17 }) =>
+    resolver[kind === 'model' ? 'previewModelData' : 'previewViewData'](
+      null,
+      { where },
+      ctx,
+    );
+  beforeEach(() => {
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    governed = jest
+      .spyOn(NativeHumanQuery.prototype, 'preview')
+      .mockResolvedValue({ terminalStatus: 'UNKNOWN' } as any);
+    ctx = {
+      projectService: { getCurrentProject: jest.fn(async () => project) },
+      modelRepository: {
+        findOneBy: jest.fn(async () => ({
+          id: 11,
+          projectId: project.id,
+          referenceName: 'orders',
+        })),
+      },
+      viewRepository: {
+        findOneBy: jest.fn(async () => ({
+          id: 11,
+          projectId: project.id,
+          statement: 'SELECT customer FROM orders',
+        })),
+      },
+      modelColumnRepository: {
+        findColumnsByModelIds: jest.fn(async () => [
+          { referenceName: 'customer' },
+          { referenceName: 'total' },
+        ]),
+      },
+      mdlService: {
+        makeCurrentModelMDL: jest.fn(async () => ({ manifest })),
+      },
+      queryService: { preview: jest.fn(async () => rows) },
+    };
+  });
+  afterEach(() => {
+    governed.mockRestore();
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+  it.each(['model', 'view'] as const)(
+    'retains the fixed original independent %s SQL, options and raw rows without an AE receipt',
+    async (kind) => {
+      await expect(invoke(kind)).resolves.toBe(rows);
+      expect(
+        ctx[kind === 'model' ? 'modelRepository' : 'viewRepository'].findOneBy,
+      ).toHaveBeenCalledWith({ id: 11, projectId: project.id });
+      expect(ctx.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith(project);
+      expect(ctx.queryService.preview).toHaveBeenCalledTimes(1);
+      expect(ctx.queryService.preview).toHaveBeenCalledWith(
+        kind === 'model'
+          ? 'select "customer","total" from "orders"'
+          : 'SELECT customer FROM orders',
+        {
+          project,
+          manifest,
+          modelingOnly: false,
+          ...(kind === 'view' ? { limit: 17 } : {}),
+        },
+      );
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
+      expect(governed).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps the original model wildcard for no native columns', async () => {
+    ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue([]);
+    await invoke('model');
+    expect(ctx.queryService.preview.mock.calls[0][0]).toBe(
+      'select * from "orders"',
+    );
+  });
+  it.each(['model', 'view'] as const)(
+    'never drops a bound intent into independent %s SQL',
+    async (kind) => {
+      await expect(
+        invoke(kind, {
+          id: 11,
+          idempotencyKey: 'retained-bound-intent',
+          idempotencyScope: 'a'.repeat(64),
+        }),
+      ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['empty', 'invalid', 'identity-only', 'token-only', 'mixed'])(
+    'refuses %s configuration/context rather than falling back to independent SQL',
+    async (fault) => {
+      if (fault === 'empty' || fault === 'invalid') {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+          fault === 'empty' ? '' : 'invalid-fixture';
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(
+            new NativeQueryRefusal(503, 'QUERY_CONFIG_UNAVAILABLE'),
+          );
+      }
+      if (fault === 'identity-only' || fault === 'mixed')
+        ctx.nativeIdentityScope = 'a'.repeat(64);
+      if (fault === 'token-only' || fault === 'mixed')
+        ctx.nativeHumanToken = 'trusted-person';
+      for (const kind of ['model', 'view'] as const)
+        await expect(invoke(kind)).rejects.toThrow();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(governed).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['model', 'view'] as const)(
+    'retains current HUMAN same-key observation for a configured %s, without native SQL fallback',
+    async (kind) => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+      ctx.nativeIdentityScope = 'a'.repeat(64);
+      ctx.nativeHumanToken = 'trusted-person';
+      const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+      const key = '5da4d2d5-4b99-4383-942a-4c6b0f7db0da';
+      await expect(
+        invoke(kind, {
+          id: 11,
+          limit: 17,
+          idempotencyKey: key,
+          idempotencyScope: scope,
+        }),
+      ).resolves.toEqual({ terminalStatus: 'UNKNOWN', previewScope: scope });
+      expect(governed).toHaveBeenCalledWith(
+        'trusted-person',
+        11,
+        17,
+        key,
+        kind,
+        undefined,
+      );
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(ctx.mdlService.makeCurrentModelMDL).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['binding', 'identity', 'token', 'project'])(
+    'refuses an independent preview when %s changes while the original MDL is prepared',
+    async (fault) => {
+      ctx.mdlService.makeCurrentModelMDL.mockImplementation(async () => {
+        if (fault === 'binding')
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+        if (fault === 'identity') ctx.nativeIdentityScope = 'a'.repeat(64);
+        if (fault === 'token') ctx.nativeHumanToken = 'trusted-person';
+        if (fault === 'project')
+          ctx.projectService.getCurrentProject.mockResolvedValue({ id: 8 });
+        return { manifest };
+      });
+      await expect(invoke('view')).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['model', 'view'] as const)(
+    'withholds late independent %s rows after binding delivery, without repeating the original query',
+    async (kind) => {
+      ctx.queryService.preview.mockImplementation(async () => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+        return rows;
+      });
+      await expect(invoke(kind)).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.queryService.preview).toHaveBeenCalledTimes(1);
+      expect(governed).not.toHaveBeenCalled();
+    },
+  );
+  it('withholds rows if the current native project changes during SQL', async () => {
+    ctx.queryService.preview.mockImplementation(async () => {
+      ctx.projectService.getCurrentProject.mockResolvedValue({ id: 8 });
+      return rows;
+    });
+    await expect(invoke('view')).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+    expect(ctx.queryService.preview).toHaveBeenCalledTimes(1);
+  });
+  it('preserves the internal Asking view snapshot before independent SQL', async () => {
+    await expect(
+      resolver.previewViewSnapshotData(
+        { where: { id: 11 } },
+        ctx,
+        'SELECT changed',
+      ),
+    ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+  });
+  it('preserves an original independent provider refusal without fabricating a terminal receipt', async () => {
+    const failure = new Error('Original native query refused');
+    ctx.queryService.preview.mockRejectedValue(failure);
+    await expect(invoke('view')).rejects.toBe(failure);
+    expect(ctx.queryService.preview).toHaveBeenCalledTimes(1);
+    expect(governed).not.toHaveBeenCalled();
+  });
+});
+
 describe('original Save as View consumes the same HUMAN query history', () => {
   const resolver = new ModelResolver();
   const config: any = {

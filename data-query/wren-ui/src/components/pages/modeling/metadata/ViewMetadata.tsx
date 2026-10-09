@@ -31,12 +31,13 @@ export default function ViewMetadata(props: Props) {
     preparing: queryPreparing,
     scopeError: queryScopeError,
     storageError: queryStorageError,
-    receipt: queryReceipt,
+    data: queryData,
     pending: queryPending,
     error: queryError,
     completed: queryCompleted,
     ended: queryEnded,
     denied: queryDenied,
+    governed: queryGoverned,
   } = useGovernedPreview(
     'view',
     viewId,
@@ -137,7 +138,9 @@ export default function ViewMetadata(props: Props) {
           onClick={onPreviewData}
           loading={previewViewDataResult.loading || queryPreparing}
         >
-          {queryPending || queryError ? text.check : text.preview}
+          {queryPending || (queryGoverned && queryError)
+            ? text.check
+            : text.preview}
         </Button>
         {queryStorageError ? (
           <Alert type="error" message={text.storageError} />
@@ -152,7 +155,7 @@ export default function ViewMetadata(props: Props) {
           <PreviewData
             error={queryError}
             loading={previewViewDataResult.loading}
-            previewData={queryCompleted ? queryReceipt?.data : undefined}
+            previewData={queryCompleted ? queryData : undefined}
           />
         </div>
       </div>

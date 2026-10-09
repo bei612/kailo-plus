@@ -1144,3 +1144,27 @@ damages caught and exact restoration. Axios is mocked there; no new UI image,
 live native Ibis/Engine call, datasource, ACTIVE binding or iframe acceptance is
 claimed. Dynamic Resource evidence, ordinary-function provenance and trusted
 SERVICE SQL still remain closed release gaps.
+
+### Original independent Model/View previews
+
+An instance that has never configured `WREN_PLATFORM_QUERY_CONFIG_FILE` and has
+neither trusted HUMAN token nor identity scope retains the original modeling
+preview: the model uses its native column/reference names and original default
+limit; the view uses its original SQL and requested limit. Both use the same
+selected project's native manifest and return the original columns/rows. The
+original Model/View metadata controls consume these raw rows, including model
+column aliases, without inventing a platform receipt or a scope/retry key.
+
+Defined-empty or invalid delivery, partial/mixed identity, or a bound intent never
+falls back to that independent branch. Configured instances still use the
+existing HUMAN query AE, native history, source authorization and same-key UNKNOWN
+observation. A binding or project change during independent preparation or SQL
+withholds the result without executing again. Switching native selection or
+refreshing visibility fences late independent rows and the previous mutation's
+error. No page/control or original standalone operation was removed.
+
+The [Model/View preview receipt](../fork/verify/native-integration.md#original-independent-model-and-view-previews)
+records this source restoration and its precise validation/release boundary.
+It does not establish dynamic native Resource evidence, ordinary-function
+provider provenance, trusted SERVICE SQL, a live instance, ACTIVE binding or
+iframe acceptance.
