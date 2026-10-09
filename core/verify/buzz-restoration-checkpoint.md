@@ -6321,3 +6321,62 @@ memory.events仍原max16751／oom2／oom_kill2，无本批增量。stderr仍有�
 原正向／失败／负向／恢复日志在同目录 settled-*／tail-*／negative-*／restored-ui.log；
 前述owned-source.patch为初始冻结，不能冒称最终检查字节。原full41490仍对应旧efb树／旧计数断言，
 不将最终尾验冒作该full通过。本批邀请／成员卡尚未部署或浏览器实拍，4c截图边界与剩余原版缺项不变。
+
+## 2026-10-09 原 SentFromThreadLine／来源链接共源恢复检查点
+
+权威与影响面：用户 2026-10-07 固定原版一致性决定、DD-75 本机持钥／Web BFF 边界；
+固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/messages/ui/SentFromThreadLine.tsx::SentFromThreadLine`、
+`desktop/src/shared/ui/markdown/MessageLinkPill.tsx::MessageLinkPillContents/segmentLinkLabel`、
+`desktop/src/features/messages/lib/messageLinkLabel.ts::getMessageLinkLabel`。
+真实生产者仍是 Native `desktop/src/features/messages/hooks.ts::useSendMessageMutation` 的原来源 tag；
+Native `MessageRow.tsx` 和 Web `ChannelPane/ChannelThreadPane` 两个实际行消费者共用原呈现主体。
+没有修改 Core、Relay、正文权威、契约、迁移、写准入或读状态；schema／数据兼容迁移无适用对象。
+
+差异逐项边界：原样保留的 shared `messages/sentFromThread.ts` 与固定原路径 blob
+同为 `90076c04c7e3844256dc01762d9efa8894f8e3c4`。
+共享迁移原来源行全部 class、原来源链接 span/button、emoji 分段与仅文本 hover 下划线，
+Native 不再保留重复渲染主体；原默认 MessageLinkPill 的 metadata/tooltip 分支没有迁移或删除。
+授权差异仅中英同源词条和宿主接缝：Web 将当前已准入 native channel 映为其 Workspace 导航 key，
+不从任意 tag 猜另一 scope；保留原线程编辑离开守卫，Native 仍沿原目录和 goChannel。
+缺失需恢复仍包含 Web DM 的来源深链导航、Web 原 send-to-channel 生产者，以及未逐项核验的
+完整 MessageLinkPill 默认分支/其他原页面；不能由本次共享迁移推论这些功能已经完成。
+
+边界：无 channel、无来源或原非法 tag 返回 null；无可用原导航消费者走固定原版非交互 span。
+撤权／中断收回真实按钮；来源 root 使用原 tag 的规范化值，不改为当前行 id，不发明引用权威。
+新显示/导航无外部写副作用、无新状态或重放；目标读取仍沿既有 BFF/原生 Relay 授权路径，
+没有把链接、目录命中或 DOM 显示当权限。原 dirty thread 处理不绕过、不增确认框。
+
+本批相对已封存成员树 `aa078475bf73967cfc6c8e185327b7e112346305`：
+12 源码／检查／生成路径 +294/-118，i18n 与 Dart 仅新增 3 keys，不混前批成员逻辑或继承删除。
+证据目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/sent-from-thread-20261009.MXo6jp`。
+`owned-source.patch` SHA256 `4d86cac8b069b7ae48755635ac3b5224f7d6c8e262ddb2d0500ccdf0ffcea34e`；
+12 输入逐项摘要在 `owned-source-sha256.txt`，原本批 diff-check 0；来源记录没有这两路径的过期 remove 声明。
+
+原受限 SDK `kailo-agent-receipt-xvkujx` 回读 4 CPU/8 GiB、无额外 swap、uid1000，
+使用既有候选/依赖与 Node heap3072；没有安装、镜像、bundle、全检或 GitNexus。
+生成 `tools/gen-platform-i18n.py` 与 --check 均 0。
+62241 首轮共享 message-row 14/14、shared 生产/检查及 Web/Native 四 tsc 均 0；
+Web 原 54 项为 49 通过/5 失败：本批两个 fixture 未按 Relay newest-first 排序被原守卫拒绝，
+另三个旧 mention selector 与现有同源 aria 文案不符；只纠正 fixture 排序和原精确 selector，没有改生产准入。
+首轮 Native helper 命令遗漏现有 test-loader，两个文件启动失败、未执行原 case；该错误原样保留。
+最终 43372 同一串行批，共享 14/14 和 shared 两 tsc 已 0；
+Web threads worker `Timeout waiting for worker to respond`、0 case、exit1，不记通过或放宽超时；
+记录时 Web tsc 在途、Native 原 loader/helper 与最终 tsc 尚未终态，生产负例/精确还原尚未执行。
+原始命令在 `verify.sh`，输出 `positive.log/final-positive.log`；后续真实尾验单独追加，不冒称已通过。
+
+本批没有浏览器新版实拍、没有部署、没有 Windows/Mobile 设备验收。
+当前 4c099 实拍仅证明既有 Profile 的 7 个有效状态，不证明此来源行或新成员卡。
+旧 dd399 全量账 5314 union（1970 原 blob、115 已证共享、0 整文件治理授权、3229 未证明恢复队列）
+仍是旧比较点，不是当前 main 全量功能缺失数或全量验收；本次未重复重导全树。
+
+### 原尾验继续结果与唯一检查导入更正
+
+43372 的 Web tsc 随后真实 exit2：唯一 TS2305 为本批检查误导入不存在的 `i18n.t`；
+只将该原 selector 的导入改为实际 `translateCurrent as t`，其精确文案／assertion与生产11文件不变。
+原 loader/helper 随后 10/10、exit0；记录时该同一句柄最后 Native tsc 仍在途。
+修正后的 Web 类型／两个新 Web case 尚未复验，不用首轮或0case冒称最终通过。
+最终12源码补丁 `owned-source-final.patch` SHA256
+`ded118e8237df248fe56bd952b321cf2a824f22fa71a91e37e777ba94101c25f`，reverse-check0；
+唯一改动检查文件 SHA256 `62642175525cd5a05ba7c648ec4ece67dd9c03ad7cb589b9369dbcb779c97079`。

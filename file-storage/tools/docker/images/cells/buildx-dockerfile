@@ -1,4 +1,19 @@
 # syntax=docker/dockerfile:1.7
+
+# Native GUI sources are embedded by frontend/assets.go at Go compile time.
+# Build the complete original pnpm workspace before that consumer runs, rather
+# than embedding the tracked bundles from an older source revision.
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS frontend
+WORKDIR /src/frontend/assets
+COPY frontend/assets/ ./
+RUN apk add --no-cache bash git && corepack enable
+SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 npm_config_store_dir=/pnpm/store
+RUN --mount=type=cache,id=cells-ui-corepack,target=/root/.cache/node/corepack \
+    --mount=type=cache,id=cells-ui-pnpm,target=/pnpm/store \
+    bash ./build.sh && \
+    mkdir /out && \
+    tar --exclude=node_modules -cf - . | tar -xf - -C /out
 #
 # Pydio Cells native-source container image.
 #
@@ -14,6 +29,10 @@ ARG BUILD_STAMP
 RUN apk add --no-cache git make
 WORKDIR /src
 COPY . .
+# Replace the old embed tree, including obsolete webpack chunks removed by the
+# original production clean rules. Dependency stores never enter the binary.
+RUN rm -rf /src/frontend/assets
+COPY --from=frontend /out/ ./frontend/assets/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \

@@ -1,7 +1,8 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
-import { MessageRowSurface, MessageActionBarSurface, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
+import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +14,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
@@ -22,6 +23,8 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   onAuthorScopeUnavailable?: () => void;
   isFocusMode?: boolean;
   channelName?: string;
+  channelId?: string;
+  onOpenMessageLink?: (link: ParsedMessageLink) => void;
   mentions?: readonly MessageMention[];
   editTarget?: TimelineMessage | null;
   editAuthorPubkey?: string;
@@ -145,6 +148,10 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
     renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply"
+      reference={<SentFromThreadLine channelId={channelId} tags={row.message.tags}
+        renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
+          channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
+          interactive={!unavailable && !interrupted && Boolean(onOpenMessageLink)} onOpenMessageLink={onOpenMessageLink} />} />}
       onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
       reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
       renderIdentity={row.message.pubkey && !unavailable && !interrupted ? (node,kind) => {

@@ -1532,3 +1532,34 @@ shape/status/postprocessor mutations and exact restoration, with final original
 TypeScript and formatting exit **0**. These are source/consumer checks, not
 SERVICE SQL admission, an instance grant, approved binding, business deployment
 or an iframe/multi-user acceptance result.
+
+### Bound HUMAN native access checkpoint
+
+Bound HUMAN native requests no longer treat an IdP instance claim as business
+permission. The original dedicated JWT and stable browser partition remain;
+the original Node `/api/config` consumer now checks the exact binding and
+fresh `discover` authorization through the existing same-binding Core transport.
+Pages, API, Next data, assets and streams reuse that private Node check. Only
+the exact config GET performs it directly; its refusal is a non-2xx response.
+`WREN_UI_ENDPOINT` in the existing UI Compose service is the private same-instance
+Node endpoint, never a URL derived from request Host or a browser input.
+Both binding/query delivery paths are required in bound mode; empty or partial
+delivery never falls back to standalone. The original SERVICE and genuinely
+unbound instance-grant rules remain, not default permission for a registered client.
+The earlier registration receipt's HUMAN instance-claim blocker is therefore
+replaced by this public-authorization consumer; it does not remove actual
+binding, membership, Resource, SecretRef or native deployment prerequisites.
+
+The original REST explanation ID is read from its own confirmed non-SQL
+generation History; the GraphQL planning ID still uses its original task owner.
+Both reuse the original message/done protocol with fresh checks at each frame;
+EOF, cache loss, unconfirmed tasks or revocation do not manufacture completion
+or create another native task. Standalone original handlers remain.
+
+This is a source checkpoint, not acceptance: the original two-suite/type command
+`60299` is still running with no reported cases. Mechanical original Prettier
+write and selected diff whitespace check returned 0; suite, final types and
+private production mutation/restoration have not yet completed. See the
+[bound HUMAN access receipt](../fork/verify/native-integration.md#bound-human-native-access-source-checkpoint).
+No native service start, ACTIVE binding, SERVICE SQL, iframe or three-user
+acceptance is claimed.

@@ -11,13 +11,15 @@ export function getMessageLinkLabel({
   channelName,
   threadExcerpt,
   variant = "default",
+  threadPrefix = MESSAGE_LINK_PREFIX,
 }: {
   channelName: string;
   threadExcerpt?: string | null;
   variant?: MessageLinkLabelVariant;
+  threadPrefix?: string;
 }): string {
   const normalizedExcerpt = threadExcerpt?.trim();
-  const baseLabel = `${MESSAGE_LINK_PREFIX} ${getMessageLinkChannelLabel(channelName)}`;
+  const baseLabel = `${threadPrefix} ${getMessageLinkChannelLabel(channelName)}`;
   if (variant === "sent-from-thread") {
     return normalizedExcerpt ?? baseLabel;
   }

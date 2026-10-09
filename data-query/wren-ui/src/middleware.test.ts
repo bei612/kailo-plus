@@ -15,6 +15,7 @@ import {
   bindingServiceCall,
   loadQueryDelivery,
   NativeQueryDelivery,
+  NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
 
@@ -27,11 +28,15 @@ jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
 describe('native instance identity boundary', () => {
   let server: Server;
+  let nativeServer: Server;
   let keys: Awaited<ReturnType<typeof generateKeyPair>>;
   let settings: Record<string, string>;
+  let privateReply: 'native' | 'redirect' | 'wrong-identity' | 'malformed';
   const originalConfig = process.env.WREN_NATIVE_IDENTITY_JSON;
   const originalAncestors = process.env.KAILO_FRAME_ANCESTORS;
   const originalQueryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const originalBindingConfig = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+  const originalUIEndpoint = process.env.WREN_UI_ENDPOINT;
 
   beforeAll(async () => {
     keys = await generateKeyPair('RS256');
@@ -56,11 +61,104 @@ describe('native instance identity boundary', () => {
       accessValue: randomUUID(),
       publicOrigin: origin,
     };
+    nativeServer = createServer(async (incoming, outgoing) => {
+      try {
+        expect(incoming.method).toBe('GET');
+        expect(incoming.url).toBe('/api/config');
+        expect(incoming.headers.cookie).toBeUndefined();
+        expect(incoming.headers['x-kailo-native-human-token']).toBeUndefined();
+        expect(
+          incoming.headers['x-kailo-native-identity-scope'],
+        ).toBeUndefined();
+        if (privateReply === 'redirect') {
+          outgoing.writeHead(302, { location: settings.publicOrigin }).end();
+          return;
+        }
+        const admitted = await middleware(
+          new NextRequest(`${process.env.WREN_UI_ENDPOINT}${incoming.url}`, {
+            headers: incoming.headers.authorization
+              ? { authorization: incoming.headers.authorization }
+              : {},
+          }),
+        );
+        if (admitted.headers.get('x-middleware-next') !== '1') {
+          outgoing.writeHead(admitted.status, {
+            'content-type': 'application/json',
+          });
+          outgoing.end(await admitted.text());
+          return;
+        }
+        const headers = Object.fromEntries(
+          ['human-token', 'identity-scope'].map((field) => [
+            `x-kailo-native-${field}`,
+            admitted.headers.get(
+              `x-middleware-request-x-kailo-native-${field}`,
+            ),
+          ]),
+        );
+        const response = {
+          setHeader: (name: string, value: string) =>
+            outgoing.setHeader(
+              name,
+              name === 'x-kailo-native-identity-scope' &&
+                privateReply === 'wrong-identity'
+                ? 'f'.repeat(64)
+                : value,
+            ),
+          status: (status: number) => {
+            outgoing.statusCode = status;
+            return response;
+          },
+          json: (body: unknown) => {
+            outgoing.setHeader('content-type', 'application/json');
+            outgoing.end(
+              JSON.stringify(privateReply === 'malformed' ? null : body),
+            );
+          },
+        };
+        await configHandler({ method: 'GET', headers } as any, response as any);
+      } catch {
+        outgoing.writeHead(503).end();
+      }
+    });
+    await new Promise<void>((resolve) =>
+      nativeServer.listen(0, '127.0.0.1', resolve),
+    );
   });
 
   beforeEach(() => {
+    privateReply = 'native';
     process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify(settings);
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+    process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
+    process.env.WREN_UI_ENDPOINT = `http://127.0.0.1:${(nativeServer.address() as AddressInfo).port}`;
+    const delivery = {
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: settings.accessValue,
+      nativeScopeRef: 'original-project',
+    } as NativeQueryDelivery;
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(delivery);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (config, operation, input, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBeTruthy();
+        expect(input).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        });
+        return {
+          scope: {
+            ...config,
+            permission: 'discover',
+            generation: 2,
+            checkedRevision: 'current-public-authority',
+          },
+        };
+      });
     delete process.env.KAILO_FRAME_ANCESTORS;
   });
 
@@ -68,6 +166,11 @@ describe('native instance identity boundary', () => {
     if (originalQueryConfig === undefined)
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalQueryConfig;
+    if (originalBindingConfig === undefined)
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = originalBindingConfig;
+    if (originalUIEndpoint === undefined) delete process.env.WREN_UI_ENDPOINT;
+    else process.env.WREN_UI_ENDPOINT = originalUIEndpoint;
     if (originalAncestors === undefined)
       delete process.env.KAILO_FRAME_ANCESTORS;
     else process.env.KAILO_FRAME_ANCESTORS = originalAncestors;
@@ -76,6 +179,9 @@ describe('native instance identity boundary', () => {
     else process.env.WREN_NATIVE_IDENTITY_JSON = originalConfig;
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await new Promise<void>((resolve, reject) =>
+      nativeServer.close((error) => (error ? reject(error) : resolve())),
     );
   });
 
@@ -111,6 +217,192 @@ describe('native instance identity boundary', () => {
     '/',
     '/setup/connection',
     '/api/graphql',
+    '/api/v1/knowledge/instructions',
+    '/api/v1/knowledge/sql_pairs/42',
+    '/api/ask_task/streaming',
+    '/api/ask_task/streaming_answer',
+    '/api/v1/stream/ask',
+    '/api/v1/stream_explanation',
+    '/_next/data/native/index.json',
+    '/_next/static/native.js',
+  ])(
+    'bound HUMAN %s consumes the original Node fresh discover instead of an IdP grant',
+    async (path) => {
+      const signed = await token({}, [settings.accessClaim]);
+      const admitted = await middleware(request(path, `Bearer ${signed}`));
+      expect(admitted.headers.get('x-middleware-next')).toBe('1');
+      const delivery =
+        await jest.mocked(loadQueryDelivery).mock.results[0].value;
+      expect(bindingServiceCall).toHaveBeenCalledTimes(1);
+      expect(bindingServiceCall).toHaveBeenCalledWith(
+        delivery,
+        'human-action',
+        {
+          bindingId: delivery.bindingId,
+          authorizeScope: { permission: 'discover' },
+        },
+        signed,
+      );
+      // The signed storage partition remains stable when the former entitlement
+      // is no longer the bound HUMAN business-access authority.
+      const claimed = await middleware(
+        request(path, `Bearer ${await token({ sub: 'same-person' })}`),
+      );
+      const unclaimed = await middleware(
+        request(
+          path,
+          `Bearer ${await token({ sub: 'same-person' }, [settings.accessClaim])}`,
+        ),
+      );
+      if (
+        claimed.headers.has(
+          'x-middleware-request-x-kailo-native-identity-scope',
+        )
+      )
+        expect(
+          unclaimed.headers.get(
+            'x-middleware-request-x-kailo-native-identity-scope',
+          ),
+        ).toBe(
+          claimed.headers.get(
+            'x-middleware-request-x-kailo-native-identity-scope',
+          ),
+        );
+    },
+  );
+
+  it.each([401, 403, 409, 412, 503])(
+    'propagates Core discover refusal %s without granting a bound native page',
+    async (status) => {
+      const signed = await token();
+      expect((await middleware(request('/', `Bearer ${signed}`))).status).toBe(
+        200,
+      );
+      jest
+        .mocked(bindingServiceCall)
+        .mockRejectedValue(
+          new NativeQueryRefusal(status, 'QUERY_SCOPE_DENIED'),
+        );
+      const response = await middleware(request('/', `Bearer ${signed}`));
+      expect(response.status).toBe(status);
+      expect(response.headers.get('x-middleware-next')).toBeNull();
+    },
+  );
+
+  it.each(['redirect', 'wrong-identity', 'malformed'] as const)(
+    'rejects the private native authorization reply %s',
+    async (mode) => {
+      privateReply = mode;
+      const response = await middleware(
+        request('/api/graphql', `Bearer ${await token()}`),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('x-middleware-next')).toBeNull();
+    },
+  );
+
+  it.each([
+    undefined,
+    '',
+    ' ',
+    '/relative',
+    'https://user:pass@host.invalid',
+    'https://host.invalid/path',
+    'https://host.invalid?query',
+  ])(
+    'does not derive the private Node authority from request Host when endpoint is %p',
+    async (value) => {
+      if (value === undefined) delete process.env.WREN_UI_ENDPOINT;
+      else process.env.WREN_UI_ENDPOINT = value;
+      const response = await middleware(
+        request('/', `Bearer ${await token()}`),
+      );
+      expect(response.status).toBe(503);
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['query-empty', 'binding-empty', 'query-missing', 'binding-missing'])(
+    'fails closed for partially configured bound runtime %s',
+    async (kind) => {
+      if (kind === 'query-empty')
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+      if (kind === 'binding-empty')
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '';
+      if (kind === 'query-missing')
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      if (kind === 'binding-missing')
+        delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+      const response = await middleware(
+        request('/api/config', `Bearer ${await token()}`),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('x-middleware-next')).toBeNull();
+      const native: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      await configHandler({ method: 'GET', headers: {} } as any, native);
+      expect(native.status).toHaveBeenCalledWith(503);
+      expect(native.json).not.toHaveBeenCalledWith(
+        expect.objectContaining({ nativeBindingConfigured: false }),
+      );
+    },
+  );
+
+  it('the exact config GET itself must consume fresh discover and cannot return 200 on refusal', async () => {
+    const signed = await token({}, [settings.accessClaim]);
+    const admitted = await middleware(
+      request('/api/config', `Bearer ${signed}`),
+    );
+    expect(admitted.headers.get('x-middleware-next')).toBe('1');
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+    const headers = Object.fromEntries(
+      ['human-token', 'identity-scope'].map((field) => [
+        `x-kailo-native-${field}`,
+        admitted.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+      ]),
+    );
+    jest
+      .mocked(bindingServiceCall)
+      .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+    const native: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    await configHandler({ method: 'GET', headers } as any, native);
+    expect(native.status).toHaveBeenCalledWith(403);
+    expect(native.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryScope: expect.any(String) }),
+    );
+  });
+
+  it('keeps a genuinely never-configured original config response and does not manufacture a governance scope', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    const native: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    await configHandler({ method: 'GET', headers: {} } as any, native);
+    expect(native.status).toHaveBeenCalledWith(200);
+    expect(native.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nativeBindingConfigured: false,
+        queryScope: undefined,
+        nativeBindingGeneration: undefined,
+      }),
+    );
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/',
+    '/setup/connection',
+    '/api/graphql',
     '/api/config',
     '/api/platform-query-reference',
     '/api/v1/run_sql',
@@ -121,6 +413,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/models',
     '/api/v1/generate_sql',
     '/api/v1/stream/generate_sql',
+    '/api/v1/stream_explanation',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
     '/api/v1/knowledge/instructions',
@@ -148,6 +441,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/models',
     '/api/v1/generate_sql',
     '/api/v1/stream/generate_sql',
+    '/api/v1/stream_explanation',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
   ])(
@@ -184,6 +478,7 @@ describe('native instance identity boundary', () => {
           '/api/v1/models',
           '/api/v1/generate_sql',
           '/api/v1/stream/generate_sql',
+          '/api/v1/stream_explanation',
           '/api/config',
           '/api/platform-query-reference',
           '/api/v1/knowledge/sql_pairs',
@@ -316,7 +611,7 @@ describe('native instance identity boundary', () => {
       expect(original.status).toHaveBeenLastCalledWith(200);
       expect(original.json).toHaveBeenCalledWith(frozen);
       expect(reference).toHaveBeenCalledWith(resourceId, 7, 10);
-      expect(bindingServiceCall).toHaveBeenCalledTimes(4);
+      expect(bindingServiceCall).toHaveBeenCalledTimes(5);
 
       // Config A before/after cannot turn this intervening verified B request
       // into A. The existing request filter is bound at the actual handler.
@@ -346,12 +641,14 @@ describe('native instance identity boundary', () => {
     '/api/v1/models',
     '/api/v1/generate_sql',
     '/api/v1/stream/generate_sql',
+    '/api/v1/stream_explanation',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
   ])(
     'does not forward private HUMAN credentials or caller-forged scope to independent %s',
     async (path) => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
       const response = await middleware(
         request(path, `Bearer ${await token()}`, {
           method: 'POST',
@@ -453,7 +750,7 @@ describe('native instance identity boundary', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     };
-    await configHandler({ headers } as any, response);
+    await configHandler({ method: 'GET', headers } as any, response);
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({
         nativeBindingConfigured: true,
@@ -694,6 +991,7 @@ describe('native instance identity boundary', () => {
 
   it('does not forward private instructions credentials for the original independent GET', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
     const response = await middleware(
       request('/api/v1/knowledge/instructions', `Bearer ${await token()}`, {
         headers: {
@@ -951,6 +1249,8 @@ describe('native instance identity boundary', () => {
   ])(
     'does not turn authentication into instance authorization: %p',
     async (access) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
       const bearer = await token({ [settings.accessClaim]: access });
       expect((await middleware(request('/', `Bearer ${bearer}`))).status).toBe(
         403,

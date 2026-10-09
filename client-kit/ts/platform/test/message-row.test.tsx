@@ -1,14 +1,62 @@
 import { expect, it, vi } from "vitest";
 import { act } from "react";
 import { setLocale } from "../src/i18n";
-import { ComposerReplyBanner, MessageRowSurface, MessageActionBarSurface, type TimelineMessage } from "../src/react/messages";
+import { ComposerReplyBanner, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, type TimelineMessage } from "../src/react/messages";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, click } from "./render";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "../src/react/messages";
 import { resolveMessageMentionClipboard } from "../src/react/messages/resolveMentionNames";
 import { buildMentionClipboardHtml, parseMentionClipboardRecords } from "../src/react/composer/features/messages/lib/mentionClipboard";
+import type { ParsedMessageLink } from "../src/react/composer/features/messages/lib/messageLink";
 
 const message: TimelineMessage = { id: "message", pubkey: "author", author: "Alice", body: "Hello", createdAt: 1770000000, depth: 0, time: "", tags: [] };
+
+it("restores the original sent-from-thread reference and exact root navigation with separate emoji hover segments", async () => {
+  const open = vi.fn();
+  const tags = [["buzz:sent-from-thread", " original-root ", " 🧭 Shipping plan "]];
+  const host = await render(<MessageRowSurface message={{ ...message, tags }}
+    renderBody={() => message.body}
+    reference={<SentFromThreadLine channelId="native-channel" tags={tags}
+      renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link} channelLabel="general"
+        threadExcerpt={threadExcerpt} interactive onOpenMessageLink={open} />} />} />);
+  await act(async () => setLocale("en"));
+  const reference = host.querySelector<HTMLElement>('[data-testid="sent-from-thread"]')!;
+  expect(reference.className).toContain("min-h-[var(--inline-chip-min-height)]");
+  expect(reference.textContent).toBe("Sent from thread:🧭 Shipping plan");
+  const link = reference.querySelector<HTMLButtonElement>('button[data-message-link]')!;
+  expect(link.getAttribute("aria-label")).toBe("Open thread in general");
+  expect(link.getAttribute("title")).toBe("🧭 Shipping plan");
+  expect(link.querySelector('[data-message-link-emoji]')?.textContent).toBe("🧭");
+  const text = link.querySelector<HTMLElement>('[data-message-link-text]')!;
+  await act(async () => link.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  expect(text.style.boxShadow).toBe("inset 0 -1px 0 currentColor");
+  expect(link.querySelector<HTMLElement>('[data-message-link-emoji]')?.style.boxShadow).toBe("");
+  await click(link);
+  expect(open).toHaveBeenCalledExactlyOnceWith({channelId: "native-channel", messageId: "original-root", threadRootId: "original-root"});
+  await act(async () => setLocale("zh-CN"));
+  expect(reference.textContent).toBe("发送自线程：🧭 Shipping plan");
+  expect(link.getAttribute("aria-label")).toBe("打开 general 中的线程");
+});
+
+it("retains the original noninteractive reference and localized no-excerpt label without making missing references clickable", async () => {
+  const open = vi.fn();
+  await act(async () => setLocale("zh-CN"));
+  const renderLink = (link: ParsedMessageLink, threadExcerpt: string | null) =>
+    <SentFromThreadLink link={link} channelLabel="general" threadExcerpt={threadExcerpt} interactive={false} onOpenMessageLink={open} />;
+  const host = await render(<SentFromThreadLine channelId="native-channel" tags={[["buzz:sent-from-thread", "root"]]} renderLink={renderLink} />);
+  expect(host.textContent).toBe("发送自线程：线程位于 #general");
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector('[data-message-link]')?.className).toBe("inline-block max-w-80 truncate");
+  await act(async () => setLocale("en"));
+  expect(host.textContent).toBe("Sent from thread:Thread in #general");
+  for (const tags of [[], [["buzz:sent-from-thread", ""]], [["buzz:sent-from-thread", "root", "excerpt", "extra"]]]) {
+    const missing = await render(<SentFromThreadLine channelId="native-channel" tags={tags} renderLink={renderLink} />);
+    expect(missing.querySelector('[data-testid="sent-from-thread"]')).toBeNull();
+  }
+  const missingChannel = await render(<SentFromThreadLine tags={[["buzz:sent-from-thread", "root"]]} renderLink={renderLink} />);
+  expect(missingChannel.querySelector('[data-testid="sent-from-thread"]')).toBeNull();
+  expect(open).not.toHaveBeenCalled();
+});
 
 it("restores original custom-shortcode emoji-only sizing from each message's own tags", async () => {
   const tags=[["emoji","buzz",new URL("emoji.png",window.location.href).href]];

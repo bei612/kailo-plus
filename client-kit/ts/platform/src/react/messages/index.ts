@@ -16,6 +16,8 @@ export * from "./messageGrouping";
 export * from "./messageOrder";
 export * from "./observeElementBlockSize";
 export * from "./sentFromThread";
+export * from "./SentFromThreadLine";
+export * from "./SentFromThreadLink";
 export * from "./threadTreeLayout";
 export * from "./types";
 export { buildMessageReactions } from "./reactions/buildMessageReactions";

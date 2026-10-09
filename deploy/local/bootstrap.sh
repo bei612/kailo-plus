@@ -627,7 +627,7 @@ try:
             or native["issuer"] != issuer or native["publicOrigin"] != origin
             or native["audience"] != browser_id
             or native["jwksUrl"] != issuer + "/protocol/openid-connect/certs"
-            or native["accessClaim"] in {"iss", "sub", "aud", "exp", "iat", "nbf", "jti"}):
+            or native["accessClaim"] in {"iss", "sub", "aud", "exp", "iat", "nbf", "jti", "azp"}):
         refuse()
     service_id = native["serviceAudience"]
     if browser_id == service_id or {browser_id, service_id}.intersection(platform_clients):

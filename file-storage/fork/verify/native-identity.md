@@ -332,3 +332,78 @@ Cookie、未重置/共享身份：`kailo-bootstrap-admin` 回读 native UUID
 后续门禁未运行，不以本回执宣称生产就绪。
 本次原 `./tools/check-docs.sh` 首轮在容器 launcher 因未投递 TMPDIR
 实际 exit 2、七项文档检查未启动；文档门禁未宣称通过。
+
+## 2026-10-09 原生完整 UI producer→Go embed 源码 checkpoint（未产物验收）
+
+1. 权威及固定原消费者：`.design/07` §4.6 要求复用完整独立原生页面，
+   apps/07 §2.1 约束受限构建。Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf::frontend/assets.go::EmbededAssets`
+   用原 `go:embed assets`，在 Go 编译时固定页面资源；原
+   `frontend/assets/gui.ajax/package.json::scripts.build-boot-prod`、
+   `scripts.build-core-prod`、`scripts.build-libs-prod`、`scripts.build-css-prod`
+   及其它 workspace 的 `scripts.build` 是实际 webpack producer。
+   原 `build.sh` 只拼错全局安装 pnmp/执行 install；原 build-modified.sh
+   依赖 Git 脏文件且排除 gui.ajax，均不能交付冻结源码的完整 UI。
+2. 影响：原 build.sh 现在校验原 packageManager 的 pnpm 10.7.1，按原
+   frozen lock 安装开发工具链，再以 production 执行 GUI 四 producer
+   与其它 28 个原 workspace。按 `pnpm-workspace.yaml::packages` 的
+   `*.*` 路径逐包执行，避免 editor.soundmanager/editor.diaporama 的
+   重复原 package.name 或 meta.versions 的 meta.git 名称漏包；不改名、
+   不删原布局/页面/样式/交互。原 webpack-commons.js::configLoader
+   实际消费而 root 未声明的 Babel dynamic-import 7.8.3、TypeScript
+   preset 7.28.5 加入原 root package/lock importer；复用原锁已有
+   integrity/snapshot，不升级其他版本。没有业务数据库、公共契约或身份迁移。
+3. 副作用：原 Dockerfile 增加固定本地 Node 22.23.3 Alpine digest
+   `sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402`
+   的原前端构建 stage（原工具 bash/git）；其完整 assets 去除
+   node_modules 后替换 Go stage 的旧 embed 树。原 production clean
+   清掉的过时 chunks 不由旧树重新覆盖。Bash -e/pipefail 保留 build
+   或任一 tar 管道失败，不用旧预编译文件降级出成功镜像。没有第二套
+   前端、外部 runtime 页面目录、权限/队列/账本或 ApplicationBinding 激活。
+4. 异常与边界：管理器漂移、锁不同步、缺包、prepare/webpack/导出失败
+   均阻止 Go 产物消费；两 Git SDK 仍固定原锁的 HTTPS archive commits
+   a68409a2a6494834f92c997d1e67e8ed470ca70a 与
+   cbea7de85ff1ac4602a86e8196d583b9ef6c9893，不回退浮动 next/v5-dev。
+   不忽略 prepare、不关闭 TLS、不换 registry；git 工具不表示本轮实际
+   使用了 clone，原锁无 SSH URL。HUSKY=0 仅关闭 source-only release
+   的开发 Git hook 安装，不改组件运行期认证。write/delete/share、
+   staging writer 退休与完整七键类别准入既有门禁没有解除。
+
+实际复用已有 `kailo-cells-login-ui-node-20261005`，UID 1000，4 CPU/
+8 GiB、swap 0；现有 assets/node_modules 与 Data npm/pnpm-memory-read
+缓存均保留，无新 SDK、builder 或全仓复制。原缓存仅实际安装过
+core.authfront，不能称完整前端已缓存。初次预检 SDK 29 MiB、OOM 全 0，
+host available 25 GiB；原源码增量同步后 build.sh/package/lock/PydioApi
+四输入 cmp 0。SDK Node 实际 24.21.0，不是 Node 22 镜像验收。
+
+原完整入口命令在 SDK `/workspace/assets`：
+
+```sh
+npm exec --offline --yes --package=pnpm@10.7.1 -- bash ./build.sh
+```
+
+投递 `npm_config_cache=/cache/npm`、`npm_config_store_dir=/cache/pnpm`、
+`npm_config_offline=true`、`CI=true`。62846 实际 exit 1：30 workspace
+projects（root + 29），921 锁包、lock resolution skipped，但原缓存缺
+`react-joyride@1.11.4`，`ERR_PNPM_NO_OFFLINE_TARBALL`；未进入 webpack。
+原件 `/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/cells-native-frontend-bundle-positive.log`
+SHA-256 `f47a23aa3f094ebed0e003434bc100993d890015a0917b43ac310e2ba646b805`。
+
+经主代理明确允许同一 cache 按原 frozen lock 获取缺失包，唯一正常
+续验 38929 的 cached npm wrapper 仍用 offline pnpm 10.7.1，其原
+build.sh 子进程改用 `env npm_config_offline=false`；源码输入不变。
+原件同目录 `cells-native-frontend-bundle-locked-online.log`。截止本节
+17:33 UTC，原 921 锁包安装尚未终态；已记录 Git-pinned cells-sdk-ts
+的原 npm prepare 中 `tsup: not found`/127，不能写成整命令退出码。
+根因是安装前 NODE_ENV=production 传入 nested npm；正式源已改为
+`NODE_ENV=development pnpm install --frozen-lockfile --prod=false`，
+安装后才切 production，未修改在途候选。最终 NODE_ENV 与 Docker
+git/Bash 修正尚未重跑。最近 SDK cgroup 903 MiB、OOM 全 0；保持原句柄，
+没有启动第二安装、Go/Cargo、镜像构建、数据库或部署。
+
+本 checkpoint 仅源码接线与上述真实失败/在途事实：bash -n 和 owned
+diff --check 实际 exit 0；完整 32 webpack producer、生产变异/还原、
+新 bundle/Go embed binary/image、浏览器与部署均未据此验收。
+upstream.yaml 原 artifact/source digest 不伪造更新，原 live Cells/数据库/
+认证/业务数据未变。full 41490 属主代理另一固定输入且实际 exit 1，
+不借其阶段输出宣称本前端通过，也不重跑全局门禁。

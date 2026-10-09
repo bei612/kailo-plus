@@ -9132,3 +9132,130 @@ No platform contract or generated API changes apply to this batch. Root owns
 selective commit/push and its separate full gate. Native Wren product deployment,
 approved ACTIVE binding, dynamic Resource adoption, ordinary FunctionCall
 provenance, SERVICE SQL, iframe and three-user acceptance remain unclaimed.
+
+## Bound HUMAN native access source checkpoint
+
+This independent checkpoint follows the native SQL response batch. It does not
+reuse that batch's 28/22 passing results to certify these new inputs.
+
+Authority and state: `.design/05` §3 states that IdP authenticates while active
+membership and SpiceDB decide business permissions. `.design/07` §4.6 and
+`.design/08` §6 / `SS-WRN-IDENTITY` require actual current-user/project access,
+not iframe, single-instance isolation or client registration as permission.
+The existing `authorizeNativeScope` producer/consumer is reused, not a new IdP
+grant store or ACL. Root separately owns Core HUMAN authentication and its
+controlled-directory six-field schema/serialization change. Wren retains the
+existing NativeIdentity JSON's access fields for SERVICE, unbound instances and
+the unchanged issuer/sub/audience/accessValue storage partition; that partition
+is never authorization and no existing UNKNOWN reference is rekeyed here.
+
+Impact and actual consumers: `middleware.ts` catches every native page/API,
+Next data/static route and stream (`matcher: '/:path*'`). Bound HUMAN requests
+call the original Node config GET over the existing Compose-delivered private
+`WREN_UI_ENDPOINT`; no caller Host, public origin fallback, service secret or
+browser-supplied internal identity is used. The private request forwards only
+the original signed bearer. Its config GET independently verifies identity via
+the same middleware, then `authorizeNativeScope('discover')` checks the exact
+binding/generation, HUMAN/membership and public permission using the existing
+Core/service-credential transport. All other native requests require that
+actual successful current proof. Management/Resource/action checks remain in
+the original business consumers and are not replaced with `discover`.
+
+The 19 original API modules were enumerated with `rg --files
+data-query/wren-ui/src/pages/api`. GraphQL, config, query reference, original
+run_sql/ask/generate_sql/summary/chart/models, SQL-pair/instructions, planning
+and answer streams remain. The only exact machine exemptions are the existing
+MCP/execute/observe/handshake/validate_binding paths and four original rewrite
+targets: `platform-adapter/[operation].ts` still requires its own Gateway
+identity or ActionToken/fresh PEP, rejects browser Origin/Cookie and rejects
+unknown operation/method. No broader exemption or SERVICE SQL admission is added.
+Signed SERVICE and never-bound instance access retain their existing instance
+grant requirement; bound HUMAN does not receive a static/default grant.
+
+Side effects and boundaries: config query/binding paths must both be defined
+and absolute in bound mode. Missing/empty/half delivery, private endpoint errors,
+redirect, identity mismatch, malformed proof, dependency failure and Core
+401/403/409/412/503 never grant entry or synthesize a standalone config 200.
+The exact config GET is the sole recursion boundary, not an unauthenticated API;
+it requires the trusted private HUMAN token and derived scope itself. Cookie,
+Authorization and client-forged private headers are stripped from the original
+forwarded business hop. The private Node response must correlate to the same
+derived identity; management, content and execution are still authorized again.
+No Resource/SQL body, credentials, new task/table, usage or workflow authority
+is copied to Core or created by this change. Bootstrap changes only its existing
+native reserved-claim rejection to include `azp`; other inherited dirty hunks
+are excluded from ownership. `07` changes only the Wren browser-entry table row.
+
+The original UI planning stream continues to consume
+`AskingResolver.authorizeNativeAskingTask`. The original REST explanation stream
+is not aliased to a fabricated GraphQL task: fixed official
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/openapi.yaml` `/generate_sql` and `/stream_explanation`, and
+`wren-ui/src/pages/api/v1/stream_explanation.ts::handler` prove that its
+`explanationQueryId` comes from the native GENERAL response. The new bound REST
+consumer reads that exact original `GENERATE_SQL`/`STREAM_GENERATE_SQL` History,
+same project/binding/current identity and verified non-SQL 400 terminal evidence
+through `readNativeAskHistory`; that existing reader checks the captured MDL,
+source Resources, generation and immutable history again. Both real consumers
+use `streamNativeAskingTask` solely for the original bounded message/done output,
+not a task/permission registry. Each actual frame reuses its original fresh owner
+and source reader. Foreign IDs, missing proof, unknown status/type, pending
+history, EOF, lost native cache or withdrawal never generate `done`, rewrite a
+terminal, POST another task or execute SQL. Original standalone handlers remain.
+
+Wire/compatibility: no Wren GraphQL field, platform action or generated type is
+introduced. Bound config now returns a non-2xx refusal rather than an unusable
+synthetic 200; old partial delivery is rejected. Root's separate controlled
+directory schema upgrade is required together with its Core consumer, not
+silently ignored. Original native JSON/payload/SSE shapes and UI remain intact.
+
+Actual verification as of this checkpoint: original SDK
+`kailo-wren-query-sdk-itgs2n` was read back as 4 CPU/4 GiB memory+swap; only sleep,
+approximately 59 MiB usage, `memory.events` all zero before this batch. Host
+MemAvailable was approximately 16.1 GiB, memory PSI avg10 0.10 and IO some 36.51.
+Only one original command is running (`60299`):
+`NODE_OPTIONS=--max-old-space-size=3072 node_modules/.bin/jest --runInBand
+--runTestsByPath src/middleware.test.ts src/nativeTaskOwnership.test.ts &&
+node_modules/.bin/tsc --noEmit && node_modules/.bin/prettier --check` on the six
+TS inputs. It has not reported cases or a terminal exit. One bounded read-only
+check found the same Node PID 2976062 in `Dl` / `folio_wait_bit_common`, cumulative
+CPU 00:00:00, with a zero-byte positive log. This is cold I/O waiting, not a PASS
+or evidence of a completed test. No duplicate command, SDK, database or build
+was started. Mechanical original Prettier `--write` on those six files did
+return 0, and selected formal `git diff --check` returned 0. Final suite/types,
+production guard removal and exact restoration remain unverified here.
+
+The private single-root inputs replaced only those six exact source/check files
+via `apply_patch`. Prior bytes are archived in
+`/volumes/data/kailo/tmp/wren-human-before.kiLl1H`; five direct existing consumers
+(`nativeRestAsk.ts`, `modelResolver.ts`, `nativeHumanQuery.ts`,
+`nativeQueryAdmission.ts`, `apiHistoryRepository.ts`) were cmp-equal to formal.
+Current log: `/volumes/data/kailo/tmp/wren-human-fresh.HsCVnQ/positive.log`.
+Formal SHA-256 in order middleware, middleware test, config, planning stream,
+REST explanation stream, original task-ownership test, original Compose:
+`c8d580e70e6fc622783bbc38c8bd761813ae7711b875e52cd268adf9fe795e87`,
+`22a22dd5d4b26977a6d34a27ff1bf0207009192454a07398c545a7fac0823104`,
+`01d8d7bd65a10224ea2195ebb9cab55df6d53e810484124bb550ddd91463d690`,
+`cfff55bea798b6153aceb060b5cac1bc694220215c63e83f37d39d1a2fd74ccb`,
+`e0f89089d79d1ae798edbf2cba089ce4a2bb6439a4d9715656702083d6b39450`,
+`2c74b8c1bcaa287848e38f5271794916f2e1e7b6d354fc51e71c039d475e54eb`,
+`d3b943cf936957400c7459934000119f66679c1861813362aa3e31a8f340f0a5`.
+Root owns selective commit/push and its single full gate. This checkpoint is
+not native deployment, verified client/instance registration, ACTIVE binding,
+dynamic Resource adoption, ordinary FunctionCall provenance, SERVICE SQL,
+iframe or three-independent-user/Agent acceptance. The separately attempted
+Knowledge backend build ended exit 1 at original Go dependency TLS timeouts;
+no image pin or app deployment was made and that failure was not retried.
+
+Checkpoint tail correction: a bounded source read found that the original
+`bindingServiceCall` body is `Record<string, unknown>`, so the new original
+task-ownership fixture's `input.authorizeScope.permission` was not a valid
+typed property read. The formal fixture now asserts the actual existing MDL
+consumer's `{permission: 'discover'}` request and returns that same closed
+permission, without casting through unknown or weakening authorization cases.
+The formal task-ownership SHA above includes this correction. The still-running
+`60299` SDK input remains the previously captured `70ec1be...` bytes and does
+not include it; its eventual result cannot certify the corrected fixture.
+No new final suite/type/format result is claimed for this correction. All
+production bytes and the existing in-flight input are unchanged; the original
+failed/waiting receipt will be retained before the final same-SDK validation.

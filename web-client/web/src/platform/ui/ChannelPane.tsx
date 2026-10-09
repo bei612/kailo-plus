@@ -42,7 +42,7 @@ import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
-import { MessageRowSurface, MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
@@ -387,6 +387,14 @@ export function ChannelPane({
   const channelId = conversation?.channelId ?? admittedChannelId ?? events
     .find((e) => e.tags.some((tag) => tag[0] === "h"))
     ?.tags.find((tag) => tag[0] === "h")?.[1];
+  const openThreadReference = !conversation && channelId && live && !denied && !metadataPending && onOpenMessageLink
+    ? (link: ParsedMessageLink) => {
+      if (link.channelId !== channelId || !requireThreadEditResolution()) return;
+      // The original reference identifies the native channel; the Web route
+      // resolves this already-admitted channel through its current Workspace.
+      onOpenMessageLink({ ...link, channelId: workspaceId });
+    }
+    : undefined;
   const copyMessageLink = channelId ? async (target: TimelineMessage) => {
     const { rootId } = getThreadReference(target.tags ?? []);
     try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success(t("buzz.copiedLink")); }
@@ -638,6 +646,10 @@ export function ChannelPane({
             const followedByContinuation = item.kind === "message" && item.isFollowedByContinuation;
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
+                reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
+                  renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
+                    channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
+                    interactive={Boolean(openThreadReference)} onOpenMessageLink={openThreadReference} />} />}
                 onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
                 reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
                 renderIdentity={message.pubkey && live && !denied ? (node,kind) => <MessageAuthorIdentity
@@ -713,6 +725,8 @@ export function ChannelPane({
     <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {!conversation && replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
+      channelId={channelId}
+      onOpenMessageLink={openThreadReference}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
       routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}

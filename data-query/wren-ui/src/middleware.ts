@@ -2,7 +2,8 @@ import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
 import { NextRequest, NextResponse } from 'next/server';
 
 // SS-WRN-IDENTITY: login is owned by the OIDC gateway. The native backend
-// verifies its own audience and instance entitlement, including direct access.
+// verifies its own audience, including direct access. Bound HUMAN business
+// access comes from the existing Core binding/membership/SpiceDB consumer.
 let identity: {
   source: string;
   issuer: string;
@@ -54,7 +55,7 @@ function nativeIdentity() {
   }
   // Registered identity claims are not native access entitlements.
   if (
-    ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'jti'].includes(
+    ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'jti', 'azp'].includes(
       value.accessClaim,
     )
   ) {
@@ -144,7 +145,17 @@ export async function middleware(request: NextRequest) {
   const token = authorization?.match(/^Bearer ([^\s,]+)$/i)?.[1];
   if (!token) return denied(401, 'NATIVE_AUTHENTICATION_REQUIRED');
 
+  const queryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const bindingConfig = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+  const bound = queryConfig !== undefined || bindingConfig !== undefined;
+  if (
+    bound &&
+    (!queryConfig?.startsWith('/') || !bindingConfig?.startsWith('/'))
+  )
+    return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+
   let identityScope: string;
+  let service: boolean;
   try {
     const { payload } = await jwtVerify(token, configured.keys, {
       issuer: configured.issuer,
@@ -157,9 +168,10 @@ export async function middleware(request: NextRequest) {
       return denied(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     }
     const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-    const service =
+    service = Boolean(
       configured.serviceAudience &&
-      audiences.includes(configured.serviceAudience);
+        audiences.includes(configured.serviceAudience),
+    );
     if (
       service &&
       (audiences.includes(configured.audience) ||
@@ -173,9 +185,11 @@ export async function middleware(request: NextRequest) {
       (Array.isArray(access) &&
         access.every((entry) => typeof entry === 'string') &&
         access.includes(configured.accessValue));
-    if (!permitted) return denied(403, 'NATIVE_INSTANCE_ACCESS_DENIED');
+    if ((service || !bound) && !permitted)
+      return denied(403, 'NATIVE_INSTANCE_ACCESS_DENIED');
     // A non-authorizing browser storage partition, derived only after signature
-    // and native-instance verification. Never expose the token or raw subject.
+    // verification. This partition is not business authorization. Never expose
+    // the token or raw subject.
     identityScope = Array.from(
       new Uint8Array(
         await crypto.subtle.digest(
@@ -216,6 +230,61 @@ export async function middleware(request: NextRequest) {
     return denied(403, 'NATIVE_REQUEST_ORIGIN_DENIED');
   }
 
+  // Edge has no platform service credential or file access. The original
+  // Node /api/config consumer owns the same-binding SERVICE transport and the
+  // independently verified HUMAN fresh discover check. Its exact GET handles
+  // this check itself; no other page/API/stream/Next data/asset skips it.
+  if (
+    bound &&
+    !service &&
+    !(request.method === 'GET' && request.nextUrl.pathname === '/api/config')
+  ) {
+    try {
+      const endpoint = process.env.WREN_UI_ENDPOINT;
+      if (!endpoint || endpoint !== endpoint.trim())
+        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      const origin = new URL(endpoint);
+      if (
+        !['http:', 'https:'].includes(origin.protocol) ||
+        origin.username ||
+        origin.password ||
+        origin.hash ||
+        origin.search ||
+        origin.pathname !== '/' ||
+        origin.origin === configured.publicOrigin
+      )
+        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+      const access = await fetch(new URL('/api/config', origin), {
+        method: 'GET',
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+        redirect: 'error',
+        signal: request.signal,
+      });
+      if (!access.ok) {
+        return denied(
+          [401, 403, 409, 412].includes(access.status) ? access.status : 503,
+          'NATIVE_INSTANCE_ACCESS_DENIED',
+        );
+      }
+      const proof = await access.json();
+      if (
+        !proof ||
+        typeof proof !== 'object' ||
+        Array.isArray(proof) ||
+        proof.nativeBindingConfigured !== true ||
+        typeof proof.queryScope !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(proof.queryScope) ||
+        !Number.isSafeInteger(proof.nativeBindingGeneration) ||
+        proof.nativeBindingGeneration <= 0 ||
+        access.headers.get('x-kailo-native-identity-scope') !== identityScope
+      )
+        return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+    } catch {
+      return denied(503, 'NATIVE_INSTANCE_UNAVAILABLE');
+    }
+  }
+
   const headers = new Headers(request.headers);
   headers.delete('authorization');
   headers.delete('cookie');
@@ -231,6 +300,7 @@ export async function middleware(request: NextRequest) {
       '/api/v1/models',
       '/api/v1/generate_sql',
       '/api/v1/stream/generate_sql',
+      '/api/v1/stream_explanation',
       '/api/ask_task/streaming',
       '/api/v1/knowledge/sql_pairs',
     ].includes(request.nextUrl.pathname) ||
@@ -243,7 +313,7 @@ export async function middleware(request: NextRequest) {
         /^\/api\/v1\/knowledge\/instructions\/[1-9]\d*$/.test(
           request.nextUrl.pathname,
         ))) &&
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    bound;
   if (
     boundSql ||
     [

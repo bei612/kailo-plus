@@ -419,6 +419,9 @@ enum PlatformMessageKey {
   buzzSentToChannel,
   buzzSendToChannelFailed,
   buzzCopiedMessage,
+  messageSentFromThread,
+  messageThreadIn,
+  messageOpenThreadIn,
   buzzCopiedLink,
   buzzCopyFailed,
   buzzImagePreview,
@@ -2987,6 +2990,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.buzzCopiedMessage: (
     'Message copied to clipboard',
     '消息已复制',
+  ),
+  PlatformMessageKey.messageSentFromThread: ('Sent from thread:', '发送自线程：'),
+  PlatformMessageKey.messageThreadIn: ('Thread in', '线程位于'),
+  PlatformMessageKey.messageOpenThreadIn: (
+    'Open thread in {channel}',
+    '打开 {channel} 中的线程',
   ),
   PlatformMessageKey.buzzCopiedLink: ('Link copied to clipboard', '链接已复制'),
   PlatformMessageKey.buzzCopyFailed: ('Failed to copy to clipboard', '复制失败'),

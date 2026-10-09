@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
@@ -10,7 +10,7 @@ import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-
 import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
-import { setLocale } from "@client-kit/platform/i18n";
+import { setLocale, translateCurrent as t } from "@client-kit/platform/i18n";
 import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import { clearAllDrafts, loadDraftEntry, saveDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { compareRelayOrder } from "@client-kit/platform/react/messages/timeline/channelWindowStore";
@@ -105,7 +105,7 @@ async function flush() {
       }
     });
 }
-async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView; key?:string } = {}) {
+async function renderChannel(props: { archived?: boolean; metadataPending?: boolean;conversation?:ConversationView; key?:string; onOpenMessageLink?: ComponentProps<typeof ChannelPane>["onOpenMessageLink"] } = {}) {
   const {key, ...channelProps} = props;
   await act(async () => {
     root.render(
@@ -145,6 +145,33 @@ function acceptReadMarks() {
     return {version: projection.version};
   });
 }
+
+it.each(["main", "thread"])("the actual %s row restores original sent-from-thread navigation through the admitted native-channel/workspace mapping", async surface => {
+  const navigate = vi.fn();
+  const sent = {...event(20), content: "Copied thread reply", tags: [["h", "channel-a"], ["buzz:sent-from-thread", "original-root", "🧭 Shipping plan"]]};
+  threadMessages.splice(0, threadMessages.length, {...sent, createdAt: 20});
+  await renderChannel({onOpenMessageLink: navigate});
+  await act(async () => {
+    state.receive!({type: "snapshot", events: windowEvents([event(10), sent].sort(compareRelayOrder))});
+    state.receive!({type: "live"});
+  });
+  await flush();
+  if (surface === "thread") {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-20"]')!.click());
+    await flush();
+  }
+  const within = surface === "thread" ? host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')! : host;
+  const reference = within.querySelector<HTMLElement>('[data-testid="sent-from-thread"]')!;
+  expect(reference?.textContent).toContain("🧭 Shipping plan");
+  const link = reference.querySelector<HTMLButtonElement>('button[data-message-link]')!;
+  expect(link).not.toBeNull();
+  await act(async () => link.click());
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({channelId: "workspace-a", messageId: "original-root", threadRootId: "original-root"});
+  expect(state.publish).not.toHaveBeenCalled();
+  await act(async () => state.receive!({type: "closed", reason: "scope-revoked"}));
+  await flush();
+  expect(host.querySelector('[data-testid="sent-from-thread"] button')).toBeNull();
+});
 
 it.each(["main", "thread"])("the real %s read/unread row menu preserves the original local subtree, including collapsed same-second descendants", async surface => {
   projection.readContexts["channel-a"] = new Date(100_000).toISOString();
@@ -989,7 +1016,7 @@ it("sends the real human picker identity and reconciles the same UNKNOWN request
   state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
   await open();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
-  const options=host.querySelectorAll('[aria-label="Mention someone Alex"]');
+  const options=host.querySelectorAll(`[aria-label="${t("buzz.mentionNamed", {name:"Alex"})}"]`);
   expect(options).toHaveLength(2);
   await act(async () => options[0]!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
   await sendChannel();
@@ -1032,7 +1059,7 @@ it("does not silently drop a revoked human recipient or replay its UNKNOWN reque
   state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
   await open();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
-  await act(async () => host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await act(async () => host.querySelector(`[aria-label="${t("buzz.mentionNamed", {name:"Alex"})}"]`)!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
   await sendChannel();
   state.members.mockResolvedValue([]);
   await remountChannel();await sendChannel();
@@ -1046,7 +1073,7 @@ it("does not mint a different request for a legacy UNKNOWN draft whose human ref
   state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
   await open();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
-  await act(async () => host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await act(async () => host.querySelector(`[aria-label="${t("buzz.mentionNamed", {name:"Alex"})}"]`)!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
   await sendChannel();
   const saved=loadDraftEntry("workspace-a")!;
   expect(saved.sendIntent).toBeDefined();

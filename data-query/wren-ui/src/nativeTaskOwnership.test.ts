@@ -16,6 +16,9 @@ import {
 } from './apollo/server/services/nativeQueryAdmission';
 import { components } from './common';
 import planningStreamHandler from './pages/api/ask_task/streaming';
+import explanationStreamHandler from './pages/api/v1/stream_explanation';
+import { ApiType } from './apollo/server/repositories/apiHistoryRepository';
+import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
 import { Readable } from 'stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
@@ -242,14 +245,17 @@ describe('native task ownership consumers', () => {
 
 describe('original native planning HTTP stream and HUMAN task owner', () => {
   let server: Server, endpoint: string, task: any, ctx: any, revoked: boolean;
+  let history: any, generation: number;
   let nativeStream: jest.Mock;
   const queryId = randomUUID();
   const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const originalBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
   const originalComponents = { ...components };
   const project = { id: 7, language: 'EN' };
   const config = {
     projectId: 7,
     bindingId: randomUUID(),
+    tenantId: randomUUID(),
     workspaceId: randomUUID(),
     nativeInstanceRef: 'original-fixture',
     nativeScopeRef: '7',
@@ -288,6 +294,14 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
   };
   const send = (changes = {}, method = 'GET') =>
     fetch(endpoint, { method, headers: { ...headers, ...changes } });
+  const explanation = (changes = {}, method = 'GET') =>
+    fetch(
+      endpoint.replace('/api/ask_task/streaming', '/api/v1/stream_explanation'),
+      {
+        method,
+        headers: { ...headers, ...changes },
+      },
+    );
   beforeAll(async () => {
     server = createServer(
       (request, response) =>
@@ -300,7 +314,11 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
               'http://fixture.invalid',
             ).searchParams.get('queryId'),
           },
-          { default: planningStreamHandler },
+          {
+            default: request.url.startsWith('/api/v1/stream_explanation')
+              ? explanationStreamHandler
+              : planningStreamHandler,
+          },
           {
             previewModeId: '',
             previewModeEncryptionKey: '',
@@ -315,9 +333,11 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/ask_task/streaming?queryId=${queryId}`;
   });
   beforeEach(() => {
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+    process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture/binding.json';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config as any);
     revoked = false;
+    generation = 2;
     task = {
       id: 1,
       projectId: project.id,
@@ -353,6 +373,40 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
         `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
       ]),
     );
+    history = {
+      id: queryId,
+      apiType: ApiType.GENERATE_SQL,
+      projectId: project.id,
+      governanceBindingId: config.bindingId,
+      threadId: queryId,
+      statusCode: 400,
+      requestPayload: {
+        question: 'Original non-SQL question',
+        nativeAsk: {
+          taskId: queryId,
+          identityScope: proof.identityScope,
+          histories: [],
+          metadataReference: {
+            ...proof.metadataReference,
+            queryScope: nativePreviewScope(config as any, proof.identityScope),
+            generation,
+          },
+        },
+      },
+      responsePayload: {
+        threadId: queryId,
+        code: 'NON_SQL_QUERY',
+        error: 'Original non-SQL explanation',
+        explanationQueryId: queryId,
+        nativeAsk: {
+          askResult: {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            intentReasoning: 'Original non-SQL explanation',
+          },
+        },
+      },
+    };
     Object.assign(components, {
       projectService,
       askingTaskRepository: repository,
@@ -365,6 +419,17 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       },
       wrenAIAdaptor: { getAskStreamingResult: nativeStream },
       telemetry: { sendEvent: jest.fn() },
+      apiHistoryRepository: {
+        findOneBy: jest.fn(async (where) =>
+          Object.entries(where).every(
+            ([name, value]) => history?.[name] === value,
+          )
+            ? structuredClone(history)
+            : null,
+        ),
+        createOne: jest.fn(),
+        updateOne: jest.fn(),
+      },
     });
     ctx = {
       ...components,
@@ -379,6 +444,21 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       .mocked(bindingServiceCall)
       .mockImplementation(async (_config, _operation, input) => {
         if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        if (input.authorizeScope) {
+          expect(input.authorizeScope).toEqual({ permission: 'discover' });
+          return {
+            scope: {
+              bindingId: config.bindingId,
+              tenantId: config.tenantId,
+              workspaceId: config.workspaceId,
+              nativeInstanceRef: config.nativeInstanceRef,
+              nativeScopeRef: config.nativeScopeRef,
+              generation,
+              permission: 'discover',
+              checkedRevision: 'original-fresh-revision',
+            },
+          };
+        }
         const source = input.resolveResource as any;
         return {
           resource: {
@@ -396,6 +476,9 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
     if (originalDelivery === undefined)
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
+    if (originalBinding === undefined)
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = originalBinding;
     Object.keys(components).forEach((key) => delete components[key]);
     Object.assign(components, originalComponents);
     await new Promise<void>((resolve) => {
@@ -491,6 +574,136 @@ describe('original native planning HTTP stream and HUMAN task owner', () => {
       status: 403,
     });
   });
+  it.each([ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL])(
+    'keeps the original %s explanationQueryId stream through its persisted GENERAL history, not a fabricated GraphQL task',
+    async (apiType) => {
+      history.apiType = apiType;
+      task = { ...task, queryId: 'a different GraphQL asking task' };
+      const response = await explanation();
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(
+        'data: {"message":"原生思考"}\n\ndata: {"done":true}\n\n',
+      );
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+      expect(nativeStream).toHaveBeenCalledWith(queryId);
+      expect(components.apiHistoryRepository.findOneBy).toHaveBeenCalledWith({
+        id: queryId,
+        projectId: project.id,
+        governanceBindingId: config.bindingId,
+      });
+      expect(components.apiHistoryRepository.createOne).not.toHaveBeenCalled();
+      expect(components.apiHistoryRepository.updateOne).not.toHaveBeenCalled();
+      expect(bindingServiceCall).toHaveBeenCalledWith(
+        config,
+        'human-action',
+        {
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        },
+        headers['x-kailo-native-human-token'],
+      );
+    },
+  );
+  it.each([
+    'foreign-user',
+    'foreign-binding',
+    'foreign-project',
+    'legacy-owner',
+    'generation-changed',
+    'resource-revoked',
+    'unconfirmed-task',
+    'foreign-task',
+    'foreign-api-type',
+    'unknown-status',
+    'contradictory-error',
+  ])(
+    'does not disclose the original REST explanation with %s',
+    async (mode) => {
+      if (mode === 'foreign-user')
+        history.requestPayload.nativeAsk.identityScope = 'b'.repeat(64);
+      if (mode === 'foreign-binding')
+        history.governanceBindingId = randomUUID();
+      if (mode === 'foreign-project') history.projectId++;
+      if (mode === 'legacy-owner') delete history.requestPayload.nativeAsk;
+      if (mode === 'generation-changed') generation++;
+      if (mode === 'resource-revoked') revoked = true;
+      if (mode === 'unconfirmed-task') history.statusCode = 202;
+      if (mode === 'foreign-task')
+        history.requestPayload.nativeAsk.taskId = randomUUID();
+      if (mode === 'foreign-api-type') history.apiType = ApiType.RUN_SQL;
+      if (mode === 'unknown-status')
+        history.responsePayload.nativeAsk.askResult.status = 'future';
+      if (mode === 'contradictory-error')
+        history.responsePayload.nativeAsk.askResult.error = {
+          code: 'provider-error',
+        };
+      const before = structuredClone(history);
+      expect((await explanation()).status).toBeGreaterThanOrEqual(400);
+      expect(nativeStream).not.toHaveBeenCalled();
+      expect(history).toEqual(before);
+      expect(components.apiHistoryRepository.createOne).not.toHaveBeenCalled();
+      expect(components.apiHistoryRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['EOF', 'foreign-done', 'unknown-event'])(
+    'original REST explanation %s remains incomplete without re-dispatch or a manufactured done',
+    async (mode) => {
+      nativeStream.mockResolvedValue(
+        Readable.from([
+          'data: {"message":"partial"}\n\n',
+          ...(mode === 'foreign-done'
+            ? ['data: {"done":true,"queryId":"foreign"}\n\n']
+            : []),
+          ...(mode === 'unknown-event'
+            ? ['data: {"status":"future"}\n\n']
+            : []),
+        ]),
+      );
+      const response = await explanation();
+      expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+      expect(components.apiHistoryRepository.createOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['resource', 'generation', 'history-row'])(
+    'stops the original REST explanation when %s changes before its next actual frame',
+    async (mode) => {
+      nativeStream.mockResolvedValue(
+        Readable.from(
+          (async function* () {
+            yield 'data: {"message":"visible"}\n\n';
+            if (mode === 'resource') revoked = true;
+            if (mode === 'generation') generation++;
+            if (mode === 'history-row')
+              history.requestPayload.nativeAsk.taskId = randomUUID();
+            yield 'data: {"message":"private"}\n\n';
+          })(),
+        ),
+      );
+      const response = await explanation();
+      const body = await response.text();
+      expect(body).not.toContain('private');
+      expect(body).not.toContain('"done":true');
+      expect(nativeStream).toHaveBeenCalledTimes(1);
+      expect(components.apiHistoryRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['query-only', 'binding-only', 'empty-query', 'empty-binding'])(
+    'both original planning routes refuse %s configuration before a native read',
+    async (mode) => {
+      if (mode === 'query-only')
+        delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+      if (mode === 'binding-only')
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      if (mode === 'empty-query')
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+      if (mode === 'empty-binding')
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '';
+      expect((await send()).status).toBe(503);
+      expect((await explanation()).status).toBe(503);
+      expect(nativeStream).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('native reset transaction consumer', () => {
