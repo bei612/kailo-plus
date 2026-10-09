@@ -1270,3 +1270,55 @@ y456.25/h47。五张截图均由执行队友和主线打开视觉复核，范围
 没有重复执行全局编译或把旧 full 退出 1 改记通过。全量官方差异分类、原生端、
 三组件独立二开后的完整绑定/业务、跨服务同步、三人多 Agent 稳定协作与生产退出
 门禁仍未完成。正文及外部资源权威未进入 Core，本批不新增不安全运行开关。
+
+## 2026-10-09 Core 原发布入口与实际运行回读
+
+本批仅更新本机 Core 镜像 pin 和实际发布回执，不修改领域契约、数据库迁移、
+审批、额度或 Agent 执行状态。构建输入固定为
+`d619b0b06adea393ac21102ac9fe0ff4767981e5`，沿原 `tools/release.sh`，
+`kailo-core-data` 的实际 cgroup 为 8 CPU、16 GiB memory/memory+swap，缓存
+设备仍为 Data。Core 编译实际完成；同一入口的 Worker 构建仍在进行，不能将
+Core 产物成功写成整个发布入口退出 0。
+
+原生 Codex 仍消费来源登记已闭合的不可变 runtime
+`sha256:0a37f9edf7f4004c73e41bba7bf7dfa5cdcd8d04b51dbc22066a2a3094282725`，
+没有再编译 Codex、复用共享身份或发起新 Agent turn。Core 本地镜像与本机
+registry 回读一致：
+`sha256:e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65`。
+原生成的 SPDX/provenance subject 与源码提交一致；原件位于
+`/volumes/data/kailo/tmp/core-web-main-release-20261008.SzH7rU/apps/dist/`。
+
+| 原件 | SHA-256 |
+|---|---|
+| `core.e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65.spdx.json` | `51f54b706c51bf558b14ffbc8be34c8f598620c60e1394d95dce77b635cc2627` |
+| `core.e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65.provenance.json` | `1df5e11b7e9215d0e5b5d9bec79b1f96e63071b2239bdb0b1d15279d86141314` |
+
+原 `deploy/local/start-core.sh --no-build` 两次都退出 0，但第一次创建后的
+Core 进程实际退出 1。实际错误为 OpenBao wrapping lookup HTTP 400，已消费或
+过期；Data I/O 下容器创建耗时超过现投递 120 秒包装时限。不以启动脚本退出 0
+掩盖失败，不增大 TTL、不复用包装、不关闭认证。第二次沿相同原入口重新取得
+三枚一次性包装后，Core 实际于 `2026-10-09T10:45:43.173649396Z` 启动；
+10:55 UTC 回读 running、exit code 0、restart count 0、镜像为上文 digest。
+原 `BFF_PORT` 投递的 `/healthz` 实际 HTTP 200。
+
+正常 SSO 会话下 session、tasks、approvals、platform-info 实际 HTTP 200；
+Pulse 和 Agent 两张截图均由 playwright-cli 取得并打开视觉复核。会话过期时
+手工 fetch 被登录跳转/CSP 拒绝；沿原页面正常导航重新认证后，既有安装任务
+`c0d9b906-589d-4fd8-8c2f-582ced976f28` 回读 HTTP 200，仍为 RUNNING /
+DISPATCHED / UNKNOWN_EXTERNAL_RESULT。缺 workspaceId 的两次安装查询实际
+HTTP 400，使用真实工作区参数后回读四条安装记录；没有把这些失败省略。
+
+| 截图原件（Data `tmp/`） | SHA-256 |
+|---|---|
+| `kailo-core-d619-pulse-20261009-1047.png` | `47c551d0b33b8d9d2fd69a8913c3545f86222472b81cc5c29ca7d0ca6025d936` |
+| `kailo-core-d619-agent-20261009-1049.png` | `f51fc38602f941f8fff9c3b14e323867603d7dd2f52b205fe73f26eaca910934` |
+
+影响范围只包括 Core；Worker 与目标提交之间源码 diff 为空，现运行镜像仍为
+`sha256:b357ebf9e83ffe0ba267f31da5c832ce67f515d90cb7b94e29911917a523294b`；
+Web 仍为 `sha256:312afc7902bc754b91307f018b0ce4f7620efbeb42e40d9232a5252e6e270270`。
+截图证明新 Core 与既有 Web 的局部操作，不证明在途 Web 新镜像、Windows、
+Mobile、全页面或全量官方一致性。现有第三方容器、独立数据库、历史运行和
+UNKNOWN 任务保留，没有强制 ACTIVE、补写成功、重放模型或执行数据迁移。
+Agent 初始化仍报 DependencyUnavailable；另一个既有线程的 THREAD_NOT_FOUND
+及 Gateway 用量缺 Core trace / BILLING_UNAVAILABLE 仍未收敛，不能报稳定协作。
+本批不新增安全开关；原全量检查退出 1 的状态不因局部运行回读改写。

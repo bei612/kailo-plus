@@ -516,7 +516,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:1d7316086734e513792968ee40e9868807a378f47a1e66bf34bf07093ff049a4
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65
     build:
       context: ../..
       dockerfile: core/Dockerfile
