@@ -17,7 +17,7 @@ export type SettingsSection = "profile" | "appearance" | "notifications" | "shor
 export const settingsSectionKeys = {
   profile: "platform.settings.profile", appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications", shortcuts: "platform.settings.shortcuts",
-  "community-members": "invitations.title",
+  "community-members": "communityMembers.title",
   "custom-emoji": "customEmoji.title",
   experimental: "platform.settings.experimental",
 } as const;

@@ -352,6 +352,10 @@ void main() {
           row[key] = permission;
         }
       }
+      if (permission == null) {
+        row.remove('createdAt');
+        row.remove('pubkeys');
+      }
       expect(RoleMemberPage.fromJson(value).toJson(), value);
     }
   });

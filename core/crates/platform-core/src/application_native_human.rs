@@ -64,17 +64,6 @@ fn verified_subject(
         .as_str()
         .filter(|v| !v.is_empty())
         .ok_or_else(blocked)?;
-    let claim = trust["accessClaim"].as_str().ok_or_else(blocked)?;
-    let value = trust["accessValue"]
-        .as_str()
-        .filter(|v| !v.is_empty())
-        .ok_or_else(blocked)?;
-    if matches!(
-        claim,
-        "iss" | "aud" | "sub" | "exp" | "iat" | "nbf" | "jti" | "azp"
-    ) {
-        return Err(blocked());
-    }
     let kid = decode_header(token)
         .map_err(|_| denied())?
         .kid
@@ -108,11 +97,10 @@ fn verified_subject(
     )
     .map_err(|_| denied())?
     .claims;
-    let granted = claims[claim] == value
-        || claims[claim].as_array().is_some_and(|items| {
-            items.iter().all(Value::is_string) && items.iter().any(|item| item == value)
-        });
-    if !granted || claims.get("azp").is_some_and(|v| v != audience) {
+    // The IdP authenticates a HUMAN; it is not a second instance-permission
+    // authority. The caller still resolves this subject through the binding's
+    // ACTIVE membership and performs its existing fresh scope/resource check.
+    if claims.get("azp").is_some_and(|v| v != audience) {
         return Err(denied());
     }
     claims["sub"]
@@ -903,7 +891,7 @@ mod tests {
     }
 
     #[test]
-    fn native_human_subject_requires_exact_controlled_trust_and_instance_claim() {
+    fn native_human_subject_authenticates_without_business_entitlements() {
         let rng = ring::rand::SystemRandom::new();
         let algorithm = &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
         let private = ring::signature::EcdsaKeyPair::generate_pkcs8(algorithm, &rng).unwrap();
@@ -917,13 +905,13 @@ mod tests {
         let key = jsonwebtoken::EncodingKey::from_ec_der(private.as_ref());
         let signed = |claims: &Value| jsonwebtoken::encode(&header, claims, &key).unwrap();
         let now = jsonwebtoken::get_current_timestamp();
-        let claims = json!({"iss":"urn:fixture:human-idp","aud":"native-browser","sub":"existing-subject","exp":now+60,"instance":["dedicated-instance"]});
-        let trust = json!({"audience":"native-browser","accessClaim":"instance","accessValue":"dedicated-instance"});
+        let claims = json!({"iss":"urn:fixture:human-idp","aud":"native-browser","sub":"existing-subject","exp":now+60});
+        let trust = json!({"audience":"native-browser"});
         assert_eq!(
             verified_subject(&signed(&claims), "urn:fixture:human-idp", &trust, &keys).unwrap(),
             "existing-subject"
         );
-        for field in ["iss", "aud", "sub", "exp", "instance"] {
+        for field in ["iss", "aud", "sub", "exp"] {
             let mut missing = claims.clone();
             missing.as_object_mut().unwrap().remove(field);
             assert!(
@@ -938,8 +926,6 @@ mod tests {
             ("sub", json!(" ")),
             ("exp", json!(now - 1)),
             ("nbf", json!(now + 60)),
-            ("instance", json!("another-instance")),
-            ("instance", json!(["dedicated-instance", true])),
             ("azp", json!("service-client")),
         ] {
             let mut changed = claims.clone();
@@ -950,16 +936,15 @@ mod tests {
                 "changed {field}"
             );
         }
-        let mut claim_as_permission = trust.clone();
-        claim_as_permission["accessClaim"] = json!("sub");
-        claim_as_permission["accessValue"] = json!("existing-subject");
-        assert!(verified_subject(
-            &signed(&claims),
-            "urn:fixture:human-idp",
-            &claim_as_permission,
-            &keys
-        )
-        .is_err());
+        // Business-like claims cannot select another principal or scope. The
+        // existing mapped_actor/authorize_scope consumers remain authoritative.
+        let mut extraneous = claims.clone();
+        extraneous["instance"] = json!(["another-instance"]);
+        extraneous["roles"] = json!(["admin"]);
+        assert_eq!(
+            verified_subject(&signed(&extraneous), "urn:fixture:human-idp", &trust, &keys).unwrap(),
+            "existing-subject"
+        );
     }
 
     #[test]

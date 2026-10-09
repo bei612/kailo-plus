@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Search, Shield } from "lucide-react";
-import { WorkspaceMembershipState, type WorkspaceMemberView, type RoleMemberView } from "@client-kit/contracts";
+import { WorkspaceMembershipState, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
 import { truncatePubkey } from "../format";
@@ -21,7 +21,7 @@ import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPane
 import { useThreadPanelWidth } from "./messages/thread/useThreadPanelWidth";
 import { useEscapeKey } from "./messages/thread/useEscapeKey";
 import { VirtualizedList } from "./forum/VirtualizedList";
-import { MemberActionFeedback, useMemberAction, validRoleMemberPage } from "./roles";
+import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "./roles";
 import { TenantInvitations } from "./invitations";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
@@ -104,20 +104,7 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
 export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincipalId}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer;onStartDm?:(pubkey:string)=>void|Promise<void>;currentPrincipalId?:string}) {
   const client=useBffClient();const t=useT();const locale=useLocale();
   const [state,reload]=useLoad(`members:${workspaceId}`,()=>client.members(workspaceId));
-  const [roles,reloadRoles]=useLoad(`member-actions:${workspaceId}`,async()=>{
-    const members=new Map<string,RoleMemberView>();const cursors=new Set<string>();let cursor:string|undefined;
-    do {
-      const page=await client.roleMembers(workspaceId,cursor);
-      if(!validRoleMemberPage(page))throw new TransportError("Invalid member action projection");
-      for(const member of page.members){
-        if(members.has(member.principalId))throw new TransportError("Repeated member action identity");
-        members.set(member.principalId,member);
-      }
-      cursor=page.nextCursor;
-      if(cursor){if(cursors.has(cursor))throw new TransportError("Repeated member action cursor");cursors.add(cursor);}
-    }while(cursor);
-    return members;
-  });
+  const [roles,reloadRoles]=useLoad(`member-actions:${workspaceId}`,()=>loadRoleMemberDirectory(client,workspaceId));
   const action=useMemberAction(()=>{reload();reloadRoles();});
   const [search,setSearch]=useState("");const [selected,setSelected]=useState<MemberTarget|null>(null);
   useEffect(()=>{const refresh=()=>{reload();reloadRoles();};window.addEventListener("focus",refresh);return()=>window.removeEventListener("focus",refresh);},[reload,reloadRoles]);

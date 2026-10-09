@@ -2171,7 +2171,9 @@ async function nativeDownloadFixture(failure, mobile = false) {
         }
         getObject(params, callback) {
           state.reads.push(JSON.parse(JSON.stringify(params)));
-          callback(null, { Body: Buffer.from('original native text') });
+          if (state.holdRead) { state.readCallback = callback; return; }
+          callback(failure === 'read' ? new Error('native read result unconfirmed') : null,
+            { Body: Buffer.from('original native text') });
         }
         putObject(params, callback) {
           state.writes.push(JSON.parse(JSON.stringify(params)));
@@ -2791,6 +2793,99 @@ test('original native version transport never retargets a pending download or re
       assert.equal(state.errors.length, mode === 'restore ACK' ? 0 : 1);
     });
   }
+});
+
+test('original native preview and file download retain their node and current user while signing', async t => {
+  for (const mode of ['preview token', 'preview loader', 'preview signer', 'callback token', 'download token']) {
+    for (const change of ['move', 'uuid', 'repository', 'user', 'user id', 'slug', 'removed repository']) await t.test(`${mode}/${change}`, async () => {
+      const {api, node, state, pydio, repositories, selection} = await nativeDownloadFixture();
+      const mutate = () => {
+        if (change === 'move') node.path = '/moved/file.txt';
+        if (change === 'uuid') node.getMetadata().set('uuid', ids[4]);
+        if (change === 'repository') node.getMetadata().set('repository_id', ids[10]);
+        if (change === 'user') pydio.user = {...pydio.user};
+        if (change === 'user id') pydio.user.id = 'different-native-user';
+        if (change === 'slug') repositories.set(ids[9], {getSlug:() => 'changed-documents'});
+        if (change === 'removed repository') repositories.delete(ids[9]);
+      };
+      let release;
+      if (mode.endsWith('token')) state.tokenPending = new Promise(resolve => {release = resolve;});
+      if (mode === 'preview loader') state.loaderPending = new Promise(resolve => {release = resolve;});
+      if (mode === 'preview signer') state.beforeSign = mutate;
+      let delivered = 0;
+      let failed = false;
+      const request = mode.startsWith('preview')
+        ? api.buildPresignedGetUrl(node, null, 'image/png').then(() => {delivered++;}, () => {failed = true;})
+        : mode.startsWith('callback')
+        ? api.buildPresignedGetUrl(node, () => {delivered++;}, 'image/png')
+        : api.downloadSelection(selection());
+      await new Promise(resolve => setImmediate(resolve));
+      if (mode !== 'preview signer') mutate();
+      if (release) release();
+      await request;
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(delivered, 0);
+      assert.equal(failed, mode.startsWith('preview'));
+      assert.deepEqual(state.downloads, []);
+      assert.equal(state.signed.length, mode === 'preview signer' ? 1 : 0);
+      for (const signed of state.signed) assert.equal(signed.params.Key, 'documents/folder/file.txt');
+      assert.equal(state.errors.length, mode.startsWith('preview') ? 0 : 1);
+      if (state.errors.length) assert.equal(state.errors[0].message, pydio.MessageHash[391]);
+    });
+  }
+});
+
+test('original native editors never consume another scope or moved node from a late plain GET', async t => {
+  for (const phase of ['token', 'loader', 'response']) {
+    for (const change of ['move', 'uuid', 'repository', 'user', 'user id', 'slug', 'removed repository']) await t.test(`${phase}/${change}`, async () => {
+      const {api, node, state, pydio, repositories} = await nativeDownloadFixture();
+      let release;
+      if (phase === 'token') state.tokenPending = new Promise(resolve => {release = resolve;});
+      if (phase === 'loader') state.loaderPending = new Promise(resolve => {release = resolve;});
+      if (phase === 'response') state.holdRead = true;
+      let delivered = 0;
+      const request = api.getPlainContent(node, () => {delivered++;});
+      await new Promise(resolve => setImmediate(resolve));
+      if (change === 'move') node.path = '/moved/file.txt';
+      if (change === 'uuid') node.getMetadata().set('uuid', ids[4]);
+      if (change === 'repository') node.getMetadata().set('repository_id', ids[10]);
+      if (change === 'user') pydio.user = {...pydio.user};
+      if (change === 'user id') pydio.user.id = 'different-native-user';
+      if (change === 'slug') repositories.set(ids[9], {getSlug:() => 'changed-documents'});
+      if (change === 'removed repository') repositories.delete(ids[9]);
+      if (release) release();
+      if (phase === 'response') state.readCallback(null, {Body:Buffer.from('late original native text')});
+      await request;
+      assert.equal(delivered, 0);
+      assert.equal(state.reads.length, phase === 'response' ? 1 : 0);
+      for (const read of state.reads) assert.equal(read.Key, 'documents/folder/file.txt');
+      assert.deepEqual(state.errors, [{kind:'ERROR',message:pydio.MessageHash[391]}]);
+    });
+  }
+  await t.test('only the explicitly selected repository matters while another active workspace changes', async () => {
+    const {api, node, state} = await nativeDownloadFixture();
+    node.getMetadata().set('repository_id', ids[9]);
+    state.holdRead = true;
+    let content;
+    const request = api.getPlainContent(node, value => {content = value;});
+    await new Promise(resolve => setImmediate(resolve));
+    state.activeRepository = ids[10];
+    state.readCallback(null, {Body:Buffer.from('same original native text')});
+    await request;
+    assert.equal(content, 'same original native text');
+    assert.equal(state.reads.length, 1);
+    assert.equal(state.reads[0].Key, 'documents/folder/file.txt');
+    assert.deepEqual(state.errors, []);
+    assert.match(await api.buildPresignedGetUrl(node), /\/documents\/folder\/file\.txt/);
+  });
+  await t.test('the original GET error settles once without delivering content or automatically reading again', async () => {
+    const {api, node, state} = await nativeDownloadFixture('read');
+    let delivered = 0;
+    await api.getPlainContent(node, () => {delivered++;});
+    assert.equal(delivered, 0);
+    assert.equal(state.reads.length, 1);
+    assert.deepEqual(state.errors, [{kind:'ERROR',message:'native read result unconfirmed'}]);
+  });
 });
 
 test('original native signing failures reject or reach the existing UI without hanging a download', async t => {

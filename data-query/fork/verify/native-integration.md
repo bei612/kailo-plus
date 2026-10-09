@@ -9037,3 +9037,98 @@ checkpoint is also not authorization. SS-WRN-IDENTITY/GOVERNANCE, SERVICE SQL,
 ordinary FunctionCall provenance and dynamic Resource adoption retain their
 actual unclosed release boundaries. Root owns selective commit/push and the
 separate fixed-source UI/AI build; full/docs checks are not rerun by this child.
+
+## Native SQL response and correction boundary
+
+2026-10-09 implementation-after-source-read checkpoint. Formal comparison base
+`e89d1e8d1f14fe96654505bb491340a00f919812`; source ownership is exactly
+`wren-ai-service/src/providers/engine/wren.py`,
+`wren-ai-service/src/pipelines/generation/utils/sql.py`,
+`wren-ai-service/tests/pytest/providers/test_native_identity.py`,
+`wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts` and
+`wren-ui/src/apollo/server/services/tests/queryService.test.ts`, plus this EOF
+and `docker/README.md` EOF. The subsequent HUMAN middleware/binding change is
+independent and is not validated by this checkpoint.
+
+Authority/impact: SS-WRN-IDENTITY/GOVERNANCE and the existing failure/UNKNOWN
+contract govern the original `WrenUI.execute_sql` →
+`SQLGenPostProcessor.run/_classify_generation_result` → original Ask generation
+consumer. Fixed UI source `c5f02a0391c87420dba78632dcd86073710deb72`, complete
+paths `wren-ai-service/src/providers/engine/wren.py`,
+`wren-ai-service/src/pipelines/generation/utils/sql.py`,
+`wren-ui/src/apollo/server/services/queryService.ts` and
+`wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts`, retain original
+provider, native POST, correction details and preview result semantics.
+The typed failure is rethrown before the generic invalid-generation classifier;
+this does not invent an AE or component business terminal state.
+
+The actual error producer is fixed Engine
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0`, complete paths
+`wren-core-legacy/wren-main/src/main/java/io/wren/main/web/WrenExceptionMapper.java::failure`,
+`wren-core-legacy/wren-main/src/main/java/io/wren/main/web/dto/ErrorMessageDto.java::getCode`,
+`wren-core-legacy/wren-base/src/main/java/io/wren/base/metadata/StandardErrorCode.java::SYNTAX_ERROR`
+and `wren-core-legacy/wren-base/src/main/java/io/wren/base/jinjava/JinjavaExpressionProcessor.java::processInternal/processExpression`.
+The same Engine pin's `ibis-server/app/model/connector.py::DuckDBConnector.dry_run`
+actually calls `connection.execute`; generic dry-run failure is not evidence
+that no SQL side effect happened. Only confirmed Engine HTTP 400 with structured
+SYNTAX_ERROR maps to the existing INVALID_SQL_ERROR, and only AI dry-run with a
+single proper error and string message enters correction. No function-name
+allowlist, parser, task table, permission, quota/usage or execution authority is
+added. No UI layout/GraphQL/schema/SQL body storage changes are made.
+
+Boundary behavior: non-200, non-object response, malformed/falsy non-list
+errors, absent/non-string error message, partial data, HUMAN receipt/UNKNOWN or
+unrecognized terminal status throw the sanitized unavailable failure. Empty
+original row arrays retain original false/empty-result semantics. Engine true
+and original Ibis correlation metadata retain dry-run success semantics.
+Identity failure remains its original typed failure. Original request is sent
+once; these errors never cause an additional SQL request or automatic correction.
+All differences are authorized governance changes, not claims of all-page
+original consistency or service-query authorization.
+
+Original constrained SDK `kailo-wren-query-sdk-itgs2n` retained 4 CPU/4 GiB,
+Node heap 3072, Jest `--runInBand`, original cached dependencies and no new
+image/DB/toolchain. `memory.events` remained all zero. The Knowledge backend
+build overlapped initially; no host compiler was used. Original commands:
+`python3 -B tests/pytest/providers/test_native_identity.py -v` (**28/28**),
+`./node_modules/.bin/jest --runInBand --runTestsByPath src/apollo/server/services/tests/queryService.test.ts`
+(**22/22**, session 37536 exit 0), original `tsc --noEmit` and two-file Prettier
+check (both **0**). Initial private Python preparation omitted the unchanged
+`force_deploy.py` input and produced **26 pass/2 import errors**; that failure
+is retained in `positive-python.log`, then the real original input was supplied.
+
+Private production mutations were run after implementation, never in formal
+source: removing the HTTP status guard caught **3 subcase failures**; removing
+typed postprocessor rethrow caught **5**; reverting falsy-error acceptance caught
+**4**. Removing the Engine HTTP-400 condition produced **1 failed/5 passed/16
+filtered skips**, actual original QueryService → HTTP → adaptor → Apollo
+formatter, not a compiler-only failure. Exact restoration then ran the same
+six new native status cases **6/6** (16 filtered skips), original final types
+**0**, formatting **0**, session 71190 exit 0. The final string-message guard
+was subsequently implemented: 28/28 positive, reverting the actual guard and
+former message fallback caught **8 subcase failures in 2 real methods**, including
+the actual postprocessor `.startswith`/generic-catch regression; exact restore
+then **28/28**, exit 0. No prior result is used to validate those later bytes.
+
+All raw logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-sql-response.vwdTRb/`:
+`positive-query-service.log` SHA-256 `45cc28f2a957eb082d19e03bb2c33a49c2e07d239ce56493106dbe3414c18ee6`;
+`mutation-query-syntax-status.log` `eca17655434270cee264237516b7f17f89f92027ea0bb7fd26126695ab0e084a`;
+`restored-query-syntax-status.log` `c2072985c2ca2e7842256659a16058e9cd6bee713b1a01fb0006e733c8bb6399`;
+`final-message-shape-mutation.log` `c717fc559bbb7cdb174ce025b7e8bdb4fc4cacfb716eee82c0961900baaad152`;
+`final-message-shape-restored.log` `99b4896fb016e0c56bdea50da58a0dea03608138708fd36ebd72d0ac74131688`;
+`final-restored-types.log` is the empty successful diagnostic log;
+`final-restored-format.log` `17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+The earlier HTTP/postprocessor/shape mutation and restoration logs remain there.
+
+Final five input bytes are cmp-equal to the actual validated single-root SDK
+and private Python input. Formal SHA-256, in the five-source order above:
+`60156447e1476c7e4688862265af838af59018b1e32ecba2ddce7acd87c545b2`,
+`0624ad94c8b6dcb55fc00bb258f9adb76b81ecc47a768c516f9e9ac1d03b6ae5`,
+`0e2ba1f42e5a4bfc63ac4b355fb533382a9e8bf8bee3f05fdb74be1323290e9e`,
+`d2fb07e28aaea4d59c921b794d96c8dac65c93b3319dcf7fd638431022974bf5`,
+`7f013dc2f11d061d3e60102d27fa74406c405a7291850110aca56229a9928fb3`.
+No platform contract or generated API changes apply to this batch. Root owns
+selective commit/push and its separate full gate. Native Wren product deployment,
+approved ACTIVE binding, dynamic Resource adoption, ordinary FunctionCall
+provenance, SERVICE SQL, iframe and three-user acceptance remain unclaimed.

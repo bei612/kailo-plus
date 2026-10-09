@@ -100,3 +100,52 @@ uploader、native task 执行、审批／额度、外部副作用及原页面端
 缺 Resource、当前身份、权限、输入版本或真实终态继续 fail closed；不退回默认
 root／tenant、不重发结果不明的写入、不伪造上传成功或零字节计量。
 原生写入消费和部署须继续提供各自证据；四语言往返不代表组件或生产验收。
+
+## 5. Tenant 成员目录的原版资料字段（2026-10-09）
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx` 的
+`RelayMemberRow` 使用 `createdAt` 呈现 Added 日期，使用成员公钥呈现身份。
+Kailo 沿 `DD-82` 原 `/api/v1/role-members` 提供实际 Tenant 成员事实，
+不以所选 Workspace 的成员列表冒充整个 Tenant，也不把 HUMAN 管理员映射为
+Relay 的 CONTROL owner。
+
+生产者是 `platform_views.rs::list_role_members`：`createdAt` 来自既有
+`identity.tenant_membership.created_at`，是成员记录创建时间，不是审批通过或
+最近激活时间；`pubkeys` 只取同 Tenant、同 HUMAN Principal 的 ACTIVE
+Buzz 绑定并排序。仅 Workspace manage 不返回这两个 Tenant 资料字段。
+无有效公钥时省略列表，不使用查看者、其他成员或其他 Workspace 的身份替代。
+原分页、SpiceDB 角色读取和动作准入保持原路径，未增加资料写入或权限权威。
+
+两字段均可选；时间沿本目录既定子集用 RFC3339 字符串，不用 date-time 类型。
+旧回应缺省保持缺省，非空多公钥列表不拆分成多个 HUMAN。既有四侧生成解析器
+忽略未知可选字段；这不代表旧版额外关闭属性的 schema 校验器接受新回应。
+数据库没有新增字段、迁移或双写窗口；资料正文及头像仍属于 Buzz，目录公钥
+本身不授权任意资料或媒体读取。Web/Desktop 共享消费者，Mobile 仅同步合同。
+
+实现后扩展原四侧 member removal 往返用例，覆盖新字段及旧缺省；原
+`role_management` 场景增加与数据库实际创建时间、公钥集合的对照以及
+Workspace-only 管理者不泄露这两个字段的断言。后者尚无本批真实拓扑执行
+结果，不能用合同往返通过替代 BFF、原版页面或设备验收。
+
+已执行的合同证据位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/tenant-directory-20261009.xUdSgp/`：
+`contract-native-complete-input.log` 的 Rust 指定往返用例 1 passed、Go 对应用例
+退出 0；随后只在私有候选树把 Go `RoleMemberView.Pubkeys` 的 JSON tag 改为
+忽略字段，原用例在 `contract-native-negative.log` 实际退出 1 并报
+`Member removal permissions lost`。正式源码未施加该破坏。
+还原 tag 后，`contract-final-restored-sdk-path.log` 的原 `tools/gen.sh`
+四侧生成与 i18n 均成功，Go 恢复复验退出 0；最终生成物已回写本目录对应四侧。
+所有执行复用已有 SDK、Data 缓存与实际 4 CPU/8 GiB cgroup，不运行宿主工具链。
+
+一次中间调用误用 login shell 覆盖 SDK PATH，格式化工具不可见，原生成入口
+在 `contract-final-restored.log` 报 `TypeScript and Dart ReasonCode enums differ`、
+退出 1；修正调用环境后重新生成通过，没有修改合同检查器或绕过该错误。
+旧 `tools/check.sh --full` 的 22988 轮仍因禁网下 Dart 依赖准备失败而退出 2，
+不把上述限定范围证据记为全量通过。
+
+同一 SDK 中 `cargo check --offline --locked --manifest-path core/Cargo.toml
+-p platform-core --test role_management` 最终退出 0，日志
+`core-directory-complete-input.log`；该结果是 Core 与既有场景的编译验证，不是
+场景运行。首次私有输入漏带原 `model-gateway/crates/protos/proto`，在 build.rs
+失败、退出 101，补入原固定源码依赖后重验；未新增或复制成另一协议权威。

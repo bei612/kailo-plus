@@ -31,7 +31,10 @@ import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./
 import { Resource } from "./pages";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad, type Loaded } from "./use-load";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./composer/shared/ui/dialog";
+import { CommunityInviteDialog } from "./community-members/CommunityInviteDialog";
+import { InviteLinkSection } from "./community-members/InviteLinkSection";
+import { Button as InviteButton } from "./profile/buzz/shared/ui/button";
+import { CommunityMembersSettingsCard } from "./community-members/CommunityMembersSettingsCard";
 
 /** BFF 以 403 回答：调用方没有这项权限。这是确定的「不给入口」，不是读取失败。 */
 function forbidden(error: unknown): boolean {
@@ -59,7 +62,7 @@ type IssueOutcome =
   | { kind: "failed"; failure: WriteFailure };
 
 /** 成员页上的邀请一节。非 admin（列表 403）时整节不渲染。 */
-export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean;onAccessChange?:(state:Loaded<boolean>,reload:()=>void)=>void} = {}) {
+export function TenantInvitations({dialog=false,settings=false,active=true,onAccessChange}:{dialog?:boolean;settings?:boolean;active?:boolean;onAccessChange?:(state:Loaded<boolean>,reload:()=>void)=>void} = {}) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
@@ -85,6 +88,9 @@ export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean
     window.addEventListener("focus",reload);
     return ()=>window.removeEventListener("focus",reload);
   },[reload]);
+  // Closing the original settings surface dismisses its dialog, not its
+  // unresolved governed intent or first-response-only link.
+  useEffect(()=>{if(!active)setOpen(false);},[active]);
 
   // 第一次得到 BFF 的回答之前不画任何东西：非 admin 不该看到这一节闪一下再消失。
   // 重读期间保持已有的画面（签发出的链接还要留在屏幕上）。
@@ -153,12 +159,10 @@ export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean
     }
   };
 
-  const content = (
-    <section className="flex flex-col gap-3" data-testid="tenant-invitations">
-      {!dialog?<h2 className="text-sm font-medium">{t("invitations.title")}</h2>:null}
+  const invitationForm = <>
       {answered.current ? (
         <>
-          <p className="text-xs text-muted-foreground">{t("invitations.explain")}</p>
+          {!dialog&&!settings?<p className="text-xs text-muted-foreground">{t("invitations.explain")}</p>:null}
           <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => void issue(e)}>
             <label className="flex flex-col gap-1 text-sm">
               <span>{t("invitations.inviteeLabel")}</span>
@@ -179,6 +183,12 @@ export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean
         </>
       ) : null}
       {issued ? <IssuedNotice outcome={issued} /> : null}
+  </>;
+
+  const content = (
+    <section className="flex flex-col gap-3" data-testid="tenant-invitations">
+      {!dialog&&!settings?<h2 className="text-sm font-medium">{t("invitations.title")}</h2>:null}
+      {!settings?invitationForm:null}
       {withdrawFailure ? (
         <p className={withdrawFailure.kind === "rejected" ? "text-destructive" : ""} role="alert">
           {withdrawFailure.kind === "unknown"
@@ -246,14 +256,18 @@ export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean
       </Resource>
     </section>
   );
+  if(settings)return <>
+    <CommunityMembersSettingsCard inviteAction={<InviteButton data-testid="community-invite-dialog-trigger" onClick={()=>setOpen(true)}>{t("invitations.communityInvite")}</InviteButton>}>
+      <CommunityInviteDialog open={open&&active} onOpenChange={setOpen}>{invitationForm}</CommunityInviteDialog>
+    </CommunityMembersSettingsCard>
+    {content}
+  </>;
   if(!dialog)return content;
   return <>
-    <Button onClick={()=>setOpen(true)}>{t("actions.tenant.member.invite")}</Button>
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="community-invite-dialog">
-      <DialogHeader><DialogTitle>{t("actions.tenant.member.invite")}</DialogTitle>
-        <DialogDescription>{t("invitations.explain")}</DialogDescription></DialogHeader>
+    <InviteButton data-testid="community-invite-dialog-trigger" onClick={()=>setOpen(true)}>{t("invitations.communityInvite")}</InviteButton>
+    <CommunityInviteDialog open={open} onOpenChange={setOpen}>
       {content}
-    </DialogContent></Dialog>
+    </CommunityInviteDialog>
   </>;
 }
 
@@ -261,7 +275,6 @@ function IssuedNotice({ outcome }: { outcome: IssueOutcome }) {
   const t = useT();
   const locale = useLocale();
   const failureText = useFailureText();
-  const [copied, setCopied] = useState(false);
   if (outcome.kind === "noLink") return <p role="alert">{t("invitations.noLink")}</p>;
   if (outcome.kind === "failed") {
     const f = outcome.failure;
@@ -274,31 +287,15 @@ function IssuedNotice({ outcome }: { outcome: IssueOutcome }) {
     );
   }
   const { invitation, label } = outcome;
-  // 剪贴板 API 只在安全上下文里存在；没有时链接照样在只读框里可选中复制
-  const canCopy = typeof navigator !== "undefined" && navigator.clipboard !== undefined;
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3" role="status" data-testid="issued-invitation">
+    <div className="space-y-3" role="status" data-testid="issued-invitation">
       <p>
         {t("invitations.issued", {
           label,
           expires: relativeTime(locale, invitation.expiresAt),
         })}
       </p>
-      <input
-        aria-label={t("invitations.title")}
-        className={`${inputClass} font-mono text-xs`}
-        readOnly
-        value={invitation.link}
-        onFocus={(e) => e.currentTarget.select()}
-      />
-      {canCopy ? (
-        <Button
-          className="w-fit"
-          onClick={() => void navigator.clipboard.writeText(invitation.link).then(() => setCopied(true))}
-        >
-          {copied ? t("invitations.copied") : t("invitations.copy")}
-        </Button>
-      ) : null}
+      <InviteLinkSection inviteUrl={invitation.link}/>
     </div>
   );
 }

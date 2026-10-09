@@ -93,16 +93,19 @@ export function NativeBootstrap({
   invoke,
   connect,
   locale,
+  copyText,
   children,
 }: {
   invoke: Invoke;
   /** 用连接事实连 Relay（宿主既有的连接路径）；失败以 reject 表示 */
   connect: (facts: NativeCommunityFacts, signal: AbortSignal) => Promise<void>;
   locale?: PlatformLocale;
+  copyText?: (text: string) => Promise<void>;
   children: (session: NativeSession) => ReactNode;
 }) {
   const [step, setStep] = useState<Step>({ kind: "loading" });
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [currentPrincipalId, setCurrentPrincipalId] = useState<string | undefined>();
   // 当前服务器的配置：显示名缓存以它的原生入口地址为键
   const configRef = useRef<NativeConfig | null>(null);
   // 每次登录/退出/配置切换属于一个流程；失效流程的异步结果不能恢复旧身份。
@@ -110,6 +113,7 @@ export function NativeBootstrap({
   const connection = useRef<AbortController | null>(null);
   const invalidateFlow = useCallback(() => {
     flow.current += 1;
+    setCurrentPrincipalId(undefined);
     connection.current?.abort();
     connection.current = null;
     return flow.current;
@@ -194,6 +198,7 @@ export function NativeBootstrap({
         setStep({ kind: "restricted" });
         return;
       }
+      setCurrentPrincipalId(session.tenantPrincipalId);
     } catch (e) {
       if (flow.current !== epoch) return;
       if (e instanceof SessionEndedError) return;
@@ -388,7 +393,7 @@ export function NativeBootstrap({
   );
 
   return (
-    <PlatformProvider client={client} locale={locale} authenticateNativePage={host.authenticateNativePage}>
+    <PlatformProvider client={client} locale={locale} authenticateNativePage={host.authenticateNativePage} currentPrincipalId={session ? currentPrincipalId : undefined} copyText={copyText}>
       {step.kind === "restricted" ? (
         <LifecycleRestrictedView displayName={displayName} onSignOut={() => void signOut()} />
       ) : session ? (

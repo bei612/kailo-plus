@@ -7,6 +7,9 @@ import { MembersPane, WorkspaceManagementPanels } from "../src/react/pages";
 import type { BffRequest, BffReply } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { TenantInvitations } from "../src/react/invitations";
+import { CommunityMembersSettingsCard } from "../src/react/community-members/CommunityMembersSettingsCard";
+import { canonicalNpub } from "../src/react/conversations/pubkey";
+import type { PlatformLocale } from "../src/i18n";
 import { render, click, button, type, settle } from "./render";
 
 beforeEach(()=>{
@@ -33,10 +36,10 @@ function browse(request:BffRequest):BffReply {
     {status:200,body:request.path.endsWith("/members")?[member]:request.path.includes("/profiles/")?
       {...profile,pubkey:request.path.endsWith(second)?second:first}:profile};
 }
-function mount(route:(request:BffRequest)=>BffReply|Promise<BffReply>, ui:React.ReactNode) {
+function mount(route:(request:BffRequest)=>BffReply|Promise<BffReply>, ui:React.ReactNode, currentPrincipalId?:string, locale:PlatformLocale="en") {
   const send=vi.fn(async(request:BffRequest)=>route(request));
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-  return {send,render:()=>render(<QueryClientProvider client={cache}><PlatformProvider locale="en" client={createBffClient({send})}>{ui}</PlatformProvider></QueryClientProvider>)};
+  return {send,render:()=>render(<QueryClientProvider client={cache}><PlatformProvider locale={locale} client={createBffClient({send})} currentPrincipalId={currentPrincipalId}>{ui}</PlatformProvider></QueryClientProvider>)};
 }
 
 describe("original member browsing with governed identity",()=>{
@@ -67,7 +70,7 @@ describe("original member browsing with governed identity",()=>{
     const host=await m.render();
     await vi.waitFor(()=>expect(host.querySelector('[data-testid="member-person"] img')?.getAttribute("src")).toBe(mediaPath));
     const avatar=host.querySelector('[data-testid="member-person"] img')!;
-    expect(avatar.getAttribute("alt")).toBe("Ada Avatar");
+    expect(avatar.getAttribute("alt")).toBe("Ada avatar");
     expect(avatar.parentElement?.className).toContain("h-9 w-9 text-xs shadow-none");
     expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(1);
     expect(m.send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
@@ -203,6 +206,99 @@ async function chooseMember(host:HTMLElement,label:string) {
   expect(item).toBeDefined();await click(item);
 }
 describe("original member actions through the same governance entry",()=>{
+  it("searches the displayed Chinese role while retaining the original English keyword",async()=>{
+    const m=mount(()=>({status:200,body:{members:[role,{...role,principalId:"admin",displayName:"Grace",tenantAdmin:true}]}}),
+      <CommunityMembersSettingsCard inviteAction={<button>邀请加入社区</button>}>{null}</CommunityMembersSettingsCard>,undefined,"zh-CN");
+    const host=await m.render();await settle();const search=host.querySelector<HTMLInputElement>('[data-testid="community-members-search"]')!;
+    await type(search,"管理员");expect(host.querySelector('[data-testid="relay-member-row-admin"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).toBeNull();
+    await type(search,"成员");expect(host.querySelector('[data-testid="relay-member-row-person"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="relay-member-row-admin"]')).toBeNull();
+    await type(search,"admin");expect(host.querySelector('[data-testid="relay-member-row-admin"]')).not.toBeNull();
+  });
+  it("loads the complete original card before counting or searching and marks only the trusted Principal You",async()=>{
+    const cursor="4f25b49e-0339-4d5c-86e0-6d0eb2c58f14";
+    const m=mount(request=>({status:200,body:request.path.includes("cursor=")?
+      {members:[{...role,principalId:"other",displayName:"Grace",pubkeys:[second]}]}:
+      {members:[{...role,pubkeys:[first]}],nextCursor:cursor}}),
+      <CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}>{null}</CommunityMembersSettingsCard>,"other");
+    const host=await m.render();await settle();
+    expect(m.send.mock.calls.map(([request])=>request.path)).toEqual(["/api/v1/role-members",`/api/v1/role-members?cursor=${cursor}`]);
+    expect(host.textContent).toContain("Members2");
+    expect(host.querySelector('[data-testid="relay-member-row-other"]')?.textContent).toContain("You");
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')?.textContent).not.toContain("You");
+    expect(host.textContent).not.toContain("Next page");expect(host.textContent).not.toContain("Previous page");
+    await type(host.querySelector<HTMLInputElement>('[data-testid="community-members-search"]')!,canonicalNpub(second)!);
+    expect(host.querySelector('[data-testid="relay-member-row-other"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).toBeNull();
+  });
+  it.each(["repeated-cursor","duplicate-principal","failed-page"] as const)("does not expose an actionable partial Tenant directory after %s",async problem=>{
+    const cursor="4f25b49e-0339-4d5c-86e0-6d0eb2c58f14";
+    const m=mount(request=>!request.path.includes("cursor=")?{status:200,body:{members:[{...role,canGrantTenantAdmin:true}],nextCursor:cursor}}:
+      problem==="failed-page"?{status:503,body:{}}:{status:200,body:{members:problem==="duplicate-principal"?[role]:[],nextCursor:problem==="repeated-cursor"?cursor:undefined}},
+      <CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}>{null}</CommunityMembersSettingsCard>);
+    const host=await m.render();await settle();
+    expect(m.send.mock.calls).toHaveLength(2);
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  });
+  it("restores the original Tenant member card without splitting one Principal into its active bindings",async()=>{
+    const added="2026-09-25T09:15:00Z";
+    const m=mount(request=>request.path.startsWith("/api/v1/role-members")?{status:200,body:{members:[{
+      ...role,pubkeys:[first,second],createdAt:added,
+    }]}}:{status:403,body:{}},<CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}><p>Invitation dialog host</p></CommunityMembersSettingsCard>);
+    const host=await m.render();await settle();
+    expect(host.querySelectorAll('[data-testid="relay-member-row-person"]')).toHaveLength(1);
+    expect(host.textContent).toContain("Invites");expect(host.textContent).toContain("Manage members and community access.");
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')?.className).toBe("group/member flex min-h-14 items-center gap-3 px-1 py-2.5");
+    const identity=host.querySelector('[data-testid="relay-member-name-person"]')!.parentElement!;
+    expect(identity.title).toContain(canonicalNpub(first));expect(identity.title).toContain(canonicalNpub(second));
+    expect(host.querySelector('[data-testid="relay-member-npub-person"]')?.textContent).toContain("npub1");
+    expect(host.textContent).toContain(`Added ${new Date(added).toLocaleDateString("en",{month:"short",day:"numeric",year:"numeric"})}`);
+    expect(host.querySelector('button[aria-label="Actions for Ada"]')).toBeNull();
+    expect(host.querySelector('img')).toBeNull();
+    expect(m.send.mock.calls.every(([request])=>request.path==="/api/v1/role-members"&&request.method==="GET")).toBe(true);
+    await type(host.querySelector<HTMLInputElement>('[data-testid="community-members-search"]')!,canonicalNpub(second)!);
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).not.toBeNull();
+    await type(host.querySelector<HTMLInputElement>('[data-testid="community-members-search"]')!,"absent");
+    expect(host.textContent).toContain("No members match your search.");
+  });
+  it("preserves old optional metadata absence without inventing a key, Added date or profile grant",async()=>{
+    const m=mount(()=>({status:200,body:{members:[role]}}),<CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}>{null}</CommunityMembersSettingsCard>);
+    const host=await m.render();await settle();
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="relay-member-npub-person"]')).toBeNull();
+    expect(host.textContent).not.toContain("Added");expect(host.textContent).not.toContain("You");
+    expect(host.querySelector('[data-testid="relay-member-name-person"]')?.className).not.toContain("group-hover/member:max-w-0");
+    expect(host.querySelector('img')).toBeNull();
+  });
+  it.each([{pubkeys:["not-an-active-key"]},{createdAt:"not-a-date"}])("rejects malformed optional Tenant metadata before rendering actionable rows: %j",async metadata=>{
+    const m=mount(()=>({status:200,body:{members:[{...role,canGrantTenantAdmin:true,...metadata}]}}),<CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}>{null}</CommunityMembersSettingsCard>);
+    const host=await m.render();await settle();
+    expect(host.querySelector('[data-testid="relay-member-row-person"]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  });
+  it("routes original Tenant card menu actions through confirmation and retains UNKNOWN across a fresh roster",async()=>{
+    let attempts=0;
+    const m=mount(request=>request.method==="POST"?(++attempts===2?{status:403,body:{}}:{status:202,body:{actionKey:"tenant.admin.grant",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"UNKNOWN"}}):
+      {status:200,body:{members:[{...role,pubkeys:[first,second],canGrantTenantAdmin:true,canRemoveFromTenant:false}]}}
+      ,<CommunityMembersSettingsCard inviteAction={<button>Invite to community</button>}>{null}</CommunityMembersSettingsCard>);
+    const host=await m.render();await settle();
+    const menu=await memberMenu(host);expect(menu.textContent).toContain("Make admin");
+    expect(menu.textContent).not.toContain("Remove from community");expect(menu.textContent).not.toContain("owner");
+    await click([...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node=>node.textContent==="Make admin")!);
+    expect(m.send.mock.calls.some(([request])=>request.method==="POST")).toBe(false);
+    await click(button(host,"Confirm"));
+    expect(host.textContent).toContain("accepted is unknown");
+    await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    expect(host.textContent).toContain("accepted is unknown");
+    expect([...host.querySelectorAll('button')].some(node=>node.textContent==="Cancel")).toBe(false);
+    await click(button(host,"Confirm"));
+    const commands=m.send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
+    expect(commands).toHaveLength(2);expect(commands[1]).toEqual(commands[0]);
+    expect(commands[0]).toMatchObject({actionKey:"tenant.admin.grant",principalId:"person"});
+    expect(commands[0]).not.toHaveProperty("workspaceId");
+  });
   it("uses exact server flags and the original command scope, not role-derived removal",async()=>{
     const m=mount(request=>request.method==="POST"?{status:202,body:{actionKey:"workspace.admin.grant",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"DISPATCHED"}}:
       request.path.includes("role-members")?{status:200,body:{members:[{...role,canRemoveFromWorkspace:undefined}]}}:browse(request),<MembersPane workspaceId="workspace"/>);
@@ -237,10 +333,10 @@ describe("original member actions through the same governance entry",()=>{
   });
   it("retains an unknown invitation across the original dialog closing and retries only its original key",async()=>{
     const m=mount(request=>{if(request.method==="POST")throw new TransportError("response lost");return {status:200,body:[]};},<TenantInvitations dialog/>);
-    const host=await m.render();await settle();await click(button(host,"Invite organization member"));
+    const host=await m.render();await settle();await click(button(host,"Invite to community"));
     await type(document.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!,"Ada");
     await act(async()=>document.querySelector('form')!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));await settle();
-    await click(button(document.body,"Close"));await click(button(host,"Invite organization member"));
+    await click(button(document.body,"Close"));await click(button(host,"Invite to community"));
     expect(document.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
     await act(async()=>document.querySelector('form')!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));await settle();
     const commands=m.send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);

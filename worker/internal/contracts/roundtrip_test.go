@@ -527,6 +527,10 @@ func TestMemberRemovalPermissionsRoundtrip(t *testing.T) {
 				row[key] = permission
 			}
 		}
+		if permission == nil {
+			delete(row, "createdAt")
+			delete(row, "pubkeys")
+		}
 		input, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

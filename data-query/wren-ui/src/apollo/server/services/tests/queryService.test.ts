@@ -7,6 +7,10 @@ import { WrenEngineAdaptor } from '../../adaptors/wrenEngineAdaptor';
 import { encryptConnectionInfo } from '../../dataSource';
 import { DataSourceName } from '../../types';
 import { QueryService } from '../queryService';
+import {
+  GeneralErrorCodes,
+  defaultApolloErrorHandler,
+} from '../../utils/error';
 
 describe('QueryService', () => {
   let mockIbisAdaptor;
@@ -182,6 +186,65 @@ class MockTelemetry {
 }
 
 describe('original QueryService governed SQL transport', () => {
+  it.each([
+    { status: 400, code: 'SYNTAX_ERROR', invalid: true },
+    { status: 500, code: 'SYNTAX_ERROR', invalid: false },
+    { status: 400, code: 'PERMISSION_DENIED', invalid: false },
+    { status: 400, code: 'GENERIC_USER_ERROR', invalid: false },
+    { status: 400, code: 'future-code', invalid: false },
+    { status: 503, code: 'GENERIC_INTERNAL_ERROR', invalid: false },
+  ])(
+    'only native syntax refusal is correctable: $status $code',
+    async ({ status, code, invalid }) => {
+      let requests = 0;
+      let path: string;
+      const server = createServer((request, response) => {
+        requests++;
+        path = request.url;
+        response.writeHead(status, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({ code, message: 'original native error' }),
+        );
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const service = new QueryService({
+        ibisAdaptor: {} as any,
+        wrenEngineAdaptor: new WrenEngineAdaptor({
+          wrenEngineEndpoint: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        }),
+        telemetry: new MockTelemetry() as any,
+      });
+      try {
+        let error: any;
+        try {
+          await service.preview('SELECT original', {
+            project: { type: DataSourceName.DUCKDB } as any,
+            manifest: { catalog: 'fixture', schema: 'public', models: [] },
+            dryRun: true,
+          });
+        } catch (failure) {
+          error = failure;
+        }
+        expect(error).toBeDefined();
+        const reply = defaultApolloErrorHandler(error);
+        expect(reply.extensions.code).toBe(
+          invalid
+            ? GeneralErrorCodes.INVALID_SQL_ERROR
+            : GeneralErrorCodes.DRY_RUN_ERROR,
+        );
+        expect(reply.message).toBe('original native error');
+        expect(reply.extensions).not.toHaveProperty('originalError');
+        expect(requests).toBe(1);
+        expect(path).toBe('/v1/mdl/dry-run');
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+
   it.each(
     [DataSourceName.DUCKDB, DataSourceName.POSTGRES].flatMap((type) =>
       ['deadline', 'response size'].map((boundary) => ({ type, boundary })),

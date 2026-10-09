@@ -100,6 +100,6 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:312afc7902bc754b91307f018b0ce4f7620efbeb42e40d9232a5252e6e270270
+      digest: sha256:7ea0c5fa4cf0897ae1c762fa7b42bcc5b087b26950106bc0de2604be5137e07f
   # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed

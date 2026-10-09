@@ -2,6 +2,8 @@
   "members": [{
     "principalId": "00000000-0000-4000-8000-000000000002",
     "displayName": "Member",
+    "createdAt": "2026-10-09T00:00:00+00:00",
+    "pubkeys": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
     "tenantAdmin": false,
     "workspaceAdmin": false,
     "canGrantTenantAdmin": true,

@@ -1,7 +1,7 @@
 // DD-53 / ADR-09: shared presentation only. Hosts retain their existing
 // preference stores, native notification permissions and keyboard handlers.
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { useDeviceLocale, useUiLocale } from "./context";
+import { useDeviceLocale } from "./context";
 import { SettingsViewSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
 import { TenantInvitations } from "./invitations";
@@ -180,10 +180,8 @@ export function SettingsPage({
 
 /** Kept mounted across section changes: an uncertain invitation is still the same action. */
 export function CommunityInvitationSettings({active,onAccessChange}:{active:boolean;onAccessChange:(state:Loaded<boolean>,reload:()=>void)=>void}) {
-  const locale=useUiLocale();
   return <section hidden={!active} data-testid="settings-community-invitations">
-    <SettingsSectionHeader title={translate(locale,"invitations.title")} description={translate(locale,"invitations.explain")}/>
-    <TenantInvitations onAccessChange={onAccessChange}/>
+    <TenantInvitations settings active={active} onAccessChange={onAccessChange}/>
   </section>;
 }
 

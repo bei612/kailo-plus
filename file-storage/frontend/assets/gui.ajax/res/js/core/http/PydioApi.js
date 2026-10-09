@@ -433,10 +433,13 @@ class PydioApi{
                 break;
         }
 
-        const resolver = (jwt, aws, slug) => {
+        const resolver = (jwt, aws, target) => {
+            if (!this.isVersionTargetCurrent(node, target)) {
+                throw new Error(this.getPydioObject().MessageHash[391]);
+            }
             let params = {
                 Bucket: this.getBucket(),
-                Key: slug + node.getPath(),
+                Key: target.slug + target.path,
                 Expires: longExpire ? 6000 : 600
             };
             if (bucketParams !== null) {
@@ -487,11 +490,18 @@ class PydioApi{
             return signed;
         };
 
-        const download = Promise.resolve().then(() => {
-            const slug = this.getSlugForNode(node);
+        const download = new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
+            if (!this.isVersionTargetCurrent(node, target)) {
+                throw new Error(this.getPydioObject().MessageHash[391]);
+            }
             return PydioApi.getRestClient().getOrUpdateJwt().then(jwt =>
-                awsLoader().then(aws => resolver(jwt, aws, slug))
-            );
+                awsLoader().then(aws => resolver(jwt, aws, target))
+            ).then(url => {
+                if (!this.isVersionTargetCurrent(node, target)) {
+                    throw new Error(this.getPydioObject().MessageHash[391]);
+                }
+                return url;
+            });
         });
         if (callback === null) {
             return download;
@@ -505,24 +515,31 @@ class PydioApi{
     }
 
     getPlainContent(node, contentCallback) {
-        return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
-            const slug = this.getSlugForNode(node)
-            return awsLoader().then(({S3}) => {
+        return new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
+            return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => awsLoader().then(({S3}) => new Promise((resolve, reject) => {
+                if (!this.isVersionTargetCurrent(node, target)) {
+                    throw new Error(this.getPydioObject().MessageHash[391]);
+                }
                 const params = {
                     Bucket: this.getBucket(),
-                    Key: slug + node.getPath(),
+                    Key: target.slug + target.path,
                     ResponseContentType: 'text/plain',
                     ResponseCacheControl: "no-cache",
                 };
                 const s3 = new S3(this.s3Options(jwt));
                 s3.getObject(params, (err,data) => {
-                    if (!err) {
+                    try {
+                        if (err) throw err;
+                        if (!this.isVersionTargetCurrent(node, target)) {
+                            throw new Error(this.getPydioObject().MessageHash[391]);
+                        }
                         contentCallback(data.Body.toString('utf-8'));
-                    } else {
-                        this.getPydioObject().UI.displayMessage('ERROR', err.message);
+                        resolve();
+                    } catch (error) {
+                        reject(error);
                     }
                 })
-            })
+            })))
         }).catch(error => this.getPydioObject().UI.displayMessage('ERROR', error.message || error));
 
     }

@@ -335,6 +335,10 @@ fn member_removal_permissions_preserve_true_false_and_legacy_absence() {
                 row.remove(key);
             }
         }
+        if permission.is_none() {
+            row.remove("createdAt");
+            row.remove("pubkeys");
+        }
         let typed: contracts::RoleMemberPage = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(typed).unwrap(), value);
     }

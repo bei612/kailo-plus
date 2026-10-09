@@ -26,6 +26,7 @@ import { DeviceIdentityGate } from "@/features/platform/DeviceIdentityGate";
 import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { cn } from "@/shared/lib/cn";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
@@ -196,7 +197,7 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <DeviceIdentityGate loading={<AppLoadingGate />}>
-        <NativeBootstrap connect={connectCommunity} invoke={invoke}>
+        <NativeBootstrap connect={connectCommunity} invoke={invoke} copyText={writeTextToClipboard}>
           {(session) => (
             <ActiveCommunityProvider
               key={`${session.facts.relayUrl}-${session.devicePubkey}`}

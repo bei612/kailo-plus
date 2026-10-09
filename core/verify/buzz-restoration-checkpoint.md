@@ -6221,3 +6221,103 @@ owned-source.patch SHA256 `13881b35c15b9a472edb400dc603770a79d1606c6d9429d0b6a66
 这是历史源码比较，不是当前main全量功能／视觉验收，3229也不是已实证功能故障数。
 本批三原模块归共享迁移，拒绝远端降级／MIME及中英宿主差异逐项记明，
 其余原 Settings／Workflows／GIF等未恢复消费者仍保留缺口，不声称100%。
+
+## 2026-10-09 原 Community Invitations/Tenant Members 共享恢复与4c实拍
+
+源码 checkpoint，不是完整原版恢复、上线或生产验收。17 个本批 clean 输入
+（3 新共享模块、14 修改／生成／既有检查）冻结为 +855/-76；没有吸收继承源 hunk。
+原版基准固定 `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/community-members/ui/CommunityInviteDialog.tsx::CommunityInviteDialog`、
+`desktop/src/features/community-members/ui/InviteLinkSection.tsx::InviteLinkSection`、
+`desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::{CommunityMembersSettingsCard,RelayMemberRow}`
+均已读取完整原文件并留下全文差异；
+`desktop/src/features/settings/ui/SettingsPanels.tsx` 的 community-members descriptor 原为 Invites + Ticket，
+本批恢复现成 `communityMembers.title` 的菜单读方，未把内部 Members 分组改作外侧菜单名。
+
+动手前四步结论：
+
+- 权威：原布局／动画／搜索／Added／菜单顺序来自固定官方模块；
+  DD-83 的一次性、服务端到期、原动作准入／审批／审计和 UNKNOWN 仍由既有 Core/BFF 消费者维护。
+  原 DirectAddMemberForm 与可选多用／到期没有已开放治理能力，不生成假控件或空 callback。
+- 影响面：邀请首个确认回执 → 原 Link；完整 Tenant role-members 游标目录 → 原 Card；
+  Web 可信 session.tenantPrincipalId、NativeBootstrap 原会话读 → 同一 PlatformProvider／You；
+  Native 原 writeTextToClipboard → 同一复制消费者。管理面两端仍 BFF，本机凭据／Relay传输不迁入 Web。
+  复用原 MembersPane 游标加载逻辑，现 helper 由原 Workspace 列表和新 Tenant Card 两个真实读方调用。
+  原总数／搜索基于全列表，无新增分页UI；可选 createdAt/pubkeys 由主线原合同／四侧生成，旧缺省不伪造。
+- 副作用：复制只在宿主真实 ACK 后 Copied，失败／迟到回执不报成功；
+  client 或可信 Principal 换代即重置整个消费 scope。成员菜单只消费服务端精确 can* 位，
+  不按 admin/member 推权限，不用 Tenant admin 冒充 Relay CONTROL owner，不复制头像／资料正文。
+- 边界：重复游标／重复 Principal／后续页失败／非法可选字段拒绝完整目录，不暴露可操作部分结果；
+  一个 HUMAN Principal 的多 ACTIVE SERVER/CLIENT pubkeys 仍是一人，不择首key猜本人或资料授权。
+  You 缺可信 Principal 即不渲染；无 metadata 即不捏造日期／key；空目录保留原空态。
+  邀请关闭、隐藏、刷新或读失败不清 UNKNOWN 的原意图／幂等key；角色确认沿原治理动作，未知不当终态。
+
+四类差异逐项边界：原输入／Button／Dialog／动画等既有共享原 primitive 本批原样复用；
+三原模块的原外观结构、Link状态、完整搜索／虚拟列表／成员菜单迁入同一 TS，两真实宿主消费；
+上述 DD-83、Principal映射／精确权限／本机clipboard和同源中文为已授权接缝；
+原真实 Tenant avatar/profile read、NIP05／ProfilePopover、Relay CONTROL owner 呈现、
+DirectAddMemberForm 原完整产品仍未恢复。不得将整文件差异笼统归治理或把 fallback Avatar 称真实头像加载。
+原 community-members Native目录 remove_paths 仍是共享迁移来源事实，不以删除登记掩盖剩余缺项。
+
+实际检查记录（最终正式17字节不可用旧候选结果代替）：
+
+- 原受限 `kailo-agent-receipt-xvkujx`：4CPU／8GiB，Node heap3072，原 caches，
+  无新SDK／依赖安装／镜像／bundle／full。旧 memory.events oom/oom_kill=2 是基线，不算本批负向命中。
+- 40604：三原 UI 目标 59/60；唯一失败为既有 Ada avatar alt 断言，与原实际 alt 不符，已纠正。
+  两共享 tsc 各 exit2 为已删 unused import；Web/Native tsc各0；TS member往返1/1 exit0。
+  Dart失败为未设PUB_CACHE导致 /.pub-cache permission denied，未验收。
+- 4496：原 i18n生成／check各0；邀请18/18，但 settings/members 各0 case、worker启动超时，UI总exit1。
+  共享源码／检查 tsc各exit2为已恢复的 TransportError import；
+  Web/Native tsc各exit2为候选已安装 platform副本仍旧props，不能计正式消费者通过。
+  TS member往返1/1 exit0；Dart exit64：本轮误用不支持的 --no-pub，未执行case。
+  原测试超时／断言没有放宽，失败日志保留。正式已补中文角色搜索、菜单实际断言及原新Card formatter。
+- 最终尾验尚未执行：最小同步原两宿主实际安装副本的45300、只读top85239仍无终态。
+  已观察 SDK bash2590430 Ds，内核 __flush_workqueue → cgroup_writeback_umount/cleanup_mnt；
+  没有启动重复Node、重启／改mount／另建环境。最终四UI（含原bootstrap）／四types／TS-Dart往返、
+  本批 production保护破坏与字节还原均尚未执行，不能把启动失败或计划记为正／负验收。
+  主线33路径候选 full 尚未终态，本记录不将其记通过。
+
+证据目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/community-invite-20261009.koOleB/`。
+`owned-source.patch` SHA256 `1aa0beee5a112582b0fd699aafef6ba0390fdd698d6133013c88583d76a21284`，reverse-check0；
+`owned-source-paths.txt` 给精确17路径；`upstream-*.tsx` 是三份原文，
+`official-shared-{CommunityInviteDialog,InviteLinkSection,CommunityMembersSettingsCard}.patch`
+分别 SHA256 `6c4a21136a1275e149d893c4d773c74230e27a75109fedb7bf8cfafe35bf5848`、
+`23948914378846ca322fd0094888503f75feb5280439cfed5b9bd277b933368c`、
+`de0823867b97c14e6887a1cc211f02101468c0e259ad78ebe8a6bdc9a94aa9a2`。
+`final-*.log` 保留4496原各阶段；`sync-kernel-wait.log` 保存只读阻塞证据。
+
+正常 seam-verifier SSO 的4c实拍独立在
+[Profile实拍回执](../../web-client/fork/verify/screenshots-20261009-4c099-profile.md)：
+实际 buildId `sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`，
+10原件均打开，7稳定目标／3错误页或过渡态排除；没有资料PUT／mediaPOST、上传／保存／擦除。
+英语 Profile description 仍被当前 About 替换，保留缺项；未将原Editor不消费previewName说成新功能。
+这些图只验已部署4c，不验新邀请／成员卡，Windows／Mobile及本批新页面视觉均未验。
+全树账仍仅 dd399f93f584b30d4a6301a5024c3959d4d420e6 历史比较点：
+5314 union／1970相同blob／115有证共享／0整文件治理授权／3229未证恢复队列，
+不是当前main完整核验或功能故障数；本批不声明全量100%。
+
+### 本批尾验真实终态与恢复（追加更正上述等待时点）
+
+45300 最小安装副本同步和85239原top随后均实际exit0，两宿主platform／contracts输入cmp0。
+最终85350：i18n-check0、shared生产／检查／Web／Native四tsc均0，
+原TS／Dart member removal permissions往返各1/1 exit0。
+该次UI69/70仍exit1：settings唯一旧断言将新增Card目录GET混入邀请总次数，
+members线程0case启动超时；原错误保留。只修已有settings fixture为两个真实端点形状，
+邀请GET仍精确2次、目录GET精确2次、无POST；生产16文件未变。
+该检查文件Git blob `3e99faf7584c5f8ceea7f1594c89ee960d16b8c0`。
+
+26964尾验同原settings／members目标53/53、最终检查tsc均exit0。
+私有生产对象破坏：66385将目录截为第一页、把Tenant晋升位换为Workspace位、倒置可信You判定，
+原members29项实际7失败／22通过、exit1，确实抓到部分目录／越权菜单／错误身份标记；
+roles与Card原字节还原并分别cmp0。14280将复制失败误置Copied，
+原invitations18项实际1失败／17通过、exit1，命中 expected idle received copied；Link原字节还原cmp0。
+恢复54235同四个原消费者invitations／settings／members／bootstrap：4文件99/99、exit0；
+memory.events仍原max16751／oom2／oom_kill2，无本批增量。stderr仍有原act／Reduced Motion提示，未隐藏。
+没有修改检查超时或为通过替换被测真实组件／权限消费者。
+
+最终17输入现在 +864/-78（含唯一既有检查纠正），全部其余源保持冻结；
+`owned-source-final.patch` SHA256 `a8aafa18911541a01439dbc497cbd7a8e98835e23423a9ceed57353284cfdfe4`，reverse-check0。
+原正向／失败／负向／恢复日志在同目录 settled-*／tail-*／negative-*／restored-ui.log；
+前述owned-source.patch为初始冻结，不能冒称最终检查字节。原full41490仍对应旧efb树／旧计数断言，
+不将最终尾验冒作该full通过。本批邀请／成员卡尚未部署或浏览器实拍，4c截图边界与剩余原版缺项不变。

@@ -134,6 +134,24 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
         .find(|m| m["principalId"] == w.b.principal.to_string())
         .unwrap();
     assert_eq!(b_view["canGrantTenantAdmin"], true);
+    for entry in entries {
+        let principal = Uuid::parse_str(entry["principalId"].as_str().unwrap()).unwrap();
+        let created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "select created_at from identity.tenant_membership where tenant_id=$1 and tenant_principal_id=$2",
+        ).bind(w.tenant).bind(principal).fetch_one(pool).await.unwrap();
+        assert_eq!(entry["createdAt"], created_at.to_rfc3339());
+        let keys: Vec<String> = sqlx::query_scalar(
+            "select pubkey from identity.buzz_identity_binding where tenant_id=$1 and principal_id=$2 and kind='HUMAN' and state='ACTIVE' order by pubkey",
+        ).bind(w.tenant).bind(principal).fetch_all(pool).await.unwrap();
+        if keys.is_empty() {
+            assert!(
+                entry.get("pubkeys").is_none(),
+                "unbound member must not borrow a key"
+            );
+        } else {
+            assert_eq!(entry["pubkeys"], json!(keys));
+        }
+    }
     let (st, _) = bff(
         http,
         e,
@@ -561,6 +579,12 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
         "没有 WorkspaceMembership 的 admin 应能管理此 Workspace：{view}"
     );
     let entries = view["members"].as_array().unwrap();
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.get("pubkeys").is_none() && entry.get("createdAt").is_none()),
+        "Workspace-only manage must not expose Tenant profile directory facts"
+    );
     let c_view = entries
         .iter()
         .find(|m| m["principalId"] == w.c.principal.to_string())

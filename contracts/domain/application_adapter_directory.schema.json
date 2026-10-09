@@ -16,18 +16,16 @@
         "maxResponseBytes": {"type": "integer"},
         "modelCredentialDeliveries": {"$ref":"#/$defs/modelCredentialDeliveries"},
         "bindings": {"type":"array", "minItems":1, "items":{"$ref":"#/properties/protocolPeers/items/properties/bindings/items"}, "description":"可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。"},
-        "nativeHumanIdentities": {"type":"array", "description":"受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。", "items":{
+        "nativeHumanIdentities": {"type":"array", "description":"受控原生浏览器认证信任投递；IdP只认证HUMAN，不承载实例业务许可。绑定、ACTIVE成员与SpiceDB实时检查决定权限；不由请求提供issuer/subject/key URL。", "items":{
           "title":"ApplicationNativeHumanIdentity", "type":"object", "additionalProperties":false,
-          "required":["bindingId","configDigest","generation","identityProviderId","audience","jwksFile","accessClaim","accessValue"],
+          "required":["bindingId","configDigest","generation","identityProviderId","audience","jwksFile"],
           "properties":{
             "bindingId":{"type":"string","format":"uuid"},
             "configDigest":{"type":"string","pattern":"^[a-f0-9]{64}$"},
             "generation":{"type":"integer","minimum":1},
             "identityProviderId":{"type":"string","format":"uuid"},
             "audience":{"type":"string","minLength":1},
-            "jwksFile":{"type":"string","minLength":1},
-            "accessClaim":{"type":"string","minLength":1},
-            "accessValue":{"type":"string","minLength":1}
+            "jwksFile":{"type":"string","minLength":1}
           }
         }},
         "secretReaders": {"type": "array", "items": {

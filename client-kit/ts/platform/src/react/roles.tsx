@@ -9,6 +9,7 @@ import { BffError, TransportError, type WriteFailure, writeFailure } from "../tr
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
+import type { BffClient } from "../client";
 import { Input } from "./composer/shared/ui/input";
 import { Button as ChannelButton } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
@@ -499,8 +500,27 @@ export function validRoleMemberPage(page:RoleMemberPage):boolean {
     &&typeof m.lastTenantAdmin==="boolean"&&typeof m.canGrantTenantAdmin==="boolean"&&typeof m.canRevokeTenantAdmin==="boolean"
     &&typeof m.canGrantWorkspaceAdmin==="boolean"&&typeof m.canRevokeWorkspaceAdmin==="boolean"
     &&(m.canRemoveFromWorkspace===undefined||typeof m.canRemoveFromWorkspace==="boolean")
-    &&(m.canRemoveFromTenant===undefined||typeof m.canRemoveFromTenant==="boolean"))
+    &&(m.canRemoveFromTenant===undefined||typeof m.canRemoveFromTenant==="boolean")
+    &&(m.createdAt===undefined||typeof m.createdAt==="string"&&Number.isFinite(Date.parse(m.createdAt)))
+    &&(m.pubkeys===undefined||Array.isArray(m.pubkeys)&&m.pubkeys.every(key=>typeof key==="string"&&/^[0-9a-f]{64}$/.test(key))))
     &&(page.nextCursor===undefined||typeof page.nextCursor==="string"&&page.nextCursor.length>0);
+}
+
+/** The existing complete role projection, shared by Workspace rows and the
+ * original Tenant card. No partial page is exposed after a failed read. */
+export async function loadRoleMemberDirectory(client:BffClient,workspaceId?:string):Promise<Map<string,RoleMemberView>> {
+  const members=new Map<string,RoleMemberView>();const cursors=new Set<string>();let cursor:string|undefined;
+  do {
+    const page=await client.roleMembers(workspaceId,cursor);
+    if(!validRoleMemberPage(page))throw new TransportError("Invalid member action projection");
+    for(const member of page.members){
+      if(members.has(member.principalId))throw new TransportError("Repeated member action identity");
+      members.set(member.principalId,member);
+    }
+    cursor=page.nextCursor;
+    if(cursor){if(cursors.has(cursor))throw new TransportError("Repeated member action cursor");cursors.add(cursor);}
+  }while(cursor);
+  return members;
 }
 
 export function RoleMembers({ workspaceId }: { workspaceId?: string }) {

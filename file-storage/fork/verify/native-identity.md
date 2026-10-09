@@ -260,3 +260,75 @@ Cells 原生会话的 Strict 与 OIDC 事务的 Lax Cookie 未弱化；同站点
 不等于 Desktop tauri 父来源下的跨站 iframe。后者仍需真实可用的安全 Cookie
 交付方案，认证弹窗本身不能证明 iframe 已取得会话。此限制不以重复登录、
 共享身份、复制 Cookie 或放宽 CSRF 绕过。
+
+### 2026-10-09 固定 bb5d67e6 原生构建失败与独立账号基线
+
+本次交付范围是已提交/push 的原 Job/Task 修复，不是创建新 Cells 实例或
+激活未闭合的 FILE_STORAGE 类别。四步影响：apps/07 §2.1 受限原构建/
+可追溯发布，以及设计 07 的原独立服务/数据库边界；影响原 manifest 的 native artifact
+与 application-only 更新，安装/认证文件及数据库均保留；任何构建、
+digest 或 native 版本确认缺失都不替换容器；失去确定结果不拿旧 tag
+冒充新产物、不重建数据库或伪造 binding/Task。
+
+原 sparse 构建候选
+`/volumes/data/kailo/tmp/cells-native-release-20261009.wlO96u/apps`
+固定 HEAD=`bb5d67e62364608e73aab56ca0f7b4718a78a38a`、源 status clean；
+官方版本仍 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+原 manifest plan 对本候选得到 source digest
+`sha256:4621e6a6da894edd613d6d441c701804237f0b1857af737bb5e1afe81ecfbecd`，
+但失败构建没有关联新 artifact，不能把该输入摘要称作已发布镜像。
+
+复用既有 `kailo-core-data` BuildKit、Data cache，8 CPU/16 GiB、无额外
+swap，不下调 Go 并行、不新建 builder。原 Knowledge 构建也在该 builder，
+不是独占窗口；启动前 MemAvailable 大于 16 GiB，原资源限额约束 aggregate。
+原 builder lifetime memory.peak=16 GiB、max 计数是既有历史快照，不冒充
+本批峰值；oom/oom_kill 仍 0。原 Dockerfile pinned frontend/Go/Alpine
+镜像及 apk/Go 依赖确实进行了拉取，不声称纯离线或全部 cache hit。
+
+真实原入口与投递（REGISTRY/密钥仍来自既有 operator `.env`，不打印）：
+
+```text
+BUILDX_BUILDER=kailo-core-data
+CELLS_VERSION=5.0.3-dev
+GIT_REV=bb5d67e62364608e73aab56ca0f7b4718a78a38a
+BUILD_STAMP=2026-10-09T15:56:35
+DOCKER_ENTRYPOINT_SRC_DIR=tools/docker/images/cells
+./tools/build-upstream.sh file-storage-service
+```
+
+原句柄 77075 最终实际 exit 1，没有重复启动。真实失败在原
+`go build -mod=readonly -trimpath` 的锁定依赖下载，原输出包括：
+
+```text
+github.com/blevesearch/bleve/v2@v2.5.7: Get "https://proxy.golang.org/github.com/blevesearch/bleve/v2/@v/v2.5.7.zip": net/http: TLS handshake timeout
+gocloud.dev@v0.45.0: Get "https://proxy.golang.org/gocloud.dev/@v/v0.45.0.zip": net/http: TLS handshake timeout
+ERROR: failed to build: failed to solve: process ... did not complete successfully: exit code: 1
+```
+
+完整原件位于候选上级 `cells-native-release-20261009.wlO96u`：
+
+```text
+8a88e4dab86e13c8c1ec93944e1e2583a00473a65a3736646220e37816b2df04 build.log
+14bebe7ed2109547470673a2eb62e855403025c91f8b0daac45102041f7127c8 build-file-storage-service.QRn8T2.log
+```
+
+因此没有新 Cells binary、artifact digest/registry push 或部署；正式
+upstream.yaml 两个旧产物摘要不改，旧 native app
+`kailo-cells-native-cells-1`/image `sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4`
+与原数据库/认证/业务数据均未变更。原 start.sh --check 对既有受控
+投递检查退出 0，不等于新版构建/部署成功。原 Dockerfile 不 bundle
+frontend JS，未来此 native 构建即使通过也不能代替 JS/browser 更新证据。
+
+等待构建期间，原 normal browser 会话从 Cells 登录页走本人 IdP，未注入
+Cookie、未重置/共享身份：`kailo-bootstrap-admin` 回读 native UUID
+`1860170d-e93e-499d-8140-ce54011c29ab`，`seam-verifier` 回读
+`7f1849a6-a5cf-4c05-b8d1-2c1e478aa804`，两者均 standard/admin=false。
+原 `PydioReactUI.JobsStore.getInstance().getJobs(true,"Any")` 在 admin 的
+旧版正常会话读取为 0 jobs/0 tasks，没有制造任务作验收。第三既有账号
+本轮未找到已投递登录密码，明确 SKIP，不用其它 Tenant 管理员凑数。
+这些只是旧版两账号独立入口/身份与原任务列表只读基线，不是新 bb5 字节、
+三人协作、claimed Task 重启恢复、Mongo/S3 实库或平台 binding E2E 验收。
+本轮未运行 full；此前 full 22988 exit 2 于 Dart pub.dev socket 依赖阶段，
+后续门禁未运行，不以本回执宣称生产就绪。
+本次原 `./tools/check-docs.sh` 首轮在容器 launcher 因未投递 TMPDIR
+实际 exit 2、七项文档检查未启动；文档门禁未宣称通过。

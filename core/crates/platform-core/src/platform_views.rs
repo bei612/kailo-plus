@@ -623,6 +623,15 @@ pub async fn list_platform_tenants(
         .into_response()
 }
 
+#[derive(sqlx::FromRow)]
+struct RoleMemberRow {
+    principal_id: Uuid,
+    display_name: String,
+    removable_workspace_member: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
+    pubkeys: Vec<String>,
+}
+
 /// 角色管理候选人是本 Tenant 的全部 ACTIVE HUMAN 成员，不限于 WorkspaceMembership：
 /// Workspace admin 可以授给尚未加入该 Workspace 的 Tenant 成员（DD-82）。角色只从
 /// SpiceDB fresh 读取，不在 Core 缓存；按钮只是当前视图，动作仍走重新准入。
@@ -702,10 +711,14 @@ pub async fn list_role_members(
     let Some(fetch_limit) = page.checked_add(1) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    let mut rows: Vec<(Uuid, String, bool)> = match sqlx::query_as(
-        "select p.id, hi.display_name,
+    let mut rows: Vec<RoleMemberRow> = match sqlx::query_as(
+        "select p.id as principal_id, hi.display_name,
            exists(select 1 from identity.workspace_membership wm
-             where wm.workspace_id=$4 and wm.tenant_principal_id=p.id and wm.state in ('ACTIVE','ERROR'))
+             where wm.workspace_id=$4 and wm.tenant_principal_id=p.id and wm.state in ('ACTIVE','ERROR')) as removable_workspace_member,
+           tm.created_at,
+           array(select bib.pubkey from identity.buzz_identity_binding bib
+             where bib.tenant_id=tm.tenant_id and bib.principal_id=p.id
+               and bib.kind='HUMAN' and bib.state='ACTIVE' order by bib.pubkey) as pubkeys
          from identity.principal p
          join identity.tenant_membership tm on tm.tenant_principal_id = p.id
          join identity.human_identity hi on hi.id = tm.human_identity_id
@@ -730,7 +743,7 @@ pub async fn list_role_members(
     let more = rows.len() as i64 > page;
     rows.truncate(page as usize);
     let next_cursor = if more {
-        rows.last().map(|r| r.0.to_string())
+        rows.last().map(|r| r.principal_id.to_string())
     } else {
         None
     };
@@ -845,46 +858,59 @@ pub async fn list_role_members(
     };
     let members = rows
         .into_iter()
-        .map(|(principal_id, display_name, removable_workspace_member)| {
-            let tenant_admin = tenant_admins.contains(&principal_id);
-            let workspace_admin = workspace_admins.contains(&principal_id);
-            let last_tenant_admin =
-                tenant_admin && effective.len() == 1 && effective.first() == Some(&principal_id);
-            RoleMemberView {
-                principal_id: principal_id.to_string(),
-                display_name,
-                tenant_admin,
-                workspace_admin,
-                can_grant_tenant_admin: tenant_manage
-                    && !tenant_admin
-                    && enabled.contains("tenant.admin.grant"),
-                can_revoke_tenant_admin: tenant_manage
-                    && tenant_admin
-                    && !last_tenant_admin
-                    && enabled.contains("tenant.admin.revoke"),
-                can_grant_workspace_admin: workspace_manage
-                    && !workspace_admin
-                    && enabled.contains("workspace.admin.grant"),
-                can_revoke_workspace_admin: workspace_manage
-                    && workspace_admin
-                    && enabled.contains("workspace.admin.revoke"),
-                last_tenant_admin,
-                can_remove_from_workspace: Some(
-                    workspace_manage
-                        && removable_workspace_member
-                        && principal_id != ctx.tenant_principal_id
-                        && removal_actions.contains("workspace.member.revoke")
-                        && crate::capability_registry::action_exposed("workspace.member.revoke"),
-                ),
-                can_remove_from_tenant: Some(
-                    tenant_manage
+        .map(
+            |RoleMemberRow {
+                 principal_id,
+                 display_name,
+                 removable_workspace_member,
+                 created_at,
+                 pubkeys,
+             }| {
+                let tenant_admin = tenant_admins.contains(&principal_id);
+                let workspace_admin = workspace_admins.contains(&principal_id);
+                let last_tenant_admin = tenant_admin
+                    && effective.len() == 1
+                    && effective.first() == Some(&principal_id);
+                RoleMemberView {
+                    principal_id: principal_id.to_string(),
+                    display_name,
+                    created_at: tenant_manage.then(|| created_at.to_rfc3339()),
+                    pubkeys: (tenant_manage && !pubkeys.is_empty()).then_some(pubkeys),
+                    tenant_admin,
+                    workspace_admin,
+                    can_grant_tenant_admin: tenant_manage
+                        && !tenant_admin
+                        && enabled.contains("tenant.admin.grant"),
+                    can_revoke_tenant_admin: tenant_manage
+                        && tenant_admin
                         && !last_tenant_admin
-                        && principal_id != ctx.tenant_principal_id
-                        && removal_actions.contains("tenant.member.revoke")
-                        && crate::capability_registry::action_exposed("tenant.member.revoke"),
-                ),
-            }
-        })
+                        && enabled.contains("tenant.admin.revoke"),
+                    can_grant_workspace_admin: workspace_manage
+                        && !workspace_admin
+                        && enabled.contains("workspace.admin.grant"),
+                    can_revoke_workspace_admin: workspace_manage
+                        && workspace_admin
+                        && enabled.contains("workspace.admin.revoke"),
+                    last_tenant_admin,
+                    can_remove_from_workspace: Some(
+                        workspace_manage
+                            && removable_workspace_member
+                            && principal_id != ctx.tenant_principal_id
+                            && removal_actions.contains("workspace.member.revoke")
+                            && crate::capability_registry::action_exposed(
+                                "workspace.member.revoke",
+                            ),
+                    ),
+                    can_remove_from_tenant: Some(
+                        tenant_manage
+                            && !last_tenant_admin
+                            && principal_id != ctx.tenant_principal_id
+                            && removal_actions.contains("tenant.member.revoke")
+                            && crate::capability_registry::action_exposed("tenant.member.revoke"),
+                    ),
+                }
+            },
+        )
         .collect();
     (
         StatusCode::OK,

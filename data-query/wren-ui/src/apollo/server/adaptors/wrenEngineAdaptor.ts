@@ -389,10 +389,22 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
       return res.data;
     } catch (err: any) {
       logger.info(`Got error when dry running`);
-      throw Errors.create(Errors.GeneralErrorCodes.DRY_RUN_ERROR, {
-        customMessage: err.response?.data?.message || err.message,
-        originalError: err,
-      });
+      // WrenExceptionMapper emits a structured native error. The generic
+      // dry-run label also covers timeouts, permissions and backend failures;
+      // only a confirmed native syntax refusal can drive SQL correction.
+      const invalidSql =
+        err.response?.status === 400 &&
+        err.response?.data?.code === 'SYNTAX_ERROR' &&
+        typeof err.response?.data?.message === 'string';
+      throw Errors.create(
+        invalidSql
+          ? Errors.GeneralErrorCodes.INVALID_SQL_ERROR
+          : Errors.GeneralErrorCodes.DRY_RUN_ERROR,
+        {
+          customMessage: err.response?.data?.message || err.message,
+          originalError: err,
+        },
+      );
     }
   }
 

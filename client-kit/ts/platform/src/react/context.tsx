@@ -16,7 +16,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK" };
+type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void> };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -26,6 +26,8 @@ export function PlatformProvider({
   children,
   authenticateNativePage,
   documentTheme,
+  currentPrincipalId,
+  copyText,
 }: {
   client: BffClient;
   /** Device preference; absent preference defaults to Chinese. */
@@ -34,15 +36,20 @@ export function PlatformProvider({
   authenticateNativePage?: (bindingId: string) => Promise<void>;
   /** Only the Web host opts in. Desktop GAP-DSK-EDITOR-01 and Mobile stay closed. */
   documentTheme?: "LIGHT" | "DARK";
+  /** Authenticated BFF session fact; never inferred from a display key. */
+  currentPrincipalId?: string;
+  /** Native uses its original system clipboard; Web retains browser policy. */
+  copyText?: (text: string) => Promise<void>;
 }) {
   const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
   // consumers together: read snapshots, frozen writes and late receipts must
   // never migrate to another identity. Locale changes preserve the same scope.
-  const [scope, setScope] = useState({ client, generation: 0 });
-  if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
+  const [scope, setScope] = useState({ client, currentPrincipalId, generation: 0 });
+  if (scope.client !== client || scope.currentPrincipalId !== currentPrincipalId)
+    setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, documentTheme }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, documentTheme, currentPrincipalId, copyText }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -65,6 +72,13 @@ export function useBffClient(): BffClient {
 export function useNativeAuthenticationHost() { return usePlatform().authenticateNativePage; }
 
 export function useDocumentTheme() { return usePlatform().documentTheme; }
+
+export function useCurrentPrincipalId() { return usePlatform().currentPrincipalId; }
+
+export function useClipboardWrite() {
+  const { copyText } = usePlatform();
+  return useCallback((text: string) => copyText ? copyText(text) : navigator.clipboard.writeText(text), [copyText]);
+}
 
 export function useLocale(): PlatformLocale {
   return usePlatform().locale;

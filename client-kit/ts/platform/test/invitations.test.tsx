@@ -7,9 +7,13 @@ import {
   TenantMembershipState,
 } from "@client-kit/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { toast } from "sonner";
 import { createBffClient } from "../src/client";
 import { newIdempotencyKey, redemptionPhase } from "../src/governance";
-import { PlatformProvider } from "../src/react/context";
+import { PlatformProvider, useCurrentPrincipalId } from "../src/react/context";
+import { NativeBootstrap } from "../src/react/NativeBootstrap";
+import type { Invoke } from "../src/native";
 import { ApprovalsPage } from "../src/react/governance";
 import { InvitationRedeemPage, TenantInvitations } from "../src/react/invitations";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
@@ -72,6 +76,100 @@ describe("newIdempotencyKey / redemptionPhase", () => {
 });
 
 describe("TenantInvitations", () => {
+  it("uses the original Native clipboard host and authenticated session Principal in the actual invite consumer",async()=>{
+    const copyText=vi.fn(async(_text:string)=>{});
+    const pubkey="a".repeat(64);
+    const invoke=vi.fn<Invoke>(async(command,args)=>{
+      if(command==="platform_get_config")return {};
+      if(command==="platform_status")return {configured:true,signedIn:true};
+      if(command==="platform_register_device")return {status:200,body:{pubkey,state:"ACTIVE"}};
+      if(command==="platform_api"){
+        if(args?.path==="/api/v1/session")return {status:200,body:{accessMode:"FULL",tenantPrincipalId:"native-person"}};
+        if(args?.path==="/api/v1/native/community")return {status:200,body:{communityHost:"relay.example",relayUrl:"wss://relay.example"}};
+        if(args?.path==="/api/v1/platform-info")return {status:200,body:{displayName:"Platform"}};
+        if(args?.path==="/api/v1/invitations")return {status:200,body:[]};
+        if(args?.path==="/api/v1/actions")return {status:200,body:{actionKey:"tenant.member.invite",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"DISPATCHED",invitation:{invitationId:"inv-1",link:LINK,expiresAt:invitation().expiresAt}}};
+      }
+      throw new Error(`Unexpected Native command ${command}`);
+    });
+    function NativeInvite(){return <><p data-testid="trusted-native-principal">{useCurrentPrincipalId()}</p><TenantInvitations/></>;}
+    const host=await render(<NativeBootstrap invoke={invoke} connect={async()=>{}} locale="en" copyText={copyText}>{()=> <NativeInvite/>}</NativeBootstrap>);
+    await settle();
+    expect(host.querySelector('[data-testid="trusted-native-principal"]')?.textContent).toBe("native-person");
+    await type(host.querySelector('input[name="inviteeLabel"]')!,"Grace");
+    await click(button(host,"Create invitation link"));
+    await click(host.querySelector<HTMLElement>('[data-testid="copy-invite-link"]')!);
+    expect(copyText).toHaveBeenCalledExactlyOnceWith(LINK);
+    expect(host.querySelector('[data-testid="copy-invite-link"]')?.getAttribute("data-copy-status")).toBe("copied");
+  });
+  it.each([
+    ["en", "Invite to community", "Create invitation link", "Copied"],
+    ["zh-CN", "邀请加入社区", "生成邀请链接", "已复制"],
+  ] as const)("restores the %s original dialog and copies only its confirmed first-response link",async(locale,title,issueLabel,copied)=>{
+    const descriptor=Object.getOwnPropertyDescriptor(navigator,"clipboard");
+    const writeText=vi.fn(async()=>{});
+    Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+    const send=vi.fn(async(request:BffRequest)=>request.method==="GET"?{status:200,body:[]}:{status:200,body:{
+      actionKey:"tenant.member.invite",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"DISPATCHED",
+      invitation:{invitationId:"inv-1",link:LINK,expiresAt:invitation().expiresAt},
+    }});
+    try{
+      const host=await render(<PlatformProvider client={createBffClient({send})} locale={locale}><TenantInvitations dialog/></PlatformProvider>);
+      await settle();await click(button(host,title));
+      const dialog=document.querySelector<HTMLElement>('[data-testid="community-invite-dialog"]')!;
+      expect(dialog.classList.contains("max-h-[85vh]")).toBe(true);
+      expect(dialog.classList.contains("max-w-xl")).toBe(true);
+      expect(send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(0);
+      expect(dialog.querySelector('[data-testid="direct-add-member-form"]')).toBeNull();
+      await type(dialog.querySelector('input[name="inviteeLabel"]')!,"Grace");
+      await click(button(dialog,issueLabel));
+      const link=dialog.querySelector<HTMLInputElement>('[data-testid="invite-link-url"]')!;
+      expect(link.readOnly).toBe(true);expect(link.value).toBe(LINK);
+      expect(link.classList.contains("text-transparent")).toBe(true);
+      expect(dialog.querySelector('[data-testid="invite-link-preview"]')?.textContent).toBe(LINK);
+      expect(dialog.querySelector('[data-testid="invite-link-ttl-trigger"]')).toBeNull();
+      expect(dialog.querySelector('[data-testid="invite-link-max-uses-trigger"]')).toBeNull();
+      await click(dialog.querySelector<HTMLElement>('[data-testid="copy-invite-link"]')!);
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(LINK);
+      expect(dialog.querySelector('[data-testid="copy-invite-link"]')?.getAttribute("data-copy-status")).toBe("copied");
+      expect(dialog.querySelector('[data-testid="copy-invite-link"]')?.textContent).toBe(copied);
+      await click(dialog.querySelector<HTMLButtonElement>('button[data-testid="dialog-close"]')??button(document.body,locale==="en"?"Close":"关闭"));
+      await click(button(host,title));
+      expect(document.querySelector<HTMLInputElement>('[data-testid="invite-link-url"]')!.value).toBe(LINK);
+      expect(send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(1);
+    }finally{
+      if(descriptor)Object.defineProperty(navigator,"clipboard",descriptor);else Reflect.deleteProperty(navigator,"clipboard");
+    }
+  });
+  it("does not call a rejected clipboard operation Copied or reuse a late copy for another invitation",async()=>{
+    const descriptor=Object.getOwnPropertyDescriptor(navigator,"clipboard");
+    const failure=vi.spyOn(toast,"error");
+    let resolveCopy:()=>void=()=>{};
+    const writeText=vi.fn<(text:string)=>Promise<void>>(async()=>{throw new Error("Clipboard unavailable");});
+    Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+    let issued=0;
+    const {host}=mount(request=>request.method==="GET"?{status:200,body:[]}:{status:200,body:{
+      actionKey:"tenant.member.invite",actionExecutionId:`ae-${++issued}`,operationId:`op-${issued}`,gateState:"ALLOWED",dispatchState:"DISPATCHED",
+      invitation:{invitationId:`inv-${issued}`,link:`${LINK}${issued}`,expiresAt:invitation().expiresAt},
+    }},<TenantInvitations/>);
+    try{
+      const el=await host;await settle();await type(el.querySelector('input[name="inviteeLabel"]')!,"Grace");
+      await click(button(el,"Create invitation link"));
+      await click(el.querySelector<HTMLElement>('[data-testid="copy-invite-link"]')!);
+      expect(el.querySelector('[data-testid="copy-invite-link"]')?.getAttribute("data-copy-status")).toBe("idle");
+      expect(failure).toHaveBeenCalledWith("Couldn’t copy the invite link. Try again.");
+      writeText.mockImplementationOnce(()=>new Promise<void>(resolve=>{resolveCopy=resolve;}));
+      await click(el.querySelector<HTMLElement>('[data-testid="copy-invite-link"]')!);
+      expect(el.querySelector('[data-testid="copy-invite-link"]')?.getAttribute("data-copy-status")).toBe("copying");
+      await type(el.querySelector('input[name="inviteeLabel"]')!,"Ada");await click(button(el,"Create invitation link"));
+      expect(el.querySelector<HTMLInputElement>('[data-testid="invite-link-url"]')!.value).toBe(`${LINK}2`);
+      await act(async()=>resolveCopy());await settle();
+      expect(el.querySelector('[data-testid="copy-invite-link"]')?.getAttribute("data-copy-status")).toBe("idle");
+    }finally{
+      failure.mockRestore();
+      if(descriptor)Object.defineProperty(navigator,"clipboard",descriptor);else Reflect.deleteProperty(navigator,"clipboard");
+    }
+  });
   it.each([
     ["ALLOWED", "UNKNOWN"], ["EVALUATING", "NOT_DISPATCHED"], ["ALLOWED", "NOT_DISPATCHED"],
     ["HTTP_UNKNOWN", "no receipt"],

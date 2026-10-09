@@ -1513,3 +1513,22 @@ authorization producer, native model/provider credentials, and approved
 binding/SecretRef/Resource evidence remain separate prerequisites. No native
 business service, ACTIVE binding, iframe or multi-user acceptance is claimed;
 the root-owned fixed-source UI/AI build is independent of this later change.
+
+### Native SQL response and correction boundary
+
+The original AI `WrenUI.execute_sql` consumer now requires a confirmed HTTP
+200, the actual original preview result shape and a valid GraphQL error shape.
+HUMAN AE receipts, UNKNOWN, authentication/dependency failures and malformed
+errors are not successful SQL validation and do not enter automatic correction.
+Only dry-run with the existing `INVALID_SQL_ERROR` and a string message is
+correctable; ordinary SQL execution never retries through that label.
+The original Engine adaptor produces that label only from native HTTP 400 plus
+structured `SYNTAX_ERROR`. Ibis dry-run can execute SQL, so a generic
+`DRY_RUN_ERROR` is not proof of a side-effect-free validation refusal.
+
+The [native SQL response receipt](../fork/verify/native-integration.md#native-sql-response-and-correction-boundary)
+records original QueryService **22/22**, Python **28/28**, real production
+shape/status/postprocessor mutations and exact restoration, with final original
+TypeScript and formatting exit **0**. These are source/consumer checks, not
+SERVICE SQL admission, an instance grant, approved binding, business deployment
+or an iframe/multi-user acceptance result.

@@ -5,9 +5,7 @@
     "generation": 2,
     "identityProviderId": "c75ca942-217b-4a96-a487-416e893630ab",
     "audience": "fixture-native-browser",
-    "jwksFile": "/fixture/public-keys.json",
-    "accessClaim": "native_instances",
-    "accessValue": "fixture-dedicated-instance"
+    "jwksFile": "/fixture/public-keys.json"
   },
   "request": {
     "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",

@@ -134,7 +134,7 @@ export function PlatformApp() {
   if (error) return <Notice text={error} />;
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
-    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"}>
+    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}

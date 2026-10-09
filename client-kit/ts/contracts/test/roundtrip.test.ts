@@ -97,7 +97,7 @@ test("native human action preserves controlled trust and nonterminal references"
   } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
   const t=sample.trust, r=sample.request, o=sample.result;
   const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
-    identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile,accessClaim:t.accessClaim,accessValue:t.accessValue};
+    identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile};
   const request: typeof r = {bindingId:r.bindingId,idempotencyKey:r.idempotencyKey,command:r.command};
   const result: typeof o = {submission:o.submission,inputReference:o.inputReference,terminalStatus:o.terminalStatus,nativeType:o.nativeType,nativeId:o.nativeId};
   const q=sample.resourceRequest.resolveResource!;
@@ -234,12 +234,14 @@ import type { RoleMemberPage } from "../src/generated/contracts.js";
 test("member removal permissions preserve true false and legacy absence", () => {
   const sample: RoleMemberPage = JSON.parse(readFileSync(new URL("../../../../contracts/samples/member-action-availability.sample.json", import.meta.url), "utf8"));
   for (const permission of [true, false, undefined]) {
-    const value: RoleMemberPage = {members:sample.members.map(row=>({...row,canRemoveFromWorkspace:permission,canRemoveFromTenant:permission}))};
+    const value: RoleMemberPage = {members:sample.members.map(row=>({...row,canRemoveFromWorkspace:permission,canRemoveFromTenant:permission,
+      createdAt:permission===undefined?undefined:row.createdAt,pubkeys:permission===undefined?undefined:row.pubkeys}))};
     const back: RoleMemberPage = {members:value.members.map(row=>({principalId:row.principalId,displayName:row.displayName,
       tenantAdmin:row.tenantAdmin,workspaceAdmin:row.workspaceAdmin,canGrantTenantAdmin:row.canGrantTenantAdmin,
       canRevokeTenantAdmin:row.canRevokeTenantAdmin,canGrantWorkspaceAdmin:row.canGrantWorkspaceAdmin,
       canRevokeWorkspaceAdmin:row.canRevokeWorkspaceAdmin,lastTenantAdmin:row.lastTenantAdmin,
-      canRemoveFromWorkspace:row.canRemoveFromWorkspace,canRemoveFromTenant:row.canRemoveFromTenant}))};
+      canRemoveFromWorkspace:row.canRemoveFromWorkspace,canRemoveFromTenant:row.canRemoveFromTenant,
+      createdAt:row.createdAt,pubkeys:row.pubkeys}))};
     deepStrictEqual(JSON.parse(JSON.stringify(back)),JSON.parse(JSON.stringify(value)));
   }
 });

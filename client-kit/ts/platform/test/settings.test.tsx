@@ -126,12 +126,13 @@ describe("shared Buzz settings presentation", () => {
   it("restores original Communities invitations from one authorized read and preserves its uncertain intent",async()=>{
     let refused=false;let unavailable=false;let attempts=0;
     const send=vi.fn(async(request:BffRequest)=>{
+      if(request.method==="GET"&&request.path.startsWith("/api/v1/role-members"))return {status:200,body:{members:[]}};
       if(request.method==="GET")return refused?{status:403,body:{}}:unavailable?{status:503,body:{}}:{status:200,body:[]};
       attempts++;
       return attempts===1?{status:202,body:{actionKey:"tenant.member.invite",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"UNKNOWN"}}:{status:403,body:{}};
     });
     const client=createBffClient({send});
-    const nextSend=vi.fn(async()=>({status:200,body:[]}));
+    const nextSend=vi.fn(async(request:BffRequest)=>({status:200,body:request.path.startsWith("/api/v1/role-members")?{members:[]}:[]}));
     const nextClient=createBffClient({send:nextSend});
     function Settings(){
       const [section,setSection]=useState<SettingsSection>("profile");
@@ -145,19 +146,29 @@ describe("shared Buzz settings presentation", () => {
       return <><button onClick={()=>setChanged(true)}>Switch session</button><PlatformProvider client={changed?nextClient:client} locale="en"><Settings/></PlatformProvider></>;
     }
     const host=await render(<Scope/>);await settle();
-    expect(send).toHaveBeenCalledTimes(1);expect(send).toHaveBeenCalledWith({method:"GET",path:"/api/v1/invitations"});
+    expect(send.mock.calls.filter(([request])=>request.path==="/api/v1/invitations")).toHaveLength(1);
+    expect(send).toHaveBeenCalledWith({method:"GET",path:"/api/v1/invitations"});
+    expect(send).toHaveBeenCalledWith({method:"GET",path:"/api/v1/role-members"});
     expect(host.textContent).toContain("Communities");
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);
+    const inviteNavigation = host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!;
+    expect(inviteNavigation.querySelector('[data-sidebar="menu-label"]')?.textContent).toBe("InvitesInvites");
+    expect(inviteNavigation.querySelector("svg.lucide-ticket")).not.toBeNull();
     const panel=host.querySelector<HTMLElement>('[data-testid="settings-community-invitations"]')!;
-    await type(panel.querySelector('input[name="inviteeLabel"]')!,"Ada");await click(button(panel,"Create invitation link"));
-    expect(panel.textContent).toContain("op");
+    expect(panel.querySelector('input[name="inviteeLabel"]')).toBeNull();
+    const inviteInput=()=>document.querySelector<HTMLInputElement>('[data-testid="community-invite-dialog"] input[name="inviteeLabel"]')!;
+    await click(panel.querySelector<HTMLElement>('[data-testid="community-invite-dialog-trigger"]')!);
+    await type(inviteInput(),"Ada");await click(button(document.body,"Create invitation link"));
+    expect(document.querySelector('[data-testid="community-invite-dialog"]')?.textContent).toContain("op");
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-profile"]')!);expect(panel.hidden).toBe(true);
+    expect(document.querySelector('[data-testid="community-invite-dialog"]')).toBeNull();
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);expect(panel.hidden).toBe(false);
-    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    await click(panel.querySelector<HTMLElement>('[data-testid="community-invite-dialog-trigger"]')!);
+    expect(inviteInput().value).toBe("Ada");
     unavailable=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
     expect(host.querySelector('[data-testid="settings-panel-community-members"]')).not.toBeNull();
     expect(panel.hidden).toBe(false);
-    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    expect(inviteInput().value).toBe("Ada");
     unavailable=false;
     refused=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
     expect(host.querySelector('[data-testid="settings-nav-community-members"]')).toBeNull();
@@ -168,20 +179,26 @@ describe("shared Buzz settings presentation", () => {
     refused=false;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);
     expect(panel.hidden).toBe(false);
-    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
-    await click(button(panel,"Try again"));
+    await click(panel.querySelector<HTMLElement>('[data-testid="community-invite-dialog-trigger"]')!);
+    expect(inviteInput().value).toBe("Ada");
+    await click(button(document.body,"Try again"));
     const writes=send.mock.calls.filter(([r])=>r.method==="POST").map(([r])=>r.body);
     expect(writes).toHaveLength(2);expect(writes[1]).toEqual(writes[0]);
-    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.disabled).toBe(true);
+    expect(inviteInput().disabled).toBe(true);
     const previousCalls=send.mock.calls.length;
     await click(button(host,"Switch session"));
     expect(panel.isConnected).toBe(false);
-    expect(host.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("");
+    expect(document.querySelector('[data-testid="community-invite-dialog"]')).toBeNull();
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);
+    const nextPanel=host.querySelector<HTMLElement>('[data-testid="settings-community-invitations"]')!;
+    await click(nextPanel.querySelector<HTMLElement>('[data-testid="community-invite-dialog-trigger"]')!);
+    expect(inviteInput().value).toBe("");
     await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
-    expect(send).toHaveBeenCalledTimes(previousCalls);expect(nextSend).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(previousCalls);
+    expect(nextSend.mock.calls.filter(([request])=>request.path==="/api/v1/invitations")).toHaveLength(2);
   });
   it("never offers invitations for an unconfirmed read and retries the same page read",async()=>{
-    let failed=true;const send=vi.fn(async()=>failed?{status:503,body:{}}:{status:200,body:[]});
+    let failed=true;const send=vi.fn(async(request:BffRequest)=>request.path==="/api/v1/role-members"?{status:200,body:{members:[]}}:failed?{status:503,body:{}}:{status:200,body:[]});
     function Settings(){
       const state=useInvitationSettingsState();
       return <SettingsPage locale="en" section="profile" onSelect={()=>{}} invitationAccess={state.access} onRetryInvitations={state.reload}>
@@ -192,7 +209,14 @@ describe("shared Buzz settings presentation", () => {
     expect(host.querySelector('[data-testid="settings-nav-community-members"]')).toBeNull();
     const notice=host.querySelector<HTMLElement>('[data-testid="community-access-error"]')!;expect(notice).not.toBeNull();
     failed=false;await click(button(notice,"Try again"));
-    expect(host.querySelector('[data-testid="settings-nav-community-members"]')).not.toBeNull();expect(send).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('[data-testid="settings-nav-community-members"]')).not.toBeNull();
+    expect(send.mock.calls.filter(([request])=>request.path==="/api/v1/invitations")).toEqual([
+      [{method:"GET",path:"/api/v1/invitations"}],[{method:"GET",path:"/api/v1/invitations"}],
+    ]);
+    expect(send.mock.calls.filter(([request])=>request.path==="/api/v1/role-members")).toEqual([
+      [{method:"GET",path:"/api/v1/role-members"}],[{method:"GET",path:"/api/v1/role-members"}],
+    ]);
+    expect(send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
   });
   it("applies the original link-preview setting to a real mounted message card", async () => {
     const href = "https://example.com/product";

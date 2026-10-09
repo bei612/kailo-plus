@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-09）
 
+- 2026-10-09 15:43 UTC：仅 Web 更新为固定
+  `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 的共享 Profile 修复。
+  实际容器 healthy，镜像与容器内 build-info 已读回核对；入口仍为
+  `http://192.168.0.193:58090/app/`。正常 SSO 后已检查中英文资料页、头像选择器
+  和空白显示名编辑状态；本轮没有上传或保存新头像，不据此声明头像写入验收。
+  Core／Worker 未随本批替换，Windows／Mobile 未更新；后续成员目录与邀请
+  恢复源码不在此镜像内。三组件完整业务、三人双 Agent 稳定协作及全量原版
+  一致性仍未完成。原 full 在 Dart 依赖准备阶段退出 2；发布记录文档检查
+  已退出 0，不能互相替代。详见[固定来源与实际发布](web-client/fork/verify/baseline-build.md)
+  和[页面实拍及失败边界](web-client/fork/verify/screenshots-20261009-4c099-profile.md)。
+
 - 2026-10-09 11:42 UTC：Core、Worker 已沿原发布入口更新为固定
   `d619b0b06adea393ac21102ac9fe0ff4767981e5`。Core health 200、正常 SSO 读取
   与 Pulse／Agent 两张实拍已复核；Worker 已接回原 Temporal 队列。

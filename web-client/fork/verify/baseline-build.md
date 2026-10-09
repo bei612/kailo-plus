@@ -76,8 +76,9 @@ Vite 构建成功（3943 modules）、OCI 导出及实际 registry 产物。
   Worker、Relay、Gateway、数据库或身份服务，未迁移数据或更改认证凭据。
 
 本次只发布已提交的 Profile 可访问性、默认头像及中英文等修复；当前工作树中的
-成员目录字段、成员卡及邀请交互改动不在该镜像中。页面实际截图与操作验收另由
-`web-surface.md` 记录，healthy 和构建成功不证明页面全量还原。
+成员目录字段、成员卡及邀请交互改动不在该镜像中。页面实际截图与操作边界见
+[本版实拍记录](screenshots-20261009-4c099-profile.md)，healthy 和构建成功
+不证明页面全量还原。
 对应冻结输入的原 `tools/check.sh --full` 句柄 22988 退出 2，日志
 `/volumes/data/kailo/tmp/tmp.1FOvLFPjbi.check.log`：
 `Got socket error trying to find package test at https://pub.dev.`

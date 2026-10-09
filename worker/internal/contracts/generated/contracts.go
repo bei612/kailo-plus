@@ -5125,14 +5125,20 @@ type RoleMemberView struct {
 	CanRemoveFromTenant *bool `json:"canRemoveFromTenant,omitempty"`
 	// 当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false
 	// 不显示动作，提交仍重新准入。
-	CanRemoveFromWorkspace  *bool  `json:"canRemoveFromWorkspace,omitempty"`
-	CanRevokeTenantAdmin    bool   `json:"canRevokeTenantAdmin"`
-	CanRevokeWorkspaceAdmin bool   `json:"canRevokeWorkspaceAdmin"`
-	DisplayName             string `json:"displayName"`
+	CanRemoveFromWorkspace  *bool `json:"canRemoveFromWorkspace,omitempty"`
+	CanRevokeTenantAdmin    bool  `json:"canRevokeTenantAdmin"`
+	CanRevokeWorkspaceAdmin bool  `json:"canRevokeWorkspaceAdmin"`
+	// RFC3339，TenantMembership 的原始创建时间，用于原版 Added 日期；不是审批通过、激活或最近重新加入时间。只向具有 Tenant manage
+	// 的查看者提供，旧服务或仅 Workspace manage 时省略，客户端不编造日期。
+	CreatedAt   *string `json:"createdAt,omitempty"`
+	DisplayName string  `json:"displayName"`
 	// 有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
 	LastTenantAdmin bool   `json:"lastTenantAdmin"`
 	PrincipalID     string `json:"principalId"`
-	TenantAdmin     bool   `json:"tenantAdmin"`
+	// 同一 Tenant、同一 HUMAN Principal 当前 ACTIVE 的 Buzz 身份公钥，按公钥排序；仅向具有 Tenant manage
+	// 的查看者提供非空列表，无有效绑定、旧服务或仅 Workspace manage 时省略。缺省不提供可读取资料的身份凭据，不以当前查看者或其他 Workspace 身份替代。
+	Pubkeys     []string `json:"pubkeys,omitempty"`
+	TenantAdmin bool     `json:"tenantAdmin"`
 	// 没有 workspaceId 时恒为 false
 	WorkspaceAdmin bool `json:"workspaceAdmin"`
 }
@@ -5474,7 +5480,8 @@ type ApplicationAdapterDelivery struct {
 	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
 	MCPURL                    *string                              `json:"mcpUrl,omitempty"`
 	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
-	// 受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。
+	// 受控原生浏览器认证信任投递；IdP只认证HUMAN，不承载实例业务许可。绑定、ACTIVE成员与SpiceDB实时检查决定权限；不由请求提供issuer/subject/key
+	// URL。
 	NativeHumanIdentities []ApplicationNativeHumanIdentity `json:"nativeHumanIdentities,omitempty"`
 	NativeInstanceRef     string                           `json:"nativeInstanceRef"`
 	SecretReaders         []AdapterSecretReader            `json:"secretReaders"`
@@ -5535,8 +5542,6 @@ type ApplicationModelServiceSecretRef struct {
 }
 
 type ApplicationNativeHumanIdentity struct {
-	AccessClaim        string `json:"accessClaim"`
-	AccessValue        string `json:"accessValue"`
 	Audience           string `json:"audience"`
 	BindingID          string `json:"bindingId"`
 	ConfigDigest       string `json:"configDigest"`

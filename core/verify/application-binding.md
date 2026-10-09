@@ -1358,3 +1358,96 @@ offline 后，handle 28241 退出0：277个引用、87实体、115DD、29接缝�
 `docs-adapter-delivery-cached-22f83251c.log`，SHA-256 分别为
 `fad325259d76c813bd739332fe10e5ec62280c398b486cfa079c6f8c390ddd0b`、
 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+
+## 原生 HUMAN 认证与业务授权归位（2026-10-09）
+
+实现基线为 `e89d1e8d1f14fe96654505bb491340a00f919812`。本节只记录已写入的
+Core 认证消费者及受控目录合同改动，不把 Wren 页面能登录视为业务授权完成。
+
+1. 权威为设计05 §3、设计07 §4.6 和 DD-94/98：IdP 认证 HumanIdentity，
+   TenantMembership 与 SpiceDB 决定业务权限。原 `verified_subject` 额外要求
+   IdP 携带实例业务许可，没有对应的既定许可权威；现移除此重复授权条件。
+   仍核验受控 issuer、audience、签名、公钥 kid、有效期、nbf、azp 和 subject。
+2. 影响面为 `application_native_human.rs::verified_subject`、
+   `ApplicationNativeHumanIdentity` 六字段受控信任、原样例及四侧生成/往返消费者。
+   `binding`、`human`、`mapped_actor`、`authorize_scope` 及资源/动作消费者仍要求
+   精确 ACTIVE binding/release/runtime/generation、同 binding SERVICE 身份、
+   ACTIVE 外部身份/HUMAN/Tenant 成员，以及原 fresh scope/resource 检查。
+   `start-core.sh` 仍只读挂载目录及公钥，不新增 secret 或账号投递机制。
+3. 没有将移除静态 claim 当作允许业务访问。客户端、模型和请求不能指定受信
+   issuer/JWKS、切换 binding 或绕过成员关系。Core 不复制外部业务正文，原
+   Action Admission、审批、额度、审计与终态对账未替换。Web/Desktop 的组件
+   页面仍由业务后端检查；Mobile 非组件宿主边界不变。
+4. 缺失/歧义信任、签名或时间不符仍拒绝；binding/member/scope 撤销及投影不符
+   沿原错误分类拒绝。原请求内重新读取身份和 binding、授权后的版本检查保留。
+   无新增持久状态、数据库迁移或重试路径，不将 UNKNOWN 变为成功/失败。
+
+兼容边界：受控目录移除 `accessClaim/accessValue`，不是新增可选字段。
+旧生成消费者要求这两个字段，新目录不能直接交给旧 Core；新 Core 的
+`Adapter::resolve` 将原 JSON 与生成类型往返结果比较，旧字段不能被静默忽略。
+必须将受控目录与对应 Core 版本协调投递，原生服务的 fresh 授权链闭合前不得
+激活 binding。不能把这个认证合同改动称为无影响滚动兼容或单独开放页面的依据。
+
+源码与原单元检查已调整，原 `tools/gen.sh` 在既有受限 SDK 内实际退出0，
+Rust/Go/TypeScript/Dart 四份生成物已回写，生成差异未混入成员/邀请私有候选。
+日志为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/tenant-directory-20261009.xUdSgp/native-human-generate.log`。
+实际四侧往返与原 JWT 单元沿同一 SDK 执行；此时尚无本批完整验证、提交、部署或
+真实 Wren HUMAN 业务验收结论。成员/邀请批次的在途 full 使用另一冻结树，
+不覆盖这里的后续改动。
+
+原窄验证 `native-human-roundtrip-and-auth.log` 的 Rust 指定往返 1 passed、Go
+`TestNativeHumanActionRoundtrip` 退出0；随后 TypeScript 因私有候选缺少 pnpm
+根缓存链接报 `Cannot find module .../node_modules/.pnpm/typescript@5.9.3/...`，
+该组实际退出1，Dart/JWT 未在此轮执行。不改业务源码，补齐原已安装缓存的
+私有引用后，尾验日志 `native-human-roundtrip-auth-tail.log` 的 TypeScript
+类型检查退出0、指定往返 1 passed；Dart 原指定往返随后 1 passed。
+尾验在 JWT 命令错误指定 `--lib` 时退出101，原输出为
+`error: no library targets found in package platform-core`，不是 JWT 验证通过。
+按实际 `src/main.rs` 的 binary target 修正为 `--bin platform-core`，原指定
+JWT 单元继续写入 `native-human-auth-bin.log`，不重跑已通过的四侧往返。
+
+只在私有候选 Go 生成物中将 HUMAN trust 的 audience 序列化 tag 临时改为忽略，
+同一原往返在 `native-human-contract-negative.log` 真实退出1并报
+`roundtrip mismatch`，缺失 audience 被检出。随后原字节还原，与正式生成物
+`cmp` 退出0；恢复复验 `native-human-contract-restored.log` 已实际退出0：
+`ok apps/worker/internal/contracts 0.002s`。正式源码、原样例和断言均未施加
+该破坏。JWT binary 原命令此时报告 `Blocking waiting for file lock on build
+directory`，原全量检查正在同一缓存执行 Rust 验证；不启动第二构建或把等待
+计为 JWT 通过。
+
+JWT 命令 22160 随后实际退出101：私有输入缺少原 binary 单元会编入的
+`tools/registry/capabilities.yaml`，编译报 `couldn't read ...capabilities.yaml`。
+已核对 Core 的全部 `include_str!/include_bytes!` 引用，从成员候选固定树
+`aa078475bf73967cfc6c8e185327b7e112346305` 补入该原文件，和正式文件 cmp0；
+不改生产 registry 或业务逻辑。修正输入后的同一 binary 目标记录为
+`native-human-auth-complete-input.log`，前次失败不改记通过。
+
+修正投递后的 JWT binary 原目标 78084 实际退出0：1 passed，404 filtered out。
+随后仅在私有副本关闭生产 `validation.validate_aud`，原断言不变；96951
+实际退出101，报 `changed aud`、0 passed / 1 failed。正式源码未施加破坏。
+删除该私有破坏行后与正式 `application_native_human.rs` cmp0，原目标81124
+再次退出0：1 passed，404 filtered out。原始日志依次为上目录
+`native-human-auth-complete-input.log`、`native-human-auth-negative.log`、
+`native-human-auth-restored.log`。实际执行者仍为原 SDK，4 CPU/8 GiB、无额外
+swap，`CARGO_BUILD_JOBS=16`，复用 `/cache/rust-target`；没有为恢复新建镜像。
+这些结果证明认证消费者及四侧序列化，不证明数据库成员撤权、SpiceDB、真实
+Wren 页面或 iframe 已验收。后续集中 full、提交和部署不能沿用此窄结果冒充。
+
+阶段合入边界：原 `tools/check.sh --full` 41490 对冻结树
+`efb0fee7c163a067eea56ec186c714ce559a27ad` 已实际退出1，完整日志为
+`/volumes/data/kailo/tmp/tmp.ePRisvv2R4.check.log`。Rust/Go/Dart 检查、契约生成
+同步和历史兼容、Workflow replay、文档与安全检查通过；真实数据库演练及
+实际部署配置检查明确跳过。TypeScript 原步骤失败；成员设置原专项的请求断言
+修正和99项恢复复验见本批成员回执，不以该专项覆盖所有 TypeScript 消费者。
+19条 Web 产物追溯仍引用旧摘要，现按已登记且实际部署的 `7ea0c5fa…` 镜像
+同步引用，没有修改源码摘要或伪造新产物。完整检查另报告 Relay、Desktop、
+Wren Engine、Cells、Knowledge adapter/service、AgentGateway、Web 的当前
+源码与登记产物来源不匹配；这些发布门禁仍保留，不能据源码阶段提交宣称关闭。
+
+随后选择性候选 `caccf674e8c0803b62d3c1b5e399c65d9eac4065` 共68路径、
+2071新增/265删除，包含成员/邀请、上述HUMAN认证合同、Cells原生读取、Wren
+SQL结果分类及已有发布追溯引用。Cells与Wren专项及真实生产破坏/还原证据分别
+见各自已有核验记录。该候选不包含下一批线程引用、Cells完整前端打包或Wren
+fresh页面授权源码；原full也不覆盖此候选的后续增量。保持阶段源码提交与
+完整验收、产物构建、部署分开，不因旧镜像能运行而宣称新功能已发布。

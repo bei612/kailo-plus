@@ -3418,3 +3418,75 @@ SDK 仅 sleep，memory.events 全 0，memory.current=230633472（共享 SDK
 批准或 ACTIVE binding。原 native 独立下载/恢复不冒充平台已治理 write；
 首次上传准入/writer 终结、Task 安全退休、HUMAN 正文交付与完整
 write/delete/share 的既有发布门禁未被本批解除。
+
+### 2026-10-09 原下载、预览与文本编辑器的可信当前目标消费者
+
+本批直接接续原 `PydioApi.buildPresignedGetUrl/getPlainContent`，未增加
+页面、样式、菜单、下载器或权限目录。四步影响结论如下。
+
+1. 权威为设计 07 §4.6 的可信当前用户/scope 与原生授权边界，以及原版
+   完整读取功能保留要求。固定官方
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::{buildPresignedGetUrl,getPlainContent}`
+   使用原 JWT、awsLoader/S3 和 native ACL；本批继续复用这些原消费者。
+   官方原签名参数在异步凭据加载前构造，而已提交签名 Promise 接线改造
+   在加载后再次读取可变 node.Path；本批冻结原目标，纠正该迁移引入的
+   路径漂移。原 plain GET 的晚正文缺当前目标核验是官方已有缺口，本批
+   为可信当前用户/归属接入修复，不声明这两项为原样字节保留。
+2. 影响面为原 `downloadSelection/openVersion`、调用该 signer 的预览，及
+   `frontend/assets/editor.{browser,ckeditor,bnote,text,codemirror}/res/js/`
+   的原 getPlainContent 调用；codemirror 的 editor 与 badge 均已检索。
+   复用既有 `getVersionTarget/isVersionTargetCurrent`，冻结 native user
+   对象/id、UUID、path、repository id 与现有 repository slug；不新增
+   仓库映射或持久字段。文本 GET 的 Promise 等待实际原 callback；既有
+   六个页面消费者仍使用原 callback，模板/样式与正文权威均未迁移。
+3. 只沿原读取发送/交付边界判断当前目标，不从 SSO 推出资源访问权。
+   原 native JWT/ACL 保持；节点或用户已变化即不再签名/GET、不送晚正文，
+   不自动重发到新节点。已发出的 GET 不被宣称“未执行”，本批也不产生
+   Core EE、用量或取消终态。错误继续原 MessageHash[391]/native error
+   表现，不新造英文用户文案或输出 token。
+4. 覆盖 JWT/S3 loader 等待、签名返回、GET callback 等待中的移动、UUID
+   替换、仓库换绑/卸载、slug 变更与当前用户对象/id 变化；即使原节点
+   UUID 相同，也不交付旧路径/旧身份响应。显式所属仓库在无关 active
+   workspace 变化后仍可正常使用；原 GET 错误只处理一次、不重复请求。
+   无新增状态、迁移或终态；这是独立 native 读取错误收敛，不冒充通用
+   平台 HUMAN 正文交付或 FILE_STORAGE 七项批准。
+
+复用 `kailo-wren-query-sdk-itgs2n` 原 4 CPU/4 GiB 及既有独立候选
+`/work/knowledge-observation-guard.8QFEVq`。实际 preflight 同时存在旧
+MainThread I/O 等待，不冒称独占；cgroup memory.current=678535168、
+memory.max=4294967296，memory.events 的 max/oom/oom_kill 均 0。
+只同步原源依赖闭包及已有 fixture，没有新 SDK、依赖安装、镜像或 Go 编译。
+
+原实施后命令（候选根目录、UID 1000）：
+
+```text
+node --test --test-name-pattern='^original native (download, archive|history and content|workspace selection|archive keeps|restore errors|revision panel|version transport|preview and file download|editors never|signing failures)' file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向句柄 73432 实际 exit 0、156/156。仅私有 PydioApi 的 signer/current
+和 plain GET/current 五处真实生产拒绝守卫失效后，同一原目标实际 exit 1：
+156 检查中 58 失败、98 通过，捕获晚 URL/正文交付；未改断言或故意制造
+编译错误。原正式字节还原，两输入 cmp exit 0，再跑同一原目标实际 exit 0、
+156/156，最终 cgroup memory.events 全 0。原 VM 执行实际完整 API class，
+JWT、AWS 与 browser DOM 是受控 fixture；不称真实 HTTP/S3/浏览器验收。
+
+原日志位于主机
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+```text
+ff9fd19065ffc7c201d0a8ff99b3fda27737c3959df5ca18da098c540f4abd56 cells-native-read-target-positive.log
+19ddfd3046fe8e211ea1889e485904ee5216a0614ed20db08f27064fc17c9163 cells-native-read-target-negative.log
+b136db59cddbea1570cf917a5e479e0c426f5b27d55f99ce1879acaffde570e1 cells-native-read-target-restored.log
+c0e72a92577650f19ab387a163594f15156c374116970800335602bbea2f90ea frontend/assets/gui.ajax/res/js/core/http/PydioApi.js
+6e87b88893c5bfc92fcfd6d31330fa2cbfca387bef420f3d3d2890e70fc7c80e adapter/test/query-revision.test.mjs
+```
+
+本批未 bundle、未部署、未截图/设备验收。原 file-storage-service
+Dockerfile 只编译 Go 与既有 embedded assets，不重建这些 JS；不能用另批
+native Go 镜像证明本批浏览器已采用。原独立页面/ACL、平台 S3 禁写与
+首次上传原子 CAS/writer 终结、Task 退休、完整 write/delete/share 门禁
+保持，原 full 的 Dart pub.dev 依赖失败也未被此定点证据替代。
+原 `./tools/check-docs.sh` 首轮实际 exit 2：
+`容器执行拒绝：必须由执行配置提供 TMPDIR`，七项文档检查未启动；未把
+host launcher 拒绝记为通过，合批文档门禁仍需沿主线已投递运行配置执行。

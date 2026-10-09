@@ -11308,11 +11308,19 @@ class RoleMemberView {
   final bool? canRemoveFromWorkspace;
   final bool canRevokeTenantAdmin;
   final bool canRevokeWorkspaceAdmin;
+
+  ///RFC3339，TenantMembership 的原始创建时间，用于原版 Added 日期；不是审批通过、激活或最近重新加入时间。只向具有 Tenant manage
+  ///的查看者提供，旧服务或仅 Workspace manage 时省略，客户端不编造日期。
+  final String? createdAt;
   final String displayName;
 
   ///有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查
   final bool lastTenantAdmin;
   final String principalId;
+
+  ///同一 Tenant、同一 HUMAN Principal 当前 ACTIVE 的 Buzz 身份公钥，按公钥排序；仅向具有 Tenant manage
+  ///的查看者提供非空列表，无有效绑定、旧服务或仅 Workspace manage 时省略。缺省不提供可读取资料的身份凭据，不以当前查看者或其他 Workspace 身份替代。
+  final List<String>? pubkeys;
   final bool tenantAdmin;
 
   ///没有 workspaceId 时恒为 false
@@ -11325,9 +11333,11 @@ class RoleMemberView {
     this.canRemoveFromWorkspace,
     required this.canRevokeTenantAdmin,
     required this.canRevokeWorkspaceAdmin,
+    this.createdAt,
     required this.displayName,
     required this.lastTenantAdmin,
     required this.principalId,
+    this.pubkeys,
     required this.tenantAdmin,
     required this.workspaceAdmin,
   });
@@ -11339,9 +11349,13 @@ class RoleMemberView {
     canRemoveFromWorkspace: json["canRemoveFromWorkspace"],
     canRevokeTenantAdmin: json["canRevokeTenantAdmin"],
     canRevokeWorkspaceAdmin: json["canRevokeWorkspaceAdmin"],
+    createdAt: json["createdAt"],
     displayName: json["displayName"],
     lastTenantAdmin: json["lastTenantAdmin"],
     principalId: json["principalId"],
+    pubkeys: json["pubkeys"] == null
+        ? null
+        : List<String>.from(json["pubkeys"]!.map((x) => x)),
     tenantAdmin: json["tenantAdmin"],
     workspaceAdmin: json["workspaceAdmin"],
   );
@@ -11353,9 +11367,13 @@ class RoleMemberView {
     "canRemoveFromWorkspace": canRemoveFromWorkspace,
     "canRevokeTenantAdmin": canRevokeTenantAdmin,
     "canRevokeWorkspaceAdmin": canRevokeWorkspaceAdmin,
+    "createdAt": createdAt,
     "displayName": displayName,
     "lastTenantAdmin": lastTenantAdmin,
     "principalId": principalId,
+    "pubkeys": pubkeys == null
+        ? null
+        : List<dynamic>.from(pubkeys!.map((x) => x)),
     "tenantAdmin": tenantAdmin,
     "workspaceAdmin": workspaceAdmin,
   });
@@ -12606,7 +12624,8 @@ class ApplicationAdapterDelivery {
   final String? mcpUrl;
   final List<ApplicationModelCredentialDelivery>? modelCredentialDeliveries;
 
-  ///受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。
+  ///受控原生浏览器认证信任投递；IdP只认证HUMAN，不承载实例业务许可。绑定、ACTIVE成员与SpiceDB实时检查决定权限；不由请求提供issuer/subject/key
+  ///URL。
   final List<ApplicationNativeHumanIdentity>? nativeHumanIdentities;
   final String nativeInstanceRef;
   final List<AdapterSecretReader> secretReaders;
@@ -12915,8 +12934,6 @@ class ApplicationModelServiceSecretRef {
 }
 
 class ApplicationNativeHumanIdentity {
-  final String accessClaim;
-  final String accessValue;
   final String audience;
   final String bindingId;
   final String configDigest;
@@ -12925,8 +12942,6 @@ class ApplicationNativeHumanIdentity {
   final String jwksFile;
 
   ApplicationNativeHumanIdentity({
-    required this.accessClaim,
-    required this.accessValue,
     required this.audience,
     required this.bindingId,
     required this.configDigest,
@@ -12937,8 +12952,6 @@ class ApplicationNativeHumanIdentity {
 
   factory ApplicationNativeHumanIdentity.fromJson(Map<String, dynamic> json) =>
       ApplicationNativeHumanIdentity(
-        accessClaim: json["accessClaim"],
-        accessValue: json["accessValue"],
         audience: json["audience"],
         bindingId: json["bindingId"],
         configDigest: json["configDigest"],
@@ -12948,8 +12961,6 @@ class ApplicationNativeHumanIdentity {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "accessClaim": accessClaim,
-    "accessValue": accessValue,
     "audience": audience,
     "bindingId": bindingId,
     "configDigest": configDigest,

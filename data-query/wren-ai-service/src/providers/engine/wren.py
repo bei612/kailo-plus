@@ -15,6 +15,11 @@ from src.providers.engine.native_identity import NativeIdentityUnavailable, nati
 logger = logging.getLogger("wren-ai-service")
 
 
+class NativeSQLResponseUnavailable(RuntimeError):
+    def __init__(self):
+        super().__init__("Native SQL response was not confirmed; query outcome is unavailable")
+
+
 @provider("wren_ui")
 class WrenUI(Engine):
     def __init__(
@@ -58,10 +63,30 @@ class WrenUI(Engine):
                 },
                 timeout=aiohttp.ClientTimeout(total=timeout),
             ) as response:
+                if response.status != 200:
+                    raise NativeSQLResponseUnavailable()
                 res_json = await response.json()
-                if res_data := res_json.get("data"):
-                    res = res_data.get("previewSql", {}) if res_data else {}
+                if not isinstance(res_json, dict):
+                    raise NativeSQLResponseUnavailable()
+                errors = res_json.get("errors")
+                if errors is None or (isinstance(errors, list) and not errors):
+                    res_data = res_json.get("data")
+                    if not isinstance(res_data, dict) or "previewSql" not in res_data:
+                        raise NativeSQLResponseUnavailable()
+                    res = res_data["previewSql"]
+                    # A HUMAN AE receipt is not this SERVICE caller's original
+                    # preview result. In particular, UNKNOWN is not validation.
+                    if isinstance(res, dict) and "terminalStatus" in res:
+                        raise NativeSQLResponseUnavailable()
                     if dry_run:
+                        # QueryService returns true for Engine dry-run, or the
+                        # original Ibis correlation metadata (possibly empty).
+                        if res is not True and not (
+                            isinstance(res, dict)
+                            and set(res).issubset({"correlationId"})
+                            and (res.get("correlationId") is None or isinstance(res["correlationId"], str))
+                        ):
+                            raise NativeSQLResponseUnavailable()
                         return (
                             True,
                             res,
@@ -70,7 +95,13 @@ class WrenUI(Engine):
                             },
                         )
 
-                    data = res.get("data", []) if res else []
+                    if (
+                        not isinstance(res, dict)
+                        or not isinstance(res.get("columns"), list)
+                        or not isinstance(res.get("data"), list)
+                    ):
+                        raise NativeSQLResponseUnavailable()
+                    data = res["data"]
                     if len(data) > 0:
                         return (
                             True,
@@ -88,9 +119,21 @@ class WrenUI(Engine):
                         },
                     )
 
-                error_message = res_json.get("errors", [{}])[0].get(
-                    "message", "Unknown error"
-                )
+                if (
+                    not dry_run
+                    or
+                    not isinstance(errors, list)
+                    or len(errors) != 1
+                    or not isinstance(errors[0], dict)
+                    or not isinstance(errors[0].get("message"), str)
+                    or not isinstance(errors[0].get("extensions"), dict)
+                    or errors[0]["extensions"].get("code")
+                    != "INVALID_SQL_ERROR"
+                ):
+                    # Authentication, admission, dependency and unknown errors
+                    # cannot instruct the LLM to correct/re-dispatch SQL.
+                    raise NativeSQLResponseUnavailable()
+                error_message = errors[0]["message"]
                 logger.error(f"Error executing SQL: {error_message}")
                 dialect_sql = (
                     (
@@ -137,18 +180,10 @@ class WrenUI(Engine):
                         ),
                     },
                 )
-        except NativeIdentityUnavailable:
-            return (
-                False,
-                {},
-                {"error_message": "Native service identity unavailable"},
-            )
-        except asyncio.TimeoutError:
-            return (
-                False,
-                {},
-                {"error_message": f"Request timed out: {timeout} seconds"},
-            )
+        except (NativeIdentityUnavailable, NativeSQLResponseUnavailable):
+            raise
+        except Exception:
+            raise NativeSQLResponseUnavailable() from None
 
 
 @provider("wren_ibis")

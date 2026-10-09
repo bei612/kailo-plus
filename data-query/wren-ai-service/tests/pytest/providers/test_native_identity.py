@@ -278,6 +278,53 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
         env.start()
         self.addCleanup(env.stop)
 
+    def load_provider(self):
+        dependencies = {
+            "aiohttp": types.SimpleNamespace(ClientSession=Session, ClientTimeout=lambda **kw: kw),
+            "orjson": json,
+            "src.config": types.SimpleNamespace(settings=types.SimpleNamespace(engine_timeout=5)),
+            "src.core.engine": types.SimpleNamespace(Engine=object, remove_limit_statement=lambda sql: sql),
+            "src.providers.loader": types.SimpleNamespace(provider=lambda name: lambda cls: cls),
+            "src.providers.engine.native_identity": identity,
+        }
+        with patch.dict(sys.modules, dependencies):
+            source = importlib.util.spec_from_file_location("native_wren_test", SOURCE / "wren.py")
+            module = importlib.util.module_from_spec(source)
+            source.loader.exec_module(module)
+        return module
+
+    def load_postprocessor(self, module, session):
+        class Component:
+            def __call__(self, value):
+                return value
+
+            def output_types(self, **kwargs):
+                return lambda value: value
+
+        class Model:
+            @classmethod
+            def model_json_schema(cls):
+                return {"type": "object"}
+
+        dependencies = {
+            "aiohttp": types.SimpleNamespace(ClientSession=lambda: session),
+            "orjson": json,
+            "haystack": types.SimpleNamespace(component=Component()),
+            "haystack.dataclasses": types.SimpleNamespace(ChatMessage=object),
+            "pydantic": types.SimpleNamespace(BaseModel=Model),
+            "src.core.engine": types.SimpleNamespace(Engine=object, clean_generation_result=lambda sql: sql),
+            "src.web.v1.services.ask": types.SimpleNamespace(AskHistory=object),
+            "src.providers.engine.native_identity": identity,
+            "src.providers.engine.wren": module,
+        }
+        with patch.dict(sys.modules, dependencies):
+            source = importlib.util.spec_from_file_location(
+                "native_sql_postprocessor_test", SOURCE.parents[1] / "pipelines/generation/utils/sql.py",
+            )
+            result = importlib.util.module_from_spec(source)
+            source.loader.exec_module(result)
+        return result
+
     async def test_reads_rotation_without_cache_or_platform_token(self):
         session = Session([
             Response(200, {"token_type": "Bearer", "access_token": "signed-native-one"}),
@@ -342,23 +389,11 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
     async def test_actual_wren_provider_authenticates_before_original_graphql_and_fails_closed(self):
         # No second provider implementation: execute the production module,
         # substituting only its external engine/config/HTTP library boundaries.
-        aiohttp = types.SimpleNamespace(ClientSession=Session, ClientTimeout=lambda **kw: kw)
-        dependencies = {
-            "aiohttp": aiohttp,
-            "orjson": json,
-            "src.config": types.SimpleNamespace(settings=types.SimpleNamespace(engine_timeout=5)),
-            "src.core.engine": types.SimpleNamespace(Engine=object, remove_limit_statement=lambda sql: sql),
-            "src.providers.loader": types.SimpleNamespace(provider=lambda name: lambda cls: cls),
-            "src.providers.engine.native_identity": identity,
-        }
-        with patch.dict(sys.modules, dependencies):
-            source = importlib.util.spec_from_file_location("native_wren_test", SOURCE / "wren.py")
-            module = importlib.util.module_from_spec(source)
-            source.loader.exec_module(module)
+        module = self.load_provider()
         provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
         session = Session([
             Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
-            Response(200, {"data": {"previewSql": {"data": []}}}),
+            Response(200, {"data": {"previewSql": True}}),
         ])
         result = await provider.execute_sql("select 1", session, project_id="native-project", dry_run=True)
         self.assertTrue(result[0])
@@ -368,9 +403,157 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(request["allow_redirects"])
         self.assertEqual(request["json"]["variables"]["data"]["projectId"], "native-project")
         denied = Session([Response(403, {})])
-        failure = await provider.execute_sql("select 1", denied)
-        self.assertFalse(failure[0])
+        with self.assertRaises(identity.NativeIdentityUnavailable):
+            await provider.execute_sql("select 1", denied)
         self.assertEqual(len(denied.calls), 1)
+
+    async def test_native_sql_consumer_preserves_actual_engine_and_ibis_success_shapes(self):
+        module = self.load_provider()
+        provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
+        for payload in (True, {}, {"correlationId": "original-ibis-correlation"}):
+            with self.subTest(payload=payload):
+                session = Session([
+                    Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+                    Response(200, {"data": {"previewSql": payload}}),
+                ])
+                success, result, _ = await provider.execute_sql("select 1", session)
+                self.assertTrue(success)
+                self.assertEqual(result, payload)
+                self.assertEqual(len(session.calls), 2)
+        for rows in ([], [[1]]):
+            with self.subTest(rows=rows):
+                payload = {"columns": [{"name": "value", "type": "INTEGER"}], "data": rows}
+                session = Session([
+                    Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+                    Response(200, {"data": {"previewSql": payload}}),
+                ])
+                success, result, addition = await provider.execute_sql("select 1", session, dry_run=False)
+                self.assertEqual(success, bool(rows))
+                self.assertEqual(result, payload)
+                self.assertNotIn("error_message", addition)
+
+    async def test_native_sql_errors_unknown_and_unowned_receipts_are_not_success_or_correction(self):
+        module = self.load_provider()
+        provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
+        cases = [
+            Response(401, {"data": {"previewSql": True}}),
+            Response(302, {"data": {"previewSql": True}}),
+            Response(503, {"data": {"previewSql": True}}),
+            Response(200, {"data": {"previewSql": True}, "errors": {}}),
+            Response(200, {"data": {"previewSql": True}, "errors": False}),
+            Response(200, {"data": {"previewSql": True}, "errors": 0}),
+            Response(200, {"data": {"previewSql": True}, "errors": ""}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": "private-secret"}]}),
+            Response(200, {"data": {"previewSql": True}, "errors": [{"message": "private-secret", "extensions": {"code": "INTERNAL_SERVER_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": True}, "errors": [{"message": "private-driver", "extensions": {"code": "CONNECTION_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": "private-driver", "extensions": {"code": "DRY_RUN_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": "private-driver", "extensions": {"code": "IBIS_SERVER_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"extensions": {"code": "INVALID_SQL_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": None, "extensions": {"code": "INVALID_SQL_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": {}, "extensions": {"code": "INVALID_SQL_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{"message": [], "extensions": {"code": "INVALID_SQL_ERROR"}}]}),
+            Response(200, {"data": {"previewSql": False}}),
+            Response(200, {"data": {"previewSql": None}}),
+            Response(200, {"data": {"previewSql": "true"}}),
+            Response(200, {"data": {"previewSql": {"correlationId": 1}}}),
+            Response(200, {"data": {"previewSql": {"terminalStatus": "UNKNOWN"}}}),
+            Response(200, {"data": {"previewSql": {"terminalStatus": "PENDING"}}}),
+            Response(200, {"data": {"previewSql": {"terminalStatus": "COMPLETED", "data": {"valid": True}}}}),
+            Response(200, {"data": {"previewSql": {"terminalStatus": "future-status"}}}),
+            Response(200, {"data": {"otherMutation": True}}),
+            Response(200, {"data": None}),
+            Response(200, []),
+        ]
+        for response in cases:
+            for dry_run in (True, False):
+                with self.subTest(response=response.body, status=response.status, dry_run=dry_run):
+                    session = Session([
+                        Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}), response,
+                    ])
+                    with self.assertRaisesRegex(module.NativeSQLResponseUnavailable, "^Native SQL response was not confirmed; query outcome is unavailable$"):
+                        await provider.execute_sql("select 1", session, dry_run=dry_run)
+                    self.assertEqual(len(session.calls), 2)
+                    self.assertEqual(sum(url.endswith("/api/graphql") for url, _ in session.calls), 1)
+
+    async def test_native_sql_existing_explicit_invalid_sql_retains_original_correction_details(self):
+        module = self.load_provider()
+        provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
+        for code in ("INVALID_SQL_ERROR",):
+            with self.subTest(code=code):
+                session = Session([
+                    Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+                    Response(200, {"data": {"previewSql": None}, "errors": [{
+                        "message": "original SQL validation error", "extensions": {
+                            "code": code, "other": {"metadata": {"plannedSql": "select original"}, "correlationId": "original-correlation"},
+                        },
+                    }]}),
+                ])
+                success, _, addition = await provider.execute_sql("select bad", session)
+                self.assertFalse(success)
+                self.assertEqual(addition, {
+                    "error_message": "original SQL validation error",
+                    "error_sql": "select original",
+                    "correlation_id": "original-correlation",
+                })
+                self.assertEqual(len(session.calls), 2)
+        session = Session([
+            Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+            Response(200, {"data": {"previewSql": None}, "errors": [{
+                "message": "native syntax refusal", "extensions": {"code": "INVALID_SQL_ERROR"},
+            }]}),
+        ])
+        with self.assertRaises(module.NativeSQLResponseUnavailable):
+            await provider.execute_sql("select bad", session, dry_run=False)
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_real_sql_postprocessor_never_classifies_identity_or_unknown_as_invalid_sql(self):
+        module = self.load_provider()
+        provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
+        for responses, expected in (
+            ([Response(403, {})], identity.NativeIdentityUnavailable),
+            ([Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+              Response(503, {})], module.NativeSQLResponseUnavailable),
+            ([Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+              Response(200, {"data": {"previewSql": {"terminalStatus": "UNKNOWN"}}})], module.NativeSQLResponseUnavailable),
+            ([Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+              Response(200, {"data": {"previewSql": None}, "errors": [{"message": "private-secret"}]})], module.NativeSQLResponseUnavailable),
+            ([Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+              Response(200, {"data": {"previewSql": None}, "errors": [{"message": "private-driver", "extensions": {"code": "DRY_RUN_ERROR"}}]})], module.NativeSQLResponseUnavailable),
+            *(
+                ([Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}),
+                  Response(200, {"data": {"previewSql": None}, "errors": [{
+                      **({} if message == "missing" else {"message": message}),
+                      "extensions": {"code": "INVALID_SQL_ERROR"},
+                  }]})], module.NativeSQLResponseUnavailable)
+                for message in ("missing", None, {}, [])
+            ),
+        ):
+            with self.subTest(expected=expected.__name__, responses=len(responses)):
+                session = Session(responses)
+                source = self.load_postprocessor(module, session)
+                processor = source.SQLGenPostProcessor(provider)
+                with self.assertRaises(expected):
+                    await processor.run(["select 1"], project_id="native-project")
+                self.assertLessEqual(sum(url.endswith("/api/graphql") for url, _ in session.calls), 1)
+
+    async def test_real_sql_postprocessor_preserves_confirmed_native_validation_and_sql_correction(self):
+        module = self.load_provider()
+        provider = module.WrenUI(endpoint=self.delivery["uiEndpoint"])
+        for response, valid in (
+            (Response(200, {"data": {"previewSql": True}}), True),
+            (Response(200, {"data": {"previewSql": None}, "errors": [{"message": "original validation error", "extensions": {"code": "INVALID_SQL_ERROR"}}]}), False),
+        ):
+            with self.subTest(valid=valid):
+                session = Session([
+                    Response(200, {"token_type": "Bearer", "access_token": "native-jwt"}), response,
+                ])
+                source = self.load_postprocessor(module, session)
+                result = await source.SQLGenPostProcessor(provider).run(["select 1"], project_id="native-project")
+                self.assertEqual(bool(result["valid_generation_result"]), valid)
+                self.assertEqual(bool(result["invalid_generation_result"]), not valid)
+                if not valid:
+                    self.assertEqual(result["invalid_generation_result"]["type"], "DRY_RUN")
+                self.assertEqual(len(session.calls), 2)
 
     async def test_original_force_deploy_callback_uses_native_identity_without_printing_payload(self):
         session = Session([
