@@ -85,6 +85,69 @@ describe('DashboardService', () => {
     });
   });
 
+  describe('original pin INSERT after layout read', () => {
+    const input = {
+      dashboardId: 4,
+      type: 'BAR' as any,
+      sql: 'SELECT original_column FROM original_model',
+      chartSchema: { mark: 'bar' },
+    };
+
+    it('consumes the supplied project permission after native layout assembly and keeps the original INSERT result', async () => {
+      const sequence: string[] = [];
+      const item = { id: 7, ...input };
+      mockDashboardRepository.findOneBy.mockResolvedValue({
+        id: input.dashboardId,
+        projectId: 1,
+      });
+      mockDashboardItemRepository.findAllBy.mockImplementation(async () => {
+        sequence.push('layout');
+        return [];
+      });
+      mockDashboardItemRepository.createOne.mockImplementation(async () => {
+        sequence.push('insert');
+        return item;
+      });
+      const beforeWrite = jest.fn(async (projectId: number) => {
+        expect(projectId).toBe(1);
+        sequence.push('fresh-project');
+      });
+      expect(
+        await dashboardService.createDashboardItem(
+          input,
+          undefined,
+          beforeWrite,
+        ),
+      ).toBe(item);
+      expect(sequence).toEqual(['layout', 'fresh-project', 'insert']);
+      expect(mockDashboardItemRepository.createOne).toHaveBeenCalledWith({
+        dashboardId: input.dashboardId,
+        type: input.type,
+        detail: { sql: input.sql, chartSchema: input.chartSchema },
+        layout: { x: 0, y: 0, w: 3, h: 2 },
+      });
+    });
+
+    it('does not INSERT when the current captured permission rejects after layout assembly', async () => {
+      const refusal = new Error('Current project permission revoked');
+      mockDashboardRepository.findOneBy.mockResolvedValue({
+        id: input.dashboardId,
+        projectId: 1,
+      });
+      mockDashboardItemRepository.findAllBy.mockResolvedValue([]);
+      const beforeWrite = jest.fn(async () => {
+        throw refusal;
+      });
+      await expect(
+        dashboardService.createDashboardItem(input, undefined, beforeWrite),
+      ).rejects.toBe(refusal);
+      expect(mockDashboardItemRepository.findAllBy).toHaveBeenCalledWith({
+        dashboardId: input.dashboardId,
+      });
+      expect(mockDashboardItemRepository.createOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('generateCronExpression', () => {
     it('should generate correct cron expression for daily schedule', () => {
       const schedule = {

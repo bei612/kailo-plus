@@ -48,6 +48,7 @@ export interface IDashboardService {
   createDashboardItem(
     input: CreateDashboardItemInput,
     project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<DashboardItem>;
   updateDashboardItem(
     dashboardItemId: number,
@@ -187,9 +188,14 @@ export class DashboardService implements IDashboardService {
   public async createDashboardItem(
     input: CreateDashboardItemInput,
     project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<DashboardItem> {
-    await this.currentDashboard(input.dashboardId, project);
+    const dashboard = await this.currentDashboard(input.dashboardId, project);
     const layout = await this.calculateNewLayout(input.dashboardId);
+    // Layout calculation reads the native repository asynchronously. Consume
+    // the original request's current project permission at the actual INSERT,
+    // not only at the resolver's earlier dashboard/source lookup.
+    await beforeWrite?.(dashboard.projectId);
     return await this.dashboardItemRepository.createOne({
       dashboardId: input.dashboardId,
       type: input.type,

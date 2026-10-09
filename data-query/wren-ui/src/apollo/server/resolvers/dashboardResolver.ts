@@ -35,6 +35,23 @@ const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
 
 export class DashboardResolver {
+  private standalonePin(ctx: IContext) {
+    return (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE === undefined &&
+      ctx.nativeIdentityScope === undefined &&
+      ctx.nativeHumanToken === undefined
+    );
+  }
+
+  private async verifyMetadataWrite(ctx: IContext, projectId: number) {
+    if (ctx.nativeProjectCheck) {
+      await ctx.nativeProjectCheck(projectId);
+    } else if (!this.standalonePin(ctx)) {
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+  }
+
   private async metadataAccess(ctx: IContext, project: Project) {
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
@@ -266,8 +283,10 @@ export class DashboardResolver {
     // Bound dashboards already warm/refresh this cache via the original chart
     // hook and governed previewItemSQL. Metadata manage is not SQL execution
     // permission, so pin must not issue a second unadmitted query here.
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) {
+    if (this.standalonePin(ctx)) {
       const deployment = await ctx.deployService.getLastDeployment(project.id);
+      if (!this.standalonePin(ctx))
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       await ctx.queryService.preview(response.sql, {
         project,
         manifest: deployment.manifest,
@@ -285,6 +304,10 @@ export class DashboardResolver {
         chartSchema: response.chartDetail?.chartSchema,
       },
       project,
+      async (projectId) => {
+        await this.readableSql(ctx, project, response.sql);
+        await this.verifyMetadataWrite(ctx, projectId);
+      },
     );
     try {
       await this.readableWriteResult(ctx, project, [item]);

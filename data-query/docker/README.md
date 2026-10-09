@@ -1556,10 +1556,29 @@ Both reuse the original message/done protocol with fresh checks at each frame;
 EOF, cache loss, unconfirmed tasks or revocation do not manufacture completion
 or create another native task. Standalone original handlers remain.
 
-This is a source checkpoint, not acceptance: the original two-suite/type command
-`60299` is still running with no reported cases. Mechanical original Prettier
-write and selected diff whitespace check returned 0; suite, final types and
-private production mutation/restoration have not yet completed. See the
+This remains a source checkpoint, not acceptance. The original command `60299`
+ended exit 1: middleware 157/157 passed, while the old task fixture failed static
+typing before executing cases. After its actual `discover` request assertion
+was corrected, the same-SDK command `54258` also ended exit 1: 225/231 passed and
+six original PostgreSQL migration cases failed their 5000 ms `beforeAll` timeout.
+Final types/format did not run because the command used `&&`; no whole-suite or
+database acceptance is claimed. The timeouts were not extended, and the cold
+suite/database was not restarted. See the
 [bound HUMAN access receipt](../fork/verify/native-integration.md#bound-human-native-access-source-checkpoint).
 No native service start, ACTIVE binding, SERVICE SQL, iframe or three-user
 acceptance is claimed.
+
+### Original dashboard pin write boundary
+
+The original ChartAnswer pin keeps its native chart, dashboard and layout.
+For a bound instance its original native INSERT now rechecks readable SQL
+sources and the request's captured project manage permission after layout
+assembly; revocation or generation drift refuses the write. Metadata management
+does not trigger an additional unadmitted query. The independently operated,
+never-configured native service retains original cache warming and pin behavior.
+Lost write acknowledgements stay UNKNOWN rather than inviting another INSERT.
+The original two-file focused checks passed 52 cases, types and formatting
+passed, and two deliberately removed production guards were caught and restored;
+this is not a deployed feature or a browser acceptance result. The earlier
+six PostgreSQL migration checks remain failed and were not rerun or relabeled.
+See the [pin evidence](../fork/verify/native-integration.md#original-dashboard-pin-last-native-insert-authorization).

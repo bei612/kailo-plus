@@ -17,6 +17,7 @@ import {
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
+import { DashboardService } from './apollo/server/services/dashboardService';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import {
   AskingService,
@@ -3149,6 +3150,7 @@ describe('native saved-view HUMAN query consumer', () => {
               chartSchema: item.detail.chartSchema,
             },
             { id: 3 },
+            expect.any(Function),
           );
       },
     );
@@ -3199,6 +3201,8 @@ describe('native saved-view HUMAN query consumer', () => {
     );
     it('retains original standalone pin cache warming, INSERT and full response without a manufactured platform Action', async () => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeHumanToken;
+      delete ctx.nativeIdentityScope;
       expect(await write('pin')).toEqual(item);
       expect(ctx.queryService.preview).toHaveBeenCalledWith(statement, {
         project: { id: 3 },
@@ -3216,6 +3220,258 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(calls).not.toHaveBeenCalled();
       expect(ctx.queryService.sourceObjects).not.toHaveBeenCalled();
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+
+    describe('original pin final native INSERT boundary', () => {
+      let previousBinding: string | undefined;
+      let pinDelivery: NativeQueryDelivery;
+      let generation: number;
+      let revoked: boolean;
+      let sourceRevoked: boolean;
+      let afterLayout: () => void;
+      let itemRepository: any;
+      const invoke = () =>
+        originalResolvers.Mutation.createDashboardItem(
+          null,
+          { data: { itemType: 'BAR' as any, responseId: 31 } },
+          ctx,
+        );
+      const failure = async () => {
+        try {
+          await invoke();
+        } catch (error) {
+          return error as any;
+        }
+        throw new Error('Original dashboard pin unexpectedly succeeded');
+      };
+      beforeEach(() => {
+        previousBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+          'fixture-controlled-binding';
+        pinDelivery = structuredClone(config);
+        generation = 2;
+        revoked = false;
+        sourceRevoked = false;
+        afterLayout = () => {};
+        jest
+          .mocked(loadQueryDelivery)
+          .mockImplementation(async () => structuredClone(pinDelivery));
+        calls.mockImplementation(async (delivery, operation, input, bearer) => {
+          expect(operation).toBe('human-action');
+          if (input.authorizeScope) {
+            expect(bearer).toBe('verified-native-token');
+            expect(input.authorizeScope).toEqual({ permission: 'manage' });
+            if (revoked)
+              throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+            return {
+              scope: {
+                bindingId: delivery.bindingId,
+                generation,
+                tenantId: delivery.tenantId,
+                workspaceId: delivery.workspaceId,
+                nativeInstanceRef: delivery.nativeInstanceRef,
+                nativeScopeRef: delivery.nativeScopeRef,
+                permission: 'manage',
+                checkedRevision: 'fresh-native-pin-management',
+              },
+            };
+          }
+          if (sourceRevoked)
+            throw new NativeQueryRefusal(
+              403,
+              'QUERY_ADMISSION_UNAVAILABLE',
+              true,
+            );
+          return resolve(delivery, operation, input, bearer);
+        });
+        itemRepository = {
+          findOneBy: jest.fn().mockResolvedValue(item),
+          findAllBy: jest.fn().mockImplementation(async () => {
+            afterLayout();
+            return [];
+          }),
+          createOne: jest.fn().mockResolvedValue(item),
+        };
+        ctx.dashboardService = new DashboardService({
+          projectService: ctx.projectService,
+          dashboardItemRepository: itemRepository,
+          dashboardRepository: {
+            findOneBy: jest.fn(async (where) =>
+              where.projectId === config.projectId
+                ? { id: 4, projectId: config.projectId }
+                : null,
+            ),
+          } as any,
+        });
+      });
+      afterEach(() => {
+        if (previousBinding === undefined)
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = previousBinding;
+      });
+
+      it('consumes real source reads and captured manage after layout lookup, preserving one INSERT/full original result', async () => {
+        expect(await invoke()).toEqual(item);
+        expect(itemRepository.createOne).toHaveBeenCalledTimes(1);
+        expect(itemRepository.createOne).toHaveBeenCalledWith({
+          dashboardId: 4,
+          type: 'BAR',
+          detail: item.detail,
+          layout: item.layout,
+        });
+        expect(
+          calls.mock.calls.filter((entry) => entry[2].authorizeScope),
+        ).toHaveLength(3);
+        expect(
+          calls.mock.calls.filter((entry) => entry[2].resolveResource),
+        ).toHaveLength(12);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      });
+
+      it.each(['revoked', 'generation', 'delivery', 'identity', 'partition'])(
+        'refuses %s changed by the last layout read before any native INSERT',
+        async (change) => {
+          afterLayout = () => {
+            if (change === 'revoked') revoked = true;
+            else if (change === 'generation') generation++;
+            else if (change === 'delivery')
+              pinDelivery = {
+                ...pinDelivery,
+                workspaceId: 'changed-workspace',
+              };
+            else if (change === 'identity')
+              ctx.nativeHumanToken = 'another-verified-native-token';
+            else ctx.nativeIdentityScope = 'b'.repeat(64);
+          };
+          const error = await failure();
+          expect(error.extensions.other.nativeWrite.outcome).toBe(
+            'NOT_STARTED',
+          );
+          expect(itemRepository.createOne).not.toHaveBeenCalled();
+          expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses a source revoked during layout lookup without INSERT or exposing a successful pin', async () => {
+        afterLayout = () => {
+          sourceRevoked = true;
+        };
+        const error = await failure();
+        // A source-reader refusal is not the wrapper's exact local manage
+        // refusal. Preserve its conservative UNKNOWN, never fabricate success.
+        expect(error.extensions.other.nativeWrite.outcome).toBe('UNKNOWN');
+        expect(itemRepository.createOne).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      });
+
+      it('rejects a raw bound pin without the original trusted write closure', async () => {
+        await expect(write('pin')).rejects.toThrow(
+          'QUERY_EVIDENCE_UNAVAILABLE',
+        );
+        expect(itemRepository.createOne).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        'lost-ack',
+        'forged-not-started',
+        'read-revoked',
+        'manage-revoked',
+      ])(
+        'preserves UNKNOWN for %s after the original INSERT without a second query/INSERT',
+        async (cause) => {
+          itemRepository.createOne.mockImplementation(async () => {
+            if (cause === 'read-revoked') sourceRevoked = true;
+            else if (cause === 'manage-revoked') revoked = true;
+            else {
+              const error: any = new Error(
+                'Native pin acknowledgement unavailable',
+              );
+              if (cause === 'forged-not-started')
+                error.extensions = {
+                  other: { nativeWrite: { outcome: 'NOT_STARTED' } },
+                };
+              throw error;
+            }
+            return item;
+          });
+          const error = await failure();
+          expect(error.extensions.other.nativeWrite.outcome).toBe('UNKNOWN');
+          if (cause === 'read-revoked' || cause === 'manage-revoked')
+            expect(error.extensions.other.nativeWrite.reference).toEqual({
+              nativeType: 'dashboardItem',
+              nativeId: item.id,
+            });
+          expect(itemRepository.createOne).toHaveBeenCalledTimes(1);
+          expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        },
+      );
+
+      it('retains entirely never-configured independent pin/cache warming and original INSERT', async () => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        delete ctx.nativeHumanToken;
+        delete ctx.nativeIdentityScope;
+        expect(await invoke()).toEqual(item);
+        expect(itemRepository.createOne).toHaveBeenCalledTimes(1);
+        expect(calls).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).toHaveBeenCalledWith(statement, {
+          project: { id: 3 },
+          manifest: deployment.manifest,
+          limit: 500,
+          cacheEnabled: true,
+          refresh: true,
+        });
+      });
+
+      it.each(['query-config', 'binding-config', 'token', 'partition'])(
+        'refuses %s arriving during the last independent deployment read before naked SQL or INSERT',
+        async (change) => {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          delete ctx.nativeHumanToken;
+          delete ctx.nativeIdentityScope;
+          ctx.deployService.getLastDeployment.mockImplementation(async () => {
+            if (change === 'query-config')
+              process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+                'controlled-delivery';
+            else if (change === 'binding-config')
+              process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+                'controlled-binding';
+            else if (change === 'token')
+              ctx.nativeHumanToken = 'verified-native-token';
+            else ctx.nativeIdentityScope = 'a'.repeat(64);
+            return deployment;
+          });
+          const error = await failure();
+          expect(ctx.queryService.preview).not.toHaveBeenCalled();
+          expect(itemRepository.createOne).not.toHaveBeenCalled();
+          expect(error).toMatchObject({ status: 412 });
+        },
+      );
+
+      it.each(['query-config', 'binding-config', 'token', 'partition'])(
+        'refuses %s arriving during independent layout lookup without an INSERT',
+        async (change) => {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          delete ctx.nativeHumanToken;
+          delete ctx.nativeIdentityScope;
+          afterLayout = () => {
+            if (change === 'query-config')
+              process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+                'controlled-delivery';
+            else if (change === 'binding-config')
+              process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+                'controlled-binding';
+            else if (change === 'token')
+              ctx.nativeHumanToken = 'verified-native-token';
+            else ctx.nativeIdentityScope = 'a'.repeat(64);
+          };
+          await expect(invoke()).rejects.toBeInstanceOf(NativeQueryRefusal);
+          expect(itemRepository.createOne).not.toHaveBeenCalled();
+        },
+      );
     });
   });
 

@@ -9259,3 +9259,117 @@ not include it; its eventual result cannot certify the corrected fixture.
 No new final suite/type/format result is claimed for this correction. All
 production bytes and the existing in-flight input are unchanged; the original
 failed/waiting receipt will be retained before the final same-SDK validation.
+
+### Bound HUMAN checkpoint: actual two-suite terminal results
+
+The checkpoint above records its original in-flight state; both commands have
+now ended, not been restarted. Session `60299` ended **exit 1**. The original
+middleware suite ran **157/157 PASS**; the old captured task fixture failed
+TS2339 on `Record<string, unknown>.authorizeScope.permission` before any task
+cases ran. The formal correction already included in `f1862706d4a9d3de146e316f12f0730293c8eac7`
+was then supplied to the same single-root SDK with `apply_patch`, retaining the
+actual `{permission: 'discover'}` assertion. Its formal/private SHA-256 was
+cmp-equal: `2c74b8c1bcaa287848e38f5271794916f2e1e7b6d354fc51e71c039d475e54eb`.
+
+The corrected same-SDK session `54258` ended **exit 1**, not a whole-suite PASS:
+middleware **157 PASS**, task ownership/stream consumers **68 PASS**, and **six
+original PostgreSQL migration cases failed** the existing 5000 ms `beforeAll`
+hook at `nativeTaskOwnership.test.ts:1220`. Final Jest totals were **225 passed,
+6 failed, 231 total**; two suites were one passed/one failed. The failing group
+is `native task migration and conditional binding in PostgreSQL`, covering
+legacy refusal/backfill, concurrent first binding, speculative-row rollback,
+rollback/forward migration and running/UNKNOWN cascade cleanup. This is a real
+unresolved database-verification boundary, not a filtered skip or evidence of
+successful migration. No timeout was changed and no database, SDK or cold suite
+was restarted to obtain a green result.
+
+Both commands ran the original two paths with `jest --runInBand` followed by
+`tsc --noEmit` and the original six-file `prettier --check` using `&&`.
+Consequently **final TypeScript and format checks did not execute**, and no
+production mutation/restoration result is claimed for this authorization batch.
+The corrected run's preflight confirmed 4 CPU/4 GiB memory+swap, Node heap 3072
+MiB, approximately 141 MiB container usage and zero `memory.events`; host
+MemAvailable was approximately 25.8 GiB and memory PSI avg10 zero. Existing
+root build/full work overlapped; these were not exclusive machine checks.
+
+Original logs, retained separately:
+`/volumes/data/kailo/tmp/wren-human-fresh.HsCVnQ/positive.log`, SHA-256
+`ae5f51adf1e2bd219fb3a3394bd910558e9fc32ca92d2552e1d0beee1595b6c4`;
+`/volumes/data/kailo/tmp/wren-human-fresh.HsCVnQ/final-positive.log`, SHA-256
+`89d0b52ed8b05bebab2689495c6a29e990ee67f01b5b5f2d550d7a8545ac2c3f`.
+These results do not cover the later Dashboard pin first-INSERT source changes,
+which have not yet been supplied to this SDK. Native deployment, ACTIVE binding,
+ordinary FunctionCall provenance, SERVICE SQL, dynamic Resource adoption,
+iframe and three-independent-user acceptance remain unclaimed.
+
+### Original Dashboard pin: last native INSERT authorization
+
+Authority and source: `SS-WRN-IDENTITY`, `SS-WRN-GOVERNANCE`, `DD-12/87/93`,
+design `08` §6 retain Wren's independent full native UI/data and require real
+project/resource authorization. Fixed official Wren
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts::DashboardResolver.createDashboardItem`
+and `wren-ui/src/apollo/server/services/dashboardService.ts::DashboardService.createDashboardItem`
+were reread with `git show`. The original ChartAnswer pin, native dashboard,
+response/chart details, layout algorithm and repository INSERT remain in use.
+The authorized difference is the existing captured manage-generation/source-read
+check at that INSERT, not a replacement page, workflow or platform data copy.
+
+Impact: the original `resolvers.ts::nativeProjectResolver` manage wrapper already
+supplies the request's trusted `nativeProjectCheck`. The original service now
+consumes its resolver callback after asynchronous native layout assembly and
+before `dashboardItemRepository.createOne`; the callback first rechecks SQL
+source readability and then that captured project permission. Both original
+check files exercise the actual resolver/service, not a second pin implementation.
+No schema, migration, contract, native response shape, layout or UI changed.
+Web/Desktop consume the same embedded native service; no Mobile host is added.
+
+Side effects and boundaries: revoked permission, changed generation/delivery or
+request identity cannot INSERT after the layout read. Raw bound resolver calls
+without the trusted closure refuse. Independent cache warming remains only when
+both delivery settings and both trusted identity inputs are absent, and that
+absence is checked again after `getLastDeployment` before raw SQL. Bound pin
+does not use manage permission as SQL-execute permission. Lost INSERT ACK and
+post-write source/manage refusal remain UNKNOWN, with an exact native reference
+only when observed; neither retries nor a second INSERT/query are introduced.
+Existing conservative UNKNOWN for source-reader refusal is retained rather than
+inventing proof of NOT_STARTED. Standalone and configured races are verified;
+this does not establish cross-process database isolation or a fresh live binding.
+
+Actual post-implementation verification sequence, 2026-10-09: resumed command
+`72577` exited 0, **52 passed / 480 filtered** in the original two test files;
+`9961` exited 0 for `tsc --noEmit` and four-file `prettier --check`. Private
+production mutation `58059` removed the service's `beforeWrite` invocation:
+**14 failed / 9 passed / 509 filtered**, exit 1, including actual unwanted
+INSERT and missing authorization order. It was restored byte-for-byte. Mutation
+`15587` removed the post-deployment standalone guard and failed four status
+assertions. The same four original checks were sharpened to assert zero raw SQL
+calls first; `55886` then exited 1 with **four actual unexpected preview calls**.
+No compile/import failure was used as mutation success. Both production files
+were restored and all four formal/private files compared equal before final
+`27874`: **52 passed / 480 filtered**, `tsc --noEmit` and four-file formatting
+all exited 0. No timeout was changed, no database restarted, no cold PG suite
+or image build repeated. Formal selected `git diff --check` also exited 0.
+
+All execution used existing `kailo-wren-query-sdk-itgs2n`, immutable SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+UID 1000, 4 CPU/4 GiB memory+swap and Node heap 3072 MiB. Source/cache mounts
+are on Data. Preflight observed only sleep in this SDK, zero memory events,
+approximately 27 GiB host available memory and ongoing unrelated bounded work.
+The original command was `jest --runInBand --runTestsByPath
+src/nativeHumanQuery.test.ts src/apollo/server/services/tests/dashboardService.test.ts
+-t 'original dashboard HUMAN metadata readers|original pin INSERT after layout read'`.
+
+Evidence directory: `/volumes/data/kailo/tmp/wren-dashboard-pin.0amwYB`.
+`restored-final.log` SHA-256
+`b27025d950d687e3bec8e6dffb8c64030a858515883dbdf2c3218959482cb40d`;
+`negative-before-write.log`
+`fbb477e7954e5e72b6bac3b89a8c336750013ede70da9336274f7f8a00543692`;
+`negative-standalone-effect.log`
+`36e93d2e36c7708bb1748b97070281bc229cf58bbcd0c64b54437b24d1ae07c0`.
+The previous empty `positive.log` is not evidence of a started or passed suite.
+Source/check increment is four files +350/-2 against the current main parent;
+root owns selective phase commit and batch documentation/full gates. This is
+not deployment, browser/iframe pin acceptance, ACTIVE binding, whole Wren
+acceptance or clearance of the preceding six PG migration failures. Native
+function provenance, SERVICE SQL and dynamic Resource adoption remain separate.
