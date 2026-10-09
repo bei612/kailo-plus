@@ -322,7 +322,7 @@ export const MessageComposerToolbar = React.memo(
                   </Tooltip>
                 ) : null}
                 <ComposerEmojiPicker
-                  disabled={composerDisabled}
+                  disabled={composerDisabled || isVoiceNoteRecording}
                   customEmoji={customEmoji}
                   open={isEmojiPickerOpen}
                   onOpenChange={setIsEmojiPickerOpen}

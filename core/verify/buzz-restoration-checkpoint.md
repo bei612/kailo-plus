@@ -5934,3 +5934,90 @@ node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
 不注入 Cookie／重置账号／借其它身份。线上仍 a816 buildId 88591b4d…，
 此前登录页或旧业务图不验本批源码。新 10 路径未部署，Toolbar/Web 实际运行未验，
 Windows／Mobile／完整 Tauri 与生产全检均未执行，不声明原版 100%／生产就绪。
+
+### 2026-10-09：原 Toolbar 录音期间表情禁用消费者恢复（2 路径冻结）
+
+本批起点 `d5850c53143488ecd4d24411b725a5b8b9bed2af` 的前批 10 路径已 clean；
+本次两个拥有路径接手前均 clean，源码／原检查 +64/-1，无 inherited hunk。
+只恢复一个固定原 receiver 条件，不称完整语音或 GIF 功能恢复。
+
+四步结论及固定依据：
+
+1. 权威：Buzz `779af8886caae1317b4de962082429867ab61503`，
+   `desktop/src/features/messages/ui/MessageComposerToolbar.tsx:284::MessageComposerToolbar`
+   原 EmojiPicker 为 `disabled={composerDisabled || isVoiceNoteRecording}`；
+   下一行 `gifsDisabled={hasVoiceNoteAttachment}` 只限制 GIF，不限制普通表情。
+2. 影响：共享 Toolbar 唯一源→两宿主消费者。Native 现有
+   `MessageComposer.tsx::MessageComposerImpl` 从真实 voiceNote.status 写原 recording flag；
+   Web 目前没有录音 producer，不新增假 callback／入口或伪录音能力。
+   消息、附件、draft、quota、scope、SecretRef、签名与上传合同均未改。
+3. 副作用：仅恢复已有真实禁用状态，不改变录音状态机或给 API 放权；
+   有语音附件时普通表情仍可选，文件原禁用规则继续保留。
+   不为缺 GIF 治理链调用 Browser 私钥／裸 Relay，也不新建代理。
+4. 边界：现有原录音目标同时验证取消、StrictMode、迟到权限流释放和旧 decode fence；
+   本批 receiver 证据使用其原 FakeStream/FakeRecorder 和真实 hook／共享 Toolbar／DOM，
+   不 mock Toolbar 或复制 disabled 分支，不据此声称物理麦克风／Tauri Window 已验收。
+
+逐项四分类：
+
+- 原样保留：原录音 hook／状态机及原三项检查不变；
+  原普通表情与 GIF-only 附件限制的区分保留，未把所有表情一起关闭。
+- 共享迁移：shared Toolbar 已有单主体中接回原 recording 条件，
+  Native 真实状态继续传入，不建立两套呈现或可配置禁用开关。
+- 已授权治理改造：本次无新增治理例外；原 DD-75／SS-WEB-01 传输继续不变。
+- 缺失需恢复：原 `ComposerEmojiPicker.tsx::handleGifSelect`、
+  `desktop/src/features/gifs/relay.ts::relayKlipyEndpoints/fetchKlipyGifs/reportKlipyShare`
+  和 gifMediaController 的完整页面仍未恢复。Relay 现有 api/gifs.rs::search/share
+  不等于 Browser 已有受治理 BFF 消费链，当前 BFF／合同无相应读写消费者。
+  原 best-effort share 也不能证明外部副作用终态；本批没有生成 GIF 入口。
+  另已证原 `useComposerVoiceNote.tsx` 的 editTargetId 取消／迟到 upload fence、
+  setEmojiPickerOpen 原关闭链在当前 Native 仍缺失，本批未扩改为完整语音交付。
+
+原件目录：
+
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/voice-emoji-20261009.PILFvV`
+
+`owned-paths.txt` 精确两个路径，`inputs.sha256` 固定最终字节；
+`owned-source.patch` SHA256
+`b14d31deaf187e7be526f47d120f62ca9b0a025041ab89da5cf6b82ff86a273b`，
+reverse／cached check 均 0，正式与候选两输入、正式与还原安装副本 cmp 0。
+`official-to-current.diff` 为 Toolbar／原录音目标的完整全文 diff，391 行，
+SHA256 `e7a786289a0e86f2375b933f7e43f8099e74fa8823e4f6f53aa6d2af7bc4fd52`；
+其余原 Toolbar 残差仍如实保留，不将整文件归作治理授权。
+
+实际命令及结果：
+
+```sh
+# 候选 collaboration/desktop；原 Node loader 和原目标，没有新 runner
+node --import ./test-loader.mjs --experimental-strip-types --test --test-concurrency=1 src/features/messages/lib/useVoiceNoteRecorder.test.mjs
+# 候选 client-kit/ts/platform
+node node_modules/typescript/bin/tsc --noEmit
+# 候选 Native cwd；复用现存 Web Biome，以 Native 原配置验两个拥有文件
+/evidence/profile-settings-ortsoo.DRR20F/apps/web-client/web/node_modules/.bin/biome format --config-path=./biome.json /evidence/profile-settings-ortsoo.DRR20F/apps/client-kit/ts/platform/src/react/composer/features/messages/ui/MessageComposerToolbar.tsx src/features/messages/lib/useVoiceNoteRecorder.test.mjs
+```
+
+原 SDK xvkujx 实核 4 CPU／8 GiB，Node heap3072；
+开始 available 27.8 GiB／memory full0.01%／I/O full3.65%／Data 可用277G。
+正向 4531：4/4、exit 0；45898：shared tsc exit 0，但同请求格式入口缺失127，
+总 exit 1，未把总失败说成通过。50078 从 apps 根跨工程格式因 nested-root 配置 exit 1；
+43314 共享端误读候选根默认 tabs、Native 新检查行格式未收齐，各 exit 1。
+没有迁移／修改任何 formatter 配置，没有整文件重排。
+只修本批新检查行格式后，沿 Native 原配置最终 checked2/2、exit 0；
+上述失败日志均保留于 format-*.log，最终为 format-original-config.log。
+
+真生产破坏 23046：仅私有 Native 实际安装的 Toolbar 撤去原 recording 条件，
+同原目标 3 pass／1 assertion fail、exit 1，失败实际是 emoji.disabled false≠true。
+精确还原 cmp 0 后 29231：4/4、exit 0；见 mutation-native-receiver.log、
+restored-native-receiver.log；不是 worker／loader／OOM 失败。
+结束 SDK 仅 sleep，memory.events oom=2／oom_kill=2 与原基线相同，不增。
+
+本批没有重跑此前 0-case Vitest、四 host 冷扫、full、镜像、安装或图谱。
+本次无词条／Dart／schema／API／lock 变更。
+完整全树分类仍为此前固定 a816 union5314 的历史账：
+原样1976／共享112／整文件授权0／恢复队列3226，不能当当前 main 全树已核验；
+恢复队列包含未证明保留或授权，不等同功能缺失条数。
+
+本次未新登录／注入 Cookie／重置账号，没有新截图；
+原 a816／登录页图不验此候选，两个源尚未部署或形成新安装包。
+Web 录音、Native 物理麦克风／完整 Recorder UI、GIF 页面与 Windows/Mobile 均未验，
+不声明原版全量一致／100%／生产就绪。根代理独占提交和集中发布。

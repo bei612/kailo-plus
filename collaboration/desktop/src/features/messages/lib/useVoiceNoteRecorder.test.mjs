@@ -95,6 +95,69 @@ before(() => {
 
 after(() => dom.window.close());
 
+test("the original toolbar emoji trigger follows the real recorder state without changing attachment gating", async () => {
+  const { createElement } = await import("react");
+  const { act, cleanup, render } = await import("@testing-library/react");
+  const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
+  const { MessageComposerToolbar } = await import(
+    "@client-kit/platform/react/composer/features/messages/ui/MessageComposerToolbar"
+  );
+  const { TooltipProvider } = await import(
+    "@client-kit/platform/react/sidebar/tooltip"
+  );
+  let recorder;
+  let hasAttachment = false;
+  function Composer() {
+    recorder = useVoiceNoteRecorder();
+    return createElement(
+      TooltipProvider,
+      null,
+      createElement(MessageComposerToolbar, {
+        editor: null,
+        composerDisabled: false,
+        formattingDisabled: false,
+        isFormattingOpen: false,
+        isSending: false,
+        isUploading: false,
+        isVoiceNoteRecording: recorder.status !== "idle",
+        hasVoiceNoteAttachment: hasAttachment,
+        sendDisabled: false,
+        onFormattingToggle() {},
+        onLinkButton() {},
+        onPaperclip() {},
+        onVoiceNote() {},
+      }),
+    );
+  }
+  const host = render(createElement(Composer));
+  const emojiTrigger = () =>
+    host.container.querySelector('[data-testid="composer-emoji-button"]');
+  const fileTrigger = () =>
+    host.container.querySelector(
+      'button[aria-label="Attach file"],button[aria-label="添加附件"]',
+    );
+  try {
+    assert.equal(emojiTrigger()?.disabled, false);
+    await act(() => recorder.start());
+    assert.equal(recorder.status, "recording");
+    assert.equal(emojiTrigger()?.disabled, true);
+    act(() => recorder.cancel());
+    assert.equal(recorder.status, "idle");
+    assert.equal(emojiTrigger()?.disabled, false);
+    hasAttachment = true;
+    host.rerender(createElement(Composer));
+    assert.equal(
+      emojiTrigger()?.disabled,
+      false,
+      "the original voice attachment restriction is GIF-only, not ordinary emoji",
+    );
+    assert.equal(fileTrigger()?.disabled, true);
+  } finally {
+    host.unmount();
+    cleanup();
+  }
+});
+
 test("permission acquisition is visible, cancellable, and releases a late stream", async () => {
   const { act, cleanup, renderHook } = await import("@testing-library/react");
   const { useVoiceNoteRecorder } = await import("./useVoiceNoteRecorder.ts");
