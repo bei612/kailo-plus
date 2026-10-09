@@ -32,7 +32,7 @@ runtime:
 release:
   artifacts:
     - name: core
-      digest: sha256:11584b7305f254ac867d61aee12e4665545f173904bd919ab28f8a7d31e26e62
+      digest: sha256:1d7316086734e513792968ee40e9868807a378f47a1e66bf34bf07093ff049a4
     - name: web-client
-      digest: sha256:871dc5b0719889d6e4cee4eab17540015c48f58385ce86910680d7e80de00ac1
+      digest: sha256:f229799241e2703bd159b92aa5cb6958ec750d81d33b13048efa3bbd5f79b502
   gate: blocked_until_seams_closed
