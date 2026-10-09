@@ -8653,3 +8653,116 @@ dynamic Resource evidence and remaining metadata recovery still gate release.
 The newly written query-reference export identity repair is a separate batch
 and is not certified by the 27 old-input results. Root owns selective review,
 main commit/push and the later single serial UI-to-AI source build.
+
+## Query-reference export current identity and generation
+
+Authority: the existing `.design/05` §2.7, `.design/07` §4.6 and `.design/08` §6
+current HUMAN/scope, fail-closed authorization and binding-generation fences
+also apply to the existing query-reference UI consumer. Fixed official
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx::ViewMetadata`
+(line 11), remains the native metadata/SQL/preview presentation. This batch
+changes only its existing authorized Kailo query-reference integration,
+private-hop middleware and actual native reference GET consumer. It adds no
+page, layout, registry, permission, Action, task or execution authority.
+
+Impact: source search found the reference GET's sole real client in
+`ViewMetadata.exportReference`; server consumers are
+`pages/api/platform-query-reference.ts::handler`, existing
+`NativeQueryService.reference` and `resolveNativeResource`. The exact request
+now carries `queryScope` and `generation` from the current original no-store
+`getUserConfig` consumer alongside `viewId`/`limit`. Middleware strips supplied
+private headers and injects both verified HUMAN token and issuer/subject-based
+identity scope at this exact route. The handler consumes existing
+`nativePreviewScope` plus `authorizeNativeScope(..., 'discover')`, current
+generation and unchanged delivery before native reference access and before
+return, separately from its two existing `data_query.query@v1` Resource checks.
+Expected fields correlate this request; they are not caller-supplied
+authorization. Client/server must upgrade together; old missing association
+fields are refused. No platform contract or generated-language type changed.
+
+Side effects and boundaries: exporting this frozen native reference neither
+executes SQL nor grants a Resource permission, approval or result-export right.
+The native view/project/deployment reference remains captured by the original
+service. Missing/forged scope, generation, verified identity or native token
+refuse; invalid request parameters are 400, authentication absence 401,
+Resource denial 403, changed reference/version 409, expected identity/current
+generation or delivery mismatch 412, and unavailable evidence remains the
+existing 503 refusal. The original response shape is unchanged. A-to-B-to-A
+cannot hide a B request behind two A browser config reads because the expected
+A scope is compared at the actual middleware-authenticated request. The UI
+also rereads current identity before disclosure and detaches stale output on
+view change, focus, any visibility change or unmount; already visible reference
+data is cleared without re-execution or automatic request replay. The original
+never-configured independent SQL preview and all native metadata layout and
+controls remain unchanged. This is not metadata-write UNKNOWN recovery,
+dynamic Resource adoption or a new trusted SERVICE query capability.
+
+Implementation preceded checks. Six formal inputs were minimally patched into
+the existing canonical `/work` of `kailo-wren-query-sdk-itgs2n`, without a new
+SDK, dependencies, database or build. Original cgroup **4 CPU / 4 GiB**, Node
+heap 3072 MiB and Jest `--runInBand` were retained. Actual preflight had about
+24 GiB MemAvailable, CPU some 3.93%, memory some 0%, I/O some 5.76%; the SDK had
+only sleep, about 189 MiB current memory and all OOM counters zero. Parent's
+original BuildKit/Go work overlapped; no second Wren heavy build was launched.
+
+Original concentrated command was:
+`node node_modules/jest/bin/jest.js src/viewMetadata.test.ts src/nativeHumanQuery.test.ts src/middleware.test.ts --runInBand --testNamePattern="original saved-view reference export identity consumers|exports only the resolved native view resource|does not disclose an exported reference|binds the actual exported-reference|verifies signed entitlement.*platform-query-reference"`.
+
+Actual terminal evidence:
+
+- `57334`, **exit 0**: **3 passing suites, 33 passed / 718 target-filtered
+  skipped / 751 total**, 13.492 seconds; original TypeScript
+  `--noEmit --incremental false` and six-file Prettier check **0**. This includes
+  the real component callback and original GET handler, plus a private signed
+  RS256 token/real JWKS HTTP/middleware-to-handler consumer proving the
+  intervening verified B request cannot use A's expected scope. Core transport,
+  native reference storage and resource results remain fixtures, not live
+  public authorization acceptance.
+- `91285`, **exit 1**: deliberately replace the private production handler's
+  expected scope/generation comparisons, and the private component's current
+  actor/generation comparisons, with self-comparisons. The real existing
+  consumers gave **8 failed / 25 passed / 718 target-filtered skipped**, 9.26
+  seconds: forged-scope/actor-ABA/generation-ABA/late-generation handler
+  responses became incorrect 200, the signed middleware/handler ABA also
+  became incorrect 200, and actor/generation/invalid UI results were wrongly
+  published. These were business assertion failures, not zero-test/compiler
+  failures. Formal production bytes were not mutated.
+- `18420`, **exit 0**: restore exact original six source/check inputs, `cmp`
+  **6/6**, then repeat the same **33 passed / 718 target-filtered skipped**,
+  8.968 seconds. Final TypeScript and six-file formatting **0**; cgroup
+  low/high/max/OOM counters all **0**. No whole-product/database/full/image
+  check is claimed.
+
+Log directory is
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`;
+`native-view-reference-scope-positive.log`,
+`native-view-reference-scope-negative.log` and
+`native-view-reference-scope-restored.log` SHA-256:
+`76c0ecf069ca7eb12c4a3bd055ac795e8b6dc7716623a7ff9aebc56eecde64d1`,
+`ff3ab952a11a60359d8de3031135fbda6131d5c1ef2591630014f62011272fe2`,
+`07f54a59c8fa1d20fd4f800e50fb6a9ed2232e30e8be3c0f6ee8e3f8be2d90be`.
+
+Final SHA-256, relative to `data-query/wren-ui/src/`:
+
+- `components/pages/modeling/metadata/ViewMetadata.tsx`:
+  `95b01a0ac614ba18ca7ae8824325fd6c849df821e4c7599b37c0279c0910d894`.
+- `pages/api/platform-query-reference.ts`:
+  `2e6ee90951d0b10073ed6ee138e8f40e7af5c391bce1dbb16b910b08c61cf281`.
+- `middleware.ts`:
+  `44cb314b84984e57dc8b7feddf352dee807dd26fac4132d73c01baf51dbd554a`.
+- `viewMetadata.test.ts`:
+  `fdb227d02f9035118306032123d6ba95f7cf4872beb5c59c4638565f01263e2a`.
+- `nativeHumanQuery.test.ts`:
+  `5c8b1581d82680e0248f642bf0ec586138c5cbdeb71e54d95ab30c91cb35e6ee`.
+- `middleware.test.ts`:
+  `4abd900e3b59877cf15d49ab7cb17ccaed0682d505f2ce143c34c65f6961757b`.
+
+No native UI/AI image pin, Wren product container, ACTIVE binding, browser
+screenshot/iframe, three-HUMAN/multi-Agent or complete-product acceptance is
+established by this batch. Ordinary-function/provider provenance, trusted
+SERVICE SQL, native Resource evidence and remaining metadata recovery still
+gate release. Root owns the selective main commit/push and single original
+UI-then-AI source build from the final committed source, not old 5b or an
+unverified candidate. Existing standalone operation is not a substitute for
+the missing real bound deployment/authorization evidence.

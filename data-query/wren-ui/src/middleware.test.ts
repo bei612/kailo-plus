@@ -8,6 +8,8 @@ import configHandler from './pages/api/config';
 import modelsHandler from './pages/api/v1/models';
 import instructionsHandler from './pages/api/v1/knowledge/instructions';
 import instructionByIdHandler from './pages/api/v1/knowledge/instructions/[id]';
+import referenceHandler from './pages/api/platform-query-reference';
+import { NativeQueryService } from './apollo/server/services/nativeQueryService';
 import { components } from './common';
 import {
   bindingServiceCall,
@@ -159,6 +161,7 @@ describe('native instance identity boundary', () => {
             origin: settings.publicOrigin,
             cookie: 'native=synthetic',
             'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
           },
         }),
       );
@@ -182,6 +185,7 @@ describe('native instance identity boundary', () => {
           '/api/v1/generate_sql',
           '/api/v1/stream/generate_sql',
           '/api/config',
+          '/api/platform-query-reference',
           '/api/v1/knowledge/sql_pairs',
           '/api/v1/knowledge/sql_pairs/42',
           '/api/ask_task/streaming',
@@ -192,6 +196,11 @@ describe('native instance identity boundary', () => {
             'x-middleware-request-x-kailo-native-identity-scope',
           ),
         ).toMatch(/^[a-f0-9]{64}$/);
+        expect(
+          response.headers.get(
+            'x-middleware-request-x-kailo-native-identity-scope',
+          ),
+        ).not.toBe('f'.repeat(64));
       }
     },
   );
@@ -206,6 +215,126 @@ describe('native instance identity boundary', () => {
     expect(
       response.headers.get('x-middleware-request-x-kailo-native-human-token'),
     ).toBeNull();
+  });
+
+  it('binds the actual exported-reference request to the signed private-hop subject, including actor ABA', async () => {
+    const delivery = {
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      projectId: 3,
+      nativeInstanceRef: settings.accessValue,
+      nativeScopeRef: 'original-project',
+    } as NativeQueryDelivery;
+    const resourceId = randomUUID();
+    const frozen = {
+      resourceId,
+      nativeObjectRef: '{"viewId":7,"deploymentId":12,"limit":10}',
+      nativeRevision: 'original-native-revision',
+    };
+    const reference = jest
+      .spyOn(NativeQueryService.prototype, 'reference')
+      .mockResolvedValue(frozen as any);
+    let currentBearer: string;
+    jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, _operation, input, bearer) => {
+        expect(bearer).toBe(currentBearer);
+        if (input.authorizeScope)
+          return {
+            scope: {
+              bindingId: delivery.bindingId,
+              tenantId: delivery.tenantId,
+              workspaceId: delivery.workspaceId,
+              nativeInstanceRef: delivery.nativeInstanceRef,
+              nativeScopeRef: delivery.nativeScopeRef,
+              permission: 'discover',
+              generation: 2,
+              checkedRevision: 'original-current-authority',
+            },
+          };
+        expect(input.resolveResource).toEqual({
+          workspaceId: delivery.workspaceId,
+          actionKey: 'data_query.query@v1',
+          actionVersion: 1,
+          nativeType: 'view',
+          nativeRef: '7',
+        });
+        return {
+          resource: {
+            resourceId,
+            resourceVersion: 1,
+            nativeType: 'view',
+            nativeRef: '7',
+            nativeInstanceRef: delivery.nativeInstanceRef,
+            nativeScopeRef: delivery.nativeScopeRef,
+          },
+        };
+      });
+    const privateHeaders = async (subject: string) => {
+      currentBearer = await token({ sub: subject });
+      const admitted = await middleware(
+        request('/api/platform-query-reference', `Bearer ${currentBearer}`, {
+          headers: {
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(admitted.headers.get('x-middleware-next')).toBe('1');
+      return Object.fromEntries(
+        ['human-token', 'identity-scope'].map((field) => [
+          `x-kailo-native-${field}`,
+          admitted.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+        ]),
+      );
+    };
+    const response = () => ({
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      end: jest.fn(),
+    });
+    try {
+      const firstIdentity = await privateHeaders('original-view-reader');
+      const query = {
+        viewId: '7',
+        limit: '10',
+        queryScope: nativePreviewScope(
+          delivery,
+          firstIdentity['x-kailo-native-identity-scope'],
+        ),
+        generation: '2',
+      };
+      const original = response();
+      await referenceHandler(
+        { method: 'GET', headers: firstIdentity, query } as any,
+        original as any,
+      );
+      expect(original.status).toHaveBeenLastCalledWith(200);
+      expect(original.json).toHaveBeenCalledWith(frozen);
+      expect(reference).toHaveBeenCalledWith(resourceId, 7, 10);
+      expect(bindingServiceCall).toHaveBeenCalledTimes(4);
+
+      // Config A before/after cannot turn this intervening verified B request
+      // into A. The existing request filter is bound at the actual handler.
+      const interveningIdentity = await privateHeaders('another-view-reader');
+      jest.mocked(bindingServiceCall).mockClear();
+      reference.mockClear();
+      const intervening = response();
+      await referenceHandler(
+        { method: 'GET', headers: interveningIdentity, query } as any,
+        intervening as any,
+      );
+      expect(intervening.status).toHaveBeenLastCalledWith(412);
+      expect(intervening.json).not.toHaveBeenCalledWith(frozen);
+      expect(reference).not.toHaveBeenCalled();
+      expect(bindingServiceCall).toHaveBeenCalledTimes(1);
+    } finally {
+      reference.mockRestore();
+    }
   });
 
   it.each([

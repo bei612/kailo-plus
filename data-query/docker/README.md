@@ -1396,3 +1396,34 @@ these checks are fixture-backed. This does not establish cross-client metadata
 recovery, dynamic Resource adoption, a native UI/AI image, a running Wren
 instance, ACTIVE binding or browser/iframe/production acceptance. The separate
 query-reference export identity repair is not covered by these results.
+
+### Query-reference export current identity and generation
+
+The existing governed reference export control retains its page layout,
+selection and original reference payload; it does not execute SQL. Its exact
+`GET /api/platform-query-reference` now requires the current `/api/config`
+`queryScope` and `nativeBindingGeneration` as `queryScope` and `generation`
+query parameters, in addition to `viewId` and `limit`. Client and server must
+upgrade together: legacy incomplete requests fail closed, not fall back to an
+unscoped or independent export. Original independent Model/View SQL preview
+behavior is unchanged.
+
+The real request consumes only middleware-verified HUMAN/identity private-hop
+headers, compares the expected scope with existing `nativePreviewScope`, and
+uses existing fresh discover/current-generation and actual query Resource
+authorization before reading and before disclosing the reference. Two browser
+configuration reads alone do not prove request identity; the actual handler
+now rejects an intervening A-to-B-to-A identity/generation request. The native
+reference still grants no Resource permission or execution approval.
+
+The original component also suppresses changed actor/generation and detached
+view/focus/visibility/unmount results; focus or hiding clears an already
+visible reference without automatically replaying the request. The
+[query-reference consumer receipt](../fork/verify/native-integration.md#query-reference-export-current-identity-and-generation)
+records **33 passed / 718 target-filtered skipped**, three passing original
+suites, TypeScript/six-file formatting exit **0**, real private production
+comparison failures (**8 failed**), exact six-input restoration and the same
+**33 passed**. These are source consumers and a private fixture JWKS endpoint,
+not live Core/SpiceDB, browser/iframe, native product image or deployment
+acceptance. The original Wren UI/AI source build still follows the final
+committed clean source, serially, through the existing constrained builder.

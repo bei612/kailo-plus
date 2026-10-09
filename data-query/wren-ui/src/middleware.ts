@@ -222,9 +222,12 @@ export async function middleware(request: NextRequest) {
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (
     boundSql ||
-    ['/api/graphql', '/api/config', '/api/ask_task/streaming_answer'].includes(
-      request.nextUrl.pathname,
-    )
+    [
+      '/api/graphql',
+      '/api/config',
+      '/api/platform-query-reference',
+      '/api/ask_task/streaming_answer',
+    ].includes(request.nextUrl.pathname)
   ) {
     headers.set('x-kailo-native-identity-scope', identityScope);
   }

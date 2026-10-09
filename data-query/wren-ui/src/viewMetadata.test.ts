@@ -26,6 +26,7 @@ let mockLocale: string | undefined;
 let mockScope: string;
 let mockButtons: any[];
 let mockPreviewResult: any;
+let mockReferenceLimit: any;
 let mockFormValues: any;
 let mockSqlWatch: string;
 const mockPreview = jest.fn();
@@ -194,7 +195,10 @@ jest.mock('antd', () => {
     Row: field,
     Col: field,
     Input,
-    InputNumber: field,
+    InputNumber: (props: any) => {
+      mockReferenceLimit = props;
+      return field(props);
+    },
     Typography: { Text: field, Paragraph: field, Link: field },
     Button: (props: any) => {
       mockButtons.push(props);
@@ -957,6 +961,217 @@ describe('original independent preview selection and visibility consumers', () =
       expect(render().error).toBeUndefined();
       expect(hook.pending).toBe(false);
       expect(hook.data).toBeUndefined();
+    },
+  );
+});
+
+describe('original saved-view reference export identity consumers', () => {
+  const identity = {
+    nativeBindingConfigured: true,
+    nativeBindingGeneration: 2,
+    queryScope: 'a'.repeat(64),
+  };
+  const reference = {
+    resourceId: '55555555-5555-4555-8555-555555555555',
+    nativeObjectRef: '{"viewId":7,"deploymentId":1,"limit":5}',
+    nativeRevision: 'original-frozen-revision',
+  };
+  let viewId: number;
+  let stateSlots: any[];
+  let refSlots: any[];
+  let stateIndex: number;
+  let refIndex: number;
+  let effects: Array<() => void | (() => void)>;
+  let cleanup: void | (() => void);
+  let listeners: Map<string, () => void>;
+  let spies: jest.SpyInstance[];
+  let fetchReference: jest.Mock;
+  let originalWindow: PropertyDescriptor | undefined;
+  let originalDocument: PropertyDescriptor | undefined;
+  let originalFetch: PropertyDescriptor | undefined;
+  const flush = async () => {
+    for (let index = 0; index < 12; index++) await Promise.resolve();
+  };
+  const render = () => {
+    stateIndex = 0;
+    refIndex = 0;
+    mockButtons = [];
+    renderToStaticMarkup(
+      createElement(ViewMetadata, {
+        viewId,
+        displayName: 'Original saved view',
+        fields: [],
+        statement: 'SELECT original_column FROM original_model',
+      } as any),
+    );
+    return mockButtons.find(
+      (button) => button.children === getQueryPreviewText('en').exportReference,
+    );
+  };
+  const published = () =>
+    stateSlots.filter(
+      (value) => typeof value === 'string' && value.includes('nativeObjectRef'),
+    );
+  beforeEach(() => {
+    viewId = 7;
+    stateSlots = [];
+    refSlots = [];
+    effects = [];
+    cleanup = undefined;
+    listeners = new Map();
+    mockLocale = 'en';
+    mockPreviewResult = { loading: false };
+    mockConfig.mockReset().mockResolvedValue(identity);
+    fetchReference = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => reference,
+    });
+    originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+    originalDocument = Object.getOwnPropertyDescriptor(global, 'document');
+    originalFetch = Object.getOwnPropertyDescriptor(global, 'fetch');
+    const events = {
+      addEventListener: (name: string, callback: () => void) =>
+        listeners.set(name, callback),
+      removeEventListener: (name: string) => listeners.delete(name),
+    };
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: events,
+    });
+    Object.defineProperty(global, 'document', {
+      configurable: true,
+      value: { ...events, visibilityState: 'visible' },
+    });
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      value: fetchReference,
+    });
+    const React = jest.requireActual('react');
+    spies = [
+      jest.spyOn(React, 'useState').mockImplementation((initial: any) => {
+        const slot = stateIndex++;
+        if (!(slot in stateSlots)) stateSlots[slot] = initial;
+        return [stateSlots[slot], (value: any) => (stateSlots[slot] = value)];
+      }),
+      jest.spyOn(React, 'useRef').mockImplementation((initial: any) => {
+        const slot = refIndex++;
+        if (!(slot in refSlots)) refSlots[slot] = { current: initial };
+        return refSlots[slot];
+      }),
+      jest.spyOn(React, 'useEffect').mockImplementation((effect: any) => {
+        effects.push(effect);
+      }),
+    ];
+    render();
+    cleanup = effects[effects.length - 1]();
+    mockReferenceLimit.onChange(5);
+    render();
+  });
+  afterEach(() => {
+    if (typeof cleanup === 'function') cleanup();
+    for (const spy of spies) spy.mockRestore();
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete (global as any).window;
+    if (originalDocument)
+      Object.defineProperty(global, 'document', originalDocument);
+    else delete (global as any).document;
+    if (originalFetch) Object.defineProperty(global, 'fetch', originalFetch);
+    else delete (global as any).fetch;
+  });
+  it('exports only the original reference through same-current-identity reads, never SQL execution', async () => {
+    await render().onClick();
+    await flush();
+    expect(mockConfig).toHaveBeenCalledTimes(2);
+    expect(fetchReference).toHaveBeenCalledTimes(1);
+    expect(fetchReference).toHaveBeenCalledWith(
+      `/api/platform-query-reference?viewId=7&limit=5&queryScope=${identity.queryScope}&generation=2`,
+      { credentials: 'same-origin', cache: 'no-store' },
+    );
+    expect(published()).toEqual([JSON.stringify(reference, null, 2)]);
+  });
+  it.each(['actor', 'generation', 'unconfigured', 'invalid', 'revoked'])(
+    'refuses a returned reference after current %s evidence changes',
+    async (boundary) => {
+      mockConfig.mockResolvedValueOnce(identity);
+      if (boundary === 'revoked')
+        mockConfig.mockRejectedValueOnce(new Error('Current access denied'));
+      else
+        mockConfig.mockResolvedValueOnce(
+          boundary === 'unconfigured'
+            ? { nativeBindingConfigured: false }
+            : {
+                ...identity,
+                ...(boundary === 'actor' ? { queryScope: 'b'.repeat(64) } : {}),
+                ...(boundary === 'generation'
+                  ? { nativeBindingGeneration: 3 }
+                  : {}),
+                ...(boundary === 'invalid' ? { queryScope: undefined } : {}),
+              },
+        );
+      await render().onClick();
+      await flush();
+      expect(published()).toEqual([]);
+      expect(fetchReference).toHaveBeenCalledTimes(1);
+      expect(stateSlots).toContain(true);
+    },
+  );
+  it.each(['focus', 'hidden', 'unmount', 'view'])(
+    'does not publish a late reference after %s detaches the current observation',
+    async (boundary) => {
+      let resolve: (value: any) => void;
+      fetchReference.mockImplementationOnce(
+        () => new Promise((done) => (resolve = done)),
+      );
+      render().onClick();
+      await flush();
+      if (boundary === 'focus') listeners.get('focus')!();
+      if (boundary === 'hidden') {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'hidden',
+        });
+        listeners.get('visibilitychange')!();
+      }
+      if (boundary === 'unmount' && typeof cleanup === 'function') cleanup();
+      if (boundary === 'view') {
+        viewId = 8;
+        render();
+      }
+      resolve!({ ok: true, json: async () => reference });
+      await flush();
+      expect(published()).toEqual([]);
+      expect(fetchReference).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([false, undefined, '', 0])(
+    'does not fetch a reference without exact configured scope and generation evidence %p',
+    async (invalid) => {
+      mockConfig.mockResolvedValue(
+        invalid === false
+          ? { nativeBindingConfigured: false }
+          : { ...identity, queryScope: invalid, nativeBindingGeneration: 0 },
+      );
+      render().onClick();
+      await flush();
+      expect(fetchReference).not.toHaveBeenCalled();
+      expect(published()).toEqual([]);
+    },
+  );
+  it.each(['focus', 'hidden'])(
+    'clears an already-visible reference at the %s identity boundary without replay',
+    async (boundary) => {
+      render().onClick();
+      await flush();
+      expect(published()).toHaveLength(1);
+      if (boundary === 'hidden') {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'hidden',
+        });
+        listeners.get('visibilitychange')!();
+      } else listeners.get('focus')!();
+      expect(published()).toEqual([]);
+      expect(fetchReference).toHaveBeenCalledTimes(1);
     },
   );
 });

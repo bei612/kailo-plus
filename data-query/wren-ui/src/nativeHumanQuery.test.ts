@@ -1405,6 +1405,7 @@ describe('native saved-view HUMAN query consumer', () => {
     projectConnectionDigest: connection,
     nativeInstanceRef: 'native-fixture',
     nativeScopeRef: '3',
+    tenantId: '5ab9a86e-6495-405a-a416-205281d2467e',
     workspaceId: '02c405cd-786f-49fe-a460-0b94f98e014d',
     humanAction: {
       resultExposurePolicyId: 'f50e30ee-a9c6-4406-8620-7e45262f3145',
@@ -5109,7 +5110,22 @@ describe('native saved-view HUMAN query consumer', () => {
 
   it('exports only the resolved native view resource through the actual reference handler', async () => {
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
-    calls.mockResolvedValue(resolution);
+    calls.mockImplementation(async (_config, _operation, input) =>
+      input.authorizeScope
+        ? {
+            scope: {
+              bindingId: config.bindingId,
+              tenantId: config.tenantId,
+              workspaceId: config.workspaceId,
+              nativeInstanceRef: config.nativeInstanceRef,
+              nativeScopeRef: config.nativeScopeRef,
+              permission: 'discover',
+              generation: 2,
+              checkedRevision: 'original-current-authority',
+            },
+          }
+        : resolution,
+    );
     const nativeReference = jest
       .spyOn(NativeQueryService.prototype, 'reference')
       .mockResolvedValue(reference);
@@ -5123,16 +5139,26 @@ describe('native saved-view HUMAN query consumer', () => {
       await referenceHandler(
         {
           method: 'GET',
-          headers: { 'x-kailo-native-human-token': 'verified-native-token' },
-          query: { viewId: '7', limit: '10' },
+          headers: {
+            'x-kailo-native-human-token': 'verified-native-token',
+            'x-kailo-native-identity-scope': 'a'.repeat(64),
+          },
+          query: {
+            viewId: '7',
+            limit: '10',
+            queryScope: nativePreviewScope(config, 'a'.repeat(64)),
+            generation: '2',
+          },
         } as any,
         response,
       );
       expect(response.status).toHaveBeenLastCalledWith(200);
       expect(response.json).toHaveBeenCalledWith(reference);
       expect(nativeReference).toHaveBeenCalledWith(resource, 7, 10);
-      expect(calls).toHaveBeenCalledTimes(2);
-      for (const call of calls.mock.calls) {
+      expect(calls).toHaveBeenCalledTimes(4);
+      for (const call of calls.mock.calls.filter(
+        (call) => call[2].resolveResource,
+      )) {
         expect(call[2]).toEqual({
           bindingId: binding,
           resolveResource: {
@@ -5145,6 +5171,9 @@ describe('native saved-view HUMAN query consumer', () => {
         });
         expect(call[3]).toBe('verified-native-token');
       }
+      expect(
+        calls.mock.calls.filter((call) => call[2].authorizeScope),
+      ).toHaveLength(2);
     } finally {
       nativeReference.mockRestore();
     }
@@ -5159,26 +5188,41 @@ describe('native saved-view HUMAN query consumer', () => {
     'changed-version',
   ])('does not disclose an exported reference for %s', async (failure) => {
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
-    calls.mockResolvedValue(resolution);
-    if (failure === 'denied')
-      calls.mockRejectedValue(
-        new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
-      );
-    if (failure === 'revoked')
-      calls
-        .mockResolvedValueOnce(resolution)
-        .mockRejectedValueOnce(
-          new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
-        );
-    if (failure === 'changed-resource' || failure === 'changed-version')
-      calls.mockResolvedValueOnce(resolution).mockResolvedValueOnce({
-        resource: {
-          ...resolution.resource,
-          ...(failure === 'changed-resource'
-            ? { resourceId: binding }
-            : { resourceVersion: 5 }),
-        },
-      });
+    let resourceReads = 0;
+    calls.mockImplementation(async (_config, _operation, input) => {
+      if (input.authorizeScope)
+        return {
+          scope: {
+            bindingId: config.bindingId,
+            tenantId: config.tenantId,
+            workspaceId: config.workspaceId,
+            nativeInstanceRef: config.nativeInstanceRef,
+            nativeScopeRef: config.nativeScopeRef,
+            permission: 'discover',
+            generation: 2,
+            checkedRevision: 'original-current-authority',
+          },
+        };
+      resourceReads++;
+      if (
+        failure === 'denied' ||
+        (failure === 'revoked' && resourceReads === 2)
+      )
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      if (
+        resourceReads === 2 &&
+        ['changed-resource', 'changed-version'].includes(failure)
+      )
+        return {
+          resource: {
+            ...resolution.resource,
+            ...(failure === 'changed-resource'
+              ? { resourceId: binding }
+              : { resourceVersion: 5 }),
+          },
+        };
+      return resolution;
+    });
     const nativeReference = jest
       .spyOn(NativeQueryService.prototype, 'reference')
       .mockResolvedValue(reference);
@@ -5195,10 +5239,15 @@ describe('native saved-view HUMAN query consumer', () => {
           headers:
             failure === 'missing-token'
               ? {}
-              : { 'x-kailo-native-human-token': 'verified-native-token' },
+              : {
+                  'x-kailo-native-human-token': 'verified-native-token',
+                  'x-kailo-native-identity-scope': 'a'.repeat(64),
+                },
           query: {
             viewId: '7',
             limit: '10',
+            queryScope: nativePreviewScope(config, 'a'.repeat(64)),
+            generation: '2',
             ...(failure === 'forged-resource' ? { resourceId: resource } : {}),
           },
         } as any,
@@ -5220,6 +5269,99 @@ describe('native saved-view HUMAN query consumer', () => {
       nativeReference.mockRestore();
     }
   });
+
+  it.each([
+    'missing-identity',
+    'missing-scope',
+    'missing-generation',
+    'forged-scope',
+    'actor-ABA',
+    'generation-ABA',
+    'late-generation',
+    'late-delivery',
+  ])(
+    'binds the actual exported-reference request against %s before disclosure',
+    async (failure) => {
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      const nativeReference = jest
+        .spyOn(NativeQueryService.prototype, 'reference')
+        .mockImplementation(async () => {
+          if (failure === 'late-delivery')
+            jest
+              .mocked(loadQueryDelivery)
+              .mockResolvedValue({ ...config, bindingId: resource });
+          return reference;
+        });
+      let scopeReads = 0;
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (!input.authorizeScope) return resolution;
+        scopeReads++;
+        return {
+          scope: {
+            bindingId: config.bindingId,
+            tenantId: config.tenantId,
+            workspaceId: config.workspaceId,
+            nativeInstanceRef: config.nativeInstanceRef,
+            nativeScopeRef: config.nativeScopeRef,
+            permission: 'discover',
+            generation:
+              failure === 'generation-ABA' ||
+              (failure === 'late-generation' && scopeReads === 2)
+                ? 3
+                : 2,
+            checkedRevision: 'original-current-authority',
+          },
+        };
+      });
+      const headers: Record<string, string> = {
+        'x-kailo-native-human-token': 'verified-native-token',
+        // A -> B -> A browser config reads cannot authorize the intervening B
+        // request as A; this is the actual verified private-hop identity.
+        'x-kailo-native-identity-scope':
+          failure === 'actor-ABA' ? 'b'.repeat(64) : 'a'.repeat(64),
+      };
+      if (failure === 'missing-identity')
+        delete headers['x-kailo-native-identity-scope'];
+      const query: Record<string, string> = {
+        viewId: '7',
+        limit: '10',
+        queryScope:
+          failure === 'forged-scope'
+            ? 'f'.repeat(64)
+            : nativePreviewScope(config, 'a'.repeat(64)),
+        generation: '2',
+      };
+      if (failure === 'missing-scope') delete query.queryScope;
+      if (failure === 'missing-generation') delete query.generation;
+      const response: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+        end: jest.fn(),
+      };
+      try {
+        await referenceHandler(
+          { method: 'GET', headers, query } as any,
+          response,
+        );
+        expect(response.status).toHaveBeenLastCalledWith(
+          failure === 'missing-identity'
+            ? 401
+            : failure.startsWith('missing-')
+              ? 400
+              : 412,
+        );
+        expect(response.json).not.toHaveBeenCalledWith(reference);
+        expect(nativeReference).toHaveBeenCalledTimes(
+          failure.startsWith('late-') ? 1 : 0,
+        );
+        expect(freeze).not.toHaveBeenCalled();
+        expect(history).not.toHaveBeenCalled();
+      } finally {
+        nativeReference.mockRestore();
+      }
+    },
+  );
 
   describe('original run_sql HTTP HUMAN consumer', () => {
     let server: Server,

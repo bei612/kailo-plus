@@ -9,6 +9,7 @@ import { usePreviewViewDataMutation } from '@/apollo/client/graphql/view.generat
 import { useRouter } from 'next/router';
 import { getQueryPreviewText } from '@/utils/language';
 import useGovernedPreview from '@/hooks/useGovernedPreview';
+import { getUserConfig } from '@/utils/env';
 
 export type Props = DiagramView;
 
@@ -54,24 +55,46 @@ export default function ViewMetadata(props: Props) {
   const [referenceError, setReferenceError] = useState(false);
   const [exporting, setExporting] = useState(false);
   const selection = useRef(0);
+  const selectedView = useRef(viewId);
+  selectedView.current = viewId;
   useEffect(() => {
-    selection.current++;
-    setReference('');
-    setReferenceError(false);
-    setExporting(false);
+    const detach = () => {
+      selection.current++;
+      setReference('');
+      setReferenceError(false);
+      setExporting(false);
+    };
+    detach();
+    window.addEventListener('focus', detach);
+    document.addEventListener('visibilitychange', detach);
     return () => {
       selection.current++;
+      window.removeEventListener('focus', detach);
+      document.removeEventListener('visibilitychange', detach);
     };
   }, [viewId]);
   const exportReference = async () => {
     const current = ++selection.current;
+    const active = () =>
+      current === selection.current && selectedView.current === viewId;
     setExporting(true);
     setReference('');
     setReferenceError(false);
     try {
+      const identity = await getUserConfig();
+      if (!active()) return;
+      if (
+        identity.nativeBindingConfigured !== true ||
+        !/^[a-f0-9]{64}$/.test(identity.queryScope ?? '') ||
+        !Number.isSafeInteger(identity.nativeBindingGeneration) ||
+        identity.nativeBindingGeneration <= 0
+      )
+        throw new Error('reference identity unavailable');
       const query = new URLSearchParams({
         viewId: String(viewId),
         limit: String(limit),
+        queryScope: identity.queryScope,
+        generation: String(identity.nativeBindingGeneration),
       });
       const response = await fetch(`/api/platform-query-reference?${query}`, {
         credentials: 'same-origin',
@@ -79,6 +102,14 @@ export default function ViewMetadata(props: Props) {
       });
       if (!response.ok) throw new Error('reference unavailable');
       const value = await response.json();
+      const after = await getUserConfig();
+      if (!active()) return;
+      if (
+        after.nativeBindingConfigured !== true ||
+        after.queryScope !== identity.queryScope ||
+        after.nativeBindingGeneration !== identity.nativeBindingGeneration
+      )
+        throw new Error('reference identity changed');
       if (
         typeof value.resourceId !== 'string' ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -88,12 +119,11 @@ export default function ViewMetadata(props: Props) {
         typeof value.nativeRevision !== 'string'
       )
         throw new Error('invalid reference');
-      if (current === selection.current)
-        setReference(JSON.stringify(value, null, 2));
+      setReference(JSON.stringify(value, null, 2));
     } catch {
-      if (current === selection.current) setReferenceError(true);
+      if (active()) setReferenceError(true);
     } finally {
-      if (current === selection.current) setExporting(false);
+      if (active()) setExporting(false);
     }
   };
 
