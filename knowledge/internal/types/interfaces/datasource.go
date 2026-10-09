@@ -102,6 +102,13 @@ type DataSourceRepository interface {
 
 // SyncLogRepository defines database access patterns for sync logs
 type SyncLogRepository interface {
+	// CreatePending atomically admits one native run and persists its original task payload.
+	CreatePending(ctx context.Context, source *types.DataSource, payload *types.DataSourceSyncPayload) (*types.SyncLog, error)
+
+	// DispatchPending serializes delivery of durable native intents. An empty logID
+	// scans the current backlog; acknowledgement transfers ownership to Asynq.
+	DispatchPending(ctx context.Context, logID string, dispatch func(*types.DataSourceSyncPayload) error) error
+
 	// Create inserts a new sync log entry
 	Create(ctx context.Context, log *types.SyncLog) error
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
 )
 
@@ -79,13 +80,34 @@ func (r *fakeDataSourceRepo) FindActive(_ context.Context) ([]*types.DataSource,
 
 // fakeSyncLogRepo is an in-memory SyncLogRepository.
 type fakeSyncLogRepo struct {
+	interfaces.SyncLogRepository
 	mu         sync.Mutex
 	logs       map[string]*types.SyncLog
+	pending    map[string]*types.DataSourceSyncPayload
 	runningErr error
 }
 
 func newFakeSyncLogRepo() *fakeSyncLogRepo {
-	return &fakeSyncLogRepo{logs: make(map[string]*types.SyncLog)}
+	return &fakeSyncLogRepo{logs: make(map[string]*types.SyncLog), pending: make(map[string]*types.DataSourceSyncPayload)}
+}
+
+func (r *fakeSyncLogRepo) CreatePending(ctx context.Context, source *types.DataSource, payload *types.DataSourceSyncPayload) (*types.SyncLog, error) {
+	log := &types.SyncLog{DataSourceID: source.ID, TenantID: source.TenantID, Status: types.SyncLogStatusRunning, StartedAt: time.Now().UTC()}
+	if err := r.Create(ctx, log); err != nil {
+		return nil, err
+	}
+	original := *payload
+	original.SyncLogID = log.ID
+	r.mu.Lock()
+	r.pending[log.ID] = &original
+	r.mu.Unlock()
+	return log, nil
+}
+
+func (r *fakeSyncLogRepo) DispatchPending(_ context.Context, logID string, dispatch func(*types.DataSourceSyncPayload) error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return dispatch(r.pending[logID])
 }
 
 func (r *fakeSyncLogRepo) Create(_ context.Context, log *types.SyncLog) error {
@@ -157,14 +179,18 @@ type fakeTaskEnqueuer struct {
 
 func (e *fakeTaskEnqueuer) Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
 	e.count.Add(1)
+	var id string
 	for _, opt := range opts {
+		if opt.Type() == asynq.TaskIDOpt {
+			id, _ = opt.Value().(string)
+		}
 		if opt.Type() == asynq.QueueOpt {
 			if queue, ok := opt.Value().(string); ok {
 				e.lastQueue.Store(queue)
 			}
 		}
 	}
-	return &asynq.TaskInfo{ID: "task-fake"}, nil
+	return &asynq.TaskInfo{ID: id}, nil
 }
 
 // ──────────────────────────────────────────────────────────────────────

@@ -96,6 +96,70 @@ func TestDataSourceServiceDeleteSQLiteCleansUpAfterSoftDelete(t *testing.T) {
 	}
 }
 
+func TestDataSourceServiceManualSyncRetainsRunWhenQueueIsUnavailable(t *testing.T) {
+	for _, status := range []string{types.DataSourceStatusActive, types.DataSourceStatusPaused, types.DataSourceStatusError} {
+		t.Run(status, func(t *testing.T) {
+			fixture := newSQLiteDataSourceDeleteFixture(t)
+			require.NoError(t, fixture.db.AutoMigrate(&types.TaskPendingOp{}))
+			ctx := context.Background()
+			source := &types.DataSource{ID: "manual-source", TenantID: fixture.ds.TenantID,
+				KnowledgeBaseID: fixture.ds.KnowledgeBaseID, Type: types.ConnectorTypeRSS, Status: status}
+			require.NoError(t, fixture.dsRepo.Create(ctx, source))
+			svc := &DataSourceService{dsRepo: fixture.dsRepo, syncLogRepo: fixture.syncLogRepo}
+			log, err := svc.ManualSync(ctx, source.ID)
+			require.NoError(t, err)
+			require.Equal(t, types.SyncLogStatusRunning, log.Status)
+			require.Nil(t, log.FinishedAt)
+			var pending types.TaskPendingOp
+			require.NoError(t, fixture.db.First(&pending, "dedup_key = ?", log.ID).Error)
+			require.Equal(t, source.TenantID, pending.TenantID)
+			require.Equal(t, source.KnowledgeBaseID, pending.ScopeID)
+			stored, err := fixture.dsRepo.FindByID(ctx, source.ID)
+			require.NoError(t, err)
+			require.Equal(t, status, stored.Status, "unconfirmed dispatch must not rewrite native source state")
+			second, err := svc.ManualSync(ctx, source.ID)
+			require.ErrorIs(t, err, datasource.ErrSyncRunning)
+			require.Nil(t, second)
+			var count int64
+			require.NoError(t, fixture.db.Model(&types.SyncLog{}).Where("data_source_id = ?", source.ID).Count(&count).Error)
+			require.EqualValues(t, 1, count, "a second click must not create a second business run")
+		})
+	}
+}
+
+func TestSyncAttemptKeepsNativeRunOpenUntilRetriesExhausted(t *testing.T) {
+	for _, outcome := range []string{types.SyncLogStatusFailed, types.SyncLogStatusPartial} {
+		for _, attempt := range []string{"unknown", "retrying", "exhausted"} {
+			t.Run(outcome+"/"+attempt, func(t *testing.T) {
+				fixture := newSQLiteDataSourceDeleteFixture(t)
+				svc := &DataSourceService{dsRepo: fixture.dsRepo, syncLogRepo: fixture.syncLogRepo}
+				ctx := context.Background()
+				if attempt == "retrying" {
+					ctx = types.WithTaskRetryMetadata(ctx, 0, 1)
+				} else if attempt == "exhausted" {
+					ctx = types.WithTaskRetryMetadata(ctx, 1, 1)
+				}
+				require.NoError(t, svc.updateSyncRunResult(ctx, fixture.ds, fixture.runningLog,
+					&types.SyncResult{Total: 1, Failed: 1}, types.JSON(`{"failed":1}`), outcome, "native attempt error", false))
+				stored, err := fixture.syncLogRepo.FindByID(ctx, fixture.runningLog.ID)
+				require.NoError(t, err)
+				require.Equal(t, 1, stored.ItemsFailed)
+				require.Equal(t, "native attempt error", stored.ErrorMessage)
+				if attempt == "exhausted" {
+					require.Equal(t, outcome, stored.Status)
+					require.NotNil(t, stored.FinishedAt)
+				} else {
+					require.Equal(t, types.SyncLogStatusRunning, stored.Status)
+					require.Nil(t, stored.FinishedAt)
+					running, err := fixture.syncLogRepo.HasRunningSync(ctx, fixture.ds.ID)
+					require.NoError(t, err)
+					require.True(t, running, "retry ownership must still prevent another run")
+				}
+			})
+		}
+	}
+}
+
 func TestDataSourceServiceDeleteKeepsCleanupStateWhenSoftDeleteFails(t *testing.T) {
 	fixture := newSQLiteDataSourceDeleteFixture(t)
 	require.NoError(t, fixture.db.Exec(`

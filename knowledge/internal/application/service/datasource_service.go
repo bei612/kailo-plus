@@ -501,58 +501,27 @@ func (s *DataSourceService) ManualSync(ctx context.Context, dsID string) (*types
 		return nil, datasource.ErrDataSourceNotActive
 	}
 
-	// Create sync log
-	syncLog := &types.SyncLog{
-		DataSourceID: dsID,
-		TenantID:     ds.TenantID,
-		Status:       types.SyncLogStatusRunning,
-		StartedAt:    time.Now().UTC(),
-	}
-
-	if err := s.syncLogRepo.Create(ctx, syncLog); err != nil {
-		logger.Errorf(ctx, "failed to create sync log: %v", err)
-		return nil, err
-	}
-
-	// Enqueue sync task
 	payload := &types.DataSourceSyncPayload{
 		DataSourceID: dsID,
 		TenantID:     ds.TenantID,
-		SyncLogID:    syncLog.ID,
 		ForceFull:    false,
 		Initiator:    types.TaskInitiatorFromContext(ctx),
 		Trigger:      "manual",
 	}
 	langfuse.InjectTracing(ctx, payload)
 
-	payloadJSON, _ := json.Marshal(payload)
-	task := asynq.NewTask(types.TypeDataSourceSync, payloadJSON,
-		asynq.Queue(types.QueueSync), asynq.MaxRetry(5), asynq.Timeout(2*time.Hour))
-
-	info, err := s.taskEnqueuer.Enqueue(task)
+	syncLog, err := s.syncLogRepo.CreatePending(ctx, ds, payload)
 	if err != nil {
-		logger.Errorf(ctx, "failed to enqueue sync task: %v", err)
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
-		syncLog.ErrorMessage = err.Error()
-		_ = s.syncLogRepo.Update(ctx, syncLog)
-		if ds.Status != types.DataSourceStatusPaused {
-			ds.Status = types.DataSourceStatusError
-		}
-		ds.ErrorMessage = fmt.Sprintf("Failed to enqueue sync: %v", err)
-		_ = s.dsRepo.Update(ctx, ds)
-		recordKBActivity(ctx, s.audit, ds.TenantID, ds.KnowledgeBaseID, types.AuditActionDataSourceSyncFailed,
-			"data_source", ds.ID, types.AuditOutcomeFailed,
-			map[string]any{"name": ds.Name, "type": ds.Type, "sync_log_id": syncLog.ID, "trigger": "manual"})
 		return nil, err
 	}
-
-	logger.Infof(ctx, "sync task enqueued: ds=%s syncLog=%s", dsID, syncLog.ID)
+	if err := datasource.DispatchSync(ctx, s.syncLogRepo, s.taskEnqueuer, syncLog.ID); err != nil {
+		logger.Warnf(ctx, "sync handoff remains pending: ds=%s syncLog=%s: %v", dsID, syncLog.ID, err)
+	}
 	recordKBActivity(ctx, s.audit, ds.TenantID, ds.KnowledgeBaseID, types.AuditActionDataSourceSyncStarted,
 		"data_source", ds.ID, types.AuditOutcomeAccepted,
 		map[string]any{
 			"name": ds.Name, "type": ds.Type, "sync_log_id": syncLog.ID,
-			"task_id": info.ID, "trigger": "manual", "processing_status": "pending",
+			"task_id": "dssync:" + syncLog.ID, "trigger": "manual", "processing_status": "pending",
 		})
 	return syncLog, nil
 }
@@ -701,10 +670,9 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	connector, err := s.connectorRegistry.Get(ds.Type)
 	if err != nil {
 		logger.Errorf(ctx, "connector not found: type=%s", ds.Type)
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		setSyncAttemptOutcome(ctx, syncLog, types.SyncLogStatusFailed)
 		syncLog.ErrorMessage = fmt.Sprintf("Connector not found: %s", ds.Type)
-		_ = s.syncLogRepo.Update(ctx, syncLog)
+		_ = s.syncLogRepo.UpdateResult(ctx, syncLog)
 		if !wasPaused {
 			ds.Status = types.DataSourceStatusError
 		}
@@ -717,10 +685,9 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	config, err := ds.ParseConfig()
 	if err != nil {
 		logger.Errorf(ctx, "failed to parse config: %v", err)
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		setSyncAttemptOutcome(ctx, syncLog, types.SyncLogStatusFailed)
 		syncLog.ErrorMessage = fmt.Sprintf("Invalid configuration: %v", err)
-		_ = s.syncLogRepo.Update(ctx, syncLog)
+		_ = s.syncLogRepo.UpdateResult(ctx, syncLog)
 		if !wasPaused {
 			ds.Status = types.DataSourceStatusError
 		}
@@ -770,10 +737,9 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		// partial discovery nor an unread result may commit a desired deletion
 		// set or advance beyond the last durable ingestion checkpoint.
 		logger.Errorf(ctx, "fetch operation failed: %v", fetchErr)
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		setSyncAttemptOutcome(ctx, syncLog, types.SyncLogStatusFailed)
 		syncLog.ErrorMessage = fmt.Sprintf("Fetch failed: %v", fetchErr)
-		_ = s.syncLogRepo.Update(ctx, syncLog)
+		_ = s.syncLogRepo.UpdateResult(ctx, syncLog)
 		if !wasPaused {
 			ds.Status = types.DataSourceStatusError
 		}
@@ -793,10 +759,9 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	tenant, err := s.tenantRepo.GetTenantByID(ctx, ds.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get tenant info: %v", err)
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		setSyncAttemptOutcome(ctx, syncLog, types.SyncLogStatusFailed)
 		syncLog.ErrorMessage = fmt.Sprintf("Failed to get tenant info: %v", err)
-		_ = s.syncLogRepo.Update(ctx, syncLog)
+		_ = s.syncLogRepo.UpdateResult(ctx, syncLog)
 		if !wasPaused {
 			ds.Status = types.DataSourceStatusError
 		}
@@ -1212,6 +1177,25 @@ func (s *DataSourceService) processSyncStreaming(
 	return nil
 }
 
+// A failed delivery is not a finished native run while the original executor
+// still owns retries. Missing retry evidence is also non-terminal; only the
+// original task/worker can establish that its retry budget was exhausted.
+func setSyncAttemptOutcome(ctx context.Context, log *types.SyncLog, status string) {
+	log.Status, log.FinishedAt = status, timePtr(time.Now().UTC())
+	if status != types.SyncLogStatusFailed && status != types.SyncLogStatusPartial {
+		return
+	}
+	retried, retryOK := asynq.GetRetryCount(ctx)
+	maxRetry, maxRetryOK := asynq.GetMaxRetry(ctx)
+	known := retryOK && maxRetryOK
+	if !known {
+		retried, maxRetry, known = types.TaskRetryMetadataFromContext(ctx)
+	}
+	if !known || retried < 0 || maxRetry < 0 || retried < maxRetry {
+		log.Status, log.FinishedAt = types.SyncLogStatusRunning, nil
+	}
+}
+
 func (s *DataSourceService) updateSyncRunResult(
 	ctx context.Context,
 	ds *types.DataSource,
@@ -1228,8 +1212,8 @@ func (s *DataSourceService) updateSyncRunResult(
 	syncLog.ItemsDeleted = result.Deleted
 	syncLog.ItemsSkipped = result.Skipped
 	syncLog.ItemsFailed = result.Failed
-	syncLog.Status = status
-	syncLog.FinishedAt = timePtr(time.Now().UTC())
+	setSyncAttemptOutcome(ctx, syncLog, status)
+	status = syncLog.Status
 	syncLog.ErrorMessage = errorMessage
 	syncLog.Result = resultJSON
 
@@ -1260,6 +1244,9 @@ func (s *DataSourceService) updateSyncRunResult(
 		outcome = types.AuditOutcomeFailed
 	} else if status == types.SyncLogStatusPartial {
 		outcome = types.AuditOutcomePartial
+	} else if status == types.SyncLogStatusRunning {
+		action = types.AuditActionDataSourceSyncStarted
+		outcome = types.AuditOutcomeAccepted
 	}
 	recordKBActivity(ctx, s.audit, ds.TenantID, ds.KnowledgeBaseID, action,
 		"data_source", ds.ID, outcome,

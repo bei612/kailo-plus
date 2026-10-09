@@ -28,6 +28,27 @@ CREATE TABLE IF NOT EXISTS knowledges (
 );
 `
 
+func TestRestartPreservesDurableNativeSyncHandoff(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(resetPendingSyncLogDDL).Error)
+	require.NoError(t, db.Exec(resetPendingOpsDDL).Error)
+	started := time.Now().Add(-time.Hour)
+	for _, id := range []string{"original-pending", "legacy-orphan"} {
+		require.NoError(t, db.Exec(`INSERT INTO sync_logs (id, tenant_id, status, started_at) VALUES (?, ?, ?, ?)`, id, 1, types.SyncLogStatusRunning, started).Error)
+	}
+	for _, id := range []string{"original-pending"} {
+		op := &types.TaskPendingOp{TenantID: 1, TaskType: types.TypeDataSourceSync,
+			Scope: types.TaskScopeKnowledgeBase, ScopeID: "kb", Op: "sync", DedupKey: id,
+			Payload: json.RawMessage(`{}`)}
+		require.NoError(t, db.Create(op).Error)
+	}
+	var candidates []types.SyncLog
+	require.NoError(t, stuckSyncLogQuery(db).Find(&candidates).Error)
+	require.Len(t, candidates, 1)
+	require.Equal(t, "legacy-orphan", candidates[0].ID)
+}
+
 const resetPendingSyncLogDDL = `
 CREATE TABLE IF NOT EXISTS sync_logs (
     id              VARCHAR(64) PRIMARY KEY,
@@ -255,8 +276,8 @@ func TestResetPendingTasks_SyncLogStaleRunning(t *testing.T) {
 	require.NoError(t, db.Raw(
 		`SELECT status, finished_at FROM sync_logs WHERE id = ?`, "sync-1",
 	).Row().Scan(&status, &finishedAt))
-	assert.Equal(t, types.SyncLogStatusFailed, status)
-	require.NotNil(t, finishedAt)
+	assert.Equal(t, types.SyncLogStatusRunning, status, "another replica or the durable queue may still own this run")
+	require.Nil(t, finishedAt)
 }
 
 func TestResetPendingTasks_SyncLogLiteMode(t *testing.T) {

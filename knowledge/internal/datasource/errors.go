@@ -25,6 +25,7 @@ var (
 	// Sync errors
 	ErrSyncFailed       = errors.New("sync operation failed")
 	ErrSyncCanceled     = errors.New("sync operation was canceled")
+	ErrSyncRunning      = errors.New("a data source sync is already pending or running")
 	ErrFetchFailed      = errors.New("failed to fetch items from source")
 	ErrResourceNotFound = errors.New("resource not found in source system")
 

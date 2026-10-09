@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -190,6 +191,158 @@ func NewSyncLogRepository(db *gorm.DB) interfaces.SyncLogRepository {
 	return &SyncLogRepository{db: db}
 }
 
+// CreatePending keeps admission and the native handoff in one database commit.
+// Lock the source, not a process-local scheduler, so manual requests and cron
+// callbacks across replicas cannot create competing runs for the same source.
+func (r *SyncLogRepository) CreatePending(ctx context.Context, source *types.DataSource, payload *types.DataSourceSyncPayload) (*types.SyncLog, error) {
+	if source == nil || payload == nil || source.ID == "" || source.TenantID == 0 ||
+		source.UpdatedAt.IsZero() || source.KnowledgeBaseID == "" ||
+		payload.DataSourceID != source.ID || payload.TenantID != source.TenantID ||
+		payload.SyncLogID != "" || (payload.Trigger != "manual" && payload.Trigger != "schedule") {
+		return nil, datasource.ErrDataSourceInvalid
+	}
+	var log types.SyncLog
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current types.DataSource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", source.ID).Error; err != nil {
+			return err
+		}
+		if current.TenantID != source.TenantID || current.KnowledgeBaseID != source.KnowledgeBaseID ||
+			!current.UpdatedAt.Equal(source.UpdatedAt) {
+			return datasource.ErrDataSourceInvalid
+		}
+		if current.Status != types.DataSourceStatusActive &&
+			(payload.Trigger != "manual" || (current.Status != types.DataSourceStatusPaused && current.Status != types.DataSourceStatusError)) {
+			return datasource.ErrDataSourceNotActive
+		}
+		var count int64
+		if err := tx.Model(&types.SyncLog{}).Where("data_source_id = ? AND status = ?", source.ID, types.SyncLogStatusRunning).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return datasource.ErrSyncRunning
+		}
+		log = types.SyncLog{DataSourceID: source.ID, TenantID: source.TenantID, Status: types.SyncLogStatusRunning, StartedAt: time.Now().UTC()}
+		if err := tx.Create(&log).Error; err != nil {
+			return err
+		}
+		original := *payload
+		original.SyncLogID = log.ID
+		body, err := json.Marshal(&original)
+		if err != nil {
+			return err
+		}
+		return tx.Create(&types.TaskPendingOp{TenantID: source.TenantID, TaskType: types.TypeDataSourceSync,
+			Scope: types.TaskScopeKnowledgeBase, ScopeID: source.KnowledgeBaseID, Op: "sync",
+			DedupKey: log.ID, Payload: body, EnqueuedAt: log.StartedAt}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// DispatchPending visits a bounded snapshot one row at a time. Queue failures
+// retain the original payload, increment the native backlog counter, and never
+// turn an unconfirmed enqueue into a failed business run. A row lock prevents
+// concurrent dispatchers from replacing an acknowledged queue owner. Successful
+// delivery consumes the handoff row; only Asynq owns execution and retries.
+func (r *SyncLogRepository) DispatchPending(ctx context.Context, logID string, dispatch func(*types.DataSourceSyncPayload) error) error {
+	if dispatch == nil {
+		return errors.New("sync dispatch is unavailable")
+	}
+	query := func(db *gorm.DB) *gorm.DB {
+		q := db.Model(&types.TaskPendingOp{}).Where("task_type = ? AND scope = ? AND op = ?", types.TypeDataSourceSync, types.TaskScopeKnowledgeBase, "sync")
+		if logID != "" {
+			q = q.Where("dedup_key = ?", logID)
+		}
+		return q
+	}
+	var end int64
+	if err := query(r.db.WithContext(ctx)).Select("COALESCE(MAX(id), 0)").Scan(&end).Error; err != nil {
+		return err
+	}
+	var after int64
+	var failures error
+	for after < end {
+		var next types.TaskPendingOp
+		err := query(r.db.WithContext(ctx)).Where("id > ? AND id <= ?", after, end).Order("id").First(&next).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			break
+		}
+		if err != nil {
+			return errors.Join(failures, err)
+		}
+		after = next.ID
+		var deliveryErr error
+		err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var op types.TaskPendingOp
+			if err := query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&op, "id = ?", next.ID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil // Another sweep already retired this native terminal.
+				}
+				return err
+			}
+			var payload types.DataSourceSyncPayload
+			if err := json.Unmarshal(op.Payload, &payload); err != nil {
+				return err
+			}
+			var log types.SyncLog
+			if err := tx.First(&log, "id = ?", op.DedupKey).Error; err != nil {
+				return err // Missing evidence is not permission to enqueue or discard.
+			}
+			if payload.SyncLogID != log.ID || payload.DataSourceID != log.DataSourceID ||
+				payload.TenantID == 0 || payload.TenantID != log.TenantID || op.TenantID != log.TenantID {
+				return datasource.ErrDataSourceInvalid
+			}
+			switch log.Status {
+			case types.SyncLogStatusSuccess, types.SyncLogStatusCanceled, types.SyncLogStatusFailed, types.SyncLogStatusPartial:
+				if log.FinishedAt == nil || log.FinishedAt.IsZero() || log.StartedAt.IsZero() ||
+					log.FinishedAt.Before(log.StartedAt) || log.FinishedAt.After(time.Now()) {
+					return errors.New("sync terminal evidence is incomplete")
+				}
+				return tx.Delete(&op).Error
+			case types.SyncLogStatusRunning:
+				if log.FinishedAt != nil {
+					return errors.New("running sync has conflicting terminal evidence")
+				}
+			default:
+				return errors.New("unrecognized native sync status")
+			}
+			var source types.DataSource
+			if err := tx.Unscoped().First(&source, "id = ?", payload.DataSourceID).Error; err != nil {
+				return err
+			}
+			if op.ScopeID == "" || source.KnowledgeBaseID != op.ScopeID || source.TenantID != op.TenantID ||
+				(payload.Trigger != "manual" && payload.Trigger != "schedule") {
+				return datasource.ErrDataSourceInvalid
+			}
+			if source.DeletedAt.Valid {
+				// Resume the existing native delete's interrupted cancellation,
+				// only after confirming its original scoped source tombstone.
+				// This never re-enqueues a deleted source or invents a success.
+				now := time.Now().UTC()
+				if err := tx.Model(&types.SyncLog{}).Where("id = ? AND tenant_id = ? AND status = ?", log.ID, log.TenantID, types.SyncLogStatusRunning).
+					Updates(map[string]interface{}{"status": types.SyncLogStatusCanceled, "finished_at": &now, "error_message": "data source deleted"}).Error; err != nil {
+					return err
+				}
+				return tx.Delete(&op).Error
+			}
+			if deliveryErr = dispatch(&payload); deliveryErr != nil {
+				return tx.Model(&op).UpdateColumn("fail_count", gorm.Expr("fail_count + 1")).Error
+			}
+			return tx.Delete(&op).Error
+		})
+		if failures == nil {
+			failures = errors.Join(err, deliveryErr)
+		}
+		if ctx.Err() != nil {
+			return errors.Join(failures, ctx.Err())
+		}
+	}
+	return failures
+}
+
 // Create inserts a new sync log entry
 func (r *SyncLogRepository) Create(ctx context.Context, log *types.SyncLog) error {
 	if log == nil {
@@ -347,6 +500,11 @@ func (r *SyncLogRepository) CleanupOldLogs(ctx context.Context, retentionDays in
 	// Delete logs older than the retention period
 	if err := r.db.WithContext(ctx).
 		Where("started_at < NOW() - INTERVAL ? DAY", retentionDays).
+		Where(`NOT EXISTS (SELECT 1 FROM task_pending_ops
+			WHERE task_pending_ops.task_type = ? AND task_pending_ops.scope = ?
+			AND task_pending_ops.op = ? AND task_pending_ops.dedup_key = sync_logs.id
+			AND task_pending_ops.tenant_id = sync_logs.tenant_id)`,
+			types.TypeDataSourceSync, types.TaskScopeKnowledgeBase, "sync").
 		Delete(&types.SyncLog{}).Error; err != nil {
 		return err
 	}

@@ -2,16 +2,13 @@ package datasource
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/hibiken/asynq"
 	"github.com/robfig/cron/v3"
 )
 
@@ -19,11 +16,8 @@ import (
 //
 // robfig/cron fires at absolute wall-clock times (e.g. "0 0 * * * *" always fires
 // at the top of every hour regardless of when the process started). So multiple
-// instances will fire at the same moment. Dedup is handled by two layers:
-//
-//  1. HasRunningSync — if a previous sync is still running, skip (prevent overlap).
-//  2. asynq.TaskID  — deterministic ID per (dataSourceID, minute). Redis ensures
-//     only one task with a given ID is enqueued. Losers get ErrTaskIDConflict.
+// instances will fire at the same moment. Source-row admission serializes
+// manual and scheduled runs; the durable run ID also deduplicates queue delivery.
 type Scheduler struct {
 	cron         *cron.Cron
 	dsRepo       interfaces.DataSourceRepository
@@ -134,9 +128,8 @@ func (s *Scheduler) addEntryLocked(ds *types.DataSource) error {
 // Layer 1 — DB: if a previous sync is still running, skip. This prevents
 // overlap when a sync takes longer than the cron interval.
 //
-// Layer 2 — Redis: deterministic asynq.TaskID = "dssync:<dsID>:<minute>".
-// Since robfig/cron fires at absolute wall-clock times, all instances trigger
-// at the same minute. The first Enqueue wins; others get ErrTaskIDConflict.
+// Layer 2 — native transactional admission and durable queue handoff. The
+// optimistic running check is only a fast path; CreatePending serializes races.
 func (s *Scheduler) triggerSync(dataSourceID string, tenantID uint64) {
 	ctx := context.Background()
 
@@ -158,57 +151,21 @@ func (s *Scheduler) triggerSync(dataSourceID string, tenantID uint64) {
 		return
 	}
 
-	syncLog := &types.SyncLog{
-		DataSourceID: dataSourceID,
-		TenantID:     tenantID,
-		Status:       types.SyncLogStatusRunning,
-		StartedAt:    time.Now().UTC(),
-	}
-	if err := s.syncLogRepo.Create(ctx, syncLog); err != nil {
-		logger.Errorf(ctx, "[Scheduler] failed to create sync log for ds=%s: %v", dataSourceID, err)
-		return
-	}
-
 	payload := &types.DataSourceSyncPayload{
 		DataSourceID: dataSourceID,
 		TenantID:     tenantID,
-		SyncLogID:    syncLog.ID,
 		ForceFull:    false,
 		Trigger:      "schedule",
 	}
 	langfuse.InjectTracing(ctx, payload)
-	payloadJSON, _ := json.Marshal(payload)
-	task := asynq.NewTask(types.TypeDataSourceSync, payloadJSON)
-
-	// Layer 2: deterministic TaskID — all instances in the same minute produce the same ID
-	taskID := fmt.Sprintf("dssync:%s:%s", dataSourceID, time.Now().UTC().Truncate(time.Minute).Format("200601021504"))
-
-	_, err = s.taskEnqueuer.Enqueue(task,
-		asynq.Queue(types.QueueSync),
-		asynq.MaxRetry(5),
-		asynq.Timeout(2*time.Hour),
-		asynq.TaskID(taskID),
-	)
+	syncLog, err := s.syncLogRepo.CreatePending(ctx, ds, payload)
 	if err != nil {
-		if err == asynq.ErrTaskIDConflict {
-			logger.Infof(ctx, "[Scheduler] sync already enqueued by another instance for ds=%s", dataSourceID)
-			syncLog.Status = types.SyncLogStatusCanceled
-			now := time.Now().UTC()
-			syncLog.FinishedAt = &now
-			syncLog.ErrorMessage = "deduplicated: another instance enqueued first"
-			_ = s.syncLogRepo.Update(ctx, syncLog)
-			return
-		}
-		logger.Errorf(ctx, "[Scheduler] failed to enqueue sync task for ds=%s: %v", dataSourceID, err)
-		syncLog.Status = types.SyncLogStatusFailed
-		now := time.Now().UTC()
-		syncLog.FinishedAt = &now
-		syncLog.ErrorMessage = fmt.Sprintf("enqueue failed: %v", err)
-		_ = s.syncLogRepo.Update(ctx, syncLog)
+		logger.Infof(ctx, "[Scheduler] sync not admitted for ds=%s: %v", dataSourceID, err)
 		return
 	}
-
-	logger.Infof(ctx, "[Scheduler] sync task enqueued for ds=%s syncLog=%s", dataSourceID, syncLog.ID)
+	if err := DispatchSync(ctx, s.syncLogRepo, s.taskEnqueuer, syncLog.ID); err != nil {
+		logger.Warnf(ctx, "[Scheduler] sync handoff remains pending for ds=%s syncLog=%s: %v", dataSourceID, syncLog.ID, err)
+	}
 }
 
 // EntryCount returns the number of active cron entries (for testing/monitoring).

@@ -51,6 +51,14 @@ func (e *SyncTaskExecutor) Enqueue(task *asynq.Task, opts ...asynq.Option) (*asy
 	maxRetrySet := false
 	for _, opt := range opts {
 		switch opt.Type() {
+		case asynq.TaskIDOpt:
+			// Native data-source handoffs require a durable, create-only queue
+			// owner. A Lite goroutine cannot provide that acknowledgement;
+			// returning a random ID after dispatch would replay the same run.
+			// Keep other original Lite tasks and unkeyed calls unchanged.
+			if task.Type() == types.TypeDataSourceSync {
+				return nil, fmt.Errorf("sync task executor: durable data source handoff requires Redis")
+			}
 		case asynq.ProcessInOpt:
 			if d, ok := opt.Value().(time.Duration); ok {
 				delay = d

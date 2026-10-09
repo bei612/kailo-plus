@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -46,7 +47,9 @@ type HousekeepingService struct {
 	// A nil inspector cannot establish that no transient work remains.
 	// Durable Wiki ownership in task_pending_ops is also probed before a row
 	// is admitted, never falling back to span/updated_at heuristics alone.
-	inspector interfaces.TaskInspector
+	inspector    interfaces.TaskInspector
+	syncLogs     interfaces.SyncLogRepository
+	taskEnqueuer interfaces.TaskEnqueuer
 
 	mu      sync.Mutex
 	started bool
@@ -57,11 +60,14 @@ type HousekeepingService struct {
 // cron schedule cannot prevent the rest of the service from coming up.
 func NewHousekeepingService(
 	db *gorm.DB, cfg *config.Config, inspector interfaces.TaskInspector,
+	syncLogs interfaces.SyncLogRepository, taskEnqueuer interfaces.TaskEnqueuer,
 ) *HousekeepingService {
 	return &HousekeepingService{
-		db:        db,
-		cfg:       cfg,
-		inspector: inspector,
+		db:           db,
+		cfg:          cfg,
+		inspector:    inspector,
+		syncLogs:     syncLogs,
+		taskEnqueuer: taskEnqueuer,
 		cron: cron.New(cron.WithSeconds(), cron.WithChain(
 			cron.Recover(cron.DefaultLogger),
 		)),
@@ -111,6 +117,12 @@ func (h *HousekeepingService) Stop() {
 // runSweep is exported on the type for testability — tests can drive a
 // single sweep without waiting for the cron tick.
 func (h *HousekeepingService) runSweep(ctx context.Context) {
+	// Native sync producers commit their payload before contacting Redis.
+	// Reuse this existing sweep for restart/ACK-loss delivery and terminal
+	// retirement; do not reconstruct tasks from mutable source configuration.
+	if err := datasource.DispatchSync(ctx, h.syncLogs, h.taskEnqueuer, ""); err != nil {
+		logger.Warnf(ctx, "[Housekeeping] native sync handoff backlog remains unresolved: %v", err)
+	}
 	threshold := h.staleThreshold()
 	cutoff := time.Now().Add(-threshold)
 

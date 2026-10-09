@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const resetPendingStaleWindow = 30 * time.Minute
-
 const restartInterruptedMessage = "Task interrupted due to application restart"
 
 // resetPendingTasks resets the state of any knowledge items or sync logs stuck in processing
@@ -27,17 +25,12 @@ const restartInterruptedMessage = "Task interrupted due to application restart"
 // startup hook cannot safely distinguish an orphan from a backlogged task that
 // has not opened a span yet. HousekeepingService owns that decision because it
 // checks BOTH recent span activity and the real Asynq queue. Consequently this
-// hook never resets knowledge/summary rows in distributed mode; it only keeps
-// the separate sync-log cleanup below.
+// hook never resets knowledge/summary/sync rows in distributed mode. An old
+// sync may still be queued or running on another replica; age is not a terminal.
 func resetPendingTasks(db *gorm.DB) {
 	distributed := os.Getenv("REDIS_ADDR") != ""
 	ctx := context.Background()
 	spanRepo := repository.NewKnowledgeSpanRepository(db)
-
-	var staleCutoff time.Time
-	if distributed {
-		staleCutoff = time.Now().Add(-resetPendingStaleWindow)
-	}
 
 	// Resolve Lite-mode orphaned knowledge rows first. A finalizing row whose
 	// ONLY remaining slot is backed by a durable wiki op is excluded and resumed
@@ -120,9 +113,14 @@ func resetPendingTasks(db *gorm.DB) {
 		}
 	}
 
-	// 3. Reset data source sync tasks
+	// 3. Only process-local sync work can be lost by this process restarting.
+	// Redis owns distributed executions; native handoff rows own delivery not
+	// yet acknowledged by Redis. Neither is a failed business result.
+	if distributed {
+		return
+	}
 	now := time.Now()
-	resultSync := stuckSyncLogQuery(db, distributed, staleCutoff).Updates(map[string]interface{}{
+	resultSync := stuckSyncLogQuery(db).Updates(map[string]interface{}{
 		"status":        types.SyncLogStatusFailed,
 		"error_message": "Sync interrupted due to application restart",
 		"finished_at":   &now,
@@ -159,13 +157,16 @@ func stuckKnowledgeSummaryQuery(db *gorm.DB) *gorm.DB {
 		Where("summary_status IN ?", []string{types.SummaryStatusPending, types.SummaryStatusProcessing})
 }
 
-func stuckSyncLogQuery(db *gorm.DB, distributed bool, staleCutoff time.Time) *gorm.DB {
-	q := db.Model(&types.SyncLog{}).
-		Where("status = ?", types.SyncLogStatusRunning)
-	if distributed {
-		q = q.Where("started_at < ?", staleCutoff)
-	}
-	return q
+func stuckSyncLogQuery(db *gorm.DB) *gorm.DB {
+	return db.Model(&types.SyncLog{}).
+		Where("status = ?", types.SyncLogStatusRunning).
+		// Durable native handoffs survive this process. Housekeeping dispatches
+		// unacknowledged originals, without creating replacement business runs.
+		Where(`NOT EXISTS (SELECT 1 FROM task_pending_ops
+			WHERE task_pending_ops.task_type = ? AND task_pending_ops.scope = ?
+			AND task_pending_ops.op = ? AND task_pending_ops.dedup_key = sync_logs.id
+			AND task_pending_ops.tenant_id = sync_logs.tenant_id)`,
+			types.TypeDataSourceSync, types.TaskScopeKnowledgeBase, "sync")
 }
 
 func resettableParseStatuses() []string {

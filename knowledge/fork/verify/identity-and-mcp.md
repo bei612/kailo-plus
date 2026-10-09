@@ -1478,3 +1478,139 @@ It does not include these uncommitted source inputs and is not a passing
 production gate. This increment has passed its targeted positive, production
 damage and restoration checks; global acceptance, commit and deployment remain
 separate and are not claimed at this checkpoint.
+
+## 2026-10-09 Native data-source enqueue handoff
+
+This increment reuses the fixed WeKnora commit
+`2be7bd40631dda1dd485306038f07a62e9ee287e`, original
+`internal/types/task_pending_op.go::TaskPendingOp`,
+`internal/application/service/datasource_service.go::ManualSync/ProcessSync`,
+and the existing scheduler and knowledge housekeeping sweep. Authority is
+DD-89/92/93 and `.design/13` sections 4.4 and 7: a queue acknowledgement is not
+the business terminal, and uncertain delivery must retain the original run.
+
+The implementation impact and boundaries are:
+
+- Admission now locks the original DataSource row, checks its tenant, KB,
+  version and native state, and commits the original RUNNING SyncLog together
+  with its original payload in `task_pending_ops`. Manual and scheduled
+  admission share this transaction; no new schema, workflow or authority is
+  introduced. Existing task payloads remain readable without a format change.
+- `DispatchSync` uses the original log ID as the Asynq TaskID. Lost
+  acknowledgements retain the original payload and backlog counter. Confirmed
+  enqueue or a conflict for that exact TaskID consumes the handoff; Asynq alone
+  owns execution and retries. The original housekeeping sweep retries pending
+  delivery using a bounded ID snapshot and one row at a time.
+- Missing scope, conflicting/unknown native states, unavailable storage and
+  incomplete terminal evidence do not enqueue or discard the handoff. A
+  scoped source tombstone resumes the original interrupted delete cancellation
+  instead of enqueuing that source. Startup no longer treats a Redis-owned
+  RUNNING sync as failed merely because of its age; Lite cleanup excludes
+  durable pending handoffs.
+- Failed or partial attempts remain RUNNING without FinishedAt while the
+  original executor still has retries, or retry evidence is missing. Only
+  confirmed exhausted attempts use those native terminal states. The native
+  result writer clears a former FinishedAt and records accepted, not successful,
+  activity for an ongoing retry. No frontend, Core body storage or public
+  contract changes are included. Web/Desktop consume the same native result;
+  Mobile remains outside the component-host scope.
+
+The first concentrated offline SDK request ran repository, datasource, service
+and container packages, and exited 1. Repository and datasource passed; service
+compilation found an existing hand-written SyncLogRepository fixture missing
+the new admission method. That fixture was corrected. The container package
+could not compile its existing sqlite-vec dependency because this SDK lacks
+`sqlite3.h`; its restart tests did not execute. This is not a successful
+container/startup check, and no host SDK or synthetic header was substituted.
+
+The next request used the existing 4-CPU/8-GiB SDK, UID 1000, Data-backed caches,
+`GOPROXY=off`, and `GOTOOLCHAIN=local`:
+
+```sh
+go test ./internal/application/repository ./internal/datasource \
+  ./internal/application/service \
+  -run 'Test(SyncHandoff|SyncAttempt|Scheduler|ProcessSync|Housekeeping|DataSourceService)' \
+  -count=1
+```
+
+It exited 0: repository 1.917s, datasource 4.192s, service 0.933s. Coverage
+includes atomic admission rollback, identity/version refusal, original payload
+and initiator retention, a real Asynq client over the existing miniredis
+dependency accepting a task but losing its acknowledgement, and one pending
+queue entry after retry. SQLite does not prove PostgreSQL cross-replica locking.
+The subsequent tombstone cancellation correction was not in that snapshot;
+it requires its own final-input result and is not covered by this exit 0.
+
+The subsequent tombstone request exited 0: repository 1.578s, datasource
+3.845s, service 3.621s. Final-input review then aligned the handoff terminal
+check with the original `ProcessSync` consumer: zero start/finish timestamps
+and a future finish timestamp cannot retire delivery evidence. The final
+three-package request, including these cases and real ManualSync admission
+with an unavailable queue, passed: repository 1.052s, datasource 3.465s,
+service 1.098s. Its following restart target failed because the SQLite
+fixture's default TEXT payload could not scan into json.RawMessage. The
+fixture now explicitly supplies JSON, as the actual producer does; no
+production storage fallback was introduced.
+
+The old corrected-restart tool handle was missing when the next session
+resumed; the SDK had only its idle sleep process and its log was empty.
+That run is unproven, not passed. A new invocation of the original named
+restart source files and Lite executor files exited 0 (session 14335):
+restart 0.507s and Lite 0.461s. Named original source checks do not prove the
+entire container/router package or application dependency wiring.
+
+Release boundaries remain explicit: active Knowledge bindings require Redis
+(`.design/08`, apps/07 section 1.2). The Lite executor now refuses a durable
+data-source TaskID before starting a goroutine: it cannot provide that queue
+ownership. Other keyed native tasks and original unkeyed calls are retained;
+this refusal is not full Lite data-source sync delivery. An archived task whose
+handler could not read its original run may still require native Runtime
+inspection and retry of that original task; no age-based failure or automatic
+new task is inferred. Existing workers and their older retry outcomes require
+release coordination. Full acceptance, real Cells-to-Knowledge import, images,
+browser operation and deployment are not established by these narrow checks.
+
+Production-damage checks used only the private SDK snapshot, with unchanged
+formal source and original test assertions. Session 33076 ran four commands:
+
+- Removing the stable Asynq TaskID made
+  `TestSyncHandoffUsesOriginalAsynqIdentityAfterLostAck` fail with
+  `asynq: task not found` (exit 1).
+- Disabling retry-owned RUNNING preservation made
+  `TestSyncAttemptKeepsNativeRunOpenUntilRetriesExhausted` fail four cases:
+  unknown/retrying attempts incorrectly became failed or partial (exit 1).
+- Breaking the native handoff exclusion made
+  `TestRestartPreservesDurableNativeSyncHandoff` select two orphan candidates
+  instead of the single original legacy orphan (exit 1).
+- Disabling the Lite pre-dispatch refusal made
+  `TestSyncTaskExecutorRefusesDurableDataSourceHandoffBeforeDispatch` receive
+  an apparent acknowledgement for unsupported durable ownership (exit 1).
+
+The wrapper continued after each expected failure and itself exited 0; that is
+not four passing checks. All four production files were restored with patches
+and compared byte-for-byte to both formal source and their saved originals
+before the final positive run. Evidence is retained under
+`/volumes/data/kailo/tmp/knowledge-sync-handoff-final.0rftMR`, including the
+original fixture failure in `restart-positive.log`, final-input package results
+in `native-positive.log`, and actual failures in `production-negatives.log`.
+
+Final restored session 18630 exited 0: repository 0.502s, datasource 2.971s,
+service 1.088s, named restart files 0.483s and named Lite files 0.493s.
+`production-restored.log` contains `RESTORED_EXIT=0`; all SDK memory event
+counters remained zero. The original three-package command above and these
+named-file commands used the same bounded, offline SDK and Data caches:
+
+```sh
+go test internal/container/reset_pending_tasks.go \
+  internal/container/recover_pending_wiki_tasks.go \
+  internal/container/reset_pending_tasks_test.go -count=1
+go test internal/router/sync_task.go \
+  internal/router/sync_task_retry_test.go -count=1
+```
+
+Cross-review of this admission/handoff/retry increment found no new P1; it
+did not replace runtime verification. The preceding full check is still on
+frozen tree `73f7d70189c100ba7b40d426783365e7c23ef8f7`, not this increment.
+Its actual database drill was skipped without DATABASE_URL. Neither that
+check nor these focused results establish the whole Knowledge release,
+cross-replica database behavior, active bindings or a deployed sync feature.

@@ -74,6 +74,7 @@ func (r *kbDeleteDSRepo) FindActive(_ context.Context) ([]*types.DataSource, err
 var _ interfaces.DataSourceRepository = (*kbDeleteDSRepo)(nil)
 
 type kbDeleteSyncLogRepo struct {
+	interfaces.SyncLogRepository
 	mu       sync.Mutex
 	canceled []string
 }

@@ -323,6 +323,7 @@ func (s *processSyncKBService) ProcessKBDelete(context.Context, *asynq.Task) err
 var _ interfaces.KnowledgeBaseService = (*processSyncKBService)(nil)
 
 type processSyncSyncLogRepo struct {
+	interfaces.SyncLogRepository
 	logs      map[string]*types.SyncLog
 	readErr   error
 	updateErr error
@@ -1152,7 +1153,8 @@ func TestProcessSync_SyncDeletionsPartialWhenMixedResults(t *testing.T) {
 
 	updated := syncLogRepo.logs[syncLog.ID]
 	require.NotNil(t, updated)
-	assert.Equal(t, types.SyncLogStatusPartial, updated.Status)
+	assert.Equal(t, types.SyncLogStatusRunning, updated.Status)
+	assert.Nil(t, updated.FinishedAt, "missing retry evidence cannot terminate the original run")
 	assert.Equal(t, 1, updated.ItemsFailed)
 	assert.Equal(t, 1, updated.ItemsCreated)
 	assert.Contains(t, updated.ErrorMessage, "deletion failure(s) retained at the previous cursor")
