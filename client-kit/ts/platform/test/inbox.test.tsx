@@ -421,5 +421,34 @@ describe("actual shared Core state consumer", () => {
     expect(chip.classList.contains("overflow-hidden")).toBe(true);
     expect(chip.querySelector(".truncate")?.textContent).toBe("#A");
     expect(host.querySelector("button > span")?.classList.contains("group-active/inbox-item:bg-muted/40")).toBe(true);
+    expect(host.querySelector('[data-testid="home-inbox-unread-count"]')).toBeNull();
+  });
+  it.each([
+    ["2 unread", "4 days ago"],
+    ["2 条未读", "4 天前"],
+  ])("keeps the original separate unread child and timestamp flex gap for %s", async (unread, timestamp) => {
+    const host = await render(
+      <InboxRow
+        id="unread"
+        selected={false}
+        read={false}
+        sender="Sender"
+        timestamp={timestamp}
+        unread={unread}
+        label="Thread in"
+        channel="A"
+        preview="Preview"
+        actions={null}
+        openLabel="Open item"
+        onSelect={vi.fn()}
+      />,
+    );
+    const count = host.querySelector<HTMLElement>('[data-testid="home-inbox-unread-count"]')!;
+    expect(count.textContent).toBe(unread);
+    const metadata = count.parentElement!;
+    expect(metadata.classList.contains("flex")).toBe(true);
+    expect(metadata.classList.contains("gap-1.5")).toBe(true);
+    expect(count.nextSibling?.nodeType).toBe(Node.TEXT_NODE);
+    expect(count.nextSibling?.textContent).toBe(timestamp);
   });
 });

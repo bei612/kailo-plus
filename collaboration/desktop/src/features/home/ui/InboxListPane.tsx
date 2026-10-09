@@ -142,11 +142,9 @@ export function InboxListPane({
         onSelect={() => onSelect(item.id)}
         timestamp={item.timestampLabel}
         unread={
-          item.unreadCount > 1 ? (
-            <span data-testid="home-inbox-unread-count">
-              {t("inbox.unreadCount", { count: item.unreadCount })}
-            </span>
-          ) : null
+          item.unreadCount > 1
+            ? t("inbox.unreadCount", { count: item.unreadCount })
+            : null
         }
         label={typeLabel.text}
         channel={typeLabel.channelLabel}

@@ -94,7 +94,9 @@ export function InboxRow({
                     className="h-1.5 w-1.5 rounded-full bg-primary"
                   />
                 ) : null}
-                {unread}
+                {unread != null ? (
+                  <span data-testid="home-inbox-unread-count">{unread}</span>
+                ) : null}
                 {timestamp}
               </span>
             </div>

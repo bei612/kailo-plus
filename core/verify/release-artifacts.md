@@ -1384,3 +1384,38 @@ network none；七项全部通过。`worker-web-docs-20261009.log` SHA 为
 `184e5e058889df3aba655421e96d021505c0696bb461425fcb3a30321a1d4c20`。
 该快照包括上述 README 与部署 pins，不包括本段后置记录；文档检查范围不
 覆盖 `verify/` 证据正文，也不替代全量门禁、源码一致性或三端功能验收。
+
+## 2026-10-09 本批后置全量尝试与独立 Wren 投递
+
+原 `./tools/check.sh --full` 句柄 73562 已真实终态 exit 2，固定源码
+`7c7580f316c5b06b1d8b73873f067460d3b14034`，不是后来 Wren 启动进程与共享
+音频/Inbox 的源码验收。原检查
+镜像为 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+实际执行容器为 4 CPU、8 GiB、network none、UID 1000，临时目录及依赖缓存
+仍投递 Data。原 pnpm 293 项全部 reused、downloaded 0；随后 Dart 原
+`pub get` 输出 `Got socket error trying to find package test at https://pub.dev.`，
+依赖准备未完成，十项门禁没有进入，不把旧检查或局部专项改记成 full 通过。
+日志 `full-main-7c7580f31-20261009.log` SHA-256 为
+`9c9a80bf1455586bd35ce477e3756ce7239c0cc32465b0417a5c483e0be0bc79`；
+原容器日志 `tmp.HNudn720U8.check.log` SHA-256 为
+`fd6c7790745d3372d4bf82d1c627b231574a2873486b18146cf528ee63ee54bf`。
+未为此清理在用缓存、降低 Cargo 并行度或重启另一轮全量构建。
+
+Wren 后续沿唯一忽略的 `deploy/local/.env` 投递已核验的非密配置；所有原值
+逐字节保留。独立原生目录为 `/volumes/data/kailo/components/wren-native`，
+其 `data` 和目录本身为 0700，实际设备为挂载 Data 的 `/dev/sda1`；SQLite
+专属原 `env_file` 为 0 字节、0600，不含平台数据库或凭据。精确 Compose
+项目与 `native-ui-data` 卷不存在，新目录没有旧数据库/密文/密钥，因此仅为
+这个新实例通过 OpenSSL 3.0.13 的原生随机输出生成专属 password/salt；两个
+文件各由 32 随机字节生成、45 字节、0600，所属目录 0700，未回显、覆盖或
+轮换任何旧键。文件名与原 `docker-entrypoint.mjs::dataKey` 及 Compose 的
+`/run/wren-native` 消费者一致，没有新建第二份非密部署配置。
+
+原两次分阶段 `config --quiet` 均真实 exit 1，先缺原生 Ibis storage，再缺
+原生 DATA_KEY 目录；两个前置已真实投递后没有重复运行该命令或据此推定
+整体配置通过。独立 UI/AI 产物构建仍在途；原生模型/embedding 配置、组件
+专属 browser/AI OIDC 注册、实际 origin/callback、可信 instance 授权与
+受批准的 binding/Resource 事实仍未闭合。未以示例模型、Core 客户端或
+默认 grant 填补，未启动半套服务、激活 binding 或声称原生问数/iframe 可用。
+当前 Web 仍为上节 9edf，Windows/Mobile 未更新，三组件完整业务和生产退出
+门禁没有因目录或密钥存在而完成。
