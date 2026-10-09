@@ -249,10 +249,10 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
       about?: string;
     } = {};
 
-    if (nextDisplayName !== currentDisplayName) {
+    if (nextDisplayName.length > 0 && nextDisplayName !== currentDisplayName) {
       payload.displayName = nextDisplayName;
     }
-    if (nextAvatarUrl !== currentAvatarUrl) {
+    if (nextAvatarUrl.length > 0 && nextAvatarUrl !== currentAvatarUrl) {
       payload.avatarUrl = nextAvatarUrl;
     }
     if (nextAbout !== currentAbout) {
@@ -269,12 +269,19 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
     nextDisplayName,
   ]);
 
+  const hasPendingDisplayNameClearRequest =
+    currentDisplayName.length > 0 && nextDisplayName.length === 0;
+  const hasPendingAvatarClearRequest =
+    currentAvatarUrl.length > 0 && nextAvatarUrl.length === 0;
+  const hasPendingClearRequest =
+    hasPendingDisplayNameClearRequest || hasPendingAvatarClearRequest;
   const hasProfileChanges = Object.keys(updatePayload).length > 0;
   const canSave =
     hasProfileChanges && !writeLocked && !isUploadingAvatar;
   const isAvatarEditorSaving =
     isAvatarEditorFinishing ||
     (shouldRenderAvatarEditor && writeLocked);
+  const shouldShowSaveArea = hasPendingClearRequest;
   const readOnlyContentMotionClassName = cn(
     "min-w-0 w-full origin-top overflow-hidden transition-[opacity,scale] duration-200 ease-out will-change-[opacity,transform]",
     shouldRenderAvatarEditor ? "absolute inset-x-0 top-0" : "relative",
@@ -420,12 +427,22 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
     }
 
     if (!hasProfileChanges) {
+      if (hasPendingDisplayNameClearRequest) {
+        setDisplayNameDraft(currentDisplayName);
+      }
+      if (hasPendingAvatarClearRequest) {
+        setAvatarUrlDraft(currentAvatarUrl);
+      }
       setIsEditingProfileMetadata(false);
       return;
     }
 
     void saveProfile();
   }, [
+    currentAvatarUrl,
+    currentDisplayName,
+    hasPendingAvatarClearRequest,
+    hasPendingDisplayNameClearRequest,
     hasProfileChanges,
     isEditingProfileMetadata,
     saveProfile,
@@ -433,6 +450,9 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
 
   const handleAvatarEditorDone = React.useCallback(() => {
     if (!hasProfileChanges) {
+      if (hasPendingAvatarClearRequest) {
+        setAvatarUrlDraft(currentAvatarUrl);
+      }
       closeAvatarEditor();
       return;
     }
@@ -453,6 +473,8 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
   }, [
     closeAvatarEditor,
     completeAvatarEditorClose,
+    currentAvatarUrl,
+    hasPendingAvatarClearRequest,
     hasProfileChanges,
     reopenAvatarEditorAfterClose,
     saveProfile,
@@ -803,6 +825,16 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                   </motion.div>
                 </motion.div>
               </LayoutGroup>
+
+              {shouldShowSaveArea && !isAvatarEditorOpen ? (
+                <div className="mx-auto w-full max-w-[576px] space-y-2">
+                  {hasPendingClearRequest ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t("platform.profile.clearIgnored")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </form>
           </div>
         </div>

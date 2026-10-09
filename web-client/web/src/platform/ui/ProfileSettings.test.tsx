@@ -56,6 +56,22 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 
+it("consumes the original blank-name refusal in the real Web settings pane without a BFF write", async () => {
+  await openProfile();
+  await click('[data-testid="profile-metadata-edit"]');
+  const input = host.querySelector<HTMLInputElement>("#profile-display-name")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "  ");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.textContent).toContain("Clearing existing profile fields is not supported yet. Blank display name and avatar values are ignored for now.");
+  await click('[data-testid="profile-metadata-edit"]');
+  expect(state.write).not.toHaveBeenCalled();
+  expect(state.upload).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe(profile.displayName);
+  expect(host.textContent).not.toContain("Clearing existing profile fields");
+});
+
 it("passes only the current session identity fallback to the original avatar preview when kind-0 has no name", async () => {
   state.read.mockResolvedValue({ ...profile, displayName: "" });
   await openProfile("original", "Authenticated viewer");

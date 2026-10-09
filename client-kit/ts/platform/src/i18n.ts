@@ -1825,6 +1825,7 @@ export const platformMessages = {
   "platform.profile.copied": { en: "Copied to clipboard", "zh-CN": "已复制到剪贴板" },
   "platform.profile.copyFailed": { en: "Could not copy to clipboard", "zh-CN": "未能复制到剪贴板" },
   "platform.profile.notSet": { en: "Not set", "zh-CN": "未设置" },
+  "platform.profile.clearIgnored": { en: "Clearing existing profile fields is not supported yet. Blank display name and avatar values are ignored for now.", "zh-CN": "暂不支持清空已有的个人资料字段。空白的显示名称和头像值会被忽略。" },
   "platform.profile.avatar.avatarType": { en: "Avatar type", "zh-CN": "头像类型" },
   "platform.profile.avatar.image": { en: "Image", "zh-CN": "图片" },
   "platform.profile.avatar.emoji": { en: "Emoji", "zh-CN": "表情" },

@@ -1581,6 +1581,7 @@ enum PlatformMessageKey {
   platformProfileCopied,
   platformProfileCopyFailed,
   platformProfileNotSet,
+  platformProfileClearIgnored,
   platformProfileAvatarAvatarType,
   platformProfileAvatarImage,
   platformProfileAvatarEmoji,
@@ -5608,6 +5609,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '未能复制到剪贴板',
   ),
   PlatformMessageKey.platformProfileNotSet: ('Not set', '未设置'),
+  PlatformMessageKey.platformProfileClearIgnored: (
+    'Clearing existing profile fields is not supported yet. Blank display name and avatar values are ignored for now.',
+    '暂不支持清空已有的个人资料字段。空白的显示名称和头像值会被忽略。',
+  ),
   PlatformMessageKey.platformProfileAvatarAvatarType: ('Avatar type', '头像类型'),
   PlatformMessageKey.platformProfileAvatarImage: ('Image', '图片'),
   PlatformMessageKey.platformProfileAvatarEmoji: ('Emoji', '表情'),

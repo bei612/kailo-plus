@@ -19,6 +19,55 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it.each(["en", "zh-CN"] as const)("ignores the original blank display-name request and restores its draft without publishing (%s)", async (locale) => {
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => profile);
+    const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={clipboard} onSave={onSave} />);
+    const control = host.querySelector<HTMLButtonElement>('[data-testid="profile-metadata-edit"]')!;
+    await click(control);
+    await type(host.querySelector<HTMLInputElement>("#profile-display-name")!, "  ");
+    expect(host.textContent).toContain(locale === "en"
+      ? "Clearing existing profile fields is not supported yet. Blank display name and avatar values are ignored for now."
+      : "暂不支持清空已有的个人资料字段。空白的显示名称和头像值会被忽略。");
+    const notice = [...host.querySelectorAll("p")].find((element) => element.textContent?.includes(locale === "en" ? "Clearing existing profile fields" : "暂不支持清空"))!;
+    expect(notice.className).toBe("text-sm text-muted-foreground");
+    expect(notice.parentElement?.className).toBe("mx-auto w-full max-w-[576px] space-y-2");
+    await click(control);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe(profile.displayName);
+    expect(host.textContent).not.toContain(locale === "en" ? "Clearing existing profile fields" : "暂不支持清空");
+  });
+
+  it("ignores the original blank avatar request and restores it on Done without a save or upload", async () => {
+    const original = { ...profile, avatarUrl: "https://community.example/media/original.png" };
+    let editor!: ProfileAvatarEditorBinding;
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => original);
+    const host = await render(<ProfileSettingsCard locale="en" profile={original} onCopy={clipboard} onSave={onSave}
+      avatarEditor={(binding) => { editor = binding; return <button type="button" onClick={binding.onDone}>Finish avatar</button>; }} />);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    await act(async () => editor.onChange("  "));
+    expect(host.textContent).not.toContain("Clearing existing profile fields");
+    await click(button(host, "Finish avatar"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(editor.avatarUrl).toBe(original.avatarUrl);
+    expect(host.querySelector('[data-testid="profile-readonly-content"]')?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("ignores a blank name while preserving the original supported biography clear in the real save payload", async () => {
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => ({ ...profile, about: "" }));
+    const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave} />);
+    await edit(host, "");
+    await type(host.querySelector<HTMLTextAreaElement>("#profile-about")!, "  ");
+    await click(button(host, "Done"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const request = onSave.mock.calls[0]![0];
+    expect(request).toMatchObject({ expectedPubkey: profile.pubkey, about: "" });
+    expect(request).not.toHaveProperty("displayName");
+    expect(request).not.toHaveProperty("avatarUrl");
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe(profile.displayName);
+    expect(host.querySelector('[data-testid="profile-about-value"]')?.textContent).toBe("Not set");
+  });
+
   it("keeps the original identity fallback and draft priority in the real avatar preview and editor binding", async () => {
     let editor!: ProfileAvatarEditorBinding;
     const emptyName = { ...profile, displayName: "" };
