@@ -51,3 +51,34 @@ web/src/shared/api/media-client.ts
 去掉；中间那段时间里，拓扑与设计是矛盾的。
 
 因此顺序固定为：先落 `SS-WEB-RELAY` 的 transport patch，再让 Web 面进拓扑。
+
+## 2026-10-09 已提交共享 Profile 修复的实际发布
+
+本节是当前共享页面的发布证据，不把前述 2026-09 基线记录中的 patch-series
+做法作为现行开发方式。当前沿 ADR-15/16 在 apps 原工程维护源码；Web/Desktop
+共源页面沿 SS-WEB-PRESENTATION，Browser 凭据和协作调用仍沿 SS-WEB-RELAY。
+
+冻结输入为 apps `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，实际工作树
+`/volumes/data/kailo/tmp/web-shared-9edf-20261009.cyN2cz/apps`。
+使用原 `tools/build-upstream.sh web-client`、已有限额 BuildKit 和 Data 缓存，
+没有在 `.references` 中构建，也没有重启同一构建。原构建句柄 86766 退出 0；
+日志 `/volumes/data/kailo/tmp/build-web-client.JqeAqq.log` 记录 TypeScript 与
+Vite 构建成功（3943 modules）、OCI 导出及实际 registry 产物。
+构建包含依赖下载，不声称完全离线；缓存命中也不等于零网络。
+
+- source/build ID：`sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`。
+- artifact：`sha256:7ea0c5fa4cf0897ae1c762fa7b42bcc5b087b26950106bc0de2604be5137e07f`。
+- 原 Compose 仅执行 `up -d --no-deps --pull never --wait buzz-web`，句柄 18913
+  退出 0。实际容器 `6ffe6fe762d1f632d07ab20f6e61b96da4627f48a7f434a49d22fe9838a54830`
+  于 `2026-10-09T15:43:39.764556373Z` 启动，状态 healthy；容器内
+  `/srv/app/platform-build-info.json` 的 build ID 与上述值一致。
+- 前后逐项核对 platform-local 容器 ID，除 buzz-web 外均未改变；未重启 Core、
+  Worker、Relay、Gateway、数据库或身份服务，未迁移数据或更改认证凭据。
+
+本次只发布已提交的 Profile 可访问性、默认头像及中英文等修复；当前工作树中的
+成员目录字段、成员卡及邀请交互改动不在该镜像中。页面实际截图与操作验收另由
+`web-surface.md` 记录，healthy 和构建成功不证明页面全量还原。
+对应冻结输入的原 `tools/check.sh --full` 句柄 22988 退出 2，日志
+`/volumes/data/kailo/tmp/tmp.1FOvLFPjbi.check.log`：
+`Got socket error trying to find package test at https://pub.dev.`
+依赖准备阶段失败，产品门禁没有执行，不能声明全量检查通过或生产就绪。
