@@ -565,40 +565,69 @@ class PydioApi{
         return slug;
     }
 
+    getVersionTarget(node) {
+        const user = this.getPydioObject().user;
+        if (!user || !node) {
+            throw new Error(this.getPydioObject().MessageHash[391]);
+        }
+        const metadata = node.getMetadata();
+        return {
+            user, userId: user.id, path: node.getPath(), label: node.getLabel(),
+            uuid: metadata.get('uuid'),
+            repositoryId: metadata.has('repository_id') ? metadata.get('repository_id') : user.getActiveRepository(),
+            slug: this.getSlugForNode(node)
+        };
+    }
+
+    isVersionTargetCurrent(node, target) {
+        try {
+            const current = this.getVersionTarget(node);
+            return ['user', 'userId', 'path', 'uuid', 'repositoryId', 'slug'].every(key => current[key] === target[key]);
+        } catch (e) {
+            return false;
+        }
+    }
+
     openVersion(node, versionId){
 
         const pydio = this.getPydioObject();
         const agent = navigator.userAgent || '';
         const agentIsMobile = (agent.indexOf('iPhone')!==-1||agent.indexOf('iPod')!==-1||agent.indexOf('iPad')!==-1||agent.indexOf('iOs')!==-1);
         const hiddenForm = pydio && pydio.UI && pydio.UI.hasHiddenDownloadForm();
-        return Promise.resolve().then(() => {
-            const slug = this.getSlugForNode(node);
+        return new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
+            if (!this.isVersionTargetCurrent(node, target)) {
+                throw new Error(pydio.MessageHash[391]);
+            }
             return this.buildPresignedGetUrl(node, null, '', {
                 Bucket: this.getBucket(),
-                Key: slug + node.getPath(),
+                Key: target.slug + target.path,
                 VersionId: versionId
-            }, node.getLabel());
-        }).then(url => {
-            if(agentIsMobile || !hiddenForm){
-                document.location.href = url;
-            } else {
-                pydio.UI.sendDownloadToHiddenForm(null, {presignedUrl: url});
-            }
+            }, target.label).then(url => {
+                if (!this.isVersionTargetCurrent(node, target)) {
+                    throw new Error(pydio.MessageHash[391]);
+                }
+                if(agentIsMobile || !hiddenForm){
+                    document.location.href = url;
+                } else {
+                    pydio.UI.sendDownloadToHiddenForm(null, {presignedUrl: url});
+                }
+            });
         }).catch(error => pydio.UI.displayMessage('ERROR', error.message || error));
 
     }
 
 
     revertToVersion(node, versionId, callback){
-        return Promise.resolve().then(() => {
-            const slug = this.getSlugForNode(node);
-            const path = node.getPath();
+        return new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
             return PydioApi.getRestClient().getOrUpdateJwt().then(jwt =>
                 awsLoader().then(({S3}) => new Promise((resolve, reject) => {
+                    if (!this.isVersionTargetCurrent(node, target)) {
+                        throw new Error(this.getPydioObject().MessageHash[391]);
+                    }
                     const params = {
                         Bucket: this.getBucket(),
-                        Key: slug + path,
-                        CopySource:encodeURIComponent('io/' + slug + path + '?versionId=' + versionId)
+                        Key: target.slug + target.path,
+                        CopySource:encodeURIComponent('io/' + target.slug + target.path + '?versionId=' + versionId)
                     };
                     const s3 = new S3(this.s3Options(jwt));
                     s3.copyObject(params, (err) => {
@@ -609,9 +638,9 @@ class PydioApi{
                         }
                     })
                 }))
-            );
-        }).then(() => {
-            if (callback) callback('Copy version to original node');
+            ).then(() => {
+                if (this.isVersionTargetCurrent(node, target) && callback) callback('Copy version to original node');
+            });
         }).catch(error => this.getPydioObject().UI.displayMessage('ERROR', error.message || error));
 
     }

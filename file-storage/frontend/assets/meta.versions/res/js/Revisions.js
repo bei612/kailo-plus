@@ -60,17 +60,40 @@ class Revisions extends Component {
             revs: [],
             selection: props.preselection
         }
+        this._loadEpoch = 0;
         this._bload = debounce(this.load.bind(this), 1500)
-        this.load()
+        this._nodeReplaced = () => {
+            if(this._disposed) {
+                return;
+            }
+            this._loadEpoch++;
+            this._loadedScope = null;
+            this.setState({loading: true, revs: [], empty: false});
+            this._bload();
+        };
+    }
+
+    componentDidMount() {
+        this.props.node.observe('node_replaced', this._nodeReplaced);
+        this.load();
+    }
+
+    componentWillUnmount() {
+        this._disposed = true;
+        this._loadEpoch++;
+        this._loadedScope = null;
+        this._bload.cancel();
+        this.props.node.stopObserving('node_replaced', this._nodeReplaced);
     }
 
     componentDidUpdate(prevProps, prevState, snapshot) {
         if(prevProps.node !== this.props.node) {
+            this._bload.cancel();
             if(prevProps.node) {
-                prevProps.node.stopObserving('node_replaced', this._bload)
+                prevProps.node.stopObserving('node_replaced', this._nodeReplaced)
             }
             if(this.props.node) {
-                this.props.node.observe('node_replaced', this._bload)
+                this.props.node.observe('node_replaced', this._nodeReplaced)
             }
             this.load()
         }
@@ -81,23 +104,52 @@ class Revisions extends Component {
         return Pydio.getMessages()['meta.versions.' + id] || id;
     }
 
+    isCurrentScope(scope) {
+        return !this._disposed && scope && scope.epoch === this._loadEpoch && scope.node === this.props.node &&
+            PydioApi.getClient().isVersionTargetCurrent(scope.node, scope.target);
+    }
+
     load() {
-        const {node} = this.props;
-        const providerProps = {versions:'true',file:node.getPath(), silent:true}
-        if(node.getMetadata().has('repository_id')) {
-            providerProps['tmp_repository_id'] = node.getMetadata().get('repository_id')
+        if(this._disposed) {
+            return;
         }
+        const {node} = this.props;
+        const epoch = ++this._loadEpoch;
+        this._loadedScope = null;
+        this.setState({loading: true, revs: [], empty: false, selection: this.props.preselection});
+        let target;
+        try {
+            target = PydioApi.getClient().getVersionTarget(node);
+        } catch (error) {
+            this.setState({loading: false});
+            Pydio.getInstance().UI.displayMessage('ERROR', error.message || error);
+            return;
+        }
+        const scope = {node, epoch, target};
+        const providerProps = {versions:'true',file:target.path, silent:true, tmp_repository_id:target.repositoryId}
         const provider = new MetaNodeProvider(providerProps);
         const versionsRoot = new Node("/", false, "Versions", "folder.png", provider);
-        this.setState({empty: false})
         provider.loadNode(versionsRoot, (n) => {
+            if(!this.isCurrentScope(scope)) {
+                return;
+            }
             const revs = [];
             n.getChildren().forEach(c => revs.push(c));
+            this._loadedScope = scope;
             this.setState({loading: false, revs, empty: !revs.length});
-        })
+        }, null, false, -1, {errorHandler: error => {
+            if(this.isCurrentScope(scope)) {
+                this.setState({loading: false});
+                Pydio.getInstance().UI.displayMessage('ERROR', error.message || error);
+            }
+        }})
     }
 
     applyAction(action, versionNode){
+        const scope = this._loadedScope;
+        if(!this.isCurrentScope(scope) || !this.state.revs.includes(versionNode)) {
+            return;
+        }
         const {node, onRequestClose} = this.props;
         switch(action){
             case 'dl':
@@ -107,8 +159,11 @@ class Revisions extends Component {
                 if(!confirm(this.getMessage('13'))){
                     return;
                 }
+                if(!this.isCurrentScope(scope)) {
+                    return;
+                }
                 PydioApi.getClient().revertToVersion(node, versionNode.getMetadata().get('versionId'), ()=>{
-                    if(onRequestClose) {
+                    if(this.isCurrentScope(scope) && onRequestClose) {
                         onRequestClose();
                     }
                 });

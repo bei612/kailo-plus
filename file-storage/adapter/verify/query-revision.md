@@ -3341,3 +3341,80 @@ e2c0d787c946330251d666e7f57661fb4556b55530b086d9b618f9020134b02f go-copy-product
 不含继承 `deploy/compose.yaml`）；回执自身 SHA 在冻结交接时单独核对。
 以上仅为原受控 fixture、真实 Bolt/Job/stream 与锁定 MCP client-wire
 验收；不是 native HTTP/S3/Mongo 实库、浏览器或七必选批准/部署证据。
+
+## 2026-10-09：原版本面板与下载/恢复的真实当前节点消费者
+
+### 实施后四步影响结论
+
+- 权威：`.design/07-组件接入标准.md` §4.6、§5 与 DD-87/90/93；
+  原生完整页面、当前用户及源节点权限保留。本批是实际原版本调用的
+  必要目标关联修复，不声称与原版字节相同。固定官方
+  `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+  `frontend/assets/meta.versions/res/js/Revisions.js::load/applyAction`
+  无晚回包代际校验，`applyAction` 又读取当前 props.node，可能把旧 A
+  的 versionId 用到新 B；该问题并非迁移后臆造的差异。
+- 影响面：原 Revisions → `MetaNodeProvider.loadNode` → 原完整版本列表
+  → 原 `PydioApi.openVersion/revertToVersion` → JWT/AWS signer/copy →
+  原 hidden form/恢复回调。对应固定源码路径为
+  `frontend/assets/gui.ajax/res/js/core/model/MetaNodeProvider.js::loadNode`、
+  `frontend/assets/gui.ajax/res/js/core/model/AjxpNode.js::replaceBy`、
+  `frontend/assets/gui.ajax/res/js/core/model/User.js`（原 user.id/仓库目录）与
+  `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::openVersion/revertToVersion`。
+  复用已实现的 `getSlugForNode`；当前 user/node UUID/path/仓库 ID/slug
+  仅是临时请求关联，不是第二身份、资源目录、权限或持久业务状态。
+- 副作用：初始观察、换节点、同 UUID 移动/重绑定都固定本次目标与请求
+  代际；node_replaced 在原 debounce 前立即使旧版本操作失效。换文件/卸载
+  撤原 observer 并取消 debounce；旧回包/错误不会更新新面板。下载先固定
+  原版本及目标，URL 返回后再次核对当前目标才交 hidden form；恢复在
+  实际 copy 派发前核对，已派发后只等待同一次 ACK，晚 ACK 不关闭后来
+  面板、不重发 copy。确认成功的旧目标操作不被改成平台 FAILED/CANCELED。
+- 边界：A→B→A、同对象 path/UUID/仓库变化、同用户对象 id 变化、换用户、
+  仓库移除/slug 变化、关闭重开、失败与晚 ACK 均无 active 仓库降级。
+  明确 node.repository_id 时，不相关的 active 仓库变化仍允许原目标。
+  原确认框、文案、完整 Timeline、annotations、render、下载/恢复入口及
+  样式均未重设计。错误沿既有 UI.displayMessage/MessageHash[391]；未加
+  英文词条、平台 Task 状态、自动重试或任何公共 schema/数据库字段。
+  原后端身份/native ACL 与平台 S3 禁写保持，不以客户端校验证明后端授权。
+
+### 原受限目标、真实生产破坏与还原
+
+只复用 `kailo-wren-query-sdk-itgs2n` 的原独立候选，UID1000、4 CPU/4 GiB、
+无额外 swap；preflight SDK 仅 sleep，宿主可用内存约 24 GiB，memory PSI
+some/full 为 0，CPU some 约 3.61、I/O some/full 2.51/2.21。未开启 Go、
+Cargo、镜像、新 SDK、依赖安装或 full；仅同步三个实际源码/原检查文件。
+
+```text
+cd /work/knowledge-observation-guard.8QFEVq/file-storage/adapter
+TMPDIR=/work/knowledge-observation-guard.8QFEVq node --test --test-reporter=spec \
+  --test-name-pattern='original native (revision|version transport|history|workspace|restore errors|download|signing)' \
+  test/query-revision.test.mjs
+```
+
+正向实际 exit 0，109/109。原 VM 执行完整 PydioApi 与 Revisions 的真实
+loading/lifecycle/action 方法；React/DOM、provider transport、JWT 与 AWS
+为受控 fixture。Revisions 的未修改 JSX render 未在该 VM 执行，不把这些
+方法证据称作 React bundler、浏览器视觉或真实 S3/权限 E2E。
+
+仅私有两生产输入将 `Revisions.isCurrentScope` 与
+`PydioApi.isVersionTargetCurrent` 的真实拒绝守卫破坏；原目标改用
+`--test-name-pattern='original native (revision|version transport)'`，实际
+exit 1：46 项中 45 失败、1 通过，命中旧列表覆盖、旧恢复 ACK 关闭新面板、
+卸载后更新、晚 JWT/signer/copy 的无效目标继续交付；不是修改断言或制造
+编译失败。逆补丁还原与正向快照 cmp exit 0，三源正式/SDK cmp exit 0，
+同正向目标恢复实际 exit 0，109/109。owned diff --check exit 0；最终
+SDK 仅 sleep，memory.events 全 0，memory.current=230633472（共享 SDK
+快照，不冒充本批峰值）。无本批在途命令。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/cells-native-revision-scope-20261009.NWdf8p`。
+
+```text
+85cad314ee1c7534c23065f2cb58a4e1f0923bebc0dd9acec3d7c607411c3825 node-positive.log
+2b0a32ea52cb8ea5c7817b8c6a599d81fe2e6b732644a371b2e7b5c9daf7da48 node-production-negative.log
+49125442091a5e9d8a1f25df1dcf86fab7a3016ed0f92fc222b847f1dbc204f0 node-restored.log
+```
+
+本批尚未构建/部署、浏览器截图或设备验收，没有完整 FILE_STORAGE 七项
+批准或 ACTIVE binding。原 native 独立下载/恢复不冒充平台已治理 write；
+首次上传准入/writer 终结、Task 安全退休、HUMAN 正文交付与完整
+write/delete/share 的既有发布门禁未被本批解除。

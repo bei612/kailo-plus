@@ -2118,11 +2118,14 @@ async function nativeDownloadFixture(failure, mobile = false) {
   const repositories = new Map([[ids[9], { getSlug: () => 'documents' }],
     [ids[10], { getSlug: () => 'other-documents' }]]);
   class NativeNode {
-    constructor(path, leaf = true) { this.path = path; this.leaf = leaf; this.metadata = new Map([['uuid', ids[3]], ['etag', 'native-etag']]); }
+    constructor(path, leaf = true) { this.path = path; this.leaf = leaf; this.metadata = new Map([['uuid', ids[3]], ['etag', 'native-etag']]); this.listeners = new Map(); }
     getPath() { return this.path; }
     getLabel() { return this.path.slice(this.path.lastIndexOf('/') + 1); }
     getMetadata() { return this.metadata; }
     isLeaf() { return this.leaf; }
+    observe(event, callback) { this.listeners.set(callback, event); }
+    stopObserving(_event, callback) { this.listeners.delete(callback); }
+    notify(event) { for (const [callback, observed] of this.listeners) if (event === observed) callback(); }
   }
   state.contextNode = new NativeNode('/folder', false);
   const messages = JSON.parse(await readFile(new URL('../../frontend/assets/core.pydio/i18n/zh-cn.all.json', import.meta.url), 'utf8'));
@@ -2132,7 +2135,7 @@ async function nativeDownloadFixture(failure, mobile = false) {
     getPluginConfigs: () => new Map([['DOWNLOAD_ARCHIVE_FORMAT', 'zip']]),
     MessageHash: { 391: messages[391].other },
     getContextHolder: () => ({ getContextNode: () => state.contextNode }),
-    user: { getActiveRepository: () => state.activeRepository, getRepositoriesList: () => repositories,
+    user: { id:'original-native-user', getActiveRepository: () => state.activeRepository, getRepositoriesList: () => repositories,
       getActiveRepositoryObject: () => repositories.get(state.activeRepository) },
     UI: { hasHiddenDownloadForm: () => true,
       sendDownloadToHiddenForm: (_selection, value) => state.downloads.push(value.presignedUrl),
@@ -2153,14 +2156,17 @@ async function nativeDownloadFixture(failure, mobile = false) {
     } },
     awsLoader: async () => {
       if (failure === 'loader') throw new Error('native signing module unavailable');
+      if (state.loaderPending) await state.loaderPending;
       return { S3: class {
         getSignedUrl(operation, params) {
           if (failure === 'signer') throw new Error('native signing rejected');
+          state.beforeSign?.();
           state.signed.push(JSON.parse(JSON.stringify({ operation, params })));
           return `https://cells.example.invalid/${params.Bucket}/${params.Key}?versionId=${params.VersionId || ''}`;
         }
         copyObject(params, callback) {
           state.copies.push(JSON.parse(JSON.stringify(params)));
+          if (state.holdCopy) { state.copyCallback = callback; return; }
           callback(failure === 'copy' ? new Error('native restore result unconfirmed') : null);
         }
         getObject(params, callback) {
@@ -2177,6 +2183,7 @@ async function nativeDownloadFixture(failure, mobile = false) {
   const Api = runInNewContext(source.replace(/^import .+$/gm, '').replace(/^export .+$/gm, 'PydioApi;'), sandbox);
   Api._PydioRestClient = { async getOrUpdateJwt() {
     if (failure === 'token') throw new Error('native session revoked');
+    if (state.tokenPending) await state.tokenPending;
     return 'native-current-user';
   } };
   const api = new Api();
@@ -2185,6 +2192,51 @@ async function nativeDownloadFixture(failure, mobile = false) {
   const selection = (unique = true, selected = node) => ({ isUnique: () => unique,
     getUniqueNode: () => selected, getSelectedNodes: () => [node, new NativeNode('/folder/other.txt')] });
   return { api, node, selection, state, sandbox, NativeNode, pydio, repositories };
+}
+
+async function nativeRevisionsFixture() {
+  const fixture = await nativeDownloadFixture();
+  const {api, node, state, pydio, NativeNode} = fixture;
+  const pending = [];
+  let debounceCallback;
+  const source = await readFile(new URL('../../frontend/assets/meta.versions/res/js/Revisions.js', import.meta.url), 'utf8');
+  // Run the original class's loading/lifecycle/action methods. Its untouched
+  // JSX annotations/render are not a browser or React renderer assertion.
+  const Revisions = runInNewContext(source.slice(source.indexOf('class Revisions extends Component'), source.indexOf('    itemAnnotations(')) + '\n}\nRevisions;', {
+    Component:class {
+      constructor(props) { this.props = props; this.updates = []; }
+      setState(value) { this.updates.push(value); this.state = {...this.state, ...value}; }
+    },
+    Pydio:{getInstance:() => pydio, getMessages:() => ({'meta.versions.13':'original confirmation'})},
+    PydioApi:{getClient:() => api}, Node:NativeNode,
+    MetaNodeProvider:class {
+      constructor(properties) { this.properties = properties; }
+      loadNode(root, callback, _child, _recursive, _depth, options) { pending.push({properties:this.properties, root, callback, options}); }
+    },
+    debounce:callback => {
+      const deferred = () => { debounceCallback = callback; };
+      deferred.cancel = () => { debounceCallback = undefined; };
+      return deferred;
+    },
+    confirm:() => true,
+  });
+  let closed = 0;
+  const panel = new Revisions({node, onRequestClose:() => { closed++; }});
+  panel.componentDidMount();
+  const select = selected => {
+    const previous = panel.props;
+    panel.props = {...previous, node:selected};
+    panel.componentDidUpdate(previous);
+  };
+  const replyVersions = (index, revision) => {
+    const version = new NativeNode(revision);
+    version.getMetadata().set('versionId', revision);
+    pending[index].root.getChildren = () => new Map([[revision, version]]);
+    pending[index].callback(pending[index].root);
+    return version;
+  };
+  const flushDebounce = () => { const callback = debounceCallback; debounceCallback = undefined; callback?.(); };
+  return {...fixture, panel, pending, select, replyVersions, flushDebounce, closed:() => closed};
 }
 
 // The four original browser consumers run together. Only browser storage, the
@@ -2575,6 +2627,168 @@ test('original native restore errors never close the original version panel or r
       assert.equal(state.copies.length, failure === 'copy' ? 1 : 0);
       assert.equal(state.errors.length, 1);
       assert.equal(state.errors[0].kind, 'ERROR');
+    });
+  }
+});
+
+test('original native revision panel keeps its actual file and repository across late responses', async () => {
+  const {panel, node, pending, select, replyVersions, NativeNode, state} = await nativeRevisionsFixture();
+  const other = new NativeNode('/other/file.txt');
+  other.getMetadata().set('repository_id', ids[10]);
+  other.getMetadata().set('uuid', ids[4]);
+  select(other);
+  select(node);
+  assert.deepEqual(pending.map(value => [value.properties.file, value.properties.tmp_repository_id]),
+    [['/folder/file.txt', ids[9]], ['/other/file.txt', ids[10]], ['/folder/file.txt', ids[9]]]);
+  const current = replyVersions(2, 'current-original-revision');
+  const staleOther = replyVersions(1, 'other-original-revision');
+  const staleOriginal = replyVersions(0, 'old-original-revision');
+  assert.deepEqual(Array.from(panel.state.revs), [current]);
+  panel.applyAction('dl', staleOther);
+  panel.applyAction('revert', staleOriginal);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(state.signed, []);
+  assert.deepEqual(state.copies, []);
+  panel.applyAction('dl', current);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.downloads.length, 1);
+  assert.equal(state.signed[0].params.Key, 'documents/folder/file.txt');
+  assert.equal(state.signed[0].params.VersionId, 'current-original-revision');
+  panel.componentWillUnmount();
+  assert.equal(node.listeners.size, 0);
+  assert.equal(other.listeners.size, 0);
+});
+
+test('original native revision replacement invalidates cached actions before its original debounce', async t => {
+  for (const change of ['move', 'repository', 'uuid']) await t.test(change, async () => {
+    const {panel, node, pending, replyVersions, flushDebounce, state} = await nativeRevisionsFixture();
+    const old = replyVersions(0, 'old-original-revision');
+    if (change === 'move') node.path = '/moved/file.txt';
+    if (change === 'repository') node.getMetadata().set('repository_id', ids[10]);
+    if (change === 'uuid') node.getMetadata().set('uuid', ids[4]);
+    node.notify('node_replaced');
+    assert.equal(panel.state.loading, true);
+    assert.equal(panel.state.revs.length, 0);
+    panel.applyAction('dl', old);
+    panel.applyAction('revert', old);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(state.signed, []);
+    assert.deepEqual(state.copies, []);
+    flushDebounce();
+    assert.equal(pending.length, 2);
+    assert.equal(pending[1].properties.file, node.getPath());
+    assert.equal(pending[1].properties.tmp_repository_id, change === 'repository' ? ids[10] : ids[9]);
+    const current = replyVersions(1, 'current-original-revision');
+    replyVersions(0, 'late-old-revision');
+    assert.deepEqual(Array.from(panel.state.revs), [current]);
+    panel.componentWillUnmount();
+  });
+});
+
+test('original native revision scope and lifecycle reject stale response, error and restore ACK', async t => {
+  for (const change of ['active repository', 'user', 'user id', 'slug', 'removed repository']) await t.test(change, async () => {
+    const {panel, pending, replyVersions, state, pydio, repositories} = await nativeRevisionsFixture();
+    if (change === 'active repository') state.activeRepository = ids[10];
+    if (change === 'user') pydio.user = {...pydio.user};
+    if (change === 'user id') pydio.user.id = 'different-native-user';
+    if (change === 'slug') repositories.set(ids[9], {getSlug:() => 'changed-documents'});
+    if (change === 'removed repository') repositories.delete(ids[9]);
+    replyVersions(0, 'unrelated-late-revision');
+    pending[0].options.errorHandler(new Error('late original lookup failed'));
+    assert.equal(panel.state.revs.length, 0);
+    assert.equal(panel.state.loading, true);
+    assert.deepEqual(state.errors, []);
+    panel.componentWillUnmount();
+  });
+  await t.test('only the current original lookup error changes its loading state', async () => {
+    const {panel, node, pending, state, select, NativeNode} = await nativeRevisionsFixture();
+    select(new NativeNode('/other-file.txt'));
+    pending[0].options.errorHandler(new Error('old lookup error'));
+    assert.equal(panel.state.loading, true);
+    assert.deepEqual(state.errors, []);
+    pending[1].options.errorHandler(new Error('current lookup error'));
+    assert.equal(panel.state.loading, false);
+    assert.equal(panel.state.empty, false);
+    assert.equal(panel.state.revs.length, 0);
+    assert.deepEqual(state.errors, [{kind:'ERROR', message:'current lookup error'}]);
+    assert.equal(node.listeners.size, 0);
+    panel.componentWillUnmount();
+  });
+  await t.test('unmount cancels the original observer and debounce and ignores its late response', async () => {
+    const {panel, node, pending, replyVersions, flushDebounce, state} = await nativeRevisionsFixture();
+    node.notify('node_replaced');
+    panel.componentWillUnmount();
+    const updates = panel.updates.length;
+    flushDebounce();
+    replyVersions(0, 'late-revision');
+    pending[0].options.errorHandler(new Error('late lookup error'));
+    assert.equal(panel.updates.length, updates);
+    assert.equal(pending.length, 1);
+    assert.equal(node.listeners.size, 0);
+    assert.deepEqual(state.errors, []);
+  });
+  await t.test('an already dispatched restore cannot close a later file panel', async () => {
+    const {panel, replyVersions, select, state, NativeNode, closed} = await nativeRevisionsFixture();
+    const revision = replyVersions(0, 'original-revision');
+    state.holdCopy = true;
+    panel.applyAction('revert', revision);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(state.copies.length, 1);
+    select(new NativeNode('/later-file.txt'));
+    state.copyCallback(null);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(closed(), 0);
+    assert.equal(state.copies.length, 1);
+    panel.componentWillUnmount();
+  });
+  await t.test('explicit node repository remains usable after an unrelated active workspace change', async () => {
+    const fixture = await nativeRevisionsFixture();
+    fixture.node.getMetadata().set('repository_id', ids[9]);
+    fixture.panel.load();
+    fixture.state.activeRepository = ids[10];
+    const revision = fixture.replyVersions(1, 'original-revision');
+    fixture.panel.applyAction('dl', revision);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(fixture.state.downloads.length, 1);
+    assert.equal(fixture.state.signed[0].params.Key, 'documents/folder/file.txt');
+    fixture.panel.componentWillUnmount();
+  });
+});
+
+test('original native version transport never retargets a pending download or restore', async t => {
+  for (const mode of ['download token', 'download signer', 'restore token', 'restore loader', 'restore ACK']) {
+    for (const change of ['move', 'uuid', 'repository', 'user', 'user id', 'slug']) await t.test(`${mode}/${change}`, async () => {
+      const {api, node, state, pydio, repositories} = await nativeDownloadFixture();
+      const mutate = () => {
+        if (change === 'move') node.path = '/moved/file.txt';
+        if (change === 'uuid') node.getMetadata().set('uuid', ids[4]);
+        if (change === 'repository') node.getMetadata().set('repository_id', ids[10]);
+        if (change === 'user') pydio.user = {...pydio.user};
+        if (change === 'user id') pydio.user.id = 'different-native-user';
+        if (change === 'slug') repositories.set(ids[9], {getSlug:() => 'changed-documents'});
+      };
+      let release;
+      if (mode.endsWith('token')) state.tokenPending = new Promise(resolve => {release = resolve;});
+      if (mode === 'restore loader') state.loaderPending = new Promise(resolve => {release = resolve;});
+      if (mode === 'restore ACK') state.holdCopy = true;
+      if (mode === 'download signer') state.beforeSign = mutate;
+      let completed = 0;
+      const request = mode.startsWith('download') ? api.openVersion(node, 'frozen-original-revision')
+        : api.revertToVersion(node, 'frozen-original-revision', () => {completed++;});
+      await new Promise(resolve => setImmediate(resolve));
+      if (mode !== 'download signer') mutate();
+      if (release) release();
+      if (mode === 'restore ACK') state.copyCallback(null);
+      await request;
+      assert.deepEqual(state.downloads, []);
+      assert.equal(completed, 0);
+      assert.equal(state.copies.length, mode === 'restore ACK' ? 1 : 0);
+      if (state.copies.length) {
+        assert.equal(state.copies[0].Key, 'documents/folder/file.txt');
+        assert.equal(decodeURIComponent(state.copies[0].CopySource), 'io/documents/folder/file.txt?versionId=frozen-original-revision');
+      }
+      for (const signed of state.signed) assert.equal(signed.params.Key, 'documents/folder/file.txt');
+      assert.equal(state.errors.length, mode === 'restore ACK' ? 0 : 1);
     });
   }
 });
