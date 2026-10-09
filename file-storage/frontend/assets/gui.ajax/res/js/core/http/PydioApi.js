@@ -207,6 +207,7 @@ class PydioApi{
         const hiddenForm = pydio.UI && pydio.UI.hasHiddenDownloadForm();
         const archiveExt = pydio.getPluginConfigs("access.gateway").get("DOWNLOAD_ARCHIVE_FORMAT") || "zip";
 
+        let download;
         if (userSelection.isUnique()) {
             let downloadNode, attachmentName;
             const uniqueNode = userSelection.getUniqueNode();
@@ -218,13 +219,7 @@ class PydioApi{
                 attachmentName = uniqueNode.getLabel() + '.' + archiveExt;
             }
 
-            this.buildPresignedGetUrl(downloadNode, null, '', null, attachmentName).then(url => {
-                if(agentIsMobile || !hiddenForm){
-                    document.location.href = url;
-                } else {
-                    this.getPydioObject().UI.sendDownloadToHiddenForm(userSelection, {presignedUrl: url});
-                }
-            });
+            download = this.buildPresignedGetUrl(downloadNode, null, '', null, attachmentName);
         } else {
             const selection = new RestCreateSelectionRequest();
             selection.Nodes = [];
@@ -234,21 +229,22 @@ class PydioApi{
                 return tNode;
             });
             const api = new TreeServiceApi(PydioApi.getRestClient());
-            api.createSelection(selection).then(response => {
+            download = api.createSelection(selection).then(response => {
                 const {SelectionUUID} = response;
                 let fakeNodePath = this.getPydioObject().getContextHolder().getContextNode().getPath() + "/" + SelectionUUID + '-selection.' + archiveExt;
                 fakeNodePath = fakeNodePath.replace('//', '/')
                 const fakeNode = new AjxpNode(fakeNodePath, true);
-                this.buildPresignedGetUrl(fakeNode, null, '', null, 'selection.' + archiveExt).then(url => {
-                    if(agentIsMobile || !hiddenForm){
-                        document.location.href = url;
-                    } else {
-                        this.getPydioObject().UI.sendDownloadToHiddenForm(userSelection, {presignedUrl: url});
-                    }
-                });
-            })
+                return this.buildPresignedGetUrl(fakeNode, null, '', null, 'selection.' + archiveExt);
+            });
         }
 
+        return download.then(url => {
+            if(agentIsMobile || !hiddenForm){
+                document.location.href = url;
+            } else {
+                pydio.UI.sendDownloadToHiddenForm(userSelection, {presignedUrl: url});
+            }
+        }).catch(error => pydio.UI.displayMessage('ERROR', error.message || error));
     }
 
     /**
@@ -432,7 +428,7 @@ class PydioApi{
             params['ResponseContentDisposition'] = 'attachment; filename=' + encodeURIComponent(attachmentName);
         }
 
-        const resolver = (jwt, cb, aws) => {
+        const resolver = (jwt, aws) => {
 
             let seed = node.getMetadata().get('etag');
             if(!seed) {
@@ -450,40 +446,34 @@ class PydioApi{
             lscache.setBucket('cells.presigned');
             const cached = lscache.get(cacheKey);
             if(cached){
-                cb(cached);
-                return;
+                return cached;
             }
 
-            const s3 = new AWS.S3(this.s3Options(jwt));
+            const s3 = new aws.S3(this.s3Options(jwt));
             const signed = s3.getSignedUrl('getObject', params);
-            cb(signed);
             lscache.set(cacheKey, signed, 10);
             if(Math.random() < 0.1) {
-                cb = debounce(()=>{
+                const flush = debounce(()=>{
                     lscache.flushExpired();
-                }, 250)
+                }, 250);
                 if(window && window.requestIdleCallback) {
-                    window.requestIdleCallback(cb)
+                    window.requestIdleCallback(flush);
                 }else{
-                    cb()
+                    flush();
                 }
             }
+            return signed;
         };
 
+        const download = PydioApi.getRestClient().getOrUpdateJwt().then(jwt =>
+            awsLoader().then(aws => resolver(jwt, aws))
+        );
         if (callback === null) {
-            return new Promise((resolve) => {
-                PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
-                    awsLoader().then((aws)=> {
-                        resolver(jwt, resolve, aws);
-                    })
-                });
-            });
+            return download;
         } else {
-            PydioApi.getRestClient().getOrUpdateJwt().then(jwt => {
-                awsLoader().then((aws)=> {
-                    resolver(jwt, callback, aws);
-                })
-            });
+            download.then(callback).catch(error =>
+                this.getPydioObject().UI.displayMessage('ERROR', error.message || error)
+            );
             return null;
         }
 

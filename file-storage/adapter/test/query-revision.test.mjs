@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { canonical, configuration, createAdapter, queryDigest } from '../src/query-revision.mjs';
 
 const ids = Array.from({ length: 12 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
@@ -1867,4 +1868,131 @@ test('Asset scope never becomes a general subtree and authorization root is cove
   assert.equal((await invoke({ raw: mismatched })).status, 401);
   const exact = await setup(t, { arguments: { authorizationTargetNativeRef: ids[3], ...args } });
   assert.equal((await exact.invoke({ token: exact.token({ target_type: 'ASSET' }) })).status, 200);
+});
+
+// Execute the original browser API class, replacing module imports with its
+// browser/SDK fixture only. No download implementation is copied into checks.
+async function nativeDownloadFixture(failure, mobile = false) {
+  const source = await readFile(new URL('../../frontend/assets/gui.ajax/res/js/core/http/PydioApi.js', import.meta.url), 'utf8');
+  const state = { errors: [], downloads: [], signed: [], selections: [] };
+  const cache = new Map();
+  class NativeNode {
+    constructor(path, leaf = true) { this.path = path; this.leaf = leaf; this.metadata = new Map([['uuid', ids[3]], ['etag', 'native-etag']]); }
+    getPath() { return this.path; }
+    getLabel() { return this.path.slice(this.path.lastIndexOf('/') + 1); }
+    getMetadata() { return this.metadata; }
+    isLeaf() { return this.leaf; }
+  }
+  const pydio = {
+    Parameters: new Map([['ENDPOINT_S3_GATEWAY', '/io']]),
+    getFrontendUrl: () => new URL('https://cells.example.invalid'),
+    getPluginConfigs: () => new Map([['DOWNLOAD_ARCHIVE_FORMAT', 'zip']]),
+    getContextHolder: () => ({ getContextNode: () => new NativeNode('/folder', false) }),
+    user: { getActiveRepositoryObject: () => ({ getSlug: () => 'documents' }) },
+    UI: { hasHiddenDownloadForm: () => true,
+      sendDownloadToHiddenForm: (_selection, value) => state.downloads.push(value.presignedUrl),
+      displayMessage: (kind, message) => state.errors.push({ kind, message }) },
+  };
+  const sandbox = {
+    navigator: { userAgent: mobile ? 'iPhone' : 'Desktop' }, document: { location: { href: '' } }, window: {},
+    // Existing cache cleanup is unrelated to the signing/error consumers.
+    Math: Object.assign(Object.create(Math), { random: () => 1 }),
+    lscache: { setBucket() {}, get: key => cache.get(key), set: (key, value) => cache.set(key, value) },
+    debounce: callback => callback, AjxpNode: NativeNode,
+    RestCreateSelectionRequest: class {}, TreeNode: class {},
+    TreeServiceApi: class { async createSelection(request) {
+      state.selections.push(request);
+      if (failure === 'selection') throw new Error('native selection rejected');
+      return { SelectionUUID: ids[4] };
+    } },
+    awsLoader: async () => {
+      if (failure === 'loader') throw new Error('native signing module unavailable');
+      return { S3: class {
+        getSignedUrl(operation, params) {
+          if (failure === 'signer') throw new Error('native signing rejected');
+          state.signed.push(JSON.parse(JSON.stringify({ operation, params })));
+          return `https://cells.example.invalid/${params.Bucket}/${params.Key}?versionId=${params.VersionId || ''}`;
+        }
+      } };
+    },
+  };
+  const Api = runInNewContext(source.replace(/^import .+$/gm, '').replace(/^export .+$/gm, 'PydioApi;'), sandbox);
+  Api._PydioRestClient = { async getOrUpdateJwt() {
+    if (failure === 'token') throw new Error('native session revoked');
+    return 'native-current-user';
+  } };
+  const api = new Api();
+  api.setPydioObject(pydio);
+  const node = new NativeNode('/folder/file.txt');
+  const selection = (unique = true, selected = node) => ({ isUnique: () => unique,
+    getUniqueNode: () => selected, getSelectedNodes: () => [node, new NativeNode('/folder/other.txt')] });
+  return { api, node, selection, state, sandbox, NativeNode };
+}
+
+test('original native download, archive, preview and version consumers use the loaded signer', async t => {
+  for (const mode of ['file', 'folder', 'selection', 'mobile', 'preview', 'version', 'cache']) {
+    await t.test(mode, async () => {
+      const { api, node, selection, state, sandbox, NativeNode } = await nativeDownloadFixture(undefined, mode === 'mobile');
+      if (mode === 'preview' || mode === 'cache') {
+        const url = await api.buildPresignedGetUrl(node, null, 'image/png');
+        assert.equal(url, 'https://cells.example.invalid/io/documents/folder/file.txt?versionId=');
+        assert.equal(state.signed[0].params.ResponseContentDisposition, 'inline');
+        assert.equal(state.signed[0].params.ResponseContentType, 'image/png');
+        if (mode === 'cache') assert.equal(await api.buildPresignedGetUrl(node, null, 'image/png'), url);
+      } else if (mode === 'version') {
+        api.openVersion(node, 'original-opaque-revision');
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(state.signed[0].params.VersionId, 'original-opaque-revision');
+        assert.equal(state.downloads.length, 1);
+      } else {
+        await api.downloadSelection(selection(mode !== 'selection', mode === 'folder' ? new NativeNode('/folder', false) : node));
+        const url = mode === 'mobile' ? sandbox.document.location.href : state.downloads[0];
+        assert.match(url, /^https:\/\/cells\.example\.invalid\/io\/documents\//);
+        if (mode === 'selection') {
+          assert.equal(state.selections.length, 1);
+          assert.deepEqual(Array.from(state.selections[0].Nodes, value => value.Path), ['documents/folder/file.txt', 'documents/folder/other.txt']);
+          assert.match(state.signed[0].params.Key, /-selection\.zip$/);
+        } else if (mode === 'folder') assert.equal(state.signed[0].params.Key, 'documents/folder.zip');
+      }
+      assert.equal(state.signed.length, 1);
+      assert.deepEqual(state.errors, []);
+    });
+  }
+});
+
+test('original native signing failures reject or reach the existing UI without hanging a download', async t => {
+  for (const failure of ['token', 'loader', 'signer']) {
+    for (const mode of ['promise', 'callback', 'download', 'version']) {
+      await t.test(`${failure}/${mode}`, async () => {
+        const { api, node, selection, state, sandbox } = await nativeDownloadFixture(failure);
+        let callbacks = 0;
+        if (mode === 'promise') {
+          const pending = api.buildPresignedGetUrl(node);
+          let outcome;
+          pending.then(() => { outcome = 'fulfilled'; }, () => { outcome = 'rejected'; });
+          await new Promise(resolve => setImmediate(resolve));
+          assert.equal(outcome, 'rejected', 'completed signing dependencies must reject, not leave the caller pending');
+          await assert.rejects(pending, /native /);
+        }
+        else if (mode === 'download') await api.downloadSelection(selection());
+        else {
+          if (mode === 'callback') assert.equal(api.buildPresignedGetUrl(node, () => { callbacks++; }), null);
+          else api.openVersion(node, 'original-opaque-revision');
+          await new Promise(resolve => setImmediate(resolve));
+        }
+        assert.equal(state.errors.length, mode === 'promise' ? 0 : 1);
+        assert.equal(callbacks, 0, 'rejected signing cannot disclose a URL');
+        if (state.errors.length) assert.equal(state.errors[0].kind, 'ERROR');
+        assert.deepEqual(state.downloads, []);
+        assert.equal(sandbox.document.location.href, '');
+      });
+    }
+  }
+  await t.test('selection RPC rejection', async () => {
+    const { api, selection, state } = await nativeDownloadFixture('selection');
+    await api.downloadSelection(selection(false));
+    assert.deepEqual(state.errors, [{ kind: 'ERROR', message: 'native selection rejected' }]);
+    assert.deepEqual(state.signed, []);
+    assert.deepEqual(state.downloads, []);
+  });
 });

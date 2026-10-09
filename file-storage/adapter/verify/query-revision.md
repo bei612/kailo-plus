@@ -2497,3 +2497,77 @@ Mongo 仅编译，真实 unique/cleanup index 迁移与数据库 CAS 并发明�
 Cells→WeKnora/live binding/full 均未在本批验收或部署。Task 失联/旧代对账、
 delete/share、publish 独立因果、完整七必选 catalog/批准 binding 原门禁仍在；
 没有强改业务库 ACTIVE，也不声明 100% 原版恢复。
+
+## 2026-10-09 原下载/预览/历史版本的 Promise 消费修复
+
+本批不继续扩上传 fence。固定官方
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`common/nodes/version/handler-version.go::Handler.PutObject/MultipartComplete/MultipartAbort`
+提供原对象写入与 multipart abort 调用，但没有按平台上传 key 查询远端
+writer 已不可再写的终结证据；abort 接受不能证明分区恢复后不会晚写。
+上一节原预留/CAS/清理仍不是完整上传，平台 S3 写入保持关闭。
+
+本次转到不依赖上述缺口的原生读取消费者，四步结论：
+
+1. 权威/差异：固定官方
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::PydioApi.buildPresignedGetUrl`
+   与修改前交付文件精确 diff=0，属于官方原有缺陷，不是共享迁移漏复制。
+   原 `awsLoader.js` 动态加载 SDK，固定官方
+   `frontend/assets/gui.ajax/res/dist/core/aws.min.js` 实际设置 window.AWS/self.AWS；
+   因而不能说浏览器必然缺全局 AWS。修复逐项为：直接消费已加载模块的 S3，
+   串回原 token/module/signing Promise 的拒绝，原下载与 callback 调用显示
+   原有 ERROR 消息。不改页面、文案、布局或交互入口，不声称字节原样一致。
+2. 影响：原 `downloadSelection` 的单文件、目录、多选归档都复用同一签名
+   Promise 与原隐藏表单/移动浏览器跳转；`openVersion` 继续相同 VersionId
+   与原 callback API；预览继续原 preset/key/cache。原函数原先的外层
+   Promise 只接 resolve，内部拒绝不返回给调用者，导致永久 pending。
+   现沿原返回链传递拒绝；callback 仍返回 null，错误沿现有 UI 消费，不能
+   将 undefined 当 URL 发给隐藏表单。没有第二下载器或新 endpoint。
+3. 副作用：native JWT/签名、当前 workspace slug、原 key/VersionId、
+   MIME/附件参数、缓存和原 ACL 均保持。没有向前端投递 SERVICE credential
+   或 ActionToken，不绕平台授权、不启上传；多选归档仍调用原 createSelection，
+   其拒绝不会继续签名/下载。Core、schema、版本持久化和用量权威未改。
+4. 异常：token 刷新拒绝、动态模块拒绝、实际 signer 抛错分别使 Promise
+   明确 reject 或使原 callback/download 显示错误，不生成成功 URL；普通
+   文件/目录/多选、移动跳转、预览 inline、历史 opaque VersionId 与 cache
+   命中保留。该 native 读取错误不产生平台业务终态或结算事件，沿 `06` §4
+   保留既有认证/前置条件失败边界，不把本批前端拒绝当写动作 FAILED。
+
+实施后在原 `adapter/test/query-revision.test.mjs` 追加真实消费者检查。VM 只
+替换原浏览器模块 imports 为已有 API/SDK fixture，执行完整原 PydioApi 类，
+没有复制下载实现；它是 browser API 调用逻辑证据，不是完整 bundler、真实
+AWS 签名 wire、原页面截图或 HTTP/对象存储验收。复用原受限
+`kailo-wren-query-sdk-itgs2n` 独立候选，4CPU/4GiB、UID1000、swap.max=0；
+执行前原 SDK 无在途 Node，宿主 MemAvailable 22GiB、内存 PSI=0，未新装
+依赖/镜像/SDK。与 Wren 单 suite/tsc 错开，只做本批两筛选：
+
+```sh
+sudo -n docker exec \
+  -w /work/knowledge-observation-guard.8QFEVq/file-storage/adapter \
+  kailo-wren-query-sdk-itgs2n node --test \
+  --test-name-pattern='original native download|original native signing failures' \
+  test/query-revision.test.mjs
+```
+
+原目标正向 exit0：2 顶层+20 子检查，计 22/22。只在私有原生产文件的真实
+签名 Promise 后追加 `.catch(() => undefined)`，原目标真实 exit1：13 失败、
+9 通过，捕获 token/module/signer 拒绝被吞及错误 URL/原 UI 未获拒绝；未改
+断言或用编译失败冒充命中。apply_patch 恢复原字节、两输入正式/SDK cmp=0
+后同目标 exit0，22/22。原 SDK node --check、正式 diff --check 均 exit0。
+SDK memory.events 全 0；生命周期 memory.peak=3837739008 字节，不是本批
+独立峰值。无在途命令，随后把原共享 SDK 窗口归还 Wren 队友。
+
+原日志仍在
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| cells-native-download-positive.log | `33a8dc0e88baf9c0a2ef5b09bfe003bd41f51718d812e9ae0691ac509e450bc9` |
+| cells-native-download-production-negative.log | `590f594e8f3f298bd2d86c11619b3f18e4dfd72fbf679166fb2a0ee0dfdc6e36` |
+| cells-native-download-restored.log | `d2cdc7d00af4c49fa667fab0e2abaeb45ad2b8a0fa89780060b89c340d962357` |
+
+本批未构建前端 artifact、未部署、未跑 full、未做浏览器/设备截图。原完整
+预览 Hook 的 React 渲染与失败展示、真实当前用户撤权后的 S3 请求以及完整
+FILE_STORAGE release/binding 仍未验；检查中的 mobile 分支只是原浏览器跳转
+逻辑，绝不冒充 Kailo Mobile 宿主或设备验收。上一节写入退休/清理、上传
+准入、Task/usage、delete/share 及七必选 catalog 原门禁均未解除。
