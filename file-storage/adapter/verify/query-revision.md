@@ -2361,3 +2361,139 @@ sudo -n docker exec -e GOMODCACHE=/cache/mod -e GOCACHE=/cache/build \
 | cells-native-write-effective-production-negative.log | `052d383505831c63b41a9c0a6c2c790be5e88192b928c24b361470b0bb5fea06` |
 | cells-native-write-effective-production-mutation.diff | `0973a7fc266843a6f35a37c29254c03d5ccb97bc8a79c6aefa6c855ade932241` |
 | cells-native-write-final-restored.log | `19ec3797326a4bbebfc1e216c1a885760e44c53158b6faf4cd81c41d6d33d23c` |
+
+## 2026-10-09 原生首次 draft 预留、字节 ACK 与清理 fence
+
+本批是原 Cells Version 生产者、读取者和清理消费者的二开，不是完整上传入口
+验收。原 uploader 页面与独立原生 ACL 未改；平台配置存在时，原 S3 hook 的
+PUT/POST/DELETE 继续明确拒绝，不能借未登记节点或不完整配置退回独立执行。
+read/list/list_revisions/export 和既有 Promote 执行链不因此被声明为完整七项
+FILE_STORAGE。修正历史提交说明：`2f26494c5` 的提交正文出现的
+`SS-CELLS-GOVERNANCE` 并非已登记接缝，不能作为设计权威；本节依据仍为
+`.design/07` 原组件 Action/授权与错误合同、DD-90/DD-93 及下述固定源码。
+
+### 四步影响与真实调用链
+
+1. 权威与基准：固定官方 commit
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`，本轮只读 Git 重核对应符号：
+   `common/nodes/version/handler-version.go::Handler.routeUploadToContentRevision`、
+   `data/versions/grpc/handler.go::Handler.CreateVersion/StoreVersion`、
+   `data/versions/dao/bolt/bolt.go::BoltStore.StoreVersion/DeleteVersionsForNode`、
+   `data/versions/dao/mongo/mongo.go::MongoStore.StoreVersion/DeleteVersionsForNode`、
+   `data/versions/action-prune.go::PruneVersionsAction.Run`。原样保留独立 UI、
+   native router/ACL 与普通版本路径；本批属于已授权治理接入所需的原生版本
+   持久化改造，不是重新设计页面或另建同步、任务、账本和权限权威。
+2. 影响：原 PutObject/MultipartComplete 在原 CreateVersion 前冻结 owner、
+   revision、Location、预期大小和时间；绑定模式用原 Version 同一行先做
+   create-only 预留，成功才给原 writer Location。真实字节 ACK 通过原
+   StoreVersion，只有 ETag/ContentHash/实际 Size 可更新，其他冻结字段必须
+   精确一致。Bolt 原事务和 Mongo 原唯一 node/version key 分别承接 CAS。
+   GetVersion 拒绝不明行，GetLastVersion/GetVersions 隐藏 pending/cleanup；
+   普通 StoreVersion 不可旁路 completion。原单个/批量删除保留该行和原
+   Location 为 cleanup fence，不释放同 key。Core 不存正文，字节仍在原
+   Cells 对象存储，native 行只有原版本引用及生命周期元数据。
+3. 副作用：相同 key 的重复 reservation（包括完全相同输入）也不再次发放
+   Location；预留 ACK 不明不写 bytes，字节 ACK 不明不发布版本、不二次
+   PUT。PruneDraftUploads 沿原 DeleteNode，先在原行 fence 再删除对象，
+   false ACK/error/cancel 不当清理完成。清理失败保留可发现 Location；晚到
+   PUT 后后续同一消费者仍能找到该 Location。清理顺序取首次 deadline、
+   后续原行最后 sweep 时间，避免持续新过期行饿死旧 fence；该时间绝不证明
+   writer 已终结。没有第二份正文、操作收据或平台执行状态。
+4. 边界与配置：原 config store 的 `NativeActorDelivery.draftUploads` 必须
+   显式投递 timeout/sweepInterval/sweepBatchSize，没有默认值；清理请求上界
+   复用同份已投递 requestTimeout，不借 multipart expiry 或新硬编码期限。
+   原服务启动冻结配置并沿 AfterServe 启动消费者；缺项/无正期限拒绝配置或
+   暂存。每轮开始先撤 cleanerReady，使用有界 ctx；阻塞/超时/取消时不得
+   沿用上一轮 ready 放行新暂存，Bolt 长扫描逐行响应 ctx。零字节真实
+   Size=0；未知生命周期记录、异 owner/Location、超期 ACK、重复/并发 key
+   均不产生成功版本。取消/配置变更/远端不明仍不能证明旧 writer 未写。
+
+版本模型未改公共 protobuf。原 ContentRevision 与 legacy ChangeLog 读取仍由
+原 DAO 检查覆盖；新私有上传 wrapper/字段不能交给旧 binary 混合读写。该模式
+不得在混合版本运行时开启；部署需同批原生 writer/reader/cleanup 二进制，
+本批未实际发布该兼容窗口。原 Migrate 遇 pending/cleanup 直接拒绝，不能用
+普通版本迁移静默丢 fence；新鲜库发布要求不等于旧 reader 可读新行。
+
+按 `06` §4，平台 S3/owner/权限拒绝沿 DENIED；缺投递或未就绪沿
+PRECONDITION；重复 key、冻结字段不一致、超期 completion 沿 CONFLICT；
+对象/落库 ACK 不明沿 UNKNOWN；完整上传未闭合沿 BLOCKED。没有新增平台
+错误分类，也不把 fresh 资源授权称作审批或 quota 预留已经完成。
+
+### 实施后验证与生产破坏
+
+复用 `kailo-cells-native-check-lftow7`：Go 1.26.8、UID1000:1000、4CPU/
+8GiB、swap.max=0，原 `/cache/mod`、`/cache/build` 与已有候选。启动前只读
+核实原在途进程、cgroup、CPU/内存/I/O；最终批前 MemAvailable 22GiB，内存
+PSI=0，Data 可用 279GB。未建镜像/SDK/数据库或运行 full。
+
+最终命令（外层 RTK、pipefail 与 tee 保存原输出）：
+
+```sh
+sudo -n docker exec -e GOMODCACHE=/cache/mod -e GOCACHE=/cache/build \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  go test -mod=readonly -tags kv ./common/nodes/version ./data/versions \
+  ./data/versions/dao ./data/versions/grpc ./data/versions/grpc/service \
+  ./gateway/restv2 ./gateway/data/hooks \
+  -run 'Test(DraftUploadRequiresNativePersistence|NativeDraftUpload|KailoNative|NativeBoundDataGatewayDoesNotBypassPromote|DAO_|VersionActionRequiresExactNativePersistence)' \
+  -count=1 -v
+```
+
+- 初次 25458 exit0：7 顶层/91 子检查；中间 55326 exit0：12/118。
+  这些是较早字节，不能代替最终输入验收。
+- 私有生产变异 46006 exit1：绕过 Bolt 重复预留拒绝和清理前 fence，实际
+  4 顶层/13 子检查失败；原 RPC writer 真执行两次，非只改 fixture 断言。
+  同轮删除保护因上游断言先停止未独立命中，故没有冒算其覆盖。
+- 独立删除保护变异 72612 exit1：关闭原 Bolt native-row 保留分支，实际
+  1 顶层/1 子检查失败，原 Location/key 已不可检出，被原检查捕获。
+  这两个负向的原 storage fixture 用外层 t.Fatal，附有 Goexit 提示；这是
+  fixture 的退出行为，不是生产 panic，更不是把编译失败当负向通过。
+- 初次恢复 60116 exit0：14 顶层/121 子检查。随后完善阻塞 fixture 的真实
+  native policy 条件；私有生产变异 22684 移除每轮 ready 撤销和有界 ctx，
+  原 TestKailoNativeDraftUploadBlockedSweep exit1，1 顶层失败，实际报告
+  旧 ready 留存、阻塞期 CreateVersion 给出新 Location、超出投递请求上界
+  三处错误；不仅检查私有状态枚举。
+- apply_patch 原字节还原后 86058 的六个业务包 14 顶层/121 子检查通过，
+  新增真实 S3 hook 编译因 GOPROXY=off 缺缓存的锁定 MinIO 而整体 exit1，
+  原失败保存，未冒称七包通过。
+- 沿原正常代理获取 go.sum 固定的
+  `github.com/pydio/minio@v0.0.0-20251127102432-d3b575770589`（76302 exit0）
+  及同锁传递依赖后，最终 78561 同七包 exit0：14 顶层/121 子检查通过。
+  这轮并非纯离线。go.mod/go.sum 无改动，正式/候选二者 cmp=0。
+- 最终 14 个自有源码/检查/启动输入正式与 SDK cmp=0；gofmt-l 空输出、
+  bash-n、diff --check exit0。SDK memory.events 全 0，既有容器生命周期
+  memory.peak=2632499200 字节，不冒充本批独立峰值。所有句柄已终态，
+  没有重复启动在途目标。service 与 gateway/data/hooks 无 test files，
+  只证明编译；原 REST 48 子项消费实际 S3 gate helper，不是签名 S3 wire。
+
+日志均在
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| cells-draft-reservation-positive.log | `63825e1e8fa044afbc82ef8a04cb39ac8aafa18c6f3c67b842d17c428ec4bccd` |
+| cells-draft-reservation-final-positive.log | `7bf16509ab3bf1bcd91b0347db910070f6eb9355aa9ac9ce23939007c22b2737` |
+| cells-draft-reservation-production-negative.log | `1229c44748ccfd135c1dd86894ed8df6738e5b98a633dcdc5d835a295734c31f` |
+| cells-draft-reservation-retention-negative.log | `add439fe2963ccb3ad9c0db49eb0a93bff141dcd25ac5498b0d0498cb43999ca` |
+| cells-draft-reservation-final-restored.log | `2d13b4d56b4c27b665eb54b504ba052dfd7cca64ea72d4e4b9bc1f1e701a9454` |
+| cells-draft-reservation-readiness-negative.log | `484d3b6041c5dbfe11d4317ff3066f8dc064e97ef3046c34bc2d7cf70a2461da` |
+| cells-draft-reservation-cleaner-final-restored.log | `c65193fc947dff87277e3f967308a37cf367935f4025ab3abd83f819d3178359` |
+| cells-draft-reservation-locked-dependency.log | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| cells-draft-reservation-with-hooks-final-restored.log | `889e971d49a1e51418698cbd0e767ff15c8ea95a98bd18f3e80581de50ac7038` |
+
+### 未验收与发布门禁
+
+CLEANUP fence 保留、后续定期删除不等于 writer 已终结；远端 writer 退休、
+安全释放原 key/最终清理时限仍无确切证据，不能凭 deadline、一次 Delete ACK
+或本机取消删掉原行。当前引用可检出但尚不能确定终结，因此平台上传保持
+关闭，不能把本批写成完成首次上传、全上传或生产就绪。审批/quota 前 staging
+的完整边界、原 uploader→稳定 Action→202/同键观察消费者也没有本批 live
+证据；本批没有把有 Resource 的老节点路径冒充新文件完整注册/上传。
+
+Mongo 仅编译，真实 unique/cleanup index 迁移与数据库 CAS 并发明确 SKIP：
+没有受控 Mongo fixture，不造新数据库。原服务 AfterServe 启动、start.sh
+配置投递/重启、真实 S3 签名 wire、原对象存储多 RPC、浏览器/设备、跨服务
+Cells→WeKnora/live binding/full 均未在本批验收或部署。Task 失联/旧代对账、
+delete/share、publish 独立因果、完整七必选 catalog/批准 binding 原门禁仍在；
+没有强改业务库 ACTIVE，也不声明 100% 原版恢复。

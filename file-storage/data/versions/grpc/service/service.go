@@ -53,6 +53,7 @@ func init() {
 	jobs.RegisterDefault(grpc2.GetVersioningJob("en-us"), Name)
 	runtime.Register("main", func(ctx context.Context) {
 		config.RegisterExposedConfigs(Name, grpc2.ExposedConfigs)
+		var versionHandler *grpc2.Handler
 
 		service.NewService(
 			service.Name(Name),
@@ -76,8 +77,16 @@ func init() {
 			service.WithStorageMigrator(versions.Migrate),
 			service.WithStorageDrivers(versions.Drivers),
 			service.WithGRPC(func(ctx context.Context, server grpc.ServiceRegistrar) error {
-				tree.RegisterNodeVersionerServer(server, &grpc2.Handler{})
+				var err error
+				versionHandler, err = grpc2.NewHandler(ctx)
+				if err != nil {
+					return err
+				}
+				tree.RegisterNodeVersionerServer(server, versionHandler)
 				return nil
+			}),
+			service.AfterServe(func(ctx context.Context) error {
+				return versionHandler.StartDraftUploadCleaner(ctx)
 			}),
 		)
 	})

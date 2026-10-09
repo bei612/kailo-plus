@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth/claim"
@@ -40,6 +41,7 @@ type versionActionRouter struct {
 	copyErr    error
 	copyCount  int
 	pruneCount int
+	prune      func(context.Context, *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error)
 	copies     []*models.CopyRequestData
 }
 
@@ -54,9 +56,116 @@ func (r *versionActionRouter) CopyObject(_ context.Context, _ *tree.Node, _ *tre
 	r.copies = append(r.copies, data)
 	return models.ObjectInfo{Size: r.copySize}, r.copyErr
 }
-func (r *versionActionRouter) DeleteNode(context.Context, *tree.DeleteNodeRequest, ...grpc.CallOption) (*tree.DeleteNodeResponse, error) {
+func (r *versionActionRouter) DeleteNode(ctx context.Context, request *tree.DeleteNodeRequest, _ ...grpc.CallOption) (*tree.DeleteNodeResponse, error) {
 	r.pruneCount++
+	if r.prune != nil {
+		return r.prune(ctx, request)
+	}
 	return &tree.DeleteNodeResponse{Success: true}, nil
+}
+
+type nativeDraftPruneStore struct {
+	DAO
+	upload    *DraftUpload
+	fenceErr  error
+	completed *tree.ContentRevision
+}
+
+func (d *nativeDraftPruneStore) DraftUploads(context.Context, time.Time, int64) ([]*DraftUpload, error) {
+	if d.upload == nil {
+		return nil, nil
+	}
+	return []*DraftUpload{d.upload}, nil
+}
+func (d *nativeDraftPruneStore) FenceDraftUpload(context.Context, string, string, time.Time) (*DraftUpload, error) {
+	if d.fenceErr != nil {
+		return nil, d.fenceErr
+	}
+	d.upload.State = DraftUploadCleanup
+	return d.upload, nil
+}
+func (d *nativeDraftPruneStore) GetVersion(context.Context, string, string) (*tree.ContentRevision, error) {
+	return d.completed, d.fenceErr
+}
+
+func TestNativeDraftUploadPruneRetainsLateWriter(t *testing.T) {
+	previousRouter := router
+	defer func() { router = previousRouter }()
+	for _, scenario := range []string{"ack", "not-acknowledged", "remote-error"} {
+		t.Run(scenario, func(t *testing.T) {
+			location := &tree.Node{Uuid: "reserved-object", Path: "versions/reserved-object"}
+			dao := &nativeDraftPruneStore{upload: &DraftUpload{NodeUuid: "native-node", State: DraftUploadPending,
+				Revision: &tree.ContentRevision{VersionId: "native-draft", Location: location}}}
+			blobExists := true
+			r := &versionActionRouter{prune: func(_ context.Context, request *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				if !proto.Equal(request.Node, location) || dao.upload.State != DraftUploadCleanup {
+					t.Fatal("object deletion ran before fencing the original reserved location")
+				}
+				if scenario == "remote-error" {
+					return nil, errors.New("object deletion acknowledgement lost")
+				}
+				if scenario == "not-acknowledged" {
+					return &tree.DeleteNodeResponse{}, nil
+				}
+				blobExists = false
+				return &tree.DeleteNodeResponse{Success: true}, nil
+			}}
+			router = r
+			err := PruneDraftUploads(context.Background(), dao, time.Now(), 1)
+			if (err != nil) != (scenario != "ack") {
+				t.Fatalf("cleanup fabricated acknowledgement: %v", err)
+			}
+			if dao.upload == nil || dao.upload.State != DraftUploadCleanup || !proto.Equal(dao.upload.Revision.Location, location) {
+				t.Fatal("cleanup ACK retired the native writer fence/location")
+			}
+			// The expired original PUT finishes after the first remote delete.
+			// A second sweep must still discover and delete those actual bytes.
+			blobExists = true
+			r.prune = func(_ context.Context, request *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				if !proto.Equal(request.Node, location) {
+					t.Fatal("late writer location changed")
+				}
+				blobExists = false
+				return &tree.DeleteNodeResponse{Success: true}, nil
+			}
+			if err := PruneDraftUploads(context.Background(), dao, time.Now(), 1); err != nil {
+				t.Fatal(err)
+			}
+			if blobExists || r.pruneCount != 2 || dao.upload == nil {
+				t.Fatal("late native writer escaped the original cleanup consumer")
+			}
+		})
+	}
+}
+
+func TestNativeDraftUploadPruneCancellation(t *testing.T) {
+	previousRouter := router
+	defer func() { router = previousRouter }()
+	dao := &nativeDraftPruneStore{upload: &DraftUpload{NodeUuid: "native-node", State: DraftUploadPending,
+		Revision: &tree.ContentRevision{VersionId: "native-version", Location: &tree.Node{Path: "versions/native-object"}}}}
+	entered, finished := make(chan struct{}), make(chan error, 1)
+	router = &versionActionRouter{prune: func(ctx context.Context, _ *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+		close(entered)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { finished <- PruneDraftUploads(ctx, dao, time.Now(), 1) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("original native DeleteNode was not called")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.Canceled) || dao.upload == nil || dao.upload.State != DraftUploadCleanup {
+			t.Fatalf("unknown deletion lost cancellation or its discoverable fence: %v %v", dao.upload, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("native deletion ignored the original cleanup context")
+	}
 }
 
 type versionActionService struct {

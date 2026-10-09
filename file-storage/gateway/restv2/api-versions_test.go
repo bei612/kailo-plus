@@ -384,6 +384,38 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 	}
 }
 
+func TestNativeBoundDataGatewayDoesNotBypassPromote(t *testing.T) {
+	for _, bound := range []bool{false, true} {
+		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodPost, http.MethodDelete} {
+			for _, suffix := range []string{"", "?uploadId=existing-native-upload&partNumber=1", "?uploads", "?delete"} {
+				t.Run(fmt.Sprintf("bound=%t/%s/%s", bound, method, suffix), func(t *testing.T) {
+					ctx := config.WithStubStore(context.Background())
+					if bound {
+						// Presence, including incomplete delivery, is not permission
+						// to fall back to independent native write semantics.
+						if err := config.Set(ctx, map[string]interface{}{}, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+							t.Fatal(err)
+						}
+					}
+					request := httptest.NewRequest(method, "https://cells.example.invalid/io/workspace/file.txt"+suffix, nil).WithContext(ctx)
+					// Untrusted metadata, an old native JWT or a claimed operation
+					// header cannot make direct S3 bytes an admitted Action.
+					request.Header.Set(common.XAmzMetaPrefix+common.InputDraftMode, "true")
+					request.Header.Set(common.XAmzMetaPrefix+common.InputVersionId, "00000000-0000-4000-8000-000000000001")
+					request.Header.Set("X-Amz-Copy-Source", "/io/workspace/old.txt")
+					request.Header.Set("X-Kailo-Native-Execution", "not-authority-on-s3")
+					request.Header.Set("Authorization", "native-session-is-not-action-approval")
+					err := auth.AuthorizeNativeDataMutation(request)
+					mutation := method == http.MethodPut || method == http.MethodPost || method == http.MethodDelete
+					if (err != nil) != (bound && mutation) {
+						t.Fatalf("data gateway mode=%t method=%s: mutation bypass or independent/read regression: %v", bound, method, err)
+					}
+				})
+			}
+		}
+	}
+}
+
 func (m *mockPreSigner) PreSignV4(ctx context.Context, bucket, key string, params PresignParams) (*http.Request, time.Time, error) {
 	u, _ := url.Parse("https://test.example.com/" + bucket + "/" + key)
 	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)

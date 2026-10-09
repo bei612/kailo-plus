@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,9 +33,12 @@ import (
 	"github.com/pydio/cells/v5/broker/activity"
 	"github.com/pydio/cells/v5/broker/activity/render"
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/commons"
 	"github.com/pydio/cells/v5/common/client/commons/docstorec"
 	"github.com/pydio/cells/v5/common/client/commons/treec"
+	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
 	activity2 "github.com/pydio/cells/v5/common/proto/activity"
 	"github.com/pydio/cells/v5/common/proto/docstore"
@@ -49,6 +53,80 @@ import (
 
 type Handler struct {
 	tree.UnimplementedNodeVersionerServer
+	draftUploadTimeout  time.Duration
+	draftSweepInterval  time.Duration
+	draftSweepTimeout   time.Duration
+	draftSweepBatchSize int64
+	draftCleanerReady   atomic.Bool
+}
+
+func NewHandler(ctx context.Context) (*Handler, error) {
+	handler := new(Handler)
+	value := config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform")
+	if value.Get() == nil {
+		return handler, nil
+	}
+	var delivery auth.NativeActorDelivery
+	if err := value.Scan(&delivery); err != nil {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	if delivery.DraftUploads == nil {
+		return handler, nil // Existing read-only native binding stays read-only.
+	}
+	timeout, interval, err := delivery.DraftUploads.Durations()
+	if err != nil {
+		return nil, err
+	}
+	requestTimeout, err := time.ParseDuration(delivery.RequestTimeout)
+	if err != nil || requestTimeout <= 0 {
+		return nil, errors.WithMessage(errors.InvalidParameters, "native cleanup requires the delivered request timeout")
+	}
+	handler.draftUploadTimeout, handler.draftSweepInterval = timeout, interval
+	handler.draftSweepTimeout = requestTimeout
+	handler.draftSweepBatchSize = delivery.DraftUploads.SweepBatchSize
+	return handler, nil
+}
+
+// The original native Version service owns cleanup of its upload rows. The
+// configured interval is frozen at service start; enabling/changing it requires
+// the existing controlled restart, not a runtime bypass switch. Read traffic
+// remains available while uncertain cleanup refuses admission of new bytes.
+func (h *Handler) StartDraftUploadCleaner(ctx context.Context) error {
+	if h.draftUploadTimeout <= 0 {
+		return nil
+	}
+	dao, err := manager.Resolve[versions.DAO](ctx)
+	if err != nil {
+		return err
+	}
+	sweep := func() {
+		h.draftCleanerReady.Store(false)
+		sweepCtx, cancel := context.WithTimeout(ctx, h.draftSweepTimeout)
+		defer cancel()
+		err := versions.PruneDraftUploads(sweepCtx, dao, time.Now(), h.draftSweepBatchSize)
+		if err == nil {
+			err = sweepCtx.Err()
+		}
+		h.draftCleanerReady.Store(err == nil)
+		if err != nil {
+			log.Logger(ctx).Error("Native draft cleanup uncertain; new draft staging refused", zap.Error(err))
+		}
+	}
+	sweep()
+	go func() {
+		timer := time.NewTicker(h.draftSweepInterval)
+		defer timer.Stop()
+		defer h.draftCleanerReady.Store(false)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				sweep()
+			}
+		}
+	}()
+	return nil
 }
 
 func (h *Handler) buildVersionDescription(ctx context.Context, version *tree.ContentRevision) string {
@@ -193,7 +271,9 @@ func (h *Handler) DeleteVersion(ctx context.Context, request *tree.HeadVersionRe
 }
 
 func (h *Handler) CreateVersion(ctx context.Context, request *tree.CreateVersionRequest) (*tree.CreateVersionResponse, error) {
-
+	if request.GetNode().GetUuid() == "" {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
 	log.Logger(ctx).Debug("[VERSION] CreateVersion for node " + request.Node.Uuid)
 	dao, err := manager.Resolve[versions.DAO](ctx)
 	if err != nil {
@@ -232,12 +312,28 @@ func (h *Handler) CreateVersion(ctx context.Context, request *tree.CreateVersion
 	} else {
 		log.Logger(ctx).Debug("CreateVersion has location", c.Location.Zap("location"))
 	}
+	if request.Draft && config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() != nil {
+		claims, ok := claim.FromContext(ctx)
+		if !ok || claims.Subject == "" || claims.Subject != request.OwnerUuid ||
+			h.draftUploadTimeout <= 0 || !h.draftCleanerReady.Load() || versions.PolicyForNode(ctx, node) == nil {
+			return nil, errors.WithStack(errors.StatusForbidden)
+		}
+		deadline := time.Now().Add(h.draftUploadTimeout)
+		if deadline.UnixNano() <= time.Now().UnixNano() {
+			return nil, errors.WithStack(errors.InvalidParameters)
+		}
+		if err := dao.ReserveDraftUpload(ctx, node.Uuid, c, deadline); err != nil {
+			return nil, err // Lost reservation ACK never permits an object write.
+		}
+	}
 
 	return &tree.CreateVersionResponse{Version: c}, nil
 }
 
 func (h *Handler) StoreVersion(ctx context.Context, request *tree.StoreVersionRequest) (*tree.StoreVersionResponse, error) {
-
+	if request.GetNode().GetUuid() == "" || request.GetVersion() == nil {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
 	resp := &tree.StoreVersionResponse{}
 	p := versions.PolicyForNode(ctx, request.Node)
 	if p == nil {
@@ -251,16 +347,16 @@ func (h *Handler) StoreVersion(ctx context.Context, request *tree.StoreVersionRe
 		return nil, err
 	}
 
-	/*
-		if request.Version.Location == nil {
-			if request.Version.Location, err = versions.LocationForNode(ctx, request.GetNode(), request.Version.VersionId); err != nil {
-				return nil, errors.WithMessage(errors.InvalidParameters, "cannot find location for storing version")
-			}
+	if request.Version.Draft && config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() != nil {
+		claims, ok := claim.FromContext(ctx)
+		if !ok || claims.Subject == "" || claims.Subject != request.Version.OwnerUuid {
+			return nil, errors.WithStack(errors.StatusForbidden)
 		}
-
-	*/
-
-	if err := dao.StoreVersion(ctx, request.Node.Uuid, request.Version); err != nil {
+		err = dao.CompleteDraftUpload(ctx, request.Node.Uuid, request.Version, time.Now())
+	} else {
+		err = dao.StoreVersion(ctx, request.Node.Uuid, request.Version)
+	}
+	if err != nil {
 		return nil, err
 	}
 	resp.Success = true

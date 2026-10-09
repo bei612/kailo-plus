@@ -139,6 +139,10 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx = propagator.WithUserNameMetadata(ctx, common.PydioContextUserKey, userName)
+	if err := auth.AuthorizeNativeDataMutation(r.WithContext(ctx)); err != nil {
+		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
+		return
+	}
 	newRequest := r.WithContext(ctx)
 	a.handler.ServeHTTP(w, newRequest)
 

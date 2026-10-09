@@ -23,7 +23,10 @@ package bolt
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"slices"
+	"sort"
+	"time"
 
 	"go.etcd.io/bbolt"
 	"go.uber.org/multierr"
@@ -83,10 +86,17 @@ func (b *BoltStore) GetLastVersion(ctx context.Context, nodeUuid string) (log *t
 			return nil
 		}
 		c := nodeBucket.Cursor()
-		_, v := c.Last()
-		var er error
-		log, er = b.unmarshalRevision(v)
-		return er
+		for k, v := c.Last(); k != nil; k, v = c.Prev() {
+			revision, upload, er := b.unmarshalRecord(v)
+			if er != nil {
+				return er
+			}
+			if upload == nil || upload.State == versions.DraftUploadComplete {
+				log = revision
+				break
+			}
+		}
+		return nil
 	})
 
 	return log, err
@@ -124,9 +134,12 @@ func (b *BoltStore) GetVersions(ctx context.Context, nodeUuid string, offset int
 			c := nodeBucket.Cursor()
 
 			for k, v := c.Last(); k != nil; k, v = c.Prev() {
-				cr, e := b.unmarshalRevision(v)
+				cr, upload, e := b.unmarshalRecord(v)
 				if e != nil {
 					return e
+				}
+				if upload != nil && upload.State != versions.DraftUploadComplete {
+					continue
 				}
 				if (filterByType == "draft" && !cr.Draft) || filterByType == "published" && cr.Draft {
 					continue
@@ -170,12 +183,15 @@ func (b *BoltStore) StoreVersion(ctx context.Context, nodeUuid string, revision 
 		var existing *tree.ContentRevision
 		cursor := nodeBucket.Cursor()
 		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
-			stored, err := b.unmarshalRevision(value)
+			stored, upload, err := b.unmarshalRecord(value)
 			if err != nil {
 				return err
 			}
 			if stored.VersionId != revision.VersionId {
 				continue
+			}
+			if upload != nil && upload.State != versions.DraftUploadComplete {
+				return errors.WithMessage(errors.StatusConflict, "draft upload requires its native completion CAS")
 			}
 			if existing != nil || !proto.Equal(stored, revision) {
 				return errors.WithMessage(errors.StatusConflict, "native version reference already has different or ambiguous evidence")
@@ -219,9 +235,12 @@ func (b *BoltStore) GetVersion(ctx context.Context, nodeUuid string, versionId s
 
 		c := nodeBucket.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			if cr, er := b.unmarshalRevision(v); er != nil {
+			if cr, upload, er := b.unmarshalRecord(v); er != nil {
 				return er
 			} else if cr.VersionId == versionId {
+				if upload != nil && upload.State != versions.DraftUploadComplete {
+					return errors.WithMessage(errors.StatusConflict, "draft bytes have no completed native revision")
+				}
 				if version != nil {
 					return errors.WithMessage(errors.StatusConflict, "native version reference has multiple stored results")
 				}
@@ -230,14 +249,14 @@ func (b *BoltStore) GetVersion(ctx context.Context, nodeUuid string, versionId s
 		}
 		return nil
 	})
-	if version == nil {
+	if version == nil && err == nil {
 		err = errors.WithMessage(errors.VersionNotFound, "cannot find version "+versionId)
 	}
 	return version, err
 }
 
 // DeleteVersionsForNode deletes whole node bucket at once.
-func (b *BoltStore) DeleteVersionsForNode(ctx context.Context, nodeUuid string, versions ...string) error {
+func (b *BoltStore) DeleteVersionsForNode(ctx context.Context, nodeUuid string, revisionIDs ...string) error {
 
 	return b.Update(func(tx *bbolt.Tx) error {
 
@@ -248,20 +267,30 @@ func (b *BoltStore) DeleteVersionsForNode(ctx context.Context, nodeUuid string, 
 		nodeBucket := bucket.Bucket([]byte(nodeUuid))
 		var ee []error
 		if nodeBucket != nil {
-			if len(versions) > 0 { // delete some specific versions
-				c := nodeBucket.Cursor()
-				var keys [][]byte
-				for k, v := c.First(); k != nil; k, v = c.Next() {
-					if cr, er := b.unmarshalRevision(v); er == nil {
-						if slices.Contains(versions, cr.VersionId) {
-							keys = append(keys, k)
-						}
+			c := nodeBucket.Cursor()
+			for k, value := c.First(); k != nil; k, value = c.Next() {
+				revision, upload, err := b.unmarshalRecord(value)
+				if err != nil {
+					return err
+				}
+				if len(revisionIDs) > 0 && !slices.Contains(revisionIDs, revision.VersionId) {
+					continue
+				}
+				if upload != nil {
+					// A delete cannot retire the upload's create-only claim. Keep
+					// its actual location available to the original prune loop,
+					// including after an uncertain/late object-store writer.
+					upload.State = versions.DraftUploadCleanup
+					encoded, err := json.Marshal(upload)
+					if err != nil {
+						return err
 					}
+					ee = append(ee, nodeBucket.Put(k, encoded))
+				} else {
+					ee = append(ee, c.Delete())
 				}
-				for _, key := range keys {
-					ee = append(ee, nodeBucket.Delete(key))
-				}
-			} else { // delete whole bucket
+			}
+			if nodeBucket.Stats().KeyN == 0 {
 				return bucket.DeleteBucket([]byte(nodeUuid))
 			}
 		}
@@ -271,15 +300,179 @@ func (b *BoltStore) DeleteVersionsForNode(ctx context.Context, nodeUuid string, 
 
 // DeleteVersionsForNodes delete versions in a batch
 func (b *BoltStore) DeleteVersionsForNodes(ctx context.Context, nodeUuid []string) error {
-	er := b.Batch(func(tx *bbolt.Tx) error {
+	var failures []error
+	for _, id := range nodeUuid {
+		failures = append(failures, b.DeleteVersionsForNode(ctx, id))
+	}
+	return multierr.Combine(failures...)
+}
+
+func (b *BoltStore) ReserveDraftUpload(ctx context.Context, nodeUuid string, revision *tree.ContentRevision, deadline time.Time) error {
+	if err := versions.ValidateDraftUpload(nodeUuid, revision, deadline); err != nil {
+		return err
+	}
+	return b.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(bucketName)
-		var ee []error
-		for _, uuid := range nodeUuid {
-			ee = append(ee, bucket.DeleteBucket([]byte(uuid)))
+		if bucket == nil {
+			return errors.WithStack(errors.BucketNotFound)
 		}
-		return multierr.Combine(ee...)
+		node, err := bucket.CreateBucketIfNotExists([]byte(nodeUuid))
+		if err != nil {
+			return err
+		}
+		cursor := node.Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			stored, _, err := b.unmarshalRecord(value)
+			if err != nil {
+				return err
+			}
+			if stored.VersionId == revision.VersionId {
+				return errors.WithMessage(errors.StatusConflict, "native draft reference is already claimed; observe without uploading again")
+			}
+		}
+		encoded, err := json.Marshal(&versions.DraftUpload{NodeUuid: nodeUuid, Revision: revision,
+			Deadline: deadline.UnixNano(), CleanupOrder: deadline.UnixNano(), State: versions.DraftUploadPending})
+		if err != nil {
+			return err
+		}
+		sequence, err := node.NextSequence()
+		if err != nil {
+			return err
+		}
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, sequence)
+		return node.Put(key, encoded)
 	})
-	return er
+}
+
+func (b *BoltStore) CompleteDraftUpload(ctx context.Context, nodeUuid string, revision *tree.ContentRevision, now time.Time) error {
+	if revision == nil || revision.VersionId == "" {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	return b.updateDraftUpload(nodeUuid, revision.VersionId, func(upload *versions.DraftUpload) error {
+		if err := versions.ValidateDraftCompletion(upload, revision, now); err != nil {
+			return err
+		}
+		upload.State = versions.DraftUploadComplete
+		upload.Revision = proto.Clone(revision).(*tree.ContentRevision)
+		return nil
+	})
+}
+
+func (b *BoltStore) FenceDraftUpload(ctx context.Context, nodeUuid, versionId string, now time.Time) (*versions.DraftUpload, error) {
+	var fenced *versions.DraftUpload
+	err := b.updateDraftUpload(nodeUuid, versionId, func(upload *versions.DraftUpload) error {
+		if upload.State != versions.DraftUploadCleanup &&
+			(upload.State != versions.DraftUploadPending || upload.Deadline > now.UnixNano()) {
+			return errors.WithMessage(errors.StatusConflict, "native draft is not eligible for cleanup")
+		}
+		upload.State = versions.DraftUploadCleanup
+		upload.CleanupOrder = now.UnixNano()
+		fenced = upload
+		return nil
+	})
+	return fenced, err
+}
+
+func (b *BoltStore) updateDraftUpload(nodeUuid, versionId string, update func(*versions.DraftUpload) error) error {
+	return b.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(bucketName)
+		if bucket == nil {
+			return errors.WithStack(errors.BucketNotFound)
+		}
+		node := bucket.Bucket([]byte(nodeUuid))
+		if node == nil {
+			return errors.WithStack(errors.VersionNotFound)
+		}
+		var selectedKey []byte
+		var selected *versions.DraftUpload
+		cursor := node.Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			revision, upload, err := b.unmarshalRecord(value)
+			if err != nil {
+				return err
+			}
+			if revision.VersionId != versionId {
+				continue
+			}
+			if selected != nil || upload == nil || upload.NodeUuid != nodeUuid {
+				return errors.WithMessage(errors.StatusConflict, "native draft reference has incompatible evidence")
+			}
+			selectedKey, selected = append([]byte(nil), key...), upload
+		}
+		if selected == nil {
+			return errors.WithStack(errors.VersionNotFound)
+		}
+		if err := update(selected); err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(selected)
+		if err != nil {
+			return err
+		}
+		return node.Put(selectedKey, encoded)
+	})
+}
+
+func (b *BoltStore) DraftUploads(ctx context.Context, now time.Time, limit int64) ([]*versions.DraftUpload, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	var uploads []*versions.DraftUpload
+	err := b.View(func(tx *bbolt.Tx) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		bucket := tx.Bucket(bucketName)
+		if bucket == nil {
+			return errors.WithStack(errors.BucketNotFound)
+		}
+		return bucket.ForEach(func(nodeID, _ []byte) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			node := bucket.Bucket(nodeID)
+			if node == nil {
+				return errors.WithStack(errors.BucketNotFound)
+			}
+			return node.ForEach(func(_, value []byte) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				_, upload, err := b.unmarshalRecord(value)
+				if err != nil {
+					return err
+				}
+				if upload != nil && (upload.State == versions.DraftUploadCleanup ||
+					(upload.State == versions.DraftUploadPending && upload.Deadline <= now.UnixNano())) {
+					if upload.NodeUuid != string(nodeID) {
+						return errors.WithStack(errors.StatusConflict)
+					}
+					uploads = append(uploads, upload)
+					// Bound the snapshot while releasing the native read transaction
+					// before the cleanup CAS. Least recently attempted rows get a
+					// turn even when one object's deletion continually fails.
+					sort.Slice(uploads, func(i, j int) bool {
+						if uploads[i].CleanupOrder != uploads[j].CleanupOrder {
+							return uploads[i].CleanupOrder < uploads[j].CleanupOrder
+						}
+						if uploads[i].NodeUuid != uploads[j].NodeUuid {
+							return uploads[i].NodeUuid < uploads[j].NodeUuid
+						}
+						return uploads[i].Revision.VersionId < uploads[j].Revision.VersionId
+					})
+					if int64(len(uploads)) > limit {
+						uploads = uploads[:len(uploads)-1]
+					}
+				}
+				return nil
+			})
+		})
+	})
+	return uploads, err
 }
 
 // ListAllVersionedNodesUuids lists all nodes uuids
@@ -317,10 +510,20 @@ func (b *BoltStore) ListAllVersionedNodesUuids(ctx context.Context) (chan string
 	return idsChan, done, errChan
 }
 
-func (b *BoltStore) unmarshalRevision(bb []byte) (r *tree.ContentRevision, e error) {
-	r = &tree.ContentRevision{}
+func (b *BoltStore) unmarshalRecord(bb []byte) (*tree.ContentRevision, *versions.DraftUpload, error) {
+	if len(bb) > 0 && bb[0] == '{' {
+		upload := &versions.DraftUpload{}
+		if err := json.Unmarshal(bb, upload); err != nil {
+			return nil, nil, err
+		}
+		if err := versions.ValidateDraftUploadRecord(upload); err != nil {
+			return nil, nil, err
+		}
+		return upload.Revision, upload, nil
+	}
+	r := &tree.ContentRevision{}
 	if er := proto.Unmarshal(bb, r); er == nil && (r.Event != nil || r.Location != nil) {
-		return r, nil
+		return r, nil, nil
 	}
 	// LegacyFormat
 	cLog := &tree.ChangeLog{}
@@ -334,7 +537,7 @@ func (b *BoltStore) unmarshalRevision(bb []byte) (r *tree.ContentRevision, e err
 			OwnerName:   cLog.OwnerUuid, // This is normal
 			Event:       cLog.Event,
 			Location:    cLog.Location,
-		}, nil
+		}, nil, nil
 	}
-	return nil, errors.New("invalid format (tree.ContentRevision or tree.ChangeLog expected)")
+	return nil, nil, errors.New("invalid format (tree.ContentRevision or tree.ChangeLog expected)")
 }

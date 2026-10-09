@@ -88,13 +88,18 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write'}, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'draftUploads'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
             canonical_uuid(delivery[key])
         if 'workspaceId' in delivery:
             canonical_uuid(delivery['workspaceId'])
+        if 'draftUploads' in delivery:
+            upload = delivery['draftUploads']
+            require(isinstance(upload, dict) and set(upload) == {'timeout', 'sweepInterval', 'sweepBatchSize'}, 'native draft lifetime and cleanup fields must match the Version consumer')
+            require(all(isinstance(upload[k], str) and upload[k].strip() == upload[k] != '' for k in ('timeout', 'sweepInterval')), 'native draft timeout and sweep interval must be explicitly delivered')
+            require(type(upload['sweepBatchSize']) is int and upload['sweepBatchSize'] > 0, 'native draft cleanup batch must be explicitly bounded')
         if 'write' in delivery:
             write = delivery['write']
             require(isinstance(write, dict) and {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'} <= set(write) <= {'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion', 'nativeJobId'}, 'native write metadata must match the original ActionCommand consumer')

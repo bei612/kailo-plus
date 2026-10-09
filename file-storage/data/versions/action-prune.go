@@ -22,12 +22,15 @@ package versions
 
 import (
 	"context"
+	"time"
 
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/forms"
 	"github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/object"
@@ -41,6 +44,41 @@ var (
 )
 
 type PruneVersionsAction struct{}
+
+// PruneDraftUploads uses the original Version store and original object
+// deletion route. Fence first, then delete; never remove the native claim or
+// its location. A late/unknown writer cannot publish, reuse the key, or create
+// an undiscoverable blob. The next bounded sweep also visits cleanup fences.
+func PruneDraftUploads(ctx context.Context, dao DAO, now time.Time, batchSize int64) error {
+	uploads, err := dao.DraftUploads(ctx, now, batchSize)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, upload := range uploads {
+		if err := ctx.Err(); err != nil {
+			return multierr.Append(multierr.Combine(failures...), err)
+		}
+		fenced, err := dao.FenceDraftUpload(ctx, upload.NodeUuid, upload.Revision.VersionId, now)
+		if err != nil {
+			// Completion may have won the original row CAS. Only its actual
+			// readable native revision proves that cleanup is no longer needed.
+			if completed, readErr := dao.GetVersion(ctx, upload.NodeUuid, upload.Revision.VersionId); readErr == nil && completed != nil && completed.ETag != "" {
+				continue
+			}
+			failures = append(failures, err)
+			continue
+		}
+		response, err := getRouter().DeleteNode(ctx, &tree.DeleteNodeRequest{Node: fenced.Revision.Location.Clone()})
+		if err == nil && !response.GetSuccess() {
+			err = errors.WithMessage(errors.StatusInternalServerError, "native draft blob deletion was not acknowledged")
+		}
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return multierr.Combine(failures...)
+}
 
 func (c *PruneVersionsAction) GetDescription(lang ...string) actions.ActionDescription {
 	return actions.ActionDescription{

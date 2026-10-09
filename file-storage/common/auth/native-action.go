@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pborman/uuid"
 	"github.com/pydio/cells/v5/common"
@@ -20,15 +21,34 @@ import (
 // node handlers and original native Task observer consume this same delivery.
 type NativeActorDelivery struct {
 	protocol.Delivery
-	TenantID          string `json:"tenantId"`
-	NativeInstanceRef string `json:"nativeInstanceRef"`
-	NativeScopeRef    string `json:"nativeScopeRef"`
-	NativeRootRef     string `json:"nativeRootRef"`
+	TenantID          string                     `json:"tenantId"`
+	NativeInstanceRef string                     `json:"nativeInstanceRef"`
+	NativeScopeRef    string                     `json:"nativeScopeRef"`
+	NativeRootRef     string                     `json:"nativeRootRef"`
+	DraftUploads      *NativeDraftUploadDelivery `json:"draftUploads,omitempty"`
 	Actors            []struct {
 		PrincipalID string `json:"principalId"`
 		Kind        string `json:"kind"`
 		UserUUID    string `json:"userUuid"`
 	} `json:"actors"`
+}
+
+// These are native upload/cleanup bounds delivered through the original Cells
+// config store, not Action/Quota policy and not the multipart cache lifetime.
+// Absence has no default and cannot enable platform draft staging.
+type NativeDraftUploadDelivery struct {
+	Timeout        string `json:"timeout"`
+	SweepInterval  string `json:"sweepInterval"`
+	SweepBatchSize int64  `json:"sweepBatchSize"`
+}
+
+func (d NativeDraftUploadDelivery) Durations() (time.Duration, time.Duration, error) {
+	timeout, timeoutErr := time.ParseDuration(d.Timeout)
+	interval, intervalErr := time.ParseDuration(d.SweepInterval)
+	if timeoutErr != nil || intervalErr != nil || timeout <= 0 || interval <= 0 || d.SweepBatchSize <= 0 {
+		return 0, 0, errors.WithMessage(errors.InvalidParameters, "native draft upload lifetime and cleanup bounds must be explicitly delivered")
+	}
+	return timeout, interval, nil
 }
 
 func NativeActorUUID(value string) bool {
@@ -145,4 +165,17 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 func text(value map[string]interface{}, key string) string {
 	valueText, _ := value[key].(string)
 	return valueText
+}
+
+// AuthorizeNativeDataMutation preserves the independent native data gateway,
+// but does not let a platform-bound UI bypass the original Action producer via
+// a direct S3 write. The current native draft PUT changes its blob before the
+// immutable Version ACK, so even "Draft-Mode" is not an admissible exception.
+func AuthorizeNativeDataMutation(request *http.Request) error {
+	ctx := request.Context()
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() == nil ||
+		(request.Method != http.MethodPut && request.Method != http.MethodPost && request.Method != http.MethodDelete) {
+		return nil
+	}
+	return errors.WithStack(errors.StatusForbidden)
 }

@@ -242,6 +242,136 @@ func TestDAO_CRUD(t *testing.T) {
 
 }
 
+func TestNativeDraftUploadReservation(t *testing.T) {
+	test.RunStorageTests(testcases, t, func(ctx context.Context) {
+		dao, err := manager.Resolve[versions.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(time.Hour)
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err := dao.DraftUploads(canceled, deadline, 1); !errors.Is(err, context.Canceled) {
+			t.Fatalf("native cleanup scan ignored cancellation: %v", err)
+		}
+		newDraft := func(id string) *tree.ContentRevision {
+			return &tree.ContentRevision{VersionId: id, Draft: true, OwnerUuid: "native-owner", Size: 4,
+				Event:    &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_CREATE},
+				Location: &tree.Node{Uuid: "object-" + id, Path: "versions/object-" + id}}
+		}
+		pending := newDraft("pending")
+		if err := dao.ReserveDraftUpload(ctx, "native-node", pending, deadline); err != nil {
+			t.Fatal(err)
+		}
+		for _, different := range []bool{false, true} {
+			repeated := proto.Clone(pending).(*tree.ContentRevision)
+			if different {
+				repeated.OwnerUuid = "different-owner"
+			}
+			if err := dao.ReserveDraftUpload(ctx, "native-node", repeated, deadline); !errors.Is(err, errors.StatusConflict) {
+				t.Fatalf("duplicate reservation returned a writable location: different=%v err=%v", different, err)
+			}
+		}
+		assertHidden := func(id string) {
+			t.Helper()
+			if _, err := dao.GetVersion(ctx, "native-node", id); !errors.Is(err, errors.StatusConflict) {
+				t.Fatalf("uncertain bytes became readable or reusable: %s %v", id, err)
+			}
+			stream, err := dao.GetVersions(ctx, "native-node", 0, 0, "", false, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for revision := range stream {
+				if revision.VersionId == id {
+					t.Errorf("uncertain draft leaked into original listing: %s", id)
+				}
+			}
+			last, err := dao.GetLastVersion(ctx, "native-node")
+			if err != nil || last.GetVersionId() == id {
+				t.Fatalf("uncertain draft became last revision: %v %v", last, err)
+			}
+		}
+		assertHidden(pending.VersionId)
+		confirmed := proto.Clone(pending).(*tree.ContentRevision)
+		confirmed.ETag, confirmed.ContentHash = "native-etag", "native-hash"
+		for _, invalid := range []*versions.DraftUpload{
+			nil,
+			{NodeUuid: "native-node", Deadline: deadline.UnixNano(), State: versions.DraftUploadPending},
+			{NodeUuid: "native-node", Deadline: deadline.UnixNano(), Revision: pending, State: "FUTURE_NATIVE_STATE"},
+		} {
+			if err := versions.ValidateDraftCompletion(invalid, confirmed, time.Now()); !errors.Is(err, errors.StatusConflict) {
+				t.Fatalf("unknown or corrupt native reservation became a byte ACK: %v", err)
+			}
+		}
+		changed := proto.Clone(confirmed).(*tree.ContentRevision)
+		changed.Location.Path = "other-object"
+		if err := dao.CompleteDraftUpload(ctx, "native-node", changed, time.Now()); !errors.Is(err, errors.StatusConflict) {
+			t.Fatalf("byte ACK replaced frozen location: %v", err)
+		}
+		if err := dao.StoreVersion(ctx, "native-node", confirmed); !errors.Is(err, errors.StatusConflict) {
+			t.Fatalf("ordinary StoreVersion bypassed native completion: %v", err)
+		}
+		if err := dao.CompleteDraftUpload(ctx, "native-node", confirmed, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		// A lost completion ACK observes the same immutable native result. It
+		// does not return another object-write reservation.
+		if err := dao.CompleteDraftUpload(ctx, "native-node", confirmed, deadline.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		stored, err := dao.GetVersion(ctx, "native-node", confirmed.VersionId)
+		if err != nil || !proto.Equal(stored, confirmed) {
+			t.Fatalf("completed native receipt changed: %v %v", stored, err)
+		}
+		if _, err := dao.FenceDraftUpload(ctx, "native-node", confirmed.VersionId, deadline.Add(time.Second)); !errors.Is(err, errors.StatusConflict) {
+			t.Fatalf("expiration destroyed an acknowledged revision: %v", err)
+		}
+		late := newDraft("late")
+		if err := dao.ReserveDraftUpload(ctx, "native-node", late, deadline); err != nil {
+			t.Fatal(err)
+		}
+		if err := dao.CompleteDraftUpload(ctx, "native-node", &tree.ContentRevision{VersionId: late.VersionId, ETag: "late"}, deadline.Add(time.Second)); !errors.Is(err, errors.StatusConflict) {
+			t.Fatalf("expired byte ACK became a revision: %v", err)
+		}
+		for _, deletion := range []func() error{
+			func() error { return dao.DeleteVersionsForNode(ctx, "native-node", late.VersionId) },
+			func() error { return dao.DeleteVersionsForNodes(ctx, []string{"native-node"}) },
+		} {
+			if err := deletion(); err != nil {
+				t.Fatal(err)
+			}
+			assertHidden(late.VersionId)
+			if err := dao.ReserveDraftUpload(ctx, "native-node", late, deadline); !errors.Is(err, errors.StatusConflict) {
+				t.Fatalf("native delete retired the first-writer fence: %v", err)
+			}
+		}
+		uploads, err := dao.DraftUploads(ctx, deadline.Add(time.Second), 1)
+		if err != nil || len(uploads) != 1 {
+			t.Fatalf("cleanup lost retained location: %v %v", uploads, err)
+		}
+		first := uploads[0]
+		if _, err := dao.FenceDraftUpload(ctx, first.NodeUuid, first.Revision.VersionId, deadline.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		uploads, err = dao.DraftUploads(ctx, deadline.Add(2*time.Second), 1)
+		if err != nil || len(uploads) != 1 || uploads[0].Revision.VersionId == first.Revision.VersionId {
+			t.Fatalf("one cleanup failure starved the other native location: %v %v", uploads, err)
+		}
+		second := uploads[0]
+		if _, err := dao.FenceDraftUpload(ctx, second.NodeUuid, second.Revision.VersionId, deadline.Add(2*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		newer := newDraft("newer")
+		if err := dao.ReserveDraftUpload(ctx, "native-node", newer, deadline.Add(3*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		uploads, err = dao.DraftUploads(ctx, deadline.Add(4*time.Second), 1)
+		if err != nil || len(uploads) != 1 || uploads[0].Revision.VersionId != first.Revision.VersionId {
+			t.Fatalf("newly expired uploads starved an existing cleanup fence: %v %v", uploads, err)
+		}
+	})
+}
+
 // Exercise the original DAO and storage fixtures rather than a replacement
 // receipt store: the native reference must resolve to one immutable result.
 func TestDAO_NativeReference(t *testing.T) {

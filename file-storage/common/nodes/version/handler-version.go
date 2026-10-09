@@ -510,7 +510,10 @@ func (v *Handler) routeUploadToContentRevision(ctx context.Context, node *tree.N
 	if versionId == "" {
 		versionId = uuid.New()
 	}
-	// CreateVersion (not stored yet)
+	// Freeze the upload input before CreateVersion. In platform mode that
+	// original RPC durably claims this native reference before any bytes move.
+	// The old live node's ETag/size are not an upload result.
+	node.Etag, node.Size, node.MTime = "", knownSize, time.Now().Unix()
 	claims, ok := claim.FromContext(ctx)
 	if !ok {
 		return nil, nil, nodes.LoadedSource{}, errors.WithStack(errors.MissingClaims)
@@ -531,9 +534,6 @@ func (v *Handler) routeUploadToContentRevision(ctx context.Context, node *tree.N
 		revision.Location == nil || revision.Location.Path == "" || revision.Location.GetStringMeta(common.MetaNamespaceDatasourceName) == "" {
 		return nil, nil, nodes.LoadedSource{}, errors.WithMessage(errors.VersionNotFound, "draft revision creation was not acknowledged")
 	}
-	revision.MTime = time.Now().Unix()
-	revision.Size = knownSize
-
 	// Refresh target and context from location
 	newTarget := vr.GetVersion().GetLocation()
 	source, e := nodes.GetSourcesPool(ctx).GetDataSourceInfo(newTarget.GetStringMeta(common.MetaNamespaceDatasourceName))
