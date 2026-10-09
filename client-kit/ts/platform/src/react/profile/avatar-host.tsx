@@ -29,5 +29,5 @@ export function useAvatarViewHost(): AvatarViewHost | AvatarHost {
 }
 export function useAvatarText() {
   const { locale } = useAvatarViewHost();
-  return useCallback((key: Parameters<typeof translate>[1]) => translate(locale, key), [locale]);
+  return useCallback((key: Parameters<typeof translate>[1], variables: Parameters<typeof translate>[2] = {}) => translate(locale, key, variables), [locale]);
 }

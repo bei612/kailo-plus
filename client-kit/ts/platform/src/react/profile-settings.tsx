@@ -83,7 +83,7 @@ function EditProfileMetadataButton({
 }) {
   const Icon = isEditing ? Check : Pencil;
   const actionLabel = translate(locale, isEditing ? "platform.profile.done" : "platform.profile.edit");
-  const accessibleLabel = `${actionLabel} ${label}`;
+  const accessibleLabel = translate(locale, isEditing ? "platform.profile.doneEditingLabel" : "platform.profile.editLabel", { label });
 
   return (
     <button
@@ -294,7 +294,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
     nextDisplayName ||
     profile?.displayName ||
     fallbackDisplayName ||
-    t("platform.settings.profile");
+    t("platform.profile.yourProfile");
   // Identity details show and copy the full canonical npub; a key that
   // cannot be encoded renders the neutral label and is never copyable.
   const identityNpub = /^[0-9a-f]{64}$/i.test(profile.pubkey) ? npubEncode(profile.pubkey) : null;
@@ -560,7 +560,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                                 aria-expanded={isAvatarEditorOpen}
                                 aria-label={
                                   isAvatarEditorSaving
-                                    ? t("platform.profile.saving")
+                                    ? t("platform.profile.avatar.savingPhoto")
                                     : t("platform.profile.avatar.edit")
                                 }
                                 className={avatarEditButtonClassName}
@@ -569,7 +569,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                                 onClick={openAvatarEditor}
                                 title={
                                   isAvatarEditorSaving
-                                    ? t("platform.profile.saving")
+                                    ? t("platform.profile.avatar.savingPhoto")
                                     : t("platform.profile.avatar.edit")
                                 }
                                 type="button"
@@ -605,7 +605,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                           />
                           {shouldShowAnimatedPreview ? null : emojiAvatarPreview ? (
                             <div
-                              aria-label={`${resolvedName} ${t("platform.profile.avatar")}`}
+                              aria-label={translate(locale, "platform.profile.avatarLabel", { name: resolvedName })}
                               className="relative flex h-full w-full shrink-0 items-center justify-center overflow-hidden rounded-full shadow-xs"
                               data-testid="profile-avatar-preview"
                               role="img"
@@ -671,7 +671,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                             <EditProfileMetadataButton locale={locale}
                               disabled={writeLocked}
                               isEditing={isEditingProfileMetadata}
-                              label={t("platform.profile.info")}
+                              label={t("platform.profile.infoLabel")}
                               onClick={handleProfileMetadataEdit}
                               testId="profile-metadata-edit"
                             />

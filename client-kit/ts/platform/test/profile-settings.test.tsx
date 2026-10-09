@@ -19,6 +19,52 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it.each(["en", "zh-CN"] as const)("consumes the original unnamed profile and metadata accessibility sentences (%s)", async (locale) => {
+    const unnamed = { ...profile, displayName: "" };
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => unnamed);
+    const host = await render(<ProfileSettingsCard locale={locale} profile={unnamed} onCopy={clipboard} onSave={onSave}
+      avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? ""} upload={vi.fn()} rewriteMediaUrl={(url) => url} testId="actual-avatar" />} />);
+    expect(host.querySelector('[data-testid="actual-avatar-fallback"]')?.textContent).toBe(locale === "en" ? "YP" : "你");
+    const metadata = host.querySelector<HTMLButtonElement>('[data-testid="profile-metadata-edit"]')!;
+    expect(metadata.getAttribute("aria-label")).toBe(locale === "en" ? "Edit profile info" : "编辑个人资料信息");
+    expect(metadata.title).toBe(metadata.getAttribute("aria-label"));
+    expect(host.querySelector('[data-testid="profile-metadata-card"]')?.textContent).toContain(locale === "en" ? "Profile info" : "个人资料信息");
+    await click(metadata);
+    expect(metadata.getAttribute("aria-label")).toBe(locale === "en" ? "Done editing profile info" : "完成编辑个人资料信息");
+    expect(metadata.title).toBe(metadata.getAttribute("aria-label"));
+    const identity = host.querySelector<HTMLButtonElement>('[data-testid="copy-profile-nip05"]')!;
+    expect(identity.getAttribute("aria-label")).toBe(locale === "en" ? "Copy NIP-05 handle" : "复制 NIP-05 标识");
+    expect(identity.title).toBe(identity.getAttribute("aria-label"));
+    await click(metadata);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it.each(["en", "zh-CN"] as const)("consumes the original complete emoji avatar accessibility sentence (%s)", async (locale) => {
+    const emojiProfile = { ...profile, avatarUrl: emojiAvatarDataUrl("😀", DEFAULT_EMOJI_AVATAR_COLOR) };
+    const host = await render(<ProfileSettingsCard locale={locale} profile={emojiProfile} onCopy={clipboard} onSave={async () => emojiProfile} />);
+    expect(host.querySelector('[data-testid="profile-avatar-preview"]')?.getAttribute("aria-label")).toBe(locale === "en" ? "Original avatar" : "Original的头像");
+  });
+
+  it.each(["en", "zh-CN"] as const)("preserves the original image avatar alt sentence through the real preview (%s)", async (locale) => {
+    vi.stubGlobal("Image", function () {
+      const image = document.createElement("img");
+      let source = "";
+      Object.defineProperties(image, {
+        complete: { get: () => source.length > 0 },
+        naturalWidth: { value: 1 },
+        src: { get: () => source, set: (value: string) => { source = value; queueMicrotask(() => image.dispatchEvent(new Event("load"))); } },
+      });
+      return image;
+    });
+    try {
+      const host = await render(<ProfileAvatarPreview locale={locale} avatarUrl="data:image/png;base64,AA==" label="Original $&" upload={vi.fn()} rewriteMediaUrl={(url) => url} testId="actual-avatar" />);
+      await settle();
+      expect(host.querySelector<HTMLImageElement>('[data-testid="actual-avatar-image"]')?.alt).toBe(locale === "en" ? "Original $& avatar" : "Original $&的头像");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(["en", "zh-CN"] as const)("ignores the original blank display-name request and restores its draft without publishing (%s)", async (locale) => {
     const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => profile);
     const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={clipboard} onSave={onSave} />);
@@ -214,6 +260,10 @@ describe("original profile settings through canonical host callbacks", () => {
       await act(async () => finish({ ...profile, avatarUrl }));
       expect(host.textContent).toContain("Saved and read back");
       expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(false);
+      const closingAvatar = host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!;
+      expect(closingAvatar.getAttribute("aria-label")).toBe("Saving profile photo");
+      expect(closingAvatar.title).toBe("Saving profile photo");
+      expect(closingAvatar.querySelector('[role="status"] .sr-only')?.textContent).toBe("Saving avatar");
     } finally {
       vi.unstubAllGlobals();
     }

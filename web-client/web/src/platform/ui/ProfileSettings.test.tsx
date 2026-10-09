@@ -56,6 +56,22 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 
+it("consumes the original Your profile fallback and metadata accessibility sentences in Web settings", async () => {
+  state.read.mockResolvedValue({ ...profile, displayName: "", nip05Handle: "me@community.example" });
+  await openProfile();
+  expect(host.querySelector('[data-testid="profile-avatar-preview-fallback"]')?.textContent).toBe("YP");
+  const metadata = host.querySelector<HTMLButtonElement>('[data-testid="profile-metadata-edit"]')!;
+  expect(metadata.getAttribute("aria-label")).toBe("Edit profile info");
+  expect(metadata.title).toBe("Edit profile info");
+  await click('[data-testid="profile-metadata-edit"]');
+  expect(metadata.getAttribute("aria-label")).toBe("Done editing profile info");
+  expect(metadata.title).toBe("Done editing profile info");
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="copy-profile-nip05"]')?.title).toBe("Copy NIP-05 handle");
+  await click('[data-testid="profile-metadata-edit"]');
+  expect(state.write).not.toHaveBeenCalled();
+  expect(state.upload).not.toHaveBeenCalled();
+});
+
 it("consumes the original blank-name refusal in the real Web settings pane without a BFF write", async () => {
   await openProfile();
   await click('[data-testid="profile-metadata-edit"]');

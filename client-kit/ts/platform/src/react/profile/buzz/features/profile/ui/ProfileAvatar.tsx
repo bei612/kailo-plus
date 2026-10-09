@@ -126,7 +126,7 @@ export function ProfileAvatar({
     >
       {src !== undefined ? (
         <AvatarImage
-          alt={`${label} ${t("platform.profile.avatar")}`}
+          alt={t("platform.profile.avatarLabel", { name: label })}
           className={cn(
             "object-cover",
             presentation?.state === "pending" && "brightness-75",
