@@ -50,6 +50,7 @@ import {
 } from '../services/nativeQueryAdmission';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
+import { nativeWriteUnknown } from '../utils/error';
 
 const logger = getLogger('ModelResolver');
 logger.level = 'debug';
@@ -122,17 +123,27 @@ export class ModelResolver {
     return relation;
   }
 
-  private async verifyMetadataWrite(ctx: IContext, projectId: number) {
-    if (ctx.nativeProjectCheck) {
-      // Consume current permission at the native write boundary. A caller
-      // which already dispatched a write must preserve UNKNOWN on rejection.
-      await ctx.nativeProjectCheck(projectId);
-    } else if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      ctx.nativeIdentityScope !== undefined ||
-      ctx.nativeHumanToken !== undefined
-    ) {
-      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+  private async verifyMetadataWrite(
+    ctx: IContext,
+    projectId: number,
+    alreadyDispatched = false,
+  ) {
+    try {
+      if (ctx.nativeProjectCheck) {
+        // Consume the captured current permission immediately before writing.
+        await ctx.nativeProjectCheck(projectId);
+      } else if (
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+        ctx.nativeIdentityScope !== undefined ||
+        ctx.nativeHumanToken !== undefined
+      ) {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+    } catch (error) {
+      // A later refusal cannot establish NOT_STARTED for a multi-write native
+      // operation whose earlier write was already dispatched.
+      if (alreadyDispatched) throw nativeWriteUnknown(error);
+      throw error;
     }
   }
 
@@ -759,6 +770,7 @@ export class ModelResolver {
       refreshTime: null,
       properties: properties ? JSON.stringify(properties) : null,
     } as Partial<Model>;
+    await this.verifyMetadataWrite(ctx, project.id);
     const model = await ctx.modelRepository.createOne(modelValue);
 
     // create columns
@@ -781,6 +793,7 @@ export class ModelResolver {
             : null,
         }) as Partial<ModelColumn>,
     );
+    await this.verifyMetadataWrite(ctx, project.id, true);
     const columns = await ctx.modelColumnRepository.createMany(columnValues);
 
     // create nested columns
@@ -795,6 +808,7 @@ export class ModelResolver {
         sourceColumnName: column.sourceColumnName,
       });
     });
+    await this.verifyMetadataWrite(ctx, project.id, true);
     await ctx.modelNestedColumnRepository.createMany(nestedColumnValues);
     logger.info(`Model created: ${JSON.stringify(model)}`);
 
@@ -855,10 +869,13 @@ export class ModelResolver {
       ctx.modelColumnRepository,
       model.id,
       primaryKey,
+      (alreadyDispatched) =>
+        this.verifyMetadataWrite(ctx, project.id, alreadyDispatched),
     );
 
     // delete columns
     if (toDeleteColumnIds.length) {
+      await this.verifyMetadataWrite(ctx, project.id, true);
       await ctx.modelColumnRepository.deleteMany(toDeleteColumnIds);
     }
 
@@ -883,6 +900,7 @@ export class ModelResolver {
         } as Partial<ModelColumn>;
         return columnValue;
       });
+      await this.verifyMetadataWrite(ctx, project.id, true);
       const columns = await ctx.modelColumnRepository.createMany(columnValues);
 
       // create nested columns
@@ -896,12 +914,14 @@ export class ModelResolver {
           sourceColumnName: column.sourceColumnName,
         });
       });
+      await this.verifyMetadataWrite(ctx, project.id, true);
       await ctx.modelNestedColumnRepository.createMany(nestedColumnValues);
     }
 
     // update columns
     if (toUpdateColumns.length) {
       for (const { id, sourceColumnName, type } of toUpdateColumns) {
+        await this.verifyMetadataWrite(ctx, project.id, true);
         const column = await ctx.modelColumnRepository.updateOne(id, { type });
 
         // if the struct type is changed, need to re-create nested columns
@@ -909,9 +929,11 @@ export class ModelResolver {
           const sourceColumn = sourceTableColumns.find(
             (sourceColumn) => sourceColumn.name === sourceColumnName,
           );
+          await this.verifyMetadataWrite(ctx, project.id, true);
           await ctx.modelNestedColumnRepository.deleteAllBy({
             columnId: column.id,
           });
+          await this.verifyMetadataWrite(ctx, project.id, true);
           await ctx.modelNestedColumnRepository.createMany(
             handleNestedColumns(sourceColumn, {
               modelId: column.modelId,

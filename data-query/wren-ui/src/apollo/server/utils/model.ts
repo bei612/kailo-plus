@@ -85,9 +85,12 @@ export async function updateModelPrimaryKey(
   repository: IModelColumnRepository,
   modelId: number,
   primaryKey: string,
+  beforeWrite?: (alreadyDispatched: boolean) => Promise<void>,
 ) {
+  await beforeWrite?.(false);
   await repository.resetModelPrimaryKey(modelId);
   if (primaryKey) {
+    await beforeWrite?.(true);
     await repository.setModelPrimaryKey(modelId, primaryKey);
   }
 }

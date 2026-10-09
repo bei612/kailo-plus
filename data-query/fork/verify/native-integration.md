@@ -8128,3 +8128,113 @@ generic metadata UNKNOWN recovery, dynamic Resource evidence, ordinary function
 provenance and trusted SERVICE SQL remain release gaps. This is scoped source
 and actual consumer evidence, not all native CRUD, complete Wren integration,
 100% original-product parity or production readiness. Root alone owns commit/push.
+
+## Original model creation and column-selection write consumers
+
+This batch follows the committed relationship batch and compares its five owned
+paths against `e71757861238eeaa4473a1b09e35db251fcac1e8`. It changes only the
+original Model resolver and primary-key helper, one original Jest consumer file,
+and these two existing documentation EOFs. It does not modify Core, contracts,
+Worker, UI, the preceding relationship/delete service or their checks.
+
+### Authority, impact, side effects and deterministic boundaries
+
+1. Authority: `.design/05` §2.7 and `.design/08` §6,
+   `SS-WRN-IDENTITY/GOVERNANCE` retain original native modeling and public
+   project permissions, not a fabricated per-metadata query Action. Fixed UI
+   `c5f02a0391c87420dba78632dcd86073710deb72` resolves
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::createModel`,
+   `handleCreateModel`, `updateModel`, `handleUpdateModel` and
+   `wren-ui/src/apollo/server/utils/model.ts::updateModelPrimaryKey`.
+   Original create/edit payloads, table/column validation, source-name transforms,
+   nested structures, primary keys, native responses and telemetry are retained.
+   Only the stated project/fresh-permission and uncertainty differences are
+   authorized governance changes. No presentation change or full-product parity
+   claim is made. `python3 tools/upstream_manifest.py status` exited **0**;
+   Wren's reference HEAD is still its fixed pin, not a new source version.
+2. Impact: current `resolvers.ts::nativeProjectResolver` supplies the independent
+   request's existing `nativeProjectCheck`. Creation consumes it after the native
+   catalog lookup and before each original model/column/nested-column insert.
+   Editing's actual **first** write is the original primary-key reset, not the
+   later column delete. Its sole `updateModelPrimaryKey` caller now supplies an
+   internal callback, consumed before reset and again after its await before set.
+   Later deletes, new columns, type changes and nested replacements also recheck.
+   The original helper's three-argument standalone signature stays valid;
+   no external schema, generated type, database format or migration changes.
+3. Side effects: the existing `verifyMetadataWrite` consumes actual captured
+   project/generation/manage proof, or refuses any configured/trusted context
+   missing the server closure. Entirely absent configuration **and** absent both
+   native identity inputs preserves standalone; configuration/identity arriving
+   during the last read cannot adopt that in-flight independent write. The
+   internal `alreadyDispatched` value describes the same call's real write
+   boundary, not another persisted execution/state authority. A refusal after
+   an earlier native dispatch is wrapped as existing `nativeWriteUnknown`, so
+   the outer public wrapper cannot mistake its local closure error for a proven
+   `NOT_STARTED`. Repository errors, forged upstream markers and lost replies
+   do not retry or produce invented success. Core receives no model/SQL body.
+4. Boundaries: foreign native project/model selection, revoked manage,
+   delivery/generation or HUMAN/scope changes at the last lookup stop the first
+   write. Equivalent changes after any preceding write stop remaining work with
+   `UNKNOWN`, including between PK reset and set and between nested delete and
+   create. Empty primary key keeps the original reset-only behavior. Actual
+   complete responses still run the original `getModel` Resource-read checks;
+   model body denial cannot become write success. Authentication, denied scope,
+   changed reference and absent evidence retain the existing
+   `NATIVE_AUTHENTICATION_REQUIRED`, `QUERY_SCOPE_DENIED`,
+   `QUERY_REFERENCE_CHANGED`, `QUERY_EVIDENCE_UNAVAILABLE` error consumers
+   (`apps/06` §4); partial native outcomes use existing `UNKNOWN`. This does not
+   make the upstream multi-write CRUD transactional or invent rollback/terminal
+   evidence for a partial insert/update.
+
+### Actual checks, production mutations and restoration
+
+Before the single original SDK window: host available memory **32,978 MiB**,
+memory PSI avg10 **0**, CPU some **1.93%**, I/O full **51.77%**; the original
+`kailo-wren-query-sdk-itgs2n` had only `sleep`, 4 CPU / 4 GiB memory and swap,
+UID/GID 1000:1000 and all cgroup memory/OOM counters **0**. The three inputs were
+applied to its existing single `/work` source root and existing dependencies,
+not a new SDK/alias/environment. Node heap remained **3072 MiB**, Jest serial.
+
+Original commands inside `/work`:
+
+```sh
+node node_modules/jest/bin/jest.js src/nativeModelWrite.test.ts src/nativeRelationWrite.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/apollo/server/utils/model.ts src/nativeModelWrite.test.ts
+```
+
+Logs under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+
+- `native-model-write-positive.log`, handle `38930`, exit **0**,
+  **52 Model + 44 Relation = 96/96**, 15.487 s; original TypeScript and formatting
+  **0**, memory/OOM counters all **0**. Original Prettier formatted only the
+  consumer input; its bytes were applied back to the formal source.
+- `native-model-write-negative-first-write.log`, handle `60521`, exit **1**,
+  **27 failed / 25 passed / 52 total**, 7.300 s. The private production model
+  insert check and both primary-key helper closure calls were removed. Actual
+  pre-write revocation/identity/delivery consumers observed native writes or
+  wrong outcomes; reset-to-set revocation also exposed an extra native set.
+  Assertions and authorization policy were not weakened.
+- `native-model-write-negative-partial-outcome.log`, handle `81611`, exit **1**,
+  **19 failed / 33 passed / 52 total**, 7.363 s. After restoring those three calls,
+  only the production `alreadyDispatched` UNKNOWN wrapping was removed. Actual
+  public consumers incorrectly received `NOT_STARTED` after prior native writes;
+  the original consumer rejected it. A first private patch attempt failed on
+  hunk ordering before any mutation/run; exact source was read and the corrected
+  private patch then applied. This tool failure is not a product pass.
+- `native-model-write-restored.log`, handle `33459`, exit **0**, final **96/96**,
+  7.158 s, TypeScript and three-file formatting **0**, all cgroup memory/OOM
+  counters **0**. Both production mutations were restored, and `cmp` of all
+  three latest formal/private inputs exited **0** before this final run.
+
+The original ModelResolver/public Mutation and primary-key helper are the actual
+consumers; only database and public authorization transports are fixtures.
+No live PostgreSQL transaction/SpiceDB/Core/provider acceptance, browser visual
+check, three-user/Agent scenario, global check, new database/SDK, image build,
+deploy, ACTIVE binding/iframe or Desktop/Mobile installation is claimed.
+Generic metadata partial/lost-ACK cross-client reconciliation, dynamic Resource
+evidence, calculated-field SQL admission, other metadata/deployment writes,
+ordinary-function provenance and trusted SERVICE SQL remain release gaps.
+This is a scoped native write-consumer increment, not complete Wren delivery or
+production readiness. Root owns the subsequent selective commit and push.

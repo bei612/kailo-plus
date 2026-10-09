@@ -1275,3 +1275,32 @@ database and authorization transports, not live database/authorization or UI
 acceptance. This batch does not provide cross-client metadata idempotency or
 lost-ACK reconciliation, close other Model/calculated-field/deployment writes,
 activate a release, deploy an instance, or establish full Wren integration.
+
+### Original model creation and column-selection writes
+
+The original `createModel` and `updateModel` GraphQL consumers now recheck the
+existing request's project `manage` permission and captured binding/generation
+after their last native lookup, immediately before the actual repository write.
+Creation retains the original model, columns and nested-column inserts. Editing
+retains the original primary-key reset/set, removed/new/type-changed columns and
+nested-column replacement. In particular, the existing `updateModelPrimaryKey`
+helper consumes the same permission closure before **each** native reset/set;
+an early resolver check does not substitute for that write boundary.
+
+Every later write uses the same current request check. If any earlier native
+write was dispatched, a subsequent refusal remains `UNKNOWN`, not
+`NOT_STARTED`; neither a native write nor SQL is automatically retried. Complete
+native responses still pass the existing actual model Resource-read consumer.
+The entirely unconfigured independent flow and the original three-argument
+primary-key helper remain compatible. Controls, source-column transforms,
+payloads, responses and telemetry are unchanged; no Core Action or new native
+permission/execution record is introduced.
+
+The [actual implementation and consumer receipt](../fork/verify/native-integration.md#original-model-creation-and-column-selection-write-consumers)
+records **52 Model + 44 Relation = 96/96** after byte-for-byte restoration,
+original TypeScript/three-file formatting exit 0, and two production mutations
+actually caught. Database and authorization transports are fixture-backed,
+not live instance or browser acceptance. This does not provide generic metadata
+lost-ACK/cross-client reconciliation, calculation-field SQL admission, deployment
+or all other modeling mutations, dynamic Resource evidence, ordinary-function
+provenance, trusted SERVICE SQL, an ACTIVE release or a deployed Wren instance.
