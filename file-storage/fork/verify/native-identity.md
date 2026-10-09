@@ -407,3 +407,92 @@ diff --check 实际 exit 0；完整 32 webpack producer、生产变异/还原、
 upstream.yaml 原 artifact/source digest 不伪造更新，原 live Cells/数据库/
 认证/业务数据未变。full 41490 属主代理另一固定输入且实际 exit 1，
 不借其阶段输出宣称本前端通过，也不重跑全局门禁。
+
+## 2026-10-09 完整 producer 终态与原活动流缺件恢复
+
+本节续接 `f1862706d4a9d3de146e316f12f0730293c8eac7` 的真实验证，不改
+其固定 Cells 基线 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+旧 38929 最终 exit 1，原 Git-pinned SDK 的 `npm install` prepare 报
+`spawn ENOENT`；它不是此前内层 `tsup: not found`/127 的整命令退出码。
+原日志 `cells-native-frontend-bundle-locked-online.log` SHA-256
+`afe69801ae6fcf24e3528ab27949d970107a8881a305ca11920872f300149c34`。
+
+最终 f186 输入已在同一 SDK 冻结，未混入后续编辑器保存修复：
+
+```sh
+sudo -n docker exec --user 1000:1000 --workdir /workspace/assets \
+  --env npm_config_cache=/cache/npm --env npm_config_store_dir=/cache/pnpm \
+  --env CI=true kailo-cells-login-ui-node-20261005 \
+  npm exec --offline --yes --package=pnpm@10.7.1 -- \
+  env npm_config_offline=false bash ./build.sh
+```
+
+46339 最终 exit 1：原 921 锁包安装在 3m52.7s 结束，reused 907、
+downloaded 1、added 1；不是纯离线。boot/core/libs/CSS 与原 access.gateway、
+access.homepage、access.settings、action.compression、action.share、action.user
+已进入实际 webpack 并编译；第 11 个原入口 core.activitystreams 在
+`res/js/index.js:30` 不能解析 `./UserPanel` 停止。全部 32 producer 不通过。
+原日志根目录仍为
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS`，
+`cells-native-frontend-bundle-final-source.log` SHA-256
+`ea3d42c42d54849f9eca79e958068f678979ca836d1cc1279e3c9451b6233b01`。
+
+本次实际源码恢复的四步影响：
+
+- 权威：用户固定原版恢复要求与 `.design/07` §4.6、DD-87 的完整原生
+  前端要求。固定 c57 的
+  `frontend/assets/core.activitystreams/res/js/index.js::UserPanel` 保留
+  import/export，`git ls-tree` 没有其源文件；这是上游 source/dist 缺件，
+  不是授权删除面板或变更固定基线。最后保留原源码的完整提交是
+  `ae047e260516f2a0139bc910e1cf0f045fdeed0b`，完整路径
+  `frontend/front-srv/assets/core.activitystreams/res/js/UserPanel.js::UserPanel`，
+  blob `21dea15c61a69ee15bbe9835a853e22a7d248355`；官方提交
+  `2ed6070924fa9f93dc810bd22df12c602ca18e5e` 删除此文件却保留入口。
+- 影响面：原样恢复 149 行到当前 `core.activitystreams/res/js/UserPanel.js`；
+  原 `index.js`、`gui.ajax/res/js/ui/Workspaces/leftnav/UserWidget.js::render`
+  的 AsyncComponent/PydioActivityStreams.UserPanel 与原 manifest 加载链
+  不变。固定 c57 的
+  `frontend/assets/core.activitystreams/res/dist/PydioActivityStreams.min.js`
+  blob `f7a5a5f60ef3cb94742411916b4920ebd5fecf61` 仍含导出 UserPanel 与
+  `ht` 的 reloadData/reloadUnread/render/muiThemeable 实现；恢复来源与其对应，
+  不另写相似面板。唯一相对历史源码的字节差异是补 EOF 换行。
+- 副作用：不改原 UI/文案/样式、原 ActivityServiceApi 消费、身份或 ACL，
+  不增加 API/schema/状态/凭据/队列/平台权威。没有数据库迁移适用对象。
+- 异常：缺件仍由真实 webpack 消费者拒绝，不隐藏原通知入口，不用旧 bundle
+  冒称完整新 producer 成功；尚未构建的原插件、Node22 镜像、Go embed、
+  实际页面与运行期授权不借本插件编译推断通过。
+
+定点复用原 SDK UID1000、4 CPU/8 GiB、无额外 swap；`cpu.max=400000 100000`，
+开始时仅 sleep、memory.current 32.8 MiB、OOM 全 0；host MemAvailable
+22584612 kB，I/O some avg10 38.89%，记录真实其它主线在途，不声称宿主独占。
+未安装新依赖、未新建 SDK/镜像或启动 Go/Cargo/full。SDK 实际 Node24.21.0
+仍不等于 Docker Node22 stage 验收。原定点命令：
+
+```sh
+sudo -n docker exec --user 1000:1000 --workdir /workspace/assets \
+  --env npm_config_cache=/cache/npm --env npm_config_store_dir=/cache/pnpm \
+  --env NODE_ENV=production kailo-cells-login-ui-node-20261005 \
+  npm exec --offline --yes --package=pnpm@10.7.1 -- \
+  pnpm --dir core.activitystreams run build
+```
+
+74067 正向 exit 0，真实 `PydioActivityStreams.min.js` 48.5 KiB，14661 ms。
+随后仅在私有 SDK 用 apply_patch 删除真实 UserPanel 源，71199 同目标
+exit 1、1120 ms，实际再次命中原 index 的缺依赖；正式源未破坏。
+按上述原源码 apply_patch 精确还原，正式/SDK cmp 0，27479 同目标
+exit 0、1271 ms。末次 memory.current 95.3 MiB、memory.events 全 0。
+三原件依次为同日志根目录下：
+
+- `cells-native-activitystreams-restored-source-positive.log`，SHA-256
+  `726e5e871cfe6a0145fed1286e668beb742d1eec081cf32b9f7fbb851913b99a`。
+- `cells-native-activitystreams-restored-source-negative.log`，SHA-256
+  `cf3c2b16e4764cf5e349a10a3038a5f8802dbbb1244ef29cae7e91fe344e3d3f`。
+- `cells-native-activitystreams-restored-source-restored.log`，SHA-256
+  `c16bca09bae3fb4c1531a82a0343f91b8f6692fc275f5417dfb1825e8c5eb4e9`。
+
+恢复源码 SHA-256
+`a27934bcda51b7cb2cdc9291bfa97ab95c7cc6da64d43aa078ce9e599dcde069`。
+仅此原插件定点正反还原通过；完整 producer 未重跑、完整 bundle/image/
+Go embed binary、浏览器与部署均未验。实际 live Cells、独立数据库、认证、
+业务数据及原 artifact digest 不变；本节不解除七必选、首传 CAS、writer/
+Task 安全退休、HUMAN 正文交付、批准 release/binding 的既有发布门禁。
