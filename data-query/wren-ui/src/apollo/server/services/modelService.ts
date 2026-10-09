@@ -46,9 +46,19 @@ export interface IModelService {
   batchUpdateColumnProperties(tables: SampleDatasetTable[]): Promise<void>;
   // saveRelations was used in the onboarding process, we assume there is not existing relation in the project
   saveRelations(relations: RelationData[]): Promise<Relation[]>;
-  createRelation(relation: RelationData): Promise<Relation>;
-  updateRelation(relation: UpdateRelationData, id: number): Promise<Relation>;
-  deleteRelation(id: number): Promise<void>;
+  createRelation(
+    relation: RelationData,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<Relation>;
+  updateRelation(
+    relation: UpdateRelationData,
+    id: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<Relation>;
+  deleteRelation(
+    id: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void>;
   createCalculatedField(data: CreateCalculatedFieldData): Promise<ModelColumn>;
   updateCalculatedField(
     data: UpdateCalculatedFieldData,
@@ -392,7 +402,10 @@ export class ModelService implements IModelService {
     return savedRelations;
   }
 
-  public async createRelation(relation: RelationData): Promise<Relation> {
+  public async createRelation(
+    relation: RelationData,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<Relation> {
     const { id } = await this.projectService.getCurrentProject();
     const modelIds = [relation.fromModelId, relation.toModelId];
     const models = await this.modelRepository.findAllByIds(modelIds);
@@ -408,7 +421,12 @@ export class ModelService implements IModelService {
     if (!valid) {
       throw new Error(message);
     }
+    if (models.some((model) => model.projectId !== id))
+      throw new Error('Relation model not in project');
     const relationName = this.generateRelationName(relation, models, columns);
+    // The resolver's earlier project/column reads cannot authorize this write
+    // after the native service has awaited its own project and validation.
+    await beforeWrite?.(id);
     const savedRelation = await this.relationRepository.createOne({
       projectId: id,
       name: relationName,
@@ -422,24 +440,57 @@ export class ModelService implements IModelService {
   public async updateRelation(
     relation: UpdateRelationData,
     id: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<Relation> {
+    if (beforeWrite) {
+      const current = await this.relationRepository.findOneBy({ id });
+      if (!current) throw new Error('Relation not found');
+      await beforeWrite(current.projectId);
+    }
     const updatedRelation = await this.relationRepository.updateOne(id, {
       joinType: relation.type,
     });
     return updatedRelation;
   }
 
-  public async deleteRelation(id: number): Promise<void> {
+  public async deleteRelation(
+    id: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void> {
     const relation = await this.relationRepository.findOneBy({ id });
     if (!relation) {
       throw new Error('Relation not found');
     }
     const calculatedFields = await this.getCalculatedFieldByRelation(id);
+    if (beforeWrite && calculatedFields.length > 0) {
+      const models = await this.modelRepository.findAllByIds([
+        ...new Set(calculatedFields.map((field) => field.modelId)),
+      ]);
+      if (
+        calculatedFields.some(
+          (field) =>
+            !models.some(
+              (model) =>
+                model.id === field.modelId &&
+                model.projectId === relation.projectId,
+            ),
+        )
+      )
+        throw new Error('Relation calculated field not in project');
+    }
+    await beforeWrite?.(relation.projectId);
     if (calculatedFields.length > 0) {
       // delete related calculated fields
       await this.modelColumnRepository.deleteMany(
         calculatedFields.map((f) => f.id),
       );
+      try {
+        await beforeWrite?.(relation.projectId);
+      } catch (error) {
+        // A calculated-field delete has already been dispatched. Do not let
+        // the trusted closure's next refusal relabel a partial write as idle.
+        throw Errors.nativeWriteUnknown(error);
+      }
     }
     await this.relationRepository.deleteOne(id);
   }

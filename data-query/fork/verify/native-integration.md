@@ -8019,3 +8019,112 @@ dynamic Resource evidence, ordinary-function provenance and trusted SERVICE SQL
 remain actual release gaps. This is source plus scoped evidence, not all native
 CRUD governance, complete Wren integration, original-product 100% parity or
 production readiness. Root retains index/commit/push ownership.
+
+## Original relationship metadata native first-write consumer
+
+Implementation-only source comparison baseline:
+`342cf6b901916dc3e48077dcd3ea3e3a20a21287`; the prior SQL-pair batch is already
+committed/pushed as `7b463d699e1d28d76c34627c80dcd036b60ec41c`. This batch is
+limited to two original production modules, one implementation-after consumer
+check and the existing README/receipt EOF. No inherited Java or Root-owned
+`nativeProjectScope.test.ts` / `nativeMetadataDelete.test.ts` bytes are changed.
+
+Four implementation conclusions:
+
+1. **Authority.** `.design/05` §2.7, `.design/08` §6 and
+   `SS-WRN-IDENTITY/GOVERNANCE` require real current identity/project permission
+   in the original native metadata consumers. Native modeling remains native
+   CRUD, not a fabricated query Action. Fixed official commit
+   `c5f02a0391c87420dba78632dcd86073710deb72` in
+   `/volumes/kailo/.references/WrenAI-ui-0.32.2` resolves
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.{createRelation,updateRelation,deleteRelation}`
+   and `wren-ui/src/apollo/server/services/modelService.ts::ModelService.{createRelation,updateRelation,deleteRelation,validateCreateRelation,getCalculatedFieldByRelation}`.
+   The actual upstream calls/repository sequence are retained, not reconstructed
+   from an assumed product interface.
+2. **Impact.** Original `pages/modeling.tsx`, `RelationModal` and
+   `DeleteRelationshipModal` still use the existing relationship GraphQL
+   operations, public `nativeProjectResolver`, original resolver and service.
+   Creation consumes the existing captured closure after native project/model/
+   column/duplicate validation and before `relationRepository.createOne`;
+   editing checks the native relation's current project before `updateOne`;
+   deletion checks native related calculated-field model ownership and consumes
+   the closure after its last read, before `deleteMany` or `deleteOne`.
+   `verifyMetadataDelete` is renamed to `verifyMetadataWrite` without changing
+   the committed Model/View deletion guard semantics. The optional service
+   callback is ephemeral server context, not a public contract or stored actor.
+   GraphQL/API/UI layout, migrations and four-side platform contracts are
+   unchanged; no second ACL, execution, task, ledger or registry is added.
+3. **Side effects.** First-write refusal uses the original public wrapper's
+   exact local refusal object; service/upstream-shaped `NOT_STARTED` extensions
+   cannot establish that nothing happened. After calculated-field `deleteMany`
+   has been dispatched, a second fresh refusal before deleting the relation is
+   wrapped in the existing `nativeWriteUnknown`, so it cannot be relabeled
+   `NOT_STARTED`. A lost write response is also `UNKNOWN`; no automatic repeated
+   INSERT/UPDATE/DELETE is introduced. Original full relationship response
+   disclosure still uses existing source model Resource `read`, separately from
+   project metadata `manage`.
+4. **Boundaries.** Actual fixture consumers cover unchanged original returns,
+   entirely unconfigured standalone behavior, configuration/identity arriving
+   during its last native read, bound raw resolver missing its trusted closure,
+   service current-project/model ownership changes, active permission revocation,
+   generation/delivery/HUMAN identity changes, missing source body permission,
+   no calculated fields, cross-project calculated fields, partial deletion and
+   lost/forged write receipts. Existing 403/412/503 classification and native
+   `UNKNOWN` remain authoritative; no native terminal success or failure is
+   fabricated. Partial native metadata effects and cross-client lost ACKs still
+   lack generic durable reconciliation; this batch does not close that gap or
+   change an unknown event to failed merely because it cannot be observed.
+
+Validation used only the existing `kailo-wren-query-sdk-itgs2n`, canonical
+`/work` and original dependencies. Actual limits were 4 CPU / 4 GiB memory,
+4 GiB memory+swap, UID/GID 1000:1000 and Node heap 3072 MiB. Preflight found
+22,371 MiB host available memory, memory PSI 0, high shared Data I/O
+(`full avg10=62.49%`) and only SDK `sleep`. A later bounded read found the
+same Jest `MainThread` in `Dl` with no case output; the original process was
+not terminated, restarted or mistaken for a pass.
+
+Actual original commands, with `docker exec -w /work` and the stated Node limit:
+
+```text
+node node_modules/jest/bin/jest.js src/nativeRelationWrite.test.ts --runInBand
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/modelResolver.ts src/apollo/server/services/modelService.ts src/nativeRelationWrite.test.ts
+```
+
+Log root (all old outputs retained):
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`.
+
+- `native-relation-write-positive.log`: original handle `76672`, exit **1**,
+  1056.119 s, **0 tests**. TS2339 occurred at four accesses of the transport's
+  actual `Record<string, unknown>` fixture payload and at union `boolean|Relation`
+  `output.id`. Only the fixture dynamic payload type and return assertion
+  expression were corrected; production/permission/UNKNOWN assertions were not
+  weakened. This is retained failure evidence, not business acceptance.
+- `native-relation-write-positive-corrected.log`: handle `87025`, exit **0**,
+  **44/44**, 10.286 s, original TypeScript and three-file formatting **0**.
+  Formal/private three inputs compared equal, memory/OOM event counters all 0.
+- `native-relation-write-negative-first-write.log`: handle `65171`, exit **1**,
+  **25 failed / 19 passed / 44 total**, 6.909 s. Only the three new production
+  service first-write closure calls were removed in the private candidate;
+  raw native writes, independent-to-bound changes and post-read revocation
+  regressions were caught. Original service bytes were restored and `cmp` **0**.
+- `native-relation-write-negative-partial-outcome.log`: handle `19618`, exit
+  **1**, **3 failed / 41 passed / 44 total**, 6.877 s. Only the production
+  post-partial-delete UNKNOWN wrapping was replaced with rethrowing the local
+  refusal; actual public consumers received `NOT_STARTED` after cleanup and
+  rejected it. This is a production behavior mutation, not an edited assertion.
+- `native-relation-write-restored.log`: handle `23882`, exit **0**, final
+  **44/44**, 7.072 s, original TypeScript and three-file formatting **0**,
+  memory/OOM counters all 0. Both private production mutations were restored;
+  all three latest formal/private inputs compared equal, including the clarified
+  write-boundary comment. The original public wrapper/class is exercised with
+  fixture-backed repository and binding transports; no live PostgreSQL,
+  SpiceDB/Core permission, native provider or browser visual check is claimed.
+
+No global check, new SDK/database, image build, deployment, actual business
+instance/ACTIVE binding/iframe, three-user/Agent scenario or Desktop/Mobile
+acceptance was run. Other model create/update/calculated-field/deployment writes,
+generic metadata UNKNOWN recovery, dynamic Resource evidence, ordinary function
+provenance and trusted SERVICE SQL remain release gaps. This is scoped source
+and actual consumer evidence, not all native CRUD, complete Wren integration,
+100% original-product parity or production readiness. Root alone owns commit/push.

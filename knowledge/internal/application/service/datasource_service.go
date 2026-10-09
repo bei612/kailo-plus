@@ -646,6 +646,21 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		syncLog.ID != payload.SyncLogID || syncLog.DataSourceID != payload.DataSourceID || syncLog.TenantID != payload.TenantID {
 		return fmt.Errorf("%w: original sync identity is unavailable", asynq.SkipRetry)
 	}
+	// Queue ACK loss can redeliver an already-finished native run. Observe its
+	// own persisted terminal evidence, without fetching under changed source
+	// configuration or replacing the original cursor, counts and finish time.
+	switch syncLog.Status {
+	case types.SyncLogStatusSuccess, types.SyncLogStatusCanceled:
+		if syncLog.FinishedAt == nil || syncLog.FinishedAt.IsZero() || syncLog.StartedAt.IsZero() ||
+			syncLog.FinishedAt.Before(syncLog.StartedAt) || syncLog.FinishedAt.After(time.Now()) {
+			return fmt.Errorf("%w: original sync terminal evidence is unavailable", asynq.SkipRetry)
+		}
+		return nil
+	case types.SyncLogStatusRunning, types.SyncLogStatusFailed, types.SyncLogStatusPartial:
+		// Failed/partial runs retain the original native retry and cursor path.
+	default:
+		return fmt.Errorf("%w: original sync state is unavailable", asynq.SkipRetry)
+	}
 	ds, err := s.GetDataSource(ctx, payload.DataSourceID)
 	if err != nil {
 		if !errors.Is(err, datasource.ErrDataSourceNotFound) {

@@ -4023,3 +4023,100 @@ max/oom/oom_kill 各 0，SDK 只剩 sleep；完整 scoped diff 与 diff --check 
 撤权 E2E、实库、full、镜像构建或部署，未批准/激活 release/binding。
 固定 `272693d5e1386a352946736c80a2a00ff7c27ff1` 知识库镜像不含本批。
 完整 FILE_STORAGE 七能力、写入/删除/分享门禁和三组件生产交付未因此解除。
+
+## 2026-10-09 原生同步终态重复投递消费者（专项，不是跨服务 E2E）
+
+本批直接修复原 `DataSourceService.ProcessSync`：已有 SyncLog 已确认
+`success/canceled` 时，队列 ACK 丢失后的同一任务只观察原终态，
+不再读取新 DataSource 配置、列举、导入或覆盖原 cursor、计数和 FinishedAt。
+`running/failed/partial` 保留原生重试；未知状态或不完整终态不冒充完成。
+原模板、样式、独立入口、连接器、原队列/TaskID 和数据结构均未变。
+
+动手前四步结论与实际调用方：
+
+1. 权威是 `.design/13` DD-89 的 receiver 自拉、原生同步/游标权威和
+   撤权后禁止新读取/不猜删除终态，及 `.design/07` DD-93 的现有 Task/
+   观察边界。固定官方
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整路径
+   `internal/application/service/datasource_service.go::DataSourceService.ProcessSync`
+   读取 SyncLog 后没有消费成功/取消终态，仍进入原 fetch/process/checkpoint。
+   这是既有原生消费者缺项，不是设计阻断，也不是新同步能力。
+   本批归为已授权治理改造，不声明与官方字节一致或全量恢复。
+2. 相同固定版本
+   `internal/application/service/datasource_service.go::DataSourceService.ManualSync`
+   和 `internal/datasource/scheduler.go::Scheduler.triggerSync` 先保存原
+   `running`/StartedAt，再投递原 `TypeDataSourceSync`。当前
+   `internal/router/task.go` 将它绑定原 `ProcessSync`；
+   `SyncLogRepository.FindByID/CancelPendingByDataSource/UpdateResult` 位于
+   `internal/application/repository/datasource_repo.go`。
+   原 `updateSyncRunResult` 先 checkpoint，再保存状态/FinishedAt。
+   新消费者仍先核 payload 与 log 的 tenant/source/log 三个原引用，
+   再消费五个原封闭状态；确认终态必须有有效 StartedAt/FinishedAt、
+   顺序正确且非未来时间。无需新 schema、迁移、客户端双读或注册实体。
+3. 没有新 grant、SOURCE/RECEIVER 调用、业务正文存储、secret、权限、
+   quota、审计、工作流、队列或账本。确认原终态可以在当前来源已删除/
+   不可用时被观察，但不据此解除新内容读取的 fresh PEP。
+   原 log 读取失败传播错误；身份错配、缺失/未知状态与坏终态拒绝，
+   保留原 log，不写 `success/failed/canceled` 来猜结果。
+   原 `asynq.SkipRetry` 只终止坏任务的原队列重试，不改业务 SyncLog。
+   按 `apps/06` §4，错配属 DENIED，证据缺项/未知属 PRECONDITION/UNKNOWN；
+   没有新增公开 ErrorClass/ReasonCode。原 LIMIT/CONFLICT 和 binding/
+   generation/secret/projection 准入未被改变或绕过。
+4. 原检查直接调用 `ProcessSync`：成功/取消各核当前来源存在、已删除、
+   不可用、空/零/倒序/未来时间、原 tenant/source/log 错配和 log 读取失败；
+   原 stream/Knowledge lookup、metadata/delete、DS checkpoint 和 SyncLog
+   写计数均未再进入，原 FinishedAt、计数、结果与 cursor 不变。
+   failed/partial 仍走原读/重试路径，未知状态不被 ACK 为终态成功。
+   没有新增 timeout/背压阈值；原 producer 的 QueueSync、MaxRetry(5)、
+   Timeout(2*time.Hour) 保留，未将本地取消、读取失败或接受队列当成完成。
+   这里只闭合已持久终态后的顺序重投递；在途并发、探测后 writer CAS、
+   ManualSync enqueue 结果不明及 HTTP 全 ACK 丢失仍未闭合，不称 exactly-once。
+
+复用原 `kailo-knowledge-native-check-wkkigg`、镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+UID/GID 1000:1000、4 CPU/8 GiB、无额外 swap、Go 1.26.8。
+开始时只有 sleep、memory.current 约 5 MiB、max/oom/oom_kill 全 0；
+宿主 available 约 21.9 GiB、memory PSI avg10 0，Data 可用 277 GiB。
+原 internal 完整 checksum 比对只差本批两个输入，go.mod/go.sum cmp 0；
+仅同步这两个文件到原候选，复用 `/cache/mod`、`/cache/build` 和现存
+`file-storage-sync-20261008.maEMf2`，未下载/安装、建 SDK/镜像/数据库或整仓快照。
+首轮宿主 I/O full avg10 升至约 69%，原 go 冷读后进入 link；
+同一句柄等待终态，没有重复启动。结束 SDK 只剩 sleep、max/oom/oom_kill 全 0。
+
+实际原命令（三轮相同，仅日志名不同）：
+
+```sh
+sudo docker exec --user 1000:1000 -w /workspace/knowledge \
+  kailo-knowledge-native-check-wkkigg \
+  env PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  GOMODCACHE=/cache/mod GOCACHE=/cache/build GOPROXY=off \
+  TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  go test -mod=readonly ./internal/application/service \
+  -run 'TestProcessSync|TestFileStorage' -count=1 -v
+```
+
+3169 正向 exit 0：**26 顶层、177 子项 PASS，0 failed/skip**。
+仅在私有候选 apply_patch 移除实际生产终态 switch，保留身份核验与
+所有原 fixture；18765 exit 1：**3 顶层、20 子项 FAIL**，其余
+23 顶层、157 子项 PASS。success/canceled 原完整 stream 实际再次进入，
+日志显示原 streaming completion/count 写路径，检查真实报错；
+缺失/未知证据也被捕获，不是编译失败或改测试预期的负向。
+apply_patch 恢复生产原字节，两输入正式/SDK cmp 各 0。
+41403 最终同目标 exit 0：**26 顶层、177 子项 PASS，0 failed/skip**；
+最终两输入 cmp 0、gofmt -d 空、完整 scoped diff 与 diff --check 通过。
+
+日志保留主机原目录
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/file-storage-sync-20261008.maEMf2/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `datasource-terminal-positive.log` | `089f6a8932bdc9479f026e15c9b16ecc7a47021e59b32e9713174a9ab536a8d5` |
+| `datasource-terminal-production-mutation.log` | `1a81b7adc9be236b34fc35bd42b3563d1871f73334b037dee991739e4c8c50ce` |
+| `datasource-terminal-restored.log` | `4116247bb028304d830dbc5b7b957fecdc95c2867794685116902457fcb759c4` |
+
+这是原 native Go/HTTP fixture 与队列消费者专项证据，不是实库、真实
+Cells→WeKnora 解析/撤权 E2E、浏览器视觉或 Windows/Mobile 验收。
+未运行本批 full、镜像构建、部署或 release/binding 批准；
+固定 `272693d5e1386a352946736c80a2a00ff7c27ff1` 已发布原生镜像不含本批，
+也不含此前 `1e3712818fc6d74359a501e192fd7c8a8881046c` 恢复实现。
+正式绑定仍 0，完整 FILE_STORAGE 七必选和生产交付门禁未因此解除。

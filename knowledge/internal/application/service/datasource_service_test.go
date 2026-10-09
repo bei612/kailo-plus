@@ -377,11 +377,13 @@ func (r *processSyncSyncLogRepo) CleanupOldLogs(context.Context, int) error { re
 
 type processSyncReadDSRepo struct {
 	interfaces.DataSourceRepository
-	ds  *types.DataSource
-	err error
+	ds    *types.DataSource
+	err   error
+	reads int
 }
 
 func (r *processSyncReadDSRepo) FindByID(context.Context, string) (*types.DataSource, error) {
+	r.reads++
 	return r.ds, r.err
 }
 
@@ -468,6 +470,125 @@ func TestProcessSyncRequiresOriginalRunAndConfirmedDeletion(t *testing.T) {
 			}
 			require.Equal(t, before, *original, "unconfirmed writes cannot mutate retained run evidence in memory")
 			require.Equal(t, cursor, string(ds.LastSyncCursor))
+		})
+	}
+}
+
+func TestProcessSyncObservesOnlyConfirmedTerminalRun(t *testing.T) {
+	for _, status := range []string{types.SyncLogStatusSuccess, types.SyncLogStatusCanceled} {
+		for _, scenario := range []string{"confirmed", "source-deleted", "source-unavailable", "missing-finish", "zero-finish",
+			"missing-start", "finish-before-start", "future-finish", "wrong-tenant", "wrong-source", "wrong-log", "missing-tenant", "log-read-unavailable"} {
+			t.Run(status+"/"+scenario, func(t *testing.T) {
+				started := time.Now().Add(-time.Minute).UTC()
+				finished := started.Add(time.Second)
+				original := &types.SyncLog{ID: "original-log", DataSourceID: "original-source", TenantID: 1,
+					Status: status, StartedAt: started, FinishedAt: &finished,
+					ItemsTotal: 7, ItemsCreated: 3, ItemsUpdated: 2, ItemsDeleted: 1, ItemsSkipped: 1,
+					ErrorMessage: "original observation", Result: types.JSON(`{"original":"retained"}`)}
+				payload := types.DataSourceSyncPayload{DataSourceID: original.DataSourceID, SyncLogID: original.ID, TenantID: original.TenantID}
+				source := &processSyncReadDSRepo{err: errors.New("current source is unavailable")}
+				logs := &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{original.ID: original}}
+				confirmed := scenario == "confirmed" || scenario == "source-deleted" || scenario == "source-unavailable"
+				switch scenario {
+				case "source-deleted":
+					source.err = datasource.ErrDataSourceNotFound
+				case "missing-finish":
+					original.FinishedAt = nil
+				case "zero-finish":
+					original.FinishedAt = timePtr(time.Time{})
+				case "missing-start":
+					original.StartedAt = time.Time{}
+				case "finish-before-start":
+					original.FinishedAt = timePtr(started.Add(-time.Second))
+				case "future-finish":
+					original.FinishedAt = timePtr(time.Now().Add(time.Hour))
+				case "wrong-tenant":
+					payload.TenantID++
+				case "wrong-source":
+					payload.DataSourceID = "another-source"
+				case "wrong-log":
+					original.ID = "another-log"
+				case "missing-tenant":
+					payload.TenantID = 0
+				case "log-read-unavailable":
+					logs.readErr = errors.New("original log is unavailable")
+				}
+				before := *original
+				raw, err := json.Marshal(payload)
+				require.NoError(t, err)
+				svc := &DataSourceService{dsRepo: source, syncLogRepo: logs}
+				err = svc.ProcessSync(context.Background(), asynq.NewTask(types.TypeDataSourceSync, raw))
+				if confirmed {
+					require.NoError(t, err, "trusted native terminal evidence does not depend on new source access")
+				} else if logs.readErr != nil {
+					require.ErrorIs(t, err, logs.readErr)
+				} else {
+					require.ErrorIs(t, err, asynq.SkipRetry, "missing evidence or a mismatched run cannot acknowledge completion")
+				}
+				require.Zero(t, source.reads, "terminal observation must not reenter current source configuration")
+				require.Zero(t, logs.writes)
+				require.Equal(t, before, *original, "retain the exact original finish time, counts and result")
+			})
+		}
+	}
+}
+
+func TestProcessSyncPreservesNonterminalRetryAndRejectsUnknownState(t *testing.T) {
+	for _, status := range []string{types.SyncLogStatusRunning, types.SyncLogStatusFailed, types.SyncLogStatusPartial, "", "unknown-native-state"} {
+		t.Run(status, func(t *testing.T) {
+			original := &types.SyncLog{ID: "original-log", DataSourceID: "original-source", TenantID: 1, Status: status}
+			sourceUnavailable := errors.New("source is unavailable")
+			source := &processSyncReadDSRepo{err: sourceUnavailable}
+			logs := &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{original.ID: original}}
+			svc := &DataSourceService{dsRepo: source, syncLogRepo: logs}
+			raw, err := json.Marshal(types.DataSourceSyncPayload{DataSourceID: original.DataSourceID, SyncLogID: original.ID, TenantID: original.TenantID})
+			require.NoError(t, err)
+			err = svc.ProcessSync(context.Background(), asynq.NewTask(types.TypeDataSourceSync, raw))
+			if status == "" || status == "unknown-native-state" {
+				require.ErrorIs(t, err, asynq.SkipRetry)
+				require.Zero(t, source.reads)
+			} else {
+				require.ErrorIs(t, err, sourceUnavailable)
+				require.NotErrorIs(t, err, asynq.SkipRetry, "original native retries must remain available")
+				require.Equal(t, 1, source.reads)
+			}
+			require.Equal(t, status, original.Status)
+			require.Nil(t, original.FinishedAt)
+			require.Zero(t, logs.writes)
+		})
+	}
+}
+
+func TestProcessSyncTerminalReplayDoesNotRepeatStreaming(t *testing.T) {
+	for _, status := range []string{types.SyncLogStatusSuccess, types.SyncLogStatusCanceled} {
+		t.Run(status, func(t *testing.T) {
+			h := newSyncDeletionHarness(t, true, "original-source", "original-log", nil, nil)
+			connector := &recordingFullStreamConnector{}
+			h.svc.connectorRegistry = datasource.NewConnectorRegistry()
+			require.NoError(t, h.svc.connectorRegistry.Register(connector))
+			h.ds.Type = connector.Type()
+			h.ds.LastSyncCursor = makeConnectorCursor(t, map[string]map[string]string{"original-source": {"file": "original-revision"}})
+			source := &recordingDSRepo{kbDeleteDSRepo: *newKBDeleteDSRepo(h.ds.KnowledgeBaseID, h.ds)}
+			h.svc.dsRepo = source
+			original := h.syncLogRepo.logs[h.syncLogID]
+			original.Status = status
+			original.StartedAt = time.Now().Add(-time.Minute).UTC()
+			original.FinishedAt = timePtr(original.StartedAt.Add(time.Second))
+			original.ItemsTotal, original.ItemsCreated = 7, 7
+			original.Result = types.JSON(`{"original":"retained"}`)
+			before := *original
+			cursor := string(h.ds.LastSyncCursor)
+			_, err := h.run(t)
+			require.NoError(t, err)
+			require.False(t, connector.streamCalled)
+			require.False(t, connector.fullCalled, "redelivery cannot enumerate or consume the original stream again")
+			require.Empty(t, h.knowledgeRepo.metadataUpdates)
+			require.Empty(t, h.knowledgeRepo.externalID)
+			require.Empty(t, h.knowledgeRepo.hardDeleted)
+			require.Empty(t, source.updated, "no ingestion checkpoint or final cursor may be written")
+			require.Zero(t, h.syncLogRepo.writes)
+			require.Equal(t, before, *original)
+			require.Equal(t, cursor, string(h.ds.LastSyncCursor))
 		})
 	}
 }

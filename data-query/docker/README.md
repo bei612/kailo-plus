@@ -1248,3 +1248,30 @@ new live PostgreSQL rollback, public authorization/provider or installed-instanc
 acceptance. Dynamic Resource adoption, ordinary-function provenance, trusted
 SERVICE SQL and other native metadata first-write/UNKNOWN recovery gaps still
 prevent a claim of complete Wren integration or an ACTIVE release.
+
+### Original relationship metadata first-write consumer
+
+The original `createRelation`, `updateRelation` and `deleteRelation` GraphQL
+mutations now pass the existing request-scoped `nativeProjectCheck` to their
+original `ModelService` methods. It consumes captured binding/generation and
+current project `manage` permission **after** the service's own native reads and
+before its first repository write, not only at the resolver entrance. Native
+model/related calculated-field ownership remains in Wren's existing tables.
+
+Relationship deletion retains the original calculated-field cleanup and native
+relationship delete. If cleanup has already been dispatched, a fresh refusal
+before the remaining delete preserves `UNKNOWN`, not `NOT_STARTED`. No SQL,
+native write or native task is automatically retried by this consumer. A missing
+trusted server closure in bound mode fails closed; the entirely unconfigured
+independent original flow remains available. Existing original relationship
+controls, payloads, telemetry and complete native responses are unchanged.
+
+The [source and actual consumer receipt](../fork/verify/native-integration.md#original-relationship-metadata-native-first-write-consumer)
+records final **44/44**, original TypeScript/three-file formatting exit 0, and
+two private production mutations caught and restored byte-for-byte. The initial
+fixture TypeScript failure had **0 tests** and is retained, not counted as a pass.
+These are actual original public resolver/service consumers with fixture-backed
+database and authorization transports, not live database/authorization or UI
+acceptance. This batch does not provide cross-client metadata idempotency or
+lost-ACK reconciliation, close other Model/calculated-field/deployment writes,
+activate a release, deploy an instance, or establish full Wren integration.

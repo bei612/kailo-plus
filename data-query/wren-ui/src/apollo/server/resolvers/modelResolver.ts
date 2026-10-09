@@ -122,10 +122,10 @@ export class ModelResolver {
     return relation;
   }
 
-  private async verifyMetadataDelete(ctx: IContext, projectId: number) {
+  private async verifyMetadataWrite(ctx: IContext, projectId: number) {
     if (ctx.nativeProjectCheck) {
-      // This is the first native write. The original project and row reads
-      // cannot authorize deletion after their asynchronous scope has changed.
+      // Consume current permission at the native write boundary. A caller
+      // which already dispatched a write must preserve UNKNOWN on rejection.
       await ctx.nativeProjectCheck(projectId);
     } else if (
       process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
@@ -201,7 +201,9 @@ export class ModelResolver {
 
     const eventName = TelemetryEvent.MODELING_CREATE_RELATION;
     try {
-      const relation = await ctx.modelService.createRelation(data);
+      const relation = await ctx.modelService.createRelation(data, (id) =>
+        this.verifyMetadataWrite(ctx, id),
+      );
       ctx.telemetry.sendEvent(eventName, { data });
       return relation;
     } catch (err: any) {
@@ -225,7 +227,11 @@ export class ModelResolver {
     await this.currentRelation(ctx, where.id, projectId);
     const eventName = TelemetryEvent.MODELING_UPDATE_RELATION;
     try {
-      const relation = await ctx.modelService.updateRelation(data, where.id);
+      const relation = await ctx.modelService.updateRelation(
+        data,
+        where.id,
+        (id) => this.verifyMetadataWrite(ctx, id),
+      );
       ctx.telemetry.sendEvent(eventName, { data });
       return relation;
     } catch (err: any) {
@@ -247,7 +253,9 @@ export class ModelResolver {
     const relationId = args.where.id;
     const { id: projectId } = await ctx.projectService.getCurrentProject();
     await this.currentRelation(ctx, relationId, projectId);
-    await ctx.modelService.deleteRelation(relationId);
+    await ctx.modelService.deleteRelation(relationId, (id) =>
+      this.verifyMetadataWrite(ctx, id),
+    );
     return true;
   }
 
@@ -932,7 +940,7 @@ export class ModelResolver {
     }
 
     // related columns and relationships will be deleted in cascade
-    await this.verifyMetadataDelete(ctx, projectId);
+    await this.verifyMetadataWrite(ctx, projectId);
     await ctx.modelRepository.deleteOne(modelId);
     return true;
   }
@@ -1367,7 +1375,7 @@ export class ModelResolver {
     if (!view) {
       throw new Error('View not found');
     }
-    await this.verifyMetadataDelete(ctx, projectId);
+    await this.verifyMetadataWrite(ctx, projectId);
     await ctx.viewRepository.deleteOne(viewId);
     return true;
   }
