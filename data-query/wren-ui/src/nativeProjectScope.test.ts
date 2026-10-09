@@ -1,10 +1,12 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
 import { ApolloServer } from 'apollo-server-micro';
 import { gql } from '@apollo/client';
 import GraphQLJSON from 'graphql-type-json';
 import { typeDefs } from './apollo/server/schema';
 import { LIST_MODELS, GET_MODEL } from './apollo/client/graphql/model';
 import { LIST_VIEWS } from './apollo/client/graphql/view';
+import { GET_NATIVE_SQL } from './apollo/client/graphql/home';
 import { DiagramResolver } from './apollo/server/resolvers/diagramResolver';
 import { AskingService } from './apollo/server/services/askingService';
 import { ProjectService } from './apollo/server/services/projectService';
@@ -430,6 +432,342 @@ describe('native bound-project business consumers', () => {
         ),
       ).rejects.toThrow('NATIVE_AUTHENTICATION_REQUIRED');
       expect(authorize).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('original native SQL conversion HUMAN source consumer', () => {
+    let previous: string | undefined;
+    let captured: any;
+    let response: any;
+    let generation: number;
+    let args: any;
+    let requestContext: typeof ctx;
+    const read = async () => {
+      const graphql = new ApolloServer({
+        typeDefs,
+        resolvers: {
+          JSON: GraphQLJSON,
+          Query: {
+            nativeSql: (root, variables, context) => {
+              requestContext = context;
+              return resolver.getNativeSql(root, variables, context);
+            },
+          },
+        },
+        context: () => ctx,
+      });
+      try {
+        return await graphql.executeOperation({
+          query: GET_NATIVE_SQL,
+          variables: args,
+        });
+      } finally {
+        await graphql.stop();
+      }
+    };
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      generation = 2;
+      requestContext = undefined;
+      captured = {
+        manifest: {
+          catalog: 'original',
+          schema: 'original',
+          models: [{ name: 'model11', columns: [] }],
+          views: [
+            {
+              name: 'originalView',
+              statement: 'SELECT model11',
+              properties: { viewId: '21' },
+            },
+          ],
+        },
+        nativeObjectRefs: [
+          { nativeType: 'model', nativeId: 11, nativeName: 'model11' },
+          { nativeType: 'view', nativeId: 21, nativeName: 'originalView' },
+        ],
+      };
+      response = { id: 71, threadId: 81, sql: 'SELECT originalView' };
+      ctx.projectService.getCurrentProject.mockResolvedValue({
+        id: projectId,
+        type: 'POSTGRES',
+      });
+      ctx.mdlService = {
+        makeCurrentModelMDL: jest.fn(async () => structuredClone(captured)),
+      };
+      ctx.askingService = {
+        getResponse: jest.fn(async () => structuredClone(response)),
+      };
+      ctx.wrenEngineAdaptor = {
+        getNativeSQL: jest.fn(async () => 'SELECT converted'),
+      };
+      ctx.ibisServerAdaptor = {
+        getNativeSql: jest.fn(async () => 'SELECT converted'),
+      };
+      args = {
+        responseId: 71,
+        queryScope: nativePreviewScope(config, ctx.nativeIdentityScope),
+        generation,
+      };
+      authorize.mockImplementation(async (_config, _operation, input) =>
+        input.authorizeScope
+          ? {
+              scope: {
+                ...config,
+                generation,
+                tenantId: config.tenantId,
+                permission: 'discover',
+                checkedRevision: 'fresh-scope',
+              },
+            }
+          : selected(input),
+      );
+    });
+    afterEach(() => {
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    it.each(['POSTGRES', 'DUCKDB', 'MSSQL'])(
+      'converts the original current %s model snapshot once after real source reads, without executing SQL',
+      async (type) => {
+        const project = { id: projectId, type };
+        ctx.projectService.getCurrentProject.mockResolvedValue(project);
+        const result = await read();
+        expect(result.errors).toBeUndefined();
+        expect(result.data.nativeSql).toContain('converted');
+        expect(ctx.mdlService.makeCurrentModelMDL).toHaveBeenNthCalledWith(
+          1,
+          project,
+        );
+        expect(ctx.mdlService.makeCurrentModelMDL).toHaveBeenNthCalledWith(
+          2,
+          project,
+        );
+        expect(ctx.askingService.getResponse).toHaveBeenNthCalledWith(
+          1,
+          71,
+          project,
+        );
+        expect(ctx.askingService.getResponse).toHaveBeenNthCalledWith(
+          2,
+          71,
+          project,
+        );
+        const convert =
+          type === 'DUCKDB'
+            ? ctx.wrenEngineAdaptor.getNativeSQL
+            : ctx.ibisServerAdaptor.getNativeSql;
+        expect(convert).toHaveBeenCalledTimes(1);
+        const scopeRequests = authorize.mock.calls
+          .map((entry) => entry[2].authorizeScope)
+          .filter(Boolean);
+        expect(scopeRequests).toHaveLength(3);
+        scopeRequests.forEach((request) =>
+          expect(request).toEqual({ permission: 'discover' }),
+        );
+        expect(
+          authorize.mock.calls
+            .filter((entry) => (entry[2] as any).resolveResource)
+            .map((entry) => (entry[2] as any).resolveResource),
+        ).toEqual(
+          [11, 21, 11, 21].map((id) => ({
+            workspaceId: config.workspaceId,
+            actionKey: 'data_query.describe@v1',
+            actionVersion: 1,
+            nativeType: id === 11 ? 'model' : 'view',
+            nativeRef: String(id),
+          })),
+        );
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['missing', 'scope', 'generation'])(
+      'rejects %s request association before reading model bodies or converting',
+      async (fault) => {
+        if (fault === 'missing') args = { responseId: 71 };
+        else if (fault === 'scope') args.queryScope = 'b'.repeat(64);
+        else args.generation = 3;
+        const result = await read();
+        expect(result.errors).toBeDefined();
+        expect(result.data).toBeNull();
+        expect(ctx.mdlService.makeCurrentModelMDL).not.toHaveBeenCalled();
+        expect(ctx.ibisServerAdaptor.getNativeSql).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['model', 'view'])(
+      'refuses denied %s before sending full native MDL to the original converter',
+      async (kind) => {
+        const original = authorize.getMockImplementation();
+        authorize.mockImplementation(async (...input) => {
+          if ((input[2] as any).resolveResource?.nativeType === kind)
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          return original(...input);
+        });
+        expect((await read()).data).toBeNull();
+        expect(ctx.ibisServerAdaptor.getNativeSql).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      'source',
+      'resource-version',
+      'generation',
+      'scope',
+      'delivery',
+      'manifest',
+      'provenance',
+      'response',
+      'project',
+    ])(
+      'withholds converted SQL after %s changes while the original converter is in flight',
+      async (fault) => {
+        const original = authorize.getMockImplementation();
+        ctx.ibisServerAdaptor.getNativeSql.mockImplementation(async () => {
+          if (fault === 'source')
+            authorize.mockImplementation(async (...input) => {
+              if ((input[2] as any).resolveResource)
+                throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+              return original(...input);
+            });
+          if (fault === 'resource-version')
+            authorize.mockImplementation(async (...input) => {
+              const result = await original(...input);
+              return result.resource
+                ? { resource: { ...result.resource, resourceVersion: 2 } }
+                : result;
+            });
+          if (fault === 'generation') generation += 1;
+          if (fault === 'scope') {
+            requestContext.nativeIdentityScope =
+              requestContext.nativeIdentityScope === 'a'.repeat(64)
+                ? 'b'.repeat(64)
+                : 'a'.repeat(64);
+            expect(
+              nativePreviewScope(config, requestContext.nativeIdentityScope),
+            ).not.toBe(args.queryScope);
+          }
+          if (fault === 'delivery')
+            jest.mocked(loadQueryDelivery).mockResolvedValue({
+              ...config,
+              nativeInstanceRef: 'different-controlled-instance',
+            });
+          if (fault === 'manifest')
+            captured.manifest.models[0].columns = [{ name: 'new-column' }];
+          if (fault === 'provenance')
+            captured.nativeObjectRefs[0].nativeId = 12;
+          if (fault === 'response') response.sql = 'SELECT other';
+          if (fault === 'project')
+            ctx.projectService.getCurrentProject.mockResolvedValue({
+              id: 8,
+              type: 'POSTGRES',
+            });
+          return 'SELECT secretConverted';
+        });
+        const result = await read();
+        expect(result.errors).toBeDefined();
+        expect(result.data).toBeNull();
+        expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('refuses missing captured source facts instead of adopting same-name current native IDs', async () => {
+      delete captured.nativeObjectRefs;
+      const result = await read();
+      expect(result.errors).toBeDefined();
+      expect(result.data).toBeNull();
+      expect(ctx.ibisServerAdaptor.getNativeSql).not.toHaveBeenCalled();
+    });
+    it.each([undefined, { sql: 'SELECT undisclosed_native_detail' }])(
+      'does not expose an unrecognized native converter response %p through GraphQL serialization',
+      async (value) => {
+        ctx.ibisServerAdaptor.getNativeSql.mockResolvedValue(value);
+        const result = await read();
+        expect(result.data).toBeNull();
+        expect(result.errors[0].message).toBe('QUERY_EVIDENCE_UNAVAILABLE');
+        expect(JSON.stringify(result.errors)).not.toContain(
+          'undisclosed_native_detail',
+        );
+        expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['unchanged', 'revoked', 'generation'])(
+      'applies the same current read authorization to an original converter error after %s',
+      async (boundary) => {
+        const original = authorize.getMockImplementation();
+        const message = 'original-native-conversion-detail SELECT model11';
+        ctx.ibisServerAdaptor.getNativeSql.mockImplementation(async () => {
+          if (boundary === 'generation') generation += 1;
+          if (boundary === 'revoked')
+            authorize.mockImplementation(async (...input) => {
+              if ((input[2] as any).resolveResource)
+                throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+              return original(...input);
+            });
+          throw new Error(message);
+        });
+        const result = await read();
+        expect(result.data).toBeNull();
+        expect(result.errors).toBeDefined();
+        expect(JSON.stringify(result.errors)).not.toContain(message);
+        expect(result.errors[0].message).toBe(
+          boundary === 'unchanged'
+            ? 'QUERY_EVIDENCE_UNAVAILABLE'
+            : boundary === 'revoked'
+              ? 'QUERY_SCOPE_DENIED'
+              : 'QUERY_REFERENCE_CHANGED',
+        );
+        expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('retains the original independent converter without invented platform provenance or scope', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
+      delete captured.nativeObjectRefs;
+      args = { responseId: 71 };
+      expect((await read()).errors).toBeUndefined();
+      expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
+      expect(authorize).not.toHaveBeenCalled();
+      expect(ctx.mdlService.makeCurrentModelMDL).toHaveBeenCalledTimes(1);
+    });
+    it('retains an original independent converter error without inventing bound delivery', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
+      args = { responseId: 71 };
+      const error = new Error('original independent converter error');
+      ctx.ibisServerAdaptor.getNativeSql.mockRejectedValue(error);
+      const result = await read();
+      expect(result.data).toBeNull();
+      expect(result.errors[0].message).toBe(error.message);
+      expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
+      expect(authorize).not.toHaveBeenCalled();
+    });
+    it('does not convert under invalid configured delivery or disclose a standalone conversion adopted by a new binding', async () => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+      jest
+        .mocked(loadQueryDelivery)
+        .mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+        );
+      expect((await read()).data).toBeNull();
+      expect(ctx.ibisServerAdaptor.getNativeSql).not.toHaveBeenCalled();
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
+      args = { responseId: 71 };
+      ctx.ibisServerAdaptor.getNativeSql.mockImplementation(async () => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'new-controlled-binding';
+        return 'SELECT secretConverted';
+      });
+      const result = await read();
+      expect(result.errors).toBeDefined();
+      expect(result.data).toBeNull();
+      expect(ctx.ibisServerAdaptor.getNativeSql).toHaveBeenCalledTimes(1);
     });
   });
 

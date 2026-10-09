@@ -48,6 +48,8 @@ export interface WrenEngineValidationResponse {
 export interface DryPlanOption {
   modelingOnly?: boolean;
   manifest?: Manifest;
+  requestTimeoutMs?: number;
+  responseMaxBytes?: number;
 }
 
 export interface WrenEngineDryRunOption {
@@ -296,6 +298,8 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
         method: 'get',
         url: url.href,
         headers,
+        timeout: options?.requestTimeoutMs,
+        maxContentLength: options?.responseMaxBytes,
         data: {
           sql,
           ...props,
@@ -305,7 +309,7 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
       return res.data;
     } catch (err: any) {
       logger.debug(`Got error when getting native SQL: ${err.message}`);
-      Errors.create(Errors.GeneralErrorCodes.DRY_PLAN_ERROR, {
+      throw Errors.create(Errors.GeneralErrorCodes.DRY_PLAN_ERROR, {
         customMessage: err.message,
         originalError: err,
       });

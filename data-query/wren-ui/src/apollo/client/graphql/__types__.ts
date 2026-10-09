@@ -1229,6 +1229,8 @@ export type QueryModelArgs = {
 
 
 export type QueryNativeSqlArgs = {
+  generation?: InputMaybe<Scalars['Int']>;
+  queryScope?: InputMaybe<Scalars['String']>;
   responseId: Scalars['Int'];
 };
 

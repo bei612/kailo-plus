@@ -5,6 +5,7 @@ import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
 import useGovernedPreview from './hooks/useGovernedPreview';
 import useGovernedSqlPreview from './hooks/useGovernedSqlPreview';
 import useDashboardQuery from './hooks/useDashboardQuery';
+import useNativeSQL from './hooks/useNativeSQL';
 import { queryReceiptState } from './utils/queryReceipt';
 import { getQueryPreviewText } from './utils/language';
 import { getNativeWriteText } from './utils/language';
@@ -30,6 +31,17 @@ const mockPreview = jest.fn();
 const mockConfig = jest.fn();
 const mockSqlPairRead = jest.fn();
 const mockHistoryRead = jest.fn();
+const mockNativeSqlRead = jest.fn();
+let mockNativeSqlOptions: any[];
+jest.mock('./apollo/client/graphql/home.generated', () => ({
+  useGetNativeSqlLazyQuery: (options: any) => {
+    mockNativeSqlOptions.push(options);
+    return [
+      mockNativeSqlRead,
+      { data: { nativeSql: 'old shared Apollo cache' } },
+    ];
+  },
+}));
 const mockHistoryOpen = jest.fn();
 const mockHistoryClose = jest.fn();
 const mockHistoryUpdate = jest.fn();
@@ -162,6 +174,226 @@ jest.mock('./components/table/CalculatedFieldTable', () => () => null);
 jest.mock('./components/table/RelationTable', () => () => null);
 jest.mock('./components/table/BaseTable', () => ({ COLUMN: {} }));
 jest.mock('./components/pages/modeling/form/ModelForm', () => () => null);
+
+describe('original Show original SQL hook identity and late-response consumers', () => {
+  let hook: ReturnType<typeof useNativeSQL>;
+  let effect: jest.SpyInstance;
+  let state: jest.SpyInstance;
+  let effects: Array<() => void | (() => void)>;
+  let cleanup: void | (() => void);
+  let published: any[];
+  let listeners: Map<string, () => void>;
+  let originalWindow: PropertyDescriptor | undefined;
+  let originalDocument: PropertyDescriptor | undefined;
+  const identity = {
+    nativeBindingConfigured: true,
+    nativeBindingGeneration: 2,
+    queryScope: 'a'.repeat(64),
+  };
+  const flush = async () => {
+    for (let index = 0; index < 16; index++) await Promise.resolve();
+  };
+  beforeEach(() => {
+    published = [];
+    mockLocale = undefined;
+    effects = [];
+    listeners = new Map();
+    mockNativeSqlOptions = [];
+    mockConfig.mockReset().mockResolvedValue(identity);
+    mockNativeSqlRead
+      .mockReset()
+      .mockResolvedValue({ data: { nativeSql: 'SELECT originalConverted' } });
+    jest.mocked(message.error).mockClear();
+    effect = jest
+      .spyOn(require('react'), 'useEffect')
+      .mockImplementation((callback: any) => {
+        effects.push(callback);
+      });
+    state = jest
+      .spyOn(require('react'), 'useState')
+      .mockImplementation((initial: any) => [
+        initial,
+        (value: any) => published.push(value),
+      ]);
+    originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+    originalDocument = Object.getOwnPropertyDescriptor(global, 'document');
+    const events = {
+      addEventListener: (name: string, callback: () => void) =>
+        listeners.set(name, callback),
+      removeEventListener: (name: string) => listeners.delete(name),
+    };
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: events,
+    });
+    Object.defineProperty(global, 'document', {
+      configurable: true,
+      value: { ...events, visibilityState: 'visible' },
+    });
+    const Consumer = () => {
+      hook = useNativeSQL(71);
+      return null;
+    };
+    renderToStaticMarkup(createElement(Consumer));
+    cleanup = effects[0]();
+    hook.nativeSQLResult.setNativeSQLMode(true);
+  });
+  afterEach(() => {
+    if (cleanup) cleanup();
+    effect.mockRestore();
+    state.mockRestore();
+    if (originalWindow) Object.defineProperty(global, 'window', originalWindow);
+    else delete (global as any).window;
+    if (originalDocument)
+      Object.defineProperty(global, 'document', originalDocument);
+    else delete (global as any).document;
+  });
+  const bodies = () => published.filter((value) => value?.responseId);
+  it('reads the original selected response without shared Apollo cache and sends the real current request identity', async () => {
+    expect(mockNativeSqlOptions).toEqual([{ fetchPolicy: 'no-cache' }]);
+    expect(hook.nativeSQLResult.data).toBe('');
+    await hook.fetchNativeSQL();
+    expect(mockNativeSqlRead).toHaveBeenCalledTimes(1);
+    expect(mockNativeSqlRead).toHaveBeenCalledWith({
+      variables: {
+        responseId: 71,
+        queryScope: identity.queryScope,
+        generation: 2,
+      },
+    });
+    expect(bodies()).toEqual([
+      { responseId: 71, value: 'SELECT originalConverted' },
+    ]);
+    expect(message.error).not.toHaveBeenCalled();
+  });
+  it('retains explicit independent native conversion without fabricating scope or generation', async () => {
+    mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+    await hook.fetchNativeSQL();
+    expect(mockNativeSqlRead).toHaveBeenCalledWith({
+      variables: { responseId: 71 },
+    });
+    expect(bodies()).toHaveLength(1);
+  });
+  it.each([
+    {},
+    { nativeBindingConfigured: true },
+    { ...identity, nativeBindingGeneration: 0 },
+    { ...identity, queryScope: '' },
+  ])(
+    'does not borrow independent mode from malformed current configuration %p',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      await hook.fetchNativeSQL();
+      expect(mockNativeSqlRead).not.toHaveBeenCalled();
+      expect(bodies()).toEqual([]);
+    },
+  );
+  it.each(['scope', 'generation', 'binding'])(
+    'withholds converted SQL if %s changes during the original request',
+    async (fault) => {
+      mockConfig
+        .mockResolvedValueOnce(identity)
+        .mockResolvedValueOnce(
+          fault === 'scope'
+            ? { ...identity, queryScope: 'b'.repeat(64) }
+            : fault === 'generation'
+              ? { ...identity, nativeBindingGeneration: 3 }
+              : { nativeBindingConfigured: false },
+        );
+      await hook.fetchNativeSQL();
+      expect(bodies()).toEqual([]);
+      expect(mockNativeSqlRead).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['close', 'hide', 'unmount'])(
+    'does not publish a late original converter acknowledgement after %s',
+    async (boundary) => {
+      let acknowledge: (value: any) => void;
+      mockNativeSqlRead.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            acknowledge = resolve;
+          }),
+      );
+      const pending = hook.fetchNativeSQL();
+      await flush();
+      expect(mockNativeSqlRead).toHaveBeenCalledTimes(1);
+      if (boundary === 'close') hook.nativeSQLResult.setNativeSQLMode(false);
+      else if (boundary === 'unmount') {
+        if (cleanup) cleanup();
+        cleanup = undefined;
+      } else {
+        Object.defineProperty(document, 'visibilityState', {
+          value: 'hidden',
+          configurable: true,
+        });
+        listeners.get('visibilitychange')();
+      }
+      acknowledge({ data: { nativeSql: 'SELECT staleConverted' } });
+      await pending;
+      expect(bodies()).toEqual([]);
+      expect(mockConfig).toHaveBeenCalledTimes(1);
+      expect(message.error).not.toHaveBeenCalled();
+    },
+  );
+  it('restores the original enabled SQL view through a fresh same-identity read on focus, never the old cache', async () => {
+    await hook.fetchNativeSQL();
+    expect(bodies()).toHaveLength(1);
+    listeners.get('focus')();
+    await flush();
+    expect(mockNativeSqlRead).toHaveBeenCalledTimes(2);
+    expect(bodies()).toHaveLength(2);
+  });
+  it('does not restore the prior response under another actor or generation on focus', async () => {
+    await hook.fetchNativeSQL();
+    mockConfig.mockResolvedValue({ ...identity, queryScope: 'b'.repeat(64) });
+    listeners.get('focus')();
+    await flush();
+    expect(mockNativeSqlRead).toHaveBeenCalledTimes(1);
+    expect(bodies()).toHaveLength(1);
+    expect(published).toContain(false);
+  });
+  it.each(['error', 'missing'])(
+    'does not present %s conversion evidence as successful native SQL or retry automatically',
+    async (fault) => {
+      mockNativeSqlRead.mockResolvedValue(
+        fault === 'error'
+          ? { error: new Error('QUERY_EVIDENCE_UNAVAILABLE') }
+          : {},
+      );
+      await hook.fetchNativeSQL();
+      expect(bodies()).toEqual([]);
+      expect(mockNativeSqlRead).toHaveBeenCalledTimes(1);
+      expect(published).toContain(false);
+    },
+  );
+  it.each([undefined, 'en'])(
+    'presents a bound conversion refusal through the original toast in locale %p, without native error bodies',
+    async (locale) => {
+      mockLocale = locale;
+      if (cleanup) cleanup();
+      effects = [];
+      const Consumer = () => {
+        hook = useNativeSQL(71);
+        return null;
+      };
+      renderToStaticMarkup(createElement(Consumer));
+      cleanup = effects[0]();
+      hook.nativeSQLResult.setNativeSQLMode(true);
+      mockNativeSqlRead.mockResolvedValue({
+        error: new Error('provider details SELECT private_table'),
+      });
+      await hook.fetchNativeSQL();
+      expect(message.error).toHaveBeenCalledWith(
+        getQueryPreviewText(locale).referenceError,
+      );
+      expect(
+        JSON.stringify(jest.mocked(message.error).mock.calls),
+      ).not.toContain('private_table');
+      expect(bodies()).toEqual([]);
+    },
+  );
+});
 
 describe('original API History detail bounded native observation consumers', () => {
   const pending = {

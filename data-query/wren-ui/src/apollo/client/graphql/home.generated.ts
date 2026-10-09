@@ -131,6 +131,8 @@ export type PreviewBreakdownDataMutation = { __typename?: 'Mutation', previewBre
 
 export type GetNativeSqlQueryVariables = Types.Exact<{
   responseId: Types.Scalars['Int'];
+  queryScope?: Types.InputMaybe<Types.Scalars['String']>;
+  generation?: Types.InputMaybe<Types.Scalars['Int']>;
 }>;
 
 
@@ -901,8 +903,12 @@ export type PreviewBreakdownDataMutationHookResult = ReturnType<typeof usePrevie
 export type PreviewBreakdownDataMutationResult = Apollo.MutationResult<PreviewBreakdownDataMutation>;
 export type PreviewBreakdownDataMutationOptions = Apollo.BaseMutationOptions<PreviewBreakdownDataMutation, PreviewBreakdownDataMutationVariables>;
 export const GetNativeSqlDocument = gql`
-    query GetNativeSQL($responseId: Int!) {
-  nativeSql(responseId: $responseId)
+    query GetNativeSQL($responseId: Int!, $queryScope: String, $generation: Int) {
+  nativeSql(
+    responseId: $responseId
+    queryScope: $queryScope
+    generation: $generation
+  )
 }
     `;
 
@@ -919,6 +925,8 @@ export const GetNativeSqlDocument = gql`
  * const { data, loading, error } = useGetNativeSqlQuery({
  *   variables: {
  *      responseId: // value for 'responseId'
+ *      queryScope: // value for 'queryScope'
+ *      generation: // value for 'generation'
  *   },
  * });
  */

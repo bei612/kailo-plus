@@ -1413,7 +1413,7 @@ export class ModelResolver {
 
   public async getNativeSql(
     _root: any,
-    args: { responseId: number },
+    args: { responseId: number; queryScope?: string; generation?: number },
     ctx: IContext,
   ): Promise<string> {
     const { responseId } = args;
@@ -1423,7 +1423,63 @@ export class ModelResolver {
     if (project.sampleDataset) {
       throw new Error(`Doesn't support Native SQL`);
     }
-    const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
+    const config = await this.metadataConfig(ctx, project.id);
+    const verifyRequest = async () => {
+      if (!config) {
+        await this.readableMetadata(ctx, config, 'model', []);
+        if (args.queryScope !== undefined || args.generation !== undefined)
+          throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+        return;
+      }
+      const permission = await authorizeNativeScope(
+        config,
+        ctx.nativeHumanToken,
+        'discover',
+      );
+      if (
+        args.queryScope !==
+          nativePreviewScope(config, ctx.nativeIdentityScope) ||
+        args.generation !== permission.generation ||
+        (await ctx.projectService.getCurrentProject()).id !== project.id ||
+        canonical(await loadQueryDelivery()) !== canonical(config)
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    };
+    await verifyRequest();
+    // Keep the original current-model conversion, including undeployed edits.
+    // These refs are captured by that same native builder, never inferred from
+    // a later same-name Resource or treated as automatic Resource registration.
+    const captured = await ctx.mdlService.makeCurrentModelMDL(project);
+    const { manifest } = captured;
+    const metadataEvidence = canonical({
+      manifest,
+      nativeObjectRefs: captured.nativeObjectRefs,
+    });
+    let objects: NativeDeploymentObject[] = [];
+    if (config) {
+      try {
+        objects = deploymentObjects(manifest, captured.nativeObjectRefs);
+      } catch {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+    }
+    const authorize = async () => {
+      if (!config) return [];
+      const resolved = [];
+      for (const ref of objects)
+        resolved.push(
+          await resolveNativeResource(
+            config,
+            ctx.nativeHumanToken,
+            ref.nativeType,
+            ref.nativeId,
+            'data_query.describe@v1',
+          ),
+        );
+      return resolved;
+    };
+    const before = await authorize();
+    await verifyRequest();
 
     // get sql statement of a response
     const response = await ctx.askingService.getResponse(responseId, project);
@@ -1431,22 +1487,68 @@ export class ModelResolver {
       throw new Error(`Thread response ${responseId} not found`);
     }
 
+    const responseEvidence = canonical({
+      id: response.id,
+      threadId: response.threadId,
+      sql: response.sql,
+    });
     // construct cte sql and format it
     let nativeSql: string;
-    if (project.type === DataSourceName.DUCKDB) {
-      logger.info(`Getting native sql from wren engine`);
-      nativeSql = await ctx.wrenEngineAdaptor.getNativeSQL(response.sql, {
-        manifest,
-        modelingOnly: false,
-      });
-    } else {
-      logger.info(`Getting native sql from ibis server`);
-      nativeSql = await ctx.ibisServerAdaptor.getNativeSql({
-        dataSource: project.type,
-        sql: response.sql,
-        mdl: manifest,
-      });
+    let failed: { error: unknown } | undefined;
+    try {
+      if (project.type === DataSourceName.DUCKDB) {
+        logger.info(`Getting native sql from wren engine`);
+        nativeSql = await ctx.wrenEngineAdaptor.getNativeSQL(response.sql, {
+          manifest,
+          modelingOnly: false,
+          ...(config && {
+            requestTimeoutMs: config.requestTimeoutMs,
+            responseMaxBytes: config.responseMaxBytes,
+          }),
+        });
+      } else {
+        logger.info(`Getting native sql from ibis server`);
+        nativeSql = await ctx.ibisServerAdaptor.getNativeSql({
+          dataSource: project.type,
+          sql: response.sql,
+          mdl: manifest,
+          ...(config && {
+            requestTimeoutMs: config.requestTimeoutMs,
+            responseMaxBytes: config.responseMaxBytes,
+          }),
+        });
+      }
+    } catch (error) {
+      failed = { error };
     }
+    if (config) {
+      const current = await ctx.mdlService.makeCurrentModelMDL(project);
+      const currentResponse = await ctx.askingService.getResponse(
+        responseId,
+        project,
+      );
+      if (
+        metadataEvidence !==
+          canonical({
+            manifest: current.manifest,
+            nativeObjectRefs: current.nativeObjectRefs,
+          }) ||
+        !currentResponse ||
+        responseEvidence !==
+          canonical({
+            id: currentResponse.id,
+            threadId: currentResponse.threadId,
+            sql: currentResponse.sql,
+          })
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    }
+    await verifyRequest();
+    if (canonical(await authorize()) !== canonical(before))
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    if (config && (failed || typeof nativeSql !== 'string'))
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    if (failed) throw failed.error;
     const language = project.type === DataSourceName.MSSQL ? 'tsql' : undefined;
     return safeFormatSQL(nativeSql, { language });
   }

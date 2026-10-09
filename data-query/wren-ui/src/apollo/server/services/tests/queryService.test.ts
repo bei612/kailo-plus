@@ -184,6 +184,91 @@ class MockTelemetry {
 describe('original QueryService governed SQL transport', () => {
   it.each(
     [DataSourceName.DUCKDB, DataSourceName.POSTGRES].flatMap((type) =>
+      ['deadline', 'response size'].map((boundary) => ({ type, boundary })),
+    ),
+  )(
+    'bounds the original native SQL converter $type $boundary without querying or retrying',
+    async ({ type, boundary }) => {
+      let requests = 0;
+      let pending: ServerResponse;
+      let lateReply: ReturnType<typeof setTimeout>;
+      let input: any;
+      let path: string;
+      let blocked = true;
+      const transport = { requestTimeoutMs: 200, responseMaxBytes: 256 };
+      const sql = `SELECT '${randomUUID()}' AS original`;
+      const manifest = { catalog: 'fixture', schema: 'public', models: [] };
+      const server = createServer(async (request, response) => {
+        requests++;
+        path = request.url;
+        let body = '';
+        for await (const part of request) body += part;
+        input = JSON.parse(body);
+        response.setHeader('content-type', 'application/json');
+        const payload = JSON.stringify(
+          blocked && boundary === 'response size' ? sql.repeat(100) : sql,
+        );
+        if (blocked && boundary === 'deadline') {
+          pending = response;
+          lateReply = setTimeout(
+            () => response.end(payload),
+            transport.requestTimeoutMs * 4,
+          );
+        } else {
+          response.write(payload.slice(0, payload.length / 2));
+          response.end(payload.slice(payload.length / 2));
+        }
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const engine = new WrenEngineAdaptor({ wrenEngineEndpoint: origin });
+      const ibis = new IbisAdaptor({ ibisServerEndpoint: origin });
+      const convert = () =>
+        type === DataSourceName.DUCKDB
+          ? engine.getNativeSQL(sql, {
+              manifest,
+              modelingOnly: false,
+              ...transport,
+            })
+          : ibis.getNativeSql({
+              dataSource: type,
+              sql,
+              mdl: manifest,
+              ...transport,
+            });
+      try {
+        await expect(convert()).rejects.toBeDefined();
+        expect(requests).toBe(1);
+        expect(input.sql).toBe(sql);
+        expect(
+          type === DataSourceName.DUCKDB
+            ? input.manifest
+            : JSON.parse(Buffer.from(input.manifestStr, 'base64').toString()),
+        ).toEqual(manifest);
+        expect(path).toContain(
+          type === DataSourceName.DUCKDB
+            ? '/mdl/dry-plan'
+            : '/connector/postgres/dry-plan',
+        );
+        expect(path).not.toContain('/query');
+        pending?.end('{}');
+        clearTimeout(lateReply);
+        blocked = false;
+        expect(await convert()).toBe(sql);
+        expect(requests).toBe(2);
+      } finally {
+        pending?.end('{}');
+        clearTimeout(lateReply);
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+
+  it.each(
+    [DataSourceName.DUCKDB, DataSourceName.POSTGRES].flatMap((type) =>
       [false, true].flatMap((dryRun) =>
         ['deadline', 'response size'].map((boundary) => ({
           type,

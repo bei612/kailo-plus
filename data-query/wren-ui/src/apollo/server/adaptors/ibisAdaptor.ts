@@ -194,6 +194,8 @@ export interface IbisDryPlanOptions {
   mdl: Manifest;
   // TODO: replace sql type with WrenSQL
   sql: string;
+  requestTimeoutMs?: number;
+  responseMaxBytes?: number;
 }
 
 export interface IIbisAdaptor {
@@ -279,6 +281,10 @@ export class IbisAdaptor implements IIbisAdaptor {
       const res = await axios.post(
         `${this.ibisServerEndpoint}/${this.getIbisApiVersion(IBIS_API_TYPE.DRY_PLAN)}/connector/${dataSourceUrlMap[dataSource]}/dry-plan`,
         body,
+        {
+          timeout: options.requestTimeoutMs,
+          maxContentLength: options.responseMaxBytes,
+        },
       );
       return res.data;
     } catch (e) {

@@ -302,8 +302,12 @@ export const PREVIEW_BREAKDOWN_DATA = gql`
 `;
 
 export const GET_NATIVE_SQL = gql`
-  query GetNativeSQL($responseId: Int!) {
-    nativeSql(responseId: $responseId)
+  query GetNativeSQL($responseId: Int!, $queryScope: String, $generation: Int) {
+    nativeSql(
+      responseId: $responseId
+      queryScope: $queryScope
+      generation: $generation
+    )
   }
 `;
 

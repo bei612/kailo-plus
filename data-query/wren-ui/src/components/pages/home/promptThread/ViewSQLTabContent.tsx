@@ -55,7 +55,7 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
   const text = getQueryPreviewText(useRouter().locale);
 
   const { onOpenAdjustSQLModal } = usePromptThreadStore();
-  const { fetchNativeSQL, nativeSQLResult } = useNativeSQL();
+  const { fetchNativeSQL, nativeSQLResult } = useNativeSQL(id);
   const [previewData, previewDataResult] = usePreviewDataMutation({
     onError: (error) => console.error(error),
   });
@@ -99,7 +99,7 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
 
   const onChangeNativeSQL = async (checked: boolean) => {
     nativeSQLResult.setNativeSQLMode(checked);
-    checked && fetchNativeSQL({ variables: { responseId: id } });
+    checked && fetchNativeSQL();
   };
 
   const onCopy = () => {

@@ -1155,7 +1155,7 @@ export const typeDefs = gql`
     threads: [Thread!]!
     thread(threadId: Int!): DetailedThread!
     threadResponse(responseId: Int!): ThreadResponse!
-    nativeSql(responseId: Int!): String!
+    nativeSql(responseId: Int!, queryScope: String, generation: Int): String!
 
     # Adjustment
     adjustmentTask(taskId: String!): AdjustmentTask

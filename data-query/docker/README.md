@@ -991,3 +991,36 @@ trusted existing-object evidence consumer; bare CRUD IDs or `query_revision`
 cannot replace scope/owner/type evidence. Static controlled native-resource
 facts remain the existing supported path. Neither an ACTIVE Wren binding nor
 complete original parity is established by this increment.
+
+### Original Show original SQL: current HUMAN and source disclosure
+
+The original SQL-tab toggle, data-source formatting and current-model conversion
+remain, including undeployed model edits. In configured mode the original
+`nativeSql` GraphQL query sends current `queryScope` and binding `generation`;
+the server compares them with trusted request identity and fresh discovery,
+reads every model/view captured by the same native MDL builder through existing
+Resource read authorization, and repeats the checks before disclosing converted
+SQL. A changed project, source, response, controlled delivery or generation
+withholds the body. This is read-only conversion, not SQL execution, a query
+Action, a new task or trusted SERVICE SQL.
+
+The original hook avoids shared Apollo SQL bodies and detaches late responses
+after Close, hide or unmount. Returning to the window restores the enabled view
+only after a fresh same-identity read. Bound refusals use the existing Chinese or
+English reference-error toast without SQL, MDL or provider error bodies.
+Engine/Ibis converters consume the existing delivery deadline and response-size
+bounds. The original Engine error outlet now actually throws instead of silently
+returning `undefined`. Never-configured independent mode retains original
+arguments, conversion and error behavior; empty/bad delivery never selects it.
+Optional GraphQL identity fields preserve standalone compatibility only; bound
+clients must upgrade generated callers together, and missing/old fields refuse.
+
+The [native SQL receipt](../fork/verify/native-integration.md#original-show-original-sql-current-human-and-source-disclosure)
+records original generation, final **280/280** checks across all three suites,
+original TypeScript/format passes, two actual private production-fault runs
+catching **12** and **8** failures, and exact restored inputs. Earlier fixture/
+compiler failures and correction of a false-positive scope fixture are retained.
+These are SDK GraphQL/hook and real local HTTP transport consumers, not business
+provider, browser, iframe, multi-user or device acceptance. Dynamic trusted
+native Resource adoption, ordinary-function provenance, trusted SERVICE SQL,
+a live Wren business instance and ACTIVE binding remain unestablished.

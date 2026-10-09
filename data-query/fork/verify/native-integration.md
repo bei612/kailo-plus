@@ -6644,3 +6644,140 @@ not PostgreSQL/provider/browser/screenshot/iframe/Desktop/Mobile/multi-user
 evidence. No production Wren instance, ACTIVE binding or dynamic registration
 is established. Ordinary-function provenance, trusted SERVICE SQL and complete
 original parity remain unaccepted. This agent does not stage/commit/push/deploy.
+
+## Original Show original SQL: current HUMAN and source disclosure
+
+Fixed official baseline: `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.getNativeSql`,
+`wren-ui/src/hooks/useNativeSQL.tsx::useNativeSQL`,
+`wren-ui/src/components/pages/home/promptThread/ViewSQLTabContent.tsx::ViewSQLTabContent`,
+`wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts::WrenEngineAdaptor.getNativeSQL`
+and `wren-ui/src/apollo/server/adaptors/ibisAdaptor.ts::IbisAdaptor.getNativeSql`.
+Those original consumers use the current MDL builder, native response SQL,
+Engine/Ibis conversion and original formatting; unlike the separate REST
+generation consumer, this resolver has no `nativeSql || sql` fallback.
+No `.references` file was changed or executed.
+
+Implementation four-step findings:
+
+1. Authority: `.design/08` §6 preserves native UI and requires current HUMAN/
+   project/public resource authorization when bound; `.design/07` §2 / DD-98
+   requires real native references, not inferred ownership. This converter reads
+   metadata and reuses existing `data_query.describe@v1` Resource read; it issues
+   no SQL query, execution Action, new task or SERVICE authorization.
+2. Impact: original GraphQL schema/document/generated caller and SQL-tab hook
+   carry `queryScope/generation`. The resolver uses
+   `MDLService.makeCurrentModelMDL(project)` and same-builder captured native
+   model/view refs, not later same-name lookup or last deployment that drops
+   undeployed edits. It freezes manifest/refs, response ID/thread/SQL and current
+   Resource facts, then rechecks after the one original conversion. Engine/Ibis
+   consume already configured deadline/response bounds. The existing Engine
+   error now throws rather than returning undefined; existing REST catches see
+   transport errors while genuine empty-output fallback remains unchanged.
+   No DB/table/migration, platform contract, four-language type, lifecycle or
+   execution writer changed. Optional native GraphQL arguments preserve
+   never-configured standalone compatibility only; old bound clients refuse and
+   need same-version schema/caller upgrade. Both changed generated files came
+   from the original generator, not handwritten types.
+3. Side effects: trusted identity, project, delivery, generation and each captured
+   source read are checked before/after conversion, including error exits.
+   Bound provider error bodies and non-string results are withheld; existing
+   refusal and localized reference toast expose no SQL/MDL/provider body.
+   Never-configured mode retains original arguments/body/error behavior; empty/
+   bad delivery or mixed identity cannot borrow it. The hook uses no-cache,
+   selected response and before/after identity checks; the server also compares
+   request identity, so client before/after alone is not claimed as ABA proof.
+4. Boundaries: missing identity/read is DENIED; unavailable or malformed delivery,
+   source/converter evidence keeps PRECONDITION refusal; changed reference/
+   generation/snapshot is CONFLICT. Original transport bounds limit provider
+   work/response memory; no quota/state/UNKNOWN authority is invented.
+   Close/hide/unmount detach late responses without canceling a native task.
+   Focus/visibility restores an enabled view only through a fresh same-identity
+   conversion; changed identity cannot reopen the old selection. No automatic
+   SQL retry/second query or unknown-to-success path was added. Already blocked
+   SERVICE/function/dynamic-adoption capabilities stay blocked, without new
+   menus/actions/tools.
+
+Difference classification: original SQL-tab layout/toggle/format/data-source
+information, current native model/response and Engine/Ibis path are **原样保留**;
+shared-host migration is **无适用对象**. Request association, same-source/current
+read checks, no-cache/detach/identity restore, configured transport bounds, real
+Engine error propagation and bound redacted zh/en toast are individual
+**已授权治理改造**. No replacement page/parser/credential/execution authority/
+resource registry/Core business-body copy was introduced. Dynamic trusted
+Resource adoption, ordinary-function provenance, trusted SERVICE SQL and actual
+release remain **缺失需恢复**; this batch is not full original parity.
+
+Only existing `kailo-wren-query-sdk-itgs2n` and original `/work` dependency cache
+were used, CPU `400000 100000`, memory `4294967296`. Before the concentrated run
+at `2026-10-09T00:09:37Z`, the SDK was idle, host available memory was about
+25 GiB and I/O full avg10 was 8.70%. Initial/final memory-event counters were
+zero. No new SDK/image/download/database/inherited Java/global check/production
+service was started or modified. Logs below are under
+`/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+Original generation used installed `@graphql-codegen/cli` `loadCodegenConfig`
+with original `codegen.yaml`, actual `print(typeDefs)` and `generate(..., true)`
+through existing `ts-node/register` (CommonJS, transpile-only), not a second
+generator. `native-sql-codegen.log` is **exit 0**, all stages succeeded.
+Changed outputs are `home.generated.ts` and `__types__.ts`; all eighteen generated
+files match private generated inputs, and the other sixteen have no formal diff.
+Only the generated home's missing EOF newline was normalized mechanically to
+the patch tool's newline; no generated type was manually edited.
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand --runTestsByPath \
+  src/nativeProjectScope.test.ts src/viewMetadata.test.ts \
+  src/apollo/server/services/tests/queryService.test.ts
+node /work/node_modules/typescript/bin/tsc \
+  --noEmit --incremental false --pretty false
+```
+
+- `native-sql-positive.log`: **exit 1**, two suites passed **143** checks; backend
+  did not execute because a fixture read permission on unknown input (TS2339).
+  It now returns known discover and asserts each actual permission request;
+  no production diagnostic was suppressed.
+- `native-sql-backend-positive.log`: **exit 1**, **136 passed / 1 failed / 137**.
+  The scope fixture mutated outer context while Apollo copied the real resolver
+  context. An intermediate converter assertion then became a caught provider
+  error: `native-sql-backend-final-cases.log` (**26 passed / 111 filtered**, exit 0)
+  and first `native-sql-mutation-backend.log` (**11 failed / 15 passed /
+  111 filtered**, exit 1) are retained but not accepted as scope-case or full
+  three-suite proof. Final fixture captures/mutates real GraphQL context and
+  verifies its distinct digest; production fence stays unchanged. A malformed
+  shell quote exited 2 before Docker/tests and is not counted as a test run.
+- `native-sql-mutation-backend-real-context.log`: **exit 1**, **12 failed /
+  14 passed / 111 filtered**, 8.584 seconds. Removing request scope/generation
+  comparison and final Resource reauthorization in private production bytes
+  was caught, including the corrected real-context scope consumer and source/
+  generation/error-exit consumers. Resolver restored with apply_patch and cmp 0
+  before the next target; formal production was never damaged.
+- `native-sql-mutation-ui-transport.log`: **exit 1**, **8 failed / 14 passed /
+  121 filtered**, 9.135 seconds. Private shared-cache reads and detached-response
+  acceptance broke no-cache/Close/hide/unmount consumers. Removing real Engine/
+  Ibis converter timeout/response options broke four local HTTP deadline/size
+  cases. Requests used original converter paths, not SQL queries/blind retries.
+  Three private production files restored with apply_patch; all twelve formal/
+  private source/generated/check inputs cmp 0 before final checking.
+- `native-sql-restored.log`: **exit 0**, **3 suites passed / 280 passed / 280 total**,
+  13.513 seconds, full unfiltered command above on restored final bytes:
+  137 native-project/GraphQL, 127 original UI and 16 real HTTP adapter checks.
+  Includes POSTGRES/DUCKDB/MSSQL conversion, captured model/view reads, identity/
+  project/delivery/MDL/response/source changes, errors/malformed results, real
+  standalone, late detach, same-identity focus restore and original zh/en toast.
+- `native-sql-types.log`: original TypeScript command above, **exit 0**,
+  unchanged compiler config and no suppressed diagnostics.
+- `native-sql-final-format-write.log` / `native-sql-format.log`: original Prettier
+  on ten handwritten inputs, **exit 0**; final check reports all matched files
+  use original style. Generated files were not globally reformatted.
+  Batch `git diff --check` is **exit 0**.
+- `native-sql-cgroup-final.log`: at `2026-10-09T00:21:59Z`, same CPU/memory bounds,
+  and low/high/max/oom/oom_kill/oom_group_kill all **0**.
+
+These are actual original Apollo/React consumers with repository/authorization
+fixtures and real local HTTP transport, not live business-provider, PostgreSQL,
+browser/screenshot/iframe/Desktop/Mobile/multi-user evidence. Production delivery/
+projection/native registration still require runtime acceptance. No production
+Wren instance or ACTIVE binding is established; full restoration/production
+readiness is not claimed. Fourteen paths are frozen for root main review/commit/
+push; this agent does not stage/commit/push/deploy. Root owns full-check/release.
