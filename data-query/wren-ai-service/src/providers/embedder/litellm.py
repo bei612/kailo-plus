@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import backoff
@@ -9,7 +8,7 @@ from haystack import Document, component
 from litellm import aembedding
 
 from src.core.provider import EmbedderProvider
-from src.providers.loader import provider
+from src.providers.loader import configured_api_key, provider
 from src.utils import remove_trailing_slash
 
 logger = logging.getLogger("wren-ai-service")
@@ -174,7 +173,7 @@ class LitellmEmbedderProvider(EmbedderProvider):
         timeout: float = 120.0,
         **kwargs,
     ):
-        self._api_key = os.getenv(api_key_name) if api_key_name else None
+        self._api_key = configured_api_key(api_key_name)
         self._api_base = remove_trailing_slash(api_base) if api_base else None
         self._embedding_model = model
         self._timeout = timeout

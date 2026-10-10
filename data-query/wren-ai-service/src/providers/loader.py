@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 import pkgutil
 
 logger = logging.getLogger("wren-ai-service")
@@ -7,6 +8,19 @@ logger = logging.getLogger("wren-ai-service")
 
 PROVIDERS_PATH = "src.providers"
 PROVIDERS = {}
+
+
+def configured_api_key(api_key_name: str | None) -> str | None:
+    if api_key_name is None:
+        return None
+    if not isinstance(api_key_name, str) or not api_key_name.strip():
+        raise ValueError("Configured model credential name is invalid")
+    value = os.getenv(api_key_name)
+    if not value or any(character.isspace() for character in value) or "\x00" in value:
+        # A named component credential must not fall back to another provider's
+        # environment identity. Never include the value in the startup error.
+        raise ValueError("Configured model credential is unavailable")
+    return value
 
 
 def import_mods(package_name=PROVIDERS_PATH):
