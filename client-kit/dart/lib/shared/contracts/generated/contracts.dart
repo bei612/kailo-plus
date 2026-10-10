@@ -3678,7 +3678,8 @@ class ActionCommand {
   ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
   final String? originalActionExecutionId;
 
-  ///成员动作的目标 Principal；resource.transfer_owner 的新 owner
+  ///成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+  ///Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
   final String? principalId;
 
   ///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
@@ -3686,7 +3687,8 @@ class ActionCommand {
   final ProtocolSessionOpenClass? protocolSessionOpen;
 
   ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-  ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+  ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+  ///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
   final ActionCommandReceiverResource? receiverResource;
   final ReferenceClass? resourceCreate;
 
@@ -5094,7 +5096,8 @@ class ProtocolSessionOpenClass {
 }
 
 ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 class ActionCommandReceiverResource {
   final String id;
   final int version;
@@ -10239,7 +10242,8 @@ class CommandClass {
   ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
   final String? originalActionExecutionId;
 
-  ///成员动作的目标 Principal；resource.transfer_owner 的新 owner
+  ///成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+  ///Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
   final String? principalId;
 
   ///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
@@ -10247,7 +10251,8 @@ class CommandClass {
   final ProtocolSessionOpenClass? protocolSessionOpen;
 
   ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-  ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+  ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+  ///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
   final CommandReceiverResource? receiverResource;
   final ReferenceClass? resourceCreate;
 
@@ -10437,7 +10442,8 @@ class CommandClass {
 }
 
 ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 class CommandReceiverResource {
   final String id;
   final int version;

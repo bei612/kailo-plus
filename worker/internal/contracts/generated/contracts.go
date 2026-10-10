@@ -3386,13 +3386,15 @@ type ActionCommand struct {
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
 	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
-	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner
+	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+	// Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
 	PrincipalID *string `json:"principalId,omitempty"`
 	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
 	// identity; no Agent or caller-selected native credentials.
 	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
 	// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+	// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 	ReceiverResource *ActionCommandReceiverResource `json:"receiverResource,omitempty"`
 	ResourceCreate   *ResourceCreateClass           `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
@@ -3698,7 +3700,8 @@ type ProtocolSessionOpenClass struct {
 }
 
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 type ActionCommandReceiverResource struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
@@ -4904,13 +4907,15 @@ type CommandClass struct {
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
 	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
-	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner
+	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+	// Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
 	PrincipalID *string `json:"principalId,omitempty"`
 	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
 	// identity; no Agent or caller-selected native credentials.
 	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
 	// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+	// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 	ReceiverResource *CommandReceiverResource `json:"receiverResource,omitempty"`
 	ResourceCreate   *ResourceCreateClass     `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
@@ -4931,7 +4936,8 @@ type CommandClass struct {
 }
 
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 type CommandReceiverResource struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`

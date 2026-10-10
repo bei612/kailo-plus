@@ -116,9 +116,10 @@ async fn permission_target(
     projected: Option<Uuid>,
 ) -> Result<PermissionTarget, Refusal> {
     let Some(reference) = &params.receiver_resource else {
-        return installation(conn, tenant, id, lock)
-            .await?
-            .ok_or_else(conflict);
+        if let Some(row) = installation(conn, tenant, id, lock).await? {
+            return Ok(row);
+        }
+        return human_resource(conn, tenant, id, params, lock).await;
     };
     let (receiver, version) = receiver_reference(reference)?;
     // A Resource may be both source and receiver. Only this AE's prewrite may
@@ -210,6 +211,84 @@ async fn permission_target(
     Ok(row)
 }
 
+/// 05 §2.9 reader operations and §2.4 membership boundaries: a HUMAN uses the same relationship,
+/// owner approval and projection intent as the existing AGENT/SERVICE paths.
+/// The native service supplies neither another tenant nor permission facts.
+async fn human_resource(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    params: &Params,
+    lock: bool,
+) -> Result<PermissionTarget, Refusal> {
+    let recipient = params.principal_id.ok_or_else(conflict)?;
+    if lock {
+        let _: Option<Uuid> = sqlx::query_scalar(
+            "select id from catalog.resource where id=$1 and tenant_id=$2 for update",
+        )
+        .bind(id)
+        .bind(tenant)
+        .fetch_optional(&mut *conn)
+        .await?;
+    }
+    // Keep an inactive recipient identifiable for revoke; a grant checks its
+    // live membership again at the existing fresh dispatch boundary below.
+    sqlx::query_as("select r.id,r.tenant_id,r.home_workspace_id as workspace_id,
+        r.owner_principal_id,recipient.id as subject_principal_id,r.version,
+        r.projection_action_execution_id,
+        jsonb_build_object('recipientKind','HUMAN','sourceBindingId',b.id,
+          'sourceBindingVersion',b.version,'sourceGeneration',b.active_projection_generation,
+          'sourceReleaseId',b.component_release_id) as read_edge
+        from catalog.resource r
+        join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
+        join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=t.id
+          and owner.kind='HUMAN' and owner.status='ACTIVE'
+        join identity.tenant_membership membership on membership.tenant_principal_id=owner.id
+          and membership.tenant_id=t.id and membership.state='ACTIVE'
+        join identity.principal recipient on recipient.id=$3 and recipient.tenant_id=t.id and recipient.kind='HUMAN'
+        join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=t.id and b.state='ACTIVE'
+        join identity.service_principal service on service.principal_id=b.service_principal_id
+          and service.component_binding_kind='APPLICATION' and service.component_binding_id=b.id
+        join identity.principal service_actor on service_actor.id=service.principal_id
+          and service_actor.tenant_id=t.id and service_actor.kind='SERVICE' and service_actor.status='ACTIVE'
+        join catalog.component_release release on release.id=b.component_release_id
+          and release.status='APPROVED' and release.approved_by_action_execution_id is not null
+        join projection.application_runtime runtime on runtime.binding_id=b.id
+          and runtime.generation=b.active_projection_generation and runtime.state='ACTIVE'
+          and runtime.component_release_id=b.component_release_id
+          and runtime.normalized_manifest_digest=release.manifest_digest
+        join catalog.resource_type_definition definition on definition.id=r.resource_type_definition_id
+          and definition.type_key=r.type_key and definition.component_release_id=b.component_release_id
+          and definition.status='ACTIVE'
+        where r.id=$1 and r.tenant_id=$2 and r.state='ACTIVE'
+          and (r.home_workspace_id is null or exists(select 1 from identity.workspace w
+            where w.id=r.home_workspace_id and w.tenant_id=t.id and w.state='ACTIVE'))
+          and (b.workspace_id is null or b.workspace_id=r.home_workspace_id)
+          and (r.projection_action_execution_id is null or exists(select 1 from admission.action_execution a
+            where a.id=r.projection_action_execution_id and a.tenant_id=t.id and a.target_id=r.id
+              and a.workspace_id is not distinct from r.home_workspace_id
+              and a.action_key in ('resource.grant_read','resource.revoke_read')))
+        for share of t,owner,membership,recipient,b,service,service_actor,release,runtime,definition")
+        .bind(id).bind(tenant).bind(recipient).fetch_optional(conn).await?.ok_or_else(conflict)
+}
+
+fn human_recipient(row: &PermissionTarget) -> bool {
+    row.read_edge
+        .as_ref()
+        .is_some_and(|edge| edge["recipientKind"] == "HUMAN")
+}
+
+fn permission_outcome_matches(
+    row: &PermissionTarget,
+    grant: bool,
+    held: bool,
+    allowed: bool,
+) -> bool {
+    // HUMAN read revocation removes this explicit reader, not independent
+    // owner/role permissions. Keep the legacy AGENT/SERVICE outcome rule.
+    held == grant && (allowed == grant || (!grant && human_recipient(row)))
+}
+
 fn conflict() -> Refusal {
     Refusal::Conflict(ReasonCode::TargetStateConflict)
 }
@@ -219,7 +298,9 @@ fn unavailable() -> Refusal {
 
 fn principal_field(row: &PermissionTarget) -> &'static str {
     // Keep already-admitted Installation intents readable without rewriting them.
-    if row.read_edge.is_some() {
+    if human_recipient(row) {
+        "humanPrincipalId"
+    } else if row.read_edge.is_some() {
         "servicePrincipalId"
     } else {
         "agentPrincipalId"
@@ -275,7 +356,8 @@ pub(super) async fn target(
         .resource_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
     let row = permission_target(conn, tenant, id, params, lock, None).await?;
-    if Some(row.version) != params.resource_version
+    if (!is_read(&def.action_key) && row.read_edge.is_some())
+        || Some(row.version) != params.resource_version
         || frozen.is_some_and(|v| v != row.id)
         || (grant && row.projection_action_execution_id.is_some())
         || (is_read(&def.action_key) && params.principal_id != Some(row.subject_principal_id))
@@ -326,7 +408,7 @@ async fn projection(g: &Governance, row: &PermissionTarget) -> Result<(), Refusa
     {
         return Err(unavailable());
     }
-    if let Some(edge) = &row.read_edge {
+    if let Some(edge) = row.read_edge.as_ref().filter(|_| !human_recipient(row)) {
         if !g
             .spicedb
             .resource_projection_matches_in_workspace(
@@ -358,7 +440,7 @@ async fn human(
 ) -> Result<(), Refusal> {
     human_scope(g, conn, row.tenant_id, row.workspace_id, principal).await?;
     checked(g, "resource", row.id, "share", principal).await?;
-    if let Some(edge) = &row.read_edge {
+    if let Some(edge) = row.read_edge.as_ref().filter(|_| !human_recipient(row)) {
         let receiver = edge["receiverResourceId"]
             .as_str()
             .and_then(|id| Uuid::parse_str(id).ok())
@@ -367,6 +449,40 @@ async fn human(
     }
     if !is_read(action) {
         checked(g, "resource", row.id, "execute", principal).await?;
+    }
+    if human_recipient(row) && is_grant(action) {
+        human_recipient_scope(conn, row).await?;
+    }
+    Ok(())
+}
+
+async fn human_recipient_scope(
+    conn: &mut PgConnection,
+    row: &PermissionTarget,
+) -> Result<(), Refusal> {
+    let recipient: Option<Uuid> = sqlx::query_scalar(
+            "select p.id from identity.principal p
+             join identity.tenant_membership m on m.tenant_principal_id=p.id and m.tenant_id=p.tenant_id
+             join identity.human_identity h on h.id=m.human_identity_id
+             where p.id=$1 and p.tenant_id=$2 and p.kind='HUMAN' and p.status='ACTIVE'
+               and m.state='ACTIVE' and h.status='ACTIVE' for share of p,m,h",
+        )
+        .bind(row.subject_principal_id).bind(row.tenant_id).fetch_optional(&mut *conn).await?;
+    if recipient.is_none() {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    if let Some(workspace) = row.workspace_id {
+        let member: Option<Uuid> = sqlx::query_scalar(
+            "select id from identity.workspace_membership where workspace_id=$1
+                 and tenant_principal_id=$2 and state='ACTIVE' for share",
+        )
+        .bind(workspace)
+        .bind(row.subject_principal_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        if member.is_none() {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
     }
     Ok(())
 }
@@ -966,8 +1082,12 @@ pub(super) async fn dispatch(
         .await
         .map_err(|_| unavailable())?;
     if c.zed_token.is_empty()
-        || held(g, &row, relation(&ae.action_key)).await? != grant
-        || c.allowed != grant
+        || !permission_outcome_matches(
+            &row,
+            grant,
+            held(g, &row, relation(&ae.action_key)).await?,
+            c.allowed,
+        )
     {
         audit(
             &mut tx,
@@ -1038,7 +1158,11 @@ pub(super) async fn dispatch(
         "permission-outcome",
         "OUTCOME",
         "ALLOW",
-        if row.read_edge.is_some() && grant {
+        if human_recipient(&row) && grant {
+            "HUMAN_READ_GRANTED"
+        } else if human_recipient(&row) {
+            "HUMAN_READ_REVOKED"
+        } else if row.read_edge.is_some() && grant {
             "SERVICE_READ_GRANTED"
         } else if row.read_edge.is_some() {
             "SERVICE_READ_REVOKED"
@@ -1245,6 +1369,165 @@ mod approval_tests {
         assert_eq!(principal_field(&row), "agentPrincipalId");
         row.read_edge = Some(json!({"receiverResourceId":Uuid::new_v4()}));
         assert_eq!(principal_field(&row), "servicePrincipalId");
+        row.read_edge = Some(
+            json!({"recipientKind":"HUMAN","sourceBindingId":Uuid::new_v4(),
+            "sourceBindingVersion":1,"sourceGeneration":1,"sourceReleaseId":Uuid::new_v4()}),
+        );
+        assert_eq!(principal_field(&row), "humanPrincipalId");
+        // The actual dispatch predicate consumes both native relationship and
+        // effective permission observations. An owner may still read after its
+        // explicit reader edge is deleted; a remaining edge is never success.
+        assert!(permission_outcome_matches(&row, false, false, true));
+        assert!(permission_outcome_matches(&row, false, false, false));
+        assert!(!permission_outcome_matches(&row, false, true, true));
+        assert!(!permission_outcome_matches(&row, true, true, false));
+        assert!(!permission_outcome_matches(&row, true, false, true));
+        assert!(permission_outcome_matches(&row, true, true, true));
+        let human_edge = row.read_edge.clone();
+        for legacy_edge in [None, Some(json!({"receiverResourceId":Uuid::new_v4()}))] {
+            row.read_edge = legacy_edge;
+            assert!(!permission_outcome_matches(&row, false, false, true));
+            assert!(permission_outcome_matches(&row, false, false, false));
+        }
+        row.read_edge = human_edge;
+        let human_command: contracts::ActionCommand = serde_json::from_value(json!({
+            "actionKey":READ_GRANT,"idempotencyKey":Uuid::new_v4(),
+            "resourceId":row.id,"resourceVersion":row.version,"principalId":row.subject_principal_id
+        }))
+        .unwrap();
+        let human_params =
+            super::super::parse_command(Semantic::ResourceGrantRead, &human_command).unwrap();
+        assert_eq!(human_params.principal_id, Some(row.subject_principal_id));
+        assert!(human_params.receiver_resource.is_none());
+        assert_eq!(
+            Params::from_json(&human_params.to_json())
+                .unwrap()
+                .to_json(),
+            human_params.to_json()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires original migrated APPLICATION_EXECUTION_TEST_DATABASE_URL"]
+    async fn human_reader_target_consumes_original_component_resource_without_cross_tenant_fallback(
+    ) {
+        use sqlx::Connection;
+        let mut conn = PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL")
+                .expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;\n", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../../verify/application-execution-dispatch.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let (tenant, recipient, resource, binding, version): (Uuid, Uuid, Uuid, Uuid, i32) =
+            sqlx::query_as(
+                "select ae.tenant_id,m.tenant_principal_id,ae.target_id,f.binding,r.version
+             from application_dispatch_fixture f join admission.action_execution ae on ae.id=f.child
+             join catalog.resource r on r.id=ae.target_id and r.tenant_id=ae.tenant_id
+             join identity.tenant_membership m on m.tenant_id=ae.tenant_id
+               and m.tenant_principal_id<>ae.initiator_principal_id and m.state='ACTIVE'
+             order by ae.id limit 1",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        // The original isolated release fixture predates dedicated instance
+        // identities. Only this rollback transaction supplies its real binding
+        // relation; no running Catalog or permission endpoint is modified.
+        sqlx::query("update identity.service_principal s set component_binding_kind='APPLICATION',component_binding_id=b.id
+            from catalog.application_binding b where b.id=$1 and s.principal_id=b.service_principal_id")
+            .bind(binding).execute(&mut *tx).await.unwrap();
+        let mut command: contracts::ActionCommand = serde_json::from_value(json!({
+            "actionKey":READ_GRANT,"idempotencyKey":Uuid::new_v4(),
+            "resourceId":resource,"resourceVersion":version,"principalId":recipient
+        }))
+        .unwrap();
+        let params = super::super::parse_command(Semantic::ResourceGrantRead, &command).unwrap();
+        let found = permission_target(&mut tx, tenant, resource, &params, true, None)
+            .await
+            .unwrap();
+        assert_eq!(found.subject_principal_id, recipient);
+        assert_eq!(principal_field(&found), "humanPrincipalId");
+        human_recipient_scope(&mut tx, &found).await.unwrap();
+        assert_eq!(
+            found.read_edge.as_ref().unwrap()["sourceBindingId"],
+            binding.to_string()
+        );
+        assert!(
+            permission_target(&mut tx, Uuid::new_v4(), resource, &params, true, None)
+                .await
+                .is_err()
+        );
+        command.principal_id = Some(Uuid::new_v4().to_string());
+        let absent = super::super::parse_command(Semantic::ResourceGrantRead, &command).unwrap();
+        assert!(
+            permission_target(&mut tx, tenant, resource, &absent, true, None)
+                .await
+                .is_err()
+        );
+        let foreign_tenant = Uuid::new_v4();
+        let foreign_recipient = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'isolated foreign recipient','ACTIVE')")
+            .bind(foreign_tenant).bind(foreign_tenant.to_string()).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(foreign_recipient).bind(foreign_tenant).execute(&mut *tx).await.unwrap();
+        command.principal_id = Some(foreign_recipient.to_string());
+        let foreign = super::super::parse_command(Semantic::ResourceGrantRead, &command).unwrap();
+        assert!(
+            permission_target(&mut tx, tenant, resource, &foreign, true, None)
+                .await
+                .is_err()
+        );
+        let service: Uuid = sqlx::query_scalar(
+            "select service_principal_id from catalog.application_binding where id=$1",
+        )
+        .bind(binding)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        command.principal_id = Some(service.to_string());
+        let service_without_receiver =
+            super::super::parse_command(Semantic::ResourceGrantRead, &command).unwrap();
+        assert!(permission_target(
+            &mut tx,
+            tenant,
+            resource,
+            &service_without_receiver,
+            true,
+            None
+        )
+        .await
+        .is_err());
+        sqlx::query("update identity.principal set status='DISABLED' where id=$1")
+            .bind(recipient)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(matches!(
+            human_recipient_scope(&mut tx, &found).await,
+            Err(Refusal::Denied(ReasonCode::ScopeGuardFailed))
+        ));
+        // An inactive recipient is still an exact revoke target, not a reason
+        // to abandon its existing relationship. Grant eligibility is checked
+        // separately by the original fresh authority boundary.
+        assert_eq!(
+            permission_target(&mut tx, tenant, resource, &params, true, None)
+                .await
+                .unwrap()
+                .subject_principal_id,
+            recipient
+        );
+        tx.rollback().await.unwrap();
     }
 
     /// Uses the existing isolated migrated DB only. No business objects or

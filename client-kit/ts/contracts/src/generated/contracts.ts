@@ -892,7 +892,8 @@ export interface ActionCommand {
      */
     originalActionExecutionId?: string;
     /**
-     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
+     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+     * Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
      */
     principalId?: string;
     /**
@@ -902,7 +903,8 @@ export interface ActionCommand {
     protocolSessionOpen?: ProtocolSessionOpenClass;
     /**
      * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+     * Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
      */
     receiverResource?: ActionCommandReceiverResource;
     resourceCreate?:   ResourceCreateClass;
@@ -1410,7 +1412,8 @@ export interface ProtocolSessionOpenClass {
 
 /**
  * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
- * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+ * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+ * Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
  */
 export interface ActionCommandReceiverResource {
     id:      string;
@@ -3437,7 +3440,8 @@ export interface CommandClass {
      */
     originalActionExecutionId?: string;
     /**
-     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
+     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
+     * Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
      */
     principalId?: string;
     /**
@@ -3447,7 +3451,8 @@ export interface CommandClass {
     protocolSessionOpen?: ProtocolSessionOpenClass;
     /**
      * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+     * Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
      */
     receiverResource?: CommandReceiverResource;
     resourceCreate?:   ResourceCreateClass;
@@ -3484,7 +3489,8 @@ export interface CommandClass {
 
 /**
  * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
- * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+ * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
+ * Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
  */
 export interface CommandReceiverResource {
     id:      string;
