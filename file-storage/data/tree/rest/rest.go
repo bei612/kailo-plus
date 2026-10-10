@@ -27,6 +27,7 @@ import (
 
 	restful "github.com/emicklei/go-restful/v3"
 
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/client/commons"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/middleware"
@@ -113,6 +114,11 @@ func (h *Handler) CreateNodes(req *restful.Request, resp *restful.Response) erro
 
 // DeleteNodes either moves to recycle bin or definitively removes nodes.
 func (h *Handler) DeleteNodes(req *restful.Request, resp *restful.Response) error {
+	// The legacy route calls the same native delete producer as REST v2.
+	// Changing API versions is not an alternate platform admission path.
+	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
+		return err
+	}
 
 	var input rest.DeleteNodesRequest
 	if e := req.ReadEntity(&input); e != nil {

@@ -26,6 +26,7 @@ import (
 
 	restful "github.com/emicklei/go-restful/v3"
 
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/client/commons/jobsc"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/middleware"
@@ -39,6 +40,12 @@ import (
 
 // PerformAction answers to POST /node/action/{Name}
 func (h *Handler) PerformAction(req *restful.Request, resp *restful.Response) error {
+	// These native jobs do not yet consume a platform Action/Task claim. The
+	// recycle path already writes metadata before PutJob, so enforce the
+	// existing managed-instance boundary before resolving any input node.
+	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
+		return err
+	}
 	actionName := req.PathParameter("Name")
 	var actionID rest.UserActionType
 	if id, ok := rest.UserActionType_value[actionName]; ok {
@@ -195,6 +202,11 @@ func (h *Handler) BackgroundActionInfo(req *restful.Request, resp *restful.Respo
 
 // ControlBackgroundAction answers to PATCH /node/action/{Name}/{JobUuid}
 func (h *Handler) ControlBackgroundAction(req *restful.Request, resp *restful.Response) error {
+	// Resume/restart can dispatch native effects too; a native session must
+	// not use the old control route to bypass a governed execution.
+	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
+		return err
+	}
 	var cr jobs.CtrlCommand
 	if err := req.ReadEntity(&cr); err != nil {
 		return err

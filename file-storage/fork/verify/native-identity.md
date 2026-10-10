@@ -1092,3 +1092,85 @@ artifact 为 `sha256:705480fd0013e45912757ea38a39d113ee665b918f8198f3dbf1e888f7d
 `d45cecded58d9bf497d8720c05cdd8009317c08ed09d5164f5acb20a9bd61fa3`。
 日志明确存在基础镜像下载与 npm 安装，不声称完全离线。后续删除版本的
 独立开发输入不在此冻结产物及前述 native service 镜像内，不能挪用其验证结论。
+
+### 2026-10-10 原生后台删除入口的准入边界
+
+本批基准为 apps `68c08fd199779da2aba10b31b4c6d5e988aadf12`。固定上游
+Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`gateway/restv2/api-actions.go::PerformAction/ControlBackgroundAction`、
+`data/tree/rest/rest.go::DeleteNodes` 与
+`scheduler/jobs/userspace/userspace.go::DeleteNodesTask` 已直接读回：前两条
+删除入口均调用原 `DeleteNodesTask`；回收分支在 `PutJob` 以前写入
+`recycle_restore` 元数据并可能创建回收目录；后台控制入口可直接向原 Task
+派发控制。既有 `DeleteVersion` 拒绝未准入写入不能覆盖这些入口。
+
+1. 权威：`.design/07` §2.4 的 FILE_STORAGE 七必选与 `delete` permission、
+   DD-87/88 及工程规则 9/10；身份、原生 ACL 或 SSO 不能代替 Action Admission。
+   本批修复既有原生 HTTP 消费者的绕行，不登记或启用尚未闭合的 delete 能力。
+2. 影响面：原 `AuthorizeNativeDataMutation` 统一消费并拒绝未支持的写入
+   proof，覆盖 PATCH；v2 动作、控制及 v1 删除在读 body、读节点、写回收元数据、
+   创建 Job 或控制 Task 之前调用该守卫。`DeleteVersion` 删除重复 proof 包装，
+   使用同一消费者。GET/HEAD 不剥离 proof，保留原读取链；未投递 platform 且
+   无 proof 的独立服务仍走原实现。没有 schema、数据库、原生 Task 或四侧生成变化。
+3. 副作用：空 platform 对象同样拒绝，伪造、空值或重复 proof 不能退回独立
+   模式。拒绝发生在第一次副作用之前，属于 DENIED；不会新建 AE/Task、产生
+   零用量回执、自动重放或把既有 UNKNOWN 改成终态。原先已派发任务不在本批
+   收敛范围；未修改 Task 存储、后台观察或组件停用排空。
+4. 边界：拒绝路径不消费业务正文或原生节点，保留读 proof、独立原生输入校验
+   与已有删除版本完整 ACK 消费者。原 API、页面及独立运行功能未删除；受管
+   操作尚无合法准入实现时拒绝，不以入口拒绝声称完整删除已交付。
+
+`PerformAction` 的实际六个封闭枚举为 delete、restore、copy、move、extract、
+compress，本批覆盖它们的受管直达调用，不只删除。现有 node 读取、version
+写入分别经原 lookup/node/version 与 PromoteVersion 消费者；它们没有调用此
+后台动作入口。`ControlBackgroundAction` 拒绝受管 None/Pause/Resume/Stop/
+Delete/RunOnce/Inactive/Active；现 adapter 的 node/version 取消能力固定为
+UNSUPPORTED，DOCUMENT 取消经 `auth/token/document/{session}/{node}` 撤销 PAT，
+不经过这个 Task 控制入口。本批未更改这些观察、取消或停用消费者。原 UI 的
+JobsStore/AdminScheduler 使用另一路 `UserControlJob`，不在本批覆盖范围；
+不能声称所有原生后台控制均已完成平台接入。
+
+`contracts/adapter/file_storage.v1/` 当前没有 `delete_input` / `delete_output`，
+这是已有必选能力的实施缺口，不是 `.design` 禁止该能力。固定上游
+`frontend/assets/access.gateway/res/js/callback/deleteAction.js` 保留原确认框，
+按配置显示永久删除勾选并传 `RemovePermanently`；`emptyRecycle.js` 传回收站
+路径，由 `DeleteNodesTask` 的 `SourceInRecycle` 选择永久删除。后续应保留
+原请求两种语义与原 Task，不自行抹掉其中一种；目前随机 AutoStart/AutoClean
+Job 还不能当作已关联的 ExternalExecution。完整 delete@v1、七必选批准及
+原 UNKNOWN 终结仍未验收。
+
+本批源码与原始检查目录为 Data 的
+`codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-action-guard.OiDcbV/`。
+原 SDK 已回读 4 CPU、8 GiB memory、8 GiB memory+swap 与 user `1000:1000`，
+源码、TMPDIR、模块和构建缓存均位于 Data。冻结六个 Go 文件的 `gofmt -d`
+已退出 0 且无输出。第一次原 restv2 单包检查的 `positive.log` 明确失败：
+`Could not create local data dir ... -/.config/pydio/cells`，随后为包 `FAIL`；
+中断后原 wrapper 句柄不可恢复，没有伪报该句柄退出码。实际 SDK 只剩
+`sleep infinity`，确认原 Go 已结束后，才沿原 `ApplicationWorkingDir` 消费
+的 `CELLS_WORKING_DIR` / `CELLS_DATA_DIR` 投递同一 Data 快照的
+`native-state`，不修改 HOME、不转移 TMPDIR、不改产品源码迁就环境。
+修正投递后使用原 `go test -mod=readonly ./gateway/restv2 -run
+'^(TestNativeBackgroundActionsRequireAdmission|TestNativeMutationGuardPreservesReadProof|TestNativeBoundDataGatewayDoesNotBypassPromote|TestDeleteVersionRequiresEveryNativeAcknowledgement)$'
+-count=1 -v`；原 SDK 工作目录是该快照的 `file-storage`，`GOPROXY=off`、
+`GOSUMDB=off`，没有下载依赖。句柄 96060 实际退出 0（包 2.940s），
+覆盖六动作、控制、v1 删除的 48 个入口/配置场景、12 个读 proof 场景及
+原 S3/版本 ACK 边界；日志共 142 条含父测试的 PASS，不称 142 项业务联调。
+
+实现后只在私有快照真实删除三处生产入口守卫及不再使用的 import，保留测试；
+同包 `-run '^TestNativeBackgroundActionsRequireAdmission$'` 的句柄 15051
+退出 1：40 个 bound/proof 场景 FAIL，8 个独立输入校验场景仍 PASS。
+随后两生产文件按正式原字节恢复并 `cmp` 一致，重跑原四目标，句柄 37517
+退出 0（包 2.937s）；最终六文件 `gofmt -d` 退出 0 且无 diff。
+原错误、正向、生产反证、还原日志依次为该目录的：
+
+- `positive.log`，SHA-256 `212333b50b12366df70912adc4862c7f4138ff407df303a205dd5cda7c72612e`；
+- `positive-delivered.log`，`34218b0b21c444d6c39ec4f584bbe5432b45b93ba878bbc373dc497822c1cbb5`；
+- `negative-guards.log`，`688536d4ed2db0e981fbc391828401dff73f737787c321650cee96f57a54409a`；
+- `restored-final.log`，`38b55953ff45cfcc0e77b402f5e16701513e574d3bad0af59b570453b2719b9a`。
+
+相对本节基准的六代码路径为 +146/-14（含新 `api-actions_test.go`）；
+精确 `source-final-six.patch` 的 SHA-256 是
+`5f82bf961cdd04c04a166c51281f46999a367a859bcf0cf81b4bb434595e3946`。
+本批没有启动新镜像或 full、部署或激活绑定；提交由主线程集中处理。
+这些检查证明绕行被拒绝，不证明完整 delete/share、原生后台控制治理、
+三用户业务交互、FILE_STORAGE release 七必选或 UNKNOWN 对账门禁已闭合。

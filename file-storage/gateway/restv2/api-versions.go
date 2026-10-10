@@ -298,13 +298,6 @@ func (h *Handler) DeleteVersion(req *restful.Request, resp *restful.Response) er
 	// This original direct deletion has no governed native Task/AE consumer.
 	// A configured platform binding or an unconsumed execution proof cannot
 	// fall through to independent native deletion, even with valid native ACLs.
-	_, present, proofErr := auth.TakeNativeProof(req.Request)
-	if proofErr != nil {
-		return proofErr
-	}
-	if present {
-		return errors.WithStack(errors.StatusForbidden)
-	}
 	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
 		return err
 	}

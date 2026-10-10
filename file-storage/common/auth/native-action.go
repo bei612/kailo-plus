@@ -170,12 +170,27 @@ func text(value map[string]interface{}, key string) string {
 
 // AuthorizeNativeDataMutation preserves the independent native data gateway,
 // but does not let a platform-bound UI bypass the original Action producer via
-// a direct S3 write. The current native draft PUT changes its blob before the
-// immutable Version ACK, so even "Draft-Mode" is not an admissible exception.
+// a direct S3 or background-job write. The current native draft PUT changes its
+// blob before the immutable Version ACK, so even "Draft-Mode" is not an
+// admissible exception.
 func AuthorizeNativeDataMutation(request *http.Request) error {
+	if request.Method != http.MethodPut && request.Method != http.MethodPost && request.Method != http.MethodDelete && request.Method != http.MethodPatch {
+		// Read proofs belong to the original GetObject/HEAD consumer. Do not
+		// strip or interpret them in this mutation-only gateway boundary.
+		return nil
+	}
+	// A proof is meaningful only to a handler which actually verifies and
+	// consumes its admitted operation. Never silently treat it as independent
+	// native authority, including on an instance without platform delivery.
+	_, present, err := TakeNativeProof(request)
+	if err != nil {
+		return err
+	}
+	if present {
+		return errors.WithStack(errors.StatusForbidden)
+	}
 	ctx := request.Context()
-	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() == nil ||
-		(request.Method != http.MethodPut && request.Method != http.MethodPost && request.Method != http.MethodDelete) {
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() == nil {
 		return nil
 	}
 	return errors.WithStack(errors.StatusForbidden)

@@ -753,7 +753,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 
 func TestNativeBoundDataGatewayDoesNotBypassPromote(t *testing.T) {
 	for _, bound := range []bool{false, true} {
-		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodPost, http.MethodDelete} {
+		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodPost, http.MethodDelete, http.MethodPatch} {
 			for _, suffix := range []string{"", "?uploadId=existing-native-upload&partNumber=1", "?uploads", "?delete"} {
 				t.Run(fmt.Sprintf("bound=%t/%s/%s", bound, method, suffix), func(t *testing.T) {
 					ctx := config.WithStubStore(context.Background())
@@ -770,10 +770,9 @@ func TestNativeBoundDataGatewayDoesNotBypassPromote(t *testing.T) {
 					request.Header.Set(common.XAmzMetaPrefix+common.InputDraftMode, "true")
 					request.Header.Set(common.XAmzMetaPrefix+common.InputVersionId, "00000000-0000-4000-8000-000000000001")
 					request.Header.Set("X-Amz-Copy-Source", "/io/workspace/old.txt")
-					request.Header.Set("X-Kailo-Native-Execution", "not-authority-on-s3")
 					request.Header.Set("Authorization", "native-session-is-not-action-approval")
 					err := auth.AuthorizeNativeDataMutation(request)
-					mutation := method == http.MethodPut || method == http.MethodPost || method == http.MethodDelete
+					mutation := method == http.MethodPut || method == http.MethodPost || method == http.MethodDelete || method == http.MethodPatch
 					if (err != nil) != (bound && mutation) {
 						t.Fatalf("data gateway mode=%t method=%s: mutation bypass or independent/read regression: %v", bound, method, err)
 					}
