@@ -436,13 +436,16 @@ describe('original instructions REST update and delete consumers', () => {
     ).toHaveBeenCalledTimes(1);
     expect(
       components.instructionService.updateInstruction,
-    ).toHaveBeenCalledWith({
-      id: row.id,
-      projectId: config.projectId,
-      instruction: 'Updated original instruction',
-      questions: row.questions,
-      isDefault: false,
-    });
+    ).toHaveBeenCalledWith(
+      {
+        id: row.id,
+        projectId: config.projectId,
+        instruction: 'Updated original instruction',
+        questions: row.questions,
+        isDefault: false,
+      },
+      expect.any(Function),
+    );
     expect(records).toEqual([
       expect.objectContaining({
         apiType: ApiType.UPDATE_INSTRUCTION,
@@ -488,12 +491,15 @@ describe('original instructions REST update and delete consumers', () => {
     ).toHaveBeenCalledTimes(1);
     expect(
       components.instructionService.createInstruction,
-    ).toHaveBeenCalledWith({
-      projectId: config.projectId,
-      instruction: row.instruction,
-      questions: row.questions,
-      isDefault: false,
-    });
+    ).toHaveBeenCalledWith(
+      {
+        projectId: config.projectId,
+        instruction: row.instruction,
+        questions: row.questions,
+        isDefault: false,
+      },
+      expect.any(Function),
+    );
     expect(records).toEqual([
       expect.objectContaining({
         apiType: ApiType.CREATE_INSTRUCTION,
@@ -570,13 +576,16 @@ describe('original instructions REST update and delete consumers', () => {
     await invoke('PUT', { body: { isGlobal: true } });
     expect(
       components.instructionService.updateInstruction,
-    ).toHaveBeenCalledWith({
-      id: row.id,
-      projectId: config.projectId,
-      instruction: row.instruction,
-      questions: [],
-      isDefault: true,
-    });
+    ).toHaveBeenCalledWith(
+      {
+        id: row.id,
+        projectId: config.projectId,
+        instruction: row.instruction,
+        questions: [],
+        isDefault: true,
+      },
+      expect.any(Function),
+    );
   });
 
   it('deletes only the current project native row through the original Mutation and original 204 History', async () => {
@@ -591,7 +600,7 @@ describe('original instructions REST update and delete consumers', () => {
     ).toHaveBeenCalledTimes(1);
     expect(
       components.instructionService.deleteInstruction,
-    ).toHaveBeenCalledWith(row.id, config.projectId);
+    ).toHaveBeenCalledWith(row.id, config.projectId, expect.any(Function));
     expect(records).toEqual([
       expect.objectContaining({
         apiType: ApiType.DELETE_INSTRUCTION,

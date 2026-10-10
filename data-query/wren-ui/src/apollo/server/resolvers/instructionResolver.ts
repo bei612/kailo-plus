@@ -77,12 +77,10 @@ export class InstructionResolver {
   ): Promise<Instruction> {
     const { instruction, questions, isDefault } = args.data;
     const project = await this.currentProject(ctx);
-    return await ctx.instructionService.createInstruction({
-      instruction,
-      questions,
-      isDefault,
-      projectId: project.id,
-    });
+    return await ctx.instructionService.createInstruction(
+      { instruction, questions, isDefault, projectId: project.id },
+      ctx.nativeProjectCheck,
+    );
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_UPDATE_INSTRUCTION)
@@ -103,13 +101,10 @@ export class InstructionResolver {
       throw new Error('Instruction ID is required.');
     }
     const project = await this.currentProject(ctx);
-    return await ctx.instructionService.updateInstruction({
-      id,
-      projectId: project.id,
-      instruction,
-      questions,
-      isDefault,
-    });
+    return await ctx.instructionService.updateInstruction(
+      { id, projectId: project.id, instruction, questions, isDefault },
+      ctx.nativeProjectCheck,
+    );
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_DELETE_INSTRUCTION)
@@ -120,7 +115,11 @@ export class InstructionResolver {
   ): Promise<boolean> {
     const { id } = args.where;
     const project = await this.currentProject(ctx);
-    await ctx.instructionService.deleteInstruction(id, project.id);
+    await ctx.instructionService.deleteInstruction(
+      id,
+      project.id,
+      ctx.nativeProjectCheck,
+    );
     return true;
   }
 }
