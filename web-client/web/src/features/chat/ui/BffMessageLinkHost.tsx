@@ -13,6 +13,8 @@ import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import type { RelayEvent } from "@client-kit/platform/react/forum/channelWindowResponse";
 import type { loadWebSearchDirectory } from "@/platform/ui/search";
+import { createChannelDeepLinks, type ChannelLinkRuntime } from "@client-kit/platform/react/messages/channel-link";
+import type { SearchChannel } from "@client-kit/platform/react/search/types";
 
 type Directory = Awaited<ReturnType<typeof loadWebSearchDirectory>>;
 type Host = {
@@ -24,6 +26,35 @@ type Host = {
   onOpenMessageLink: (link: ParsedMessageLink) => void;
 };
 const MessageLinkHost = createContext<Host | null>(null);
+function copyLink(url: string) {
+  void navigator.clipboard.writeText(url).then(() => toast.success(t("video.linkCopied")), () => toast.error(t("platform.profile.copyFailed")));
+}
+
+export function useBffChannelLinkRuntime(): ChannelLinkRuntime {
+  const host = useContext(MessageLinkHost);
+  // The current session's admitted directory is the only label/navigation
+  // source. No arbitrary Relay lookup, guessed workspace or synthetic binding.
+  return {
+    channels: host?.directory?.channels.filter(channel => !!resolveMessageLinkTarget(host, channel.id)) ?? [],
+    onOpenChannel: id => host?.onOpenChannel(id),
+    onOpenMessageLink: link => host?.onOpenMessageLink(link),
+    resolveChannelReferences: true,
+  };
+}
+
+export const {
+  AuthoredDeepLinkAnchor: BffAuthoredDeepLinkAnchor,
+  ChannelDeepLinkAnchor: BffChannelDeepLinkAnchor,
+  MarkdownChannelDeepLink: BffMarkdownChannelDeepLink,
+  MarkdownChannelReference: BffMarkdownChannelReference,
+} = createChannelDeepLinks({
+  useMarkdownRuntime: useBffChannelLinkRuntime,
+  useChannelReference: id => useBffChannelLinkRuntime().channels.find(channel => channel.id === id),
+  useResolvedChannelDirectory: useBffChannelLinkRuntime,
+  isChannelReferenceOpenable: (channel): channel is SearchChannel => !!channel?.isMember,
+  MessageLinkPill: BffMessageLinkPill,
+  copyLink,
+});
 export function BffMessageLinkHost({children, ...host}: Host & {children: ReactNode}) {
   return <MessageLinkHost.Provider value={host}>{children}</MessageLinkHost.Provider>;
 }
@@ -107,5 +138,5 @@ function ResolvedBffMessageLinkPill({href, link, host}: {href?: string; link:Par
   return <MessageLinkPillPresentation href={href} link={link} channel={target?.channel} channelLabel={target?.label}
     interactive={!!host && !!target} openable={!!target} metadata={{state}}
     onOpenChannel={id => host?.onOpenChannel(id)} onOpenMessageLink={value => host?.onOpenMessageLink(value)}
-    copyLink={url => {void navigator.clipboard.writeText(url).then(() => toast.success(t("video.linkCopied")),() => toast.error(t("platform.profile.copyFailed")));}} />;
+    copyLink={copyLink} />;
 }

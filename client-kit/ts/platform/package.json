@@ -23,6 +23,8 @@
     "./react/messages/markdown.css": "./src/react/messages/markdown.css",
     "./react/members": "./src/react/members.tsx",
     "./react/messages/message-link": "./src/react/messages/message-link/index.ts",
+    "./react/messages/channel-link": "./src/react/messages/channel-link/index.ts",
+    "./react/messages/channel-link/*": "./src/react/messages/channel-link/*.ts",
     "./react/messages/message-link/messageLinkMetadata": "./src/react/messages/message-link/messageLinkMetadata.ts",
     "./react/messages/message-link/useInlineTooltipPosition": "./src/react/messages/message-link/useInlineTooltipPosition.ts",
     "./react/messages/system": "./src/react/messages/system/SystemMessageRow.tsx",

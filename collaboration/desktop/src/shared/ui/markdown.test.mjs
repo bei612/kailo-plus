@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { JSDOM } from "jsdom";
+import { setLocale } from "@client-kit/platform/i18n";
+
+function withPlatformLocale(locale, run) {
+  const originals = {
+    window: globalThis.window,
+    document: globalThis.document,
+    Event: globalThis.Event,
+  };
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "https://example.test",
+  });
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  globalThis.Event = dom.window.Event;
+  try {
+    setLocale(locale);
+    return run();
+  } finally {
+    dom.window.close();
+    Object.assign(globalThis, originals);
+  }
+}
 
 // These are copied here to avoid importing from .ts files that depend on
 // React (which isn't resolvable outside the bundler). Same pattern as
@@ -855,85 +878,104 @@ test("inline message chips omit fetched metadata and the event hash", () => {
   assert.doesNotMatch(visibleText, /·/);
 });
 
-test("authored Buzz permalink labels remain ordinary links", () => {
-  const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
-  const links = [
-    `[the message](buzz://message?channel=${channelId}&id=${EVENT_HEX})`,
-    `[the compatibility message](buzz://channel/${channelId}/${EVENT_HEX})`,
-    `[**design discussion**](buzz://channel/${channelId})`,
-  ];
-  const markdown = renderCachedMarkdown({
-    components: createMarkdownComponents(true, false),
-    content: links.join(" "),
-    variant: "authored-buzz-link-integration-test",
-  });
-  const html = renderToStaticMarkup(
-    React.createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      React.createElement(
-        MarkdownRuntimeContext.Provider,
-        {
-          value: {
-            channels: [{ id: channelId, name: "engineering" }],
-            onOpenChannel: () => {},
-            onOpenEntityLink: () => {},
-            onOpenMessageLink: () => {},
-            relayOrigin: null,
-          },
-        },
-        markdown,
-      ),
-    ),
-  );
-
-  assert.equal((html.match(/data-buzz-link=""/g) ?? []).length, 0);
-  assert.match(html, />the message</);
-  assert.match(html, />the compatibility message</);
-  assert.match(html, /aria-label="Open message: the compatibility message"/);
-  assert.match(html, />design discussion</);
-  assert.match(html, /aria-label="Open channel: design discussion"/);
-  assert.doesNotMatch(html, /\[object Object\]/);
-  assert.equal((html.match(/underline-offset-4/g) ?? []).length, 3);
-});
-
-test("generic audio attachments render outside paragraph markup", () => {
-  const href = "https://relay.example/media/meeting.mp3";
-  const markdown = renderCachedMarkdown({
-    components: createMarkdownComponents(true, false),
-    content: `[meeting.mp3](${href})`,
-    variant: "generic-audio-block-integration-test",
-  });
-  const html = renderToStaticMarkup(
-    React.createElement(
-      MarkdownRuntimeContext.Provider,
-      {
-        value: {
-          channels: [],
-          imetaByUrl: new Map([
-            [
-              href,
-              {
-                duration: 42,
-                filename: "meeting.mp3",
-                m: "audio/mpeg",
+for (const locale of ["zh-CN", "en"]) {
+  test(`authored Buzz permalink labels remain ordinary links (${locale})`, () =>
+    withPlatformLocale(locale, () => {
+      const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
+      const links = [
+        `[the message](buzz://message?channel=${channelId}&id=${EVENT_HEX})`,
+        `[the compatibility message](buzz://channel/${channelId}/${EVENT_HEX})`,
+        `[**design discussion**](buzz://channel/${channelId})`,
+      ];
+      const markdown = renderCachedMarkdown({
+        components: createMarkdownComponents(true, false),
+        content: links.join(" "),
+        variant: `authored-buzz-link-integration-test-${locale}`,
+      });
+      const html = renderToStaticMarkup(
+        React.createElement(
+          QueryClientProvider,
+          { client: new QueryClient() },
+          React.createElement(
+            MarkdownRuntimeContext.Provider,
+            {
+              value: {
+                channels: [{ id: channelId, name: "engineering" }],
+                onOpenChannel: () => {},
+                onOpenEntityLink: () => {},
+                onOpenMessageLink: () => {},
+                relayOrigin: null,
               },
-            ],
-          ]),
-          onOpenChannel: () => {},
-          onOpenEntityLink: () => {},
-          onOpenMessageLink: () => {},
-          relayOrigin: "https://relay.example",
-        },
-      },
-      markdown,
-    ),
-  );
+            },
+            markdown,
+          ),
+        ),
+      );
 
-  assert.match(html, /data-testid="audio-message-attachment"/);
-  assert.match(html, /aria-label="Download meeting.mp3"/);
-  assert.doesNotMatch(html, /<p[^>]*>\s*<div/);
-});
+      assert.equal((html.match(/data-buzz-link=""/g) ?? []).length, 0);
+      assert.match(html, />the message</);
+      assert.match(html, />the compatibility message</);
+      assert.match(
+        html,
+        locale === "en"
+          ? /aria-label="Open message: the compatibility message"/
+          : /aria-label="打开消息：the compatibility message"/,
+      );
+      assert.match(html, />design discussion</);
+      assert.match(
+        html,
+        locale === "en"
+          ? /aria-label="Open channel: design discussion"/
+          : /aria-label="打开频道：design discussion"/,
+      );
+      assert.doesNotMatch(html, /\[object Object\]/);
+      assert.equal((html.match(/underline-offset-4/g) ?? []).length, 3);
+    }));
+
+  test(`generic audio attachments render outside paragraph markup (${locale})`, () =>
+    withPlatformLocale(locale, () => {
+      const href = "https://relay.example/media/meeting.mp3";
+      const markdown = renderCachedMarkdown({
+        components: createMarkdownComponents(true, false),
+        content: `[meeting.mp3](${href})`,
+        variant: `generic-audio-block-integration-test-${locale}`,
+      });
+      const html = renderToStaticMarkup(
+        React.createElement(
+          MarkdownRuntimeContext.Provider,
+          {
+            value: {
+              channels: [],
+              imetaByUrl: new Map([
+                [
+                  href,
+                  {
+                    duration: 42,
+                    filename: "meeting.mp3",
+                    m: "audio/mpeg",
+                  },
+                ],
+              ]),
+              onOpenChannel: () => {},
+              onOpenEntityLink: () => {},
+              onOpenMessageLink: () => {},
+              relayOrigin: "https://relay.example",
+            },
+          },
+          markdown,
+        ),
+      );
+
+      assert.match(html, /data-testid="audio-message-attachment"/);
+      assert.match(
+        html,
+        locale === "en"
+          ? /aria-label="Download meeting.mp3"/
+          : /aria-label="下载meeting.mp3"/,
+      );
+      assert.doesNotMatch(html, /<p[^>]*>\s*<div/);
+    }));
+}
 
 test("Native markdown keeps the original image trigger through the shared viewer and native media actions", () => {
   const href = "https://relay.example/media/poster.png";
@@ -943,16 +985,20 @@ test("Native markdown keeps the original image trigger through the shared viewer
     variant: "shared-native-image-lightbox-consumer",
   });
   const html = renderToStaticMarkup(
-    React.createElement(MarkdownRuntimeContext.Provider, {
-      value: {
-        channels: [],
-        imetaByUrl: new Map([[href, { m: "image/png", dim: "1080x1920" }]]),
-        onOpenChannel() {},
-        onOpenEntityLink() {},
-        onOpenMessageLink() {},
-        relayOrigin: "https://relay.example",
+    React.createElement(
+      MarkdownRuntimeContext.Provider,
+      {
+        value: {
+          channels: [],
+          imetaByUrl: new Map([[href, { m: "image/png", dim: "1080x1920" }]]),
+          onOpenChannel() {},
+          onOpenEntityLink() {},
+          onOpenMessageLink() {},
+          relayOrigin: "https://relay.example",
+        },
       },
-    }, markdown),
+      markdown,
+    ),
   );
   assert.match(html, /data-testid="message-image-lightbox-trigger"/);
   assert.match(html, /data-image-lightbox-trigger=""/);
@@ -960,7 +1006,10 @@ test("Native markdown keeps the original image trigger through the shared viewer
   assert.match(html, /rounded-2xl/);
   assert.match(html, /width:144px/);
   assert.match(html, /aria-label="缩放图片：poster"/);
-  assert.match(html, /data-image-lightbox-src="https:\/\/relay.example\/media\/poster.png"/);
+  assert.match(
+    html,
+    /data-image-lightbox-src="https:\/\/relay.example\/media\/poster.png"/,
+  );
   assert.doesNotMatch(html, /\/api\/v1\//);
   assert.match(html, /data-image-mosaic-count="3"/);
   assert.match(html, /h-80 grid-rows-2/);

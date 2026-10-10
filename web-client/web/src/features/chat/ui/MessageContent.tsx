@@ -47,7 +47,9 @@ import {
 } from "@client-kit/platform/react/composer/features/messages/lib/audioAttachment";
 import { BffAudioAttachment } from "./BffAudioAttachment";
 import { BffVideoPlayer, useBffVideoReview } from "./BffVideoReview";
-import { BffMessageLinkPill } from "./BffMessageLinkHost";
+import { BffMessageLinkPill, BffAuthoredDeepLinkAnchor, BffChannelDeepLinkAnchor, BffMarkdownChannelDeepLink, BffMarkdownChannelReference, useBffChannelLinkRuntime } from "./BffMessageLinkHost";
+import { remarkChannelLinks, remarkChannelDeepLinks, remarkMessageLinks } from "@client-kit/platform/react/messages/channel-link";
+import { parseChannelLink } from "@client-kit/platform/react/composer/features/messages/lib/channelLink";
 import { useVideoReviewCommentContent, type VideoReviewContext } from "@client-kit/platform/react/video-review";
 import rehypeLeadingInlineContent from "@client-kit/platform/react/video-review/rehypeLeadingInlineContent";
 import { isVideoMedia } from "@client-kit/platform/react/video-review/mediaEntry";
@@ -274,7 +276,13 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   const { mediaByUrl, resolveMediaUrl } = useMarkdownRenderContext();
   const messageLink = href ? parseMessageLink(href) : null;
   if (messageLink?.ok) {
+    if (getReactNodeText(children) !== href) {
+      return <BffAuthoredDeepLinkAnchor channelId={messageLink.value.channelId} href={href!} interactive messageLink={messageLink.value}>{children}</BffAuthoredDeepLinkAnchor>;
+    }
     return <BffMessageLinkPill href={href} link={messageLink.value} />;
+  }
+  if (href && parseChannelLink(href).ok) {
+    return <BffChannelDeepLinkAnchor href={href} interactive>{children}</BffChannelDeepLinkAnchor>;
   }
   const media = href ? mediaByUrl.get(href) : undefined;
   if (!media) {
@@ -314,6 +322,12 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   }
   return <a href={resolveMediaUrl(media.sha256)} download={String(children) || "attachment"}>{children}</a>;
 };
+
+function MarkdownMessageLink({ children }: { children?: ReactNode }) {
+  const href = String(children ?? "");
+  const link = parseMessageLink(href);
+  return link.ok ? <BffMessageLinkPill href={href} link={link.value} /> : <span data-message-link="">{href}</span>;
+}
 
 function MarkdownMention({ children }: { children?: React.ReactNode }) {
   const { mentionsByName } = useMarkdownRenderContext();
@@ -419,6 +433,8 @@ export function MessageContent({
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 }) {
   const {reviewContext, videoReviewCommentRootId} = useBffVideoReview(messageId);
+  const channelRuntime = useBffChannelLinkRuntime();
+  const channelNames = channelRuntime.channels.filter(channel => channel.channelType !== "dm").map(channel => channel.name);
   const reviewComment = useVideoReviewCommentContent({content, videoReviewCommentRootId});
   const mentionsByPubkey = new Map(mentions.map(mention => [mention.pubkey.toLowerCase(), mention]));
   const { mentionNames, mentionPubkeysByName } = resolveMentionProps(
@@ -453,10 +469,14 @@ export function MessageContent({
     <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink, reviewContext, leadingInlineContent: reviewComment.leadingInlineContent }}>
       <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
         <ReactMarkdown
-          urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
-          remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
+          urlTransform={(url) => parseMessageLink(url).ok || parseChannelLink(url).ok ? url : defaultUrlTransform(url)}
+          remarkPlugins={[remarkGfm, remarkBreaks, remarkChannelDeepLinks, remarkMessageLinks, [remarkChannelLinks, { channelNames }], remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
           rehypePlugins={reviewComment.leadingInlineContent != null ? [rehypeLeadingInlineContent] : []}
-          components={{ ...MARKDOWN_COMPONENTS, emoji: MarkdownEmoji, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
+          components={{ ...MARKDOWN_COMPONENTS,
+            "channel-deep-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelDeepLink interactive>{children}</BffMarkdownChannelDeepLink>,
+            "channel-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelReference interactive>{children}</BffMarkdownChannelReference>,
+            "message-link": MarkdownMessageLink,
+            emoji: MarkdownEmoji, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
             <SpoilerInline block={props["data-block-spoiler"] != null}>{children}</SpoilerInline> } as Components}
         >
           {displayContent(reviewComment.content)}

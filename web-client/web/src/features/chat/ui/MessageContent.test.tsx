@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, type ComponentProps } from "react";
+import { ChannelType, WorkspaceVisibility } from "@client-kit/contracts";
 import { createRoot } from "react-dom/client";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
@@ -9,7 +10,7 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { t } from "@/shared/i18n";
 import { setLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
-import { readMessageLinkMetadata } from "./BffMessageLinkHost";
+import { BffMessageLinkHost, readMessageLinkMetadata } from "./BffMessageLinkHost";
 import { MessageLinkPillPresentation } from "@client-kit/platform/react/messages/message-link";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
@@ -25,7 +26,7 @@ const SHA = "ab".repeat(32);
 describe("MessageContent", () => {
   it("message-link restores the original chip and never exposes an unadmitted permalink as an external anchor", () => {
     const id = "a".repeat(64);
-    const html = renderToStaticMarkup(<MessageContent content={`[reference](buzz://message?channel=channel-one&id=${id})`} />);
+    const html = renderToStaticMarkup(<MessageContent content={`buzz://message?channel=channel-one&id=${id}`} />);
     expect(html).toContain('data-message-link=""');
     expect(html).not.toContain('target="_blank"');
     expect(html).not.toContain('role="button"');
@@ -35,6 +36,64 @@ describe("MessageContent", () => {
     expect(admitted).toContain('data-message-link-state="deleted"');
     expect(admitted).toContain('buzz-link-deleted');
     expect(admitted).toContain('role="button"');
+  });
+
+  it("restores original authored labels and channel links without external navigation for an unknown scope", () => {
+    const channel = WORKSPACE;
+    const message = "a".repeat(64);
+    const html = renderToStaticMarkup(<MessageContent content={
+      `[authored **label**](buzz://message?channel=${channel}&id=${message})\n` +
+      `buzz://channel/${channel}.\n#unknown\n\`buzz://channel/${channel}\``
+    } />);
+    expect(html).toContain("authored <strong>label</strong>");
+    expect(html).toContain('data-channel-deep-link=""');
+    expect(html).toContain('data-channel-link=""');
+    expect(html).not.toContain('target="_blank"');
+    expect(html).not.toContain('role="button"');
+    expect(html).toContain("<code>");
+  });
+
+  it("uses the original channel chip, keyboard and authored-label navigation; revocation removes actions and labels", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const element = document.createElement("div");
+    document.body.append(element);
+    const root = createRoot(element);
+    const openChannel = vi.fn(), openMessage = vi.fn();
+    const id = WORKSPACE, eventId = "a".repeat(64);
+    const directory: NonNullable<ComponentProps<typeof BffMessageLinkHost>["directory"]> = {
+      channels: [{id, name:"design room", channelType:"stream", visibility:"private",
+        description:"Original channel metadata", isMember:true, lastMessageAt:null}],
+      workspaces: [{id:"workspace-binding", createdAt:new Date(0), isMember:true, memberCount:1,
+        visibility:WorkspaceVisibility.Private, channel:{channelId:id, name:"design room",
+          channelType:ChannelType.Stream, archived:false}}],
+      labels:{}, people:[],
+    };
+    const content = `#design room\n\nbuzz://channel/${id}\n\n[authored label](buzz://message?channel=${id}&id=${eventId})`;
+    const show = (admitted: boolean, ambiguous = false) => act(async () => root.render(
+      <PlatformProvider client={client} locale="en"><BffMessageLinkHost scopeKey={admitted ? "session-a" : "session-b"}
+        principalId="human-a" conversations={[]} onOpenChannel={openChannel} onOpenMessageLink={openMessage}
+        directory={admitted ? {...directory, workspaces: ambiguous ? [...directory.workspaces,...directory.workspaces] : directory.workspaces} : undefined}>
+        <MessageContent content={content} />
+      </BffMessageLinkHost></PlatformProvider>,
+    ));
+    try {
+      await show(true);
+      const chip = element.querySelector('[data-channel-link][role="button"]')!;
+      expect(chip.textContent).toBe("design room");
+      await act(async () => chip.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true})));
+      expect(openChannel).toHaveBeenLastCalledWith(id);
+      const labelled = [...element.querySelectorAll("button")].find(button => button.textContent === "authored label")!;
+      expect(labelled.className).toContain("font-medium text-primary underline");
+      await act(async () => labelled.click());
+      expect(openMessage).toHaveBeenLastCalledWith({channelId:id,messageId:eventId,threadRootId:null});
+      await show(true, true);
+      expect(element.querySelector('[role="button"]')).toBeNull();
+      expect([...element.querySelectorAll("button")].some(button => button.textContent === "authored label")).toBe(false);
+      await show(false);
+      expect(element.querySelector('[role="button"]')).toBeNull();
+      expect(element.textContent).not.toContain("Original channel metadata");
+      expect(element.querySelector('[data-channel-deep-link]')?.textContent).toBe(id.slice(0,8));
+    } finally { await act(async () => root.unmount()); element.remove(); }
   });
 
   it("message-link reads the exact governed root, original author and latest edit without crossing target scope", async () => {
