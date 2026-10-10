@@ -9917,3 +9917,69 @@ Original TypeScript session 24386 exited 0 on its earlier frozen adjustment inpu
 not this Asking batch. No type/full-gate, browser, complete quota/approval/billing,
 AI artifact or deployed question-to-SQL acceptance is claimed here. Original
 provider-cache loss/unknown-outcome reconciliation remains a release gap.
+
+### 2026-10-10 original thread rename/delete management consumer checkpoint
+
+Authority and impact: `.design/08` §6 `SS-WRN-IDENTITY` /
+`SS-WRN-GOVERNANCE` require current HUMAN/project authorization on the original
+native page. Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72`
+contains `AskingResolver.updateThread/deleteThread` in
+`wren-ui/src/apollo/server/resolvers/askingResolver.ts` and the matching
+`AskingService` methods in `wren-ui/src/apollo/server/services/askingService.ts`.
+These are authorized governance adaptations of those original consumers, not
+new thread entities or UI replacements. The original GraphQL payload, native
+repository rows and independent-instance behavior remain unchanged; no schema,
+contract, workflow or three-client layout changes are involved.
+
+The two original Mutation entries now use existing
+`nativeProjectResolver('manage')`. Each resolver passes its trusted
+`nativeProjectCheck` into the real service; `currentThread` first selects the
+thread in the current project and the callback then verifies fresh permission
+and the captured binding generation immediately before `updateOne/deleteOne`.
+Bound service calls without the callback are rejected. This adds neither a
+Core copy of conversation content nor another permission authority.
+
+Boundary behavior: a foreign/missing thread cannot be written, a changed
+project/generation/identity or revoked permission stops dispatch, and only the
+existing trusted pre-write closure proves NOT_STARTED. After a sent write, a
+lost acknowledgement stays UNKNOWN; there is no automatic second write. Empty
+rename input and existing native delete constraints keep their original rules.
+This batch does not introduce a new durable state or override outstanding-task
+deletion rules, database-query cancellation or unknown-task reconciliation.
+
+Actual post-implementation evidence used existing
+`kailo-wren-query-sdk-itgs2n` (4 CPU, 4 GiB memory and swap limit) with a separate
+frozen source input at
+`/volumes/data/kailo/check-cache/wren-thread-management.a4H2Na`.
+Original command from that container directory:
+
+```sh
+node /work/node_modules/jest/bin/jest.js src/nativeProjectScope.test.ts --runInBand \
+  --testNamePattern="original thread rename and delete management consumers" \
+  --transform '{"^.+\\.tsx?$":["ts-jest",{"isolatedModules":true,"tsconfig":{"jsx":"react-jsx"}}]}'
+```
+
+Session 7662 exited 0: 18 passed, 249 unrelated cases skipped, 267 total
+(165.289 s). It exercises original Mutation-to-AskingService consumers with
+repository/authorization boundary substitutes, not a live multi-user database
+or browser. Private production mutation removed both actual `await beforeWrite`
+calls; session 1356 exited 1 with 10 failures, 8 passes and 249 skips, including
+a wrong-project write succeeding and post-write UNKNOWN replacing NOT_STARTED.
+The production file was restored and compared byte-for-byte (`cmp` exit 0).
+Session 92474 then exited 0: 18 passed / 249 skipped (0.726 s), followed by the
+original four-file Prettier check: `All matched files use Prettier code style!`.
+
+Logs in that candidate directory and SHA-256:
+
+- `thread-positive.log`: `365d97b8270f7e9cbde46488d76150ebe8240775a6ea7d607b0f692e09dbf813`.
+- `thread-negative.log`: `8a85aa174b83a78f9f901895bfc140e36cc58ed78497e629d9f60db2f90e9700`.
+- `thread-restored.log`: `95b3d9049865d599be863371d45e256d6533c567ba823be541afad78f968310e`.
+- `thread-restored-format.log`: `17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+
+First formatter invocation exited 1 because the old `bin-prettier.js` path was
+absent (`thread-format.log`); the installed `bin/prettier.cjs` was then used,
+without installation or changing dependencies. Earlier Asking final type job
+36727 remains on its original frozen input and does not cover this batch.
+No final type/full gate, screenshot, complete quota/approval/billing or Wren
+deployment acceptance is claimed. AI source build 13724 is a separate live
+artifact job, not evidence that this UI source has been released.

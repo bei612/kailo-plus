@@ -39,6 +39,183 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
+describe('original thread rename and delete management consumers', () => {
+  const config: any = {
+    projectId: 3,
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    tenantId: 'fixture-tenant',
+    workspaceId: 'fixture-workspace',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '3',
+  };
+  let previous: string | undefined;
+  let ctx: any;
+  let row: { id: number; projectId: number; summary: string };
+  let repository: any;
+  let generation: number;
+  let revoked: boolean;
+  let afterRead: () => void;
+  const invoke = (mutation: 'updateThread' | 'deleteThread') =>
+    originalResolvers.Mutation[mutation](
+      null,
+      { where: { id: row.id }, data: { summary: 'Renamed original thread' } },
+      ctx,
+    );
+  beforeEach(() => {
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    generation = 2;
+    revoked = false;
+    afterRead = () => undefined;
+    row = { id: 81, projectId: 3, summary: 'Original thread' };
+    repository = {
+      findOneBy: jest.fn(async (filter) => {
+        const result = Object.entries(filter).every(
+          ([key, value]) => row[key] === value,
+        )
+          ? { ...row }
+          : null;
+        afterRead();
+        return result;
+      }),
+      updateOne: jest.fn(async (_id, input) => ({ ...row, ...input })),
+      deleteOne: jest.fn(async () => undefined),
+    };
+    ctx = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'verified-person',
+      projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
+      telemetry: { sendEvent: jest.fn() },
+    };
+    ctx.askingService = Object.assign(Object.create(AskingService.prototype), {
+      projectService: ctx.projectService,
+      threadRepository: repository,
+    });
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, operation, input, bearer) => {
+        expect(operation).toBe('human-action');
+        expect(bearer).toBe('verified-person');
+        expect(input).toEqual({
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'manage' },
+        });
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: 'manage',
+            checkedRevision: 'current-project-management',
+          },
+        };
+      });
+  });
+  afterEach(() => {
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+  it.each(['updateThread', 'deleteThread'] as const)(
+    'preserves the original %s result and performs fresh management authorization immediately before its single write',
+    async (mutation) => {
+      const write = mutation === 'updateThread' ? 'updateOne' : 'deleteOne';
+      repository[write].mockImplementation(async (_id, input) => {
+        expect(bindingServiceCall).toHaveBeenCalledTimes(2);
+        return { ...row, ...input };
+      });
+      expect(await invoke(mutation)).toEqual(
+        mutation === 'updateThread'
+          ? { ...row, summary: 'Renamed original thread' }
+          : true,
+      );
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: 81,
+        projectId: 3,
+      });
+      expect(repository[write]).toHaveBeenCalledTimes(1);
+      expect(bindingServiceCall).toHaveBeenCalledTimes(3);
+    },
+  );
+  it.each(['updateThread', 'deleteThread'] as const)(
+    'does not write a foreign project thread through %s',
+    async (mutation) => {
+      row.projectId = 8;
+      await expect(invoke(mutation)).rejects.toThrow();
+      expect(repository.updateOne).not.toHaveBeenCalled();
+      expect(repository.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    (['updateThread', 'deleteThread'] as const).flatMap((mutation) =>
+      (['revoked', 'generation', 'identity', 'project'] as const).map(
+        (fault) => [mutation, fault] as const,
+      ),
+    ),
+  )(
+    'refuses %s before dispatch when %s changes during native lookup',
+    async (mutation, fault) => {
+      afterRead = () => {
+        if (fault === 'revoked') revoked = true;
+        if (fault === 'generation') generation++;
+        if (fault === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+        if (fault === 'project') row.projectId = 8;
+      };
+      if (fault === 'project')
+        repository.findOneBy.mockImplementation(async () => ({
+          ...row,
+          projectId: 8,
+        }));
+      await expect(invoke(mutation)).rejects.toMatchObject({
+        extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+      });
+      expect(repository.updateOne).not.toHaveBeenCalled();
+      expect(repository.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['updateThread', 'deleteThread'] as const)(
+    'rejects a bound %s service call without its trusted before-write consumer',
+    async (mutation) => {
+      await expect(
+        ctx.askingService[mutation](
+          row.id,
+          ...(mutation === 'updateThread' ? [{ summary: 'bypass' }] : []),
+        ),
+      ).rejects.toMatchObject({ code: 'NATIVE_AUTHENTICATION_REQUIRED' });
+      expect(repository.updateOne).not.toHaveBeenCalled();
+      expect(repository.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['updateThread', 'deleteThread'] as const)(
+    'keeps %s unknown after a sent native write loses its acknowledgement',
+    async (mutation) => {
+      const write = mutation === 'updateThread' ? 'updateOne' : 'deleteOne';
+      repository[write].mockRejectedValue(
+        new Error('native acknowledgement lost'),
+      );
+      await expect(invoke(mutation)).rejects.toMatchObject({
+        extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+      });
+      expect(repository[write]).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['updateThread', 'deleteThread'] as const)(
+    'retains independent-instance %s without platform configuration or identity',
+    async (mutation) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete ctx.nativeIdentityScope;
+      delete ctx.nativeHumanToken;
+      await invoke(mutation);
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+      expect(
+        repository[mutation === 'updateThread' ? 'updateOne' : 'deleteOne'],
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
 describe('original instructions REST update and delete consumers', () => {
   const config: any = {
     projectId: 3,

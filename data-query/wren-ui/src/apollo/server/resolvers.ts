@@ -314,8 +314,8 @@ const resolvers = {
 
     // Thread
     createThread: askingResolver.createThread,
-    updateThread: askingResolver.updateThread,
-    deleteThread: askingResolver.deleteThread,
+    updateThread: nativeProjectResolver(askingResolver.updateThread, 'manage'),
+    deleteThread: nativeProjectResolver(askingResolver.deleteThread, 'manage'),
     createThreadResponse: askingResolver.createThreadResponse,
     updateThreadResponse: askingResolver.updateThreadResponse,
     previewData: askingResolver.previewData,

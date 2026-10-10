@@ -576,7 +576,11 @@ export class AskingResolver {
     const eventName = TelemetryEvent.HOME_UPDATE_THREAD_SUMMARY;
     const newSummary = data.summary;
     try {
-      const thread = await askingService.updateThread(where.id, data);
+      const thread = await askingService.updateThread(
+        where.id,
+        data,
+        ctx.nativeProjectCheck,
+      );
       // telemetry
       ctx.telemetry.sendEvent(eventName, {
         new_summary: newSummary,
@@ -603,7 +607,7 @@ export class AskingResolver {
     const { where } = args;
 
     const askingService = ctx.askingService;
-    await askingService.deleteThread(where.id);
+    await askingService.deleteThread(where.id, ctx.nativeProjectCheck);
     return true;
   }
 

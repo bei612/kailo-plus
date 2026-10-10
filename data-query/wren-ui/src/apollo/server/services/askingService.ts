@@ -171,8 +171,12 @@ export interface IAskingService {
   updateThread(
     threadId: number,
     input: Partial<AskingDetailTaskUpdateInput>,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<Thread>;
-  deleteThread(threadId: number): Promise<void>;
+  deleteThread(
+    threadId: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void>;
   listThreads(): Promise<Thread[]>;
   createThreadResponse(
     input: AskingDetailTaskInput,
@@ -833,21 +837,37 @@ export class AskingService implements IAskingService {
   public async updateThread(
     threadId: number,
     input: Partial<AskingDetailTaskUpdateInput>,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<Thread> {
     // if input is empty, throw error
     if (isEmpty(input)) {
       throw new Error('Update thread input is empty');
     }
 
-    await this.currentThread(threadId);
+    const thread = await this.currentThread(threadId);
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !beforeWrite
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await beforeWrite?.(thread.projectId);
 
     return this.threadRepository.updateOne(threadId, {
       summary: input.summary,
     });
   }
 
-  public async deleteThread(threadId: number): Promise<void> {
-    await this.currentThread(threadId);
+  public async deleteThread(
+    threadId: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void> {
+    const thread = await this.currentThread(threadId);
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !beforeWrite
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await beforeWrite?.(thread.projectId);
     await this.threadRepository.deleteOne(threadId);
   }
 
