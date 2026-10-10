@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     config_path: str = Field(default="config.yaml")
     _components: list[dict]
 
+    model_delivery_input_file: str | None = Field(default=None, alias="WREN_MODEL_DELIVERY_INPUT_FILE")
+    model_credential_file: str | None = Field(default=None, alias="WREN_MODEL_CREDENTIAL_FILE")
+    model_adapter_directory_file: str | None = Field(default=None, alias="WREN_MODEL_ADAPTER_DIRECTORY_FILE")
+    model_delivery_output_file: str | None = Field(default=None, alias="WREN_MODEL_DELIVERY_OUTPUT_FILE")
+
     sql_pairs_path: str = Field(default="sql_pairs.json")
 
     def __init__(self):

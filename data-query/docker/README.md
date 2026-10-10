@@ -1647,3 +1647,59 @@ passed, and two deliberately removed production guards were caught and restored;
 this is not a deployed feature or a browser acceptance result. The earlier
 six PostgreSQL migration checks remain failed and were not rerun or relabeled.
 See the [pin evidence](../fork/verify/native-integration.md#original-dashboard-pin-last-native-insert-authorization).
+
+### Native running model credential read-back
+
+The original AI lifespan can publish the existing `ApplicationAdapterDirectory`
+format after its real LLM/Router and embedding providers have loaded. It does
+not create a model, route, identity, grant or HTTP management endpoint. The
+independent upstream startup remains unchanged when all four delivery paths are
+absent; that mode produces no platform delivery proof.
+
+For this governed Compose entry, `WREN_MODEL_DELIVERY_DIR` is an existing,
+owner-only directory. It supplies `input.json` (the existing frozen Core model
+projection plus native `models` mapping), `credential.json` (the original Bao
+Agent's matching `delivery`, `requestId`, `version`, `value`), and
+`adapter-directory.json` (the existing controlled directory with this exact
+binding, generation, scope and secret reader). Files must be regular, owner-only
+and non-symlinked. The mapping uses existing provider identifiers from native
+`config.yaml`, including aliases, and the existing `routeResourceId`,
+`nativeModelRef`, `baseUrl` fields. Do not create a route or invent an embedding
+dimension merely to fill these inputs.
+
+The original native `config.yaml` and component-only env delivery still own the
+actual model settings and restricted key. Startup compares the actual loaded
+direct/Router/embedding values against the delivered route mapping; all live
+models and fallback targets must be accounted for. The proof is computed from
+those loaded provider keys, not from an independent copy of the Bao material.
+Core independently checks the fixed challenge and original Bao audit request.
+
+Successful startup atomically publishes `verified-directory.json` with the
+existing `modelCredentialDeliveries` on the selected adapter. It preserves other
+bindings and historical generations. It never overwrites the input directory.
+An existing output is removed only after its directory, instance, binding,
+scope and generation identify it as this writer's prior receipt; a misdirected
+owner-only file is refused without deletion. A directory lock excludes concurrent
+lifespan writers. Failed startup emits no successful receipt. Normal shutdown removes only the output inode created by
+that process, not a newer replacement. A crash residue is removed by the next
+startup and never reused to attest a different generation.
+
+Use that distinct candidate as `APPLICATION_ADAPTER_DIRECTORY_FILE` through the
+existing controlled deployment and `deploy/local/start-core.sh --no-build`.
+Run that command on the deployment host and select
+`WREN_MODEL_DELIVERY_DIR/verified-directory.json` using the actual configured
+host directory, not the AI container's `/run/wren-model-delivery` alias.
+The input directory's `nativeHumanIdentities[].jwksFile` values stay unchanged:
+they must be real host-controlled public JWKS paths consumed by the original
+host `PYADAPTER` check and mounted at those same paths into Core. A container-only
+fixture path does not establish that host delivery.
+The output is deployment evidence, not an automatic modification of a running
+Core mount or an activation action. An existing single-file container bind mount
+retains its old inode after replacement or removal: apply the original controlled
+Core deployment to adopt the new file; no automatic hot reload is asserted.
+Before adopting it, use the current input
+directory; changed directory facts during native startup refuse publication.
+Do not substitute a stale candidate for newer directory changes. Core's existing
+binding workflow, authorization, generation and audited-read checks remain
+mandatory. Missing approved inputs, a real embedding route or native config
+continues to block release; this read-back does not grant business access.
