@@ -648,6 +648,109 @@ class NativeProvisioningTests(unittest.TestCase):
                     provision.native_client(env, 1)
             self.assertEqual([call.args[0] for call in api.request.call_args_list], ["GET", "GET"])
 
+    def test_adapter_service_client_uses_delivered_identity_and_exact_readback(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        native_secret = root / "native-secret"
+        native_secret.write_text("independent-native-fixture")
+        native_secret.chmod(0o600)
+        credential = root / "adapter-secret"
+        credential.write_text("independent-adapter-fixture")
+        credential.chmod(0o600)
+        config_file = root / "adapter.json"
+        binding = "11111111-1111-4111-8111-111111111111"
+        tenant = "22222222-2222-4222-8222-222222222222"
+        config = {"bindingId": binding, "tenantId": tenant,
+                  "oidcClientId": "knowledge-binding-fixture",
+                  "oidcTokenUrl": "https://idp.example.test/realms/native/protocol/openid-connect/token",
+                  "oidcClientSecretFile": str(credential),
+                  "management": {"validation": {"secretDeliveries": [{
+                      "secretFile": str(credential), "locator": "tenants/" + tenant + "/kv/adapter",
+                      "version": 1}]}}}
+        env = {"KNOWLEDGE_ADAPTER_CONFIG_FILE": str(config_file),
+               "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "2",
+               "KNOWLEDGE_OIDC_ISSUER_URL": "https://idp.example.test/realms/native",
+               "OIDC_ISSUER": "https://idp.example.test/realms/native",
+               "KNOWLEDGE_OIDC_CLIENT_ID": "native-browser-fixture",
+               "KNOWLEDGE_OIDC_CLIENT_SECRET_FILE": str(native_secret),
+               "OIDC_SERVICE_CLIENT_ID": "core-service-fixture", "OIDC_WORKER_CLIENT_ID": "worker-fixture",
+               "OIDC_BROWSER_CLIENT_ID": "platform-browser-fixture", "OIDC_NATIVE_CLIENT_ID": "platform-native-fixture"}
+        expected_mapper = {"name": "adapter-core-service-audience", "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
+            "config": {"included.custom.audience": "core-service-fixture", "access.token.claim": "true",
+                       "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}}
+        expected = {"clientId": "knowledge-binding-fixture", "enabled": True, "protocol": "openid-connect",
+            "publicClient": False, "standardFlowEnabled": False, "implicitFlowEnabled": False,
+            "directAccessGrantsEnabled": False, "serviceAccountsEnabled": True,
+            "fullScopeAllowed": False, "redirectUris": [], "webOrigins": []}
+        for scenario in ("create", "existing", "lost-ack", "unconfirmed", "duplicate", "wrong-secret",
+                         "wrong-audience", "extra-mapper", "browser-flow", "wrong-lookup-id"):
+            with self.subTest(scenario=scenario):
+                config_file.write_text(json.dumps(config))
+                config_file.chmod(0o600)
+                calls, created = [], [scenario in {"existing", "duplicate", "wrong-lookup-id"}]
+
+                def request(method, path, body=None):
+                    calls.append((method, path, body))
+                    if method == "POST":
+                        self.assertEqual(body, {**expected, "secret": "independent-adapter-fixture",
+                                                "protocolMappers": [expected_mapper]})
+                        created[0] = scenario != "unconfirmed"
+                        if scenario in {"lost-ack", "unconfirmed"}:
+                            raise OSError("fixture lost acknowledgement")
+                        return None
+                    if "?" in path:
+                        match = {"id": "opaque/id", "clientId": expected["clientId"]}
+                        if scenario == "wrong-lookup-id": match["clientId"] = "other-binding"
+                        return [match, match] if scenario == "duplicate" else [match] if created[0] else []
+                    self.assertIn("opaque%2Fid", path)
+                    if path.endswith("/client-secret"):
+                        return {"type": "secret", "value": "wrong" if scenario == "wrong-secret" else "independent-adapter-fixture"}
+                    if path.endswith("/protocol-mappers/models"):
+                        mapper = json.loads(json.dumps(expected_mapper))
+                        if scenario == "wrong-audience": mapper["config"]["included.custom.audience"] = "native-ai-fixture"
+                        return [mapper, mapper] if scenario == "extra-mapper" else [mapper]
+                    return {**expected, "standardFlowEnabled": scenario == "browser-flow"}
+
+                api = MagicMock()
+                api.request.side_effect = request
+                output = io.StringIO()
+                with patch.object(provision, "identity_admin", return_value=(api, "/clients")), redirect_stdout(output):
+                    if scenario in {"create", "existing", "lost-ack"}:
+                        provision.adapter_client(env)
+                        self.assertEqual(json.loads(output.getvalue()), {"bindingId": binding,
+                            "clientId": expected["clientId"], "identityVerified": True, "bindingActivated": False})
+                    else:
+                        with self.assertRaises(provision.ConfigurationError): provision.adapter_client(env)
+                        self.assertEqual(output.getvalue(), "")
+                self.assertLessEqual(sum(method == "POST" for method, _, _ in calls), 1)
+                self.assertFalse(any(method in {"PUT", "DELETE"} for method, _, _ in calls))
+                if scenario == "existing": self.assertTrue(all(method == "GET" for method, _, _ in calls))
+
+        for scenario in ("native-id", "service-id", "worker-id", "browser-id", "device-id", "wrong-token-url",
+                         "cross-tenant-secret", "unfixed-version", "missing-delivery", "duplicate-delivery", "shared-secret",
+                         "wrong-core-issuer"):
+            with self.subTest(input=scenario):
+                invalid = json.loads(json.dumps(config))
+                ids = {"native-id": env["KNOWLEDGE_OIDC_CLIENT_ID"], "service-id": env["OIDC_SERVICE_CLIENT_ID"],
+                       "worker-id": env["OIDC_WORKER_CLIENT_ID"], "browser-id": env["OIDC_BROWSER_CLIENT_ID"],
+                       "device-id": env["OIDC_NATIVE_CLIENT_ID"]}
+                if scenario in ids: invalid["oidcClientId"] = ids[scenario]
+                if scenario == "wrong-token-url": invalid["oidcTokenUrl"] += "/other"
+                deliveries = invalid["management"]["validation"]["secretDeliveries"]
+                if scenario == "cross-tenant-secret": deliveries[0]["locator"] = "tenants/other/kv/adapter"
+                if scenario == "unfixed-version": deliveries[0]["version"] = 0
+                if scenario == "missing-delivery": deliveries.clear()
+                if scenario == "duplicate-delivery": deliveries.append(dict(deliveries[0]))
+                credential.write_text(Path(env["KNOWLEDGE_OIDC_CLIENT_SECRET_FILE"]).read_text()
+                                      if scenario == "shared-secret" else "independent-adapter-fixture")
+                config_file.write_text(json.dumps(invalid))
+                with patch.object(provision, "identity_admin") as admin:
+                    supplied = {**env, "OIDC_ISSUER": "https://other.example.test/realms/native"} if scenario == "wrong-core-issuer" else env
+                    with self.assertRaises(provision.ConfigurationError): provision.adapter_client(supplied)
+                    admin.assert_not_called()
+
     def test_atomic_delivery_does_not_follow_symlink_or_emit_partial_file(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "delivery"

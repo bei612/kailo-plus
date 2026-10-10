@@ -4342,3 +4342,69 @@ SHA-256 `3c6c91ba6e6872cccdc571a378cdfaa7a389e9888d5896b6aa0f0b57bd191b5d`。
 `7622ceebf6038cc0964902ed324ab007b48723226fa8335e9242a6c1094c54d4`。
 没有在正式源码保留故障注入，没有新增平台调度或借本批声明页面截图、
 真实数据库、跨组件业务、迁移、部署或 full 门禁通过。
+
+## 2026-10-10 原部署入口专属 SERVICE 客户端投递
+
+四步影响结论：
+
+1. 权威为 `.design/03` SERVICE 身份/绑定边界、`.design/07` §8.2 与
+   DD-71/93。原 `fork/deploy/provision.py` 已使用 Keycloak 管理 API 和
+   OpenBao Agent；本批只补实际 receiver/adapter 所需的独立 client。
+   原生登录仍沿固定 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`
+   `internal/handler/auth.go::AuthHandler.OIDCRedirectCallback`、
+   `internal/application/service/user.go::userService.LoginWithOIDC`，已重新
+   `git grep` 核实；不是把该浏览器 client 打开 serviceAccounts。
+   原 Agent `openbao/internal/command/agent/config/config.go::parseAutoAuth`
+   在 `735723da5628148f232497a48a35a137b6512103` 仍存在，未改其投递语义。
+2. `provision.py adapter-client` 读取原私有 adapter config 的 binding、
+   tenant、oidcClientId、oidcTokenUrl 与 oidcClientSecretFile，要求后者已有
+   同租户固定版本 SecretRef 投递。密钥只读原 Agent 渲染文件，不生成、不
+   新写 KV。平台原 `OIDC_ISSUER` 和四个 OIDC client ID 经既有受控环境
+   投递；`OIDC_SERVICE_CLIENT_ID` 就是原 Compose 的 SERVICE_OIDC_AUDIENCE，
+   不使用 ActionToken audience。真实消费方仍为 native file_storage_sync
+   的 clientcredentials 与 adapter 的 freshPep；本批没有契约/数据库变化。
+3. 原 `identity_admin` 复用禁止重定向、禁进程代理的 API。独立 client
+   只开 client_credentials：browser/implicit/direct/password flow 关闭、
+   fullScopeAllowed=false、无 redirect/webOrigins；只投射 exact Core
+   audience，不授予用户、实例、资源或平台权限。原 native client 调用
+   同一登录 helper，其定义和回调未改。登记不创建/激活 ApplicationBinding，
+   不绕过 release、7 项 FILE_STORAGE 必选、fresh PEP、quota 或审批。
+4. 重入只读同 clientId；不存在时最多一次 POST，失败/ACK 不明只精确读回，
+   未找到/重复仍拒绝。既有 flags、唯一 mapper 或 stored secret 不符均拒绝，
+   不 PUT/reset/delete。平台四类 client/native 登录 client 或 native 登录
+   secret 均禁止复用；不同 issuer/token URL、跨租户/无固定版本/重复投递
+   也拒绝。CLI 沿原配置失败 exit 78，不把上游正文/密钥打印到日志；成功
+   输出仅证明本操作回读身份配置，不表示业务授权或跨服务终态。
+
+实际实现后验证复用原空闲 `kailo-knowledge-native-check-wkkigg`，实际
+4 CPU / 8 GiB，宿主 available 19 GiB，无并行 Go 任务；未构建镜像。
+原命令 `python3 -B -m unittest -v test_native_entrypoint`：首次新增检查
+误引用另一检查类的 setUp，31 项 / 1 error，原输出
+`AttributeError: 'NativeProvisioningTests' object has no attribute 'directory'`。
+只修夹具后 **31 项 PASS，exit 0**；新增生产 consumer 检查 22 子场景，
+包括首次登记、已存在、丢失 ACK、未确认、配置/secret/audience 漂移和
+独立身份拒绝。API 用原测试 mock 记录，不冒充真实 Keycloak 注册验收。
+
+仅私有 SDK 输入去掉实际 audience exact 比对并把 stored secret 比对
+改为自身相等，原检查不改，定向运行真实 **exit 1、2 FAIL**：
+`wrong-secret` 与 `wrong-audience` 均明确报
+`AssertionError: ConfigurationError not raised`。还原正式原字节后两文件
+`cmp` exit 0；全文件 **31 项 PASS，exit 0**（0.849s）。正式 diff --check
+exit 0。日志均在既有私有目录
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/`：
+
+- `adapter-client-positive.log`（首次失败）：SHA-256
+  `04594f13819389ada9025dfbe3830c8f30c84b5db4633d1937766fc41da073e3`。
+- `adapter-client-positive-corrected.log`：SHA-256
+  `0dc0e5019d700d97b4b6f6637f41f78e26274ee927e63051d410ec1df2c33046`。
+- `adapter-client-negative.log`：SHA-256
+  `0dc17f803c28876e041da12ed2902af72c1241cb8df70089c01a50ac815eeb57`。
+- `adapter-client-restored.log`：SHA-256
+  `ac0ddc5f7aae7c1a75a06840da4865e2b876889ec9ede82d2dd20160bdef7183`。
+
+运行事实仍为：现存 knowledge app 未投递 file_storage_sync 配置、未挂载
+专属 SERVICE secret；没有 adapter 容器。本批未虚构 binding/client/secret、
+未直接改库或 SpiceDB、未启动组件或执行真实 SOURCE→解析→usage→撤权
+联调；Cells 原写入及七必选 release 门禁没有因此关闭。同步启动变量补入
+原 `.env.example`，身份步骤也在该原配置入口说明，没有新建部署文档。
+完整门禁与文档检查由主线集中收口，本批未重复 full 或发版。

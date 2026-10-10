@@ -87,11 +87,9 @@ def exact(current, wanted, kind):
         raise ConfigurationError(f"{kind}: existing configuration differs; not overwritten")
 
 
-def native_client(env, timeout):
-    origin = http_url(env, "KNOWLEDGE_NATIVE_ORIGIN", origin=True).rstrip("/")
+def identity_admin(env, timeout):
     base = http_url(env, "KNOWLEDGE_IDP_ADMIN_URL", origin=True).rstrip("/")
     realm = segment(env, "KNOWLEDGE_IDP_REALM")
-    client_id = required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
     issuer = http_url(env, "KNOWLEDGE_OIDC_ISSUER_URL").rstrip("/")
     if urllib.parse.urlsplit(issuer).path != "/realms/" + realm:
         raise ConfigurationError("native OIDC issuer and realm disagree")
@@ -106,6 +104,13 @@ def native_client(env, timeout):
         token = json.load(response)["access_token"]
     api = API(base, timeout, {"Authorization": "Bearer " + token})
     collection = "/admin/realms/" + realm + "/clients"
+    return api, collection
+
+
+def native_client(env, timeout):
+    origin = http_url(env, "KNOWLEDGE_NATIVE_ORIGIN", origin=True).rstrip("/")
+    client_id = required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
+    api, collection = identity_admin(env, timeout)
     query = collection + "?" + urllib.parse.urlencode({"clientId": client_id})
     wanted = {
         "clientId": client_id, "enabled": True, "protocol": "openid-connect",
@@ -129,6 +134,82 @@ def native_client(env, timeout):
     if secret.get("type") != "secret" or not isinstance(value, str) or not value:
         raise ConfigurationError("native OIDC client secret is absent")
     return value, client["id"]
+
+
+def adapter_client(env):
+    """Register only the adapter's already delivered, binding-specific identity."""
+    config = json.loads(private_file(required(env, "KNOWLEDGE_ADAPTER_CONFIG_FILE")))
+    timeout = int(required(env, "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS"))
+    if timeout <= 0:
+        raise ConfigurationError("provision timeout must be positive")
+    issuer = http_url(env, "KNOWLEDGE_OIDC_ISSUER_URL").rstrip("/")
+    client_id = config["oidcClientId"]
+    platform_clients = {required(env, key) for key in (
+        "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_NATIVE_CLIENT_ID"
+    )}
+    if (not isinstance(client_id, str) or not client_id or client_id.strip() != client_id
+        or any(ord(c) < 32 or ord(c) == 127 for c in client_id)
+        or client_id in platform_clients or client_id == required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
+        or issuer != http_url(env, "OIDC_ISSUER").rstrip("/")
+        or config["oidcTokenUrl"] != issuer + "/protocol/openid-connect/token"):
+        raise ConfigurationError("adapter client: independent identity and exact issuer token endpoint required")
+    for key in ("bindingId", "tenantId"):
+        if str(uuid.UUID(config[key])) != config[key] or uuid.UUID(config[key]).int == 0:
+            raise ConfigurationError("adapter client: canonical binding and tenant required")
+    secret_path = Path(config["oidcClientSecretFile"])
+    deliveries = config["management"]["validation"]["secretDeliveries"]
+    matches = [item for item in deliveries if item.get("secretFile") == str(secret_path)]
+    if (not secret_path.is_absolute() or len(matches) != 1
+        or not matches[0]["locator"].startswith("tenants/" + config["tenantId"] + "/")
+        or type(matches[0]["version"]) is not int or matches[0]["version"] <= 0):
+        raise ConfigurationError("adapter client: existing tenant SecretRef delivery required")
+    # Agent is the only reader of the fixed KV version. Do not generate a new
+    # key here, reset a native client, or copy a credential into another store.
+    secret = private_file(str(secret_path)).strip()
+    if not secret or any(c in secret for c in "\r\n\x00"):
+        raise ConfigurationError("adapter client: nonempty single-line delivered credential required")
+    if hmac.compare_digest(secret, private_file(required(env, "KNOWLEDGE_OIDC_CLIENT_SECRET_FILE")).strip()):
+        raise ConfigurationError("adapter client: native login credential cannot be reused")
+    audience_mapper = {
+        "name": "adapter-core-service-audience", "protocol": "openid-connect",
+        "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
+        "config": {"included.custom.audience": required(env, "OIDC_SERVICE_CLIENT_ID"),
+                   "access.token.claim": "true", "id.token.claim": "false",
+                   "userinfo.token.claim": "false", "introspection.token.claim": "true"},
+    }
+    wanted = {
+        "clientId": client_id, "enabled": True, "protocol": "openid-connect",
+        "publicClient": False, "standardFlowEnabled": False, "implicitFlowEnabled": False,
+        "directAccessGrantsEnabled": False, "serviceAccountsEnabled": True,
+        "fullScopeAllowed": False, "redirectUris": [], "webOrigins": [],
+    }
+    api, collection = identity_admin(env, timeout)
+    lookup = collection + "?" + urllib.parse.urlencode({"clientId": client_id})
+    found = api.request("GET", lookup)
+    if not isinstance(found, list) or len(found) > 1:
+        raise ConfigurationError("adapter client: identity lookup is not unique")
+    if not found:
+        try:
+            api.request("POST", collection, {**wanted, "secret": secret, "protocolMappers": [audience_mapper]})
+        except (ConfigurationError, OSError):
+            # A rejected/unknown create is resolved only by exact read-back.
+            # Never repeat the POST, reset the secret or alter an existing client.
+            pass
+        found = api.request("GET", lookup)
+    if not isinstance(found, list) or len(found) != 1 or found[0].get("clientId") != client_id:
+        raise ConfigurationError("adapter client: creation remains unconfirmed")
+    path = collection + "/" + urllib.parse.quote(found[0]["id"], safe="")
+    exact(api.request("GET", path), wanted, "adapter client")
+    mappers = api.request("GET", path + "/protocol-mappers/models")
+    if not isinstance(mappers, list) or len(mappers) != 1:
+        raise ConfigurationError("adapter client: exact audience mapper required")
+    exact(mappers[0], audience_mapper, "adapter client audience")
+    confirmed = api.request("GET", path + "/client-secret")
+    if (confirmed.get("type") != "secret" or not isinstance(confirmed.get("value"), str)
+        or not hmac.compare_digest(confirmed["value"], secret)):
+        raise ConfigurationError("adapter client: stored credential differs; explicit rotation required")
+    print(json.dumps({"bindingId": config["bindingId"], "clientId": client_id,
+                      "identityVerified": True, "bindingActivated": False}))
 
 
 def write_private(path, content):
@@ -601,9 +682,9 @@ if __name__ == "__main__":
     try:
         operation = sys.argv[1] if len(sys.argv) == 2 else "native" if len(sys.argv) == 1 else ""
         actions = {"native": provision, "model-reader": model_reader, "model-delivery": model_delivery,
-                   "adapter-reader": adapter_reader}
+                   "adapter-reader": adapter_reader, "adapter-client": adapter_client}
         if operation not in actions:
-            raise ConfigurationError("expected native, model-reader, model-delivery, or adapter-reader")
+            raise ConfigurationError("expected native, model-reader, model-delivery, adapter-reader, or adapter-client")
         actions[operation](os.environ)
     except (ConfigurationError, OSError, ValueError, KeyError, TypeError) as error:
         # ConfigurationError messages contain field names only. HTTP transport
