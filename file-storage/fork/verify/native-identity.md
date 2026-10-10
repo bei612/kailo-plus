@@ -823,3 +823,63 @@ SOURCE proof 到 NativeReadExecution 与原共享 Task 分别验收，未在此�
 真实 SOURCE S3→WeKnora 全链。没有执行本批完整门禁、真实
 Cells→WeKnora 导入、页面截图、构建发布或部署。SOURCE 已读但回执网络不明
 时仍保留原 operation/原 Task 待对账，不声称本批闭合了全部故障恢复。
+
+## 2026-10-10 原生 multipart 分片恢复与完成回执
+
+本批是原上传/保存消费者的直接修复，不新建上传页面、对象存储或任务权威。
+实现后的四步影响结论：
+
+1. 权威为 `.design/18` 的 Cells 字节/版本权威、`.design/07` §5.2 的真实终态
+   与 UNKNOWN 边界。固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/nodes/objects/mc/client.go::(*Client).ListObjectParts` 收到原 S3 分片
+   后却遍历新建结果中的空 `ObjectParts`，使实际恢复列表丢失；同版本
+   `common/nodes/core/handler-exec.go::(*Executor).MultipartComplete` 丢弃
+   `CompleteMultipartUpload` 的 ETag，再把 HEAD 到的当前对象直接当作本次
+   完成。两者都是上游已有生产调用，不是无消费者的扩展。
+2. 影响沿原 data gateway `ListObjectParts` → Router/Executor → mc，以及
+   Version handler 的 MultipartComplete → Executor → 原 S3 SDK 完成与 HEAD。
+   分片结果原样保留数量、编号、ETag、大小、时间及分页元数据；不改变公共
+   接口或数据格式。完成后只接受原非空 ACK ETag 和同 key、同 ETag、非负大小
+   且无错误的 HEAD，不把另一对象写入 draft Version 回执。Web/Desktop/Mobile
+   原客户端 API 与页面未改，不另造两套上传主体。
+3. SDK 沿 `go.mod/go.sum` 锁定的 `github.com/minio/minio-go/v7 v7.0.99`。
+   `api-put-object-multipart.go::(*Client).completeMultipartUpload` 与
+   `utils.go::ToObjectInfo` 都调用其原 `trimEtag`，故消费该 SDK 值直接比较，
+   不发明十六进制、MD5 或 multipart 后缀规则。相反，`core.go::Core.ListObjectParts`
+   直接调用 `api-list.go::(*Client).listObjectPartsQuery` 的 XML 解码，原引号
+   予以保留。没有权限放宽、重试或第二回执库，没有新契约字段、迁移或配置。
+4. 空分片、零字节、分页、完成 ACK 缺失、HEAD/对象错误、不同 key/ETag 及
+   未知大小均有确定消费；真实远端错误原样返回，缺证据返回原 native internal
+   error，不声称副作用未发生。原 Version 上层收到错误不会写成功回执，沿原
+   UNKNOWN 路径，不重放完成。相同 ETag 不是跨存储原子 CAS 或失联 writer
+   已退休的证明，本批没有解除首次上传、write/delete/share、完整七键类别、
+   release/binding 准入与发布门禁。
+
+实现后在原 core 检查文件补齐完成回执 10 场景，并在 mc 包用固定原 SDK
+真实 HTTP 编解码检查分片/空列表/拒绝三场景与带引号的完成/HEAD ETag。
+原生 S3 响应来自本地 HTTP 夹具，不将其称为真实存储或三端 E2E。
+复用原 `kailo-cells-native-check-lftow7`、UID 1000、4 CPU/8 GiB 与 Data
+模块/构建缓存，GOPROXY=off；每轮先确认 SDK 空闲，host available 26–27 GiB。
+
+```sh
+go test ./common/nodes/core ./common/nodes/objects/mc -count=1 -v
+```
+
+首次句柄 88435 exit 1：core 检查通过，但 mc 新夹具 `time.Date` 少一个纳秒
+实参，实际报 `not enough arguments in call to time.Date`；这是夹具编译错误，
+不是生产负向。修正后句柄 19938 exit 0，两包全部通过。仅在私有快照去掉
+生产 ETag 比较并恢复旧空列表映射，原断言句柄 68852 exit 1：
+`handler-exec_test.go:76` 抓到 changed-object/missing-head-etag 被当作成功，
+`client_test.go:61` 报 `original uploaded parts lost: []`。apply_patch 还原
+两个生产文件并与正式 cmp 0 后，句柄 75275 同命令 exit 0，两包再次全部通过。
+原 SDK gofmt 后四个文件无格式差异；未执行整库门禁、镜像构建、部署或页面验收。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| `cells-multipart-evidence-initial.log` | `65e1aeccfdd91a6cd010e7c51045bc9eca8b56412a0af5d8574934d32723f561` |
+| `cells-multipart-evidence-positive.log` | `05a3fba5cf56a3c61eb135ed1672ec29f8544e7545b498e067bbc0b670d2776f` |
+| `cells-multipart-evidence-negative.log` | `4d540ae43ccef42b71e75920a391ee766fa020f1ba296c65f636ef65f11d3e8d` |
+| `cells-multipart-evidence-restored.log` | `05a3fba5cf56a3c61eb135ed1672ec29f8544e7545b498e067bbc0b670d2776f` |

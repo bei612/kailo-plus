@@ -10,9 +10,90 @@ import (
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/nodes"
+	"github.com/pydio/cells/v5/common/nodes/models"
+	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/utils/openurl"
 )
+
+type multipartReceiptClient struct {
+	nodes.StorageClient
+	t                    *testing.T
+	etag                 string
+	completeErr, statErr error
+	info                 models.ObjectInfo
+	completes, stats     int
+}
+
+func (c *multipartReceiptClient) CompleteMultipartUpload(_ context.Context, bucket, key, upload string, parts []models.MultipartObjectPart) (string, error) {
+	c.completes++
+	if bucket != "native-bucket" || key != "draft/object" || upload != "native-upload" ||
+		len(parts) != 1 || parts[0].PartNumber != 1 || parts[0].ETag != "part-etag" {
+		c.t.Fatal("completion lost its original upload and parts")
+	}
+	return c.etag, c.completeErr
+}
+
+func (c *multipartReceiptClient) StatObject(_ context.Context, bucket, key string, _ models.ReadMeta) (models.ObjectInfo, error) {
+	c.stats++
+	if bucket != "native-bucket" || key != "draft/object" {
+		c.t.Fatal("HEAD changed its native object")
+	}
+	return c.info, c.statErr
+}
+
+func TestMultipartCompletionRequiresOriginalObjectReceipt(t *testing.T) {
+	for _, scenario := range []string{"complete", "empty-file", "missing-ack-etag", "completion-unknown", "head-unknown", "head-error", "changed-object", "wrong-key", "negative-size", "missing-head-etag"} {
+		t.Run(scenario, func(t *testing.T) {
+			failure := errors.New("native result unknown")
+			client := &multipartReceiptClient{t: t, etag: "native-multipart-etag-2", info: models.ObjectInfo{ETag: "native-multipart-etag-2", Key: "draft/object", Size: 9}}
+			switch scenario {
+			case "empty-file":
+				client.info.Size = 0
+			case "missing-ack-etag":
+				client.etag = ""
+			case "completion-unknown":
+				client.completeErr = failure
+			case "head-unknown":
+				client.statErr = failure
+			case "head-error":
+				client.info.Err = failure
+			case "changed-object":
+				client.info.ETag = "another-native-etag-2"
+			case "wrong-key":
+				client.info.Key = "other/object"
+			case "negative-size":
+				client.info.Size = -1
+			case "missing-head-etag":
+				client.info.ETag = ""
+			}
+			ctx := nodes.WithBranchInfo(context.Background(), "in", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{DataSource: &object.DataSource{ObjectsBucket: "native-bucket"}, Client: client}})
+			target := &tree.Node{Uuid: "native-node"}
+			target.MustSetMeta(common.MetaNamespaceDatasourcePath, "draft/object")
+			result, err := (&Executor{}).MultipartComplete(ctx, target, "native-upload", []models.MultipartObjectPart{{PartNumber: 1, ETag: "part-etag"}})
+			allowed := scenario == "complete" || scenario == "empty-file"
+			if (err == nil) != allowed || client.completes != 1 {
+				t.Fatalf("completion outcome or dispatch count changed: result=%v err=%v calls=%d", result, err, client.completes)
+			}
+			if allowed && !reflect.DeepEqual(result, client.info) {
+				t.Fatal("native object metadata was replaced")
+			}
+			if !allowed && !reflect.DeepEqual(result, models.ObjectInfo{}) {
+				t.Fatal("unknown completion returned successful object evidence")
+			}
+			if (scenario == "completion-unknown" || scenario == "head-unknown" || scenario == "head-error") && !errors.Is(err, failure) {
+				t.Fatal("original native error was lost")
+			}
+			wantStats := 1
+			if scenario == "completion-unknown" || scenario == "missing-ack-etag" {
+				wantStats = 0
+			}
+			if client.stats != wantStats {
+				t.Fatalf("unexpected HEAD count: %d", client.stats)
+			}
+		})
+	}
+}
 
 type statReadClient struct {
 	tree.NodeProviderClient

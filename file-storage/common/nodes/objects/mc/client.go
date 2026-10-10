@@ -303,7 +303,7 @@ func (c *Client) ListObjectParts(ctx context.Context, bucketName, objectName, up
 		IsTruncated:          opp.IsTruncated,
 		EncodingType:         opp.EncodingType,
 	}
-	for _, part := range lpi.ObjectParts {
+	for _, part := range opp.ObjectParts {
 		lpi.ObjectParts = append(lpi.ObjectParts, models.MultipartObjectPart{
 			PartNumber:   part.PartNumber,
 			LastModified: part.LastModified,

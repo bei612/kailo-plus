@@ -449,14 +449,26 @@ func (e *Executor) MultipartComplete(ctx context.Context, target *tree.Node, upl
 	for _, up := range uploadedParts {
 		mParts = append(mParts, models.MultipartObjectPart{ETag: up.ETag, PartNumber: up.PartNumber})
 	}
-	_, err := info.Client.CompleteMultipartUpload(ctx, info.ObjectsBucket, s3Path, uploadID, mParts)
+	etag, err := info.Client.CompleteMultipartUpload(ctx, info.ObjectsBucket, s3Path, uploadID, mParts)
 	if err != nil {
 		log.Logger(ctx).Error("fail to complete upload", zap.Error(err))
 		return models.ObjectInfo{}, err
 	}
+	if etag == "" {
+		return models.ObjectInfo{}, errors.WithMessage(errors.StatusInternalServerError, "multipart completion has no acknowledged object ETag")
+	}
 	oi, er := info.Client.StatObject(ctx, info.ObjectsBucket, s3Path, nil)
 	if er != nil {
 		return models.ObjectInfo{}, er
+	}
+	if oi.Err != nil {
+		return models.ObjectInfo{}, oi.Err
+	}
+	// The native SDK normalizes both ETags. A later HEAD is evidence for this
+	// completion only while it still identifies the acknowledged object.
+	// Mismatch is an unknown result, not permission to replay completion.
+	if oi.ETag != etag || oi.Key != s3Path || oi.Size < 0 {
+		return models.ObjectInfo{}, errors.WithMessage(errors.StatusInternalServerError, "multipart result does not match its acknowledged object")
 	}
 	return models.ObjectInfo{
 		ETag:         oi.ETag,
