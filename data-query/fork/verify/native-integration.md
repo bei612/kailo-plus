@@ -10181,3 +10181,72 @@ No HUMAN permission, instance claim, Catalog registration or binding was granted
 The final original Compose preflight still exits 1 at `WREN_UI_IMAGE`; its
 single source build remains in progress. Registration and token verification
 do not constitute native service startup, SQL execution or page acceptance.
+
+### 2026-10-10 original instruction write admission
+
+Implemented in the isolated `codex/wren-instruction-native-admission` worktree
+at `/volumes/data/kailo/tmp/wren-instruction-native.ZZkcxP`, based on main
+`216740f31da344786f282ee74fcede94981f2034`. The main worktree input of the
+ongoing original UI build 91644 was not changed.
+
+Authority and impact were checked before implementation: `.design/08` §6,
+SS-WRN-IDENTITY/GOVERNANCE and DD-98 retain native knowledge instructions
+without inventing a platform Action. Fixed upstream
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/services/instructionService.ts::InstructionService`
+owns the original transaction, instruction rows and AI index dispatch.
+The original instructions page and REST consumers enter the existing
+`nativeProjectResolver(..., 'manage')` wrapper through InstructionResolver.
+Repository searches found no `createInstructions` caller; this change does
+not expand that original bulk API. No contract, schema, row format, menu or
+second task/permission authority is introduced.
+
+The original create/update/delete services now consume the wrapper's captured
+generation callback after transaction/row reads, before native DB writes, and
+again after the staged write before the original AI request. Project-scoped
+row lookup remains intact. Missing authentication maps to the existing DENIED
+reason; changed generation to PRECONDITION. A rejection before AI dispatch
+rolls back the native transaction and preserves the exact refusal object only
+after successful rollback, allowing the existing wrapper to report NOT_STARTED.
+Rollback failure or an already-dispatched AI error remains UNKNOWN; neither
+causes an automatic replacement request. No post-AI callback can relabel an
+already-sent effect NOT_STARTED. Standalone-to-bound changes during either
+await fail closed; never-configured independent operation retains its original
+behavior. Existing validation, LIMIT/CONFLICT handling and blocked capabilities
+are unchanged. No new durable state, migration or reconciliation authority was
+added; this is not completion of native AI quota, approval or UNKNOWN recovery.
+
+Actual post-implementation verification used the existing
+`kailo-wren-query-sdk-itgs2n` container (4 CPU, 4 GiB), original Jest/ts-jest
+single-file runtime transform, one worker, and the original test paths
+`src/nativeProjectScope.test.ts` and
+`src/apollo/server/services/tests/instructionService.test.ts`, filtered by
+`--testNamePattern=instruction`. SDK preflight found only its idle sleep process
+and 22 GiB host memory available. No image, dependency installation or PG restart
+was performed. Repository and AI boundaries are substitutes; these cases prove
+the real resolver/service control flow, not live PG or AI index reconciliation.
+
+- Positive: 74820 exit 0, 51 passed / 249 filtered, two suites.
+- Actual production mutation: removed the `checkWrite` body in the isolated
+  verification copy; 98013 exit 1, 18 failed / 33 passed / 249 filtered. It caught
+  missing fresh authorization, generation changes and both standalone-switch
+  windows through all three real native service operations.
+- Restored the production file byte-for-byte from the worktree (`cmp`, exit 0).
+  3334 exit 0, 51 passed / 249 filtered, two suites. The restored run uses the
+  final original `.prettierrc` formatting; the first run's default-format noise
+  was corrected without changing its implementation or assertions.
+
+Logs are under `/volumes/data/kailo/check-cache/wren-instruction.ME5VD0/`:
+`instruction-positive.log` SHA-256
+`a8463647ab51e70c994341e630ea1ec95226becb8454468e7a1c24dddd1ac4b0`;
+`instruction-negative.log`
+`3c0118bfece0c3347b312b8dd6224e0fa02f11c734de1a0b121a54c25095e21e`;
+`instruction-restored.log`
+`f4e64b3a9865921996ec4d0326fadc43c15f0b79f7af08cf6efb5ea99a98533f`.
+Restored service SHA-256 is
+`138373960cfe21a5f6edca8d6119201d90d4df22e0b63d1e6ead4018d89a4965`.
+Original Prettier `--check` completed successfully before the chained final
+TypeScript check 11601, which is still running and not covered by the runtime
+transform. This isolated branch commit is a source checkpoint, not a type/full
+check or release acceptance. Full check, deployment and browser acceptance have
+not been run for this batch; no complete native integration claim is made.

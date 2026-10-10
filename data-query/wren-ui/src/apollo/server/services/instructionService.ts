@@ -9,13 +9,24 @@ import {
 import { IInstructionRepository, Instruction } from '@server/repositories';
 import * as Errors from '@server/utils/error';
 import { GeneralErrorCodes } from '@server/utils/error';
+import { NativeQueryRefusal } from './nativeQueryAdmission';
 export interface IInstructionService {
   getInstructions(projectId: number): Promise<Instruction[]>;
   getInstruction(id: number): Promise<Instruction>;
-  createInstruction(instruction: InstructionInput): Promise<Instruction>;
+  createInstruction(
+    instruction: InstructionInput,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<Instruction>;
   createInstructions(instructions: InstructionInput[]): Promise<Instruction[]>;
-  updateInstruction(instruction: UpdateInstructionInput): Promise<Instruction>;
-  deleteInstruction(id: number, projectId: number): Promise<void>;
+  updateInstruction(
+    instruction: UpdateInstructionInput,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<Instruction>;
+  deleteInstruction(
+    id: number,
+    projectId: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void>;
 }
 
 export class InstructionService implements IInstructionService {
@@ -42,10 +53,12 @@ export class InstructionService implements IInstructionService {
 
   public async createInstruction(
     input: InstructionInput,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<Instruction> {
     const tx = await this.instructionRepository.transaction();
     try {
       this.validateInstructionInput(input);
+      await this.checkWrite(input.projectId, beforeWrite);
       const newInstruction = await this.instructionRepository.createOne(
         {
           ...input,
@@ -56,6 +69,7 @@ export class InstructionService implements IInstructionService {
           tx,
         },
       );
+      await this.checkWrite(newInstruction.projectId, beforeWrite);
       const { queryId } = await this.wrenAIAdaptor.generateInstruction([
         this.pickGenerateInstructionInput(newInstruction),
       ]);
@@ -70,6 +84,7 @@ export class InstructionService implements IInstructionService {
       return newInstruction;
     } catch (e: any) {
       await tx.rollback();
+      if (beforeWrite || e instanceof NativeQueryRefusal) throw e;
       throw new Error(`Failed to create instruction: ${e}`);
     }
   }
@@ -110,6 +125,7 @@ export class InstructionService implements IInstructionService {
 
   public async updateInstruction(
     input: UpdateInstructionInput,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<Instruction> {
     const tx = await this.instructionRepository.transaction();
     try {
@@ -128,11 +144,13 @@ export class InstructionService implements IInstructionService {
         ...input,
         updatedAt: new Date().toISOString(),
       };
+      await this.checkWrite(instruction.projectId, beforeWrite);
       const updatedInstruction = await this.instructionRepository.updateOne(
         input.id,
         instructionData,
         { tx },
       );
+      await this.checkWrite(updatedInstruction.projectId, beforeWrite);
       const { queryId } = await this.wrenAIAdaptor.generateInstruction([
         this.pickGenerateInstructionInput(updatedInstruction),
       ]);
@@ -147,10 +165,15 @@ export class InstructionService implements IInstructionService {
       return updatedInstruction;
     } catch (e: any) {
       await tx.rollback();
+      if (beforeWrite || e instanceof NativeQueryRefusal) throw e;
       throw new Error(`Failed to update instruction: ${e}`);
     }
   }
-  async deleteInstruction(id: number, projectId: number): Promise<void> {
+  async deleteInstruction(
+    id: number,
+    projectId: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void> {
     const tx = await this.instructionRepository.transaction();
     try {
       const instruction = await this.instructionRepository.findOneBy(
@@ -160,13 +183,31 @@ export class InstructionService implements IInstructionService {
       if (!instruction) {
         throw new Error('Instruction not found');
       }
+      await this.checkWrite(instruction.projectId, beforeWrite);
       await this.instructionRepository.deleteOne(id, { tx });
+      await this.checkWrite(instruction.projectId, beforeWrite);
       await this.wrenAIAdaptor.deleteInstructions([id], instruction.projectId);
       await tx.commit();
     } catch (e: any) {
       await tx.rollback();
+      if (beforeWrite || e instanceof NativeQueryRefusal) throw e;
       throw new Error(`Failed to delete instruction: ${e}`);
     }
+  }
+
+  private async checkWrite(
+    projectId: number,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void> {
+    // A transaction/read may have awaited while standalone became bound.
+    // Reuse the request wrapper's captured generation before each native
+    // dispatch; an uncommitted local write is rolled back if this refuses.
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !beforeWrite
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await beforeWrite?.(projectId);
   }
 
   private async waitDeployInstruction(
