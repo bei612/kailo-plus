@@ -7,6 +7,21 @@ cd "$(dirname "$0")"
 
 [ -s .env ] || { echo '缺少 deploy/local/.env' >&2; exit 2; }
 . ./.env
+# SS-WRN-GOVERNANCE: these explicit modes consume an already admitted model
+# projection. They never register a binding, choose a model or create a key.
+if [ "$#" -eq 1 ] && { [ "$1" = '--prepare-wren-model-reader' ] || [ "$1" = '--materialize-wren-model-key' ]; }; then
+  operation=prepare
+  [ "$1" != '--materialize-wren-model-key' ] || operation=materialize
+  WREN_MODEL_DELIVERY_DIR="${WREN_MODEL_DELIVERY_DIR:?existing frozen model delivery is required}" \
+  WREN_AI_SECRET_ENV_FILE="${WREN_AI_SECRET_ENV_FILE:?component-only env destination is required}" \
+  WREN_PROJECT_DIR="${WREN_PROJECT_DIR:?existing native configuration is required}" \
+  OPENBAO_ADDR="${OPENBAO_ADDR:?}" \
+  OPENBAO_HTTP_TIMEOUT_SECONDS="${OPENBAO_HTTP_TIMEOUT_SECONDS:?}" \
+  OPENBAO_SECRET_ID_TTL="${OPENBAO_SECRET_ID_TTL:?}" \
+  OPENBAO_SECRET_ID_WRAP_TTL="${OPENBAO_SECRET_ID_WRAP_TTL:?}" \
+  OPENBAO_TOKEN_PERIOD="${OPENBAO_TOKEN_PERIOD:?}" \
+    exec python3 ../../data-query/docker/query-secrets/model-reader.py "$operation"
+fi
 : "${OIDC_ISSUER:?缺少 OIDC_ISSUER}" "${OIDC_REALM:?缺少 OIDC_REALM}" \
   "${PUBLIC_ORIGIN:?缺少 PUBLIC_ORIGIN}" "${PUBLIC_HOST:?缺少 PUBLIC_HOST}" \
   "${OIDC_HOST:?缺少 OIDC_HOST}" "${BUZZ_RELAY_HOST:?缺少 BUZZ_RELAY_HOST}" \

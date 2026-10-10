@@ -10639,6 +10639,117 @@ binding activation or permission grant changed; no browser or deployment
 acceptance was run. Partial-write reconciliation and complete governance remain
 release boundaries, not inferred from these scope-consumer checks.
 
+### 2026-10-10 existing model projection to native Agent materialization
+
+Authority and scope: DD-70/72/92 and SS-WRN-GOVERNANCE retain Core model
+provisioning, OpenBao secrets/audit, AgentGateway admission and the original
+native provider authority. Fixed Wren remains
+`c5f02a0391c87420dba78632dcd86073710deb72`; this changes the existing local
+bootstrap/deployment seam, not native pages, models or platform entities.
+Knowledge's `fork/deploy/provision.py::model_reader` supplies the existing
+scoped AppRole/template pattern. `application_model_route::provision` remains
+the sole restricted-key writer; actual execution still uses `admit` and fresh
+Gateway checks. No local SQL authorization replica was added.
+
+Impact: the existing bootstrap consumes already-delivered projection and
+adapter-directory files plus real native YAML, prepares a read-only AppRole
+for the exact tenant KV locator/version, and emits original Agent HCL. Its
+single Secret response supplies request ID/version/value. The second explicit
+mode materializes the component env consumed by original Wren Compose; actual
+loaded-provider proof remains in `NativeModelDelivery.publish`. No contract,
+database format, account, binding, model choice or permission grant changed.
+
+Side effects and exceptional boundaries: configuration is not authorization.
+Old frozen files may still render after revocation; they cannot bypass the
+original current-generation/model-route execution PEP. Missing embedding,
+dimension, scope mapping or complete material refuses locally. Existing
+differing policies/roles and unrelated private output files are not replaced.
+Symlinks, broad permissions and input aliases refuse. A directory lock excludes
+simultaneous helper writers; frozen inputs are re-read before publication.
+HCL is published last, not as a claimed multi-file transaction. A lost wrapping
+ACK is not automatically replayed; its one-use token expires under the supplied
+TTL. Cross-generation preparation needs a separate controlled directory and
+original lifecycle adoption. CLI refusal exits 78 without printing secret bodies;
+it does not label an uncertain remote policy/role write as a successful operation.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/wren-model-reader-verify.LVbJfD/`.
+The original AI image was
+`sha256:0f29bfe3ef7c31fec8bbb85914fc731724e64d067f61c78aafc6db7b39400494`,
+with read-only source, no network, UID 1000, 4 CPU/4 GiB, bounded tmpfs and no
+dependency installation. The original command was `/app/.venv/bin/python -m
+unittest discover -s /candidate/data-query/wren-ai-service/tests/pytest/providers
+-p test_native_model_delivery.py -v`; original directory schema and start-core
+consumer were mounted read-only. `HAYSTACK_TELEMETRY_ENABLED=False` and
+`LANGFUSE_ENABLED=false` are fixture settings, not changes to production defaults.
+
+| Actual evidence | Result |
+|---|---|
+| `positive.log` | exit 1, 23 cases/2 errors: missing test contract env and fixture document-store network attempt; retained |
+| `positive-final.log` | exit 0, 25/25; real LLM/router/embedder consumers retained, document-store startup outside this model-key test |
+| `negative.log` | exit 1, 8 cases/3 failures after removing actual generation/version and protected-output conditions |
+| `restored.log` | exit 0, 25/25 after exact-byte production restoration |
+| `bao-template.log` | exit 2: original Bao rejects audit enable API; retained |
+| `bao-template-final.log` | exit 0, real wrapped AppRole and version-pinned Agent template rendered with original declarative audit |
+| `actual-consumer.log` | exit 0, actual Agent material through production CLI, loaded providers, 3 receipts, original schema and PYADAPTER |
+| `static.log` | exit 0, both Python sources compile; Ruff absent in original AI image and existing SDK, not installed or claimed passed |
+
+The temporary original Bao image was
+`sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6`,
+isolated with `--network none`, 1 CPU/1 GiB and an in-memory fixture server;
+it was removed after completion. `bao-template.command.txt` retains exact
+invocation/body and mounts. This tested real template parsing and execution,
+not only string equality or `-test-verify-only`. The generated request ID matched
+the actual audit request/response pair for that one scoped read. Root credentials
+were fixture-only; the running platform Bao and business catalogs were untouched.
+The AI output retains `Configuration file config.yaml not found. Using default
+settings.` from module import. The check explicitly loads the fixture YAML into
+the original provider factory and passes those resulting provider objects to
+the original receipt consumer; this is not a real Wren application startup.
+Bootstrap shell syntax passes; its full real environment registration path was
+not executed by the direct CLI fixture and is not claimed covered.
+
+Restored production SHA-256:
+`3e21f7660eb0c053df4ced549d7320a17f8ea3fd0226a05225ceb191defaf97f`.
+Test SHA-256:
+`88de54c5a85e1d7a9f7d3ca792a8b246599261c7a30df7a7522e4fbe5409e8e0`.
+Positive/negative/restored log SHAs respectively:
+`f958ea20295309f1438e938db85279cda566c573dd6656569ea4cf550de4c4ba`,
+`eab885c503ab348077e5eaf8f0829327a502ab97b34bb59cb265128286f361cc`,
+`90d3aabf23c58e6f1e596c831323b56004c1b852fad2a45220e19b3cfaa1136e`.
+The existing source helper now reports AI source
+`sha256:92a532e755dd5b8c13564c13d8860f047faeaf44bf3f9ef9fa3e7854999a0874`:
+the added native check is inside AI inputs and requires an actual new artifact.
+No source/artifact digest or release pin was edited to hide that change.
+Actual embedding delivery, approved component release/binding, business model
+calls, deployment, browser validation and full production acceptance remain
+uncompleted. No new model account or default embedding model is requested or
+invented by this implementation.
+
+Follow-up frozen-input evidence: the first original docs invocation exited 2
+because TMPDIR was missing. The single configured retry used the existing
+check image, 4 CPU/4 GiB, no network and Data cache; it exited 1
+(`docs-configured.log`). Markdownlint, design IDs, coverage and design corpus
+passed; relative-link checks failed on files absent from the sparse worktree
+export. No production links were changed and no full acceptance is inferred.
+
+The separately inherited Engine template correction was checked through the
+original Compose interpolation consumer, extracting only its unchanged
+`wren-engine.image` expression. An empty Engine image exited 1 with
+`verified source-built native Engine image digest is required`;
+`inherited-engine-interpolation.log` is not whole-stack deployment validation.
+
+The candidate build export is frozen tree
+`21795f8d6ab89d2f180d0f020661c46e79c5860e`. Its complete exported path/mode/blob
+set matches that tree (empty `export-tree-compare.log`, exit 0). An initially
+untracked export omitted original tracked-but-ignored source env files; after
+restoring their tracking metadata, the original helper reports UI source
+`sha256:e4400b75b6df9a8e55272c183975ede04aa71d63cd43e7685f7326cfb5df6779`
+and AI source `sha256:92a532e755dd5b8c13564c13d8860f047faeaf44bf3f9ef9fa3e7854999a0874`.
+No source bytes were changed to obtain these values. These are source plans,
+not newly built images. The UI/AI/Engine/Gateway builds await the existing
+serialized builder queue; no new builder or concurrent build was started.
+
 ### 2026-10-10 fixed-candidate native UI artifact
 
 The original `tools/build-upstream.sh data-query-ui` job 76085 completed with

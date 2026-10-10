@@ -268,5 +268,177 @@ class NativeModelDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.output.exists())
 
 
+class NativeModelReaderTest(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        import yaml
+
+        path = Path(__file__).resolve().parents[4] / "docker/query-secrets/model-reader.py"
+        spec = importlib.util.spec_from_file_location("wren_model_reader", path)
+        self.reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.reader)
+        self.fixture = NativeModelDeliveryTest()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        f = self.fixture
+        locator = f"tenants/{identity(1)}/kv/application-model/{identity(2)}/2"
+        f.projection["serviceSecretRef"]["locator"] = locator
+        f.projection["secretRef"]["locator"] = locator
+        f.key = "e" * 64
+        f.material["value"] = f.key
+        f.config.append({"type": "document_store", "provider": "qdrant", "embedding_model_dim": 1536})
+        f.save()
+        self.config = f.root / "config.yaml"
+        self.config.write_text(yaml.safe_dump_all(f.config), encoding="utf-8")
+        self.config.chmod(0o600)
+        self.env_file = f.root / "model.env"
+        self.env = {"WREN_MODEL_DELIVERY_DIR": str(f.root), "WREN_PROJECT_DIR": str(f.root),
+                    "WREN_AI_SECRET_ENV_FILE": str(self.env_file), "OPENBAO_ADDR": "https://bao.example",
+                    "OPENBAO_TOKEN_PERIOD": "5m", "OPENBAO_SECRET_ID_TTL": "60s",
+                    "OPENBAO_SECRET_ID_WRAP_TTL": "30s", "OPENBAO_HTTP_TIMEOUT_SECONDS": "5"}
+
+    def test_prepare_original_reader_template_contains_same_secret_response(self):
+        calls = []
+        objects = {}
+
+        class API:
+            def __init__(self, env, namespace):
+                self.namespace = namespace
+
+            def request(self, path, fields=None, **options):
+                calls.append((path, fields, options))
+                if path == "sys/mounts":
+                    return {"data": {"kv/": {"type": "kv", "options": {"version": "2"}}}}
+                if path == "sys/auth":
+                    return {"data": {"approle/": {"type": "approle"}}}
+                if path.endswith("/role-id"):
+                    return {"data": {"role_id": "fixture-role"}}
+                if path.endswith("/secret-id"):
+                    return {"wrap_info": {"token": "fixture-wrapped-token"}}
+                if fields is not None:
+                    objects[path] = {"data": fields}
+                return objects.get(path)
+
+        result = self.reader.deliver(self.env, "prepare", API)
+        self.assertFalse(result["bindingActivated"])
+        hcl = (self.fixture.root / "model-agent.hcl").read_text()
+        # This is an Agent template, not a fabricated requestId or second read.
+        self.assertEqual(hcl.count("with secret"), 1)
+        self.assertIn(".RequestID | toJSON", hcl)
+        self.assertIn(".Data.data.value | toJSON", hcl)
+        self.assertIn(".Data.metadata.version | toJSON", hcl)
+        self.assertNotIn(self.fixture.key, hcl)
+        self.assertTrue(any(c[2].get("wrap") == "30s" for c in calls))
+        self.assertFalse(any(c[0].startswith("kv/data/") for c in calls))
+        self.assertFalse(self.env_file.exists())
+
+    def test_materialize_reads_original_agent_material_not_a_second_secret(self):
+        result = self.reader.deliver(self.env, "materialize")
+        self.assertEqual(result["generation"], 2)
+        self.assertEqual(self.env_file.read_text(), 'FIXTURE_MODEL_KEY="' + self.fixture.key + '"\n')
+        self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
+        self.assertFalse((self.fixture.root / "verified-directory.json").exists())
+        with patch.dict(os.environ, {"FIXTURE_MODEL_KEY": self.fixture.key}):
+            with NativeModelDelivery(self.fixture.settings) as delivery:
+                providers = [entry for entry in self.fixture.config if entry["type"] != "document_store"]
+                delivery.publish(generate_components(providers), providers)
+                receipts = json.loads(self.fixture.output.read_text())["adapters"][0]["modelCredentialDeliveries"]
+                self.assertEqual({r["requestId"] for r in receipts}, {self.fixture.material["requestId"]})
+
+    def test_materialize_refuses_stale_version_and_generation_without_replacing_env(self):
+        self.reader.deliver(self.env, "materialize")
+        before = self.env_file.read_bytes()
+        for change in ("version", "generation", "request"):
+            with self.subTest(change=change):
+                material = copy.deepcopy(self.fixture.material)
+                if change == "version":
+                    material["version"] += 1
+                elif change == "generation":
+                    material["delivery"]["projection"]["generation"] += 1
+                else:
+                    material["requestId"] = ""
+                self.fixture.write(self.fixture.settings.model_credential_file, material)
+                with self.assertRaises((self.reader.Refused, ValueError)):
+                    self.reader.deliver(self.env, "materialize")
+                self.assertEqual(self.env_file.read_bytes(), before)
+
+    def test_materialize_refuses_missing_embedding_and_changed_native_model(self):
+        import yaml
+
+        for kind in ("embedding", "model", "scope"):
+            with self.subTest(kind=kind):
+                docs = copy.deepcopy(self.fixture.config)
+                if kind == "embedding":
+                    docs = [d for d in docs if d.get("type") != "embedder"]
+                elif kind == "model":
+                    docs[0]["models"][0]["model"] = "openai/not-the-route"
+                else:
+                    directory = copy.deepcopy(self.fixture.directory)
+                    directory["adapters"][0]["bindings"][0]["configDigest"] = "c" * 64
+                    self.fixture.write(self.fixture.settings.model_adapter_directory_file, directory)
+                self.config.write_text(yaml.safe_dump_all(docs), encoding="utf-8")
+                with self.assertRaises(self.reader.Refused):
+                    self.reader.deliver(self.env, "materialize")
+                self.assertFalse(self.env_file.exists())
+
+    def test_output_cannot_alias_input_or_follow_symlink(self):
+        self.env["WREN_AI_SECRET_ENV_FILE"] = self.fixture.settings.model_credential_file
+        with self.assertRaises(self.reader.Refused):
+            self.reader.deliver(self.env, "materialize")
+        self.env["WREN_AI_SECRET_ENV_FILE"] = str(self.env_file)
+        self.env_file.symlink_to(self.fixture.settings.model_credential_file)
+        with self.assertRaises(self.reader.Refused):
+            self.reader.deliver(self.env, "materialize")
+
+    def test_output_does_not_replace_configuration_or_unrelated_private_file(self):
+        before = self.config.read_bytes()
+        self.env["WREN_AI_SECRET_ENV_FILE"] = str(self.config)
+        with self.assertRaises(self.reader.Refused):
+            self.reader.deliver(self.env, "materialize")
+        self.assertEqual(self.config.read_bytes(), before)
+        self.env["WREN_AI_SECRET_ENV_FILE"] = str(self.env_file)
+        self.env_file.write_text("UNRELATED=owner-data\n")
+        self.env_file.chmod(0o600)
+        with self.assertRaises(self.reader.Refused):
+            self.reader.deliver(self.env, "materialize")
+        self.assertEqual(self.env_file.read_text(), "UNRELATED=owner-data\n")
+
+    def test_materialize_rechecks_frozen_input_before_publish(self):
+        read = self.reader.document
+        def replace_after_credential(path):
+            result = read(path)
+            if path.name == "credential.json":
+                changed = copy.deepcopy(self.fixture.delivery)
+                changed["projection"]["generation"] += 1
+                self.fixture.write(self.fixture.settings.model_delivery_input_file, changed)
+            return result
+        with patch.object(self.reader, "document", side_effect=replace_after_credential):
+            with self.assertRaises(self.reader.Refused):
+                self.reader.deliver(self.env, "materialize")
+        self.assertFalse(self.env_file.exists())
+
+    def test_policy_refusal_does_not_publish_agent_entrypoint(self):
+        reader = self.reader
+        fixture = self.fixture
+
+        class API:
+            def __init__(self, env, namespace):
+                pass
+
+            def request(self, path, fields=None, **options):
+                if path == "sys/mounts":
+                    return {"data": {"kv/": {"type": "kv", "options": {"version": "2"}}}}
+                if path == "sys/auth":
+                    return {"data": {"approle/": {"type": "approle"}}}
+                if path.startswith("sys/policies"):
+                    raise reader.Refused("existing policy differs")
+                raise AssertionError("No further side effect after policy refusal")
+
+        with self.assertRaises(reader.Refused):
+            reader.deliver(self.env, "prepare", API)
+        self.assertFalse((fixture.root / "model-agent.hcl").exists())
+        self.assertFalse(self.env_file.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1703,3 +1703,65 @@ Do not substitute a stale candidate for newer directory changes. Core's existing
 binding workflow, authorization, generation and audited-read checks remain
 mandatory. Missing approved inputs, a real embedding route or native config
 continues to block release; this read-back does not grant business access.
+
+### Materialize the existing platform model key with OpenBao Agent
+
+The existing `deploy/local/bootstrap.sh` accepts
+`--prepare-wren-model-reader` and `--materialize-wren-model-key`. Both load
+`deploy/local/.env`; neither creates a model, binding, grant or Gateway key.
+The original platform model provisioner must already have supplied the frozen
+`input.json`, `adapter-directory.json`, component `config.yaml`, and exact
+tenant-scoped KV SecretRef. A real embedding route and its native dimension
+remain required; no chat-model fallback or guessed dimension is generated.
+
+Set `WREN_MODEL_DELIVERY_DIR` to the existing owner-only directory and
+`WREN_AI_SECRET_ENV_FILE` to a distinct file within it. Preparation validates
+the actual native model/endpoint/key-name consumers against that projection,
+then uses the original local OpenBao CLI transport to read back or create only
+the exact reader policy and bounded one-use AppRole. A differing existing
+policy/role is refused, not replaced. The key itself is never read by bootstrap.
+
+From the apps root, with the existing execution profile and private Wren Agent
+image/network/UID/GID delivery configured, use the original tools:
+
+```sh
+./deploy/local/bootstrap.sh --prepare-wren-model-reader
+set -a
+. ./deploy/local/.env
+set +a
+. ./tools/container-safety.sh
+container_safety_init
+container_resource_preflight
+sudo -n docker run --rm --pull=never \
+  --cpus "${CHECK_CPUS:?}" --memory "${CHECK_MEMORY:?}" --memory-swap "${CHECK_MEMORY:?}" \
+  --network "${WREN_QUERY_PLATFORM_NETWORK:?}" \
+  --user "${WREN_QUERY_AGENT_UID:?}:${WREN_QUERY_AGENT_GID:?}" \
+  --mount "type=bind,src=${WREN_MODEL_DELIVERY_DIR:?},dst=${WREN_MODEL_DELIVERY_DIR:?}" \
+  "${WREN_QUERY_OPENBAO_IMAGE:?}" agent \
+  -config="${WREN_MODEL_DELIVERY_DIR:?}/model-agent.hcl"
+./deploy/local/bootstrap.sh --materialize-wren-model-key
+```
+
+The generated HCL uses one version-pinned Agent `secret` response for
+`RequestID`, KV metadata version and key. It renders `credential.json` with
+owner-only permissions; the materializer then validates the same frozen
+projection and atomically publishes the component-only env file. It never
+overwrites an input, native config, symlink or unrelated private env file.
+Preparation publishes the HCL last; it is not an atomic multi-file transaction.
+An interrupted or expired one-use wrapping delivery needs explicit read-back
+and preparation again, not an automatic replay of an uncertain Bao write.
+Use a distinct controlled directory for another binding/generation; existing
+different HCL/role identity is refused. Do not run an Agent while preparing
+the same directory. The Agent UID and native AI UID must match the controlled
+file ownership; host paths are preserved in its bind mount.
+
+The original Wren Compose consumes this env file and mounts the same delivery
+directory into the AI service. Only its existing startup consumer can produce
+the loaded-provider proof described above. Adoption still uses the original
+host `start-core.sh` directory validation and binding lifecycle. Local files
+are not live authorization evidence: materialization may still render an old
+frozen delivery, but it cannot authorize a model call. Actual calls pass the
+existing Gateway fresh PEP and Core `application_model_route::admit`, including
+current binding generation, runtime projection, release and route checks.
+Revocation is enforced there, not by a second lifecycle database in bootstrap.
+This procedure does not activate the binding or establish runtime acceptance.
