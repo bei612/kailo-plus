@@ -10499,6 +10499,62 @@ Wren model projection/embedding route/dimension/native configuration delivery or
 new AI image/deployment in this batch. Main full job 87175 predates this input;
 no full or browser acceptance result is claimed here.
 
+### 2026-10-10 — native model delivery AI candidate image
+
+The preceding native model credential and lifespan delivery implementations were
+built from clean commit `3eda3e7908bd16113c0e77eb37dfce5a9b2a4acd` in the
+independent source worktree. Its seven-path source batch is also committed on
+main as `f5673422728077dc24c694981e99d57e770b9ab1` with identical file contents.
+AI source bytes remained unchanged throughout the
+build (`git diff --exit-code HEAD -- data-query/wren-ai-service` exited 0).
+The original `tools/build-upstream.sh data-query-ai-service` entrypoint ran with
+the existing `kailo-core-data` builder, registry `127.0.0.1:55000`, and Data
+temporary/cache storage. Preflight found only the existing builder daemon, with
+8 CPU / 16 GiB memory and swap limits. No second builder, cache cleanup or
+deployment was started. The sparse checkout initially lacked the manifest's
+existing Engine sibling input; materializing that committed directory allowed
+the unchanged original manifest planner to run, without a placeholder.
+
+Job 4009 exited 0. The immutable Python base layers absent from BuildKit's cache
+were fetched by their original digests; this was not an all-cache build. Original
+Poetry 1.8.3 installation completed, then `poetry install --without dev,eval,test
+--no-root` read the existing lock: 112 installs, 0 updates, 0 removals. Image
+export, Docker import, registry push and the original manifest `record` all
+completed. Two original Dockerfile `FromAsCasing` warnings remained. The helper
+changed only the AI artifact's two source/registry digest fields:
+
+- Fixed upstream: `c5f02a0391c87420dba78632dcd86073710deb72`.
+- Source: `sha256:518607d37a8e89e867c78a304395c0a002cd9eec5b6b1e2166de68154cd8a540`.
+- Candidate: `127.0.0.1:55000/data-query-ai-service@sha256:0f29bfe3ef7c31fec8bbb85914fc731724e64d067f61c78aafc6db7b39400494`.
+- Lock SHA-256: `803742f8fd832b21eac5db758b6841ccb43ada47e267b98b4aa3b0551d48588e`.
+
+The original planner recomputed the same source digest after the build (32601,
+exit 0); Docker inspection and the registry's immutable-manifest HEAD response
+agreed on the candidate digest (HTTP 200). No runtime image pin was changed.
+Full wrapper log `/volumes/data/kailo/tmp/wren-ai-release-3eda.P026JT.log` SHA-256:
+`725a0c84419dd3384a21e14b64ec9d14f75e82b30159b1c9738dcf5a0ce3c1d7`.
+Original build log `/volumes/data/kailo/tmp/build-data-query-ai-service.fB6O6R.log`:
+`19f37eecf4ebd63965cba0adee229c43076cac31366fe192177c6d7af5f8c077`.
+
+Reused the installed Syft 1.52.0 command from `tools/release.sh`, targeting the
+immutable local image (`syft docker:sha256:0f29bfe3ef7c31fec8bbb85914fc731724e64d067f61c78aafc6db7b39400494
+-o spdx-json`), not invoking that script's separate Core/Worker builds. Job 71630
+exited 0; nonempty JSON validation found SPDX-2.3 and 270 packages before moving
+the temporary output into the worktree's existing `dist/` convention:
+`dist/data-query-ai-service.0f29bfe3ef7c31fec8bbb85914fc731724e64d067f61c78aafc6db7b39400494.spdx.json`.
+SBOM SHA-256: `4682e0a9961d78f6b127e6c54a6454e01b79ae8b77966bbd54e481cb192a5a0f`.
+Syft's DocumentRoot version records the selected image digest; its internal
+package checksum is not asserted to be the registry manifest digest. The SBOM is
+a local generated artifact, not an uploaded registry referrer or signed SLSA
+attestation. No new provenance protocol or build script was introduced.
+
+This closes the AI source-image candidate gap for the committed producer only.
+Real approved model projection, embedding route/dimension, native configuration,
+audited Bao material and Core challenge verification still need actual delivery.
+No service was started, binding activated or HUMAN permission granted; neither
+image completion nor the earlier isolated consumer checks prove browser,
+cross-service, full-gate or production acceptance.
+
 ## 2026-10-10 native settings and project recommendation admission
 
 Fixed upstream: `c5f02a0391c87420dba78632dcd86073710deb72`,

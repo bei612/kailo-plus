@@ -1006,3 +1006,89 @@ cmp 一致。原进程 16647 正向 exit 0（0.020s）是多个 ACK 场景加入
 本批未另起全局构建或文档检查，由主线集中收口，不能把窄验写成全量门禁通过。
 本批没有部署、真实对象存储故障演练，也未解除首次上传、目标原子 CAS、
 失联 writer 退休或 FILE_STORAGE 七必选批准门禁。
+
+## 2026-10-10 冻结候选原构建与编辑器真实输入修正
+
+沿 `apps/07` §2.1 和原 `tools/build-upstream.sh file-storage-service` 收口产物，
+不部署或激活组件。原候选 tree `79f54effa177b87df71693a6bed4ed028f9b799e`
+从 apps Git 对象导出，非当前 dirty 工作树拷贝；基底 commit 是
+`f5673422728077dc24c694981e99d57e770b9ab1`，版本字段明确为该 commit 加
+`-dirty`，不把候选 tree 冒充 commit。官方基准仍为
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+
+原构建 47317 实际退出 1。真实 `editor.libreoffice/res/js/editor.js` 消费
+`../../../../../adapter/src/native-reference.mjs`，而原 frontend stage 仅复制
+`frontend/assets/`，导致 webpack 报 `/src/adapter/src/native-reference.mjs`
+不存在。该 helper 已在同候选源码及完整构建 context 中，且没有传递 import；
+全 frontend 实际跨 adapter 引用仅此处。本次只补原 Dockerfile 的单行
+`COPY adapter/src/native-reference.mjs /src/adapter/src/native-reference.mjs`，
+放在原 apk/SHELL/ENV 之后、原 pnpm 构建 RUN 之前。页面、权限、原 helper、
+依赖锁与各模块构建次序均不变；缺输入明确失败，不删除原编辑器以求通过。
+
+初版 COPY 位于 apk 前，增量 SHA-256
+`38245ee62057a429b7777f08dc13ca1ede25b0224e461c8cd8fa872bd0dd8bc4`；
+随后只移动到依赖准备之后，保留可复用层，最终增量为
+`cells-native-reference-copy-after-deps.patch`，SHA-256
+`16d85e7ceb6115458601100a9894c2624e57db640acffe275852d21a71e89e44`。
+主线私有候选已精确整合为 `d7f6cbe24daaef400aefef76e053d07d3edfed73`；
+相关全部导出路径对该树的 `git diff --exit-code` 为 0。
+原 helper 重算源码摘要从
+`sha256:2d619edc5b8e583dc9d8141766ffa0f51f7f2df5047dfa78ecf5c1aa10c7fb68`
+变为 `sha256:852312050fd17e6549faaaac1b0c2268cceb515179abd00b7e46832962af9892`。
+
+原件目录：`/volumes/data/kailo/tmp/cells-knowledge-candidate-build-20261010.LL0KzU/`。
+首次 `cells-candidate-build.log` SHA-256
+`19d53393fd6ece5b006e37a33273237a626ec585a765bb539740ff50c0ca98ab`；
+`build-file-storage-service.Op6Tj8.log` SHA-256
+`16cad9286463a88688728bf44eaa848c043d930a284444c5aaf6c29041516ae2`。
+原依赖 npm 输出 8 项漏洞（1 moderate、6 high、1 critical）原样保留；没有
+执行 audit fix 或改锁。原 Webpack 部分模块通过不能代替整个镜像成功。
+
+修正后原入口 83988 正在运行，尚无新 artifact 终态；记录时日志是
+`cells-candidate-build-after-copy.log` 与 `build-file-storage-service.cjsS4Y.log`。
+仍使用原 `kailo-core-data`、8 CPU/16 GiB/16 GiB、
+`/volumes/data/kailo/buildkit-core-state`，没有清缓存或另起并行替代构建。
+实际仍联网下载基础层和包，不能声称完全离线或全部缓存命中。
+
+后续真实终态：83988 exit 1。唯一 COPY 修正已被原消费者验证：
+`editor.libreoffice` webpack 成功，全部原 frontend stage 完成；原 Go
+生产构建及 `/out/cells version` 成功，版本为 `5.0.3-dev`、Go `1.26.8`、
+revision 为上述基底 commit 加 `-dirty`。OCI 导出和 Docker 导入完成，
+随后原 helper 的 `REGISTRY` 必填校验失败，故该句柄不能记作完整成功。
+实际配置字段为原 `deploy/local/.env` 的 `REGISTRY_HOST`，不是 `REGISTRY`。
+
+恢复只执行同一 helper 的既有后半段：从该非密字段投递 `REGISTRY`，
+核已导入的精确镜像，再原 `docker tag`、`push`、`inspect` 和
+`upstream_manifest.py record`；没有再次构建。恢复句柄 3398 exit 0，
+独立读回 snapshot manifest 与 Docker RepoDigests 一致。候选源码摘要为
+`sha256:852312050fd17e6549faaaac1b0c2268cceb515179abd00b7e46832962af9892`，
+registry artifact 为
+`sha256:391b870038c2616ebc8c28ec38d841574838672245196727e61be6336722d20a`。
+镜像地址为 `127.0.0.1:55000/file-storage-service:c57f02f49628`；
+实际部署仍引用旧 digest，没有更换运行实例或激活 binding。
+
+原件仍在本节目录：`cells-candidate-build-after-copy.log` SHA-256
+`f265ba94571388cb65487c9bfaac571887011b7da88e2d2fbf897cd708c700a5`；
+原 helper `build-file-storage-service.cjsS4Y.log` SHA-256
+`2ee4d374e5ec7354194f8f344c3d1f486462d3279d68fcc71a12784203085629`；
+恢复 `cells-candidate-registry-resume.log` SHA-256
+`ea1d358506cf9fb118ed241e023068cf6edd6bd3d2501bbd89edb770d3a5f91f`。
+原配方没有生成独立 SBOM/provenance 文件，不能冒称已经具备；候选来源由
+基底 commit、精确候选树、源码摘要、锁定配方与上述实际日志共同记录。
+本批不是 clean commit 正式发布，也不解除 FILE_STORAGE 七必选、首次上传、
+目标 CAS、writer 退休及业务验收门禁。正式清洁提交后若要求 binary revision
+改为该提交，应按最终来源重建所需层，不能把本候选直接称为正式发布。
+
+### 2026-10-10 同批适配器产物回执
+
+原 `tools/build-upstream.sh file-storage-adapter` 句柄 15854 完整退出 0；
+沿上述同一冻结源码目录和受限 builder 构建、导入、推送并自动登记来源。
+source 为 `sha256:c7c16cf2953fdbce87d4bf193a38eef9ee9218ff0298072b52bda079649bebc4`；
+artifact 为 `sha256:705480fd0013e45912757ea38a39d113ee665b918f8198f3dbf1e888f7d26c01`。
+独立按此 digest 从本地 registry 读取 OCI manifest，SHA-256 与登记逐字一致。
+没有更换运行实例、投递 SecretRef 或激活组件 binding；本产物不是业务验收。
+
+原构建日志为本节目录的 `build-file-storage-adapter.61FxlW.log`，SHA-256
+`d45cecded58d9bf497d8720c05cdd8009317c08ed09d5164f5acb20a9bd61fa3`。
+日志明确存在基础镜像下载与 npm 安装，不声称完全离线。后续删除版本的
+独立开发输入不在此冻结产物及前述 native service 镜像内，不能挪用其验证结论。

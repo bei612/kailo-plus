@@ -54,7 +54,7 @@ services:
       - wren
 
   wren-engine:
-    image: ${WREN_ENGINE_IMAGE:?fixed compatible native Engine image is required}
+    image: ${WREN_ENGINE_IMAGE:?verified source-built native Engine image digest is required}
     restart: on-failure
     platform: ${WREN_PLATFORM:?native platform is required}
     expose:

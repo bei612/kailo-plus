@@ -9,6 +9,7 @@ COPY frontend/assets/ ./
 RUN apk add --no-cache bash git && corepack enable
 SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 npm_config_store_dir=/pnpm/store
+COPY adapter/src/native-reference.mjs /src/adapter/src/native-reference.mjs
 RUN --mount=type=cache,id=cells-ui-corepack,target=/root/.cache/node/corepack \
     --mount=type=cache,id=cells-ui-pnpm,target=/pnpm/store \
     bash ./build.sh && \

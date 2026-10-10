@@ -43,8 +43,9 @@ and its credential agent to an existing private platform protocol network.
    `WREN_GATEWAY_IMAGE` digest references. The fixed Ibis/bootstrap/Qdrant
    dependencies preserve the original GenBI recipe, not an original UI/AI
    replacement. Bound queries additionally consume the forked Engine's
-   `/v2/analysis/sql/sources`; the upstream Engine image in the deployment
-   template does not prove that producer exists. Keep the release inactive
+   `/v2/analysis/sql/sources`; the sole template leaves `WREN_ENGINE_IMAGE`
+   empty so the original Compose required-input check refuses an undelivered
+   Engine instead of selecting the upstream image. Keep the release inactive
    until its actual source-built Engine digest and compatible native version
    have been verified and delivered. Registered build entries
    already exist as `tools/build-upstream.sh data-query-ui` and
