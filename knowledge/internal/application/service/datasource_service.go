@@ -69,6 +69,9 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	if ds == nil {
 		return nil, datasource.ErrDataSourceInvalid
 	}
+	if err := datasource.ValidateSyncSchedule(ds.SyncSchedule); err != nil {
+		return nil, err
+	}
 
 	// Validate knowledge base exists
 	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, ds.KnowledgeBaseID)
@@ -153,6 +156,9 @@ func (s *DataSourceService) ListDataSources(ctx context.Context, kbID string) ([
 func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.DataSource) (*types.DataSource, error) {
 	if ds == nil || ds.ID == "" {
 		return nil, datasource.ErrDataSourceInvalid
+	}
+	if err := datasource.ValidateSyncSchedule(ds.SyncSchedule); err != nil {
+		return nil, err
 	}
 
 	// Verify data source exists
@@ -552,6 +558,9 @@ func (s *DataSourceService) PauseDataSource(ctx context.Context, id string) erro
 func (s *DataSourceService) ResumeDataSource(ctx context.Context, id string) error {
 	ds, err := s.GetDataSource(ctx, id)
 	if err != nil {
+		return err
+	}
+	if err := datasource.ValidateSyncSchedule(ds.SyncSchedule); err != nil {
 		return err
 	}
 

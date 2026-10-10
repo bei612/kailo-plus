@@ -12,6 +12,22 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+// Match the original WithSeconds grammar for both persisted settings and the
+// actual native scheduler, including named descriptors and explicit time zones.
+var syncScheduleParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+
+// ValidateSyncSchedule rejects unusable settings before the native row changes.
+// Empty schedules retain the original manual-only mode.
+func ValidateSyncSchedule(expression string) error {
+	if expression == "" {
+		return nil
+	}
+	if _, err := syncScheduleParser.Parse(expression); err != nil {
+		return fmt.Errorf("invalid sync schedule: %w", err)
+	}
+	return nil
+}
+
 // Scheduler manages cron-based periodic sync for data sources.
 //
 // robfig/cron fires at absolute wall-clock times (e.g. "0 0 * * * *" always fires
@@ -35,7 +51,7 @@ func NewScheduler(
 	taskEnqueuer interfaces.TaskEnqueuer,
 ) *Scheduler {
 	return &Scheduler{
-		cron: cron.New(cron.WithSeconds(), cron.WithChain(
+		cron: cron.New(cron.WithParser(syncScheduleParser), cron.WithChain(
 			cron.Recover(cron.DefaultLogger),
 		)),
 		dsRepo:       dsRepo,
@@ -79,12 +95,11 @@ func (s *Scheduler) AddOrUpdate(ds *types.DataSource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if entryID, ok := s.entries[ds.ID]; ok {
-		s.cron.Remove(entryID)
-		delete(s.entries, ds.ID)
-	}
-
 	if ds.Status != types.DataSourceStatusActive || ds.SyncSchedule == "" {
+		if entryID, ok := s.entries[ds.ID]; ok {
+			s.cron.Remove(entryID)
+			delete(s.entries, ds.ID)
+		}
 		return nil
 	}
 
@@ -119,6 +134,11 @@ func (s *Scheduler) addEntryLocked(ds *types.DataSource) error {
 		return fmt.Errorf("invalid cron expression %q: %w", ds.SyncSchedule, err)
 	}
 
+	// Parse/register must succeed before retiring the previous native entry.
+	// Both map mutations stay under the same original scheduler mutex.
+	if previous, ok := s.entries[dsID]; ok {
+		s.cron.Remove(previous)
+	}
 	s.entries[dsID] = entryID
 	return nil
 }

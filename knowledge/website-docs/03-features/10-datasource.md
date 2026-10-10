@@ -2,7 +2,7 @@
 
 数据源将飞书、Notion、语雀等平台的内容持续同步到知识库。连接建立后，可按计划获取新增与修改；来源删除的内容按同步配置处理。
 
-数据源在知识库中配置。打开目标知识库的编辑设置，进入「数据源」页签，新建连接并填写凭据，然后选择同步范围与周期。首次同步获取完整内容，后续同步根据连接器能力增量更新。
+数据源在知识库中配置。打开目标知识库的编辑设置，进入「数据源」页签，新建连接，然后选择同步范围与周期。原生第三方连接器按页面要求填写凭据；Kailo 云盘来源使用已授权的资源目录，不填写 Cells 凭据。首次同步获取完整内容，后续同步根据连接器能力增量更新。
 
 <Screenshot
   src="/screenshots/datasource-sync.png"
@@ -19,6 +19,17 @@
 4. 查看同步状态与日志，确认新增、更新、跳过和失败内容符合预期。
 
 凭据更新需要提交完整配置，系统会在线验证。暂停数据源可停止后续计划同步；恢复后重新注册调度。
+
+### Kailo 云盘来源
+
+1. 由管理员为当前知识库投递受控的 `file_storage_sync` 配置与 SERVICE 身份，沿 Kailo 的来源授权机制授予源资源读取和目标知识库写入权限。知识库、租户、接收绑定必须与投递配置一致；不是输入任意云盘地址或共享账号。
+2. 在该知识库原有「数据源」页签新建连接，选择「云盘」。入口与来源列表由当前有效绑定和授权目录决定；没有可用来源时，先核对授权，不通过填写凭据绕过。
+3. 从列表选择来源，设置名称、同步范围与周期并保存。保存的是源 Resource 引用，不是 Cells 密码、下载 URL 或整盘挂载。编辑时也必须使用当前仍获授权的来源。
+4. 通过原有手动同步按钮发起导入，在同步日志查看条目和解析结果。来源正文由 Cells 的固定版本授权读取交给 WeKnora 原生入库流程；读取与知识物化分别校验权限，不能以源文件可读推断知识库可写。
+
+部署入口复用 `knowledge/fork/deploy/start.sh --file-storage-sync --validate`：由既有配置投递面提供 `KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE`（完整原生配置文件）、`KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE`（单个 SERVICE OIDC 密钥文件）及 `KNOWLEDGE_ADAPTER_PLATFORM_NETWORK`（现有平台网络）。配置与密钥以只读文件挂载，不生成另一套配置或来源凭据；未投递完整配置时不能启用。`--validate` 只核对部署配置，不代表服务启动或跨组件业务验收通过。
+
+暂停只停止后续计划同步，不代替撤销来源授权或对账在途动作。来源撤权、绑定失效、结果不明时保留实际失败或待对账状态；不能反复执行同一 SOURCE 读取来取得正文，也不能把同步请求被接受当作解析完成。目前跨服务真实环境的首次导入、撤权与失败恢复仍须结合实际部署验收，源码定向检查不替代该验收。
 
 ## 选择连接器
 
@@ -162,12 +173,14 @@ flowchart LR
 
 ### 同步调度（internal/datasource/scheduler.go）
 
-`Scheduler` 基于 `robfig/cron`（`cron.WithSeconds()`，支持秒级 6 段表达式）为每个配置了 `SyncSchedule` 的 active 数据源维护一个 cron entry；服务启动时 `Start()` 从 DB 加载全部 active 数据源批量注册。
+`Scheduler` 基于 `robfig/cron`，配置校验与实际注册共用与原 `cron.WithSeconds()` 相同的解析语法：支持秒级 6 段表达式、命名周期与显式时区。每个配置了 `SyncSchedule` 的 active 数据源维护一个 cron entry；服务启动时 `Start()` 从 DB 加载全部 active 数据源批量注册。创建、编辑和恢复时，无效周期在数据库变更前拒绝；调度替换只有新周期注册成功后才移除旧条目。空周期保持原来的手动同步模式。
 
 由于 robfig/cron 按**绝对墙钟时间**触发（例如 `0 0 * * * *` 总在整点触发），多实例部署时所有实例会同时触发。去重靠两层机制：
 
-1. **DB 层防重叠**：`syncLogRepo.HasRunningSync` —— 上一次同步还在 running 就跳过本次（防止同步耗时超过 cron 间隔时叠加执行）。
-2. **Redis 层跨实例去重**：确定性的 `asynq.TaskID = "dssync:<dsID>:<yyyyMMddHHmm>"`（按分钟截断）。同一分钟内所有实例产生相同 TaskID，Redis 保证只有一个入队成功，其余得到 `asynq.ErrTaskIDConflict`，对应 SyncLog 标记为 `canceled`（"deduplicated: another instance enqueued first"）。
+1. **DB 层防重叠**：原生 `CreatePending` 对同一数据源进行同步准入并保存 SyncLog；已有未结束同步时，不创建第二个执行身份。
+2. **队列投递去重**：`DispatchSync` 使用持久化的 `SyncLogID` 形成确定的 `asynq.TaskID = "dssync:<SyncLogID>"`。同一轮投递恢复仍使用原 TaskID，收到该 ID 的冲突只表示同一个原生同步已有队列所有者，不新建同步或重放已消费的 SOURCE 操作。
+
+这是 WeKnora 自身导入器的本地调度与队列，不替代 Kailo 的 Temporal 工作流执行权威；云盘同步仍消费既有来源授权、绑定、准入和回执链。
 
 入队参数：队列 `types.QueueSync`、`MaxRetry(5)`、`Timeout(2*time.Hour)`。任务类型为 `types.TypeDataSourceSync`（`"datasource:sync"`），由 `internal/router/task.go` 中 `mux.HandleFunc(types.TypeDataSourceSync, params.DataSourceService.ProcessSync)` 消费。
 

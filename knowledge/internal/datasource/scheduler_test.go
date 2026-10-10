@@ -374,6 +374,26 @@ func TestScheduler_InvalidCron(t *testing.T) {
 	if scheduler.EntryCount() != 0 {
 		t.Errorf("invalid cron should not be registered, EntryCount() = %d", scheduler.EntryCount())
 	}
+
+	ds.SyncSchedule = "0 0 * * * *"
+	if err := scheduler.AddOrUpdate(ds); err != nil {
+		t.Fatal(err)
+	}
+	original := scheduler.entries[ds.ID]
+	ds.SyncSchedule = "not a cron"
+	if err := scheduler.AddOrUpdate(ds); err == nil {
+		t.Fatal("an invalid replacement must fail")
+	}
+	if scheduler.EntryCount() != 1 || scheduler.entries[ds.ID] != original || scheduler.cron.Entry(original).ID != original {
+		t.Fatal("invalid replacement removed the original working schedule")
+	}
+	ds.SyncSchedule = "0 30 * * * *"
+	if err := scheduler.AddOrUpdate(ds); err != nil {
+		t.Fatal(err)
+	}
+	if scheduler.EntryCount() != 1 || scheduler.entries[ds.ID] == original || scheduler.cron.Entry(original).ID != 0 {
+		t.Fatal("valid replacement must retire exactly the old schedule")
+	}
 }
 
 func TestScheduler_TriggerSync_InactiveSkipped(t *testing.T) {

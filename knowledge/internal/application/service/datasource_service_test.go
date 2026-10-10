@@ -162,6 +162,52 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 	}
 }
 
+func TestFileStorageScheduleSettingsValidateBeforeNativePersistence(t *testing.T) {
+	for _, operation := range []string{"create", "edit", "resume"} {
+		for _, expression := range []string{"", "0 */30 * * * *", "@daily", "CRON_TZ=UTC 0 0 * * * *", "not a cron", "0 * * * *", "61 * * * * *", "CRON_TZ=Invalid/Zone 0 0 * * * *"} {
+			t.Run(operation+"/"+expression, func(t *testing.T) {
+				blob, err := (&types.DataSourceConfig{ResourceIDs: []string{uuid.NewString()}}).ToJSON()
+				require.NoError(t, err)
+				ds := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(),
+					Type: fileStorageConnectorType, Status: types.DataSourceStatusPaused, Config: blob}
+				registry := datasource.NewConnectorRegistry()
+				require.NoError(t, registry.Register(&fileStorageConnector{transport: &fileStorageTransport{config: &config.FileStorageSyncConfig{
+					NativeTenantID: ds.TenantID, NativeKnowledgeBaseID: ds.KnowledgeBaseID,
+				}}}))
+				repo := &fileStorageConfigRepository{kbDeleteDSRepo: newKBDeleteDSRepo(ds.KnowledgeBaseID, ds)}
+				svc := &DataSourceService{dsRepo: repo, connectorRegistry: registry,
+					kbService: &processSyncKBService{kb: &types.KnowledgeBase{ID: ds.KnowledgeBaseID, TenantID: ds.TenantID}},
+					scheduler: datasource.NewScheduler(repo, nil, nil)}
+				defer svc.scheduler.Stop()
+				next := *ds
+				next.SyncSchedule = expression
+				switch operation {
+				case "create":
+					_, err = svc.CreateDataSource(context.Background(), &next)
+				case "edit":
+					_, err = svc.UpdateDataSource(context.Background(), &next)
+				case "resume":
+					ds.SyncSchedule = expression
+					err = svc.ResumeDataSource(context.Background(), ds.ID)
+				}
+				invalid := expression == "not a cron" || expression == "0 * * * *" || expression == "61 * * * * *" || strings.HasPrefix(expression, "CRON_TZ=Invalid")
+				if invalid {
+					require.Error(t, err)
+					require.Zero(t, repo.writes, "an invalid cron cannot be saved and acknowledged as usable")
+					require.Equal(t, types.DataSourceStatusPaused, ds.Status, "invalid resume cannot activate the retained source")
+					require.Zero(t, svc.scheduler.EntryCount())
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, 1, repo.writes)
+					if operation == "resume" && expression != "" {
+						require.Equal(t, 1, svc.scheduler.EntryCount(), "accepted native schedule must actually register")
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestFileStorageCreationAcknowledgesOnlyTheOriginalPersistedPayload(t *testing.T) {
 	ds := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(), Type: fileStorageConnectorType}
 	body := []byte("persisted source body")

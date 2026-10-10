@@ -4276,3 +4276,69 @@ exit 0，读回仅 app、两个 read-only bind 和 external 原网络；使用�
 `required variable KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE is missing a value`。
 未改运行 `.env`、未挂载真实 secret、未启动服务或重复 full；完整配置投递、
 真实 SOURCE→解析→usage/撤权联调与 release/binding 批准仍未验收。
+
+## 2026-10-10 原生数据源周期保存与替换
+
+四步影响结论：
+
+1. 权威为 `.design/13` §1、§4.1–4.4：本地导入器、条目状态与调度归
+   WeKnora，平台仍持有授权与批次 Operation，不新增平台工作流执行权威。
+   固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/datasource/scheduler.go::NewScheduler`、`Scheduler.AddOrUpdate`、
+   `Scheduler.addEntryLocked` 已重新核验；原 cron 与当前锁定
+   `github.com/robfig/cron/v3 v3.0.1` 的 `option.go::WithSeconds` 使用相同
+   秒、分、时、日、月、周、Descriptor 解析规则。该能力是上游支持、
+   当前服务持久化与替换失败语义需修复，不是重写调度器。
+2. 实际调用为原 DataSourceHandler → `DataSourceService.CreateDataSource`、
+   `UpdateDataSource`、`ResumeDataSource` → 原 repository 与 Scheduler。
+   原先持久化后仅记录注册错误，客户端仍收到成功；编辑时还会先移除
+   工作中的条目。本批在三个持久化消费者前使用同一原生 parser 校验，
+   实际 cron 注册复用相同 parser，注册成功后才退休旧条目。没有 schema、
+   数据迁移、返回协议或客户端页面变更。历史无效周期不自动改写，编辑或
+   恢复须先改为有效周期；空周期保留原手动同步模式。
+3. 原身份、租户/知识库归属、来源目录、SERVICE read edge、SOURCE grant、
+   接收授权、quota、usage 与 Temporal 接缝不变。新增校验不进入执行链，
+   失败仍由原三个 HTTP handler 返回 400，不生成副作用或新 AE。原
+   `CreatePending` 和 `DispatchSync` 的持久轮次身份保持不变；不是从
+   本地 cron 绕过平台准入。正式使用文档沿原
+   `website-docs/03-features/10-datasource.md` 补充云盘来源操作与受控配置
+   投递，纠正已经不存在的按分钟 TaskID 说明，没有新建部署手册。
+4. 空值沿原入参检查；空周期为手动模式；未知语法、五段表达式、越界值、
+   无效时区均在持久化前拒绝，属于原参数错误，不是 UNKNOWN。新旧条目
+   更替与 Remove 保持同一原互斥锁；无效替换保留原 EntryID，有效替换
+   确认旧 Entry 已移除。注册新条目到撤销旧条目之间可能重叠触发，原
+   `triggerSync` 重新读库并由 `CreatePending` 事务准入拒绝重复轮次；
+   本地 mutex 不代表跨进程幂等。既有 SOURCE 超时、撤权、重复投递与崩溃结果不明
+   边界没有放宽；本批不新增状态或长期正文，不改变 Mobile 非组件宿主。
+
+代码完成后在既有原检查中补证：三种真实服务入口 × 八种周期共 24 子项，
+分别核对数据库写入次数和恢复后的真实 Scheduler 条目；原
+`TestScheduler_InvalidCron` 补充无效替换保留旧条目、有效替换移除旧条目。
+验证仍使用原受限 SDK 和现有 native service/scheduler 包，不启动镜像构建。
+
+正向原作业 39600 实际 exit 0：**13 顶层、59 子项 PASS，0 FAIL / SKIP**；
+其中 Scheduler 包 5.384s、service 包 0.505s。原命令为
+`go test -mod=readonly ./internal/datasource ./internal/application/service -run 'TestScheduler|TestFileStorageScheduleSettings|TestFileStorageEdit|TestFileStorageDataSource' -count=1 -v`，
+四个 Go 文件 `gofmt -l` 无输出。运行容器为既有
+`kailo-knowledge-native-check-wkkigg`，实际 CPU 4 / memory 8 GiB；
+未启动重复任务。原件
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/datasource-schedule-positive.log`，
+SHA-256 `86b93307dd287d545a109429a44a108e72b103eb200017555ff523c16334fa3b`。
+这是原消费者定向检查，不是实际 Cells→WeKnora SOURCE、解析、计量或撤权
+联调，也不证明平台/组件部署已更新；全量门禁与文档检查由主线集中收口。
+
+只在私有 SDK 的实际生产消费者恢复两处旧错误：`AddOrUpdate` 先移除原
+条目，三个 service 入口取消持久化前周期校验，检查断言未改。同目标
+25866 实际 **exit 1，2 顶层 / 12 子项 FAIL**；原输出明确包含
+`scheduler_test.go:388: invalid replacement removed the original working schedule`，
+三个入口各四种无效周期均报 `An error is expected but got nil`，不是编译
+或依赖失败。负向日志与正向同目录 `datasource-schedule-negative.log`，
+SHA-256 `3c6c91ba6e6872cccdc571a378cdfaa7a389e9888d5896b6aa0f0b57bd191b5d`。
+
+随后 apply_patch 还原实际生产输入，四个正式/SDK Go 文件逐一 `cmp`
+均 exit 0。同目标还原作业 66158 实际 **exit 0，13 顶层 / 59 子项 PASS，
+0 FAIL / SKIP**，Scheduler 3.158s、service 0.747s，`gofmt -l` 无输出。
+还原日志同目录 `datasource-schedule-restored.log`，SHA-256
+`7622ceebf6038cc0964902ed324ab007b48723226fa8335e9242a6c1094c54d4`。
+没有在正式源码保留故障注入，没有新增平台调度或借本批声明页面截图、
+真实数据库、跨组件业务、迁移、部署或 full 门禁通过。
