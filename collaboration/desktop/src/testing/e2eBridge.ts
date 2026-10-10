@@ -2749,7 +2749,7 @@ async function handleGetChannelReconnectRepair(
   },
   config: E2eConfig | undefined,
 ): Promise<RelayEvent[]> {
-  const kinds = new Set([5, 9, 9005, 40002, 40003, 40099]);
+  const kinds = new Set([5, 9, 9005, 40002, 40003, 40008, 40099]);
   const filter: Record<string, unknown> = {
     "#h": [args.channelId],
     kinds: [...kinds],

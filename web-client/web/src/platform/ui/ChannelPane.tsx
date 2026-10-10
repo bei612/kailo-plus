@@ -58,7 +58,7 @@ import { ComposerActivityAccessory } from "@client-kit/platform/react/messages/C
 import { ComposerDockBackdrop } from "@client-kit/platform/react/thread/ComposerDockBackdrop";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
-import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
+import { CHANNEL_TIMELINE_CONTENT_KINDS, KIND_STREAM_MESSAGE_DIFF, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
 import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, getRouteMainTimelineTargetId, useChannelMessageEdit, buildThreadPanelIndex } from "@client-kit/platform/react/thread";
 import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
@@ -674,7 +674,7 @@ export function ChannelPane({
                   isUnread={isMessageUnread(message)}
                   onMarkRead={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, true) : undefined}
                   onMarkUnread={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, false) : undefined}
-                  onReply={(message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
+                  onReply={(message.kind === 9 || message.kind === 40002 || message.kind === KIND_STREAM_MESSAGE_DIFF) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 messageId={message.id}

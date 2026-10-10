@@ -25,6 +25,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "react-diff-view": "3.3.3",
     "yaml": "^2.8.3",
     "@client-kit/contracts": "file:../../client-kit/ts/contracts",
     "@client-kit/platform": "file:../../client-kit/ts/platform",

@@ -7,6 +7,7 @@ import {
   formatTimelineMessages,
   isTimelineContentEvent,
 } from "./formatTimelineMessages.ts";
+import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_EVENT_KINDS, CHANNEL_MESSAGE_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@/shared/constants/kinds";
 
 const HEX64_A =
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -159,12 +160,28 @@ test("original message link-preview none marker suppresses all generated preview
   );
 });
 
-test("only stream messages and system rows render as timeline rows", () => {
+test("stream messages, original diffs and system rows render as timeline rows", () => {
   assert.equal(isTimelineContentEvent({ kind: 9 }), true);
   assert.equal(isTimelineContentEvent({ kind: 40002 }), true);
+  assert.equal(isTimelineContentEvent({ kind: 40008 }), true);
   assert.equal(isTimelineContentEvent({ kind: 40099 }), true);
   assert.equal(isTimelineContentEvent({ kind: 7 }), false);
   assert.equal(isTimelineContentEvent({ kind: 40003 }), false);
+});
+
+test("original diff is independent visible content, not an edit or a recency trigger", () => {
+  assert.equal(CHANNEL_TIMELINE_CONTENT_KINDS.includes(40008), true);
+  assert.equal(CHANNEL_EVENT_KINDS.includes(40008), true);
+  assert.equal(CHANNEL_AUX_EVENT_KINDS.includes(40008), false);
+  assert.equal(CHANNEL_MESSAGE_EVENT_KINDS.includes(40008), false);
+  const original = streamMessage();
+  const diff = streamMessage({ id: "c".repeat(64), kind: 40008, content: "diff --git a/a b/a", tags: [["h", CHANNEL_ID], ["e", original.id], ["file", "a"]] });
+  const rows = formatTimelineMessages([original, diff], PUBKEY_A, null);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find(row => row.id === original.id).body, "hello world");
+  assert.equal(rows.find(row => row.id === diff.id).kind, 40008);
+  assert.equal(rows.find(row => row.id === diff.id).body, diff.content);
+  assert.deepEqual(collectMessageAuthorPubkeys([diff], RELAY_PUBKEY), [PUBKEY_A]);
 });
 
 test("relay deletion markers hide their target message", () => {

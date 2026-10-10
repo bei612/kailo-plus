@@ -4,6 +4,21 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  diffTypeAdd,
+  diffTypeCopy,
+  diffTypeDelete,
+  diffTypeModify,
+  diffTypeRename,
+  diffExpand,
+  diffTruncated,
+  diffViewOn,
+  diffViewSource,
+  diffViewer,
+  diffUnified,
+  diffSplit,
+  diffEmpty,
+  diffNoHunks,
+  diffLoading,
   messageLinkOpenLink,
   messageLinkNoText,
   messageLinkDeleted,
@@ -2097,6 +2112,30 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.diffTypeAdd: ('New file', '新增文件'),
+  PlatformMessageKey.diffTypeCopy: ('Copied', '已复制'),
+  PlatformMessageKey.diffTypeDelete: ('Deleted', '已删除'),
+  PlatformMessageKey.diffTypeModify: ('Modified', '已修改'),
+  PlatformMessageKey.diffTypeRename: ('Renamed', '已重命名'),
+  PlatformMessageKey.diffExpand: ('Expand diff', '展开差异'),
+  PlatformMessageKey.diffTruncated: ('Diff truncated.', '差异已截断。'),
+  PlatformMessageKey.diffViewOn: (
+    'View full diff on {hostname}',
+    '在 {hostname} 查看完整差异',
+  ),
+  PlatformMessageKey.diffViewSource: (
+    'View the full diff at the source repository.',
+    '请在源代码仓库查看完整差异。',
+  ),
+  PlatformMessageKey.diffViewer: ('Diff Viewer', '差异查看器'),
+  PlatformMessageKey.diffUnified: ('Unified', '统一'),
+  PlatformMessageKey.diffSplit: ('Split', '并排'),
+  PlatformMessageKey.diffEmpty: ('No diff content', '没有差异内容'),
+  PlatformMessageKey.diffNoHunks: (
+    'No textual hunks in this diff.',
+    '此差异没有文本变更块。',
+  ),
+  PlatformMessageKey.diffLoading: ('Loading diff…', '正在加载差异…'),
   PlatformMessageKey.messageLinkOpenLink: ('Open link', '打开链接'),
   PlatformMessageKey.messageLinkNoText: ('No message text', '无消息文本'),
   PlatformMessageKey.messageLinkDeleted: ('Message deleted', '消息已删除'),

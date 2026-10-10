@@ -43,6 +43,7 @@ export const CHANNEL_EVENT_KINDS = [
   KIND_NIP29_DELETE_EVENT, // 9005 — NIP-29 / Buzz-native deletions
   ...CHANNEL_MESSAGE_EVENT_KINDS,
   KIND_STREAM_MESSAGE_EDIT,
+  KIND_STREAM_MESSAGE_DIFF,
   KIND_SYSTEM_MESSAGE, // 40099 — system messages (join, leave, etc.)
 ] as const;
 
@@ -62,6 +63,7 @@ export const CHANNEL_AUX_EVENT_KINDS = [
 export const CHANNEL_TIMELINE_CONTENT_KINDS = [
   KIND_STREAM_MESSAGE, // 9
   KIND_STREAM_MESSAGE_V2, // 40002
+  KIND_STREAM_MESSAGE_DIFF, // 40008 — original read-only diff content
   KIND_SYSTEM_MESSAGE, // 40099 — system rows (join/leave/channel-created)
 ] as const;
 

@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::{app_state::AppState, models::ChannelPageCursor};
 
-const TIMELINE_KINDS: [u32; 3] = [9, 40002, 40099];
+const TIMELINE_KINDS: [u32; 4] = [9, 40002, 40008, 40099];
 
 fn build_channel_window_filter(
     channel_id: &str,

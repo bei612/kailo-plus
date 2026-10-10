@@ -8,8 +8,65 @@ import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, 
 import { resolveMessageMentionClipboard } from "../src/react/messages/resolveMentionNames";
 import { buildMentionClipboardHtml, parseMentionClipboardRecords } from "../src/react/composer/features/messages/lib/mentionClipboard";
 import type { ParsedMessageLink } from "../src/react/composer/features/messages/lib/messageLink";
+import { countDiffFileChanges, getDiffTitleBadge, parseUnifiedDiff } from "../src/react/messages/diff/parseDiff";
+import DiffMessage from "../src/react/messages/diff/DiffMessage";
+import DiffMessageExpanded from "../src/react/messages/diff/DiffMessageExpanded";
 
 const message: TimelineMessage = { id: "message", pubkey: "author", author: "Alice", body: "Hello", createdAt: 1770000000, depth: 0, time: "", tags: [] };
+
+const addedFileDiff = "diff --git a/readme.txt b/readme.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/readme.txt\n@@ -0,0 +1,2 @@\n+hello\n+world\n";
+
+it("restores the original diff parser and per-file badge without treating malformed data as an empty success", () => {
+  const parsed = parseUnifiedDiff(addedFileDiff);
+  expect(parsed.parseError).toBe(false);
+  expect(parsed.files).toHaveLength(1);
+  expect(countDiffFileChanges(parsed.files[0]!)).toEqual({ additions: 2, deletions: 0 });
+  expect(getDiffTitleBadge(addedFileDiff, "readme.txt")).toBe("diff.type.add");
+  expect(parseUnifiedDiff("not a unified diff")).toEqual({ files: [], parseError: true });
+  expect(parseUnifiedDiff("  ")).toEqual({ files: [], parseError: false });
+});
+
+it("uses the complete original diff row, safe repository link and expanded unified/split controls in both languages", async () => {
+  // Eagerly load the same original lazy destinations before exercising the row.
+  expect(DiffMessage).toBeTypeOf("function");
+  expect(DiffMessageExpanded).toBeTypeOf("function");
+  await act(async () => setLocale("zh-CN"));
+  const plainBody = vi.fn(() => "wrong ordinary body");
+  const host = await render(<TooltipProvider><MessageRowSurface
+    message={{ ...message, kind: 40008, body: addedFileDiff, tags: [["file", "readme.txt"], ["description", "hello patch"], ["repo", "https://repo.example/project"], ["commit", "abcdef012345"], ["truncated", "true"]] }}
+    searchQuery="hello" renderBody={plainBody} /></TooltipProvider>);
+  await vi.waitFor(() => expect(host.querySelector('[aria-label="展开差异"]')).not.toBeNull());
+  expect(plainBody).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("新增文件");
+  expect(host.textContent).toContain("差异已截断。");
+  expect(host.querySelector(".buzz-diff-theme")).not.toBeNull();
+  expect(host.querySelector('[data-testid="diff-search-preview"]')).not.toBeNull();
+  expect(host.querySelector("a")?.href).toBe("https://repo.example/project/commit/abcdef012345");
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="展开差异"]')!);
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.className).toContain("max-w-5xl");
+  expect(dialog.textContent).toContain("readme.txt");
+  await click([...dialog.querySelectorAll("button")].find(button => button.textContent === "并排")!);
+  expect(dialog.querySelector(".buzz-diff-table")?.classList.contains("min-w-[780px]")).toBe(true);
+  await act(async () => setLocale("en"));
+  expect(host.textContent).toContain("New file");
+  expect(dialog.textContent).toContain("Unified");
+  await click([...dialog.querySelectorAll("button")].find(button => button.textContent === "Unified")!);
+  expect(dialog.querySelector(".buzz-diff-table")?.classList.contains("w-full")).toBe(true);
+  await click(dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]') ?? [...dialog.querySelectorAll("button")].find(button => button.textContent?.includes("Close"))!);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("keeps the original raw diff fallback, empty state and unsafe repository rejection", async () => {
+  await act(async () => setLocale("en"));
+  const malformed = await render(<DiffMessage content="not a unified diff" repoUrl="javascript:alert(1)" commitSha="abcdef" truncated />);
+  expect(malformed.querySelector("pre")?.textContent).toBe("not a unified diff");
+  expect(malformed.querySelector("a")).toBeNull();
+  expect(malformed.textContent).toContain("View the full diff at the source repository.");
+  const empty = await render(<DiffMessage content="" />);
+  expect(empty.textContent).toContain("No diff content");
+});
 
 it("restores the original sent-from-thread reference and exact root navigation with separate emoji hover segments", async () => {
   const open = vi.fn();

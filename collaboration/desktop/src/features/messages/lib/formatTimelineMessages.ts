@@ -13,6 +13,7 @@ import {
   KIND_DELETION,
   KIND_NIP29_DELETE_EVENT,
   KIND_STREAM_MESSAGE,
+  KIND_STREAM_MESSAGE_DIFF,
   KIND_STREAM_MESSAGE_V2,
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
@@ -26,7 +27,7 @@ const HEX_RE = /^[0-9a-f]+$/i;
 
 /**
  * Kinds that render as their own timeline row: stream messages (9 and the v2
- * form 40002) and relay system rows. Must match CHANNEL_TIMELINE_CONTENT_KINDS:
+ * form 40002), original diff rows, and relay system rows. Must match CHANNEL_TIMELINE_CONTENT_KINDS:
  * a kind that is fetched and counted as unread but not rendered is a phantom
  * unread.
  */
@@ -34,6 +35,7 @@ export function isTimelineContentEvent(event: Pick<RelayEvent, "kind">) {
   return (
     event.kind === KIND_STREAM_MESSAGE ||
     event.kind === KIND_STREAM_MESSAGE_V2 ||
+    event.kind === KIND_STREAM_MESSAGE_DIFF ||
     event.kind === KIND_SYSTEM_MESSAGE
   );
 }

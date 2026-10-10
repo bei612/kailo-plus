@@ -1,6 +1,7 @@
 import { useUiT } from "../context";
 import * as React from "react";
 import type { TimelineMessage } from "./types";
+import { KIND_STREAM_MESSAGE_DIFF } from "./thread/kinds";
 import { getThreadReplyAvatarCenterRem, getThreadReplyAvatarCenterYRem, getThreadReplyDescendantRailStartYRem, getThreadReplyConnectorLayout, getThreadReplyIndentRem, threadReplyLength, THREAD_REPLY_LINE_WIDTH_REM } from "./threadTreeLayout";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useMeasuredCssVariable } from "./useMeasuredCssVariable";
@@ -12,6 +13,8 @@ import { MessageReactions } from "./reactions/MessageReactions";
 import { useReactionHandler } from "./reactions/useReactionHandler";
 import type { CustomEmoji } from "../custom-emoji/emoji";
 import type { MessageActionBarSurface } from "./MessageActionBarSurface";
+const DiffMessage = React.lazy(() => import("./diff/DiffMessage"));
+const DiffMessageExpanded = React.lazy(() => import("./diff/DiffMessageExpanded"));
 type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
   "reactions" | "onReactionSelect" | "onReactionBadgeBurstRequest" | "reactionErrorMessage" | "customEmoji" | "reactionScope" | "resolveMediaUrl">;
 export type ThreadDepthGuideAction = {
@@ -41,7 +44,7 @@ export function MessageRowSurface({
     onEntranceComplete,
     playEntrance = false,
     showDepthGuides = true,
-    renderBody, renderIdentity, renderActions, reference, resolveMediaUrl,
+    renderBody, renderIdentity, renderActions, reference, resolveMediaUrl, searchQuery,
     onToggleReaction, customEmoji = [], reactionScope,
   }: {
     collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
@@ -78,8 +81,10 @@ export function MessageRowSurface({
     reactionScope?: string | null;
     reference?: React.ReactNode;
     resolveMediaUrl?: (url: string) => string | undefined;
+    searchQuery?: string;
   }) {
     const translateUi = useUiT();
+    const [expandedDiffId, setExpandedDiffId] = React.useState<string | null>(null);
     const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
     const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
     // Keep the transient send state with its timestamp rather than collapsing
@@ -174,7 +179,15 @@ export function MessageRowSurface({
       );
     }, [collapseDepthGuideActions]);
 
-    const bodyNode = renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"));
+    const getTag = (name: string) => message.tags?.find(tag => tag[0] === name)?.[1];
+    const bodyNode = message.kind === KIND_STREAM_MESSAGE_DIFF ? (
+      <React.Suspense fallback={<div className="p-3 text-sm text-muted-foreground">{translateUi("diff.loading")}</div>}>
+        <DiffMessage commitSha={getTag("commit")} content={message.body}
+          description={getTag("description")} filePath={getTag("file")}
+          onExpand={() => setExpandedDiffId(message.id)} repoUrl={getTag("repo")}
+          searchQuery={searchQuery} truncated={getTag("truncated") === "true"} />
+      </React.Suspense>
+    ) : renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"));
 
     const isThreadReplyLayout = layoutVariant === "thread-reply";
     const guideBleedRem = isThreadReplyLayout ? 0.25 : 0;
@@ -492,6 +505,11 @@ export function MessageRowSurface({
           )}
           {actionBarNode}
         </article>
+        {message.kind === KIND_STREAM_MESSAGE_DIFF && expandedDiffId === message.id ? (
+          <React.Suspense fallback={null}>
+            <DiffMessageExpanded content={message.body} filePath={getTag("file")} onClose={() => setExpandedDiffId(null)} />
+          </React.Suspense>
+        ) : null}
       </div>
     );
 }

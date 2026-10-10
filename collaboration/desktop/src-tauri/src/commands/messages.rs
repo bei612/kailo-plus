@@ -21,7 +21,7 @@ use crate::{
 /// (`p_gated_filters_authorized`) without a `#p` tag — load-bearing for the
 /// thread-subtree read, whose relay routing keys off `#e`+`depth_limit` (not
 /// kind) but still passes through the p-gate before it runs.
-const TIMELINE_KINDS: [u32; 3] = [9, 40002, 40099];
+const TIMELINE_KINDS: [u32; 4] = [9, 40002, 40008, 40099];
 
 #[tauri::command]
 pub async fn get_feed(

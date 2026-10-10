@@ -94,6 +94,21 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "diff.type.add": { en: "New file", "zh-CN": "新增文件" },
+  "diff.type.copy": { en: "Copied", "zh-CN": "已复制" },
+  "diff.type.delete": { en: "Deleted", "zh-CN": "已删除" },
+  "diff.type.modify": { en: "Modified", "zh-CN": "已修改" },
+  "diff.type.rename": { en: "Renamed", "zh-CN": "已重命名" },
+  "diff.expand": { en: "Expand diff", "zh-CN": "展开差异" },
+  "diff.truncated": { en: "Diff truncated.", "zh-CN": "差异已截断。" },
+  "diff.viewOn": { en: "View full diff on {hostname}", "zh-CN": "在 {hostname} 查看完整差异" },
+  "diff.viewSource": { en: "View the full diff at the source repository.", "zh-CN": "请在源代码仓库查看完整差异。" },
+  "diff.viewer": { en: "Diff Viewer", "zh-CN": "差异查看器" },
+  "diff.unified": { en: "Unified", "zh-CN": "统一" },
+  "diff.split": { en: "Split", "zh-CN": "并排" },
+  "diff.empty": { en: "No diff content", "zh-CN": "没有差异内容" },
+  "diff.noHunks": { en: "No textual hunks in this diff.", "zh-CN": "此差异没有文本变更块。" },
+  "diff.loading": { en: "Loading diff…", "zh-CN": "正在加载差异…" },
   "messageLink.openLink": { en: "Open link", "zh-CN": "打开链接" },
   "messageLink.noText": { en: "No message text", "zh-CN": "无消息文本" },
   "messageLink.deleted": { en: "Message deleted", "zh-CN": "消息已删除" },
