@@ -10273,3 +10273,67 @@ Handle 95672 actually exited 0 with no diagnostics. In the existing log director
 (`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
 This result covers the frozen Instruction candidate only, not subsequent
 Dashboard changes, a full check, the running UI image build, or deployment.
+
+### Original dashboard item rename/delete write admission (2026-10-10)
+
+This separate batch preserves the original Dashboard UI, native row ownership
+and repository writes. Authority is `.design/08` §6, SS-WRN-IDENTITY/GOVERNANCE
+and DD-98. The fixed source was rechecked with `git grep` at
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts::DashboardResolver.updateDashboardItem/deleteDashboardItem`
+and `wren-ui/src/apollo/server/services/dashboardService.ts::DashboardService.updateDashboardItem/deleteDashboardItem`.
+The original Dashboard mutation consumers already exist; no replacement page,
+entity, contract, database migration or independent permission authority is added.
+
+Impact is restricted to those two resolver/service calls and their existing
+`nativeProjectScope.test.ts` consumers. The resolver passes its captured project
+and existing `verifyMetadataWrite` closure. The service verifies the native
+dashboard item's project and consumes that same-generation manage check after
+the final asynchronous lookup, immediately before the original DB write.
+Direct bound service calls cannot omit that callback. Empty/missing rows and
+foreign ownership retain refusal; current identity, generation or permission
+changes refuse before dispatch. Standalone-to-bound configuration changes fail
+closed, while a never-configured independent instance retains its original
+behavior. Missing identity maps to existing DENIED, changed preconditions to
+PRECONDITION; existing LIMIT/CONFLICT paths are unchanged. A sent native write
+whose acknowledgement is lost remains UNKNOWN and is not retried. No durable
+state or reconciliation lifecycle was introduced; approval, quota and live
+UNKNOWN recovery are not claimed complete by this metadata change.
+
+Post-implementation checks ran in the existing 4-CPU/4-GiB
+`kailo-wren-query-sdk-itgs2n`, working directory
+`/cache/wren-dashboard.1vKwGE`, using the original Jest entrypoint,
+`src/nativeProjectScope.test.ts --runInBand`, filtered by
+`--testNamePattern="original dashboard item metadata write consumers"`, with
+the existing ts-jest single-file runtime transform. Actual resolver wrappers
+and both real services are exercised; repository/Core transport and unrelated
+SQL-body disclosure are boundary substitutes, not live PG or UI acceptance.
+Fresh authorization is a request-level check, not an atomic transaction joining
+Core permission state and the independent native database write.
+
+- Positive handle 40360: exit 0, 18 passed / 276 filtered.
+- Removed the production `await beforeWrite?.(currentProject.id)` in the private
+  verification copy: handle 10111 exited 1, 10 failed / 8 passed / 276 filtered.
+  Both actions detected lost fresh authorization and binding-switch admission.
+- Restored exactly (`cmp`, exit 0): original command exited 0, 18 passed /
+  276 filtered. Original Prettier `--check` then exited 0.
+
+The three logs in `/volumes/data/kailo/check-cache/wren-dashboard.1vKwGE/` are
+`dashboard-positive.log` SHA-256
+`6ab69298b3c95a84de7a862e211bfca01a86f8b257da2452b72f78dbab313b8c`,
+`dashboard-negative.log`
+`6e4705d513a06504e60372f34f16aa302763240fe132fb7a34396d4278d22b8e`, and
+`dashboard-restored.log`
+`47be3d397c015dc55b1b3c578e64bb9bcb662e80f0560cc23bb8685ba13c655b`.
+Restored service SHA-256 is
+`d88a6212690c20fea3b2d7f78d52e3a6bf73582508eb5dd092cd6e9d6275c58e`.
+The sole final original `tsc --noEmit` check 48488 exited 0 with no diagnostics,
+using the same frozen candidate and existing SDK. Its `dashboard-types.log` is
+empty (SHA-256
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+No full check, image rebuild, deployment or browser screenshot was performed
+for this batch. Main UI build
+91644 later returned exit 143 at `RUN yarn build`, without an artifact or
+source record. Its original helper shell exited; the orphaned buildx process
+still held its unchanged staged input. No replacement build or artifact
+registration was started. This batch remains isolated from that input.

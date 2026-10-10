@@ -19,6 +19,7 @@ import {
   DAYS,
 } from '@server/models/dashboard';
 import { CronExpressionParser } from 'cron-parser';
+import { NativeQueryRefusal } from './nativeQueryAdmission';
 const logger = getLogger('DashboardService');
 logger.level = 'debug';
 
@@ -53,8 +54,14 @@ export interface IDashboardService {
   updateDashboardItem(
     dashboardItemId: number,
     input: UpdateDashboardItemInput,
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<DashboardItem>;
-  deleteDashboardItem(dashboardItemId: number): Promise<boolean>;
+  deleteDashboardItem(
+    dashboardItemId: number,
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<boolean>;
   updateDashboardItemLayouts(
     layouts: UpdateDashboardItemLayouts,
   ): Promise<DashboardItem[]>;
@@ -210,8 +217,10 @@ export class DashboardService implements IDashboardService {
   public async updateDashboardItem(
     dashboardItemId: number,
     input: UpdateDashboardItemInput,
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<DashboardItem> {
-    await this.getDashboardItem(dashboardItemId);
+    await this.checkItemWrite(dashboardItemId, project, beforeWrite);
     return await this.dashboardItemRepository.updateOne(dashboardItemId, {
       displayName: input.displayName,
     });
@@ -256,10 +265,33 @@ export class DashboardService implements IDashboardService {
     return updatedItems;
   }
 
-  public async deleteDashboardItem(dashboardItemId: number): Promise<boolean> {
-    await this.getDashboardItem(dashboardItemId);
+  public async deleteDashboardItem(
+    dashboardItemId: number,
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<boolean> {
+    await this.checkItemWrite(dashboardItemId, project, beforeWrite);
     await this.dashboardItemRepository.deleteOne(dashboardItemId);
     return true;
+  }
+
+  private async checkItemWrite(
+    dashboardItemId: number,
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ) {
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
+    await this.getDashboardItem(dashboardItemId, currentProject);
+    // The row/project lookup yields. Consume the captured native request's
+    // fresh authorization after it, immediately before the original DB write.
+    if (
+      !beforeWrite &&
+      (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined)
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await beforeWrite?.(currentProject.id);
   }
 
   private async calculateNewLayout(

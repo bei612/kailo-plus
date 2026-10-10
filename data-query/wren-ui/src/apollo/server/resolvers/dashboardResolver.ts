@@ -333,9 +333,12 @@ export class DashboardResolver {
       throw new Error(`Dashboard item not found. id: ${id}`);
     }
     await this.readableWriteResult(ctx, project, [item]);
-    const updated = await ctx.dashboardService.updateDashboardItem(id, {
-      displayName,
-    });
+    const updated = await ctx.dashboardService.updateDashboardItem(
+      id,
+      { displayName },
+      project,
+      (projectId) => this.verifyMetadataWrite(ctx, projectId),
+    );
     await this.readableWriteResult(ctx, project, [updated]);
     return updated;
   }
@@ -346,11 +349,16 @@ export class DashboardResolver {
     ctx: IContext,
   ): Promise<boolean> {
     const { id } = args.where;
-    const item = await ctx.dashboardService.getDashboardItem(id);
+    const project = await ctx.projectService.getCurrentProject();
+    const item = await ctx.dashboardService.getDashboardItem(id, project);
     if (!item) {
       throw new Error(`Dashboard item not found. id: ${id}`);
     }
-    return await ctx.dashboardService.deleteDashboardItem(id);
+    return await ctx.dashboardService.deleteDashboardItem(
+      id,
+      project,
+      (projectId) => this.verifyMetadataWrite(ctx, projectId),
+    );
   }
 
   public async updateDashboardItemLayouts(
