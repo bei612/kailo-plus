@@ -185,6 +185,7 @@ export interface IAskingService {
   updateThreadResponse(
     responseId: number,
     data: { sql: string },
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<ThreadResponse>;
   getResponsesWithThread(threadId: number): Promise<ThreadResponse[]>;
   getResponse(responseId: number, project?: Project): Promise<ThreadResponse>;
@@ -929,12 +930,20 @@ export class AskingService implements IAskingService {
   public async updateThreadResponse(
     responseId: number,
     data: { sql: string },
+    beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<ThreadResponse> {
-    const threadResponse = await this.getResponse(responseId);
+    const project = await this.projectService.getCurrentProject();
+    const threadResponse = await this.getResponse(responseId, project);
     if (!threadResponse) {
       throw new Error(`Thread response ${responseId} not found`);
     }
 
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !beforeWrite
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await beforeWrite?.(project.id);
     return await this.threadResponseRepository.updateOne(responseId, {
       sql: data.sql,
     });

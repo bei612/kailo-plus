@@ -317,7 +317,10 @@ const resolvers = {
     updateThread: nativeProjectResolver(askingResolver.updateThread, 'manage'),
     deleteThread: nativeProjectResolver(askingResolver.deleteThread, 'manage'),
     createThreadResponse: askingResolver.createThreadResponse,
-    updateThreadResponse: askingResolver.updateThreadResponse,
+    updateThreadResponse: nativeProjectResolver(
+      askingResolver.updateThreadResponse,
+      'manage',
+    ),
     previewData: askingResolver.previewData,
     previewBreakdownData: askingResolver.previewBreakdownData,
 

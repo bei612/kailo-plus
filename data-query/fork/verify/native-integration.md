@@ -9983,3 +9983,57 @@ without installation or changing dependencies. Earlier Asking final type job
 No final type/full gate, screenshot, complete quota/approval/billing or Wren
 deployment acceptance is claimed. AI source build 13724 is a separate live
 artifact job, not evidence that this UI source has been released.
+
+### 2026-10-10 original SQL editor save authorization consumer
+
+Authority/impact: the same `.design/08` §6 `SS-WRN-IDENTITY` and
+`SS-WRN-GOVERNANCE` apply to the actual original SQL editor save path,
+`wren-ui/src/pages/home/[id].tsx:onFixSQLStatement` → original
+`UPDATE_THREAD_RESPONSE` → `AskingResolver.updateThreadResponse` →
+`AskingService.updateThreadResponse`. Both server symbols are verified in fixed
+upstream `c5f02a0391c87420dba78632dcd86073710deb72` at
+`wren-ui/src/apollo/server/resolvers/askingResolver.ts` and
+`wren-ui/src/apollo/server/services/askingService.ts`. The editor, GraphQL data
+shape, SQL text, response rows and actual query execution engine are unchanged.
+
+The existing management resolver now supplies its captured-generation callback
+to the original service. The service captures the current project, verifies
+the response's parent-thread ownership with original `getResponse`, and awaits
+fresh management permission immediately before the original SQL-text update.
+No Resource type, quota authority, SQL executor or task state was added. A
+missing/foreign response cannot be updated; missing trusted callback, changed
+project/binding generation/identity and revocation stop the write. Sent writes
+with missing acknowledgements remain UNKNOWN and are not retried. Saving text
+does not prove subsequent query/answer completion or usage settlement.
+
+Post-implementation evidence used the same existing 4 CPU / 4 GiB SDK and a
+separate candidate, `/volumes/data/kailo/check-cache/wren-sql-edit.88DTLC`.
+Preflight observed low memory before starting; after the parent released its
+own auxiliary process, actual available memory was 26 GiB. Original formatter
+19120 exited 0. Original Jest command was the preceding checkpoint's command
+with `--testNamePattern="original thread metadata management consumers"`.
+Session 44038 exited 0: 27 passed (18 original metadata cases plus 9 SQL-edit
+cases), 249 unrelated skips, 276 total (65.828 s). These exercise original
+Mutation/service consumers with repository and authorization boundary
+substitutes, not live database concurrency or browser acceptance.
+
+Private production mutation removed only SQL save's actual
+`await beforeWrite?.(project.id)` dispatch check. Session 14352 exited 1:
+5 failed / 22 passed / 249 skipped (0.924 s); the project-switch case actually
+saved SQL instead of refusing, and revoked/changed identity or generation
+became post-write UNKNOWN rather than NOT_STARTED. Restored source matched
+the implementation byte-for-byte (`cmp` exit 0). Session 26778 then exited 0:
+27 passed / 249 skipped (0.715 s), followed by original four-file Prettier
+check exit 0. No production mutation remains.
+
+Candidate log SHA-256 values:
+
+- `sql-edit-positive.log`: `3f0d0e9ed4ebddd05366000463b1c231b69e40f77e2342f81ccd858d9d68d37e`.
+- `sql-edit-negative.log`: `b4a2c71541bd069b4f355837ef32ae5a87b7b4f20d5980bd9fa4ee14f6847cbf`.
+- `sql-edit-restored.log`: `c196f60eda7421462d72a9e9f7840976093afa3dfdfdf1528b6dc48a025472a2`.
+- `sql-edit-restored-format.log`: `17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+
+Earlier final type job 36727 remains on its unchanged Asking input, not these
+thread-management/SQL-editor changes. AI build 13724 remains its independent
+original job. No new full gate, screenshot, deployed Wren page, complete
+governance or three-client acceptance is claimed by this source checkpoint.

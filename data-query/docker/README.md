@@ -654,14 +654,17 @@ by these changes.
 These consumers are not evidence that all remaining
 native mutation, recommendation, SQL-pair or SERVICE execution paths are ready.
 
-The original thread sidebar rename and delete operations use the same native
-project `manage` authorization as the other native metadata mutations. They
-still resolve the thread within the current project, then recheck the captured
+The original thread sidebar rename/delete and SQL editor save operations use
+the same native project `manage` authorization as the other metadata mutations.
+They still resolve the thread within the current project, then recheck the captured
 binding generation immediately before the original repository write. Bound
 service calls without that trusted callback are refused. A sent write whose
 acknowledgement or final authorization is unavailable stays UNKNOWN rather
 than claiming that no write occurred. This does not register threads as new
 platform resources or prove full question-to-SQL, quota or billing completion.
+SQL editing preserves the original response and parent-thread project checks;
+saving SQL text does not execute it. Subsequent answer/preview execution still
+uses its existing governed native query path and independent terminal evidence.
 
 The original UI client now consumes that exact `done` separately from connection
 closure. A partial GENERAL answer or reasoning stream followed by EOF, timeout,

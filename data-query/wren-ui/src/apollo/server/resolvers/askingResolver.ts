@@ -682,7 +682,11 @@ export class AskingResolver {
   ): Promise<ThreadResponse> {
     const { where, data } = args;
     const askingService = ctx.askingService;
-    const response = await askingService.updateThreadResponse(where.id, data);
+    const response = await askingService.updateThreadResponse(
+      where.id,
+      data,
+      ctx.nativeProjectCheck,
+    );
     return response;
   }
 

@@ -39,7 +39,7 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
-describe('original thread rename and delete management consumers', () => {
+describe('original thread metadata management consumers', () => {
   const config: any = {
     projectId: 3,
     bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
@@ -52,6 +52,13 @@ describe('original thread rename and delete management consumers', () => {
   let ctx: any;
   let row: { id: number; projectId: number; summary: string };
   let repository: any;
+  let responseRepository: any;
+  const response = {
+    id: 71,
+    threadId: 81,
+    question: 'Original',
+    sql: 'SELECT 1',
+  };
   let generation: number;
   let revoked: boolean;
   let afterRead: () => void;
@@ -59,6 +66,12 @@ describe('original thread rename and delete management consumers', () => {
     originalResolvers.Mutation[mutation](
       null,
       { where: { id: row.id }, data: { summary: 'Renamed original thread' } },
+      ctx,
+    );
+  const saveSql = () =>
+    originalResolvers.Mutation.updateThreadResponse(
+      null,
+      { where: { id: response.id }, data: { sql: 'SELECT 2' } },
       ctx,
     );
   beforeEach(() => {
@@ -81,6 +94,12 @@ describe('original thread rename and delete management consumers', () => {
       updateOne: jest.fn(async (_id, input) => ({ ...row, ...input })),
       deleteOne: jest.fn(async () => undefined),
     };
+    responseRepository = {
+      findOneBy: jest.fn(async ({ id }) =>
+        id === response.id ? { ...response } : null,
+      ),
+      updateOne: jest.fn(async (_id, data) => ({ ...response, ...data })),
+    };
     ctx = {
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-person',
@@ -90,6 +109,7 @@ describe('original thread rename and delete management consumers', () => {
     ctx.askingService = Object.assign(Object.create(AskingService.prototype), {
       projectService: ctx.projectService,
       threadRepository: repository,
+      threadResponseRepository: responseRepository,
     });
     jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
     jest
@@ -117,6 +137,69 @@ describe('original thread rename and delete management consumers', () => {
     if (previous === undefined)
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+  });
+  it('saves edited SQL through its original Mutation after fresh manage without executing that SQL', async () => {
+    responseRepository.updateOne.mockImplementation(async (id, data) => {
+      expect(bindingServiceCall).toHaveBeenCalledTimes(2);
+      expect(id).toBe(response.id);
+      expect(data).toEqual({ sql: 'SELECT 2' });
+      return { ...response, ...data };
+    });
+    expect(await saveSql()).toEqual({ ...response, sql: 'SELECT 2' });
+    expect(repository.findOneBy).toHaveBeenCalledWith({
+      id: response.threadId,
+      projectId: 3,
+    });
+    expect(responseRepository.updateOne).toHaveBeenCalledTimes(1);
+    expect(bindingServiceCall).toHaveBeenCalledTimes(3);
+  });
+  it('does not edit the SQL of a response owned by a foreign project thread', async () => {
+    row.projectId = 8;
+    await expect(saveSql()).rejects.toThrow();
+    expect(responseRepository.updateOne).not.toHaveBeenCalled();
+  });
+  it.each(['revoked', 'generation', 'identity', 'project'] as const)(
+    'does not save SQL when %s changes before its actual repository write',
+    async (fault) => {
+      afterRead = () => {
+        if (fault === 'revoked') revoked = true;
+        if (fault === 'generation') generation++;
+        if (fault === 'identity') ctx.nativeHumanToken = 'another-person';
+      };
+      if (fault === 'project') {
+        row.projectId = 8;
+        ctx.projectService.getCurrentProject
+          .mockResolvedValueOnce({ id: 3 })
+          .mockResolvedValue({ id: 8 });
+      }
+      await expect(saveSql()).rejects.toMatchObject({
+        extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+      });
+      expect(responseRepository.updateOne).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses a bound direct SQL edit without the trusted before-write callback', async () => {
+    await expect(
+      ctx.askingService.updateThreadResponse(response.id, { sql: 'SELECT 2' }),
+    ).rejects.toMatchObject({ code: 'NATIVE_AUTHENTICATION_REQUIRED' });
+    expect(responseRepository.updateOne).not.toHaveBeenCalled();
+  });
+  it('preserves UNKNOWN after one sent SQL edit loses its acknowledgement', async () => {
+    responseRepository.updateOne.mockRejectedValue(
+      new Error('native acknowledgement lost'),
+    );
+    await expect(saveSql()).rejects.toMatchObject({
+      extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+    });
+    expect(responseRepository.updateOne).toHaveBeenCalledTimes(1);
+  });
+  it('preserves original independent-instance SQL editing with no platform identity or configuration', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete ctx.nativeIdentityScope;
+    delete ctx.nativeHumanToken;
+    expect(await saveSql()).toEqual({ ...response, sql: 'SELECT 2' });
+    expect(bindingServiceCall).not.toHaveBeenCalled();
+    expect(responseRepository.updateOne).toHaveBeenCalledTimes(1);
   });
   it.each(['updateThread', 'deleteThread'] as const)(
     'preserves the original %s result and performs fresh management authorization immediately before its single write',
