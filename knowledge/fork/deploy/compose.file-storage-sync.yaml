@@ -1,0 +1,25 @@
+# Opt-in delivery to the original native DataSource importer. The full native
+# config includes its existing file_storage_sync binding projection; it is not
+# an Adapter configuration or another registry. No credential or binding is
+# created here, and no source service credentials enter the receiver.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE:?controlled full native config with file_storage_sync required}
+        # Fixed upstream docker/Dockerfile.app and Config.LoadConfig consumer.
+        target: /app/config/config.yaml
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE:?OpenBao-rendered receiver service credential required}
+        target: ${KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE:?must match native config oidc_client_secret_file}
+        read_only: true
+        bind: {create_host_path: false}
+    networks:
+      adapter_platform: {}
+
+networks:
+  adapter_platform:
+    external: true
+    name: ${KNOWLEDGE_ADAPTER_PLATFORM_NETWORK:?existing Core and source Adapter network required}

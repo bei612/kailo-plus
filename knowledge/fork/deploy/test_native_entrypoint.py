@@ -167,6 +167,36 @@ class NativeEntrypointTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(len(calls.read_text().splitlines()), 1)
 
+    def test_file_storage_sync_start_delivers_native_overlay_without_other_services(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        (root / ".env").write_text("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nsys.exit(int(os.environ.get('REFUSE_CONFIG','0')) if 'config' in sys.argv else 0)\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        for adapter in (False, True):
+            command = ["bash", str(root / "start.sh"), "--file-storage-sync"]
+            if adapter:
+                command.append("--platform-adapter")
+            for validate in (False, True):
+                with self.subTest(adapter=adapter, validate=validate):
+                    subprocess.run(command + (["--validate"] if validate else []), env=env, check=True, capture_output=True)
+                    operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                    self.assertEqual(len(operations), 1 if validate else 2)
+                    self.assertEqual(operations[0][-2:], ["config", "--quiet"])
+                    self.assertIn(str(root / "compose.file-storage-sync.yaml"), operations[0])
+                    if not validate:
+                        targets = ["adapter-agent", "adapter", "app"] if adapter else ["app"]
+                        tail = ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps"] + targets
+                        self.assertEqual(operations[1][-len(tail):], tail)
+                    calls.unlink()
+            refused = subprocess.run(command, env={**env, "REFUSE_CONFIG": "1"}, capture_output=True)
+            self.assertEqual(refused.returncode, 1)
+            self.assertEqual(len(calls.read_text().splitlines()), 1)
+            calls.unlink()
+
     def test_adapter_reader_generates_actual_scoped_uncached_agent_input(self):
         root = Path(self.directory.name)
         outputs, bootstrap = root / "outputs", root / "bootstrap"

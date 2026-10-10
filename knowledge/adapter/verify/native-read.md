@@ -4210,3 +4210,69 @@ SHA-256 `9cce9b9d79e83d2540f34d65b6cc2882d5cc1ab3ad4a695c5d49441358fdcd1a`。
 本批代码检查已收齐正向、真实生产破坏失败、还原三次终态；
 全量门禁与文档检查由主线统一收口，本批未重复启动，亦未执行真实
 Cells→WeKnora 部署联调、数据库解析任务或跨进程崩溃恢复验收。
+
+## 2026-10-10 原生自拉消费者的受控配置投递
+
+四步影响结论：
+
+1. 权威为 `.design/13` §4.1–4.4、`DD-89`：导入器运行在 WeKnora 内，
+   以接收 binding 的 ServicePrincipal 经 Core 获取 SOURCE grant，不持有
+   Cells 凭据。固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `docker/Dockerfile.app`（`WORKDIR /app`、`COPY ... /app/config ./config`）
+   和 `internal/config/config.go::LoadConfig` 已核对。沿原 YAML 配置入口，
+   不新建配置转换器或第二 registry。
+2. 原消费者 `internal/container/container.go::initConnectorRegistry`
+   依 `cfg.FileStorageSync` 注册 `NewFileStorageConnector`；既有原启动入口
+   未挂载包含该节的 native config 或接收方 service secret，本批补齐
+   `fork/deploy/start.sh --file-storage-sync` 直接消费的 Compose overlay。
+   `/app/config/config.yaml` 是固定上游的实际读取路径；原字段、YAML tag、
+   原生 tenant/KB 映射和构造器校验不变，不改数据库、契约或 SOURCE API。
+3. 仅 opt-in 时为 app 挂载完整受控 native config 与该接收 binding 的
+   单个 OIDC secret 文件，均只读、不创建缺失宿主路径；不挂整个 Adapter
+   delivery 目录，不暴露它的 native MCP/管理凭据。不调用 Core 创建身份、
+   grant、Resource 或 binding；复用已经存在的 Adapter/Core 网络。
+4. 独立服务默认路径不新增前提；`--validate` 只作原 Compose 预检。
+   普通自拉选项只重建 app；组合 `--platform-adapter` 时原 adapter-agent、
+   adapter 加 app；不重建 frontend、reader、数据库或平台服务，禁止 build
+   和自动 pull。配置变量缺失先拒绝，Compose 失败不执行 up。完整配置仍须
+   由投递面提供已批准 binding 对应的 `file_storage_sync`，节缺失则原
+   importer 不注册，内容不合法则原构造器拒绝；本入口不能证明配置/业务
+   已生效。凭据轮换遵循既有 binding/generation 与重新投递/重建，不能把
+   单文件 bind mount 当作自动追随宿主原子换文件的保证。
+
+使用原 `knowledge/fork/deploy/.env` 的三项受控位置：
+
+- `KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE`：包含原应用完整配置和
+  `file_storage_sync` 节的 native config 文件；不是 Adapter JSON，
+  不用精简配置覆盖原 prompt/model/server 等设置。
+- `KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE`：OpenBao 投递的接收方
+  service secret 文件；原节 `oidc_client_secret_file` 必须使用完全相同
+  路径，且文件权限允许原 `appuser` 读取，不变更原 gosu 降权流程。
+- `KNOWLEDGE_ADAPTER_PLATFORM_NETWORK`：已经存在、可达 Core 与 SOURCE
+  Adapter 的原受控网络；不创建网络或凭据，也不修改独立数据库。
+
+投递完成后沿原入口
+`bash knowledge/fork/deploy/start.sh --file-storage-sync --validate`
+预检；实际启动使用同选项去掉 `--validate`。可与原
+`--platform-model /absolute/deploy/local/.env`、`--platform-adapter` 组合。
+没有投递、已批准 service read edge 和绑定证据时不执行启用；页面是否可见
+仍由原 `ListFileStorageSources` 和当前授权来源决定。
+
+实际实现后验证：复用空闲原 `kailo-knowledge-native-check-wkkigg`
+（4 CPU / 8 GiB，启动前宿主 available 22 GiB），未编译或建立新 SDK。
+`bash -n knowledge/fork/deploy/start.sh` exit 0；原镜像内
+`python3 -m unittest -v test_native_entrypoint` 正向 **30 passed，exit 0**
+（3.103s）。仅私有输入删除实际 `args+=(-f ...compose.file-storage-sync.yaml)`
+调用，新增原入口检查实际 exit 1，首个断言直接显示 Compose argv 缺该
+overlay；未修改断言。还原后正式/私有 start.sh `cmp` exit 0，同套
+**30 passed，exit 0**（0.803s）。检查覆盖自拉单独/组合 Adapter、只校验、
+Compose 预检失败不启动和原 model/独立模式；Docker 调用由原检查录制，
+没有据此声称真实容器启动通过。
+
+真实 Docker Compose 对新 overlay `config --no-consistency --format json`
+exit 0，读回仅 app、两个 read-only bind 和 external 原网络；使用的是
+合成投递位置，`--no-consistency` 只验证 overlay，不证明整部署可运行。
+真实清空三变量后 `config --no-consistency --quiet` exit 1，输出
+`required variable KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE is missing a value`。
+未改运行 `.env`、未挂载真实 secret、未启动服务或重复 full；完整配置投递、
+真实 SOURCE→解析→usage/撤权联调与 release/binding 批准仍未验收。
