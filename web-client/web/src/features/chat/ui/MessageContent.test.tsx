@@ -69,8 +69,8 @@ describe("MessageContent", () => {
       labels:{}, people:[],
     };
     const content = `#design room\n\nbuzz://channel/${id}\n\n[authored label](buzz://message?channel=${id}&id=${eventId})`;
-    const show = (admitted: boolean, ambiguous = false) => act(async () => root.render(
-      <PlatformProvider client={client} locale="en"><BffMessageLinkHost scopeKey={admitted ? "session-a" : "session-b"}
+    const show = (admitted: boolean, ambiguous = false, locale: "en" | "zh-CN" = "en") => act(async () => root.render(
+      <PlatformProvider client={client} locale={locale}><BffMessageLinkHost scopeKey={admitted ? "session-a" : "session-b"}
         principalId="human-a" conversations={[]} onOpenChannel={openChannel} onOpenMessageLink={openMessage}
         directory={admitted ? {...directory, workspaces: ambiguous ? [...directory.workspaces,...directory.workspaces] : directory.workspaces} : undefined}>
         <MessageContent content={content} />
@@ -86,6 +86,11 @@ describe("MessageContent", () => {
       expect(labelled.className).toContain("font-medium text-primary underline");
       await act(async () => labelled.click());
       expect(openMessage).toHaveBeenLastCalledWith({channelId:id,messageId:eventId,threadRootId:null});
+      await show(true, false, "zh-CN");
+      expect(element.querySelector('[data-channel-link][role="button"]')!.getAttribute("aria-label")).toBe("打开频道 design room");
+      expect([...element.querySelectorAll("button")].find(button => button.textContent === "authored label")!.getAttribute("aria-label")).toBe("打开消息：authored label");
+      await show(true, false, "en");
+      expect(element.querySelector('[data-channel-link][role="button"]')!.getAttribute("aria-label")).toBe("Open channel design room");
       await show(true, true);
       expect(element.querySelector('[role="button"]')).toBeNull();
       expect([...element.querySelectorAll("button")].some(button => button.textContent === "authored label")).toBe(false);

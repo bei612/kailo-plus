@@ -3,8 +3,16 @@ import test from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { JSDOM } from "jsdom";
 import { setLocale } from "@client-kit/platform/i18n";
+import { createBffClient } from "@client-kit/platform/client";
+import { PlatformProvider } from "@client-kit/platform/react/context";
 
-function withPlatformLocale(locale, run) {
+const localeClient = createBffClient({
+  async send() {
+    assert.fail("Locale rendering must not send BFF requests");
+  },
+});
+
+function withPlatformLocale(locale, run, deviceLocale = locale) {
   const originals = {
     window: globalThis.window,
     document: globalThis.document,
@@ -17,8 +25,12 @@ function withPlatformLocale(locale, run) {
   globalThis.document = dom.window.document;
   globalThis.Event = dom.window.Event;
   try {
-    setLocale(locale);
-    return run();
+    setLocale(deviceLocale);
+    return run((node) =>
+      renderToStaticMarkup(
+        React.createElement(PlatformProvider, { client: localeClient, locale }, node),
+      ),
+    );
   } finally {
     dom.window.close();
     Object.assign(globalThis, originals);
@@ -880,7 +892,7 @@ test("inline message chips omit fetched metadata and the event hash", () => {
 
 for (const locale of ["zh-CN", "en"]) {
   test(`authored Buzz permalink labels remain ordinary links (${locale})`, () =>
-    withPlatformLocale(locale, () => {
+    withPlatformLocale(locale, (renderWithLocale) => {
       const channelId = "580ca78b-9dae-46f3-8854-bd671853ba32";
       const links = [
         `[the message](buzz://message?channel=${channelId}&id=${EVENT_HEX})`,
@@ -892,7 +904,7 @@ for (const locale of ["zh-CN", "en"]) {
         content: links.join(" "),
         variant: `authored-buzz-link-integration-test-${locale}`,
       });
-      const html = renderToStaticMarkup(
+      const html = renderWithLocale(
         React.createElement(
           QueryClientProvider,
           { client: new QueryClient() },
@@ -930,17 +942,17 @@ for (const locale of ["zh-CN", "en"]) {
       );
       assert.doesNotMatch(html, /\[object Object\]/);
       assert.equal((html.match(/underline-offset-4/g) ?? []).length, 3);
-    }));
+    }, locale === "en" ? "zh-CN" : "en"));
 
   test(`generic audio attachments render outside paragraph markup (${locale})`, () =>
-    withPlatformLocale(locale, () => {
+    withPlatformLocale(locale, (renderWithLocale) => {
       const href = "https://relay.example/media/meeting.mp3";
       const markdown = renderCachedMarkdown({
         components: createMarkdownComponents(true, false),
         content: `[meeting.mp3](${href})`,
         variant: `generic-audio-block-integration-test-${locale}`,
       });
-      const html = renderToStaticMarkup(
+      const html = renderWithLocale(
         React.createElement(
           MarkdownRuntimeContext.Provider,
           {

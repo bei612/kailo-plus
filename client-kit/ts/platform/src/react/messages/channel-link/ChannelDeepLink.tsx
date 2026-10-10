@@ -4,6 +4,7 @@
 // admitted directory, clipboard and navigation consumers.
 import type * as React from "react";
 import { translateCurrent as t } from "../../../i18n";
+import { type Translate, useUiT } from "../../context";
 import {
   buildChannelLink,
   parseChannelLink,
@@ -36,7 +37,7 @@ type MessagePillProps<C extends SearchChannel> = ChannelLinkRuntime<C> & {
   link: ParsedMessageLink;
 };
 
-function formatChannelActivity(timestamp: string): string | null {
+function formatChannelActivity(timestamp: string, t: Translate): string | null {
   const activityAt = Date.parse(timestamp);
   if (!Number.isFinite(activityAt)) return null;
   const elapsedMinutes = Math.max(
@@ -55,14 +56,21 @@ function formatChannelActivity(timestamp: string): string | null {
   return t("channelLink.activeWeeks", { count: Math.floor(elapsedDays / 7) });
 }
 
-export function channelTooltipFooter(channel: SearchChannel) {
+export function channelTooltipFooter(
+  channel: SearchChannel,
+  translateUi: Translate = t,
+) {
   const details = [
     channel.visibility === "private"
-      ? t("channelLink.private")
-      : t("channelLink.public"),
-    channel.channelType === "forum" ? t("channelLink.forum") : null,
-    channel.archivedAt || channel.archived ? t("channelLink.archived") : null,
-    channel.lastMessageAt ? formatChannelActivity(channel.lastMessageAt) : null,
+      ? translateUi("channelLink.private")
+      : translateUi("channelLink.public"),
+    channel.channelType === "forum" ? translateUi("channelLink.forum") : null,
+    channel.archivedAt || channel.archived
+      ? translateUi("channelLink.archived")
+      : null,
+    channel.lastMessageAt
+      ? formatChannelActivity(channel.lastMessageAt, translateUi)
+      : null,
   ];
   return details.filter(Boolean).join(" · ");
 }
@@ -89,6 +97,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
     channel: C | undefined;
     children: React.ReactElement;
   }) {
+    const translateUi = useUiT();
     const { contentRef, onPointerMove } = useInlineTooltipPosition();
     const description = channel?.description?.trim();
     if (!channel) return children;
@@ -118,7 +127,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
               )}
               data-buzz-tooltip-metadata-type=""
             >
-              {channelTooltipFooter(channel)}
+              {channelTooltipFooter(channel, translateUi)}
             </span>
           </TooltipContent>
         </Tooltip>
@@ -150,6 +159,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
     label: string;
     openable?: boolean;
   }) {
+    const t = useUiT();
     return (
       <ChannelMetadataTooltip channel={channel}>
         <BuzzLinkChip
@@ -210,6 +220,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
     onOpenChannel,
     onOpenMessageLink,
   }: AuthoredDeepLinkProps) {
+    const t = useUiT();
     const channel = useChannelReference(channelId);
     const openable = isChannelReferenceOpenable(channel);
     const label = getReactNodeText(children);
@@ -264,6 +275,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
     interactive: boolean;
     messageLink: AuthoredMessageLink | null;
   }) {
+    const t = useUiT();
     const {
       channels,
       onOpenChannel,
@@ -457,6 +469,7 @@ export function createChannelDeepLinks<C extends SearchChannel>({
     interactive,
     onOpenChannel,
   }: ChannelReferenceChipProps) {
+    const t = useUiT();
     return (
       <ChannelMetadataTooltip channel={channel}>
         <BuzzLinkChip
