@@ -10164,3 +10164,26 @@ TypeScript check 11601, which is still running and not covered by the runtime
 transform. This isolated branch commit is a source checkpoint, not a type/full
 check or release acceptance. Full check, deployment and browser acceptance have
 not been run for this batch; no complete native integration claim is made.
+
+### Instruction frozen-input TypeScript result (2026-10-10)
+
+The preceding pending status records commit
+`b4b23975c584339f34ef1feb6040fabff1c30d0f`, not final type acceptance.
+Original check 11601 subsequently exited 2: all 25 TS2307 diagnostics came from
+the operator-created `format-source/` temporary copies inside the verification
+candidate. That owned directory was moved outside the TypeScript input to
+`/volumes/data/kailo/tmp/wren-instruction-format-source.ME5VD0`; no application
+source or `tsconfig.json` was changed or excluded to suppress a diagnostic.
+The original command was rerun in the same 4-CPU/4-GiB SDK:
+
+```sh
+sudo -n docker exec -w /cache/wren-instruction.ME5VD0 kailo-wren-query-sdk-itgs2n node /work/node_modules/typescript/bin/tsc --noEmit
+```
+
+Handle 95672 actually exited 0 with no diagnostics. In the existing log directory,
+`instruction-types.log` retains the first failure (SHA-256
+`bc68d64c3d82f1bf3d3e869422c3934178ae8fc80970ce01c72aa63bfe3e6f2f`), and
+`instruction-types-restored.log` is the empty successful diagnostic stream
+(`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+This result covers the frozen Instruction candidate only, not subsequent
+Dashboard changes, a full check, the running UI image build, or deployment.
