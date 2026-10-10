@@ -10095,3 +10095,89 @@ data-query/docker/docker-compose.yaml config --quiet` exits 1 at missing
 were found, but dedicated OIDC/identity/model delivery and the source-built UI
 release are not thereby provided. No `.env` was changed, service started,
 binding activated or live page/SQL/usage acceptance claimed by this build.
+
+### 2026-10-10 read-only native deployment and business-scope evidence
+
+The actual `platform-local-core-bff-1` database name and the original
+`platform-local-core-db-1` database both resolve to `kailo_core`. Original
+`psql -X -v ON_ERROR_STOP=1` queries inside `BEGIN READ ONLY` / `COMMIT`
+returned **zero rows** for `catalog.component_definition`,
+`catalog.component_release` and `catalog.application_binding`. Neither the
+running Core environment nor the sole local `.env` supplies
+`APPLICATION_ADAPTER_DIRECTORY_FILE`; query delivery/bootstrap directory
+inputs are also absent. The existing consumer remains
+`deploy/local/start-core.sh`'s `adapter_compose` branch, not a new registry.
+
+Existing tenant `Kailo Verify` (`6179e160-6055-4e9a-ae63-1793509c230c`) and
+workspace `Kailo` (`ad9a6443-f0a2-47d2-895d-f11b8fef9e38`) are ACTIVE, with
+three ACTIVE memberships each and an ACTIVE same-ID Buzz channel binding.
+These are observed business-scope facts, **not** consent to register a Wren
+binding or grant every member native access. No account identifiers, tokens
+or secret values were read into the evidence output, and no database writes
+or identity registration occurred.
+
+The existing owner-only native directory contains the original data directory,
+SQLite UI delivery file and two DATA_KEY files, but no model `config.yaml` or
+AI identity/provider delivery. Dedicated browser client/origin/native identity,
+OIDC secret-file and AI identity/provider inputs remain absent. Existing
+`bootstrap.sh --register-wren-native-clients` consumes those controlled facts;
+it cannot manufacture approved instance access or a platform binding. Original
+UI source build 91644 is independent of this activation boundary and remains
+running; no UI artifact or deployment success is claimed here.
+
+The verified AI digest above was subsequently delivered as the sole new
+`WREN_AI_IMAGE` entry in the existing ignored `deploy/local/.env`. A private
+owner-only byte-preserving backup is retained at
+`/volumes/data/kailo/tmp/wren-ai-delivery.6mloJT/env.before`; removing only the
+new entry compares equal to those original bytes (`cmp`, exit 0). No other
+configuration changed. The original Compose `config --quiet` command with
+the explicit `--env-file` now exits 1 at missing `WREN_AI_IDENTITY_DIR`:
+`dedicated native service identity delivery is required`. This is local
+artifact-configuration delivery only; no service, identity registration,
+binding, instance grant or native business operation was started.
+
+### 2026-10-10 dedicated native clients: actual controlled delivery
+
+SS-WRN-IDENTITY and the existing `bootstrap.sh --register-wren-native-clients`
+now have actual local inputs, not borrowed platform credentials. The native
+Compose project directory owns three independent random secrets: browser
+client, browser cookie and AI client. The browser env, AI `identity.json` and
+AI secret are mode 0600; their native parent directories are mode 0700.
+Seven non-secret keys in the sole ignored `.env` select the independent
+origin, native clients and delivery paths. Public host/bind and issuer remain
+derived from the existing configuration; port 58095 was checked unoccupied.
+Removing exactly those seven entries compares equal to owner-only backup
+`/volumes/data/kailo/tmp/wren-ai-delivery.6mloJT/env.before-native-clients`.
+
+The first command stopped before registration because the new derived keys
+preceded `PUBLIC_HOST`; they were moved after their existing dependencies.
+The second invocation created only the two dedicated clients but refused its
+final exact mapper readback: this Keycloak normalizes the audience mapper by
+adding `introspection.token.claim=true`. The original producer now explicitly
+requests that same observed field, retaining exact config comparison rather
+than accepting arbitrary mapper differences. The only source change in this
+batch is that mapper field; inherited bootstrap changes are not part of it.
+
+Original registration then exited 0. Removing that production field caused
+the same original verifier to exit 1; byte-restoration and original readback
+exited 0. Bootstrap SHA-256 before/after mutation is
+`59d8ea53ce60a1a042dbbd2c9c68c7fcaf64a6d7e83bbb4b0553beeae10057c4`.
+Existing clients/secrets were not deleted, replaced or rotated by verification.
+Logs are `native-client-registration{,-negative,-restored}.log` under the
+backup directory above. Positive/restored SHA-256 is
+`eb0544b7b2aa1716c1093ad0311188dc1e2de0353c076fa0e89dedf0f0b32028`;
+negative SHA-256 is
+`9a07db6e892db660f5de39f892ca7d7ba695c91874196ecccc977ccc352ac2d6`.
+
+Actual AI client-credentials issuance and signature/issuer/audience verification
+with the existing SDK's JOSE implementation passed. The sole audience and
+authorized party are the dedicated AI client; no native instance entitlement
+is present. The initial direct request from the isolated SDK failed; the
+successful check used the original host IdP endpoint and piped the response
+to the SDK without printing or persisting credentials/tokens. Its sanitized
+`native-ai-token-verification-restored.log` SHA-256 is
+`79a6d0c735de0be9fac6ff6db611f8566e293bf03621a6ebd7d1a7da0c2ff2c5`.
+No HUMAN permission, instance claim, Catalog registration or binding was granted.
+The final original Compose preflight still exits 1 at `WREN_UI_IMAGE`; its
+single source build remains in progress. Registration and token verification
+do not constitute native service startup, SQL execution or page acceptance.

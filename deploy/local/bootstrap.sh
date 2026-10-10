@@ -673,7 +673,8 @@ try:
         "name": "native-service-audience", "protocol": "openid-connect",
         "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
         "config": {"included.custom.audience": service_id, "access.token.claim": "true",
-                   "id.token.claim": "false", "userinfo.token.claim": "false"},
+                   "id.token.claim": "false", "userinfo.token.claim": "false",
+                   "introspection.token.claim": "true"},
     }
     desired = [
         {"clientId": browser_id, "enabled": True, "protocol": "openid-connect",
