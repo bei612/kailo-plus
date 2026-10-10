@@ -9,6 +9,10 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('task reports preserve native activity evidence and legacy absence', () {
+    final rows = jsonDecode(File('../../contracts/samples/task-state-reports.sample.json').readAsStringSync()) as List;
+    expect(rows.map((row) => TaskStateReport.fromJson(row).toJson()).toList(), rows);
+  });
   test('file storage revision IO preserves exact versions, empty text and binary', () {
     final rows = jsonDecode(File('../../contracts/samples/file-storage-revision-io.sample.json').readAsStringSync()) as List;
     for (final row in rows) {
@@ -737,6 +741,8 @@ void main() {
       jsonDecode(jsonEncode(typed.map((page) => page.toJson()).toList())),
       equals(original),
     );
+    original[0]['runs'][0].remove('executionTrace');
+    expect(original.map((page) => AutomationRunPage.fromJson(page).toJson()).toList(), original);
   });
   test('manual run capability and deleted definition preserve wire fields', () {
     final original =

@@ -31,6 +31,12 @@
         "observation": "PROJECTION_DELAYED",
         "createdAt": "2026-10-04T10:00:00Z"
       },
+      "executionTrace": [
+        {"stepId":"pause","status":"completed","startedAt":"2026-10-04T10:00:00Z","completedAt":"2026-10-04T10:00:02Z","output":{"workflowId":"isolated-fixture-workflow","runId":"00000000-0000-0000-0000-000000000015","historyEventId":17}},
+        {"stepId":"approve","status":"waiting_approval","output":{"actionExecutionId":"00000000-0000-0000-0000-000000000014","approvalWorkflowId":"isolated-fixture-step-approval"}},
+        {"stepId":"publish","status":"unknown","error":"EXTERNAL_RESULT_UNKNOWN","output":{"eventId":"fixture-native-event","actionExecutionId":"00000000-0000-0000-0000-000000000012"}},
+        {"stepId":"future","status":"pending","output":{}}
+      ],
       "progress": "native completed",
       "usageEventIds": ["00000000-0000-0000-0000-000000000013"]
     }],

@@ -1,5 +1,6 @@
 {
   "name": "Delayed channel reply",
+  "description": "Wait before replying to the original channel thread.",
   "formatVersion": 2,
   "trigger": {"kind": "CHANNEL_MESSAGE"},
   "steps": [

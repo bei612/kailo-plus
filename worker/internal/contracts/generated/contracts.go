@@ -430,6 +430,9 @@
 //    automationStep, err := UnmarshalAutomationStep(bytes)
 //    bytes, err = automationStep.Marshal()
 //
+//    automationStepTrace, err := UnmarshalAutomationStepTrace(bytes)
+//    bytes, err = automationStepTrace.Marshal()
+//
 //    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
 //    bytes, err = automationVersionContent.Marshal()
 //
@@ -2079,6 +2082,16 @@ func (r *AutomationStep) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationStepTrace(data []byte) (AutomationStepTrace, error) {
+	var r AutomationStepTrace
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationStepTrace) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, error) {
 	var r AutomationVersionContent
 	err := json.Unmarshal(data, &r)
@@ -3473,6 +3486,8 @@ type ApplicationBindingCreateSecretRef struct {
 type AutomationVersionContentClass struct {
 	Action         *AutomationVersionContentAction `json:"action,omitempty"`
 	ApprovalPolicy *ApprovalPolicyElement          `json:"approvalPolicy,omitempty"`
+	// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+	Description *string `json:"description,omitempty"`
 	// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
 	FormatVersion *int64 `json:"formatVersion,omitempty"`
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
@@ -4292,6 +4307,8 @@ type AutomationDetailView struct {
 }
 
 type AutomationElement struct {
+	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+	CreatedAt                      *string         `json:"createdAt,omitempty"`
 	DelegationID                   *string         `json:"delegationId,omitempty"`
 	ExecutorInstallationResourceID string          `json:"executorInstallationResourceId"`
 	OwnerPrincipalID               string          `json:"ownerPrincipalId"`
@@ -4300,7 +4317,10 @@ type AutomationElement struct {
 	ResourceState                  ResourceState   `json:"resourceState"`
 	ResourceVersion                int64           `json:"resourceVersion"`
 	State                          AutomationState `json:"state"`
-	WorkspaceID                    string          `json:"workspaceId"`
+	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+	// UUID、审计投递时间或浏览器时钟推测。
+	UpdatedAt   *string `json:"updatedAt,omitempty"`
+	WorkspaceID string  `json:"workspaceId"`
 }
 
 // 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
@@ -4343,6 +4363,8 @@ type AutomationRunPage struct {
 
 // 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
 type RunElement struct {
+	// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+	ExecutionTrace []ExecutionTraceElement `json:"executionTrace,omitempty"`
 	// 原 TaskProjection 进度；缺省不推测百分比或成功。
 	Progress *string `json:"progress,omitempty"`
 	// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
@@ -4350,6 +4372,28 @@ type RunElement struct {
 	Task             StepApprovalTaskClass  `json:"task"`
 	// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
 	UsageEventIDS []string `json:"usageEventIds"`
+}
+
+// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+// history。时间仅来自原生事实，未知时省略。
+type ExecutionTraceElement struct {
+	// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+	CompletedAt *string              `json:"completedAt,omitempty"`
+	Error       *ReasonCode          `json:"error,omitempty"`
+	Output      ExecutionTraceOutput `json:"output"`
+	// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+	StartedAt *string              `json:"startedAt,omitempty"`
+	Status    AutomationStepStatus `json:"status"`
+	StepID    string               `json:"stepId"`
+}
+
+type ExecutionTraceOutput struct {
+	ActionExecutionID  *string `json:"actionExecutionId,omitempty"`
+	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
+	EventID            *string `json:"eventId,omitempty"`
+	HistoryEventID     *int64  `json:"historyEventId,omitempty"`
+	RunID              *string `json:"runId,omitempty"`
+	WorkflowID         *string `json:"workflowId,omitempty"`
 }
 
 // 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
@@ -4383,6 +4427,8 @@ type StepApprovalTaskClass struct {
 
 // 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
 type AutomationRunView struct {
+	// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+	ExecutionTrace []ExecutionTraceElement `json:"executionTrace,omitempty"`
 	// 原 TaskProjection 进度；缺省不推测百分比或成功。
 	Progress *string `json:"progress,omitempty"`
 	// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
@@ -4405,6 +4451,8 @@ type AutomationVersionView struct {
 }
 
 type AutomationView struct {
+	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+	CreatedAt                      *string         `json:"createdAt,omitempty"`
 	DelegationID                   *string         `json:"delegationId,omitempty"`
 	ExecutorInstallationResourceID string          `json:"executorInstallationResourceId"`
 	OwnerPrincipalID               string          `json:"ownerPrincipalId"`
@@ -4413,7 +4461,10 @@ type AutomationView struct {
 	ResourceState                  ResourceState   `json:"resourceState"`
 	ResourceVersion                int64           `json:"resourceVersion"`
 	State                          AutomationState `json:"state"`
-	WorkspaceID                    string          `json:"workspaceId"`
+	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+	// UUID、审计投递时间或浏览器时钟推测。
+	UpdatedAt   *string `json:"updatedAt,omitempty"`
+	WorkspaceID string  `json:"workspaceId"`
 }
 
 type CapabilityContractPage struct {
@@ -5741,11 +5792,35 @@ type AutomationStep struct {
 	Topic *string `json:"topic,omitempty"`
 }
 
+// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+// history。时间仅来自原生事实，未知时省略。
+type AutomationStepTrace struct {
+	// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+	CompletedAt *string                   `json:"completedAt,omitempty"`
+	Error       *ReasonCode               `json:"error,omitempty"`
+	Output      AutomationStepTraceOutput `json:"output"`
+	// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+	StartedAt *string              `json:"startedAt,omitempty"`
+	Status    AutomationStepStatus `json:"status"`
+	StepID    string               `json:"stepId"`
+}
+
+type AutomationStepTraceOutput struct {
+	ActionExecutionID  *string `json:"actionExecutionId,omitempty"`
+	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
+	EventID            *string `json:"eventId,omitempty"`
+	HistoryEventID     *int64  `json:"historyEventId,omitempty"`
+	RunID              *string `json:"runId,omitempty"`
+	WorkflowID         *string `json:"workflowId,omitempty"`
+}
+
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 // 配置或凭据。
 type AutomationVersionContent struct {
 	Action         *AutomationVersionContentActionClass `json:"action,omitempty"`
 	ApprovalPolicy *ApprovalPolicyElement               `json:"approvalPolicy,omitempty"`
+	// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+	Description *string `json:"description,omitempty"`
 	// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
 	FormatVersion *int64 `json:"formatVersion,omitempty"`
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
@@ -6082,6 +6157,9 @@ type FluffyRuntimeReplyPolicyMapping struct {
 // Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
 // 单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。
 type TaskStateReport struct {
+	// AgentTask 的 ProjectAgentTaskState Activity 原生执行 ID，仅由 ActivityInfo 投递。Core
+	// 校验同固定执行链的已调度载荷后生成步骤投影；旧 writer/修复报告缺省时保留原轨迹，不推测或清空。
+	ActivityID *string `json:"activityId,omitempty"`
 	// 报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
 	EventID       int64      `json:"eventId"`
 	Progress      *string    `json:"progress,omitempty"`
@@ -7358,6 +7436,19 @@ const (
 	AutomationStateDRAFT    AutomationState = "DRAFT"
 	Enabled                 AutomationState = "ENABLED"
 	Paused                  AutomationState = "PAUSED"
+)
+
+type AutomationStepStatus string
+
+const (
+	AutomationStepStatusWaitingApproval AutomationStepStatus = "waiting_approval"
+	Cancelled                           AutomationStepStatus = "cancelled"
+	Completed                           AutomationStepStatus = "completed"
+	Failed                              AutomationStepStatus = "failed"
+	Pending                             AutomationStepStatus = "pending"
+	Running                             AutomationStepStatus = "running"
+	Skipped                             AutomationStepStatus = "skipped"
+	Unknown                             AutomationStepStatus = "unknown"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close

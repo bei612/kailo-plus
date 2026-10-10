@@ -582,7 +582,7 @@ test("ordered automation steps retain IDs, duration, names and version discrimin
   const original = JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
   const typed: AutomationVersionContent = original;
   ok((typed.formatVersion === 2 || typed.formatVersion === 3) && typed.steps && typed.action === undefined);
-  const reconstructed: AutomationVersionContent = {name:typed.name,formatVersion:typed.formatVersion,
+  const reconstructed: AutomationVersionContent = {name:typed.name,description:typed.description,formatVersion:typed.formatVersion,
     trigger: {kind:typed.trigger.kind,textPrefix:typed.trigger.textPrefix,filter:typed.trigger.filter,
       mentionPrincipalId:typed.trigger.mentionPrincipalId,scheduleSpec:typed.trigger.scheduleSpec},
     steps:typed.steps.map((step) => ({id:step.id,name:step.name,action:step.action,duration:step.duration,text:step.text})),resultTarget:typed.resultTarget};
@@ -603,6 +603,14 @@ test("component release approval preserves deployment subject and NONE host API"
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
+test("task reports preserve native activity evidence and legacy absence", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/task-state-reports.sample.json", import.meta.url), "utf8");
+  const typed: import("../src/generated/contracts.js").TaskStateReport[] = JSON.parse(raw);
+  const back = typed.map(row => ({ workflowId: row.workflowId, runId: row.runId, eventId: row.eventId,
+    status: row.status, waitingReason: row.waitingReason, progress: row.progress, activityId: row.activityId }));
+  deepStrictEqual(JSON.parse(JSON.stringify(back)), JSON.parse(raw));
+});
+
 test("automation run pages preserve UNKNOWN and empty page", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-run-pages.sample.json", import.meta.url), "utf8");
   const original: unknown = JSON.parse(raw);
@@ -613,19 +621,37 @@ test("automation run pages preserve UNKNOWN and empty page", () => {
       task: run.task,
       stepApprovalTask: run.stepApprovalTask,
       progress: run.progress,
+      executionTrace: run.executionTrace?.map(step => ({
+        stepId: step.stepId, status: step.status, startedAt: step.startedAt,
+        completedAt: step.completedAt, error: step.error,
+        output: { eventId: step.output.eventId, workflowId: step.output.workflowId,
+          runId: step.output.runId, historyEventId: step.output.historyEventId,
+          actionExecutionId: step.output.actionExecutionId, approvalWorkflowId: step.output.approvalWorkflowId },
+      })),
       usageEventIds: run.usageEventIds,
     })),
     nextCursor: page.nextCursor,
   }));
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+  const legacy = JSON.parse(raw) as AutomationRunPage[];
+  delete legacy[0]!.runs[0]!.executionTrace;
+  const roundtrip: AutomationRunPage[] = JSON.parse(JSON.stringify(legacy));
+  ok(roundtrip[0]!.runs[0]!.executionTrace === undefined);
 });
 
 test("manual capability and deleted definition preserve optional compatibility", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-manual-delete.sample.json", import.meta.url), "utf8");
   const typed: AutomationDetailView[] = JSON.parse(raw);
-  const reconstructed: AutomationDetailView[] = typed.map(detail => ({ automation: detail.automation,
+  const reconstructed: AutomationDetailView[] = typed.map(detail => ({ automation: {
+    resourceId:detail.automation.resourceId,workspaceId:detail.automation.workspaceId,
+    ownerPrincipalId:detail.automation.ownerPrincipalId,executorInstallationResourceId:detail.automation.executorInstallationResourceId,
+    resourceVersion:detail.automation.resourceVersion,resourceState:detail.automation.resourceState,state:detail.automation.state,
+    pinnedVersionAssetId:detail.automation.pinnedVersionAssetId,delegationId:detail.automation.delegationId,
+    createdAt:detail.automation.createdAt,updatedAt:detail.automation.updatedAt},
     versions: detail.versions, delegations: detail.delegations, canManage: detail.canManage, canRun: detail.canRun }));
   ok(typed[0]!.canRun === undefined && typed[1]!.canRun === true && typed[2]!.automation.state === "DELETED");
+  ok(typed[0]!.automation.createdAt === undefined && typed[0]!.automation.updatedAt === undefined);
+  ok(typed[2]!.automation.createdAt === undefined && typed[2]!.automation.updatedAt !== undefined);
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 

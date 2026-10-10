@@ -270,7 +270,14 @@ async fn project_task_state(
         // 同样的体重试多少次都一样（06 §5.1）。
         return StatusCode::BAD_REQUEST.into_response();
     };
-    match crate::task_projection::apply(&state.pool, &report, false).await {
+    let trace = match crate::automation::run_trace::capture(&state, &report).await {
+        Ok(trace) => trace,
+        Err(error) => {
+            tracing::warn!(workflow_id=%report.workflow_id, error=%error, "步骤投影证据尚不可核证");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    match crate::task_projection::apply(&state.pool, &report, false, trace.as_ref()).await {
         Ok(Some(a)) => (
             StatusCode::OK,
             Json(ProjectTaskStateResponse {

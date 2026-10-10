@@ -1049,6 +1049,10 @@ export interface AutomationVersionContentClass {
     action?:         AutomationVersionContentAction;
     approvalPolicy?: ApprovalPolicyElement;
     /**
+     * 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+     */
+    description?: string;
+    /**
      * 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
      */
     formatVersion?: number;
@@ -2448,6 +2452,10 @@ export interface AutomationDetailView {
 }
 
 export interface AutomationElement {
+    /**
+     * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+     */
+    createdAt?:                     string;
     delegationId?:                  string;
     executorInstallationResourceId: string;
     ownerPrincipalId:               string;
@@ -2456,7 +2464,12 @@ export interface AutomationElement {
     resourceState:                  ResourceState;
     resourceVersion:                number;
     state:                          AutomationState;
-    workspaceId:                    string;
+    /**
+     * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+     * UUID、审计投递时间或浏览器时钟推测。
+     */
+    updatedAt?:  string;
+    workspaceId: string;
 }
 
 /**
@@ -2525,6 +2538,10 @@ export interface AutomationRunPage {
  */
 export interface RunElement {
     /**
+     * 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+     */
+    executionTrace?: ExecutionTraceElement[];
+    /**
      * 原 TaskProjection 进度；缺省不推测百分比或成功。
      */
     progress?: string;
@@ -2537,6 +2554,45 @@ export interface RunElement {
      * 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
      */
     usageEventIds: string[];
+}
+
+/**
+ * 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+ * history。时间仅来自原生事实，未知时省略。
+ */
+export interface ExecutionTraceElement {
+    /**
+     * 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+     */
+    completedAt?: string;
+    error?:       ReasonCode;
+    output:       ExecutionTraceOutput;
+    /**
+     * 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+     */
+    startedAt?: string;
+    status:     AutomationStepStatus;
+    stepId:     string;
+}
+
+export interface ExecutionTraceOutput {
+    actionExecutionId?:  string;
+    approvalWorkflowId?: string;
+    eventId?:            string;
+    historyEventId?:     number;
+    runId?:              string;
+    workflowId?:         string;
+}
+
+export enum AutomationStepStatus {
+    Cancelled = "cancelled",
+    Completed = "completed",
+    Failed = "failed",
+    Pending = "pending",
+    Running = "running",
+    Skipped = "skipped",
+    Unknown = "unknown",
+    WaitingApproval = "waiting_approval",
 }
 
 /**
@@ -2616,6 +2672,10 @@ export enum WorkflowKind {
  */
 export interface AutomationRunView {
     /**
+     * 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+     */
+    executionTrace?: ExecutionTraceElement[];
+    /**
      * 原 TaskProjection 进度；缺省不推测百分比或成功。
      */
     progress?: string;
@@ -2645,6 +2705,10 @@ export interface AutomationVersionView {
 }
 
 export interface AutomationView {
+    /**
+     * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+     */
+    createdAt?:                     string;
     delegationId?:                  string;
     executorInstallationResourceId: string;
     ownerPrincipalId:               string;
@@ -2653,7 +2717,12 @@ export interface AutomationView {
     resourceState:                  ResourceState;
     resourceVersion:                number;
     state:                          AutomationState;
-    workspaceId:                    string;
+    /**
+     * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+     * UUID、审计投递时间或浏览器时钟推测。
+     */
+    updatedAt?:  string;
+    workspaceId: string;
 }
 
 export interface CapabilityContractPage {
@@ -4660,12 +4729,44 @@ export interface AutomationStep {
 }
 
 /**
+ * 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+ * history。时间仅来自原生事实，未知时省略。
+ */
+export interface AutomationStepTrace {
+    /**
+     * 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+     */
+    completedAt?: string;
+    error?:       ReasonCode;
+    output:       AutomationStepTraceOutput;
+    /**
+     * 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+     */
+    startedAt?: string;
+    status:     AutomationStepStatus;
+    stepId:     string;
+}
+
+export interface AutomationStepTraceOutput {
+    actionExecutionId?:  string;
+    approvalWorkflowId?: string;
+    eventId?:            string;
+    historyEventId?:     number;
+    runId?:              string;
+    workflowId?:         string;
+}
+
+/**
  * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
  * 配置或凭据。
  */
 export interface AutomationVersionContent {
     action?:         AutomationVersionContentActionClass;
     approvalPolicy?: ApprovalPolicyElement;
+    /**
+     * 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+     */
+    description?: string;
     /**
      * 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
      */
@@ -5101,6 +5202,11 @@ export interface FluffyRuntimeReplyPolicyMapping {
  * 单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。
  */
 export interface TaskStateReport {
+    /**
+     * AgentTask 的 ProjectAgentTaskState Activity 原生执行 ID，仅由 ActivityInfo 投递。Core
+     * 校验同固定执行链的已调度载荷后生成步骤投影；旧 writer/修复报告缺省时保留原轨迹，不推测或清空。
+     */
+    activityId?: string;
     /**
      * 报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
      */

@@ -1,4 +1,5 @@
 import { act } from "react";
+import { AutomationStepStatus, type AutomationStepTrace } from "@client-kit/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
@@ -55,11 +56,13 @@ async function setup(override: (request: BffRequest) => BffReply | undefined | P
 }
 async function trigger(host: HTMLElement) {
   await click(button(host, "View definition"));
-  await click(button(host, "Run once"));
+  await click(button(definition(), "Run once"));
+  expect(document.querySelector('[data-testid="workflow-detail-panel"]')).toBeNull();
   await click(button(document.body, "Review request"));
   await click(button(document.body, "Submit governed request"));
 }
-const history = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-testid="workflow-runs"]')!;
+const history = (_host: HTMLElement) => document.querySelector<HTMLElement>('[role="dialog"] [data-testid="workflow-detail-panel"] [data-testid="workflow-runs"]')!;
+const definition = () => document.querySelector<HTMLElement>('[role="dialog"] [data-testid="workflow-detail-panel"]')!;
 
 describe("original trigger to persisted run selection through governed automation", () => {
   it.each(["en", "zh-CN"] as const)("keeps the original compact run identity and absolute local timestamp in %s", async (locale) => {
@@ -67,7 +70,7 @@ describe("original trigger to persisted run selection through governed automatio
     if (locale === "en") await trigger(host);
     else {
       await click(button(host, "查看定义"));
-      await click(button(host, "运行一次"));
+      await click(button(definition(), "运行一次"));
       await click(button(document.body, "核对请求"));
       await click(button(document.body, "提交受治理请求"));
     }
@@ -113,14 +116,16 @@ describe("original trigger to persisted run selection through governed automatio
     expect(history(host).textContent).toContain("You do not have permission");
   });
 
-  it("selects the returned execution, opens its real trace and follows the existing task reader", async () => {
+  it("selects a historical execution without inventing step evidence and follows the existing task reader", async () => {
     const { host, send } = await setup();
     await trigger(host);
     expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')?.getAttribute("aria-label")).toBe("execution");
-    const trace = history(host).querySelector<HTMLElement>('[data-testid="workflow-execution-trace"]')!;
-    expect(trace.textContent).toContain("Running");
-    await click(button(trace, "Action execution"));
+    const selected = history(host).querySelector<HTMLElement>('[data-testid="workflow-selected-run"]')!;
+    expect(selected.textContent).toContain("Running");
+    expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
+    expect(history(host).textContent).toContain("No steps recorded yet.");
+    await click(button(history(host), "Action execution"));
     expect(send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/execution" });
     expect(history(host).textContent).toContain("operation");
   });
@@ -139,7 +144,9 @@ describe("original trigger to persisted run selection through governed automatio
     projected = true;
     await click(button(history(host), "Refresh"));
     expect(history(host).querySelector('[data-testid="workflow-run-created"]')).toBeNull();
-    expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).not.toBeNull();
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).not.toBeNull();
+    expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
+    expect(history(host).textContent).toContain("No steps recorded yet.");
     expect(send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   });
 
@@ -149,7 +156,7 @@ describe("original trigger to persisted run selection through governed automatio
       ? { status: 202, body: { ...receipt, dispatchState: "UNKNOWN" } } : undefined);
     await trigger(host);
     expect(document.querySelector('[data-testid="workflow-editor-dialog"]')?.textContent).toContain("Outcome is not confirmed");
-    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).toBeNull();
+    expect(history(host)).toBeNull();
     confirmed = true;
     await click(button(document.body, "Re-check same request"));
     expect(history(host).querySelector('[data-testid="workflow-selected-run"]')).not.toBeNull();
@@ -171,9 +178,31 @@ describe("original trigger to persisted run selection through governed automatio
     const { host } = await setup((request) => request.path.endsWith("/runs") ? { status: 200,
       body: { ...page, runs: [{ ...run, task: { ...task, dispatchState: "UNKNOWN", taskStatus: "COMPLETED" } }] } } : undefined);
     await trigger(host);
-    const trace = history(host).querySelector('[data-testid="workflow-execution-trace"]')!;
-    expect(trace.textContent).toContain("Outcome not known yet");
-    expect(trace.textContent).not.toContain("Completed");
+    const selected = history(host).querySelector('[data-testid="workflow-selected-run"]')!;
+    expect(selected.textContent).toContain("Outcome not known yet");
+    expect(selected.textContent).not.toContain("Completed");
+    expect(history(host).querySelector('[data-testid="workflow-run-trace"]')).toBeNull();
+    expect(history(host).textContent).toContain("No steps recorded yet.");
+  });
+
+  it("renders only the authorized selected run's recorded steps without deriving their status from its parent", async () => {
+    const executionTrace: AutomationStepTrace[] = [{ stepId: "publish", status: AutomationStepStatus.Completed,
+      startedAt: "2026-10-07T01:00:00Z", completedAt: "2026-10-07T01:00:02Z", output: { eventId: "recorded-event" } },
+    { stepId: "future", status: AutomationStepStatus.Pending, output: {} }];
+    const { host, send } = await setup((request) => request.path.endsWith("/runs") ? { status: 200,
+      body: { ...page, runs: [{ ...run, executionTrace }] } } : undefined);
+    await trigger(host);
+    const trace = history(host).querySelector('[data-testid="workflow-run-trace"]')!;
+    expect(trace.textContent).toContain("publish");
+    expect(trace.textContent).toContain("completed");
+    expect(trace.textContent).toContain("2.0s");
+    expect(trace.textContent).toContain("future");
+    expect(trace.textContent).toContain("pending");
+    expect(trace.querySelectorAll("pre")).toHaveLength(1);
+    expect(trace.querySelector("pre")?.textContent).toContain('"eventId": "recorded-event"');
+    expect(history(host).querySelector('[data-testid="workflow-selected-run"]')?.textContent).toContain("Running");
+    await click(button(history(host), "Action execution"));
+    expect(send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/tasks/execution" });
   });
 
   it("does not carry a run reference across workspaces", async () => {
@@ -200,7 +229,7 @@ describe("original trigger to persisted run selection through governed automatio
     const { host } = await setup((request) => request.path.endsWith("/runs")
       ? { status: 200, body: { ...page, runs: [] } } : undefined, "zh-CN");
     await click(button(host, "查看定义"));
-    await click(button(host, "运行一次"));
+    await click(button(definition(), "运行一次"));
     await click(button(document.body, "核对请求"));
     await click(button(document.body, "提交受治理请求"));
     const pending = history(host).querySelector('[data-testid="workflow-run-created"]')!;

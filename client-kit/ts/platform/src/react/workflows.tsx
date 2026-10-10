@@ -233,6 +233,7 @@ function AutomationRunHistory({
 															<span>{t("tasks.execution")}</span>
 														</div>
 														<WorkflowRunTrace run={run} onOpen={setOpen} />
+														<div className="mt-3"><Button onClick={() => setOpen(run.task.actionExecutionId)}>{t("tasks.execution")}</Button></div>
 														<dl className="mt-3 space-y-3 text-xs">
 															<div><dt className="text-muted-foreground">{t("workflows.usage")}</dt>
 																<dd className="mt-1 break-all font-mono">{run.usageEventIds.join(", ") || "—"}</dd></div>

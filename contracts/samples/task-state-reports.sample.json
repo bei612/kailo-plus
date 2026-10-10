@@ -1,0 +1,4 @@
+[
+  {"workflowId":"fixture-workflow","runId":"00000000-0000-0000-0000-000000000015","eventId":8,"status":"RUNNING","waitingReason":"WAITING_TIMER","activityId":"native-projection-activity","progress":"native timer pending"},
+  {"workflowId":"fixture-workflow","runId":"00000000-0000-0000-0000-000000000015","eventId":9,"status":"COMPLETED"}
+]

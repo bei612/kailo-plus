@@ -594,8 +594,10 @@ describe("original workflow action menu with governed consumers", () => {
 
   it("edits the selected immutable version through form/YAML and retains UNKNOWN intent", async () => {
     const { host, send } = await setup();
-    await select(host.querySelector<HTMLSelectElement>('[data-testid="workflow-card-workflow"] select')!, "version-old");
-    await chooseAction(host, "Edit");
+    await click(button(host, "View definition"));
+    const panel = document.querySelector<HTMLElement>('[data-testid="workflow-detail-panel"]')!;
+    await select(panel.querySelector<HTMLSelectElement>("select")!, "version-old");
+    await click(button(panel, "Edit"));
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     expect(dialog.textContent).toContain("Selected older version");
     await click(button(dialog, "Workflow YAML"));
@@ -613,9 +615,15 @@ describe("original workflow action menu with governed consumers", () => {
   });
 
   it("copies the selected readable version but does not inherit source authority or execution state", async () => {
-    const { host, send } = await setup();
-    await select(host.querySelector<HTMLSelectElement>('[data-testid="workflow-card-workflow"] select')!, "version-old");
-    await chooseAction(host, "Copy as new draft");
+    const description = "Description from the selected immutable version";
+    const { host, send } = await setup(request => request.path.startsWith("/api/v1/automations/workflow?")
+      ? {status: 200, body: {...detail, versions: detail.versions.map(row => ({
+        ...row, content: {...row.content, description},
+      }))}} : undefined);
+    await click(button(host, "View definition"));
+    const panel = document.querySelector<HTMLElement>('[data-testid="workflow-detail-panel"]')!;
+    const row = [...panel.querySelectorAll("tr")].find(row => row.textContent?.includes("version-old"))!;
+    await click(button(row, "Copy as new draft"));
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     const executor = [...dialog.querySelectorAll("label")].find((label) => label.textContent?.startsWith("Executor installation"))!;
     await select(executor.querySelector("select")!, "executor");
@@ -623,7 +631,7 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Submit governed request"));
     const command = writes(send)[0];
     expect(command).toMatchObject({ actionKey: "automation.create", workspaceId: "workspace", executorInstallationResourceId: "executor",
-      automationVersionContent: { name: "Selected older version" } });
+      automationVersionContent: { name: "Selected older version", description } });
     expect(command).not.toHaveProperty("resourceId");
     expect(command).not.toHaveProperty("delegationId");
     expect(command).not.toHaveProperty("assetId");
@@ -639,8 +647,8 @@ describe("original workflow action menu with governed consumers", () => {
       await click(button(dialog, "Review request"));
       await click(button(dialog, "Submit governed request"));
       expect(writes(send)[0]).toMatchObject({ actionKey, resourceId: "workflow", resourceVersion: 2 });
-      expect(host.querySelector('[data-testid="workflow-card-workflow"]')?.textContent).toContain("Enabled");
       expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+      expect(host.querySelector('[role="switch"]')?.getAttribute("aria-label")).toBe("Disable workflow");
     });
 
   it("does not expose ungranted management or run commands", async () => {
@@ -667,8 +675,8 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Submit governed request"));
     expect(writes(send)[0]).toMatchObject({ actionKey: "automation.enable", assetId: "version-old", assetVersion: 1,
       delegationId: "grant", delegationVersion: 1, resourceId: "workflow", resourceVersion: 2 });
-    const state = host.querySelector<HTMLElement>('[data-testid="workflow-card-state"]')!;
-    expect(state.textContent).toBe("Paused");
+    const state = host.querySelector<HTMLElement>('[role="switch"]')!;
+    expect(state.getAttribute("aria-label")).toBe("Enable workflow");
     // The open confirmation intentionally aria-hides its background, not its visual layout.
     expect(state.closest('.sr-only, [hidden]')).toBeNull();
     expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");

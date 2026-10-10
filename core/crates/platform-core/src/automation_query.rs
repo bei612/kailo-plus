@@ -77,6 +77,7 @@ struct RunRow {
     #[sqlx(flatten)]
     task: crate::governance_api::TaskRow,
     progress: Option<String>,
+    execution_trace: Option<Value>,
     usage_event_ids: Vec<Uuid>,
 }
 
@@ -85,7 +86,7 @@ fn run_query() -> String {
     // when admission refuses before an Invocation exists. Do not join through
     // Invocation or filter a globally limited /tasks result.
     format!(
-        "select task.*, tp.progress,
+        "select task.*, tp.progress, tp.execution_trace,
         array(select u.id from outbox.usage_event u
             where u.tenant_id=$1 and u.workspace_id=$5 and u.operation_id=task.operation_id
             order by u.id) usage_event_ids
@@ -254,7 +255,7 @@ mod run_history_tests {
                 reason_code text,approval_workflow_id text,temporal_workflow_id text,created_at timestamptz);
             create table projection.approval_projection(workflow_id text,status text);
             create table projection.workflow_ref(workflow_id text,projection_state text,created_at timestamptz,kind text);
-            create table projection.task_projection(workflow_id text,status text,waiting_reason text,observation_gap bool,progress text);
+            create table projection.task_projection(workflow_id text,status text,waiting_reason text,observation_gap bool,progress text,execution_trace jsonb);
             create table outbox.usage_event(id uuid,tenant_id uuid,workspace_id uuid,operation_id uuid);")
             .execute(&mut *tx).await.unwrap();
         sqlx::raw_sql(
@@ -287,8 +288,16 @@ mod run_history_tests {
         sqlx::query("update admission.action_execution set temporal_workflow_id='run',gate_state='ALLOWED',dispatch_state='UNKNOWN' where id=$1")
             .bind(Uuid::from_u128(3)).execute(&mut *tx).await.unwrap();
         sqlx::raw_sql("insert into projection.workflow_ref values('run','UNKNOWN',now(),null);
-            insert into projection.task_projection values('run','RUNNING','BILLING_UNAVAILABLE',false,'native completed');")
+            insert into projection.task_projection values('run','RUNNING','BILLING_UNAVAILABLE',false,'native completed',null);")
             .execute(&mut *tx).await.unwrap();
+        let trace = json!([{"stepId":"publish","status":"unknown","output":{"eventId":"native-reference"},"error":"EXTERNAL_RESULT_UNKNOWN"}]);
+        sqlx::query(
+            "update projection.task_projection set execution_trace=$1 where workflow_id='run'",
+        )
+        .bind(&trace)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         for n in 1..=3u128 {
             sqlx::query("insert into outbox.usage_event values($1,$2,$3,$4)")
                 .bind(Uuid::from_u128(100 + n))
@@ -316,6 +325,8 @@ mod run_history_tests {
             vec![Uuid::from_u128(3), Uuid::from_u128(2)]
         );
         assert_eq!(page[0].progress.as_deref(), Some("native completed"));
+        assert_eq!(page[0].execution_trace.as_ref(), Some(&trace));
+        assert!(page[1].execution_trace.is_none());
         assert_eq!(page[0].usage_event_ids, vec![Uuid::from_u128(101)]);
         let last = page.last().unwrap();
         let following: Vec<RunRow> = sqlx::query_as(&run_query())
@@ -537,6 +548,9 @@ pub async fn runs(
         if let Some(progress) = row.progress {
             value["progress"] = json!(progress);
         }
+        if let Some(trace) = row.execution_trace {
+            value["executionTrace"] = trace;
+        }
         values.push(value);
     }
     let mut page = json!({"automationResourceId":id,"runs":values});
@@ -554,6 +568,8 @@ struct AutomationRow {
     workspace_id: Uuid,
     owner_principal_id: Uuid,
     resource_version: i32,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
     resource_state: String,
     state: String,
     executor_installation_resource_id: Uuid,
@@ -565,6 +581,8 @@ struct AutomationRow {
     pinned_action: Option<Value>,
 }
 const ROW:&str="select r.id resource_id,d.workspace_id,r.owner_principal_id,r.version resource_version,
+    d.created_at,greatest(d.updated_at,(select max(v.updated_at) from catalog.automation_version v
+        where v.automation_resource_id=d.resource_id)) updated_at,
     r.state resource_state,d.state,d.executor_installation_resource_id,d.pinned_version_asset_id,d.delegation_id,
     pin.state pinned_version_state,asset.state pinned_asset_state,asset.projection_action_execution_id pinned_projection,pin.action pinned_action
     from catalog.resource r join catalog.automation_definition d on d.resource_id=r.id
@@ -681,6 +699,7 @@ async fn view(
     serde_json::from_value(
         json!({"resourceId":row.resource_id,"workspaceId":row.workspace_id,
         "ownerPrincipalId":row.owner_principal_id,"resourceVersion":row.resource_version,
+        "createdAt":row.created_at,"updatedAt":row.updated_at,
         "resourceState":row.resource_state,"state":row.state,
         "executorInstallationResourceId":row.executor_installation_resource_id,
         "pinnedVersionAssetId":row.pinned_version_asset_id,"delegationId":row.delegation_id}),
@@ -783,6 +802,7 @@ struct VersionRow {
     approval_policy_version: Option<i32>,
     result_target: String,
     name: Option<String>,
+    description: Option<String>,
 }
 async fn versions(
     state: &BffState,
@@ -793,7 +813,7 @@ async fn versions(
     limit: i64,
 ) -> Result<(Vec<contracts::AutomationVersionView>, Option<i64>), Response> {
     let rows:Vec<VersionRow>=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.version asset_version,
-        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,v.result_target,v.name
+        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,v.result_target,v.name,v.description
         from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
         where v.automation_resource_id=$1 and a.resource_id=$1 and a.tenant_id=$2
           and a.type_key='automation.version' and a.state<>'DELETED' and a.projection_action_execution_id is null
@@ -879,6 +899,7 @@ async fn versions(
             version.approval_policy_version,
             &version.result_target,
             version.name.as_deref(),
+            version.description.as_deref(),
         );
         if version.state != version.asset_state
             || collab_bridge::limits::canonical_digest(&content) != version.config_hash
@@ -921,6 +942,9 @@ async fn versions(
             .map_err(|error| error.respond(None))?;
         if let Some(name) = content.get("name") {
             exposed_content["name"] = name.clone();
+        }
+        if let Some(description) = content.get("description") {
+            exposed_content["description"] = description.clone();
         }
         if crate::automation::steps::approval(&content["action"]).is_none() {
             if let (Some(id), Some(version)) =

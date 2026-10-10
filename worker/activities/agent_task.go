@@ -114,6 +114,14 @@ func (c *CoreAPI) advanceAgentTaskOnce(ctx context.Context, in generated.AgentTa
 // ProjectAgentTaskState 消费唯一 TaskProjection 写入面的实际 ACK。HTTP 200
 // 可以是「更旧事件已忽略」，不能据此关闭尚未投影的 AgentTask 终态。
 func (c *CoreAPI) ProjectAgentTaskState(ctx context.Context, in generated.TaskStateReport) error {
+	info := activity.GetInfo(ctx)
+	if !info.IsWorkflowActivity() || info.IsLocalActivity || info.ActivityID == "" ||
+		info.WorkflowExecution.ID != in.WorkflowID || info.WorkflowExecution.RunID != in.RunID {
+		return temporal.NewNonRetryableApplicationError("AgentTask 投影原生 Activity 引用不成立", ErrTypeRejected, nil)
+	}
+	// A native association only: Core derives the trace from the original
+	// scheduled payload, timers and reconciled effects, never caller output.
+	in.ActivityID = &info.ActivityID
 	var ack struct {
 		Applied     *bool  `json:"applied"`
 		LastEventID *int64 `json:"lastEventId"`

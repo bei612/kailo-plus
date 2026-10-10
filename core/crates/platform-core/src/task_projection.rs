@@ -39,6 +39,7 @@ pub async fn apply(
     pool: &PgPool,
     report: &TaskStateReport,
     observation_gap: bool,
+    execution_trace: Option<&serde_json::Value>,
 ) -> Result<Option<Applied>, sqlx::Error> {
     let status = wire(&report.status);
     let mut tx = pool.begin().await?;
@@ -46,8 +47,8 @@ pub async fn apply(
         r#"
         insert into projection.task_projection
             (workflow_id, run_id, last_event_id, status, waiting_reason, progress,
-             observation_gap, updated_at)
-        values ($1, $2, $3, $4, $5, $6, $7, now())
+             observation_gap, execution_trace, updated_at)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, now())
         on conflict (workflow_id) do update set
             run_id          = excluded.run_id,
             last_event_id   = excluded.last_event_id,
@@ -55,6 +56,7 @@ pub async fn apply(
             waiting_reason  = excluded.waiting_reason,
             progress        = excluded.progress,
             observation_gap = excluded.observation_gap,
+            execution_trace = coalesce(excluded.execution_trace, projection.task_projection.execution_trace),
             updated_at      = now()
         where projection.task_projection.last_event_id < excluded.last_event_id
         returning last_event_id
@@ -66,6 +68,7 @@ pub async fn apply(
         report.waiting_reason,
         report.progress,
         observation_gap,
+        execution_trace,
     )
     .fetch_optional(&mut *tx)
     .await;
@@ -80,7 +83,8 @@ pub async fn apply(
                 "select last_event_id,
                     (run_id = $2 and status = $3
                      and waiting_reason is not distinct from $4
-                     and progress is not distinct from $5)
+                     and progress is not distinct from $5
+                     and ($6::jsonb is null or execution_trace is not distinct from $6))
                  from projection.task_projection where workflow_id = $1",
             )
             .bind(&report.workflow_id)
@@ -88,6 +92,7 @@ pub async fn apply(
             .bind(&status)
             .bind(&report.waiting_reason)
             .bind(&report.progress)
+            .bind(execution_trace)
             .fetch_optional(pool)
             .await?;
             return current
@@ -125,4 +130,106 @@ pub async fn apply(
         applied: true,
         last_event_id,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    #[ignore = "requires migrated automation_trace_verify_* PostgreSQL database"]
+    async fn automation_trace_same_event_collision_old_writer_and_body_rejection() {
+        let pool = PgPool::connect(&std::env::var("AUTOMATION_TRACE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let database: String = sqlx::query_scalar("select current_database()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(database.starts_with("automation_trace_verify_"));
+        let tenant = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        let ae = Uuid::new_v4();
+        let workflow = format!("trace-evidence:{ae}");
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,$2,'ACTIVE')")
+            .bind(tenant)
+            .bind(tenant.to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'SERVICE','ACTIVE')")
+            .bind(principal).bind(tenant).execute(&pool).await.unwrap();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+            values($1,$1,$2,'tenant.provision',1,$3,$3,$2,$4,'ALLOWED','DISPATCHED',$1)")
+            .bind(ae).bind(tenant).bind(principal).bind("0".repeat(64)).execute(&pool).await.unwrap();
+        sqlx::query("insert into projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,
+            tenant_id,operation_id,action_execution_id,projection_state) values($1,$2,'AgentTaskWorkflow',1,$3,$4,$4,'RUNNING')")
+            .bind(&workflow).bind(Uuid::new_v4().to_string()).bind(tenant).bind(ae).execute(&pool).await.unwrap();
+        let mut report: TaskStateReport = serde_json::from_value(json!({"workflowId":workflow,
+            "runId":Uuid::new_v4(),"eventId":1,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"})).unwrap();
+        let trace = json!([{"stepId":"publish","status":"unknown","output":{"eventId":"a".repeat(64)},"error":"EXTERNAL_RESULT_UNKNOWN"}]);
+        assert!(
+            apply(&pool, &report, false, Some(&trace))
+                .await
+                .unwrap()
+                .unwrap()
+                .applied
+        );
+        assert!(
+            !apply(&pool, &report, false, Some(&trace))
+                .await
+                .unwrap()
+                .unwrap()
+                .applied
+        );
+        let wrong = json!([{"stepId":"publish","status":"completed","output":{}}]);
+        assert!(apply(&pool, &report, false, Some(&wrong)).await.is_err());
+        report.event_id = 2;
+        assert!(
+            apply(&pool, &report, true, None)
+                .await
+                .unwrap()
+                .unwrap()
+                .applied
+        );
+        let retained: serde_json::Value = sqlx::query_scalar(
+            "select execution_trace from projection.task_projection where workflow_id=$1",
+        )
+        .bind(&workflow)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(retained, trace);
+        report.event_id = 3;
+        for malformed in [
+            json!([{"stepId":"publish","status":"completed","output":{"body":"must not persist"}}]),
+            json!([{"stepId":"publish","status":null,"output":{}}]),
+            json!([{"stepId":"publish","status":"accepted","output":{}}]),
+        ] {
+            assert!(apply(&pool, &report, false, Some(&malformed))
+                .await
+                .is_err());
+        }
+        let pending = json!([{"stepId":"next","status":"pending","output":{}}]);
+        let (left, right) = tokio::join!(
+            apply(&pool, &report, false, Some(&pending)),
+            apply(&pool, &report, false, Some(&wrong))
+        );
+        assert_ne!(
+            left.is_ok(),
+            right.is_ok(),
+            "same-event different traces cannot both be acknowledged"
+        );
+        report.event_id = 1;
+        assert!(
+            !apply(&pool, &report, false, Some(&wrong))
+                .await
+                .unwrap()
+                .unwrap()
+                .applied
+        );
+    }
 }

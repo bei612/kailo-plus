@@ -1473,6 +1473,10 @@ pub struct AutomationVersionContentClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
 
+    /// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
     /// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format_version: Option<i64>,
@@ -3636,6 +3640,10 @@ pub struct AutomationDetailView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationElement {
+    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_id: Option<String>,
 
@@ -3653,6 +3661,11 @@ pub struct AutomationElement {
     pub resource_version: i64,
 
     pub state: AutomationState,
+
+    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+    /// UUID、审计投递时间或浏览器时钟推测。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 
     pub workspace_id: String,
 }
@@ -3745,6 +3758,10 @@ pub struct AutomationRunPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunElement {
+    /// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_trace: Option<Vec<ExecutionTraceElement>>,
+
     /// 原 TaskProjection 进度；缺省不推测百分比或成功。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<String>,
@@ -3757,6 +3774,72 @@ pub struct RunElement {
 
     /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
     pub usage_event_ids: Vec<String>,
+}
+
+/// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+/// history。时间仅来自原生事实，未知时省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionTraceElement {
+    /// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ReasonCode>,
+
+    pub output: ExecutionTraceOutput,
+
+    /// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+
+    pub status: AutomationStepStatus,
+
+    pub step_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionTraceOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_event_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationStepStatus {
+    Cancelled,
+
+    Completed,
+
+    Failed,
+
+    Pending,
+
+    Running,
+
+    Skipped,
+
+    Unknown,
+
+    #[serde(rename = "waiting_approval")]
+    WaitingApproval,
 }
 
 /// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
@@ -3891,6 +3974,10 @@ pub enum WorkflowKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRunView {
+    /// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_trace: Option<Vec<ExecutionTraceElement>>,
+
     /// 原 TaskProjection 进度；缺省不推测百分比或成功。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<String>,
@@ -3929,6 +4016,10 @@ pub struct AutomationVersionView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationView {
+    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_id: Option<String>,
 
@@ -3946,6 +4037,11 @@ pub struct AutomationView {
     pub resource_version: i64,
 
     pub state: AutomationState,
+
+    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+    /// UUID、审计投递时间或浏览器时钟推测。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 
     pub workspace_id: String,
 }
@@ -6770,6 +6866,51 @@ pub struct AutomationStep {
     pub topic: Option<String>,
 }
 
+/// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+/// history。时间仅来自原生事实，未知时省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationStepTrace {
+    /// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ReasonCode>,
+
+    pub output: AutomationStepTraceOutput,
+
+    /// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+
+    pub status: AutomationStepStatus,
+
+    pub step_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationStepTraceOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_event_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+}
+
 /// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 /// 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6780,6 +6921,10 @@ pub struct AutomationVersionContent {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 
     /// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7395,6 +7540,11 @@ pub struct FluffyRuntimeReplyPolicyMapping {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskStateReport {
+    /// AgentTask 的 ProjectAgentTaskState Activity 原生执行 ID，仅由 ActivityInfo 投递。Core
+    /// 校验同固定执行链的已调度载荷后生成步骤投影；旧 writer/修复报告缺省时保留原轨迹，不推测或清空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_id: Option<String>,
+
     /// 报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
     pub event_id: i64,
 

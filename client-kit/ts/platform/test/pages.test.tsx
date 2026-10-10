@@ -3662,6 +3662,33 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(expression)).toHaveLength(2);
         text = text.replace(expression, "{}");
       }
+      if (source.name === "workflow-run-trace.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/workflows/ui/WorkflowRunTrace.tsx: retain only
+        // the original status/error/approval expressions in their consumers.
+        const icon = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "StepStatusIcon");
+        const trace = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "WorkflowRunTrace");
+        expect(trace?.getText(parsed)).toContain('<StepStatusIcon status={step.status} />');
+        for (const expression of [
+          'case "completed": return <Check className="h-4 w-4 text-green-500" />;',
+          'case "failed": return <X className="h-4 w-4 text-red-500" />;',
+          'case "waiting_approval": return <Clock className="h-4 w-4 text-amber-500" />;',
+          'default: return <Clock className="h-4 w-4 text-blue-500" />;',
+        ]) {
+          expect(icon?.getText(parsed)).toContain(expression);
+          expect(text.split(expression)).toHaveLength(2);
+          text = text.replace(expression, "");
+        }
+        for (const expression of [
+          '<p className={`mb-1 text-2xs font-medium uppercase tracking-[0.16em] ${step.status === "unknown" ? "text-muted-foreground" : "text-red-400"}`}>{t(step.status === "unknown" ? "tasks.waitingReason" : "workflows.trace.error")}</p>',
+          '<pre className={`max-h-32 overflow-auto rounded-lg px-3 py-2 font-mono text-xs ${step.status === "unknown" ? "bg-muted/40 text-muted-foreground" : "bg-red-500/10 text-red-400"}`}>{reasonText(step.error)}</pre>',
+          '<p className="mb-2 text-2xs font-medium uppercase tracking-[0.16em] text-amber-600">{t("workflows.trace.approval")}</p>',
+        ]) {
+          expect(trace?.getText(parsed)).toContain(expression);
+          expect(text.split(expression)).toHaveLength(2);
+          text = text.replace(expression, "");
+        }
+      }
       if (source.name === "members.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::RelayMemberRow.

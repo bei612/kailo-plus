@@ -14,6 +14,31 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestTaskStateReportsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "task-state-reports.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.TaskStateReport
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("Native projection activity or legacy absence changed")
+	}
+}
+
 func TestWebSearchQueryRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-search-query.sample.json"))
 	if err != nil {
@@ -242,14 +267,14 @@ func TestNativeHumanActionRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var sample struct {
-		Trust           generated.ApplicationNativeHumanIdentity `json:"trust"`
-		Request         generated.NativeHumanActionRequest       `json:"request"`
-		Result          generated.NativeHumanActionResult        `json:"result"`
-		ResourceRequest generated.NativeHumanActionRequest       `json:"resourceRequest"`
-		ResourceResult  generated.NativeHumanResourceResult      `json:"resourceResult"`
-		ScopeRequest    generated.NativeHumanActionRequest       `json:"scopeRequest"`
-		ScopeResult     generated.NativeHumanScopeResult         `json:"scopeResult"`
-		ReadReceiptRequest generated.NativeHumanActionRequest    `json:"readReceiptRequest"`
+		Trust              generated.ApplicationNativeHumanIdentity `json:"trust"`
+		Request            generated.NativeHumanActionRequest       `json:"request"`
+		Result             generated.NativeHumanActionResult        `json:"result"`
+		ResourceRequest    generated.NativeHumanActionRequest       `json:"resourceRequest"`
+		ResourceResult     generated.NativeHumanResourceResult      `json:"resourceResult"`
+		ScopeRequest       generated.NativeHumanActionRequest       `json:"scopeRequest"`
+		ScopeResult        generated.NativeHumanScopeResult         `json:"scopeResult"`
+		ReadReceiptRequest generated.NativeHumanActionRequest       `json:"readReceiptRequest"`
 	}
 	if err := json.Unmarshal(raw, &sample); err != nil {
 		t.Fatal(err)
@@ -918,6 +943,26 @@ func TestAutomationRunPagesRoundtrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(original, back) {
 		t.Fatalf("run history round-trip changed fields: %s", encoded)
+	}
+	legacy := original.([]any)[0].(map[string]any)["runs"].([]any)[0].(map[string]any)
+	delete(legacy, "executionTrace")
+	raw, err = json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typed = nil
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatal("Legacy projection acquired invented trace")
 	}
 }
 

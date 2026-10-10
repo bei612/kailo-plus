@@ -6,6 +6,17 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn task_state_reports_preserve_native_activity_and_legacy_absence() {
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("task-state-reports.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::TaskStateReport> = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), value);
+}
+
+#[test]
 fn web_search_query_preserves_original_operators_and_optional_absence() {
     let value: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("web-search-query.sample.json")).unwrap(),
@@ -591,6 +602,13 @@ fn automation_run_pages_roundtrip_preserves_unknown_and_empty_page() {
     let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let typed: Vec<contracts::AutomationRunPage> = serde_json::from_str(&raw).unwrap();
     assert_eq!(original, serde_json::to_value(typed).unwrap());
+    let mut legacy = original;
+    legacy[0]["runs"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("executionTrace");
+    let typed: Vec<contracts::AutomationRunPage> = serde_json::from_value(legacy.clone()).unwrap();
+    assert_eq!(legacy, serde_json::to_value(typed).unwrap());
 }
 
 #[test]

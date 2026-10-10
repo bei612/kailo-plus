@@ -10,6 +10,8 @@
     "workspaceId": {"type": "string", "format": "uuid"},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
     "resourceVersion": {"type": "integer", "minimum": 1},
+    "createdAt": {"type": "string", "description": "RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。"},
+    "updatedAt": {"type": "string", "description": "RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从 UUID、审计投递时间或浏览器时钟推测。"},
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},
     "state": {"$ref": "../enums/automation_state.schema.json"},
     "executorInstallationResourceId": {"type": "string", "format": "uuid"},

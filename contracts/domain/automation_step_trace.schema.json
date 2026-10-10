@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/automation_step_trace.schema.json",
+  "title": "AutomationStepTrace",
+  "description": "既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal history。时间仅来自原生事实，未知时省略。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stepId", "status", "output"],
+  "properties": {
+    "stepId": {"type": "string"},
+    "status": {"$ref": "../enums/automation_step_status.schema.json"},
+    "startedAt": {"type": "string", "description": "原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。"},
+    "completedAt": {"type": "string", "description": "原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。"},
+    "error": {"$ref": "../enums/reason_code.schema.json"},
+    "output": {
+      "title": "AutomationStepTraceOutput",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {"type": "string"},
+        "workflowId": {"type": "string"},
+        "runId": {"type": "string"},
+        "historyEventId": {"type": "integer"},
+        "actionExecutionId": {"type": "string", "format": "uuid"},
+        "approvalWorkflowId": {"type": "string"}
+      }
+    }
+  }
+}

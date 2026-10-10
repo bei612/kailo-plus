@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into projection.task_projection\n            (workflow_id, run_id, last_event_id, status, waiting_reason, progress,\n             observation_gap, execution_trace, updated_at)\n        values ($1, $2, $3, $4, $5, $6, $7, $8, now())\n        on conflict (workflow_id) do update set\n            run_id          = excluded.run_id,\n            last_event_id   = excluded.last_event_id,\n            status          = excluded.status,\n            waiting_reason  = excluded.waiting_reason,\n            progress        = excluded.progress,\n            observation_gap = excluded.observation_gap,\n            execution_trace = coalesce(excluded.execution_trace, projection.task_projection.execution_trace),\n            updated_at      = now()\n        where projection.task_projection.last_event_id < excluded.last_event_id\n        returning last_event_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_event_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "04f21497de8d3e2225003c19033cf669a050a1992161484791c0680e1cad0cd0"
+}

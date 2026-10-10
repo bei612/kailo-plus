@@ -8,6 +8,286 @@ use governance::{Params, Semantic};
 use serde_json::json;
 use uuid::Uuid;
 
+#[tokio::test]
+#[ignore = "requires an isolated migrated automation_dates_verify_* PostgreSQL database"]
+async fn original_version_writer_records_dates_and_preserves_legacy_and_rollback() {
+    use chrono::{DateTime, Utc};
+    let pool = sqlx::PgPool::connect(&std::env::var("AUTOMATION_DATES_TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let database: String = sqlx::query_scalar("select current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(database.starts_with("automation_dates_verify_"));
+    // Same read-time aggregation as AutomationView, not another stored clock.
+    const DATES: &str = "select d.created_at,greatest(d.updated_at,(select max(v.updated_at)
+        from catalog.automation_version v where v.automation_resource_id=d.resource_id))
+        from catalog.automation_definition d where resource_id=$1";
+    let mut tx = pool.begin().await.unwrap();
+    // Exercise the actual migration around a pre-existing definition, without
+    // falsifying an old timestamp or disabling the original scope constraints.
+    sqlx::raw_sql(include_str!(
+        "../../../../migrations/20261010020000_automation_timestamps.down.sql"
+    ))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let tenant = crate::agent_task::receipt_tests::fixture(&mut tx).await;
+    let (owner,workspace,installation):(Uuid,Uuid,Uuid) = sqlx::query_as("select r.owner_principal_id,i.workspace_id,i.resource_id
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id where r.tenant_id=$1 order by i.resource_id limit 1")
+        .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+    let legacy = Uuid::new_v4();
+    let current = Uuid::new_v4();
+    for resource in [legacy, current] {
+        sqlx::query("insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,
+            native_type,native_id,state,version) values($1,$2,'automation',$3,$4,'core','automation',$1::text,'PROVISIONING',1)")
+            .bind(resource).bind(tenant).bind(workspace).bind(owner).execute(&mut *tx).await.unwrap();
+    }
+    sqlx::query("insert into catalog.automation_definition(resource_id,workspace_id,executor_installation_resource_id,state,version)
+        values($1,$2,$3,'DRAFT',1)").bind(legacy).bind(workspace).bind(installation).execute(&mut *tx).await.unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../../migrations/20261010020000_automation_timestamps.up.sql"
+    ))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let legacy_dates: (Option<DateTime<Utc>>, Option<DateTime<Utc>>) = sqlx::query_as(DATES)
+        .bind(legacy)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(
+        legacy_dates,
+        (None, None),
+        "migration must not fabricate historical dates"
+    );
+    sqlx::query("insert into catalog.automation_definition(resource_id,workspace_id,executor_installation_resource_id,state,version)
+        values($1,$2,$3,'DRAFT',1)").bind(current).bind(workspace).bind(installation).execute(&mut *tx).await.unwrap();
+    let created: (DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(DATES)
+        .bind(current)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(created.0, created.1);
+    for resource in [legacy, current] {
+        let id = Uuid::new_v4();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+            values($1,$1,$2,$3,'automation.create',1,$4,$4,$5,'automation-dates-fixture','ALLOWED','DISPATCHED',$1)")
+            .bind(id).bind(tenant).bind(workspace).bind(owner).bind(resource).execute(&mut *tx).await.unwrap();
+        let ae = governance::lock_execution(&mut tx, id).await.unwrap();
+        let mut input = json!({"name":"Original version writer","trigger":{"kind":"CHANNEL_MESSAGE"},
+            "action":{"kind":"POST_MESSAGE","template":"Writer evidence"},"resultTarget":"TRIGGER_THREAD"});
+        if resource == current {
+            input["description"] = json!("  原版 YAML description\n");
+            input["trigger"] = json!({"kind":"SCHEDULE","scheduleSpec":{"everySeconds":60,"offsetSeconds":0,"catchupWindowSeconds":60}});
+            input["resultTarget"] = json!("CHANNEL");
+        }
+        let content = management_content(&input).unwrap();
+        // This is the same production writer called by create and publish_version;
+        // it is not a hand-written INSERT standing in for that consumer.
+        super::management_insert_version(&mut tx, &ae, resource, content.clone())
+            .await
+            .unwrap();
+        let stored: (Option<String>, String) = sqlx::query_as(
+            "select description,config_hash from catalog.automation_version where asset_id=$1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored.0.as_deref(),
+            input.get("description").and_then(serde_json::Value::as_str)
+        );
+        assert_eq!(stored.1, collab_bridge::limits::canonical_digest(&content));
+        let first: (Option<DateTime<Utc>>, DateTime<Utc>) = sqlx::query_as(DATES)
+            .bind(resource)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            first.0,
+            if resource == legacy {
+                None
+            } else {
+                Some(created.0)
+            }
+        );
+        if resource == current {
+            assert!(first.1 > created.1);
+        }
+        // Idempotency remains the original Asset/AE uniqueness boundary. A
+        // rejected replay cannot advance the definition timestamp.
+        sqlx::query("savepoint duplicate_writer")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            super::management_insert_version(&mut tx, &ae, resource, content)
+                .await
+                .is_err()
+        );
+        sqlx::query("rollback to savepoint duplicate_writer")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("release savepoint duplicate_writer")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("update catalog.automation_version set state=state where asset_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        // The pre-existing definition version fence rejects even a no-op UPDATE.
+        // A metadata writer must not weaken or silently advance that fence.
+        sqlx::query("savepoint unchanged_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(sqlx::query(
+            "update catalog.automation_definition set state=state where resource_id=$1"
+        )
+        .bind(resource)
+        .execute(&mut *tx)
+        .await
+        .is_err());
+        sqlx::query("rollback to savepoint unchanged_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("release savepoint unchanged_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let unchanged: (Option<DateTime<Utc>>, DateTime<Utc>) = sqlx::query_as(DATES)
+            .bind(resource)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(unchanged, first);
+        sqlx::query("savepoint changed_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("update catalog.automation_definition set state='DISABLED',version=version+1 where resource_id=$1")
+            .bind(resource).execute(&mut *tx).await.unwrap();
+        let changed: (Option<DateTime<Utc>>, DateTime<Utc>) = sqlx::query_as(DATES)
+            .bind(resource)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(changed.0, first.0);
+        assert!(changed.1 > first.1);
+        sqlx::query("rollback to savepoint changed_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("release savepoint changed_definition")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let restored: (Option<DateTime<Utc>>, DateTime<Utc>) = sqlx::query_as(DATES)
+            .bind(resource)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            restored, first,
+            "rolled back writes cannot leave date evidence"
+        );
+        if resource == current {
+            sqlx::query("update catalog.asset set state='PUBLISHED',version=version+1,projection_action_execution_id=null where id=$1")
+                .bind(id).execute(&mut *tx).await.unwrap();
+            sqlx::query(
+                "update catalog.automation_version set state='PUBLISHED' where asset_id=$1",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query("update catalog.automation_definition set pinned_version_asset_id=$2,version=version+1 where resource_id=$1")
+                .bind(resource).bind(id).execute(&mut *tx).await.unwrap();
+            // Consume the actual CREATE query used by Schedule reconciliation,
+            // not a second hand-written reconstruction that could omit fields.
+            let (_, _, reconstructed, hash): (Uuid, Uuid, serde_json::Value, String) =
+                sqlx::query_as(super::schedule::CREATE_VERSION_SQL)
+                    .bind(id)
+                    .bind(2_i32)
+                    .bind(tenant)
+                    .bind(resource)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            assert_eq!(reconstructed["name"], input["name"]);
+            assert_eq!(reconstructed["description"], input["description"]);
+            assert_eq!(
+                hash,
+                collab_bridge::limits::canonical_digest(&reconstructed)
+            );
+            sqlx::query("savepoint published_description")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert!(sqlx::query(
+                "update catalog.automation_version set description='replacement' where asset_id=$1"
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .is_err());
+            sqlx::query("rollback to savepoint published_description")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query("release savepoint published_description")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query("savepoint description_downgrade")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert!(sqlx::raw_sql(include_str!(
+                "../../../../migrations/20261010030000_automation_version_description.down.sql"
+            ))
+            .execute(&mut *tx)
+            .await
+            .is_err());
+            sqlx::query("rollback to savepoint description_downgrade")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query("release savepoint description_downgrade")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+    }
+    sqlx::query("savepoint downgrade_evidence")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::raw_sql(include_str!(
+            "../../../../migrations/20261010020000_automation_timestamps.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .is_err(),
+        "recorded date evidence stops downgrade"
+    );
+    sqlx::query("rollback to savepoint downgrade_evidence")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    pool.close().await;
+}
+
 #[test]
 fn trigger_filter_is_frozen_without_rewriting_legacy_prefix_or_version() {
     let legacy = json!({"trigger":{"kind":"CHANNEL_MESSAGE","textPrefix":" release "},
@@ -393,7 +673,8 @@ fn version_name_is_frozen_without_rewriting_unnamed_history() {
             None,
             None,
             "TRIGGER_THREAD",
-            Some("协作播报")
+            Some("协作播报"),
+            None
         )
     );
     for invalid in [
@@ -405,6 +686,40 @@ fn version_name_is_frozen_without_rewriting_unnamed_history() {
     ] {
         named["name"] = invalid;
         assert!(management_content(&named).is_err());
+    }
+}
+
+#[test]
+fn version_description_preserves_native_yaml_and_historical_absence() {
+    let plain = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
+    let old = management_content(&plain).unwrap();
+    assert!(old.get("description").is_none());
+    for description in ["", "  ", "原说明", " leading\nand trailing "] {
+        let mut described = plain.clone();
+        described["description"] = json!(description);
+        let frozen = management_content(&described).unwrap();
+        assert_eq!(frozen["description"], description);
+        assert_ne!(
+            collab_bridge::limits::canonical_digest(&old),
+            collab_bridge::limits::canonical_digest(&frozen)
+        );
+        assert_eq!(
+            frozen,
+            super::version_content(
+                old["trigger"].clone(),
+                old["action"].clone(),
+                None,
+                None,
+                "TRIGGER_THREAD",
+                None,
+                Some(description)
+            )
+        );
+    }
+    for invalid in [json!(null), json!(123), json!({}), json!([])] {
+        let mut described = plain.clone();
+        described["description"] = invalid;
+        assert!(management_content(&described).is_err());
     }
 }
 

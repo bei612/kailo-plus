@@ -143,6 +143,7 @@
 //     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationStep = automationStepFromJson(jsonString);
+//     final automationStepTrace = automationStepTraceFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
@@ -1087,6 +1088,12 @@ AutomationStep automationStepFromJson(String str) =>
     AutomationStep.fromJson(json.decode(str));
 
 String automationStepToJson(AutomationStep data) => json.encode(data.toJson());
+
+AutomationStepTrace automationStepTraceFromJson(String str) =>
+    AutomationStepTrace.fromJson(json.decode(str));
+
+String automationStepTraceToJson(AutomationStepTrace data) =>
+    json.encode(data.toJson());
 
 AutomationVersionContent automationVersionContentFromJson(String str) =>
     AutomationVersionContent.fromJson(json.decode(str));
@@ -4194,6 +4201,9 @@ class AutomationVersionContentClass {
   final ContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
 
+  ///固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+  final String? description;
+
   ///2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
   final int? formatVersion;
 
@@ -4209,6 +4219,7 @@ class AutomationVersionContentClass {
   AutomationVersionContentClass({
     this.action,
     this.approvalPolicy,
+    this.description,
     this.formatVersion,
     this.name,
     required this.resultTarget,
@@ -4224,6 +4235,7 @@ class AutomationVersionContentClass {
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        description: json["description"],
         formatVersion: json["formatVersion"],
         name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
@@ -4238,6 +4250,7 @@ class AutomationVersionContentClass {
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action?.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "description": description,
     "formatVersion": formatVersion,
     "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
@@ -7837,6 +7850,8 @@ class AutomationDetailView {
 }
 
 class AutomationElement {
+  ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+  final String? createdAt;
   final String? delegationId;
   final String executorInstallationResourceId;
   final String ownerPrincipalId;
@@ -7845,9 +7860,14 @@ class AutomationElement {
   final ResourceState resourceState;
   final int resourceVersion;
   final AutomationState state;
+
+  ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+  ///UUID、审计投递时间或浏览器时钟推测。
+  final String? updatedAt;
   final String workspaceId;
 
   AutomationElement({
+    this.createdAt,
     this.delegationId,
     required this.executorInstallationResourceId,
     required this.ownerPrincipalId,
@@ -7856,11 +7876,13 @@ class AutomationElement {
     required this.resourceState,
     required this.resourceVersion,
     required this.state,
+    this.updatedAt,
     required this.workspaceId,
   });
 
   factory AutomationElement.fromJson(Map<String, dynamic> json) =>
       AutomationElement(
+        createdAt: json["createdAt"],
         delegationId: json["delegationId"],
         executorInstallationResourceId: json["executorInstallationResourceId"],
         ownerPrincipalId: json["ownerPrincipalId"],
@@ -7869,10 +7891,12 @@ class AutomationElement {
         resourceState: resourceStateValues.map[json["resourceState"]]!,
         resourceVersion: json["resourceVersion"],
         state: automationStateValues.map[json["state"]]!,
+        updatedAt: json["updatedAt"],
         workspaceId: json["workspaceId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
     "delegationId": delegationId,
     "executorInstallationResourceId": executorInstallationResourceId,
     "ownerPrincipalId": ownerPrincipalId,
@@ -7881,6 +7905,7 @@ class AutomationElement {
     "resourceState": resourceStateValues.reverse[resourceState],
     "resourceVersion": resourceVersion,
     "state": automationStateValues.reverse[state],
+    "updatedAt": updatedAt,
     "workspaceId": workspaceId,
   });
 }
@@ -8049,6 +8074,9 @@ class AutomationRunPage {
 
 ///本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
 class RunElement {
+  ///原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+  final List<ExecutionTraceElement>? executionTrace;
+
   ///原 TaskProjection 进度；缺省不推测百分比或成功。
   final String? progress;
 
@@ -8060,6 +8088,7 @@ class RunElement {
   final List<String> usageEventIds;
 
   RunElement({
+    this.executionTrace,
     this.progress,
     this.stepApprovalTask,
     required this.task,
@@ -8067,6 +8096,13 @@ class RunElement {
   });
 
   factory RunElement.fromJson(Map<String, dynamic> json) => RunElement(
+    executionTrace: json["executionTrace"] == null
+        ? null
+        : List<ExecutionTraceElement>.from(
+            json["executionTrace"]!.map(
+              (x) => ExecutionTraceElement.fromJson(x),
+            ),
+          ),
     progress: json["progress"],
     stepApprovalTask: json["stepApprovalTask"] == null
         ? null
@@ -8076,12 +8112,118 @@ class RunElement {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "executionTrace": executionTrace == null
+        ? null
+        : List<dynamic>.from(executionTrace!.map((x) => x.toJson())),
     "progress": progress,
     "stepApprovalTask": stepApprovalTask?.toJson(),
     "task": task.toJson(),
     "usageEventIds": List<dynamic>.from(usageEventIds.map((x) => x)),
   });
 }
+
+///既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+///history。时间仅来自原生事实，未知时省略。
+class ExecutionTraceElement {
+  ///原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+  final String? completedAt;
+  final ReasonCode? error;
+  final ExecutionTraceOutput output;
+
+  ///原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+  final String? startedAt;
+  final AutomationStepStatus status;
+  final String stepId;
+
+  ExecutionTraceElement({
+    this.completedAt,
+    this.error,
+    required this.output,
+    this.startedAt,
+    required this.status,
+    required this.stepId,
+  });
+
+  factory ExecutionTraceElement.fromJson(Map<String, dynamic> json) =>
+      ExecutionTraceElement(
+        completedAt: json["completedAt"],
+        error: json["error"] == null
+            ? null
+            : reasonCodeValues.map[json["error"]]!,
+        output: ExecutionTraceOutput.fromJson(json["output"]),
+        startedAt: json["startedAt"],
+        status: automationStepStatusValues.map[json["status"]]!,
+        stepId: json["stepId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completedAt": completedAt,
+    "error": reasonCodeValues.reverse[error],
+    "output": output.toJson(),
+    "startedAt": startedAt,
+    "status": automationStepStatusValues.reverse[status],
+    "stepId": stepId,
+  });
+}
+
+class ExecutionTraceOutput {
+  final String? actionExecutionId;
+  final String? approvalWorkflowId;
+  final String? eventId;
+  final int? historyEventId;
+  final String? runId;
+  final String? workflowId;
+
+  ExecutionTraceOutput({
+    this.actionExecutionId,
+    this.approvalWorkflowId,
+    this.eventId,
+    this.historyEventId,
+    this.runId,
+    this.workflowId,
+  });
+
+  factory ExecutionTraceOutput.fromJson(Map<String, dynamic> json) =>
+      ExecutionTraceOutput(
+        actionExecutionId: json["actionExecutionId"],
+        approvalWorkflowId: json["approvalWorkflowId"],
+        eventId: json["eventId"],
+        historyEventId: json["historyEventId"],
+        runId: json["runId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "approvalWorkflowId": approvalWorkflowId,
+    "eventId": eventId,
+    "historyEventId": historyEventId,
+    "runId": runId,
+    "workflowId": workflowId,
+  });
+}
+
+enum AutomationStepStatus {
+  CANCELLED,
+  COMPLETED,
+  FAILED,
+  PENDING,
+  RUNNING,
+  SKIPPED,
+  UNKNOWN,
+  WAITING_APPROVAL,
+}
+
+final automationStepStatusValues = EnumValues({
+  "cancelled": AutomationStepStatus.CANCELLED,
+  "completed": AutomationStepStatus.COMPLETED,
+  "failed": AutomationStepStatus.FAILED,
+  "pending": AutomationStepStatus.PENDING,
+  "running": AutomationStepStatus.RUNNING,
+  "skipped": AutomationStepStatus.SKIPPED,
+  "unknown": AutomationStepStatus.UNKNOWN,
+  "waiting_approval": AutomationStepStatus.WAITING_APPROVAL,
+});
 
 ///同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
 ///
@@ -8243,6 +8385,9 @@ final workflowKindValues = EnumValues({
 
 ///本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
 class AutomationRunView {
+  ///原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
+  final List<ExecutionTraceElement>? executionTrace;
+
   ///原 TaskProjection 进度；缺省不推测百分比或成功。
   final String? progress;
 
@@ -8254,6 +8399,7 @@ class AutomationRunView {
   final List<String> usageEventIds;
 
   AutomationRunView({
+    this.executionTrace,
     this.progress,
     this.stepApprovalTask,
     required this.task,
@@ -8262,6 +8408,13 @@ class AutomationRunView {
 
   factory AutomationRunView.fromJson(Map<String, dynamic> json) =>
       AutomationRunView(
+        executionTrace: json["executionTrace"] == null
+            ? null
+            : List<ExecutionTraceElement>.from(
+                json["executionTrace"]!.map(
+                  (x) => ExecutionTraceElement.fromJson(x),
+                ),
+              ),
         progress: json["progress"],
         stepApprovalTask: json["stepApprovalTask"] == null
             ? null
@@ -8271,6 +8424,9 @@ class AutomationRunView {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "executionTrace": executionTrace == null
+        ? null
+        : List<dynamic>.from(executionTrace!.map((x) => x.toJson())),
     "progress": progress,
     "stepApprovalTask": stepApprovalTask?.toJson(),
     "task": task.toJson(),
@@ -8325,6 +8481,8 @@ class AutomationVersionView {
 }
 
 class AutomationView {
+  ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
+  final String? createdAt;
   final String? delegationId;
   final String executorInstallationResourceId;
   final String ownerPrincipalId;
@@ -8333,9 +8491,14 @@ class AutomationView {
   final ResourceState resourceState;
   final int resourceVersion;
   final AutomationState state;
+
+  ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
+  ///UUID、审计投递时间或浏览器时钟推测。
+  final String? updatedAt;
   final String workspaceId;
 
   AutomationView({
+    this.createdAt,
     this.delegationId,
     required this.executorInstallationResourceId,
     required this.ownerPrincipalId,
@@ -8344,10 +8507,12 @@ class AutomationView {
     required this.resourceState,
     required this.resourceVersion,
     required this.state,
+    this.updatedAt,
     required this.workspaceId,
   });
 
   factory AutomationView.fromJson(Map<String, dynamic> json) => AutomationView(
+    createdAt: json["createdAt"],
     delegationId: json["delegationId"],
     executorInstallationResourceId: json["executorInstallationResourceId"],
     ownerPrincipalId: json["ownerPrincipalId"],
@@ -8356,10 +8521,12 @@ class AutomationView {
     resourceState: resourceStateValues.map[json["resourceState"]]!,
     resourceVersion: json["resourceVersion"],
     state: automationStateValues.map[json["state"]]!,
+    updatedAt: json["updatedAt"],
     workspaceId: json["workspaceId"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
     "delegationId": delegationId,
     "executorInstallationResourceId": executorInstallationResourceId,
     "ownerPrincipalId": ownerPrincipalId,
@@ -8368,6 +8535,7 @@ class AutomationView {
     "resourceState": resourceStateValues.reverse[resourceState],
     "resourceVersion": resourceVersion,
     "state": automationStateValues.reverse[state],
+    "updatedAt": updatedAt,
     "workspaceId": workspaceId,
   });
 }
@@ -13693,11 +13861,95 @@ class AutomationStep {
   });
 }
 
+///既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
+///history。时间仅来自原生事实，未知时省略。
+class AutomationStepTrace {
+  ///原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
+  final String? completedAt;
+  final ReasonCode? error;
+  final AutomationStepTraceOutput output;
+
+  ///原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
+  final String? startedAt;
+  final AutomationStepStatus status;
+  final String stepId;
+
+  AutomationStepTrace({
+    this.completedAt,
+    this.error,
+    required this.output,
+    this.startedAt,
+    required this.status,
+    required this.stepId,
+  });
+
+  factory AutomationStepTrace.fromJson(Map<String, dynamic> json) =>
+      AutomationStepTrace(
+        completedAt: json["completedAt"],
+        error: json["error"] == null
+            ? null
+            : reasonCodeValues.map[json["error"]]!,
+        output: AutomationStepTraceOutput.fromJson(json["output"]),
+        startedAt: json["startedAt"],
+        status: automationStepStatusValues.map[json["status"]]!,
+        stepId: json["stepId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completedAt": completedAt,
+    "error": reasonCodeValues.reverse[error],
+    "output": output.toJson(),
+    "startedAt": startedAt,
+    "status": automationStepStatusValues.reverse[status],
+    "stepId": stepId,
+  });
+}
+
+class AutomationStepTraceOutput {
+  final String? actionExecutionId;
+  final String? approvalWorkflowId;
+  final String? eventId;
+  final int? historyEventId;
+  final String? runId;
+  final String? workflowId;
+
+  AutomationStepTraceOutput({
+    this.actionExecutionId,
+    this.approvalWorkflowId,
+    this.eventId,
+    this.historyEventId,
+    this.runId,
+    this.workflowId,
+  });
+
+  factory AutomationStepTraceOutput.fromJson(Map<String, dynamic> json) =>
+      AutomationStepTraceOutput(
+        actionExecutionId: json["actionExecutionId"],
+        approvalWorkflowId: json["approvalWorkflowId"],
+        eventId: json["eventId"],
+        historyEventId: json["historyEventId"],
+        runId: json["runId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "approvalWorkflowId": approvalWorkflowId,
+    "eventId": eventId,
+    "historyEventId": historyEventId,
+    "runId": runId,
+    "workflowId": workflowId,
+  });
+}
+
 ///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 ///配置或凭据。
 class AutomationVersionContent {
   final AutomationVersionContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+  final String? description;
 
   ///2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
   final int? formatVersion;
@@ -13714,6 +13966,7 @@ class AutomationVersionContent {
   AutomationVersionContent({
     this.action,
     this.approvalPolicy,
+    this.description,
     this.formatVersion,
     this.name,
     required this.resultTarget,
@@ -13729,6 +13982,7 @@ class AutomationVersionContent {
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        description: json["description"],
         formatVersion: json["formatVersion"],
         name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
@@ -13743,6 +13997,7 @@ class AutomationVersionContent {
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action?.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "description": description,
     "formatVersion": formatVersion,
     "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
@@ -15080,6 +15335,10 @@ class FluffyRuntimeReplyPolicyMapping {
 ///Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
 ///单调 upsert，eventId 不大于已有值的报告按幂等成功忽略。
 class TaskStateReport {
+  ///AgentTask 的 ProjectAgentTaskState Activity 原生执行 ID，仅由 ActivityInfo 投递。Core
+  ///校验同固定执行链的已调度载荷后生成步骤投影；旧 writer/修复报告缺省时保留原轨迹，不推测或清空。
+  final String? activityId;
+
   ///报告时的 history 长度；同一 workflow 内单调，重放时取到同一值
   final int eventId;
   final String? progress;
@@ -15091,6 +15350,7 @@ class TaskStateReport {
   final String workflowId;
 
   TaskStateReport({
+    this.activityId,
     required this.eventId,
     this.progress,
     required this.runId,
@@ -15101,6 +15361,7 @@ class TaskStateReport {
 
   factory TaskStateReport.fromJson(Map<String, dynamic> json) =>
       TaskStateReport(
+        activityId: json["activityId"],
         eventId: json["eventId"],
         progress: json["progress"],
         runId: json["runId"],
@@ -15110,6 +15371,7 @@ class TaskStateReport {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "activityId": activityId,
     "eventId": eventId,
     "progress": progress,
     "runId": runId,

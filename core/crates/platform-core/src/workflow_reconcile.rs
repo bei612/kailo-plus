@@ -447,6 +447,7 @@ pub(crate) async fn patch_terminal(
     let event_id = next_reconciled_event_id(previous, history_length)
         .ok_or_else(|| format!("{workflow_id} 的投影事件序号已达上限"))?;
     let report = TaskStateReport {
+        activity_id: None,
         workflow_id: workflow_id.to_owned(),
         run_id,
         event_id,
@@ -454,7 +455,7 @@ pub(crate) async fn patch_terminal(
         waiting_reason: None,
         progress: None,
     };
-    let applied = task_projection::apply(pool, &report, true)
+    let applied = task_projection::apply(pool, &report, true, None)
         .await
         .map_err(|e| e.to_string())?;
     match applied {

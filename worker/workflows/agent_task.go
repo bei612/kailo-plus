@@ -190,8 +190,18 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 						out.DelayStep.Seconds > math.MaxInt64/int64(time.Second) {
 						return temporal.NewNonRetryableApplicationError("Delay input invalid", activities.ErrTypeUnknownExternalResult, nil)
 					}
-					_ = workflow.NewTimerWithOptions(ctx, time.Duration(out.DelayStep.Seconds)*time.Second,
-						workflow.TimerOptions{Summary: "automation-delay:" + in.InvocationID + ":" + out.DelayStep.ID}).Get(ctx, nil)
+					timer := workflow.NewTimerWithOptions(ctx, time.Duration(out.DelayStep.Seconds)*time.Second,
+						workflow.TimerOptions{Summary: "automation-delay:" + in.InvocationID + ":" + out.DelayStep.ID})
+					if workflow.GetVersion(loop, "agent-task-native-delay-trace", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+						// The timer must actually exist before a running step can be
+						// observed. This running observation is not a terminal ACK:
+						// use one bounded original Activity, then await the SAME timer.
+						// Failure must not trap cancellation/ContinueAsNew behind an
+						// unbounded projection loop. The outer path still requires the
+						// terminal projection ACK before returning a business outcome.
+						_ = project(loop, status, reason)
+					}
+					_ = timer.Get(ctx, nil)
 					// Preserve cancellation before a native continuation; the next
 					// run must drain, not restart the unfinished Delay or its effect.
 					in.CancelPending = in.CancelPending || ctx.Err() != nil

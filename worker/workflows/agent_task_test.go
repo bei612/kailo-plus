@@ -341,6 +341,83 @@ func TestAgentTaskOrdinaryContinueAsNewKeepsTypedPayload(t *testing.T) {
 	env.AssertNotCalled(t, "AdmitAutomationSchedule", mock.Anything, mock.Anything)
 }
 
+func TestAgentTaskNativeDelayTraceKeepsOldCommandsAndProjectsNewRunningTimer(t *testing.T) {
+	for _, version := range []workflow.Version{workflow.DefaultVersion, 1} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			env.OnGetVersion("agent-task-native-delay-trace", workflow.DefaultVersion, 1).Return(version)
+			projections, advances := 0, 0
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.TaskStateReport) error { projections++; return nil })
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+					advances++
+					if advances == 1 {
+						return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
+							WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+					}
+					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED,
+						WaitingReason: "NONE", FinishActivity: true}, nil
+				})
+			started := env.Now()
+			env.ExecuteWorkflow(AgentTaskKind, in)
+			want := 3
+			if version != workflow.DefaultVersion {
+				want++
+			}
+			if err := env.GetWorkflowError(); err != nil || projections != want || advances != 2 || env.Now().Sub(started) < 62*time.Second {
+				t.Fatalf("native timer trace changed effects or legacy commands: projections=%d want=%d advances=%d error=%v", projections, want, advances, err)
+			}
+		})
+	}
+}
+
+func TestAgentTaskRunningTraceFailureDoesNotTrapCompletedOrCancelledTimer(t *testing.T) {
+	for _, cancel := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancel), func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			env.OnGetVersion("agent-task-native-delay-trace", workflow.DefaultVersion, 1).Return(workflow.Version(1))
+			projections, advances := 0, 0
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.TaskStateReport) error {
+					projections++
+					if projections >= 3 {
+						return temporal.NewNonRetryableApplicationError("projection unavailable", activities.ErrTypeUnknownExternalResult, nil)
+					}
+					return nil
+				})
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+					advances++
+					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
+						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+				})
+			env.RegisterDelayedCallback(func() {
+				env.SetContinueAsNewSuggested(true)
+				if cancel {
+					env.CancelWorkflow()
+				}
+			}, 5*time.Second)
+			started := env.Now()
+			env.ExecuteWorkflow(AgentTaskKind, in)
+			var next *workflow.ContinueAsNewError
+			if !errors.As(env.GetWorkflowError(), &next) {
+				t.Fatalf("native timer must reach original continuation: %v", env.GetWorkflowError())
+			}
+			var resumed generated.AgentTaskWorkflowInput
+			if err := converter.GetDefaultDataConverter().FromPayloads(next.Input, &resumed); err != nil {
+				t.Fatal(err)
+			}
+			if projections != 3 || advances != 1 || resumed.CancelPending != cancel || resumed.InvocationID != in.InvocationID {
+				t.Fatalf("running trace retried/restarted an effect or lost cancellation: projections=%d advances=%d cancel=%t", projections, advances, resumed.CancelPending)
+			}
+			if !cancel && env.Now().Sub(started) < 62*time.Second {
+				t.Fatal("trace failure bypassed the native delay")
+			}
+		})
+	}
+}
+
 func TestAgentTaskStepApprovalStartsOriginalChildOnceWithoutWaitingForItsCompletion(t *testing.T) {
 	env, in, _ := scheduleTaskTest(t)
 	startedAt := env.Now()

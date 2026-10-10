@@ -10,6 +10,7 @@
     "task": {"$ref": "task_view.schema.json"},
     "stepApprovalTask": {"$ref": "task_view.schema.json", "description": "同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。"},
     "progress": {"type": "string", "description": "原 TaskProjection 进度；缺省不推测百分比或成功。"},
+    "executionTrace": {"type": "array", "items": {"$ref": "../domain/automation_step_trace.schema.json"}, "description": "原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。"},
     "usageEventIds": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。"}
   }
 }

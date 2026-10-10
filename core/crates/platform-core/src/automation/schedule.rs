@@ -8,6 +8,17 @@ use axum::{
 };
 use contracts::AutomationScheduleAdmitRequest;
 
+// Exact frozen version read consumed by Schedule CREATE reconciliation.
+pub(super) const CREATE_VERSION_SQL: &str = "select a.id,a.owner_principal_id,
+    jsonb_build_object('trigger',v.trigger,'action',v.action,'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
+      || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end
+      || case when v.name is null then '{}'::jsonb else jsonb_build_object('name',v.name) end
+      || case when v.description is null then '{}'::jsonb else jsonb_build_object('description',v.description) end,v.config_hash
+    from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
+    join catalog.automation_definition d on d.resource_id=v.automation_resource_id and d.pinned_version_asset_id=v.asset_id
+    where v.asset_id=$1 and a.version=$2 and a.tenant_id=$3 and a.resource_id=$4
+      and v.state='PUBLISHED' and a.state='PUBLISHED' and a.projection_action_execution_id is null for update of a,v";
+
 pub(crate) fn spec(
     value: &Value,
 ) -> Result<
@@ -474,15 +485,13 @@ pub(super) async fn dispatch(
                 latest.parameters.as_ref().ok_or_else(invalid_management)?,
             )
             .ok_or_else(invalid_management)?;
-            let version:Option<(Uuid,Uuid,Value,String)>=sqlx::query_as("select a.id,a.owner_principal_id,
-                jsonb_build_object('trigger',v.trigger,'action',v.action,'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
-                  || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end,v.config_hash
-                from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
-                join catalog.automation_definition d on d.resource_id=v.automation_resource_id and d.pinned_version_asset_id=v.asset_id
-                where v.asset_id=$1 and a.version=$2 and a.tenant_id=$3 and a.resource_id=$4
-                  and v.state='PUBLISHED' and a.state='PUBLISHED' and a.projection_action_execution_id is null for update of a,v")
-                .bind(p.asset_id).bind(p.asset_version).bind(latest.tenant_id).bind(latest_row.id)
-                .fetch_optional(&mut *guard).await?;
+            let version: Option<(Uuid, Uuid, Value, String)> = sqlx::query_as(CREATE_VERSION_SQL)
+                .bind(p.asset_id)
+                .bind(p.asset_version)
+                .bind(latest.tenant_id)
+                .bind(latest_row.id)
+                .fetch_optional(&mut *guard)
+                .await?;
             let (asset, owner, content, hash) = version.ok_or_else(invalid_management)?;
             if collab_bridge::limits::canonical_digest(&content) != hash
                 || !crate::agent_definition::active_owner(&mut guard, latest.tenant_id, owner)

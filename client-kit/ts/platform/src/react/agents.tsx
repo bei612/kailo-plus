@@ -38,7 +38,7 @@ import {
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Plus, RefreshCw, X, Zap } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Play, Plus, RefreshCw, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -51,10 +51,12 @@ import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "./workflow-form-canvas";
 import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
-import type { ParsedConditionExpression } from "./workflow-condition-expression";
+import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
+import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./workflow-author-directory";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { WorkflowDiscardDialog, type WorkflowNavigation } from "./workflow-discard-dialog";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
+import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
@@ -234,6 +236,8 @@ function validAutomation(row: AutomationView): boolean {
     && Number.isSafeInteger(row.resourceVersion) && row.resourceVersion > 0
     && row.resourceState === ResourceState.Active && Object.values(AutomationState).includes(row.state)
     && [row.pinnedVersionAssetId, row.delegationId].every((id) => id === undefined || (typeof id === "string" && !!id))
+    && [row.createdAt, row.updatedAt].every((time) => time === undefined
+      || (typeof time === "string" && Number.isFinite(Date.parse(time))))
     && (row.state !== AutomationState.Enabled || (!!row.pinnedVersionAssetId && !!row.delegationId));
 }
 
@@ -265,7 +269,7 @@ function objectFields(value: unknown, keys: string[]): value is Record<string, u
 }
 
 function validAutomationContent(value: unknown): value is AutomationVersionContent {
-  if (!objectFields(value, ["name", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
+  if (!objectFields(value, ["name", "description", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
     || !objectFields(value.trigger, ["kind", "textPrefix", "filter", "mentionPrincipalId", "scheduleSpec"])) return false;
   if (value.formatVersion === 2 || value.formatVersion === 3 ? value.action !== undefined || !supportedSteps(value.steps, value.formatVersion)
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
@@ -278,6 +282,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
   const content = value;
   const trigger = value.trigger;
   return (value.name === undefined || (typeof value.name === "string" && !!value.name.trim()))
+    && (value.description === undefined || typeof value.description === "string")
     && (trigger.textPrefix === undefined || (typeof trigger.textPrefix === "string" && !!trigger.textPrefix))
     && (trigger.filter === undefined || (typeof trigger.filter === "string" && !!trigger.filter.trim()
       && new TextEncoder().encode(trigger.filter).length <= 4096))
@@ -397,6 +402,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
 }) {
   const client = useBffClient();
   const t = useT();
+  const authors = useWorkflowAuthorDirectory(workspaceId);
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
   const offset = offsets[index] ?? 0;
@@ -417,7 +423,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
             className="group relative flex min-h-60 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-transparent text-muted-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="new-workflow-card" onClick={onCreate}><Plus aria-hidden className="h-7 w-7 transition-colors" /></button> : null}
           {page.automations.map((row) => <AutomationCard key={row.resourceId} row={row} workspaceName={workspaceName}
-            locked={locked} onView={() => onSelect(row.resourceId)} onEdit={onEdit} />)}
+            authors={authors} locked={locked} onView={() => onSelect(row.resourceId)} onEdit={onEdit} />)}
         </div>
         {page.automations.length === 0 && !page.canCreate ? <Notice>{t("agents.automation.none")}</Notice> : null}
         <div className="flex gap-2">
@@ -427,21 +433,29 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
           }}>{t("roles.next")}</Button> : null}
         </div>
       </>}
-    {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onEdit={onEdit} onClose={() => onSelect(null)}
-      renderRunHistory={renderRunHistory} /> : null}
+    <Dialog open={selected !== null} onOpenChange={(open) => { if (!open && !locked) onSelect(null); }}>
+      <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
+        showCloseButton={false} onEscapeKeyDown={(event) => { if (locked) event.preventDefault(); }}
+        onInteractOutside={(event) => { if (locked) event.preventDefault(); }} aria-describedby={undefined}>
+        <DialogTitle className="sr-only">{t("workflows.definition")}</DialogTitle>
+        {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked}
+          onEdit={(edit) => { onSelect(null); onEdit(edit); }} onClose={() => onSelect(null)} renderRunHistory={renderRunHistory} /> : null}
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
 /** Original WorkflowCard semantic content, read through the existing Asset-authorized reader. */
-function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
+function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }: {
   row: AutomationView; workspaceName: string; locked: boolean; onView: () => void;
+  authors: WorkflowAuthorDirectory;
   onEdit: (edit: AutomationEdit) => void;
 }) {
   const client = useBffClient();
   const t = useT();
+  const locale = useLocale();
   const [state, reload] = useLoad(`automation-card:${row.resourceId}:${row.resourceVersion}`,
     () => client.automation(row.resourceId, 0, 0));
-  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [triggerAnimationSequence, setTriggerAnimationSequence] = useState(0);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<unknown>();
@@ -450,15 +464,22 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
     openRequest.current += 1;
     setOpening(false); setOpenError(undefined);
     return () => { openRequest.current += 1; };
-  }, [client, row.resourceId, row.resourceVersion, row.workspaceId, selectedVersion, locked]);
+  }, [client, row.resourceId, row.resourceVersion, row.workspaceId, locked]);
   const value = state.status === "ok" ? state.data : null;
   const detail = value && validAutomationDetail(value, row.resourceId, row.workspaceId)
     && value.automation.resourceVersion === row.resourceVersion ? value : null;
-  // Latest readable immutable version is labelled explicitly, not passed off as
-  // the pinned executing version. A filtered page may have no readable version.
-  const version = detail?.versions.find((version) => version.assetId === (selectedVersion ?? row.pinnedVersionAssetId))
-    ?? detail?.versions[0];
+  // An unpinned draft uses its latest readable immutable version. Never replace
+  // an unreadable executing pin with another draft's label or action content.
+  const version = row.pinnedVersionAssetId
+    ? detail?.versions.find((version) => version.assetId === row.pinnedVersionAssetId)
+    : detail?.versions[0];
   const content = version?.content;
+  const authorCondition = content?.trigger.filter
+    ? parseConditionExpressions(content.trigger.filter, "message_posted")?.find(condition => condition.field === "trigger_author")
+    : undefined;
+  // Reuse the existing scoped directory. An unresolved authorized definition
+  // reference falls back to the original compact npub, never an unscoped read.
+  const authorLabel = authorCondition ? authors.rows.find(author => author.pubkey === authorCondition.value)?.displayName?.trim() : undefined;
   const openAction = async (action: AutomationEdit["action"]) => {
     if (locked || opening || !detail) return;
     const request = ++openRequest.current;
@@ -482,8 +503,6 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
   };
   const canEnable = !!detail?.versions.some((candidate) => candidate.state === AgentVersionState.Published)
     && !!detail?.delegations.some((grant) => new Date(grant.expiresAt).getTime() > Date.now());
-  const triggerLabel = content ? t(content.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
-    : content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage") : null;
   return <div data-testid={`workflow-card-${row.resourceId}`}
     className="group relative flex min-h-60 w-full flex-col overflow-hidden rounded-2xl bg-muted/50 p-5 text-left text-foreground shadow-xs transition-colors hover:bg-muted/65">
     <button type="button" disabled={locked}
@@ -519,25 +538,16 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
       {state.status === "pending" ? <p role="status" className="mt-4 text-sm text-muted-foreground">{t("platform.loading")}</p>
         : !detail ? <div className="pointer-events-auto mt-4"><AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /></div>
         : content ? <>
-          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionEnum.SetChannelTopic ? "workflows.steps.setTopic" : workflowAction(content)?.kind === ActionEnum.AddReaction ? "workflows.steps.addReaction" : workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
-          <h3 className="mt-2 line-clamp-4 break-words text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{content.name ?? t("workflows.unnamed")}</h3>
-          <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{workflowAction(content)?.template}</p>
-          <label className="pointer-events-auto mt-2 flex min-w-0 flex-col gap-1 text-2xs text-muted-foreground">{t("agents.version.assetVersion")}
-            <select className="h-8 min-w-0 rounded-md border border-input bg-background px-2" disabled={locked} value={version!.assetId}
-              onChange={(event) => setSelectedVersion(event.target.value)}>
-              {detail.versions.map((version) => <option key={version.assetId} value={version.assetId}>{version.assetId} · {t(automationVersionLabels[version.state])}</option>)}
-            </select>
-          </label>
+          <h3 className="mt-4 line-clamp-4 text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{workflowCardLabel(content, t, {
+            authorLabel: authorLabel || undefined, authorLoading: !!authorCondition && !authorLabel && authors.isLoading,
+          })}</h3>
         </> : <p className="mt-4 text-sm text-muted-foreground">{t("agents.automation.noVersion")}</p>}
-      <dl className="mt-3 space-y-2 text-2xs text-muted-foreground">
-        <div><dt>{t("platform.state")}</dt><dd data-testid="workflow-card-state">{t(automationLabels[row.state])}</dd></div>
-        <div><dt>{t("agents.automation.executor")}</dt><dd className="break-all font-mono">{row.executorInstallationResourceId}</dd></div>
-        <div><dt>{t("agents.owner")}</dt><dd className="break-all font-mono">{row.ownerPrincipalId}</dd></div>
-        <div><dt>{t("agents.automation.pinned")}</dt><dd className="break-all font-mono">{row.pinnedVersionAssetId ?? "—"}</dd></div>
-      </dl>
-      <div className="mt-auto min-w-0 pt-5 text-muted-foreground">
-        <p className="truncate text-xs font-semibold text-foreground" data-testid="workflow-card-channel">#{workspaceName}</p>
-        <p className="mt-0.5 truncate font-mono text-2xs" title={row.resourceId}>{row.resourceId}</p>
+      <div className="mt-auto flex min-w-0 items-end justify-between gap-3 pt-5 text-muted-foreground">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold text-foreground" data-testid="workflow-card-channel">#{workspaceName}</p>
+          <p className="mt-0.5 truncate text-2xs text-muted-foreground" data-testid="workflow-card-name">{content?.name ?? t("workflows.unnamed")}</p>
+        </div>
+        {row.updatedAt ? <time className="shrink-0 text-2xs" dateTime={row.updatedAt}>{new Date(row.updatedAt).toLocaleDateString(locale)}</time> : null}
       </div>
     </div>
   </div>;
@@ -557,6 +567,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
   const [grantIndex, setGrantIndex] = useState(0);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<unknown>();
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const copyRequest = useRef(0);
   const versionOffset = versionOffsets[versionIndex] ?? 0;
   const grantOffset = grantOffsets[grantIndex] ?? 0;
@@ -564,7 +575,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
     copyRequest.current += 1;
     setCopying(false); setCopyError(undefined);
     return () => { copyRequest.current += 1; };
-  }, [client, resourceId, workspaceId, versionOffset, grantOffset, locked]);
+  }, [client, resourceId, workspaceId, versionOffset, grantOffset, locked, selectedVersion]);
   const [state, reload] = useLoad(`automation:${resourceId}:${versionOffset}:${grantOffset}`,
     () => client.automation(resourceId, versionOffset, grantOffset));
   const value = state.status === "ok" ? state.data : null;
@@ -576,8 +587,8 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
   const row = detail.automation;
   // A pinned definition is not interchangeable with the newest readable draft.
   // If its Asset is absent from this authorized page, do not substitute a version.
-  const definition = row.pinnedVersionAssetId
-    ? detail.versions.find((version) => version.assetId === row.pinnedVersionAssetId)
+  const definition = selectedVersion || row.pinnedVersionAssetId
+    ? detail.versions.find((version) => version.assetId === (selectedVersion ?? row.pinnedVersionAssetId))
     : detail.versions[0];
   const published = detail.versions.filter((v) => v.state === AgentVersionState.Published);
   const grants = detail.delegations.filter((g) => new Date(g.expiresAt).getTime() > Date.now());
@@ -598,25 +609,45 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
     } catch (error) { if (request === copyRequest.current) setCopyError(error); }
     finally { if (request === copyRequest.current) setCopying(false); }
   };
-  return <section className="flex flex-col overflow-hidden rounded-2xl border bg-background" data-testid="workflow-detail-panel">
-    <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-      <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{definition ? definition.content.name ?? t("workflows.unnamed") : t("native.unavailable.title")}</h3>
-        <p className="mt-1 break-all font-mono text-2xs text-muted-foreground">{row.resourceId}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("agents.resourceVersion")}: {row.resourceVersion}</p></div>
-      <Button disabled={locked} aria-label={t("buzz.close")} onClick={onClose}><X aria-hidden className="h-4 w-4" /></Button>
+  return <section className="flex h-full min-h-0 flex-col border-l bg-background pt-4" data-testid="workflow-detail-panel">
+    <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2"><h3 className="truncate text-sm font-semibold">{definition ? definition.content.name ?? t("workflows.unnamed") : t("native.unavailable.title")}</h3>
+          <Badge tone={row.state === AutomationState.Enabled ? "positive" : "neutral"}>{t(automationLabels[row.state])}</Badge></div>
+        {definition?.content.description?.trim() ? <p className="mt-1 truncate text-xs text-muted-foreground">{definition.content.description.trim()}</p> : null}
+        {definition ? <p className="mt-1 truncate text-xs text-muted-foreground" data-testid="workflow-trigger-summary">{workflowTriggerSummary(definition.content, t)}</p> : null}
+      </div>
+      <div className="flex items-center gap-1">
+        {detail.canManage ? <WorkflowButton size="sm" variant="outline" disabled={locked || copying || !definition}
+          onClick={() => { if (definition) void openVersion(definition.assetId, "publish_version"); }}><Pencil aria-hidden className="mr-1 h-4 w-4" />{t("workflows.edit")}</WorkflowButton> : null}
+        {detail.canRun === true && row.state === AutomationState.Enabled ? <WorkflowButton size="sm" variant="outline" disabled={locked}
+          onClick={() => onEdit({ detail, action: "run" })}><Play aria-hidden className="mr-1 h-4 w-4" />{t("agents.automation.run")}</WorkflowButton> : null}
+        <WorkflowButton size="icon" variant="ghost" disabled={locked} aria-label={t("buzz.close")} onClick={onClose}><X aria-hidden className="h-4 w-4" /></WorkflowButton>
+      </div>
     </div>
-    <div className="space-y-4 p-4" data-scroll-restoration-id={`workflow-detail:${resourceId}`}>
-    <p className="break-words text-sm">{t("agents.automation.pinned")}: {row.pinnedVersionAssetId ?? "—"} · {t("agents.automation.grant")}: {row.delegationId ?? "—"}</p>
+    <div className="flex-1 overflow-y-auto" data-scroll-restoration-id={`workflow-detail:${resourceId}`}><div className="space-y-4 p-4">
+    {detail.versions.length > 1 ? <label className="flex items-center gap-2 text-sm">{t("agents.version.assetVersion")}
+      <select className="h-8 min-w-0 rounded-md border border-input bg-background px-2" disabled={locked || copying}
+        value={definition?.assetId ?? ""} onChange={(event) => setSelectedVersion(event.target.value)}>
+        {!definition ? <option value="" disabled>{t("native.unavailable.title")}</option> : null}
+        {detail.versions.map((version) => <option key={version.assetId} value={version.assetId}>{version.content.name ?? t("workflows.unnamed")} · {version.assetVersion} · {t(automationVersionLabels[version.state])}</option>)}
+      </select></label> : null}
+    {/* Kailo's authorized version/delegation metadata is retained in the detail,
+        outside the original semantic card label and channel/name/date footer. */}
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <dt>{t("agents.automation.executor")}</dt><dd className="break-all">{row.executorInstallationResourceId}</dd>
+      <dt>{t("agents.owner")}</dt><dd className="break-all">{row.ownerPrincipalId}</dd>
+      <dt>{t("agents.automation.pinned")}</dt><dd className="break-all">{row.pinnedVersionAssetId ?? "—"}</dd>
+      <dt>{t("agents.automation.grant")}</dt><dd className="break-all">{row.delegationId ?? "—"}</dd>
+      <dt>{t("agents.resourceVersion")}</dt><dd>{row.resourceVersion}</dd>
+    </dl>
     {detail.canManage ? <div className="flex flex-wrap gap-2">
-      <Button disabled={locked || copying || !definition} onClick={() => { if (definition) void openVersion(definition.assetId, "publish_version"); }}>{t("agents.automation.publish")}</Button>
       {row.state !== AutomationState.Enabled && published.length > 0 && grants.length > 0
         ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "enable" })}>{t("agents.automation.enable")}</Button> : null}
       {row.state === AutomationState.Enabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "pause" })}>{t("agents.automation.pause")}</Button> : null}
       {row.state !== AutomationState.Disabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "disable" })}>{t("agents.automation.disable")}</Button> : null}
       <Button disabled={locked} onClick={() => onEdit({ detail, action: "delete" })}>{t("agents.automation.delete")}</Button>
     </div> : null}
-    {detail.canRun === true && row.state === AutomationState.Enabled ? <Button className="w-fit" disabled={locked}
-      onClick={() => onEdit({ detail, action: "run" })}>{t("agents.automation.run")}</Button> : null}
     {/* Buzz 779af8886caae1317b4de962082429867ab61503:
         desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel.
         Render the authorized immutable version in the original complete JSON view. */}
@@ -653,8 +684,9 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
       </Table>}
     {copyError ? <AgentReadFailure error={copyError} onRetry={() => setCopyError(undefined)} /> : null}
     <div className="flex gap-2">
-      {versionIndex > 0 ? <Button disabled={locked} onClick={() => setVersionIndex(versionIndex - 1)}>{t("roles.previous")}</Button> : null}
+      {versionIndex > 0 ? <Button disabled={locked} onClick={() => { setSelectedVersion(null); setVersionIndex(versionIndex - 1); }}>{t("roles.previous")}</Button> : null}
       {detail.nextVersionOffset !== undefined ? <Button disabled={locked} onClick={() => {
+        setSelectedVersion(null);
         setVersionOffsets((old) => [...old.slice(0, versionIndex + 1), detail.nextVersionOffset!]); setVersionIndex(versionIndex + 1);
       }}>{t("roles.next")}</Button> : null}
     </div>
@@ -671,7 +703,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
       </div>
     </> : null}
     {renderRunHistory?.(resourceId, workspaceId)}
-    </div>
+    </div></div>
   </section>;
 }
 
@@ -721,6 +753,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const failureText = useFailureText();
   const creating = !edit || edit.action === "copy";
   const [name, setName] = useState("");
+  const [description, setDescription] = useState<string | undefined>();
   const [executorId, setExecutorId] = useState("");
   const [trigger, setTrigger] = useState(TriggerKind.ChannelMessage);
   const [prefix, setPrefix] = useState("");
@@ -805,6 +838,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     && validSchedule(scheduleSpec) && (scheduleMode !== "cron" || !cronExpressionError(cron));
   const formContent: AutomationVersionContent = {
     ...(name !== "" ? { name } : {}),
+    ...(description !== undefined ? { description } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : {
       ...(prefix ? { textPrefix: prefix } : {}), ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
@@ -841,6 +875,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     const content = edit && (edit.action === "copy" || edit.action === "publish_version")
       ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
     setName(content?.name ?? "");
+    setDescription(content?.description);
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
     setFilter(content?.trigger.filter ?? "");
     setConditionDrafts(null);
@@ -858,13 +893,17 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setVersionId(""); setGrantId(""); setExecutorId("");
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
       && content.trigger.scheduleSpec.cron.trim().split(/\s+/).length !== 5;
-    setEditorMode(cronNeedsYaml ? "yaml" : "form"); setYamlText(cronNeedsYaml ? stringify(content) : ""); setEditorError(false);
+    // Original yamlToFormState cannot represent empty/untrimmed descriptions.
+    // Keep the exact authorized version in YAML rather than dropping its text.
+    const needsYaml = cronNeedsYaml || (content?.description !== undefined
+      && (!content.description || content.description.trim() !== content.description));
+    setEditorMode(needsYaml ? "yaml" : "form"); setYamlText(needsYaml ? stringify(content) : ""); setEditorError(false);
     formDraftYaml.current = "";
     setInitialDraft(null); setDraftEpoch((epoch) => epoch + 1); setDiscardOpen(false);
   }, [edit, workspaceId, open]);
   // Original WorkflowDialog dirty comparison, applied to the existing typed form
   // and raw YAML. Capture after its initialization batch, not async admission data.
-  const formSnapshot = JSON.stringify({ name, executorId, trigger, prefix, filter, conditionDrafts,
+  const formSnapshot = JSON.stringify({ name, description, executorId, trigger, prefix, filter, conditionDrafts,
     interval, offsetSeconds, scheduleMode, intervalTagged, cron, catchupWindowSeconds,
     template, steps, stepsFormat, actionKind, policyKey });
   useEffect(() => {
@@ -909,9 +948,12 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     if (yamlText === formDraftYaml.current) {
       setEditorMode(mode); setEditorError(false); return;
     }
-    if (!contentUsable(yamlContent) || (yamlContent.trigger.scheduleSpec?.cron !== undefined
+    if (!contentUsable(yamlContent)
+      || (yamlContent.description !== undefined && (!yamlContent.description || yamlContent.description.trim() !== yamlContent.description))
+      || (yamlContent.trigger.scheduleSpec?.cron !== undefined
       && cronExpressionError(yamlContent.trigger.scheduleSpec.cron))) { setEditorError(true); return; }
     setName(yamlContent.name ?? "");
+    setDescription(yamlContent.description);
     setTrigger(yamlContent.trigger.kind); setPrefix(yamlContent.trigger.textPrefix ?? "");
     setFilter(yamlContent.trigger.filter ?? "");
     setConditionDrafts(null);
