@@ -4576,3 +4576,52 @@ run 身份及 RECEIVER PEP 分支，保留原 KB 检查与全部测试不变：�
 
 未改契约、部署、凭据或审批事实，未做真实 Cells→WeKnora 联调，不改变完整
 FILE_STORAGE release 门禁。全工程与文档检查由主线集中执行，本批未重复启动。
+
+## 2026-10-10 全部知识执行消费 Core 授权的接收目标
+
+1. 权威为 DD-94/98 和现有 `knowledge.v1`、`knowledge.v2` 的
+   `authorizationTargetRule`：文档引用归属于已准入 KnowledgeBase Resource，
+   不允许由调用参数或本地配置另选知识库。固定上游仍为
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`，原消费者为
+   `internal/mcpserver/tools_ingest.go::Server.handleAddDocument/handleDeleteDocument`
+   和 `internal/mcpserver/tools_retrieve.go::Server.handleSearchKnowledge`。
+   本批修正平台适配器原 execute 入口仅对 search 检查授权目标的遗漏，
+   不重写这些原生能力。
+2. 实际影响面是 `createAdapter`、`executeOperation` 和原 HTTP/MCP 检查。
+   Core `application_binding_pep.rs::authorized_resource` 已为全部 RESOURCE
+   execute 返回数据库解析的 targetResource；适配器现对搜索、读取、导出、
+   导入、删除统一核对 nativeRef 和 nativeScopeRef 与受控投递的知识库，
+   并在输出前比较完整目标。导入在读取 SOURCE 后、原生写入前再次比较。
+   不改契约、数据库字段、Token、API 或工作流格式，无迁移或四侧重新生成。
+   query_revision、observe、extract_usage 继续原签名协议，不强求它们返回
+   execute 专属字段。
+3. 缺失目标或知识库错配在原生读取、SOURCE grant 与下载前拒绝；导入接收目标
+   在 SOURCE 读取间变化时不调用 add_document。执行后授权目标变化不暴露结果，
+   不把已发生的副作用回写为失败、不重新派发；既有 ExternalExecution 观察与
+   对账路径不变。无需新增权限权威、服务账号或客户端入口。Web/Desktop/Mobile
+   呈现及各自凭据边界不变。
+4. 实现后扩充既有检查，覆盖 v1/v2 原生动作的缺失目标、错知识库、错 scope、
+   执行间目标变化与实例变化，逐项断言 HTTP 拒绝和实际 native/SOURCE 调用数。
+   正向与还原检查在原 4 CPU/4 GiB、无额外 swap 的固定 SDK 中均退出 0，
+   各 262 项通过、0 失败/跳过。输入、依赖和日志均复用 Data 盘路径，
+   未为本专项启动镜像构建。SDK 镜像为
+   `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+
+原命令为容器内 `node --test knowledge/adapter/test/query-revision.test.mjs`。
+实现后仅在私有生产副本将三个目标核对改为 `false &&`，不改正式源码或检查，
+以 `--test-name-pattern="knowledge native execution consumes"` 执行原 HTTP
+消费者：退出 1，45 个子场景实际收到错误 HTTP 200（期望 403），含父项共
+46 失败，不是编译错误。逆向 apply_patch 还原后，生产文件与检查文件分别
+`cmp` 正式源码均退出 0，再执行完整原目标得到上述 262 通过。
+
+原始日志目录为
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-execute-intent.SoVgAs/`：
+
+| 日志 | SHA-256 | 退出码 |
+| --- | --- | --- |
+| `receiver-scope-positive.log` | `996fc188c1c6b64b12483d0097112fe78dacf21c72f9d63617c94dc413e59167` | 0 |
+| `receiver-scope-negative.log` | `77943ab51b928911295757e102f42cdeda1a63d0659dfbb988e0670c0447291d` | 1，预期反证 |
+| `receiver-scope-restored.log` | `142653aa26537f0e1e253ae0d991ad5ccd9f6cfad3f544d7f6ffb17da1c65ccc` | 0 |
+
+本增量未部署，不证明三组件 binding 已 ACTIVE 或跨服务业务已验收。
+在途集中 full/docs 使用更早冻结输入，不能当成本增量的全工程收口证据。

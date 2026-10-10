@@ -3698,3 +3698,49 @@ exit 0（7.617s），gofmt -l 无输出。正式两文件与已验输入 cmp 0�
 
 本增量未进入此前冻结的组件镜像批，未提交、未部署；整包检查不能代替
 集中 full、真实对象存储故障演练、跨组件业务或原版页面逐项验收。
+
+## 2026-10-10 原生归档下载的发起用户连续性
+
+直接修改原 `PydioApi.downloadSelection`，没有另写下载器或页面。四步结论：
+
+1. 权威为三组件可信当前用户边界及 SS-CEL-MATERIALIZATION；固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::PydioApi.downloadSelection`
+   已通过 `git show` 重新核验。原生单文件、目录归档、多选归档与隐藏表单/
+   浏览器导航均保留，只增加已授权身份接缝的异步连续性检查。
+2. 影响只在原下载 Promise：开始前固定用户对象与用户 ID，原创建 selection
+   返回后及最终交付 URL 前重验。原 `createSelection`、signer、仓库选择及
+   `getSlugForNode` 仍为实际消费者；契约、数据库、工作流和权限权威不变。
+3. 原问题是 selection RPC 期间切换用户后，signer 可以使用后来用户的 JWT；
+   签名已完成到 UI 交付之间也没有原用户复核。现在三处都拒绝换用户、同对象
+   ID 变化和登出，不以旧响应发起新用户的下载，不自动重试归档创建。
+4. 同用户导航仍保留原冻结归档路径；不是禁止切目录。该检查不证明服务端
+   权限或删除已创建的 selection，也不把结果不明写成平台终态。普通下载的
+   完整治理、受权目录/归档正文与全部 FILE_STORAGE 必选动作仍需继续贯通。
+
+实现后扩充原 `query-revision.test.mjs` 的真实 PydioApi VM 消费者，而非复制
+下载实现。使用既有 `kailo-wren-query-sdk-itgs2n`，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID1000、4 CPU/4 GiB memory+swap、Data 私有输入与缓存；运行前容器仅 sleep，
+宿主 MemAvailable 约 19 GiB。没有构建镜像、安装依赖或启动另一全量检查。
+
+首次较宽目标 exit 1：53 passed/2 failed，旧 version 场景的 VM 缺少当前
+`openVersion` 使用的 `uuid4`，保留 `positive.log`，没有改产品去迎合旧夹具。
+本次下载用户连续性、原导航归档及原预览/文件签名目标
+`original native (selection download|archive|preview and file download)`
+实际 47 passed/0 failed、exit 0。仅私有生产副本移除新增用户守卫，原新增目标
+exit 1、9 failed/1 passed；断言实际看到了发给后来用户的旧归档链接。
+正式生产文件未破坏；私有副本逆补丁还原后与正式文件 cmp exit 0。
+日志目录：`/volumes/data/kailo/tmp/cells-download-user-20261010.fXDw0v/`。
+
+同一原目标还原复验实际退出 0，47 passed/0 failed/0 skipped，耗时 4.641s；
+`restored.log` SHA-256 为
+`afe06e64e1368461d3e4fb8b0c1e1b15f84c6ad5cafbf5f1e753bce0581dd2fc`。
+正向 `positive-targeted.log` 为
+`f2e3282fa6bc01a747622e83986713a487ebaa51bc815bb120bf9807d1183dbd`，
+反证 `negative.log` 为
+`0651951e0c4e3098a15f1c14ac27c60e317d5faa31c0fdb38424fc1ab9f7412e`。
+
+本批没有浏览器截图、实际归档下载或三端设备验收，不声称完整还原。已在途
+full/docs 使用更早输入，不覆盖本次新源码；原生组件统一构建前须纳入本批，
+不能把此前冻结 Cells 镜像作为包含此修复的发布。本增量尚未部署。

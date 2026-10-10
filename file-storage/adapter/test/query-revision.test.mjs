@@ -2637,6 +2637,32 @@ test('original native archive keeps its original context while selection RPC is 
   assert.equal(state.signed[0].params.Key, `documents/folder/${ids[4]}-selection.zip`);
 });
 
+test('original native selection download never crosses a user change', async t => {
+  for (const phase of ['before dispatch', 'selection reply', 'signed reply']) {
+    for (const change of ['user object', 'user id', 'logout']) await t.test(`${phase}/${change}`, async () => {
+      const {api, selection, state, pydio} = await nativeDownloadFixture();
+      const mutate = () => {
+        if (change === 'user object') pydio.user = {...pydio.user};
+        if (change === 'user id') pydio.user.id = 'another-native-user';
+        if (change === 'logout') pydio.user = null;
+      };
+      if (phase === 'selection reply') state.beforeSelectionResponse = mutate;
+      if (phase === 'signed reply') {
+        const sign = api.buildPresignedGetUrl.bind(api);
+        api.buildPresignedGetUrl = (...args) => sign(...args).then(url => {mutate(); return url;});
+      }
+      const request = api.downloadSelection(selection(false));
+      if (phase === 'before dispatch') mutate();
+      await request;
+      assert.equal(state.selections.length, phase === 'before dispatch' ? 0 : 1);
+      assert.equal(state.signed.length, phase === 'signed reply' ? 1 : 0);
+      assert.deepEqual(state.downloads, []);
+      assert.equal(state.errors.length, 1);
+      assert.equal(state.errors[0].message, pydio.MessageHash[391]);
+    });
+  }
+});
+
 test('original native restore errors never close the original version panel or repeat copy', async t => {
   for (const failure of ['token', 'loader', 'copy']) {
     await t.test(failure, async () => {

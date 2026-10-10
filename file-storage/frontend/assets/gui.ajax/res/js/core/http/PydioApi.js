@@ -202,6 +202,13 @@ class PydioApi{
     downloadSelection(userSelection){
 
         const pydio = this.getPydioObject();
+        const user = pydio.user;
+        const userId = user && user.id;
+        const requireOriginalUser = () => {
+            if (!user || pydio.user !== user || user.id !== userId) {
+                throw new Error(pydio.MessageHash[391]);
+            }
+        };
         const agent = navigator.userAgent || '';
         const agentIsMobile = (agent.indexOf('iPhone')!==-1||agent.indexOf('iPod')!==-1||agent.indexOf('iPad')!==-1||agent.indexOf('iOs')!==-1);
 
@@ -209,6 +216,7 @@ class PydioApi{
         const archiveExt = pydio.getPluginConfigs("access.gateway").get("DOWNLOAD_ARCHIVE_FORMAT") || "zip";
 
         const download = Promise.resolve().then(() => {
+            requireOriginalUser();
             if (userSelection.isUnique()) {
                 let downloadNode, attachmentName;
                 const uniqueNode = userSelection.getUniqueNode();
@@ -239,6 +247,7 @@ class PydioApi{
                     ? contextNode.getMetadata().get('repository_id') : pydio.user.getActiveRepository();
                 const api = new TreeServiceApi(PydioApi.getRestClient());
                 return api.createSelection(selection).then(response => {
+                    requireOriginalUser();
                     const {SelectionUUID} = response;
                     let fakeNodePath = contextPath + "/" + SelectionUUID + '-selection.' + archiveExt;
                     fakeNodePath = fakeNodePath.replace('//', '/')
@@ -250,6 +259,7 @@ class PydioApi{
         });
 
         return download.then(url => {
+            requireOriginalUser();
             if(agentIsMobile || !hiddenForm){
                 document.location.href = url;
             } else {

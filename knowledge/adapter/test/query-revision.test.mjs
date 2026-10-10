@@ -149,9 +149,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       assert.equal(body.operation, operation);
       assert.deepEqual(JSON.parse(body.argumentsJson), intent);
       return reply(response, 200, { actionExecutionId: ids[5], operationId: ids[6], authorizationMinZedToken: 'current',
-        ...(search && mode !== 'missing-target' ? { targetResource: { resourceId: ids[8], nativeType: 'knowledge_base',
+        ...(operation === 'execute' && mode !== 'missing-target' ? { targetResource: { resourceId: ids[8], nativeType: 'knowledge_base',
           nativeRef: mode === 'wrong-target' || (mode === 'target-changed' && state.peps > 1) ? ids[9] : ids[1],
-          nativeInstanceRef: 'fixture-native', nativeScopeRef: 'fixture-scope' } } : {}) });
+          nativeInstanceRef: mode === 'instance-changed' && state.peps > 1 ? 'foreign-instance' : 'fixture-native',
+          nativeScopeRef: mode === 'wrong-native-scope' ? ids[9] : ids[1] } } : {}) });
     }
     if (body.method === 'initialize') return reply(response, 200, { jsonrpc: '2.0', id: body.id,
       result: { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'native-test', version: '1' } } });
@@ -329,6 +330,32 @@ test('knowledge execute binds the same signed execution intent for HUMAN and del
         assert.equal(state.native, 0);
         assert.equal(state.grants, 0);
         assert.equal(state.downloads, 0);
+        assert.deepEqual(state.receipts, []);
+      });
+    }
+  }
+});
+
+test('knowledge native execution consumes its authorized receiver before access and after source reads', async t => {
+  for (const action of ['knowledge.search@v2', 'knowledge.read@v1', 'knowledge.read@v2',
+    'knowledge.export@v1', 'knowledge.export@v2', 'knowledge.ingest@v1', 'knowledge.ingest@v2',
+    'knowledge.delete@v1', 'knowledge.delete@v2']) {
+    for (const mode of ['missing-target', 'wrong-target', 'wrong-native-scope', 'target-changed', 'instance-changed']) {
+      await t.test(`${action}/${mode}`, async nested => {
+        const { invoke, state } = await fixture(nested, mode, action);
+        const response = await invoke();
+        assert.equal(response.status, 403);
+        assert.deepEqual(await response.json(), { class: 'DENIED' });
+        if (['missing-target', 'wrong-target', 'wrong-native-scope'].includes(mode)) {
+          assert.equal(state.native, 0);
+          assert.equal(state.grants, 0);
+          assert.equal(state.downloads, 0);
+        } else if (action.startsWith('knowledge.ingest@')) {
+          assert.equal(state.downloads, 1);
+          assert.equal(state.native, 0);
+        } else {
+          assert.ok(state.native > 0);
+        }
         assert.deepEqual(state.receipts, []);
       });
     }

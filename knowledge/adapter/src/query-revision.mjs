@@ -265,7 +265,7 @@ async function recordCreationReceipt(value, observation, config, deadline, key) 
     measurements:readMeasurements(config.readEdge?.usageMeasurements,value.source_content_bytes)});
 }
 
-async function executeOperation(config, deadline, request, claims, token) {
+async function executeOperation(config, deadline, request, claims, token, targetResource) {
   if (claims.action_key === 'knowledge.search@v2') {
     const args = request.arguments;
     if (!exactKeys(args, ['target', 'input']) || !exactKeys(args.target, ['resourceId'])
@@ -324,7 +324,8 @@ async function executeOperation(config, deadline, request, claims, token) {
     const source=await sourceFile(config,deadline,reference,request.idempotencyKey,claims);
     // Source read authorization does not substitute for receiver write authority.
     const current=await verifyKnowledgeToken(token,config,request.arguments,'execute');
-    await freshPep(config,deadline,token,request.arguments,current,'execute');
+    const receiver=await freshPep(config,deadline,token,request.arguments,current,'execute');
+    if (canonical(receiver.targetResource)!==canonical(targetResource)) throw new Refused(403);
     const value=await nativeTool(config,deadline,'add_document',{
       knowledge_base_id:config.nativeKnowledgeBaseId,title:reference.displayName,filename:reference.displayName,
       file_base64:source.bytes.toString('base64'),source_reference_json:canonical(reference),idempotency_key:request.idempotencyKey,
@@ -427,8 +428,11 @@ export function createAdapter(rawConfig) {
         || !UUID.test(claims.external_execution_id)
         || claims.external_execution_id === '00000000-0000-0000-0000-000000000000')) throw new Refused(401);
       const admitted = await freshPep(config, deadline, token, intent, claims, operation);
-      const searching = operation === 'execute' && claims.action_key === 'knowledge.search@v2';
-      if (searching && admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
+      const executing = operation === 'execute';
+      // Every knowledge action targets the admitted KnowledgeBase Resource;
+      // a signed document/source reference cannot select the receiver scope.
+      if (executing && (admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId
+        || admitted.targetResource?.nativeScopeRef !== config.nativeKnowledgeBaseId)) throw new Refused(403);
       let value;
       if (operation === 'map_native_status_error') {
         value = mapNativeStatusError(args);
@@ -464,12 +468,12 @@ export function createAdapter(rawConfig) {
           };
         } else value=observed;
       } else {
-        value = operation === 'execute' ? await executeOperation(config, deadline, args, claims, token)
+        value = executing ? await executeOperation(config, deadline, args, claims, token, admitted.targetResource)
           : await nativeRevision(config, deadline, args);
       }
       const current = await verifyKnowledgeToken(token, config, intent, operation);
       const disclosed = await freshPep(config, deadline, token, intent, current, operation);
-      if (searching && canonical(disclosed.targetResource) !== canonical(admitted.targetResource)) throw new Refused(403);
+      if (executing && canonical(disclosed.targetResource) !== canonical(admitted.targetResource)) throw new Refused(403);
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       response.end(JSON.stringify(value));
     } catch (error) {
