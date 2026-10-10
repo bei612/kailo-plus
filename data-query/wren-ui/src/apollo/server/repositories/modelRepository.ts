@@ -20,6 +20,7 @@ export interface Model {
 export interface IModelRepository extends IBasicRepository<Model> {
   findAllByIds(ids: number[]): Promise<Model[]>;
   deleteAllBySourceTableNames(
+    projectId: number,
     sourceTableNames: string[],
     queryOptions?: IQueryOptions,
   ): Promise<number>;
@@ -38,11 +39,13 @@ export class ModelRepository
   }
 
   public async deleteAllBySourceTableNames(
+    projectId: number,
     sourceTableNames: string[],
     queryOptions?: IQueryOptions,
   ) {
     const executer = queryOptions?.tx ? queryOptions.tx : this.knex;
     const builder = executer(this.tableName)
+      .where(this.transformToDBData({ projectId }))
       .whereIn('source_table_name', sourceTableNames)
       .delete();
     return await builder;

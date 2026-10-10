@@ -331,7 +331,11 @@ export class AskingResolver {
     _args: any,
     ctx: IContext,
   ): Promise<boolean> {
-    await ctx.projectService.generateProjectRecommendationQuestions();
+    const project = await ctx.projectService.getCurrentProject();
+    await ctx.projectService.generateProjectRecommendationQuestions(
+      project,
+      ctx.nativeProjectCheck,
+    );
     return true;
   }
 

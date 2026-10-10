@@ -3,6 +3,8 @@ import { IContext } from '@server/types';
 import { getLogger } from 'log4js';
 import { SchemaChange } from '@server/repositories/schemaChangeRepository';
 import { Model, ModelColumn, RelationInfo } from '../repositories';
+import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { nativeWriteUnknown } from '../utils/error';
 
 const logger = getLogger('DataSourceSchemaDetector');
 logger.level = 'debug';
@@ -76,13 +78,48 @@ export default class DataSourceSchemaDetector
 {
   public ctx: IContext;
   public projectId: number;
+  private readonly bound: boolean;
+  private writeStarted = false;
 
   constructor({ ctx, projectId }: { ctx: IContext; projectId: number }) {
     this.ctx = ctx;
     this.projectId = projectId;
+    this.bound = this.isBound();
+  }
+
+  private isBound() {
+    return (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined ||
+      this.ctx.nativeIdentityScope !== undefined ||
+      this.ctx.nativeHumanToken !== undefined
+    );
+  }
+
+  private async authorize() {
+    try {
+      if (!this.bound) {
+        if (this.isBound())
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        return;
+      }
+      if (typeof this.ctx.nativeProjectCheck !== 'function')
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      await this.ctx.nativeProjectCheck(this.projectId);
+    } catch (error) {
+      // A refusal after a preceding delete/update cannot claim NOT_STARTED.
+      if (this.writeStarted) throw nativeWriteUnknown(error);
+      throw error;
+    }
+  }
+
+  private async beforeWrite() {
+    await this.authorize();
+    this.writeStarted = true;
   }
 
   public async detectSchemaChange() {
+    await this.authorize();
     const diffSchema = await this.getDiffSchema();
     if (diffSchema) {
       await this.addSchemaChange(diffSchema);
@@ -93,6 +130,8 @@ export default class DataSourceSchemaDetector
           this.projectId,
         );
       if (lastSchemaChange !== null) {
+        if (lastSchemaChange.projectId !== this.projectId)
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
         const hasUnresolved = Object.values(lastSchemaChange.resolve).some(
           (resolve) => !resolve,
         );
@@ -109,6 +148,7 @@ export default class DataSourceSchemaDetector
   }
 
   public async resolveSchemaChange(type: string) {
+    await this.authorize();
     const schemaChangeType = camelCase(type) as SchemaChangeType;
     const supportedTypes = [
       SchemaChangeType.DELETED_TABLES,
@@ -122,6 +162,8 @@ export default class DataSourceSchemaDetector
       await this.ctx.schemaChangeRepository.findLastSchemaChange(
         this.projectId,
       );
+    if (!lastSchemaChange || lastSchemaChange.projectId !== this.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const changes = lastSchemaChange?.change[schemaChangeType];
     const isResolved = lastSchemaChange?.resolve[schemaChangeType];
 
@@ -134,15 +176,30 @@ export default class DataSourceSchemaDetector
     const models = await this.ctx.modelRepository.findAllBy({
       projectId: this.projectId,
     });
+    if (models.some((model) => model.projectId !== this.projectId))
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     const modelIds = models.map((model) => model.id);
-    const modelColumns =
-      await this.ctx.modelColumnRepository.findColumnsByModelIds(modelIds);
+    const modelColumns = modelIds.length
+      ? await this.ctx.modelColumnRepository.findColumnsByModelIds(modelIds)
+      : [];
 
-    const modelRelationships =
-      await this.ctx.relationRepository.findRelationInfoBy({
-        modelIds,
-      });
+    const modelRelationships = modelIds.length
+      ? await this.ctx.relationRepository.findRelationInfoBy({
+          projectId: this.projectId,
+          modelIds,
+        })
+      : [];
+    if (
+      modelColumns.some((column) => !modelIds.includes(column.modelId)) ||
+      modelRelationships.some(
+        (relation) =>
+          relation.projectId !== this.projectId ||
+          !modelIds.includes(relation.fromModelId) ||
+          !modelIds.includes(relation.toModelId),
+      )
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 
     const affectedResources = this.getAffectedResources(changes, {
       models,
@@ -159,36 +216,41 @@ export default class DataSourceSchemaDetector
      *  Considering that we have set up foreign keys, some data will be automatically deleted in cascade,
      *  so there is no need to perform additional deletions. (E.g., relationships, model's column)
      */
-    await Promise.all(
-      affectedResources.map(async (resource) => {
-        // both DELETED_TABLES and DELETED_COLUMNS need to remove all affected calculated fields
-        logger.debug(
-          `Start to remove all affected calculated fields "${resource.calculatedFields.map(
-            (column) => `${column.displayName} (${column.referenceName})`,
-          )}".`,
+    // Stop dispatching further writes after a refusal; never leave parallel
+    // deletes running after the request has already returned that refusal.
+    for (const resource of affectedResources) {
+      // both DELETED_TABLES and DELETED_COLUMNS need to remove all affected calculated fields
+      logger.debug(
+        `Start to remove all affected calculated fields "${resource.calculatedFields.map(
+          (column) => `${column.displayName} (${column.referenceName})`,
+        )}".`,
+      );
+
+      const columnIds = resource.calculatedFields.map((column) => column.id);
+      if (columnIds.length) {
+        await this.beforeWrite();
+        await this.ctx.modelColumnRepository.deleteAllByColumnIds(columnIds);
+      }
+
+      // remove columns if SchemaChangeType is DELETED_COLUMNS
+      if (schemaChangeType === SchemaChangeType.DELETED_COLUMNS) {
+        const affectedColumnNames = resource.columns.map(
+          (column) => column.sourceColumnName,
         );
 
-        const columnIds = resource.calculatedFields.map((column) => column.id);
-        await this.ctx.modelColumnRepository.deleteAllByColumnIds(columnIds);
+        logger.debug(
+          `Start to remove columns "${affectedColumnNames}" from model "${resource.referenceName}".`,
+        );
 
-        // remove columns if SchemaChangeType is DELETED_COLUMNS
-        if (schemaChangeType === SchemaChangeType.DELETED_COLUMNS) {
-          const affectedColumnNames = resource.columns.map(
-            (column) => column.sourceColumnName,
-          );
-
-          logger.debug(
-            `Start to remove columns "${affectedColumnNames}" from model "${resource.referenceName}".`,
-          );
-
+        if (affectedColumnNames.length) {
+          await this.beforeWrite();
           await this.ctx.modelColumnRepository.deleteAllBySourceColumnNames(
             resource.modelId,
             affectedColumnNames,
           );
         }
-        return;
-      }),
-    );
+      }
+    }
 
     // remove tables if SchemaChangeType is DELETED_TABLES
     if (schemaChangeType === SchemaChangeType.DELETED_TABLES) {
@@ -199,9 +261,13 @@ export default class DataSourceSchemaDetector
         `Start to remove tables "${affectedTableNames}" from models.`,
       );
 
-      await this.ctx.modelRepository.deleteAllBySourceTableNames(
-        affectedTableNames,
-      );
+      if (affectedTableNames.length) {
+        await this.beforeWrite();
+        await this.ctx.modelRepository.deleteAllBySourceTableNames(
+          this.projectId,
+          affectedTableNames,
+        );
+      }
     }
 
     // update resolve flag
@@ -413,11 +479,14 @@ export default class DataSourceSchemaDetector
       await this.ctx.schemaChangeRepository.findLastSchemaChange(
         this.projectId,
       );
+    if (lastSchemaChange && lastSchemaChange.projectId !== this.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     // If the schema change is the same as the last one, we don't need to create a new one.
     const isNewSchemaChange =
       JSON.stringify(lastSchemaChange?.change) !== JSON.stringify(diffSchema);
 
     if (isNewSchemaChange) {
+      await this.beforeWrite();
       await this.ctx.schemaChangeRepository.createOne({
         projectId: this.projectId,
         change: diffSchema,
@@ -441,9 +510,14 @@ export default class DataSourceSchemaDetector
     const models = await this.ctx.modelRepository.findAllBy({
       projectId: this.projectId,
     });
+    if (models.some((model) => model.projectId !== this.projectId))
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const modelIds = models.map((model) => model.id);
-    const modelColumns =
-      await this.ctx.modelColumnRepository.findColumnsByModelIds(modelIds);
+    const modelColumns = modelIds.length
+      ? await this.ctx.modelColumnRepository.findColumnsByModelIds(modelIds)
+      : [];
+    if (modelColumns.some((column) => !modelIds.includes(column.modelId)))
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const result = models.map((model) => {
       return {
         name: model.sourceTableName,
@@ -464,6 +538,9 @@ export default class DataSourceSchemaDetector
     const project = await this.ctx.projectRepository.findOneBy({
       id: this.projectId,
     });
+    if (!project || project.id !== this.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    await this.authorize();
     const latestDataSourceTables =
       await this.ctx.projectService.getProjectDataSourceTables(project);
     const result = latestDataSourceTables.map((table) => {
@@ -484,6 +561,9 @@ export default class DataSourceSchemaDetector
     lastSchemaChange: SchemaChange,
     schemaChangeTypes: SchemaChangeType[],
   ) {
+    if (lastSchemaChange.projectId !== this.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    await this.beforeWrite();
     await this.ctx.schemaChangeRepository.updateOne(lastSchemaChange.id, {
       resolve: {
         ...lastSchemaChange.resolve,

@@ -10498,3 +10498,169 @@ verification and authorization remain required. There is still no real approved
 Wren model projection/embedding route/dimension/native configuration delivery or
 new AI image/deployment in this batch. Main full job 87175 predates this input;
 no full or browser acceptance result is claimed here.
+
+## 2026-10-10 native settings and project recommendation admission
+
+Fixed upstream: `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::ProjectResolver.getSettings/updateCurrentProject/deploy`,
+`wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.deploy`,
+`wren-ui/src/apollo/server/resolvers/askingResolver.ts::AskingResolver.generateProjectRecommendationQuestions`,
+and `wren-ui/src/apollo/server/services/projectService.ts::ProjectService.generateProjectRecommendationQuestions/getProjectRecommendationQuestions`.
+The original settings, language save, deployment-triggered recommendation,
+explicit recommendation and persisted-result reading remain their original
+business implementations; the differences are authorized governance consumers,
+not replacement pages or another task/project authority.
+
+The four implementation checks are:
+
+- Authority: SS-WRN-IDENTITY, SS-WRN-GOVERNANCE and DD-98, with fresh
+  authorization before dispatch. A successful outer default-project lookup
+  cannot authorize another row returned by a subsequent asynchronous lookup.
+- Impact: settings check their actual row; language saving writes its fixed ID.
+  All four recommendation producers pass that selected Project and the original
+  request-local permission callback. The saved language is passed explicitly;
+  the service no longer reselects a different default project. Recommendation
+  reading checks the selected row before attaching its existing task or exposing
+  results. No schema, API field, permission, registry or lifecycle changed.
+- Side effects: the service rechecks after asynchronous MDL loading and before
+  AI POST. Once language saving or deployment occurred, later refusal is wrapped
+  by the existing `nativeWriteUnknown`, not mislabeled as `NOT_STARTED` by the
+  outer callback. Existing task receipt persistence/observation is retained.
+- Exceptions: missing trusted callback in bound mode, changed project,
+  generation or permission, and standalone-to-bound switching refuse closed.
+  Genuine independent operation remains. The existing six error classes and
+  UNKNOWN behavior are unchanged; no blind replay or new terminal state exists.
+
+Verification ran after implementation in the existing
+`kailo-wren-query-sdk-itgs2n` container (4 CPUs, 4 GiB memory/swap limit), without
+dependency installation, image build or service deployment. Candidate/log root:
+`/volumes/data/kailo/check-cache/wren-settings.fE93pT/`.
+The original Jest command used `--runInBand`, the existing ts-jest single-file
+transpile mode, and `src/nativeHumanQuery.test.ts --testNamePattern='original native project scope permission consumers'`.
+
+| Original output file | Actual outcome |
+| --- | --- |
+| `settings-positive.log` | exit 1: 39 passed, 5 inherited config fixtures failed (missing GET/obsolete error response) |
+| `settings-positive-final.log` | exit 1: 43 passed, 1 fixture expected 503 instead of the actual invalid-generation 403 |
+| `settings-chain-final-positive.log` | exit 0: 53 passed, 450 filtered |
+| `settings-negative.log` | exit 1: removing actual-row and post-await switching checks produced 13 assertion failures |
+| `settings-chain-negative.log` | exit 1: restoring default-project rereads/removing post-MDL admission produced 7 failures, 46 passed |
+| `settings-unknown-negative.log` | exit 1: removing only post-language UNKNOWN wrapping produced expected UNKNOWN / received NOT_STARTED |
+| `settings-chain-restored.log` | exit 0: exact production bytes restored, 53 passed, 450 filtered |
+| `settings-original-recommendations.log` | exit 0: existing recommendation observation and independent selected-project consumers, 8 passed, 295 filtered |
+| `settings-format.log` | exit 0: original Prettier check of all five changed source/check files |
+
+The existing recommendation command additionally selected
+`src/apollo/server/services/tests/projectRecommendation.test.ts` and
+`src/nativeProjectScope.test.ts` with
+`--testNamePattern='persisted project recommendation observation|project recommendations retain the exact selected'`.
+Repository/provider boundaries in these checks are substitutes, not live
+PostgreSQL multi-replica locking or AI/Gateway business acceptance. Final original
+`tsc --noEmit` completed as job 61469 with exit 0 and no diagnostics, using the
+same frozen `/cache/wren-settings.fE93pT` input in `kailo-wren-query-sdk-itgs2n`
+(4 CPU / 4 GiB). The empty `settings-types.log` SHA-256 is
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+The parent full snapshot predates this batch and does not cover it.
+
+This is scope-consumer source evidence, not proof that HUMAN model approval,
+quota reservation or external terminal reconciliation is complete. The existing
+AI provider/Gateway path is retained, not replaced by the new scope callback.
+No image provenance/digest or deployment pin was changed: previously recorded
+AI/UI artifacts do not acquire these UI/server changes. No component was
+activated, permission granted, browser screenshot or production acceptance run.
+
+## 2026-10-10 native schema detection and resolution project boundaries
+
+Authority and fixed source: SS-WRN-IDENTITY / SS-WRN-GOVERNANCE, `.design/08`
+section 6 retain native modeling, rather than creating another platform Action.
+The baseline is `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/managers/dataSourceSchemaDetector.ts`:
+`DataSourceSchemaDetector.detectSchemaChange` / `resolveSchemaChange`, and
+`wren-ui/src/apollo/server/repositories/modelRepository.ts`:
+`ModelRepository.deleteAllBySourceTableNames`. The original detection algorithm,
+deleted-table/deleted-column resolution and native schema-change records remain.
+
+Pre-edit impact review and implementation results:
+
+- Both original GraphQL mutations reread the default project after outer
+  admission; they now use the existing checked-project consumer. Resolution
+  binds its original method just like detection so that consumer is actually
+  reachable through the existing resolver map.
+- The actual manager now checks the captured project before source metadata
+  dispatch and each native write. Model/column/relation/change rows must belong
+  to that project; empty model sets do not become repository-wide filters.
+  The original repository deletion previously filtered only source table names.
+  Its single production caller now supplies the mandatory project ID, which
+  participates in the actual SQL WHERE clause. No public schema or DB migration
+  changed, and there is no remaining unscoped overload.
+- Sequential native deletions stop after refusal. Once any write is dispatched,
+  a later scope refusal remains UNKNOWN, never NOT_STARTED. The request-local
+  dispatch flag creates no persistent task/authority; native change records
+  retain their original resolved/unresolved lifecycle. This batch neither
+  automatically retries partial writes nor claims complete platform terminal
+  reconciliation or an atomic transaction with the authorization service.
+- Missing trusted callback, changed project, independent-to-bound switch during
+  await and foreign rows fail closed. Existing standalone execution still uses
+  the same native algorithms, not another execution engine or UI.
+
+Actual post-implementation checks ran in the existing
+`kailo-wren-query-sdk-itgs2n` SDK image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+user `1000:1000`, 4 CPU / 4 GiB with equal finite memory+swap. Preflight found
+the SDK idle and 26 GiB available. No image build or dependency install ran.
+The frozen candidate is `/cache/wren-schema.8ZSFts/candidate`; host evidence is
+`/volumes/data/kailo/check-cache/wren-schema.8ZSFts/`.
+
+The original command is `node /work/node_modules/jest/bin/jest.js
+src/nativeHumanQuery.test.ts --runInBand` with
+`--testNamePattern='native schema change mutation consumers|native schema deletion in original PostgreSQL model repository'`
+and the existing `ts-jest` isolated-module transform. The database case uses the
+already-delivered `WREN_QUERY_TEST_DATABASE_URL`, a random private schema, the
+original `20240125071855_create_model_table.js` migration and real ModelRepository
+calls. It creates two projects with the same source table name, checks that only
+the selected model is deleted and drops the private schema. This is an actual
+PostgreSQL predicate check; other resolver repository/provider boundaries are
+substitutes, not live service/authorization acceptance.
+
+| Evidence file | Actual result |
+|---|---|
+| `schema-positive.log` | exit 1: 12 passed / 5 failed; four checks exposed missing resolver method binding, one original PG hook exceeded 5000 ms |
+| `schema-positive-final.log` | exit 0: 18 passed / 503 filtered after fixing the method binding; original PG timeout unchanged, PG not restarted |
+| `schema-negative.log` | exit 1: 4 failed / 14 passed after removing production write admission and SQL project filter; real deletion affected 2 models instead of 1 |
+| `schema-unknown-negative.log` | exit 1: two separate actual consumers received NOT_STARTED instead of UNKNOWN when only production post-write wrapping was removed |
+| `schema-restored.log` | exit 0: 18 passed / 503 filtered after exact-byte restoration, including the real PostgreSQL case |
+| `schema-format.log` | exit 0: original Prettier check of all four changed source/check files |
+
+Final original `tsc --noEmit` completed as job 64977 with exit 0 and no diagnostics
+against the same frozen candidate. The empty `schema-types.log` SHA-256 is
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+Earlier full snapshots do not cover this new batch. No image provenance, deployment pin, UI layout,
+binding activation or permission grant changed; no browser or deployment
+acceptance was run. Partial-write reconciliation and complete governance remain
+release boundaries, not inferred from these scope-consumer checks.
+
+### 2026-10-10 fixed-candidate native UI artifact
+
+The original `tools/build-upstream.sh data-query-ui` job 76085 completed with
+exit 0 against frozen tree `160c6736339414f0b516922472e278d91a96fbc6`.
+Next 14.2.32 type checking, linting, compilation and all 39 static pages passed;
+the native route output includes home, detail, dashboard, modeling, setup,
+SQL pairs, instructions and API history. Existing legacy Dockerfile ENV and
+Browserslist warnings were retained, not represented as errors or silenced by
+changing dependencies. The existing limited BuildKit used 8 CPU/16 GiB and
+`/volumes/data/kailo/buildkit-core-state`; package cache hits do not imply the
+entire delivery is offline.
+
+The real registry artifact is
+`sha256:c48437e060361c066e5484c212c62be815a8c2c3c0a939f7945f662013195258`.
+The original source recorder produced
+`sha256:e4400b75b6df9a8e55272c183975ede04aa71d63cd43e7685f7326cfb5df6779`;
+`upstream_manifest.py plan data-query-ui` on formal apps independently reports
+the same source digest. Both recorded fields were copied into the existing
+source manifest after the build and registry inspection, not invented to bypass
+the artifact gate. Log:
+`/volumes/data/kailo/tmp/wren-ui-batch-160c6736.lGzVs2/build-data-query-ui.aD9zrO.log`.
+The UI artifact alone does not prove a running native stack, approved binding,
+model calls, iframe/SSO authorization or screenshot acceptance. AI/Engine source
+artifact updates remain separate requirements; the next original AI job is
+19078, using the same frozen source and existing builder.

@@ -401,7 +401,15 @@ export class ModelResolver {
       project.sampleDataset === null &&
       deployRes.status === DeployStatusEnum.SUCCESS
     ) {
-      await ctx.projectService.generateProjectRecommendationQuestions();
+      try {
+        await ctx.projectService.generateProjectRecommendationQuestions(
+          project,
+          ctx.nativeProjectCheck,
+        );
+      } catch (error) {
+        // Deployment already completed; a later refusal is not NOT_STARTED.
+        throw nativeWriteUnknown(error);
+      }
     }
     return deployRes;
   }

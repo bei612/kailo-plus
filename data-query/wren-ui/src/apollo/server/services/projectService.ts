@@ -24,6 +24,7 @@ import { IMDLService } from './mdlService';
 import { ProjectRecommendQuestionBackgroundTracker } from '../backgrounds';
 import { ITelemetry } from '../telemetry/telemetry';
 import { getConfig } from '../config';
+import { NativeQueryRefusal } from './nativeQueryAdmission';
 
 const config = getConfig();
 
@@ -77,10 +78,16 @@ export interface IProjectService {
     persistCredentialDir: string,
   ) => string;
   deleteProject: (projectId: number, tx?: Knex.Transaction) => Promise<void>;
-  getProjectRecommendationQuestions: () => Promise<ProjectRecommendationQuestionsResult>;
+  getProjectRecommendationQuestions: (
+    project?: Project,
+    beforeRead?: (projectId: number) => Promise<void>,
+  ) => Promise<ProjectRecommendationQuestionsResult>;
 
   // recommend questions
-  generateProjectRecommendationQuestions: () => Promise<void>;
+  generateProjectRecommendationQuestions: (
+    project?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ) => Promise<void>;
 }
 
 export class ProjectService implements IProjectService {
@@ -132,12 +139,28 @@ export class ProjectService implements IProjectService {
     return await this.metadataService.getVersion(usedProject);
   }
 
-  public async generateProjectRecommendationQuestions(): Promise<void> {
-    const project = await this.getCurrentProject();
+  public async generateProjectRecommendationQuestions(
+    selectedProject?: Project,
+    beforeWrite?: (projectId: number) => Promise<void>,
+  ): Promise<void> {
+    const configured = () =>
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    const bound = configured() || beforeWrite !== undefined;
+    if (bound && (!selectedProject || !beforeWrite))
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const project = selectedProject ?? (await this.getCurrentProject());
     if (!project) {
       throw new Error(`Project not found`);
     }
+    const check = async () => {
+      if (!bound && configured())
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      await beforeWrite?.(project.id);
+    };
+    await check();
     const { manifest } = await this.mdlService.makeCurrentModelMDL(project);
+    await check();
     const recommendQuestionResult =
       await this.wrenAIAdaptor.generateRecommendationQuestions({
         manifest,
@@ -154,11 +177,23 @@ export class ProjectService implements IProjectService {
     this.projectRecommendQuestionBackgroundTracker.addTask(updatedProject);
   }
 
-  public async getProjectRecommendationQuestions() {
-    const project = await this.projectRepository.getCurrentProject();
+  public async getProjectRecommendationQuestions(
+    selectedProject?: Project,
+    beforeRead?: (projectId: number) => Promise<void>,
+  ) {
+    const configured = () =>
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    const bound = configured() || beforeRead !== undefined;
+    if (bound && (!selectedProject || !beforeRead))
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const project = selectedProject ?? (await this.getCurrentProject());
     if (!project) {
       throw new Error(`Project not found`);
     }
+    if (!bound && configured())
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    await beforeRead?.(project.id);
     // Resume only the persisted native query. This read never POSTs a model
     // request, including after a process restart or temporary observation error.
     this.projectRecommendQuestionBackgroundTracker.addTask(project);

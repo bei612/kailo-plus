@@ -37,6 +37,7 @@ import DataSourceSchemaDetector, {
 import { encryptConnectionInfo } from '../dataSource';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import { DeployStatusEnum } from '../repositories/deployLogRepository';
+import { nativeWriteUnknown } from '../utils/error';
 import {
   canReadNativeMetadata,
   nativePreviewScope,
@@ -71,13 +72,14 @@ export class ProjectResolver {
     this.startSampleDataset = this.startSampleDataset.bind(this);
     this.triggerDataSourceDetection =
       this.triggerDataSourceDetection.bind(this);
+    this.resolveSchemaChange = this.resolveSchemaChange.bind(this);
     this.getSchemaChange = this.getSchemaChange.bind(this);
     this.getProjectRecommendationQuestions =
       this.getProjectRecommendationQuestions.bind(this);
   }
 
   public async getSettings(_root: any, _arg: any, ctx: IContext) {
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.checkedProject(ctx);
     const generalConnectionInfo =
       ctx.projectService.getGeneralConnectionInfo(project);
     const dataSourceType = project.type;
@@ -101,7 +103,11 @@ export class ProjectResolver {
     _arg: any,
     ctx: IContext,
   ) {
-    return ctx.projectService.getProjectRecommendationQuestions();
+    const project = await this.checkedProject(ctx);
+    return ctx.projectService.getProjectRecommendationQuestions(
+      project,
+      ctx.nativeProjectCheck,
+    );
   }
 
   public async updateCurrentProject(
@@ -110,16 +116,44 @@ export class ProjectResolver {
     ctx: IContext,
   ) {
     const { language } = arg.data;
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.checkedProject(ctx);
     await ctx.projectRepository.updateOne(project.id, {
       language,
     });
 
     // only generating for user's data source
     if (project.sampleDataset === null) {
-      await ctx.projectService.generateProjectRecommendationQuestions();
+      try {
+        await ctx.projectService.generateProjectRecommendationQuestions(
+          { ...project, language },
+          ctx.nativeProjectCheck,
+        );
+      } catch (error) {
+        // The language write has already happened, even if AI dispatch refuses.
+        throw nativeWriteUnknown(error);
+      }
     }
     return true;
+  }
+
+  private async checkedProject(ctx: IContext) {
+    const bound = () =>
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined ||
+      ctx.nativeIdentityScope !== undefined ||
+      ctx.nativeHumanToken !== undefined;
+    const configured = bound();
+    const project = await ctx.projectService.getCurrentProject();
+    if (!configured) {
+      if (bound()) throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return project;
+    }
+    if (typeof ctx.nativeProjectCheck !== 'function')
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    // Check the actual row returned by the second asynchronous native lookup,
+    // not only the project observed at the outer GraphQL request boundary.
+    await ctx.nativeProjectCheck(project.id);
+    return project;
   }
 
   public async resetCurrentProject(_root: any, _arg: any, ctx: IContext) {
@@ -647,7 +681,7 @@ export class ProjectResolver {
     _arg: any,
     ctx: IContext,
   ) {
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.checkedProject(ctx);
     const schemaDetector = new DataSourceSchemaDetector({
       ctx,
       projectId: project.id,
@@ -674,7 +708,7 @@ export class ProjectResolver {
     ctx: IContext,
   ) {
     const { type } = arg.where;
-    const project = await ctx.projectService.getCurrentProject();
+    const project = await this.checkedProject(ctx);
     const schemaDetector = new DataSourceSchemaDetector({
       ctx,
       projectId: project.id,
@@ -710,7 +744,15 @@ export class ProjectResolver {
       project.sampleDataset === null &&
       deployRes.status === DeployStatusEnum.SUCCESS
     ) {
-      await ctx.projectService.generateProjectRecommendationQuestions();
+      try {
+        await ctx.projectService.generateProjectRecommendationQuestions(
+          project,
+          ctx.nativeProjectCheck,
+        );
+      } catch (error) {
+        // Deployment already completed; a later refusal is not NOT_STARTED.
+        throw nativeWriteUnknown(error);
+      }
     }
     return deployRes;
   }

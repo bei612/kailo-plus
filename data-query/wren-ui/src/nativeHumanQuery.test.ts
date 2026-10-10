@@ -16,6 +16,15 @@ import {
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
+import { ProjectService } from './apollo/server/services/projectService';
+import DataSourceSchemaDetector, {
+  SchemaChangeType,
+} from './apollo/server/managers/dataSourceSchemaDetector';
+import { ModelRepository } from './apollo/server/repositories/modelRepository';
+import knex, { Knex } from 'knex';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { DashboardService } from './apollo/server/services/dashboardService';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
@@ -68,6 +77,64 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+(process.env.WREN_QUERY_TEST_DATABASE_URL ? describe : describe.skip)(
+  'native schema deletion in original PostgreSQL model repository',
+  () => {
+    let database: Knex;
+    const schema = `schema_scope_${randomUUID().replaceAll('-', '')}`;
+    beforeAll(async () => {
+      database = knex({
+        client: 'pg',
+        connection: process.env.WREN_QUERY_TEST_DATABASE_URL,
+        searchPath: [schema],
+      });
+      await database.schema.createSchema(schema);
+      await jest
+        .requireActual(
+          join(
+            process.cwd(),
+            'migrations/20240125071855_create_model_table.js',
+          ),
+        )
+        .up(database);
+    });
+    afterAll(async () => {
+      if (database) {
+        await database.schema.dropSchemaIfExists(schema, true);
+        await database.destroy();
+      }
+    });
+    it('deletes the selected project only when another project has the same source table name', async () => {
+      const repository = new ModelRepository(database);
+      const selected = await repository.createOne({
+        projectId: 3,
+        sourceTableName: 'orders',
+        referenceName: 'orders',
+      });
+      const foreign = await repository.createOne({
+        projectId: 9,
+        sourceTableName: 'orders',
+        referenceName: 'orders',
+      });
+      const unaffected = await repository.createOne({
+        projectId: 3,
+        sourceTableName: 'customers',
+        referenceName: 'customers',
+      });
+      expect(await repository.deleteAllBySourceTableNames(3, ['orders'])).toBe(
+        1,
+      );
+      expect(await repository.findOneBy({ id: selected.id })).toBeNull();
+      expect(await repository.findOneBy({ id: foreign.id })).toMatchObject({
+        projectId: 9,
+        sourceTableName: 'orders',
+      });
+      expect(await repository.findOneBy({ id: unaffected.id })).not.toBeNull();
+      expect(await repository.deleteAllBySourceTableNames(3, [])).toBe(0);
+    });
+  },
+);
 
 describe('original instructions REST project read consumer', () => {
   const config = {
@@ -3477,6 +3544,7 @@ describe('native saved-view HUMAN query consumer', () => {
 
   describe('original native project scope permission consumers', () => {
     let previous: string | undefined;
+    let previousBinding: string | undefined;
     let ctx: any;
     const scopeConfig = {
       ...config,
@@ -3500,10 +3568,37 @@ describe('native saved-view HUMAN query consumer', () => {
         { data: { language: 'zh-TW' } },
         ctx,
       );
+    const recommendations = () => {
+      const service = Object.assign(Object.create(ProjectService.prototype), {
+        getCurrentProject: ctx.projectService.getCurrentProject,
+        mdlService: {
+          makeCurrentModelMDL: jest.fn(async () => ({
+            manifest: { models: [] },
+          })),
+        },
+        wrenAIAdaptor: {
+          generateRecommendationQuestions: jest.fn(async () => ({
+            queryId: 'native-project-recommendation',
+          })),
+        },
+        projectRepository: ctx.projectRepository,
+        projectRecommendQuestionBackgroundTracker: { addTask: jest.fn() },
+      });
+      ctx.projectService.generateProjectRecommendationQuestions =
+        service.generateProjectRecommendationQuestions.bind(service);
+      ctx.projectService.getProjectRecommendationQuestions =
+        service.getProjectRecommendationQuestions.bind(service);
+      ctx.projectRepository.updateOne.mockImplementation(async (id, data) => ({
+        id,
+        ...data,
+      }));
+      return service;
+    };
     beforeEach(() => {
       previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      previousBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
       process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
-        'fixture-controlled-delivery';
+        '/fixture-controlled-delivery';
       jest.mocked(loadQueryDelivery).mockResolvedValue(scopeConfig);
       calls.mockImplementation(async (_config, _operation, input) =>
         scopeResult((input.authorizeScope as any).permission),
@@ -3528,8 +3623,291 @@ describe('native saved-view HUMAN query consumer', () => {
       if (previous === undefined)
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+      if (previousBinding === undefined)
+        delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = previousBinding;
     });
-    it('executes the original project mutation only between two current binding manage checks without creating a query Action', async () => {
+    describe('native schema change mutation consumers', () => {
+      let revoked: boolean;
+      const model = {
+        id: 8,
+        projectId: 3,
+        sourceTableName: 'orders',
+        displayName: 'Orders',
+        referenceName: 'orders',
+      };
+      const column = {
+        id: 10,
+        modelId: 8,
+        sourceColumnName: 'amount',
+        displayName: 'Amount',
+        type: 'INTEGER',
+        isCalculated: false,
+      };
+      const detect = () =>
+        originalResolvers.Mutation.triggerDataSourceDetection(null, {}, ctx);
+      const resolve = (type = SchemaChangeType.DELETED_TABLES) =>
+        originalResolvers.Mutation.resolveSchemaChange(
+          null,
+          { where: { type } },
+          ctx,
+        );
+      beforeEach(() => {
+        revoked = false;
+        calls.mockImplementation(async (_config, _operation, input) => {
+          if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          return scopeResult((input.authorizeScope as any).permission);
+        });
+        ctx.telemetry = { sendEvent: jest.fn() };
+        ctx.projectRepository.findOneBy = jest.fn(async () => ({ id: 3 }));
+        ctx.projectService.getProjectDataSourceTables = jest.fn(async () => []);
+        ctx.modelRepository = {
+          findAllBy: jest.fn(async () => [model]),
+          deleteAllBySourceTableNames: jest.fn(async () => 1),
+        };
+        ctx.modelColumnRepository = {
+          findColumnsByModelIds: jest.fn(async () => [column]),
+          deleteAllByColumnIds: jest.fn(),
+          deleteAllBySourceColumnNames: jest.fn(),
+        };
+        ctx.relationRepository = {
+          findRelationInfoBy: jest.fn(async () => []),
+        };
+        ctx.schemaChangeRepository = {
+          findLastSchemaChange: jest.fn(async () => ({
+            id: 12,
+            projectId: 3,
+            change: {
+              deletedTables: [
+                {
+                  name: 'orders',
+                  columns: [{ name: 'amount', type: 'INTEGER' }],
+                },
+              ],
+            },
+            resolve: { deletedTables: false },
+          })),
+          createOne: jest.fn(),
+          updateOne: jest.fn(),
+        };
+      });
+      it('retains original detection and creates the native schema diff after fresh admission', async () => {
+        ctx.schemaChangeRepository.findLastSchemaChange.mockResolvedValue(null);
+        expect(await detect()).toBe(true);
+        expect(ctx.schemaChangeRepository.createOne).toHaveBeenCalledWith({
+          projectId: 3,
+          change: {
+            deletedTables: [
+              {
+                name: 'orders',
+                columns: [{ name: 'amount', type: 'INTEGER' }],
+              },
+            ],
+          },
+          resolve: {
+            deletedTables: false,
+            deletedColumns: undefined,
+            modifiedColumns: undefined,
+          },
+        });
+        expect(
+          ctx.projectService.getProjectDataSourceTables,
+        ).toHaveBeenCalledWith({ id: 3 });
+      });
+      it('retains original deleted-table resolution but passes its fixed project to the real deletion boundary', async () => {
+        expect(await resolve()).toBe(true);
+        expect(
+          ctx.modelRepository.deleteAllBySourceTableNames,
+        ).toHaveBeenCalledWith(3, ['orders']);
+        expect(ctx.schemaChangeRepository.updateOne).toHaveBeenCalledWith(12, {
+          resolve: { deletedTables: true },
+        });
+      });
+      it('retains original deleted-column resolution without deleting its model', async () => {
+        ctx.schemaChangeRepository.findLastSchemaChange.mockResolvedValue({
+          id: 12,
+          projectId: 3,
+          change: {
+            deletedColumns: [
+              {
+                name: 'orders',
+                columns: [{ name: 'amount', type: 'INTEGER' }],
+              },
+            ],
+          },
+          resolve: { deletedColumns: false },
+        });
+        expect(await resolve(SchemaChangeType.DELETED_COLUMNS)).toBe(true);
+        expect(
+          ctx.modelColumnRepository.deleteAllBySourceColumnNames,
+        ).toHaveBeenCalledWith(8, ['amount']);
+        expect(
+          ctx.modelRepository.deleteAllBySourceTableNames,
+        ).not.toHaveBeenCalled();
+        expect(ctx.schemaChangeRepository.updateOne).toHaveBeenCalledWith(12, {
+          resolve: { deletedColumns: true },
+        });
+      });
+      it.each(['detect', 'resolve'])(
+        'rejects a changed inner default project before %s reads or writes',
+        async (operation) => {
+          ctx.projectService.getCurrentProject
+            .mockResolvedValueOnce({ id: 3 })
+            .mockResolvedValueOnce({ id: 9 });
+          await expect(
+            operation === 'detect' ? detect() : resolve(),
+          ).rejects.toMatchObject({
+            extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+          });
+          expect(ctx.modelRepository.findAllBy).not.toHaveBeenCalled();
+          expect(
+            ctx.modelRepository.deleteAllBySourceTableNames,
+          ).not.toHaveBeenCalled();
+        },
+      );
+      it('rechecks after the native project read before dispatching the source schema query', async () => {
+        ctx.projectRepository.findOneBy.mockImplementation(async () => {
+          revoked = true;
+          return { id: 3 };
+        });
+        await expect(detect()).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        });
+        expect(
+          ctx.projectService.getProjectDataSourceTables,
+        ).not.toHaveBeenCalled();
+      });
+      it('rejects revocation during source metadata reading before persisting its diff', async () => {
+        ctx.schemaChangeRepository.findLastSchemaChange.mockResolvedValue(null);
+        ctx.projectService.getProjectDataSourceTables.mockImplementation(
+          async () => {
+            revoked = true;
+            return [];
+          },
+        );
+        await expect(detect()).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        });
+        expect(ctx.schemaChangeRepository.createOne).not.toHaveBeenCalled();
+      });
+      it('preserves UNKNOWN after a model deletion and does not mark the change resolved', async () => {
+        ctx.modelRepository.deleteAllBySourceTableNames.mockImplementation(
+          async () => {
+            revoked = true;
+            return 1;
+          },
+        );
+        await expect(resolve()).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(
+          ctx.modelRepository.deleteAllBySourceTableNames,
+        ).toHaveBeenCalledTimes(1);
+        expect(ctx.schemaChangeRepository.updateOne).not.toHaveBeenCalled();
+      });
+      it('stops after a calculated-field delete when authorization is revoked before the next native write', async () => {
+        ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue([
+          column,
+          {
+            id: 11,
+            modelId: 8,
+            isCalculated: true,
+            lineage: JSON.stringify([10]),
+          },
+        ]);
+        ctx.modelColumnRepository.deleteAllByColumnIds.mockImplementation(
+          async () => {
+            revoked = true;
+          },
+        );
+        await expect(resolve()).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(
+          ctx.modelColumnRepository.deleteAllByColumnIds,
+        ).toHaveBeenCalledWith([11]);
+        expect(
+          ctx.modelRepository.deleteAllBySourceTableNames,
+        ).not.toHaveBeenCalled();
+        expect(ctx.schemaChangeRepository.updateOne).not.toHaveBeenCalled();
+      });
+      it.each(['change', 'model', 'column', 'relation'])(
+        'rejects foreign %s rows before original resolution writes',
+        async (kind) => {
+          if (kind === 'change')
+            ctx.schemaChangeRepository.findLastSchemaChange.mockResolvedValue({
+              projectId: 9,
+            });
+          if (kind === 'model')
+            ctx.modelRepository.findAllBy.mockResolvedValue([
+              { ...model, projectId: 9 },
+            ]);
+          if (kind === 'column')
+            ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue([
+              { ...column, modelId: 99 },
+            ]);
+          if (kind === 'relation')
+            ctx.relationRepository.findRelationInfoBy.mockResolvedValue([
+              { projectId: 9, fromModelId: 8, toModelId: 8 },
+            ]);
+          await expect(resolve()).rejects.toThrow();
+          expect(
+            ctx.modelColumnRepository.deleteAllByColumnIds,
+          ).not.toHaveBeenCalled();
+          expect(
+            ctx.modelRepository.deleteAllBySourceTableNames,
+          ).not.toHaveBeenCalled();
+          expect(ctx.schemaChangeRepository.updateOne).not.toHaveBeenCalled();
+        },
+      );
+      it('does not use empty model filters to load other projects when detecting an empty project', async () => {
+        ctx.modelRepository.findAllBy.mockResolvedValue([]);
+        ctx.schemaChangeRepository.findLastSchemaChange.mockResolvedValue(null);
+        expect(await detect()).toBe(false);
+        expect(
+          ctx.modelColumnRepository.findColumnsByModelIds,
+        ).not.toHaveBeenCalled();
+      });
+      it('retains original no-diff convergence through a fresh authorized resolve-flag write', async () => {
+        ctx.projectService.getProjectDataSourceTables.mockResolvedValue([
+          { name: 'orders', columns: [{ name: 'amount', type: 'INTEGER' }] },
+        ]);
+        expect(await detect()).toBe(false);
+        expect(ctx.schemaChangeRepository.updateOne).toHaveBeenCalledWith(12, {
+          resolve: {
+            deletedTables: true,
+            deletedColumns: true,
+            modifiedColumns: true,
+          },
+        });
+      });
+      it('requires the original trusted scope callback even for direct bound manager invocation', async () => {
+        await expect(
+          new DataSourceSchemaDetector({
+            ctx,
+            projectId: 3,
+          }).detectSchemaChange(),
+        ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+        expect(ctx.modelRepository.findAllBy).not.toHaveBeenCalled();
+      });
+      it('refuses an independent-to-bound switch during the native repository await', async () => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+        delete ctx.nativeHumanToken;
+        delete ctx.nativeIdentityScope;
+        ctx.projectRepository.findOneBy.mockImplementation(async () => {
+          process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+            '/fixture-controlled-delivery';
+          return { id: 3 };
+        });
+        await expect(detect()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+        expect(
+          ctx.projectService.getProjectDataSourceTables,
+        ).not.toHaveBeenCalled();
+        expect(ctx.schemaChangeRepository.createOne).not.toHaveBeenCalled();
+      });
+    });
+    it('executes the original project mutation after actual-row manage admission and before final read-back without creating a query Action', async () => {
       expect(await update()).toBe(true);
       expect(ctx.projectRepository.updateOne).toHaveBeenCalledWith(3, {
         language: 'zh-TW',
@@ -3545,11 +3923,19 @@ describe('native saved-view HUMAN query consumer', () => {
           { bindingId: binding, authorizeScope: { permission: 'manage' } },
           ctx.nativeHumanToken,
         ],
+        [
+          'human-action',
+          { bindingId: binding, authorizeScope: { permission: 'manage' } },
+          ctx.nativeHumanToken,
+        ],
       ]);
       expect(calls.mock.invocationCallOrder[0]).toBeLessThan(
         ctx.projectRepository.updateOne.mock.invocationCallOrder[0],
       );
-      expect(calls.mock.invocationCallOrder[1]).toBeGreaterThan(
+      expect(calls.mock.invocationCallOrder[1]).toBeLessThan(
+        ctx.projectRepository.updateOne.mock.invocationCallOrder[0],
+      );
+      expect(calls.mock.invocationCallOrder[2]).toBeGreaterThan(
         ctx.projectRepository.updateOne.mock.invocationCallOrder[0],
       );
     });
@@ -3598,10 +3984,302 @@ describe('native saved-view HUMAN query consumer', () => {
             (entry[2].authorizeScope as any)?.permission === 'discover',
         ),
       ).toBe(true);
-      expect(calls).toHaveBeenCalledTimes(2);
+      expect(calls).toHaveBeenCalledTimes(3);
       expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
     });
+    it.each(['read', 'write'])(
+      'refuses settings %s when the resolver current-project lookup differs from the outer admitted project',
+      async (operation) => {
+        ctx.projectService.getCurrentProject
+          .mockResolvedValueOnce({ id: 3 })
+          .mockResolvedValueOnce({ id: 99, sampleDataset: 'fixture' });
+        await expect(
+          operation === 'read'
+            ? originalResolvers.Query.settings(null, {}, ctx)
+            : update(),
+        ).rejects.toMatchObject({ message: 'QUERY_SCOPE_DENIED' });
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+        expect(
+          ctx.projectService.getGeneralConnectionInfo,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['read', 'write'])(
+      'rejects revoked settings %s after native project loading and before consuming the row',
+      async (operation) => {
+        calls
+          .mockResolvedValueOnce(
+            scopeResult(operation === 'read' ? 'discover' : 'manage'),
+          )
+          .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+        await expect(
+          operation === 'read'
+            ? originalResolvers.Query.settings(null, {}, ctx)
+            : update(),
+        ).rejects.toMatchObject({ message: 'QUERY_SCOPE_DENIED' });
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+        expect(
+          ctx.projectService.getGeneralConnectionInfo,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['read', 'write'])(
+      'refuses settings %s on a changed generation before data disclosure or database write',
+      async (operation) => {
+        const permission = operation === 'read' ? 'discover' : 'manage';
+        const changed = scopeResult(permission);
+        changed.scope.generation++;
+        calls
+          .mockResolvedValueOnce(scopeResult(permission))
+          .mockResolvedValue(changed);
+        await expect(
+          operation === 'read'
+            ? originalResolvers.Query.settings(null, {}, ctx)
+            : update(),
+        ).rejects.toMatchObject({ message: 'QUERY_REFERENCE_CHANGED' });
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+        expect(
+          ctx.projectService.getGeneralConnectionInfo,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['read', 'write'])(
+      'requires the trusted project callback in the original bound settings %s consumer',
+      async (operation) => {
+        const resolver = new ProjectResolver();
+        await expect(
+          operation === 'read'
+            ? resolver.getSettings(null, {}, ctx)
+            : resolver.updateCurrentProject(
+                null,
+                { data: { language: 'en' } },
+                ctx,
+              ),
+        ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+        expect(
+          ctx.projectService.getGeneralConnectionInfo,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['read', 'write'])(
+      'rejects standalone-to-bound settings %s switching during current-project loading',
+      async (operation) => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete ctx.nativeIdentityScope;
+        delete ctx.nativeHumanToken;
+        ctx.projectService.getCurrentProject.mockImplementation(async () => {
+          ctx.nativeIdentityScope = 'a'.repeat(64);
+          return { id: 3, sampleDataset: 'fixture' };
+        });
+        await expect(
+          operation === 'read'
+            ? originalResolvers.Query.settings(null, {}, ctx)
+            : update(),
+        ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+        expect(
+          ctx.projectService.getGeneralConnectionInfo,
+        ).not.toHaveBeenCalled();
+      },
+    );
+    it('regenerates real-data recommendations from the just-saved language and fixed admitted project without another default lookup', async () => {
+      const service = recommendations();
+      const project = { id: 3, sampleDataset: null, language: 'en' };
+      ctx.projectService.getCurrentProject
+        .mockResolvedValueOnce(project)
+        .mockResolvedValueOnce(project)
+        .mockResolvedValue({ id: 99, language: 'foreign' });
+      expect(
+        await originalResolvers.Mutation.updateCurrentProject(
+          null,
+          { data: { language: 'ZH_TW' } },
+          ctx,
+        ),
+      ).toBe(true);
+      expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(2);
+      expect(service.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith({
+        ...project,
+        language: 'ZH_TW',
+      });
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: '3',
+          configuration: expect.objectContaining({
+            language: 'Traditional Chinese',
+          }),
+        }),
+      );
+      expect(ctx.projectRepository.updateOne).toHaveBeenNthCalledWith(
+        2,
+        3,
+        expect.objectContaining({ queryId: 'native-project-recommendation' }),
+      );
+    });
+    it('keeps language-write then MDL-revocation UNKNOWN and does not dispatch recommendation AI', async () => {
+      const service = recommendations();
+      ctx.projectService.getCurrentProject.mockResolvedValue({
+        id: 3,
+        sampleDataset: null,
+        language: 'en',
+      });
+      service.mdlService.makeCurrentModelMDL.mockImplementation(async () => {
+        calls.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+        );
+        return { manifest: { models: [] } };
+      });
+      await expect(update()).rejects.toMatchObject({
+        message: 'NATIVE_EXECUTION_UNKNOWN',
+        extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+      });
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledWith(3, {
+        language: 'zh-TW',
+      });
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+    });
+    it('the original explicit recommendation action rejects a different loaded project before MDL or dispatch', async () => {
+      const service = recommendations();
+      ctx.projectService.getCurrentProject
+        .mockResolvedValueOnce({ id: 3 })
+        .mockResolvedValue({ id: 99 });
+      await expect(
+        originalResolvers.Mutation.generateProjectRecommendationQuestions(
+          null,
+          {},
+          ctx,
+        ),
+      ).rejects.toMatchObject({
+        message: 'QUERY_SCOPE_DENIED',
+        extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+      });
+      expect(service.mdlService.makeCurrentModelMDL).not.toHaveBeenCalled();
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    });
+    it('the original explicit recommendation action rechecks after MDL before its first side effect', async () => {
+      const service = recommendations();
+      service.mdlService.makeCurrentModelMDL.mockImplementation(async () => {
+        calls.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+        );
+        return { manifest: { models: [] } };
+      });
+      await expect(
+        originalResolvers.Mutation.generateProjectRecommendationQuestions(
+          null,
+          {},
+          ctx,
+        ),
+      ).rejects.toMatchObject({
+        extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+      });
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    });
+    it('recommendation reading uses the admitted project without a third current-project read or new AI request', async () => {
+      const service = recommendations();
+      const project = {
+        id: 3,
+        queryId: 'existing-native-query',
+        questions: [],
+      };
+      ctx.projectService.getCurrentProject
+        .mockResolvedValueOnce(project)
+        .mockResolvedValueOnce(project)
+        .mockResolvedValue({ id: 99, queryId: 'foreign-query' });
+      await originalResolvers.Query.getProjectRecommendationQuestions(
+        null,
+        {},
+        ctx,
+      );
+      expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(2);
+      expect(
+        service.projectRecommendQuestionBackgroundTracker.addTask,
+      ).toHaveBeenCalledWith(project);
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+    });
+    it('withholds recommendation reading and tracking when the loaded project changes', async () => {
+      const service = recommendations();
+      ctx.projectService.getCurrentProject
+        .mockResolvedValueOnce({ id: 3 })
+        .mockResolvedValue({ id: 99, queryId: 'foreign-query' });
+      await expect(
+        originalResolvers.Query.getProjectRecommendationQuestions(
+          null,
+          {},
+          ctx,
+        ),
+      ).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(
+        service.projectRecommendQuestionBackgroundTracker.addTask,
+      ).not.toHaveBeenCalled();
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+    });
+    it('independent recommendation generation refuses binding configuration arriving during MDL loading', async () => {
+      const service = recommendations();
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+      service.mdlService.makeCurrentModelMDL.mockImplementation(async () => {
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture-binding';
+        return { manifest: { models: [] } };
+      });
+      await expect(
+        service.generateProjectRecommendationQuestions(),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(
+        service.wrenAIAdaptor.generateRecommendationQuestions,
+      ).not.toHaveBeenCalled();
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    });
+    it.each(['model', 'project'])(
+      'the original %s deployment passes its fixed project and keeps later recommendation refusal UNKNOWN',
+      async (entry) => {
+        const service = recommendations();
+        const project = { id: 3, version: 'present', sampleDataset: null };
+        ctx.projectService.getCurrentProject.mockResolvedValue(project);
+        ctx.nativeProjectCheck = jest.fn(async () => {
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        });
+        ctx.mdlService = {
+          makeCurrentModelMDL: jest.fn(async () => ({
+            manifest: { models: [] },
+          })),
+        };
+        ctx.deployService = {
+          deploy: jest.fn(async () => ({ status: 'SUCCESS' })),
+        };
+        const operation =
+          entry === 'model'
+            ? new ModelResolver().deploy(null, { force: false }, ctx)
+            : (new ProjectResolver() as any).deploy(ctx);
+        await expect(operation).rejects.toMatchObject({
+          message: 'NATIVE_EXECUTION_UNKNOWN',
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(ctx.deployService.deploy).toHaveBeenCalledTimes(1);
+        expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+        expect(ctx.nativeProjectCheck).toHaveBeenCalledWith(3);
+        expect(
+          service.wrenAIAdaptor.generateRecommendationQuestions,
+        ).not.toHaveBeenCalled();
+      },
+    );
     it('the original browser config consumes current HUMAN discovery and only returns its authoritative binding generation', async () => {
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture-binding';
       const response = {
         setHeader: jest.fn(),
         status: jest.fn(),
@@ -3610,6 +4288,7 @@ describe('native saved-view HUMAN query consumer', () => {
       response.status.mockReturnValue(response);
       await configHandler(
         {
+          method: 'GET',
           headers: {
             'x-kailo-native-identity-scope': ctx.nativeIdentityScope,
             'x-kailo-native-human-token': ctx.nativeHumanToken,
@@ -3639,9 +4318,15 @@ describe('native saved-view HUMAN query consumer', () => {
         ctx.nativeHumanToken,
       );
     });
-    it.each(['scope', 'token', 'generation', 'empty-config'])(
+    it.each([
+      ['scope', 401],
+      ['token', 401],
+      ['generation', 403],
+      ['empty-config', 503],
+    ])(
       'browser config keeps configured %s refusal closed without standalone or a reusable identity',
-      async (failure) => {
+      async (failure, status) => {
+        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = '/fixture-binding';
         const headers: any = {
           'x-kailo-native-identity-scope': ctx.nativeIdentityScope,
           'x-kailo-native-human-token': ctx.nativeHumanToken,
@@ -3666,14 +4351,11 @@ describe('native saved-view HUMAN query consumer', () => {
           json: jest.fn(),
         };
         response.status.mockReturnValue(response);
-        await configHandler({ headers } as any, response as any);
-        expect(response.json).toHaveBeenCalledWith(
-          expect.objectContaining({
-            nativeBindingConfigured: true,
-            nativeBindingGeneration: undefined,
-            queryScope: undefined,
-          }),
-        );
+        await configHandler({ method: 'GET', headers } as any, response as any);
+        expect(response.status).toHaveBeenCalledWith(status);
+        expect(response.json).toHaveBeenCalledWith({
+          error: 'NATIVE_INSTANCE_UNAVAILABLE',
+        });
       },
     );
     it('does not disclose even empty native metadata when current discovery is refused', async () => {
@@ -3728,6 +4410,7 @@ describe('native saved-view HUMAN query consumer', () => {
     it('marks a native write UNKNOWN after the current scope is revoked, without retry or false rollback evidence', async () => {
       calls
         .mockResolvedValueOnce(scopeResult('manage'))
+        .mockResolvedValueOnce(scopeResult('manage'))
         .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
       await expect(update()).rejects.toMatchObject({
         message: 'NATIVE_EXECUTION_UNKNOWN',
@@ -3746,6 +4429,7 @@ describe('native saved-view HUMAN query consumer', () => {
       const changed = scopeResult('manage');
       changed.scope.generation++;
       calls
+        .mockResolvedValueOnce(scopeResult('manage'))
         .mockResolvedValueOnce(scopeResult('manage'))
         .mockResolvedValueOnce(changed);
       await expect(update()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
@@ -3855,12 +4539,15 @@ describe('native saved-view HUMAN query consumer', () => {
       );
     });
     it('preserves the original UNKNOWN evidence through the actual Apollo GraphQL error formatter', async () => {
-      calls.mockResolvedValueOnce(scopeResult('manage')).mockRejectedValue(
-        Object.assign(new Error('private-native-error-body'), {
-          credential: 'private-secret-value',
-          request: { Authorization: 'Bearer private-native-token' },
-        }),
-      );
+      calls
+        .mockResolvedValueOnce(scopeResult('manage'))
+        .mockResolvedValueOnce(scopeResult('manage'))
+        .mockRejectedValue(
+          Object.assign(new Error('private-native-error-body'), {
+            credential: 'private-secret-value',
+            request: { Authorization: 'Bearer private-native-token' },
+          }),
+        );
       const server = new ApolloServer({
         typeDefs:
           'type Query { ready: Boolean } type Mutation { updateCurrentProject: Boolean }',
