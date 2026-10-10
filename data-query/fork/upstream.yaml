@@ -19,8 +19,8 @@ artifacts:
     build_context: data-query/wren-ai-service
     build_dockerfile: data-query/wren-ai-service/docker/Dockerfile
     inputs: [data-query/wren-ai-service/]
-    source_digest: sha256:518607d37a8e89e867c78a304395c0a002cd9eec5b6b1e2166de68154cd8a540
-    artifact_digest: sha256:0f29bfe3ef7c31fec8bbb85914fc731724e64d067f61c78aafc6db7b39400494
+    source_digest: sha256:92a532e755dd5b8c13564c13d8860f047faeaf44bf3f9ef9fa3e7854999a0874
+    artifact_digest: sha256:721fd2fd5c4b1501303d17b13fdec67e7a978ac24187bb9d26d2436ef18792b4
   - name: data-query-engine
     kind: image
     build_context: data-query/wren-engine/wren-core-legacy

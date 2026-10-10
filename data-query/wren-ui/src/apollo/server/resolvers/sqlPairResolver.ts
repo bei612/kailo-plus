@@ -169,9 +169,11 @@ export class SqlPairResolver {
     ctx: SqlPairContext,
   ) {
     const project = await ctx.projectService.getCurrentProject();
-    const questions = await ctx.sqlPairService.generateQuestions(project, [
-      arg.data.sql,
-    ]);
+    const questions = await ctx.sqlPairService.generateQuestions(
+      project,
+      [arg.data.sql],
+      await this.nativeContext(ctx),
+    );
     return questions[0];
   }
 

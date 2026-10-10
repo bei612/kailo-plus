@@ -92,7 +92,11 @@ export interface ISqlPairService {
     native?: NativeSqlPairContext,
     key?: string,
   ): Promise<boolean>;
-  generateQuestions(project: Project, sqls: string[]): Promise<string[]>;
+  generateQuestions(
+    project: Project,
+    sqls: string[],
+    native?: NativeSqlPairContext,
+  ): Promise<string[]>;
   modelSubstitute(
     sql: DialectSQL,
     options: ModelSubstituteOptions,
@@ -361,25 +365,65 @@ export class SqlPairService implements ISqlPairService {
   public async generateQuestions(
     project: Project,
     sqls: string[],
+    native?: NativeSqlPairContext,
   ): Promise<string[]> {
+    const configured = () =>
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
+      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    if (configured() && !native)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (native && project.id !== native.config.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const identity = native
+      ? await this.nativeIdentity(native, 'manage')
+      : undefined;
+    const check = async () => {
+      if (!native) {
+        if (configured())
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        return;
+      }
+      const fresh = await this.nativeIdentity(native, 'manage');
+      if (
+        fresh.scope !== identity.scope ||
+        fresh.generation !== identity.generation
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    };
+    let dispatched = false;
+    let observedFailure = false;
     try {
       const configurations = {
         language: WrenAILanguage[project.language] || WrenAILanguage.EN,
       };
 
+      await check();
+      dispatched = true;
       const { queryId } = await this.wrenAIAdaptor.generateQuestions({
         projectId: project.id,
         configurations,
         sqls,
       });
-      const result = await this.waitQuestionGenerateResult(queryId);
-      if (result.error) {
+      const result = await this.waitQuestionGenerateResult(queryId, check);
+      await check();
+      if (result.status === QuestionsStatus.FAILED || result.error) {
+        observedFailure = result.status === QuestionsStatus.FAILED;
         throw Errors.create(Errors.GeneralErrorCodes.GENERATE_QUESTIONS_ERROR, {
-          customMessage: result.error.message,
+          customMessage: result.error?.message,
         });
       }
+      if (
+        native &&
+        (!Array.isArray(result.questions) ||
+          result.questions.length !== sqls.length ||
+          result.questions.some((question) => typeof question !== 'string'))
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       return result.questions;
     } catch (err) {
+      if (native && dispatched && !observedFailure)
+        throw Errors.nativeWriteUnknown(err);
+      if (err instanceof NativeQueryRefusal) throw err;
       throw Errors.create(Errors.GeneralErrorCodes.GENERATE_QUESTIONS_ERROR, {
         customMessage: err.message,
       });
@@ -647,14 +691,19 @@ export class SqlPairService implements ISqlPairService {
 
   private async waitQuestionGenerateResult(
     queryId: string,
+    beforeRead?: () => Promise<void>,
   ): Promise<Partial<QuestionsResult>> {
+    await beforeRead?.();
     let result = await this.wrenAIAdaptor.getQuestionsResult(queryId);
     while (
       ![QuestionsStatus.SUCCEEDED, QuestionsStatus.FAILED].includes(
         result.status,
       )
     ) {
+      if (beforeRead && result.status !== QuestionsStatus.GENERATING)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       await new Promise((resolve) => setTimeout(resolve, 500));
+      await beforeRead?.();
       result = await this.wrenAIAdaptor.getQuestionsResult(queryId);
     }
     return result;

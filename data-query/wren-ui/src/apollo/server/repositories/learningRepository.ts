@@ -10,11 +10,18 @@ import {
 
 export interface Learning {
   id: number; // ID
-  userId: string; // Reference to config userUUID
+  userId: string; // Original standalone UUID or verified native identity partition.
   paths: string[]; // The learning paths, array of learning stories
 }
 
-export interface ILearningRepository extends IBasicRepository<Learning> {}
+export interface ILearningRepository extends IBasicRepository<Learning> {
+  saveNativePath(
+    projectId: number,
+    userId: string,
+    path: string,
+    beforeWrite: () => Promise<void>,
+  ): Promise<Learning>;
+}
 
 export class LearningRepository
   extends BaseRepository<Learning>
@@ -22,6 +29,31 @@ export class LearningRepository
 {
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'learning' });
+  }
+
+  public async saveNativePath(
+    projectId: number,
+    userId: string,
+    path: string,
+    beforeWrite: () => Promise<void>,
+  ): Promise<Learning> {
+    return this.knex.transaction(async (tx) => {
+      // Serialize the first insert as well as updates using the existing
+      // project row. No new account or permission registry is introduced.
+      const project = await tx('project')
+        .where({ id: projectId })
+        .forUpdate()
+        .first();
+      if (!project) throw new Error('Project not found');
+      const records = await this.findAllBy({ userId }, { tx });
+      const paths = [
+        ...new Set([...records.flatMap((record) => record.paths), path]),
+      ];
+      await beforeWrite();
+      return records.length
+        ? this.updateOne(records[0].id, { userId, paths }, { tx })
+        : this.createOne({ userId, paths }, { tx });
+    });
   }
 
   protected override transformToDBData = (data: any) => {

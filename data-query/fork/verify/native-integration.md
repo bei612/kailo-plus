@@ -10831,3 +10831,123 @@ The UI artifact alone does not prove a running native stack, approved binding,
 model calls, iframe/SSO authorization or screenshot acceptance. AI/Engine source
 artifact updates remain separate requirements; the next original AI job is
 19078, using the same frozen source and existing builder.
+
+### 2026-10-10 fixed-candidate AI artifact
+
+The existing AI build job 19078 completed with exit 0. It used the same frozen
+candidate and bounded Data-backed builder as the UI build above; no duplicate
+build or additional builder was started. Its source recorder wrote the candidate
+manifest, not the formal apps manifest. Formal `upstream_manifest.py plan
+data-query-ai-service` independently returned the same source digest:
+`sha256:92a532e755dd5b8c13564c13d8860f047faeaf44bf3f9ef9fa3e7854999a0874`.
+The actual artifact is
+`sha256:721fd2fd5c4b1501303d17b13fdec67e7a978ac24187bb9d26d2436ef18792b4`.
+
+The initial registry HEAD accepted only Docker schema-2 and returned 404.
+Repeating the read with OCI manifest support returned HTTP 200, content type
+`application/vnd.oci.image.manifest.v1+json` and the exact Docker-Content-Digest
+above. The local image RepoDigests independently contained that registry digest.
+This was content negotiation, not a failed build or a reason to rebuild/push
+again. The two original FromAsCasing warnings remain in the build output.
+
+The formal source/artifact record and existing private `WREN_AI_IMAGE` deployment
+input now reference that verified artifact. The prior private image reference
+was `sha256:fa633e3202accc13519be5b17a493d85d6ac7c7a0b30a1d6b83eca4427f3150d`;
+no image was removed. Authority remains SS-WRN-GOVERNANCE and the original
+artifact-provenance gate. Impact is limited to the existing build record and
+Compose image consumer: no schema, API, native database or workflow changes.
+Missing approved binding/model delivery and native config still refuse startup;
+this update neither invents those inputs nor bypasses authorization.
+
+Build log:
+`/volumes/data/kailo/tmp/wren-ui-batch-160c6736.lGzVs2/build-data-query-ai-service.yepd1C.log`,
+SHA-256 `a0eafb0297b3689751ef2904ad9147a86fa4bc4789db98fb6b8fe91d960bed73`.
+The existing native `config.yaml`, frozen model delivery and component-only
+model environment are not yet delivered. No Wren service was started by this
+update, no model request or datasource query was made, and iframe/browser,
+multi-user authorization and complete production acceptance remain unverified.
+
+The original `docker compose --env-file deploy/local/.env -f
+data-query/docker/docker-compose.yaml config --quiet` was actually run after
+the image input update. It exited 1:
+`required variable WREN_MODEL_DELIVERY_DIR is missing a value: owner-only frozen model delivery directory is required`.
+No placeholder directory or empty credential was supplied to turn that refusal
+into a pass. `git diff --check` on these two tracked files exited 0; the already
+running full/docs jobs cover earlier inputs and do not certify this new receipt.
+
+## Native personal learning and SQL-pair question generation (2026-10-10)
+
+Authority and existing feature: `.design/08` §6 SS-WRN-IDENTITY/GOVERNANCE
+requires native users/project permissions, not merely instance isolation.
+Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72` retains
+`wren-ui/src/apollo/server/resolvers/learningResolver.ts::saveLearningRecord`
+and `wren-ui/src/apollo/server/services/sqlPairService.ts::generateQuestions`.
+No original page, model provider, AI protocol or registration authority changes.
+
+Impact: the existing `learning.user_id` now partitions bound personal tutorial
+paths by verified identity plus binding/instance/native scope. Existing global
+standalone rows are not adopted into anyone's private identity. The original
+project row serializes first insert/update inside the original repository
+transaction; no schema migration or account registry is added. This personal
+progress uses the same existing `discover`
+permission as `getLearningRecord`, while SQL-pair question generation requires
+the original native management permission. Only the actual selected project is
+sent to the original AI adaptor; no default-project reread changes its target.
+
+This is not a new personal-preference governance exemption. `.design/05` §2.7,
+`07` §4 and `08` §6 preserve internal native business APIs, while `03` requires
+audit for simple writes and AE for the listed asynchronous/governed operations.
+This batch proves personal partitioning and current native access checks only;
+it does not prove a complete audit chain for learning writes. The original
+question-generation POST still has no AE/EE association before dispatch.
+SS-WRN-GOVERNANCE release admission therefore remains incomplete and blocked;
+no component entry, action, grant, release approval or activation is added.
+Fresh `manage` checks must not be reported as full model execution admission.
+
+Side effects and boundaries: fresh authority and frozen generation are checked
+before writes, model dispatch, polling and result exposure. Missing identity,
+partial binding configuration and changed delivery fail closed. A dispatched
+request with lost observation/refused result is UNKNOWN, not a fabricated
+failure or an automatic retry. Learning writes merge a set of tutorial paths;
+after UNKNOWN the original `getLearningRecord` reads that same personal set,
+without another write. Real unbound original behavior remains available.
+An observed AI FAILED result remains failed; unknown status/malformed success
+is not exposed as success. The question-generation task remains the upstream
+in-memory AI task: durable restart recovery and complete governed model
+execution/usage are not proved by this source checkpoint.
+
+Post-implementation evidence is under
+`/volumes/data/kailo/tmp/wren-learning-native.77gDVx`.
+The original limited `kailo-wren-native-sdk-vuc6uo` (4 CPU/4 GiB) ran the existing
+Jest/ts-jest single-module runtime mode on the actual production consumers,
+not a replacement implementation. `native-positive.log` exited 0: 19/19.
+The final three-file run `native-final-positive.log` exited 1: those 19 passed,
+but all three actual SQLite checks lacked the SDK's Node 24 native binding.
+That failure remains recorded and is not counted as database verification.
+
+Removing the production generation/fresh check and reverting the actual read
+partition to the shared UUID caused six failures (`native-negative.log`, exit
+1); restoring the exact production bytes passed 19/19
+(`native-restored.log`, exit 0). Checks cover the real resolver-to-service
+call, not only parameter fixtures; authorization/provider boundaries are
+substitutes and do not establish a live platform/model acceptance result.
+
+The existing original UI image
+`sha256:2676b7ad8b38878419f996150cfc17c491c39cb2092acebcf9c1800c81066882`
+opened its actual SQLite 3.45.1 using Node 18.20.8 / ABI 108. With no network,
+pull or installation, 4 CPU/4 GiB and user 1000:1000, it ran the original
+LearningRepository against SQLite: three passed (`repository-positive.log`,
+exit 0). Removing its production `await beforeWrite()` caused the revoked
+transaction check to resolve with an inserted row (`repository-negative.log`,
+exit 1; one failed/two passed). Exact restoration passed all three
+(`repository-restored.log`, exit 0). This verifies SQLite isolation, path
+deduplication and transaction rollback, not PostgreSQL multi-process locking.
+
+Prettier completed on all seven selected files. The original `tsc --noEmit
+--incremental false` first exited 2 (`types.log`): the installed Jest types
+do not declare `runAllTimersAsync`. Only the new polling check was corrected
+to wait for the existing real polling interval rather than fake timers; no
+production timeout or implementation changed. The final original two-file
+Jest check passed 19/19 and the same TypeScript command exited 0 together in
+session 90350 (`types-restored.log`). No full-check, image rebuild, deployment,
+active binding, browser interaction or live model/quota acceptance is claimed.
