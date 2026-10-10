@@ -317,6 +317,7 @@ export interface InstructionResult {
 
 // ask feedback
 export interface AskFeedbackInput {
+  queryId?: string;
   question: string;
   tables: string[];
   sqlGenerationReasoning: string;

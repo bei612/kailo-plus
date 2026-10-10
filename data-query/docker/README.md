@@ -638,9 +638,13 @@ Old tasks without captured owner/deployment evidence remain in native storage
 but cannot acquire a new owner by guessing a task ID. No SQL schema or duplicate
 task table is added. This fork's UI and AI-service task-ID/completion changes
 must be released together; an old AI service cannot prove the new fixed-ID or
-completion behavior. A failed fresh check before POST keeps the original
-non-dispatched task for operator reconciliation instead of pretending the
-native provider failed. These consumers are not evidence that all remaining
+completion behavior. In the original HUMAN adjustment create/rerun consumer,
+a failed fresh check before its AI POST now persists the original task's
+FAILED admission outcome through its project/query-ID compare-and-set, keeping
+the original owner proof. This is known not to have dispatched; a lost ACK after
+POST remains unresolved and is only observed under the same ID. Other native
+task consumers' pre-dispatch reconciliation gaps are not closed by this change.
+These consumers are not evidence that all remaining
 native mutation, recommendation, SQL-pair or SERVICE execution paths are ready.
 
 The original UI client now consumes that exact `done` separately from connection

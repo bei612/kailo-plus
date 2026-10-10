@@ -128,7 +128,11 @@ export class AskingResolver {
 
   // The native task remains its original owner. No cached result or query ID
   // grants another HUMAN access to its prompt/reasoning stream.
-  public async authorizeNativeAskingTask(queryId: string, ctx: IContext) {
+  public async authorizeNativeAskingTask(
+    queryId: string,
+    ctx: IContext,
+    adjustment = false,
+  ) {
     if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
       return undefined;
     const config = await loadQueryDelivery();
@@ -145,7 +149,7 @@ export class AskingResolver {
       project.id !== config.projectId ||
       !task ||
       task.queryId !== queryId ||
-      (task.detail as any)?.adjustment ||
+      Boolean((task.detail as any)?.adjustment) !== adjustment ||
       proof?.bindingId !== config.bindingId ||
       proof.identityScope !== ctx.nativeIdentityScope ||
       typeof proof.metadataReference?.hash !== 'string' ||
@@ -171,6 +175,54 @@ export class AskingResolver {
     )
       throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
     return current;
+  }
+
+  private async authorizeNativeAdjustmentSource(
+    responseId: number,
+    ctx: IContext,
+  ) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return;
+    const project = await ctx.projectService.getCurrentProject();
+    const visited = new Set<number>();
+    const references: ThreadResponse[] = [];
+    let threadId: number | undefined;
+    let id = responseId;
+    while (!visited.has(id)) {
+      visited.add(id);
+      const response = await ctx.askingService.getResponse(id, project);
+      if (!response) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      if (threadId !== undefined && response.threadId !== threadId)
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      threadId = response.threadId;
+      references.push(response);
+      if (response.askingTaskId) {
+        const task = await ctx.askingTaskRepository.findOneBy({
+          id: response.askingTaskId,
+          projectId: project.id,
+        });
+        if (!task)
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+        await this.authorizeNativeAskingTask(
+          task.queryId,
+          ctx,
+          Boolean((task.detail as any)?.adjustment),
+        );
+        for (const expected of references) {
+          const current = await ctx.askingService.getResponse(
+            expected.id,
+            project,
+          );
+          if (canonical(current) !== canonical(expected))
+            throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+        }
+        return;
+      }
+      // Original SQL-only adjustments retain their original response reference,
+      // not a second task or a copied user identity.
+      id = response.adjustment?.payload?.originalThreadResponseId;
+      if (!Number.isSafeInteger(id) || id <= 0) break;
+    }
+    throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
   }
 
   private async readNativeViews(
@@ -677,6 +729,15 @@ export class AskingResolver {
     const { responseId, data } = args;
     const askingService = ctx.askingService;
     const project = await ctx.projectService.getCurrentProject();
+    const nativeScope = await this.nativeAskingScope(ctx);
+    const authorizeSource = async () => {
+      await this.authorizeNativeAdjustmentSource(responseId, ctx);
+      if (
+        canonical(await this.nativeAskingScope(ctx)) !== canonical(nativeScope)
+      )
+        throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+    };
+    await authorizeSource();
 
     if (data.sql) {
       const response = await askingService.adjustThreadResponseWithSQL(
@@ -684,6 +745,7 @@ export class AskingResolver {
         {
           sql: data.sql,
         },
+        authorizeSource,
       );
       ctx.telemetry.sendEvent(
         TelemetryEvent.HOME_ADJUST_THREAD_RESPONSE_WITH_SQL,
@@ -704,6 +766,14 @@ export class AskingResolver {
       },
       {
         language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+        nativeScope,
+        authorizeNative: nativeScope
+          ? async (id) => {
+              await authorizeSource();
+              return this.authorizeNativeAskingTask(id, ctx, true);
+            }
+          : undefined,
+        authorizeSource,
       },
     );
   }
@@ -715,7 +785,10 @@ export class AskingResolver {
   ): Promise<boolean> {
     const { taskId } = args;
     const askingService = ctx.askingService;
-    await askingService.cancelAdjustThreadResponseAnswer(taskId);
+    await this.authorizeNativeAskingTask(taskId, ctx, true);
+    await askingService.cancelAdjustThreadResponseAnswer(taskId, () =>
+      this.authorizeNativeAskingTask(taskId, ctx, true),
+    );
     return true;
   }
 
@@ -727,11 +800,28 @@ export class AskingResolver {
     const { responseId } = args;
     const askingService = ctx.askingService;
     const project = await ctx.projectService.getCurrentProject();
+    const nativeScope = await this.nativeAskingScope(ctx);
+    const authorizeSource = async () => {
+      await this.authorizeNativeAdjustmentSource(responseId, ctx);
+      if (
+        canonical(await this.nativeAskingScope(ctx)) !== canonical(nativeScope)
+      )
+        throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+    };
+    await authorizeSource();
     await askingService.rerunAdjustThreadResponseAnswer(
       responseId,
       project.id,
       {
         language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+        nativeScope,
+        authorizeNative: nativeScope
+          ? async (id) => {
+              await authorizeSource();
+              return this.authorizeNativeAskingTask(id, ctx, true);
+            }
+          : undefined,
+        authorizeSource,
       },
     );
     return true;
@@ -744,7 +834,9 @@ export class AskingResolver {
   ): Promise<AdjustmentTask> {
     const { taskId } = args;
     const askingService = ctx.askingService;
+    await this.authorizeNativeAskingTask(taskId, ctx, true);
     const adjustmentTask = await askingService.getAdjustmentTask(taskId);
+    await this.authorizeNativeAskingTask(taskId, ctx, true);
     return {
       queryId: adjustmentTask?.queryId,
       status: adjustmentTask?.status,
@@ -1288,6 +1380,7 @@ export class AskingResolver {
         parent.askingTaskId,
       );
       if (!adjustmentTask) return null;
+      await this.authorizeNativeAskingTask(adjustmentTask.queryId, ctx, true);
       return {
         queryId: adjustmentTask?.queryId,
         status: adjustmentTask?.status,

@@ -72,6 +72,10 @@ export interface AskingPayload {
   authorizeNative?: CreateAskingTaskInput['authorizeNative'];
 }
 
+export type AdjustmentConfigurations = AskingPayload & {
+  authorizeSource?: () => Promise<void>;
+};
+
 export interface AskingTaskInput {
   question: string;
 }
@@ -215,17 +219,21 @@ export interface IAskingService {
   adjustThreadResponseWithSQL(
     threadResponseId: number,
     input: AdjustmentSqlInput,
+    authorizeSource?: () => Promise<void>,
   ): Promise<ThreadResponse>;
   adjustThreadResponseAnswer(
     threadResponseId: number,
     input: AdjustmentReasoningInput,
-    configurations: { language: string },
+    configurations: AdjustmentConfigurations,
   ): Promise<ThreadResponse>;
-  cancelAdjustThreadResponseAnswer(taskId: string): Promise<void>;
+  cancelAdjustThreadResponseAnswer(
+    taskId: string,
+    authorizeNative?: () => Promise<unknown>,
+  ): Promise<void>;
   rerunAdjustThreadResponseAnswer(
     threadResponseId: number,
     projectId: number,
-    configurations: { language: string },
+    configurations: AdjustmentConfigurations,
   ): Promise<{ queryId: string }>;
   getAdjustmentTask(taskId: string): Promise<TrackedAdjustmentResult>;
   getAdjustmentTaskById(id: number): Promise<TrackedAdjustmentResult>;
@@ -1421,12 +1429,25 @@ export class AskingService implements IAskingService {
   public async adjustThreadResponseWithSQL(
     threadResponseId: number,
     input: AdjustmentSqlInput,
+    authorizeSource?: () => Promise<void>,
   ): Promise<ThreadResponse> {
     const response = await this.getResponse(threadResponseId);
     if (!response) {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
 
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !authorizeSource
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await authorizeSource?.();
+    if (
+      authorizeSource &&
+      canonical(await this.getResponse(threadResponseId)) !==
+        canonical(response)
+    )
+      throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
     return await this.threadResponseRepository.createOne({
       sql: input.sql,
       threadId: response.threadId,
@@ -1444,7 +1465,7 @@ export class AskingService implements IAskingService {
   public async adjustThreadResponseAnswer(
     threadResponseId: number,
     input: AdjustmentReasoningInput,
-    configurations: { language: string },
+    configurations: AdjustmentConfigurations,
   ): Promise<ThreadResponse> {
     const project = await this.projectService.getCurrentProject();
     if (input.projectId !== project.id) throw new Error('Project not found');
@@ -1463,16 +1484,37 @@ export class AskingService implements IAskingService {
         sqlGenerationReasoning: input.sqlGenerationReasoning,
         sql: originalThreadResponse.sql,
         projectId: input.projectId,
-        configurations,
+        configurations: { language: configurations.language },
         question: originalThreadResponse.question,
         originalThreadResponseId: originalThreadResponse.id,
+        nativeScope: configurations.nativeScope,
+        authorizeNative: configurations.authorizeNative,
+        authorizeSource: configurations.authorizeSource
+          ? async () => {
+              await configurations.authorizeSource();
+              if (
+                canonical(await this.getResponse(threadResponseId, project)) !==
+                canonical(originalThreadResponse)
+              )
+                throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+            }
+          : undefined,
       });
     return createdThreadResponse;
   }
 
-  public async cancelAdjustThreadResponseAnswer(taskId: string): Promise<void> {
+  public async cancelAdjustThreadResponseAnswer(
+    taskId: string,
+    authorizeNative?: () => Promise<unknown>,
+  ): Promise<void> {
     if (!(await this.currentTask({ queryId: taskId }, undefined, true)))
       throw new Error('Adjustment task not found');
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !authorizeNative
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    await authorizeNative?.();
     // call cancelAskFeedback on AI service
     await this.adjustmentBackgroundTracker.cancelAdjustmentTask(taskId);
   }
@@ -1480,7 +1522,7 @@ export class AskingService implements IAskingService {
   public async rerunAdjustThreadResponseAnswer(
     threadResponseId: number,
     projectId: number,
-    configurations: { language: string },
+    configurations: AdjustmentConfigurations,
   ): Promise<{ queryId: string }> {
     const project = await this.projectService.getCurrentProject();
     if (projectId !== project.id) throw new Error('Project not found');
@@ -1494,7 +1536,10 @@ export class AskingService implements IAskingService {
         threadId: threadResponse.threadId,
         threadResponseId,
         projectId,
-        configurations,
+        configurations: { language: configurations.language },
+        nativeScope: configurations.nativeScope,
+        authorizeNative: configurations.authorizeNative,
+        authorizeSource: configurations.authorizeSource,
       });
     return { queryId };
   }

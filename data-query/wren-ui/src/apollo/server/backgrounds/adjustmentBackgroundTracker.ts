@@ -14,6 +14,13 @@ import {
 import { IWrenAIAdaptor } from '../adaptors';
 import { TelemetryEvent, WrenService } from '../telemetry/telemetry';
 import { PostHogTelemetry } from '../telemetry/telemetry';
+import { randomUUID } from 'crypto';
+import { GeneralErrorCodes } from '../utils/error';
+import type { NativeAskingScope } from '../repositories/askingTaskRepository';
+import {
+  canonical,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
 
 const logger = getLogger('AdjustmentTaskTracker');
 logger.level = 'debug';
@@ -46,6 +53,9 @@ export type CreateAdjustmentTaskInput = AskFeedbackInput & {
   question: string;
   originalThreadResponseId: number;
   configurations: { language: string };
+  nativeScope?: NativeAskingScope;
+  authorizeNative?: (queryId: string) => Promise<unknown>;
+  authorizeSource?: () => Promise<void>;
 };
 
 export type RerunAdjustmentTaskInput = {
@@ -53,6 +63,9 @@ export type RerunAdjustmentTaskInput = {
   threadId: number;
   projectId: number;
   configurations: { language: string };
+  nativeScope?: NativeAskingScope;
+  authorizeNative?: (queryId: string) => Promise<unknown>;
+  authorizeSource?: () => Promise<void>;
 };
 
 export interface IAdjustmentBackgroundTaskTracker {
@@ -109,9 +122,16 @@ export class AdjustmentBackgroundTaskTracker
     input: CreateAdjustmentTaskInput,
   ): Promise<{ queryId: string; createdThreadResponse: ThreadResponse }> {
     try {
-      // Call the AI service to create a task
-      const response = await this.wrenAIAdaptor.createAskFeedback(input);
-      const queryId = response.queryId;
+      const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+      if (
+        bound &&
+        (!input.nativeScope || !input.authorizeNative || !input.authorizeSource)
+      )
+        throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+      await input.authorizeSource?.();
+      const queryId = bound
+        ? randomUUID()
+        : (await this.wrenAIAdaptor.createAskFeedback(input)).queryId;
 
       const tx = await this.askingTaskRepository.transaction();
       let createdAskingTask: AskingTask;
@@ -129,6 +149,7 @@ export class AdjustmentBackgroundTaskTracker
               status: AskFeedbackStatus.UNDERSTANDING,
               response: [],
               error: null,
+              ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
             },
           },
           { tx },
@@ -166,6 +187,28 @@ export class AdjustmentBackgroundTaskTracker
       } catch (error) {
         await this.askingTaskRepository.rollback(tx);
         throw error;
+      }
+
+      if (bound) {
+        await this.authorizeDispatch(
+          { taskId: createdAskingTask.id, queryId, projectId: input.projectId },
+          async () => {
+            await input.authorizeNative(queryId);
+            await input.authorizeSource();
+          },
+        );
+        try {
+          const response = await this.wrenAIAdaptor.createAskFeedback({
+            ...input,
+            queryId,
+          });
+          if (response?.queryId !== queryId)
+            logger.warn('Original adjustment acknowledgement unavailable');
+        } catch {
+          // The original row owns the fixed native ID. Observe it after a lost
+          // acknowledgement; never create a replacement or invent FAILED.
+          logger.warn('Original adjustment create outcome unavailable');
+        }
       }
 
       // Start tracking this task
@@ -214,6 +257,26 @@ export class AdjustmentBackgroundTaskTracker
     });
     if (!previous || currentThreadResponse.threadId !== input.threadId)
       throw new Error('Adjustment task not found');
+    const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    if (
+      bound &&
+      (!input.nativeScope || !input.authorizeNative || !input.authorizeSource)
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (
+      bound &&
+      (previous.detail?.nativeScope?.identityScope !==
+        input.nativeScope.identityScope ||
+        previous.detail.nativeScope.bindingId !== input.nativeScope.bindingId)
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    if (
+      bound &&
+      ![AskFeedbackStatus.FAILED, AskFeedbackStatus.STOPPED].includes(
+        previous.detail?.status as AskFeedbackStatus,
+      )
+    )
+      throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
 
     const adjustment = currentThreadResponse.adjustment;
     if (!adjustment) {
@@ -233,15 +296,36 @@ export class AdjustmentBackgroundTaskTracker
       );
     }
 
-    // call createAskFeedback on AI service
-    const response = await this.wrenAIAdaptor.createAskFeedback({
+    const feedback = {
       ...input,
       tables: adjustment.payload?.retrievedTables,
       sqlGenerationReasoning: adjustment.payload?.sqlGenerationReasoning,
       sql: originalThreadResponse.sql,
       question: originalThreadResponse.question,
-    });
-    const queryId = response.queryId;
+    };
+    const authorizeSource = async () => {
+      await input.authorizeSource?.();
+      if (!bound) return;
+      const [current, original] = await Promise.all([
+        this.threadResponseRepository.findOneBy({
+          id: currentThreadResponse.id,
+          threadId: input.threadId,
+        }),
+        this.threadResponseRepository.findOneBy({
+          id: originalThreadResponse.id,
+          threadId: input.threadId,
+        }),
+      ]);
+      if (
+        canonical(current) !== canonical(currentThreadResponse) ||
+        canonical(original) !== canonical(originalThreadResponse)
+      )
+        throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+    };
+    await authorizeSource();
+    const queryId = bound
+      ? randomUUID()
+      : (await this.wrenAIAdaptor.createAskFeedback(feedback)).queryId;
 
     // update asking task with new queryId
     const updated = await this.askingTaskRepository.updateQuery(
@@ -257,12 +341,32 @@ export class AdjustmentBackgroundTaskTracker
           status: AskFeedbackStatus.UNDERSTANDING,
           response: [],
           error: null,
+          ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
         },
       },
     );
     if (!updated) throw new Error('Adjustment task changed during dispatch');
     this.trackedTasks.delete(previous.queryId);
-
+    this.trackedTasksById.delete(previous.id);
+    if (bound) {
+      await this.authorizeDispatch(
+        { taskId: previous.id, queryId, projectId: input.projectId },
+        async () => {
+          await input.authorizeNative(queryId);
+          await authorizeSource();
+        },
+      );
+      try {
+        const response = await this.wrenAIAdaptor.createAskFeedback({
+          ...feedback,
+          queryId,
+        });
+        if (response?.queryId !== queryId)
+          logger.warn('Original adjustment acknowledgement unavailable');
+      } catch {
+        logger.warn('Original adjustment create outcome unavailable');
+      }
+    }
     // schedule task
     const task = {
       projectId: input.projectId,
@@ -490,7 +594,15 @@ export class AdjustmentBackgroundTaskTracker
           record.id,
           task.queryId,
           task.projectId,
-          { detail: { ...result, adjustment: true } },
+          {
+            detail: {
+              ...result,
+              adjustment: true,
+              ...(record.detail?.nativeScope
+                ? { nativeScope: record.detail.nativeScope }
+                : {}),
+            },
+          },
           tx,
         ))
       )
@@ -545,22 +657,69 @@ export class AdjustmentBackgroundTaskTracker
     };
   }
 
+  private async authorizeDispatch(
+    task: Pick<TrackedTask, 'taskId' | 'queryId' | 'projectId'>,
+    authorize: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await authorize();
+    } catch (error) {
+      // No AI POST has occurred: this is a known admission failure, unlike a
+      // lost acknowledgement after dispatch. Persist through the original CAS.
+      await this.updateTaskInDatabase(task, {
+        status: AskFeedbackStatus.FAILED,
+        response: [],
+        error: {
+          code: GeneralErrorCodes.INTERNAL_SERVER_ERROR,
+          message:
+            error instanceof NativeQueryRefusal
+              ? error.code
+              : 'QUERY_ADMISSION_UNAVAILABLE',
+        },
+      });
+      this.trackedTasks.delete(task.queryId);
+      if (this.trackedTasksById.get(task.taskId)?.queryId === task.queryId)
+        this.trackedTasksById.delete(task.taskId);
+      throw error;
+    }
+  }
+
   private async updateTaskInDatabase(
-    task: TrackedTask,
+    task: Pick<TrackedTask, 'taskId' | 'queryId' | 'projectId'>,
     result: AskFeedbackResult,
   ): Promise<void> {
-    const updated = await this.askingTaskRepository.updateQuery(
-      task.taskId,
-      task.queryId,
-      task.projectId,
-      {
-        detail: {
-          adjustment: true,
-          ...result,
+    const tx = await this.askingTaskRepository.transaction();
+    try {
+      const record = await this.askingTaskRepository.lockQuery(
+        task.taskId,
+        task.queryId,
+        task.projectId,
+        tx,
+      );
+      if (!record)
+        throw new Error('Adjustment task changed during observation');
+      const updated = await this.askingTaskRepository.updateQuery(
+        task.taskId,
+        task.queryId,
+        task.projectId,
+        {
+          detail: {
+            adjustment: true,
+            ...result,
+            ...(record.detail?.nativeScope
+              ? { nativeScope: record.detail.nativeScope }
+              : {}),
+          },
         },
-      },
-    );
-    if (!updated) throw new Error('Adjustment task changed during observation');
+        tx,
+      );
+      if (!updated)
+        throw new Error('Adjustment task changed during observation');
+      await this.askingTaskRepository.commit(tx);
+    } catch (error) {
+      await this.askingTaskRepository.rollback(tx);
+      throw error;
+    }
   }
 
   private isTaskFinalized(status: AskFeedbackStatus): boolean {

@@ -9683,3 +9683,175 @@ The original consumer file SHA-256 is
 `c136644387d900e682bd014c74ee37d37488cb99a3afdf6aec890a9f1958816f`.
 This is the existing dependency-boundary Python check, not an HTTP deployment
 or a claim that the missing native AI artifact has been built.
+
+### 2026-10-09 original HUMAN adjustment dispatch and observation
+
+Authority and impact: `.design/08` §6, DD-98 and SS-WRN-IDENTITY /
+SS-WRN-GOVERNANCE require the original native task consumer to retain its
+verified HUMAN scope. The fixed source is Wren GenBI UI
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/backgrounds/adjustmentBackgroundTracker.ts::AdjustmentBackgroundTaskTracker`,
+`wren-ui/src/apollo/server/services/askingService.ts::AskingService`, and
+`wren-ai-service/src/web/v1/routers/ask_feedbacks.py::ask_feedback`.
+The existing response → AskingTask link, original adjustment reference,
+repository transaction/query-ID compare-and-set, nativeScope proof and AI
+feedback pipeline are reused. No platform authority, task table, UI page,
+public Resource contract or database migration is added.
+
+The original resolver now follows SQL-only adjustment references to the
+underlying native task, verifies its actual project/HUMAN proof, and checks
+the references again after authorization. Create persists its original task
+and response with a fixed native ID before the sole AI dispatch. Rerun keeps
+the original task, requires its actual FAILED or STOPPED state and owner,
+and replaces its query ID by the original compare-and-set. Both recheck
+source SQL and adjustment input across authorization waits. Cancel and
+observation consume the same existing task authorization; cancellation does
+not claim that a database query has been cancelled (GAP-WRN-01).
+
+Side-effect and boundary behavior: lost create acknowledgements retain the
+same persisted native ID for observation, never another POST or fabricated
+failure. AI feedback accepts that ID using the same native registration
+mechanism as asking/chart, rejects duplicate in-cache dispatch, and reports
+missing observation as HTTP 404 rather than a synthetic FAILED result.
+Native nonterminal and terminal writes preserve the trusted scope from the
+locked original row. Reference changes/concurrent rerun are refused;
+missing/revoked identity is denied. The original independent mode still
+allocates its ID in the AI service. Old AI deployments that ignore the new
+optional ID cannot supply matching terminal evidence and are not claimed
+compatible with the bound dispatch path. No SERVICE SQL capability is added.
+
+First post-implementation runtime check: original Jest / installed ts-jest
+single-file runtime transpilation in the existing 4-CPU/4-GiB SDK,
+`src/nativeAdjustmentScope.test.ts --runInBand`, exited 0 with
+`13 passed, 13 total` (94.334 seconds). The isolated source is
+`/volumes/data/kailo/check-cache/wren-adjustment.nrkaVe`; its
+`adjustment-positive.log` is the actual first-run output. This result covers
+the first thirteen checks, including actual service rejection of changed
+source SQL. Subsequent 404-consumer and final rerun-await checks are not
+included in that count. The original scheduler type job remains separate;
+runtime transpilation does not establish type, full-suite, browser,
+deployment or production acceptance for this adjustment batch.
+
+Scheduler-only follow-up: the previously recorded original type-check
+session 8555 has now actually exited 0 with an empty `scheduler-tsc.log`
+(SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+Its `/work` source remained frozen at the scheduler batch while adjustment
+checks used a separate `/cache/wren-adjustment.nrkaVe` source. This completes
+the scheduler type check, not adjustment types or the full release gate.
+
+Deployment follow-up using the correct original entry (run by the root agent):
+`sudo -n docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml config --quiet`
+actually exited 1 with
+`error while interpolating services.wren-ai-service.image: required variable WREN_AI_IMAGE is missing a value: source-built native AI Service image with OIDC callback is required`.
+The Compose project name is already delivered. This observed first failure is
+the absent source-built AI artifact, not a request for the user to explain
+an internal variable and not permission to substitute an upstream AI image.
+
+Adjustment UI-consumer follow-up: the first real private-source mutation
+changed the original service's final source-SQL comparison. Session 13743
+exited 1 with `1 failed, 12 passed, 13 total`, specifically because changed
+source SQL incorrectly resolved to a newly created response. After restoring
+that service from the implementation and synchronizing the two additional
+checks, the final original-consumer run exited 0 (`15 passed, 15 total`).
+The additional cases exercise the real AI adaptor's HTTP-404 path without
+inventing FAILED/repeating create, and a source change during authorization
+of the persisted rerun task.
+
+A second private production mutation removed the actual create authorizer
+and the rerun's final source recheck. The unchanged fifteen-case command
+exited 1 with `3 failed, 12 passed`: missing actual authorization, dispatch
+after revoked authorization, and stale SQL sent after a rerun wait. Both
+production files were then compared byte-for-byte with the implementation
+(`cmp` exit 0). The final restored run exited 0 with `15 passed, 15 total`
+in 0.489 seconds. No production implementation mutation remained in either
+the repository or the isolated verification source.
+
+Logs under the same `/volumes/data/kailo/check-cache/wren-adjustment.nrkaVe/`:
+
+- `adjustment-positive.log`: SHA-256 `9899fbdc23f9bf47e93bf1912e5c60c71dfc1e5f0627692ec52eefc791947e6a`.
+- `adjustment-source-negative.log`: SHA-256 `1092bd0af3a9169418a14c5b602d3014795144e2e61259208a6c13919c2a4754`.
+- `adjustment-final-positive.log`: SHA-256 `9c8f0f5700b86e6e610f22b1fcd00867959ef37fcf29dfef18494661ba3dfbd2`.
+- `adjustment-admission-negative.log`: SHA-256 `0fb2e888fe42f7416f6655487e7a329785ef2fd5933fb5037986043034976d94`.
+- `adjustment-restored.log`: SHA-256 `02975fc0c93d078a95390b26a7ae59df85a1dc2ffd136b2754f94729481b0fdc`.
+
+Restored `adjustmentBackgroundTracker.ts` SHA-256 is
+`84bf6c9a7295e02dab1b2899c9022327b2044a1d9f8ecfa60927f286ce2f7292`;
+`askingService.ts` is
+`333c36f1c1a198e839a138910fd67eb70021050ec6af6617e0b4e4c9b99312c1`;
+`src/nativeAdjustmentScope.test.ts` is
+`b8dd418cbca96197f9bfed5ffc98ca890c4e85edca0c6ec85a84e820188f1ec5`.
+
+Recovery correction after cross-review: a rejected authorization after the
+original create/rerun transaction commits but before its AI POST is known
+not to have dispatched. That branch now uses the original locked query-ID /
+project compare-and-set to store `AskFeedbackStatus.FAILED`, retaining the
+locked row's nativeScope and original error shape. Failure to persist that
+result propagates as a storage error and still cannot reach the AI POST.
+This is separate from the post-dispatch lost-acknowledgement branch, which
+remains nonterminal. `AskingService.getAdjustmentTask` / `getAdjustmentTaskById`
+call the existing tracker's `getAdjustmentResult` / `getAdjustmentResultById`;
+`getAdjustmentResultFromDB` re-registers that stored query ID for
+`pollTasks` observation without another POST. This can recover observation of
+an actually dispatched task, but cannot resolve an execution whose provider
+cache was permanently lost. HTTP 404 does not invent a failed execution.
+Finite-time reconciliation for those unknown records is
+still a release gap; this batch does not claim an implemented operator
+finalization action or automatic reconciliation deadline. These source and
+identity checks are not evidence of complete quota, approval, usage or
+terminal-governance integration.
+
+2026-10-10 pre-dispatch correction verification used another isolated source,
+`/volumes/data/kailo/check-cache/wren-adjustment-closure.qENmDA`, in the same
+existing 4-CPU/4-GiB SDK. The earlier adjustment type job's input was not
+changed. The production helper encloses only the pre-POST authorizer/source
+checks; the original AI POST's lost-acknowledgement catch is separate. Rerun
+also removes the previous query's in-memory indexes after its successful CAS,
+so an old STOPPED observation cannot hide the new admission failure.
+
+The actual original-consumer command in `/cache/wren-adjustment-closure.qENmDA`
+was:
+
+```sh
+node /work/node_modules/jest/bin/jest.js src/nativeAdjustmentScope.test.ts --runInBand --transform '{"^.+\\.tsx?$":["ts-jest",{"isolatedModules":true,"tsconfig":{"jsx":"react-jsx"}}]}'
+```
+
+The positive run exited 0 with `17 passed, 17 total` (184.372 seconds), including
+actual create/source/rerun refusal persistence, retained scope, observation by
+the stored task ID and refusal to overwrite a concurrently replaced query ID.
+In that private production copy, changing the persisted rejection back to
+UNDERSTANDING and removing the previous-query index cleanup made the same
+command exit 1 (`3 failed, 14 passed, 17 total`, 136.825 seconds). The three
+failures identified known-not-dispatched create authorization, source
+authorization and rerun-source rejection retaining a nonterminal state.
+The production file was then restored and compared byte-for-byte with the
+implementation (`cmp` exit 0).
+
+Logs in that isolated directory:
+
+- `adjustment-closure-positive.log`: SHA-256 `963401c940c9883709987f5ad6bbba5dd39b644da73ba0d1d2867714b422f540`.
+- `adjustment-closure-negative.log`: SHA-256 `97a2e83d9ff175000588656ec2c868d3809dfffae41cc53915d4fa4459913af6`.
+
+An initial formatting invocation used the older, absent
+`prettier/bin-prettier.js` path and exited 1 before running Jest. Using the
+already installed `prettier/bin/prettier.cjs` corrected that invocation;
+no dependency or tool was installed. These runtime checks do not establish
+the still-separate TypeScript result, browser acceptance, native deployment,
+quota/approval completion or the full release gate.
+
+The restored seventeen-case command subsequently exited 0 (`17 passed,
+17 total`, 68.343 seconds). Its immediately following original formatter,
+`node /work/node_modules/prettier/bin/prettier.cjs --check src/apollo/server/backgrounds/adjustmentBackgroundTracker.ts src/nativeAdjustmentScope.test.ts`,
+also exited 0: `All matched files use Prettier code style!`. Production and
+consumer files were compared again against the implementation (`cmp` exit 0
+for both). No negative mutation remains.
+
+- `adjustment-closure-restored.log`: SHA-256 `dda900b97d5bd6912431c8b3c75f6bf7e84d871df6ca5a042d8d7591ece24cff`.
+- `adjustment-closure-format.log`: SHA-256 `17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+- Restored production tracker: SHA-256 `4fe53088f08c9497493a8f1fd5c0ee0f16bb70aaef1e49697a113c6cbaaf24a1`.
+- Original-consumer check file: SHA-256 `954f70cad869cfda599735e1b13bad6cde1fcca58aa10fd2514f38c48a0f8129`.
+
+At this runtime checkpoint, original type session 24386 is still running on
+the earlier, frozen adjustment source; it does not include the pre-dispatch
+correction. Neither that uncompleted result nor an older scheduler type pass
+is a type acceptance for this corrected batch. Full checks, deployed browser
+behavior and the source-built AI service remain outside these results.

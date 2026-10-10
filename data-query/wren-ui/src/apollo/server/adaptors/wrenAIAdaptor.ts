@@ -732,6 +732,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   ): Promise<AsyncQueryResponse> {
     try {
       const body = {
+        ...(input.queryId ? { native_task_id: input.queryId } : {}),
         question: input.question,
         tables: input.tables,
         sql_generation_reasoning: input.sqlGenerationReasoning,
