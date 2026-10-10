@@ -12,18 +12,24 @@ Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true }
 
 const state = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
-  const navigation = usePlatformNavigation();
+  const [scopeKey, setScopeKey] = useState("current-session");
+  const navigation = usePlatformNavigation(scopeKey);
   useHomeShortcut({ disabled: navigation.tab === "settings", onGoHome: () => navigation.openTab("inbox", navigation.workspaceId) });
   useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
-    data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}>
+    data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
+    data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
     <button onClick={() => { void navigation.openTab("workflows", "workspace-b"); }}>workflows</button>
     <button onClick={() => { void navigation.openApplication("binding-a", "workspace-a"); }}>application</button>
     <button onClick={() => { void navigation.openProject("signed-project"); }}>project</button>
+    <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}, "  exact needle  "); }}>search result</button>
+    <button onClick={() => { void navigation.openConversation("conversation-a", {messageId:"diff-reply",threadRootId:"diff-root"}, "reply needle"); }}>DM search result</button>
+    <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}); }}>ordinary link</button>
+    <button onClick={() => setScopeKey("next-session")}>switch session</button>
   </div>;
 } }));
 
@@ -38,6 +44,40 @@ async function mount(url: string) {
   await act(async () => { await router.load(); root!.render(<RouterProvider router={router} />); });
   return router;
 }
+
+it("carries the original search activation in history, not the URL, and clears ordinary navigation", async () => {
+  const router = await mount("/app/inbox");
+  const click = (label: string) => act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();});
+  await click("search result");
+  expect(node!.querySelector("[data-search-query]")?.getAttribute("data-search-query")).toBe("exact needle");
+  const activation = node!.querySelector("[data-search-activation]")?.getAttribute("data-search-activation");
+  expect(activation).toBeTruthy();
+  expect(router.history.location.href).not.toContain("needle");
+  expect(router.history.location.state).toMatchObject({searchHighlight:{messageId:"diff-result",query:"exact needle"}});
+  await click("search result");
+  expect(node!.querySelector("[data-search-activation]")?.getAttribute("data-search-activation")).not.toBe(activation);
+  await click("ordinary link");
+  expect(node!.querySelector("[data-search-query]")).toBeNull();
+  await click("DM search result");
+  expect(router.history.location.pathname).toBe("/app/conversations/conversation-a");
+  expect(node!.querySelector("[data-search-query]")?.getAttribute("data-search-query")).toBe("reply needle");
+  await click("audit");
+  expect(node!.querySelector("[data-search-query]")).toBeNull();
+  await act(async () => {router.history.back(); await router.load();});
+  expect(node!.querySelector("[data-search-query]")?.getAttribute("data-search-query")).toBe("reply needle");
+  await click("switch session");
+  expect(node!.querySelector("[data-search-query]")).toBeNull();
+});
+
+it("rejects malformed or mismatched target search history without altering navigation admission", async () => {
+  const router = await mount("/app/inbox");
+  for (const highlight of [{messageId:"diff-result",query:"needle"}, {activationId:"activation",messageId:"other-message",query:"needle"}]) {
+    await act(async () => {await router.navigate({to:"/channels/$channelId",params:{channelId:"workspace-a"},search:{messageId:"diff-result"},
+      state: previous => ({...previous,searchHighlightScope:"current-session",searchHighlight:highlight})});});
+    expect(node!.querySelector("[data-search-query]")).toBeNull();
+    expect(node!.querySelector("[data-message]")?.getAttribute("data-message")).toBe("diff-result");
+  }
+});
 
 it("keeps the original host mounted and restores the audit URL after a full document reload", async () => {
   const router = await mount("/app/channels/workspace-a");

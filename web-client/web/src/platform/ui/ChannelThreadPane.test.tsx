@@ -11,12 +11,15 @@ import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query,conversationMessages:state.conversationQuery}), useLocale: () => "en", useT: () => (key: string) => key,
 }));
-vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content: string}) => <p>{content}</p>}));
+vi.mock("@/features/chat/ui/MessageContent", async (original) => {
+  const actual=await original<typeof import("@/features/chat/ui/MessageContent")>();
+  return {MessageContent:(props:import("react").ComponentProps<typeof actual.MessageContent>)=>state.richContent?<actual.MessageContent {...props}/>:<p>{props.content}</p>};
+});
 vi.mock("@/platform/bff-client", async(original) => ({
   ...await original<typeof import("@/platform/bff-client")>(),
   bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.conversationProfile(...args)},
@@ -34,11 +37,12 @@ const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", ro
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() {for (let i = 0; i < 12; i++) await act(async () => {await vi.advanceTimersByTimeAsync(10);});}
-async function mount(routeTargetMessageId?:string, conversation?:ConversationView) {
+async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
     <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
       conversation={conversation} channelId={conversation?.channelId}
       routeTargetMessageId={routeTargetMessageId}
+      {...search}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
       disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
   </TooltipProvider></QueryClientProvider>));
@@ -46,6 +50,7 @@ async function mount(routeTargetMessageId?:string, conversation?:ConversationVie
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";state.receive=null;
+  state.richContent=false;
   vi.stubGlobal("Image",function(){
     const image=document.createElement("img");let source="";
     Object.defineProperties(image,{complete:{value:true},naturalWidth:{value:1},src:{get:()=>source,set:(value:string)=>{
@@ -66,6 +71,19 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();vi.unstubAllGlobals();});
+it.each([{scope:"channel",kind:9},{scope:"conversation",kind:40002}])("highlights only the searchable $kind body in the admitted $scope thread", async ({scope,kind}) => {
+  state.richContent=true;
+  const events=[rootEvent,reply].map(row=>({...row,kind,content:"needle **needle** `needle`"}));
+  state.query.mockResolvedValue({events});state.conversationQuery.mockResolvedValue({events});
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  await mount(replyId,conversation,{searchMessageId:replyId,searchQuery:"needle"});
+  await vi.waitFor(()=>expect(host.querySelectorAll(`[data-message-id="${replyId}"] [data-search-match="true"]`)).toHaveLength(2));
+  expect(host.querySelector(`[data-message-id="${rootId}"] [data-search-match="true"]`)).toBeNull();
+  expect(host.querySelector('code [data-search-match="true"]')).toBeNull();
+  await mount(replyId,conversation);
+  expect(host.querySelector('[data-search-match="true"]')).toBeNull();
+});
+
 it("uses the admitted thread query, original panel and exact selected parent when publishing", async () => {
   await mount();
   expect(state.query).toHaveBeenCalledWith("workspace", {messageType: "STREAM", parentEventId: rootId});

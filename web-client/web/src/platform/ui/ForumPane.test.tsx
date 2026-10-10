@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PlatformProvider } from "@client-kit/platform/react/context";
@@ -34,9 +34,9 @@ const reply={...post,id:replyId,kind:45003,created_at:2,tags:[...post.tags,["e",
 const bounds={...post,id:"e".repeat(64),kind:39006,tags:[["d","channel:head"]],content:JSON.stringify({has_more:false,next_cursor:null})};
 let host:HTMLDivElement, root:Root, cache:QueryClient;
 const startDm=vi.fn();
-async function mount(principal="human") {
+async function mount(principal="human", search?:Pick<ComponentProps<typeof ForumPane>, "target"|"searchMessageId"|"searchQuery"|"searchActivationId">) {
   await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
-    <ForumPane workspaceId="workspace" channelId="channel" archived={false} myPrincipalId={principal} onStartDm={startDm} />
+    <ForumPane workspaceId="workspace" channelId="channel" archived={false} myPrincipalId={principal} onStartDm={startDm} {...search} />
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   await vi.waitFor(() => expect(host.textContent).toContain("Forum post"));
 }
@@ -45,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks(); setLocale("en");
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   vi.stubGlobal("ResizeObserver",class { observe() {} unobserve() {} disconnect() {} });
+  Object.defineProperty(HTMLElement.prototype,"scrollIntoView",{configurable:true,value:vi.fn()});
   api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"},{principalId:"author",displayName:"Author",pubkeys:[author],state:"ACTIVE"}]);
   api.profile.mockResolvedValue({pubkey:self});
   api.workspaceMessages.mockImplementation((_scope, query) => Promise.resolve({events:query.messageType===WebMessageType.ForumComment?[reply]:[post,bounds]}));
@@ -54,6 +55,25 @@ beforeEach(() => {
   host=document.createElement("div");document.body.append(host);root=createRoot(host);
 });
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();});
+
+it.each([{messageId:postId,kind:45001},{messageId:replyId,kind:45003}])("opens and highlights the actual searchable forum kind $kind, including a repeated activation",async({messageId})=>{
+  const target={channelId:"channel",messageId,threadRootId:messageId===postId?null:postId};
+  const search={target,searchMessageId:messageId,searchQuery:"Forum",searchActivationId:"first"};
+  await mount("human",search);
+  await vi.waitFor(()=>expect(host.querySelector(`[data-forum-event-id="${messageId}"] [data-search-match="true"]`)?.textContent).toBe("Forum"));
+  const otherId=messageId===postId?replyId:postId;
+  expect(host.querySelector(`[data-forum-event-id="${otherId}"] [data-search-match="true"]`)).toBeNull();
+  const back=[...host.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.includes("Back"));
+  expect(back).toBeDefined();
+  await act(async()=>back!.click());
+  expect(host.querySelector('[data-forum-event-id]')).toBeNull();
+  await mount("human",{...search,searchActivationId:"second"});
+  await vi.waitFor(()=>expect(host.querySelector(`[data-forum-event-id="${messageId}"] [data-search-match="true"]`)).not.toBeNull());
+  await mount("human",{target});
+  expect(host.querySelector('[data-search-match="true"]')).toBeNull();
+  await act(async()=>api.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.querySelector('[data-forum-event-id]')).toBeNull();
+});
 
 it("opens the actual post author without selecting the post and withdraws on stream interruption",async()=>{
   await mount();

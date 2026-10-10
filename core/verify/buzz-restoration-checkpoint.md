@@ -6527,7 +6527,7 @@ Web 视频发送沿原 BFF 幂等键冻结最终时码正文、parent、附件 r
 
 权威仍为固定 Buzz `779af8886caae1317b4de962082429867ab61503`。复核其 `desktop/src/features/messages/ui/{DiffMessage.tsx,DiffMessageExpanded.tsx,DiffViewer.tsx,DiffViewer.css}`、`desktop/src/features/messages/lib/parseDiff.ts::parseUnifiedDiff/getDiffTitleBadge`、`desktop/src/shared/lib/url.ts::isSafeUrl` 与 `desktop/src/shared/constants/kinds.ts` 后，完整迁移到 `client-kit/ts/platform/src/react/messages/diff/`。卡片 DOM、CSS、源仓库/commit 链接、描述与截断提示、按文件统计和标记、原始内容降级显示、统一/并排展开及关闭均沿原实现；CSS 和 URL helper 与固定官方 blob 逐字 cmp exit0。差异仅为实际共享依赖导入、已有中文默认/英文词条与严格索引访问。没有自行设计新卡片或差异解析器，沿官方原锁定 `react-diff-view@3.3.3`。
 
-影响面为共享 `MessageRowSurface` 的真实 kind40008 分流、Web 与 Native 既有消息行消费者、Native `formatTimelineMessages::isTimelineContentEvent`、历史窗口/修复集合和 Web 打开线程动作。Native 原 `useSearchHighlightProps→MessageTimeline→TimelineMessageList→TimelineMessageRow→MessageRow` 的搜索词继续流向共享控件。Web 两个 Pane 没有搜索词上下文，`PlatformApp::openSearchChannel` 只有 eventId/threadRootId；本批不伪造搜索状态，Web 搜索定位后的 diff 词高亮仍缺。组件内带 query 的 DOM 检查不是这条 Web 全链证据。
+影响面为共享 `MessageRowSurface` 的真实 kind40008 分流、Web 与 Native 既有消息行消费者、Native `formatTimelineMessages::isTimelineContentEvent`、历史窗口/修复集合和 Web 打开线程动作。Native 原 `useSearchHighlightProps→MessageTimeline→TimelineMessageList→TimelineMessageRow→MessageRow` 的搜索词继续流向共享控件。当时 Web 两个 Pane 没有搜索词上下文，`PlatformApp::openSearchChannel` 只有 eventId/threadRootId。后续全量对照纠正：固定官方 `desktop/src-tauri/src/commands/messages.rs::build_search_messages_filter` 的可搜索类型仅 9/40002/45001/45003，不含 40008，不能把 diff 的可选高亮呈现误判为缺失 FTS 能力或据此扩搜索类型。原可搜索正文的 Web 高亮／导航消费者另批恢复；本批组件内带 query 的 DOM 检查不是 Web 搜索全链证据。
 
 Core 由主线独立改动 `core/crates/collab-bridge/src/bridge.rs` 与 `core/crates/platform-core/src/web_transport.rs`：`CHANNEL_TIMELINE_KINDS` 进入 stream.filter/channel_window_filter，`channel_message_event` 用于 thread root/author/read/reaction 引用，`thread_message_kinds` 在查询与回执中同集合；`mutation_target_matches` 仍等于原 WebMessageType，不放宽编辑删除目标。其正式检查结果由主线另行记录，本 UI 补丁不包含这两文件。没有 schema、迁移、新 API、新正文权威或持久状态；签名、唯一 h、scope、fresh admission、游标与未知 kind 拒绝沿既有通路。新 kind40008 发布/编辑/删除授权未接，`BUZZ_MEMBER_EVENT_KINDS` 未修改。
 
@@ -6605,3 +6605,115 @@ web_transport 还原复验实际 exit 0：34 passed、0 failed、1 ignored，
 `16e15278f49964a2bc88c2513b74455473fe82f12cfbaf94e446f32e6f0b410a`。
 该快照不是当前 main，也不是本批 Core 窄检查；不篡改来源摘要求通过，
 不声称当前完整门禁通过、浏览器实际收到 diff 消息、Windows/Mobile 或生产验收完成。
+
+### 2026-10-10 原可搜索消息的共享导航与正文高亮恢复
+
+权威为用户固定原版一致性要求、DD-39/75 与 SS-WEB-PRESENTATION。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/app/navigation/searchHighlightNavigation.ts::createSearchHighlightNavigation`、
+`desktop/src/app/routes/searchHighlightRouteState.ts::selectSearchHighlightRouteState`、
+`desktop/src/features/channels/ui/useSearchHighlightProps.ts::useSearchHighlightProps` 与
+`desktop/src/shared/lib/rehypeSearchHighlight.ts::rehypeSearchHighlight` 整体共享迁移，
+Native 原位置 re-export，不另维护第二份算法。前述第一、第三模块与固定官方 cmp exit 0；
+路由模块仅改共享导入，rehype 插件仅改两处共享导入，代码块仍不高亮。
+
+前述 diff 批的搜索缺项判断已纠正：固定官方
+`desktop/src-tauri/src/commands/messages.rs::build_search_messages_filter` 本来只搜
+9/40002/45001/45003。没有添加 40008 FTS、搜索 API、契约、数据迁移或另一搜索缓存。
+本批原样保留原 HAST 标记及样式；四模块归为共享迁移；Web 的会话隔离与既有
+BFF 目录准入为已授权宿主接缝；实际四种消息的搜索高亮／定位缺项在生产消费者补齐。
+
+影响面：TopbarSearch 的真实结果 query 经 PlatformApp 当前会话目录重新准入，
+进入原 history.state.searchHighlight，而不把查询词／凭据放进 URL。
+现有 tenant/principal/platformSessionId 的 scope key 限制历史呈现，原 activationId
+参与实际频道目标去重和线程重新定位，关闭回复面板后再次点击同一命中可重开。
+Forum 的 Workspace 导航引用经已准入 channel descriptor 映射回原生 channelId，
+同样消费激活与精确命中正文；MessageContent、频道主行、DM/频道线程、论坛帖子／评论
+使用同一原 rehype 插件，不再只有模拟 diff query 或无人消费的 props。
+
+副作用与边界：没有新发布链／正文副本／身份权威。普通导航显式清除高亮，
+后退／前进复用原历史；畸形状态、空查询、目标 ID 不一致和跨会话状态不呈现高亮。
+导航仍须现有目录与 ACTIVE 参与者事实；目标正文仍从原 BFF 当前 scope 读取，
+分页、撤权、结果不明及写入终态处理没有改动。错误分类沿原 apps/06 §4，
+展示状态不是准入凭证，也不把 denied/UNKNOWN 解释为成功。
+
+本批 20 源路径在既有 4 CPU/8 GiB SDK 集中校验，未新建镜像或安装依赖。
+日志原件目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/search-highlight-20261010.De10me/`。
+旧冻结 88150 实际 exit 1：Web history updater 类型不匹配、17 项继承
+composer-agent-directory fixture 错返回 userState、两项错误 40008 可搜索 fixture，
+另一个 DOM worker 启动超时；日志完整保留，不计为最终输入验收。
+修正后 69978 三侧 types 均 exit 0，原导航 Node 7/7；DOM 107/115、8 fail，
+实际暴露了浏览器 API／主题／动画退出／真实消息行图库容器等 fixture 缺失，
+以及 SSR 固定 compact 被旧断言当成 rich。未放宽超时、跳过断言或修改生产门禁。
+34850 的 Web types exit 0、DOM 114/115（唯一 matchMedia fixture 缺失），
+原 Native nodeCache 与 searchHitNavigation 17/17 exit 0；论坛两种 kind、频道／DM
+普通正文、同命中重开与清除已实际执行。82654 原 MessageContent 全文件复验
+实际 exit 0、27/27，包括普通／粗体／链接正文高亮、代码排除、清除与真实图库。
+40999 私有生产去掉实际 rehype 消费后，kind 9/40002 线程正文两项真实失败，
+另四文件 worker 启动超时，不把后者算业务反证；实际 exit 1。
+还原该正文消费者后，40636 删除原会话 scope 比较及论坛激活依赖，实际 exit 1：
+跨会话状态隔离一项失败、45001/45003 关闭后再激活两项失败，另频道 worker 超时。
+仅补该未执行频道项的 92646 实际 exit 1：移除去重键 activationId 后，
+同 ID 关闭再激活断言真实失败。未改 worker 超时或业务断言。
+全部私有生产变异随后按原字节还原，20 路径与正式源码 cmp exit 0；
+最后六文件恢复复验 13910 实际 exit 0：6 files passed、115 tests passed，
+`web-restored.log` SHA-256 为
+`af13a76b962019f7336d5f4b02bd31c3b6e63714323603eeac1eb1e0ce821fea`。
+前述三次负向分别保留 `web-production-negative.log`、`web-navigation-negative.log`、
+`web-channel-negative.log`；真实失败与 worker 未执行均区分记录。
+
+这些是源码和实际命令证据，不是浏览器视觉验收。当前未部署本批，未产生对应版本
+playwright-cli 截图；旧 4c099 页面与之前 7597036 镜像不能充当本批证据。
+Windows 安装包、Mobile、全页面原版一致性和生产验收均未据此通过。
+
+同轮现网实拍与上述源码候选严格分开：复用 `kailo-ui-status` 的 playwright-cli，
+通过原 SSO 和既有受控测试身份正常登录；没有新建／重置账号、注入 Cookie、
+绕过权限、创建工作流或替换在线产物。`/app/platform-build-info.json` 实际报告
+buildId `sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`、
+reportedAt `2026-10-09T15:39:24.407Z`，对应既有旧部署
+`4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，不包含本批搜索恢复。
+截图原件在上述日志目录，以 `live-4c099-` 为前缀，逐张打开复核：频道、Inbox、
+Pulse、Projects、Agents、成员、Workflows 及创建弹窗、Tasks、审批、审计、设备、
+个人资料及头像选择器、外观中英文、通知、快捷键、自定义表情、邀请和实验设置。
+初始导航中加载态截图保留，业务状态以随后 `-ready` 或明确命名的截图为准；
+不把已加载少数页面、头像选择器可打开当作所有页面／头像保存通过。
+
+`live-4c099-channel.png` 有真实消息图片、输入区及分隔布局，不能称全站没有 CSS。
+`live-4c099-tasks.png` 的大段 JSON 动作表单确是体验缺口，但来源不是原项目任务页：
+现有 `web-client/web/src/platform/ui/PlatformApp.tsx::PlatformApp` 的 tasks 路由消费
+`client-kit/ts/platform/src/react/governance.tsx::TasksPage` 与 `ComponentActionsPanel`，
+其 DD-90 治理动作调用见 `core/verify/component-action.md`。固定官方
+`779af8886caae1317b4de962082429867ab61503` 的原项目任务属于
+`desktop/src/features/projects/ui/ProjectDetailScreen.tsx::ProjectDetailScreen` 和
+`desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssuesPanel`。
+不能用后者替换治理 Tasks、删除已有治理动作，也不能以治理页存在声称原项目任务已恢复。
+
+`live-4c099-workflow-editor.png` 中所选频道非空；其原
+`/api/v1/agent-installations?workspaceId=…&offset=0` 实际 HTTP 200、零条目，
+是该 scope 下没有当前用户可见安装，不是未选 scope 或接口错误。
+正常切到既有 Kailo 工作区后，同接口实际 HTTP 200、4 条：
+一条 installation PROVISIONING / principal ACTIVE，三条均 ACTIVE / ACTIVE。
+`live-4c099-workflow-kailo-executors.png` 的原创建弹窗真实列出三项可用执行器，
+没有放宽原双 ACTIVE 过滤或补默认执行器。
+
+随后按本轮明确的草稿验收范围，在同一正常会话仅提交一次原 `automation.create`：
+核对页确认名称为 `Kailo 草稿界面验收 2026-10-10T03:25:09.610Z`，原
+`core/crates/platform-core/src/automation.rs::management_insert_version` 与创建分支
+都保持 DRAFT。实际 `/api/v1/actions` HTTP 200、ALLOWED / DISPATCHED，
+ActionExecution `1009b55f-dae7-4e41-a473-f968f704453f`，
+Operation `24c6cb8c-af02-489a-a64b-cae822609037`。刷新原工作流页面后，
+资源 `1f93e79f-dc93-4a48-ba44-99c6c6655b97` 及该名称仍可读，工作流与 Asset
+均为草稿，固定版本为空；`live-4c099-workflow-draft-refreshed.png` 已打开视觉复核。
+本轮新增的仅此验收草稿，未发布版本、启用、运行 Agent、授权或重试未知请求。
+随后只读原 `/api/v1/tasks/1009b55f-dae7-4e41-a473-f968f704453f`，HTTP 200，
+AE、Operation、targetId 与上文完全对应；ALLOWED / DISPATCHED，无 workflowId、
+taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::taskPhase`
+将无 Workflow 的同步动作解释为已生效；原任务详情亦显示已生效，并同时显示三项引用，
+`live-4c099-workflow-create-task-applied.png` 已打开复核。这是同步草稿创建生效
+及刷新读回，不伪称 Temporal COMPLETED、工作流运行或本批新源码已上线。
+
+`live-4c099-search-dm-result.png` 的真实 DM 搜索命中有词高亮；点击后
+`live-4c099-search-dm-target.png` 已定位到正文，但实际 DOM 中 mark 为零，
+打开截图也未见正文高亮。这是旧部署中可复核的缺口，不是本批新消费者失败或通过证据。
+`live-4c099-settings-invitations.png` 还可见重复标题／说明；完整页面一致性仍未成立。

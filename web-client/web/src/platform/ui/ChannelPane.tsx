@@ -74,6 +74,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
+import { useSearchHighlightProps } from "@client-kit/platform/react/search/useSearchHighlightProps";
 import { useUiT } from "@client-kit/platform/react/context";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
@@ -122,6 +123,9 @@ export function ChannelPane({
   onOpenMessageLink,
   targetMessageId,
   targetThreadRootId,
+  targetSearchMessageId,
+  targetSearchQuery,
+  targetSearchActivationId,
   autoSendDraftKey,
   archived = false,
   metadataPending = false,
@@ -139,6 +143,9 @@ export function ChannelPane({
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   targetMessageId?: string;
   targetThreadRootId?: string;
+  targetSearchMessageId?: string;
+  targetSearchQuery?: string;
+  targetSearchActivationId?: string;
   autoSendDraftKey?: string;
   archived?: boolean;
   metadataPending?: boolean;
@@ -155,6 +162,7 @@ export function ChannelPane({
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
   }, archived });
   const { events: rawEvents, status, live, denied } = window;
+  const searchHighlightProps = useSearchHighlightProps(targetSearchMessageId, targetSearchQuery);
   const messageReactions = useMessageReactions({principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,
     events:rawEvents,available:live && !denied && !archived && !metadataPending});
   const events = useMemo(() => {
@@ -297,7 +305,7 @@ export function ChannelPane({
   const handledRouteTarget = useRef<string | null>(null);
   useEffect(() => {
     if (!targetMessageId) { handledRouteTarget.current = null; return; }
-    const key = JSON.stringify([myPrincipalId, workspaceId, targetMessageId]);
+    const key = JSON.stringify([myPrincipalId, workspaceId, targetMessageId, targetSearchActivationId]);
     if (handledRouteTarget.current === key || !routeContextReady || !routeTarget || composerBusy) return;
     if (routeTarget.parentId && (isBroadcastReply(routeTarget.tags ?? []) || !getThreadRouteTarget(routeTarget, routeMessageById))) return;
     if (!requireThreadEditResolution()) return;
@@ -306,7 +314,7 @@ export function ChannelPane({
     setProfileTarget(null); setSystemProfileTarget(null); setReplyTarget(routeTarget);
     handleCancelEdit();
     handledRouteTarget.current = key;
-  }, [targetMessageId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
+  }, [targetMessageId, targetSearchActivationId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
   const directMessageIntro = useMemo<MessageTimelineProps["directMessageIntro"]>(() => {
     if (!conversation || !live || denied || metadataPending || !members.isSuccess || members.isError || members.isFetching) return null;
@@ -640,6 +648,7 @@ export function ChannelPane({
         onRetry={window.retry}
         isLoading={window.isLoading && timelineMessages.length === 0}
         targetMessageId={mainTimelineTargetMessageId}
+        {...searchHighlightProps.timeline}
         hasComposerOverlay={false}
         firstUnreadMessageId={anchor === null || forcedUnreadIds.size > 0 ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
         unreadCount={forcedUnreadIds.size > 0 ? 0 : unreadFromOthers}
@@ -657,6 +666,7 @@ export function ChannelPane({
             const followedByContinuation = item.kind === "message" && item.isFollowedByContinuation;
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
+                searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
                 reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
                   renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
                     channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
@@ -678,6 +688,7 @@ export function ChannelPane({
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 messageId={message.id}
+                searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
                 content={message.body}
                 mediaTags={message.tags}
                 mentions={mentions}
@@ -754,6 +765,8 @@ export function ChannelPane({
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
       routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}
+      {...searchHighlightProps.thread}
+      routeActivationId={targetSearchActivationId}
       mentions={mentions}
       onOpenAuthor={handleOpenAuthor} onAuthorScopeUnavailable={closeProfile}
       editTarget={threadEditTarget} onEdit={handleRoutedEdit} onCancelEdit={handleCancelEdit} onEditConfirmed={handleEditConfirmed}

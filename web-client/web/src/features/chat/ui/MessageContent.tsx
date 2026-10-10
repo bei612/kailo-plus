@@ -53,6 +53,7 @@ import { parseChannelLink } from "@client-kit/platform/react/composer/features/m
 import { useVideoReviewCommentContent, type VideoReviewContext } from "@client-kit/platform/react/video-review";
 import rehypeLeadingInlineContent from "@client-kit/platform/react/video-review/rehypeLeadingInlineContent";
 import { isVideoMedia } from "@client-kit/platform/react/video-review/mediaEntry";
+import rehypeSearchHighlight from "@client-kit/platform/react/search/rehypeSearchHighlight";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -422,6 +423,7 @@ export function MessageContent({
   mentions = [],
   mediaTags,
   onOpenMessageLink,
+  searchQuery,
 }: {
   content: string;
   messageId?: string;
@@ -431,6 +433,7 @@ export function MessageContent({
   mentions?: readonly MessageMention[];
   mediaTags?: readonly (readonly string[])[];
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
+  searchQuery?: string;
 }) {
   const {reviewContext, videoReviewCommentRootId} = useBffVideoReview(messageId);
   const channelRuntime = useBffChannelLinkRuntime();
@@ -464,6 +467,9 @@ export function MessageContent({
     ...[...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)),
     ...previews.flatMap(preview => preview.imageDataUrl ? [preview.imageDataUrl] : []),
   ]);
+  const rehypePlugins: ComponentProps<typeof ReactMarkdown>["rehypePlugins"] = [];
+  if (reviewComment.leadingInlineContent != null) rehypePlugins.push(rehypeLeadingInlineContent);
+  if (searchQuery && searchQuery.trim().length >= 1) rehypePlugins.push([rehypeSearchHighlight, {query: searchQuery}]);
 
   return (
     <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink, reviewContext, leadingInlineContent: reviewComment.leadingInlineContent }}>
@@ -471,7 +477,7 @@ export function MessageContent({
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok || parseChannelLink(url).ok ? url : defaultUrlTransform(url)}
           remarkPlugins={[remarkGfm, remarkBreaks, remarkChannelDeepLinks, remarkMessageLinks, [remarkChannelLinks, { channelNames }], remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
-          rehypePlugins={reviewComment.leadingInlineContent != null ? [rehypeLeadingInlineContent] : []}
+          rehypePlugins={rehypePlugins}
           components={{ ...MARKDOWN_COMPONENTS,
             "channel-deep-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelDeepLink interactive>{children}</BffMarkdownChannelDeepLink>,
             "channel-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelReference interactive>{children}</BffMarkdownChannelReference>,

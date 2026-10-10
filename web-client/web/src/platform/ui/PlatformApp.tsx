@@ -197,7 +197,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     directMessageOwner.active = true;
     return () => { directMessageOwner.active = false; };
   }, [directMessageOwner]);
-  const navigation = usePlatformNavigation();
+  const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
+  const navigation = usePlatformNavigation(searchScopeKey);
   const { tab, messageTarget } = navigation;
   usePreviewFeatureWarning(tab);
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
@@ -217,7 +218,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [newForumOpen, setNewForumOpen] = useState(false);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] = useState(0);
-  const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
   const searchDirectory = useWebSearchDirectory(searchScopeKey, conversations.items, session.tenantPrincipalId,
     !conversations.loading && !conversations.error && tab !== "settings");
   const dmHeaderPeople = searchDirectory.isSuccess && !searchDirectory.isFetching
@@ -238,7 +238,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const active = activeRow?.id ?? null;
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
-  const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">) => {
+  const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">, query?:string) => {
     if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
       throw new TransportError(translate(getLocale(), "dm.viewInactive"));
     const fresh = await searchDirectory.refetch();
@@ -247,7 +247,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     const workspace = fresh.data.workspaces.find(row=>row.channel.channelId===channelId);
     if (workspace) {
       if (hit && !workspace.isMember) throw new TransportError(t("platform.linkChannelUnavailable"));
-      await navigation.openChannel(workspace.id, hit ? {channelId:workspace.id,messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined);
+      await navigation.openChannel(workspace.id, hit ? {channelId:workspace.id,messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined, query);
       return;
     }
     const actual = await conversations.reload();
@@ -255,7 +255,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       throw new TransportError(translate(getLocale(), "dm.viewInactive"));
     const conversation = actual.find(row=>row.channelId===channelId&&row.state==="ACTIVE"&&row.participantPrincipalIds.includes(session.tenantPrincipalId));
     if (!conversation) throw new TransportError(t("platform.linkChannelUnavailable"));
-    await navigation.openConversation(conversation.id, hit ? {messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined);
+    await navigation.openConversation(conversation.id, hit ? {messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined, query);
   };
   async function openDirectMessage(pubkey: string) {
     const checkCurrent = () => {
@@ -364,11 +364,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
       onStartDm={openDirectMessage}
-      channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
+      channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink}
+      target={messageTarget?.channelId === active ? {...messageTarget,channelId:channel.data.channelId} : undefined}
+      searchMessageId={navigation.searchHighlight?.messageId} searchQuery={navigation.searchHighlight?.query} searchActivationId={navigation.searchHighlight?.activationId} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
       onStartDm={openDirectMessage}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
+      targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
+      targetSearchActivationId={navigation.searchHighlight?.activationId}
       targetThreadRootId={messageTarget?.channelId === active ? messageTarget.threadRootId ?? undefined : undefined} /></> : <Notice text={t("platform.loadFailed")} />
   ) : (
     <MembersPane key={active} workspaceId={active} currentPrincipalId={session.tenantPrincipalId}
@@ -386,6 +390,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         targetMessageId={messageTarget?.channelId === chosenConversation.id ? messageTarget.messageId : undefined}
         targetThreadRootId={messageTarget?.channelId === chosenConversation.id ? messageTarget.threadRootId ?? undefined : undefined}
+        targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
+        targetSearchActivationId={navigation.searchHighlight?.activationId}
         onStartDm={openDirectMessage}
         onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
@@ -453,7 +459,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 directoryError={conversations.error??searchDirectory.error}
                 currentChannelId={nativeCurrentChannelId} focusRequest={searchFocusRequest} scopeFocusRequest={scopeSearchFocusRequest}
                 onOpenChannel={channelId=>{void openSearchChannel(channelId).catch(()=>toast.error(t("platform.loadFailed")));}}
-                onOpenResult={hit=>{if(hit.channelId)void openSearchChannel(hit.channelId,hit).catch(()=>toast.error(t("platform.loadFailed")));}}
+                onOpenResult={(hit,query)=>{if(hit.channelId)void openSearchChannel(hit.channelId,hit,query).catch(()=>toast.error(t("platform.loadFailed")));}}
                 onOpenUser={user=>openDirectMessage(user.pubkey)}
                 onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)} />
               </AppSidebarPinnedHeaderFrame>}

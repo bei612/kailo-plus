@@ -35,11 +35,14 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, restoreDraftKey, autoSendDraftKey, onStartDm }: {
+export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onStartDm }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
   metadataPending?: boolean;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   target?: ParsedMessageLink;
+  searchMessageId?: string;
+  searchQuery?: string;
+  searchActivationId?: string;
   restoreDraftKey?: string;
   autoSendDraftKey?: string;
   onStartDm?: (pubkey: string) => void;
@@ -59,7 +62,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
       setSelectedPostId(target.threadRootId ?? target.messageId);
       setTargetEventId(target.messageId);
     }
-  }, [target, channelId]);
+  }, [target, channelId, searchActivationId]);
   const [denied, setDenied] = React.useState<string | null>(null);
   const [interrupted, setInterrupted] = React.useState(false);
   const [profileTarget, setProfileTarget] = React.useState<MessageAuthor | null>(null);
@@ -160,6 +163,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
         : <UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />;
       return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>{identity}</MessageAuthorIdentity> : identity; }}
     renderContent={(message, preview) => <MessageContent messageId={message.eventId} workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
+      searchQuery={searchMessageId === message.eventId ? searchQuery : undefined}
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
       mentionPeople={mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : [])}

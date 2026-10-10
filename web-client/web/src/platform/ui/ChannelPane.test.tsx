@@ -42,6 +42,7 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) => {
+    if (options.queryKey.includes("composer-agent-directory")) return {isSuccess:false,data:undefined};
     if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
       state.memberReads.push(options.queryKey);
       return state.members;
@@ -74,10 +75,11 @@ vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
   const { useState } = await import("react");
-  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, onOpenAuthor, onAuthorScopeUnavailable}: {
+  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, onOpenAuthor, onAuthorScopeUnavailable, onClose}: {
     selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
     routeTargetMessageId?:string;
     conversation?:{id:string};
+    onClose: () => void;
   }) => {
     const [pending, setPending] = useState(false);
     return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId} data-conversation-id={conversation?.id}>
@@ -85,6 +87,7 @@ vi.mock("./ChannelThreadPane", async () => {
       <output>{pending ? "reply pending" : "reply idle"}</output>
       <button onClick={() => onOpenAuthor(selected)}>thread author</button>
       <button onClick={onAuthorScopeUnavailable}>thread unavailable</button>
+      <button onClick={onClose}>close thread</button>
     </section>;
   }};
 });
@@ -165,6 +168,23 @@ beforeEach(async () => {
   });
   state.receive!({ type: "live" });
   });
+});
+
+it.each([9, 40002])("highlights only the matching searchable kind %s live body and clears it on ordinary navigation", async (kind) => {
+  state.richContent = true;
+  const mountSearch = (query?:string) => act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a"
+    targetSearchMessageId={query ? "search-result" : undefined} targetSearchQuery={query} /></TooltipProvider>));
+  await mountSearch("needle");
+  await act(async () => {
+    for (const id of ["search-result","other-result"]) state.receive!({type:"event",event:{id,pubkey:"author-a",kind,created_at:2,tags:[],content:"needle **needle** `needle`"}});
+  });
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-message-id="search-result"] [data-search-match="true"]')).toHaveLength(2));
+  expect(host.querySelector('[data-message-id="other-result"] [data-search-match="true"]')).toBeNull();
+  expect(host.querySelector('code [data-search-match="true"]')).toBeNull();
+  await mountSearch();
+  expect(host.querySelector('[data-search-match="true"]')).toBeNull();
+  await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.querySelector('[data-message-id="search-result"]')).toBeNull();
 });
 
 it("routes ordinary live DM messages through the DM slot while honoring self, mute and revocation", async () => {
@@ -307,7 +327,7 @@ it("copies the actual row's edited reference mention with its exact second-devic
   state.members.data = [{principalId:"human-b",pubkeys:[firstKey,secondKey],displayName:"Alice"},
     {principalId:"human-a",pubkeys:[ownKey],displayName:"Me"}];
   const write = vi.fn();
-  vi.stubGlobal("navigator", Object.create(navigator, {clipboard:{value:{write,writeText:vi.fn()}}}));
+  vi.stubGlobal("navigator", Object.create(navigator, {platform:{value:navigator.platform},clipboard:{value:{write,writeText:vi.fn()}}}));
   vi.stubGlobal("ClipboardItem", class { constructor(public readonly data: Record<string, Blob>) {} });
   await act(async () => { root.render(<TooltipProvider><ChannelPane key="copy-channel" workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider>); });
   await act(async () => {
@@ -399,7 +419,7 @@ it("opens an off-window thread search target only from the freshly admitted orig
   const rootEvent={id:rootId,pubkey,kind:9,created_at:1,createdAt:1,channelId:"workspace-a",category:"activity" as const,tags:[["h","workspace-a"]],content:"Original thread root"};
   const reply={...rootEvent,id:replyId,createdAt:2,created_at:2,content:"Original thread target",tags:[["h","workspace-a"],["e",rootId,"","root"],["e",rootId,"","reply"]]};
   state.route.thread.isFetching=true;
-  const mount=()=>act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" targetMessageId={replyId} targetThreadRootId={rootId}/></TooltipProvider>));
+  const mount=(activationId="first")=>act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" targetMessageId={replyId} targetThreadRootId={rootId} targetSearchMessageId={replyId} targetSearchQuery="target" targetSearchActivationId={activationId}/></TooltipProvider>));
   state.route.messages=[rootEvent,reply];
   await mount();
   expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
@@ -408,6 +428,10 @@ it("opens an off-window thread search target only from the freshly admitted orig
   expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,true);
   const thread=host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]');
   expect(thread?.dataset.selectedId).toBe(replyId);expect(thread?.dataset.routeTarget).toBe(replyId);
+  await act(async()=>[...thread!.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==="close thread")!.click());
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull());
+  await mount("second");
+  expect(host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]')?.dataset.routeTarget).toBe(replyId);
   // The original timeline holds older prepends until its quiet-window and
   // stable-frame conditions agree; do not mistake that real admission delay
   // for a missing root or replace the gate in this consumer check.

@@ -8,6 +8,7 @@ import { createBffClient } from "@client-kit/platform/client";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { ThemeProvider } from "@/shared/theme/ThemeProvider";
 import { t } from "@/shared/i18n";
 import { setLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 import { BffMessageLinkHost, readMessageLinkMetadata } from "./BffMessageLinkHost";
@@ -24,6 +25,21 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("uses the complete original Markdown search highlighting while excluding code and clearing an absent query", () => {
+    vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+    try {
+    const content="needle **needle** [needle](https://example.com) `needle`\n\n```text\nneedle\n```";
+    const host=document.createElement("div");
+    host.innerHTML=renderToStaticMarkup(<ThemeProvider><MessageContent content={content} searchQuery="needle"/></ThemeProvider>);
+    expect(host.querySelectorAll('[data-search-match="true"]')).toHaveLength(3);
+    expect(host.querySelector('strong [data-search-match="true"]')).not.toBeNull();
+    expect(host.querySelector('a [data-search-match="true"]')).not.toBeNull();
+    expect(host.querySelector('code [data-search-match="true"], pre [data-search-match="true"]')).toBeNull();
+    host.innerHTML=renderToStaticMarkup(<ThemeProvider><MessageContent content={content}/></ThemeProvider>);
+    expect(host.querySelector('[data-search-match="true"]')).toBeNull();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("message-link restores the original chip and never exposes an unadmitted permalink as an external anchor", () => {
     const id = "a".repeat(64);
     const html = renderToStaticMarkup(<MessageContent content={`buzz://message?channel=channel-one&id=${id}`} />);
@@ -45,7 +61,7 @@ describe("MessageContent", () => {
       `[authored **label**](buzz://message?channel=${channel}&id=${message})\n` +
       `buzz://channel/${channel}.\n#unknown\n\`buzz://channel/${channel}\``
     } />);
-    expect(html).toContain("authored <strong>label</strong>");
+    expect(html).toContain('authored <strong class="font-semibold">label</strong>');
     expect(html).toContain('data-channel-deep-link=""');
     expect(html).toContain('data-channel-link=""');
     expect(html).not.toContain('target="_blank"');
@@ -397,7 +413,7 @@ describe("MessageContent", () => {
     expect(outside).not.toContain("<img");
     expect(outside).toContain(":party:");
   });
-  it("renders the complete original snapshot card with scope-bound images and lightbox trigger", () => {
+  it("renders the original server-default compact snapshot card with scope-bound images", () => {
     const href = "https://example.com/product";
     const imageUrl = `https://relay.example.com/media/${SHA}.png`;
     const snapshot = ["link-preview", "snapshot", "1", href, "Signed title", "Example", "Signed description", imageUrl, SHA, imageUrl, SHA];
@@ -406,10 +422,11 @@ describe("MessageContent", () => {
     expect(html).toContain('data-link-preview="generic-link"');
     expect(html).toContain("Signed title");
     expect(html).toContain("Signed description");
-    expect(html).toContain('data-link-preview-favicon=""');
+    expect(html).toContain('data-link-preview-hostname-favicon=""');
     expect(html).toContain('data-link-preview-thumbnail=""');
     expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
-    expect(html).toContain('data-image-lightbox-trigger=""');
+    expect(html).toContain('data-orientation="horizontal"');
+    expect(html).not.toContain('data-image-lightbox-trigger=""');
     expect(html).not.toContain('data-link-preview-skeleton');
     expect(html).not.toContain(imageUrl);
     const suppressed = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[snapshot, ["link-preview", "none"]]} />);
@@ -440,7 +457,7 @@ describe("MessageContent", () => {
       return computed;
     });
     const show = (scope: string) => act(async () => root.render(<PlatformProvider client={client} locale="en"><TooltipProvider>
-      <MessageContent workspaceId={scope} content={hrefs.join("\n\n")} mediaTags={[...tags].reverse()} />
+      <div data-testid="message-row"><MessageContent workspaceId={scope} content={hrefs.join("\n\n")} mediaTags={[...tags].reverse()} /></div>
     </TooltipProvider></PlatformProvider>));
     try {
       await show(WORKSPACE);

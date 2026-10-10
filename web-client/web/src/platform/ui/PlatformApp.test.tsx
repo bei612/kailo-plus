@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   headerReady: true, conversationState: "ACTIVE", privateWorkspace: false,
   messageTarget:null as null|{channelId:string;messageId:string;threadRootId:string|null},
   paneTarget:null as null|{targetMessageId?:string;targetThreadRootId?:string},
+  searchHighlight:null as null|{activationId:string;messageId:string;query:string},
+  paneSearch:null as null|{targetSearchMessageId?:string;targetSearchQuery?:string},
+  forumSearch:null as null|Pick<import("react").ComponentProps<typeof import("./ForumPane").ForumPane>,"target"|"searchMessageId"|"searchQuery"|"searchActivationId">,
 }));
 const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
 function searchHit(channelId:string,threadRootId:string|null=null):import("@client-kit/platform/react/search/types").SearchHit {
@@ -30,7 +33,7 @@ vi.mock("./search",()=>({useWebSearchDirectory:()=>({data:{channels:[],labels:{}
 vi.mock("./TopbarSearch",()=>({TopbarSearch:(props:import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch>)=>{state.search=props;return <button data-testid="actual-web-search-host"/>;}}));
 vi.mock("@/app/platform-navigation", () => ({
   usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
-    conversationId: state.conversationId, messageTarget: state.messageTarget, openTab: state.openTab, openChannel: state.openChannel, openConversation: state.openConversation }),
+    conversationId: state.conversationId, messageTarget: state.messageTarget, searchHighlight:state.searchHighlight, openTab: state.openTab, openChannel: state.openChannel, openConversation: state.openConversation }),
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -145,13 +148,15 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
   TenantInvitations: () => <div data-testid="tenant-invitations" />,
   RedemptionProgress: () => null,
 }));
-vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm, targetMessageId, targetThreadRootId}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>;targetMessageId?:string;targetThreadRootId?:string}) => {
+vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm, targetMessageId, targetThreadRootId, targetSearchMessageId, targetSearchQuery}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>;targetMessageId?:string;targetThreadRootId?:string;targetSearchMessageId?:string;targetSearchQuery?:string}) => {
   state.startDm[conversation ? "conversation" : "stream"] = onStartDm;
   state.paneTarget={targetMessageId,targetThreadRootId};
+  state.paneSearch={targetSearchMessageId,targetSearchQuery};
   return null;
 } }));
-vi.mock("@/platform/ui/ForumPane", () => ({ ForumPane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
-  state.startDm.forum = onStartDm;
+vi.mock("@/platform/ui/ForumPane", () => ({ ForumPane: ({onStartDm,target,searchMessageId,searchQuery,searchActivationId}: import("react").ComponentProps<typeof import("./ForumPane").ForumPane>) => {
+  state.startDm.forum = onStartDm!;
+  state.forumSearch={target,searchMessageId,searchQuery,searchActivationId};
   return null;
 } }));
 vi.mock("./PulsePane", () => ({ PulsePane: ({onStartDm}: {onStartDm: (pubkey: string) => void | Promise<void>}) => {
@@ -197,7 +202,7 @@ beforeEach(() => {
   state.headerReady = true;
   state.conversationState = "ACTIVE";
   state.privateWorkspace = false;
-  state.messageTarget=null;state.paneTarget=null;
+  state.messageTarget=null;state.paneTarget=null;state.searchHighlight=null;state.paneSearch=null;state.forumSearch=null;
   state.startDm = {};
   state.search = null;
   state.openChannel.mockReset().mockResolvedValue(undefined);
@@ -257,21 +262,38 @@ it("maps native search Channel IDs to the actual Workspace reference after fresh
   state.tab="channel";renderToStaticMarkup(<PlatformApp/>);
   expect(state.search?.currentChannelId).toBe("native-b");
   state.search!.onOpenChannel("native-a");
-  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",undefined));
+  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",undefined,undefined));
   expect(state.searchRefetch).toHaveBeenCalledOnce();
 });
 
 it("keeps actual original search hit and thread focus when mapping native channel to Workspace navigation",async()=>{
   renderToStaticMarkup(<PlatformApp/>);
   state.search!.onOpenResult(searchHit("native-a","actual-root"),"actual");
-  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",{channelId:"workspace-a",messageId:"actual-message",threadRootId:"actual-root"}));
+  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",{channelId:"workspace-a",messageId:"actual-message",threadRootId:"actual-root"},"actual"));
+});
+
+it("passes the admitted navigation highlight to the actual stream pane",()=>{
+  state.tab="channel";state.workspaceId="workspace-a";
+  state.messageTarget={channelId:"workspace-a",messageId:"search-result",threadRootId:null};
+  state.searchHighlight={activationId:"activation",messageId:"search-result",query:"original needle"};
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.paneSearch).toEqual({targetSearchMessageId:"search-result",targetSearchQuery:"original needle"});
+});
+
+it("maps the admitted forum search target back to its native channel and preserves original activation",()=>{
+  state.tab="channel";state.workspaceId="workspace-a";state.channelType="forum";
+  state.messageTarget={channelId:"workspace-a",messageId:"forum-reply",threadRootId:"forum-root"};
+  state.searchHighlight={activationId:"forum-activation",messageId:"forum-reply",query:"original forum"};
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.forumSearch).toEqual({target:{channelId:"native-stream",messageId:"forum-reply",threadRootId:"forum-root"},
+    searchMessageId:"forum-reply",searchQuery:"original forum",searchActivationId:"forum-activation"});
 });
 
 it("resolves a fresh participant DM by native channel without treating that ID as a Workspace",async()=>{
   state.reloadConversations.mockResolvedValue([{id:"actual-private",channelId:"native-private",state:"ACTIVE",participantPrincipalIds:["human-a","human-b"]}]);
   renderToStaticMarkup(<PlatformApp/>);
   state.search!.onOpenResult(searchHit("native-private"),"actual");
-  await vi.waitFor(()=>expect(state.openConversation).toHaveBeenCalledWith("actual-private",{messageId:"actual-message",threadRootId:null}));
+  await vi.waitFor(()=>expect(state.openConversation).toHaveBeenCalledWith("actual-private",{messageId:"actual-message",threadRootId:null},"actual"));
   expect(state.openChannel).not.toHaveBeenCalled();
 });
 

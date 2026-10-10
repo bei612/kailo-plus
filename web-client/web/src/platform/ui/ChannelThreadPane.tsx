@@ -15,10 +15,13 @@ import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPa
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   conversation?: ConversationView;
   routeTargetMessageId?: string;
+  routeActivationId?: string;
+  searchMessageId?: string | null;
+  searchQuery?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
   onOpenAuthor?: (message: TimelineMessage) => void;
@@ -51,7 +54,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set([selected.id]));
   const expandedTarget = useRef<string | null>(null);
-  useEffect(() => { setReplyId(routeTargetMessageId ? rootId : selected.id); setScrollTargetId(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id); expandedTarget.current = null; }, [selected.id, routeTargetMessageId, rootId]);
+  useEffect(() => { setReplyId(routeTargetMessageId ? rootId : selected.id); setScrollTargetId(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id); expandedTarget.current = null; }, [selected.id, routeTargetMessageId, routeActivationId, rootId]);
   const width = useThreadPanelWidth();
   // Native getThreadReplies traverses the original Relay cursor until complete.
   // Web traverses that same bounded server window, never inventing a time fence.
@@ -75,7 +78,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     if (!route) return;
     expandedTarget.current = targetId;
     setExpanded((old) => new Set([...old, ...route.expandedReplyIds]));
-  }, [rows, selected.id, routeTargetMessageId]);
+  }, [rows, selected.id, routeTargetMessageId, routeActivationId]);
   const data = useMemo(() => buildThreadPanelData(rows, rootId, replyId, expanded), [rows, rootId, replyId, expanded]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !data.threadHead);
   useEffect(() => {
@@ -144,6 +147,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
     replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
+    searchMessageId={searchMessageId} searchQuery={searchQuery}
     onScrollTargetResolved={() => setScrollTargetId(null)} onCancelReply={() => setReplyId(rootId)}
     onSelectReplyTarget={handleSelectReplyTarget}
     onExpandReplies={(message) => setExpanded((prior) => {const next = new Set(prior); if (!next.delete(message.id)) next.add(message.id); return next;})}
@@ -163,6 +167,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}
       renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} conversationId={conversation?.id} content={row.message.body} mediaTags={row.message.tags}
+        searchQuery={row.searchQuery}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
