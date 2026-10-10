@@ -638,12 +638,19 @@ Old tasks without captured owner/deployment evidence remain in native storage
 but cannot acquire a new owner by guessing a task ID. No SQL schema or duplicate
 task table is added. This fork's UI and AI-service task-ID/completion changes
 must be released together; an old AI service cannot prove the new fixed-ID or
-completion behavior. In the original HUMAN adjustment create/rerun consumer,
+completion behavior. In the original HUMAN Asking and adjustment create/rerun consumers,
 a failed fresh check before its AI POST now persists the original task's
 FAILED admission outcome through its project/query-ID compare-and-set, keeping
 the original owner proof. This is known not to have dispatched; a lost ACK after
-POST remains unresolved and is only observed under the same ID. Other native
-task consumers' pre-dispatch reconciliation gaps are not closed by this change.
+POST remains unresolved and is only observed under the same ID. The original
+bound Asking rerun checks the original owner, binding and FAILED/STOPPED status
+under the task row lock before replacing its query ID; active, unknown or
+already-finished work cannot be redispatched by using rerun. Original Asking
+cancellation rechecks the same HUMAN admission after loading the task, directly
+before its native cancel call. Removed observations cannot overwrite a known
+pre-dispatch refusal or a replacement query with a late provider response.
+Other native task consumers' pre-dispatch reconciliation gaps are not closed
+by these changes.
 These consumers are not evidence that all remaining
 native mutation, recommendation, SQL-pair or SERVICE execution paths are ready.
 

@@ -123,18 +123,11 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         : null;
       if (input.rerunFromCancelled && !previous)
         throw new Error('Asking task not found');
+      const previousQueryId = previous?.queryId;
 
       const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
       if (bound && (!input.nativeScope || !input.authorizeNative))
         throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
-      if (
-        bound &&
-        previous &&
-        (previous.detail?.nativeScope?.identityScope !==
-          input.nativeScope.identityScope ||
-          previous.detail.nativeScope.bindingId !== input.nativeScope.bindingId)
-      )
-        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
       const queryId = bound
         ? input.queryId ?? randomUUID()
         : (await this.wrenAIAdaptor.ask(input)).queryId;
@@ -142,22 +135,97 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         status: AskResultStatus.UNDERSTANDING,
         ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
       } as AskResult;
-      const record = previous
-        ? await this.askingTaskRepository.updateQuery(
+      let record: AskingTask;
+      if (bound && previous) {
+        const tx = await this.askingTaskRepository.transaction();
+        try {
+          const current = await this.askingTaskRepository.lockQuery(
             previous.id,
-            previous.queryId,
+            previousQueryId,
+            input.projectId,
+            tx,
+          );
+          if (!current || current.threadResponseId !== input.threadResponseId)
+            throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+          if (
+            current.detail?.nativeScope?.identityScope !==
+              input.nativeScope.identityScope ||
+            current.detail.nativeScope.bindingId !== input.nativeScope.bindingId
+          )
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          if (
+            ![AskResultStatus.FAILED, AskResultStatus.STOPPED].includes(
+              current.detail?.status as AskResultStatus,
+            )
+          )
+            throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+          record = await this.askingTaskRepository.updateQuery(
+            previous.id,
+            previousQueryId,
             input.projectId,
             { queryId, detail },
-          )
-        : await this.askingTaskRepository.createOne({
-            queryId,
-            projectId: input.projectId,
-            question: input.query,
-            detail,
-          });
+            tx,
+          );
+          if (!record) throw new Error('Asking task changed during dispatch');
+          await this.askingTaskRepository.commit(tx);
+        } catch (error) {
+          await this.askingTaskRepository.rollback(tx);
+          throw error;
+        }
+      } else if (previous) {
+        record = await this.askingTaskRepository.updateQuery(
+          previous.id,
+          previousQueryId,
+          input.projectId,
+          { queryId, detail },
+        );
+      } else {
+        record = await this.askingTaskRepository.createOne({
+          queryId,
+          projectId: input.projectId,
+          question: input.query,
+          detail,
+        });
+      }
       if (!record) throw new Error('Asking task changed during dispatch');
+      if (previous) {
+        this.trackedTasks.delete(previousQueryId);
+        this.trackedTasksById.delete(previous.id);
+      }
       if (bound) {
-        await input.authorizeNative(queryId);
+        try {
+          await input.authorizeNative(queryId);
+        } catch (error) {
+          // Admission failed before the only AI POST. Persist the known refusal
+          // on the original native task; an acknowledgement lost after POST is
+          // deliberately handled separately below and remains observable.
+          await this.updateTaskInDatabase(
+            { taskId: record.id },
+            {
+              taskId: record.id,
+              projectId: input.projectId,
+              queryId,
+              lastPolled: Date.now(),
+              isFinalized: true,
+              result: {
+                type: null,
+                status: AskResultStatus.FAILED,
+                response: null,
+                error: {
+                  code: Errors.GeneralErrorCodes.INTERNAL_SERVER_ERROR,
+                  message:
+                    error instanceof NativeQueryRefusal
+                      ? error.code
+                      : 'QUERY_ADMISSION_UNAVAILABLE',
+                },
+              },
+            },
+          );
+          this.trackedTasks.delete(queryId);
+          if (this.trackedTasksById.get(record.id)?.queryId === queryId)
+            this.trackedTasksById.delete(record.id);
+          throw error;
+        }
         try {
           const response = await this.wrenAIAdaptor.ask({ ...input, queryId });
           if (response?.queryId !== queryId)
@@ -168,7 +236,6 @@ export class AskingTaskTracker implements IAskingTaskTracker {
           logger.warn('Original native task create outcome unavailable');
         }
       }
-      if (previous) this.trackedTasks.delete(previous.queryId);
 
       // Start tracking this task
       const task = {
@@ -329,6 +396,12 @@ export class AskingTaskTracker implements IAskingTaskTracker {
             // Poll for updates
             logger.info(`Polling for updates for task ${queryId}`);
             const result = await this.wrenAIAdaptor.getAskResult(queryId);
+            // A pre-dispatch refusal or rerun can remove this observation while
+            // the original provider read is in flight. It no longer owns a write.
+            if (this.trackedTasks.get(queryId) !== task) {
+              this.runningJobs.delete(queryId);
+              return;
+            }
             task.lastPolled = now;
 
             // if result is not changed, we don't need to update the database

@@ -157,7 +157,10 @@ export interface IAskingService {
     threadResponseId: number,
     payload: AskingPayload,
   ): Promise<Task>;
-  cancelAskingTask(taskId: string): Promise<void>;
+  cancelAskingTask(
+    taskId: string,
+    authorizeNative?: () => Promise<unknown>,
+  ): Promise<void>;
   getAskingTask(taskId: string): Promise<TrackedAskingResult>;
   getAskingTaskById(id: number): Promise<TrackedAskingResult>;
 
@@ -726,11 +729,20 @@ export class AskingService implements IAskingService {
     return task;
   }
 
-  public async cancelAskingTask(taskId: string): Promise<void> {
+  public async cancelAskingTask(
+    taskId: string,
+    authorizeNative?: () => Promise<unknown>,
+  ): Promise<void> {
     if (!(await this.currentTask({ queryId: taskId })))
       throw new Error('Asking task not found');
     const eventName = TelemetryEvent.HOME_CANCEL_ASK;
     try {
+      if (
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+        !authorizeNative
+      )
+        throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+      await authorizeNative?.();
       await this.askingTaskTracker.cancelAskingTask(taskId);
       this.telemetry.sendEvent(eventName, {});
     } catch (err: any) {

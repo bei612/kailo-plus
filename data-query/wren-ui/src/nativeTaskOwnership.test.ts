@@ -121,6 +121,47 @@ describe('native task ownership consumers', () => {
     await service.cancelAskingTask('owned');
     await service.cancelAdjustThreadResponseAnswer('adjustment');
   });
+  it('bound cancellation consumes fresh admission after reading the original task', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const authorizeNative = jest.fn(async () => {
+      expect(service.askingTaskRepository.findOneBy).toHaveBeenCalled();
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    });
+    try {
+      await expect(service.cancelAskingTask('owned')).rejects.toMatchObject({
+        status: 401,
+      });
+      await expect(
+        service.cancelAskingTask('owned', authorizeNative),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(authorizeNative).toHaveBeenCalledTimes(1);
+      expect(service.askingTaskTracker.cancelAskingTask).not.toHaveBeenCalled();
+      await service.cancelAskingTask('owned', async () => undefined);
+      expect(service.askingTaskTracker.cancelAskingTask).toHaveBeenCalledWith(
+        'owned',
+      );
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it('the original cancellation resolver supplies admission to the actual service consumer', async () => {
+    const resolver: any = new AskingResolver();
+    const authorize = jest
+      .spyOn(resolver, 'authorizeNativeAskingTask')
+      .mockResolvedValue(undefined);
+    const ctx: any = { askingService: service };
+    await expect(
+      resolver.cancelAskingTask(null, { taskId: 'owned' }, ctx),
+    ).resolves.toBe(true);
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(authorize).toHaveBeenLastCalledWith('owned', ctx);
+    expect(service.askingTaskTracker.cancelAskingTask).toHaveBeenCalledWith(
+      'owned',
+    );
+  });
   it.each([false, true])(
     'resumes original observation before refusing reset (adjustment=%s)',
     async (isAdjustment) => {
@@ -810,7 +851,14 @@ describe('acknowledged native asking task persistence and observation', () => {
         return row ? Object.assign(row, data) : null;
       }),
       bindResponse: jest.fn(),
-      lockQuery: jest.fn(),
+      lockQuery: jest.fn(async (id, queryId, projectId) =>
+        rows.find(
+          (row) =>
+            row.id === id &&
+            row.queryId === queryId &&
+            row.projectId === projectId,
+        ),
+      ),
       transaction: jest.fn(async () => ({})),
       commit: jest.fn(),
       rollback: jest.fn(),
@@ -888,9 +936,15 @@ describe('acknowledged native asking task persistence and observation', () => {
     }
   });
 
-  it('a changed bound owner before POST refuses the real native call without pretending native failure', async () => {
+  it('a changed bound owner before POST persists the known admission failure without dispatch', async () => {
     const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    let finishObservation: (result: unknown) => void;
+    const observation = new Promise((resolve) => {
+      finishObservation = resolve;
+    });
+    adaptor.getAskResult.mockReturnValue(observation);
+    let polling: Promise<void>;
     try {
       await expect(
         tracker.createAskingTask({
@@ -901,14 +955,289 @@ describe('acknowledged native asking task persistence and observation', () => {
             identityScope: 'a'.repeat(64),
             metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
           },
-          authorizeNative: async () => {
+          authorizeNative: async (queryId) => {
+            await tracker.getAskingResult(queryId);
+            polling = tracker.pollTasks();
             throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
           },
         }),
       ).rejects.toMatchObject({ status: 403 });
       expect(rows).toHaveLength(1);
-      expect(rows[0].detail.status).toBe(AskResultStatus.UNDERSTANDING);
+      expect(rows[0].detail.status).toBe(AskResultStatus.FAILED);
+      expect(rows[0].detail.error.message).toBe('QUERY_SCOPE_DENIED');
+      expect((await tracker.getAskingResultById(1)).status).toBe(
+        AskResultStatus.FAILED,
+      );
+      expect(tracker.trackedTasks.size).toBe(0);
+      expect(tracker.trackedTasksById.size).toBe(0);
+      finishObservation({
+        status: AskResultStatus.FINISHED,
+        response: [],
+        error: null,
+      });
+      await polling;
+      expect(rows[0].detail.status).toBe(AskResultStatus.FAILED);
       expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it.each([
+    AskResultStatus.UNDERSTANDING,
+    AskResultStatus.SEARCHING,
+    AskResultStatus.PLANNING,
+    AskResultStatus.GENERATING,
+    AskResultStatus.CORRECTING,
+    AskResultStatus.FINISHED,
+    'FUTURE_NATIVE_STATUS',
+    undefined,
+  ])('does not redispatch a bound %s task under rerun', async (status) => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    rows.push({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status, nativeScope },
+    });
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          authorizeNative: jest.fn(),
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(rows[0].queryId).toBe('original');
+      expect(repository.updateQuery).not.toHaveBeenCalled();
+      expect(repository.rollback).toHaveBeenCalledTimes(1);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it.each([AskResultStatus.FAILED, AskResultStatus.STOPPED])(
+    'reruns the original bound %s task once and retains unknown POST acknowledgement',
+    async (status) => {
+      const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+      const nativeScope = {
+        bindingId: randomUUID(),
+        identityScope: 'a'.repeat(64),
+        metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+      };
+      rows.push({
+        id: 9,
+        projectId: 7,
+        queryId: 'original',
+        threadResponseId: 21,
+        detail: { status, nativeScope },
+      });
+      const authorizeNative = jest.fn(async (queryId) => {
+        expect(repository.commit).toHaveBeenCalledTimes(1);
+        expect(rows[0].queryId).toBe(queryId);
+      });
+      adaptor.ask.mockRejectedValue(new Error('lost POST ACK'));
+      try {
+        const result = await tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          authorizeNative,
+        });
+        expect(result.queryId).not.toBe('original');
+        expect(rows).toHaveLength(1);
+        expect(rows[0].detail).toEqual({
+          status: AskResultStatus.UNDERSTANDING,
+          nativeScope,
+        });
+        expect(adaptor.ask).toHaveBeenCalledTimes(1);
+        expect(authorizeNative).toHaveBeenCalledWith(result.queryId);
+        await expect(
+          tracker.createAskingTask({
+            query: 'Original',
+            projectId: 7,
+            rerunFromCancelled: true,
+            previousTaskId: 9,
+            threadResponseId: 21,
+            nativeScope,
+            authorizeNative,
+          }),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(adaptor.ask).toHaveBeenCalledTimes(1);
+      } finally {
+        if (original === undefined)
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+      }
+    },
+  );
+  it('checks the locked rerun owner and status instead of the earlier row snapshot', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    const row = {
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.STOPPED, nativeScope },
+    };
+    rows.push(row);
+    const input = {
+      query: 'Original',
+      projectId: 7,
+      rerunFromCancelled: true,
+      previousTaskId: 9,
+      threadResponseId: 21,
+      nativeScope,
+      authorizeNative: jest.fn(),
+    };
+    try {
+      repository.lockQuery.mockResolvedValueOnce({
+        ...row,
+        detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
+      });
+      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
+        status: 409,
+      });
+      repository.lockQuery.mockResolvedValueOnce({
+        ...row,
+        detail: {
+          ...row.detail,
+          nativeScope: { ...nativeScope, identityScope: 'd'.repeat(64) },
+        },
+      });
+      await expect(tracker.createAskingTask(input)).rejects.toMatchObject({
+        status: 403,
+      });
+      expect(repository.updateQuery).not.toHaveBeenCalled();
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it('clears old query caches and persists a rerun admission refusal on the existing task', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    rows.push({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.STOPPED, nativeScope },
+    });
+    const stale = {
+      queryId: 'original',
+      taskId: 9,
+      projectId: 7,
+      result: rows[0].detail,
+    };
+    tracker.trackedTasks.set('original', stale);
+    tracker.trackedTasksById.set(9, stale);
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          rerunFromCancelled: true,
+          previousTaskId: 9,
+          threadResponseId: 21,
+          nativeScope,
+          authorizeNative: async () => {
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(tracker.trackedTasks.has('original')).toBe(false);
+      expect(tracker.trackedTasksById.has(9)).toBe(false);
+      expect(await tracker.getAskingResultById(9)).toMatchObject({
+        status: AskResultStatus.FAILED,
+        nativeScope,
+        error: { message: 'QUERY_SCOPE_DENIED' },
+      });
+      expect(rows).toHaveLength(1);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+  it('an old in-flight observation cannot overwrite the replacement query after a bound rerun', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    rows.push({
+      id: 9,
+      projectId: 7,
+      queryId: 'original',
+      threadResponseId: 21,
+      detail: { status: AskResultStatus.UNDERSTANDING, nativeScope },
+    });
+    let finishObservation: (result: unknown) => void;
+    adaptor.getAskResult.mockReturnValue(
+      new Promise((resolve) => {
+        finishObservation = resolve;
+      }),
+    );
+    try {
+      await tracker.getAskingResult('original');
+      const polling = tracker.pollTasks();
+      rows[0].detail.status = AskResultStatus.STOPPED;
+      adaptor.ask.mockImplementation(async ({ queryId }) => ({ queryId }));
+      const result = await tracker.createAskingTask({
+        query: 'Original',
+        projectId: 7,
+        rerunFromCancelled: true,
+        previousTaskId: 9,
+        threadResponseId: 21,
+        nativeScope,
+        authorizeNative: jest.fn(),
+      });
+      finishObservation({
+        status: AskResultStatus.FINISHED,
+        response: [{ sql: 'old result' }],
+        error: null,
+      });
+      await polling;
+      expect(rows[0].queryId).toBe(result.queryId);
+      expect(rows[0].detail.status).toBe(AskResultStatus.UNDERSTANDING);
+      expect(repository.updateQuery).toHaveBeenCalledTimes(1);
+      expect(responses.updateOne).not.toHaveBeenCalled();
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
     } finally {
       if (original === undefined)
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;

@@ -417,7 +417,9 @@ export class AskingResolver {
     const { taskId } = args;
     const askingService = ctx.askingService;
     await this.authorizeNativeAskingTask(taskId, ctx);
-    await askingService.cancelAskingTask(taskId);
+    await askingService.cancelAskingTask(taskId, () =>
+      this.authorizeNativeAskingTask(taskId, ctx),
+    );
     return true;
   }
 

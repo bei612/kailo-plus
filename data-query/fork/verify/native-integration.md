@@ -9855,3 +9855,65 @@ the earlier, frozen adjustment source; it does not include the pre-dispatch
 correction. Neither that uncompleted result nor an older scheduler type pass
 is a type acceptance for this corrected batch. Full checks, deployed browser
 behavior and the source-built AI service remain outside these results.
+
+### 2026-10-10 — original HUMAN Asking dispatch, rerun and cancel consumers
+
+Authority and impact: DD-98 and design 08 §6 keep original native task ownership
+and fail-closed admission; the original implementation remains
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts` symbols
+`AskingTaskTracker.createAskingTask`, `cancelAskingTask` and
+`updateTaskInDatabase`. The existing GraphQL resolver/service/tracker and
+`asking_task` row are the only changed execution chain. No schema, contract,
+public task registry, UI layout or provider implementation was added.
+
+Side effects: bound rerun now locks the original task and verifies current
+owner/binding, response association and FAILED/STOPPED before the existing
+query-ID compare-and-set. Active, unknown, missing-status or completed tasks
+cannot use rerun to dispatch again. An authorization refusal before the only
+AI POST persists the original FAILED admission result and retains its owner;
+lost acknowledgement after POST still observes the same query ID. Cancellation
+consumes the existing HUMAN authorizer after the native task lookup, immediately
+before the original cancel call. Standalone behavior is retained.
+
+Boundary evidence: the original consumer checks cover stale locked rows,
+missing identity, revoked admission, native FAILED/STOPPED rerun, lost ACK,
+old-query polling after replacement, and same-ID polling during a pre-POST
+refusal. Removed observations cannot write a late result or mask the refusal
+through the original task caches. Query/reference conflicts use the existing
+refusal codes; storage failures still propagate rather than claim completion.
+Repository/provider substitutes verify these consumer interleavings, not
+PostgreSQL multi-replica locking or deployed provider behavior.
+
+The existing `kailo-wren-query-sdk-itgs2n` container was checked at 4 CPUs,
+4 GiB memory and no extra swap; no SDK, dependency or image was installed.
+Candidate/log directory:
+`/volumes/data/kailo/check-cache/wren-asking-dispatch.1w4HDY`.
+The original runtime command, in that container's `/cache/wren-asking-dispatch.1w4HDY`, was:
+
+```sh
+node /work/node_modules/jest/bin/jest.js src/nativeTaskOwnership.test.ts --runInBand --testNamePattern="native task ownership consumers|acknowledged native asking task persistence and observation" --transform '{"^.+\\.tsx?$": ["ts-jest",{"isolatedModules":true,"tsconfig":{"jsx":"react-jsx"}}]}'
+```
+
+Positive session 74948 exited 0: 47 passed, 42 skipped, 89 total (138.665 s).
+Actual private-production mutations removed the locked terminal-state check,
+the cancel-time authorization await and the post-provider observation identity
+check, while keeping query-ID CAS. Negative session 67092 exited 1: 14 failed,
+33 passed, 42 skipped (0.986 s). The same-ID case explicitly observed expected
+FAILED versus actual FINISHED, proving this was not merely stale-query CAS.
+Both mutated production files were restored with `cmp` exit 0 before rerunning.
+
+- Positive log SHA-256: `0f0d77f89dac2cc69b7abe33601d863080a28b1cf791ee8a834bafae19136641`.
+- Negative log SHA-256: `c58ba427b036ee61c312135fcd2d9eb5013047d640040c52e411830544cdd6ea`.
+- Restored log SHA-256: `a2e0ece003078f9c02cf649dfe828a155dd935b7f1711ca5eeacc6b5e9f32c43`.
+- Restored formatter log SHA-256: `17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+
+Restored session 79277 exited 0: 47 passed, 42 skipped, 89 total (54.926 s).
+Its following original Prettier check of all four source/consumer files exited
+0 (`All matched files use Prettier code style!`); all four candidate files
+again matched the implementation with `cmp` exit 0. No negative mutation remains.
+
+Original TypeScript session 24386 exited 0 on its earlier frozen adjustment input,
+not this Asking batch. No type/full-gate, browser, complete quota/approval/billing,
+AI artifact or deployed question-to-SQL acceptance is claimed here. Original
+provider-cache loss/unknown-outcome reconciliation remains a release gap.
