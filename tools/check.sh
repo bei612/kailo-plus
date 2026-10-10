@@ -185,7 +185,7 @@ step_verify()   { hdr "2/10 受影响范围的验证"
   if populated worker && have go; then ran=1
     (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
   if populated client-kit/ts && have pnpm; then ran=1
-    pnpm -r test >/dev/null 2>&1 && pass "node --test（TypeScript）" || fail "node --test（TypeScript）"; fi
+    pnpm -r test && pass "pnpm -r test（TypeScript）" || fail "pnpm -r test（TypeScript）"; fi
   if populated client-kit/dart/test && have dart; then ran=1
     (cd client-kit/dart && dart test >/dev/null 2>&1) && pass "dart test" || fail "dart test"; fi
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
