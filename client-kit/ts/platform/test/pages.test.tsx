@@ -2895,6 +2895,8 @@ describe("AuditPage", () => {
       ["identity.profile.publish", "Update profile", "更新个人资料"],
       ["conversation.hide", "Close direct conversation", "关闭私聊"],
       ["conversation.reopen", "Reopen direct conversation", "重新打开私聊"],
+      ["scope.transition", "Scope state transition", "作用域状态变更"],
+      ["membership.transition", "Membership state transition", "成员关系状态变更"],
     ];
     const entries = labels.map(([actionKey]) => ({ ...ownEntry(), actionKey }));
     const host = await mount(transport((r) => r.path === "/api/v1/audit"
@@ -2922,6 +2924,38 @@ describe("AuditPage", () => {
       ? "Cancellation request accepted; awaiting task outcome" : "取消请求已接收，等待任务终态");
     expect(host.textContent).toContain(locale === "en" ? "Unrecognized action" : "未识别的动作");
     expect(host.textContent).toContain("FUTURE_RESULT");
+  });
+  it.each(["en", "zh-CN"] as const)("translates observed audit results without upgrading intermediate evidence in %s", async (locale) => {
+    const labels = [
+      ["COMPLETED", "Completed", "已完成"],
+      ["FAILED", "Failed", "失败"],
+      ["CANCELED", "Canceled", "已取消"],
+      ["COMMITTED", "Usage storage confirmed; bill settlement not confirmed", "用量已确认入库，尚未确认账单结算"],
+      ["PENDING_PUBLISH", "Usage awaiting publication", "用量等待发布"],
+      ["NATIVE_TURN_BOUND", "Native turn linked; completion not confirmed", "原生回合已关联，尚未确认完成"],
+      ["DISPATCH_INTENT", "Dispatch intent recorded; dispatch not confirmed", "派发意图已记录，尚未确认派发"],
+      ["DELEGATION_GRANTED", "Delegation granted", "委派已授权"],
+      ["DELEGATION_REVOKED", "Delegation revoked", "委派已撤销"],
+      ["INVITATION_REDEEMED", "Invitation redeemed", "邀请已兑换"],
+      ["CANCELED_BEFORE_MODEL_DISPATCH", "Canceled before model dispatch", "已在模型派发前取消"],
+      ["CANCELED_BEFORE_MESSAGE_DISPATCH", "Canceled before message dispatch", "已在消息派发前取消"],
+      ["CANCEL_REQUEST_PENDING", "Cancellation pending; task outcome not confirmed", "取消请求待确认，尚未确认任务终态"],
+      ["AUTOMATION_ENABLED", "Workflow enabled", "工作流已启用"],
+      ["AUTOMATION_DISABLED", "Workflow disabled", "工作流已停用"],
+      ["AUTOMATION_PAUSED", "Workflow paused", "工作流已暂停"],
+      ["AUTOMATION_DELETED", "Workflow deleted", "工作流已删除"],
+      ["ACTIVE", "Active", "已激活"],
+    ];
+    const entries = labels.map(([resultCode]) => ({ ...ownEntry(), decision: "NONE", resultCode }));
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
+    await settle();
+    for (const [resultCode, en, zh] of labels) {
+      expect(host.querySelector(`[title="${resultCode}"]`)?.textContent).toBe(locale === "en" ? en : zh);
+    }
+    for (const decision of host.querySelectorAll("[data-testid=audit-decision] span")) {
+      expect(decision.className).toContain("text-muted-foreground");
+    }
   });
   it("keeps non-decisions and unknown wire values neutral instead of reporting rejection", async () => {
     const entries = [
