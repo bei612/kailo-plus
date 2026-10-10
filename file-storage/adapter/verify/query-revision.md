@@ -3554,3 +3554,43 @@ fb6aee0ef1a572d89427c43fbce0cd659820c95473bff1b89e1cf44f737a596d cells-native-ed
 完整 frontend producer 固定 `f1862706…`，未混入本批新保存字节；不得以其
 成功或失败代替本批页面验收。全量/文档门禁未在本批重复运行，沿主线集中
 收口；先前 full 的失败未由这 84 项替代。
+
+## 2026-10-10 原分片完成/中止的不确定路由保留
+
+1. 权威与来源：沿既有 SS-CEL-MATERIALIZATION 与原 DraftUpload 接缝，
+   不确定副作用不能被当作确认终态。已重新读取固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/nodes/version/handler-version.go::(*Handler).MultipartComplete`
+   和 `(*Handler).MultipartAbort`。原实现派发前注册无条件清缓存的 defer，
+   即使远端对象或版本保存 ACK 丢失，也删除该 upload 的 draft target/revision。
+2. 影响：只改这两个原消费者及既有 `handler-version_test.go`。
+   Complete 只有原对象完成和 StoreVersion 回执均确认后才释放两个缓存键；
+   Abort 只有原中止确认成功后才释放。原错误不改写，不自动重放，不更换目标。
+   没有新增持久状态、契约、配置、迁移或 UI；三端页面/传输边界不变。
+3. 副作用：失败后保留创建时原路由，避免同一 upload 后续落到 live node。
+   这不是允许再次执行；原平台 S3 禁写与首传门禁没有解除。原缓存仍沿原
+   TTL/清扫规则终结，缓存不是持久执行权威；缓存丢失、进程重启和远端晚 writer
+   仍须既有首传/退休接缝闭合，不能以本次保留宣称它们已解决。
+4. 异常：实际验证零字节成功、完成 ACK 丢失、版本 ACK 丢失、版本未存、
+   错误版本回执、中止成功及中止 ACK 丢失。每个场景只派发一次到原 draft；
+   对象未确认时不登记已存版本。确认成功清理，不确定保留原字节证据；沿原
+   错误与 UNKNOWN 边界，不把超时映射成成功或确定失败。
+
+实现之后复用空闲 `kailo-cells-native-check-lftow7`（4 CPU/8 GiB、
+UID 1000、原离线 Go 缓存）执行 `gofmt -l`，两文件无输出；
+`go test ./common/nodes/version -count=1 -v` 句柄 60896 exit 0，原包
+5 个顶层检查通过，包括上述新检查的 7 个分片场景。仅在私有 SDK 恢复两个
+生产方法旧的无条件清理，原断言不变：1183 exit 1，5 个不确定场景确实报
+`unconfirmed multipart operation discarded or changed its original draft route`，
+两个确认成功场景仍通过。还原与正式文件逐字 cmp 0 后，36767 同包 exit 0；
+两私有故障注入均已还原。该验证执行原 Handler/缓存与版本服务边界替身，
+不是真实远端对象存储故障演练或完整首传验收。
+
+原件在 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- `cells-multipart-route-positive.log` SHA-256 `64deaa971fff59d80cab601e747a1c3a86a8c3c33ddd65ce0ca64a119bd5cd1d`。
+- `cells-multipart-route-negative.log` SHA-256 `4e960831cf2e0c7dd7fa3bfc0797c43b853e8b91d25219cd5a17cd1a317ec680`。
+- `cells-multipart-route-restored.log` SHA-256 `ec26f7e9611ca458e3464b3041edeec673449e3997e7b53d2821ddca23a98036`。
+
+没有以本批代替完整门禁、真实 Cells→WeKnora 联调、原上传所有门禁、
+页面截图或部署；主线原全量检查另有失败/跳过，不能由此抹除。

@@ -119,6 +119,7 @@ type draftObjectWriter struct {
 	size         int64
 	node         *tree.Node
 	gets, copies int
+	aborts       int
 }
 
 func (w *draftObjectWriter) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
@@ -163,9 +164,16 @@ func (w *draftObjectWriter) MultipartCreate(context.Context, *tree.Node, *models
 	return "native-upload", nil
 }
 
-func (w *draftObjectWriter) MultipartComplete(context.Context, *tree.Node, string, []models.MultipartObjectPart) (models.ObjectInfo, error) {
+func (w *draftObjectWriter) MultipartComplete(_ context.Context, node *tree.Node, _ string, _ []models.MultipartObjectPart) (models.ObjectInfo, error) {
 	w.writes++
+	w.node = node.Clone()
 	return models.ObjectInfo{ETag: "native-etag", Size: w.size}, w.err
+}
+
+func (w *draftObjectWriter) MultipartAbort(_ context.Context, node *tree.Node, _ string, _ *models.MultipartRequestData) error {
+	w.aborts++
+	w.node = node.Clone()
+	return w.err
 }
 
 func draftUploadFixture() (*Handler, context.Context, *tree.Node, *draftVersionServer, *draftObjectWriter) {
@@ -277,6 +285,79 @@ func TestDraftUploadRequiresNativePersistence(t *testing.T) {
 						t.Fatalf("stored draft did not consume the real completed upload size: err=%v stores=%v", err, server.saved)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestDraftMultipartRetainsUnconfirmedRoute(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		abort    bool
+		writeErr bool
+		store    func(*tree.StoreVersionResponse) error
+	}{
+		{name: "completed"},
+		{name: "completion acknowledgement lost", writeErr: true},
+		{name: "version acknowledgement lost", store: func(*tree.StoreVersionResponse) error { return errors.New("version acknowledgement lost") }},
+		{name: "version not stored", store: func(r *tree.StoreVersionResponse) error { r.Success = false; return nil }},
+		{name: "wrong version receipt", store: func(r *tree.StoreVersionResponse) error { r.Version.VersionId = "another-version"; return nil }},
+		{name: "aborted", abort: true},
+		{name: "abort acknowledgement lost", abort: true, writeErr: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			handler, ctx, node, server, writer := draftUploadFixture()
+			server.store = scenario.store
+			failure := errors.New("object acknowledgement lost")
+			if scenario.writeErr {
+				writer.err = failure
+			}
+			id, err := handler.MultipartCreate(ctx, node, &models.MultipartRequestData{Metadata: map[string]string{
+				common.XAmzMetaPrefix + common.InputDraftMode: "true",
+				common.XAmzMetaPrefix + common.InputVersionId: "native-version",
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ca, err := handler.multipartCache(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				_ = ca.Delete(id + "-target")
+				_ = ca.Delete(id + "-revision")
+			})
+			frozenTarget, frozenRevision := &tree.Node{}, &tree.ContentRevision{}
+			if handler.protoFromCache(ca, id+"-target", frozenTarget) != nil || handler.protoFromCache(ca, id+"-revision", frozenRevision) != nil {
+				t.Fatal("original multipart creation did not retain its draft route")
+			}
+			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
+				DataSource: &object.DataSource{Name: "source", FlatStorage: true},
+			}}, true)
+			if scenario.abort {
+				err = handler.MultipartAbort(ctx, node, id, &models.MultipartRequestData{})
+			} else {
+				_, err = handler.MultipartComplete(ctx, node, id, nil)
+			}
+			uncertain := scenario.writeErr || scenario.store != nil
+			if (err != nil) != uncertain || (scenario.writeErr && !errors.Is(err, failure)) {
+				t.Fatalf("native acknowledgement outcome changed: %v", err)
+			}
+			if writer.writes+writer.aborts != 1 || !proto.Equal(writer.node, frozenTarget) {
+				t.Fatal("original operation was repeated or dispatched to the live node")
+			}
+			if (scenario.abort || scenario.writeErr) && len(server.saved) != 0 {
+				t.Fatal("unconfirmed native object was recorded as a stored version")
+			}
+			retainedTarget, retainedRevision := &tree.Node{}, &tree.ContentRevision{}
+			targetErr := handler.protoFromCache(ca, id+"-target", retainedTarget)
+			revisionErr := handler.protoFromCache(ca, id+"-revision", retainedRevision)
+			if uncertain {
+				if targetErr != nil || revisionErr != nil || !proto.Equal(retainedTarget, frozenTarget) || !proto.Equal(retainedRevision, frozenRevision) {
+					t.Fatal("unconfirmed multipart operation discarded or changed its original draft route")
+				}
+			} else if targetErr == nil || revisionErr == nil {
+				t.Fatal("confirmed original terminal did not release its multipart cache entries")
 			}
 		})
 	}

@@ -446,10 +446,6 @@ func (v *Handler) MultipartComplete(ctx context.Context, target *tree.Node, uplo
 			}
 			log.Logger(ctx).Info("Switching MultipartComplete target", newTarget.Zap("newTarget"))
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
-			defer func() {
-				_ = ca.Delete(uploadID + "-target")
-				_ = ca.Delete(uploadID + "-revision")
-			}()
 			oi, e := v.Next.MultipartComplete(ctx, newTarget, uploadID, uploadedParts)
 			if e != nil {
 				return oi, e
@@ -459,7 +455,15 @@ func (v *Handler) MultipartComplete(ctx context.Context, target *tree.Node, uplo
 			revision.Size = oi.Size
 			revision.ContentHash = target.GetStringMeta(common.MetaNamespaceHash)
 			er = v.storeDraftVersion(ctx, target, revision)
-			return oi, er
+			if er != nil {
+				return oi, er
+			}
+			// A lost object or Version acknowledgement must not discard the
+			// original draft route and make a later request use the live node.
+			// Retaining the mapping is not permission to replay completion.
+			_ = ca.Delete(uploadID + "-target")
+			_ = ca.Delete(uploadID + "-revision")
+			return oi, nil
 		}
 	}
 
@@ -495,11 +499,12 @@ func (v *Handler) MultipartAbort(ctx context.Context, target *tree.Node, uploadI
 			}
 			log.Logger(ctx).Info("Switching MultipartAbort target", newTarget.Zap("newTarget"))
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
-			defer func() {
-				_ = ca.Delete(uploadID + "-target")
-				_ = ca.Delete(uploadID + "-revision")
-			}()
-			return v.Next.MultipartAbort(ctx, newTarget, uploadID, requestData)
+			if err := v.Next.MultipartAbort(ctx, newTarget, uploadID, requestData); err != nil {
+				return err
+			}
+			_ = ca.Delete(uploadID + "-target")
+			_ = ca.Delete(uploadID + "-revision")
+			return nil
 		}
 	}
 	return v.Next.MultipartAbort(ctx, target, uploadID, requestData)
