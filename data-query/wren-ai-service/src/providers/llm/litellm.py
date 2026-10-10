@@ -1,4 +1,3 @@
-import os
 from typing import Any, Callable, Dict, List, Optional
 
 import backoff
@@ -15,7 +14,7 @@ from src.providers.llm import (
     connect_chunks,
     convert_message_to_openai_format,
 )
-from src.providers.loader import provider
+from src.providers.loader import configured_api_key, provider
 from src.utils import extract_braces_content, remove_trailing_slash
 
 
@@ -37,8 +36,7 @@ class LitellmLLMProvider(LLMProvider):
         **_,
     ):
         self._model = model
-        # TODO: remove _api_key, _api_base, _api_version in the future, as it is not used in litellm
-        self._api_key = os.getenv(api_key_name) if api_key_name else None
+        self._api_key = configured_api_key(api_key_name)
         self._api_base = remove_trailing_slash(api_base) if api_base else None
         self._api_version = api_version
         self._model_kwargs = kwargs or {}
@@ -53,8 +51,19 @@ class LitellmLLMProvider(LLMProvider):
             if self._has_fallbacks
             else []
         )
+        router_models = []
+        for configured in fallback_model_list or []:
+            params = dict(configured["litellm_params"])
+            key_name = params.pop("api_key_name", None)
+            if key_name is not None:
+                if "api_key" in params:
+                    raise ValueError("Model credential sources are ambiguous")
+                params["api_key"] = configured_api_key(key_name)
+            if params.get("api_base"):
+                params["api_base"] = remove_trailing_slash(params["api_base"])
+            router_models.append({**configured, "litellm_params": params})
         self._router = Router(
-            model_list=fallback_model_list or [],
+            model_list=router_models,
             fallbacks=fallbacks,
         )
         self._enable_fallback_testing = fallback_testing and self._has_fallbacks

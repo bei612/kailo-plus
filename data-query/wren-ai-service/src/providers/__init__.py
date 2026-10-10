@@ -70,17 +70,29 @@ def llm_processor(entry: dict) -> dict:
     def build_fallback_params(all_models: dict) -> dict:
         result = {}
         for model_name, model in all_models.items():
+            # Keep the same original group-over-model precedence as the direct
+            # provider below. Router calls must use those same delivered inputs.
+            effective = {**model, **others}
             result[model_name] = {
                 "model_name": model_name,
                 "litellm_params": {
                     "model": model["model"],
-                    **({"api_base": model["api_base"]} if "api_base" in model else {}),
                     **(
-                        {"api_version": model["api_version"]}
-                        if "api_version" in model
+                        {"api_base": effective["api_base"]}
+                        if "api_base" in effective
                         else {}
                     ),
-                    "timeout": model.get("timeout", 120.0),
+                    **(
+                        {"api_version": effective["api_version"]}
+                        if "api_version" in effective
+                        else {}
+                    ),
+                    **(
+                        {"api_key_name": effective["api_key_name"]}
+                        if "api_key_name" in effective
+                        else {}
+                    ),
+                    "timeout": effective.get("timeout", 120.0),
                     **model.get("kwargs", {}),
                 },
             }

@@ -10337,3 +10337,83 @@ for this batch. Main UI build
 source record. Its original helper shell exited; the orphaned buildx process
 still held its unchanged staged input. No replacement build or artifact
 registration was started. This batch remains isolated from that input.
+
+### Original native model credential consumers (2026-10-10)
+
+This batch starts from main `4cc2ba8e50cf9c906f883b2571c862f4adc55241`,
+in the existing isolated worktree on `codex/wren-native-model-delivery`.
+DD-20/92 and SS-WRN-GOVERNANCE retain model configuration in the component,
+with restricted Gateway credentials rather than shared provider identities.
+Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72` was rechecked:
+`wren-ai-service/src/providers/__init__.py::llm_processor/generate_components`,
+`wren-ai-service/src/providers/llm/litellm.py::LitellmLLMProvider.get_generator`,
+and `wren-ai-service/src/providers/embedder/litellm.py::LitellmEmbedderProvider`.
+
+Actual impact is the original config-to-provider-to-Router/model transport
+chain. The previous fallback parameters omitted the group's endpoint/version,
+timeout and named key; the Router branch did not consume the direct provider's
+selected key. The original fallback model list now inherits those same native
+inputs with the original group-over-model precedence, then resolves each named
+key before constructing the original Router. Per-model inputs remain distinct
+when no group override exists. LLM and text/document embedding share one
+credential reader. No page, model registration, pipeline, contract, database
+schema, Core authority or deployment pin is replaced.
+
+Explicitly named keys that are missing, empty or contain whitespace/NUL refuse
+at native startup, before model dispatch; they cannot silently select unrelated
+environment credentials. Empty explicit key names and ambiguous named/inline
+Router keys also refuse. An unspecified key retains the original independent
+provider behavior and is not claimed to satisfy bound delivery. These are
+existing startup configuration failures, not fabricated query outcomes. Original
+backoff, streaming, timeout, provider usage, model selection and native lifetime
+remain unchanged; no new retry, durable state or reconciliation path is added.
+
+The original AI artifact
+`sha256:fa633e3202accc13519be5b17a493d85d6ac7c7a0b30a1d6b83eca4427f3150d`
+provided its locked real LiteLLM/Haystack/OpenAI dependencies. The one verification
+container `kailo-wren-model-credentials-inwqep` was inspected at 4 CPU, 4 GiB
+memory/total memory-swap, network `none`, read-only root and read-only frozen
+input. No image build, pull, dependency install or business entrypoint ran.
+The original interpreter command was:
+
+```sh
+/app/.venv/bin/python -m unittest discover -s tests -p test_native_model_credentials.py -v
+```
+
+Real `generate_components`, Router construction, LLM direct/Router generators,
+text embedder and document embedder execute; only remote completion/embedding
+transport is substituted. This is not a live Gateway/Bao/billing assertion.
+First run 27401 exited 1 during Haystack telemetry import because it attempted
+to create a profile on the read-only root; no cases ran. Disabling telemetry in
+this isolated test input allowed 55030 to exit 0, 10 tests passed. In the private
+production copy, removing Router key assignment and the missing/invalid-key
+refusal made 54544 exit 1 with 11 failed assertions (including subtests) and
+3 errors. Both files were restored byte-for-byte (`cmp`, exit 0); 46801 exited
+0 with 10 tests passed. The container is exited 0, OOMKilled=false.
+
+Logs under `/volumes/data/kailo/check-cache/wren-model-credentials.inWqEp/`:
+`provider-first-import-failure.log` SHA-256
+`8e850a9c88fa8d29be26d503f9744889b318f2c8fe3b2f7234c1fb53641b86ab`;
+`provider-positive.log`
+`4ed7853168c8cb5a6b25504607f5c23db03d03e4ebcd758d791c9cde66a93837`;
+`provider-negative.log`
+`c2ae0444b108522619661212da9a83c0b1624def1d6e7fbf89048b86b734bfe9`;
+`provider-restored.log`
+`975188906b9ecd0b30de66b27c64020b4abb3562d77471d42f3282f0f58cdb58`.
+
+No native model or embedding dimension was invented. Core's existing
+`modelCredentialDeliveries`, `application-model-key:v1` challenge and independent
+OpenBao audited read remain activation requirements; this batch does not claim
+a Wren producer for those receipts. Real approved binding/route inputs, embedding
+route/dimension, native config and proof delivery remain release blockers.
+No anonymous proof endpoint, incoming-authentication substitute, full check,
+browser acceptance or deployment was introduced or claimed. Original Ruff is
+not present in the existing SDK; it was not installed or claimed to have run.
+
+The final five Python files passed the existing SDK's `python3 -m py_compile`
+(exit 0, empty `provider-python-static.log`). The final test differs from the
+restored runtime input only by import-lint comments documenting its test-only
+telemetry initialization; production telemetry defaults are unchanged.
+Main full-check job 87175 froze its candidate before this batch and does not
+cover these changes. The delivered result is a source checkpoint, not an image,
+native credential-proof delivery, activation or production acceptance.
