@@ -226,6 +226,7 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 		fail    bool
 		claimed bool
 		draft   bool
+		pruned  int
 	}{
 		{name: "empty-file", size: 0},
 		{name: "actual-copy-size", size: 7},
@@ -234,6 +235,59 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 		{name: "claimed-task-version", size: 7, claimed: true},
 		{name: "claimed-draft-empty", size: 0, claimed: true, draft: true},
 		{name: "claimed-draft-exact-not-live-head", size: 7, claimed: true, draft: true},
+		{name: "claimed-prune-ack", size: 7, claimed: true, draft: true, pruned: 1, change: func(s *versionActionService, _ *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}}}}
+			}
+		}},
+		{name: "claimed-prune-multiple-ack", size: 7, claimed: true, draft: true, pruned: 2, change: func(s *versionActionService, _ *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{
+						{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}},
+						{VersionId: "next-version", Location: &tree.Node{Uuid: "next-object"}},
+					}}
+			}
+		}},
+		{name: "claimed-prune-missing-ack", size: 7, claimed: true, draft: true, pruned: 1, fail: true, change: func(s *versionActionService, r *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}}}}
+			}
+			r.prune = func(context.Context, *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) { return nil, nil }
+		}},
+		{name: "claimed-prune-rejected", size: 7, claimed: true, draft: true, pruned: 1, fail: true, change: func(s *versionActionService, r *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}}}}
+			}
+			r.prune = func(context.Context, *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				return &tree.DeleteNodeResponse{}, nil
+			}
+		}},
+		{name: "claimed-prune-transport-error", size: 7, claimed: true, draft: true, pruned: 1, fail: true, change: func(s *versionActionService, r *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}}}}
+			}
+			r.prune = func(context.Context, *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				return nil, errors.New("native pruning ACK lost")
+			}
+		}},
+		{name: "claimed-prune-partial", size: 7, claimed: true, draft: true, pruned: 2, fail: true, change: func(s *versionActionService, r *versionActionRouter) {
+			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
+				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
+					PruneVersions: []*tree.ContentRevision{
+						{VersionId: "old-version", Location: &tree.Node{Uuid: "old-object"}},
+						{VersionId: "next-version", Location: &tree.Node{Uuid: "next-object"}},
+						{VersionId: "last-version", Location: &tree.Node{Uuid: "last-object"}},
+					}}
+			}
+			r.prune = func(context.Context, *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				return &tree.DeleteNodeResponse{Success: r.pruneCount == 1}, nil
+			}
+		}},
 		{name: "draft-without-native-claim", size: 7, draft: true, fail: true},
 		{name: "draft-foreign-owner", size: 7, draft: true, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) { s.source.OwnerUuid = "foreign-owner" }},
 		{name: "draft-not-persisted-draft", size: 7, draft: true, claimed: true, fail: true, change: func(s *versionActionService, _ *versionActionRouter) { s.source.Draft = false }},
@@ -335,11 +389,17 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 						t.Error("unconfirmed native write produced a successful action output")
 					}
 				}
-				if r.pruneCount != 0 {
-					t.Error("unconfirmed native write pruned an existing version")
+			} else {
+				outputs := 1
+				if tc.pruned > 0 {
+					outputs++ // One cleanup output covers the entire acknowledged prune set.
 				}
-			} else if r.copyCount != 1 || len(s.stored) != 1 || s.stored[0].Version.Size != tc.size || len(output.OutputChain) != 1 || !output.OutputChain[0].Success {
-				t.Errorf("native copy/empty version was not exactly persisted: copies=%d stored=%v output=%v", r.copyCount, s.stored, output)
+				if r.copyCount != 1 || len(s.stored) != 1 || s.stored[0].Version.Size != tc.size || len(output.OutputChain) != outputs || !output.OutputChain[0].Success {
+					t.Errorf("native copy/empty version was not exactly persisted: copies=%d stored=%v output=%v", r.copyCount, s.stored, output)
+				}
+			}
+			if r.pruneCount != tc.pruned {
+				t.Errorf("native pruning continued without an ACK or repeated a deletion: got %d, want %d", r.pruneCount, tc.pruned)
 			}
 			if tc.claimed && !tc.fail {
 				observed := &tree.ContentRevision{}

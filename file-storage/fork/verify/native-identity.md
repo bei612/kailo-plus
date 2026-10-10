@@ -939,3 +939,70 @@ go test ./common/nodes/core ./common/nodes/objects/mc -count=1 -v
 version 0.020s、core 0.018s，九个顶层检查全部通过。上述自有六路径
 git diff --check 退出 0；没有触碰继承 compose 或其他业务改动。
 不据此声明真实存储故障演练、完整首传、七项 release 门禁、部署或生产就绪。
+
+## 2026-10-10 原版本保存清理的真实删除确认
+
+四步影响结论：
+
+1. 权威为 `.design/18` 的 Cells 字节/版本权威、`07` §2.4 的完整
+   FILE_STORAGE 契约及 `03` 外部副作用 UNKNOWN 合同。已核固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `data/versions/action-version.go::VersionAction.Run`：原 StoreVersion
+   返回 PruneVersions 后的 DeleteNode 只检查 error，没有消费其 Success。
+   本批是原版本保存真实清理消费者的确认接缝，不是实现新的删除工具或权限。
+2. 实际链为 `gateway/restv2/native-write-execution.go::Handler.executeNativePromote`
+   → `VersionAction.PromoteRevision` → `VersionAction.run` → 原 StoreVersion
+   → 原 `nodes.Client.DeleteNode`。同时普通原生 version event 也使用 run。
+   删除返回 nil/Success=false 而无 transport error 原先会继续成功；现在只在
+   全部原清理调用明确 ACK 后追加原成功 output 和 NativeVersionResult receipt。
+   正常成功输出次序、原 Node/Version 身份、BranchInfo 和调用数量保持不变。
+   没有改契约、数据库、Task 格式、平台状态、原页面或三端行为。
+3. 远端错误原样返回；未确认 ACK 沿原 StatusConflict 返回。实际平台调用者
+   遇此错误只回读/返回原 Task 非终态，不写 Finished/EndTime、不返回 SUCCEEDED，
+   沿原超时/对账进入 UNKNOWN，不把已经发生的部分清理伪装失败回滚。
+   本批没有再次调用 Promote、重复 DeleteNode、恢复已删字节或增加第二个清理器。
+   缺终态仍由既有执行对账承担，不声明未知清理已自动恢复。
+4. 无 PruneVersions 时原正常保存不增加调用；有多个旧版本时遇首个未知 ACK
+   即停止后续删除，已确认的前序副作用保留。nil response、明确 false、
+   transport error 和部分确认都不能留下这次保存的成功 receipt。
+   UNKNOWN 不是新的业务失败枚举；既有 scope/身份/权限校验与 quota 不变。
+
+`scheduler/jobs/native-write.go::NativeWriteRevision` 强制原 Task 为 Finished、
+EndTime 为正且持有精确 task/action/node 派生 revision receipt；原
+`scheduler/jobs/rest/native-write.go::nativeWriteObservation` 只消费它，不用 HeadVersion 存在
+反推清理完成。当前没有仅凭已保存 Version 即能安全终结未知 prune 的原消费者；
+原 observe/extract_usage 对缺证据继续非终态/拒绝，不能声称这类 UNKNOWN
+已自动收敛。本缺口仍阻断 write 发布，不能通过改 Task 或重删来伪造终态。
+
+实现后沿原 `TestVersionActionRequiresExactNativePersistence` 增加单个/多个完整 ACK、
+nil ACK、false ACK、transport error、第二次清理未确认的六个实际消费者场景，
+断言失败不含成功 ActionOutput、清理调用不越过未确认位置。原 draft cleanup
+检查同批运行。原受限 Cells SDK 中 gofmt -d 无输出、exit 0，正式与私有两文件
+cmp 一致。原进程 16647 正向 exit 0（0.020s）是多个 ACK 场景加入前的
+中间快照，不作为最终验收。最终快照 99521 exit 0（0.023s）；私有副本
+恢复原生产逻辑的“提前成功 output/receipt、DeleteNode 只检查 error”后，
+62147 真实 exit 1（0.017s），missing-ack、rejected、transport-error、partial
+四个子场景失败并报告 `unconfirmed native write produced a successful action output`。
+完整 ACK 的单个/多个场景仍通过，未篡改断言制造失败。
+
+随后从正式源码还原私有两文件、逐文件 cmp 一致，SDK gofmt -d 无输出。
+最终顺序还原复验 79998 实际 exit 0（0.021s），三个顶层检查通过。
+正向和还原命令为 `go test ./data/versions -run
+'Test(VersionActionRequiresExactNativePersistence|NativeDraftUploadPrune)' -count=1 -v`；
+反证使用同入口 `-run 'TestVersionActionRequiresExactNativePersistence/claimed-prune'`。
+沿原 `kailo-cells-native-check-lftow7` SDK（Go 1.26.8，4 CPU/8 GiB、无额外 swap），
+复用 `/cache/mod`、`/cache/build`，使用 `GOTOOLCHAIN=local`、`GOFLAGS=-mod=readonly`、
+`GOPROXY=off`；原 `CELLS_WORKING_DIR`/`CELLS_DATA_DIR` 均为私有
+`/tmp/cells-version-task-key-check`。没有并行替代进程、镜像构建或清缓存。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- 中间正向 `cells-version-prune-ack-positive.log`：SHA-256 `bf65d76293e0bd8c8423a38c89bbdd794c2381d4b2356d208d83f5bc726e825e`。
+- 最终正向 `cells-version-prune-ack-final-positive.log`：SHA-256 `a183d22f4adb58faba08713c4580bb1bb5f1670219cd9f8371a7afa2937b22e6`。
+- 生产反证 `cells-version-prune-ack-negative.log`：SHA-256 `c31e03cc7f976adc72b8b08da97ea3a4dfafb95580188b31c543d4aa01e7b8c0`。
+- 原字节还原 `cells-version-prune-ack-restored.log`：SHA-256 `17f1e6bf6a33605268b55031041c46c03cb056d858eeb9d0250a0d662a53d669`。
+
+原包检查日志中的 file/service logger 未注册警告保留；这不是生产审计投递验收。
+本批未另起全局构建或文档检查，由主线集中收口，不能把窄验写成全量门禁通过。
+本批没有部署、真实对象存储故障演练，也未解除首次上传、目标原子 CAS、
+失联 writer 退休或 FILE_STORAGE 七必选批准门禁。

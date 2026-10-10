@@ -244,6 +244,20 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 		return input.WithError(err2), err2
 	}
 	log.TasksLogger(ctx).Info(T("Job.Version.StatusMeta", resp.Version))
+	ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
+	for _, version := range response.PruneVersions {
+		deleted, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})
+		if errDel != nil {
+			return input.WithError(errDel), errDel
+		}
+		if !deleted.GetSuccess() {
+			errDel = errors.WithMessage(errors.StatusConflict, "native version pruning was not acknowledged")
+			return input.WithError(errDel), errDel
+		}
+	}
+	// Saving the new revision does not prove that the original version-policy
+	// cleanup completed. Emit its terminal receipt only after every native ACK;
+	// the governed caller retains its existing Task on any uncertain deletion.
 	if request.VersionUuid != "" {
 		receipt, err := protojson.Marshal(response.Version)
 		if err != nil {
@@ -252,13 +266,6 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 		output.AppendOutput(&jobs.ActionOutput{Success: true, JsonBody: receipt, Vars: map[string]string{jobstore.NativeVersionResult: "true"}})
 	} else {
 		output.AppendOutput(&jobs.ActionOutput{Success: true})
-	}
-	ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
-	for _, version := range response.PruneVersions {
-		_, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})
-		if errDel != nil {
-			return input.WithError(errDel), errDel
-		}
 	}
 	if len(response.PruneVersions) > 0 {
 		log.TasksLogger(ctx).Info(T("Job.Version.StatusPrune", struct{ Count int }{Count: len(response.PruneVersions)}))

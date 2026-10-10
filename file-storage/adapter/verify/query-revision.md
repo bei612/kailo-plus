@@ -3652,3 +3652,49 @@ wrong-key、wrong-size 四个场景失败，其余十二个通过。未改检查
 这些检查调用真实 Executor 与 Version Handler，以原 StorageClient 接口
 替身观察读取和写入，不等同真实 S3 网络/故障、目标 CAS、跨组件联调、
 七必选完整批准、提交或部署。未运行第二个全量检查或新镜像构建。
+
+## 2026-10-10 原 DeleteVersion 回执消费
+
+本次只纠正原删除处理器，不另建删除接口或执行引擎。四步影响结论：
+
+1. 权威为 SS-CEL-MATERIALIZATION、现有组件准入与 UNKNOWN 终态边界。
+   固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api-versions.go::Handler.DeleteVersion` 原来在版本/内容删除
+   报错后仍能返回 Success；同版本 `data/versions/grpc/handler.go::Handler.DeleteVersion`
+   已返回 Success 与 DeletedVersion，可直接消费，不需要自造确认协议。
+2. 影响限原 REST handler、版本流、原 metadata/blob/draft-node 删除消费者及
+   同包事后检查；没有 schema、迁移、页面、工作流种类或账号权威变更。
+   ListVersions 补充的 Description/IsHead 与原 legacy DefaultLocation 不作为
+   持久字段差异；其余删除回执字段须匹配已读取的确切版本。
+3. 平台已配置或携带未消费 execution proof 的请求在副作用前拒绝，不回退
+   原生直删；独立 Cells 仍使用原 ACL 与所有权。完整流必须实际 EOF；
+   缺版本、属主不符、缺 location、流中断在删除前拒绝。副作用已开始但
+   任一 ACK 缺失/否定/错属时返回原 ServiceError/503 与 outcome unknown，
+   不返回 Success。结果不明属于 UNKNOWN，不包装为已确定失败。
+4. 再次请求不能以 metadata 已消失证明 blob 删除完成，不自动重放后续删除。
+   仍未补成跨 metadata/blob 的原子事务或新版本并发的空节点删除 CAS；本批
+   不启用平台受治理 DeleteVersion，不新增待收敛状态或伪造 Task/EE。
+   原生分享的 PutCell/UpsertCell 仍未消费 HUMAN resource.grant_read，不能
+   以底层授权检查通过宣称分享页面已完成集成。
+
+实现后的验证沿原 4 CPU/8 GiB SDK、UID 1000 与 Data Go 缓存执行，
+GOTOOLCHAIN=local、GOFLAGS=-mod=readonly、GOPROXY=off；读取原工作目录
+`/tmp/cells-version-task-key-check`，没有访问真实文件存储或删除业务文件。
+第一次检查 exit 1：验证路由漏声明 JSON，实际输出
+`406: Not Acceptable / Available representations:`，未进入 handler。
+修正原验证接线并要求前置拒绝确实经过 node/history reader 后，原目标 22 个
+场景通过、exit 0。随后只在私有生产输入移除 blob 的 Success 判断，原断言
+实际抓到 `200 {"Success":true,"EmptyNodeDeleted":true}`、exit 1。
+逐字还原后同目标再次 exit 0；整个 `go test ./gateway/restv2 -count=1`
+exit 0（7.617s），gofmt -l 无输出。正式两文件与已验输入 cmp 0。
+
+原件位于 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- 首次失败 `cells-delete-version-ack-positive.log`：`e4fb7a47f7589f9139b454468bef76604e1805a49f7326aa453dccac9fedf384`。
+- 接线纠正 `cells-delete-version-route-corrected.log`：`433132cf3bd85f947e1416bb27509b900420101a9d52a918b5dd2d253a7e8e76`。
+- 生产反证 `cells-delete-version-negative-ack-mutation.log`：`310f5640151ddb5d3a96170462eb7b90f1be6cd7b9c5c58a90f408e734a04ee0`。
+- 还原目标 `cells-delete-version-restored.log`：`433132cf3bd85f947e1416bb27509b900420101a9d52a918b5dd2d253a7e8e76`。
+- 整包检查 `cells-delete-version-package-restored.log`：`42354f4c436d849f83343d010535b2420592259bf27c8d4e2132caef430f9a1e`。
+
+本增量未进入此前冻结的组件镜像批，未提交、未部署；整包检查不能代替
+集中 full、真实对象存储故障演练、跨组件业务或原版页面逐项验收。

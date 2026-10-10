@@ -21,18 +21,22 @@ import (
 	"github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/middleware"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/acl"
 	omock "github.com/pydio/cells/v5/common/nodes/objects/mock"
 	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/install"
+	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/utils/openurl"
+	"github.com/pydio/cells/v5/data/versions"
 	. "github.com/smartystreets/goconvey/convey"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // mockPreSigner implements PreSigner interface for testing
@@ -85,6 +89,229 @@ type uploadNativeTree struct {
 // SourcesPool is process-wide and lazily opened once, including when these
 // original route fixtures are selected separately or run together.
 var nativeVersionsTree = new(uploadNativeTree)
+
+var nativeVersionDeleteIndex = new(nativeDeleteIndex)
+
+type nativeDeleteIndex struct {
+	tree.NodeReceiverClient
+	calls  int
+	failAt int
+}
+
+func (s *nativeDeleteIndex) DeleteNode(_ context.Context, _ *tree.DeleteNodeRequest, _ ...grpc.CallOption) (*tree.DeleteNodeResponse, error) {
+	s.calls++
+	return &tree.DeleteNodeResponse{Success: s.calls != s.failAt}, nil
+}
+
+type nativeDeleteStorage struct {
+	nodes.StorageClient
+	calls  int
+	failAt int
+}
+
+func (s *nativeDeleteStorage) RemoveObject(context.Context, string, string) error {
+	s.calls++
+	if s.calls == s.failAt {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+type nativeDeleteVersions struct {
+	*nativeRevisionStream
+	reply     *tree.DeleteVersionResponse
+	err       error
+	deletes   int
+	versionID string
+}
+
+func (s *nativeDeleteVersions) NewStream(ctx context.Context, description *grpc.StreamDesc, method string, options ...grpc.CallOption) (grpc.ClientStream, error) {
+	s.position = 0
+	return s.nativeRevisionStream.NewStream(ctx, description, method, options...)
+}
+
+func (s *nativeDeleteVersions) Invoke(_ context.Context, method string, input interface{}, output interface{}, _ ...grpc.CallOption) error {
+	request, ok := input.(*tree.HeadVersionRequest)
+	if !ok || method != "/tree.NodeVersioner/DeleteVersion" || request.NodeUuid != s.nodeUUID || request.VersionId != s.versionID {
+		return fmt.Errorf("not the original exact metadata deletion")
+	}
+	s.deletes++
+	// Simulate the actual metadata side effect even if its ACK is lost.
+	kept := make([]*tree.ContentRevision, 0, len(s.versions))
+	for _, revision := range s.versions {
+		if revision.VersionId != s.versionID {
+			kept = append(kept, revision)
+		}
+	}
+	s.versions = kept
+	if s.err != nil {
+		return s.err
+	}
+	if s.reply != nil {
+		proto.Merge(output.(*tree.DeleteVersionResponse), s.reply)
+	}
+	return nil
+}
+
+func TestDeleteVersionRequiresEveryNativeAcknowledgement(t *testing.T) {
+	nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
+		return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(nativeVersionsTree, nativeVersionDeleteIndex))
+	})
+	for _, scenario := range []string{"complete", "remaining-version", "legacy-location", "metadata-lost-ack", "metadata-negative-ack", "metadata-empty-ack", "metadata-wrong-version", "metadata-wrong-owner", "metadata-wrong-location", "metadata-missing-location", "blob-lost-ack", "blob-negative-ack", "empty-node-lost-ack", "empty-node-negative-ack", "history-unexpected-eof", "history-empty-row", "foreign-owner", "missing-location", "managed", "managed-empty", "native-proof", "duplicate-native-proof"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			if scenario == "managed" || scenario == "managed-empty" {
+				platform := map[string]interface{}{}
+				if scenario == "managed" {
+					platform["bindingId"] = "00000000-0000-4000-8000-000000000001"
+				}
+				if err := config.Set(ctx, platform, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			user := &idm.User{Uuid: "00000000-0000-4000-8000-000000000003", Login: "native-user"}
+			ctx = claim.ToContext(ctx, claim.Claims{Subject: user.Uuid, Name: user.Login})
+			grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadNativeRoles{}})
+			node := &tree.Node{Uuid: "00000000-0000-4000-8000-000000000004", Path: "native/current-name.txt", Type: tree.NodeType_LEAF}
+			node.MustSetMeta(common.MetaNamespaceNodeDraftMode, true)
+			*nativeVersionsTree = uploadNativeTree{node: node, allowDefaultFlags: true}
+			*nativeVersionDeleteIndex = nativeDeleteIndex{}
+			root := &tree.Node{Uuid: "00000000-0000-4000-8000-000000000008", Path: "native", Type: tree.NodeType_COLLECTION}
+			workspace := &idm.Workspace{UUID: root.Uuid, Slug: "workspace", RootUUIDs: []string{root.Uuid}}
+			access := permissions.NewAccessList(&idm.Role{Uuid: user.Uuid})
+			access.AppendACLs(&idm.ACL{RoleID: user.Uuid, WorkspaceID: workspace.UUID, NodeID: root.Uuid, Action: permissions.AclRead},
+				&idm.ACL{RoleID: user.Uuid, WorkspaceID: workspace.UUID, NodeID: root.Uuid, Action: permissions.AclWrite})
+			access.Flatten(ctx)
+			access.GetWorkspaces()[workspace.UUID] = workspace
+			ctx = acl.WithPresetACL(ctx, access)
+			storage := &nativeDeleteStorage{StorageClient: omock.New("native")}
+			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{Workspace: workspace,
+				LoadedSource:  nodes.LoadedSource{DataSource: &object.DataSource{Name: "native", ObjectsBucket: "native", FlatStorage: true}, Client: storage},
+				AncestorsList: map[string][]*tree.Node{"": {node, root}, node.Path: {node, root}}})
+			revision := &tree.ContentRevision{VersionId: "native-draft", OwnerUuid: user.Uuid, Draft: true, Size: 3, ETag: "native-etag",
+				Location:    &tree.Node{Uuid: "native-draft-blob", Path: "native/draft-blob", Type: tree.NodeType_LEAF},
+				Description: "list-only description", IsHead: true}
+			if scenario == "legacy-location" {
+				if err := config.Set(ctx, "native", "services", "pydio.versions-store", "datasource"); err != nil {
+					t.Fatal(err)
+				}
+				revision.Location = versions.DefaultLocation(ctx, node.Uuid, revision.VersionId)
+			}
+			if scenario == "foreign-owner" {
+				revision.OwnerUuid = "another-user"
+			}
+			if scenario == "missing-location" {
+				revision.Location = nil
+			}
+			persisted := proto.Clone(revision).(*tree.ContentRevision)
+			persisted.Description, persisted.IsHead = "", false
+			connection := &nativeDeleteVersions{nativeRevisionStream: &nativeRevisionStream{nodeUUID: node.Uuid, versions: []*tree.ContentRevision{revision}},
+				versionID: revision.VersionId, reply: &tree.DeleteVersionResponse{Success: true, DeletedVersion: persisted}}
+			switch scenario {
+			case "remaining-version":
+				connection.versions = append(connection.versions, &tree.ContentRevision{VersionId: "another-version", OwnerUuid: user.Uuid})
+			case "legacy-location", "metadata-missing-location":
+				persisted.Location = nil
+			case "metadata-lost-ack":
+				connection.err = io.ErrUnexpectedEOF
+			case "metadata-negative-ack":
+				connection.reply.Success = false
+			case "metadata-empty-ack":
+				connection.reply.DeletedVersion = nil
+			case "metadata-wrong-version":
+				persisted.VersionId = "another-version"
+			case "metadata-wrong-owner":
+				persisted.OwnerUuid = "another-user"
+			case "metadata-wrong-location":
+				persisted.Location.Path = "native/another-blob"
+			case "blob-lost-ack":
+				storage.failAt = 1
+			case "blob-negative-ack":
+				nativeVersionDeleteIndex.failAt = 1
+			case "empty-node-lost-ack":
+				storage.failAt = 2
+			case "empty-node-negative-ack":
+				nativeVersionDeleteIndex.failAt = 2
+			case "history-unexpected-eof":
+				connection.ending = io.ErrUnexpectedEOF
+			case "history-empty-row":
+				connection.versions = append(connection.versions, nil)
+			}
+			grpcclient.RegisterMock(common.ServiceVersionsGRPC, connection)
+			service := new(restful.WebService).Path("/versions").Produces(restful.MIME_JSON)
+			service.Route(service.DELETE("/{Uuid}/{VersionId}").To(middleware.WrapErrorHandlerToRoute((&Handler{}).DeleteVersion)))
+			container := restful.NewContainer()
+			container.Add(service)
+			call := func() *httptest.ResponseRecorder {
+				request := httptest.NewRequest(http.MethodDelete, "/versions/"+node.Uuid+"/"+revision.VersionId, nil).WithContext(ctx)
+				request.Header.Set("Accept", restful.MIME_JSON)
+				if scenario == "native-proof" || scenario == "duplicate-native-proof" {
+					request.Header.Set("X-Kailo-Native-Execution", "unconsumed-platform-proof")
+					if scenario == "duplicate-native-proof" {
+						request.Header.Add("X-Kailo-Native-Execution", "second-unconsumed-proof")
+					}
+				}
+				response := httptest.NewRecorder()
+				container.ServeHTTP(response, request)
+				if request.Header.Get("X-Kailo-Native-Execution") != "" {
+					t.Fatal("unsupported proof remained on the original diagnostic request")
+				}
+				return response
+			}
+			response := call()
+			if scenario == "managed" || scenario == "managed-empty" || scenario == "native-proof" || scenario == "duplicate-native-proof" {
+				if response.Code != http.StatusForbidden || nativeVersionsTree.reads+connection.queries+connection.deletes+storage.calls+nativeVersionDeleteIndex.calls != 0 {
+					t.Fatalf("unsupported managed delete reached native consumers: status=%d body=%s", response.Code, response.Body.String())
+				}
+				return
+			}
+			complete := scenario == "complete" || scenario == "remaining-version" || scenario == "legacy-location"
+			if complete {
+				var result rest.DeleteVersionResponse
+				if response.Code != http.StatusOK || protojson.Unmarshal(response.Body.Bytes(), &result) != nil || !result.Success || result.EmptyNodeDeleted != (scenario != "remaining-version") {
+					t.Fatalf("complete original deletion not confirmed: %d %s", response.Code, response.Body.String())
+				}
+				want := 2
+				if scenario == "remaining-version" {
+					want = 1
+				}
+				if connection.deletes != 1 || storage.calls != want || nativeVersionDeleteIndex.calls != want {
+					t.Fatalf("unexpected side effects: metadata=%d blob=%d index=%d", connection.deletes, storage.calls, nativeVersionDeleteIndex.calls)
+				}
+				return
+			}
+			if response.Code < http.StatusBadRequest || strings.Contains(response.Body.String(), "Success") {
+				t.Fatalf("unconfirmed deletion became a terminal success response: %d %s", response.Code, response.Body.String())
+			}
+			beforeDelete := scenario == "history-unexpected-eof" || scenario == "history-empty-row" || scenario == "foreign-owner" || scenario == "missing-location"
+			if beforeDelete {
+				if nativeVersionsTree.reads == 0 || connection.queries != 1 {
+					t.Fatal("rejection did not reach the original node/history readers")
+				}
+				if connection.deletes+storage.calls+nativeVersionDeleteIndex.calls != 0 {
+					t.Fatal("invalid/partial history started deletion")
+				}
+				return
+			}
+			if response.Code != http.StatusServiceUnavailable || connection.deletes != 1 {
+				t.Fatalf("uncertain metadata operation not retained: %d %s", response.Code, response.Body.String())
+			}
+			if strings.HasPrefix(scenario, "metadata-") && storage.calls != 0 {
+				t.Fatal("unconfirmed metadata ACK reached blob deletion")
+			}
+			if strings.HasPrefix(scenario, "blob-") && storage.calls != 1 {
+				t.Fatal("unconfirmed blob ACK reached draft node deletion")
+			}
+			// Metadata may already be gone. A second user request must not turn
+			// absence into proof that the blob/empty-node deletion completed.
+			priorStorage, priorIndex := storage.calls, nativeVersionDeleteIndex.calls
+			response = call()
+			if response.Code == http.StatusOK || connection.deletes != 1 || storage.calls != priorStorage || nativeVersionDeleteIndex.calls != priorIndex {
+				t.Fatal("partial deletion was replayed or inferred successful from absence")
+			}
+		})
+	}
+}
 
 func (s *uploadNativeTree) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
 	s.reads++
@@ -170,7 +397,7 @@ func TestNativeReadRevisionStreamRequiresActualEOF(t *testing.T) {
 	// generic generated server stub loses a late stream error, so the existing
 	// ResolveConn mock supplies that real client-stream error directly here.
 	nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
-		return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(nativeVersionsTree, nil))
+		return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(nativeVersionsTree, nativeVersionDeleteIndex))
 	})
 	for _, scenario := range []string{"complete", "empty", "unexpected-eof", "canceled", "unknown-open", "unknown-tail", "nil-version", "empty-version", "bounded", "independent-unexpected-eof"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -255,7 +482,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 	// client stable and replace that client's data between serial scenarios.
 	freshTree := nativeVersionsTree
 	nodes.SetSourcesPoolOpener(func(c context.Context) *openurl.Pool[nodes.SourcesPool] {
-		return nodes.NewTestPool(c, nodes.MakeFakeClientsPool(freshTree, nil))
+		return nodes.NewTestPool(c, nodes.MakeFakeClientsPool(freshTree, nativeVersionDeleteIndex))
 	})
 	for _, scenario := range []string{"independent", "native-execution-on-independent", "native-execution-proof", "new", "opaque-draft-revision", "empty-draft-revision", "whitespace-draft-revision", "pending", "unknown", "unknown-enum", "explicit-unknown", "explicit-running", "null-terminal", "empty-terminal", "nonstring-terminal", "terminated", "timed-out", "completed", "completed-publish", "completed-node-unavailable", "completed-foreign-node", "completed-folder-node", "completed-revoked-acl", "failed", "canceled", "denied-before-dispatch", "revoked-after-unknown-dispatch",
 		"lost-submit-ack", "unavailable-observe", "foreign-node", "duplicate-ref-key", "unknown-ref-field", "non-bool-publish",

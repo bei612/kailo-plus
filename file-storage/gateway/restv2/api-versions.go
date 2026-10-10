@@ -8,6 +8,7 @@ import (
 	restful "github.com/emicklei/go-restful/v3"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
@@ -22,6 +23,7 @@ import (
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/telemetry/log"
+	"github.com/pydio/cells/v5/data/versions"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
@@ -293,7 +295,19 @@ func (h *Handler) PublishNode(req *restful.Request, resp *restful.Response) erro
 }
 
 func (h *Handler) DeleteVersion(req *restful.Request, resp *restful.Response) error {
-
+	// This original direct deletion has no governed native Task/AE consumer.
+	// A configured platform binding or an unconsumed execution proof cannot
+	// fall through to independent native deletion, even with valid native ACLs.
+	_, present, proofErr := auth.TakeNativeProof(req.Request)
+	if proofErr != nil {
+		return proofErr
+	}
+	if present {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
+		return err
+	}
 	ctx := req.Request.Context()
 	nodeUuid := req.PathParameter("Uuid")
 	versionUuid := req.PathParameter("VersionId")
@@ -313,29 +327,68 @@ func (h *Handler) DeleteVersion(req *restful.Request, resp *restful.Response) er
 	if !ok {
 		return errors.WithStack(errors.MissingClaims)
 	}
-	er = commons.ForEach(st, er, func(response *tree.ListVersionsResponse) error {
-		if response.GetVersion().VersionId == versionUuid && response.GetVersion().OwnerUuid == cl.Subject {
-			v = response.GetVersion()
-		} else {
-			vv = append(vv, response.GetVersion())
-		}
-		return nil
-	})
 	if er != nil {
 		return er
+	}
+	if st == nil {
+		return errors.WithStack(errors.ServiceError)
+	}
+	// The empty-draft deletion below requires a complete native history, not
+	// the generic iterator's acceptance of an interrupted/UnexpectedEOF list.
+	for {
+		response, streamErr := st.Recv()
+		if streamErr == io.EOF {
+			break
+		}
+		if streamErr != nil {
+			return streamErr
+		}
+		revision := response.GetVersion()
+		if revision == nil || revision.VersionId == "" {
+			return errors.WithStack(errors.ServiceError)
+		}
+		if revision.VersionId == versionUuid && revision.OwnerUuid == cl.Subject {
+			v = revision
+		} else {
+			vv = append(vv, revision)
+		}
 	}
 	if v == nil {
 		return errors.WithStack(errors.VersionNotFound)
 	}
+	if v.GetLocation() == nil || v.GetLocation().GetPath() == "" {
+		return errors.WithStack(errors.ServiceError)
+	}
 
 	log.Logger(ctx).Debug("Should delete this version: ", v.Zap())
-	if _, er = vcl.DeleteVersion(ctx, &tree.HeadVersionRequest{NodeUuid: nodeUuid, VersionId: versionUuid}); er != nil {
-		log.Logger(ctx).Error("Cannot delete draft version", zap.Error(er))
-	} else if _, er2 := compose.PathClient(nodes.AsAdmin()).DeleteNode(ctx, &tree.DeleteNodeRequest{Node: v.GetLocation()}); er2 == nil {
-		log.Logger(ctx).Debug("Deleted version blob", v.GetLocation().Zap())
-	} else {
-		log.Logger(ctx).Error("Could not delete draft version blob", v.GetLocation().Zap())
+	deleted, er := vcl.DeleteVersion(ctx, &tree.HeadVersionRequest{NodeUuid: nodeUuid, VersionId: versionUuid})
+	if er != nil || !deleted.GetSuccess() || deleted.GetDeletedVersion() == nil {
+		log.Logger(ctx).Error("Version deletion outcome is unknown; metadata ACK not confirmed", zap.Error(er))
+		return errors.WithMessage(errors.ServiceError, "version deletion outcome is unknown")
 	}
+	// ListVersions enriches IsHead/Description and supplies DefaultLocation
+	// for legacy rows. DeleteVersion returns the original persisted row.
+	// Compare every persisted field without requiring those list-only values.
+	expected := proto.Clone(v).(*tree.ContentRevision)
+	expected.IsHead = deleted.DeletedVersion.IsHead
+	expected.Description = deleted.DeletedVersion.Description
+	if deleted.DeletedVersion.Location == nil {
+		if !proto.Equal(v.Location, versions.DefaultLocation(ctx, nodeUuid, versionUuid)) {
+			log.Logger(ctx).Error("Version deletion outcome is unknown; missing persisted blob location")
+			return errors.WithMessage(errors.ServiceError, "version deletion outcome is unknown")
+		}
+		expected.Location = nil
+	}
+	if !proto.Equal(expected, deleted.DeletedVersion) {
+		log.Logger(ctx).Error("Version deletion outcome is unknown; metadata ACK identifies another revision")
+		return errors.WithMessage(errors.ServiceError, "version deletion outcome is unknown")
+	}
+	removed, er := compose.PathClient(nodes.AsAdmin()).DeleteNode(ctx, &tree.DeleteNodeRequest{Node: v.GetLocation()})
+	if er != nil || !removed.GetSuccess() {
+		log.Logger(ctx).Error("Version deletion outcome is unknown; blob ACK not confirmed", v.GetLocation().Zap(), zap.Error(er))
+		return errors.WithMessage(errors.ServiceError, "version deletion outcome is unknown")
+	}
+	log.Logger(ctx).Debug("Deleted version blob", v.GetLocation().Zap())
 
 	rsp := &rest.DeleteVersionResponse{
 		Success: true,
@@ -343,8 +396,10 @@ func (h *Handler) DeleteVersion(req *restful.Request, resp *restful.Response) er
 
 	if targetNode.HasMetaKey(common.MetaNamespaceNodeDraftMode) && len(vv) == 0 {
 		log.Logger(ctx).Debug("Now we should also delete the draft node as it has no more versions")
-		if _, er = router.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: targetNode, Silent: true}); er != nil {
-			return er
+		removed, er = router.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: targetNode, Silent: true})
+		if er != nil || !removed.GetSuccess() {
+			log.Logger(ctx).Error("Version deletion outcome is unknown; empty draft node ACK not confirmed", targetNode.Zap(), zap.Error(er))
+			return errors.WithMessage(errors.ServiceError, "version deletion outcome is unknown")
 		}
 		rsp.EmptyNodeDeleted = true
 	}
