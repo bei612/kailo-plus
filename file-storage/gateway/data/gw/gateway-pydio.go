@@ -348,7 +348,7 @@ func (l *pydioObjects) GetObjectNInfo(ctx context.Context, bucket, object string
 	if err != nil {
 		return nil, err
 	}
-	if cellauth.NativeHumanReadRequired(ctx) {
+	if cellauth.NativeHumanReadRequired(ctx) || cellauth.NativeReadFromContext(ctx).IsServiceSource() {
 		// Finish admission, the original read, usage and fresh disclosure before
 		// MinIO can send HTTP success headers, including a zero-byte response.
 		// Only this request holds the bounded content; there is no result store.

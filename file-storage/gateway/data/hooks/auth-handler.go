@@ -151,9 +151,14 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	newRequest := r.WithContext(ctx)
 	if hasProof {
-		if _, err := auth.NativeReadAuthority(newRequest, proof, "execute", false); err != nil {
+		read, err := auth.NativeReadAuthority(newRequest, proof, "execute", false)
+		if err != nil {
 			cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
 			return
+		}
+		if read.IsServiceSource() {
+			// The source adapter refuses a native server that ignored the proof.
+			w.Header().Set("X-Kailo-Native-Actor", read.Delivery.TenantID+":"+read.Delivery.BindingID+":SERVICE:"+read.Claims["actor_principal_id"].(string))
 		}
 	} else if err := auth.PrepareNativeHumanRead(newRequest); err != nil {
 		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)

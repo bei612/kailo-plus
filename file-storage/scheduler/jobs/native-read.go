@@ -244,6 +244,9 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 	if !ok || (expectedBytes < 0 && (!enumeration || expectedBytes != -1)) || read.Delivery.Read == nil {
 		return errors.WithStack(errors.StatusForbidden)
 	}
+	if read.IsServiceSource() && (expectedBytes < 0 || read.Delivery.MaxResponseBytes <= 0 || read.Delivery.MaxResponseBytes == math.MaxInt64 || expectedBytes > read.Delivery.MaxResponseBytes) {
+		return errors.WithStack(errors.StatusForbidden)
+	}
 	client := jobproto.NewJobServiceClient(grpc.ResolveConn(ctx, common.ServiceJobsGRPC))
 	job, err := client.GetJob(ctx, &jobproto.GetJobRequest{JobID: read.Delivery.Read.NativeJobID})
 	if err != nil || !NativeReadJobMatches(job.GetJob(), read.Delivery.Read.NativeJobID) {
@@ -270,7 +273,11 @@ func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expecte
 		return err
 	}
 	digest := sha256.New()
-	copied, copyErr := io.Copy(io.MultiWriter(writer, digest), reader)
+	var stream io.Reader = reader
+	if read.IsServiceSource() {
+		stream = io.LimitReader(reader, read.Delivery.MaxResponseBytes+1)
+	}
+	copied, copyErr := io.Copy(io.MultiWriter(writer, digest), stream)
 	closeErr := reader.Close()
 	if copyErr != nil {
 		return copyErr

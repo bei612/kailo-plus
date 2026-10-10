@@ -160,10 +160,14 @@ async function setup(t, changes = {}) {
     }
     if (request.url === `/native-bytes?versionId=${changes.downloadRevision ?? 'frozen-version'}` && changes.serviceRead) {
       assert.equal(request.headers.authorization, undefined);
-      if (changes.readExecution) {
+      if (changes.readExecution || !business) {
         const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
         assert.equal(proof.argumentsJson, canonical(requestArguments));
         assert.equal(request.headers['idempotency-key'], ids[7]);
+        const claims=JSON.parse(Buffer.from(proof.actionToken.split('.')[1],'base64url').toString('utf8'));
+        if (!business && !changes.missingSourceActorAck) {
+          response.setHeader('x-kailo-native-actor', `${claims.tenant_id}:${ids[0]}:SERVICE:${changes.wrongSourceActorAck?ids[0]:claims.actor_principal_id}`);
+        }
       } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
       state.downloads = (state.downloads ?? 0) + 1;
       await state.onDownload?.();
@@ -756,6 +760,20 @@ test('source bytes require the exact persisted receipt acknowledgment and actual
       if (result.status!==200) assert.deepEqual(await result.json(),{error:'adapter request refused'});
     });
   }
+});
+
+test('SERVICE body refuses a native that ignored or misattributed the original source proof',async t=>{
+  const args={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],
+    input:{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.bin',mediaType:'application/octet-stream'}};
+  for (const changes of [{missingSourceActorAck:true},{wrongSourceActorAck:true}]) await t.test(JSON.stringify(changes),async nested=>{
+    const fixture=await setup(nested,{operation:'execute',arguments:args,serviceRead:true,...changes});
+    const result=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],
+      raw:canonical({actionKey:'file_storage.read@v1',idempotencyKey:ids[7],arguments:args})});
+    assert.equal(result.status,503);
+    assert.equal(fixture.state.downloads,1);
+    assert.equal(fixture.state.receipts.length,0);
+    assert.deepEqual(await result.json(),{error:'adapter request refused'});
+  });
 });
 
 test('SERVICE source read consumes native proto3 omitted zero without accepting malformed size or nonempty bytes',async t=>{

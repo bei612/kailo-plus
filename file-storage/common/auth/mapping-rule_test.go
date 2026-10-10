@@ -269,6 +269,121 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 	}
 }
 
+func TestNativeSourceReadConsumesOriginalServiceProof(t *testing.T) {
+	cache_helper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	const serviceUser = "00000000-0000-4000-8000-000000000001"
+	const receiver = "00000000-0000-4000-8000-000000000002"
+	const resource = "00000000-0000-4000-8000-000000000003"
+	const node = "00000000-0000-4000-8000-000000000004"
+	const key = "00000000-0000-4000-8000-000000000005"
+	const execution = "00000000-0000-4000-8000-000000000006"
+	for _, scenario := range []string{"allowed", "asset", "human-transport", "human-claim", "foreign-tenant", "wrong-operation", "wrong-key", "wrong-version", "range", "locked", "missing-job", "PEP-denied", "PEP-wrong-AE", "PEP-target", "revoke"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			user := &nativeActorUserRead{t: t, user: &idm.User{Uuid: serviceUser, Login: "source-instance"}}
+			if scenario == "locked" {
+				user.user.Attributes = map[string]string{"locks": `["logout"]`}
+			}
+			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: user})
+			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadOIDCPolicy{}})
+			claims := map[string]interface{}{"tenant_id": resource, "actor_principal_id": receiver, "operation_id": key,
+				"action_execution_id": execution, "target_id": resource, "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "idempotency_key": key, "jti": execution}
+			if scenario == "human-claim" {
+				claims["initiating_human_principal_id"] = receiver
+			}
+			if scenario == "foreign-tenant" {
+				claims["tenant_id"] = receiver
+			}
+			input := map[string]interface{}{"resourceId": resource, "nativeObjectRef": node, "nativeRevision": "fixed", "displayName": "file.txt", "mediaType": "text/plain"}
+			if scenario == "asset" {
+				input["assetId"] = node
+			}
+			arguments, _ := json.Marshal(map[string]interface{}{"targetType": "RESOURCE", "targetId": resource, "authorizationTargetNativeRef": resource, "input": input})
+			payload, _ := json.Marshal(claims)
+			token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".verified-by-original-pep"
+			peps := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/token" {
+					json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "source-fixture", "token_type": "Bearer", "expires_in": 60})
+					return
+				}
+				peps++
+				var request map[string]interface{}
+				if r.URL.Path != "/service/v1/adapter/pep_check" || r.Header.Get("Authorization") != "Bearer source-fixture" ||
+					json.NewDecoder(r.Body).Decode(&request) != nil || len(request) != 4 || request["actionToken"] != token ||
+					request["argumentsJson"] != string(arguments) || request["operation"] != "execute" || request["bindingId"] != key {
+					t.Error("exact original SERVICE callback was not consumed")
+				}
+				if scenario == "PEP-denied" || (scenario == "revoke" && peps > 1) {
+					w.WriteHeader(403)
+					return
+				}
+				result := map[string]interface{}{"actionExecutionId": execution, "operationId": key, "authorizationMinZedToken": "fresh"}
+				if scenario == "PEP-wrong-AE" {
+					result["actionExecutionId"] = key
+				}
+				if scenario == "PEP-target" {
+					result["targetResource"] = map[string]interface{}{}
+				}
+				json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "source-secret")
+			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			delivery := map[string]interface{}{"bindingId": key, "tenantId": resource, "nativeRootRef": resource, "nativeScopeRef": node, "nativeInstanceRef": "instance",
+				"instanceServiceUuid": serviceUser, "corePepUrl": server.URL + "/service/v1/adapter/pep_check", "oidcTokenUrl": server.URL + "/token",
+				"clientId": "source", "clientSecretFile": secret, "clientSecretMaxBytes": 256, "maxResponseBytes": 65536, "requestTimeout": "2s",
+				"read": map[string]interface{}{"nativeJobId": "existing-read-job", "usageMeasurements": []interface{}{}}}
+			if scenario == "missing-job" {
+				delivery["read"].(map[string]interface{})["nativeJobId"] = ""
+			}
+			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+			subject := serviceUser
+			if scenario == "human-transport" {
+				subject = receiver
+			}
+			ctx = claim.ToContext(ctx, claim.Claims{Subject: subject, Name: "source-instance"})
+			request := httptest.NewRequest(http.MethodGet, "http://native.invalid/file?versionId=fixed", nil).WithContext(ctx)
+			request.Header.Set("Idempotency-Key", key)
+			if scenario == "wrong-key" {
+				request.Header.Set("Idempotency-Key", node)
+			}
+			if scenario == "wrong-version" {
+				request.URL.RawQuery = "versionId=other"
+			}
+			if scenario == "range" {
+				request.Header.Set("Range", "bytes=0-1")
+			}
+			proof, _ := json.Marshal(map[string]interface{}{"actionToken": token, "argumentsJson": string(arguments)})
+			operation := "execute"
+			if scenario == "wrong-operation" {
+				operation = "observe"
+			}
+			read, err := NativeReadAuthority(request, base64.RawURLEncoding.EncodeToString(proof), operation, false)
+			allowed := scenario == "allowed" || scenario == "revoke"
+			if (err == nil) != allowed {
+				t.Fatalf("SOURCE %s: %v", scenario, err)
+			}
+			if !allowed {
+				return
+			}
+			current, _ := claim.FromContext(request.Context())
+			if !read.IsServiceSource() || NativeReadFromContext(request.Context()) != read || current.Subject != serviceUser ||
+				read.Claims["actor_principal_id"] != receiver || read.ExternalExecutionID != "" || len(read.Input) != 5 || read.Target["nativeRef"] != resource {
+				t.Fatal("source authority was replaced by HUMAN/AGENT/native impersonation")
+			}
+			if err := read.Fresh(request.Context(), "execute"); (err != nil) != (scenario == "revoke") {
+				t.Fatalf("fresh source PEP: %v", err)
+			}
+		})
+	}
+}
+
 func TestUnmarshalMappingRuleConfig(t *testing.T) {
 	rawConfig := []byte(`
 RuleName: first

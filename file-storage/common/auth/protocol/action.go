@@ -16,6 +16,43 @@ func (d Delivery) AuthorizeAction(ctx context.Context, token, arguments string) 
 	return d.AuthorizeOperation(ctx, token, arguments, "execute")
 }
 
+// SERVICE SOURCE reads use the existing three-field read-grant PEP response,
+// not a HUMAN targetResource or an ExternalExecution. Core verifies the exact
+// signed native root in arguments against the original Resource and binding.
+func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments string) (map[string]interface{}, error) {
+	refused := errors.New("native source read authority refused or unavailable")
+	if err := d.validate(); err != nil || int64(len(token)+len(arguments)) > d.MaxResponseBytes {
+		return nil, refused
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return nil, refused
+	}
+	data, err := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims map[string]interface{}
+	if err != nil || json.Unmarshal(data, &claims) != nil || claims == nil {
+		return nil, refused
+	}
+	var result map[string]interface{}
+	if err := d.request(ctx, map[string]interface{}{"bindingId": d.BindingID, "actionToken": token,
+		"operation": "execute", "argumentsJson": arguments}, &result); err != nil {
+		return nil, refused
+	}
+	ae, aeOK := result["actionExecutionId"].(string)
+	op, opOK := result["operationId"].(string)
+	zed, zedOK := result["authorizationMinZedToken"].(string)
+	if len(result) != 3 || !aeOK || !opOK || !zedOK || zed == "" ||
+		!canonicalUUID(ae) || !canonicalUUID(op) || claims["action_execution_id"] != ae || claims["operation_id"] != op {
+		return nil, refused
+	}
+	for _, key := range []string{"initiating_human_principal_id", "agent_principal_id", "delegation_id", "delegation_version", "result_exposure_policy_id", "result_exposure_policy_version", "external_execution_id"} {
+		if _, present := claims[key]; present {
+			return nil, refused
+		}
+	}
+	return claims, nil
+}
+
 // AuthorizeOperation observes the same frozen native Task without replaying an
 // execute token. Core deliberately omits a resource body for an old observation.
 func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, error) {

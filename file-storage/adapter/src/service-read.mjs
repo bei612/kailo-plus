@@ -91,9 +91,13 @@ export async function nativeFile(config, deadline, args, claims) {
     || url.searchParams.get('versionId') !== version.VersionId) throw new Refused(503);
   const remaining=deadline-Date.now();
   if (remaining <= 0) throw new Refused(503);
+  const source=config.nativeSourceRead;
   const response=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(remaining),
-    ...(config.readExecution && config.nativeActorContext ? {headers:{'x-kailo-native-execution':config.nativeActorContext.proof, 'idempotency-key':claims.idempotency_key}} : {})});
-  if (response.status !== 200 || !response.body || response.headers.has('content-range')) {
+    ...((config.readExecution && config.nativeActorContext) || source ? {headers:{
+      'x-kailo-native-execution':source?.proof ?? config.nativeActorContext.proof,
+      'idempotency-key':claims.idempotency_key}} : {})});
+  if (response.status !== 200 || !response.body || response.headers.has('content-range')
+    || (source && response.headers.get('x-kailo-native-actor') !== source.acknowledgement)) {
     await response.body?.cancel(); throw new Refused(503);
   }
   const bytes=await boundedBytes(response.body,config.maxBodyBytes);
@@ -116,6 +120,13 @@ export async function readFile(config, deadline, raw, key, token) {
   const claims=await claimsForRead(config,token,args);
   if (claims.idempotency_key !== key) throw new Refused(401);
   await freshPep(config,deadline,token,args,claims,'execute');
+  // Metadata still uses the source instance's original native credentials.
+  // The actual fixed-version body must additionally consume this exact Core
+  // SERVICE proof and claim its original native Task before opening bytes.
+  config=Object.freeze({...config,nativeSourceRead:Object.freeze({
+    proof:Buffer.from(canonical({actionToken:token,argumentsJson:canonical(args)})).toString('base64url'),
+    acknowledgement:`${claims.tenant_id}:${config.bindingId}:SERVICE:${claims.actor_principal_id}`,
+  })});
   const file=await nativeFile(config,deadline,args,claims);
   const {bytes}=file;
   // Do not disclose buffered bytes if read permission disappeared during I/O.

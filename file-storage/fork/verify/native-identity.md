@@ -727,3 +727,99 @@ SHA-256 为 `156c71cd64158c3511f2b3ee659056de01736628db9e8159f71f01d961784927`�
 该最终树的完整 `tools/check.sh --full`、真实 Cells/Core/OpenMeter E2E、
 页面截图或部署。当前 34 个自有路径不含 `main.rs` 的继承 custom emoji
 改动、不含继承 compose 配置；由主线选择性提交，不将其余 dirty 带入。
+
+## 2026-10-10 SERVICE SOURCE 固定版本正文消费者
+
+本批接续 `9acfbddda298dcbe0dab30f79b9786c67eeeff91`，不改变其 HUMAN
+同步读取。来源是固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`
+的 `common/nodes/version/handler-version.go::(*Handler).GetObject`，继续以
+HeadVersion、VersionId 和原生 GetObject 读取，不重写文件存储。
+
+1. 权威：`.design/07` §8.2、`.design/13` §4.1/4.4 与
+   SS-CEL-MATERIALIZATION 已要求接收方自拉。现有 WeKnora 消费者取得
+   SERVICE ActionToken 后调用来源 adapter；但 adapter 的版本下载没有把
+   proof 传到原生 GetObject，原生端只接受 HUMAN/AGENT，无法交付真实正文。
+   本批只补来源端固定版本正文，不新增 Core 权限、状态、实体或协议。
+2. 影响：`protocol.AuthorizeSourceRead` 消费 Core 既有三字段 SERVICE PEP
+   响应，成功校验原 AE/operation 后才能消费 claims；它不把该响应伪造成
+   HUMAN targetResource。原数据网关消费 proof、保留实例原生身份，以签名
+   authorizationTargetNativeRef 与原 GetObject 的 root/admitted/member
+   UUID/路径/ACL 约束共同限制正文。adapter 要求原生 exact SERVICE 身份回显。
+   Web/Desktop 仍使用原组件完整页面；本批没有改页面或 Mobile 承载边界。
+3. 副作用：复用原 create-only read Task，记录同一 SERVICE actor、AE、
+   operation 和固定版本；重复 key 在打开原生 reader 前拒绝。正文与摘要仍
+   留在原请求和 Cells 原 Task，Core 只收原 SOURCE 元数据回执。实例凭据不交
+   给 WeKnora，不把 SERVICE 映射成 HUMAN/AGENT，不产生第二份权限账本。
+4. 异常：缺 proof/原生 ACK、错误身份、旧原生忽略 proof、范围或版本不符、
+   PEP 不可达/撤权、超限、Task ACK 不确定均拒绝正文；零字节也须原 Task
+   真正完成后 GetObjectNInfo 才返回 reader，不能通过空流绕过门禁。错误沿
+   既有拒绝与 UNKNOWN 处理，不伪造成功或零用量。不改变 SERVICE 列举的
+   两次完整遍历、HUMAN 同步计量或 AGENT ExternalExecution 语义。
+
+实现后按实际 `contracts/adapter/file_storage.v1/read_input.schema.json`
+复核，原生 SOURCE 输入严格只收五个字段；不能因通用 ContentReference
+允许 `assetId` 就在此额外兼容。相应场景须拒绝多余字段，Core 的原输入相等
+与 schema 校验保持不变，没有修改或重新生成公共契约。
+
+复用原 4 CPU/8 GiB Node SDK、UID 1000 与 Data 缓存，未安装依赖或构建镜像：
+
+```sh
+node --test --test-name-pattern="SERVICE|source bytes" \
+  file-storage/adapter/test/query-revision.test.mjs
+```
+
+句柄 60125 实际 exit 0：115 passed / 0 failed。删除私有快照生产函数
+`nativeFile` 的 SERVICE ACK 比较后，原断言实际 exit 1：缺失及错误 ACK
+均出现 `200 !== 503`。已用补丁还原并与正式 cmp 0；句柄 36388 同命令
+复验 exit 0，115 passed / 0 failed。原件位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/cells-onlyoffice-check.bCmhrJ/`：
+
+- `cells-source-adapter-positive.log`：
+  `0f347da22dcc5a0b9e8ca1ad2e43ee1192e4da6ac3364437eccdc4f4687beff0`。
+- `cells-source-adapter-negative.log`：
+  `355e59fd36e12000fa2290e8afb24098f739d8a0ebfb45c824739944079e5b44`。
+- `cells-source-adapter-restored.log`：
+  `fd36285cc69f0fd1d5d06ef568736c07d260085f50bb1f7dc816b99c4de0ccc2`。
+
+首次误用 Core 检查快照时缺少 file-storage 路径，句柄 10632 exit 1，原输出
+`Could not find 'file-storage/adapter/test/query-revision.test.mjs'`；该次未运行
+验证，不计通过。已改用原 Cells Node SDK 的实际挂载。
+
+Go 句柄 44877 已实际 exit 0，原命令为：
+
+```sh
+go test ./common/auth ./common/auth/protocol ./scheduler/jobs/grpc \
+  ./gateway/data/gw ./gateway/data/hooks \
+  -run "TestNativeSourceRead|TestNativeReadAuthority|TestNativeReadTaskRecordsActualStreamOnce|TestAuthorizeAction|TestAuthorizeOperation" \
+  -count=1 -v
+```
+
+原 authority 28 场景、SOURCE 15 场景、protocol 18 场景通过；原 Task
+在实际 Bolt 中执行 19 个主场景及空流内四个零值证据断言，覆盖 create-only、
+重复 key 不重读、零字节、ACK 丢失和撤权。两条 gateway 包编译通过，
+实际输出为 `[no test files]`，不能计为网关业务测试。原件
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/cells-source-native-positive.log`
+SHA-256 为 `679043f86ae5018e5db3ccd48d3d236777b6bd65878cc5001d0432c2edc533d2`。
+该冻结快照尚含实现后取消的 `assetId` 兼容；最终五字段 authority 另用
+`go test ./common/auth -run TestNativeSourceRead -count=1 -v` 验证，句柄
+68314 exit 0，15 场景通过。仅在私有 SDK 把生产来源身份比较从必须等于
+实例服务 UUID 破坏为非空，原断言句柄 44022 实际 exit 1：
+`mapping-rule_test.go:370: SOURCE human-transport: <nil>`。没有修改断言来制造
+失败。apply_patch 还原生产比较并与正式源码 cmp 0 后，句柄 91919 同命令
+exit 0，15 场景通过。以上两个最终源码文件在原 SDK gofmt 后均与正式 cmp 0。
+每轮复用原空闲 4 CPU/8 GiB SDK，最终检查前 host available 26–27 GiB、
+memory PSI avg10=0；不并行另开 Go 检查。
+
+同一 Go 原件目录内的最终日志：
+
+- `cells-source-native-final-positive.log`：
+  `0947a0f6401579029dafa88af52256b7b1f89c3c649fdcef5403d0b031838d26`。
+- `cells-source-native-negative.log`：
+  `e867d44a5e8f83ad7a97cc6eb293c3f549218277bf899e0bce3c4dc4cb391c43`。
+- `cells-source-native-restored.log`：
+  `e420b65a46c07b4dd09b168ef1be9ae3d5d6be20bf0ce81c756f2dd721472c81`。
+
+SOURCE proof 到 NativeReadExecution 与原共享 Task 分别验收，未在此模拟
+真实 SOURCE S3→WeKnora 全链。没有执行本批完整门禁、真实
+Cells→WeKnora 导入、页面截图、构建发布或部署。SOURCE 已读但回执网络不明
+时仍保留原 operation/原 Task 待对账，不声称本批闭合了全部故障恢复。

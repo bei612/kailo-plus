@@ -52,6 +52,7 @@ type NativeReadExecution struct {
 	Token               string
 	Args                string
 	humanToken          string
+	source              bool
 }
 
 type nativeReadContextKey struct{}
@@ -86,6 +87,16 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 	decoder.DisallowUnknownFields()
 	if err != nil || decoder.Decode(&proof) != nil || decoder.Decode(new(interface{})) != io.EOF {
 		return nil, refused
+	}
+	var sourceArgs map[string]interface{}
+	if json.Unmarshal([]byte(proof.ArgumentsJSON), &sourceArgs) != nil {
+		return nil, refused
+	}
+	if _, present := sourceArgs["targetType"]; present {
+		if service || operation != "execute" {
+			return nil, refused
+		}
+		return nativeSourceReadAuthority(request, delivery, proof.ActionToken, proof.ArgumentsJSON, sourceArgs)
 	}
 	claims, target, err := delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
 	revisions := claims["action_key"] == "file_storage.list_revisions@v1"
@@ -185,6 +196,16 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 }
 
 func (read *NativeReadExecution) Fresh(ctx context.Context, operation string) error {
+	if read.IsServiceSource() {
+		if operation != "execute" {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		claims, err := read.Delivery.AuthorizeSourceRead(ctx, read.Token, read.Args)
+		if err != nil || claims["action_execution_id"] != read.Claims["action_execution_id"] || claims["operation_id"] != read.Claims["operation_id"] {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		return nil
+	}
 	claims, target, err := read.Delivery.AuthorizeOperation(ctx, read.Token, read.Args, operation)
 	if err != nil || claims["action_execution_id"] != read.Claims["action_execution_id"] || claims["operation_id"] != read.Claims["operation_id"] {
 		return errors.WithStack(errors.StatusForbidden)
