@@ -39,6 +39,183 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
+describe('original dashboard item metadata write consumers', () => {
+  const config: any = {
+    projectId: 3,
+    bindingId: '3c0c015a-373a-4af1-8cbe-4a7e437bdbe1',
+    tenantId: 'fixture-tenant',
+    workspaceId: 'fixture-workspace',
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '3',
+  };
+  let previous: string | undefined;
+  let previousBinding: string | undefined;
+  let ctx: any;
+  let repository: any;
+  let dashboard: { id: number; projectId: number };
+  let generation: number;
+  let revoked: boolean;
+  let afterRead: () => void;
+  let disclosure: jest.SpyInstance;
+  const item = { id: 91, dashboardId: 81, displayName: 'Original' };
+  beforeEach(() => {
+    previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    previousBinding = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    generation = 2;
+    revoked = false;
+    afterRead = () => undefined;
+    dashboard = { id: 81, projectId: 3 };
+    repository = {
+      findOneBy: jest.fn(async () => ({ ...item })),
+      updateOne: jest.fn(async (_id, input) => ({ ...item, ...input })),
+      deleteOne: jest.fn(async () => undefined),
+    };
+    ctx = {
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'verified-person',
+      projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
+    };
+    ctx.dashboardService = new DashboardService({
+      projectService: ctx.projectService,
+      dashboardItemRepository: repository,
+      dashboardRepository: {
+        findOneBy: jest.fn(async (where) => {
+          const result = Object.entries(where).every(
+            ([key, value]) => dashboard[key] === value,
+          )
+            ? { ...dashboard }
+            : null;
+          afterRead();
+          return result;
+        }),
+      },
+    } as any);
+    // SQL body disclosure is independently covered by nativeHumanQuery. Keep
+    // this batch on the actual wrapper/resolver/service DB-write consumer.
+    disclosure = jest
+      .spyOn(DashboardResolver.prototype as any, 'readableWriteResult')
+      .mockImplementation(async (_ctx, _project, items) => items);
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async () => {
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: 'manage',
+            checkedRevision: 'current',
+          },
+        };
+      });
+  });
+  afterEach(() => {
+    disclosure.mockRestore();
+    if (previous === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    if (previousBinding === undefined)
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_BINDING_CONFIG_FILE = previousBinding;
+  });
+  describe.each(['updateDashboardItem', 'deleteDashboardItem'] as const)(
+    '%s',
+    (mutation) => {
+      const write =
+        mutation === 'updateDashboardItem' ? 'updateOne' : 'deleteOne';
+      const invoke = () =>
+        originalResolvers.Mutation[mutation](
+          null,
+          {
+            where: { id: item.id },
+            data: { displayName: 'Renamed original card' },
+          },
+          ctx,
+        );
+      it('keeps the original result and consumes manage after row reads before one native write', async () => {
+        repository[write].mockImplementation(async (_id, input) => {
+          expect(bindingServiceCall).toHaveBeenCalledTimes(2);
+          return { ...item, ...input };
+        });
+        expect(await invoke()).toEqual(
+          mutation === 'updateDashboardItem'
+            ? { ...item, displayName: 'Renamed original card' }
+            : true,
+        );
+        expect(repository[write]).toHaveBeenCalledTimes(1);
+        expect(bindingServiceCall).toHaveBeenCalledTimes(3);
+      });
+      it.each(['revoked', 'generation', 'identity'] as const)(
+        'refuses %s after the final native row read',
+        async (fault) => {
+          // First lookup is the resolver's; second is the actual service's lookup.
+          let reads = 0;
+          afterRead = () => {
+            if (++reads !== 2) return;
+            if (fault === 'revoked') revoked = true;
+            if (fault === 'generation') generation++;
+            if (fault === 'identity') ctx.nativeHumanToken = 'different-person';
+          };
+          await expect(invoke()).rejects.toMatchObject({
+            extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+          });
+          expect(repository[write]).not.toHaveBeenCalled();
+        },
+      );
+      it('does not mutate another native project dashboard', async () => {
+        dashboard.projectId = 8;
+        await expect(invoke()).rejects.toThrow();
+        expect(repository[write]).not.toHaveBeenCalled();
+      });
+      it('does not let a direct bound service call omit the actual authorization consumer', async () => {
+        await expect(
+          ctx.dashboardService[mutation](
+            item.id,
+            ...(mutation === 'updateDashboardItem'
+              ? [{ displayName: 'bypass' }]
+              : []),
+          ),
+        ).rejects.toMatchObject({ code: 'NATIVE_AUTHENTICATION_REQUIRED' });
+        expect(repository[write]).not.toHaveBeenCalled();
+      });
+      it('retains UNKNOWN after the original write was sent and its acknowledgement was lost', async () => {
+        repository[write].mockRejectedValue(
+          new Error('native acknowledgement lost'),
+        );
+        await expect(invoke()).rejects.toMatchObject({
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(repository[write]).toHaveBeenCalledTimes(1);
+      });
+      it('keeps the never-configured independent native instance behavior', async () => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete ctx.nativeIdentityScope;
+        delete ctx.nativeHumanToken;
+        await invoke();
+        expect(bindingServiceCall).not.toHaveBeenCalled();
+        expect(repository[write]).toHaveBeenCalledTimes(1);
+      });
+      it('refuses a standalone-to-binding switch during the final native lookup', async () => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete ctx.nativeIdentityScope;
+        delete ctx.nativeHumanToken;
+        afterRead = () => {
+          process.env.WREN_PLATFORM_BINDING_CONFIG_FILE =
+            'new-controlled-binding';
+        };
+        await expect(invoke()).rejects.toMatchObject({
+          code: 'QUERY_EVIDENCE_UNAVAILABLE',
+        });
+        expect(repository[write]).not.toHaveBeenCalled();
+      });
+    },
+  );
+});
+
 describe('original thread metadata management consumers', () => {
   const config: any = {
     projectId: 3,
