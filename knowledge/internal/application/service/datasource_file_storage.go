@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"reflect"
 	"sort"
 	"strconv"
@@ -524,6 +526,17 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		}
 	}
 	groups := map[string][]fileStorageFetched{}
+	// Keep one request-local descriptor, never a second persistent content
+	// store. Unlink before SOURCE execution so a crash cannot leave a body file.
+	// Each read and later Emit is bounded independently; valid multi-file batches
+	// acquire neither an aggregate size limit nor one descriptor per dedupe group.
+	var spool *os.File
+	bodyOffsets := map[string]int64{}
+	defer func() {
+		if spool != nil {
+			_ = spool.Close()
+		}
+	}()
 	for _, source := range cfg.ResourceIDs {
 		for _, ref := range listings[source].items {
 			key := fileStorageKey(run.syncLogID, source, fileStorageText(ref, "nativeObjectRef"), fileStorageText(ref, "nativeRevision"))
@@ -543,6 +556,15 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 				digest = fileStorageText(receipt, "contentSha256")
 				size = fileStorageNumber(receipt, "contentBytes")
 			} else {
+				if spool == nil {
+					spool, err = os.CreateTemp("", "weknora-fileurl-*")
+					if err != nil {
+						return nil, fmt.Errorf("native source body buffer is unavailable: %w", err)
+					}
+					if err := os.Remove(spool.Name()); err != nil {
+						return nil, fmt.Errorf("native source body buffer cannot be isolated: %w", err)
+					}
+				}
 				body, observed, err := c.read(ctx, grant, ref)
 				if err != nil {
 					return nil, err
@@ -552,6 +574,17 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 				group = hex.EncodeToString(hash[:]) + ":" + getFileType(fileStorageText(ref, "displayName"))
 				digest = observed
 				size = int64(len(body))
+				if _, retained := bodyOffsets[group]; !retained {
+					offset, err := spool.Seek(0, io.SeekCurrent)
+					if err != nil {
+						return nil, fmt.Errorf("native source body buffer cannot be positioned")
+					}
+					written, err := spool.Write(body)
+					if err != nil || written != len(body) {
+						return nil, fmt.Errorf("native source body buffer is incomplete")
+					}
+					bodyOffsets[group] = offset
+				}
 			}
 			if existing := groups[group]; len(existing) > 0 && existing[0].digest != digest {
 				return nil, fmt.Errorf("native dedupe tuple has conflicting streamed content")
@@ -590,12 +623,17 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			}
 		}
 		if !completedGroup {
-			body, digest, err := c.read(ctx, first.grant, first.ref)
-			if err != nil || digest != first.digest {
-				return nil, fmt.Errorf("pinned source group changed before native ingestion")
+			offset, retained := bodyOffsets[key]
+			if spool == nil || !retained || first.size < 0 || first.size > c.transport.config.MaxBodyBytes {
+				return nil, fmt.Errorf("pinned source group body is unavailable for native ingestion")
 			}
-			// Reading again can take time: renew receiver authorization immediately
-			// before the original native write, not only before source I/O.
+			body, err := io.ReadAll(io.NewSectionReader(spool, offset, first.size))
+			digest := fileStorageDigest(body)
+			if err != nil || int64(len(body)) != first.size || digest != first.digest {
+				return nil, fmt.Errorf("pinned source group body differs from its original read")
+			}
+			// Consume the first authorized SOURCE body, never execute its create-only
+			// read again. Recheck receiver authority after local I/O before Emit.
 			for _, file := range files {
 				if err := c.transport.pep(ctx, file.grant); err != nil {
 					return nil, err
@@ -633,6 +671,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 				return nil, err
 			}
 		}
+		delete(bodyOffsets, key)
 		if completedGroup {
 			// A partially acknowledged group may combine completed and pending
 			// reads. Observe the same native target without replaying Emit, but

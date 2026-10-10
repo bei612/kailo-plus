@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/json"
@@ -737,8 +738,13 @@ func (s *fileStorageApplicationService) CreateKnowledgeFromFileAtID(ctx context.
 }
 
 func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T) {
-	for _, stage := range []string{"parse-pending", "multiple-pending-files", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
+	for _, stage := range []string{"parse-pending", "multiple-pending-files", "duplicate-content", "source-read-refused", "receiver-revoked-after-read", "temporary-buffer-unavailable", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
 		t.Run(stage, func(t *testing.T) {
+			scratch := t.TempDir()
+			t.Setenv("TMPDIR", scratch)
+			if stage == "temporary-buffer-unavailable" {
+				t.Setenv("TMPDIR", filepath.Join(scratch, "absent"))
+			}
 			source, node, root := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			receiverResource := uuid.NewString()
 			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
@@ -754,8 +760,16 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					id := uuid.NewString()
 					references = append(references, map[string]string{"resourceId": source, "nativeObjectRef": id,
 						"nativeRevision": "source-revision", "displayName": fmt.Sprintf("doc-%d.txt", index), "mediaType": "text/plain"})
-					bodies[id] = []byte(fmt.Sprintf("independent source body %d", index))
+					// Every individual response fits MaxBodyBytes, while the whole
+					// valid batch exceeds it. It must not acquire a batch-size cap.
+					bodies[id] = bytes.Repeat([]byte(fmt.Sprintf("independent source body %d", index)), 300)
 				}
+			}
+			if stage == "duplicate-content" {
+				id := uuid.NewString()
+				references = append(references, map[string]string{"resourceId": source, "nativeObjectRef": id,
+					"nativeRevision": "source-revision", "displayName": "copy.txt", "mediaType": "text/plain"})
+				bodies[id] = body
 			}
 			items, err := json.Marshal(references)
 			require.NoError(t, err)
@@ -807,6 +821,10 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					require.NoError(t, json.NewEncoder(w).Encode(response))
 				case "/service/v1/adapter/pep_check":
 					pepCalls++
+					if stage == "receiver-revoked-after-read" && sourceCompletions[readKey] != (time.Time{}) {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
 					require.False(t, observing, "old invocation recovery must never authorize another write")
 					var arguments map[string]any
 					require.NoError(t, json.Unmarshal([]byte(request["argumentsJson"].(string)), &arguments))
@@ -817,11 +835,23 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					require.False(t, observing, "old invocation recovery must never repeat a source call")
 					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))
 					key := request["idempotencyKey"].(string)
+					if _, consumed := sourceCompletions[key]; consumed {
+						t.Errorf("create-only SOURCE execution repeated: %s", key)
+						w.WriteHeader(http.StatusConflict)
+						return
+					}
 					sourceCompletions[key] = time.Now().UTC()
 					if key == listKey {
 						require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": key,
 							"listingDigest": fileStorageDigest(items), "nativeRevision": fileStorageDigest(items), "items": json.RawMessage(items)}))
 					} else {
+						files, err := os.ReadDir(scratch)
+						require.NoError(t, err)
+						require.Empty(t, files, "SOURCE must run only after the temporary body path is unlinked")
+						if stage == "source-read-refused" {
+							w.WriteHeader(http.StatusForbidden)
+							return
+						}
 						reference := readRefs[key]
 						require.NotNil(t, reference)
 						content := bodies[reference["nativeObjectRef"]]
@@ -917,6 +947,23 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			ctx := context.WithValue(newCreateKnowledgeFileContext(), fileStorageRunKey{}, run)
 			input := &types.DataSourceConfig{ResourceIDs: []string{source}}
 			next, err := connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			files, scratchErr := os.ReadDir(scratch)
+			require.NoError(t, scratchErr)
+			require.Empty(t, files, "successful and refused imports must leave no temporary body path")
+			if stage == "source-read-refused" || stage == "receiver-revoked-after-read" || stage == "temporary-buffer-unavailable" {
+				require.Error(t, err)
+				require.Nil(t, next)
+				require.Zero(t, repo.createCalls)
+				require.Zero(t, storage.saveCalls)
+				require.Zero(t, queue.calls)
+				require.Zero(t, readReceipts)
+				if stage == "temporary-buffer-unavailable" {
+					require.Equal(t, 1, sourceCalls, "unavailable scratch must prevent consuming the file SOURCE operation")
+				} else {
+					require.Equal(t, 2, sourceCalls)
+				}
+				return
+			}
 			if stage == "multiple-pending-files" {
 				require.Error(t, err)
 				require.Nil(t, next)

@@ -4120,3 +4120,93 @@ Cells→WeKnora 解析/撤权 E2E、浏览器视觉或 Windows/Mobile 验收。
 固定 `272693d5e1386a352946736c80a2a00ff7c27ff1` 已发布原生镜像不含本批，
 也不含此前 `1e3712818fc6d74359a501e192fd7c8a8881046c` 恢复实现。
 正式绑定仍 0，完整 FILE_STORAGE 七必选和生产交付门禁未因此解除。
+
+## 2026-10-10 SOURCE 首次读取直达原生导入
+
+### 已实现范围与四步影响
+
+1. 权威：DD-89、`.design/07` §8.2 和 `.design/13` §4.4 的接收方自拉，
+   原 `DataSource/SyncLog` 管理同步状态，Core 只保留原 operation 与双方回执。
+   固定 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/knowledge_util.go::downloadFileFromURL`
+   已使用 OS 临时文件承接受限正文；本批直接复用这一原生机制，不建立
+   新正文库、接口、注册表、游标或资源实体。`upstream_manifest.py status
+   knowledge` 确认 reference HEAD 即该基准；首次直接执行脚本因无执行位
+   退出 1，按原 `python3 tools/upstream_manifest.py status knowledge` 入口退出 0。
+2. 影响面：原 `fileStorageConnector.FetchStream` 首轮 `read` 得到正文后只
+   保留摘要，进入 Emit 前再次用同一 grant/key 读取，违反已接入的 SOURCE
+   create-only Task 消费。现在同一请求创建一个原生临时文件，成功 unlink
+   后才读取 SOURCE；每个原生 hash/type 去重组仅追加首次正文并保存 offset。
+   原 `newStreamHandler → ingestItem → CreateKnowledgeFromFileAtID` 继续
+   保存文件、原生知识行与解析任务；进入 Emit 前按 offset/size 读取本地
+   切片并比对原 SHA-256，沿原 fresh RECEIVER PEP 再授权，不重发 SOURCE。
+3. 副作用：原 Core、Cells、公共契约、native dedupe、Applying checkpoint、
+   同一 native creation ID、解析完成观察、usage 提交与 RECEIVER 回执均不改。
+   不把临时文件当完成证据；没有正文进入 Core 或 cursor。单响应仍受已投递
+   MaxBodyBytes 限制，整个合法批次不新增累计大小限制；整请求一个 FD，
+   不随去重组数消耗文件描述符。额外工作内存按单文件受限，临时磁盘占用
+   随本批不同正文增长，空间不足确定拒绝而非降级到无界内存或再次读取。
+4. 边界：零字节仍有 offset 与空正文摘要，重复内容沿原 hash/type 合并。
+   临时文件建立或 unlink 失败在 SOURCE 前拒绝；读失败、局部写入、切片
+   大小或摘要不符、撤权均不 Emit、不虚构完成或零用量。所有函数退出路径
+   关闭唯一 FD；unlink 成功后的进程崩溃由 OS 回收匿名文件，不留下持久正文。
+   该行为依赖当前组件 Linux 运行环境的 open/unlink 语义；不能 unlink 的
+   宿主确定拒绝，不以此宣称 Windows 原生服务已验收。
+   SOURCE 已消费而接收方原生创建尚无终态的崩溃/磁盘错误窗口仍属原 UNKNOWN
+   对账责任，本批不提供跨重启正文恢复、不重新 SOURCE、不声明完整恢复门禁。
+   输入/授权失败与依赖/执行结果不明仍走原 service 错误消费者及 `06` §4，
+   不新增成功枚举、自动重试动作或 SYNC quota 例外。
+
+本批只有接收方上述两个 Go 路径与本节记录；没有页面、菜单或三端宿主变动。
+Web/Desktop 仍经原配置的组件管理面，Mobile 不新增组件宿主；
+未构建镜像、部署服务、批准 release/binding 或执行真实 Cells→WeKnora E2E。
+
+### 实际实现后验证
+
+复用现存 `kailo-knowledge-native-check-wkkigg`、原 Go 工具链与 Data
+`/cache/mod`、`/cache/build`；启动前 SDK 仅 sleep，4 CPU / 8 GiB 限额，
+宿主 available 20 GiB。仅同步本批两个 Go 文件，未创建 SDK、镜像或数据库。
+原作业 35039 等待磁盘读取后进入 compile/vet/link，保持同进程直到 exit 0。
+`gofmt -l` 两文件无输出；原命令为：
+
+```sh
+sudo docker exec --user 1000:1000 -w /workspace/knowledge \
+  kailo-knowledge-native-check-wkkigg \
+  env PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  GOMODCACHE=/cache/mod GOCACHE=/cache/build GOPROXY=off \
+  TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  go test -mod=readonly ./internal/application/service \
+  -run 'TestProcessSync|TestFileStorage' -count=1 -v
+```
+
+35039 正向 **26 顶层、181 子项 PASS，exit 0**，原 service 执行 2.993s。
+现有 `TestFileStoragePendingApplicationResumesOriginalNativeCreation` 的
+HTTP 来源实际按 key 只允许执行一次，第二次返回 409 并使断言失败；
+原链经过真实 FetchStream、stream handler、native creation 与解析观察。
+新增同内容多引用、合法多文件总量超过 MaxBodyBytes、SOURCE 拒绝、
+正文读取后 RECEIVER 撤权及临时目录不可用场景；保留空文件、pending、
+原生创建 ACK 丢失、回执/usage 未确定及后续批次恢复检查。
+检查同时确认 SOURCE 请求前临时路径已 unlink，函数返回后没有临时路径。
+这是原生消费者与本地 HTTP fixture 证据，不是真实 Cells 服务或实库解析验收。
+
+正向日志主机原件：
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/cells-source-single-read-positive.log`，
+SHA-256 `ffe3f5756af0ad4c9628b4967b8826b365b0f0a4ac2fe22a5bf0f985d581e5e7`。
+
+只在私有 SDK 的实际 `FetchStream` 生产路径恢复
+`body, digest, err = c.read(ctx, first.grant, first.ref)`，未改检查断言；
+82713 同目标实际 **exit 1，1 顶层 / 14 子项 FAIL**。
+`datasource_file_storage_test.go:839` 明确报
+`create-only SOURCE execution repeated`，原真实创建计数随 409 拒绝失败，
+不是编译失败。随后 apply_patch 移除这次生产破坏，正式/SDK cmp 0。
+负向日志与正向同目录，`cells-source-single-read-negative.log`，
+SHA-256 `9cce9b9d79e83d2540f34d65b6cc2882d5cc1ab3ad4a695c5d49441358fdcd1a`。
+
+还原后复用原 34192 作业与同一目标，**26 顶层、181 子项 PASS，exit 0**，
+原 service 执行 2.037s，未出现 FAIL/SKIP；`gofmt -l` 两文件无输出。
+正式与 SDK 两个 Go 文件逐一 `cmp` 均 exit 0，未把故障注入留在交付源码。
+同目录 `cells-source-single-read-restored.log` SHA-256
+`a814722662cbd46577a61255013371f1a5ae57e20736389abfc8fac1196ce96c`。
+本批代码检查已收齐正向、真实生产破坏失败、还原三次终态；
+全量门禁与文档检查由主线统一收口，本批未重复启动，亦未执行真实
+Cells→WeKnora 部署联调、数据库解析任务或跨进程崩溃恢复验收。
