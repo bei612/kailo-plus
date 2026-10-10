@@ -215,6 +215,7 @@ Workflows（工作流）是 Web/Desktop 左侧导航的独立平台核心页面�
 
 - 定义列表按当前授权 Workspace 查询 AutomationDefinition，展示 owner、状态、已固定版本与执行 Installation 引用；无定义显示真实空状态，鉴权失败、依赖不可用或投影落后不得显示成“没有工作流”。
 - 原版工作流名称按 `03` §7 的 AutomationVersion.name 读取和编辑；名称、触发条件与动作摘要来自同一个有权读取的版本。表单与 YAML 切换、编辑和复制均保留名称，不以 UUID 卡片或仅浏览器保存的别名代替原版命名功能。旧版本未命名是明确的兼容状态，不代表读取失败或无访问权。
+- 原版可选说明按 `03` §7 的 AutomationVersion.description 随同一授权版本读取、编辑和复制；详情页在触发摘要前保留独立说明段落，不用触发摘要替代说明。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `buzz/desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel` 与 `buzz/desktop/src/features/workflows/ui/workflowDefinition.ts::getWorkflowDescription` 是呈现来源；缺省、空白说明不生成虚构内容，不增加原版没有的说明表单控件。
 - 创建、版本查看与发布、启用、暂停、停用只消费 `05` §2.9 已登记的管理动作；已发布版本不可原地修改，编辑内容形成新版本，启用固定已发布版本。提交时由服务端重查权限、scope 和版本事实，不信任页面缓存。
 - 配置以 DD-107 的 AutomationVersion 为权威。表单与 YAML 必须覆盖同一组合同字段并可相互切换；编辑已发布内容形成新版本。解析失败、未知字段或未知枚举保留编辑内容并拒绝提交，不把无法表示的字段静默丢弃，不执行任意 YAML 指令或恢复 Buzz 原生 workflow 引擎。
 - 复制从有权读取的定义配置进入原创建过程，默认新 DRAFT、新 HUMAN owner；不复制 pin、启用状态、Schedule、webhook 密钥、委托授权、审批或运行历史。目标 Workspace、Installation 与 Delegation 均沿原准入重新查证；没有来源读取权或目标创建权则拒绝。
