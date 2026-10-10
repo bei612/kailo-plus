@@ -6546,3 +6546,62 @@ Core 由主线独立改动 `core/crates/collab-bridge/src/bridge.rs` 与 `core/c
 原 `tools/check-docs.sh ../.design` 使用同一4CPU/8GiB SDK：第一次58889实际 exit1，日志 `check-docs.log` SHA-256 `a7cd4cda905be950fb782e57bda04c2a69dfaed65cf4c5a2b82621de61504c37`。原因是验证输入错误：旧副本缺 README 的7个已在候选 tree 内的链接目标，且误用外层历史 HEAD `50515dd6e3481bcb1732d1662efc88431c716a3d` 中的旧设计，漏掉当前权威已有的3个 Wren ID。`.design` 不是独立 Git 根；没有修改它或外层索引/历史。补齐实际候选目标并冻结当前 `.design/*.md` 21篇，逐文件 SHA-256、外层历史 blob 与工作树 blob 写入 `design-input.tsv`（16篇与该历史不同、5篇相同），SHA-256 `2d31764b0ac60aeed41312d301d73de83ef93ad652e8317865f42c1bba048e7f`，副本逐项哈希核对 exit0。实施文档和原脚本来自 apps main `2460adddce2518f56360ce019dff54ae5492918f` 加本批UI25路径候选 tree `67272212ad2482135d817292f433081fd8189b91`；未包含主线 Core2文件、未复制继承脏回执。修正输入后16121实际 exit0：链接、ID、87实体/115DD/29SS、87场景、两套markdownlint及21篇设计自检全部通过；`check-docs-corrected.log` SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。两次均保留原检查规则，不删除/弱化断言；最终这段运行记录在检查后追加，未宣称外层设计差异已提交。
 
 17项 DOM 正向及读取负向不是浏览器截图，也不替代未启动成功的 DOM 反证。该40008正文分流的 DOM 变异验收仍未闭合；本批无新部署、Windows包或 Mobile 设备验收，旧4c099部署与759产物均不含本批，不能用于宣称原版100%或生产就绪。
+
+### 2026-10-10：Core 原生 diff 消息读取的实际正向与生产分支反证
+
+本批对应 REQ-24、DD-74/75、SS-WEB-PRESENTATION。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的完整路径
+`crates/buzz-core/src/kind.rs::KIND_STREAM_MESSAGE_DIFF` 与
+`desktop/src/shared/constants/kinds.ts::CHANNEL_TIMELINE_CONTENT_KINDS`
+明确将 40008 作为独立可见消息；同文件 `CHANNEL_MESSAGE_EVENT_KINDS`
+不包含它。只恢复原读取能力，不据此新增发布、编辑、删除或搜索类型。
+
+四步影响结论：
+
+1. 权威与状态：原生读取上游已支持，Core/BFF 需补齐接缝；新消息写入授权不是本批开放范围。
+2. 读写面：`core/crates/collab-bridge/src/bridge.rs::CHANNEL_TIMELINE_KINDS`
+   由既有 stream/channel window 消费；
+   `core/crates/platform-core/src/web_transport.rs::channel_message_event`
+   与 `thread_message_kinds` 对齐原查询及回执验证。没有 schema、迁移、API
+   字段、Workflow 类型或新持久状态，旧数据和客户端合同不变。
+3. 副作用：只扩原读取集合，`message_kind`、`mutation_target_matches`、
+   Relay 成员发布集合、认证、scope 与 fresh admission 不变；不复制正文权威。
+4. 异常：原签名、唯一 h、所属频道、线程祖先与复合游标校验继续执行；
+   缺失/重复 h、篡改正文、异频道、无祖先/错根和越界游标拒绝，空页保留原语义。
+   只读别名不能通过原写类型校验；撤权与依赖不明沿原准入及 `06` §4 分类，
+   不新增成功终态或副作用重试。窄检查不冒充在途撤权或实库验收。
+
+仅两个生产/既有检查所在 Rust 文件，差异 +74/-43。私有完整消费闭包来自
+`41ebf521867801eeeb67ef4236b57817b28d77b6`，覆盖 Core、contracts、原 Buzz
+core/sdk、proto 与 registry，并覆盖这两个实际文件；与当前已提交 main
+`7a3e49cd157532ad47e95bdff70d5f05ddbe57e1` 核对，相关生产/契约/依赖输入
+没有期间提交差异。正式文件与私有源逐字核对，不把全仓其他未提交内容带入。
+复用现有 `kailo-installation-scope-sdk-e4agxd`（UID 1000:1000、4 CPU、8 GiB），
+启动前检查进程、内存/CPU/I/O 压力与 Data 缓存 mount；不新建镜像、不降低 Cargo 并行度。
+
+原命令 `cargo test --offline --locked -p platform-core --bin platform-core web_transport::tests`
+在该 SDK 的 `/cache/core-diff-read.69nUQd/core` 执行，使用原 SQLX_OFFLINE
+及 `/cache/rust-target`。30291 实际 exit 0：34 passed、0 failed、1 ignored；
+忽略项 `member_profile_requires_exact_active_member_identity` 需要隔离数据库，
+没有提供，不计为通过。日志原件目录为
+`/volumes/data/kailo/check-cache/core-diff-read.69nUQd/`，`positive.log`
+SHA-256 `8e95572b583b0fb844ffb99670135d23888913d3e3f278a7a92486980e915f67`。
+
+实际反证只在私有生产 `channel_message_event` 移除 40008 读取别名，保留测试断言，
+执行原 `web_transport::tests::native_stream_read_evidence_preserves_scope_signature_and_write_kind`。
+37458 实际 exit 101：0 passed、1 failed；原读取断言收到 503 Err 并失败，
+不是编译失败。`negative.log` SHA-256
+`81c5b49d526592ede860f67ddf492784e7818d60d4e1a31bcf6c4ef960dfa746`。
+私有生产已 apply_patch 还原，与正式文件 cmp exit 0；7499 原完整
+web_transport 还原复验实际 exit 0：34 passed、0 failed、1 ignored，
+隔离数据库忽略项不计为通过。`restored.log` SHA-256
+`08a5d6bde9ec1e87f8f316af4470a65c33d53e75120a785a538259150a20fe2d`。
+正式源未经历变异。
+
+另一个旧固定全量快照 `331fdcb443e40ff918b7801b1f94341f2e453ce0` 的原
+`tools/check.sh --full` 20676 已实际 exit 1：TypeScript 121 pass/48 worker 启动失败，
+8 项声明产物与源码摘要不匹配，数据库演练及真实部署配置预检明确 SKIP。
+原日志 `/volumes/data/kailo/tmp/tmp.9rO9noPZmK.check.log` 的 SHA-256 为
+`16e15278f49964a2bc88c2513b74455473fe82f12cfbaf94e446f32e6f0b410a`。
+该快照不是当前 main，也不是本批 Core 窄检查；不篡改来源摘要求通过，
+不声称当前完整门禁通过、浏览器实际收到 diff 消息、Windows/Mobile 或生产验收完成。

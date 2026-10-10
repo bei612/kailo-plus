@@ -24,8 +24,9 @@ use axum::{
 };
 use collab_bridge::bridge::{
     message_kind, parse_thread_markers, Custody, Delivery, IdentityClient, CHANNEL_TIMELINE_KINDS,
-    KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
+    KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY,
+    KIND_WINDOW_BOUNDS,
 };
 use collab_bridge::limits::RelayLimits;
 use collab_bridge::operator::{LimitKind, OperatorError};
@@ -903,10 +904,12 @@ fn channel_message_event(
     ]
     .into_iter()
     .find(|kind| message_kind(kind) == event.kind.as_u16())
-    // The original Relay thread store includes V2 stream rows. This is a read
-    // alias only: publication and mutation targeting retain their write kinds.
+    // The original Relay exposes V2 and diff rows in channels and threads.
+    // These are read aliases only: publication and mutation_target_matches
+    // retain the original writable kinds.
     .or_else(|| {
-        (u32::from(event.kind.as_u16()) == KIND_STREAM_MESSAGE_V2)
+        [KIND_STREAM_MESSAGE_V2, KIND_STREAM_MESSAGE_DIFF]
+            .contains(&u32::from(event.kind.as_u16()))
             .then_some(contracts::WebMessageType::Stream)
     });
     let ancestry = parse_thread_markers(&event.tags).resolve();
@@ -2372,10 +2375,11 @@ async fn message_author_profile_for(
 }
 
 /// Read-only native thread kinds, shared by the query and receipt validation.
-fn thread_message_kinds() -> [u16; 3] {
+fn thread_message_kinds() -> [u16; 4] {
     [
         message_kind(&contracts::WebMessageType::Stream),
         KIND_STREAM_MESSAGE_V2 as u16,
+        KIND_STREAM_MESSAGE_DIFF as u16,
         message_kind(&contracts::WebMessageType::ForumComment),
     ]
 }
@@ -3748,6 +3752,13 @@ mod tests {
             vec![],
             &author,
         );
+        let diff = sign(
+            KIND_STREAM_MESSAGE_DIFF as u16,
+            4,
+            "diff --git a/file b/file".into(),
+            vec![],
+            &author,
+        );
         let last_id = legacy.id.to_hex();
         let summary = sign(KIND_THREAD_SUMMARY as u16, 4,
             serde_json::json!({"reply_count":1,"descendant_count":1,"last_reply_at":2,"participants":[author.public_key().to_hex()]}).to_string(),
@@ -3775,10 +3786,10 @@ mod tests {
                 None,
                 None,
                 Some(&relay.public_key().to_hex()),
-                3,
+                4,
             )
         };
-        let events = vec![system, orphan.clone(), legacy, summary, edit, bounds];
+        let events = vec![diff, system, orphan.clone(), legacy, summary, edit, bounds];
         let (verified, cursor) = check(events.clone()).unwrap();
         assert_eq!(verified, events);
         assert!(verified.iter().any(|event| event.id == orphan.id));
@@ -3787,17 +3798,17 @@ mod tests {
         let filter = channel_window_filter(
             &channel,
             &contracts::WebMessageType::Stream,
-            3,
+            4,
             Some(&cursor),
         );
-        assert_eq!(filter["kinds"], serde_json::json!([9, 40002, 40099]));
+        assert_eq!(filter["kinds"], serde_json::json!([9, 40002, 40008, 40099]));
         for flag in ["top_level", "include_summaries", "include_aux"] {
             assert_eq!(filter[flag], true);
         }
         assert_eq!(filter["until"], 1);
         assert_eq!(filter["before_id"], last_id);
         let mut forged = events.clone();
-        forged[0] = sign(KIND_SYSTEM_MESSAGE as u16, 3, "{}".into(), vec![], &author);
+        forged[1] = sign(KIND_SYSTEM_MESSAGE as u16, 3, "{}".into(), vec![], &author);
         assert!(check(forged).is_err());
         let mut missing = events;
         missing.pop();
@@ -3899,34 +3910,36 @@ mod tests {
     }
 
     #[test]
-    fn stream_v2_read_evidence_preserves_scope_signature_and_write_kind() {
-        let keys = nostr::Keys::generate();
-        let sign = |tags| {
-            nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE_V2 as u16), "V2")
-                .tags(tags)
-                .sign_with_keys(&keys)
-                .unwrap()
-        };
-        let tag = || nostr::Tag::parse(["h", "channel"]).unwrap();
-        let event = sign(vec![tag()]);
-        let value = serde_json::to_value(&event).unwrap();
-        assert_eq!(
-            channel_message_event(value.clone(), "channel").unwrap().id,
-            event.id
-        );
-        assert!(channel_message_event(value.clone(), "foreign").is_err());
-        let mut tampered = value;
-        tampered["content"] = "tampered".into();
-        assert!(channel_message_event(tampered, "channel").is_err());
-        for tags in [vec![], vec![tag(), tag()]] {
-            assert!(channel_message_event(serde_json::json!(sign(tags)), "channel").is_err());
+    fn native_stream_read_evidence_preserves_scope_signature_and_write_kind() {
+        for kind in [KIND_STREAM_MESSAGE_V2, KIND_STREAM_MESSAGE_DIFF] {
+            let keys = nostr::Keys::generate();
+            let sign = |tags| {
+                nostr::EventBuilder::new(nostr::Kind::Custom(kind as u16), "native stream")
+                    .tags(tags)
+                    .sign_with_keys(&keys)
+                    .unwrap()
+            };
+            let tag = || nostr::Tag::parse(["h", "channel"]).unwrap();
+            let event = sign(vec![tag()]);
+            let value = serde_json::to_value(&event).unwrap();
+            assert_eq!(
+                channel_message_event(value.clone(), "channel").unwrap().id,
+                event.id
+            );
+            assert!(channel_message_event(value.clone(), "foreign").is_err());
+            let mut tampered = value;
+            tampered["content"] = "tampered".into();
+            assert!(channel_message_event(tampered, "channel").is_err());
+            for tags in [vec![], vec![tag(), tag()]] {
+                assert!(channel_message_event(serde_json::json!(sign(tags)), "channel").is_err());
+            }
+            assert_eq!(message_kind(&contracts::WebMessageType::Stream), 9);
+            assert!(!mutation_target_matches(
+                &event,
+                keys.public_key(),
+                &contracts::WebMessageType::Stream
+            ));
         }
-        assert_eq!(message_kind(&contracts::WebMessageType::Stream), 9);
-        assert!(!mutation_target_matches(
-            &event,
-            keys.public_key(),
-            &contracts::WebMessageType::Stream
-        ));
     }
 
     #[test]
@@ -3944,6 +3957,11 @@ mod tests {
         let parent = || nostr::Tag::parse(["e", root.as_str(), "", "reply"]).unwrap();
         let mut rows = vec![
             sign(KIND_STREAM_MESSAGE_V2 as u16, "V2 reply", vec![parent()]),
+            sign(
+                KIND_STREAM_MESSAGE_DIFF as u16,
+                "diff reply",
+                vec![parent()],
+            ),
             sign(
                 message_kind(&contracts::WebMessageType::Stream),
                 "reply",
@@ -3972,11 +3990,18 @@ mod tests {
         let cursor = cursor.unwrap();
         assert_eq!(cursor.event_id, rows[0].id.to_hex());
         assert!(check(vec![rows[1].clone()], Some(&cursor)).is_ok());
+        assert!(check(vec![rows[2].clone()], Some(&cursor)).is_ok());
         assert!(check(vec![rows[0].clone()], Some(&cursor)).is_err());
         assert!(check(Vec::new(), Some(&cursor)).unwrap().1.is_none());
         let wrong_root = "b".repeat(64);
         for event in [
             sign(KIND_STREAM_MESSAGE_V2 as u16, "not a reply", vec![]),
+            sign(KIND_STREAM_MESSAGE_DIFF as u16, "not a diff reply", vec![]),
+            sign(
+                KIND_STREAM_MESSAGE_DIFF as u16,
+                "foreign diff root",
+                vec![nostr::Tag::parse(["e", wrong_root.as_str(), "", "reply"]).unwrap()],
+            ),
             sign(
                 KIND_STREAM_MESSAGE_V2 as u16,
                 "foreign root",
@@ -3992,7 +4017,12 @@ mod tests {
         }
         assert_eq!(
             thread_message_kinds(),
-            [9, KIND_STREAM_MESSAGE_V2 as u16, 45003]
+            [
+                9,
+                KIND_STREAM_MESSAGE_V2 as u16,
+                KIND_STREAM_MESSAGE_DIFF as u16,
+                45003
+            ]
         );
     }
 
