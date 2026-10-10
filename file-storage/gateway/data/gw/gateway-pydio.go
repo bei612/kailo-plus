@@ -17,6 +17,7 @@
 package pydio
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -347,6 +348,16 @@ func (l *pydioObjects) GetObjectNInfo(ctx context.Context, bucket, object string
 	if err != nil {
 		return nil, err
 	}
+	if cellauth.NativeHumanReadRequired(ctx) {
+		// Finish admission, the original read, usage and fresh disclosure before
+		// MinIO can send HTTP success headers, including a zero-byte response.
+		// Only this request holds the bounded content; there is no result store.
+		var body bytes.Buffer
+		if err := l.GetObject(ctx, bucket, object, startOffset, length, &body, objInfo.ETag, opts); err != nil {
+			return nil, pydioToMinioError(err, bucket, object)
+		}
+		return minio.NewGetObjectReaderFromReader(bytes.NewReader(body.Bytes()), objInfo, minio.ObjectOptions{}, func() {})
+	}
 
 	pr, pw := io.Pipe()
 	go func() {
@@ -374,7 +385,22 @@ func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string,
 	// log.Println("[GetObject] From Router", bucket, key, startOffset, length)
 
 	path := strings.TrimLeft(key, "/")
-	if read := cellauth.NativeReadFromContext(ctx); read != nil {
+	read := cellauth.NativeReadFromContext(ctx)
+	if read == nil && cellauth.NativeHumanReadRequired(ctx) && !cellauth.HasNativeHumanRead(ctx) {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	if read == nil && cellauth.HasNativeHumanRead(ctx) {
+		native, err := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
+		if err != nil {
+			return err
+		}
+		n := native.GetNode()
+		read, err = cellauth.AdmitNativeHumanRead(ctx, n.GetUuid(), opts.VersionID, pathutil.Base(path), n.GetStringMeta(common.MetaNamespaceMime))
+		if err != nil {
+			return err
+		}
+	}
+	if read != nil {
 		if startOffset != 0 || opts.VersionID != read.Input["nativeRevision"] {
 			return errors.WithStack(errors.StatusForbidden)
 		}
@@ -395,9 +421,24 @@ func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string,
 			(m.GetUuid() != a.GetUuid() && (a.GetType() != tree.NodeType_COLLECTION || !strings.HasPrefix(m.GetPath(), a.GetPath()+"/"))) {
 			return errors.WithStack(errors.StatusForbidden)
 		}
-		return jobstore.CopyNativeRead(ctx, read, length, writer, func() (io.ReadCloser, error) {
+		open := func() (io.ReadCloser, error) {
 			return l.Router.GetObject(ctx, n, &models.GetRequestData{StartOffset: 0, Length: length, VersionId: opts.VersionID})
-		})
+		}
+		if read.IsHumanSynchronous() {
+			return jobstore.CopyNativeHumanRead(ctx, read, length, writer, open, func() error {
+				fresh, err := l.Router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path}})
+				if err != nil || fresh.GetNode().GetUuid() != n.GetUuid() || fresh.GetNode().GetType() != tree.NodeType_LEAF {
+					return errors.WithStack(errors.StatusForbidden)
+				}
+				user, userErr := read.Delivery.User(read.Delivery.TenantID, read.Claims["actor_principal_id"].(string), "HUMAN")
+				if userErr != nil {
+					return userErr
+				}
+				_, err = cellauth.ResolveNativeUser(ctx, user)
+				return err
+			})
+		}
+		return jobstore.CopyNativeRead(ctx, read, length, writer, open)
 	}
 	objectReader, err := l.Router.GetObject(ctx, &tree.Node{
 		Path: path,

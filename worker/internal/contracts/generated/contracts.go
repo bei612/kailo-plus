@@ -292,6 +292,9 @@
 //    nativeHumanActionResult, err := UnmarshalNativeHumanActionResult(bytes)
 //    bytes, err = nativeHumanActionResult.Marshal()
 //
+//    nativeHumanReadReceipt, err := UnmarshalNativeHumanReadReceipt(bytes)
+//    bytes, err = nativeHumanReadReceipt.Marshal()
+//
 //    nativeHumanResourceResult, err := UnmarshalNativeHumanResourceResult(bytes)
 //    bytes, err = nativeHumanResourceResult.Marshal()
 //
@@ -1613,6 +1616,16 @@ func UnmarshalNativeHumanActionResult(data []byte) (NativeHumanActionResult, err
 }
 
 func (r *NativeHumanActionResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeHumanReadReceipt(data []byte) (NativeHumanReadReceipt, error) {
+	var r NativeHumanReadReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeHumanReadReceipt) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4766,9 +4779,10 @@ type NativeCommunityFacts struct {
 	RelayURL string `json:"relayUrl"`
 }
 
-// Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-// ActionCommand, observe the same user's idempotency key, or freshly check the binding's
-// own native scope. Tokens stay in transport, not this document.
+// Binding SERVICE transport. Command, observation and scope/resource access additionally
+// require the independently verified native HUMAN token. readReceipt is SERVICE-only
+// incurred-usage metadata for the already admitted original HUMAN SYNC operation; it never
+// authorizes content disclosure. Tokens stay in transport, not this document.
 type NativeHumanActionRequest struct {
 	// Native metadata access uses existing tenant/workspace permissions. Scope and identity
 	// come exclusively from the authenticated binding and HUMAN token, never from
@@ -4777,6 +4791,7 @@ type NativeHumanActionRequest struct {
 	BindingID      string                 `json:"bindingId"`
 	Command        *CommandClass          `json:"command,omitempty"`
 	IdempotencyKey *string                `json:"idempotencyKey,omitempty"`
+	ReadReceipt    *ReadReceiptClass      `json:"readReceipt,omitempty"`
 	// Read the already-registered exact native object for the verified HUMAN and action. This
 	// never creates a Resource or native object.
 	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
@@ -4871,6 +4886,25 @@ type CommandReceiverResource struct {
 	Version int64  `json:"version"`
 }
 
+// Original HUMAN synchronous application read completion, authenticated by its binding
+// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+type ReadReceiptClass struct {
+	CompletedAt     string                   `json:"completedAt"`
+	ContentBytes    int64                    `json:"contentBytes"`
+	ContentSha256   string                   `json:"contentSha256"`
+	IdempotencyKey  string                   `json:"idempotencyKey"`
+	Measurements    []ReadReceiptMeasurement `json:"measurements"`
+	NativeObjectRef string                   `json:"nativeObjectRef"`
+	NativeRevision  string                   `json:"nativeRevision"`
+	OperationID     string                   `json:"operationId"`
+	StartedAt       string                   `json:"startedAt"`
+}
+
+type ReadReceiptMeasurement struct {
+	MeterKey string `json:"meterKey"`
+	Quantity int64  `json:"quantity"`
+}
+
 // Read the already-registered exact native object for the verified HUMAN and action. This
 // never creates a Resource or native object.
 type NativeHumanResourceQuery struct {
@@ -4887,8 +4921,19 @@ type NativeHumanActionResult struct {
 	InputReference ContentReferenceElement `json:"inputReference"`
 	NativeID       *string                 `json:"nativeId,omitempty"`
 	NativeType     *string                 `json:"nativeType,omitempty"`
-	Submission     SubmissionClass         `json:"submission"`
-	TerminalStatus *TaskStatus             `json:"terminalStatus,omitempty"`
+	// First native same-request read only. Never returned by idempotency observation or retried
+	// admission; the bearer is not persisted.
+	ReadAdmission  *ReadAdmission  `json:"readAdmission,omitempty"`
+	Submission     SubmissionClass `json:"submission"`
+	TerminalStatus *TaskStatus     `json:"terminalStatus,omitempty"`
+}
+
+// First native same-request read only. Never returned by idempotency observation or retried
+// admission; the bearer is not persisted.
+type ReadAdmission struct {
+	ActionToken   string `json:"actionToken"`
+	ArgumentsJSON string `json:"argumentsJson"`
+	ExpiresAt     int64  `json:"expiresAt"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -4905,6 +4950,25 @@ type SubmissionClass struct {
 	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
 	Reason             *ReasonCode            `json:"reason,omitempty"`
 	WorkflowID         *string                `json:"workflowId,omitempty"`
+}
+
+// Original HUMAN synchronous application read completion, authenticated by its binding
+// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+type NativeHumanReadReceipt struct {
+	CompletedAt     string                              `json:"completedAt"`
+	ContentBytes    int64                               `json:"contentBytes"`
+	ContentSha256   string                              `json:"contentSha256"`
+	IdempotencyKey  string                              `json:"idempotencyKey"`
+	Measurements    []NativeHumanReadReceiptMeasurement `json:"measurements"`
+	NativeObjectRef string                              `json:"nativeObjectRef"`
+	NativeRevision  string                              `json:"nativeRevision"`
+	OperationID     string                              `json:"operationId"`
+	StartedAt       string                              `json:"startedAt"`
+}
+
+type NativeHumanReadReceiptMeasurement struct {
+	MeterKey string `json:"meterKey"`
+	Quantity int64  `json:"quantity"`
 }
 
 // Current already-registered native Resource selected under the original HUMAN action

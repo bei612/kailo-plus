@@ -2,12 +2,13 @@
   "$schema":"https://json-schema.org/draft/2020-12/schema",
   "$id":"api/native_human_action_request.schema.json",
   "title":"NativeHumanActionRequest",
-  "description":"Binding SERVICE plus independently verified native HUMAN token. Submit an existing ActionCommand, observe the same user's idempotency key, or freshly check the binding's own native scope. Tokens stay in transport, not this document.",
+  "description":"Binding SERVICE transport. Command, observation and scope/resource access additionally require the independently verified native HUMAN token. readReceipt is SERVICE-only incurred-usage metadata for the already admitted original HUMAN SYNC operation; it never authorizes content disclosure. Tokens stay in transport, not this document.",
   "type":"object", "additionalProperties":false,
   "required":["bindingId"],
   "properties":{
     "bindingId":{"type":"string","format":"uuid"},
     "command":{"$ref":"action_command.schema.json"},
+    "readReceipt":{"$ref":"native_human_read_receipt.schema.json"},
     "idempotencyKey":{"type":"string","format":"uuid"},
     "sourceResources":{
       "type":"array","minItems":1,"uniqueItems":true,
@@ -35,9 +36,10 @@
     }
   },
   "oneOf":[
-    {"required":["command"],"not":{"anyOf":[{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
-    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["command"]},{"required":["resolveResource"]},{"required":["authorizeScope"]}]}},
-    {"required":["resolveResource"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
-    {"required":["authorizeScope"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}}
+    {"required":["readReceipt"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["command"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["resolveResource"]},{"required":["authorizeScope"]}]}},
+    {"required":["resolveResource"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["authorizeScope"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}}
   ]
 }

@@ -4,7 +4,7 @@ use super::*;
 use crate::openmeter::ApplicationMeter;
 use chrono::{DateTime, Utc};
 
-pub(super) async fn billing(
+pub(crate) async fn billing(
     state: &ServiceState,
     conn: &mut PgConnection,
     tenant: Uuid,
@@ -169,13 +169,26 @@ async fn usage(
     let p = ae.parameters.as_ref().ok_or_else(invalid)?;
     let role = text(raw, "role")?;
     let pin = &p["readBilling"][role];
-    let meters: Vec<ApplicationMeter> =
-        serde_json::from_value(pin["meters"].clone()).map_err(|_| blocked())?;
     let source = if role == "SOURCE" {
         ae.id
     } else {
         uuid(p, "receiverActionExecutionId")?
     };
+    record_usage(tx, ae, raw, pin, source, role).await
+}
+
+/// Shared outbox writer. Its callers validate their own actor and receipt
+/// families; HUMAN reads do not acquire SERVICE SOURCE/RECEIVER authority.
+pub(crate) async fn record_usage(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &Execution,
+    raw: &Value,
+    pin: &Value,
+    source: Uuid,
+    role: &str,
+) -> Result<(), Refusal> {
+    let meters: Vec<ApplicationMeter> =
+        serde_json::from_value(pin["meters"].clone()).map_err(|_| blocked())?;
     let at = timestamp(raw)?;
     for meter in meters {
         let quantity = raw["measurements"]
@@ -286,7 +299,7 @@ pub(crate) async fn record(
     }
 }
 
-pub(super) async fn frozen_definition(
+pub(crate) async fn frozen_definition(
     conn: &mut PgConnection,
     id: Uuid,
 ) -> Result<Definition, Refusal> {

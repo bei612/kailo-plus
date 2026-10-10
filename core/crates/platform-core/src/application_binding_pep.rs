@@ -40,6 +40,11 @@ async fn dispatched_intent(
     claims: &Value,
     digest: &str,
 ) -> Result<bool, Refusal> {
+    if crate::application_action::native_read::is_read(ae) {
+        return Ok(crate::application_action::native_read::dispatched(
+            ae, claims,
+        ));
+    }
     Ok(sqlx::query_scalar(
         "select exists(select 1 from admission.external_execution e
          join admission.action_execution a on a.id=e.action_execution_id

@@ -10,6 +10,12 @@
     "inputReference":{"$ref":"../domain/content_reference.schema.json"},
     "terminalStatus":{"$ref":"../enums/task_status.schema.json"},
     "nativeType":{"type":"string"},
-    "nativeId":{"type":"string"}
+    "nativeId":{"type":"string"},
+    "readAdmission":{
+      "description":"First native same-request read only. Never returned by idempotency observation or retried admission; the bearer is not persisted.",
+      "type":"object","additionalProperties":false,
+      "required":["actionToken","argumentsJson","expiresAt"],
+      "properties":{"actionToken":{"type":"string"},"argumentsJson":{"type":"string"},"expiresAt":{"type":"integer"}}
+    }
   }
 }

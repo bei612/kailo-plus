@@ -97,6 +97,7 @@
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final nativeHumanActionRequest = nativeHumanActionRequestFromJson(jsonString);
 //     final nativeHumanActionResult = nativeHumanActionResultFromJson(jsonString);
+//     final nativeHumanReadReceipt = nativeHumanReadReceiptFromJson(jsonString);
 //     final nativeHumanResourceResult = nativeHumanResourceResultFromJson(jsonString);
 //     final nativeHumanScopeResult = nativeHumanScopeResultFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
@@ -817,6 +818,12 @@ NativeHumanActionResult nativeHumanActionResultFromJson(String str) =>
     NativeHumanActionResult.fromJson(json.decode(str));
 
 String nativeHumanActionResultToJson(NativeHumanActionResult data) =>
+    json.encode(data.toJson());
+
+NativeHumanReadReceipt nativeHumanReadReceiptFromJson(String str) =>
+    NativeHumanReadReceipt.fromJson(json.decode(str));
+
+String nativeHumanReadReceiptToJson(NativeHumanReadReceipt data) =>
     json.encode(data.toJson());
 
 NativeHumanResourceResult nativeHumanResourceResultFromJson(String str) =>
@@ -9906,9 +9913,10 @@ class NativeCommunityFacts {
   });
 }
 
-///Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-///ActionCommand, observe the same user's idempotency key, or freshly check the binding's
-///own native scope. Tokens stay in transport, not this document.
+///Binding SERVICE transport. Command, observation and scope/resource access additionally
+///require the independently verified native HUMAN token. readReceipt is SERVICE-only
+///incurred-usage metadata for the already admitted original HUMAN SYNC operation; it never
+///authorizes content disclosure. Tokens stay in transport, not this document.
 class NativeHumanActionRequest {
   ///Native metadata access uses existing tenant/workspace permissions. Scope and identity
   ///come exclusively from the authenticated binding and HUMAN token, never from
@@ -9917,6 +9925,7 @@ class NativeHumanActionRequest {
   final String bindingId;
   final CommandClass? command;
   final String? idempotencyKey;
+  final ReadReceiptClass? readReceipt;
 
   ///Read the already-registered exact native object for the verified HUMAN and action. This
   ///never creates a Resource or native object.
@@ -9928,6 +9937,7 @@ class NativeHumanActionRequest {
     required this.bindingId,
     this.command,
     this.idempotencyKey,
+    this.readReceipt,
     this.resolveResource,
     this.sourceResources,
   });
@@ -9942,6 +9952,9 @@ class NativeHumanActionRequest {
             ? null
             : CommandClass.fromJson(json["command"]),
         idempotencyKey: json["idempotencyKey"],
+        readReceipt: json["readReceipt"] == null
+            ? null
+            : ReadReceiptClass.fromJson(json["readReceipt"]),
         resolveResource: json["resolveResource"] == null
             ? null
             : NativeHumanResourceQuery.fromJson(json["resolveResource"]),
@@ -9959,6 +9972,7 @@ class NativeHumanActionRequest {
     "bindingId": bindingId,
     "command": command?.toJson(),
     "idempotencyKey": idempotencyKey,
+    "readReceipt": readReceipt?.toJson(),
     "resolveResource": resolveResource?.toJson(),
     "sourceResources": sourceResources == null
         ? null
@@ -10268,6 +10282,75 @@ class CommandReceiverResource {
   Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
+///Original HUMAN synchronous application read completion, authenticated by its binding
+///SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+class ReadReceiptClass {
+  final String completedAt;
+  final int contentBytes;
+  final String contentSha256;
+  final String idempotencyKey;
+  final List<ReadReceiptMeasurement> measurements;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String operationId;
+  final String startedAt;
+
+  ReadReceiptClass({
+    required this.completedAt,
+    required this.contentBytes,
+    required this.contentSha256,
+    required this.idempotencyKey,
+    required this.measurements,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.operationId,
+    required this.startedAt,
+  });
+
+  factory ReadReceiptClass.fromJson(Map<String, dynamic> json) =>
+      ReadReceiptClass(
+        completedAt: json["completedAt"],
+        contentBytes: json["contentBytes"],
+        contentSha256: json["contentSha256"],
+        idempotencyKey: json["idempotencyKey"],
+        measurements: List<ReadReceiptMeasurement>.from(
+          json["measurements"].map((x) => ReadReceiptMeasurement.fromJson(x)),
+        ),
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        operationId: json["operationId"],
+        startedAt: json["startedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completedAt": completedAt,
+    "contentBytes": contentBytes,
+    "contentSha256": contentSha256,
+    "idempotencyKey": idempotencyKey,
+    "measurements": List<dynamic>.from(measurements.map((x) => x.toJson())),
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "operationId": operationId,
+    "startedAt": startedAt,
+  });
+}
+
+class ReadReceiptMeasurement {
+  final String meterKey;
+  final int quantity;
+
+  ReadReceiptMeasurement({required this.meterKey, required this.quantity});
+
+  factory ReadReceiptMeasurement.fromJson(Map<String, dynamic> json) =>
+      ReadReceiptMeasurement(
+        meterKey: json["meterKey"],
+        quantity: json["quantity"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"meterKey": meterKey, "quantity": quantity});
+}
+
 ///Read the already-registered exact native object for the verified HUMAN and action. This
 ///never creates a Resource or native object.
 class NativeHumanResourceQuery {
@@ -10309,6 +10392,10 @@ class NativeHumanActionResult {
   final ReferenceElement inputReference;
   final String? nativeId;
   final String? nativeType;
+
+  ///First native same-request read only. Never returned by idempotency observation or retried
+  ///admission; the bearer is not persisted.
+  final ReadAdmission? readAdmission;
   final SubmissionClass submission;
   final TaskStatus? terminalStatus;
 
@@ -10316,6 +10403,7 @@ class NativeHumanActionResult {
     required this.inputReference,
     this.nativeId,
     this.nativeType,
+    this.readAdmission,
     required this.submission,
     this.terminalStatus,
   });
@@ -10325,6 +10413,9 @@ class NativeHumanActionResult {
         inputReference: ReferenceElement.fromJson(json["inputReference"]),
         nativeId: json["nativeId"],
         nativeType: json["nativeType"],
+        readAdmission: json["readAdmission"] == null
+            ? null
+            : ReadAdmission.fromJson(json["readAdmission"]),
         submission: SubmissionClass.fromJson(json["submission"]),
         terminalStatus: json["terminalStatus"] == null
             ? null
@@ -10335,8 +10426,35 @@ class NativeHumanActionResult {
     "inputReference": inputReference.toJson(),
     "nativeId": nativeId,
     "nativeType": nativeType,
+    "readAdmission": readAdmission?.toJson(),
     "submission": submission.toJson(),
     "terminalStatus": taskStatusValues.reverse[terminalStatus],
+  });
+}
+
+///First native same-request read only. Never returned by idempotency observation or retried
+///admission; the bearer is not persisted.
+class ReadAdmission {
+  final String actionToken;
+  final String argumentsJson;
+  final int expiresAt;
+
+  ReadAdmission({
+    required this.actionToken,
+    required this.argumentsJson,
+    required this.expiresAt,
+  });
+
+  factory ReadAdmission.fromJson(Map<String, dynamic> json) => ReadAdmission(
+    actionToken: json["actionToken"],
+    argumentsJson: json["argumentsJson"],
+    expiresAt: json["expiresAt"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionToken": actionToken,
+    "argumentsJson": argumentsJson,
+    "expiresAt": expiresAt,
   });
 }
 
@@ -10403,6 +10521,81 @@ class SubmissionClass {
     "reason": reasonCodeValues.reverse[reason],
     "workflowId": workflowId,
   });
+}
+
+///Original HUMAN synchronous application read completion, authenticated by its binding
+///SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+class NativeHumanReadReceipt {
+  final String completedAt;
+  final int contentBytes;
+  final String contentSha256;
+  final String idempotencyKey;
+  final List<NativeHumanReadReceiptMeasurement> measurements;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String operationId;
+  final String startedAt;
+
+  NativeHumanReadReceipt({
+    required this.completedAt,
+    required this.contentBytes,
+    required this.contentSha256,
+    required this.idempotencyKey,
+    required this.measurements,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.operationId,
+    required this.startedAt,
+  });
+
+  factory NativeHumanReadReceipt.fromJson(Map<String, dynamic> json) =>
+      NativeHumanReadReceipt(
+        completedAt: json["completedAt"],
+        contentBytes: json["contentBytes"],
+        contentSha256: json["contentSha256"],
+        idempotencyKey: json["idempotencyKey"],
+        measurements: List<NativeHumanReadReceiptMeasurement>.from(
+          json["measurements"].map(
+            (x) => NativeHumanReadReceiptMeasurement.fromJson(x),
+          ),
+        ),
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        operationId: json["operationId"],
+        startedAt: json["startedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completedAt": completedAt,
+    "contentBytes": contentBytes,
+    "contentSha256": contentSha256,
+    "idempotencyKey": idempotencyKey,
+    "measurements": List<dynamic>.from(measurements.map((x) => x.toJson())),
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "operationId": operationId,
+    "startedAt": startedAt,
+  });
+}
+
+class NativeHumanReadReceiptMeasurement {
+  final String meterKey;
+  final int quantity;
+
+  NativeHumanReadReceiptMeasurement({
+    required this.meterKey,
+    required this.quantity,
+  });
+
+  factory NativeHumanReadReceiptMeasurement.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeHumanReadReceiptMeasurement(
+    meterKey: json["meterKey"],
+    quantity: json["quantity"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"meterKey": meterKey, "quantity": quantity});
 }
 
 ///Current already-registered native Resource selected under the original HUMAN action

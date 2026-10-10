@@ -225,6 +225,7 @@ async fn pass(
          left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
          where ae.action_key <> $4
            and coalesce(ae.parameters->>'componentActionKind','')<>'SERVICE_READ'
+           and coalesce(ae.parameters->'nativeRead','false'::jsonb)<>'true'::jsonb
            and (ae.action_key not in ('agent.memory.core.replace','agent.memory.entry.set',
                                      'agent.memory.entry.patch','agent.memory.entry.remove')
                 or (ae.gate_state='EVALUATING' and ae.dispatch_state='NOT_DISPATCHED'

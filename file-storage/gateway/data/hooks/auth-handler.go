@@ -155,6 +155,9 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
 			return
 		}
+	} else if err := auth.PrepareNativeHumanRead(newRequest); err != nil {
+		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
+		return
 	}
 	a.handler.ServeHTTP(w, newRequest)
 

@@ -28,6 +28,7 @@ import lscache from 'lscache'
 import {RestCreateSelectionRequest, TreeNode, TreeServiceApi} from 'cells-sdk';
 import awsLoader from "./awsLoader";
 import {debounce} from 'lodash'
+import uuid4 from 'uuid4'
 
 const DUMMY_SECRET='gatewaysecret'
 
@@ -614,9 +615,9 @@ class PydioApi{
     openVersion(node, versionId){
 
         const pydio = this.getPydioObject();
-        const agent = navigator.userAgent || '';
-        const agentIsMobile = (agent.indexOf('iPhone')!==-1||agent.indexOf('iPod')!==-1||agent.indexOf('iPad')!==-1||agent.indexOf('iOs')!==-1);
-        const hiddenForm = pydio && pydio.UI && pydio.UI.hasHiddenDownloadForm();
+        // One original user action owns one request key. There is no automatic
+        // GET retry after a lost response or native completion acknowledgement.
+        const requestKey = uuid4();
         return new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
             if (!this.isVersionTargetCurrent(node, target)) {
                 throw new Error(pydio.MessageHash[391]);
@@ -629,11 +630,27 @@ class PydioApi{
                 if (!this.isVersionTargetCurrent(node, target)) {
                     throw new Error(pydio.MessageHash[391]);
                 }
-                if(agentIsMobile || !hiddenForm){
-                    document.location.href = url;
-                } else {
-                    pydio.UI.sendDownloadToHiddenForm(null, {presignedUrl: url});
-                }
+                const endpoint = new URL(url, document.location.href);
+                if (endpoint.origin !== document.location.origin) throw new Error(pydio.MessageHash[391]);
+                return fetch(endpoint.href, {credentials: 'same-origin', redirect: 'error',
+                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.export@v1'}})
+                    .then(response => {
+                        if (!response.ok || !this.isVersionTargetCurrent(node, target)) throw new Error(pydio.MessageHash[391]);
+                        return response.blob();
+                    }).then(blob => {
+                        if (!this.isVersionTargetCurrent(node, target)) throw new Error(pydio.MessageHash[391]);
+                        const local = URL.createObjectURL(blob);
+                        const anchor = document.createElement('a');
+                        try {
+                            anchor.href = local;
+                            anchor.download = target.label;
+                            document.body.appendChild(anchor);
+                            anchor.click();
+                        } finally {
+                            anchor.remove();
+                            URL.revokeObjectURL(local);
+                        }
+                    });
             });
         }).catch(error => pydio.UI.displayMessage('ERROR', error.message || error));
 

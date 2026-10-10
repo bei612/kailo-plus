@@ -25,6 +25,8 @@ validation:
       ref: core/verify/application-binding-client.md
     - dimension: 合同一致
       ref: core/verify/component-action.md
+    - dimension: 安全边界
+      ref: file-storage/fork/verify/native-identity.md
 
 implementation:
   owners: [team-platform]
@@ -38,6 +40,8 @@ implementation:
     - core/crates/platform-core/src/application_binding_pep.rs
     - core/crates/platform-core/src/application_tool.rs
     - core/crates/platform-core/src/application_action.rs
+    - core/crates/platform-core/src/application_native_human.rs
+    - core/crates/platform-core/src/application_native_read.rs
     - core/crates/platform-core/src/agent_tool_pep.rs
     - core/crates/platform-core/src/application_execution.rs
     - core/crates/platform-core/src/application_page.rs
@@ -53,6 +57,10 @@ implementation:
     - client-kit/ts/platform/src/react/application-bindings.tsx
     - client-kit/ts/platform/src/react/service-read-permissions.tsx
     - client-kit/ts/platform/src/react/component-actions.tsx
+    - file-storage/common/auth/native-human-read.go
+    - file-storage/scheduler/jobs/native-read.go
+    - file-storage/gateway/data/gw/gateway-pydio.go
+    - file-storage/frontend/assets/gui.ajax/res/js/core/http/PydioApi.js
   surfaces: [web, desktop]
   schemas:
     - contracts/api/application_binding_page.schema.json
@@ -60,6 +68,9 @@ implementation:
     - contracts/api/application_native_page.schema.json
     - contracts/domain/application_binding_create.schema.json
     - contracts/domain/component_action_input.schema.json
+    - contracts/api/native_human_action_request.schema.json
+    - contracts/api/native_human_action_result.schema.json
+    - contracts/api/native_human_read_receipt.schema.json
     - contracts/workflow/component_action_target.schema.json
     - contracts/workflow/component_action_advance_request.schema.json
     - contracts/workflow/component_action_advance_result.schema.json
@@ -90,6 +101,8 @@ implementation:
     - core/migrations/20261005017000_resource_reference.down.sql
     - core/migrations/20261005020000_component_action.up.sql
     - core/migrations/20261005020000_component_action.down.sql
+    - core/migrations/20261009010000_native_human_reads.up.sql
+    - core/migrations/20261009010000_native_human_reads.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]

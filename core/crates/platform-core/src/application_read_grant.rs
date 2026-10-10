@@ -529,6 +529,7 @@ pub(crate) async fn reconcile_expired(state: &ServiceState, batch: i64) -> Resul
     }
     tx.commit().await?;
     // Metering unavailability must not prevent deadline quarantine.
+    crate::application_action::native_read::reconcile(state, batch).await?;
     receipt::reconcile(state, batch).await
 }
 

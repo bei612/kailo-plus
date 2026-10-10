@@ -585,3 +585,145 @@ go test -mod=readonly -tags=storage ./scheduler/jobs/dao ./scheduler/jobs/grpc \
 运行期审计输出可用。未执行 full、产品镜像、部署、页面截图或平台绑定
 E2E；它们由整体交付另验。本回执不解除 FILE_STORAGE 七必选能力、
 首次上传、writer/Task 安全退休、HUMAN 正文交付与 release/binding 门禁。
+
+## 2026-10-09 HUMAN 固定版本原请求读取（源码检查点，未部署）
+
+本批只贯通原生固定版本 read/export：`PydioApi.openVersion` 原入口经
+Cells `pydioObjects.GetObject` / `GetObjectNInfo` 读取一次源内容，沿 Core 原
+NativeHumanAction 准入、原 usage outbox 计量并重新检查 HUMAN 后交付。
+没有恢复完成普通预览、未固定版本下载、Range、归档或列表页面动作，
+没有以本批宣称 FILE_STORAGE 全能力、三端或生产验收。
+原版本按钮/布局未重写；调用改为携带原 request key 的同源 fetch 与本地
+blob 下载，以便错误不会被隐藏表单吞掉。跨源 presigned URL 与原移动
+浏览器跳转方式未验证/未支持，不以这个调用改造宣称全宿主原版一致。
+
+变更前四步与实际边界：
+
+1. 权威是 `.design/03` §6 HUMAN APPLICATION 同请求 SYNC 分界、
+   `.design/05` §6 CHECK/STRICT 边界与 `.design/18`。固定 Cells 官方版本
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/nodes/version/handler-version.go::(*Handler).GetObject`
+   原本 HeadVersion/Location/GetObject 同步读，不要求创建 Task。本批不改
+   REMOTE_ADAPTER v1 execute/ExternalExecution/Temporal 与 Agent 路径。
+2. 影响到原 NativeHumanAction 入站、AE/ActionToken/PEP、usage writer、
+   maintenance 与 binding disable 屏障、Cells 原认证/GetObject、原版本下载
+   调用。新增 readAdmission/readReceipt 为既有契约可选分支；旧请求不变，
+   新回执单独 closed schema 且生成四侧。Core 仅保留固定 inputReference、
+   token stamp、billing pin、字节数/摘要/时间/计量回执，不存正文、下载链接
+   或第二份结果。Web/Desktop 不增加另一组件页面；Mobile 不承载组件。
+3. 原请求先持久化 AE，再锁行 claim UNKNOWN，最后记录唯一签票；重试和
+   observation 不签第二张票。Core 落原回执/outbox，只有 stored_at 对应
+   COMMITTED 才写终态。Cells 的原请求只重交同一份不可变计量回执，绝不
+   重读源。HUMAN 再授权和原生 ACL 均在正文交付前复核。GetObjectNInfo
+   先完成上述链再返回 reader，避免 HTTP 200 或空文件绕过消费检查。
+4. 缺 proof/身份/binding/原生归属/版本/计量返回拒绝；无对象、Range、超限
+   或实际长度不符不交正文。并发同 key、丢签票 ACK、读中断和超时保持
+   UNKNOWN，不重读或伪造零用量。startedAt 必须在原 token 有效期内，
+   completedAt 可晚于 token.exp，合法开始后已发生用量不会因过期丢弃。
+   对应原六类错误为 PRECONDITION/LIMIT/CONFLICT/DENIED/BLOCKED/UNKNOWN，
+   不增加未知错误枚举。
+
+未 claim 的 ALLOWED/NOT_DISPATCHED AE 使用创建时冻结的原 tokenSeconds
+截止；与 signer 持同一 AE 行锁，过期后原 audit terminal FAILED +
+ADMISSION_ABANDONED（原封闭 reason）结束。数据库禁止已 claim 再变
+NOT_DISPATCHED，防止“未执行”推断被状态回退破坏。已 claim、签发或结果
+不明者不适用该终结，只收原回执。缺真实回执时原 UNKNOWN 度量/audit 与
+binding 排空屏障持续可见，不能自动判为成功/失败；当前未提供能凭真实
+补充证据终结无回执读取的独立人工消费者，因此此项仍属发布阻断，由平台
+治理与 Cells 组件运维共同处置，不将无限等待称为已交付。
+
+Quota 沿原 ActionDefinition：NONE 仅无 meter，CHECK 读取 OpenMeter；
+STRICT 没有完整 producer/最坏上界证据即 CapabilityBlocked。依据
+`.design/05` §6，并非为 SYNC 绕免预留。本读取链没有创建 reservation，
+无执行过期不产生 usage 或虚构 release；已读内容沿同 operation 计量。
+
+原 binding delivery 的 read.human 实际消费者要求 actions 中现有 action
+版本/nativeType/resultExposurePolicy ID 与版本，可选 workspaceId，以及
+receiptPollInterval。后者为正 duration、严格小于原 requestTimeout；
+后者同时限制原请求中计量回执的总等待。只对 503 重交相同 metadata；
+4xx/错误 ACK/撤权/取消/期限结束都不交正文。初次 OpenMeter ACCEPTED
+不等于入账；即使请求结束，原 durable outbox 继续同 ID 对账，不重读源。
+未投递上述配置或未通过原 release/binding 不开放平台正文入口；独立原生
+安装不被切换成 Kailo 身份，没有新增默认不安全上游开关。
+
+已实际证据：原 tools/gen.sh 固定 quicktype 生成四侧，最终生成 exit 0；
+原 gen --check 四侧与 Mobile catalog 一致。首次并发复制未结束就生成
+遇到空 schema 而失败；其后缺 Dart formatter PATH 令 i18n 检查失败，
+补齐原 /usr/lib/dart/bin 后通过，未改生成器或手写产物。TS 第一次
+roundtrip 因检查重建字段遗漏新增分支 51/52；修正检查后 52/52 通过。
+原 Dart roundtrip 46/46 通过，两个命令的共同执行句柄 72246 最终 exit 0。
+原 Worker Go `go test ./internal/contracts -run NativeHuman -count=1 -v`
+句柄 6927 最终 exit 0：`TestNativeHumanActionRoundtrip` PASS，包耗时
+`0.002s`；链接与落盘耗时不算产品功能完成率。
+原 tools/check.sh 的 step_contract 在同 SDK 直接复用（不另装依赖），
+句柄 8095 最终 exit 0：四侧生成物同步；相对 contracts-v0.1.0
+`无破坏性变更（193 个 schema，匹配 3 个历史 schema）`。这只覆盖原发布
+基线存在的历史项，并不冒称执行了完整 check.sh --full。
+
+独立验证库 kailo_native_human_read_20261009 来自原验证 PG 模板，无业务
+AE，不触碰现网；本新增 migration down/up 最终 exit 0。原检查文件中的
+SQL fixture 使用实际安装的 production trigger，最终正向 exit 0；在同
+事务把真实 guard 的 BEGIN 改成 BEGIN RETURN NEW，负向 exit 3：
+`ERROR: accepted claim reset without no-execution evidence`，退出自动回滚
+该破坏，原检查还原复验 exit 0。这验证回执字段/归属/不可变与 claim
+单调性，不等于整个 NativeHumanAction/OpenMeter 真实集成验收。
+
+原 Cells SDK 4 CPU/8 GiB 与 Data module/build cache 复用。首轮旧快照在
+链接阶段运行约半小时，因本批真实修复改变输入，仅停止该自有检查
+（exit 130）后集中同步最终源码；未停止其他项目，未删缓存。最终 Go
+句柄 48401 已实际 exit 0：`common/auth` 0.262s、`common/auth/protocol`
+0.025s，HUMAN admission 8 个场景与 completion 10 个场景（含首次计量
+ACCEPTED 后确认、计量超时、撤权及错误终态）均 PASS。`scheduler/jobs`、
+`gateway/data/gw`、`gateway/data/hooks` 编译通过但报告 `[no test files]`，
+不能称其真实网关链已验收。完整原件为原 cache 中
+`cells-human-sync-positive.log`，SHA-256 为
+`e20e06075628c7f15aa5734fd543ef77067dbfaa33022775b5c2055df60abfbb`。
+随后仅在隔离 SDK 源码移除 `CompleteHumanRead` 的 COMPLETED 门禁，
+原 completion 检查句柄 24500 实际 exit 1：
+`native-human-read_test.go:190: completion pending got <nil>`。这是真实生产
+对象破坏，不是改测试预期；正式源码没有被破坏。已还原隔离文件且与正式
+源码逐字 cmp 0，还原复验句柄 61226 实际 exit 0，原 HUMAN admission 8
+场景与 completion 10 场景全部 PASS，`common/auth` 0.137s；原 cache 保存
+`cells-human-sync-negative.log` 与 `cells-human-sync-restored.log`。
+首次负向命令曾因 login shell
+重置 PATH 报 `go: command not found`（exit 127），不算有效负向证据；
+使用原 Go PATH 后才得到上述 exit 1。当时 Rust 验证的终态尚未收齐，
+后续实际结果见下；真实页面/计量 E2E 未执行，本段不证明部署或安装包更新。
+
+实现后交叉复核发现 ACK 的 `receiptDigest` 只查长度不能证明关联本次回执。
+已在实际 `CompleteHumanRead` 消费者改为比对本次 receipt 的完整摘要，
+沿 `.design/03` §8 和 Worker `component_conformance.go` 的既有 canonical
+JSON 规则：键排序、精确保留整数、UTF-8、无 HTML 转义，并区别 U+2028/
+U+2029 与字面反斜线转义。没有新增结果协议或结果存储。实现后增加合法
+64hex 错误摘要拒绝用例，以及显式 canonical 字节 oracle（大于 2^53 的
+整数、乱序嵌套 struct、HTML 和 Unicode 转义）。原 18 场景正反还原证据
+不替代该后续修复验证。本次摘要正向检查句柄 69478 实际 exit 0，
+admission 8、completion 11 子场景及 canonical 独立字节 oracle 均 PASS，
+`common/auth` 0.371s。随后只在隔离生产消费者将摘要相等退回长度相等，
+真实负向句柄 29181 实际 exit 1，准确抓到
+`native-human-read_test.go:200: completion wrong-digest got <nil>`；
+已还原隔离生产校验并与正式 cmp 0，还原复验句柄 56466 实际 exit 0：
+admission 8、completion 11 子场景和独立 canonical oracle 全部 PASS，
+`common/auth` 0.137s。最终 Go 两文件与 SDK 一致，原 SDK gofmt 已回写。
+completion 的服务器摘要复用函数不作为独立算法 oracle；独立依据是另外
+一项测试中固定写出的 canonical JSON 字节与其 SHA-256。
+Core 原句柄 90990 保持原冻结输入，不被这次 Go-only
+修正改写，已实际 exit 0：`cargo test --manifest-path core/Cargo.toml
+-p platform-core -p contracts` 完成，platform-core 360 passed / 0 failed /
+48 ignored，contracts adapter 2 与 roundtrip 46 全部通过；集成测试入口返回
+绿色，但本次没有确认 `PLATFORM_INTEGRATION=1` 与完整业务依赖实际执行，
+因此不作为真实业务联调通过证据，两个外部 drill 保持 ignored。
+新增 native_read 完成证据与首次签票不可重放
+两项单元通过；SQL fixture 在此 cargo 命令中按环境 ignored，实际数据库
+正反还原证据见上文，不混为该命令执行。本次编译另纳入主线原生 Tool 候选
+三个文件，不意味着其 PG/SpiceDB 真实候选撤权链通过；这项仍未执行。
+原件 `/volumes/data/kailo/check-cache/cells-human-sync-core-positive.log`。
+SHA-256 为 `156c71cd64158c3511f2b3ee659056de01736628db9e8159f71f01d961784927`。
+终态后按工程 Rust 2021 在同 SDK 对本批及主线三个文件格式化与 `--check`
+退出 0；只把 `application_action.rs` 的 import/assert 换行回写正式源码，
+主线 Tool helper 的纯格式差异也已同步，未重复语义不变的编译。
+
+此检查点仅交付 HUMAN 固定版本原生读取的上述源码与定向证据；没有执行
+该最终树的完整 `tools/check.sh --full`、真实 Cells/Core/OpenMeter E2E、
+页面截图或部署。当前 34 个自有路径不含 `main.rs` 的继承 custom emoji
+改动、不含继承 compose 配置；由主线选择性提交，不将其余 dirty 带入。

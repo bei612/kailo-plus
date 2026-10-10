@@ -14,6 +14,8 @@ use uuid::Uuid;
 pub(crate) const KIND: &str = "COMPONENT_ACTION";
 #[path = "application_native_human.rs"]
 pub(crate) mod native_human;
+#[path = "application_native_read.rs"]
+pub(crate) mod native_read;
 fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
@@ -91,8 +93,12 @@ async fn facts(
     };
     let definition = &application.definition;
     if definition.target_type != target_type
-        || definition.execution_mode != "TEMPORAL"
-        || definition.workflow_kind.as_deref() != Some(KIND)
+        || !(definition.execution_mode == "TEMPORAL"
+            && definition.workflow_kind.as_deref() == Some(KIND)
+            || definition.execution_mode == "SYNC"
+                && definition.workflow_kind.is_none()
+                && definition.confirmation_mode == "NONE"
+                && matches!(definition.permission.as_str(), "read" | "export"))
         || !matches!(definition.confirmation_mode.as_str(), "NONE" | "APPROVAL")
     {
         return Err(blocked());
@@ -175,7 +181,7 @@ pub(crate) async fn fresh_execution(g: &Governance, ae: &Execution) -> Result<Ev
             .ok_or_else(invalid)?,
     )
     .await?;
-    let result = g
+    let mut result = g
         .evaluate(
             Actor {
                 tenant_id: ae.tenant_id,
@@ -186,6 +192,10 @@ pub(crate) async fn fresh_execution(g: &Governance, ae: &Execution) -> Result<Ev
             &f.target,
         )
         .await?;
+    if native_read::is_read(ae) && p.get("nativeReadReceipt").is_none() {
+        g.check_quota(ae.tenant_id, &f.application.definition, &mut result)
+            .await?;
+    }
     tx.commit().await?;
     Ok(result)
 }
@@ -354,6 +364,7 @@ pub(crate) async fn submit(
         },
         cmd,
         None,
+        None,
     )
     .await
     {
@@ -393,7 +404,11 @@ async fn replay(
     {
         return Err(Refusal::Conflict(ReasonCode::IdempotencyKeyReused));
     }
-    if ae.gate_state == "ALLOWED" {
+    if native_read::is_read(&ae) {
+        // A retried native HTTP request observes its original AE. It must not
+        // issue another content ticket, even if the first acknowledgement was lost.
+        return Ok((StatusCode::ACCEPTED, ae.submission()));
+    } else if ae.gate_state == "ALLOWED" {
         start(state, &ae).await?;
     } else if ae.gate_state == "WAITING" {
         state.ensure_approval_started(ae.id).await;
@@ -431,6 +446,7 @@ pub(super) async fn submit_inner(
     actor: Actor,
     cmd: &ActionCommand,
     required_binding: Option<(Uuid, i64)>,
+    native: Option<&crate::service_api::ServiceState>,
 ) -> Result<(StatusCode, ActionSubmission), Refusal> {
     let FrozenCommand {
         raw,
@@ -484,6 +500,10 @@ pub(super) async fn submit_inner(
         return Err(denied());
     }
     let def = &f.application.definition;
+    let synchronous = def.execution_mode == "SYNC";
+    if synchronous && (native.is_none() || required_binding.is_none() || kind != "RESOURCE") {
+        return Err(blocked());
+    }
     let documents = crate::application_tool::schemas(&mut tx, f.binding, &cmd.action_key).await?;
     let digest = f.application.declaration["inputSchemaDigest"]
         .as_str()
@@ -516,10 +536,25 @@ pub(super) async fn submit_inner(
         .await?;
     let ae_id = Uuid::new_v4();
     let operation = Uuid::new_v4();
-    let wf = crate::component_task::workflow_id(KIND, actor.tenant_id, &ae_id.to_string(), 1);
-    let parameters = json!({"componentActionKind":KIND,"commandDigest":request_digest,"inputArguments":arguments,
+    let wf = (!synchronous)
+        .then(|| crate::component_task::workflow_id(KIND, actor.tenant_id, &ae_id.to_string(), 1));
+    let mut parameters = json!({"componentActionKind":KIND,"commandDigest":request_digest,"inputArguments":arguments,
         "toolParameterHash":collab_bridge::limits::canonical_digest(&arguments),"targetType":kind,"targetVersion":version,
         "bindingVersion":f.binding_version,"resultExposurePolicyId":policy,"resultExposurePolicyVersion":policy_version});
+    if synchronous {
+        parameters["nativeRead"] = json!(true);
+        parameters["nativeReadDeadline"] = json!(crate::action_token::native_read_deadline()?);
+        parameters["nativeReadBilling"] = crate::application_binding::read_grant::receipt::billing(
+            native.ok_or_else(blocked)?,
+            &mut tx,
+            actor.tenant_id,
+            f.binding,
+            f.generation,
+            target,
+            &f.application,
+        )
+        .await?;
+    }
     let hash = collab_bridge::limits::canonical_digest(
         &json!({"actionKey":def.action_key,"actionVersion":def.version,"targetId":target,"parameters":parameters}),
     );
@@ -584,7 +619,7 @@ pub(super) async fn submit_inner(
             .await
             .map_err(|(e, _)| e);
     }
-    if evaluation.allowed {
+    if evaluation.allowed && !synchronous {
         start(state, &ae).await?;
     }
     let ae = crate::governance::load_execution(&state.pool, ae_id)
@@ -596,7 +631,7 @@ pub(super) async fn submit_inner(
 /// Same-ID recovery is delegated to the original ComponentTask Start routine.
 /// A Workflow launch is not evidence that the native action has executed.
 pub(crate) async fn start(g: &Governance, ae: &Execution) -> Result<(), Refusal> {
-    if !is_human(ae) || ae.gate_state != "ALLOWED" {
+    if !is_human(ae) || native_read::is_read(ae) || ae.gate_state != "ALLOWED" {
         return Err(denied());
     }
     let frozen:Option<(Uuid,i32,Uuid,i64,String)>=sqlx::query_as("select a.component_binding_id,

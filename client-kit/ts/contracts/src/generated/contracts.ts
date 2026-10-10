@@ -3243,9 +3243,10 @@ export interface NativeCommunityFacts {
 }
 
 /**
- * Binding SERVICE plus independently verified native HUMAN token. Submit an existing
- * ActionCommand, observe the same user's idempotency key, or freshly check the binding's
- * own native scope. Tokens stay in transport, not this document.
+ * Binding SERVICE transport. Command, observation and scope/resource access additionally
+ * require the independently verified native HUMAN token. readReceipt is SERVICE-only
+ * incurred-usage metadata for the already admitted original HUMAN SYNC operation; it never
+ * authorizes content disclosure. Tokens stay in transport, not this document.
  */
 export interface NativeHumanActionRequest {
     /**
@@ -3257,6 +3258,7 @@ export interface NativeHumanActionRequest {
     bindingId:       string;
     command?:        CommandClass;
     idempotencyKey?: string;
+    readReceipt?:    ReadReceiptClass;
     /**
      * Read the already-registered exact native object for the verified HUMAN and action. This
      * never creates a Resource or native object.
@@ -3421,6 +3423,27 @@ export interface CommandReceiverResource {
 }
 
 /**
+ * Original HUMAN synchronous application read completion, authenticated by its binding
+ * SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+ */
+export interface ReadReceiptClass {
+    completedAt:     string;
+    contentBytes:    number;
+    contentSha256:   string;
+    idempotencyKey:  string;
+    measurements:    ReadReceiptMeasurement[];
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    operationId:     string;
+    startedAt:       string;
+}
+
+export interface ReadReceiptMeasurement {
+    meterKey: string;
+    quantity: number;
+}
+
+/**
  * Read the already-registered exact native object for the verified HUMAN and action. This
  * never creates a Resource or native object.
  */
@@ -3437,11 +3460,26 @@ export interface NativeHumanResourceQuery {
  * component-action audit after native/usage reconciliation, never from HTTP acceptance.
  */
 export interface NativeHumanActionResult {
-    inputReference:  ContentReferenceElement;
-    nativeId?:       string;
-    nativeType?:     string;
+    inputReference: ContentReferenceElement;
+    nativeId?:      string;
+    nativeType?:    string;
+    /**
+     * First native same-request read only. Never returned by idempotency observation or retried
+     * admission; the bearer is not persisted.
+     */
+    readAdmission?:  ReadAdmission;
     submission:      SubmissionClass;
     terminalStatus?: TaskStatus;
+}
+
+/**
+ * First native same-request read only. Never returned by idempotency observation or retried
+ * admission; the bearer is not persisted.
+ */
+export interface ReadAdmission {
+    actionToken:   string;
+    argumentsJson: string;
+    expiresAt:     number;
 }
 
 /**
@@ -3460,6 +3498,27 @@ export interface SubmissionClass {
     protocolSessionId?:  string;
     reason?:             ReasonCode;
     workflowId?:         string;
+}
+
+/**
+ * Original HUMAN synchronous application read completion, authenticated by its binding
+ * SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+ */
+export interface NativeHumanReadReceipt {
+    completedAt:     string;
+    contentBytes:    number;
+    contentSha256:   string;
+    idempotencyKey:  string;
+    measurements:    NativeHumanReadReceiptMeasurement[];
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    operationId:     string;
+    startedAt:       string;
+}
+
+export interface NativeHumanReadReceiptMeasurement {
+    meterKey: string;
+    quantity: number;
 }
 
 /**

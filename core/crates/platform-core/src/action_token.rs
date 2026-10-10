@@ -59,6 +59,13 @@ fn delivery() -> Result<Value, Refusal> {
     Ok(value)
 }
 
+pub(crate) fn native_read_deadline() -> Result<i64, Refusal> {
+    chrono::Utc::now()
+        .timestamp()
+        .checked_add(delivery()?["tokenSeconds"].as_i64().ok_or_else(invalid)?)
+        .ok_or_else(invalid)
+}
+
 /// Only the exact NONE management definition admits absent policy references.
 /// Protocol operations cannot turn a content action into a management action.
 pub(crate) async fn issue_binding_management(
@@ -337,6 +344,39 @@ pub(crate) async fn issue_component_action(
         return Err(invalid());
     }
     issue_application_intent(state, ae, arguments, external, key).await
+}
+
+/// The native HUMAN request owns a first-only synchronous read, not an EE.
+/// Its original admission caller atomically fences issuance before calling us.
+pub(crate) async fn issue_native_read(
+    state: &ServiceState,
+    ae: &Execution,
+    audience: &str,
+    key: Uuid,
+) -> Result<String, Refusal> {
+    if !crate::application_action::native_read::is_read(ae)
+        || ae.gate_state != "ALLOWED"
+        || ae.dispatch_state != "UNKNOWN"
+    {
+        return Err(invalid());
+    }
+    let decision = crate::application_action::fresh_execution(&state.governance, ae).await?;
+    if !decision.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let mut claims = application_claims(
+        ae,
+        p,
+        p["toolParameterHash"].clone(),
+        decision
+            .zed_token
+            .filter(|v| !v.is_empty())
+            .ok_or_else(invalid)?,
+        None,
+    )?;
+    claims["idempotency_key"] = json!(key);
+    sign_claims(state, audience, claims).await
 }
 
 async fn issue_application_intent(

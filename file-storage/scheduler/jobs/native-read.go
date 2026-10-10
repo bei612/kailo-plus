@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"math"
 	"strings"
 	"time"
 
@@ -66,6 +67,60 @@ func nativeReadMeasurements(mapping []auth.NativeReadMeasurement, bytes int64) [
 		values = append(values, NativeReadMeasurement{MeterKey: meter.MeterKey, Quantity: quantity})
 	}
 	return values
+}
+
+// The original synchronous native reader is consumed exactly once. Buffering
+// is bounded by delivered limits and stays in this HTTP request, never a task,
+// result store or Core. No byte escapes before its actual usage is committed.
+func CopyNativeHumanRead(ctx context.Context, read *auth.NativeReadExecution, expectedBytes int64, writer io.Writer, open func() (io.ReadCloser, error), fresh func() error) error {
+	refused := errors.WithStack(errors.StatusForbidden)
+	if !read.IsHumanSynchronous() || expectedBytes < 0 || read.Delivery.MaxResponseBytes <= 0 || read.Delivery.MaxResponseBytes == math.MaxInt64 || expectedBytes > read.Delivery.MaxResponseBytes || read.Delivery.Read == nil {
+		return refused
+	}
+	if err := read.Fresh(ctx, "execute"); err != nil {
+		return err
+	}
+	if err := fresh(); err != nil {
+		return err
+	}
+	started := time.Now().UTC()
+	expires, validExpiry := read.Claims["exp"].(float64)
+	if !validExpiry || started.Unix() >= int64(expires) {
+		return refused
+	}
+	reader, err := open()
+	if err != nil {
+		return err
+	}
+	body, readErr := io.ReadAll(io.LimitReader(reader, read.Delivery.MaxResponseBytes+1))
+	closeErr := reader.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if int64(len(body)) != expectedBytes || int64(len(body)) > read.Delivery.MaxResponseBytes {
+		return errors.WithStack(errors.StatusConflict)
+	}
+	digest := sha256.Sum256(body)
+	receipt := map[string]interface{}{"operationId": read.Claims["operation_id"], "idempotencyKey": read.Key,
+		"nativeObjectRef": read.Input["nativeObjectRef"], "nativeRevision": read.Input["nativeRevision"],
+		"contentSha256": hex.EncodeToString(digest[:]), "contentBytes": int64(len(body)), "startedAt": started.Format(time.RFC3339Nano), "completedAt": time.Now().UTC().Format(time.RFC3339Nano),
+		"measurements": nativeReadMeasurements(read.Delivery.Read.UsageMeasurements, int64(len(body)))}
+	// Completion is recorded even if permission was revoked during the read.
+	// The completion caller separately rechecks HUMAN and binding disclosure.
+	if err := read.CompleteHumanRead(ctx, receipt); err != nil {
+		return err
+	}
+	if err := fresh(); err != nil {
+		return err
+	}
+	written, err := writer.Write(body)
+	if err == nil && written != len(body) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func NewNativeReadTask(read *auth.NativeReadExecution, owner, user string) (*jobproto.Task, error) {

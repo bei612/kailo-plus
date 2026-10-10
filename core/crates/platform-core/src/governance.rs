@@ -6557,6 +6557,11 @@ impl Governance {
             return Ok(());
         }
         if crate::application_action::is_human(&ae) {
+            if crate::application_action::native_read::is_read(&ae) {
+                // Only the original native HTTP admission can claim its first
+                // read. Reconciliation never renews content execution.
+                return Ok(());
+            }
             return crate::application_action::start(self, &ae).await;
         }
         let def = exact_definition_for_execution(&self.pool, &ae).await?;

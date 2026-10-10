@@ -4808,9 +4808,10 @@ pub struct NativeCommunityFacts {
     pub relay_url: String,
 }
 
-/// Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-/// ActionCommand, observe the same user's idempotency key, or freshly check the binding's
-/// own native scope. Tokens stay in transport, not this document.
+/// Binding SERVICE transport. Command, observation and scope/resource access additionally
+/// require the independently verified native HUMAN token. readReceipt is SERVICE-only
+/// incurred-usage metadata for the already admitted original HUMAN SYNC operation; it never
+/// authorizes content disclosure. Tokens stay in transport, not this document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHumanActionRequest {
@@ -4827,6 +4828,9 @@ pub struct NativeHumanActionRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_receipt: Option<ReadReceiptClass>,
 
     /// Read the already-registered exact native object for the verified HUMAN and action. This
     /// never creates a Resource or native object.
@@ -5009,6 +5013,38 @@ pub struct CommandReceiverResource {
     pub version: i64,
 }
 
+/// Original HUMAN synchronous application read completion, authenticated by its binding
+/// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadReceiptClass {
+    pub completed_at: String,
+
+    pub content_bytes: i64,
+
+    pub content_sha256: String,
+
+    pub idempotency_key: String,
+
+    pub measurements: Vec<ReadReceiptMeasurement>,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub operation_id: String,
+
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadReceiptMeasurement {
+    pub meter_key: String,
+
+    pub quantity: i64,
+}
+
 /// Read the already-registered exact native object for the verified HUMAN and action. This
 /// never creates a Resource or native object.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5039,10 +5075,27 @@ pub struct NativeHumanActionResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_type: Option<String>,
 
+    /// First native same-request read only. Never returned by idempotency observation or retried
+    /// admission; the bearer is not persisted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_admission: Option<ReadAdmission>,
+
     pub submission: SubmissionClass,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_status: Option<TaskStatus>,
+}
+
+/// First native same-request read only. Never returned by idempotency observation or retried
+/// admission; the bearer is not persisted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAdmission {
+    pub action_token: String,
+
+    pub arguments_json: String,
+
+    pub expires_at: i64,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -5077,6 +5130,38 @@ pub struct SubmissionClass {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
+}
+
+/// Original HUMAN synchronous application read completion, authenticated by its binding
+/// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanReadReceipt {
+    pub completed_at: String,
+
+    pub content_bytes: i64,
+
+    pub content_sha256: String,
+
+    pub idempotency_key: String,
+
+    pub measurements: Vec<NativeHumanReadReceiptMeasurement>,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub operation_id: String,
+
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanReadReceiptMeasurement {
+    pub meter_key: String,
+
+    pub quantity: i64,
 }
 
 /// Current already-registered native Resource selected under the original HUMAN action

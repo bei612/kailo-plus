@@ -18,8 +18,9 @@ import (
 // Read receipts belong to the original Job/Task store. No job is created from
 // a browser request, and a missing controlled job never means zero usage.
 type NativeReadDelivery struct {
-	NativeJobID       string                  `json:"nativeJobId"`
-	UsageMeasurements []NativeReadMeasurement `json:"usageMeasurements"`
+	NativeJobID       string                   `json:"nativeJobId"`
+	UsageMeasurements []NativeReadMeasurement  `json:"usageMeasurements"`
+	Human             *NativeHumanReadDelivery `json:"human,omitempty"`
 }
 
 type NativeReadMeasurement struct {
@@ -50,6 +51,7 @@ type NativeReadExecution struct {
 	ExternalExecutionID string
 	Token               string
 	Args                string
+	humanToken          string
 }
 
 type nativeReadContextKey struct{}

@@ -94,12 +94,14 @@ test("native human action preserves controlled trust and nonterminal references"
     resourceResult: import("../src/generated/contracts.js").NativeHumanResourceResult;
     scopeRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
     scopeResult: import("../src/generated/contracts.js").NativeHumanScopeResult;
+    readReceiptRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
   } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
   const t=sample.trust, r=sample.request, o=sample.result;
   const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
     identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile};
   const request: typeof r = {bindingId:r.bindingId,idempotencyKey:r.idempotencyKey,command:r.command};
-  const result: typeof o = {submission:o.submission,inputReference:o.inputReference,terminalStatus:o.terminalStatus,nativeType:o.nativeType,nativeId:o.nativeId};
+  const result: typeof o = {submission:o.submission,inputReference:o.inputReference,terminalStatus:o.terminalStatus,nativeType:o.nativeType,nativeId:o.nativeId,
+    readAdmission:o.readAdmission && {actionToken:o.readAdmission.actionToken,argumentsJson:o.readAdmission.argumentsJson,expiresAt:o.readAdmission.expiresAt}};
   const q=sample.resourceRequest.resolveResource!;
   const resourceRequest:typeof sample.resourceRequest={bindingId:sample.resourceRequest.bindingId,
     resolveResource:{workspaceId:q.workspaceId,actionKey:q.actionKey,actionVersion:q.actionVersion,nativeType:q.nativeType,nativeRef:q.nativeRef}};
@@ -111,7 +113,15 @@ test("native human action preserves controlled trust and nonterminal references"
   const sp=sample.scopeResult.scope;
   const scopeResult:typeof sample.scopeResult={scope:{bindingId:sp.bindingId,generation:sp.generation,tenantId:sp.tenantId,
     workspaceId:sp.workspaceId,nativeInstanceRef:sp.nativeInstanceRef,nativeScopeRef:sp.nativeScopeRef,permission:sp.permission,checkedRevision:sp.checkedRevision}};
-  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult,scopeRequest,scopeResult})),sample);
+  const rr=sample.readReceiptRequest.readReceipt!;
+  const readReceiptRequest:typeof sample.readReceiptRequest={bindingId:sample.readReceiptRequest.bindingId,
+    readReceipt:{operationId:rr.operationId,idempotencyKey:rr.idempotencyKey,nativeObjectRef:rr.nativeObjectRef,nativeRevision:rr.nativeRevision,
+      contentSha256:rr.contentSha256,contentBytes:rr.contentBytes,startedAt:rr.startedAt,completedAt:rr.completedAt,
+      measurements:rr.measurements.map(m=>({meterKey:m.meterKey,quantity:m.quantity}))}};
+  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult,scopeRequest,scopeResult,readReceiptRequest})),sample);
+  const legacy={...result};
+  delete legacy.readAdmission;
+  deepStrictEqual(JSON.parse(JSON.stringify({...legacy,readAdmission:undefined})),JSON.parse(JSON.stringify(legacy)));
 });
 
 test("automation topic step preserves explicit empty topic", () => {

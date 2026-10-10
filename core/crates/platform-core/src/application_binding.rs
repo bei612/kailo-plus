@@ -663,6 +663,9 @@ pub(crate) async fn advance(
             projection::revoke(&state,&ae).await?;
             gateway::revoke(&state,&ae).await?;
             crate::model_route::application::revoke(&state,&ae).await?;
+            if !crate::application_action::native_read::drained(&state.pool,id).await? {
+                return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
+            }
             if !crate::protocol_session::maintenance::drain_binding(&state,id).await? {
                 return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
             }

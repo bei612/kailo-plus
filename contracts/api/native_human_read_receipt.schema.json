@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/native_human_read_receipt.schema.json",
+  "title":"NativeHumanReadReceipt",
+  "description":"Original HUMAN synchronous application read completion, authenticated by its binding SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.",
+  "type":"object","additionalProperties":false,
+  "required":["operationId","idempotencyKey","nativeObjectRef","nativeRevision","contentSha256","contentBytes","startedAt","completedAt","measurements"],
+  "properties":{
+    "operationId":{"type":"string","format":"uuid"},
+    "idempotencyKey":{"type":"string","format":"uuid"},
+    "nativeObjectRef":{"type":"string"},
+    "nativeRevision":{"type":"string"},
+    "contentSha256":{"type":"string"},
+    "contentBytes":{"type":"integer"},
+    "startedAt":{"type":"string"},
+    "completedAt":{"type":"string"},
+    "measurements":{"type":"array","items":{"type":"object","additionalProperties":false,
+      "required":["meterKey","quantity"],"properties":{"meterKey":{"type":"string"},"quantity":{"type":"integer"}}}}
+  }
+}

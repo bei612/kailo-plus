@@ -197,6 +197,7 @@ fn request_binding(raw: &Value) -> Result<Uuid, Refusal> {
         "idempotencyKey",
         "resolveResource",
         "authorizeScope",
+        "readReceipt",
     ]
     .iter()
     .filter(|key| raw.get(**key).is_some())
@@ -217,6 +218,9 @@ pub(crate) async fn handle(
     let result = async {
         let Json(raw) = body.map_err(|_| invalid())?;
         let id = request_binding(&raw)?;
+        if let Some(receipt) = raw.get("readReceipt") {
+            return native_read::record(&state, &headers, id, receipt).await.map(Some);
+        }
         let before = binding(&state,id).await?;
         let count: i64 = sqlx::query_scalar("select count(*) from catalog.application_binding where normalized_config->>'client_id'=$1 and state<>'DISABLED'")
             .bind(&before.client_id).fetch_one(&state.pool).await?;
@@ -248,7 +252,7 @@ pub(crate) async fn handle(
                 let parsed = normalized(&command)?;
                 // Fence the exact existing idempotency key before the original replay path can start it.
                 check_existing_binding(&state,actor,parsed.key,id,before.generation).await?;
-                submit_inner(&state.governance,actor,&command,Some((id,before.generation))).await?;
+                submit_inner(&state.governance,actor,&command,Some((id,before.generation)),Some(&state)).await?;
                 parsed.key
             },
             (None,Some(key))=>super::id(key)?,
@@ -257,18 +261,25 @@ pub(crate) async fn handle(
         let Some(action) = check_existing_binding(&state,actor,key,id,before.generation).await? else {
             return Ok(None);
         };
-        let ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
+        let mut ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
         if !is_human(&ae) { return Err(denied()); }
         if ae.gate_state == "DENIED" && raw.get("sourceResources").is_some() { return Err(denied()); }
         if ae.gate_state != "DENIED" && !crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,raw.get("sourceResources")).await?.allowed { return Err(denied()); }
         let mut output = json!({"submission":ae.submission(),"inputReference":ae.parameters.as_ref().ok_or_else(unavailable)?["inputArguments"]["input"]});
+        if raw.get("command").is_some() && native_read::is_read(&ae) {
+            if let Some(admission) = native_read::admit(&state, &ae, key).await? {
+                output["readAdmission"] = admission;
+                ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
+                output["submission"] = serde_json::to_value(ae.submission()).map_err(|_| unavailable())?;
+            }
+        }
         let terminal: Option<String> = sqlx::query_scalar("select result_code from audit.audit_event where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4")
             .bind(format!("{}:component_action:terminal",ae.operation_id)).bind(ae.tenant_id).bind(ae.operation_id).bind(&ae.action_key)
             .fetch_optional(&state.pool).await?;
         if let Some(status) = terminal {
             if !matches!(status.as_str(),"COMPLETED"|"FAILED"|"CANCELED") { return Err(unavailable()); }
             output["terminalStatus"] = json!(status);
-            if status == "COMPLETED" {
+            if status == "COMPLETED" && !native_read::is_read(&ae) {
                 let native: Option<(String,String)> = sqlx::query_as("select native_type,native_id from admission.external_execution where action_execution_id=$1 and operation_id=$2 and component_binding_id=$3 and platform_status='SUCCEEDED' and terminal_at is not null")
                     .bind(ae.id).bind(ae.operation_id).bind(id).fetch_optional(&state.pool).await?;
                 let (kind,reference) = native.ok_or_else(unavailable)?;
