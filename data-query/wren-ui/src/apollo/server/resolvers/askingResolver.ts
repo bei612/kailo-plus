@@ -32,9 +32,13 @@ import { TrackedAskingResult, ThreadResponseAnswerStatus } from '../services';
 import { View } from '../repositories/viewRepository';
 import { ModelResolver } from './modelResolver';
 import {
+  NativeHumanQuery,
   nativePreviewScope,
   resolveNativeResource,
 } from '../services/nativeHumanQuery';
+import { NativeQueryService } from '../services/nativeQueryService';
+import { ApiType } from '../repositories/apiHistoryRepository';
+import { GeneralErrorCodes } from '../utils/error';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import { ApiHistoryResolver } from './apiHistoryResolver';
@@ -42,6 +46,7 @@ import {
   canonical,
   digest,
   loadQueryDelivery,
+  bindingServiceCall,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
 
@@ -175,6 +180,108 @@ export class AskingResolver {
     )
       throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
     return current;
+  }
+
+  public async settledNativeAskingQueries(
+    queryId: string,
+    ctx: IContext,
+    recoverMissing = false,
+  ) {
+    const task = await this.authorizeNativeAskingTask(queryId, ctx);
+    if (!task) return [];
+    if (
+      recoverMissing &&
+      task.detail.status !== AskResultStatus.STOPPED &&
+      task.detail.status !== AskResultStatus.FAILED
+    )
+      throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+    const config = await loadQueryDelivery();
+    const keys = task.detail.nativeQueries ?? [];
+    for (const key of keys) {
+      let receipt = await bindingServiceCall(
+        config,
+        'human-action',
+        {
+          bindingId: config.bindingId,
+          idempotencyKey: key,
+        },
+        ctx.nativeHumanToken,
+      );
+      if (!receipt && recoverMissing) {
+        // The task key is committed before Core admission. A lost admission
+        // response is not proof of non-execution: only the explicit original
+        // rerun operation may re-enter that SAME key, never a new SQL key.
+        const { components } = await import('@/common');
+        const history = components.apiHistoryRepository;
+        const prepared = await history.findOneBy({
+          governanceBindingId: config.bindingId,
+          governanceKey: key,
+          projectId: task.projectId,
+          threadId: queryId,
+          apiType: ApiType.RUN_SQL,
+        });
+        const input = prepared?.requestPayload;
+        if (
+          !prepared ||
+          prepared.governanceState != null ||
+          prepared.governanceActionExecutionId != null ||
+          prepared.governanceOperationId != null ||
+          input?.previewScope !==
+            nativePreviewScope(config, ctx.nativeIdentityScope) ||
+          !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
+            input?.action,
+          ) ||
+          prepared.governanceDeploymentHash !==
+            task.detail.nativeScope.metadataReference.hash
+        )
+          throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+        const native = new NativeQueryService(
+          config,
+          ctx.projectRepository,
+          ctx.deployRepository,
+          history,
+          ctx.queryService,
+          ctx.viewRepository,
+          ctx.modelRepository,
+          ctx.modelColumnRepository,
+        );
+        receipt = await new NativeHumanQuery(
+          config,
+          native,
+          history,
+        ).previewSql(
+          ctx.nativeHumanToken,
+          key,
+          input.sql,
+          input.limit,
+          input.previewScope,
+          input.action === 'data_query.dry_run@v1',
+          queryId,
+          task.detail.nativeScope.metadataReference.hash,
+          input.cache,
+          false,
+          async () => {
+            const current = await this.authorizeNativeAskingTask(queryId, ctx);
+            if (
+              (current.detail.status !== AskResultStatus.STOPPED &&
+                current.detail.status !== AskResultStatus.FAILED) ||
+              canonical(current.detail.nativeQueries ?? []) !==
+                canonical(keys) ||
+              canonical(current.detail.nativeScope) !==
+                canonical(task.detail.nativeScope)
+            )
+              throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+          },
+        );
+      }
+      const state = queryReceiptState(receipt);
+      if (!state.valid || (!state.terminal && !state.denied))
+        throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+    }
+    const current = await this.authorizeNativeAskingTask(queryId, ctx);
+    if (canonical(current.detail.nativeQueries ?? []) !== canonical(keys))
+      throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+    return keys;
   }
 
   private async authorizeNativeAdjustmentSource(
@@ -402,6 +509,7 @@ export class AskingResolver {
       threadId,
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
       nativeScope,
+      nativeHumanToken: nativeScope ? ctx.nativeHumanToken : undefined,
       authorizeNative: nativeScope
         ? (queryId) => this.authorizeNativeAskingTask(queryId, ctx)
         : undefined,
@@ -439,6 +547,36 @@ export class AskingResolver {
 
     if (!askResult) {
       return null;
+    }
+
+    if (
+      [
+        AskResultStatus.FINISHED,
+        AskResultStatus.FAILED,
+        AskResultStatus.STOPPED,
+      ].includes(askResult.status)
+    ) {
+      try {
+        await this.settledNativeAskingQueries(taskId, ctx);
+      } catch (error) {
+        if (
+          !(error instanceof NativeQueryRefusal) ||
+          error.message !== 'NATIVE_EXECUTION_UNKNOWN'
+        )
+          throw error;
+        // The AI job has ended; its child SQL has not. GET only observes and
+        // shows the original stopped controls without claiming SQL cancellation.
+        return {
+          status: AskResultStatus.STOPPED,
+          type: askResult.type,
+          candidates: [],
+          queryId: taskId,
+          error: {
+            code: GeneralErrorCodes.AI_SERVICE_UNDEFINED_ERROR,
+            message: 'NATIVE_EXECUTION_UNKNOWN',
+          },
+        };
+      }
     }
 
     const task = await this.transformAskingTask(askResult, ctx);
@@ -703,6 +841,7 @@ export class AskingResolver {
     const askingService = ctx.askingService;
     const project = await ctx.projectService.getCurrentProject();
     const nativeScope = await this.nativeAskingScope(ctx);
+    let nativePreviousQueries: string[] | undefined;
     if (nativeScope) {
       const response = await askingService.getResponse(responseId, project);
       const previous =
@@ -713,11 +852,29 @@ export class AskingResolver {
         }));
       if (!previous)
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
-      await this.authorizeNativeAskingTask(previous.queryId, ctx);
+      try {
+        nativePreviousQueries = await this.settledNativeAskingQueries(
+          previous.queryId,
+          ctx,
+          true,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof NativeQueryRefusal) ||
+          error.message !== 'NATIVE_EXECUTION_UNKNOWN'
+        )
+          throw error;
+        // Return the original task so the existing UI refreshes its receipt
+        // state. Never allocate another AI task while a child query is unknown.
+        await this.authorizeNativeAskingTask(previous.queryId, ctx);
+        return { id: previous.queryId };
+      }
     }
     const task = await askingService.rerunAskingTask(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
       nativeScope,
+      nativeHumanToken: nativeScope ? ctx.nativeHumanToken : undefined,
+      nativePreviousQueries,
       authorizeNative: nativeScope
         ? (queryId) => this.authorizeNativeAskingTask(queryId, ctx)
         : undefined,
@@ -1378,8 +1535,7 @@ export class AskingResolver {
         parent.askingTaskId,
       );
       if (!askingTask) return null;
-      await this.authorizeNativeAskingTask(askingTask.queryId, ctx);
-      return this.transformAskingTask(askingTask, ctx);
+      return this.getAskingTask(null, { taskId: askingTask.queryId }, ctx);
     },
     adjustmentTask: async (
       parent: ThreadResponse,

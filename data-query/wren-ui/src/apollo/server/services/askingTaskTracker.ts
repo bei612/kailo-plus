@@ -47,6 +47,8 @@ export type CreateAskingTaskInput = AskInput & {
   threadResponseId?: number;
   nativeScope?: NativeAskingScope;
   authorizeNative?: (queryId: string) => Promise<unknown>;
+  nativeHumanToken?: string;
+  nativePreviousQueries?: string[];
 };
 
 export interface IAskingTaskTracker {
@@ -126,7 +128,12 @@ export class AskingTaskTracker implements IAskingTaskTracker {
       const previousQueryId = previous?.queryId;
 
       const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
-      if (bound && (!input.nativeScope || !input.authorizeNative))
+      if (
+        bound &&
+        (!input.nativeScope ||
+          !input.authorizeNative ||
+          !input.nativeHumanToken)
+      )
         throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
       const queryId = bound
         ? input.queryId ?? randomUUID()
@@ -153,6 +160,11 @@ export class AskingTaskTracker implements IAskingTaskTracker {
             current.detail.nativeScope.bindingId !== input.nativeScope.bindingId
           )
             throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          if (
+            JSON.stringify(current.detail.nativeQueries ?? []) !==
+            JSON.stringify(input.nativePreviousQueries ?? [])
+          )
+            throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
           if (
             ![AskResultStatus.FAILED, AskResultStatus.STOPPED].includes(
               current.detail?.status as AskResultStatus,
@@ -227,7 +239,20 @@ export class AskingTaskTracker implements IAskingTaskTracker {
           throw error;
         }
         try {
-          const response = await this.wrenAIAdaptor.ask({ ...input, queryId });
+          const response = await this.wrenAIAdaptor.ask(
+            {
+              queryId,
+              query: input.query,
+              deployId: input.deployId,
+              histories: input.histories,
+              configurations: input.configurations,
+            },
+            {
+              humanToken: input.nativeHumanToken,
+              projectId: input.projectId,
+              pollingIntervalMs: this.pollingInterval,
+            },
+          );
           if (response?.queryId !== queryId)
             logger.warn('Original native task acknowledgement unavailable');
         } catch {

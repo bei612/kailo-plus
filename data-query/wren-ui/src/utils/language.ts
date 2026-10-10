@@ -43,6 +43,8 @@ export const getQueryPreviewText = (locale?: string) =>
         results: 'View results',
         preview: 'Preview data',
         check: 'Check query',
+        awaitingVerification: 'Query awaiting verification',
+        verifyAndContinue: 'Verify and continue',
         storageError:
           'Cannot retain the query identifier; nothing was submitted.',
         scopeError:
@@ -66,6 +68,8 @@ export const getQueryPreviewText = (locale?: string) =>
         results: '查看结果',
         preview: '预览数据',
         check: '检查原查询',
+        awaitingVerification: '查询待核验',
+        verifyAndContinue: '核验并继续',
         storageError: '无法保存查询标识，未发起查询。',
         scopeError: '无法核验当前查询身份，未发起查询。',
         pending: '原查询尚未完成；再次检查不会重复执行。',

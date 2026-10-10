@@ -13,6 +13,12 @@ from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
+identity_spec = importlib.util.spec_from_file_location(
+    "native_ask_identity_fixture", ROOT / "src/providers/engine/native_identity.py"
+)
+identity_module = importlib.util.module_from_spec(identity_spec)
+sys.modules[identity_spec.name] = identity_module
+identity_spec.loader.exec_module(identity_module)
 
 
 def decorator(*args, **kwargs):
@@ -59,6 +65,7 @@ class Event(Model):
 def load_original(name, path, dependencies=None):
     configuration = type("Configuration", (), {"show_current_time": lambda _: "fixture-time"})
     modules = {
+        "src.providers.engine.native_identity": identity_module,
         "hamilton": types.SimpleNamespace(base=types.SimpleNamespace(DictResult=object)),
         "hamilton.async_driver": types.SimpleNamespace(AsyncDriver=object),
         "haystack.components.builders.prompt_builder": types.SimpleNamespace(PromptBuilder=object),
@@ -71,7 +78,7 @@ def load_original(name, path, dependencies=None):
         "cachetools": types.SimpleNamespace(TTLCache=lambda **kwargs: {}),
         "pydantic": types.SimpleNamespace(BaseModel=Model, Field=lambda *args, **kwargs: None, AliasChoices=lambda *args: args),
         "fastapi": types.SimpleNamespace(HTTPException=HTTPException, APIRouter=Router,
-            BackgroundTasks=Model, Response=Model, Depends=lambda value: value),
+            BackgroundTasks=Model, Response=Model, Request=Model, Depends=lambda value: value),
         "fastapi.responses": types.SimpleNamespace(StreamingResponse=Model),
         "src.globals": types.SimpleNamespace(ServiceContainer=Model, ServiceMetadata=Metadata,
             get_service_container=lambda: None, get_service_metadata=lambda: None),
@@ -182,7 +189,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
         ]:
             with self.subTest(create=create):
                 identifier = uuid4()
-                request = types.SimpleNamespace(native_task_id=identifier)
+                request = types.SimpleNamespace(native_task_id=identifier, project_id=None, mdl_hash=None)
                 container = types.SimpleNamespace(**{member: service})
                 scheduled = []
                 background = types.SimpleNamespace(add_task=lambda *args, **kwargs: scheduled.append((args, kwargs)))
@@ -190,7 +197,11 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.query_id, str(identifier))
                 self.assertEqual(request.query_id, str(identifier))
                 self.assertEqual(len(scheduled), 1)
-                self.assertEqual(scheduled[0][0][0], getattr(service, create))
+                if router is ask_router:
+                    self.assertEqual(scheduled[0][0][0], ask_router.run_native_ask)
+                    self.assertEqual(scheduled[0][0][2], getattr(service, create))
+                else:
+                    self.assertEqual(scheduled[0][0][0], getattr(service, create))
                 observed = await getattr(router, read)(str(identifier), container)
                 self.assertIn(observed.status, ["preprocessing", "fetching", "understanding", "searching"])
                 # Simulate loss of the HTTP create acknowledgement: only GET the
@@ -215,8 +226,8 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 scheduled = []
                 background = types.SimpleNamespace(add_task=lambda *args, **kwargs: scheduled.append(args))
                 container = types.SimpleNamespace(**{member: service})
-                first = await getattr(router, create)(types.SimpleNamespace(native_task_id=None), background, container, Metadata())
-                second = await getattr(router, create)(types.SimpleNamespace(native_task_id=None), background, container, Metadata())
+                first = await getattr(router, create)(types.SimpleNamespace(native_task_id=None, project_id=None, mdl_hash=None), background, container, Metadata())
+                second = await getattr(router, create)(types.SimpleNamespace(native_task_id=None, project_id=None, mdl_hash=None), background, container, Metadata())
                 self.assertNotEqual(first.query_id, second.query_id)
                 self.assertEqual(str(UUID(first.query_id)), first.query_id)
                 self.assertEqual(len(scheduled), 2)

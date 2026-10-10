@@ -2,6 +2,9 @@ import asyncio
 import base64
 import logging
 import os
+import re
+import time
+import uuid
 from typing import Any, Dict, Optional, Tuple
 
 import aiohttp
@@ -10,7 +13,13 @@ import orjson
 from src.config import settings
 from src.core.engine import Engine, remove_limit_statement
 from src.providers.loader import provider
-from src.providers.engine.native_identity import NativeIdentityUnavailable, native_headers
+from src.providers.engine.native_identity import (
+    NativeIdentityUnavailable,
+    NativeQueryPending,
+    native_ask_context,
+    native_headers,
+    native_human_headers,
+)
 
 logger = logging.getLogger("wren-ai-service")
 
@@ -48,6 +57,12 @@ class WrenUI(Engine):
             data["limit"] = 1
         else:
             data["limit"] = limit
+
+        context = native_ask_context.get()
+        if context is not None:
+            return await self._execute_native_ask(
+                context, data, session, dry_run, timeout
+            )
 
         try:
             headers = await native_headers(
@@ -184,6 +199,113 @@ class WrenUI(Engine):
             raise
         except Exception:
             raise NativeSQLResponseUnavailable() from None
+
+    async def _execute_native_ask(self, context, data, session, dry_run, timeout):
+        # This is the original request's private, task-local identity, not the
+        # AI client's SERVICE identity. Only the UI re-verifies its audience and
+        # task ownership; the AI never derives an actor or grant from it.
+        if data["projectId"] is not None and str(data["projectId"]) != context.project_id:
+            raise NativeQueryPending()
+        data["projectId"] = context.project_id
+        data["nativeTaskId"] = context.task_id
+        data["idempotencyKey"] = str(uuid.uuid5(
+            uuid.UUID(context.task_id),
+            orjson.dumps(data, option=orjson.OPT_SORT_KEYS).decode(),
+        ))
+        deadline = time.monotonic() + timeout
+        try:
+            headers = native_human_headers(self._endpoint, context)
+            async with session.get(
+                f"{self._endpoint}/api/config",
+                headers=headers,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as response:
+                if response.status != 200:
+                    raise NativeQueryPending()
+                configuration = await response.json()
+            scope = configuration.get("queryScope")
+            if (
+                configuration.get("nativeBindingConfigured") is not True
+                or not isinstance(scope, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", scope)
+                or (context.query_scope is not None and context.query_scope != scope)
+            ):
+                raise NativeQueryPending()
+            context.query_scope = scope
+            data["idempotencyScope"] = scope
+            action = "data_query.dry_run@v1" if dry_run else "data_query.query@v1"
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise NativeQueryPending()
+                async with session.post(
+                    f"{self._endpoint}/api/graphql",
+                    headers=native_human_headers(self._endpoint, context),
+                    allow_redirects=False,
+                    json={
+                        "query": "mutation PreviewSql($data: PreviewSQLDataInput) { previewSql(data: $data) }",
+                        "variables": {"data": data},
+                    },
+                    timeout=aiohttp.ClientTimeout(total=remaining),
+                ) as response:
+                    if response.status != 200:
+                        raise NativeQueryPending()
+                    body = await response.json()
+                if not isinstance(body, dict) or body.get("errors"):
+                    raise NativeQueryPending()
+                receipt = (body.get("data") or {}).get("previewSql")
+                if not isinstance(receipt, dict) or receipt.get("previewScope") != scope:
+                    raise NativeQueryPending()
+                submission = receipt.get("submission") or {}
+                gate = submission.get("gateState")
+                dispatch = submission.get("dispatchState")
+                status = receipt.get("terminalStatus")
+                if (
+                    submission.get("actionKey") != action
+                    or gate not in {"EVALUATING", "WAITING", "ALLOWED", "DENIED", "REVOKED", "EXPIRED"}
+                    or dispatch not in {"NOT_DISPATCHED", "DISPATCHED", "ABORTED", "UNKNOWN"}
+                    or status not in {None, "RUNNING", "COMPLETED", "FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}
+                    or (status not in {None, "RUNNING"} and dispatch == "UNKNOWN")
+                ):
+                    raise NativeQueryPending()
+                if status == "COMPLETED":
+                    if gate != "ALLOWED" or dispatch != "DISPATCHED":
+                        raise NativeQueryPending()
+                    result = receipt.get("data")
+                    if (
+                        not isinstance(result, dict)
+                        or result.get("deploymentHash") != context.deployment_hash
+                        or (dry_run and result.get("valid") is not True)
+                        or (not dry_run and (
+                            not isinstance(result.get("columns"), list)
+                            or not isinstance(result.get("data"), list)
+                        ))
+                    ):
+                        raise NativeQueryPending()
+                    return (
+                        True if dry_run else bool(result["data"]),
+                        result,
+                        {"correlation_id": ""},
+                    )
+                if (
+                    (gate == "DENIED" and dispatch == "NOT_DISPATCHED")
+                    or status in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}
+                ):
+                    raise NativeSQLResponseUnavailable()
+                # Approval and in-flight/unknown execution are observed using
+                # the same original task key. They are never invalid-SQL input
+                # to the correction loop and never permit a new SQL execution.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise NativeQueryPending()
+                await asyncio.sleep(min(context.polling_interval, remaining))
+        except (NativeQueryPending, NativeSQLResponseUnavailable):
+            raise
+        except Exception:
+            # No headers/token, HTTP exception repr, or remote error body can
+            # enter the original traced pipeline's exception logger.
+            raise NativeQueryPending() from None
 
 
 @provider("wren_ibis")

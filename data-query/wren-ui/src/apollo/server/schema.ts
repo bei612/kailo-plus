@@ -880,6 +880,7 @@ export const typeDefs = gql`
     dryRun: Boolean
     idempotencyKey: String
     idempotencyScope: String
+    nativeTaskId: String
   }
 
   # Schema Change

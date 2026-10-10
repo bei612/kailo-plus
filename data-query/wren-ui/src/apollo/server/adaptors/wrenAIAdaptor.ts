@@ -56,6 +56,15 @@ export type NativeSqlPairTransport = {
   requestMaxBytes: number;
 };
 
+// Request-scoped credentials are transport only, never part of AskInput or
+// native task/history data. The receiving AI worker returns this same native
+// UI token to its original audience; it does not acquire HUMAN authority.
+export type NativeAskTransport = {
+  humanToken: string;
+  projectId: number;
+  pollingIntervalMs: number;
+};
+
 export interface IWrenAIAdaptor {
   deploy(deployData: DeployData): Promise<WrenAIDeployResponse>;
   observeDeploy(
@@ -71,7 +80,10 @@ export interface IWrenAIAdaptor {
    * 2. use getAskResult() to get the result of the queryId
    * 3. use cancelAsk() to cancel the query
    **/
-  ask(input: AskInput): Promise<AsyncQueryResponse>;
+  ask(
+    input: AskInput,
+    native?: NativeAskTransport,
+  ): Promise<AsyncQueryResponse>;
   cancelAsk(queryId: string): Promise<void>;
   getAskResult(queryId: string): Promise<AskResult>;
   getAskStreamingResult(queryId: string): Promise<Readable>;
@@ -288,17 +300,41 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
    * AI service will return anwser candidates containing sql.
    */
 
-  public async ask(input: AskInput): Promise<AsyncQueryResponse> {
+  public async ask(
+    input: AskInput,
+    native?: NativeAskTransport,
+  ): Promise<AsyncQueryResponse> {
     try {
-      const res = await axios.post(`${this.wrenAIBaseEndpoint}/v1/asks`, {
-        query: input.query,
-        native_task_id: input.queryId,
-        id: input.deployId,
-        histories: this.transformHistoryInput(input.histories),
-        configurations: input.configurations,
-      });
+      const res = await axios.post(
+        `${this.wrenAIBaseEndpoint}/v1/asks`,
+        {
+          query: input.query,
+          native_task_id: input.queryId,
+          ...(native ? { project_id: String(native.projectId) } : {}),
+          id: input.deployId,
+          histories: this.transformHistoryInput(input.histories),
+          configurations: input.configurations,
+        },
+        native
+          ? {
+              headers: {
+                'x-wren-native-authorization': `Bearer ${native.humanToken}`,
+                'x-wren-native-poll-interval-ms': String(
+                  native.pollingIntervalMs,
+                ),
+              },
+              // Never forward the native user's bearer credential to a redirect.
+              maxRedirects: 0,
+            }
+          : undefined,
+      );
       return { queryId: res.data.query_id };
     } catch (err: any) {
+      if (native) {
+        // Axios errors contain their request headers. Never let that object
+        // reach the original tracker/telemetry exception paths.
+        throw new Error('Original native task acknowledgement unavailable');
+      }
       logger.debug(`Got error when asking wren AI: ${getAIServiceError(err)}`);
       throw err;
     }

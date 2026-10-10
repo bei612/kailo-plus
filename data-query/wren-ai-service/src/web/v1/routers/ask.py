@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import asdict
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from src.globals import (
@@ -18,6 +18,7 @@ from src.web.v1.services.ask import (
     StopAskRequest,
     StopAskResponse,
 )
+from src.providers.engine.native_identity import NativeIdentityUnavailable, native_ask_transport, run_native_ask
 
 router = APIRouter()
 
@@ -28,7 +29,15 @@ async def ask(
     background_tasks: BackgroundTasks,
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
+    request: Request = None,
 ) -> AskResponse:
+    try:
+        context = native_ask_transport(
+            request.headers if request else {}, ask_request.native_task_id,
+            ask_request.project_id, ask_request.mdl_hash,
+        )
+    except NativeIdentityUnavailable:
+        raise HTTPException(status_code=401, detail="Native request identity unavailable") from None
     query_id = str(ask_request.native_task_id or uuid.uuid4())
     if query_id in service_container.ask_service._ask_results:
         raise HTTPException(status_code=409, detail="Native task ID already registered")
@@ -38,6 +47,8 @@ async def ask(
     )
 
     background_tasks.add_task(
+        run_native_ask,
+        context,
         service_container.ask_service.ask,
         ask_request,
         service_metadata=asdict(service_metadata),

@@ -12,7 +12,7 @@ from src.core.engine import (
     clean_generation_result,
 )
 from src.web.v1.services.ask import AskHistory
-from src.providers.engine.native_identity import NativeIdentityUnavailable
+from src.providers.engine.native_identity import NativeIdentityUnavailable, NativeQueryPending
 from src.providers.engine.wren import NativeSQLResponseUnavailable
 
 logger = logging.getLogger("wren-ai-service")
@@ -61,7 +61,7 @@ class SQLGenPostProcessor:
                 "valid_generation_result": valid_generation_result,
                 "invalid_generation_result": invalid_generation_result,
             }
-        except (NativeIdentityUnavailable, NativeSQLResponseUnavailable):
+        except (NativeIdentityUnavailable, NativeSQLResponseUnavailable, NativeQueryPending):
             # Preserve the existing pipeline's dependency error path, rather
             # than manufacture invalid SQL for its automatic correction loop.
             raise

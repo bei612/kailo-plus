@@ -461,6 +461,7 @@ export class NativeHumanQuery {
     expectedDeploymentHash?: string,
     cache?: GovernedQueryInput['cache'],
     observationOnly = false,
+    beforeAdmission?: () => Promise<void>,
   ) {
     const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
@@ -535,6 +536,7 @@ export class NativeHumanQuery {
         if (canonical(after) !== canonical(resources[index]))
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       }
+      await beforeAdmission?.();
       receipt = await bindingServiceCall(
         this.config,
         'human-action',

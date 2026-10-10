@@ -70,6 +70,8 @@ export interface AskingPayload {
   language: string;
   nativeScope?: NativeAskingScope;
   authorizeNative?: CreateAskingTaskInput['authorizeNative'];
+  nativeHumanToken?: string;
+  nativePreviousQueries?: string[];
 }
 
 export type AdjustmentConfigurations = AskingPayload & {
@@ -690,6 +692,8 @@ export class AskingService implements IAskingService {
       projectId: project.id,
       nativeScope: payload.nativeScope,
       authorizeNative: payload.authorizeNative,
+      nativeHumanToken: payload.nativeHumanToken,
+      nativePreviousQueries: payload.nativePreviousQueries,
       query: input.question,
       histories,
       deployId,

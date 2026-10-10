@@ -12,6 +12,7 @@ from pydantic import AliasChoices, BaseModel, Field
 from src.core.pipeline import BasicPipeline
 from src.utils import trace_metadata
 from src.web.v1.services import BaseRequest, SSEEvent
+from src.providers.engine.native_identity import NativeQueryPending
 
 logger = logging.getLogger("wren-ai-service")
 
@@ -607,6 +608,20 @@ class AskService:
                 results["metadata"]["error_message"] = error_message
                 results["metadata"]["type"] = "TEXT_TO_SQL"
 
+            return results
+        except NativeQueryPending:
+            # The original query AE may be awaiting approval or reconciliation.
+            # Do not turn that query into FAILED (or correct/re-dispatch SQL).
+            # Stop/rerun remains the original user operation; the UI re-observes
+            # every registered child query before it permits a new task ID.
+            if not self._is_stopped(query_id, self._ask_results):
+                self._ask_results[query_id] = AskResultResponse(
+                    status="stopped", type="TEXT_TO_SQL",
+                    error=AskError(code="OTHERS", message="NATIVE_EXECUTION_UNKNOWN"),
+                    trace_id=trace_id,
+                )
+            results["metadata"]["error_type"] = "OTHERS"
+            results["metadata"]["error_message"] = "Native query outcome unavailable"
             return results
         except Exception as e:
             logger.exception(f"ask pipeline - OTHERS: {e}")

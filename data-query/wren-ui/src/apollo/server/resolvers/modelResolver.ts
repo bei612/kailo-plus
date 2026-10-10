@@ -1547,9 +1547,25 @@ export class ModelResolver {
     args: { data: PreviewSQLData },
     ctx: IContext,
   ) {
-    const { sql, projectId, limit, dryRun, idempotencyKey, idempotencyScope } =
-      args.data;
+    const {
+      sql,
+      projectId,
+      limit,
+      dryRun,
+      idempotencyKey,
+      idempotencyScope,
+      nativeTaskId,
+    } = args.data;
     const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    if (nativeTaskId !== undefined && !bound)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (
+      nativeTaskId !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        nativeTaskId,
+      )
+    )
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
     const project =
       projectId && !bound
         ? await ctx.projectService.getProjectById(parseInt(projectId))
@@ -1562,6 +1578,44 @@ export class ModelResolver {
       const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);
       if (idempotencyScope !== previewScope || config.projectId !== project.id)
         throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+      const asking =
+        nativeTaskId === undefined
+          ? undefined
+          : new (await import('./askingResolver')).AskingResolver();
+      const task = asking
+        ? await asking.authorizeNativeAskingTask(nativeTaskId, ctx)
+        : undefined;
+      if (asking && !task)
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const settledTask =
+        task && ['FINISHED', 'FAILED', 'STOPPED'].includes(task.detail.status);
+      const beforeAdmission = task
+        ? async () => {
+            const current = await asking.authorizeNativeAskingTask(
+              nativeTaskId,
+              ctx,
+            );
+            if (
+              canonical(current.detail.nativeScope) !==
+              canonical(task.detail.nativeScope)
+            )
+              throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+            const registered =
+              await ctx.askingTaskRepository.registerNativeQuery(
+                nativeTaskId,
+                project.id,
+                current.detail.nativeScope,
+                idempotencyKey,
+              );
+            if (
+              !registered ||
+              ['FINISHED', 'FAILED', 'STOPPED'].includes(
+                registered.detail.status,
+              )
+            )
+              throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+          }
+        : undefined;
       const { components } = await import('@/common');
       const native = new NativeQueryService(
         config,
@@ -1584,7 +1638,20 @@ export class ModelResolver {
         limit ?? DEFAULT_PREVIEW_LIMIT,
         previewScope,
         !!dryRun,
+        nativeTaskId,
+        task?.detail.nativeScope.metadataReference.hash,
+        undefined,
+        !!settledTask,
+        beforeAdmission,
       );
+      if (asking) {
+        const current = await asking.authorizeNativeAskingTask(
+          nativeTaskId,
+          ctx,
+        );
+        if (!current.detail.nativeQueries?.includes(idempotencyKey))
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
       return { ...receipt, previewScope };
     }
     const { manifest } = await ctx.deployService.getLastDeployment(project.id);

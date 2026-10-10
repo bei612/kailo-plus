@@ -1,8 +1,11 @@
-"""Dedicated native-service OIDC credentials; never a platform user token."""
+"""Dedicated service credentials and private original HUMAN task transport."""
 
 import json
 import os
 import stat
+import re
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 
@@ -25,7 +28,7 @@ def _origin(value):
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def _delivery(endpoint):
+def _configuration(endpoint):
     path = os.environ.get("WREN_NATIVE_SERVICE_IDENTITY_FILE", "")
     if not os.path.isabs(path):
         raise NativeIdentityUnavailable()
@@ -49,6 +52,11 @@ def _delivery(endpoint):
     ):
         raise NativeIdentityUnavailable()
     _origin(value["tokenEndpoint"])
+    return value
+
+
+def _delivery(endpoint):
+    value = _configuration(endpoint)
     # OpenBao/controlled delivery publishes owner-readable regular files.
     # Re-read every call to consume rotations without keeping a stale token.
     descriptor = os.open(value["secretFile"], os.O_RDONLY | os.O_NOFOLLOW)
@@ -63,6 +71,66 @@ def _delivery(endpoint):
     if not secret or any(ord(c) < 32 or ord(c) == 127 for c in secret):
         raise NativeIdentityUnavailable()
     return value, secret
+
+
+class NativeQueryPending(RuntimeError):
+    def __init__(self):
+        super().__init__("Native query outcome unavailable; observe the original query before retrying")
+
+
+@dataclass(repr=False)
+class NativeAskContext:
+    # This object is never a Pydantic request, pipeline argument or trace input.
+    human_token: str = field(repr=False)
+    task_id: str
+    project_id: str
+    deployment_hash: str
+    polling_interval: float
+    query_scope: str | None = None
+
+
+native_ask_context: ContextVar[NativeAskContext | None] = ContextVar("native_ask_context", default=None)
+
+
+def native_ask_transport(headers, task_id, project_id, deployment_hash):
+    authorization = headers.get("x-wren-native-authorization")
+    interval = headers.get("x-wren-native-poll-interval-ms")
+    if authorization is None and interval is None:
+        return None
+    if (
+        not isinstance(authorization, str)
+        or not re.fullmatch(r"Bearer [^\s,]+", authorization)
+        or not isinstance(interval, str)
+        or not interval.isascii()
+        or not interval.isdecimal()
+        or int(interval) <= 0
+        or task_id is None
+        or not isinstance(project_id, str)
+        or not re.fullmatch(r"[1-9][0-9]*", project_id)
+        or not isinstance(deployment_hash, str)
+        or not re.fullmatch(r"[a-f0-9]{40}", deployment_hash)
+    ):
+        raise NativeIdentityUnavailable()
+    return NativeAskContext(authorization[7:], str(task_id), project_id, deployment_hash, int(interval) / 1000)
+
+
+async def run_native_ask(context, call, request, **kwargs):
+    # Set/reset in the actual BackgroundTasks async task, not in the HTTP
+    # router's task. All original pipeline descendants inherit this context.
+    handle = native_ask_context.set(context)
+    try:
+        return await call(request, **kwargs)
+    finally:
+        native_ask_context.reset(handle)
+        if context is not None:
+            context.human_token = ""
+
+
+def native_human_headers(endpoint, context):
+    configuration = _configuration(endpoint)
+    if not context.human_token:
+        raise NativeQueryPending()
+    return {"Authorization": f"Bearer {context.human_token}", "Origin": configuration["publicOrigin"]}
 
 
 async def native_headers(session, endpoint, timeout):

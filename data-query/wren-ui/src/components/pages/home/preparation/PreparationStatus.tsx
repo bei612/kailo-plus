@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
+import { getQueryPreviewText } from '@/utils/language';
 import { Button, Tag, Space } from 'antd';
 import StopOutlined from '@ant-design/icons/StopOutlined';
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined';
@@ -21,6 +23,10 @@ export default function PreparationStatus(
   const [stopLoading, setStopLoading] = useState(false);
   const [reRunLoading, setReRunLoading] = useState(false);
   const isProcessing = !getIsFinished(preparedTask.status);
+  const { locale } = useRouter();
+  const queryText = getQueryPreviewText(locale);
+  const queryPending =
+    preparedTask.error?.message === 'NATIVE_EXECUTION_UNKNOWN';
 
   const onCancel = (e) => {
     e.stopPropagation();
@@ -55,7 +61,9 @@ export default function PreparationStatus(
   } else if (preparedTask.status === AskingTaskStatus.STOPPED) {
     return (
       <Space className="-mr-4">
-        <Tag color="red">Cancelled by user</Tag>
+        <Tag color={queryPending ? 'orange' : 'red'}>
+          {queryPending ? queryText.awaitingVerification : 'Cancelled by user'}
+        </Tag>
         <Button
           icon={<ReloadOutlined />}
           className="gray-7"
@@ -64,7 +72,7 @@ export default function PreparationStatus(
           onClick={onReRun}
           loading={reRunLoading}
         >
-          Re-run
+          {queryPending ? queryText.verifyAndContinue : 'Re-run'}
         </Button>
       </Space>
     );

@@ -1130,6 +1130,7 @@ export type PreviewSqlDataInput = {
   idempotencyKey?: InputMaybe<Scalars['String']>;
   idempotencyScope?: InputMaybe<Scalars['String']>;
   limit?: InputMaybe<Scalars['Int']>;
+  nativeTaskId?: InputMaybe<Scalars['String']>;
   projectId?: InputMaybe<Scalars['String']>;
   sql: Scalars['String'];
 };

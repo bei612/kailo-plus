@@ -43,7 +43,13 @@ export default function Preparation(props: Props) {
       ...(askingTask || {}),
       ...(adjustmentTask || {}),
     } as PreparedTask;
-  }, [askingTask?.status, adjustmentTask?.status, adjustment?.payload]);
+  }, [
+    askingTask?.status,
+    askingTask?.error,
+    askingTask?.queryId,
+    adjustmentTask?.status,
+    adjustment?.payload,
+  ]);
 
   // wrapping up after answer is prepared
   useEffect(() => {

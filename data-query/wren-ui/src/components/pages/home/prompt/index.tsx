@@ -104,6 +104,9 @@ export default forwardRef<Attributes, Props>(function Prompt(props, ref) {
   }, [askingTask]);
 
   useEffect(() => {
+    // Preserve the original empty thread/task binding while its SQL awaits
+    // verification. The stopped controls live in that existing thread.
+    if (error?.message === 'NATIVE_EXECUTION_UNKNOWN') return;
     if (error) {
       !askProcessState.isFailed() &&
         askProcessState.transitionTo(PROCESS_STATE.FAILED);

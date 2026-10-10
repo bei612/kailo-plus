@@ -1,6 +1,8 @@
 """Actual native provider and credential reader, with an HTTP transport boundary."""
 
 import importlib.util
+import asyncio
+import copy
 import contextlib
 import io
 import json
@@ -248,8 +250,10 @@ class Session:
         self.calls = []
 
     def post(self, url, **kwargs):
-        self.calls.append((url, kwargs))
+        self.calls.append((url, copy.deepcopy(kwargs)))
         return self.responses.pop(0)
+
+    get = post
 
     async def __aenter__(self):
         return self
@@ -281,7 +285,10 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
     def load_provider(self):
         dependencies = {
             "aiohttp": types.SimpleNamespace(ClientSession=Session, ClientTimeout=lambda **kw: kw),
-            "orjson": json,
+            "orjson": types.SimpleNamespace(
+                loads=json.loads, OPT_SORT_KEYS=True,
+                dumps=lambda value, option=None: json.dumps(value, sort_keys=bool(option)).encode(),
+            ),
             "src.config": types.SimpleNamespace(settings=types.SimpleNamespace(engine_timeout=5)),
             "src.core.engine": types.SimpleNamespace(Engine=object, remove_limit_statement=lambda sql: sql),
             "src.providers.loader": types.SimpleNamespace(provider=lambda name: lambda cls: cls),
@@ -324,6 +331,109 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
             result = importlib.util.module_from_spec(source)
             source.loader.exec_module(result)
         return result
+
+    def human_context(self, token="fixture-original-human"):
+        return identity.native_ask_transport({
+            "x-wren-native-authorization": f"Bearer {token}",
+            "x-wren-native-poll-interval-ms": "1",
+        }, "86c86577-d5b8-4594-8f48-61648e595d3a", "7", "a" * 40)
+
+    def human_receipt(self, status="COMPLETED", gate="ALLOWED", dispatch="DISPATCHED", **changes):
+        return {"data": {"previewSql": {
+            "submission": {"actionKey": "data_query.dry_run@v1", "gateState": gate, "dispatchState": dispatch},
+            "terminalStatus": status, "previewScope": "b" * 64,
+            "data": {"valid": True, "deploymentHash": "a" * 40}, **changes,
+        }}}
+
+    async def human_query(self, module, session, context=None):
+        context = context or self.human_context()
+        async def original_task(_):
+            return await module.WrenUI(endpoint=self.delivery["uiEndpoint"]).execute_sql(
+                "SELECT original_column FROM original_table", session, project_id="7", dry_run=True,
+            )
+        return await identity.run_native_ask(context, original_task, None)
+
+    async def test_human_callback_waits_on_same_query_key_without_service_credentials(self):
+        module = self.load_provider()
+        session = Session([
+            Response(200, {"nativeBindingConfigured": True, "queryScope": "b" * 64}),
+            Response(200, self.human_receipt(None, "WAITING", "NOT_DISPATCHED")),
+            Response(200, self.human_receipt("RUNNING", "ALLOWED", "UNKNOWN")),
+            Response(200, self.human_receipt()),
+        ])
+        context = self.human_context()
+        success, result, _ = await self.human_query(module, session, context)
+        self.assertTrue(success)
+        self.assertTrue(result["valid"])
+        self.assertTrue(all(url.startswith(self.delivery["uiEndpoint"]) for url, _ in session.calls))
+        queries = [call[1]["json"]["variables"]["data"] for call in session.calls[1:]]
+        self.assertEqual(len({query["idempotencyKey"] for query in queries}), 1)
+        self.assertEqual(context.human_token, "")
+        self.assertIsNone(identity.native_ask_context.get())
+        self.assertTrue(all(query["nativeTaskId"] == context.task_id for query in queries))
+        self.assertTrue(all(call[1]["headers"]["Authorization"] == "Bearer fixture-original-human" for call in session.calls))
+        self.assertNotIn("fixture-original-human", json.dumps(queries))
+
+    async def test_human_unknown_scope_loss_or_invalid_terminal_never_becomes_invalid_sql(self):
+        module = self.load_provider()
+        for response in [
+            Response(401, {}),
+            Response(200, {"errors": [{"message": "denied"}]}),
+            Response(200, self.human_receipt("FAILED", dispatch="UNKNOWN")),
+            Response(200, self.human_receipt(previewScope="c" * 64)),
+            Response(200, self.human_receipt(data={"valid": True, "deploymentHash": "c" * 40})),
+        ]:
+            with self.subTest(body=response.body):
+                session = Session([
+                    Response(200, {"nativeBindingConfigured": True, "queryScope": "b" * 64}), response,
+                ])
+                with self.assertRaises(identity.NativeQueryPending):
+                    await self.human_query(module, session)
+                self.assertEqual(len(session.calls), 2)
+                self.assertIsNone(identity.native_ask_context.get())
+
+    async def test_human_known_denial_is_not_pending_and_never_invokes_correction(self):
+        module = self.load_provider()
+        session = Session([
+            Response(200, {"nativeBindingConfigured": True, "queryScope": "b" * 64}),
+            Response(200, self.human_receipt(None, "DENIED", "NOT_DISPATCHED")),
+        ])
+        with self.assertRaises(module.NativeSQLResponseUnavailable):
+            await self.human_query(module, session)
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_background_context_isolates_two_humans_and_clears_failed_lifetime(self):
+        first, second = self.human_context("human-one"), self.human_context("human-two")
+        observations = []
+        async def task(expected):
+            await asyncio.sleep(0)
+            observations.append(identity.native_ask_context.get().human_token)
+            self.assertEqual(identity.native_ask_context.get().human_token, expected)
+            raise identity.NativeQueryPending()
+        results = await asyncio.gather(
+            identity.run_native_ask(first, task, "human-one"),
+            identity.run_native_ask(second, task, "human-two"), return_exceptions=True,
+        )
+        self.assertTrue(all(isinstance(result, identity.NativeQueryPending) for result in results))
+        self.assertEqual(set(observations), {"human-one", "human-two"})
+        self.assertEqual((first.human_token, second.human_token), ("", ""))
+        self.assertIsNone(identity.native_ask_context.get())
+        self.assertNotIn("human-one", repr(first))
+
+    async def test_original_postprocessor_propagates_human_pending_without_sql_correction(self):
+        module = self.load_provider()
+        session = Session([
+            Response(200, {"nativeBindingConfigured": True, "queryScope": "b" * 64}),
+            Response(503, {}),
+        ])
+        processor = self.load_postprocessor(module, session).SQLGenPostProcessor(
+            module.WrenUI(endpoint=self.delivery["uiEndpoint"]),
+        )
+        async def task(_):
+            return await processor.run(["SELECT id FROM native_table"], project_id="7")
+        with self.assertRaises(identity.NativeQueryPending):
+            await identity.run_native_ask(self.human_context(), task, None)
+        self.assertEqual(len(session.calls), 2)
 
     async def test_reads_rotation_without_cache_or_platform_token(self):
         session = Session([

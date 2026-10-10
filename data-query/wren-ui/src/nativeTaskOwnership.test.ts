@@ -910,9 +910,15 @@ describe('acknowledged native asking task persistence and observation', () => {
       expect(rows[0].queryId).toBe(queryId);
       expect(rows[0].detail.nativeScope).toEqual(nativeScope);
     });
-    adaptor.ask.mockImplementation(async (input) => {
+    adaptor.ask.mockImplementation(async (input, transport) => {
       expect(authorizeNative).toHaveBeenCalledWith(input.queryId);
       expect(rows[0].queryId).toBe(input.queryId);
+      expect(input.nativeHumanToken).toBeUndefined();
+      expect(transport).toMatchObject({
+        humanToken: 'fixture-human-token',
+        projectId: 7,
+      });
+      expect(JSON.stringify(rows)).not.toContain('fixture-human-token');
       throw new Error('lost create ACK');
     });
     try {
@@ -921,6 +927,7 @@ describe('acknowledged native asking task persistence and observation', () => {
         projectId: 7,
         nativeScope,
         authorizeNative,
+        nativeHumanToken: 'fixture-human-token',
       });
       expect(result.queryId).toBe(rows[0].queryId);
       expect(result.queryId).toMatch(/^[a-f0-9-]{36}$/);
@@ -955,6 +962,7 @@ describe('acknowledged native asking task persistence and observation', () => {
             identityScope: 'a'.repeat(64),
             metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
           },
+          nativeHumanToken: 'fixture-human-token',
           authorizeNative: async (queryId) => {
             await tracker.getAskingResult(queryId);
             polling = tracker.pollTasks();
@@ -1018,6 +1026,7 @@ describe('acknowledged native asking task persistence and observation', () => {
           threadResponseId: 21,
           nativeScope,
           authorizeNative: jest.fn(),
+          nativeHumanToken: 'fixture-human-token',
         }),
       ).rejects.toMatchObject({ status: 409 });
       expect(rows[0].queryId).toBe('original');
@@ -1061,6 +1070,7 @@ describe('acknowledged native asking task persistence and observation', () => {
           threadResponseId: 21,
           nativeScope,
           authorizeNative,
+          nativeHumanToken: 'fixture-human-token',
         });
         expect(result.queryId).not.toBe('original');
         expect(rows).toHaveLength(1);
@@ -1079,6 +1089,7 @@ describe('acknowledged native asking task persistence and observation', () => {
             threadResponseId: 21,
             nativeScope,
             authorizeNative,
+            nativeHumanToken: 'fixture-human-token',
           }),
         ).rejects.toMatchObject({ status: 409 });
         expect(adaptor.ask).toHaveBeenCalledTimes(1);
@@ -1113,6 +1124,7 @@ describe('acknowledged native asking task persistence and observation', () => {
       threadResponseId: 21,
       nativeScope,
       authorizeNative: jest.fn(),
+      nativeHumanToken: 'fixture-human-token',
     };
     try {
       repository.lockQuery.mockResolvedValueOnce({
@@ -1172,6 +1184,7 @@ describe('acknowledged native asking task persistence and observation', () => {
           previousTaskId: 9,
           threadResponseId: 21,
           nativeScope,
+          nativeHumanToken: 'fixture-human-token',
           authorizeNative: async () => {
             throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
           },
@@ -1226,6 +1239,7 @@ describe('acknowledged native asking task persistence and observation', () => {
         threadResponseId: 21,
         nativeScope,
         authorizeNative: jest.fn(),
+        nativeHumanToken: 'fixture-human-token',
       });
       finishObservation({
         status: AskResultStatus.FINISHED,

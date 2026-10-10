@@ -3,6 +3,7 @@ import { BaseRepository, IBasicRepository } from './baseRepository';
 import {
   camelCase,
   isPlainObject,
+  isEqual,
   mapKeys,
   mapValues,
   snakeCase,
@@ -20,7 +21,7 @@ export type AskingTaskDetail = (
   | (AskFeedbackResult & {
       adjustment?: boolean;
     })
-) & { nativeScope?: NativeAskingScope };
+) & { nativeScope?: NativeAskingScope; nativeQueries?: string[] };
 
 export interface AskingTask {
   id: number;
@@ -57,6 +58,12 @@ export interface IAskingTaskRepository extends IBasicRepository<AskingTask> {
     queryId: string,
     projectId: number,
     tx: Knex.Transaction,
+  ): Promise<AskingTask | null>;
+  registerNativeQuery(
+    queryId: string,
+    projectId: number,
+    scope: NativeAskingScope,
+    key: string,
   ): Promise<AskingTask | null>;
 }
 
@@ -115,11 +122,65 @@ export class AskingTaskRepository
     data: Partial<AskingTask>,
     tx?: Knex.Transaction,
   ) {
-    const [row] = await (tx ?? this.knex)(this.tableName)
-      .where({ id, query_id: queryId, project_id: projectId })
-      .update(this.transformToDBData(data))
-      .returning('*');
-    return row ? this.transformFromDBData(row) : null;
+    const update = async (transaction: Knex.Transaction) => {
+      const current = await this.lockQuery(id, queryId, projectId, transaction);
+      if (!current) return null;
+      const next =
+        data.detail && (!data.queryId || data.queryId === queryId)
+          ? {
+              ...data,
+              detail: {
+                ...data.detail,
+                ...(current.detail?.nativeQueries
+                  ? { nativeQueries: current.detail.nativeQueries }
+                  : {}),
+              },
+            }
+          : data;
+      const [row] = await transaction(this.tableName)
+        .where({ id, query_id: queryId, project_id: projectId })
+        .update(this.transformToDBData(next))
+        .returning('*');
+      return row ? this.transformFromDBData(row) : null;
+    };
+    return tx ? update(tx) : this.knex.transaction(update);
+  }
+
+  // Serialize callback registration with the original task's cancel/rerun and
+  // poll writers. An old AI job cannot add queries to a replacement task.
+  public async registerNativeQuery(
+    queryId: string,
+    projectId: number,
+    scope: NativeAskingScope,
+    key: string,
+  ) {
+    return this.knex.transaction(async (tx) => {
+      const row = await tx(this.tableName)
+        .where({ query_id: queryId, project_id: projectId })
+        .forUpdate()
+        .first();
+      if (!row) return null;
+      const current = this.transformFromDBData(row) as AskingTask;
+      if (!isEqual(current.detail?.nativeScope, scope)) return null;
+      const keys = current.detail.nativeQueries ?? [];
+      if (keys.includes(key)) return current;
+      if (
+        ![
+          'UNDERSTANDING',
+          'SEARCHING',
+          'PLANNING',
+          'GENERATING',
+          'CORRECTING',
+        ].includes(current.detail.status)
+      )
+        return null;
+      const detail = { ...current.detail, nativeQueries: [...keys, key] };
+      const [updated] = await tx(this.tableName)
+        .where({ id: current.id, query_id: queryId, project_id: projectId })
+        .update(this.transformToDBData({ detail }))
+        .returning('*');
+      return updated ? (this.transformFromDBData(updated) as AskingTask) : null;
+    });
   }
 
   public async lockQuery(

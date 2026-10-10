@@ -297,7 +297,11 @@ export default memo(function PromptResult(props: Props) {
   const { processState, data } = props;
 
   const getProcessStateComponent = makeProcessStateStrategy(data?.type);
-  const StateComponent = getProcessStateComponent(processState);
+  const StateComponent =
+    processState === PROCESS_STATE.STOPPED &&
+    props.error?.message === 'NATIVE_EXECUTION_UNKNOWN'
+      ? IntentionFinished
+      : getProcessStateComponent(processState);
 
   if (StateComponent === null) return null;
 

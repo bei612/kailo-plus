@@ -96,4 +96,5 @@ export interface PreviewSQLData {
   dryRun?: boolean;
   idempotencyKey?: string;
   idempotencyScope?: string;
+  nativeTaskId?: string;
 }
