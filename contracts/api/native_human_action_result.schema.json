@@ -4,10 +4,11 @@
   "title":"NativeHumanActionResult",
   "description":"Reference-only observation of the original HUMAN AE. Terminal status comes from original component-action audit after native/usage reconciliation, never from HTTP acceptance.",
   "type":"object","additionalProperties":false,
-  "required":["submission","inputReference"],
+  "required":["submission"],
   "properties":{
     "submission":{"$ref":"action_submission.schema.json"},
     "inputReference":{"$ref":"../domain/content_reference.schema.json"},
+    "inputJson":{"type":"string","description":"Original admitted canonical capability metadata input; exactly one input form, never a result body or a new execution authority."},
     "terminalStatus":{"$ref":"../enums/task_status.schema.json"},
     "nativeType":{"type":"string"},
     "nativeId":{"type":"string"},

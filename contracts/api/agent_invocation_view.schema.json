@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_invocation_view.schema.json",
+  "title": "AgentInvocationView",
+  "description": "原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invocationId", "actionExecutionId", "status", "cancelPending", "canReadTask", "createdAt", "updatedAt"],
+  "properties": {
+    "invocationId": {"type": "string", "format": "uuid"},
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "runtimeTurnId": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["CREATED", "DISPATCHING", "RUNNING", "UNKNOWN", "COMPLETED", "FAILED", "CANCELED"]},
+    "cancelPending": {"type": "boolean"},
+    "canReadTask": {"type": "boolean", "description": "当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。"},
+    "observation": {"$ref": "../enums/reason_code.schema.json"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"}
+  }
+}

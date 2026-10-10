@@ -91,6 +91,31 @@ type NativeWriteDelivery struct {
 	} `json:"write"`
 }
 
+// Delete uses the same controlled binding identity and native Task store as
+// the other actions. These fields are approved action metadata, not policy.
+type NativeDeleteDelivery struct {
+	NativeActorDelivery
+	WorkspaceID string `json:"workspaceId"`
+	Delete      struct {
+		NativeJobID                 string `json:"nativeJobId"`
+		BindingGeneration           int64  `json:"bindingGeneration"`
+		ActionVersion               int64  `json:"actionVersion"`
+		NativeType                  string `json:"nativeType"`
+		ResultExposurePolicyID      string `json:"resultExposurePolicyId"`
+		ResultExposurePolicyVersion int64  `json:"resultExposurePolicyVersion"`
+	} `json:"delete"`
+}
+
+func NativeDeleteAuthority(request *http.Request, raw, operation string) (NativeDeleteDelivery, map[string]interface{}, map[string]interface{}, string, error) {
+	var delivery NativeDeleteDelivery
+	if config.Get(request.Context(), "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil || delivery.Delete.NativeJobID == "" || strings.TrimSpace(delivery.Delete.NativeJobID) != delivery.Delete.NativeJobID {
+		return delivery, nil, nil, "", errors.WithStack(errors.StatusForbidden)
+	}
+	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
+		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion)
+	return delivery, claims, target, arguments, err
+}
+
 // TakeNativeProof removes credentials before any original handler diagnostics.
 // No proof preserves the original independent native UI and its own ACLs.
 func TakeNativeProof(request *http.Request) (string, bool, error) {
@@ -115,9 +140,20 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil || delivery.MaxResponseBytes <= 0 || int64(len(raw)) > delivery.MaxResponseBytes || delivery.Write.NativeJobID == "" || strings.TrimSpace(delivery.Write.NativeJobID) != delivery.Write.NativeJobID {
 		return delivery, nil, nil, "", refused
 	}
+	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
+		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion)
+	return delivery, claims, target, arguments, err
+}
+
+func nativeMutationAuthority(request *http.Request, raw, operation string, delivery NativeActorDelivery, workspace, action string, version int64, policy string, policyVersion int64) (map[string]interface{}, map[string]interface{}, string, error) {
+	refused := errors.WithStack(errors.StatusForbidden)
+	ctx := request.Context()
+	if delivery.MaxResponseBytes <= 0 || int64(len(raw)) > delivery.MaxResponseBytes || version <= 0 || policyVersion <= 0 || !NativeActorUUID(policy) {
+		return nil, nil, "", refused
+	}
 	transport, ok := claim.FromContext(ctx)
 	if !ok || !NativeActorUUID(delivery.InstanceServiceUUID) || transport.Subject != delivery.InstanceServiceUUID {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	data, err := base64.RawURLEncoding.DecodeString(raw)
 	var proof struct {
@@ -127,40 +163,40 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err != nil || decoder.Decode(&proof) != nil || decoder.Decode(new(interface{})) != io.EOF {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	claims, target, err := delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
-	if err != nil || claims["action_key"] != "file_storage.write@v1" || claims["tenant_id"] != delivery.TenantID || !NativeActorUUID(text(claims, "target_id")) || (delivery.WorkspaceID != "" && claims["workspace_id"] != delivery.WorkspaceID) || claims["action_definition_version"] != float64(delivery.Write.ActionVersion) || claims["result_exposure_policy_id"] != delivery.Write.ResultExposurePolicyID || claims["result_exposure_policy_version"] != float64(delivery.Write.ResultExposurePolicyVersion) {
-		return delivery, nil, nil, "", refused
+	if err != nil || claims["action_key"] != action || claims["tenant_id"] != delivery.TenantID || !NativeActorUUID(text(claims, "target_id")) || (workspace != "" && claims["workspace_id"] != workspace) || claims["action_definition_version"] != float64(version) || claims["result_exposure_policy_id"] != policy || claims["result_exposure_policy_version"] != float64(policyVersion) {
+		return nil, nil, "", refused
 	}
 	for _, key := range []string{"operation_id", "action_execution_id", "actor_principal_id", "initiating_human_principal_id"} {
 		if !NativeActorUUID(text(claims, key)) {
-			return delivery, nil, nil, "", refused
+			return nil, nil, "", refused
 		}
 	}
 	if operation == "execute" && (!NativeActorUUID(text(claims, "idempotency_key")) || !NativeActorUUID(text(claims, "external_execution_id"))) {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	kind := "HUMAN"
 	if agent, exists := claims["agent_principal_id"]; exists {
 		kind = "AGENT"
 		if agent != claims["actor_principal_id"] || !NativeActorUUID(text(claims, "delegation_id")) {
-			return delivery, nil, nil, "", refused
+			return nil, nil, "", refused
 		}
 	} else if claims["actor_principal_id"] != claims["initiating_human_principal_id"] {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	userID, err := delivery.User(text(claims, "tenant_id"), text(claims, "actor_principal_id"), kind)
 	if err != nil {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	user, err := ResolveNativeUser(ctx, userID)
 	if err != nil {
-		return delivery, nil, nil, "", refused
+		return nil, nil, "", refused
 	}
 	native := WithImpersonate(ctx, user)
 	*request = *request.WithContext(native)
-	return delivery, claims, target, proof.ArgumentsJSON, nil
+	return claims, target, proof.ArgumentsJSON, nil
 }
 
 func text(value map[string]interface{}, key string) string {

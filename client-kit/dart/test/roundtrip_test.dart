@@ -9,23 +9,96 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('task reports preserve native activity evidence and legacy absence', () {
-    final rows = jsonDecode(File('../../contracts/samples/task-state-reports.sample.json').readAsStringSync()) as List;
-    expect(rows.map((row) => TaskStateReport.fromJson(row).toJson()).toList(), rows);
-  });
-  test('file storage revision IO preserves exact versions, empty text and binary', () {
-    final rows = jsonDecode(File('../../contracts/samples/file-storage-revision-io.sample.json').readAsStringSync()) as List;
-    for (final row in rows) {
-      expect(FileStorageReadInput.fromJson(row['readInput']).toJson(), row['readInput']);
-      expect(FileStorageWriteInput.fromJson(row['readInput']).toJson(), row['readInput']);
-      expect(FileStorageWriteOutput.fromJson({}).toJson(), {});
-      expect(FileStorageReadOutput.fromJson(row['readOutput']).toJson(), row['readOutput']);
-      expect(FileStorageListRevisionsInput.fromJson(row['listRevisionsInput']).toJson(), row['listRevisionsInput']);
-      expect(FileStorageListRevisionsOutput.fromJson(row['listRevisionsOutput']).toJson(), row['listRevisionsOutput']);
-      expect(FileStorageExportInput.fromJson(row['exportInput']).toJson(), row['exportInput']);
-      expect(FileStorageExportOutput.fromJson(row['exportOutput']).toJson(), row['exportOutput']);
+  test('Agent sessions and native control preserve wire and legacy', () {
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/agent-session-control.sample.json',
+      ).readAsStringSync(),
+    );
+    expect(
+      AgentSessionPage.fromJson(sample['sessions']).toJson(),
+      sample['sessions'],
+    );
+    expect(
+      AgentInvocationPage.fromJson(sample['invocations']).toJson(),
+      sample['invocations'],
+    );
+    for (final key in ['control', 'legacy']) {
+      expect(ComponentActionInput.fromJson(sample[key]).toJson(), sample[key]);
     }
+    expect(
+      FileStorageDeleteInput.fromJson(sample['deleteInput']).toJson(),
+      sample['deleteInput'],
+    );
+    expect(
+      FileStorageDeleteOutput.fromJson(sample['deleteOutput']).toJson(),
+      sample['deleteOutput'],
+    );
+    expect(
+      NativeHumanActionResult.fromJson(sample['result']).toJson(),
+      sample['result'],
+    );
   });
+  test('task reports preserve native activity evidence and legacy absence', () {
+    final rows =
+        jsonDecode(
+              File(
+                '../../contracts/samples/task-state-reports.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      rows.map((row) => TaskStateReport.fromJson(row).toJson()).toList(),
+      rows,
+    );
+  });
+  test(
+    'file storage revision IO preserves exact versions, empty text and binary',
+    () {
+      final rows =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/file-storage-revision-io.sample.json',
+                ).readAsStringSync(),
+              )
+              as List;
+      for (final row in rows) {
+        expect(
+          FileStorageReadInput.fromJson(row['readInput']).toJson(),
+          row['readInput'],
+        );
+        expect(
+          FileStorageWriteInput.fromJson(row['readInput']).toJson(),
+          row['readInput'],
+        );
+        expect(FileStorageWriteOutput.fromJson({}).toJson(), {});
+        expect(
+          FileStorageReadOutput.fromJson(row['readOutput']).toJson(),
+          row['readOutput'],
+        );
+        expect(
+          FileStorageListRevisionsInput.fromJson(
+            row['listRevisionsInput'],
+          ).toJson(),
+          row['listRevisionsInput'],
+        );
+        expect(
+          FileStorageListRevisionsOutput.fromJson(
+            row['listRevisionsOutput'],
+          ).toJson(),
+          row['listRevisionsOutput'],
+        );
+        expect(
+          FileStorageExportInput.fromJson(row['exportInput']).toJson(),
+          row['exportInput'],
+        );
+        expect(
+          FileStorageExportOutput.fromJson(row['exportOutput']).toJson(),
+          row['exportOutput'],
+        );
+      }
+    },
+  );
   test('Web search preserves original operators and optional absence', () {
     final sample =
         jsonDecode(
@@ -176,10 +249,13 @@ void main() {
         sample['result'],
       );
       expect(
-        NativeHumanActionRequest.fromJson(sample['readReceiptRequest']).toJson(),
+        NativeHumanActionRequest.fromJson(
+          sample['readReceiptRequest'],
+        ).toJson(),
         sample['readReceiptRequest'],
       );
-      final legacy = Map<String, dynamic>.from(sample['result'])..remove('readAdmission');
+      final legacy = Map<String, dynamic>.from(sample['result'])
+        ..remove('readAdmission');
       expect(NativeHumanActionResult.fromJson(legacy).toJson(), legacy);
       expect(
         NativeHumanActionRequest.fromJson(sample['resourceRequest']).toJson(),
@@ -742,7 +818,12 @@ void main() {
       equals(original),
     );
     original[0]['runs'][0].remove('executionTrace');
-    expect(original.map((page) => AutomationRunPage.fromJson(page).toJson()).toList(), original);
+    expect(
+      original
+          .map((page) => AutomationRunPage.fromJson(page).toJson())
+          .toList(),
+      original,
+    );
   });
   test('manual run capability and deleted definition preserve wire fields', () {
     final original =

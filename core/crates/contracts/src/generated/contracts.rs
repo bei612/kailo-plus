@@ -154,6 +154,25 @@ pub struct ApplicationModelAdmission {
     pub traceparent: String,
 }
 
+/// Delete selected native objects in the admitted Resource using the original
+/// recycle/permanent-delete choice. Each native object identity must be independently
+/// authorized and retained in the native first-dispatch claim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageDeleteInput {
+    pub native_object_refs: Vec<String>,
+
+    pub remove_permanently: bool,
+
+    pub resource_id: String,
+}
+
+/// Metadata-only result. Success requires all selected native identities to have linked
+/// durable deletion or recycle acknowledgements; an accepted job, Finished status or absent
+/// current object is not terminal evidence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileStorageDeleteOutput {}
+
 /// Export exactly the authorized typed native file revision, including empty or non-UTF-8
 /// files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1786,14 +1805,21 @@ pub struct CapabilityContractRegistrationResourceTypeFamily {
     pub type_key: String,
 }
 
-/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-/// Core/Temporal。
+/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+/// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+/// 仍校验原目标、能力 schema、审批和用量。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentActionClass {
     pub action_version: i64,
 
-    pub input_reference: ReferenceElement,
+    /// Canonical JSON for the existing registered capability input schema; mutually exclusive
+    /// with inputReference, validated before AE admission.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_reference: Option<ReferenceElement>,
 
     pub result_exposure_policy_id: String,
 
@@ -2771,6 +2797,95 @@ pub struct AgentInstallationViewReadPermission {
     pub requested: bool,
 }
 
+/// 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
+/// prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInvocationPage {
+    pub invocations: Vec<InvocationElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+/// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvocationElement {
+    pub action_execution_id: String,
+
+    pub cancel_pending: bool,
+
+    /// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+    pub can_read_task: bool,
+
+    pub created_at: String,
+
+    pub invocation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+
+    pub status: InvocationStatus,
+
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum InvocationStatus {
+    #[serde(rename = "CANCELED")]
+    Canceled,
+
+    #[serde(rename = "COMPLETED")]
+    Completed,
+
+    #[serde(rename = "CREATED")]
+    Created,
+
+    #[serde(rename = "DISPATCHING")]
+    Dispatching,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "RUNNING")]
+    Running,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
+/// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+/// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInvocationView {
+    pub action_execution_id: String,
+
+    pub cancel_pending: bool,
+
+    /// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+    pub can_read_task: bool,
+
+    pub created_at: String,
+
+    pub invocation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observation: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+
+    pub status: InvocationStatus,
+
+    pub updated_at: String,
+}
+
 /// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
 /// snapshot，不是严格存量权威。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2869,6 +2984,79 @@ pub enum AgentMemoryReadViewState {
 
     #[serde(rename = "UNREADABLE")]
     Unreadable,
+}
+
+/// 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
+/// 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionPage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+
+    pub sessions: Vec<SessionElement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionElement {
+    pub agent_version_asset_id: String,
+
+    pub created_at: String,
+
+    pub installation_resource_id: String,
+
+    pub projection_generation: i64,
+
+    /// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+    pub root_event_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_thread_id: Option<String>,
+
+    pub status: SessionStatus,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SessionStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "CLOSED")]
+    Closed,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+
+    #[serde(rename = "STARTING")]
+    Starting,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionView {
+    pub agent_version_asset_id: String,
+
+    pub created_at: String,
+
+    pub installation_resource_id: String,
+
+    pub projection_generation: i64,
+
+    /// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+    pub root_event_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_thread_id: Option<String>,
+
+    pub status: SessionStatus,
+
+    pub workspace_id: String,
 }
 
 /// DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
@@ -5169,7 +5357,13 @@ pub struct NativeHumanResourceQuery {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHumanActionResult {
-    pub input_reference: ReferenceElement,
+    /// Original admitted canonical capability metadata input; exactly one input form, never a
+    /// result body or a new execution authority.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_reference: Option<ReferenceElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_id: Option<String>,
@@ -7091,14 +7285,21 @@ pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
     pub type_key: String,
 }
 
-/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-/// Core/Temporal。
+/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+/// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+/// 仍校验原目标、能力 schema、审批和用量。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentActionInput {
     pub action_version: i64,
 
-    pub input_reference: ReferenceElement,
+    /// Canonical JSON for the existing registered capability input schema; mutually exclusive
+    /// with inputReference, validated before AE admission.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_reference: Option<ReferenceElement>,
 
     pub result_exposure_policy_id: String,
 

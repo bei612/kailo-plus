@@ -470,6 +470,14 @@ pub fn router(state: BffState) -> Router {
             get(crate::agent_installation_query::get),
         )
         .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/sessions",
+            get(crate::agent_session_query::sessions),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/invocations",
+            get(crate::agent_session_query::invocations),
+        )
+        .exposed_route(
             "/api/v1/agent-installations/{resource_id}/delegations",
             get(crate::delegation_query::list),
         )

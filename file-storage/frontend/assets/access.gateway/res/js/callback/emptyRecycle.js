@@ -18,8 +18,8 @@
  * The latest code can be found at <https://pydio.com>.
  */
 
-import PydioApi from "pydio/http/api";
-import {RestDeleteNodesRequest, TreeServiceApi, TreeNode} from 'cells-sdk'
+import {RestDeleteNodesRequest, TreeNode} from 'cells-sdk'
+import nativeDelete from './nativeDelete';
 
 export default function (pydio) {
 
@@ -32,11 +32,11 @@ export default function (pydio) {
             validCallback:()=>{
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();
                 const deleteRequest = new RestDeleteNodesRequest();
-                const api = new TreeServiceApi(PydioApi.getRestClient());
                 const n = new TreeNode();
                 n.Path = slug + '/recycle_bin';
                 deleteRequest.Nodes = [n];
-                api.deleteNodes(deleteRequest).then(r => {
+                nativeDelete(pydio, deleteRequest).then(r => {
+                    if (!r) return;
                     if (r.DeleteJobs){
                         r.DeleteJobs.forEach(j => {
                             pydio.UI.displayMessage('SUCCESS', j.Label);

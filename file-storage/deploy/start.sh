@@ -88,7 +88,7 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads'}, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads', 'delete'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
@@ -118,6 +118,15 @@ try:
             for meter in read['usageMeasurements']:
                 require(isinstance(meter, dict) and set(meter) == {'meterKey', 'quantitySource'} and isinstance(meter['meterKey'], str) and meter['meterKey'] != '' and meter['meterKey'] not in meters and meter['quantitySource'] in ('COUNT', 'CONTENT_BYTES'), 'native read meters must match the approved mapping')
                 meters.add(meter['meterKey'])
+        if 'delete' in delivery:
+            deletion = delivery['delete']
+            require(isinstance(deletion, dict) and set(deletion) == {'nativeJobId', 'bindingGeneration', 'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native delete metadata must match its original Task/HUMAN consumers')
+            for key in ('bindingGeneration', 'actionVersion', 'resultExposurePolicyVersion'):
+                require(type(deletion[key]) is int and deletion[key] > 0, 'native delete versions must come from the approved binding')
+            for key in ('nativeJobId', 'nativeType'):
+                require(isinstance(deletion[key], str) and deletion[key].strip() == deletion[key] != '', 'native delete identifiers must be delivered')
+            canonical_uuid(deletion['resultExposurePolicyId'])
+            require(deletion['nativeJobId'] not in (delivery.get('read', {}).get('nativeJobId'), delivery.get('write', {}).get('nativeJobId')), 'native delete task owner must be distinct')
         for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
             require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
         for key in ('maxResponseBytes', 'clientSecretMaxBytes'):
@@ -208,6 +217,14 @@ try:
         require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
         require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
         require(any(action['actionKey'] == 'file_storage.write@v1' and action['actionVersion'] == native['write']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
+    if 'delete' in conf:
+        native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
+        require(conf['delete']['nativeJobId'] == native['delete']['nativeJobId'])
+        require(all(conf[key] == native[key] for key in ('bindingId', 'tenantId', 'nativeRootRef')))
+        require(conf.get('workspaceId') == native.get('workspaceId'))
+        require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
+        require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
+        require(any(action['actionKey'] == 'file_storage.delete@v1' and action['actionVersion'] == native['delete']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     for key in ('cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile'):
         delivered(conf[key])
     for item in conf['management']['validation']['secretDeliveries']:

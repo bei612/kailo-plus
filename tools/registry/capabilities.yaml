@@ -3,6 +3,8 @@ capabilities:
 - id: agent.definition_management
   exposure: end_user
   routes:
+  - /api/v1/agent-installations/{resource_id}/sessions
+  - /api/v1/agent-installations/{resource_id}/invocations
   - /api/v1/agent-definitions
   - /api/v1/agent-definitions/{resource_id}
   - /api/v1/agent-versions/{asset_id}

@@ -80,6 +80,54 @@ func TestNewTaskFromEvent(t *testing.T) {
 	})
 }
 
+func TestNativeDeleteAcknowledgementsRemainInOriginalClaimedTask(t *testing.T) {
+	job := &jobs.Job{ID: "admitted-delete-child", Metadata: map[string]string{jobstore.NativeDeleteJob: "original-coordinator", jobstore.NativeDeleteTask: "original-operation"}}
+	action := &jobs.Action{ID: "actions.tree.delete"}
+	task := NewTaskFromEvent(context.Background(), job, &jobs.JobTriggerEvent{JobID: job.ID, RunNow: true, RunTaskId: job.ID})
+	for _, id := range []string{"selected-one", "selected-two"} {
+		body, err := protojson.Marshal(&tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: id}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		output := &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeNodeMutationResult: "true"}}}}
+		if err := task.AppendResult(action, output); err != nil {
+			t.Fatal(err)
+		}
+		if err := task.AppendResult(action, output); err != nil {
+			t.Fatal("same ACK was not idempotent", err)
+		}
+	}
+	stored := task.Clone()
+	if len(stored.ActionsLogs) != 3 || !jobstore.TaskHasClaim(stored) {
+		t.Fatal("claim or one-per-selected-node ACK was lost", stored)
+	}
+	for _, mutation := range []struct {
+		name    string
+		event   *tree.NodeChangeEvent
+		success bool
+		action  *jobs.Action
+	}{
+		{"wrong-event", &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_CREATE, Source: &tree.Node{Uuid: "other"}}, true, action},
+		{"negative-ack", &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: "other"}}, false, action},
+		{"missing-id", &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE}, true, action},
+		{"wrong-action", &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: "other"}}, true, &jobs.Action{ID: "actions.tree.other"}},
+		{"changed-same-id", &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: "selected-one", Path: "changed"}}, true, action},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			body, err := protojson.Marshal(mutation.event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := task.AppendResult(mutation.action, &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{Success: mutation.success, JsonBody: body, Vars: map[string]string{jobstore.NativeNodeMutationResult: "true"}}}}); err == nil {
+				t.Fatal("invalid ACK persisted")
+			}
+			if !proto.Equal(task.Clone(), stored) {
+				t.Fatal("failed evidence check changed original Task")
+			}
+		})
+	}
+}
+
 type nativeClaimService struct {
 	grpc.ClientConnInterface
 	put func(context.Context, *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error)

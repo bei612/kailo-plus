@@ -1174,3 +1174,115 @@ Job 还不能当作已关联的 ExternalExecution。完整 delete@v1、七必选
 本批没有启动新镜像或 full、部署或激活绑定；提交由主线程集中处理。
 这些检查证明绕行被拒绝，不证明完整 delete/share、原生后台控制治理、
 三用户业务交互、FILE_STORAGE release 七必选或 UNKNOWN 对账门禁已闭合。
+
+### 2026-10-10 原删除/回收 HUMAN—adapter—原 Task 消费接线
+
+本批沿固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`，
+`frontend/assets/access.gateway/res/js/callback/deleteAction.js`、`emptyRecycle.js`
+与 `scheduler/jobs/userspace/userspace.go::DeleteNodesTask` 的原删除/回收语义。
+保留确认框、永久删除选择、回收站规则与原 tree delete/copymove 执行器；
+不以复制上游或该源码检查点声明七必选批准或部署完成。
+
+四步影响结论如下：
+
+1. 权威为 `.design/03` §6 的 HUMAN APPLICATION、ADR-12 §7 原
+   `{target,input}` 及 `.design/18` 原写动作接缝。本批补充既有 delete 能力
+   输入 schema（resourceId、所选 UUID、removePermanently），不把原生控制参数
+   伪装成有正文 revision 的 ContentReference。Core 通用 `inputJson` 接受
+   能力 schema 验证的 UUID/布尔/整数控制对象，保持旧 ContentReference 分支；
+   不允许 SQL、prompt、正文或任意字符串写入 AE/Temporal。四侧与 Core
+   验证由主线程集中收口，不以 Cells 检查替代。
+2. 原 UI `/tree/stats` 经本人原 ACL 读取后取得投递的非秘密 binding/generation；
+   `/tree/delete` 先观察相同 HUMAN key，再 resolve 当前原 Resource、核原 UUID
+   与作用域后提交。多选不能创造共同 Resource；不存在真实已注册 root 即拒绝。
+   adapter 原 HTTP/MCP 复用同一 executeDelete，受控 jobID/COUNT 用量配置没有
+   默认值。后台先以原 DAO ClaimTask 持久化 coordinator，原 ActionOutput
+   冻结 child Job 定义与确定性 child TaskID；Task ID 全局唯一，child 使用
+   自身 Job ID，不能复用 coordinator key。原 ClaimJob 与 bolt/mongo PutJob
+   拒绝覆盖或移除受管标记，原 Queue 只接受冻结原 Job 的 RunTaskId。
+3. 真实副作用仍在 `DeleteAction.Run` / `CopyMoveAction.Run`；持久化每个所选
+   UUID 的原 ActionOutput ACK，观察器同时核原 Finished、EndTime、owner、
+   Job digest、selector、所有节点 ACK 与回收目标，不靠空 selector/节点消失
+   判成功。共用 `common/nodes/copy-move.go::CopyMoveNodes` 还被
+   `common/nodes/sync/handler-sync-folder-tasks.go` 与
+   `scheduler/actions/idm/clean-user-data.go` 消费；本批传播递归 403/流错误、
+   真实 UpdateNode/DeleteNode ACK，并删除 source 删除结果不明后删除 target
+   的危险补偿。固定 `common/nodes/core/handler-exec-struct.go::CreateNode` 与
+   `handler-exec-flat.go::CreateNode` 以 Node 返回成功、Success 默认 false，
+   因此只校原 UUID/路径，不误拒合法原版回复；MetaServer.CreateNode 及
+   TreeServer.UpdateNode/DeleteNode 的 Success 则由原生产者实际设置。
+4. 浏览器 localStorage 仅保存无秘密的原请求 key/所选 UUID 与身份、仓库、
+   tenant/binding/generation 域；存储失败在派发前拒绝。刷新后观察同 key，
+   已不存在路径不重新提交新操作；换代保留旧 UNKNOWN，不清 key 重发。
+   202 不清选择，只有 Core 确认 COMPLETED 或原 FAILED/CANCELED 终态才
+   退休该请求。Task 部分 ACK、未知回复、已发副作用后断连均 UNKNOWN；
+   空输入/重复 UUID/错资源/未知字段先拒绝。鉴权拒绝沿既有 FORBIDDEN；
+   原请求/证据冲突沿 CONFLICT/INVALID_ARGUMENT；派发及终态不明保留
+   UNKNOWN，不将超时映射成已失败或零用量成功。
+
+新增 `delete.bindingGeneration` 是既有受控配置投递的运行期非秘密字段，
+只用于 UI 意图域，不是服务端授权。真实 binding/generation、身份、scope、
+quota、审批与审计仍由原 Core/PEP 执行，不开放任意原生后台动作。
+
+原 Go SDK `kailo-cells-native-check-lftow7` 复核 4 CPU、8 GiB memory/swap，
+模块、构建缓存、TMPDIR 与 CELLS_WORKING_DIR 仍在 Data；未新建镜像。
+原 compile-only 73849 退出 0，仅证明此前快照编译，不是最终业务验收。
+最终快照定向命令为 `go test -count=1 -run
+'TestNativeDelete|TestDeleteAction|TestTask|TestReadNative|TestPutTask|TestClaim|TestNativeActor'
+./common/auth ./common/nodes ./scheduler/jobs/... ./scheduler/tasks
+./scheduler/actions/tree ./gateway/restv2 ./data/tree/rest`，句柄 20673 退出 0；
+grpc 39.214s、tasks 0.017s、tree 0.016s、gateway 0.011s。其他包明确
+`[no tests to run]` / `[no test files]`，不称已执行；Mongo 仅编译，未做真实 Mongo
+数据库演练。原日志位于
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-delete-governed.WFcXfh/`。
+
+实现后在 SDK 私有生产 `NativeDeleteTerminal` 中实际去掉所选 UUID ACK
+完整性约束，原 `TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements`
+立即抓住 missing-ack 与 partial-ack 被错误结成 terminalAt=123，句柄 7558
+退出 1（grpc 34.974s）。随后恢复该文件原字节，原整组定向命令句柄
+44493 退出 0（grpc 7.752s、tasks 0.017s、tree 0.015s、gateway 0.011s）。
+上述 Go 目录内原日志及 SHA-256 为：
+
+- `compile.log`：`2b425ddf137100ba81bd027154d1fb6883668fcc5dd01c4a70882ada1a3b10cf`；
+- `positive-final.log`：`12c8a4c24fea7f35e64d85ab664f260096aeeeb5d426d482f453b2e1864b4a74`；
+- `negative-acks.log`：`2598d701a1a7624f94079ce1135bd3b0fe048b18aa9eda35d3aca0617bd37efc`；
+- `restored-final.log`：`4663815d009870859386d9e8245d3b40f81f088417393bfac50854fab0e9015e`。
+
+Mongo 并发清理边界另外核对实际源码：DeleteJob 的前置 Count 不是保护依据，
+真正 DeleteMany 保留原 `claimMarkerPath:{$ne:"true"}` 条件；即使其间新增
+ClaimTask，该 claim 也不能被删。最后 DeleteOne 同时排除两个受管 metadata
+标记，原 PutTask 的日志 CAS 与 ValidateTaskUpdate 禁止移除第 0 个 claim。
+`go.mod` 固定 mongo-driver v1.17.9 的 DefaultStructTagParser 默认将字段名
+转小写；mongoTask 的匿名 Task 未标 inline，protobuf 结构没有 bson tag，
+原 mongodb 连接也未启用 JSON tag fallback，故原
+`task.actionslogs.0.inputmessage.outputchain.0.vars.X-Pydio-Task-Create-Only`
+路径与实际默认编码一致。这是源码核对，未冒充真实 Mongo 并发实测。
+
+Node SDK `kailo-cells-onlyoffice-node-bcmhrj` 同为 4 CPU/8 GiB，原空闲进程
+仅 sleep。首次 72522 退出 1：复用 setup 会同时登记原检查，但窄快照缺原 UI
+文件且旧 node_modules 无 MCP SDK；原失败日志保留，未计通过。随后原锁
+`npm ci --offline --ignore-scripts --no-audit --no-fund` 退出 0，复用 Data 缓存
+安装 97 项，无新版本、无联网安装。最终只选择本批 9 个父场景与其子场景，
+`node --test --test-name-pattern='governed native deletion|delete observation|native delete uses|delete refuses|original delete retains|a pending old|unreadable or unwritable|pending observation|only original Core'
+file-storage/adapter/test/native-delete.test.mjs` 正向及还原均 32/32、退出 0。
+真实删除 adapter `execution.idempotencyKey` 比较后，wrong-key 返回 200 被
+检查抓住，反证退出 1；真实改为忽略已有浏览器意图后 4 场景失败、退出 1。
+两个生产文件按私有正式字节还原后复验，不以模拟响应的拒绝当生产反证。
+Node 原日志目录为
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/cells-onlyoffice-check.bCmhrJ/delete-governed.hb2FHx/`：
+
+- `adapter-positive.log`（首次失败）：`9d8092723cbf5fb92df4c630df78bd9af0675edf3886f5fcee9229d9f097d400`；
+- `adapter-positive-final.log`：`b4e676d480aed76e658e001b76546bc5853d564b9c809ec4eab7697f8a746429`；
+- `adapter-negative-key.log`：`a4800e316f83faf5489a19d51cccf16a31c4d0ab0436e4c23ffa5fab196cd95a`；
+- `adapter-negative-intent.log`：`2fd6d533d58195532237ac12d5261da52b94a3c062f8dd3a72fd2770a37b7613`；
+- `adapter-restored.log`：`954852bbf50e85754aef6bce0240d4c887457b28e7f7838a5b22574bcaf32c44`。
+
+发布阻断仍明确存在：fresh PEP 已覆盖 coordinator 持久化、首次原生 metadata、
+PutJob、broker 派发及响应边界，但异步 child `scheduler/tasks/task.go::Queue`
+只检查原已冻结准入与 create-only claim，之后 `DeleteAction.Run` /
+`CopyMoveAction.Run` 仍沿 native ACL，不等于延迟执行前再次向平台在线复核
+撤权。部分副作用后无 ACK 的 UNKNOWN 没有凭空产生补偿/重放/零用量终态。
+因此本批不激活 release/binding，不宣称 delete 全治理、七必选、目标 CAS、
+三用户真实端到端或 Cells→WeKnora 已验收；原 UI 视觉截图和实际绑定审批
+运行未执行。本节只计源码接线及上述受限消费者证据，后续沿已有 PEP/绑定
+链闭合延迟执行门禁，不新建执行或终态权威。

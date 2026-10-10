@@ -12,6 +12,7 @@ mod agent_memory;
 mod agent_policy;
 mod agent_runtime;
 mod agent_session;
+mod agent_session_query;
 mod agent_task;
 mod agent_tool;
 mod agent_tool_mcp;

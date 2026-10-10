@@ -77,9 +77,13 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 	if err := value.Scan(&delivery); err != nil {
 		return errors.WithStack(errors.InvalidParameters)
 	}
+	var deleteDelivery auth.NativeDeleteDelivery
+	if err := value.Scan(&deleteDelivery); err != nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
 	// An optional, absent write Job preserves the original admission-only
 	// delivery. The native execute consumer still refuses without that Job ID.
-	if delivery.Read == nil && delivery.Write.NativeJobID == "" {
+	if delivery.Read == nil && delivery.Write.NativeJobID == "" && deleteDelivery.Delete.NativeJobID == "" {
 		return nil
 	}
 	var expected []*proto.Job
@@ -98,6 +102,16 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 			return errors.WithStack(errors.InvalidParameters)
 		}
 		expected = append(expected, jobs.NativeWriteJob(write.NativeJobID))
+	}
+	deletion := deleteDelivery.Delete
+	if deletion.NativeJobID != "" {
+		if strings.TrimSpace(deletion.NativeJobID) != deletion.NativeJobID || deletion.ActionVersion <= 0 ||
+			deletion.NativeType == "" || strings.TrimSpace(deletion.NativeType) != deletion.NativeType ||
+			!auth.NativeActorUUID(deletion.ResultExposurePolicyID) || deletion.ResultExposurePolicyVersion <= 0 ||
+			deletion.NativeJobID == write.NativeJobID || (delivery.Read != nil && deletion.NativeJobID == delivery.Read.NativeJobID) {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		expected = append(expected, jobs.NativeReadJob(deletion.NativeJobID))
 	}
 	deadline, err := time.ParseDuration(delivery.RequestTimeout)
 	if err != nil || deadline <= 0 {
@@ -168,8 +182,16 @@ func (j *JobsHandler) PutJob(ctx context.Context, request *proto.PutJobRequest) 
 	}
 
 	log.Logger(ctx).Debug("Scheduler PutJob", zap.Any("job", request.Job))
-	if err := store.PutJob(job); err != nil {
-		return nil, err
+	var putErr error
+	if jobs.IsNativeDeleteJob(job) {
+		// An admitted child is a one-shot definition. A lost ACK is observed
+		// via its persisted coordinator, never overwritten or started again.
+		putErr = store.ClaimJob(ctx, job)
+	} else {
+		putErr = store.PutJob(job)
+	}
+	if putErr != nil {
+		return nil, putErr
 	}
 
 	response := &proto.PutJobResponse{}

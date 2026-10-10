@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_session_view.schema.json",
+  "title": "AgentSessionView",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "workspaceId", "rootEventId", "projectionGeneration", "agentVersionAssetId", "status", "createdAt"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "rootEventId": {"type": "string", "minLength": 1, "description": "既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。"},
+    "projectionGeneration": {"type": "integer", "minimum": 1},
+    "agentVersionAssetId": {"type": "string", "format": "uuid"},
+    "runtimeThreadId": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["PENDING", "STARTING", "ACTIVE", "UNKNOWN", "CLOSED"]},
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}

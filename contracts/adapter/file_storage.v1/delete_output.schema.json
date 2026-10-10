@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/delete_output.schema.json",
+  "title": "FileStorageDeleteOutput",
+  "description": "Metadata-only result. Success requires all selected native identities to have linked durable deletion or recycle acknowledgements; an accepted job, Finished status or absent current object is not terminal evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

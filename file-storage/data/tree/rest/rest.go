@@ -67,10 +67,27 @@ func (h *Handler) Filter() func(string) string {
 }
 
 func (h *Handler) BulkStatNodes(req *restful.Request, resp *restful.Response) error {
+	var bulkRequest rest.GetBulkMetaRequest
+	if err := req.ReadEntity(&bulkRequest); err != nil {
+		return err
+	}
+	// Use the original MetaService loader, including native resource ACLs.
+	// The extra header identifies only the browser intent's delivery domain.
+	nn, pagination, err := h.LoadNodes(req.Request.Context(), &bulkRequest, tree.Flags{}, false)
+	if err != nil {
+		return err
+	}
+	output := &rest.BulkMetaResponse{Pagination: pagination}
+	for _, node := range nn {
+		output.Nodes = append(output.Nodes, node.WithoutReservedMetas())
+	}
+	if domain, err := nativeDeleteDomain(req); err != nil {
+		return err
+	} else if domain != "" {
+		resp.Header().Set("X-Kailo-Native-Delete-Binding", domain)
+	}
 
-	// This is exactly the same a MetaService => BulkStatNodes
-	return h.GetBulkMeta(req, resp)
-
+	return resp.WriteEntity(output)
 }
 
 func (h *Handler) HeadNode(req *restful.Request, resp *restful.Response) error {
@@ -114,6 +131,9 @@ func (h *Handler) CreateNodes(req *restful.Request, resp *restful.Response) erro
 
 // DeleteNodes either moves to recycle bin or definitively removes nodes.
 func (h *Handler) DeleteNodes(req *restful.Request, resp *restful.Response) error {
+	if handled, err := h.platformDeleteNodes(req, resp); handled {
+		return err
+	}
 	// The legacy route calls the same native delete producer as REST v2.
 	// Changing API versions is not an alternate platform admission path.
 	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {

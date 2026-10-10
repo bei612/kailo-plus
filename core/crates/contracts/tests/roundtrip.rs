@@ -6,6 +6,28 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn agent_sessions_and_native_control_preserve_wire_and_legacy() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-session-control.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    macro_rules! roundtrip {
+        ($key:literal, $ty:ty) => {{
+            let typed: $ty = serde_json::from_value(sample[$key].clone()).unwrap();
+            assert_eq!(serde_json::to_value(typed).unwrap(), sample[$key]);
+        }};
+    }
+    roundtrip!("sessions", contracts::AgentSessionPage);
+    roundtrip!("invocations", contracts::AgentInvocationPage);
+    roundtrip!("control", contracts::ComponentActionInput);
+    roundtrip!("legacy", contracts::ComponentActionInput);
+    roundtrip!("deleteInput", contracts::FileStorageDeleteInput);
+    roundtrip!("deleteOutput", contracts::FileStorageDeleteOutput);
+    roundtrip!("result", contracts::NativeHumanActionResult);
+}
+
+#[test]
 fn task_state_reports_preserve_native_activity_and_legacy_absence() {
     let value: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("task-state-reports.sample.json"))

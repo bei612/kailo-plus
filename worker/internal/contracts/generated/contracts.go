@@ -7,6 +7,12 @@
 //    applicationModelAdmission, err := UnmarshalApplicationModelAdmission(bytes)
 //    bytes, err = applicationModelAdmission.Marshal()
 //
+//    fileStorageDeleteInput, err := UnmarshalFileStorageDeleteInput(bytes)
+//    bytes, err = fileStorageDeleteInput.Marshal()
+//
+//    fileStorageDeleteOutput, err := UnmarshalFileStorageDeleteOutput(bytes)
+//    bytes, err = fileStorageDeleteOutput.Marshal()
+//
 //    fileStorageExportInput, err := UnmarshalFileStorageExportInput(bytes)
 //    bytes, err = fileStorageExportInput.Marshal()
 //
@@ -148,6 +154,12 @@
 //    agentInstallationView, err := UnmarshalAgentInstallationView(bytes)
 //    bytes, err = agentInstallationView.Marshal()
 //
+//    agentInvocationPage, err := UnmarshalAgentInvocationPage(bytes)
+//    bytes, err = agentInvocationPage.Marshal()
+//
+//    agentInvocationView, err := UnmarshalAgentInvocationView(bytes)
+//    bytes, err = agentInvocationView.Marshal()
+//
 //    agentMemoryEntryPage, err := UnmarshalAgentMemoryEntryPage(bytes)
 //    bytes, err = agentMemoryEntryPage.Marshal()
 //
@@ -156,6 +168,12 @@
 //
 //    agentMemoryReadView, err := UnmarshalAgentMemoryReadView(bytes)
 //    bytes, err = agentMemoryReadView.Marshal()
+//
+//    agentSessionPage, err := UnmarshalAgentSessionPage(bytes)
+//    bytes, err = agentSessionPage.Marshal()
+//
+//    agentSessionView, err := UnmarshalAgentSessionView(bytes)
+//    bytes, err = agentSessionView.Marshal()
 //
 //    agentVersionConfigurationPage, err := UnmarshalAgentVersionConfigurationPage(bytes)
 //    bytes, err = agentVersionConfigurationPage.Marshal()
@@ -672,6 +690,26 @@ func (r *ApplicationModelAdmission) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalFileStorageDeleteInput(data []byte) (FileStorageDeleteInput, error) {
+	var r FileStorageDeleteInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageDeleteInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageDeleteOutput(data []byte) (FileStorageDeleteOutput, error) {
+	var r FileStorageDeleteOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageDeleteOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFileStorageExportInput(data []byte) (FileStorageExportInput, error) {
 	var r FileStorageExportInput
 	err := json.Unmarshal(data, &r)
@@ -1142,6 +1180,26 @@ func (r *AgentInstallationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentInvocationPage(data []byte) (AgentInvocationPage, error) {
+	var r AgentInvocationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInvocationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInvocationView(data []byte) (AgentInvocationView, error) {
+	var r AgentInvocationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInvocationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentMemoryEntryPage(data []byte) (AgentMemoryEntryPage, error) {
 	var r AgentMemoryEntryPage
 	err := json.Unmarshal(data, &r)
@@ -1169,6 +1227,26 @@ func UnmarshalAgentMemoryReadView(data []byte) (AgentMemoryReadView, error) {
 }
 
 func (r *AgentMemoryReadView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentSessionPage(data []byte) (AgentSessionPage, error) {
+	var r AgentSessionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentSessionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentSessionView(data []byte) (AgentSessionView, error) {
+	var r AgentSessionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentSessionView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2852,6 +2930,21 @@ type ApplicationModelAdmission struct {
 	Traceparent        string `json:"traceparent"`
 }
 
+// Delete selected native objects in the admitted Resource using the original
+// recycle/permanent-delete choice. Each native object identity must be independently
+// authorized and retained in the native first-dispatch claim.
+type FileStorageDeleteInput struct {
+	NativeObjectRefs  []string `json:"nativeObjectRefs"`
+	RemovePermanently bool     `json:"removePermanently"`
+	ResourceID        string   `json:"resourceId"`
+}
+
+// Metadata-only result. Success requires all selected native identities to have linked
+// durable deletion or recycle acknowledgements; an accepted job, Finished status or absent
+// current object is not terminal evidence.
+type FileStorageDeleteOutput struct {
+}
+
 // Export exactly the authorized typed native file revision, including empty or non-UTF-8
 // files.
 type FileStorageExportInput struct {
@@ -3597,13 +3690,17 @@ type CapabilityContractRegistrationResourceTypeFamily struct {
 	TypeKey string `json:"typeKey"`
 }
 
-// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-// Core/Temporal。
+// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+// 仍校验原目标、能力 schema、审批和用量。
 type ComponentActionClass struct {
-	ActionVersion               int64                   `json:"actionVersion"`
-	InputReference              ContentReferenceElement `json:"inputReference"`
-	ResultExposurePolicyID      string                  `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                   `json:"resultExposurePolicyVersion"`
+	ActionVersion int64 `json:"actionVersion"`
+	// Canonical JSON for the existing registered capability input schema; mutually exclusive
+	// with inputReference, validated before AE admission.
+	InputJSON                   *string                  `json:"inputJson,omitempty"`
+	InputReference              *ContentReferenceElement `json:"inputReference,omitempty"`
+	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
 }
 
 // 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
@@ -3972,6 +4069,43 @@ type AgentInstallationViewReadPermission struct {
 	Requested                bool    `json:"requested"`
 }
 
+// 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
+// prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
+type AgentInvocationPage struct {
+	Invocations []InvocationElement `json:"invocations"`
+	NextCursor  *string             `json:"nextCursor,omitempty"`
+}
+
+// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+type InvocationElement struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	CancelPending     bool   `json:"cancelPending"`
+	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+	CanReadTask   bool             `json:"canReadTask"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	InvocationID  string           `json:"invocationId"`
+	Observation   *ReasonCode      `json:"observation,omitempty"`
+	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
+	Status        InvocationStatus `json:"status"`
+	UpdatedAt     time.Time        `json:"updatedAt"`
+}
+
+// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+type AgentInvocationView struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	CancelPending     bool   `json:"cancelPending"`
+	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+	CanReadTask   bool             `json:"canReadTask"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	InvocationID  string           `json:"invocationId"`
+	Observation   *ReasonCode      `json:"observation,omitempty"`
+	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
+	Status        InvocationStatus `json:"status"`
+	UpdatedAt     time.Time        `json:"updatedAt"`
+}
+
 // 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
 // snapshot，不是严格存量权威。
 type AgentMemoryEntryPage struct {
@@ -4015,6 +4149,37 @@ type AgentMemoryReadView struct {
 	// not the JSON body or a stored plaintext copy.
 	ValueHash   *string `json:"valueHash,omitempty"`
 	WorkspaceID string  `json:"workspaceId"`
+}
+
+// 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
+// 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
+type AgentSessionPage struct {
+	NextCursor *string          `json:"nextCursor,omitempty"`
+	Sessions   []SessionElement `json:"sessions"`
+}
+
+type SessionElement struct {
+	AgentVersionAssetID    string    `json:"agentVersionAssetId"`
+	CreatedAt              time.Time `json:"createdAt"`
+	InstallationResourceID string    `json:"installationResourceId"`
+	ProjectionGeneration   int64     `json:"projectionGeneration"`
+	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+	RootEventID     string        `json:"rootEventId"`
+	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`
+	Status          SessionStatus `json:"status"`
+	WorkspaceID     string        `json:"workspaceId"`
+}
+
+type AgentSessionView struct {
+	AgentVersionAssetID    string    `json:"agentVersionAssetId"`
+	CreatedAt              time.Time `json:"createdAt"`
+	InstallationResourceID string    `json:"installationResourceId"`
+	ProjectionGeneration   int64     `json:"projectionGeneration"`
+	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+	RootEventID     string        `json:"rootEventId"`
+	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`
+	Status          SessionStatus `json:"status"`
+	WorkspaceID     string        `json:"workspaceId"`
 }
 
 // DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
@@ -4975,9 +5140,12 @@ type NativeHumanResourceQuery struct {
 // Reference-only observation of the original HUMAN AE. Terminal status comes from original
 // component-action audit after native/usage reconciliation, never from HTTP acceptance.
 type NativeHumanActionResult struct {
-	InputReference ContentReferenceElement `json:"inputReference"`
-	NativeID       *string                 `json:"nativeId,omitempty"`
-	NativeType     *string                 `json:"nativeType,omitempty"`
+	// Original admitted canonical capability metadata input; exactly one input form, never a
+	// result body or a new execution authority.
+	InputJSON      *string                  `json:"inputJson,omitempty"`
+	InputReference *ContentReferenceElement `json:"inputReference,omitempty"`
+	NativeID       *string                  `json:"nativeId,omitempty"`
+	NativeType     *string                  `json:"nativeType,omitempty"`
 	// First native same-request read only. Never returned by idempotency observation or retried
 	// admission; the bearer is not persisted.
 	ReadAdmission  *ReadAdmission  `json:"readAdmission,omitempty"`
@@ -5918,13 +6086,17 @@ type CapabilityContractRegistrationResourceTypeFamilyClass struct {
 	TypeKey string `json:"typeKey"`
 }
 
-// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-// Core/Temporal。
+// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+// 仍校验原目标、能力 schema、审批和用量。
 type ComponentActionInput struct {
-	ActionVersion               int64                   `json:"actionVersion"`
-	InputReference              ContentReferenceElement `json:"inputReference"`
-	ResultExposurePolicyID      string                  `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                   `json:"resultExposurePolicyVersion"`
+	ActionVersion int64 `json:"actionVersion"`
+	// Canonical JSON for the existing registered capability input schema; mutually exclusive
+	// with inputReference, validated before AE admission.
+	InputJSON                   *string                  `json:"inputJson,omitempty"`
+	InputReference              *ContentReferenceElement `json:"inputReference,omitempty"`
+	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
 }
 
 // 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -7280,12 +7452,24 @@ const (
 	Draining                           AgentInstallationState = "DRAINING"
 )
 
+type InvocationStatus string
+
+const (
+	Created         InvocationStatus = "CREATED"
+	Dispatching     InvocationStatus = "DISPATCHING"
+	FluffyUNKNOWN   InvocationStatus = "UNKNOWN"
+	StatusCANCELED  InvocationStatus = "CANCELED"
+	StatusCOMPLETED InvocationStatus = "COMPLETED"
+	StatusFAILED    InvocationStatus = "FAILED"
+	StatusRUNNING   InvocationStatus = "RUNNING"
+)
+
 type AgentMemoryEntryPageState string
 
 const (
-	BoundExceeded AgentMemoryEntryPageState = "BOUND_EXCEEDED"
-	Complete      AgentMemoryEntryPageState = "COMPLETE"
-	FluffyUNKNOWN AgentMemoryEntryPageState = "UNKNOWN"
+	BoundExceeded    AgentMemoryEntryPageState = "BOUND_EXCEEDED"
+	Complete         AgentMemoryEntryPageState = "COMPLETE"
+	TentacledUNKNOWN AgentMemoryEntryPageState = "UNKNOWN"
 )
 
 type AgentMemoryReadViewState string
@@ -7294,6 +7478,16 @@ const (
 	StateABSENT AgentMemoryReadViewState = "ABSENT"
 	StateFOUND  AgentMemoryReadViewState = "FOUND"
 	Unreadable  AgentMemoryReadViewState = "UNREADABLE"
+)
+
+type SessionStatus string
+
+const (
+	Starting        SessionStatus = "STARTING"
+	StatusCLOSED    SessionStatus = "CLOSED"
+	StatusPENDING   SessionStatus = "PENDING"
+	StickyUNKNOWN   SessionStatus = "UNKNOWN"
+	TentacledACTIVE SessionStatus = "ACTIVE"
 )
 
 type RuntimeProfileKind string
@@ -7463,7 +7657,7 @@ const (
 type TaskStatus string
 
 const (
-	Canceled            TaskStatus = "CANCELED"
+	TaskStatusCANCELED  TaskStatus = "CANCELED"
 	TaskStatusCOMPLETED TaskStatus = "COMPLETED"
 	TaskStatusFAILED    TaskStatus = "FAILED"
 	TaskStatusRUNNING   TaskStatus = "RUNNING"
@@ -7581,7 +7775,7 @@ const (
 	StateDISABLED     ItemState = "DISABLED"
 	StatePROVISIONING ItemState = "PROVISIONING"
 	StateRECONCILING  ItemState = "RECONCILING"
-	TentacledACTIVE   ItemState = "ACTIVE"
+	StickyACTIVE      ItemState = "ACTIVE"
 )
 
 type JoinActionKey string
@@ -7680,8 +7874,8 @@ const (
 type ToolStatus string
 
 const (
+	IndigoACTIVE       ToolStatus = "ACTIVE"
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
-	StickyACTIVE       ToolStatus = "ACTIVE"
 )
 
 type ProjectPublicationOperation string
@@ -7710,18 +7904,18 @@ const (
 type ProtocolSessionViewState string
 
 const (
-	Admitted         ProtocolSessionViewState = "ADMITTED"
-	Closed           ProtocolSessionViewState = "CLOSED"
-	FluffyCONFLICT   ProtocolSessionViewState = "CONFLICT"
-	FluffyDIRTY      ProtocolSessionViewState = "DIRTY"
-	FluffyEXPIRED    ProtocolSessionViewState = "EXPIRED"
-	FluffyFAILED     ProtocolSessionViewState = "FAILED"
-	FluffyREVOKED    ProtocolSessionViewState = "REVOKED"
-	FluffySAVED      ProtocolSessionViewState = "SAVED"
-	Opening          ProtocolSessionViewState = "OPENING"
-	ReadOnly         ProtocolSessionViewState = "READ_ONLY"
-	StateOPEN        ProtocolSessionViewState = "OPEN"
-	TentacledUNKNOWN ProtocolSessionViewState = "UNKNOWN"
+	Admitted       ProtocolSessionViewState = "ADMITTED"
+	FluffyCONFLICT ProtocolSessionViewState = "CONFLICT"
+	FluffyDIRTY    ProtocolSessionViewState = "DIRTY"
+	FluffyEXPIRED  ProtocolSessionViewState = "EXPIRED"
+	FluffyFAILED   ProtocolSessionViewState = "FAILED"
+	FluffyREVOKED  ProtocolSessionViewState = "REVOKED"
+	FluffySAVED    ProtocolSessionViewState = "SAVED"
+	IndigoUNKNOWN  ProtocolSessionViewState = "UNKNOWN"
+	Opening        ProtocolSessionViewState = "OPENING"
+	ReadOnly       ProtocolSessionViewState = "READ_ONLY"
+	StateCLOSED    ProtocolSessionViewState = "CLOSED"
+	StateOPEN      ProtocolSessionViewState = "OPEN"
 )
 
 type Operation string

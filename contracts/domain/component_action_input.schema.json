@@ -2,13 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/component_action_input.schema.json",
   "title": "ComponentActionInput",
-  "description": "Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入 Core/Temporal。",
+  "description": "Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久 ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core 仍校验原目标、能力 schema、审批和用量。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["actionVersion", "inputReference", "resultExposurePolicyId", "resultExposurePolicyVersion"],
+  "required": ["actionVersion", "resultExposurePolicyId", "resultExposurePolicyVersion"],
   "properties": {
     "actionVersion": {"type": "integer", "minimum": 1},
     "inputReference": {"$ref": "content_reference.schema.json"},
+    "inputJson": {"type": "string", "description": "Canonical JSON for the existing registered capability input schema; mutually exclusive with inputReference, validated before AE admission."},
     "resultExposurePolicyId": {"type": "string", "format": "uuid"},
     "resultExposurePolicyVersion": {"type": "integer", "minimum": 1}
   }

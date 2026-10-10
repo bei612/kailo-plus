@@ -80,10 +80,22 @@ func newBoltStore(db boltdb.DB) (*boltStore, error) {
 }
 
 func (s *boltStore) PutJob(job *proto.Job) error {
+	if jobs.IsNativeDeleteJob(job) {
+		return errors.WithStack(errors.StatusConflict)
+	}
 
 	err := s.DB.Update(func(tx *bbolt.Tx) error {
 
 		bucket := tx.Bucket(jobsBucketKey)
+		if prior := bucket.Get([]byte(job.ID)); prior != nil {
+			var frozen proto.Job
+			if err := json.Unmarshal(prior, &frozen); err != nil {
+				return err
+			}
+			if jobs.IsNativeDeleteJob(&frozen) {
+				return errors.WithStack(errors.StatusConflict)
+			}
+		}
 		if job.Tasks != nil {
 			// Do not store that
 			job.Tasks = nil
@@ -157,6 +169,15 @@ func (s *boltStore) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 func (s *boltStore) DeleteJob(jobID string) error {
 
 	return s.DB.Update(func(tx *bbolt.Tx) error {
+		if prior := tx.Bucket(jobsBucketKey).Get([]byte(jobID)); prior != nil {
+			var frozen proto.Job
+			if err := json.Unmarshal(prior, &frozen); err != nil {
+				return err
+			}
+			if jobs.IsNativeDeleteJob(&frozen) {
+				return errors.WithStack(errors.StatusConflict)
+			}
+		}
 		if tasks := tx.Bucket([]byte(tasksBucketString + jobID)); tasks != nil {
 			if err := tasks.ForEach(func(_ []byte, data []byte) error {
 				task := &proto.Task{}

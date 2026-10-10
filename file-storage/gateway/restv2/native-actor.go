@@ -87,7 +87,8 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	action := stringClaim(claims, "action_key")
 	listing := action == "file_storage.list@v1"
 	writing := action == "file_storage.write@v1"
-	if !listing && !writing && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
+	deleting := action == "file_storage.delete@v1"
+	if !listing && !writing && !deleting && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
 		return refused
 	}
 	var args map[string]interface{}
@@ -99,16 +100,30 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	inputSize := 5
 	if listing {
 		inputSize = 1
+	} else if deleting {
+		inputSize = 3
 	} else if action == "file_storage.list_revisions@v1" {
 		inputSize = 2
 	}
 	if !inputOK || !targetOK || len(argumentTarget) != 1 || argumentTarget["resourceId"] != target["resourceId"] || input["resourceId"] != target["resourceId"] ||
 		len(input) != inputSize ||
-		(!listing && !writing && !actorUUID(stringClaim(input, "nativeObjectRef"))) ||
+		(!listing && !writing && !deleting && !actorUUID(stringClaim(input, "nativeObjectRef"))) ||
 		(writing && (!validWriteReference(stringClaim(input, "nativeObjectRef"), requested, false) || operation != "promote" || requested != target["nativeRef"])) ||
-		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions" && operation != "promote") ||
-		(operation == "promote" && !writing) {
+		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions" && operation != "promote" && operation != "delete") ||
+		(operation == "promote" && !writing) || (operation == "delete" && !deleting) || (deleting && operation != "delete") {
 		return refused
+	}
+	if deleting {
+		selected, _, valid := nativeDeleteInput(input)
+		found := false
+		for _, node := range selected {
+			if node == requested {
+				found = true
+			}
+		}
+		if !valid || !found {
+			return refused
+		}
 	}
 	nativeUUID, err := delivery.user(tenant, principal, kind)
 	if err != nil {

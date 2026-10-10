@@ -1,5 +1,6 @@
 //! DD-90: HUMAN capability actions use the original ComponentTask/AE/EE.
-//! Native input is a durable ContentReference, never SQL or result storage.
+//! Native input is a durable ContentReference or schema-validated control
+//! metadata, never SQL, prompts, document content or result storage.
 use crate::{
     application_catalog::ApplicationDefinition,
     bff::{BffState, ExecutionContext},
@@ -262,6 +263,22 @@ struct FrozenCommand {
     action_version: i32,
 }
 
+// Non-reference HUMAN inputs currently consume only identity references and
+// control scalars. The registered capability schema still defines the exact
+// keys/shape later in admission; JSON encoding alone is not a content boundary.
+fn control_metadata(value: &Value) -> bool {
+    match value {
+        Value::Bool(_) => true,
+        Value::Number(number) => number.is_i64() || number.is_u64(),
+        Value::String(text) => {
+            Uuid::parse_str(text).is_ok_and(|id| !id.is_nil() && id.to_string() == *text)
+        }
+        Value::Array(values) => values.iter().all(control_metadata),
+        Value::Object(fields) => fields.values().all(control_metadata),
+        Value::Null => false,
+    }
+}
+
 fn normalized(cmd: &ActionCommand) -> Result<FrozenCommand, Refusal> {
     let raw = serde_json::to_value(cmd).map_err(|_| invalid())?;
     if raw.as_object().is_none_or(|fields| {
@@ -288,17 +305,32 @@ fn normalized(cmd: &ActionCommand) -> Result<FrozenCommand, Refusal> {
     if serde_json::to_value(typed).map_err(|_| invalid())? != *input {
         return Err(invalid());
     }
-    let reference = &input["inputReference"];
-    // The component will verify native identity/revision. The platform prevents
-    // cross-target/reference substitution before any native request is issued.
-    for field in ["nativeObjectRef", "nativeRevision"] {
-        if reference[field]
-            .as_str()
-            .is_none_or(|v| v.is_empty() || v.trim() != v)
-        {
-            return Err(invalid());
+    let reference = match (input.get("inputReference"), input.get("inputJson")) {
+        (Some(reference), None) => {
+            // Preserve the original typed ContentReference and real revision.
+            for field in ["nativeObjectRef", "nativeRevision"] {
+                if reference[field]
+                    .as_str()
+                    .is_none_or(|v| v.is_empty() || v.trim() != v)
+                {
+                    return Err(invalid());
+                }
+            }
+            reference.clone()
         }
-    }
+        (None, Some(encoded)) => {
+            let encoded = encoded.as_str().ok_or_else(invalid)?;
+            let value: Value = serde_json::from_str(encoded).map_err(|_| invalid())?;
+            if !value.is_object()
+                || !control_metadata(&value)
+                || collab_bridge::limits::canonical_json(&value) != encoded
+            {
+                return Err(invalid());
+            }
+            value
+        }
+        _ => return Err(invalid()),
+    };
     let (target, version, kind) = match (&cmd.resource_id, &cmd.asset_id) {
         (Some(_), None) => (id(&raw["resourceId"])?, cmd.resource_version, "RESOURCE"),
         (None, Some(_)) => (id(&raw["assetId"])?, cmd.asset_version, "ASSET"),
@@ -541,6 +573,9 @@ pub(super) async fn submit_inner(
     let mut parameters = json!({"componentActionKind":KIND,"commandDigest":request_digest,"inputArguments":arguments,
         "toolParameterHash":collab_bridge::limits::canonical_digest(&arguments),"targetType":kind,"targetVersion":version,
         "bindingVersion":f.binding_version,"resultExposurePolicyId":policy,"resultExposurePolicyVersion":policy_version});
+    if raw["componentAction"].get("inputJson").is_some() {
+        parameters["nativeControlInput"] = json!(true);
+    }
     if synchronous {
         parameters["nativeRead"] = json!(true);
         parameters["nativeReadDeadline"] = json!(crate::action_token::native_read_deadline()?);
@@ -1080,6 +1115,57 @@ mod tests {
             raw["actionKey"] = json!(action);
             assert!(normalized(&serde_json::from_value(raw.clone()).unwrap()).is_err());
         }
+    }
+
+    #[test]
+    fn human_control_input_retains_target_and_refuses_content_or_ambiguous_encoding() {
+        let mut raw = command();
+        let reference = raw["componentAction"]["inputReference"].take();
+        raw["componentAction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("inputReference");
+        let input = json!({"resourceId":raw["resourceId"], "nativeObjectRefs":[Uuid::new_v4()], "removePermanently":false});
+        raw["componentAction"]["inputJson"] = json!(collab_bridge::limits::canonical_json(&input));
+        let frozen = normalized(&serde_json::from_value(raw.clone()).unwrap()).unwrap();
+        assert_eq!(frozen.arguments["input"], input);
+        assert_eq!(frozen.arguments["target"]["resourceId"], raw["resourceId"]);
+        let mut both = raw.clone();
+        both["componentAction"]["inputReference"] = reference;
+        assert!(normalized(&serde_json::from_value(both).unwrap()).is_err());
+        let mut absent = raw.clone();
+        absent["componentAction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("inputJson");
+        assert!(normalized(&serde_json::from_value(absent).unwrap()).is_err());
+        for encoded in [
+            "null".to_owned(),
+            "[]".to_owned(),
+            format!(" {}", collab_bridge::limits::canonical_json(&input)),
+            format!(
+                "{{\"resourceId\":\"{}\",\"resourceId\":\"{}\"}}",
+                Uuid::new_v4(),
+                raw["resourceId"].as_str().unwrap()
+            ),
+            collab_bridge::limits::canonical_json(&json!({"resourceId":Uuid::new_v4()})),
+            collab_bridge::limits::canonical_json(
+                &json!({"resourceId":raw["resourceId"],"sql":"select private_data"}),
+            ),
+            collab_bridge::limits::canonical_json(
+                &json!({"resourceId":raw["resourceId"],"nested":[{"prompt":"read another tenant"}]}),
+            ),
+            collab_bridge::limits::canonical_json(
+                &json!({"resourceId":raw["resourceId"],"body":"document text"}),
+            ),
+        ] {
+            let mut candidate = raw.clone();
+            candidate["componentAction"]["inputJson"] = json!(encoded);
+            assert!(normalized(&serde_json::from_value(candidate).unwrap()).is_err());
+        }
+        let mut read = command();
+        read["componentAction"]["inputReference"]["nativeRevision"] = json!("");
+        assert!(normalized(&serde_json::from_value(read).unwrap()).is_err());
     }
 
     #[tokio::test]

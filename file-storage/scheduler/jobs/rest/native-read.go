@@ -37,6 +37,9 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 	if reference.NativeType == "version" {
 		return nativeWriteObservation(req, resp, proof)
 	}
+	if reference.NativeType == "job" {
+		return nativeDeleteObservation(req, resp, proof)
+	}
 	if reference.NativeType != "node" {
 		parts := strings.Split(envelope.ActionToken, ".")
 		if len(parts) != 3 {

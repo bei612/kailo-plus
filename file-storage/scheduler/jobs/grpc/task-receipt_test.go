@@ -31,6 +31,7 @@ import (
 	"github.com/pydio/cells/v5/common/config"
 	cellserrors "github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
+	"github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/storage/boltdb"
@@ -44,7 +45,148 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
+
+type deleteReceiptServer struct{ *taskLookupContextServer }
+
+func (s *deleteReceiptServer) GetJob(_ context.Context, request *jobproto.GetJobRequest) (*jobproto.GetJobResponse, error) {
+	return s.JobsHandler.GetJob(s.ctx, request)
+}
+func (s *deleteReceiptServer) PutTask(_ context.Context, request *jobproto.PutTaskRequest) (*jobproto.PutTaskResponse, error) {
+	return s.JobsHandler.PutTask(s.ctx, request)
+}
+
+func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.T) {
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(bolt.NewBoltDAO, "native_delete_receipt_")}, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jobstore.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handler := NewJobsHandler(ctx, "native-delete-receipt")
+		listener := bufconn.Listen(65536)
+		server := grpc.NewServer()
+		jobproto.RegisterJobServiceServer(server, &deleteReceiptServer{&taskLookupContextServer{JobsHandler: handler, ctx: ctx}})
+		go server.Serve(listener)
+		defer server.Stop()
+		defer listener.Close()
+		connection, err := grpc.NewClient("passthrough:///native-delete-receipt", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close()
+		grpcclient.RegisterMock(common.ServiceJobsGRPC, connection)
+		for index, mode := range []string{"delete-complete", "recycle-complete", "missing-ack", "partial-ack", "wrong-node", "wrong-action", "wrong-recycle-target", "wrong-job-digest", "missing-dispatch-ack", "failed-child", "missing-child", "empty-selector"} {
+			t.Run(mode, func(t *testing.T) {
+				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
+				ids := []string{"00000000-0000-4000-8000-000000000101", "00000000-0000-4000-8000-000000000102"}
+				coordinatorJob := jobstore.NativeReadJob("delete-coordinator-" + mode)
+				if err := store.ClaimJob(ctx, coordinatorJob); err != nil {
+					t.Fatal(err)
+				}
+				coordinator, err := jobstore.NewNativeWriteTask("binding", coordinatorJob.ID, key, "owner", "native-user", map[string]interface{}{"action_key": "file_storage.delete@v1"}, map[string]interface{}{"nativeObjectRefs": ids, "removePermanently": mode != "recycle-complete" && mode != "wrong-recycle-target"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				query, err := anypb.New(&tree.Query{UUIDs: ids})
+				if err != nil {
+					t.Fatal(err)
+				}
+				action := &jobproto.Action{ID: "actions.tree.delete", NodesSelector: &jobproto.NodesSelector{Query: &service.Query{SubQueries: []*anypb.Any{query}}}}
+				if strings.Contains(mode, "recycle") {
+					action.ID = "actions.tree.copymove"
+					action.Parameters = map[string]string{"type": "move", "target": "native/recycle_bin", "targetParent": "true"}
+				}
+				if mode == "empty-selector" {
+					action.NodesSelector.Query.SubQueries[0], _ = anypb.New(&tree.Query{})
+				}
+				childJob := &jobproto.Job{ID: coordinatorJob.ID + "-" + key + "-0", Owner: "owner", Actions: []*jobproto.Action{action}, Metadata: map[string]string{jobstore.NativeDeleteJob: coordinatorJob.ID, jobstore.NativeDeleteTask: key}}
+				if err := store.ClaimJob(ctx, childJob); err != nil {
+					t.Fatal(err)
+				}
+				digest, err := jobstore.NativeJobDefinitionDigest(childJob)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref, _ := json.Marshal(map[string]string{"jobId": childJob.ID, "taskId": childJob.ID, "jobDigest": digest})
+				coordinator.ActionsLogs = append(coordinator.ActionsLogs, &jobproto.ActionLog{OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{JsonBody: ref, Vars: map[string]string{jobstore.NativeDeleteJob: "true"}}}}})
+				if mode != "missing-dispatch-ack" {
+					coordinator.ActionsLogs = append(coordinator.ActionsLogs, &jobproto.ActionLog{OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, Vars: map[string]string{jobstore.NativeDeleteDispatchComplete: "true"}}}}})
+				}
+				if err := store.ClaimTask(coordinator); err != nil {
+					t.Fatal(err)
+				}
+				claimDigest := digest
+				if mode == "wrong-job-digest" {
+					claimDigest = strings.Repeat("a", 64)
+				}
+				claimBody, _ := json.Marshal(map[string]string{"requestDigest": strings.Repeat("b", 64), "jobDigest": claimDigest})
+				child := &jobproto.Task{ID: childJob.ID, JobID: childJob.ID, TriggerOwner: "owner", Status: jobproto.TaskStatus_Finished, EndTime: 123,
+					ActionsLogs: []*jobproto.ActionLog{{InputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{JsonBody: claimBody, Vars: map[string]string{jobstore.TaskCreateOnly: "true"}}}}}}}
+				if mode == "failed-child" {
+					child.Status = jobproto.TaskStatus_Error
+				}
+				for n, id := range ids {
+					if mode == "missing-ack" || mode == "partial-ack" && n == 1 {
+						continue
+					}
+					event := &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: id, Path: "native/item"}}
+					if action.ID == "actions.tree.copymove" {
+						event.Type = tree.NodeChangeEvent_UPDATE_PATH
+						event.Target = &tree.Node{Uuid: id, Path: "native/recycle_bin/item"}
+					}
+					if mode == "wrong-recycle-target" {
+						event.Target.Path = "native/other/item"
+					}
+					if mode == "wrong-node" {
+						event.Source.Uuid = "another-node"
+					}
+					body, err := protojson.Marshal(event)
+					if err != nil {
+						t.Fatal(err)
+					}
+					actualAction := action.ID
+					if mode == "wrong-action" {
+						actualAction = "actions.tree.other"
+					}
+					child.ActionsLogs = append(child.ActionsLogs, &jobproto.ActionLog{Action: &jobproto.Action{ID: actualAction}, OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeNodeMutationResult: "true"}}}}})
+				}
+				if mode != "missing-child" {
+					if err := store.ClaimTask(child); err != nil {
+						t.Fatal(err)
+					}
+				}
+				completed, err := jobstore.NativeDeleteTerminal(ctx, coordinator, 65536)
+				want := mode == "delete-complete" || mode == "recycle-complete"
+				if want && (err != nil || completed != 123) {
+					t.Fatalf("actual complete ACKs not accepted: %d %v", completed, err)
+				}
+				if !want && (err == nil || completed != 0) {
+					t.Fatalf("unconfirmed deletion became terminal: %d %v", completed, err)
+				}
+				stored, err := jobstore.ReadNativeWriteTask(ctx, coordinatorJob.ID, key, 65536)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if (stored.Status == jobproto.TaskStatus_Finished) != want {
+					t.Fatal("coordinator terminal did not match native evidence")
+				}
+				stripped := proto.Clone(childJob).(*jobproto.Job)
+				stripped.Metadata = nil
+				if err := store.PutJob(stripped); !cellserrors.Is(err, cellserrors.StatusConflict) {
+					t.Fatal("frozen job downgraded through metadata removal", err)
+				}
+				if err := store.DeleteJob(childJob.ID); !cellserrors.Is(err, cellserrors.StatusConflict) {
+					t.Fatal("frozen job erased before/after child claim", err)
+				}
+				actual, err := store.GetJob(childJob.ID, jobproto.TaskStatus_Unknown)
+				if err != nil || !proto.Equal(actual, childJob) {
+					t.Fatal("native immutable definition lost", err)
+				}
+			})
+		}
+	})
+}
 
 type taskLookupContextServer struct {
 	*JobsHandler

@@ -2,6 +2,8 @@
 //
 //     final canary = canaryFromJson(jsonString);
 //     final applicationModelAdmission = applicationModelAdmissionFromJson(jsonString);
+//     final fileStorageDeleteInput = fileStorageDeleteInputFromJson(jsonString);
+//     final fileStorageDeleteOutput = fileStorageDeleteOutputFromJson(jsonString);
 //     final fileStorageExportInput = fileStorageExportInputFromJson(jsonString);
 //     final fileStorageExportOutput = fileStorageExportOutputFromJson(jsonString);
 //     final fileStorageListInput = fileStorageListInputFromJson(jsonString);
@@ -49,9 +51,13 @@
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
+//     final agentInvocationPage = agentInvocationPageFromJson(jsonString);
+//     final agentInvocationView = agentInvocationViewFromJson(jsonString);
 //     final agentMemoryEntryPage = agentMemoryEntryPageFromJson(jsonString);
 //     final agentMemoryEntryView = agentMemoryEntryViewFromJson(jsonString);
 //     final agentMemoryReadView = agentMemoryReadViewFromJson(jsonString);
+//     final agentSessionPage = agentSessionPageFromJson(jsonString);
+//     final agentSessionView = agentSessionViewFromJson(jsonString);
 //     final agentVersionConfigurationPage = agentVersionConfigurationPageFromJson(jsonString);
 //     final agentVersionPage = agentVersionPageFromJson(jsonString);
 //     final agentVersionRouteOption = agentVersionRouteOptionFromJson(jsonString);
@@ -226,6 +232,18 @@ ApplicationModelAdmission applicationModelAdmissionFromJson(String str) =>
     ApplicationModelAdmission.fromJson(json.decode(str));
 
 String applicationModelAdmissionToJson(ApplicationModelAdmission data) =>
+    json.encode(data.toJson());
+
+FileStorageDeleteInput fileStorageDeleteInputFromJson(String str) =>
+    FileStorageDeleteInput.fromJson(json.decode(str));
+
+String fileStorageDeleteInputToJson(FileStorageDeleteInput data) =>
+    json.encode(data.toJson());
+
+FileStorageDeleteOutput fileStorageDeleteOutputFromJson(String str) =>
+    FileStorageDeleteOutput.fromJson(json.decode(str));
+
+String fileStorageDeleteOutputToJson(FileStorageDeleteOutput data) =>
     json.encode(data.toJson());
 
 FileStorageExportInput fileStorageExportInputFromJson(String str) =>
@@ -527,6 +545,18 @@ AgentInstallationView agentInstallationViewFromJson(String str) =>
 String agentInstallationViewToJson(AgentInstallationView data) =>
     json.encode(data.toJson());
 
+AgentInvocationPage agentInvocationPageFromJson(String str) =>
+    AgentInvocationPage.fromJson(json.decode(str));
+
+String agentInvocationPageToJson(AgentInvocationPage data) =>
+    json.encode(data.toJson());
+
+AgentInvocationView agentInvocationViewFromJson(String str) =>
+    AgentInvocationView.fromJson(json.decode(str));
+
+String agentInvocationViewToJson(AgentInvocationView data) =>
+    json.encode(data.toJson());
+
 AgentMemoryEntryPage agentMemoryEntryPageFromJson(String str) =>
     AgentMemoryEntryPage.fromJson(json.decode(str));
 
@@ -543,6 +573,18 @@ AgentMemoryReadView agentMemoryReadViewFromJson(String str) =>
     AgentMemoryReadView.fromJson(json.decode(str));
 
 String agentMemoryReadViewToJson(AgentMemoryReadView data) =>
+    json.encode(data.toJson());
+
+AgentSessionPage agentSessionPageFromJson(String str) =>
+    AgentSessionPage.fromJson(json.decode(str));
+
+String agentSessionPageToJson(AgentSessionPage data) =>
+    json.encode(data.toJson());
+
+AgentSessionView agentSessionViewFromJson(String str) =>
+    AgentSessionView.fromJson(json.decode(str));
+
+String agentSessionViewToJson(AgentSessionView data) =>
     json.encode(data.toJson());
 
 AgentVersionConfigurationPage agentVersionConfigurationPageFromJson(
@@ -1773,6 +1815,48 @@ class ApplicationModelAdmission {
     "path": path,
     "traceparent": traceparent,
   });
+}
+
+///Delete selected native objects in the admitted Resource using the original
+///recycle/permanent-delete choice. Each native object identity must be independently
+///authorized and retained in the native first-dispatch claim.
+class FileStorageDeleteInput {
+  final List<String> nativeObjectRefs;
+  final bool removePermanently;
+  final String resourceId;
+
+  FileStorageDeleteInput({
+    required this.nativeObjectRefs,
+    required this.removePermanently,
+    required this.resourceId,
+  });
+
+  factory FileStorageDeleteInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageDeleteInput(
+        nativeObjectRefs: List<String>.from(
+          json["nativeObjectRefs"].map((x) => x),
+        ),
+        removePermanently: json["removePermanently"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeObjectRefs": List<dynamic>.from(nativeObjectRefs.map((x) => x)),
+    "removePermanently": removePermanently,
+    "resourceId": resourceId,
+  });
+}
+
+///Metadata-only result. Success requires all selected native identities to have linked
+///durable deletion or recycle acknowledgements; an accepted job, Finished status or absent
+///current object is not terminal evidence.
+class FileStorageDeleteOutput {
+  FileStorageDeleteOutput();
+
+  factory FileStorageDeleteOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageDeleteOutput();
+
+  Map<String, dynamic> toJson() => _stripNulls({});
 }
 
 ///Export exactly the authorized typed native file revision, including empty or non-UTF-8
@@ -4734,17 +4818,23 @@ class CapabilityContractRegistrationResourceTypeFamily {
       _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
-///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-///Core/Temporal。
+///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+///ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+///仍校验原目标、能力 schema、审批和用量。
 class ComponentActionClass {
   final int actionVersion;
-  final ReferenceElement inputReference;
+
+  ///Canonical JSON for the existing registered capability input schema; mutually exclusive
+  ///with inputReference, validated before AE admission.
+  final String? inputJson;
+  final ReferenceElement? inputReference;
   final String resultExposurePolicyId;
   final int resultExposurePolicyVersion;
 
   ComponentActionClass({
     required this.actionVersion,
-    required this.inputReference,
+    this.inputJson,
+    this.inputReference,
     required this.resultExposurePolicyId,
     required this.resultExposurePolicyVersion,
   });
@@ -4752,14 +4842,18 @@ class ComponentActionClass {
   factory ComponentActionClass.fromJson(Map<String, dynamic> json) =>
       ComponentActionClass(
         actionVersion: json["actionVersion"],
-        inputReference: ReferenceElement.fromJson(json["inputReference"]),
+        inputJson: json["inputJson"],
+        inputReference: json["inputReference"] == null
+            ? null
+            : ReferenceElement.fromJson(json["inputReference"]),
         resultExposurePolicyId: json["resultExposurePolicyId"],
         resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionVersion": actionVersion,
-    "inputReference": inputReference.toJson(),
+    "inputJson": inputJson,
+    "inputReference": inputReference?.toJson(),
     "resultExposurePolicyId": resultExposurePolicyId,
     "resultExposurePolicyVersion": resultExposurePolicyVersion,
   });
@@ -6378,6 +6472,158 @@ class AgentInstallationViewReadPermission {
   });
 }
 
+///原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
+///prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
+class AgentInvocationPage {
+  final List<InvocationElement> invocations;
+  final String? nextCursor;
+
+  AgentInvocationPage({required this.invocations, this.nextCursor});
+
+  factory AgentInvocationPage.fromJson(Map<String, dynamic> json) =>
+      AgentInvocationPage(
+        invocations: List<InvocationElement>.from(
+          json["invocations"].map((x) => InvocationElement.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "invocations": List<dynamic>.from(invocations.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+///原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+///不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+class InvocationElement {
+  final String actionExecutionId;
+  final bool cancelPending;
+
+  ///当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+  final bool canReadTask;
+  final DateTime createdAt;
+  final String invocationId;
+  final ReasonCode? observation;
+  final String? runtimeTurnId;
+  final InvocationStatus status;
+  final DateTime updatedAt;
+
+  InvocationElement({
+    required this.actionExecutionId,
+    required this.cancelPending,
+    required this.canReadTask,
+    required this.createdAt,
+    required this.invocationId,
+    this.observation,
+    this.runtimeTurnId,
+    required this.status,
+    required this.updatedAt,
+  });
+
+  factory InvocationElement.fromJson(Map<String, dynamic> json) =>
+      InvocationElement(
+        actionExecutionId: json["actionExecutionId"],
+        cancelPending: json["cancelPending"],
+        canReadTask: json["canReadTask"],
+        createdAt: DateTime.parse(json["createdAt"]),
+        invocationId: json["invocationId"],
+        observation: json["observation"] == null
+            ? null
+            : reasonCodeValues.map[json["observation"]]!,
+        runtimeTurnId: json["runtimeTurnId"],
+        status: invocationStatusValues.map[json["status"]]!,
+        updatedAt: DateTime.parse(json["updatedAt"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "cancelPending": cancelPending,
+    "canReadTask": canReadTask,
+    "createdAt": createdAt.toIso8601String(),
+    "invocationId": invocationId,
+    "observation": reasonCodeValues.reverse[observation],
+    "runtimeTurnId": runtimeTurnId,
+    "status": invocationStatusValues.reverse[status],
+    "updatedAt": updatedAt.toIso8601String(),
+  });
+}
+
+enum InvocationStatus {
+  CANCELED,
+  COMPLETED,
+  CREATED,
+  DISPATCHING,
+  FAILED,
+  RUNNING,
+  UNKNOWN,
+}
+
+final invocationStatusValues = EnumValues({
+  "CANCELED": InvocationStatus.CANCELED,
+  "COMPLETED": InvocationStatus.COMPLETED,
+  "CREATED": InvocationStatus.CREATED,
+  "DISPATCHING": InvocationStatus.DISPATCHING,
+  "FAILED": InvocationStatus.FAILED,
+  "RUNNING": InvocationStatus.RUNNING,
+  "UNKNOWN": InvocationStatus.UNKNOWN,
+});
+
+///原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+///不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+class AgentInvocationView {
+  final String actionExecutionId;
+  final bool cancelPending;
+
+  ///当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+  final bool canReadTask;
+  final DateTime createdAt;
+  final String invocationId;
+  final ReasonCode? observation;
+  final String? runtimeTurnId;
+  final InvocationStatus status;
+  final DateTime updatedAt;
+
+  AgentInvocationView({
+    required this.actionExecutionId,
+    required this.cancelPending,
+    required this.canReadTask,
+    required this.createdAt,
+    required this.invocationId,
+    this.observation,
+    this.runtimeTurnId,
+    required this.status,
+    required this.updatedAt,
+  });
+
+  factory AgentInvocationView.fromJson(Map<String, dynamic> json) =>
+      AgentInvocationView(
+        actionExecutionId: json["actionExecutionId"],
+        cancelPending: json["cancelPending"],
+        canReadTask: json["canReadTask"],
+        createdAt: DateTime.parse(json["createdAt"]),
+        invocationId: json["invocationId"],
+        observation: json["observation"] == null
+            ? null
+            : reasonCodeValues.map[json["observation"]]!,
+        runtimeTurnId: json["runtimeTurnId"],
+        status: invocationStatusValues.map[json["status"]]!,
+        updatedAt: DateTime.parse(json["updatedAt"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "cancelPending": cancelPending,
+    "canReadTask": canReadTask,
+    "createdAt": createdAt.toIso8601String(),
+    "invocationId": invocationId,
+    "observation": reasonCodeValues.reverse[observation],
+    "runtimeTurnId": runtimeTurnId,
+    "status": invocationStatusValues.reverse[status],
+    "updatedAt": updatedAt.toIso8601String(),
+  });
+}
+
 ///19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
 ///snapshot，不是严格存量权威。
 class AgentMemoryEntryPage {
@@ -6550,6 +6796,131 @@ final agentMemoryReadViewStateValues = EnumValues({
   "FOUND": AgentMemoryReadViewState.FOUND,
   "UNREADABLE": AgentMemoryReadViewState.UNREADABLE,
 });
+
+///17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
+///正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
+class AgentSessionPage {
+  final String? nextCursor;
+  final List<SessionElement> sessions;
+
+  AgentSessionPage({this.nextCursor, required this.sessions});
+
+  factory AgentSessionPage.fromJson(Map<String, dynamic> json) =>
+      AgentSessionPage(
+        nextCursor: json["nextCursor"],
+        sessions: List<SessionElement>.from(
+          json["sessions"].map((x) => SessionElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextCursor": nextCursor,
+    "sessions": List<dynamic>.from(sessions.map((x) => x.toJson())),
+  });
+}
+
+class SessionElement {
+  final String agentVersionAssetId;
+  final DateTime createdAt;
+  final String installationResourceId;
+  final int projectionGeneration;
+
+  ///既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+  final String rootEventId;
+  final String? runtimeThreadId;
+  final SessionStatus status;
+  final String workspaceId;
+
+  SessionElement({
+    required this.agentVersionAssetId,
+    required this.createdAt,
+    required this.installationResourceId,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    this.runtimeThreadId,
+    required this.status,
+    required this.workspaceId,
+  });
+
+  factory SessionElement.fromJson(Map<String, dynamic> json) => SessionElement(
+    agentVersionAssetId: json["agentVersionAssetId"],
+    createdAt: DateTime.parse(json["createdAt"]),
+    installationResourceId: json["installationResourceId"],
+    projectionGeneration: json["projectionGeneration"],
+    rootEventId: json["rootEventId"],
+    runtimeThreadId: json["runtimeThreadId"],
+    status: sessionStatusValues.map[json["status"]]!,
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "createdAt": createdAt.toIso8601String(),
+    "installationResourceId": installationResourceId,
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "runtimeThreadId": runtimeThreadId,
+    "status": sessionStatusValues.reverse[status],
+    "workspaceId": workspaceId,
+  });
+}
+
+enum SessionStatus { ACTIVE, CLOSED, PENDING, STARTING, UNKNOWN }
+
+final sessionStatusValues = EnumValues({
+  "ACTIVE": SessionStatus.ACTIVE,
+  "CLOSED": SessionStatus.CLOSED,
+  "PENDING": SessionStatus.PENDING,
+  "STARTING": SessionStatus.STARTING,
+  "UNKNOWN": SessionStatus.UNKNOWN,
+});
+
+class AgentSessionView {
+  final String agentVersionAssetId;
+  final DateTime createdAt;
+  final String installationResourceId;
+  final int projectionGeneration;
+
+  ///既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+  final String rootEventId;
+  final String? runtimeThreadId;
+  final SessionStatus status;
+  final String workspaceId;
+
+  AgentSessionView({
+    required this.agentVersionAssetId,
+    required this.createdAt,
+    required this.installationResourceId,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    this.runtimeThreadId,
+    required this.status,
+    required this.workspaceId,
+  });
+
+  factory AgentSessionView.fromJson(Map<String, dynamic> json) =>
+      AgentSessionView(
+        agentVersionAssetId: json["agentVersionAssetId"],
+        createdAt: DateTime.parse(json["createdAt"]),
+        installationResourceId: json["installationResourceId"],
+        projectionGeneration: json["projectionGeneration"],
+        rootEventId: json["rootEventId"],
+        runtimeThreadId: json["runtimeThreadId"],
+        status: sessionStatusValues.map[json["status"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "createdAt": createdAt.toIso8601String(),
+    "installationResourceId": installationResourceId,
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "runtimeThreadId": runtimeThreadId,
+    "status": sessionStatusValues.reverse[status],
+    "workspaceId": workspaceId,
+  });
+}
 
 ///DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
 ///canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
@@ -10563,7 +10934,10 @@ class NativeHumanResourceQuery {
 ///Reference-only observation of the original HUMAN AE. Terminal status comes from original
 ///component-action audit after native/usage reconciliation, never from HTTP acceptance.
 class NativeHumanActionResult {
-  final ReferenceElement inputReference;
+  ///Original admitted canonical capability metadata input; exactly one input form, never a
+  ///result body or a new execution authority.
+  final String? inputJson;
+  final ReferenceElement? inputReference;
   final String? nativeId;
   final String? nativeType;
 
@@ -10574,7 +10948,8 @@ class NativeHumanActionResult {
   final TaskStatus? terminalStatus;
 
   NativeHumanActionResult({
-    required this.inputReference,
+    this.inputJson,
+    this.inputReference,
     this.nativeId,
     this.nativeType,
     this.readAdmission,
@@ -10584,7 +10959,10 @@ class NativeHumanActionResult {
 
   factory NativeHumanActionResult.fromJson(Map<String, dynamic> json) =>
       NativeHumanActionResult(
-        inputReference: ReferenceElement.fromJson(json["inputReference"]),
+        inputJson: json["inputJson"],
+        inputReference: json["inputReference"] == null
+            ? null
+            : ReferenceElement.fromJson(json["inputReference"]),
         nativeId: json["nativeId"],
         nativeType: json["nativeType"],
         readAdmission: json["readAdmission"] == null
@@ -10597,7 +10975,8 @@ class NativeHumanActionResult {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "inputReference": inputReference.toJson(),
+    "inputJson": inputJson,
+    "inputReference": inputReference?.toJson(),
     "nativeId": nativeId,
     "nativeType": nativeType,
     "readAdmission": readAdmission?.toJson(),
@@ -14356,17 +14735,23 @@ class CapabilityContractRegistrationResourceTypeFamilyClass {
       _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
-///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
-///Core/Temporal。
+///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+///ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+///仍校验原目标、能力 schema、审批和用量。
 class ComponentActionInput {
   final int actionVersion;
-  final ReferenceElement inputReference;
+
+  ///Canonical JSON for the existing registered capability input schema; mutually exclusive
+  ///with inputReference, validated before AE admission.
+  final String? inputJson;
+  final ReferenceElement? inputReference;
   final String resultExposurePolicyId;
   final int resultExposurePolicyVersion;
 
   ComponentActionInput({
     required this.actionVersion,
-    required this.inputReference,
+    this.inputJson,
+    this.inputReference,
     required this.resultExposurePolicyId,
     required this.resultExposurePolicyVersion,
   });
@@ -14374,14 +14759,18 @@ class ComponentActionInput {
   factory ComponentActionInput.fromJson(Map<String, dynamic> json) =>
       ComponentActionInput(
         actionVersion: json["actionVersion"],
-        inputReference: ReferenceElement.fromJson(json["inputReference"]),
+        inputJson: json["inputJson"],
+        inputReference: json["inputReference"] == null
+            ? null
+            : ReferenceElement.fromJson(json["inputReference"]),
         resultExposurePolicyId: json["resultExposurePolicyId"],
         resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionVersion": actionVersion,
-    "inputReference": inputReference.toJson(),
+    "inputJson": inputJson,
+    "inputReference": inputReference?.toJson(),
     "resultExposurePolicyId": resultExposurePolicyId,
     "resultExposurePolicyVersion": resultExposurePolicyVersion,
   });

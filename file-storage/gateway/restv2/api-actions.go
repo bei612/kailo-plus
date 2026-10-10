@@ -40,6 +40,15 @@ import (
 
 // PerformAction answers to POST /node/action/{Name}
 func (h *Handler) PerformAction(req *restful.Request, resp *restful.Response) error {
+	if req.PathParameter("Name") == "delete" {
+		proof, present, err := auth.TakeNativeProof(req.Request)
+		if err != nil {
+			return err
+		}
+		if present {
+			return h.executeNativeDelete(req, resp, proof)
+		}
+	}
 	// These native jobs do not yet consume a platform Action/Task claim. The
 	// recycle path already writes metadata before PutJob, so enforce the
 	// existing managed-instance boundary before resolving any input node.

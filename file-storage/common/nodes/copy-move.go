@@ -107,7 +107,10 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 
 	if innerFlat && move {
 		log.Logger(ctx).Debug("Move on Flat storage : switching to direct index update")
-		_, e := router.UpdateNode(ctx, &tree.UpdateNodeRequest{From: sourceNode, To: targetNode})
+		response, e := router.UpdateNode(ctx, &tree.UpdateNodeRequest{From: sourceNode, To: targetNode})
+		if e == nil && !response.GetSuccess() {
+			e = errors.WithStack(errors.StatusConflict)
+		}
 		return e
 	}
 
@@ -216,13 +219,15 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 				rootFolderCtx = propagator.WithAdditionalMetadata(rootFolderCtx, map[string]string{common.XPydioMoveUuid: session})
 				rootFolderCtx = WithSkipDefaultMeta(rootFolderCtx)
 			}
-			if _, e := router.CreateNode(rootFolderCtx, &tree.CreateNodeRequest{Node: &tree.Node{
+			if created, e := router.CreateNode(rootFolderCtx, &tree.CreateNodeRequest{Node: &tree.Node{
 				Uuid:  tgtUuid,
 				Path:  targetNode.Path,
 				Type:  tree.NodeType_COLLECTION,
 				MTime: time.Now().Unix(),
 			}, IndexationSession: session}); e != nil {
 				return e
+			} else if created.GetNode().GetUuid() != tgtUuid || created.GetNode().GetPath() != targetNode.Path {
+				return errors.WithStack(errors.StatusConflict)
 			}
 
 		}
@@ -241,6 +246,9 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 			logger.Error("Copy/move - List Nodes", zap.Error(err))
 			return err
 		}
+		if streamer == nil {
+			return errors.WithStack(errors.StatusConflict)
+		}
 		var children []*tree.Node
 		defer streamer.CloseSend()
 		var statErrors int
@@ -249,10 +257,13 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 		for {
 			child, cE := streamer.Recv()
 			if cE != nil {
+				if cE != io.EOF {
+					return cE
+				}
 				break
 			}
-			if child == nil {
-				continue
+			if child.GetNode() == nil {
+				return errors.WithStack(errors.StatusConflict)
 			}
 			if child.Node.IsLeaf() {
 				if _, statErr := router.ReadNode(skipAclContext, &tree.ReadNodeRequest{Node: child.Node, ObjectStats: true}); statErr != nil {
@@ -316,7 +327,10 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 					folderNode.MustSetMeta(common.MetaNamespaceDatasourcePath, path.Join(targetDsPath, relativePath))
 				}
 				log.Logger(ctx).Info("Creating folder", folderNode.ZapPath(), folderNode.ZapUuid())
-				_, e := router.CreateNode(createContext, &tree.CreateNodeRequest{Node: folderNode, IndexationSession: sess, UpdateIfExists: true})
+				created, e := router.CreateNode(createContext, &tree.CreateNodeRequest{Node: folderNode, IndexationSession: sess, UpdateIfExists: true})
+				if e == nil && (created.GetNode().GetUuid() == "" || created.GetNode().GetPath() != folderNode.Path) {
+					e = errors.WithStack(errors.StatusConflict)
+				}
 				if e != nil {
 					logger.Error("-- Create Folder ERROR", zap.Error(e), zap.Any("from", childNode.Path), zap.Any("to", targetPath))
 					publishError(targetDs, folderNode.Path)
@@ -337,6 +351,7 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 		t := time.Now()
 		var lastNode *tree.Node
 		var errs []error
+		var resultMu sync.Mutex
 		progress := &copyPgReader{
 			progressChan: progressChan,
 			total:        totalSize,
@@ -358,10 +373,9 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 					defer wg.Done()
 				}()
 				e := processCopyMove(skipAclContext, router, session, move, crossDs, sourceDs, targetDs, sourceFlat, targetFlat, false, childNode, prefixPathSrc, prefixPathTarget, targetDsPath, logger, publishError, statusChan, progress, tFunc...)
-				if Is403(e) {
-					childrenMoved++
-					taskLogger.Info("-- Ignoring " + childNode.Path + " (" + e.Error() + ")")
-				} else if e != nil {
+				resultMu.Lock()
+				defer resultMu.Unlock()
+				if e != nil {
 					errs = append(errs, e)
 				} else {
 					childrenMoved++
@@ -377,10 +391,7 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 		if lastNode != nil {
 			// Now process very last node
 			e := processCopyMove(skipAclContext, router, session, move, crossDs, sourceDs, targetDs, sourceFlat, targetFlat, true, lastNode, prefixPathSrc, prefixPathTarget, targetDsPath, logger, publishError, statusChan, progress, tFunc...)
-			if Is403(e) {
-				childrenMoved++
-				taskLogger.Info("-- Ignoring " + lastNode.Path + " (" + e.Error() + ")")
-			} else if e != nil {
+			if e != nil {
 				panic(e)
 			} else {
 				childrenMoved++
@@ -435,10 +446,14 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 		// Remove Source N
 		if move {
 			ctx = propagator.WithAdditionalMetadata(ctx, deleteMeta)
-			_, moveErr := router.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: sourceNode})
+			deleted, moveErr := router.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: sourceNode})
+			if moveErr == nil && !deleted.GetSuccess() {
+				moveErr = errors.WithStack(errors.StatusConflict)
+			}
 			if moveErr != nil {
-				logger.Error("-- Delete Source Error / Reverting Copy", zap.Error(moveErr), sourceNode.Zap())
-				router.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: targetNode})
+				// The source deletion may already have happened. Removing the
+				// copied target on a lost ACK could destroy the last good copy.
+				logger.Error("-- Source deletion unconfirmed; retaining target", zap.Error(moveErr), sourceNode.Zap())
 				publishError(sourceDs, sourceNode.Path)
 				panic(moveErr)
 			}
@@ -450,8 +465,10 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 			log.Logger(ctx).Info("Removing source folder after move")
 			// Manually create target folder
 			tgt := propagator.WithAdditionalMetadata(ctx, map[string]string{common.XPydioMoveUuid: session})
-			if _, e := router.DeleteNode(tgt, &tree.DeleteNodeRequest{Node: sourceNode}); e != nil {
+			if deleted, e := router.DeleteNode(tgt, &tree.DeleteNodeRequest{Node: sourceNode}); e != nil {
 				return e
+			} else if !deleted.GetSuccess() {
+				return errors.WithStack(errors.StatusConflict)
 			}
 
 			if !targetFlat && childrenMoved == 0 {
@@ -472,7 +489,10 @@ func CopyMoveNodes(ctx context.Context, router Handler, sourceNode *tree.Node, t
 			if r, e := router.ReadNode(ctx, &tree.ReadNodeRequest{Node: targetNode}); e == nil && r != nil {
 				targetNode.Uuid = r.GetNode().GetUuid()
 			}
-			_, e := router.CreateNode(ctx, &tree.CreateNodeRequest{Node: targetNode, IndexationSession: session, UpdateIfExists: true})
+			created, e := router.CreateNode(ctx, &tree.CreateNodeRequest{Node: targetNode, IndexationSession: session, UpdateIfExists: true})
+			if e == nil && (created.GetNode().GetUuid() == "" || created.GetNode().GetPath() != targetNode.Path) {
+				e = errors.WithStack(errors.StatusConflict)
+			}
 			if e != nil {
 				panic(e)
 			}
@@ -523,8 +543,6 @@ func processCopyMove(ctx context.Context, handler Handler, session string, move,
 	if targetDsPath != "" {
 		targetNode.MustSetMeta(common.MetaNamespaceDatasourcePath, path.Join(targetDsPath, relativePath))
 	}
-	var justCopied *tree.Node
-	justCopied = nil
 	isHidden := path.Base(childPath) == common.PydioSyncHiddenFile
 	// Copy files - For "Copy" operation or targetFlat, do NOT copy .pydio files
 	if childNode.IsLeaf() && !(isHidden && (!move || targetFlat)) {
@@ -568,7 +586,6 @@ func processCopyMove(ctx context.Context, handler Handler, session string, move,
 			publishError(targetDs, targetPath)
 			return e
 		}
-		justCopied = targetNode
 		logger.Debug("-- Copy Success: ", zap.String("to", targetPath), childNode.Zap())
 
 	}
@@ -584,14 +601,12 @@ func processCopyMove(ctx context.Context, handler Handler, session string, move,
 		if crossDs {
 			delCtx = propagator.WithAdditionalMetadata(ctx, map[string]string{common.XPydioMoveUuid: originalSession})
 		}
-		_, moveErr := handler.DeleteNode(delCtx, &tree.DeleteNodeRequest{Node: childNode, IndexationSession: session})
+		deleted, moveErr := handler.DeleteNode(delCtx, &tree.DeleteNodeRequest{Node: childNode, IndexationSession: session})
+		if moveErr == nil && !deleted.GetSuccess() {
+			moveErr = errors.WithStack(errors.StatusConflict)
+		}
 		if moveErr != nil {
-			log.Logger(ctx).Error("-- Delete Error / Reverting Copy", zap.Error(moveErr), childNode.Zap())
-			if justCopied != nil {
-				if _, revertErr := handler.DeleteNode(delCtx, &tree.DeleteNodeRequest{Node: justCopied}); revertErr != nil {
-					log.Logger(ctx).Error("---- Could not Revert", zap.Error(revertErr), justCopied.Zap())
-				}
-			}
+			log.Logger(ctx).Error("-- Source deletion unconfirmed; retaining target", zap.Error(moveErr), childNode.Zap())
 			if Is403(moveErr) {
 				moveErr = errors.New("some original objects are not allowed to be deleted") // replace by a non-403 to trigger error
 			} else {

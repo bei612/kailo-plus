@@ -2495,6 +2495,8 @@
   "action.delete.permanently": {
     "other": "Delete permanently"
   },
+  "action.delete.awaiting-admission": {"other": "Deletion is awaiting admission or approval. Retry this selection to check the same request."},
+  "action.delete.unknown": {"other": "Deletion outcome is not yet confirmed. Retry this selection to check the same request; it will not start a new deletion."},
   "action.delete.permanently.warning": {
     "other": "warning, you cannot undo this operation!"
   },

@@ -109,6 +109,25 @@ export interface ApplicationModelAdmission {
 }
 
 /**
+ * Delete selected native objects in the admitted Resource using the original
+ * recycle/permanent-delete choice. Each native object identity must be independently
+ * authorized and retained in the native first-dispatch claim.
+ */
+export interface FileStorageDeleteInput {
+    nativeObjectRefs:  string[];
+    removePermanently: boolean;
+    resourceId:        string;
+}
+
+/**
+ * Metadata-only result. Success requires all selected native identities to have linked
+ * durable deletion or recycle acknowledgements; an accepted job, Finished status or absent
+ * current object is not terminal evidence.
+ */
+export interface FileStorageDeleteOutput {
+}
+
+/**
  * Export exactly the authorized typed native file revision, including empty or non-UTF-8
  * files.
  */
@@ -1257,12 +1276,18 @@ export interface CapabilityContractRegistrationResourceTypeFamily {
 }
 
 /**
- * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
- * Core/Temporal。
+ * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+ * ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+ * 仍校验原目标、能力 schema、审批和用量。
  */
 export interface ComponentActionClass {
-    actionVersion:               number;
-    inputReference:              ContentReferenceElement;
+    actionVersion: number;
+    /**
+     * Canonical JSON for the existing registered capability input schema; mutually exclusive
+     * with inputReference, validated before AE admission.
+     */
+    inputJson?:                  string;
+    inputReference?:             ContentReferenceElement;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;
 }
@@ -1889,6 +1914,63 @@ export interface AgentInstallationViewReadPermission {
 }
 
 /**
+ * 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
+ * prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
+ */
+export interface AgentInvocationPage {
+    invocations: InvocationElement[];
+    nextCursor?: string;
+}
+
+/**
+ * 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+ * 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+ */
+export interface InvocationElement {
+    actionExecutionId: string;
+    cancelPending:     boolean;
+    /**
+     * 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+     */
+    canReadTask:    boolean;
+    createdAt:      Date;
+    invocationId:   string;
+    observation?:   ReasonCode;
+    runtimeTurnId?: string;
+    status:         InvocationStatus;
+    updatedAt:      Date;
+}
+
+export enum InvocationStatus {
+    Canceled = "CANCELED",
+    Completed = "COMPLETED",
+    Created = "CREATED",
+    Dispatching = "DISPATCHING",
+    Failed = "FAILED",
+    Running = "RUNNING",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+ * 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+ */
+export interface AgentInvocationView {
+    actionExecutionId: string;
+    cancelPending:     boolean;
+    /**
+     * 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+     */
+    canReadTask:    boolean;
+    createdAt:      Date;
+    invocationId:   string;
+    observation?:   ReasonCode;
+    runtimeTurnId?: string;
+    status:         InvocationStatus;
+    updatedAt:      Date;
+}
+
+/**
  * 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
  * snapshot，不是严格存量权威。
  */
@@ -1955,6 +2037,51 @@ export enum AgentMemoryReadViewState {
     Absent = "ABSENT",
     Found = "FOUND",
     Unreadable = "UNREADABLE",
+}
+
+/**
+ * 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
+ * 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
+ */
+export interface AgentSessionPage {
+    nextCursor?: string;
+    sessions:    SessionElement[];
+}
+
+export interface SessionElement {
+    agentVersionAssetId:    string;
+    createdAt:              Date;
+    installationResourceId: string;
+    projectionGeneration:   number;
+    /**
+     * 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+     */
+    rootEventId:      string;
+    runtimeThreadId?: string;
+    status:           SessionStatus;
+    workspaceId:      string;
+}
+
+export enum SessionStatus {
+    Active = "ACTIVE",
+    Closed = "CLOSED",
+    Pending = "PENDING",
+    Starting = "STARTING",
+    Unknown = "UNKNOWN",
+}
+
+export interface AgentSessionView {
+    agentVersionAssetId:    string;
+    createdAt:              Date;
+    installationResourceId: string;
+    projectionGeneration:   number;
+    /**
+     * 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+     */
+    rootEventId:      string;
+    runtimeThreadId?: string;
+    status:           SessionStatus;
+    workspaceId:      string;
 }
 
 /**
@@ -3535,9 +3662,14 @@ export interface NativeHumanResourceQuery {
  * component-action audit after native/usage reconciliation, never from HTTP acceptance.
  */
 export interface NativeHumanActionResult {
-    inputReference: ContentReferenceElement;
-    nativeId?:      string;
-    nativeType?:    string;
+    /**
+     * Original admitted canonical capability metadata input; exactly one input form, never a
+     * result body or a new execution authority.
+     */
+    inputJson?:      string;
+    inputReference?: ContentReferenceElement;
+    nativeId?:       string;
+    nativeType?:     string;
     /**
      * First native same-request read only. Never returned by idempotency observation or retried
      * admission; the bearer is not persisted.
@@ -4887,12 +5019,18 @@ export interface CapabilityContractRegistrationResourceTypeFamilyClass {
 }
 
 /**
- * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
- * Core/Temporal。
+ * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+ * ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+ * 仍校验原目标、能力 schema、审批和用量。
  */
 export interface ComponentActionInput {
-    actionVersion:               number;
-    inputReference:              ContentReferenceElement;
+    actionVersion: number;
+    /**
+     * Canonical JSON for the existing registered capability input schema; mutually exclusive
+     * with inputReference, validated before AE admission.
+     */
+    inputJson?:                  string;
+    inputReference?:             ContentReferenceElement;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;
 }

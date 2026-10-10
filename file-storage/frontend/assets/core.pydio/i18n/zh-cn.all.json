@@ -2495,6 +2495,8 @@
   "action.delete.permanently": {
     "other": "永久删除"
   },
+  "action.delete.awaiting-admission": {"other": "删除正在等待准入或审批。再次操作此选择将查询同一请求。"},
+  "action.delete.unknown": {"other": "删除结果尚未确认。再次操作此选择将查询同一请求，不会重新发起删除。"},
   "action.delete.permanently.warning": {
     "other": "警告！你不能撤消此操作。"
   },

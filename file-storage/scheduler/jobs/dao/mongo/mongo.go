@@ -129,6 +129,9 @@ func (m *mongoImpl) ClaimJob(ctx context.Context, job *proto.Job) error {
 }
 
 func (m *mongoImpl) PutJob(job *proto.Job) error {
+	if jobs.IsNativeDeleteJob(job) {
+		return errors.WithStack(errors.StatusConflict)
+	}
 	c := context.Background()
 	// do not store tasks inside job
 	mj := &mongoJob{
@@ -140,7 +143,14 @@ func (m *mongoImpl) PutJob(job *proto.Job) error {
 	}
 	mj.Job.Tasks = nil
 	upsert := true
-	_, e := m.Collection(collJobs).ReplaceOne(c, bson.D{{"id", job.ID}}, mj, &options.ReplaceOptions{Upsert: &upsert})
+	// The unique original Job ID plus this atomic predicate prevents a
+	// metadata-removing update from downgrading a claimed native execution.
+	_, e := m.Collection(collJobs).ReplaceOne(c, bson.D{{"id", job.ID},
+		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
+		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}}, mj, &options.ReplaceOptions{Upsert: &upsert})
+	if mongo.IsDuplicateKeyError(e) {
+		return errors.WithStack(errors.StatusConflict)
+	}
 	return e
 }
 
@@ -169,6 +179,13 @@ func (m *mongoImpl) GetJob(jobId string, withTasks proto.TaskStatus) (*proto.Job
 
 func (m *mongoImpl) DeleteJob(jobId string) error {
 	c := context.Background()
+	prior, readErr := m.GetJob(jobId, proto.TaskStatus_Unknown)
+	if readErr != nil && !errors.Is(readErr, errors.JobNotFound) {
+		return readErr
+	}
+	if jobs.IsNativeDeleteJob(prior) {
+		return errors.WithStack(errors.StatusConflict)
+	}
 	protected, err := m.Collection(collTasks).CountDocuments(c, bson.D{{Key: "job_id", Value: jobId}, {Key: claimMarkerPath, Value: "true"}})
 	if err != nil {
 		return err
@@ -185,8 +202,20 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 	}
 
 	// Now delete job
-	if _, e := m.Collection(collJobs).DeleteOne(c, bson.D{{"id", jobId}}); e != nil {
+	deleted, e := m.Collection(collJobs).DeleteOne(c, bson.D{{"id", jobId},
+		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
+		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}})
+	if e != nil {
 		return e
+	}
+	if deleted.DeletedCount == 0 {
+		current, err := m.GetJob(jobId, proto.TaskStatus_Unknown)
+		if err != nil && !errors.Is(err, errors.JobNotFound) {
+			return err
+		}
+		if jobs.IsNativeDeleteJob(current) {
+			return errors.WithStack(errors.StatusConflict)
+		}
 	}
 
 	//fmt.Println("Delete", res.DeletedCount, "job")

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_session_page.schema.json",
+  "title": "AgentSessionPage",
+  "description": "17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessions"],
+  "properties": {
+    "sessions": {"type": "array", "items": {"$ref": "agent_session_view.schema.json"}},
+    "nextCursor": {"type": "string"}
+  }
+}

@@ -65,6 +65,10 @@ import (
 )
 
 func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []string, permanently bool, languages ...string) ([]*jobs.Job, error) {
+	return deleteNodesTask(ctx, router, selectedPaths, permanently, nil, languages...)
+}
+
+func deleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []string, permanently bool, execution *nativeDeleteExecution, languages ...string) ([]*jobs.Job, error) {
 
 	var jj []*jobs.Job
 	username := claim.UserNameFromContext(ctx)
@@ -80,9 +84,21 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 			return nil, er
 		}
 		node := read.GetNode()
+		if execution != nil && (node == nil || execution.nodes[nodePath] != node.Uuid) {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
 
 		e := router.WrapCallback(func(inputFilter nodes.FilterFunc, outputFilter nodes.FilterFunc) error {
-			ctx, filtered, _ := inputFilter(ctx, node, "in")
+			ctx, filtered, filterErr := inputFilter(ctx, node, "in")
+			if filterErr != nil {
+				return filterErr
+			}
+			if execution != nil {
+				if filtered == nil || filtered.Uuid != node.Uuid {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				execution.nodes[filtered.Path] = node.Uuid
+			}
 			_, ancestors, e := nodes.AncestorsListFromContext(ctx, filtered, "in", false)
 			if e != nil {
 				return e
@@ -121,9 +137,6 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 				// If moving to recycle, save current path as metadata for later restore operation
 				metaNode := &tree.Node{Uuid: ancestors[0].Uuid}
 				metaNode.MustSetMeta(common.MetaNamespaceRecycleRestore, ancestors[0].Path)
-				if _, e := metaClient.CreateNode(ctx, &tree.CreateNodeRequest{Node: metaNode, Silent: true}); e != nil {
-					log.Logger(ctx).Error("Could not store recycle_restore metadata for node", zap.Error(e))
-				}
 				if _, ok := delJobs.RecycleMoves[rPath]; !ok {
 					delJobs.RecycleMoves[rPath] = &RecycleMoves{Workspace: bi.Workspace}
 				}
@@ -133,12 +146,33 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 				delJobs.RecycleMoves[rPath].Sources = append(delJobs.RecycleMoves[rPath].Sources, filtered.Path)
 
 				// Check permissions
-				srcCtx, srcNode, _ := inputFilter(ctx, node, "from")
-				_, recycleOut, _ := outputFilter(ctx, delJobs.RecyclesNodes[rPath], "to")
-				targetCtx, recycleIn, _ := inputFilter(ctx, recycleOut, "to")
+				srcCtx, srcNode, err := inputFilter(ctx, node, "from")
+				if err != nil {
+					return err
+				}
+				_, recycleOut, err := outputFilter(ctx, delJobs.RecyclesNodes[rPath], "to")
+				if err != nil {
+					return err
+				}
+				targetCtx, recycleIn, err := inputFilter(ctx, recycleOut, "to")
+				if err != nil {
+					return err
+				}
 				recycleIn.MustSetMeta(common.RecycleBinName, "true")
 				if er := router.WrappedCanApply(srcCtx, targetCtx, &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_UPDATE_PATH, Source: srcNode, Target: recycleIn}); er != nil {
 					return er
+				}
+				// Recycle metadata is itself a write, not a read-only job plan.
+				// Native ACLs and the governed claim precede this first effect.
+				if execution != nil {
+					if err := execution.fresh(ctx); err != nil {
+						return err
+					}
+				}
+				if response, err := metaClient.CreateNode(ctx, &tree.CreateNodeRequest{Node: metaNode, Silent: true}); err != nil {
+					return err
+				} else if !response.GetSuccess() {
+					return errors.WithStack(errors.StatusConflict)
 				}
 
 				log.Auditer(ctx).Info(
@@ -166,9 +200,19 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 		// Create recycle bins now, to make sure user is notified correctly
 		recycleNode := delJobs.RecyclesNodes[recyclePath]
 		if _, e := fullPathRouter.ReadNode(ctx, &tree.ReadNodeRequest{Node: recycleNode}); e != nil {
-			_, e := fullPathRouter.CreateNode(ctx, &tree.CreateNodeRequest{Node: recycleNode, IndexationSession: "close-create-recycle"})
+			if !errors.Is(e, errors.NodeNotFound) && !errors.Is(e, errors.ObjectNotFound) {
+				return nil, e
+			}
+			if execution != nil {
+				if err := execution.fresh(ctx); err != nil {
+					return nil, err
+				}
+			}
+			created, e := fullPathRouter.CreateNode(ctx, &tree.CreateNodeRequest{Node: recycleNode, IndexationSession: "close-create-recycle"})
 			if e != nil {
-				log.Logger(ctx).Error("Could not create recycle node, it will be created during the move but may not appear to the user")
+				return nil, e
+			} else if created.GetNode().GetUuid() == "" || created.GetNode().GetPath() != recycleNode.Path || created.GetNode().GetType() != tree.NodeType_COLLECTION {
+				return nil, errors.WithStack(errors.StatusConflict)
 			} else {
 				log.Logger(ctx).Info("Recycle bin created before launching move task", recycleNode.ZapPath())
 			}
@@ -207,7 +251,7 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 		ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{
 			keys.CtxWorkspaceUuid: rMoves.Workspace.UUID,
 		})
-		if resp, er := cli.PutJob(ctx, &jobs.PutJobRequest{Job: job}); er != nil {
+		if resp, er := putDeleteJob(ctx, cli, job, execution); er != nil {
 			return nil, er
 		} else {
 			jj = append(jj, resp.GetJob())
@@ -239,7 +283,7 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 				},
 			},
 		}
-		if resp, er := cli.PutJob(ctx, &jobs.PutJobRequest{Job: job}); er != nil {
+		if resp, er := putDeleteJob(ctx, cli, job, execution); er != nil {
 			return nil, er
 		} else {
 			jj = append(jj, resp.GetJob())

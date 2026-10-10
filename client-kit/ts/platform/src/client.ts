@@ -24,6 +24,8 @@ import type {
   AgentDelegationPage,
   AgentDelegationTargetPage,
   AgentInstallationView,
+  AgentSessionPage,
+  AgentInvocationPage,
   AgentMemoryReadView,
   AgentMemoryEntryPage,
   AgentVersionView,
@@ -175,6 +177,19 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+
+    /** Existing Session / Invocation authority only; never starts or resumes a runtime. */
+    agentSessions: (resourceId: string, rootEventId?: string, cursor?: string) => {
+      const query = new URLSearchParams();
+      if (rootEventId !== undefined) query.set("rootEventId", rootEventId);
+      if (cursor !== undefined) query.set("cursor", cursor);
+      return get<AgentSessionPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/sessions${query.size ? `?${query}` : ""}`);
+    },
+    agentInvocations: (resourceId: string, rootEventId: string, projectionGeneration: number, cursor?: string) => {
+      const query = new URLSearchParams({ rootEventId, projectionGeneration: String(projectionGeneration) });
+      if (cursor !== undefined) query.set("cursor", cursor);
+      return get<AgentInvocationPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/invocations?${query}`);
+    },
 
     /** 实际受权的确切 PUBLISHED 安装来源；不从定义的当前指针选默认版本。 */
     agentInstallationCandidates: (workspaceId: string, offset?: number) => {

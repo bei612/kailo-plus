@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/errors"
@@ -42,6 +43,7 @@ import (
 	"github.com/pydio/cells/v5/common/utils/std"
 	"github.com/pydio/cells/v5/scheduler/actions"
 	"github.com/pydio/cells/v5/scheduler/actions/tools"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"github.com/pydio/cells/v5/scheduler/lang"
 )
 
@@ -55,6 +57,7 @@ type CopyMoveAction struct {
 	targetPlaceholder string
 	createFolder      bool
 	targetIsParent    bool
+	nativeDelete      bool
 }
 
 func (c *CopyMoveAction) GetDescription(_ ...string) actions.ActionDescription {
@@ -130,6 +133,7 @@ func (c *CopyMoveAction) ProvidesProgress() bool {
 
 // Init passes parameters to the action
 func (c *CopyMoveAction) Init(ctx context.Context, job *jobs.Job, action *jobs.Action) error {
+	c.nativeDelete = jobstore.IsNativeDeleteJob(job)
 
 	if action.Parameters == nil {
 		return errors.WithMessage(errors.InvalidParameters, "Could not find parameters for CopyMove action")
@@ -266,6 +270,20 @@ func (c *CopyMoveAction) Run(ctx context.Context, channels *actions.RunnableChan
 	output.AppendOutput(&jobs.ActionOutput{
 		Success: true,
 	})
+	if claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool); claimed && c.nativeDelete && c.move {
+		if len(output.Nodes) != 1 || sourceNode.GetUuid() == "" || output.Nodes[0].GetUuid() == "" {
+			err := errors.WithStack(errors.StatusConflict)
+			return input.WithError(err), err
+		}
+		target := output.Nodes[0]
+		body, err := protojson.Marshal(&tree.NodeChangeEvent{Type: tree.NodeChangeEvent_UPDATE_PATH,
+			Source: &tree.Node{Uuid: sourceNode.Uuid, Path: sourceNode.Path, Type: sourceNode.Type},
+			Target: &tree.Node{Uuid: target.Uuid, Path: target.Path, Type: target.Type}})
+		if err != nil {
+			return input.WithError(err), err
+		}
+		output.AppendOutput(&jobs.ActionOutput{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeNodeMutationResult: "true"}})
+	}
 	return output, nil
 
 }

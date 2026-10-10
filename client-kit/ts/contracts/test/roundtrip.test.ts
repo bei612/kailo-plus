@@ -8,6 +8,32 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Agent sessions and native control preserve wire and legacy", () => {
+  type Wire = import("../src/generated/contracts.js").AgentSessionPage;
+  type Invocations = import("../src/generated/contracts.js").AgentInvocationPage;
+  type Control = import("../src/generated/contracts.js").ComponentActionInput;
+  type DeleteInput = import("../src/generated/contracts.js").FileStorageDeleteInput;
+  type Result = import("../src/generated/contracts.js").NativeHumanActionResult;
+  const sample: { sessions: Wire; invocations: Invocations; control: Control; legacy: Control; deleteInput: DeleteInput; deleteOutput: import("../src/generated/contracts.js").FileStorageDeleteOutput; result: Result } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-session-control.sample.json", import.meta.url), "utf8"));
+  const sessions: Wire = { nextCursor: sample.sessions.nextCursor, sessions: sample.sessions.sessions.map(r => ({
+    installationResourceId: r.installationResourceId, workspaceId: r.workspaceId, rootEventId: r.rootEventId,
+    projectionGeneration: r.projectionGeneration, agentVersionAssetId: r.agentVersionAssetId,
+    runtimeThreadId: r.runtimeThreadId, status: r.status, createdAt: r.createdAt,
+  })) };
+  const invocations: Invocations = { nextCursor: sample.invocations.nextCursor, invocations: sample.invocations.invocations.map(r => ({
+    invocationId: r.invocationId, actionExecutionId: r.actionExecutionId, runtimeTurnId: r.runtimeTurnId,
+    status: r.status, cancelPending: r.cancelPending, canReadTask: r.canReadTask, observation: r.observation,
+    createdAt: r.createdAt, updatedAt: r.updatedAt,
+  })) };
+  const control = (r: Control): Control => ({ actionVersion: r.actionVersion, inputReference: r.inputReference,
+    inputJson: r.inputJson, resultExposurePolicyId: r.resultExposurePolicyId, resultExposurePolicyVersion: r.resultExposurePolicyVersion });
+  const d = sample.deleteInput, r = sample.result;
+  const deleteInput: DeleteInput = { nativeObjectRefs: d.nativeObjectRefs, removePermanently: d.removePermanently, resourceId: d.resourceId };
+  const result: Result = { submission: r.submission, inputReference: r.inputReference, inputJson: r.inputJson,
+    terminalStatus: r.terminalStatus, nativeType: r.nativeType, nativeId: r.nativeId, readAdmission: r.readAdmission };
+  deepStrictEqual(JSON.parse(JSON.stringify({ sessions, invocations, control: control(sample.control), legacy: control(sample.legacy), deleteInput, deleteOutput: {}, result })), sample);
+});
+
 test("Web search preserves original operators and optional absence", () => {
   const sample: import("../src/generated/contracts.js").WebSearchQuery[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-search-query.sample.json",import.meta.url),"utf8"));
   const actual: typeof sample = sample.map(row=>({q:row.q,channelId:row.channelId,authors:row.authors,since:row.since,until:row.until,limit:row.limit}));

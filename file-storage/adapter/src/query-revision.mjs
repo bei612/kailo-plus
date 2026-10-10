@@ -11,6 +11,7 @@ import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
 import { executeNode, observeNode, nodeActions, readExecutionConfiguration } from './node-execution.mjs';
 import { writeAction, writeConfiguration, executeWrite, observeWrite } from './write-execution.mjs';
+import { deleteAction, deleteConfiguration, executeDelete, observeDelete } from './delete-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { nativeJsonFetch } from './native-actor.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
@@ -27,6 +28,7 @@ function executionMapping(action, config) {
     return { ...action, nativeType: 'node', cancelCapability: 'UNSUPPORTED' };
   }
   if (action.actionKey === writeAction && config.write) return {...action, nativeType:'version', cancelCapability:'UNSUPPORTED'};
+  if (action.actionKey === deleteAction && config.delete) return {...action, nativeType:'job', cancelCapability:'UNSUPPORTED'};
   if (['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(action.actionKey) && config.documentLaunch) {
     return { ...action, nativeType: 'document.pat', cancelCapability: 'SUPPORTED' };
   }
@@ -56,9 +58,10 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'readExecution', 'management', 'mcp', 'write'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'readExecution', 'management', 'mcp', 'write', 'delete'].includes(key))) throw new Refused(503);
   if (value.readExecution !== undefined && value.readEdge === undefined) throw new Refused(503);
   if (value.write !== undefined) writeConfiguration(value.write, value);
+  if (value.delete !== undefined) deleteConfiguration(value.delete, value);
   if (value.management !== undefined && (!exactKeys(value.management,
     ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
       ...(value.management.validation === undefined ? [] : ['validation'])])
@@ -88,6 +91,7 @@ export function configuration(value) {
     executionMapping: action => executionMapping(action, value),
   });
   return Object.freeze({ ...value, ...(value.write === undefined ? {} : {write:writeConfiguration(value.write, value)}),
+    ...(value.delete === undefined ? {} : {delete:deleteConfiguration(value.delete, value)}),
     ...(value.readExecution === undefined ? {} : {readExecution:readExecutionConfiguration(value.readExecution)}),
     ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
     ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
@@ -144,7 +148,8 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
         // HUMAN business contexts have the same required policy pair as
         // Agent calls. This cannot borrow a DOCUMENT/PAT NONE context.
         if (!(nodeActions.includes(claims.action_key)
-          || (operation === 'map_native_status_error' && config.write && claims.action_key === writeAction))
+          || (operation === 'map_native_status_error' && config.write && claims.action_key === writeAction)
+          || (operation === 'map_native_status_error' && config.delete && claims.action_key === deleteAction))
           || !UUID.test(claims.result_exposure_policy_id) || !Number.isSafeInteger(claims.result_exposure_policy_version)
           || claims.result_exposure_policy_version <= 0) throw new Refused(401);
       } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
@@ -346,7 +351,9 @@ export function createAdapter(rawConfig) {
         const operation = request.url.slice('/platform-adapter/v1/'.length);
         let args;
         try { args = JSON.parse(raw); } catch { throw new Refused(400); }
-        const value = ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'version'
+        const value = ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'job'
+          ? await observeDelete(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
+          : ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'version'
           ? await observeWrite(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
           : ['observe', 'extract_usage'].includes(operation) && args?.nativeType === 'node'
           ? await observeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7), operation)
@@ -359,8 +366,9 @@ export function createAdapter(rawConfig) {
       if (request.url === '/platform-adapter/v1/execute') {
         let body;
         try { body=JSON.parse(raw); } catch { throw new Refused(400); }
-        if (body?.actionKey === writeAction) {
-          const value = await executeWrite(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+        if (body?.actionKey === writeAction || body?.actionKey === deleteAction) {
+          const execute = body.actionKey === deleteAction ? executeDelete : executeWrite;
+          const value = await execute(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
           response.writeHead(200, {'content-type':'application/json', 'cache-control':'no-store'});
           response.end(canonical(value));
           return;

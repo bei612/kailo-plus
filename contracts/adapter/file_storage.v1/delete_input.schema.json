@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/delete_input.schema.json",
+  "title": "FileStorageDeleteInput",
+  "description": "Delete selected native objects in the admitted Resource using the original recycle/permanent-delete choice. Each native object identity must be independently authorized and retained in the native first-dispatch claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRefs", "removePermanently"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeObjectRefs": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "removePermanently": {"type": "boolean"}
+  }
+}

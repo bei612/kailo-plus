@@ -136,12 +136,13 @@ func NewTaskFromEvent(ctx context.Context, job *jobs.Job, event interface{}) *Ta
 		definition, definitionError := proto.MarshalOptions{Deterministic: true}.Marshal(job)
 		triggerBytes, triggerError := proto.MarshalOptions{Deterministic: true}.Marshal(trigger)
 		parameters, parameterError := json.Marshal(c.Value(ContextJobParametersKey{}))
-		if definitionError != nil || triggerError != nil || parameterError != nil {
+		jobDigest, jobDigestError := jobstore.NativeJobDefinitionDigest(job)
+		if definitionError != nil || triggerError != nil || parameterError != nil || jobDigestError != nil {
 			t.err = errors.WithMessage(errors.InvalidParameters, "native task input cannot be frozen")
 		} else {
 			input, _ := json.Marshal([][]byte{definition, triggerBytes, parameters, []byte(ctxUserName)})
 			digest := sha256.Sum256(input)
-			receipt, _ := json.Marshal(map[string]string{"requestDigest": hex.EncodeToString(digest[:])})
+			receipt, _ := json.Marshal(map[string]string{"requestDigest": hex.EncodeToString(digest[:]), "jobDigest": jobDigest})
 			t.task.ActionsLogs = []*jobs.ActionLog{{InputMessage: &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{{JsonBody: receipt, Vars: map[string]string{jobstore.TaskCreateOnly: "true"}}}}}}
 		}
 	}
@@ -162,6 +163,9 @@ func (t *Task) Queue(queue ...chan RunnerFunc) (dispatchError error) {
 	}
 	if t.err != nil {
 		return t.err
+	}
+	if err := jobstore.AuthorizeNativeDeleteDispatch(t.context, t.Job, t.event); err != nil {
+		return err
 	}
 	if t.claimRequired {
 		client := jobs.NewJobServiceClient(grpc.ResolveConn(t.context, common.ServiceJobsGRPC))
@@ -320,6 +324,32 @@ func (t *Task) AppendResult(action *jobs.Action, output *jobs.ActionMessage) err
 	t.resultMu.Lock()
 	defer t.resultMu.Unlock()
 	for _, entry := range output.OutputChain {
+		if entry.GetVars()[jobstore.NativeNodeMutationResult] == "true" {
+			event := new(tree.NodeChangeEvent)
+			if !entry.Success || protojson.Unmarshal(entry.JsonBody, event) != nil || event.GetSource().GetUuid() == "" ||
+				(action.GetID() != "actions.tree.delete" && action.GetID() != "actions.tree.copymove") ||
+				(action.GetID() == "actions.tree.delete" && event.Type != tree.NodeChangeEvent_DELETE) ||
+				(action.GetID() == "actions.tree.copymove" && (event.Type != tree.NodeChangeEvent_UPDATE_PATH || action.Parameters["type"] != "move" || event.GetTarget().GetUuid() == "")) {
+				return errors.WithMessage(errors.StatusConflict, "native mutation result lacks exact acknowledged identity")
+			}
+			duplicate := false
+			for _, priorLog := range t.task.ActionsLogs {
+				for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
+					previous := new(tree.NodeChangeEvent)
+					if prior.GetVars()[jobstore.NativeNodeMutationResult] != "true" || protojson.Unmarshal(prior.JsonBody, previous) != nil || previous.GetSource().GetUuid() != event.Source.Uuid {
+						continue
+					}
+					if priorLog.GetAction().GetID() != action.GetID() || !proto.Equal(previous, event) {
+						return errors.WithStack(errors.StatusConflict)
+					}
+					duplicate = true
+				}
+			}
+			if !duplicate {
+				t.task.ActionsLogs = append(t.task.ActionsLogs, &jobs.ActionLog{Action: &jobs.Action{ID: action.ID}, OutputMessage: &jobs.ActionMessage{OutputChain: []*jobs.ActionOutput{proto.Clone(entry).(*jobs.ActionOutput)}}})
+			}
+			continue
+		}
 		if entry.GetVars()[jobstore.NativeVersionResult] != "true" || !entry.Success {
 			continue
 		}

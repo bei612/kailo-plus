@@ -29,6 +29,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/broker"
@@ -42,6 +43,7 @@ import (
 	"github.com/pydio/cells/v5/common/utils/uuid"
 	"github.com/pydio/cells/v5/scheduler/actions"
 	"github.com/pydio/cells/v5/scheduler/actions/tools"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"github.com/pydio/cells/v5/scheduler/lang"
 )
 
@@ -53,6 +55,7 @@ type DeleteAction struct {
 	tools.ScopedRouterConsumer
 	childrenOnlyParam string
 	ignoreNonExisting string
+	nativeDelete      bool
 }
 
 func (c *DeleteAction) GetDescription(_ ...string) actions.ActionDescription {
@@ -102,6 +105,7 @@ func (c *DeleteAction) GetName() string {
 
 // Init passes parameters to the action
 func (c *DeleteAction) Init(ctx context.Context, job *jobs.Job, action *jobs.Action) error {
+	c.nativeDelete = jobstore.IsNativeDeleteJob(job)
 
 	if co, ok := action.Parameters["childrenOnly"]; ok {
 		c.childrenOnlyParam = co
@@ -298,6 +302,15 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 		Success:    true,
 		StringBody: "Deleted node",
 	})
+	if claimed, _ := ctx.Value(jobstore.ClaimedTaskContextKey{}).(bool); claimed && c.nativeDelete && !childrenOnly {
+		// Persist the original native event identity only after every delete ACK.
+		// An empty selector or children-only operation cannot prove this removal.
+		body, err := protojson.Marshal(&tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: sourceNode.Uuid, Path: sourceNode.Path, Type: sourceNode.Type}})
+		if err != nil {
+			return input.WithError(err), err
+		}
+		output.AppendOutput(&jobs.ActionOutput{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeNodeMutationResult: "true"}})
+	}
 
 	return output, nil
 }

@@ -73,7 +73,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 		}
 		for _, priorLog := range stored.ActionsLogs {
 			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
-				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" {
+				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" {
 					continue
 				}
 				found := false
@@ -167,8 +167,15 @@ func Migrate(ctx, fromCtx, toCtx context.Context, dryRun bool, status chan servi
 		if dryRun {
 			break
 		}
-		if e := to.PutJob(j); e != nil {
-			return out, e
+		var writeErr error
+		if IsNativeDeleteJob(j) {
+			j.Tasks = nil
+			writeErr = to.ClaimJob(ctx, j)
+		} else {
+			writeErr = to.PutJob(j)
+		}
+		if writeErr != nil {
+			return out, writeErr
 		}
 		for _, ta := range tasks {
 			// Migrate the existing native claim, including its status and

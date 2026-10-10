@@ -19,9 +19,9 @@
  */
 
 import React from 'react'
-import PydioApi from 'pydio/http/api'
 import {Checkbox} from 'material-ui'
-import {RestDeleteNodesRequest, TreeServiceApi,TreeNode} from 'cells-sdk';
+import {RestDeleteNodesRequest,TreeNode} from 'cells-sdk';
+import nativeDelete from './nativeDelete';
 
 class PermanentRemoveCheckbox extends React.Component {
     constructor(props) {
@@ -69,16 +69,17 @@ export default function (pydio) {
                 const nodes = pydio.getContextHolder().getSelectedNodes();
                 const slug = pydio.user.getActiveRepositoryObject().getSlug();
                 const deleteRequest = new RestDeleteNodesRequest();
-                const api = new TreeServiceApi(PydioApi.getRestClient());
                 deleteRequest.Nodes = nodes.map(n => {
                     const t = new TreeNode();
                     t.Path = slug + n.getPath();
+                    t.Uuid = n.getMetadata().get('uuid');
                     return t;
                 });
                 if(moreValues && moreValues.removePermanently) {
                     deleteRequest.RemovePermanently = true;
                 }
-                api.deleteNodes(deleteRequest).then(r => {
+                nativeDelete(pydio, deleteRequest).then(r => {
+                    if (!r) return;
                     if (r.DeleteJobs && r.DeleteJobs.length){
                         nodes.forEach(n => {
                             n.getMetadata().set('pending_operation', r.DeleteJobs[0].Label);

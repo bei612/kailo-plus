@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_invocation_page.schema.json",
+  "title": "AgentInvocationPage",
+  "description": "原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回 prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invocations"],
+  "properties": {
+    "invocations": {"type": "array", "items": {"$ref": "agent_invocation_view.schema.json"}},
+    "nextCursor": {"type": "string"}
+  }
+}

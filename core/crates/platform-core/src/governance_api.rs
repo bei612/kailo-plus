@@ -369,7 +369,7 @@ pub(crate) const TASK_QUERY: &str = "
 
 /// 投影能否担保为当前（`.design/06` §3.1、RB-05）。返回 None 即当前；否则是
 /// UI 必须显示为「待对账」的原因，不得渲染成成功或失败（`06` §4）。
-fn observation(r: &TaskRow) -> Option<ReasonCode> {
+pub(crate) fn observation(r: &TaskRow) -> Option<ReasonCode> {
     let unknown = r.dispatch_state == "UNKNOWN"
         || r.ref_state.as_deref() == Some("UNKNOWN")
         || r.approval_ref_state.as_deref() == Some("UNKNOWN");

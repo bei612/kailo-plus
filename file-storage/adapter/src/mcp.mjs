@@ -5,6 +5,7 @@ import { Refused, exactKeys, object, nonempty, canonical, boundedBody,
   fixedUrl, verifiedClaims } from '../../../client-kit/adapter/protocol.mjs';
 import { executeNode, nodeActions } from './node-execution.mjs';
 import { executeWrite, writeAction } from './write-execution.mjs';
+import { executeDelete, deleteAction } from './delete-execution.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const transportHeader = 'x-kailo-gateway-authorization';
@@ -28,7 +29,9 @@ export function mcpConfiguration(value, config) {
     if (!exactKeys(tool, ['name', 'actionKey', 'actionVersion', 'inputSchemaDigest', 'inputSchema',
       ...(Object.hasOwn(tool ?? {}, 'description') ? ['description'] : [])])
       || !nonempty(tool.name) || names.has(tool.name)
-      || (nodeActions.includes(tool.actionKey) ? !config.readEdge : tool.actionKey !== writeAction || !config.write)
+      || (nodeActions.includes(tool.actionKey) ? !config.readEdge
+        : tool.actionKey === writeAction ? !config.write
+        : tool.actionKey !== deleteAction || !config.delete)
       || !Number.isSafeInteger(tool.actionVersion) || tool.actionVersion <= 0
       || !object(tool.inputSchema) || tool.inputSchema.type !== 'object'
       || (tool.description !== undefined && !nonempty(tool.description))
@@ -99,7 +102,8 @@ export async function handleMcp(config, request, response) {
       // ExtMcp forwards only input. The authenticated target, original hash,
       // HUMAN/AGENT delegation and all fresh PEP checks remain executeNode's.
       const args = { target: { resourceId: claims.target_id }, input: value.params.arguments };
-      const execute = tool.actionKey === writeAction ? executeWrite : executeNode;
+      const execute = tool.actionKey === writeAction ? executeWrite
+        : tool.actionKey === deleteAction ? executeDelete : executeNode;
       const structuredContent = await execute(config, deadline, canonical({ actionKey: tool.actionKey,
         idempotencyKey: key, arguments: args }), key, token);
       await gatewayIdentity(config, request);

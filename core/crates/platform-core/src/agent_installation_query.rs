@@ -293,7 +293,7 @@ pub async fn get(
     }
 }
 
-async fn read_view(
+pub(crate) async fn read_view(
     state: &BffState,
     ctx: &ExecutionContext,
     id: Uuid,

@@ -265,7 +265,15 @@ pub(crate) async fn handle(
         if !is_human(&ae) { return Err(denied()); }
         if ae.gate_state == "DENIED" && raw.get("sourceResources").is_some() { return Err(denied()); }
         if ae.gate_state != "DENIED" && !crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,raw.get("sourceResources")).await?.allowed { return Err(denied()); }
-        let mut output = json!({"submission":ae.submission(),"inputReference":ae.parameters.as_ref().ok_or_else(unavailable)?["inputArguments"]["input"]});
+        let parameters = ae.parameters.as_ref().ok_or_else(unavailable)?;
+        let input = &parameters["inputArguments"]["input"];
+        let mut output = json!({"submission":ae.submission()});
+        if parameters["nativeControlInput"] == json!(true) {
+            if !input.is_object() || !control_metadata(input) { return Err(unavailable()); }
+            output["inputJson"] = json!(collab_bridge::limits::canonical_json(input));
+        } else {
+            output["inputReference"] = input.clone();
+        }
         if raw.get("command").is_some() && native_read::is_read(&ae) {
             if let Some(admission) = native_read::admit(&state, &ae, key).await? {
                 output["readAdmission"] = admission;

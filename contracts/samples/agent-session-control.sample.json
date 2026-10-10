@@ -1,0 +1,65 @@
+{
+  "sessions": {
+    "sessions": [
+      {
+        "installationResourceId": "09c6b43b-1edf-467d-8e81-e47a3f506c4f",
+        "workspaceId": "87c27723-e475-4e0b-a0e9-50e5d755fe63",
+        "rootEventId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "projectionGeneration": 2,
+        "agentVersionAssetId": "736d7562-5678-4d27-9c82-4e6ea165837f",
+        "status": "UNKNOWN",
+        "createdAt": "2026-10-10T18:00:00.000Z"
+      }
+    ]
+  },
+  "invocations": {
+    "invocations": [
+      {
+        "invocationId": "49279014-2fbe-4893-b020-fa3b3920f1c9",
+        "actionExecutionId": "e75c0307-2614-4786-ac31-14e719f728a9",
+        "status": "UNKNOWN",
+        "cancelPending": true,
+        "canReadTask": false,
+        "observation": "EXTERNAL_RESULT_UNKNOWN",
+        "createdAt": "2026-10-10T18:00:00.000Z",
+        "updatedAt": "2026-10-10T18:01:00.000Z"
+      }
+    ]
+  },
+  "control": {
+    "inputJson": "{\"nativeObjectRefs\":[\"736d7562-5678-4d27-9c82-4e6ea165837f\"],\"removePermanently\":false,\"resourceId\":\"09c6b43b-1edf-467d-8e81-e47a3f506c4f\"}",
+    "actionVersion": 1,
+    "resultExposurePolicyId": "c75ca942-217b-4a96-a487-416e893630ab",
+    "resultExposurePolicyVersion": 1
+  },
+  "legacy": {
+    "inputReference": {
+      "resourceId": "09c6b43b-1edf-467d-8e81-e47a3f506c4f",
+      "nativeObjectRef": "736d7562-5678-4d27-9c82-4e6ea165837f",
+      "nativeRevision": "fixed-native-version",
+      "displayName": "source document",
+      "mediaType": "text/plain"
+    },
+    "actionVersion": 1,
+    "resultExposurePolicyId": "c75ca942-217b-4a96-a487-416e893630ab",
+    "resultExposurePolicyVersion": 1
+  },
+  "deleteInput": {
+    "nativeObjectRefs": [
+      "736d7562-5678-4d27-9c82-4e6ea165837f"
+    ],
+    "removePermanently": false,
+    "resourceId": "09c6b43b-1edf-467d-8e81-e47a3f506c4f"
+  },
+  "deleteOutput": {},
+  "result": {
+    "submission": {
+      "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",
+      "actionExecutionId": "736d7562-5678-4d27-9c82-4e6ea165837f",
+      "actionKey": "file_storage.delete@v1",
+      "gateState": "ALLOWED",
+      "dispatchState": "DISPATCHED"
+    },
+    "inputJson": "{\"nativeObjectRefs\":[\"736d7562-5678-4d27-9c82-4e6ea165837f\"],\"removePermanently\":false,\"resourceId\":\"09c6b43b-1edf-467d-8e81-e47a3f506c4f\"}"
+  }
+}

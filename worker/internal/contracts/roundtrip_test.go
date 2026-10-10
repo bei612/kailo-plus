@@ -14,6 +14,43 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestAgentSessionsAndNativeControlRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-session-control.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for key, typed := range map[string]any{
+		"sessions": &generated.AgentSessionPage{}, "invocations": &generated.AgentInvocationPage{},
+		"control": &generated.ComponentActionInput{}, "legacy": &generated.ComponentActionInput{},
+		"deleteInput": &generated.FileStorageDeleteInput{}, "deleteOutput": &generated.FileStorageDeleteOutput{},
+		"result": &generated.NativeHumanActionResult{},
+	} {
+		t.Run(key, func(t *testing.T) {
+			if err := json.Unmarshal(samples[key], typed); err != nil {
+				t.Fatal(err)
+			}
+			back, err := json.Marshal(typed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual, expected any
+			if err := json.Unmarshal(back, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(samples[key], &expected); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(actual, expected) {
+				t.Fatalf("wire changed: %s", back)
+			}
+		})
+	}
+}
+
 func TestTaskStateReportsRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "task-state-reports.sample.json"))
 	if err != nil {

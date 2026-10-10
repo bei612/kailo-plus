@@ -185,7 +185,7 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
-    if (business && (operation === 'execute' || changes.write || changes.readExecution)) {
+    if (business && (operation === 'execute' || changes.write || changes.readExecution || changes.delete)) {
       const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
       assert.deepEqual(Object.keys(proof).sort(), ['actionToken','argumentsJson']);
       assert.equal(proof.argumentsJson, canonical(requestArguments));
@@ -197,6 +197,23 @@ async function setup(t, changes = {}) {
       if (!changes.missingActorAck) response.setHeader('x-kailo-native-actor', changes.actorAck ??
         `${actor.tenant_id}:${ids[0]}:${kind}:${actor.actor_principal_id}`);
     } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
+    if (changes.delete && (request.url === '/v2/n/action/delete' || request.url === '/v2/jobs/user')) {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      if (operation === 'execute') {
+        assert.equal(request.url, '/v2/n/action/delete');
+        assert.equal(request.headers['idempotency-key'], ids[7]);
+        assert.deepEqual(JSON.parse(raw), {Nodes:requestArguments.input.nativeObjectRefs.map(Uuid => ({Uuid})),
+          DeleteOptions:{PermanentDelete:requestArguments.input.removePermanently}});
+        state.deletions=(state.deletions??0)+1;
+      } else {
+        assert.equal(request.url, '/v2/jobs/user');
+        assert.equal(request.headers['x-kailo-native-operation'], operation);
+        assert.deepEqual(JSON.parse(raw), {JobIDs:['delivered-delete-job'],LoadTasks:'Any'});
+        state.deleteObservations=(state.deleteObservations??0)+1;
+      }
+      return reply(response, changes.nativeStatus??200, changes.deleteResult??{execution:{
+        idempotencyKey:ids[7],nativeType:'job',platformStatus:'UNKNOWN',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'}});
+    }
     if (changes.readExecution && request.url === '/v2/jobs/user') {
       let raw = ''; for await (const chunk of request) raw += chunk;
       assert.equal(request.headers['x-kailo-native-operation'], operation);
@@ -307,6 +324,7 @@ async function setup(t, changes = {}) {
     ...(changes.serviceRead || changes.serviceList || changes.validation ? {readEdge:{downloadOrigin:origin,
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const proofFiles = [];
+  if (changes.delete) config.delete={nativeJobId:'delivered-delete-job',usageMeasurements:[{meterKey:'approved_delete_count',quantitySource:'COUNT'}],...changes.deleteConfig};
   if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
   if (changes.readExecution) config.readExecution={nativeJobId:'delivered-read-job',usageMeasurements:[{meterKey:'approved_read_count',quantitySource:'COUNT'},{meterKey:'approved_read_bytes',quantitySource:'CONTENT_BYTES'}],...changes.readExecutionConfig};
   let secretAgent;
@@ -402,7 +420,7 @@ async function setup(t, changes = {}) {
         target_type:'RESOURCE',target_id:ids[10],action_key:businessAction,
         delegation_id:changes.businessHuman ? undefined : ids[11], delegation_version:changes.businessHuman ? undefined : 1,
         result_exposure_policy_id:ids[9],result_exposure_policy_version:1,idempotency_key:ids[7],
-        ...(changes.businessHuman || changes.write || changes.readExecution ? {external_execution_id:ids[8]} : {}),
+        ...(changes.businessHuman || changes.write || changes.readExecution || changes.delete ? {external_execution_id:ids[8]} : {}),
         normalized_parameter_hash:createHash('sha256').update(canonical(operation==='execute'
           ? requestArguments : {operation,arguments:requestArguments})).digest('hex')} : {}), ...change };
     return signedClaims(claims,key);
@@ -427,6 +445,8 @@ async function setup(t, changes = {}) {
   return { state, token, invoke, target, proofFiles, requestArguments, config, gatewayToken,
     adapterOrigin, privateKey };
 }
+
+export { setup, mcpWireClient };
 
 test('native write executes the frozen opaque draft and only discloses a durable version reference',async t=>{
  for (const businessHuman of [false,true]) for (const mcp of [false,true]) await t.test(`${businessHuman?'HUMAN':'AGENT'} ${mcp?'SDK MCP':'HTTP'}`,async nested=>{
