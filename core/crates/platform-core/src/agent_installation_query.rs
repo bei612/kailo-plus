@@ -581,16 +581,28 @@ pub async fn candidates(
         {
             return Refusal::Unavailable("安装版本内容 hash 不一致".into()).respond(None);
         }
-        // These declared producers are not yet implemented; don't present them
-        // as an installable source and don't replace them with an empty config.
-        if !content.declared_tool_resource_ids.is_empty()
-            || !content.skill_version_asset_ids.is_empty()
-        {
+        // Skill materialization still has no producer. Native Tool references
+        // already have one: use the actual install checks, not the old blanket
+        // exclusion, and never replace requested references with empty config.
+        if !content.skill_version_asset_ids.is_empty() {
             continue;
         }
         match crate::agent_version::runtime_profile(&content) {
             Ok(()) => {}
             Err(Refusal::Blocked(_)) => continue,
+            Err(error) => return error.respond(None),
+        }
+        match crate::agent_tool::installation_references(
+            &state.governance,
+            &mut conn,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            &content.declared_tool_resource_ids,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(Refusal::Denied(_) | Refusal::Blocked(_) | Refusal::Conflict(_)) => continue,
             Err(error) => return error.respond(None),
         }
         let route_id = match Uuid::parse_str(&content.model_route_resource_id) {

@@ -4712,3 +4712,44 @@ cargo 退出 127、未开始编译；改用 SDK 原绝对可执行路径后才�
 私聊 HUMAN 身份边界、webhook、任意条件、逐步骤 timeout/输出引用及后置审批
 仍未闭合，不生成假入口。需迁移、新 Core/Worker 与共享客户端集中投递，不让
 旧 Core 接受格式 3；本记录不声明生产可用。
+
+### 2026-10-09 安装候选恢复已支持的原生工具版本
+
+1. 权威：DD-24/49/99/105、`.design/17` 的版本、安装与工具绑定语义。
+   原生工具发布、安装和受治理 MCP 消费已有实现；候选读取仍把所有非空
+   `declaredToolResourceIds` 当作无生产者而排除，导致已有能力不能从目录安装。
+   非空 Skill 引用仍没有物化生产者，继续拒绝，不借本次修改开启 Skills。
+2. 影响面：`agent_tool::installation_references` 复用原 `validate_reference`
+   与 HUMAN `share` 检查，供 `install_bindings` 和
+   `agent_installation_query::candidates` 两个实际消费者使用。注册状态、
+   schema 摘要、owner、租户、投影及 fresh consume/share 均沿原检查。
+   Web/Desktop 的共享候选选择器与 Mobile 只读目录仍消费原 BFF 接口；
+   API、schema、存储格式、版本内容及迁移无变化。
+3. 副作用：候选读取不写 ToolBinding、不写关系、不授予 Agent 权限。
+   安装时再次校验，原事务内写入仍为 `NO_PERMISSION`；实际 Agent 的工具
+   发现和消费权限继续独立检查，不继承 HUMAN 的可安装资格。
+4. 边界：空工具集合保留原行为；不支持、无权限或冲突的工具版本不列为候选；
+   授权服务不可用、损坏参数等错误沿原 Refusal 返回，不伪装空列表成功。
+   列出后撤权必须由安装时重验拒绝；既有分页、租户暂停和投影门禁不变。
+   本次没有新持久状态、外部执行或终态，不改变 UNKNOWN 的对账语义。
+
+源码比较基准为 `9682a0526f6d4807ff86d3ff7f6060ca991ca122`。
+三个生产文件的 `git diff --check` 实际退出 0，仅证明补丁空白检查通过。
+原全量作业 20676 针对较早提交，不覆盖此修改；其 Rust 段结束后，
+本批三个生产文件进入 Cells 同批固定快照的原 Core/契约编译 90990，
+不另启动重复编译。2026-10-10 该原作业实际退出 0：平台单元 360 项通过、
+48 项忽略，契约 adapter 2 项及 round-trip 46 项通过；使用工程 edition 2021
+的 rustfmt 检查退出 0，三个生产文件与该快照逐字一致。原日志为
+`/volumes/data/kailo/check-cache/cells-human-sync-core-positive.log`，SHA-256
+`156c71cd64158c3511f2b3ee659056de01736628db9e8159f71f01d961784927`。
+未确认启用 `PLATFORM_INTEGRATION=1` 的集成入口绿色结果不算实际业务联调；
+原文档检查 `tools/check-docs.sh` 的受限 SDK 作业 23443 已退出 0，原日志
+`/volumes/data/kailo/tmp/check-docs-current.lY7XKJ/docs.log`；它不替代业务检查。
+本批候选 HTTP 的业务正反验证与还原、目录实际操作和部署仍未完成，
+本次仅提交源码检查点，不以编译及既有测试通过宣称目录能力已验收。
+
+实现后交叉复核未发现本批放宽执行权限或拆开安装事务。候选的原生工具查询
+沿用 `FOR UPDATE`，在独立 SQL 语句结束时释放，不跨后续 SpiceDB 调用持锁；
+仍可能等待并发写事务，不能称无锁或已通过候选负载验收。既有 Tool PEP、
+session、MCP 与安装字段检查不能代替候选 HTTP 链：真实可 consume/share
+时可见、撤 share 后不可见、SpiceDB 不可用拒绝的联调仍须验证。

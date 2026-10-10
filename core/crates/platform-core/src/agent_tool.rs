@@ -41,6 +41,27 @@ pub(crate) async fn permission(
     Ok(proof.zed_token)
 }
 
+/// Candidate discovery and installation use the same registered native tools
+/// and current HUMAN consume/share checks. This only resolves references; it
+/// neither creates bindings nor grants the Agent any execution permission.
+pub(crate) async fn installation_references(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    human: Uuid,
+    tools: &[String],
+) -> Result<Vec<Uuid>, Refusal> {
+    let mut references = Vec::with_capacity(tools.len());
+    for id in tools {
+        let id = Uuid::parse_str(id)
+            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+        validate_reference(gov, conn, tenant, human, id).await?;
+        permission(gov, id, human, "share").await?;
+        references.push(id);
+    }
+    Ok(references)
+}
+
 /// 03/17: a binding is visibility configuration. It never writes a consumer,
 /// discoverer or reader relationship, and does not borrow installation rights.
 pub(crate) async fn install_bindings(
@@ -51,11 +72,9 @@ pub(crate) async fn install_bindings(
     generation: i64,
     tools: &[String],
 ) -> Result<(), Refusal> {
-    for id in tools {
-        let id = Uuid::parse_str(id)
-            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        validate_reference(gov, tx, ae.tenant_id, ae.initiator_principal_id, id).await?;
-        permission(gov, id, ae.initiator_principal_id, "share").await?;
+    for id in
+        installation_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, tools).await?
+    {
         sqlx::query(
             "insert into catalog.tool_binding(installation_resource_id,projection_generation,
             workspace_id,agent_version_asset_id,tool_resource_id,action_execution_id,status)

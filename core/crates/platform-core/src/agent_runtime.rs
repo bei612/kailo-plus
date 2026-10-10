@@ -418,7 +418,7 @@ impl Supervisor {
                 .map_err(|_| RuntimeError::Unavailable)?;
         }
         let quoted = |s: &str| serde_json::to_string(s).map_err(|_| RuntimeError::Protocol);
-        // 当前既有 Version 准入拒绝非空 Skill/Tool 引用。原生 bundled skill
+        // 当前既有 Version 准入拒绝非空 Skill 引用；Tool 另走受治理 MCP 投影。原生 bundled skill
         // 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
         // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
         // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
