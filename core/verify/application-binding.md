@@ -1451,3 +1451,54 @@ SQL结果分类及已有发布追溯引用。Cells与Wren专项及真实生产�
 见各自已有核验记录。该候选不包含下一批线程引用、Cells完整前端打包或Wren
 fresh页面授权源码；原full也不覆盖此候选的后续增量。保持阶段源码提交与
 完整验收、产物构建、部署分开，不因旧镜像能运行而宣称新功能已发布。
+
+## 2026-10-10 Binding 专属服务身份生产入口修正（源码阶段）
+
+本批针对 DD-89/94 和 `.design/03` 的绑定专属 SERVICE 身份要求。
+原 `approved_release` 要求先有 SERVICE，但实际生产 writer 只有平台引导和
+模型路由，没有 ApplicationBinding 专属身份创建入口；同时允许接管未绑定的
+同 Tenant SERVICE。改为原受治理 create 事务创建全新身份，不新增注册 API。
+
+四步影响结论：
+
+1. 权威与准入不变：原 HUMAN、同 Tenant/Workspace、tenant.manage、显式确认、
+   APPROVED release、目录及凭据检查继续执行，之后才创建 SERVICE。Core 只写
+   身份、绑定、投影引用，不复制业务正文或账号密码。
+2. 原 ActionCommand 的 servicePrincipalId 现在必须是未占用 UUID；已有 binding
+   的读取、执行和停用格式不变，无 schema/契约迁移。唯一新身份 writer 是
+   `application_binding::prewrite` 调用的私有 `create_service_identity`。
+   既有 OIDC verifier、绑定 client_id 检查、资源授权和 SecretRef 投递仍各自必需。
+   Web/Desktop/Mobile 管理面仍走同一 BFF，没有新增组件或 Mobile 入口。
+3. 身份占用即拒绝；并发 insert 冲突不更新占用者。身份、binding 和 runtime
+   在原 admission 事务内一起提交，后续失败整体回滚。
+   `Governance::decide` 在拒绝时丢弃事务后才另行记录 close_gate；
+   `Governance::submit` 先按发起者与幂等键 replay，再解析新目标。
+   原 binding 停用仍禁用该专属身份，不新增第二套生命周期或授权。
+4. RemoteAdapter audience 来自已验证 manifest；ProtocolPeer 的 NONE 表示不使用
+   ActionToken，不是 OIDC audience，也不是缺失时的默认值。
+   占用、未知连接模式和数据库不可用沿既有 Denied/Conflict/Blocked/Unavailable
+   分类处理，不从配置缺失降级为共享身份，不把未确认执行报为成功。
+
+生产实现后补入原模块数据库检查，覆盖真实身份 writer、三类既有 Principal
+拒绝接管、同 Tenant/同 audience 身份重复拒绝、两种连接方式及事务回滚。
+选定 diff --check、原 SDK 格式化均退出 0；格式化副本与正式文件 cmp 退出 0。
+隔离库只读核验实际返回数据库 `scope_verify`、57 条迁移记录、8 个 Tenant；
+此结果不代表最新全部迁移已演练。原 SDK 的真实数据库专项 45565 已退出 0：
+`1 passed; 0 failed; 408 filtered out`，执行用时 1.50s，编译用时 11m54s。
+命令为 `cargo test --offline -p platform-core binding_admission_tests::binding_service_identity_is_new_and_rolls_back_with_its_transaction -- --ignored --nocapture`，
+使用原隔离库、4 CPU/8 GiB 容器和 `CARGO_BUILD_JOBS=16`，复用 `/cache/rust-target`。
+日志位于 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/application-binding-service-identity-positive.log`，
+SHA-256 为 `0c82c4a3b81d5fdfbfff74200bd1f00118e90a2129b1770b01147f41090418e1`。
+此专项证明实际身份 writer 的上述行为，不覆盖完整受治理 create 调用链。
+随后仅在私有候选中把生产 helper 的占用冲突改为成功返回，原断言未改；
+原 SDK 反证 94583 实际退出 101：`0 passed; 1 failed; 408 filtered out`，
+失败点为同一 SERVICE 重复创建必须返回 `Conflict(TargetStateConflict)` 的断言，
+不是环境启动错误。反证日志为同目录 `application-binding-service-identity-negative.log`，
+SHA-256 为 `352d284b17b4928704d05341c7189919cb9be119cc015a36565c82b31260f684`。
+正式源码未施加破坏；私有候选恢复冲突返回后与正式文件 cmp 退出 0。
+原 SDK 还原专项 70120 实际退出 0：`1 passed; 0 failed; 408 filtered out`，
+编译用时 2m31s，执行用时 0.01s。同一命令限定 `--bin platform-core`，
+原断言未改。还原日志为同目录 `application-binding-service-identity-restored.log`，
+SHA-256 为 `2f10092ea50a1997f43e228cfee455c08d4bc2e0060fb0e295a0175937ac7843`。
+完整准入调用及当前候选 full 均未验收，不能以实际 writer 专项代替全链验收。
+本节只记录源码阶段验证；未部署、未创建现网 binding，不据此声明三组件集成完成。

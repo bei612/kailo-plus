@@ -236,7 +236,7 @@ async fn approved_release(
     .fetch_optional(&mut *conn)
     .await?;
     let (manifest, schema, digest) = row.ok_or_else(blocked)?;
-    let connector = native::Connector::from_manifest(&manifest)?;
+    native::Connector::from_manifest(&manifest)?;
     if collab_bridge::limits::canonical_digest(&manifest) != digest
         || !matches!(
             manifest["frontendDelivery"]["mode"].as_str(),
@@ -306,16 +306,17 @@ async fn approved_release(
             return Err(invalid());
         }
     }
-    // Service identity is registered independently; an arbitrary caller UUID or
-    // another binding's machine identity cannot become this adapter's identity.
-    let service: bool = sqlx::query_scalar(
-        "select exists(select 1 from identity.service_principal s join identity.principal p on p.id=s.principal_id
-         where s.principal_id=$1 and p.tenant_id=$2 and p.kind='SERVICE' and p.status='ACTIVE'
-           and ($5 or s.audience=$3) and (s.component_binding_id is null
-                or (s.component_binding_kind='APPLICATION' and s.component_binding_id=$4)))",
-    ).bind(request.service).bind(tenant).bind(text(&manifest["executionConnector"], "actionTokenAudience")?)
-     .bind(request.id).bind(connector == native::Connector::ProtocolPeer).fetch_one(&mut *conn).await?;
-    if !service {
+    // DD-89/94: the governed create transaction owns this binding's SERVICE
+    // identity. Requiring a pre-existing row had no production producer and
+    // permitted reuse of an unbound platform identity. Never adopt one, even
+    // when it has the same Tenant and audience. Normal AE idempotency retains
+    // the original result; this is not an identity registration/retry endpoint.
+    let occupied: bool =
+        sqlx::query_scalar("select exists(select 1 from identity.principal where id=$1)")
+            .bind(request.service)
+            .fetch_one(&mut *conn)
+            .await?;
+    if occupied {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     native::Adapter::resolve(&request.adapter_ref, &request.native_instance, &manifest)?;
@@ -488,6 +489,10 @@ pub(crate) async fn prewrite(
         // in category-key order. The SQL trigger repeats this for every writer.
         let mut categories = request.categories.clone();
         categories.sort_by(|a, b| a["category"].as_str().cmp(&b["category"].as_str()));
+        // Identity, binding and runtime intent commit atomically with the
+        // admitted HUMAN action. A concurrent claim loses without modifying
+        // the winner, and any later failure rolls these rows back as well.
+        create_service_identity(tx, ae.tenant_id, request.service, &manifest).await?;
         let version: i32 = sqlx::query_scalar("insert into catalog.application_binding
             (id,tenant_id,workspace_id,component_type_key,component_release_id,service_principal_id,
              adapter_service_ref,native_instance_ref,native_scope_ref,isolation_mode,call_identity_mode,
@@ -539,6 +544,37 @@ pub(crate) async fn prewrite(
         .await?;
         version.ok_or_else(conflict)
     }
+}
+
+/// Only the admitted create transaction calls this producer. Do not upsert an
+/// existing principal: that would adopt a platform or another binding's identity.
+async fn create_service_identity(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    service: Uuid,
+    manifest: &Value,
+) -> Result<(), Refusal> {
+    native::Connector::from_manifest(manifest)?;
+    // PROTOCOL_PEER explicitly declares NONE (no ActionToken). This field is
+    // not the IdP JWT audience; the service verifier validates that separately.
+    let audience = text(&manifest["executionConnector"], "actionTokenAudience")?;
+    let created = sqlx::query(
+        "insert into identity.principal(id,tenant_id,kind,status)
+         values($1,$2,'SERVICE','ACTIVE') on conflict do nothing",
+    )
+    .bind(service)
+    .bind(tenant)
+    .execute(&mut **tx)
+    .await?;
+    if created.rows_affected() != 1 {
+        return Err(conflict());
+    }
+    sqlx::query("insert into identity.service_principal(principal_id,audience) values($1,$2)")
+        .bind(service)
+        .bind(audience)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 pub(crate) async fn start(
@@ -1095,6 +1131,119 @@ async fn observe_generation(
 #[cfg(test)]
 mod binding_admission_tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires migrated isolated APPLICATION_EXECUTION_TEST_DATABASE_URL; all writes roll back"]
+    async fn binding_service_identity_is_new_and_rolls_back_with_its_transaction() {
+        use sqlx::{Acquire, Connection};
+        let mut conn = PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL")
+                .expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut outer = Connection::begin(&mut conn).await.unwrap();
+        let tenant = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,$2,'ACTIVE')")
+            .bind(tenant)
+            .bind(format!("binding-identity-{tenant}"))
+            .execute(&mut *outer)
+            .await
+            .unwrap();
+        let remote = json!({"executionConnector":{"mode":"REMOTE_ADAPTER",
+            "adapterProtocolRange":"1","actionTokenAudience":"isolated-binding-adapter"}});
+        let peer = json!({"executionConnector":{"mode":"PROTOCOL_PEER",
+            "adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}});
+        for manifest in [&remote, &peer] {
+            let service = Uuid::new_v4();
+            let mut admitted = outer.begin().await.unwrap();
+            create_service_identity(&mut admitted, tenant, service, manifest)
+                .await
+                .unwrap();
+            let row: (Uuid, String, String, String, Option<Uuid>) = sqlx::query_as(
+                "select p.tenant_id,p.kind,p.status,s.audience,s.component_binding_id
+                 from identity.principal p join identity.service_principal s on s.principal_id=p.id
+                 where p.id=$1",
+            )
+            .bind(service)
+            .fetch_one(&mut *admitted)
+            .await
+            .unwrap();
+            assert_eq!(
+                row,
+                (
+                    tenant,
+                    "SERVICE".into(),
+                    "ACTIVE".into(),
+                    manifest["executionConnector"]["actionTokenAudience"]
+                        .as_str()
+                        .unwrap()
+                        .into(),
+                    None
+                )
+            );
+            // A second creation cannot adopt even an unbound, same-tenant,
+            // same-audience identity. The original row remains unchanged.
+            assert!(matches!(
+                create_service_identity(&mut admitted, tenant, service, manifest).await,
+                Err(Refusal::Conflict(ReasonCode::TargetStateConflict))
+            ));
+            // Mirrors any subsequent binding/runtime failure: the caller owns
+            // the transaction, so no independently committed identity remains.
+            admitted.rollback().await.unwrap();
+            let count: i64 =
+                sqlx::query_scalar("select count(*) from identity.principal where id=$1")
+                    .bind(service)
+                    .fetch_one(&mut *outer)
+                    .await
+                    .unwrap();
+            assert_eq!(count, 0);
+        }
+        for kind in ["HUMAN", "SERVICE", "AGENT"] {
+            let occupied = Uuid::new_v4();
+            sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,$3,'ACTIVE')")
+                .bind(occupied).bind(tenant).bind(kind).execute(&mut *outer).await.unwrap();
+            assert!(matches!(
+                create_service_identity(&mut outer, tenant, occupied, &remote).await,
+                Err(Refusal::Conflict(ReasonCode::TargetStateConflict))
+            ));
+            let retained: String =
+                sqlx::query_scalar("select kind from identity.principal where id=$1")
+                    .bind(occupied)
+                    .fetch_one(&mut *outer)
+                    .await
+                    .unwrap();
+            assert_eq!(retained, kind);
+            let count: i64 = sqlx::query_scalar(
+                "select count(*) from identity.service_principal where principal_id=$1",
+            )
+            .bind(occupied)
+            .fetch_one(&mut *outer)
+            .await
+            .unwrap();
+            assert_eq!(count, 0);
+        }
+        for invalid in [
+            json!({}),
+            json!({"executionConnector":{"mode":"REMOTE_ADAPTER",
+            "adapterProtocolRange":"1","actionTokenAudience":"NONE"}}),
+        ] {
+            let service = Uuid::new_v4();
+            assert!(
+                create_service_identity(&mut outer, tenant, service, &invalid)
+                    .await
+                    .is_err()
+            );
+            let count: i64 =
+                sqlx::query_scalar("select count(*) from identity.principal where id=$1")
+                    .bind(service)
+                    .fetch_one(&mut *outer)
+                    .await
+                    .unwrap();
+            assert_eq!(count, 0);
+        }
+        outer.rollback().await.unwrap();
+    }
 
     #[test]
     fn selected_category_cannot_publish_an_unimplemented_execution_mode() {
