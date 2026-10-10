@@ -868,10 +868,14 @@ with tempfile.TemporaryDirectory() as temporary:
     delivery = {"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(public)},
         {"jwksFile": str(public)}]}]}
     directory.write_text(json.dumps(delivery), encoding="utf-8")
-    base_env = {k: v for k, v in os.environ.items() if k != "APPLICATION_ADAPTER_DIRECTORY_FILE"}
+    conformance_names = ("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
+                         "COMPONENT_CONFORMANCE_IDENTITY_FILE")
+    base_env = {k: v for k, v in os.environ.items()
+                if k not in ("APPLICATION_ADAPTER_DIRECTORY_FILE", *conformance_names)}
     base_env["TMPDIR"] = temporary
-    def adapter_produce(path=None):
+    def adapter_produce(path=None, supplied=None):
         values = {} if path is None else {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(path)}
+        values.update(supplied or {})
         result = subprocess.run(["bash", "-c", adapter_program], cwd=temporary,
                                 env=base_env | values, capture_output=True, text=True)
         assert not list(location.glob("tmp.*")), "原 EXIT cleanup 必须清掉失败/成功投递临时文件"
@@ -905,9 +909,39 @@ with tempfile.TemporaryDirectory() as temporary:
         assert refused.returncode != 0 and "fixture-private" not in refused.stdout + refused.stderr
     public.write_text(json.dumps(public_doc), encoding="utf-8")
     assert adapter_produce(directory).returncode == 0
+    candidate = location / "candidate.json"
+    fixture = location / "fixture.json"
+    identity = location / "identity.json"
+    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture"}), encoding="utf-8")
+    fixture.write_text(json.dumps({"artifactDigest": "fixture-artifact", "steps": []}), encoding="utf-8")
+    identity.write_text(json.dumps({"artifactDigest": "fixture-artifact", "jwksFile": str(public)}), encoding="utf-8")
+    supplied = dict(zip(conformance_names, map(str, (candidate, fixture, identity))))
+    conformance = adapter_produce(supplied=supplied)
+    assert conformance.returncode == 0, conformance.stderr
+    services = json.loads(conformance.stdout)["services"]
+    assert services["core-bff"]["environment"] == supplied
+    assert {m["source"] for m in services["core-bff"]["volumes"]} == set(supplied.values()) | {str(public)}
+    assert services["worker"]["environment"] == {conformance_names[0]: str(candidate)}
+    assert services["worker"]["volumes"] == [{"type": "bind", "source": str(candidate),
+        "target": str(candidate), "read_only": True, "bind": {"create_host_path": False}}]
+    combined = adapter_produce(directory, supplied)
+    assert combined.returncode == 0 and len(json.loads(combined.stdout)["services"]["core-bff"]["volumes"]) == 5
+    for missing in conformance_names:
+        assert adapter_produce(supplied={k: v for k, v in supplied.items() if k != missing}).returncode != 0
+    fixture.write_text(json.dumps({"artifactDigest": "different", "steps": []}), encoding="utf-8")
+    assert adapter_produce(supplied=supplied).returncode != 0, "不同候选 artifact 不得混合投递"
+    fixture.write_text(json.dumps({"artifactDigest": "fixture-artifact", "steps": []}), encoding="utf-8")
+    public.write_text(json.dumps({"keys": [public_doc["keys"][0] | {"d": "fixture-private"}]}), encoding="utf-8")
+    assert adapter_produce(supplied=supplied).returncode != 0, "隔离身份也不能把私钥当公钥投递"
+    public.write_text(json.dumps(public_doc), encoding="utf-8")
+    assert adapter_produce(supplied=supplied).returncode == 0
+    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "mcpUrl": "fixture"}), encoding="utf-8")
+    assert adapter_produce(supplied={conformance_names[0]: str(candidate)}).returncode == 0
+    assert adapter_produce(supplied=supplied).returncode != 0
+    assert 'compose up -d --no-deps --force-recreate --no-build worker' in starter
     assert '"${adapter_compose[@]}"' in starter[starter.index("compose() {"):]
     assert "adapter_config" in starter[starter.index("cleanup_start_core()"):starter.index("trap cleanup_start_core EXIT")]
-print("  \033[32mPASS\033[0m Application 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥拒绝、同原启动消费者")
+print("  \033[32mPASS\033[0m Application/conformance 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥/混合 artifact/半份配置拒绝、Core 与 Worker 消费者")
 gateway_start = starter.index("gateway_names=(")
 gateway_end = starter.index("\nproject=", gateway_start)
 gateway_program = "set -eu\n" + starter[gateway_start:gateway_end]

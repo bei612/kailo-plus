@@ -296,3 +296,67 @@ report 11 项通过，原 ignored 边界不变。原件在同一 Data 父目录�
 `roundtrip-worker-restored.log`。本批没有 full、镜像构建、部署、live 套件登记或
 五键业务验收；完整隔离 native fixture、独立模拟 PEP 和实际五键消费者仍须真实
 投递与执行，不能把本次报文一致性修复当作它们已经可用。
+
+## 2026-10-10 原启动入口的隔离套件投递
+
+权威与原因：`.design/07` §8A、DD-94/101 的登记执行仍归原
+ComponentTaskWorkflow。Core 的 `protocol_fixture`、
+`component_conformance_identity::load` 和 Worker 的
+`RunComponentConformanceStep` 已消费受控文件；原 `start-core.sh`
+只挂载 ApplicationAdapterDirectory，未把套件文件交给实际进程。
+本批修正部署生产者，不生成隔离身份、native fixture 或通过报告。
+
+影响面：`start-core.sh` 复用原规范文件/public-only JWKS 校验和临时
+Compose overlay。HTTP adapter 投递 environment、fixture、identity 三项，
+必须声明同一 artifact；原生 MCP peer 只投递自己的 environment。
+Core 只读挂载所需文件及 identity 引用的公钥，Worker 只读挂载 environment。
+有套件环境时原入口在 Core 后以同一 overlay 重建 Worker，否则保留原启动
+行为。数据库、契约、Workflow 类型、登记/审批状态和三端页面均不变，
+无需数据迁移；旧进程未重建前不会获得新文件。
+
+副作用与边界：全缺省不引入业务组件依赖；半份 HTTP 输入、混合 artifact、
+缺失/相对/符号链接路径、重复 JSON 键或公钥文件中的私钥材料在获取一次性
+OpenBao 投递前拒绝。密钥仍由 Core 现有 OpenBao 消费者读取；完整 schema、
+算法、权限、用例覆盖与结果证据仍由原 Core/Worker 验证。不放宽失败分类，
+不重试结果不明的组件动作，不把文件挂载当作 release 或 binding 已启用。
+修改套件候选前须先查清原登记 Workflow 的在途状态，不能靠切换文件重放。
+
+用法：在原 `.env` 提供 `COMPONENT_CONFORMANCE_ENVIRONMENT_FILE`；HTTP
+adapter 同时提供 `COMPONENT_CONFORMANCE_FIXTURE_FILE` 与
+`COMPONENT_CONFORMANCE_IDENTITY_FILE`，然后沿原 `start-core.sh --no-build`
+投递。文件必须事先存在。关闭套件时移除这三项并通过原入口重建 Core，
+同时用不含套件 overlay 的原 Compose 重建 Worker，避免残留旧候选配置。
+此操作不批准组件，也不代替绑定停用流程。
+
+实现后复用 `tools/check.sh` 原 security 中的部署生产者检查，未建新检查脚本。
+在既有 4 CPU/8 GiB SDK、UID 1000、Data-backed 私有快照执行
+`bash -n deploy/local/start-core.sh tools/check.sh`，再执行该检查段；首次退出 0。
+仅在私有快照关闭实际生产者的 artifact 相等校验，原检查退出 1：
+`AssertionError: 不同候选 artifact 不得混合投递`。正式源码未被破坏，
+私有副本已还原并与正式脚本逐字 cmp 通过；还原复验句柄 12778 实际退出 0，
+原检查再次输出 PASS，两个 shell 的语法检查及本批 `git diff --check` 通过。
+快照为 `/volumes/data/kailo/check-cache/conformance-delivery.rogmUz`。
+完整 `tools/check.sh --full` 已针对独立候选树
+`f9784f9b92f8279e3293999c04c97d8e0baaddde` 启动，日志位于
+`/volumes/data/kailo/tmp/component-delivery-commit.CVKZK5/full.log`；截至下述走查，
+句柄 32210 仍存活且处于源码导出，尚无退出码，不记为通过。
+本批尚未执行实际套件登记或部署。
+
+2026-10-10 15:29 UTC 使用 `playwright-cli` 在原
+`knowledge-catalog-register` 会话重新完成正常 SSO，经成员管理分别打开
+“组件发行版本”和“外部服务连接”。前者显示三个清单输入、禁用的空输入预览
+及 Catalog 无发行版本；后者显示连接配置输入、禁用的空输入预览及当前作用域
+无连接。两张截图已实际打开复核，原件为上述 Data 目录下的
+`catalog-releases-20261010.png`、`catalog-bindings-20261010.png`。
+这仅证明当前已部署 Web 的两个管理空态可达，不是本批新部署、原版全量一致性、
+英文或三组件业务验收；没有填写清单、提交登记、审批或创建绑定。
+
+17:12 UTC 续查原完整检查容器，格式/Clippy/Go vet/TypeScript/Dart 静态检查、
+四侧生成同步及 296 个 schema 的兼容检查已通过；实际数据库演练因未提供
+DATABASE_URL 明确 SKIP。Core 测试报 363 passed、1 failed、51 ignored：
+`stream::tests::forum_kinds_are_native_workspace_events_not_private_conversation_events`
+的旧期望列表遗漏原生产列表已有的 `40008`。这是被冻结基底的真实失败，
+没有改动在途检查输入或把失败标成通过；工作区的对应修正尚未进入该冻结树。
+完整检查仍在继续，其后日志从同一容器接续保存为上述目录的
+`full-resumed.log`。本批可以独立提交已定向验证的投递源码，但不表示完整门禁
+已通过，也不批准组件、不激活绑定、不作为生产就绪或新部署声明。

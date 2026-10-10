@@ -98,9 +98,12 @@ fi
 # a platform startup dependency. Mount only the supplied facts and public JWKS
 # files; never create missing paths or generate native identities here.
 adapter_compose=()
-if [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" ]; then
+if [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
   adapter_config=$(mktemp)
-  APPLICATION_ADAPTER_DIRECTORY_FILE="$APPLICATION_ADAPTER_DIRECTORY_FILE" \
+  APPLICATION_ADAPTER_DIRECTORY_FILE="${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" \
+  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE="${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" \
+  COMPONENT_CONFORMANCE_FIXTURE_FILE="${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}" \
+  COMPONENT_CONFORMANCE_IDENTITY_FILE="${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" \
   python3 - "$adapter_config" <<'PYADAPTER'
 import json
 import os
@@ -108,7 +111,7 @@ from pathlib import Path, PurePosixPath
 import sys
 
 def reject():
-    raise SystemExit("Application adapter 投递必须使用真实规范文件与 public-only JWKS；不生成绑定或原生证据")
+    raise SystemExit("Application adapter / conformance 投递必须完整、使用同一 artifact 与真实规范文件及 public-only JWKS；不生成绑定或通过证据")
 
 def unique_object(pairs):
     result = {}
@@ -129,35 +132,75 @@ def source_file(raw):
         reject()
     return source
 
-try:
-    directory = source_file(os.environ["APPLICATION_ADAPTER_DIRECTORY_FILE"])
-    document = json.loads(directory.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-    if not isinstance(document, dict) or not isinstance(document.get("adapters"), list):
+def document_file(raw):
+    source = source_file(raw)
+    document = json.loads(source.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(document, dict):
         reject()
-    files = {directory}
-    for adapter in document["adapters"]:
+    return source, document
+
+def public_file(raw):
+    public, jwks = document_file(raw)
+    if set(jwks) != {"keys"} or not isinstance(jwks["keys"], list) or not jwks["keys"]:
+        reject()
+    # Private/symmetric material cannot be delivered as a verification key.
+    # Full identity/algorithm checks remain in the original Core consumer.
+    public_fields = {"kty", "kid", "use", "key_ops", "alg", "crv", "x", "y", "n", "e", "x5c", "x5t", "x5t#S256", "x5u"}
+    if any(not isinstance(key, dict) or set(key) - public_fields for key in jwks["keys"]):
+        reject()
+    return public
+
+def delivery(environment, files):
+    return {"environment": environment, "volumes": [
+        {"type": "bind", "source": str(source), "target": str(source), "read_only": True,
+         "bind": {"create_host_path": False}} for source in sorted(files)]}
+
+try:
+    files, environment, services = set(), {}, {}
+    raw = os.environ["APPLICATION_ADAPTER_DIRECTORY_FILE"]
+    adapters = []
+    if raw:
+        directory, document = document_file(raw)
+        adapters = document.get("adapters")
+        if not isinstance(adapters, list):
+            reject()
+        files.add(directory)
+        environment["APPLICATION_ADAPTER_DIRECTORY_FILE"] = str(directory)
+    for adapter in adapters:
         if not isinstance(adapter, dict):
             reject()
         identities = adapter.get("nativeHumanIdentities", [])
         if not isinstance(identities, list):
             reject()
         for identity in identities:
-            public = source_file(identity["jwksFile"])
-            jwks = json.loads(public.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-            if not isinstance(jwks, dict) or set(jwks) != {"keys"} or not isinstance(jwks["keys"], list) or not jwks["keys"]:
+            files.add(public_file(identity["jwksFile"]))
+    names = ("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE", "COMPONENT_CONFORMANCE_FIXTURE_FILE",
+             "COMPONENT_CONFORMANCE_IDENTITY_FILE")
+    supplied = {name: os.environ[name] for name in names if os.environ[name]}
+    if supplied:
+        if names[0] not in supplied:
+            reject()
+        candidate, configuration = document_file(supplied[names[0]])
+        # HTTP adapters require all three deliveries; native MCP peers consume
+        # only their original environment. Neither branch fabricates evidence.
+        peer = "mcpUrl" in configuration
+        if set(supplied) != ({names[0]} if peer else set(names)):
+            reject()
+        artifact = configuration.get("artifactDigest")
+        if not isinstance(artifact, str) or not artifact:
+            reject()
+        for name, raw in supplied.items():
+            source, document = document_file(raw)
+            if document.get("artifactDigest") != artifact:
                 reject()
-            # Reject private/symmetric material before mounting it into Core.
-            # Algorithm, identity and scope checks remain in the original Core
-            # verifier; this producer does not grant business access.
-            public_fields = {"kty", "kid", "use", "key_ops", "alg", "crv", "x", "y", "n", "e", "x5c", "x5t", "x5t#S256", "x5u"}
-            if any(not isinstance(key, dict) or set(key) - public_fields for key in jwks["keys"]):
-                reject()
-            files.add(public)
-    volumes = [{"type": "bind", "source": str(source), "target": str(source), "read_only": True,
-                "bind": {"create_host_path": False}} for source in sorted(files)]
+            environment[name] = str(source)
+            files.add(source)
+            if name == names[2]:
+                files.add(public_file(document["jwksFile"]))
+        services["worker"] = delivery({names[0]: str(candidate)}, {candidate})
+    services["core-bff"] = delivery(environment, files)
     with open(sys.argv[1], "w", encoding="utf-8") as stream:
-        json.dump({"services": {"core-bff": {"environment": {
-            "APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)}, "volumes": volumes}}}, stream)
+        json.dump({"services": services}, stream)
 except (OSError, ValueError, KeyError, TypeError):
     reject()
 PYADAPTER
@@ -382,3 +425,8 @@ mv "$tmp" secrets/openbao-core.env
 tmp=
 
 compose up -d --no-deps --force-recreate --no-build core-bff
+# The conformance consumer runs in the original Worker, not in Core. Recreate
+# it with the same overlay only when an isolated environment was supplied.
+if [ -n "${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" ]; then
+  compose up -d --no-deps --force-recreate --no-build worker
+fi
