@@ -10037,3 +10037,61 @@ Earlier final type job 36727 remains on its unchanged Asking input, not these
 thread-management/SQL-editor changes. AI build 13724 remains its independent
 original job. No new full gate, screenshot, deployed Wren page, complete
 governance or three-client acceptance is claimed by this source checkpoint.
+
+### 2026-10-10 frozen Asking type completion and first AI artifact export failure
+
+Original type job 36727 actually exited 0 at 01:28 UTC, without diagnostics.
+Its frozen `/volumes/data/kailo/check-cache/wren-asking-dispatch.1w4HDY/src`
+still matches the checked Asking checkpoint's four source hashes above and
+includes the final adjustment pre-dispatch closure. The original command was
+`node /work/node_modules/typescript/bin/tsc --noEmit` in the existing limited
+SDK. `asking-final-tsc.log` is empty (SHA-256
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+This corrects the historical running status, not the later thread/SQL scope.
+After that job ended, one combined final type job 77393 uses the SQL candidate
+and its successful incremental cache; actual `diff -qr` of that candidate's
+`src` and current Wren UI `src` exited 0. Its result is not yet claimed here.
+
+Original `tools/build-upstream.sh data-query-ai-service` job 13724 exited 1
+after original locked production dependencies and all Dockerfile source steps
+completed: OCI export failed with `no active session for
+gjzkppyg6czxhzq2eq0cl7c0h: context deadline exceeded`. Full log
+`/volumes/data/kailo/tmp/build-data-query-ai-service.fnLTmq.log`, SHA-256
+`638c8aed274521844a29a414f9e74f4aaf662fed2a29ee803e7a05be30f80574`.
+The intermediate exported manifest is not a delivered registry artifact.
+The local baseline tag still references an older image created on October 9;
+the source/artifact registration remains `none`. It was not substituted for
+this build or deployed. After verifying the original builder idle, 8 CPU /
+16 GiB limits, retained cache and 26 GiB available host memory, one original
+entrypoint cached retry 19652 was authorized. Its original Poetry, venv and
+source COPY steps explicitly report CACHED in
+`/volumes/data/kailo/tmp/build-data-query-ai-service.2r0tTk.log`; the retry has
+no delivered-artifact or deployment result yet. No cache cleanup, second
+builder, credential substitution or original-image fallback occurred.
+
+Final result: type job 77393 actually exited 0 with empty diagnostics. Its
+`metadata-final-tsc.log` in the SQL candidate has SHA-256
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+The entire frozen candidate `src` again compared equal to current Wren UI
+`src` (`diff -qr`, exit 0), covering both committed thread and SQL-save batches.
+This is type acceptance, not a new full gate or deployed browser acceptance.
+
+Cached AI retry 19652 actually exited 0, including Docker import, original
+registry push and source/artifact registration. The source digest is
+`sha256:aa7bd5aa08b4fb862cdcd7993647aacc03bdadc124c63d31309b6cf6ce81f12f`;
+artifact digest is
+`sha256:fa633e3202accc13519be5b17a493d85d6ac7c7a0b30a1d6b83eca4427f3150d`.
+The actual local image and registry HEAD (HTTP 200,
+`Docker-Content-Digest`) agree; `data-query/fork/upstream.yaml` was written by
+the original helper, not manually marked successful. Success log SHA-256:
+`2ecfe9d6085bf97e860a516230130602f0618103147cc045e3b67280d9a9bc41`.
+The original Dockerfile still reports two FROM/as casing warnings; the first
+failed export above is retained, not rewritten as success.
+
+Deployment remains separate: passing only this verified AI digest temporarily
+to the original `docker compose --env-file deploy/local/.env -f
+data-query/docker/docker-compose.yaml config --quiet` exits 1 at missing
+`WREN_OIDC_CLIENT_ID`. The existing project name and native DB/data-key inputs
+were found, but dedicated OIDC/identity/model delivery and the source-built UI
+release are not thereby provided. No `.env` was changed, service started,
+binding activated or live page/SQL/usage acceptance claimed by this build.
