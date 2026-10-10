@@ -269,8 +269,12 @@ export function ChannelPane({
     () => new Set((members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkeys),
     [members.data, myPrincipalId],
   );
-  const typingPubkeys = window.typing
-    .filter(entry => entry.threadHeadId === null && !mine.has(entry.pubkey) && entry.pubkey !== ownProfile.data?.pubkey)
+  const typingAgents = useComposerAgentDirectory(bff, {workspaceId, principalId: myPrincipalId}, !conversation && live && !denied && !metadataPending);
+  const agentTypingPubkeys = useMemo(() => new Set(typingAgents.data?.agents.map(agent => agent.pubkey.toLowerCase())), [typingAgents.data]);
+  const humanTypingEntries = window.typing.filter(entry => !mine.has(entry.pubkey)
+    && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey));
+  const typingPubkeys = humanTypingEntries
+    .filter(entry => entry.threadHeadId === null)
     .map(entry => entry.pubkey);
   const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
@@ -744,7 +748,7 @@ export function ChannelPane({
       <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row"
         visible={typingPubkeys.length > 0}>
         <div className="flex w-full items-center gap-2 overflow-visible pl-2">
-          <TypingIndicatorRow channel={null} currentPubkey={ownProfile.data?.pubkey} profiles={profiles}
+          <TypingIndicatorRow resolveMediaUrl={messageReactions.resolveMediaUrl} channel={null} currentPubkey={ownProfile.data?.pubkey} profiles={profiles}
             className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
             typingPubkeys={typingPubkeys} />
         </div>
@@ -768,6 +772,8 @@ export function ChannelPane({
       {...searchHighlightProps.thread}
       routeActivationId={targetSearchActivationId}
       mentions={mentions}
+      profiles={profiles}
+      typingEntries={humanTypingEntries}
       onOpenAuthor={handleOpenAuthor} onAuthorScopeUnavailable={closeProfile}
       editTarget={threadEditTarget} onEdit={handleRoutedEdit} onCancelEdit={handleCancelEdit} onEditConfirmed={handleEditConfirmed}
       onDelete={canDelete ? deleteMessageDialog.requestDelete : undefined} onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}

@@ -301,7 +301,7 @@ export function useChannelMessagesQuery(channel: Channel | null) {
   });
 }
 
-export function useChannelSubscription(channel: Channel | null) {
+export function useChannelSubscription(channel: Channel | null, onMessage?: (event: RelayEvent) => void) {
   const queryClient = useQueryClient();
   const channelId = channel?.id ?? null;
   const channelType = channel?.channelType ?? null;
@@ -312,6 +312,7 @@ export function useChannelSubscription(channel: Channel | null) {
 
   const appendMessage = useEffectEvent((event: RelayEvent) => {
     if (!channelId) return;
+    onMessage?.(event);
     if (event.kind === KIND_CHANNEL_THREAD_SUMMARY) {
       // Relay-pushed live badge recount — window-store overlay only, never a
       // timeline row (mirrors the page path, where 39005 is metadata).

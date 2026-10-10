@@ -93,3 +93,63 @@ node --import ./test-loader.mjs --experimental-strip-types --test src/features/m
 - Web 原 DOM 文件追加快照 signer 更换、重连后的原 Relay 不再被信任场景。
   当前未运行该新增场景；本批类型检查随共享 UI 批集中进行，尚无结果。
   Wren 队友交叉源码复核未发现新增阻断；不是浏览器、全量检查或部署验收。
+
+## 原线程与 Native 接收消费者补齐（2026-10-10）
+
+源码检查点为 19 路径（+420/-16），独立候选补丁 SHA-256
+`162a2247ed3801186b1e2619e425da9588bc1885beb88c5b63b9ffd232ad77fe`；
+导入前正式主干为 `10a9701622a82ae27ad924dbe8395859fa580799`，所选源无交叉变更。
+该增量不表示前节 Native/线程缺口已完整验收，也不包含 Agent working 活动内容。
+
+1. 权威：仍沿 REQ-24、DD-75、SS-WEB-RELAY 与 SS-BUZ-SERVER-CLIENT。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/ui/MessageThreadPanel.tsx::MessageThreadPanel`、
+   `desktop/src/features/messages/useChannelTyping.ts::useChannelTyping`、
+   `desktop/src/shared/api/relayClientSession.ts::subscribeToTypingIndicators`
+   为原活动栏、原接收与订阅来源；不是另造状态页或以输入状态冒充 Agent working。
+2. 影响：共享 `ThreadPanelSurface` 复用原活动栏和 `TypingIndicatorRow`；Native
+   ChannelScreen → ChannelPane → MessageThreadPanel，Web 原频道/会话 ChannelPane →
+   ChannelThreadPane 均有真实消费者。Native 原 RelayClient 增加独立 ephemeral 订阅，
+   不进历史、未读或 recency。成员/profile 已知 Agent 被排除，线程按 threadHeadId 分流；
+   Native 传入真实 channel 保留原 DM 成员 fallback。Web 无可信原生 channel 时不编造它。
+3. 副作用：接收恢复没有发送动作、契约/持久化迁移或第二身份权威。真实 DOM 曾发现原
+   ProfileAvatar 缺只读宿主；现复用 AvatarHostProvider 和既有媒体解析，未知媒体 URL 返回
+   null、无图片网络加载。仅 AvatarViewHost 允许 null，上传编辑 AvatarHost 的字符串合同不变。
+4. 边界：签名/唯一 h/频道缺失拒绝，过期、重连、不可回复、撤权清空；已终止 subscription
+   不得由旧队列恢复。真实 handleRelayClosed 删除 terminal 订阅，flushEvents 再查同一 map；
+   rate-limit 保留原重试。最终用例改为经过这两个真实 dispatcher，不再直接调用已删除回调
+   把授权关闭后重新出现误当正确行为。该最终 dispatcher 用例随下述原 Node 22 项实际通过。
+
+验证使用原 4 CPU/8 GiB SDK，日志均位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-description-next.IPHHqc`：
+
+- `native-typing-final-input.log`：Native 类型 exit 0，原 Node 两文件 22/22；
+  `native-typing-production-negative.log`：删除真实连接清空与 CLOSED 通知后 20 pass/2 fail、
+  exit 1；原字节还原后 `native-typing-restored.log` 22/22、exit 0。
+  这三份证据早于最终 dispatcher 用例与只读头像宿主修正，不扩大其覆盖。
+- `typing-final-dom.log`：Web 类型通过；实际 DOM 暴露头像宿主和 Agent 夹具问题，exit 1；
+  `typing-avatar-host-restored.log`：首个 undefined 方案与原 ProfileAvatar 类型冲突，exit 2。
+  已修为上述 null 语义，不改原头像组件或上传合同来绕过。
+- `typing-avatar-null-final.log`（原作业 15903）：最终 Web tsc exit 0；Web 两个文件
+  126.80 秒、0 tests、2 worker 启动超时；共享 thread-panel 61.76 秒、0 tests、
+  1 worker 启动超时；聚合 exit 1。不是业务断言通过或有效反证，未调整 timeout/pool。
+- `native-typing-dispatcher-final.log`（18531）：最终两个原 Node 文件 22 pass/0 fail、
+  exit 0，包含真实 terminal CLOSED → flushEvents 丢弃旧队列、合法新订阅及重连清空。
+- 同一最终用例对私有生产源码移除连接清空与 CLOSED 通知：15693 实际 exit 1、
+  20 pass/2 fail（`native-typing-dispatcher-negative.log`），撤权后仍留下输入状态及
+  EOSE 后未通知均被真实断言捕获；不是 worker 启动错误。apply_patch 恢复两行后，
+  与正式源码逐文件 cmp exit 0；6880 原命令复验 22 pass/0 fail、exit 0
+  （`native-typing-dispatcher-restored.log`）。正式生产源码始终未变异。
+- 最终 shared/Native 类型与头像拒绝 DOM 尚未取得通过证据；
+  没有新增候选页面截图、安装包或部署。既有旧站截图不覆盖这 19 路径。
+  Web 发送 ACK/UNKNOWN、Agent working Session/Transcript 及三端完整体验仍未恢复。
+- 原文档入口 `./tools/check-docs.sh ../.design`：63983 exit 1，私有输入缺顶层中文文件/
+  链接目标且 npm 默认缓存不可写。只纠正副本与原 `/cache/npm` 投递后，64138 exit 1；
+  唯一剩余失败为私有副本遗漏 `deploy/local/database-url.sh`，主干该文件实际存在。
+  其余 277 引用、87 实体、115 DD、29 SS、87 场景与两侧 markdownlint/21 篇设计自检通过。
+  未弱化检查，按阶段止损未继续拼副本/重复执行；不把本轮文档检查报告为通过。
+  日志为 `typing-reception-docs-final.log` 和 `typing-reception-docs-restored.log`；
+  文档取上述 10a970 主干，设计取当时权威工作树并 `diff -qr` exit 0，不声称设计已提交。
+- SDK 累计 OOM 标记为 true，StartedAt 为 2026-10-05T20:43:03.659Z、RestartCount 0；
+  2026-10-10 17:42 UTC 读取 memory.events 为 oom/oom_kill 各 2，未有本轮前计数，
+  不以该累计标记断言本轮 DOM 超时的原因；没有放宽内存限额。

@@ -37,12 +37,14 @@ const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", ro
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() {for (let i = 0; i < 12; i++) await act(async () => {await vi.advanceTimersByTimeAsync(10);});}
-async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}) {
+async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}, typingEntries: import("react").ComponentProps<typeof ChannelThreadPane>["typingEntries"] = []) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
     <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
       conversation={conversation} channelId={conversation?.channelId}
       routeTargetMessageId={routeTargetMessageId}
       {...search}
+      typingEntries={typingEntries}
+      profiles={{["d".repeat(64)]:{displayName:"Peer",avatarUrl:null,nip05Handle:null,ownerPubkey:null}}}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
       disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
   </TooltipProvider></QueryClientProvider>));
@@ -71,6 +73,24 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();vi.unstubAllGlobals();});
+it.each(["channel", "conversation"] as const)("renders only the admitted %s thread typing and clears expired or revoked state", async (scope) => {
+  const peer = "d".repeat(64);
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const typing = [{pubkey:peer,threadHeadId:rootId},{pubkey:"e".repeat(64),threadHeadId:null},{pubkey:"f".repeat(64),threadHeadId:replyId}];
+  await mount(undefined,conversation,undefined,typing);
+  const indicator = () => host.querySelector('[data-testid="message-typing-indicator"]');
+  expect(indicator()?.textContent).toContain("Peer is typing");
+  expect(indicator()?.querySelectorAll('[data-testid="message-typing-avatar"]')).toHaveLength(1);
+  const composer = host.querySelector('[data-testid="host-send"]');
+  await mount(undefined,conversation);
+  await vi.waitFor(() => expect(indicator()).toBeNull());
+  expect(host.querySelector('[data-testid="host-send"]')).toBe(composer);
+  await mount(undefined,conversation,undefined,typing);
+  expect(indicator()?.textContent).toContain("Peer is typing");
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));await settle();
+  expect(indicator()).toBeNull();
+  expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
+});
 it.each([{scope:"channel",kind:9},{scope:"conversation",kind:40002}])("highlights only the searchable $kind body in the admitted $scope thread", async ({scope,kind}) => {
   state.richContent=true;
   const events=[rootEvent,reply].map(row=>({...row,kind,content:"needle **needle** `needle`"}));

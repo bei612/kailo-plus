@@ -52,11 +52,15 @@ import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMes
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
+import { ComposerActivityAccessory } from "@client-kit/platform/react/messages/ComposerActivityAccessory";
+import { TypingIndicatorRow } from "@client-kit/platform/react/messages/TypingIndicatorRow";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 export const ChannelPane = React.memo(function ChannelPane({
   activeChannel,
   autoSendDraftKey = null,
   onAutoSendComplete,
   currentPubkey,
+  typingEntries = [],
   editTarget,
   onEdit,
   onCancelEdit,
@@ -233,6 +237,10 @@ export const ChannelPane = React.memo(function ChannelPane({
   );
   const isComposerDisabled =
     !activeChannel.isMember || activeChannel.archivedAt !== null || isSending || editing;
+  const humanTypingPubkeys = isComposerDisabled ? [] : typingEntries
+    .filter(entry => entry.threadHeadId === null && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey);
+  const threadTypingPubkeys = isComposerDisabled ? [] : typingEntries
+    .filter(entry => entry.threadHeadId === threadHeadMessage?.id && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey);
   const deleteMessageDialog = useMessageDeleteDialog(
     JSON.stringify([activeChannel.id, community.relayUrl, currentPubkey]),
     Boolean(currentPubkey && !isComposerDisabled),
@@ -489,7 +497,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               ref={composerWrapperRef}
             >
               <ComposerUploadProgressOverlay />
-              <div className="composer-dock composer-overlay-corner-masks relative pointer-events-auto">
+              <div className={cn("composer-dock composer-overlay-corner-masks relative pointer-events-auto", humanTypingPubkeys.length > 0 && "composer-dock--with-activity")}>
                 <ComposerDockBackdrop gutterClassName="inset-x-5" />
                 {mainEditTarget ? (
                   <MessageComposer
@@ -529,6 +537,16 @@ export const ChannelPane = React.memo(function ChannelPane({
                   placeholder={composerPlaceholder}
                   showTopBorder={false}
                 /></div>
+                <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row" visible={humanTypingPubkeys.length > 0}>
+                  <div className="flex w-full items-center gap-2 overflow-visible pl-2">
+                    {humanTypingPubkeys.length > 0 ? <TypingIndicatorRow
+                      resolveMediaUrl={rewriteRelayUrl}
+                      channel={activeChannel}
+                      className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
+                      currentPubkey={currentPubkey} profiles={profiles} typingPubkeys={humanTypingPubkeys}
+                    /> : null}
+                  </div>
+                </ComposerActivityAccessory>
               </div>
             </div>
             {canDropInMainColumn && mainComposerMedia.isDragOver ? (
@@ -592,6 +610,8 @@ export const ChannelPane = React.memo(function ChannelPane({
                   threadHeadMessage.id,
                 )}
                 threadReplyUnreadCounts={threadReplyUnreadCounts}
+                threadTypingPubkeys={threadTypingPubkeys}
+                typingChannel={activeChannel}
               />,
             )
           : shouldShowThreadSkeleton

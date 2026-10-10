@@ -9,7 +9,9 @@ export type AvatarHost = {
   rewriteMediaUrl: (url: string) => string;
   performDefaultHaptic: () => void;
 };
-type AvatarViewHost = Pick<AvatarHost, "locale" | "rewriteMediaUrl">;
+type AvatarViewHost = Pick<AvatarHost, "locale"> & {
+  rewriteMediaUrl: (url: string) => string | null;
+};
 const Context = createContext<AvatarViewHost | AvatarHost | null>(null);
 export function AvatarHostProvider({ value, children }: { value: AvatarViewHost | AvatarHost; children: ReactNode }) {
   return <Context.Provider value={value}>{children}</Context.Provider>;

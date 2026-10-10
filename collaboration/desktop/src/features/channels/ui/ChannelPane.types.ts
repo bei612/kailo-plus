@@ -19,6 +19,7 @@ export type ChannelPaneProps = {
    */
   onAutoSendComplete: () => void;
   currentPubkey?: string;
+  typingEntries?: readonly import("@client-kit/platform/react/messages/typingState").TypingIndicatorEntry[];
   editTarget: TimelineMessage | null;
   onEdit: (message: TimelineMessage) => void;
   onCancelEdit: () => void;

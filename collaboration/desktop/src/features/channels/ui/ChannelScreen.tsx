@@ -49,6 +49,7 @@ import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { ChannelPane } from "./ChannelScreenLazyViews";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { useChannelTyping } from "@/features/messages/useChannelTyping";
 
 export function ChannelScreen({
   activeChannel,
@@ -151,7 +152,8 @@ export function ChannelScreen({
     effectiveOpenThreadHeadId,
     threadScrollTargetId,
   );
-  useChannelSubscription(activeChannel);
+  const {typingEntries, receiveMessage} = useChannelTyping(activeChannel, currentPubkey, relaySelfPubkey);
+  useChannelSubscription(activeChannel, receiveMessage);
   const { fetchOlder, hasOlderMessages, historyExhausted, isFetchingOlder } =
     useFetchOlderMessages(activeChannel);
   const latestActiveMessage = React.useMemo(() => {
@@ -450,6 +452,7 @@ export function ChannelScreen({
               autoSendDraftKey={autoSendDraftKey}
               onAutoSendComplete={clearAutoSend}
               currentPubkey={currentPubkey}
+              typingEntries={typingEntries}
               editTarget={editTarget}
               onEdit={(message) => {
                 if (handleEdit(message)) setThreadReplyTargetId(effectiveOpenThreadHeadId);

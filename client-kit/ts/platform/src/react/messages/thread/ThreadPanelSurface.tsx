@@ -40,6 +40,8 @@ import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useAnchoredScroll } from "./useAnchoredScroll";
 import { selectDeferredListRenderState } from "./timelineSnapshot";
 import { selectThreadRowHighlight } from "./threadReplyHighlight";
+import { ComposerActivityAccessory } from "../ComposerActivityAccessory";
+import { TypingIndicatorRow } from "../TypingIndicatorRow";
 
 export type ThreadPanelRowProps = Omit<React.ComponentProps<typeof import("../MessageRowSurface").MessageRowSurface>, "renderBody" | "renderIdentity" | "renderActions"> & {
   isUnread?: boolean; searchQuery?: string;
@@ -59,6 +61,10 @@ export type ThreadPanelSurfaceProps = ThreadPanelLayoutProps & {
   onCopy?: React.ClipboardEventHandler<HTMLDivElement>;
   channelId: string | null;
   channelName: string;
+  currentPubkey?: string;
+  profiles?: React.ComponentProps<typeof TypingIndicatorRow>["profiles"];
+  threadTypingPubkeys?: string[];
+  typingChannel?: React.ComponentProps<typeof TypingIndicatorRow>["channel"];
   disabled?: boolean;
   firstUnreadReplyId?: string | null;
   isSending: boolean;
@@ -101,6 +107,7 @@ export type ThreadPanelSurfaceProps = ThreadPanelLayoutProps & {
 };
 
 const EMPTY_THREAD_REPLIES: MainTimelineEntry[] = [];
+const EMPTY_TYPING_PUBKEYS: string[] = [];
 const THREAD_PANEL_SUMMARY_INDENT_OFFSET_REM = 0;
 
 function ThreadRow({ render, ...props }: ThreadPanelRowProps & { render: ThreadPanelSurfaceProps["renderRow"] }) {
@@ -117,6 +124,10 @@ export function ThreadPanelSurface({
   onCopy,
   channelId,
   channelName,
+  currentPubkey,
+  profiles,
+  threadTypingPubkeys = EMPTY_TYPING_PUBKEYS,
+  typingChannel = null,
   columnMaxWidthPx,
   disabled = false,
   firstUnreadReplyId,
@@ -171,6 +182,8 @@ export function ThreadPanelSurface({
   >(null);
   const isOverlay = useIsThreadPanelOverlay();
   const threadHeadId = threadHead?.id ?? null;
+  const visibleTypingPubkeys = disabled || threadRepliesError ? EMPTY_TYPING_PUBKEYS : threadTypingPubkeys;
+  const hasComposerBottomActivity = visibleTypingPubkeys.length > 0;
   useEscapeKey(onClose, isOverlay || isSinglePanelView || isFocusMode);
   const hasConstrainedColumn = columnMaxWidthPx != null;
 
@@ -678,6 +691,7 @@ export function ThreadPanelSurface({
           <div
             className={cn(
               "composer-dock composer-overlay-corner-masks relative pointer-events-auto",
+              hasComposerBottomActivity && "composer-dock--with-activity",
             )}
           >
             <ComposerDockBackdrop gutterClassName="inset-x-5" />
@@ -700,6 +714,24 @@ export function ThreadPanelSurface({
               placeholder={t("thread.replyTo", {author: threadHead.author})}
               replyTarget={composerReplyTarget}
             />
+            <ComposerActivityAccessory
+              className={THREAD_PANEL_COMPOSER_GUTTER_CLASS}
+              visible={hasComposerBottomActivity}
+            >
+              <div className="mx-auto flex w-full max-w-4xl items-center gap-2 overflow-visible pl-2">
+                {visibleTypingPubkeys.length > 0 ? (
+                  <TypingIndicatorRow
+                    resolveMediaUrl={resolveMediaUrl}
+                    channel={typingChannel}
+                    className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
+                    currentPubkey={currentPubkey}
+                    profiles={profiles}
+                    typingPubkeys={visibleTypingPubkeys}
+                    variant="activity"
+                  />
+                ) : null}
+              </div>
+            </ComposerActivityAccessory>
           </div>
         </div>
       </div>

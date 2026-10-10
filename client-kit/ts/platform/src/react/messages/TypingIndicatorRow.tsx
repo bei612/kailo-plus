@@ -8,7 +8,8 @@ import {
 } from "./system/identity";
 import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
 import type { Channel } from "../search/types";
-import { useUiT, type Translate } from "../context";
+import { useUiLocale, useUiT, type Translate } from "../context";
+import { AvatarHostProvider } from "../profile/avatar-host";
 type TypingChannel = Pick<Channel, "channelType" | "participants" | "participantPubkeys">;
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { Shimmer } from "./Shimmer";
@@ -20,6 +21,7 @@ type TypingIndicatorRowProps = {
   currentPubkey?: string;
   profiles?: UserProfileLookup;
   typingPubkeys: string[];
+  resolveMediaUrl?: (url: string) => string | undefined;
   variant?: "default" | "activity";
 };
 
@@ -61,9 +63,11 @@ export function TypingIndicatorRow({
   currentPubkey,
   profiles,
   typingPubkeys,
+  resolveMediaUrl,
   variant = "default",
 }: TypingIndicatorRowProps) {
   const t = useUiT();
+  const locale = useUiLocale();
   const isActivityVariant = variant === "activity";
   const labels = React.useMemo(
     () =>
@@ -80,7 +84,7 @@ export function TypingIndicatorRow({
   );
 
   return (
-    <div
+    <AvatarHostProvider value={{locale, rewriteMediaUrl: (url) => resolveMediaUrl?.(url) ?? null}}><div
       aria-live="polite"
       className={cn(
         "shrink-0 bg-transparent",
@@ -143,6 +147,6 @@ export function TypingIndicatorRow({
           </p>
         </div>
       )}
-    </div>
+    </div></AvatarHostProvider>
   );
 }

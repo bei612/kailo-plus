@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {}, conversationPreferences: {} as Record<string, {muted: boolean}> } },
   notify: vi.fn(),
   richContent: false,
+  typingAgents: {isSuccess:true,isFetching:false,data:{agents:[] as {pubkey:string;installation:{resourceId:string}}[]}},
   emoji: { isSuccess: true, data: { events: [] } },
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
@@ -42,7 +43,7 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) => {
-    if (options.queryKey.includes("composer-agent-directory")) return {isSuccess:false,data:undefined};
+    if (options.queryKey.includes("composer-agent-directory")) return state.typingAgents;
     if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
       state.memberReads.push(options.queryKey);
       return state.members;
@@ -75,14 +76,15 @@ vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
   const { useState } = await import("react");
-  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, onOpenAuthor, onAuthorScopeUnavailable, onClose}: {
+  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, typingEntries, onOpenAuthor, onAuthorScopeUnavailable, onClose}: {
     selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
     routeTargetMessageId?:string;
     conversation?:{id:string};
+    typingEntries?: readonly import("@client-kit/platform/react/messages/typingState").TypingIndicatorEntry[];
     onClose: () => void;
   }) => {
     const [pending, setPending] = useState(false);
-    return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId} data-conversation-id={conversation?.id}>
+    return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId} data-conversation-id={conversation?.id} data-typing={JSON.stringify(typingEntries ?? [])}>
       <button onClick={() => setPending(true)}>pending reply</button>
       <output>{pending ? "reply pending" : "reply idle"}</output>
       <button onClick={() => onOpenAuthor(selected)}>thread author</button>
@@ -142,6 +144,7 @@ beforeEach(async () => {
   state.stop.mockClear();
   state.notify.mockClear();
   state.richContent = false;
+  state.typingAgents.data.agents=[];
   state.route.messages=[];state.route.denied=false;state.route.interrupted=false;
   state.route.thread.isSuccess=true;state.route.thread.isError=false;state.route.thread.isFetching=false;
   state.routeRead.mockClear();
@@ -168,6 +171,34 @@ beforeEach(async () => {
   });
   state.receive!({ type: "live" });
   });
+});
+
+it.each(["channel", "conversation"] as const)("passes admitted %s thread typing from the live window and clears completed, expired and revoked indicators", async scope => {
+  state.typingAgents.data.agents=[{pubkey:"agent",installation:{resourceId:"agent-installation"}}];
+  state.members.data = [{principalId:"human-a",pubkeys:["self-key"],displayName:"Me"}, {principalId:"human-b",pubkeys:["peer"],displayName:"Peer"}];
+  const conversation=scope==="conversation"?{id:"workspace-a",channelId:"channel-a",state:ItemState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1}:undefined;
+  await act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>));
+  if(conversation) await act(async()=>{
+    state.receive!({type:"snapshot",events:[{id:"event-a",pubkey:"author-a",kind:9,created_at:1,tags:[["h","channel-a"]],content:"existing message"},
+      {id:"dm-bounds",pubkey:"relay",kind:39006,created_at:1,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+    state.receive!({type:"live"});
+  });
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="reply-message-event-a"]')).not.toBeNull());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-a"]')!.click());
+  const indicators = () => JSON.parse(host.querySelector('[data-testid="thread-lifetime"]')!.getAttribute("data-typing")!);
+  const now = Math.floor(Date.now() / 1000);
+  const send = (id:string, pubkey:string, created_at=now, kind=20002) => act(async () => state.receive!({type:"event",event:{id,pubkey,created_at,kind,tags:[["h","channel-a"],["e","event-a","","reply"]],content:kind===20002 ? "" : "reply"}}));
+  await send("typing-self", "self-key");
+  if(!conversation) await send("typing-agent", "agent");
+  await send("typing-expired", "expired", now-9);
+  await send("typing-peer", "peer");
+  expect(indicators()).toEqual([{pubkey:"peer",threadHeadId:"event-a"}]);
+  await send("completed-peer", "peer", now, 9);
+  expect(indicators()).toEqual([]);
+  await send("typing-next", "next-peer");
+  expect(indicators()).toEqual([{pubkey:"next-peer",threadHeadId:"event-a"}]);
+  await act(async () => state.receive!({type:"closed",reason:"readmission-unavailable"}));
+  expect(indicators()).toEqual([]);
 });
 
 it.each([9, 40002])("highlights only the matching searchable kind %s live body and clears it on ordinary navigation", async (kind) => {

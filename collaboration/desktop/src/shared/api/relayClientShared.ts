@@ -66,6 +66,8 @@ type LiveSubscription = {
   filter: RelaySubscriptionFilter;
   onEvent: (event: RelayEvent) => void;
   resolveReady?: (readiness: LiveSubscriptionReadiness) => void;
+  /** Live admission loss, including CLOSED received after initial EOSE. */
+  onClosed?: () => void;
   lastSeenCreatedAt?: number;
   /**
    * Lower bound of a reconnect backfill window that has not yet completed.

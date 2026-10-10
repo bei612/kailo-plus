@@ -9,6 +9,7 @@ import {
   KIND_STREAM_MESSAGE,
   CHANNEL_EVENT_KINDS,
   KIND_CHANNEL_THREAD_SUMMARY,
+  KIND_TYPING_INDICATOR,
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
@@ -300,6 +301,18 @@ export class RelayClient {
     );
   }
 
+  async subscribeToTypingIndicators(
+    channelId: string,
+    onEvent: (event: RelayEvent) => void,
+    onClosed: () => void,
+  ) {
+    // Fixed original ephemeral receive filter; not added to history/unread.
+    return this.subscribe({
+      kinds: [KIND_TYPING_INDICATOR], "#h": [channelId], limit: 10,
+      since: Math.floor(Date.now() / 1_000) - 10,
+    }, onEvent, undefined, undefined, onClosed);
+  }
+
   async subscribeLive(
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
@@ -485,6 +498,7 @@ export class RelayClient {
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
     readinessTimeoutMs = 250,
+    onClosed?: () => void,
   ) {
     await this.ensureConnected();
 
@@ -507,6 +521,7 @@ export class RelayClient {
       filter,
       onEvent,
       resolveReady,
+      onClosed,
     });
 
     try {

@@ -16,6 +16,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channelName: string;
   channelType?: import("@/shared/api/types").ChannelType;
   currentPubkey?: string;
+  typingChannel?: import("react").ComponentProps<typeof ThreadPanelSurface>["typingChannel"];
+  threadTypingPubkeys?: string[];
   editTarget?: TimelineMessage | null;
   onEdit?: (message: TimelineMessage) => void;
   onDelete?: (message: TimelineMessage) => void;

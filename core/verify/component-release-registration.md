@@ -360,3 +360,25 @@ DATABASE_URL 明确 SKIP。Core 测试报 363 passed、1 failed、51 ignored：
 完整检查仍在继续，其后日志从同一容器接续保存为上述目录的
 `full-resumed.log`。本批可以独立提交已定向验证的投递源码，但不表示完整门禁
 已通过，也不批准组件、不激活绑定、不作为生产就绪或新部署声明。
+
+17:47 UTC 已验证上述 Core 检查的旧期望修正。依据仍是固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-core/src/kind.rs::KIND_STREAM_MESSAGE_DIFF` 和既有读取恢复；
+`StreamScope::message_kinds` 生产集合未改，只在 workspace/conversation
+两个预期列表补回原生 40008。没有修改字段、契约、迁移、订阅授权、历史读取或
+发布准入，不把 forum 消息放进私聊，原跨 scope、验签和 Relay overlay 断言保留。
+这不是新增能力或新的检查脚本，也不是修改在途 full 输入使旧失败消失。
+
+原 4 CPU/8 GiB SDK、Cargo 16、SQLX_OFFLINE=true、Data 缓存中执行：
+
+```text
+cargo test --locked --offline --manifest-path core/Cargo.toml -p platform-core --bin platform-core stream::tests -- --nocapture
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 411 filtered out
+```
+
+实际退出 0；私有 `human-reader.gcbX3d` 的该文件与正式源码逐字 cmp 退出 0。
+日志为 `/volumes/data/kailo/tmp/cells-share-native.0fuX6u/stream-native-kinds-restored.log`。
+日志 SHA-256 为 `b80dea0725ee6f1f189621ca03e355609204bb8ef9bff064684d6250b33be39e`。
+这只证明该四项检查，不替代最新 main 全量验证。原冻结 full 后续还出现
+TypeScript 26 failed/1070 passed，涉及 pages 和 workflow-definition 两个文件；
+截至此记录仍未终态，不能报告 full 退出 0。本批未构建镜像、部署或激活组件。

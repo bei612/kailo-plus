@@ -14,10 +14,14 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
+import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
+import type { ComponentProps } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   conversation?: ConversationView;
+  typingEntries?: readonly TypingIndicatorEntry[];
+  profiles?: ComponentProps<typeof ThreadPanelSurface>["profiles"];
   routeTargetMessageId?: string;
   routeActivationId?: string;
   searchMessageId?: string | null;
@@ -145,6 +149,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id} channelName={channelName} channelType={conversation ? "dm" : "stream"}
     messages={rows} available={canReply} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
+    profiles={profiles} currentPubkey={editAuthorPubkey}
+    threadTypingPubkeys={canReply ? typingEntries.filter(entry => entry.threadHeadId === data.threadHead?.id && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey) : []}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
     replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
     searchMessageId={searchMessageId} searchQuery={searchQuery}

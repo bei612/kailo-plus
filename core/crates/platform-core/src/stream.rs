@@ -722,11 +722,11 @@ mod tests {
         });
         assert_eq!(
             workspace.message_kinds(),
-            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40099, 45001, 45003]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099, 45001, 45003]
         );
         assert_eq!(
             conversation.message_kinds(),
-            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40099]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099]
         );
         assert!(!workspace.same_admission(&conversation));
     }

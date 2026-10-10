@@ -507,6 +507,19 @@ test("production CLOSED handler removes terminal live subscriptions", () => {
   assert.equal(readyCalls, 1);
 });
 
+test("typing admission loss is delivered even after initial EOSE cleared readiness", () => {
+  let lost = 0;
+  const subscriptions = new Map([["typing", {
+    mode:"live", filter:{kinds:[20002],"#h":["scope"],limit:10},
+    onEvent:()=>{},resolveReady:()=>{},onClosed:()=>{lost += 1;},
+  }]]);
+  handleSubscriptionEose({subscriptions,subId:"typing",closeSubscription:async()=>{}});
+  assert.equal(subscriptions.get("typing").resolveReady,undefined);
+  handleRelayClosed({subscriptions,subId:"typing",message:"restricted: access revoked",sendReq:async()=>{}});
+  assert.equal(lost,1);
+  assert.equal(subscriptions.has("typing"),false);
+});
+
 // ── Rate-limited CLOSED core behaviour (F5) ───────────────────────────────────
 
 test("rate-limited CLOSED keeps live subscription in the map", () => {

@@ -125,6 +125,7 @@ function recoverLiveSubscriptionFromClosed({
 }) {
   subscription.resolveReady?.("closed");
   subscription.resolveReady = undefined;
+  subscription.onClosed?.();
 
   const closedClass = classifyRelayClosed(message);
 
