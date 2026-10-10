@@ -102,6 +102,10 @@ services:
       PYTHONUNBUFFERED: 1
       CONFIG_PATH: /app/config.yaml
       WREN_NATIVE_SERVICE_IDENTITY_FILE: /run/wren-ai-native/identity.json
+      WREN_MODEL_DELIVERY_INPUT_FILE: /run/wren-model-delivery/input.json
+      WREN_MODEL_CREDENTIAL_FILE: /run/wren-model-delivery/credential.json
+      WREN_MODEL_ADAPTER_DIRECTORY_FILE: /run/wren-model-delivery/adapter-directory.json
+      WREN_MODEL_DELIVERY_OUTPUT_FILE: /run/wren-model-delivery/verified-directory.json
       QDRANT_HOST: qdrant
       WREN_AI_SERVICE_PORT: ${WREN_AI_SERVICE_PORT}
       WREN_UI_PORT: ${WREN_UI_PORT:?native UI port is required}
@@ -126,6 +130,11 @@ services:
         source: ${WREN_AI_IDENTITY_DIR:?dedicated native service identity delivery is required}
         target: /run/wren-ai-native
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WREN_MODEL_DELIVERY_DIR:?owner-only frozen model delivery directory is required}
+        target: /run/wren-model-delivery
         bind:
           create_host_path: false
     networks:

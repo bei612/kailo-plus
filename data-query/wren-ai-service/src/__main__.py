@@ -13,6 +13,7 @@ from src.globals import (
     create_service_metadata,
 )
 from src.providers import generate_components
+from src.providers.native_model_delivery import NativeModelDelivery
 from src.utils import (
     init_langfuse,
     setup_custom_logger,
@@ -28,15 +29,17 @@ setup_custom_logger(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup events
-    pipe_components = generate_components(settings.components)
-    app.state.service_container = create_service_container(pipe_components, settings)
-    app.state.service_metadata = create_service_metadata(pipe_components)
-    init_langfuse(settings)
+    with NativeModelDelivery(settings) as delivery:
+        pipe_components = generate_components(settings.components)
+        app.state.service_container = create_service_container(pipe_components, settings)
+        app.state.service_metadata = create_service_metadata(pipe_components)
+        init_langfuse(settings)
+        delivery.publish(pipe_components, settings.components)
 
-    yield
+        yield
 
-    # shutdown events
-    langfuse_context.flush()
+        # shutdown events
+        langfuse_context.flush()
 
 
 app = FastAPI(

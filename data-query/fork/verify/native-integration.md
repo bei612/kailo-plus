@@ -10417,3 +10417,84 @@ telemetry initialization; production telemetry defaults are unchanged.
 Main full-check job 87175 froze its candidate before this batch and does not
 cover these changes. The delivered result is a source checkpoint, not an image,
 native credential-proof delivery, activation or production acceptance.
+
+### Actual native lifespan model-delivery producer (2026-10-10)
+
+Authority is DD-20/92, SS-WRN-GOVERNANCE and the existing
+`application_adapter_directory.schema.json` / Core `verify_model_delivery`.
+Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72` was rechecked at
+`wren-ai-service/src/__main__.py::lifespan`,
+`wren-ai-service/src/providers/__init__.py::generate_components/transform` and
+`wren-ai-service/src/core/pipeline.py::PipelineComponent`. The existing
+Knowledge `model_delivery` producer and original `start-core.sh` `PYADAPTER`
+directory consumer were read, not replaced.
+
+Impact: original AI startup now observes its actual instantiated direct LLM,
+LiteLLM Router fallback and text/document embedding providers after native
+service construction. The frozen projection, original Bao Agent material and
+existing controlled adapter directory remain input facts. Every loaded native
+model/endpoint/key and fallback must match; proof uses the loaded provider key,
+not a standalone calculation from the input material. No new HTTP endpoint,
+model registry, account, permission, embedding dimension or Core write exists.
+No schema, query outcome, billing authority or public page changes.
+
+Side effects and boundaries: all four controlled paths are required together;
+all absent preserves original independent startup but produces no platform
+proof. Symlinked, broad-permission, aliased or malformed inputs refuse. Existing
+output is removed only after verifying this writer's prior adapter/instance/
+binding/scope/generation, never just because an arbitrary file is owner-only.
+A directory lock excludes concurrent lifespans; inputs are rechecked both after
+provider observation and after output fsync. The complete existing directory is
+atomically published to a distinct candidate; other bindings and historical
+generations remain intact. Failure removes no unrelated file and publishes no
+success; shutdown removes only this process's output inode. Next startup removes
+an identified crash residue, never treating an old generation as fresh proof.
+These are startup configuration failures, not fabricated query terminal states.
+
+Post-implementation verification used the previously registered original AI
+image `sha256:fa633e3202accc13519be5b17a493d85d6ac7c7a0b30a1d6b83eca4427f3150d`,
+container `kailo-wren-model-proof-2m9yur`, 4 CPU/4 GiB, network `none`, read-only
+root/input and bounded temporary storage. Preflight MemAvailable was about
+15.5 GB; no image build, pull, dependency install or live service ran. The
+original interpreter executed:
+
+```sh
+/app/.venv/bin/python -m unittest discover -s tests -p test_native_model_delivery.py -v
+```
+
+First frozen input 86981 passed 13 checks. The final input additionally covers
+source replacement during output fsync, direct LLM, preserved generations and
+post-publication lifetime failure: 33566 exited 0, 17 checks passed. The checks
+execute real provider constructors/Router and original `lifespan`; only unrelated
+service-container construction/telemetry is substituted in the lifespan check.
+The emitted directory passes the existing JSON Schema and the original
+`start-core.sh` `PYADAPTER` code executed verbatim. This last check uses isolated
+container fixture paths; it is not real host JWKS delivery or Core activation.
+
+In the private production candidate, removing loaded-key equality, prior-output
+ownership checks, the post-fsync input check and the actual lifespan publish
+call made 87206 exit 1 (3 failures, 1 error), respectively detecting those four
+breaks. Both changed production files were restored byte-for-byte (`cmp` 0);
+5812 exited 0, 17 checks passed. The existing SDK's four-file `py_compile` exited
+0. Final container inspection: exited 0, OOMKilled=false. Production telemetry
+defaults were not changed. Ruff was unavailable and was not installed/run.
+
+Logs under `/volumes/data/kailo/check-cache/wren-model-proof.2m9yur/`:
+`proof-final-positive.log` SHA-256
+`94fb9811cda2d320c2a9d060c6aae18f568e3c44eb17aa2157549738e9dd08aa`;
+`proof-negative.log`
+`7c1d607822f6c500f2900e39ca6f90f5914182c67e7ae88169288a0ff32f35ee`;
+`proof-restored.log`
+`e9fd109890deb192c5f5faebcd491cb247043b8b089180ab3adde2a364fe73ea`.
+The empty `proof-python-static.log` SHA-256 is
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+Deployment boundary: use the configured host `WREN_MODEL_DELIVERY_DIR` output,
+not its AI container alias. Existing host JWKS references are preserved unchanged
+and must pass the original host directory check. A running Core single-file bind
+mount retains its old inode; this producer does not claim automatic hot reload.
+Original controlled redeployment, binding workflow, audited Bao read/challenge
+verification and authorization remain required. There is still no real approved
+Wren model projection/embedding route/dimension/native configuration delivery or
+new AI image/deployment in this batch. Main full job 87175 predates this input;
+no full or browser acceptance result is claimed here.
