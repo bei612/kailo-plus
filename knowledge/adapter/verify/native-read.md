@@ -4408,3 +4408,171 @@ exit 0。日志均在既有私有目录
 联调；Cells 原写入及七必选 release 门禁没有因此关闭。同步启动变量补入
 原 `.env.example`，身份步骤也在该原配置入口说明，没有新建部署文档。
 完整门禁与文档检查由主线集中收口，本批未重复 full 或发版。
+
+## 2026-10-10 原 RECEIVER 准入证据到实际原生写入点
+
+四步影响结论：
+
+1. 权威为 `.design/07` §5.2、§8.2 的 fresh PEP、原 SERVICE
+   SOURCE/RECEIVER 分界与 `.design/13` §4.1、§4.4 的 DD-89 原生同步链。
+   已重新核验固定 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::DataSourceService.ingestItem`、
+   `internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromFile`
+   和 `internal/application/service/knowledge.go::knowledgeService.setAndAttachKnowledgeTags`。
+   原文件保存、Knowledge、标签和解析队列仍是组件自身权威；本批不新建平台动作、
+   存储、权限、工作流或第二份内容权威。
+2. 实际消费者是 `fileStorageConnector.FetchStream` → 原 `StreamHandler.Emit`
+   → `DataSourceService.ingestItem` → `CreateKnowledgeFromFileAtID` → 原
+   intent INSERT、FileService.SaveFile、标签写入及解析入队。原只在 Emit 前
+   PEP，后面仍有目标查询、cursor checkpoint、KB/config/hash/dedupe、标签查询等
+   await；本批把原 grants/run 作为私有请求上下文交给写入者，在实际副作用前
+   再调用原 `fileStorageTransport.pep`。不是可选 callback：绑定路径缺上下文、
+   tenant/KB/DataSource 不符、无原 grant 或过期均拒绝。可信 `ds.Type` 为
+   file_storage 时不接受 `item.Metadata.channel` 覆盖；其他 Connector 原 source
+   标签行为不变。标签 PEP 位于 `validateKnowledgeTagIDs` 完成后、真正
+   `SetKnowledgeTags` 前；原 ready 文档 provenance CAS 也重新授权。
+   原 initial lookup 和 CreateAtID DuplicateKnowledgeError 的并发去重结果，
+   现在均经 `finishDataSourceIngest` 唯一分派到 file_storage 专用收尾；不再
+   让后者落进通用 `datasource_replacement` 的潜在删除链。bound dedupe 按
+   DataSource+external 精确查询且不刷新通用 created_at；已 checkpoint 的
+   nativeID 随同一请求上下文校验，后来撞到其他 ID 时保留原 Applying、拒绝
+   改对象或偷偷替换指针。没有新增持久字段，其他 Connector 的原分支不变。
+3. 原 Knowledge intent 之前拒绝不创建行或上传文件；intent 之后拒绝保留原
+   native ID，已完成的 Save ACK 仍写回 FilePath，随后不继续未获授权的标签或
+   enqueue。已经提交的解析任务不因后续拒绝伪装撤销，也不删已保存的源/目标数据。
+   原 Applying cursor 持续指向同一原生对象，重入只观察，不再 SOURCE/Emit。
+   每次 fresh PEP 与后续数据库/存储/队列调用之间并非跨系统原子事务；没有声称
+   最后一次 PEP 能原子锁住所有授权或撤回已发生副作用。证据不进入正文或任务载荷。
+   本批只覆盖解析/摘要任务 enqueue 前的 fresh PEP，不据此声明异步 worker
+   的绑定停用/在途处置已验收。依 `.design/13` §4.2、§7，来源 reader 撤权
+   阻断后续读取，不以来源撤权或原短票据到期中止已准入解析；已取得内容按
+   接收方删除语义处理，不能仅因异步函数没有原 grant 检查便另造该中止要求。
+4. 按 `06` §4，缺身份/权限是 DENIED，缺原执行/绑定证据是 PRECONDITION，
+   既有内容/revision 冲突是 CONFLICT；原有大小/quota LIMIT 和能力 BLOCKED
+   不变。SOURCE 已消费、Applying 已落盘之后的未确认物化继续 UNKNOWN 对账，
+   没有零用量成功、自动重传或删除原 cursor。零字节、重复内容组仍走原链，
+   每组所有原 RECEIVER grants 都必须通过 fresh PEP。没有 schema、数据库、
+   外部 API 或已存 cursor 格式变化，也没有新增 reason code。
+
+源码已写入；原中间快照检查 `77214` 已退出 0，包结果 `PASS` / `3.635s`。
+该结果早于并发 dedupe 与 checkpoint ID 最终修正，不作为最终八路径验收。
+实现后用例已覆盖 Emit 前 checkpoint 后撤权、dedupe/intent/storage/tag/queue
+各 await 后撤权、缺上下文/跨 scope/过期/空 grants、channel 覆盖拒绝，以及
+原 provenance CAS 的授权；新增两种原查询时序的授权/撤权/错 native ID 检查。
+最终七个 Go 文件已与私有检查副本逐一 `cmp` 一致，受限 SDK 的 `gofmt -l`
+无输出且退出 0。最终正向 `71909` 退出 0（`PASS` / 包耗时 `0.746s`），
+233 条 PASS 记录包含父检查与子场景，不是 233 项独立业务验收。
+真实反证仅在私有副本删除 `authorizeFileStorageWrite` 的远端 PEP 调用和
+`finishDataSourceIngest` 的 file_storage 专用分派；`16697` 退出 1，18 条
+FAIL 记录包含父检查及子场景。原 initial/native dedupe 触发
+`unexpected generic replacement delete`，过期/撤权后 intent、保存、标签、
+解析/摘要入队场景也真实失败，checkpoint 后撤权不能被初始 PEP 冒充。
+正式源未被变异；还原七文件并逐一 `cmp` 后复验。第一次恢复 shell 与检查
+启动短暂重叠，因此其 `9413` 退出 0 仅保留日志、不作最终冻结证据；再以
+串行 `cmp` 全成功后启动 `62903`，最终还原退出 0（`PASS` / `0.725s`），
+233 条 PASS，正式与私有源原字节一致。
+一次误用宿主 `/usr/bin/gofmt -w` 已向主线如实报告；它不作为项目格式门禁证据，
+后续只在既有受限 SDK 内复核格式与检查。SDK 只读源码挂载上的 `gofmt -w`
+另实际返回 `read-only file system` / 退出 2，没有修改源；随后采用 SDK
+`gofmt -d` 的精确格式输出，经正式源 `apply_patch` 修正并重新投递、复核。
+未重复 full、构建镜像或部署组件。
+
+实际入口复用 `kailo-knowledge-native-check-wkkigg`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+Go `1.26.8`，4 CPU / 8 GiB / 无额外 swap，运行前确认原 SDK 仅有 sleep，
+宿主可用 25–26 GiB、memory PSI 0。没有新增 SDK、清理缓存或并行替代构建。
+在原 `/workspace/knowledge`、`GOMODCACHE=/cache/mod GOCACHE=/cache/build
+GOPROXY=off` 下执行：
+
+```sh
+go test ./internal/application/service -run 'Test(FileStorage|CreateKnowledgeFromFile|KnowledgeCreateQueueUnknown|StreamHandler)' -count=1 -v
+go test ./internal/application/service -run 'TestFileStorage(WriterReauthorizesNativeSideEffects|IngestCannotReplaceReceiverChannel|DedupeUsesCheckpointedReceiverCompletion|PendingApplicationResumesOriginalNativeCreation)$' -count=1 -v
+```
+
+第一条用于正向及最终还原，第二条仅用于上述真实生产反证。
+原日志目录为
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/`：
+
+| 日志 | SHA-256 | 实际退出码 |
+| --- | --- | --- |
+| `receiver-native-writes-final-positive.log` | `9539b15bf10154d88d9b574cd4cdb0d716cef82911b96bc3416046b0d5f29de1` | 0 |
+| `receiver-native-writes-negative.log` | `672b8f54bc81f365f910793bdd7632933fff673f56ad8049657f5ffed632e466` | 1，预期真实反证 |
+| `receiver-native-writes-restored-frozen.log` | `760d7cd12c38e0ec63205e1747c6c7eb229e31477b2ad6987becdb8bccfb614b` | 0 |
+
+全工程 full 与文档检查由主线集中收口；本批未单独重复执行，不以窄检查代替。
+
+仍未完成真实 Cells→WeKnora SOURCE→解析→usage→撤权联调；没有合法 receiver
+binding/受控配置投递证据，本批不伪造。原同步任务在重试预算耗尽后由
+`setSyncAttemptOutcome` 标记任务失败，不等同于平台 read/receiver AE 的 UNKNOWN
+已经取得终态；跨层 UI 的待对账呈现及原生物化长期不确定的人工终结仍是发布边界。
+本批不解除 FILE_STORAGE 七必选、首次上传或目标 CAS/writer 退休门禁。
+
+## 2026-10-10 同步退休在原生入队边界重新消费 RECEIVER 权限
+
+四步影响结论：
+
+1. 权威是 `.design/13` §4.4 的 create-new → ready → delete-old、`07` 的
+   fresh PEP 和 UNKNOWN 分界。本批不重新定义删除语义。重新核实固定
+   WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/knowledge_delete.go::knowledgeService.DeleteKnowledgeList`
+   与 `ProcessKnowledgeListDelete`：保留其原 plan/execute/Asynq 消费链，
+   只补 Kailo 已有同步退休调用的 RECEIVER 准入消费。
+2. 实际链是 `DataSourceService.ProcessSync` 写可信 `fileStorageRunKey`
+   → `fileStorageConnector.retire` 查询目标并保存原 Retiring intent
+   → `knowledgeService.StartKnowledgeDeleteTask` 查询原任务、加载删除 plan
+   → 原 `TaskEnqueuer.Enqueue`。此前 PEP 仅发生在目标查询/checkpoint 之前，
+   两处 await 后仍可能新派发删除。现在 retire 携带原 request-local
+   `fileStorageWrite`，原 Enqueue 前校验 tenant/KB/DataSource/nativeID、run、
+   由原 revision 派生的 retire taskID 及唯一 grant.key，再调用原 RECEIVER PEP。
+   run 已存在但 write 缺失或错属时拒绝，不回退为独立删除。
+3. `datasource_replacement.go` 的独立原生替换与
+   `mcpserver/tools_ingest.go::Server.handleDeleteDocument` 也调用 Start；
+   它们没有可信 fileStorageRun，不因目标 Channel 是 file_storage 而被强加
+   无关 SOURCE 授权。Enqueue 前复核的 `requireKBWrite` 只消费当前上下文
+   KB grant/tenant/role，不是重新查询权限权威；本批 fresh 在线校验专指
+   RECEIVER PEP，不能据此声称独立 MCP 已通过在线撤权验收。
+4. 原任务已存在时仍优先 Observe，不因短票到期再次派发。初次入队前 PEP
+   拒绝不创建任务、不删正文、不制造成功 receipt；已保存 intent 与已消费
+   SOURCE list 保留。若拒绝或崩溃发生在 intent 后、任务前，后续仍只观察
+   原 task，缺 task 保持 UNKNOWN；本批未新增该窗口的自动终结能力或重新
+   SOURCE/删除重放机制，也不把最后一次 PEP 称为跨库原子撤权。
+
+实现后使用既有原生服务/SQLite/miniredis/Asynq 测试入口，覆盖完整
+retire→checkpoint→native plan→队列链：正常入队、checkpoint 后撤权、
+plan 后撤权、缺 write、错 nativeID、错 taskID、独立原生，以及已存在任务
+仅观察。原受限 `kailo-knowledge-native-check-wkkigg` SDK（4 CPU/8 GiB、
+无额外 swap）复用原 Go 缓存，gofmt -d 无输出。首次原单包检查
+`go test -mod=readonly ./internal/application/service -run 'Test(FileStorage|ConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay)' -count=1 -v`
+实际退出 1：原四个条件删除场景 PASS（291.71s），新增正常入队及 checkpoint
+后撤权完成；第三个新增场景的 SQLite 夹具建表期间触发
+`panic: test timed out after 10m0s`，包总耗时 617.296s，不计为本批验收通过。
+原日志为宿主
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/retire-enqueue-pep-positive.log`，
+SHA-256 `79619edca2c7a9e59360b2adc3fd5e9697f41ece3629f4b1b815c56fcd19b4df`。
+临时目录仍由 Data 盘投递，未通过根盘绕行；原 Go 自动清理后的 test 二进制
+在原临时目录未留存，随后沿同 SDK/缓存仅复验新增场景，不改变业务超时或断言：
+
+```text
+go test -mod=readonly ./internal/application/service -run '^TestFileStorageRetirementAuthorizesAtNativeEnqueue$' -count=1 -timeout 30m -v
+```
+
+`30m` 仅为原文件 SQLite 夹具在 Data I/O 压力下的测试执行预算。正向退出 0，
+7 子场景 PASS，包耗时 33.796s。随后仅在 SDK 私有副本中移除实际 Enqueue 前
+run 身份及 RECEIVER PEP 分支，保留原 KB 检查与全部测试不变：真实反证退出 1，
+6 子场景 FAIL，独立 native 子场景仍 PASS，包耗时 53.976s。正常及两撤权场景
+先被缺少第二次 PEP 的断言捕获，缺 write/错 native/错 task 场景由未拒绝执行
+的断言捕获；不把该反证描述成完整删除 worker 的运行结果。
+还原后 3 个 Go 文件逐字 `cmp` 与正式源码一致，`gofmt -d` 无输出、退出 0；
+同命令最终退出 0，7 子场景 PASS，包耗时 55.900s。队列观察包括正常 Pending、
+两种撤权不入队、缺失/错属拒绝、已有任务只观察，不证明异步删除已经终态完成。
+
+以下日志均位于上述宿主 `native-go-cache` 目录：
+
+| 日志 | SHA-256 | 退出码 |
+| --- | --- | --- |
+| `retire-enqueue-pep-focused-positive.log` | `b53f8f9034ffb543830437a881ffaaca5cc147a3c193da8dc44a39d4b6d59e71` | 0 |
+| `retire-enqueue-pep-negative.log` | `6893053ccae387e7a3d4aec9a516a3a22b0ebec7f741f6b6cc5ada3300d12f75` | 1，预期反证 |
+| `retire-enqueue-pep-restored.log` | `b9b3f00d5540d2daa697b807f81a4530b9ea5d863c80d136b44a70c38626fcb5` | 0 |
+
+未改契约、部署、凭据或审批事实，未做真实 Cells→WeKnora 联调，不改变完整
+FILE_STORAGE release 门禁。全工程与文档检查由主线集中执行，本批未重复启动。

@@ -69,6 +69,18 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 	processOverrides *types.KnowledgeProcessOverrides, creationID string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
+	if channel == fileStorageConnectorType {
+		tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
+		if creationID == "" {
+			return nil, fmt.Errorf("native file-storage write has no durable creation identity")
+		}
+		if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
+			return nil, err
+		}
+		if ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID != creationID {
+			return nil, fmt.Errorf("native file-storage creation differs from its checkpointed identity")
+		}
+	}
 
 	// Use custom filename if provided, otherwise use original filename. Folder
 	// uploads pass a path-qualified name ("docs/spec/design.md"): the directory
@@ -125,6 +137,9 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 		logger.Errorf(ctx, "Failed to calculate file hash: %v", err)
 		return nil, err
 	}
+	if channel == fileStorageConnectorType && metadata["external_id"] != hash+":"+getFileType(fileName) {
+		return nil, fmt.Errorf("native file-storage content group does not match its original source identity")
+	}
 
 	// Check if file already exists
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
@@ -179,6 +194,12 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 	}
 	if exists {
 		logger.Infof(ctx, "File already exists: %s", fileName)
+		if channel == fileStorageConnectorType {
+			// The caller resolves this reference through the same checkpointed
+			// identity/readiness/provenance consumer as its initial lookup. A
+			// hash collision is not permission to refresh or replace another row.
+			return existingKnowledge, types.NewDuplicateFileError(existingKnowledge)
+		}
 		// Update creation time for existing knowledge
 		if err := s.repo.UpdateKnowledgeColumn(ctx, existingKnowledge.ID, "created_at", time.Now()); err != nil {
 			logger.Errorf(ctx, "Failed to update existing knowledge: %v", err)
@@ -263,6 +284,11 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 		// Native Knowledge is the durable intent, not a second importer table.
 		// A crash leaves this same pending/failed row for native observation and
 		// owner cleanup; an absent receipt never triggers a second upload.
+		if channel == fileStorageConnectorType {
+			if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
 			prior, readErr := s.fileCreation(ctx, tenantID, kbID, creationID, creationDigest)
 			if readErr != nil || prior != nil {
@@ -275,6 +301,11 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 	// Save the file to storage (use KB-level storage engine if configured)
 	logger.Infof(ctx, "Saving file, knowledge ID: %s", knowledge.ID)
 	fileSvc := s.resolveFileService(ctx, kb)
+	if channel == fileStorageConnectorType {
+		if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
+			return knowledge, err
+		}
+	}
 	filePath, err := fileSvc.SaveFile(ctx, file, knowledge.TenantID, knowledge.ID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to save file, knowledge ID: %s, error: %v", knowledge.ID, err)
@@ -358,6 +389,11 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 		payloadBytes,
 		documentProcessTaskOptions(s.config, asynq.MaxRetry(3))...,
 	)
+	if channel == fileStorageConnectorType {
+		if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
+			return knowledge, err
+		}
+	}
 	info, err := s.task.Enqueue(task)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to enqueue document process task: %v", err)
@@ -384,6 +420,11 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 		knowledge.ID,
 	)
 
+	if channel == fileStorageConnectorType && isDataTableFileType(getFileType(safeFilename)) {
+		if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
+			return knowledge, err
+		}
+	}
 	enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, knowledge.ID, safeFilename, getFileType(safeFilename), kb.SummaryModelID, kb.EmbeddingModelID)
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
@@ -1329,7 +1370,7 @@ func (s *knowledgeService) markKnowledgeEnqueueFailed(ctx context.Context, knowl
 
 func usesSourceIdentityDuplicateCheck(channel string) bool {
 	switch channel {
-	case types.ConnectorTypeGitLab, types.ChannelConfluence:
+	case types.ConnectorTypeGitLab, types.ChannelConfluence, fileStorageConnectorType:
 		return true
 	default:
 		return false

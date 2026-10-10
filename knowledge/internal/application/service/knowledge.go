@@ -975,6 +975,11 @@ func (s *knowledgeService) setAndAttachKnowledgeTags(
 		return err
 	}
 	if len(tagIDs) > 0 {
+		if knowledge.Channel == fileStorageConnectorType {
+			if err := authorizeFileStorageWrite(ctx, tenantID, kbID, knowledge.GetMetadata()["datasource_id"]); err != nil {
+				return err
+			}
+		}
 		if err := s.repo.SetKnowledgeTags(ctx, knowledge.ID, tagIDs); err != nil {
 			return err
 		}

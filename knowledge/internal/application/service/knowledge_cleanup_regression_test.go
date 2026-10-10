@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -340,6 +344,134 @@ func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) 
 			require.Error(t, err)
 			_, err = f.svc.ObserveKnowledgeDeleteTask(f.ctx, "kb", "", "", uuid.NewString())
 			require.Error(t, err)
+		})
+	}
+}
+
+type retirementPlanChunkRepository struct {
+	interfaces.ChunkRepository
+	afterRead func()
+}
+
+func (r *retirementPlanChunkRepository) ListImageInfoByKnowledgeIDs(ctx context.Context, tenant uint64, ids []string) ([]interfaces.ChunkImageInfo, error) {
+	images, err := r.ChunkRepository.ListImageInfoByKnowledgeIDs(ctx, tenant, ids)
+	r.afterRead()
+	return images, err
+}
+
+func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
+	for _, scenario := range []string{"admitted", "revoked-after-checkpoint", "revoked-after-plan", "missing-write", "wrong-native", "wrong-task", "independent-native"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newDocumentWriteFixture(t)
+			kb, id, source, root, binding := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: kb, tenantID: 7}
+			metadata, err := json.Marshal(map[string]string{"datasource_id": run.dataSourceID, "external_id": "group"})
+			require.NoError(t, err)
+			require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Updates(map[string]any{
+				"id": id, "knowledge_base_id": kb, "channel": fileStorageConnectorType, "metadata": types.JSON(metadata),
+			}).Error)
+			base := &types.KnowledgeBase{ID: kb, TenantID: 7}
+			f.kbs.values[kb] = base
+			ctx, err := access.WithKBTaskWrite(f.ctx, base, 7)
+			require.NoError(t, err)
+			row, err := f.repo.GetKnowledgeByID(ctx, 7, id)
+			require.NoError(t, err)
+			old := fileStorageGroup{KnowledgeID: id, Revision: row.UpdatedAt.UTC().Format(time.RFC3339Nano),
+				References: []map[string]json.RawMessage{fileStorageTestWire(t, map[string]string{"resourceId": source})}}
+			key := fileStorageKey(run.syncLogID, run.dataSourceID, "group", id, old.Revision, "retire")
+			r := miniredis.RunT(t)
+			client := redis.NewClient(&redis.Options{Addr: r.Addr()})
+			queue := asynq.NewClient(asynq.RedisClientOpt{Addr: r.Addr()})
+			t.Cleanup(func() {
+				require.NoError(t, client.Close())
+				require.NoError(t, queue.Close())
+			})
+			f.svc.redisClient, f.svc.task = client, queue
+			f.svc.config = &config.Config{KnowledgeBase: &config.KnowledgeBaseConfig{DeleteReceiptRetention: time.Hour}}
+			ds := &types.DataSource{ID: run.dataSourceID, TenantID: 7, KnowledgeBaseID: kb}
+			checkpoint := newStreamHandler(&DataSourceService{dsRepo: &recordingDSRepo{},
+				syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}, ds, &types.SyncResult{}, &types.SyncLog{})
+			planned, pepCalls, sourceCalls := false, 0, 0
+			f.svc.chunkRepo = &retirementPlanChunkRepository{ChunkRepository: f.chunkRepo, afterRead: func() { planned = true }}
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch request.URL.Path {
+				case "/oidc":
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+				case "/service/v1/adapter/request_read_grant":
+					args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+						"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root,
+							"input": map[string]string{"resourceId": source}}})
+					receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": binding, "authorizationTargetNativeRef": kb,
+						"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": run.syncLogID, "sourceReadActionExecutionId": key}})
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": key, "actionExecutionId": key, "sourceBindingId": source,
+						"endpoint": server.URL + "/execute", "actionToken": "source-token", "expiresAt": time.Now().Add(time.Hour).Unix(), "argumentsJson": string(args),
+						"receiverWrite": map[string]any{"actionExecutionId": binding, "actionToken": "receiver-token", "expiresAt": time.Now().Add(time.Hour).Unix(), "argumentsJson": string(receiverArgs)}}))
+				case "/execute":
+					sourceCalls++
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root,
+						"operationId": key, "items": []any{}, "listingDigest": fileStorageDigest([]byte("[]")), "nativeRevision": fileStorageDigest([]byte("[]"))}))
+				case "/service/v1/adapter/pep_check":
+					pepCalls++
+					if (scenario == "revoked-after-checkpoint" && len(ds.LastSyncCursor) > 0) || (scenario == "revoked-after-plan" && planned) {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"actionExecutionId": binding, "operationId": key, "authorizationMinZedToken": "current-receiver-permission"}))
+				default:
+					t.Errorf("unconfirmed retirement attempted %s", request.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "receiver-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-receiver-secret"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: binding, ReceiverResourceID: binding,
+				NativeKnowledgeBaseID: kb, NativeTenantID: 7, CorePepURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver", OIDCClientSecretFile: secret, TimeoutMS: 1000, MaxBodyBytes: 10240,
+				ListActionVersion: 1, ReadActionVersion: 1, ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1})
+			require.NoError(t, err)
+			if scenario != "independent-native" {
+				ctx = context.WithValue(ctx, fileStorageRunKey{}, run)
+			}
+			if scenario == "missing-write" || scenario == "wrong-native" || scenario == "wrong-task" || scenario == "independent-native" {
+				if scenario == "wrong-native" || scenario == "wrong-task" {
+					grant, err := transport.grant(ctx, run, source, "file_storage.list@v1", 1, key, transport.config.RetireActionKey, 1, map[string]string{"resourceId": source})
+					require.NoError(t, err)
+					write := &fileStorageWrite{transport: transport, run: run, nativeID: id, grants: []*fileStorageGrant{grant}}
+					if scenario == "wrong-native" {
+						write.nativeID = uuid.NewString()
+					} else {
+						key = uuid.NewString()
+					}
+					ctx = context.WithValue(ctx, fileStorageWriteKey{}, write)
+				}
+				_, err = f.svc.StartKnowledgeDeleteTask(ctx, kb, id, old.Revision, key)
+			} else {
+				connector := &fileStorageConnector{transport: transport, knowledge: f.svc}
+				state := fileStorageCursor{Retiring: map[string]fileStorageRetirement{}}
+				err = connector.retire(ctx, run, "group", old, map[string]*fileStorageListing{source: {digest: fileStorageDigest([]byte("[]"))}}, &state, checkpoint, time.Time{})
+				require.Error(t, err, "queued deletion is not a terminal receiver receipt")
+				require.Equal(t, 1, sourceCalls)
+				require.Equal(t, 2, pepCalls, "the final PEP must run after native planning, not only before checkpoint")
+				require.True(t, planned)
+				require.Equal(t, key, state.Retiring["group"].Key)
+			}
+			info, queueErr := asynq.NewInspectorFromRedisClient(client).GetTaskInfo(types.QueueMaintenance, key)
+			if scenario == "admitted" || scenario == "independent-native" {
+				require.NoError(t, queueErr)
+				require.Equal(t, asynq.TaskStatePending, info.State)
+				before := pepCalls
+				// An existing task is observation, even without a fresh write grant.
+				observed, err := f.svc.StartKnowledgeDeleteTask(context.WithValue(ctx, fileStorageWriteKey{}, (*fileStorageWrite)(nil)), kb, id, old.Revision, key)
+				require.NoError(t, err)
+				require.Equal(t, "RUNNING", observed["state"])
+				require.Equal(t, before, pepCalls)
+			} else {
+				require.Error(t, err)
+				require.True(t, errors.Is(queueErr, asynq.ErrTaskNotFound) || errors.Is(queueErr, asynq.ErrQueueNotFound))
+			}
 		})
 	}
 }

@@ -95,6 +95,26 @@ func (s *knowledgeService) StartKnowledgeDeleteTask(ctx context.Context, kbID, i
 	if err != nil {
 		return nil, err
 	}
+	// A prior inspector/plan read is not authorization for this first queue
+	// write. Reapply the native KB grant and the admitted connector's original
+	// RECEIVER grant at the actual dispatch boundary, not on task observation.
+	if _, err := requireKBWrite(ctx, plan.kbs[kbID]); err != nil {
+		return nil, err
+	}
+	if value := ctx.Value(fileStorageRunKey{}); value != nil {
+		run, ok := value.(fileStorageRun)
+		write, hasWrite := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite)
+		if !ok || !hasWrite || write == nil || write.run != run || write.nativeID != id ||
+			run.tenantID != row.TenantID || run.knowledgeBaseID != kbID ||
+			run.dataSourceID != row.GetMetadata()["datasource_id"] || row.GetMetadata()["external_id"] == "" ||
+			taskID != fileStorageKey(run.syncLogID, run.dataSourceID, row.GetMetadata()["external_id"], id, revision, "retire") ||
+			len(write.grants) != 1 || write.grants[0] == nil || write.grants[0].key != taskID {
+			return nil, fmt.Errorf("native retirement does not match its receiver execution")
+		}
+		if err := authorizeFileStorageWrite(ctx, row.TenantID, kbID, run.dataSourceID); err != nil {
+			return nil, err
+		}
+	}
 	_, err = s.task.Enqueue(asynq.NewTask(types.TypeKnowledgeListDelete, raw), asynq.Queue(types.QueueMaintenance), asynq.TaskID(taskID), asynq.MaxRetry(0), asynq.Timeout(config.DocumentProcessTimeout(s.config)), asynq.Retention(s.config.KnowledgeBase.DeleteReceiptRetention))
 	if err != nil && !errors.Is(err, asynq.ErrTaskIDConflict) && !errors.Is(err, asynq.ErrDuplicateTask) {
 		return nil, err

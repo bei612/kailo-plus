@@ -1334,13 +1334,18 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 //
 // Returns (isUpdate, error) — isUpdate is true when an existing item was replaced.
 func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, tagIDs []string) (bool, error) {
+	if ds.Type == fileStorageConnectorType {
+		if err := authorizeFileStorageWrite(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID); err != nil {
+			return false, err
+		}
+	}
 	// Channel decides the knowledge "source" label shown in the UI. Prefer the
 	// connector-supplied metadata["channel"] (e.g. Feishu Drive sets it to
 	// "feishu" so Drive docs share the wiki's "飞书" label instead of showing
 	// "unknown" for the raw ds.Type "feishu_drive"). Fall back to ds.Type so
 	// connectors that don't set metadata.channel still get a meaningful label.
 	channel := ds.Type // e.g. "feishu", "notion"
-	if item.Metadata != nil {
+	if ds.Type != fileStorageConnectorType && item.Metadata != nil {
 		if mc, ok := item.Metadata["channel"]; ok && mc != "" {
 			channel = mc
 		}
@@ -1382,7 +1387,7 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 		}
 		if existing != nil {
 			if ds.Type == fileStorageConnectorType {
-				return true, s.finishFileStorageIngest(ctx, ds, item, existing)
+				return true, s.finishDataSourceIngest(ctx, ds, item, existing)
 			}
 			if existing.ID == "" || existing.UpdatedAt.IsZero() {
 				return false, fmt.Errorf("previous source revision is unavailable")

@@ -34,6 +34,37 @@ type fileStorageRun struct {
 }
 type fileStorageRunKey struct{}
 
+// This request-local evidence is installed only by the admitted connector.
+// It carries the original grants to the native writer, not a new authority or
+// an optional callback that a bound writer could omit.
+type fileStorageWriteKey struct{}
+type fileStorageWrite struct {
+	transport *fileStorageTransport
+	run       fileStorageRun
+	grants    []*fileStorageGrant
+	nativeID  string
+}
+
+func authorizeFileStorageWrite(ctx context.Context, tenantID uint64, kbID, sourceID string) error {
+	write, ok := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite)
+	if !ok || write == nil || write.transport == nil || write.transport.config == nil ||
+		tenantID == 0 || tenantID != write.run.tenantID || kbID != write.run.knowledgeBaseID ||
+		!fileStorageUUID(sourceID) || sourceID != write.run.dataSourceID || !fileStorageUUID(write.run.syncLogID) ||
+		write.transport.config.NativeTenantID != tenantID || write.transport.config.NativeKnowledgeBaseID != kbID ||
+		!fileStorageUUID(write.nativeID) || len(write.grants) == 0 {
+		return fmt.Errorf("native file-storage write has no matching receiver execution")
+	}
+	for _, grant := range write.grants {
+		if grant == nil {
+			return fmt.Errorf("native file-storage write has no receiver grant")
+		}
+		if err := write.transport.pep(ctx, grant); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type fileStorageGroup struct {
 	KnowledgeID string                       `json:"knowledgeId"`
 	Revision    string                       `json:"revision"`
@@ -667,7 +698,11 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			item := types.FetchedItem{ExternalID: key, Title: fileStorageText(first.ref, "displayName"), FileName: fileStorageText(first.ref, "displayName"),
 				ContentType: fileStorageText(first.ref, "mediaType"), Content: body, SourceResourceID: fileStorageText(first.ref, "resourceId"),
 				Metadata: metadata, NativeCreationID: creationID}
-			if err := h.Emit(ctx, item); err != nil {
+			write := &fileStorageWrite{transport: c.transport, run: run, nativeID: nativeID}
+			for _, file := range files {
+				write.grants = append(write.grants, file.grant)
+			}
+			if err := h.Emit(context.WithValue(ctx, fileStorageWriteKey{}, write), item); err != nil {
 				return nil, err
 			}
 		}
@@ -745,7 +780,8 @@ func (s *DataSourceService) acceptFileStorageCreation(ds *types.DataSource, item
 // with the same ownership/readiness/transfer CAS used by source replacement.
 // No imported body or per-file group state is sent to Core.
 func (s *DataSourceService) finishFileStorageIngest(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, current *types.Knowledge) error {
-	if current == nil || !fileStorageUUID(current.ID) || current.TenantID != ds.TenantID || current.KnowledgeBaseID != ds.KnowledgeBaseID ||
+	write, _ := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite)
+	if write == nil || current == nil || write.nativeID != current.ID || !fileStorageUUID(current.ID) || current.TenantID != ds.TenantID || current.KnowledgeBaseID != ds.KnowledgeBaseID ||
 		current.DeletedAt.Valid || current.UpdatedAt.IsZero() || current.ParseStatus != types.ParseStatusCompleted ||
 		current.FileHash+":"+current.FileType != item.ExternalID {
 		return fmt.Errorf("native file-storage target is not ready or does not match its content group")
@@ -773,6 +809,9 @@ func (s *DataSourceService) finishFileStorageIngest(ctx context.Context, ds *typ
 	}
 	next := *current
 	next.Metadata = types.JSON(raw)
+	if err := authorizeFileStorageWrite(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID); err != nil {
+		return err
+	}
 	if err := s.knowledgeService.GetRepository().UpdateKnowledgeForTransfer(ctx, current, &next); err != nil {
 		return err
 	}
@@ -836,7 +875,11 @@ func (c *fileStorageConnector) retire(ctx context.Context, run fileStorageRun, k
 		if _, err := fileStorageCheckpoint(ctx, h, *state, oldTime); err != nil {
 			return err
 		}
-		result, err = c.knowledge.StartKnowledgeDeleteTask(ctx, run.knowledgeBaseID, old.KnowledgeID, old.Revision, intent.Key)
+		// The native enqueue consumer rechecks this original RECEIVER grant
+		// after its own target/queue lookups. Retained intents only observe.
+		write := &fileStorageWrite{transport: c.transport, run: run, grants: []*fileStorageGrant{grant}, nativeID: old.KnowledgeID}
+		result, err = c.knowledge.StartKnowledgeDeleteTask(context.WithValue(ctx, fileStorageWriteKey{}, write),
+			run.knowledgeBaseID, old.KnowledgeID, old.Revision, intent.Key)
 	}
 	if err != nil {
 		return fmt.Errorf("native retirement remains unconfirmed: %w", err)

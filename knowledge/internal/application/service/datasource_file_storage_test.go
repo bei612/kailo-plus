@@ -282,8 +282,16 @@ func TestFileStorageMetadataKeepsHashGroupAndReadinessFence(t *testing.T) {
 	service := &DataSourceService{knowledgeService: &replacementKnowledgeService{sweepFakeKS: sweepFakeKS{repo: repo}}}
 	item := &types.FetchedItem{ExternalID: "native-md5:txt", Metadata: map[string]string{"source_content_sha256": metadata["source_content_sha256"],
 		"source_references": "new", "import_config_ref": dataSource.ID}}
-	require.NoError(t, service.finishFileStorageIngest(context.Background(), dataSource, item, native))
+	run := fileStorageRun{tenantID: dataSource.TenantID, knowledgeBaseID: dataSource.KnowledgeBaseID, dataSourceID: dataSource.ID, syncLogID: uuid.NewString()}
+	revoked := false
+	ctx := newFileStorageWriteContext(t, run, func() bool { return revoked })
+	ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID = native.ID
+	require.Error(t, service.finishFileStorageIngest(context.Background(), dataSource, item, native))
+	require.Zero(t, repo.writes)
+	require.NoError(t, service.finishFileStorageIngest(ctx, dataSource, item, native))
 	require.Equal(t, 1, repo.writes)
+	revoked = true
+	require.Error(t, service.finishFileStorageIngest(ctx, dataSource, item, native))
 	for _, change := range []func(*types.Knowledge){
 		func(k *types.Knowledge) { k.ParseStatus = types.ParseStatusPending },
 		func(k *types.Knowledge) { k.FileHash = "another-hash" },
@@ -292,9 +300,123 @@ func TestFileStorageMetadataKeepsHashGroupAndReadinessFence(t *testing.T) {
 	} {
 		copy := *native
 		change(&copy)
-		require.Error(t, service.finishFileStorageIngest(context.Background(), dataSource, item, &copy))
+		require.Error(t, service.finishFileStorageIngest(ctx, dataSource, item, &copy))
 	}
 	require.Equal(t, 1, repo.writes)
+}
+
+type fileStorageDedupeRepo struct {
+	fileStorageApplicationRepo
+	missLookup  bool
+	writes      int
+	afterLookup func()
+	checked     *types.KnowledgeCheckParams
+}
+
+func (r *fileStorageDedupeRepo) FindByDataSourceExternalID(ctx context.Context, tenant uint64, kb, ds, external string) (*types.Knowledge, error) {
+	if r.afterLookup != nil {
+		r.afterLookup()
+	}
+	if r.missLookup {
+		return nil, nil
+	}
+	return r.existing, nil
+}
+
+func (r *fileStorageDedupeRepo) CheckKnowledgeExists(ctx context.Context, tenant uint64, kb string, params *types.KnowledgeCheckParams) (bool, *types.Knowledge, error) {
+	r.checked = params
+	if r.afterLookup != nil {
+		r.afterLookup()
+	}
+	return true, r.existing, nil
+}
+
+func (r *fileStorageDedupeRepo) UpdateKnowledgeForTransfer(_ context.Context, _, next *types.Knowledge) error {
+	r.writes++
+	return nil
+}
+
+type fileStorageDedupeService struct {
+	fileStorageApplicationService
+	repository *fileStorageDedupeRepo
+	deletes    int
+}
+
+func (s *fileStorageDedupeService) GetRepository() interfaces.KnowledgeRepository {
+	return s.repository
+}
+func (s *fileStorageDedupeService) StartKnowledgeDeleteTask(context.Context, string, string, string, string) (map[string]any, error) {
+	s.deletes++
+	return nil, fmt.Errorf("unexpected generic replacement delete")
+}
+
+func TestFileStorageDedupeUsesCheckpointedReceiverCompletion(t *testing.T) {
+	for _, branch := range []string{"initial-lookup", "native-dedupe"} {
+		for _, state := range []string{"authorized", "revoked-after-lookup", "different-native-id"} {
+			t.Run(branch+"/"+state, func(t *testing.T) {
+				run := fileStorageRun{tenantID: 1, knowledgeBaseID: uuid.NewString(), dataSourceID: uuid.NewString(), syncLogID: uuid.NewString()}
+				revoked := false
+				ctx := newFileStorageWriteContext(t, run, func() bool { return revoked })
+				id := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID
+				body := []byte("source body")
+				hash := fmt.Sprintf("%x", md5.Sum(body))
+				metadata := map[string]string{"datasource_id": run.dataSourceID, "external_id": hash + ":txt",
+					"source_content_sha256": fileStorageDigest(body), "source_references": "old"}
+				previous, err := json.Marshal(datasourceReplacement{KnowledgeID: uuid.NewString(), Revision: time.Now().UTC().Format(time.RFC3339Nano)})
+				require.NoError(t, err)
+				metadata[datasourceReplacementMetadataKey] = string(previous)
+				raw, err := json.Marshal(metadata)
+				require.NoError(t, err)
+				current := &types.Knowledge{ID: id, TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID, Type: "file",
+					FileHash: hash, FileType: "txt", FileSize: int64(len(body)), ParseStatus: types.ParseStatusCompleted, UpdatedAt: time.Now(), Metadata: types.JSON(raw)}
+				if state == "different-native-id" {
+					current.ID = uuid.NewString()
+				}
+				repo := &fileStorageDedupeRepo{missLookup: branch == "native-dedupe"}
+				repo.existing = current
+				if state == "revoked-after-lookup" {
+					// Initial lookup revokes after ingest's PEP. Native dedupe
+					// revokes after the writer's initial PEP instead.
+					repo.afterLookup = func() {
+						if !repo.missLookup || repo.checked != nil {
+							revoked = true
+						}
+					}
+				}
+				storage, queue := &createKnowledgeFileServiceStub{}, &createKnowledgeTaskEnqueuerStub{}
+				native := &fileStorageDedupeService{repository: repo, fileStorageApplicationService: fileStorageApplicationService{
+					creator: &knowledgeService{repo: repo, fileSvc: storage, task: queue,
+						kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: run.knowledgeBaseID}}}}}
+				svc := &DataSourceService{knowledgeService: native}
+				ds := &types.DataSource{ID: run.dataSourceID, TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID, Type: fileStorageConnectorType}
+				item := &types.FetchedItem{ExternalID: hash + ":txt", FileName: "doc.txt", Content: body, NativeCreationID: id,
+					Metadata: map[string]string{"source_content_sha256": fileStorageDigest(body), "source_references": "new", "import_config_ref": run.dataSourceID}}
+				_, err = svc.ingestItem(ctx, ds, item, nil)
+				if state == "authorized" {
+					if branch == "initial-lookup" {
+						require.NoError(t, err)
+					} else {
+						var duplicate *types.DuplicateKnowledgeError
+						require.ErrorAs(t, err, &duplicate)
+					}
+					require.Equal(t, 1, repo.writes)
+				} else {
+					require.Error(t, err)
+					require.Zero(t, repo.writes)
+				}
+				if branch == "native-dedupe" {
+					require.NotNil(t, repo.checked)
+					require.Equal(t, run.dataSourceID, repo.checked.DataSourceID)
+					require.Equal(t, item.ExternalID, repo.checked.ExternalID)
+				}
+				require.Zero(t, repo.columnUpdates)
+				require.Zero(t, repo.createCalls)
+				require.Zero(t, storage.saveCalls)
+				require.Zero(t, queue.calls)
+				require.Zero(t, native.deletes)
+			})
+		}
+	}
 }
 
 func TestFileStorageCursorDoesNotInventMissingTargetEvidence(t *testing.T) {
@@ -738,7 +860,7 @@ func (s *fileStorageApplicationService) CreateKnowledgeFromFileAtID(ctx context.
 }
 
 func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T) {
-	for _, stage := range []string{"parse-pending", "multiple-pending-files", "duplicate-content", "source-read-refused", "receiver-revoked-after-read", "temporary-buffer-unavailable", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
+	for _, stage := range []string{"parse-pending", "multiple-pending-files", "duplicate-content", "source-read-refused", "receiver-revoked-after-read", "receiver-revoked-after-checkpoint", "temporary-buffer-unavailable", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
 		t.Run(stage, func(t *testing.T) {
 			scratch := t.TempDir()
 			t.Setenv("TMPDIR", scratch)
@@ -821,6 +943,16 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					require.NoError(t, json.NewEncoder(w).Encode(response))
 				case "/service/v1/adapter/pep_check":
 					pepCalls++
+					if stage == "receiver-revoked-after-checkpoint" && ds != nil {
+						cursor, err := ds.ParseSyncCursor()
+						require.NoError(t, err)
+						state, err := fileStorageState(cursor)
+						require.NoError(t, err)
+						if len(state.Applying) > 0 {
+							w.WriteHeader(http.StatusForbidden)
+							return
+						}
+					}
 					if stage == "receiver-revoked-after-read" && sourceCompletions[readKey] != (time.Time{}) {
 						w.WriteHeader(http.StatusForbidden)
 						return
@@ -950,13 +1082,26 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			files, scratchErr := os.ReadDir(scratch)
 			require.NoError(t, scratchErr)
 			require.Empty(t, files, "successful and refused imports must leave no temporary body path")
-			if stage == "source-read-refused" || stage == "receiver-revoked-after-read" || stage == "temporary-buffer-unavailable" {
+			if stage == "source-read-refused" || stage == "receiver-revoked-after-read" || stage == "receiver-revoked-after-checkpoint" || stage == "temporary-buffer-unavailable" {
 				require.Error(t, err)
 				require.Nil(t, next)
 				require.Zero(t, repo.createCalls)
 				require.Zero(t, storage.saveCalls)
 				require.Zero(t, queue.calls)
 				require.Zero(t, readReceipts)
+				if stage == "receiver-revoked-after-checkpoint" {
+					cursor, err := ds.ParseSyncCursor()
+					require.NoError(t, err)
+					state, err := fileStorageState(cursor)
+					require.NoError(t, err)
+					require.Len(t, state.Applying, 1, "the original consumed read remains uncertain, not retried or erased")
+					before := sourceCalls
+					observing = true
+					_, err = connector.FetchStream(ctx, input, cursor, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+					require.Error(t, err)
+					require.Equal(t, before, sourceCalls)
+					require.Zero(t, repo.createCalls)
+				}
 				if stage == "temporary-buffer-unavailable" {
 					require.Equal(t, 1, sourceCalls, "unavailable scratch must prevent consuming the file SOURCE operation")
 				} else {

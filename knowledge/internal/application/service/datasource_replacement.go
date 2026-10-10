@@ -25,6 +25,9 @@ type datasourceReplacement struct {
 func (s *DataSourceService) finishDataSourceIngest(
 	ctx context.Context, ds *types.DataSource, item *types.FetchedItem, current *types.Knowledge,
 ) error {
+	if ds.Type == fileStorageConnectorType {
+		return s.finishFileStorageIngest(ctx, ds, item, current)
+	}
 	if current == nil || current.ID == "" || current.TenantID != ds.TenantID ||
 		current.KnowledgeBaseID != ds.KnowledgeBaseID || current.DeletedAt.Valid {
 		return fmt.Errorf("native ingestion evidence is unavailable")

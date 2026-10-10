@@ -13,9 +13,9 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:4e399f3a95cd99ce83b3059bf29c6425f542f684c4482e226ccd20b15eb7e350
-    artifact_digest: sha256:588c713c15b96b5adcab70c53b1cd106961d18cb484614d5e288755cd216fcf1
-    blocked: Source-matched adapter artifact is recorded; live Agent activation audit, approved release/binding and full component conformance remain unverified.
+    source_digest: sha256:4239dc6a722bb7bab580c5b4a7f0a5e2b102950ad504726157e8b56716197636
+    artifact_digest: sha256:8d4e3b73fc15e29b4ccb4896c6a9bb271c9245fafe4d078ebbbda578173261f0
+    blocked: The frozen adapter candidate built, pushed and passed immutable registry digest readback; it is not deployed. Live Agent activation audit, approved release/binding and full component conformance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-service
     kind: image
     build_context: knowledge
@@ -23,9 +23,9 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:2ca62e5ae4ade1cda4a033418d7150df76a944ffa92489717c25ac88e4037023
-    artifact_digest: sha256:8057b274fba99141ce5f9619afa20f1acb006977985da5cf07764cbc95b0cdcf
-    blocked: The full native backend built from Kailo commit 272693d5e1386a352946736c80a2a00ff7c27ff1 is deployed healthy with immutable digest readback. Later pending-sync recovery changes are not in that artifact; frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. See fork/verify/release-20261009-272693.md.
+    source_digest: sha256:e770508feeb09a71d46e0e8e5afff53002e57b4139e9219e95ffe22c5c0b213a
+    artifact_digest: sha256:46dd48a89d8c12db6ffc297e00d9ca6ac7ffdfa342f7267c4dae3e0986d9f084
+    blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend
