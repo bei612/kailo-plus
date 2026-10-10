@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"errors"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -15,6 +17,155 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/utils/openurl"
 )
+
+type revisionCopyReader struct {
+	*strings.Reader
+	closed int
+	read   int
+}
+
+func (r *revisionCopyReader) Read(data []byte) (int, error) {
+	n, err := r.Reader.Read(data)
+	r.read += n
+	return n, err
+}
+
+func (r *revisionCopyReader) Close() error { r.closed++; return nil }
+
+type revisionCopyClient struct {
+	nodes.StorageClient
+	reader         *revisionCopyReader
+	info           models.ObjectInfo
+	getErr, putErr error
+	gets, puts     int
+	readMeta       models.ReadMeta
+	written        string
+	writtenSize    int64
+}
+
+func (c *revisionCopyClient) GetObject(_ context.Context, _, _ string, meta models.ReadMeta) (io.ReadCloser, models.ObjectInfo, error) {
+	c.gets++
+	c.readMeta = meta
+	if c.reader == nil {
+		return nil, c.info, c.getErr
+	}
+	return c.reader, c.info, c.getErr
+}
+
+func (c *revisionCopyClient) PutObject(_ context.Context, _, key string, reader io.Reader, size int64, _ models.PutMeta) (models.ObjectInfo, error) {
+	c.puts++
+	c.writtenSize = size
+	if c.putErr != nil {
+		return models.ObjectInfo{}, c.putErr
+	}
+	body, err := io.ReadAll(reader)
+	c.written = string(body)
+	return models.ObjectInfo{Key: key, ETag: "new-object-etag", Size: int64(len(body))}, err
+}
+
+func TestCopyRevisionPinsOriginalGetBeforeLiveWrite(t *testing.T) {
+	for _, scenario := range []string{"revision", "same-client", "empty-file", "multipart-etag", "missing-frozen-etag",
+		"negative-frozen-size", "missing-get-etag", "changed-get-etag", "wrong-key", "wrong-size", "get-failure",
+		"get-failure-without-reader", "object-error", "missing-reader", "put-failure", "ordinary-copy"} {
+		t.Run(scenario, func(t *testing.T) {
+			data, etag := "frozen native bytes", "frozen-etag"
+			if scenario == "empty-file" {
+				data = ""
+			}
+			if scenario == "multipart-etag" {
+				etag = "opaque-multipart-7"
+			}
+			reader := &revisionCopyReader{Reader: strings.NewReader(data)}
+			source := &revisionCopyClient{reader: reader, info: models.ObjectInfo{Key: "versions/object", ETag: etag, Size: int64(len(data))}}
+			destination := &revisionCopyClient{}
+			if scenario == "same-client" {
+				destination = source
+			}
+			from := &tree.Node{Uuid: "native-source", Size: int64(len(data)), Etag: etag}
+			from.MustSetMeta(common.MetaNamespaceDatasourcePath, "versions/object")
+			to := &tree.Node{Uuid: "native-live"}
+			to.MustSetMeta(common.MetaNamespaceDatasourcePath, "live/object")
+			request := &models.CopyRequestData{SrcVersionId: "frozen-version"}
+			failure := errors.New("original storage failure")
+			switch scenario {
+			case "missing-frozen-etag":
+				from.Etag = ""
+			case "negative-frozen-size":
+				from.Size = -1
+			case "missing-get-etag":
+				source.info.ETag = ""
+			case "changed-get-etag":
+				source.info.ETag = "replacement-etag"
+			case "wrong-key":
+				source.info.Key = "versions/another-object"
+			case "wrong-size":
+				source.info.Size++
+			case "get-failure":
+				source.getErr = failure
+			case "get-failure-without-reader":
+				source.getErr, source.reader = failure, nil
+			case "object-error":
+				source.info.Err = failure
+			case "missing-reader":
+				source.reader = nil
+			case "put-failure":
+				destination.putErr = failure
+			case "ordinary-copy":
+				request.SrcVersionId, source.info.Key, source.info.ETag = "", "", ""
+			}
+			ctx := nodes.WithBranchInfo(context.Background(), "from", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
+				DataSource: &object.DataSource{Name: "source", ObjectsBucket: "versions"}, Client: source,
+			}})
+			ctx = nodes.WithBranchInfo(ctx, "to", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
+				DataSource: &object.DataSource{Name: "destination", ObjectsBucket: "files"}, Client: destination,
+			}})
+			result, err := (&Executor{}).CopyObject(ctx, from, to, request)
+			allowed := scenario == "revision" || scenario == "same-client" || scenario == "empty-file" || scenario == "multipart-etag" || scenario == "ordinary-copy"
+			if (err == nil) != allowed {
+				t.Fatalf("frozen revision outcome changed: result=%v err=%v", result, err)
+			}
+			wantGets := 1
+			if scenario == "missing-frozen-etag" || scenario == "negative-frozen-size" {
+				wantGets = 0
+			}
+			if source.gets != wantGets {
+				t.Fatalf("unexpected source dispatches: %d", source.gets)
+			}
+			wantPuts := 0
+			if allowed || scenario == "put-failure" {
+				wantPuts = 1
+			}
+			if destination.puts != wantPuts {
+				t.Fatalf("unverified source reached live writer: puts=%d err=%v", destination.puts, err)
+			}
+			if wantGets == 1 {
+				if scenario == "ordinary-copy" {
+					if len(source.readMeta) != 0 {
+						t.Fatal("ordinary copy gained a revision precondition")
+					}
+				} else if len(source.readMeta) != 1 || source.readMeta["If-Match"] != "\""+etag+"\"" {
+					t.Fatalf("original GET is not conditional on frozen ETag: %v", source.readMeta)
+				}
+			}
+			wantClosed := 0
+			if wantGets == 1 && source.reader != nil {
+				wantClosed = 1
+			}
+			if reader.closed != wantClosed {
+				t.Fatalf("original source stream not closed exactly once: %d", reader.closed)
+			}
+			if !allowed && reader.read != 0 {
+				t.Fatal("rejected source body was consumed")
+			}
+			if allowed && (destination.written != data || destination.writtenSize != int64(len(data)) || result.Size != int64(len(data))) {
+				t.Fatal("original frozen bytes or zero-size copy changed")
+			}
+			if (scenario == "get-failure" || scenario == "get-failure-without-reader" || scenario == "object-error" || scenario == "put-failure") && !errors.Is(err, failure) {
+				t.Fatalf("original storage error was swallowed: %v", err)
+			}
+		})
+	}
+}
 
 type multipartReceiptClient struct {
 	nodes.StorageClient

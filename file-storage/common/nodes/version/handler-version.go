@@ -412,18 +412,37 @@ func (v *Handler) MultipartPutObjectPart(ctx context.Context, target *tree.Node,
 		if er != nil {
 			return models.MultipartObjectPart{}, er
 		}
-		newTarget := &tree.Node{}
-		if v.protoFromCache(ca, uploadID+"-target", newTarget) == nil {
+		newTarget, _, source, er := v.multipartDraft(ctx, ca, uploadID)
+		if er != nil {
+			return models.MultipartObjectPart{}, er
+		}
+		if newTarget != nil {
 			log.Logger(ctx).Debug("Switching PutObjectPart target", newTarget.Zap("newTarget"))
-			source, err := nodes.GetSourcesPool(ctx).GetDataSourceInfo(newTarget.GetStringMeta(common.MetaNamespaceDatasourceName))
-			if err != nil {
-				return models.MultipartObjectPart{}, err
-			}
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
 			return v.Next.MultipartPutObjectPart(ctx, newTarget, uploadID, partNumberMarker, reader, requestData)
 		}
 	}
 	return v.Next.MultipartPutObjectPart(ctx, target, uploadID, partNumberMarker, reader, requestData)
+}
+
+// The original uploader resumes a draft with ListObjectParts before sending
+// the remaining parts. Listing must use the same native location as writing.
+func (v *Handler) MultipartListObjectParts(ctx context.Context, target *tree.Node, uploadID string, partNumberMarker int, maxParts int) (models.ListObjectPartsResult, error) {
+	if nodes.IsFlatStorage(ctx, "in") {
+		ca, er := v.multipartCache(ctx)
+		if er != nil {
+			return models.ListObjectPartsResult{}, er
+		}
+		newTarget, _, source, er := v.multipartDraft(ctx, ca, uploadID)
+		if er != nil {
+			return models.ListObjectPartsResult{}, er
+		}
+		if newTarget != nil {
+			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
+			return v.Next.MultipartListObjectParts(ctx, newTarget, uploadID, partNumberMarker, maxParts)
+		}
+	}
+	return v.Next.MultipartListObjectParts(ctx, target, uploadID, partNumberMarker, maxParts)
 }
 
 func (v *Handler) MultipartComplete(ctx context.Context, target *tree.Node, uploadID string, uploadedParts []models.MultipartObjectPart) (models.ObjectInfo, error) {
@@ -432,20 +451,14 @@ func (v *Handler) MultipartComplete(ctx context.Context, target *tree.Node, uplo
 		if er != nil {
 			return models.ObjectInfo{}, er
 		}
-		newTarget := &tree.Node{}
-		if v.protoFromCache(ca, uploadID+"-target", newTarget) == nil {
+		newTarget, revision, source, er := v.multipartDraft(ctx, ca, uploadID)
+		if er != nil {
+			return models.ObjectInfo{}, er
+		}
+		if newTarget != nil {
 			nodes.MustEnsureDatasourceMeta(ctx, target, "in")
-
-			source, err := nodes.GetSourcesPool(ctx).GetDataSourceInfo(newTarget.GetStringMeta(common.MetaNamespaceDatasourceName))
-			if err != nil {
-				return models.ObjectInfo{}, err
-			}
-			revision := &tree.ContentRevision{}
-			if v.protoFromCache(ca, uploadID+"-revision", revision) != nil {
-				return models.ObjectInfo{}, errors.WithMessage(errors.VersionNotFound, "error while loading version from cache")
-			}
-			log.Logger(ctx).Info("Switching MultipartComplete target", newTarget.Zap("newTarget"))
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
+			log.Logger(ctx).Info("Switching MultipartComplete target", newTarget.Zap("newTarget"))
 			oi, e := v.Next.MultipartComplete(ctx, newTarget, uploadID, uploadedParts)
 			if e != nil {
 				return oi, e
@@ -491,12 +504,11 @@ func (v *Handler) MultipartAbort(ctx context.Context, target *tree.Node, uploadI
 		if er != nil {
 			return er
 		}
-		newTarget := &tree.Node{}
-		if v.protoFromCache(ca, uploadID+"-target", newTarget) == nil {
-			source, err := nodes.GetSourcesPool(ctx).GetDataSourceInfo(newTarget.GetStringMeta(common.MetaNamespaceDatasourceName))
-			if err != nil {
-				return err
-			}
+		newTarget, _, source, er := v.multipartDraft(ctx, ca, uploadID)
+		if er != nil {
+			return er
+		}
+		if newTarget != nil {
 			log.Logger(ctx).Info("Switching MultipartAbort target", newTarget.Zap("newTarget"))
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: source})
 			if err := v.Next.MultipartAbort(ctx, newTarget, uploadID, requestData); err != nil {
@@ -508,6 +520,32 @@ func (v *Handler) MultipartAbort(ctx context.Context, target *tree.Node, uploadI
 		}
 	}
 	return v.Next.MultipartAbort(ctx, target, uploadID, requestData)
+}
+
+// A present but partial/corrupt draft route is not a normal live-node upload.
+// Reuse the original cache and revision owner; this does not turn the cache
+// into a durable execution receipt or authorize replay after a lost ACK.
+func (v *Handler) multipartDraft(ctx context.Context, ca cache.Cache, uploadID string) (*tree.Node, *tree.ContentRevision, nodes.LoadedSource, error) {
+	var targetBytes, revisionBytes []byte
+	hasTarget := ca.Get(uploadID+"-target", &targetBytes)
+	hasRevision := ca.Get(uploadID+"-revision", &revisionBytes)
+	if !hasTarget && !hasRevision {
+		return nil, nil, nodes.LoadedSource{}, nil
+	}
+	target, revision := &tree.Node{}, &tree.ContentRevision{}
+	if !hasTarget || !hasRevision || proto.Unmarshal(targetBytes, target) != nil || proto.Unmarshal(revisionBytes, revision) != nil ||
+		target.GetPath() == "" || target.GetStringMeta(common.MetaNamespaceDatasourceName) == "" ||
+		revision.GetVersionId() == "" || !revision.GetDraft() || !proto.Equal(revision.GetLocation(), target) {
+		return nil, nil, nodes.LoadedSource{}, errors.WithMessage(errors.VersionNotFound, "multipart draft route is incomplete or invalid")
+	}
+	if !visibleRevision(ctx, revision) {
+		return nil, nil, nodes.LoadedSource{}, errors.WithStack(errors.StatusForbidden)
+	}
+	source, err := nodes.GetSourcesPool(ctx).GetDataSourceInfo(target.GetStringMeta(common.MetaNamespaceDatasourceName))
+	if err != nil {
+		return nil, nil, nodes.LoadedSource{}, err
+	}
+	return target, revision, source, nil
 }
 
 func (v *Handler) routeUploadToContentRevision(ctx context.Context, node *tree.Node, userMeta map[string]string, knownSize int64) (*tree.Node, *tree.ContentRevision, nodes.LoadedSource, error) {
@@ -557,12 +595,4 @@ func (v *Handler) cacheProto(c cache.Cache, k string, m proto.Message) error {
 		return er
 	}
 	return c.Set(k, bb)
-}
-
-func (v *Handler) protoFromCache(c cache.Cache, k string, m proto.Message) error {
-	var bb []byte
-	if !c.Get(k, &bb) {
-		return errors.New("cache entry not found")
-	}
-	return proto.Unmarshal(bb, m)
 }

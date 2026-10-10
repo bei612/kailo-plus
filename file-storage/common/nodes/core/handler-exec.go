@@ -298,12 +298,38 @@ func (e *Executor) CopyObject(ctx context.Context, from *tree.Node, to *tree.Nod
 
 	} else {
 
-		reader, srcStat, err := srcClient.GetObject(ctx, srcBucket, fromPath, models.ReadMeta{})
+		readMeta := models.ReadMeta{}
+		if requestData.SrcVersionId != "" {
+			// Version Handler has already resolved this exact revision into its
+			// native Location, ETag and size. Pin the original GET, not a separate
+			// HEAD that a late writer could invalidate before bytes are read.
+			if from.Etag == "" || from.Size < 0 {
+				return models.ObjectInfo{}, errors.WithMessage(errors.VersionNotFound, "source revision has no complete object evidence")
+			}
+			// Same wire value as the locked native SDK's SetMatchETag; ETags are
+			// opaque, including multipart values, not assumed to be an MD5 hash.
+			readMeta["If-Match"] = "\"" + from.Etag + "\""
+		}
+		reader, srcStat, err := srcClient.GetObject(ctx, srcBucket, fromPath, readMeta)
 		if err != nil {
+			if reader != nil {
+				_ = reader.Close()
+			}
 			log.Logger(ctx).Error("HandlerExec: CopyObject / Different Clients - Read Source Error", zap.Error(err))
 			return models.ObjectInfo{}, err
 		}
+		if requestData.SrcVersionId != "" && reader == nil {
+			return models.ObjectInfo{}, errors.WithMessage(errors.VersionNotFound, "source revision has no object stream")
+		}
 		defer reader.Close()
+		if requestData.SrcVersionId != "" {
+			if srcStat.Err != nil {
+				return models.ObjectInfo{}, srcStat.Err
+			}
+			if srcStat.Key != fromPath || srcStat.ETag != from.Etag || srcStat.Size != from.Size {
+				return models.ObjectInfo{}, errors.WithMessage(errors.VersionNotFound, "source object differs from the frozen revision")
+			}
+		}
 
 		if requestData.IsMove() {
 			requestData.Metadata[common.XAmzMetaNodeUuid] = from.Uuid

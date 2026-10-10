@@ -883,3 +883,59 @@ go test ./common/nodes/core ./common/nodes/objects/mc -count=1 -v
 | `cells-multipart-evidence-positive.log` | `05a3fba5cf56a3c61eb135ed1672ec29f8544e7545b498e067bbc0b670d2776f` |
 | `cells-multipart-evidence-negative.log` | `4d540ae43ccef42b71e75920a391ee766fa020f1ba296c65f636ef65f11d3e8d` |
 | `cells-multipart-evidence-restored.log` | `05a3fba5cf56a3c61eb135ed1672ec29f8544e7545b498e067bbc0b670d2776f` |
+
+## 2026-10-10 原生 draft multipart 续传路由
+
+实现后的四步影响结论：
+
+1. 权威仍为 `.design/18` 的原生字节/版本权威及 DD-71/93、原 draft owner
+   可见性。固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/data/gw/gateway-pydio.go::pydioObjects.ListObjectParts` 调用原 Router，
+   `common/nodes/version/handler-version.go::Handler` 却没有该 override，
+   实际继承 `common/nodes/abstract/handler-abstract.go::Handler.MultipartListObjectParts`
+   直接查询 live node。创建/写入已路由到 versions Location 时，恢复列表
+   因而查询另一对象。本批新增的是这个原调用的缺失路由，不是另一 uploader。
+2. 影响只在原 Version Handler：list/part/complete/abort 共用同一原缓存
+   target+revision、Location 和 owner 校验；分页参数、上传 ID、分片响应
+   不改。Complete 仍先为原 target 补原 datasource 元数据，再只替换 in
+   branch；其他 branch 保留。旧 protoFromCache 已无生产调用，删除，原
+   检查在 _test.go 内读取原 cache。没有公共字段、迁移、新缓存或页面变化。
+3. 有任一原映射但残缺/损坏、Location 不一致、非 draft、无 VersionId 或
+   其他 owner 均拒绝，不转去 live 节点继续执行；沿原 visibleRevision
+   使用本机当前原生身份，没有新增平台权限权威。成功才清理原映射的上批
+   语义不变，原生远端错误直接传递，不重放 completion、abort 或对象写入。
+4. 两项缓存读取均未命中时保留原普通上传路径；原 cache.Get 只有 bool，
+   此结果不证明远端没有 draft、writer 已退休、执行未发生或可重新派发。
+   eviction、重启/缓存丢失和失联 writer 的完整终结仍是原发布门禁，不能
+   用本批 cache helper 宣称持久恢复。非法缓存映射沿原 VersionNotFound
+   拒绝，owner 拒绝沿 Forbidden，远端错误不转换成成功。Web/Desktop/Mobile
+   原 UI/API 均未改，平台 S3 写准入、首次上传与七必选 release 门禁保持关闭。
+
+代码完成后在原 handler-version_test.go 补 list/part/complete/abort 四个
+实际消费者 × 14 个场景，包括固定 draft 位置、空列表、原错误、普通上传、
+非 flat、owner、partial/corrupt 映射、版本不一致，以及其他 branch 保留。
+原受限 `kailo-cells-native-check-lftow7` 为 4 CPU/8 GiB。原调用 69510
+长时间处于 `Ds / flush_workqueue` 后实际退出 1：未投递原 Cells 测试状态
+目录，包初始化报 `Could not create local data dir ... -/.config/pydio/cells`。
+这不是断言通过，也没有新 SDK、并行替代检查或清缓存。
+
+沿既有 `CELLS_WORKING_DIR=CELLS_DATA_DIR=/tmp/cells-version-task-key-check`
+恢复原隔离测试环境，最终四个 Go 输入统一 gofmt 后，以原缓存/offline
+入口运行 `go test ./common/nodes/version ./common/nodes/core -count=1 -v`，
+退出 0：version 6 个顶层检查、core 3 个顶层检查，包括本批 56 个操作场景。
+私有生产输入把 list 的 newTarget 改回原 live target 后，原检查真实退出 1，
+三个 list 场景报告 `multipart operation lost its original draft route`。
+没有改变断言来制造失败，正式生产字节未被破坏。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- 首次失败 `cells-draft-resume-positive.log`：SHA-256 `e9e42ffb1a11b9eaa47127ddd1702f41b922bf630904ef73c69609bda723b599`。
+- 最终正向 `cells-draft-copy-final-positive.log`：SHA-256 `2074d921676cb57dc49f80634fedb9e3d1186c8e2b7d37468546abe9cb5b7b78`。
+- 实际破坏 `cells-draft-copy-final-negative.log`：SHA-256 `5527a870c77869b1d4dcb55d4a2bbc65394cb176a6246b8e2f8311bdd01b9c7e`。
+- 原字节还原 `cells-draft-copy-final-restored.log`：SHA-256 `530bf066928e97b18c7a36085f1455796762e48ece81f28104307871dca50920`。
+
+另一包的分离反证实际退出 1 后，四个 Go 文件从正式源码恢复，逐文件 cmp
+均退出 0，SDK gofmt -l 无输出。原两包再以 `-count=1 -v` 复验退出 0：
+version 0.020s、core 0.018s，九个顶层检查全部通过。上述自有六路径
+git diff --check 退出 0；没有触碰继承 compose 或其他业务改动。
+不据此声明真实存储故障演练、完整首传、七项 release 门禁、部署或生产就绪。

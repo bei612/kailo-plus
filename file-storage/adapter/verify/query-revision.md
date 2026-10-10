@@ -3594,3 +3594,61 @@ UID 1000、原离线 Go 缓存）执行 `gofmt -l`，两文件无输出；
 
 没有以本批代替完整门禁、真实 Cells→WeKnora 联调、原上传所有门禁、
 页面截图或部署；主线原全量检查另有失败/跳过，不能由此抹除。
+
+## 2026-10-10 原 Promote 固定版本复制的源 GET 条件
+
+实现后四步影响结论：
+
+1. 权威是 `.design/18` 的 VersionId/原生字节权威、原 write admission
+   的冻结输入及 SS-CEL-MATERIALIZATION。固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/nodes/core/handler-exec.go::Executor.CopyObject` 在版本复制分支
+   使用空 ReadMeta 调原 GET 后直接 PutObject；该事实已重新 git grep。
+   原 `common/nodes/objects/mc/client.go::Client.GetObject/readMetaToMinioOpts`
+   可以消费同次 GET 的条件和元数据，无须自建 reader 或结果存储。
+2. 真实生产链为 executeNativePromote → Version Handler.CopyObject 的
+   SrcVersionId → Executor.CopyObject → 原 StorageClient Get/Put。Version
+   Handler 已取得冻结 Location/ETag/Size；本批只在 SrcVersionId 非空时
+   要求这些字段完整，将同一 ETag 作为原 GET 的 If-Match，并核该响应的
+   Key/ETag/Size/Err 后才进入 live Put。普通 copy 没有新增版本条件，没有
+   改 schema、SDK interface、数据结构、页面、Temporal 或 Task 权威。
+3. 沿现有 go.mod/go.sum 固定 minio-go/v7 v7.0.99 的
+   `api-get-options.go::GetObjectOptions.SetMatchETag` 原 wire 语义给不带
+   引号的 opaque ETag 加双引号；不把 multipart ETag 当 MD5。没有先 HEAD
+   后 GET 的窗口、第二次 GET、重读或重新派发。原生 GET 返回 error 时
+   关闭其已返回 reader；其余拒绝与正常写入均沿 defer 关闭原流。源对象
+   前置条件不是目标对象原子 CAS，也不是旧 writer 已退休或保存终态证明。
+4. 缺 frozen ETag/未知 size 在 GET 前拒绝；条件失败原错误不吞；nil
+   stream、同响应嵌入错误、错 key/ETag/size 在 live Put 前拒绝。零字节
+   与 multipart ETag 沿同一链。上层原 Task/UNKNOWN 处置保持不变，不由
+   本函数将失败读等同整 Action 的确定终态。本批不解除首次上传、writer
+   退休、目标 CAS、七必选批准与发布门禁，不产生新的 ledger/cache。
+
+生产代码完成后在原 handler-exec_test.go 补 16 个实际 Executor 消费场景，
+核 GET 条件、零/非零内容、同 client 版本复制、错误/不完整元数据前零 Put、
+原错误和流关闭次数，以及普通 copy 原行为。原 69510 在文件系统等待后
+实际退出 1，原因是漏投递原 Cells 测试状态目录，包初始化拒绝；原始失败
+及摘要保留在 `file-storage/fork/verify/native-identity.md` 同日续传记录。
+
+同一 4 CPU/8 GiB SDK 沿既有 GOMODCACHE/GOCACHE/offline 配置与
+`CELLS_WORKING_DIR=CELLS_DATA_DIR=/tmp/cells-version-task-key-check`，对最终
+四个 Go 输入统一 gofmt 后运行两包原检查，退出 0：version 6 个顶层检查、
+core 3 个顶层检查，本批 16 个场景均通过。私有生产输入移除 If-Match 后
+原检查退出 1，13 个场景报告 `original GET is not conditional on frozen ETag`。
+该断言先于响应比对，因此另行只恢复 header、保留元数据匹配禁用，以原
+Executor 检查分离反证，实际退出 1：missing-get-etag、changed-get-etag、
+wrong-key、wrong-size 四个场景失败，其余十二个通过。未改检查断言。
+之后四个 Go 文件从正式源码逐字节恢复、cmp 退出 0、gofmt -l 无输出，
+最终两包 `-count=1 -v` 复验退出 0：version 0.020s、core 0.018s，九个
+顶层检查通过。六路径 git diff --check 退出 0。
+
+原件在 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/native-go-cache/`：
+
+- 正向 `cells-draft-copy-final-positive.log`：SHA-256 `2074d921676cb57dc49f80634fedb9e3d1186c8e2b7d37468546abe9cb5b7b78`。
+- 缺条件反证 `cells-draft-copy-final-negative.log`：SHA-256 `5527a870c77869b1d4dcb55d4a2bbc65394cb176a6246b8e2f8311bdd01b9c7e`。
+- 响应元数据反证 `cells-copy-metadata-negative.log`：SHA-256 `6e37d088261e5e5f4fd5f8d6caffb18f9192d4c6fdbe506f6b0d5d21d15c4cae`。
+- 原字节还原 `cells-draft-copy-final-restored.log`：SHA-256 `530bf066928e97b18c7a36085f1455796762e48ece81f28104307871dca50920`。
+
+这些检查调用真实 Executor 与 Version Handler，以原 StorageClient 接口
+替身观察读取和写入，不等同真实 S3 网络/故障、目标 CAS、跨组件联调、
+七必选完整批准、提交或部署。未运行第二个全量检查或新镜像构建。

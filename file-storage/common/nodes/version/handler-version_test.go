@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/pydio/cells/v5/common/nodes/models"
 	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/common/proto/tree"
+	"github.com/pydio/cells/v5/common/utils/cache"
 	"github.com/pydio/cells/v5/common/utils/cache/gocache"
 	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
 	"github.com/pydio/cells/v5/common/utils/openurl"
@@ -29,6 +31,14 @@ type draftVersionServer struct {
 	head    *tree.ContentRevision
 	listed  []*tree.ContentRevision
 	listErr error
+}
+
+func readCachedDraft(c cache.Cache, key string, message proto.Message) error {
+	var data []byte
+	if !c.Get(key, &data) {
+		return errors.New("cache entry not found")
+	}
+	return proto.Unmarshal(data, message)
 }
 
 // The generated in-process stub closes its response channel without carrying
@@ -120,6 +130,12 @@ type draftObjectWriter struct {
 	node         *tree.Node
 	gets, copies int
 	aborts       int
+	parts, lists int
+	uploadID     string
+	marker, max  int
+	source       string
+	otherSource  string
+	listing      models.ListObjectPartsResult
 }
 
 func (w *draftObjectWriter) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
@@ -174,6 +190,34 @@ func (w *draftObjectWriter) MultipartAbort(_ context.Context, node *tree.Node, _
 	w.aborts++
 	w.node = node.Clone()
 	return w.err
+}
+
+func (w *draftObjectWriter) MultipartPutObjectPart(ctx context.Context, node *tree.Node, uploadID string, part int, _ io.Reader, _ *models.PutRequestData) (models.MultipartObjectPart, error) {
+	w.parts++
+	w.node, w.uploadID, w.marker = node.Clone(), uploadID, part
+	info, err := nodes.GetBranchInfo(ctx, "in")
+	if err != nil {
+		return models.MultipartObjectPart{}, err
+	}
+	w.source = info.Name
+	if other, e := nodes.GetBranchInfo(ctx, "from"); e == nil {
+		w.otherSource = other.Name
+	}
+	return models.MultipartObjectPart{PartNumber: part, ETag: "native-part", Size: w.size}, w.err
+}
+
+func (w *draftObjectWriter) MultipartListObjectParts(ctx context.Context, node *tree.Node, uploadID string, marker, max int) (models.ListObjectPartsResult, error) {
+	w.lists++
+	w.node, w.uploadID, w.marker, w.max = node.Clone(), uploadID, marker, max
+	info, err := nodes.GetBranchInfo(ctx, "in")
+	if err != nil {
+		return models.ListObjectPartsResult{}, err
+	}
+	w.source = info.Name
+	if other, e := nodes.GetBranchInfo(ctx, "from"); e == nil {
+		w.otherSource = other.Name
+	}
+	return w.listing, w.err
 }
 
 func draftUploadFixture() (*Handler, context.Context, *tree.Node, *draftVersionServer, *draftObjectWriter) {
@@ -290,6 +334,128 @@ func TestDraftUploadRequiresNativePersistence(t *testing.T) {
 	}
 }
 
+func TestDraftMultipartResumesOriginalLocation(t *testing.T) {
+	for _, operation := range []string{"list", "part", "complete", "abort"} {
+		t.Run(operation, func(t *testing.T) {
+			for _, scenario := range []string{"draft", "empty-list", "native-error", "ordinary", "non-flat", "other-owner", "no-claims",
+				"missing-target", "missing-revision", "corrupt-target", "corrupt-revision", "wrong-location", "published", "missing-version"} {
+				t.Run(scenario, func(t *testing.T) {
+					handler, ctx, node, server, writer := draftUploadFixture()
+					id, err := handler.MultipartCreate(ctx, node, &models.MultipartRequestData{Metadata: map[string]string{
+						common.XAmzMetaPrefix + common.InputDraftMode: "true",
+						common.XAmzMetaPrefix + common.InputVersionId: "native-version",
+					}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					ca, err := handler.multipartCache(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() {
+						_ = ca.Delete(id + "-target")
+						_ = ca.Delete(id + "-revision")
+					})
+					frozenTarget, revision := &tree.Node{}, &tree.ContentRevision{}
+					if readCachedDraft(ca, id+"-target", frozenTarget) != nil || readCachedDraft(ca, id+"-revision", revision) != nil {
+						t.Fatal("original draft creation did not retain its route")
+					}
+					ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
+						DataSource: &object.DataSource{Name: "source", FlatStorage: scenario != "non-flat"},
+					}}, true)
+					ctx = nodes.WithBranchInfo(ctx, "from", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
+						DataSource: &object.DataSource{Name: "retained-other-branch"},
+					}})
+					wantTarget := frozenTarget
+					wantSource := "versions"
+					if scenario == "ordinary" || scenario == "non-flat" {
+						wantTarget, wantSource = node, "source"
+					}
+					switch scenario {
+					case "ordinary":
+						_ = ca.Delete(id + "-target")
+						_ = ca.Delete(id + "-revision")
+					case "missing-target":
+						_ = ca.Delete(id + "-target")
+					case "missing-revision":
+						_ = ca.Delete(id + "-revision")
+					case "corrupt-target":
+						if err := ca.Set(id+"-target", []byte{0xff}); err != nil {
+							t.Fatal(err)
+						}
+					case "corrupt-revision":
+						if err := ca.Set(id+"-revision", []byte{0xff}); err != nil {
+							t.Fatal(err)
+						}
+					case "wrong-location":
+						revision.Location.Path = "versions/other"
+					case "published":
+						revision.Draft = false
+					case "missing-version":
+						revision.VersionId = ""
+					case "other-owner":
+						ctx = claim.ToContext(ctx, claim.Claims{Subject: "other-native-user"})
+					case "no-claims":
+						ctx = claim.ToContext(ctx, claim.Claims{})
+					}
+					if scenario == "wrong-location" || scenario == "published" || scenario == "missing-version" {
+						if err := handler.cacheProto(ca, id+"-revision", revision); err != nil {
+							t.Fatal(err)
+						}
+					}
+					failure := errors.New("native operation unavailable")
+					if scenario == "native-error" {
+						writer.err = failure
+					}
+					writer.listing = models.ListObjectPartsResult{UploadID: id, Key: "native-key", PartNumberMarker: 3,
+						NextPartNumberMarker: 7, MaxParts: 4, IsTruncated: true,
+						ObjectParts: []models.MultipartObjectPart{{PartNumber: 7, ETag: "\"native-etag\"", Size: 12}}}
+					if scenario == "empty-list" {
+						writer.listing.ObjectParts = nil
+					}
+					var listed models.ListObjectPartsResult
+					switch operation {
+					case "list":
+						listed, err = handler.MultipartListObjectParts(ctx, node, id, 3, 4)
+					case "part":
+						_, err = handler.MultipartPutObjectPart(ctx, node, id, 3, strings.NewReader("part"), &models.PutRequestData{Size: 4})
+					case "complete":
+						_, err = handler.MultipartComplete(ctx, node, id, nil)
+					case "abort":
+						err = handler.MultipartAbort(ctx, node, id, &models.MultipartRequestData{})
+					}
+					allowed := scenario == "draft" || scenario == "empty-list" || scenario == "native-error" || scenario == "ordinary" || scenario == "non-flat"
+					calls := writer.lists + writer.parts + writer.writes + writer.aborts
+					if !allowed {
+						if err == nil || calls != 0 || len(server.saved) != 0 {
+							t.Fatalf("invalid/foreign draft dispatched to original writer: calls=%d stores=%d error=%v", calls, len(server.saved), err)
+						}
+						return
+					}
+					if calls != 1 || !proto.Equal(writer.node, wantTarget) {
+						t.Fatalf("multipart operation lost its original draft route: calls=%d actual=%v expected=%v", calls, writer.node, wantTarget)
+					}
+					if scenario == "native-error" {
+						if !errors.Is(err, failure) {
+							t.Fatalf("original native error lost: %v", err)
+						}
+					} else if err != nil {
+						t.Fatal(err)
+					}
+					if operation == "list" || operation == "part" {
+						if writer.uploadID != id || writer.marker != 3 || writer.source != wantSource || writer.otherSource != "retained-other-branch" {
+							t.Fatal("original upload ID, marker or datasource changed")
+						}
+					}
+					if operation == "list" && (writer.max != 4 || !reflect.DeepEqual(listed, writer.listing)) {
+						t.Fatal("original part listing/pagination changed")
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDraftMultipartRetainsUnconfirmedRoute(t *testing.T) {
 	for _, scenario := range []struct {
 		name     string
@@ -328,7 +494,7 @@ func TestDraftMultipartRetainsUnconfirmedRoute(t *testing.T) {
 				_ = ca.Delete(id + "-revision")
 			})
 			frozenTarget, frozenRevision := &tree.Node{}, &tree.ContentRevision{}
-			if handler.protoFromCache(ca, id+"-target", frozenTarget) != nil || handler.protoFromCache(ca, id+"-revision", frozenRevision) != nil {
+			if readCachedDraft(ca, id+"-target", frozenTarget) != nil || readCachedDraft(ca, id+"-revision", frozenRevision) != nil {
 				t.Fatal("original multipart creation did not retain its draft route")
 			}
 			ctx = nodes.WithBranchInfo(ctx, "in", nodes.BranchInfo{LoadedSource: nodes.LoadedSource{
@@ -350,8 +516,8 @@ func TestDraftMultipartRetainsUnconfirmedRoute(t *testing.T) {
 				t.Fatal("unconfirmed native object was recorded as a stored version")
 			}
 			retainedTarget, retainedRevision := &tree.Node{}, &tree.ContentRevision{}
-			targetErr := handler.protoFromCache(ca, id+"-target", retainedTarget)
-			revisionErr := handler.protoFromCache(ca, id+"-revision", retainedRevision)
+			targetErr := readCachedDraft(ca, id+"-target", retainedTarget)
+			revisionErr := readCachedDraft(ca, id+"-revision", retainedRevision)
 			if uncertain {
 				if targetErr != nil || revisionErr != nil || !proto.Equal(retainedTarget, frozenTarget) || !proto.Equal(retainedRevision, frozenRevision) {
 					t.Fatal("unconfirmed multipart operation discarded or changed its original draft route")
