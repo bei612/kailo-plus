@@ -12,6 +12,7 @@ import { ItemState } from "@client-kit/contracts";
 import type { MessageAuthor } from "./MessageAuthorProfile";
 import { parseMentionClipboardRecords } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { SETTLE_FRAME_COUNT, SETTLE_MOTION_WINDOW_MS } from "@client-kit/platform/react/messages/timeline/useSettleGatedPrependMessages";
+import { toast } from "sonner";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -467,6 +468,40 @@ it("partitions the actual recipient read when the same workspace switches DM or 
   expect(await open({...second,participantPrincipalIds:["human-a","bob","carol","dave","eve"]})).toContain("with Bob, Carol, Dave, +1 more.");
   await act(async()=>setLocale("zh-CN"));
   expect(host.querySelector('[data-testid="message-dm-intro"]')?.textContent).toContain("这是你与Bob, Carol, Dave, +1 人的私聊开始。");
+});
+
+it("copies the actual message link through the HTTP host and preserves clipboard refusal", async () => {
+  const success = vi.spyOn(toast, "success"), error = vi.spyOn(toast, "error");
+  const previousExec = Object.getOwnPropertyDescriptor(document, "execCommand");
+  const copied: string[] = [];
+  const exec = vi.fn(() => { copied.push((document.activeElement as HTMLTextAreaElement).value); return true; });
+  Object.defineProperty(document, "execCommand", {configurable: true, value: exec});
+  vi.stubGlobal("navigator", Object.create(navigator, {clipboard: {value: undefined}}));
+  try {
+    const button = host.querySelector<HTMLButtonElement>('button[aria-label="Copy link"]')!;
+    expect(button).not.toBeNull();
+    await act(async () => button.click());
+    expect(copied).toEqual(["buzz://message?channel=channel-a&id=event-a"]);
+    expect(success).toHaveBeenCalledWith("buzz.copiedLink");
+    expect(error).not.toHaveBeenCalled();
+    expect(document.querySelector('textarea[aria-hidden="true"]')).toBeNull();
+    success.mockClear();
+    exec.mockReturnValue(false);
+    await act(async () => button.click());
+    expect(success).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith("buzz.copyFailed");
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    vi.stubGlobal("navigator", Object.create(navigator, {clipboard: {value: {writeText}}}));
+    const fallbackCalls = exec.mock.calls.length;
+    await act(async () => button.click());
+    expect(writeText).toHaveBeenCalledWith("buzz://message?channel=channel-a&id=event-a");
+    expect(exec).toHaveBeenCalledTimes(fallbackCalls);
+    expect(success).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(2);
+  } finally {
+    if (previousExec) Object.defineProperty(document, "execCommand", previousExec);
+    else Reflect.deleteProperty(document, "execCommand");
+  }
 });
 
 it("copies the actual row's edited reference mention with its exact second-device identity", async () => {

@@ -15,6 +15,7 @@ import type { RelayEvent } from "@client-kit/platform/react/forum/channelWindowR
 import type { loadWebSearchDirectory } from "@/platform/ui/search";
 import { createChannelDeepLinks, type ChannelLinkRuntime } from "@client-kit/platform/react/messages/channel-link";
 import type { SearchChannel } from "@client-kit/platform/react/search/types";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 type Directory = Awaited<ReturnType<typeof loadWebSearchDirectory>>;
 type Host = {
@@ -27,7 +28,7 @@ type Host = {
 };
 const MessageLinkHost = createContext<Host | null>(null);
 function copyLink(url: string) {
-  void navigator.clipboard.writeText(url).then(() => toast.success(t("video.linkCopied")), () => toast.error(t("platform.profile.copyFailed")));
+  void writeTextToClipboard(url).then(() => toast.success(t("video.linkCopied")), () => toast.error(t("platform.profile.copyFailed")));
 }
 
 export function useBffChannelLinkRuntime(): ChannelLinkRuntime {

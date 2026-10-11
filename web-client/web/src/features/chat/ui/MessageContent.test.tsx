@@ -13,6 +13,8 @@ import { t } from "@/shared/i18n";
 import { setLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 import { BffMessageLinkHost, readMessageLinkMetadata } from "./BffMessageLinkHost";
 import { MessageLinkPillPresentation } from "@client-kit/platform/react/messages/message-link";
+import { toast } from "sonner";
+import { getLocale, setLocale } from "@client-kit/platform/i18n";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -75,6 +77,14 @@ describe("MessageContent", () => {
     document.body.append(element);
     const root = createRoot(element);
     const openChannel = vi.fn(), openMessage = vi.fn();
+    const previousLocale = getLocale();
+    setLocale("en");
+    const success = vi.spyOn(toast, "success"), error = vi.spyOn(toast, "error");
+    const previousExec = Object.getOwnPropertyDescriptor(document, "execCommand");
+    const copied: string[] = [];
+    const exec = vi.fn(() => { copied.push((document.activeElement as HTMLTextAreaElement).value); return true; });
+    Object.defineProperty(document, "execCommand", {configurable: true, value: exec});
+    vi.stubGlobal("navigator", Object.create(navigator, {clipboard: {value: undefined}}));
     const id = WORKSPACE, eventId = "a".repeat(64);
     const directory: NonNullable<ComponentProps<typeof BffMessageLinkHost>["directory"]> = {
       channels: [{id, name:"design room", channelType:"stream", visibility:"private",
@@ -100,6 +110,29 @@ describe("MessageContent", () => {
       expect(openChannel).toHaveBeenLastCalledWith(id);
       const labelled = [...element.querySelectorAll("button")].find(button => button.textContent === "authored label")!;
       expect(labelled.className).toContain("font-medium text-primary underline");
+      const copyAuthoredLink = async () => {
+        await act(async () => labelled.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, clientX: 40, clientY: 50})));
+        const menu = document.querySelector("[data-buzz-link-context-menu]")!;
+        expect(menu).not.toBeNull();
+        await act(async () => menu.querySelectorAll("button")[1]!.click());
+      };
+      await copyAuthoredLink();
+      expect(copied).toEqual([`buzz://message?channel=${id}&id=${eventId}`]);
+      expect(success).toHaveBeenCalledWith("Link copied to clipboard");
+      expect(error).not.toHaveBeenCalled();
+      success.mockClear();
+      exec.mockReturnValue(false);
+      await copyAuthoredLink();
+      expect(success).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith("Could not copy to clipboard");
+      const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+      vi.stubGlobal("navigator", Object.create(navigator, {clipboard: {value: {writeText}}}));
+      const fallbackCalls = exec.mock.calls.length;
+      await copyAuthoredLink();
+      expect(writeText).toHaveBeenCalledWith(`buzz://message?channel=${id}&id=${eventId}`);
+      expect(exec).toHaveBeenCalledTimes(fallbackCalls);
+      expect(success).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledTimes(2);
       await act(async () => labelled.click());
       expect(openMessage).toHaveBeenLastCalledWith({channelId:id,messageId:eventId,threadRootId:null});
       await show(true, false, "zh-CN");
@@ -114,7 +147,12 @@ describe("MessageContent", () => {
       expect(element.querySelector('[role="button"]')).toBeNull();
       expect(element.textContent).not.toContain("Original channel metadata");
       expect(element.querySelector('[data-channel-deep-link]')?.textContent).toBe(id.slice(0,8));
-    } finally { await act(async () => root.unmount()); element.remove(); }
+    } finally {
+      await act(async () => root.unmount()); element.remove();
+      if (previousExec) Object.defineProperty(document, "execCommand", previousExec);
+      else Reflect.deleteProperty(document, "execCommand");
+      setLocale(previousLocale); vi.unstubAllGlobals(); vi.restoreAllMocks();
+    }
   });
 
   it("message-link reads the exact governed root, original author and latest edit without crossing target scope", async () => {
