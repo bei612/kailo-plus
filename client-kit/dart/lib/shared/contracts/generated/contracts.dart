@@ -6509,12 +6509,16 @@ class InvocationElement {
 
   ///当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
   final bool canReadTask;
-  final DateTime createdAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String createdAt;
   final String invocationId;
   final ReasonCode? observation;
   final String? runtimeTurnId;
   final InvocationStatus status;
-  final DateTime updatedAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String updatedAt;
 
   InvocationElement({
     required this.actionExecutionId,
@@ -6533,26 +6537,26 @@ class InvocationElement {
         actionExecutionId: json["actionExecutionId"],
         cancelPending: json["cancelPending"],
         canReadTask: json["canReadTask"],
-        createdAt: DateTime.parse(json["createdAt"]),
+        createdAt: json["createdAt"],
         invocationId: json["invocationId"],
         observation: json["observation"] == null
             ? null
             : reasonCodeValues.map[json["observation"]]!,
         runtimeTurnId: json["runtimeTurnId"],
         status: invocationStatusValues.map[json["status"]]!,
-        updatedAt: DateTime.parse(json["updatedAt"]),
+        updatedAt: json["updatedAt"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionExecutionId": actionExecutionId,
     "cancelPending": cancelPending,
     "canReadTask": canReadTask,
-    "createdAt": createdAt.toIso8601String(),
+    "createdAt": createdAt,
     "invocationId": invocationId,
     "observation": reasonCodeValues.reverse[observation],
     "runtimeTurnId": runtimeTurnId,
     "status": invocationStatusValues.reverse[status],
-    "updatedAt": updatedAt.toIso8601String(),
+    "updatedAt": updatedAt,
   });
 }
 
@@ -6584,12 +6588,16 @@ class AgentInvocationView {
 
   ///当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
   final bool canReadTask;
-  final DateTime createdAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String createdAt;
   final String invocationId;
   final ReasonCode? observation;
   final String? runtimeTurnId;
   final InvocationStatus status;
-  final DateTime updatedAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String updatedAt;
 
   AgentInvocationView({
     required this.actionExecutionId,
@@ -6608,26 +6616,26 @@ class AgentInvocationView {
         actionExecutionId: json["actionExecutionId"],
         cancelPending: json["cancelPending"],
         canReadTask: json["canReadTask"],
-        createdAt: DateTime.parse(json["createdAt"]),
+        createdAt: json["createdAt"],
         invocationId: json["invocationId"],
         observation: json["observation"] == null
             ? null
             : reasonCodeValues.map[json["observation"]]!,
         runtimeTurnId: json["runtimeTurnId"],
         status: invocationStatusValues.map[json["status"]]!,
-        updatedAt: DateTime.parse(json["updatedAt"]),
+        updatedAt: json["updatedAt"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionExecutionId": actionExecutionId,
     "cancelPending": cancelPending,
     "canReadTask": canReadTask,
-    "createdAt": createdAt.toIso8601String(),
+    "createdAt": createdAt,
     "invocationId": invocationId,
     "observation": reasonCodeValues.reverse[observation],
     "runtimeTurnId": runtimeTurnId,
     "status": invocationStatusValues.reverse[status],
-    "updatedAt": updatedAt.toIso8601String(),
+    "updatedAt": updatedAt,
   });
 }
 
@@ -6828,7 +6836,9 @@ class AgentSessionPage {
 
 class SessionElement {
   final String agentVersionAssetId;
-  final DateTime createdAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String createdAt;
   final String installationResourceId;
   final int projectionGeneration;
 
@@ -6851,7 +6861,7 @@ class SessionElement {
 
   factory SessionElement.fromJson(Map<String, dynamic> json) => SessionElement(
     agentVersionAssetId: json["agentVersionAssetId"],
-    createdAt: DateTime.parse(json["createdAt"]),
+    createdAt: json["createdAt"],
     installationResourceId: json["installationResourceId"],
     projectionGeneration: json["projectionGeneration"],
     rootEventId: json["rootEventId"],
@@ -6862,7 +6872,7 @@ class SessionElement {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "agentVersionAssetId": agentVersionAssetId,
-    "createdAt": createdAt.toIso8601String(),
+    "createdAt": createdAt,
     "installationResourceId": installationResourceId,
     "projectionGeneration": projectionGeneration,
     "rootEventId": rootEventId,
@@ -6884,7 +6894,9 @@ final sessionStatusValues = EnumValues({
 
 class AgentSessionView {
   final String agentVersionAssetId;
-  final DateTime createdAt;
+
+  ///Core 记录的 RFC3339 时间字符串，按原线格式传输。
+  final String createdAt;
   final String installationResourceId;
   final int projectionGeneration;
 
@@ -6908,7 +6920,7 @@ class AgentSessionView {
   factory AgentSessionView.fromJson(Map<String, dynamic> json) =>
       AgentSessionView(
         agentVersionAssetId: json["agentVersionAssetId"],
-        createdAt: DateTime.parse(json["createdAt"]),
+        createdAt: json["createdAt"],
         installationResourceId: json["installationResourceId"],
         projectionGeneration: json["projectionGeneration"],
         rootEventId: json["rootEventId"],
@@ -6919,7 +6931,7 @@ class AgentSessionView {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "agentVersionAssetId": agentVersionAssetId,
-    "createdAt": createdAt.toIso8601String(),
+    "createdAt": createdAt,
     "installationResourceId": installationResourceId,
     "projectionGeneration": projectionGeneration,
     "rootEventId": rootEventId,

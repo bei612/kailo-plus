@@ -29,6 +29,7 @@ test("adapter PEP preserves native resource and legacy absence", () => {
     actionExecutionId: row.actionExecutionId,
     operationId: row.operationId,
     authorizationMinZedToken: row.authorizationMinZedToken,
+    bindingGeneration: row.bindingGeneration,
     targetResource: row.targetResource && {
       resourceId: row.targetResource.resourceId,
       nativeType: row.targetResource.nativeType,

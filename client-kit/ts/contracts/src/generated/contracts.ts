@@ -1937,13 +1937,19 @@ export interface InvocationElement {
     /**
      * 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
      */
-    canReadTask:    boolean;
-    createdAt:      Date;
+    canReadTask: boolean;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    createdAt:      string;
     invocationId:   string;
     observation?:   ReasonCode;
     runtimeTurnId?: string;
     status:         InvocationStatus;
-    updatedAt:      Date;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    updatedAt: string;
 }
 
 export enum InvocationStatus {
@@ -1966,13 +1972,19 @@ export interface AgentInvocationView {
     /**
      * 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
      */
-    canReadTask:    boolean;
-    createdAt:      Date;
+    canReadTask: boolean;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    createdAt:      string;
     invocationId:   string;
     observation?:   ReasonCode;
     runtimeTurnId?: string;
     status:         InvocationStatus;
-    updatedAt:      Date;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    updatedAt: string;
 }
 
 /**
@@ -2054,8 +2066,11 @@ export interface AgentSessionPage {
 }
 
 export interface SessionElement {
-    agentVersionAssetId:    string;
-    createdAt:              Date;
+    agentVersionAssetId: string;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    createdAt:              string;
     installationResourceId: string;
     projectionGeneration:   number;
     /**
@@ -2076,8 +2091,11 @@ export enum SessionStatus {
 }
 
 export interface AgentSessionView {
-    agentVersionAssetId:    string;
-    createdAt:              Date;
+    agentVersionAssetId: string;
+    /**
+     * Core 记录的 RFC3339 时间字符串，按原线格式传输。
+     */
+    createdAt:              string;
     installationResourceId: string;
     projectionGeneration:   number;
     /**

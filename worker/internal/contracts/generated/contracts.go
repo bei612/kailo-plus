@@ -4085,13 +4085,15 @@ type InvocationElement struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	CancelPending     bool   `json:"cancelPending"`
 	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
-	CanReadTask   bool             `json:"canReadTask"`
-	CreatedAt     time.Time        `json:"createdAt"`
+	CanReadTask bool `json:"canReadTask"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt     string           `json:"createdAt"`
 	InvocationID  string           `json:"invocationId"`
 	Observation   *ReasonCode      `json:"observation,omitempty"`
 	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
 	Status        InvocationStatus `json:"status"`
-	UpdatedAt     time.Time        `json:"updatedAt"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
@@ -4100,13 +4102,15 @@ type AgentInvocationView struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	CancelPending     bool   `json:"cancelPending"`
 	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
-	CanReadTask   bool             `json:"canReadTask"`
-	CreatedAt     time.Time        `json:"createdAt"`
+	CanReadTask bool `json:"canReadTask"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt     string           `json:"createdAt"`
 	InvocationID  string           `json:"invocationId"`
 	Observation   *ReasonCode      `json:"observation,omitempty"`
 	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
 	Status        InvocationStatus `json:"status"`
-	UpdatedAt     time.Time        `json:"updatedAt"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
@@ -4162,10 +4166,11 @@ type AgentSessionPage struct {
 }
 
 type SessionElement struct {
-	AgentVersionAssetID    string    `json:"agentVersionAssetId"`
-	CreatedAt              time.Time `json:"createdAt"`
-	InstallationResourceID string    `json:"installationResourceId"`
-	ProjectionGeneration   int64     `json:"projectionGeneration"`
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt              string `json:"createdAt"`
+	InstallationResourceID string `json:"installationResourceId"`
+	ProjectionGeneration   int64  `json:"projectionGeneration"`
 	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
 	RootEventID     string        `json:"rootEventId"`
 	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`
@@ -4174,10 +4179,11 @@ type SessionElement struct {
 }
 
 type AgentSessionView struct {
-	AgentVersionAssetID    string    `json:"agentVersionAssetId"`
-	CreatedAt              time.Time `json:"createdAt"`
-	InstallationResourceID string    `json:"installationResourceId"`
-	ProjectionGeneration   int64     `json:"projectionGeneration"`
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt              string `json:"createdAt"`
+	InstallationResourceID string `json:"installationResourceId"`
+	ProjectionGeneration   int64  `json:"projectionGeneration"`
 	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
 	RootEventID     string        `json:"rootEventId"`
 	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`

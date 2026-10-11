@@ -14,7 +14,7 @@
     "cancelPending": {"type": "boolean"},
     "canReadTask": {"type": "boolean", "description": "当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。"},
     "observation": {"$ref": "../enums/reason_code.schema.json"},
-    "createdAt": {"type": "string", "format": "date-time"},
-    "updatedAt": {"type": "string", "format": "date-time"}
+    "createdAt": {"type": "string", "description": "Core 记录的 RFC3339 时间字符串，按原线格式传输。"},
+    "updatedAt": {"type": "string", "description": "Core 记录的 RFC3339 时间字符串，按原线格式传输。"}
   }
 }

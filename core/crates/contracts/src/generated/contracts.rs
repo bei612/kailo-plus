@@ -2825,6 +2825,7 @@ pub struct InvocationElement {
     /// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
     pub can_read_task: bool,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub created_at: String,
 
     pub invocation_id: String,
@@ -2837,6 +2838,7 @@ pub struct InvocationElement {
 
     pub status: InvocationStatus,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub updated_at: String,
 }
 
@@ -2876,6 +2878,7 @@ pub struct AgentInvocationView {
     /// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
     pub can_read_task: bool,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub created_at: String,
 
     pub invocation_id: String,
@@ -2888,6 +2891,7 @@ pub struct AgentInvocationView {
 
     pub status: InvocationStatus,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub updated_at: String,
 }
 
@@ -3007,6 +3011,7 @@ pub struct AgentSessionPage {
 pub struct SessionElement {
     pub agent_version_asset_id: String,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub created_at: String,
 
     pub installation_resource_id: String,
@@ -3047,6 +3052,7 @@ pub enum SessionStatus {
 pub struct AgentSessionView {
     pub agent_version_asset_id: String,
 
+    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub created_at: String,
 
     pub installation_resource_id: String,

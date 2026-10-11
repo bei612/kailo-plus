@@ -13,6 +13,6 @@
     "agentVersionAssetId": {"type": "string", "format": "uuid"},
     "runtimeThreadId": {"type": "string", "minLength": 1},
     "status": {"type": "string", "enum": ["PENDING", "STARTING", "ACTIVE", "UNKNOWN", "CLOSED"]},
-    "createdAt": {"type": "string", "format": "date-time"}
+    "createdAt": {"type": "string", "description": "Core 记录的 RFC3339 时间字符串，按原线格式传输。"}
   }
 }
