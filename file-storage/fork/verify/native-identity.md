@@ -2252,3 +2252,100 @@ Unimplemented 和缺行没有 Create 回退，原独立创建/ACL 错误行为�
 消费者业务、延迟 worker fresh 授权、线上 Core/Cells 连通、三端与全量门禁均
 未在本批验收，没有新镜像、部署或组件上架。SQLite 顺序模拟的读后删除窗口
 不写成所有数据库并发已通过；原 ACL 多 RPC 部分完成仍是 UNKNOWN。
+
+## 2026-10-11 原 PEP 可选代次兼容与未闭合延迟删除的安全关闭
+
+本批关联 DD-48/90/94、`07` §4.6/§5.2 与工程准则 9/10/15。基于
+`f894a95a3e8acf06938268349e63bca65da2b521` 后的 main 增量，十份源码与
+事后检查加本回执；没有新 schema、状态、权限、存储、默认开关或数据库迁移。
+固定上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+`scheduler/jobs/userspace/userspace.go::DeleteNodesTask` 原生直接 PutJob，
+`scheduler/tasks/runnable.go::RunAction` 消费异步队列并调用原 Action.Run。
+本批属于已授权治理改造，不是原页面变更或全部 Cells 功能验收。
+
+### 权威、影响、副作用及异常边界
+
+Core 原 `application_binding_pep.rs` 的 SERVICE_READ 与普通动作响应已经
+返回 AE 冻结的可选 `bindingGeneration`；协议 schema 要求正整数。Cells
+`common/auth/protocol/action.go` 原来按固定三/四字段拒绝这些真实合法响应。
+现在 execute、SOURCE、observe/extract_usage/reconcile 共用闭集校验，兼容
+字段缺省，存在时只接受共享 JSON 可精确表示的正整数；null、字符串、布尔、
+分数、非正数、不安全数及未知字段仍拒绝。原 AE/operation/target/zed 检查
+和每次已认证 HTTP PEP 没有放宽。返回的 token claims 与 Resource 不变，
+不会将可选返回值冒充签名 claim，也不从配置回填任务 generation。
+原 NativeCell 的 HumanAction authorizeScope 代次校验不经过此函数，未更改。
+
+修好字段门槛不能顺便启用不完整路径：原 `PerformAction` 的受管 delete
+可以进入 `DeleteNodesGoverned`，请求内 fresh 检查之后由 broker 延迟执行；
+`AuthorizeNativeDeleteDispatch` 之前仅凭原 Task/Job 摘要放行，不能证明
+执行时未被撤权。Core `action_token::issue_component_action` 只由原派发
+消费；`issue_application_observation` 仅 observe/extract_usage，不允许
+替代 execute。当前没有已闭合的、供该 native worker 按同 AE/EE 引用进行
+fresh 执行授权的消费者，本批未实现这个跨模块接缝。
+
+因此 `DeleteNodesGoverned` 只读取并精确核对原有 claim，包括原 owner；
+没有 claim 返回原 Forbidden，不创建 Task、回收站元数据、子 Job 或事件。
+已存在 claim 只回 UNKNOWN，不再次派发。原 request-local 执行 producer
+及其失去消费者的分支已删除，独立 `DeleteNodesTask` 仍走原 PutJob/原 ACL。
+带 NativeDelete 元数据（包括只有一半或空值）的任务在 Queue 和实际
+RunAction 两处拒绝；后者覆盖已经排队的旧任务，不能只靠入队时检查。
+独立任务无该上下文时原执行路径保持。
+
+原生 worker 的 Error 只记录本地拒绝，不能证明整个外部动作失败：此前
+可能已有部分副作用。既有 `NativeDeleteTerminal` 仍只以全部原 child
+Finished、固定摘要及逐节点 ACK 证明成功；错误、部分 ACK、缺 child、
+取消或无法读取保持原 UNKNOWN/拒绝，`nativeDeleteObservation` 不映射 FAILED。
+历史完成任务的完整证据仍可对账，不删除历史，不盲目重放。没有新增需回收
+的状态。Web/Desktop 仍经原管理 BFF；Mobile 没有新增入口或页面承载。
+
+### 实际命令、反证与范围
+
+沿原 `kailo-cells-native-check-lftow7` SDK，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+4 CPU / 8 GiB、等额 memory+swap，独立 Data Go build/module 缓存；启动前
+原容器只有 sleep，主机 available 35–36 GiB。没有新增容器、并行构建或安装。
+私有目录沿原 `.native-cell-reconcile.MHdjoL`；原测试输入中历史未更新的
+`task-receipt_test.go` 已从当前 HEAD 精确重新导出，正式该文件没有修改。
+
+环境为 `GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`；
+`CELLS_WORKING_DIR`/`CELLS_DATA_DIR` 指向原私有 Data `.cells-runtime`。
+容器内执行 gofmt 及 `go test -mod=readonly -count=1 -v -run`，筛选以下
+实际符号：TestAuthorizeActionUsesOriginalBindingPEP、
+TestAuthorizeOperationObservesOriginalExecutionWithoutResourceBody、
+TestActionPEPConsumesOptionalFrozenGeneration、TestNativeHumanActionUsesOriginalPrivateTransport、
+TestResolveRequiresOriginalHostOrigin、TestManagedDeleteOnlyResolvesExistingClaim、
+TestNativeDeleteCannotQueueOrRunWithoutDelayedAuthority、TestNativeTaskClaimPrecedesDispatch、
+TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements、
+TestNativeDeleteAcknowledgementsRemainInOriginalClaimedTask、TestHandler_deduplication。
+包范围为 `./common/auth/protocol ./scheduler/jobs/userspace ./scheduler/tasks
+./scheduler/jobs/grpc ./gateway/restv2`。
+
+最终 29724 exit 0：上述 11 个顶层检查通过；可选字段检查为 15 场景 × 5
+操作，原 Bolt 终态包含 16 场景。HTTP PEP/OIDC 是本地受控响应夹具，不是
+真实 Core/SSO；Queue/Run 使用原生产消费者与计数 Action，未删除真实文件。
+gateway/restv2 本轮编译通过但输出 `[no tests to run]`，不计 HTTP 删除验收。
+
+失败保留：38802 因缺 CELLS 工作目录尝试写 `-/.config/pydio/cells` exit 1；
+补原环境后 33181 exit 0。34224 因删旧 producer 时遗留 execution 引用，
+以及旧私有终态检查输入而 exit 1；精确清理并校准输入后 66809 exit 0。
+59221 私有反证恢复旧字段拒绝、放行 Queue 与伪造不存在的 claim，exit 1；
+69315 去掉 Run 守卫后以 ActionNotFound 捕获，随后 44074 用实际 Action
+计数再次反证：`calls=1 err=<nil> Status:Finished` 被拒绝，exit 1。
+所有反证只在私有输入，最终恢复后原检查再次 exit 0。
+
+日志目录 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `pep-generation-positive.log` | `a03910143f9b9f31ea0abda32567c6ac409f0bb813ff87daa1b3fb7c500e5b31` | 环境失败 exit 1 |
+| `pep-generation-environment.log` | `24d825343e1fc1c537a056a94b694d7bd1f72ef93f1134bfc2cc4ca0a9c07271` | exit 0 |
+| `delete-delayed-authority-positive.log` | `73821974e5c1320defe5d26934e4c66ea284a5c147ada97d406e702e2ca47bed` | 实现/输入失败 exit 1 |
+| `delete-delayed-authority-closure.log` | `05760260d11bc162372785cd8f399b0af004171cf0513350b76ca172904a0504` | exit 0 |
+| `pep-delete-negative.log` | `0f27cc7d1280e8f4bba415fc1e34757b113594a2198f6e1dc41c07768e322e64` | 三处反证 exit 1 |
+| `delete-run-consumer-negative.log` | `59757ecbb3d3bcfcf79d188d4f3cbed2def4ea23e18a7b7d0178893bc4d19763` | 实际 Run 反证 exit 1 |
+| `pep-delete-restored.log` | `f12cf1cc98942f805ebc8afb42bed8860adb77160800ee41c2784e4655f36283` | 恢复后 exit 0 |
+
+本阶段必须同时发布 PEP 兼容与未治理删除关闭，不能只部署解除字段门槛的
+版本。未做全量门禁、新镜像、部署、绑定激活、真实三端或多人业务验收。
+完整受管删除仍未交付；后续必须闭合同 AE/EE 的延迟 fresh 授权及实际撤权
+业务证据后才可恢复新派发，不能持久化 ActionToken 或用观察权限替代写权限。

@@ -8,7 +8,6 @@ import (
 	restful "github.com/emicklei/go-restful/v3"
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/errors"
-	"github.com/pydio/cells/v5/common/middleware"
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/scheduler/jobs/userspace"
@@ -36,9 +35,10 @@ func nativeDeleteInput(input map[string]interface{}) ([]string, bool, bool) {
 	return nodes, permanent, true
 }
 
-// This is the original v2 delete route. Service transport never supplies the
-// native user's ACLs; the existing nativeActor checks each selected UUID under
-// the admitted Resource/root before the first durable delete claim.
+// This original v2 route only resolves a previously admitted delete claim;
+// new managed work is refused until delayed workers can freshly authorize it.
+// Service transport never supplies the native user's ACLs: nativeActor still
+// checks each selected UUID under the admitted Resource/root.
 func (h *Handler) executeNativeDelete(req *restful.Request, resp *restful.Response, proof string) error {
 	refused := errors.WithStack(errors.StatusForbidden)
 	transport := req.Request.Clone(req.Request.Context())
@@ -67,7 +67,6 @@ func (h *Handler) executeNativeDelete(req *restful.Request, resp *restful.Respon
 			return refused
 		}
 	}
-	paths := make([]string, 0, len(nodes))
 	for _, id := range nodes {
 		req.Request = transport.Clone(transport.Context())
 		req.Request.Header.Set("X-Kailo-Native-Execution", proof)
@@ -78,10 +77,8 @@ func (h *Handler) executeNativeDelete(req *restful.Request, resp *restful.Respon
 		if err != nil || read.GetNode().GetUuid() != id || read.GetNode().GetPath() == "" {
 			return refused
 		}
-		paths = append(paths, read.Node.Path)
 	}
-	task, executeErr := userspace.DeleteNodesGoverned(req.Request.Context(), h.TreeHandler.GetRouter(), paths, permanent, delivery,
-		decodeNativeProofToken(proof), raw, keys[0], claims, target, input, middleware.DetectedLanguages(req.Request.Context())...)
+	task, executeErr := userspace.DeleteNodesGoverned(req.Request.Context(), delivery, keys[0], claims, input)
 	if task == nil {
 		return executeErr
 	}

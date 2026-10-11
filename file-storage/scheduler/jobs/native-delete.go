@@ -10,10 +10,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/pydio/cells/v5/common"
-	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/client/commons/jobsc"
-	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -32,50 +29,15 @@ func IsNativeDeleteJob(job *jobproto.Job) bool {
 	return coordinator || operation
 }
 
-// The original RunOnce/restart inputs cannot allocate a second task for this
-// admitted child Job. Check at Queue, not only at the HTTP producer.
-func AuthorizeNativeDeleteDispatch(ctx context.Context, job *jobproto.Job, event interface{}) error {
-	coordinator, key := job.GetMetadata()[NativeDeleteJob], job.GetMetadata()[NativeDeleteTask]
-	if !IsNativeDeleteJob(job) {
-		return nil
+// A frozen native claim proves attribution, not fresh execution permission.
+// Until the delayed worker can authorize that same platform execution, refuse
+// managed children at both Queue and RunAction. Independent native jobs retain
+// their original execution path; historical managed tasks remain observable.
+func AuthorizeNativeDeleteDispatch(job *jobproto.Job) error {
+	if IsNativeDeleteJob(job) {
+		return errors.WithMessage(errors.StatusForbidden, "managed deletion lacks delayed execution authority")
 	}
-	refused := errors.WithStack(errors.StatusForbidden)
-	trigger, ok := event.(*jobproto.JobTriggerEvent)
-	if !ok || coordinator == "" || !auth.NativeActorUUID(key) || trigger.JobID != job.ID || trigger.RunTaskId != job.ID || !trigger.RunNow || len(trigger.RunParameters) != 0 {
-		return refused
-	}
-	var delivery auth.NativeDeleteDelivery
-	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil || delivery.Delete.NativeJobID != coordinator || delivery.MaxResponseBytes <= 0 {
-		return refused
-	}
-	task, err := ReadNativeWriteTask(ctx, coordinator, key, delivery.MaxResponseBytes)
-	if err != nil {
-		return err
-	}
-	intent, err := NativeWriteTaskIntent(task)
-	if err != nil || intent.BindingID != delivery.BindingID || intent.Scope["action_key"] != "file_storage.delete@v1" || task.TriggerOwner != job.Owner {
-		return refused
-	}
-	digest, err := NativeJobDefinitionDigest(job)
-	if err != nil {
-		return err
-	}
-	for _, log := range task.ActionsLogs {
-		for _, output := range log.GetOutputMessage().GetOutputChain() {
-			if output.GetVars()[NativeDeleteJob] != "true" {
-				continue
-			}
-			var reference struct {
-				JobID     string `json:"jobId"`
-				TaskID    string `json:"taskId"`
-				JobDigest string `json:"jobDigest"`
-			}
-			if json.Unmarshal(output.JsonBody, &reference) == nil && reference.JobID == job.ID && reference.TaskID == job.ID && reference.JobDigest == digest {
-				return nil
-			}
-		}
-	}
-	return refused
+	return nil
 }
 
 // NativeJobDefinitionDigest excludes only service-assigned timestamps and

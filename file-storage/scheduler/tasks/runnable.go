@@ -39,6 +39,7 @@ import (
 	"github.com/pydio/cells/v5/common/telemetry/tracing"
 	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/scheduler/actions"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 // Runnable represents the runnable instance of a given task
@@ -241,6 +242,14 @@ func (r *Runnable) Dispatch(input *jobs.ActionMessage, aa []*jobs.Action, queue 
 
 // RunAction creates an action and calls Dispatch
 func (r *Runnable) RunAction(queue chan RunnerFunc) {
+	// Queue may precede revocation or a process upgrade. Historical admitted
+	// metadata cannot authorize a delayed side effect at the actual worker.
+	if err := jobstore.AuthorizeNativeDeleteDispatch(r.Task.Job); err != nil {
+		r.Task.SetError(err, true)
+		r.Task.SaveStatus(r.Context, jobs.TaskStatus_Error)
+		r.Done()
+		return
+	}
 
 	label := r.Action.GetLabel()
 	if label == "" {

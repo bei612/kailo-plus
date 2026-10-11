@@ -164,7 +164,7 @@ func (t *Task) Queue(queue ...chan RunnerFunc) (dispatchError error) {
 	if t.err != nil {
 		return t.err
 	}
-	if err := jobstore.AuthorizeNativeDeleteDispatch(t.context, t.Job, t.event); err != nil {
+	if err := jobstore.AuthorizeNativeDeleteDispatch(t.Job); err != nil {
 		return err
 	}
 	if t.claimRequired {

@@ -130,6 +130,97 @@ func TestAuthorizeOperationObservesOriginalExecutionWithoutResourceBody(t *testi
 	}
 }
 
+func TestActionPEPConsumesOptionalFrozenGeneration(t *testing.T) {
+	const binding = "00000000-0000-4000-8000-000000000001"
+	const execution = "00000000-0000-4000-8000-000000000002"
+	const operationID = "00000000-0000-4000-8000-000000000003"
+	const resource = "00000000-0000-4000-8000-000000000004"
+	for _, operation := range []string{"execute", "source", "observe", "extract_usage", "reconcile"} {
+		for _, scenario := range []struct {
+			name       string
+			generation interface{}
+			allowed    bool
+		}{
+			{"absent", nil, true}, {"frozen", 2, true}, {"largest-exact", 1<<53 - 1, true},
+			{"null", nil, false}, {"zero", 0, false}, {"negative", -1, false},
+			{"fraction", 1.5, false}, {"unsafe", 1 << 53, false}, {"string", "2", false},
+			{"boolean", true, false}, {"unknown-field", 2, false}, {"denied", 2, false},
+			{"wrong-ae", 2, false}, {"missing-zed", 2, false}, {"unexpected-target", 2, false},
+		} {
+			t.Run(operation+"/"+scenario.name, func(t *testing.T) {
+				originalClaims := map[string]interface{}{"action_execution_id": execution, "operation_id": operationID}
+				if operation == "execute" {
+					originalClaims["target_type"], originalClaims["target_id"] = "RESOURCE", resource
+				}
+				payload, _ := json.Marshal(originalClaims)
+				token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
+				peps := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if r.URL.Path == "/token" {
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "fixture-only", "token_type": "Bearer", "expires_in": 60})
+						return
+					}
+					peps++
+					expectedOperation := operation
+					if operation == "source" {
+						expectedOperation = "execute"
+					}
+					var request map[string]interface{}
+					if r.URL.Path != "/service/v1/adapter/pep_check" || r.Header.Get("Authorization") != "Bearer fixture-only" ||
+						json.NewDecoder(r.Body).Decode(&request) != nil || len(request) != 4 || request["bindingId"] != binding ||
+						request["actionToken"] != token || request["operation"] != expectedOperation || request["argumentsJson"] != `{}` {
+						t.Error("original authenticated PEP request changed")
+					}
+					result := map[string]interface{}{"actionExecutionId": execution, "operationId": operationID, "authorizationMinZedToken": "fresh"}
+					if operation == "execute" {
+						result["targetResource"] = map[string]interface{}{"resourceId": resource, "nativeRef": binding, "nativeType": "folder", "nativeInstanceRef": "fixture-instance", "nativeScopeRef": operationID}
+					}
+					if scenario.name != "absent" {
+						result["bindingGeneration"] = scenario.generation
+					}
+					switch scenario.name {
+					case "unknown-field":
+						result["otherGeneration"] = 2
+					case "denied":
+						w.WriteHeader(http.StatusForbidden)
+					case "wrong-ae":
+						result["actionExecutionId"] = binding
+					case "missing-zed":
+						delete(result, "authorizationMinZedToken")
+					case "unexpected-target":
+						result["targetResource"] = map[string]interface{}{}
+					}
+					_ = json.NewEncoder(w).Encode(result)
+				}))
+				defer server.Close()
+				secret := filepath.Join(t.TempDir(), "secret")
+				if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				delivery := Delivery{BindingID: binding, InstanceServiceUUID: binding, CorePEPURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/token", ClientID: "fixture", ClientSecretFile: secret, RequestTimeout: "1s", MaxResponseBytes: 4096, ClientSecretMaxBytes: 128}
+				var claims, target map[string]interface{}
+				var err error
+				if operation == "source" {
+					claims, err = delivery.AuthorizeSourceRead(context.Background(), token, `{}`)
+				} else {
+					claims, target, err = delivery.AuthorizeOperation(context.Background(), token, `{}`, operation)
+				}
+				if peps != 1 {
+					t.Fatal("fresh PEP was skipped or repeated")
+				}
+				if scenario.allowed {
+					if err != nil || claims["action_execution_id"] != execution || len(claims) != len(originalClaims) || (operation == "execute") != (target != nil) {
+						t.Fatalf("compatible response refused or frozen generation invented as a claim: %v", err)
+					}
+				} else if err == nil || claims != nil || target != nil {
+					t.Fatal("invalid authority response accepted")
+				}
+			})
+		}
+	}
+}
+
 func TestNativeHumanActionUsesOriginalPrivateTransport(t *testing.T) {
 	const binding = "00000000-0000-4000-8000-000000000001"
 	const key = "00000000-0000-4000-8000-000000000002"

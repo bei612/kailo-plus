@@ -5,8 +5,33 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 )
+
+// Core may return the original AE's frozen bindingGeneration. This callback
+// consumer does not create generation ownership or copy authority facts into
+// signed claims. Preserve old responses while rejecting unknown fields and
+// numbers that the shared JSON consumers cannot represent exactly.
+func actionPEPFields(result map[string]interface{}, withTarget bool) bool {
+	for key, value := range result {
+		switch key {
+		case "actionExecutionId", "operationId", "authorizationMinZedToken":
+		case "targetResource":
+			if !withTarget {
+				return false
+			}
+		case "bindingGeneration":
+			generation, ok := value.(float64)
+			if !ok || generation < 1 || generation > 1<<53-1 || math.Trunc(generation) != generation {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // AuthorizeAction reuses the binding's original authenticated PEP callback.
 // The JWT payload is not trusted until that authority has verified the exact
@@ -16,7 +41,7 @@ func (d Delivery) AuthorizeAction(ctx context.Context, token, arguments string) 
 	return d.AuthorizeOperation(ctx, token, arguments, "execute")
 }
 
-// SERVICE SOURCE reads use the existing three-field read-grant PEP response,
+// SERVICE SOURCE reads use the original read-grant PEP response,
 // not a HUMAN targetResource or an ExternalExecution. Core verifies the exact
 // signed native root in arguments against the original Resource and binding.
 func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments string) (map[string]interface{}, error) {
@@ -41,7 +66,7 @@ func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments stri
 	ae, aeOK := result["actionExecutionId"].(string)
 	op, opOK := result["operationId"].(string)
 	zed, zedOK := result["authorizationMinZedToken"].(string)
-	if len(result) != 3 || !aeOK || !opOK || !zedOK || zed == "" ||
+	if !actionPEPFields(result, false) || !aeOK || !opOK || !zedOK || zed == "" ||
 		!canonicalUUID(ae) || !canonicalUUID(op) || claims["action_execution_id"] != ae || claims["operation_id"] != op {
 		return nil, refused
 	}
@@ -79,17 +104,14 @@ func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, oper
 	op, opOK := result["operationId"].(string)
 	zed, zedOK := result["authorizationMinZedToken"].(string)
 	target, targetOK := result["targetResource"].(map[string]interface{})
-	if !aeOK || !opOK || !zedOK || zed == "" ||
+	if !actionPEPFields(result, operation == "execute") || !aeOK || !opOK || !zedOK || zed == "" ||
 		!canonicalUUID(ae) || !canonicalUUID(op) || claims["action_execution_id"] != ae || claims["operation_id"] != op {
 		return nil, nil, refused
 	}
 	if operation != "execute" {
-		if len(result) != 3 || targetOK {
-			return nil, nil, refused
-		}
 		return claims, nil, nil
 	}
-	if len(result) != 4 || !targetOK || len(target) != 5 {
+	if !targetOK || len(target) != 5 {
 		return nil, nil, refused
 	}
 	for _, key := range []string{"resourceId", "nativeType", "nativeRef", "nativeInstanceRef", "nativeScopeRef"} {

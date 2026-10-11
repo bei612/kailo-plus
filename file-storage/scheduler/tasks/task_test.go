@@ -40,6 +40,7 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/utils/propagator"
+	"github.com/pydio/cells/v5/scheduler/actions"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 
 	_ "github.com/pydio/cells/v5/scheduler/actions/scheduler"
@@ -125,6 +126,47 @@ func TestNativeDeleteAcknowledgementsRemainInOriginalClaimedTask(t *testing.T) {
 				t.Fatal("failed evidence check changed original Task")
 			}
 		})
+	}
+}
+
+type delayedDeleteAction struct {
+	actions.ConcreteAction
+	calls int
+}
+
+func (a *delayedDeleteAction) Run(_ context.Context, _ *actions.RunnableChannels, input *jobs.ActionMessage) (*jobs.ActionMessage, error) {
+	a.calls++
+	return input, nil
+}
+
+func TestNativeDeleteCannotQueueOrRunWithoutDelayedAuthority(t *testing.T) {
+	for _, metadata := range []map[string]string{
+		{jobstore.NativeDeleteJob: "coordinator", jobstore.NativeDeleteTask: "operation"},
+		{jobstore.NativeDeleteJob: ""}, {jobstore.NativeDeleteTask: ""},
+	} {
+		job := &jobs.Job{ID: "managed-child", Metadata: metadata}
+		task := NewTaskFromEvent(context.Background(), job, &jobs.JobTriggerEvent{JobID: job.ID, RunTaskId: job.ID, RunNow: true})
+		queue := make(chan RunnerFunc, 1)
+		puts := 0
+		grpcclient.RegisterMock(common.ServiceJobsGRPC, &nativeClaimService{put: func(_ context.Context, r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
+			puts++
+			return &jobs.PutTaskResponse{Task: r.Task}, nil
+		}})
+		if err := task.Queue(queue); err == nil || len(queue) != 0 || puts != 0 {
+			t.Fatalf("managed deletion queued or persisted without fresh authority: err=%v queued=%d puts=%d", err, len(queue), puts)
+		}
+		// Model a runnable already queued by the old producer. The worker must
+		// refuse before looking up or invoking any native implementation.
+		implementation := &delayedDeleteAction{}
+		runnable := Runnable{Task: task, Context: task.context, Action: &jobs.Action{ID: "actions.tree.delete"}, Implementation: implementation, Message: &jobs.ActionMessage{}}
+		task.rci.Store(1)
+		runnable.RunAction(queue)
+		if !cellserrors.Is(task.err, cellserrors.StatusForbidden) || task.Clone().Status != jobs.TaskStatus_Error || len(queue) != 0 || implementation.calls != 0 {
+			t.Fatalf("delayed worker did not retain the refusal: calls=%d err=%v %v", implementation.calls, task.err, task.Clone())
+		}
+	}
+	if err := jobstore.AuthorizeNativeDeleteDispatch(&jobs.Job{ID: "independent-native-job"}); err != nil {
+		t.Fatal("independent native execution changed", err)
 	}
 }
 
