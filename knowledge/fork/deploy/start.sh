@@ -50,8 +50,9 @@ fi
 docker "${args[@]}" config --quiet
 if [[ "$validate" == false ]]; then
   if [[ "$platform_adapter" == true ]]; then
-    targets=(adapter-agent adapter)
-    if [[ -n "$platform_env" || "$file_storage_sync" == true ]]; then targets+=(app); fi
+    # The native backend consumes the same controlled MCP binding delivery;
+    # updating only the adapter would leave a bearer-only native bypass.
+    targets=(adapter-agent adapter app)
     docker "${args[@]}" up -d --no-build --pull never --wait --no-deps "${targets[@]}"
   elif [[ -n "$platform_env" || "$file_storage_sync" == true ]]; then
     # Integration is applied to an already running independent service. Do not

@@ -60,7 +60,20 @@ func (r *mcpEndpointRepository) ListByTenant(ctx context.Context, tenantID uint6
 }
 
 func (r *mcpEndpointRepository) Update(ctx context.Context, ep *types.MCPEndpoint) error {
-	return r.db.WithContext(ctx).Save(ep).Error
+	// Workspace settings must never overwrite a concurrent platform projection or
+	// install/remove a binding projection using a stale endpoint read.
+	// Save's implicit INSERT fallback could resurrect a concurrently deleted
+	// endpoint without its retained binding. Update only the existing owner row.
+	result := r.db.WithContext(ctx).Model(&types.MCPEndpoint{}).
+		Where("id = ? AND tenant_id = ?", ep.ID, ep.TenantID).
+		Select("*").Omit("ID", "TenantID", "PlatformBindingID").Updates(ep)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *mcpEndpointRepository) Delete(ctx context.Context, tenantID uint64, id string) error {

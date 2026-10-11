@@ -159,6 +159,11 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     if (body.method === 'notifications/initialized') { response.writeHead(202); return response.end(); }
     state.native++;
     assert.ok(request.headers.authorization === `Bearer ${nativeSecret}`);
+    const nativeProof = JSON.parse(Buffer.from(request.headers['x-kailo-native-action'], 'base64url'));
+    assert.deepEqual(Object.keys(nativeProof).sort(), ['actionToken', 'argumentsJson', 'operation']);
+    assert.equal(nativeProof.operation, operation);
+    assert.deepEqual(JSON.parse(nativeProof.argumentsJson), intent);
+    assert.equal(JSON.parse(Buffer.from(nativeProof.actionToken.split('.')[1], 'base64url')).action_execution_id, ids[5]);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
     if (body.params.name === 'list_knowledge_bases') {
@@ -306,6 +311,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     body: options.raw ?? canonical(bodyValue),
   }) };
 }
+
+test('concurrent native calls retain their own binding admission proof', async t => {
+  const first = await fixture(t, 'ok', 'knowledge.read@v2');
+  const second = await fixture(t, 'ok', 'knowledge.export@v2');
+  const responses = await Promise.all([first.invoke(), second.invoke()]);
+  assert.deepEqual(responses.map(response => response.status), [200, 200]);
+  assert.ok(first.state.native > 0 && second.state.native > 0);
+});
 
 test('knowledge execute binds the same signed execution intent for HUMAN and delegated AGENT', async t => {
   for (const actor of ['HUMAN', 'AGENT']) {

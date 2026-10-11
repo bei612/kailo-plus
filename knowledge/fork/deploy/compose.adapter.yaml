@@ -1,6 +1,23 @@
 # Existing native deployment opt-in. No platform database, registry, token sink,
 # host listener or new network is created. All paths come from controlled delivery.
 services:
+  app:
+    environment:
+      KNOWLEDGE_MCP_ADAPTER_CONFIG_FILE: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+        target: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        target: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        read_only: true
+        bind: {create_host_path: false}
+    networks:
+      adapter_platform: {}
+
   adapter:
     image: ${KNOWLEDGE_ADAPTER_REPOSITORY:?source-built adapter repository required}@sha256:${KNOWLEDGE_ADAPTER_DIGEST:?verified immutable adapter digest required}
     user: ${KNOWLEDGE_ADAPTER_UID:?delivery owner UID required}:${KNOWLEDGE_ADAPTER_GID:?delivery owner GID required}

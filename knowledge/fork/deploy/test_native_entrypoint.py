@@ -147,7 +147,7 @@ class NativeEntrypointTests(unittest.TestCase):
         missing["DB_PASSWORD_FILE"] = str(file.with_name("absent"))
         self.assert_refused(missing)
 
-    def test_adapter_start_targets_only_existing_adapter_and_agent(self):
+    def test_adapter_start_delivers_native_consumer_without_other_services(self):
         root = Path(self.directory.name)
         (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
         (root / ".env").write_text("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n")
@@ -161,7 +161,7 @@ class NativeEntrypointTests(unittest.TestCase):
         operations = [json.loads(line) for line in calls.read_text().splitlines()]
         self.assertEqual(len(operations), 2)
         self.assertIn(str(root / "compose.adapter.yaml"), operations[1])
-        self.assertEqual(operations[1][-9:], ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps", "adapter-agent", "adapter"])
+        self.assertEqual(operations[1][-10:], ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps", "adapter-agent", "adapter", "app"])
         calls.unlink()
         result = subprocess.run(command, env={**env, "REFUSE_CONFIG": "1"}, capture_output=True)
         self.assertEqual(result.returncode, 1)

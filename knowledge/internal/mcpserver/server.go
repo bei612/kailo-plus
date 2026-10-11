@@ -77,7 +77,7 @@ func NewServer(
 	db *gorm.DB,
 	cfg *config.Config,
 	redisClient *redis.Client,
-) *Server {
+) (*Server, error) {
 	s := &Server{
 		kbService:        kbService,
 		knowledgeService: knowledgeService,
@@ -92,6 +92,9 @@ func NewServer(
 		db:               db,
 		cfg:              cfg,
 		limiter:          ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
+	}
+	if err := s.initializeNativeBindings(context.Background()); err != nil {
+		return nil, err
 	}
 	// The local fallback map only grows without periodic eviction; the server
 	// lives for the whole process so the cleanup goroutine never stops.
@@ -110,7 +113,7 @@ func NewServer(
 		s.mcp,
 		server.WithStateLess(true),
 	)
-	return s
+	return s, nil
 }
 
 // Handler returns the http.Handler to mount under /mcp/:endpoint_id. The
@@ -141,8 +144,15 @@ func (s *Server) filterTools(ctx context.Context, all []mcp.Tool) []mcp.Tool {
 		return nil
 	}
 	out := make([]mcp.Tool, 0, len(all))
+	delivery, err := s.nativeAdapter(ctx, ep, false)
+	if err != nil {
+		return nil
+	}
 	for _, t := range all {
-		if ep.HasTool(t.Name) {
+		if delivery.values != nil && (t.Name == types.MCPEndpointToolAddDocument || t.Name == types.MCPEndpointToolDeleteDocument || t.Name == types.MCPEndpointToolUpdateDocument) {
+			continue
+		}
+		if delivery.ep.HasTool(t.Name) {
 			out = append(out, t)
 		}
 	}
@@ -163,8 +173,17 @@ func (s *Server) guardTool(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		if !s.limiter.Allow(ctx, ep.ID, ep.RateLimitPerMinute) {
 			return mcp.NewToolResultError("rate limit exceeded for this endpoint, retry shortly"), nil
 		}
+		ctx, err = s.authorizeNativePlatformTool(ctx, ep, req)
+		if err != nil {
+			return mcp.NewToolResultError("native platform admission unavailable"), nil
+		}
 		s.touchLastUsed(ctx, ep.ID)
-		return next(ctx, req)
+		result, callErr := next(ctx, req)
+		// Recheck before disclosing native content after a concurrent revocation.
+		if _, err := s.authorizeNativePlatformTool(ctx, ep, req); err != nil {
+			return mcp.NewToolResultError("native platform admission unavailable"), nil
+		}
+		return result, callErr
 	}
 }
 

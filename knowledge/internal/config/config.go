@@ -36,6 +36,10 @@ type Config struct {
 	// FileStorageSync is controlled binding delivery, not user data-source
 	// credentials. Native connectors never receive Cells credentials.
 	FileStorageSync *FileStorageSyncConfig `yaml:"file_storage_sync" json:"file_storage_sync"`
+	// MCPAdapterConfigs names the existing binding-specific adapter delivery
+	// files. The native service reads their original endpoint mapping and PEP
+	// credentials; callers and workspace settings cannot supply these paths.
+	MCPAdapterConfigs []string `yaml:"mcp_adapter_configs" json:"-"`
 	// FrontendBaseURL is the externally-visible origin of the SPA, used
 	// to compose absolute share-link URLs. Empty falls back to a host-
 	// relative URL ("/register?token=…") which the SPA then resolves
@@ -575,6 +579,20 @@ func LoadConfig() (*Config, error) {
 		dc.TagName = "yaml"
 	}); err != nil {
 		return nil, fmt.Errorf("unable to decode config into struct: %w", err)
+	}
+	// The independent deployment mounts the adapter's existing controlled
+	// configuration and rendered credentials into this native consumer too.
+	if path, supplied := os.LookupEnv("KNOWLEDGE_MCP_ADAPTER_CONFIG_FILE"); supplied {
+		if !filepath.IsAbs(path) || strings.TrimSpace(path) != path {
+			return nil, fmt.Errorf("KNOWLEDGE_MCP_ADAPTER_CONFIG_FILE requires an absolute path")
+		}
+		found := false
+		for _, existing := range cfg.MCPAdapterConfigs {
+			found = found || existing == path
+		}
+		if !found {
+			cfg.MCPAdapterConfigs = append(cfg.MCPAdapterConfigs, path)
+		}
 	}
 	fmt.Printf("Using configuration file: %s\n", viper.ConfigFileUsed())
 

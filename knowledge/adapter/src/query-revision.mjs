@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
@@ -10,6 +11,9 @@ import { bindingValidationConfiguration, bindingArguments, bindingObservation } 
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
+// Request-local transient admission; never saved in a task/config or shared
+// across concurrently executing bindings and users.
+const nativeAdmission = new AsyncLocalStorage();
 
 // Both immutable capability contracts use the same original native consumer.
 // Keep the signed key/version intact through PEP, hashing and observations.
@@ -111,8 +115,10 @@ export async function verifyKnowledgeToken(token, config, args, operation = 'que
 export async function nativeTool(config, deadline, name, args) {
   const bearer = await secret(config.nativeMcpBearerFile);
   const client = new Client({ name: 'kailo-knowledge-adapter', version: '1' });
+  const proof = nativeAdmission.getStore()?.proof;
   const transport = new StreamableHTTPClientTransport(new URL(config.nativeMcpUrl), {
-    requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+    requestInit: { headers: { authorization: `Bearer ${bearer}`,
+      ...(proof === undefined ? {} : { 'X-Kailo-Native-Action': proof }) } },
     fetch: async (url, options) => {
       const remaining = deadline - Date.now();
       if (String(url) !== config.nativeMcpUrl || remaining <= 0) throw new Refused(503);
@@ -382,7 +388,7 @@ async function executeOperation(config, deadline, request, claims, token, target
 
 export function createAdapter(rawConfig) {
   const config = configuration(rawConfig);
-  const server = createServer(async (request, response) => {
+  const server = createServer((request, response) => nativeAdmission.run({}, async () => {
     try {
       const operation = request.url === QUERY_PATH ? 'query_revision'
         : request.url === '/platform-adapter/v1/handshake' ? 'handshake'
@@ -399,6 +405,10 @@ export function createAdapter(rawConfig) {
       const raw = await boundedBody(request, config.maxBodyBytes);
       let args;
       try { args = JSON.parse(raw); } catch { throw new Refused(400); }
+      nativeAdmission.getStore().proof = Buffer.from(canonical({
+        actionToken: request.headers.authorization.slice('Bearer '.length),
+        argumentsJson: canonical(operation === 'execute' ? args.arguments : args), operation,
+      })).toString('base64url');
       if (['handshake', 'validate_binding'].includes(operation)) {
         if (!object(args) || !UUID.test(args.idempotencyKey)
           || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args)) throw new Refused(400);
@@ -481,7 +491,7 @@ export function createAdapter(rawConfig) {
       response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       response.end(JSON.stringify({ class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
     }
-  });
+  }));
   server.requestTimeout = config.timeoutMs;
   server.headersTimeout = config.timeoutMs;
   return server;

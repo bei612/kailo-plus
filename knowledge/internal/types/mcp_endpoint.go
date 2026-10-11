@@ -24,6 +24,10 @@ type MCPEndpoint struct {
 	Name        string `json:"name"        gorm:"type:varchar(255);not null;default:''"`
 	Description string `json:"description" gorm:"type:text;not null;default:''"`
 	Enabled     bool   `json:"enabled"     gorm:"not null;default:true"`
+	// PlatformBindingID is installed only from controlled adapter delivery. It
+	// is not accepted by the workspace endpoint settings API. Removing delivery
+	// never turns this endpoint into an independent, ungoverned credential.
+	PlatformBindingID string `json:"-" gorm:"type:varchar(36);not null;default:'';index"`
 	// TokenHash is the SHA-256 hex digest of the bearer token. The plaintext
 	// is shown once on create/rotate and never stored, mirroring
 	// TenantAPIKey.KeyHash rather than the plaintext embed publish token.

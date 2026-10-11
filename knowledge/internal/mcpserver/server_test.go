@@ -116,7 +116,10 @@ func newTestEngineWithRepo(t *testing.T, ep *types.MCPEndpoint) (*gin.Engine, *r
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	repo := &recordingEndpointRepo{touched: make(chan string, 8)}
-	srv := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, repo, nil, nil, nil)
+	srv, err := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, repo, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	r := gin.New()
 	inject := func(c *gin.Context) {
 		if ep != nil {

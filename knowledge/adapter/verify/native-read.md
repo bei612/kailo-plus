@@ -4907,3 +4907,81 @@ UID 1000、network none；启动前原 safety preflight 检查 available 42 GiB�
 
 本批未部署，不新增菜单、不激活 binding、不声称完整治理；未做真实服务联调、
 截图或设备验收。全局 `check.sh --full` 不重复启动，仍由主集成批次收口。
+
+### 2026-10-11 原生 MCP 受控归属与读取准入（未部署）
+
+本批以 Kailo `4bc73369666644a05bf79369922d8b7ebc54c199` 为基准，仅选取本节
+18 个实现/验证文件；不混入工作树既有 execution-key reconcile 改动。
+固定上游为 `2be7bd40631dda1dd485306038f07a62e9ee287e`，复用
+`knowledge/internal/types/mcp_endpoint.go::MCPEndpoint`、
+`knowledge/internal/mcpserver/server.go::guardTool` 和
+`knowledge/internal/container/container.go` 的原 `NewServer` 注入链。
+权威是现有可信身份、绑定与失败关闭要求；`.design/03` §6 和 ADR-12 §8
+不允许把观察补签当成延迟业务写授权。本批只闭合原生读取准入消费者，
+不把入口 token、成功 SSO 或原生 endpoint 所有权当成平台业务授权。
+
+影响与实际实现：
+
+- 原 `MCPEndpoint` 保存非公开 `PlatformBindingID`；PostgreSQL 105、SQLite 25
+  扩展迁移不推断历史归属。普通更新不写该列；down 在仍有绑定时拒绝丢弃归属。
+- 原配置加载消费 `KNOWLEDGE_MCP_ADAPTER_CONFIG_FILE`，原 `start.sh --platform-adapter`
+  同时投递已有受控配置/凭据给 `app`，启动范围明确为 `adapter-agent adapter app`，
+  不包含数据库或 frontend。本批没有实际执行该部署。
+- `NewServer` 在接收请求前消费受控投递并持久化原 endpoint 归属；发现工具不写投影。
+  删除配置不会把已绑定 endpoint 降成独立 bearer 模式。独立、未绑定入口保留原认证行为。
+- Adapter 用请求局部上下文携带相同 ActionToken/arguments/operation 到原 MCP 调用；
+  native 端向同一 Core PEP 验证，令牌不落库、不写任务。读取原 handler 前与返回结果前
+  均重新核验 endpoint、工具、凭据、授权、KB scope 和适用的原生文档 revision。
+- 原事务内同时比较请求认证时的 hash 与当前数据库 hash、当前投递 hash，
+  阻止两次读取之间同时轮换数据库和投递文件时接受旧请求。
+  原 repository 更新改用限定 id/tenant 的 existing-row-only Updates，保留零值更新，
+  RowsAffected 不为 1 返回 NotFound；不再让 Save 的 INSERT fallback 复活已删除凭据。
+
+副作用与异常边界：未增加账号、注册表、执行账本或 Core 正文；未将配置代次当历史 AE
+代次。缺投递、重复映射、禁用、撤工具、轮换、撤权、外部错误、文档跨 scope/revision
+均拒绝或丢弃结果，不显示业务成功。绑定的 add/delete/update 写入口仍关闭；
+generation fence、完整历史任务枚举和延迟 worker fresh 平台授权仍是 release/binding
+发布阻断，不以本批读取通过宣称完整治理或三组件已上架。
+
+启动前回读可用内存 41 GiB、D-state 0；复用原 Go SDK
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+Go 1.26.8、UID 1000、network none、4 CPU/8 GiB（memory+swap 同值），
+module/build cache、私有候选、overlay 和日志均在 Data。验证精确代码树
+`c595483815f8c00dc2440a273f740cd30c9da290`，本回执仅在其上追加。
+实际命令在 `/workspace/knowledge`：
+
+```sh
+go test -overlay /tmp/native-binding-overlay.json ./internal/mcpserver ./internal/application/repository ./internal/router -run 'TestNativeBinding|TestMCPEndpoint' -count=1 -timeout=180s
+```
+
+末版三包退出 0：16.887 s / 0.488 s / 0.471 s。仅在 Data 私有副本移除事务 hash 比较、
+post-read 准入并改回 Save；窄命令选择
+`TestNativeBindingRejectsCredentialRotatedBetweenEndpointReads|TestNativeBindingGuard|TestMCPEndpointSettings`，
+实际退出 1，分别抓住旧凭据、撤权结果泄露与删除后复活。还原后逐个复核 18 个导出 blob
+与私有 index 相等，9 个 Go 文件 gofmt 检查无输出；原命令加 `-v` 退出 0，
+三包 6.269 s / 0.479 s / 0.490 s，12 个顶层检查和 18 个子检查通过。
+SQLite down 的预期约束拒绝与既有 router 夹具 nil-config 警告不被当成线上服务结果。
+
+原 Node 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+以 UID 1000、network none、2 CPU/2 GiB（memory+swap 同值）读取精确选定源码与既有只读
+MCP SDK 1.26.0 依赖；`node --test knowledge/adapter/test/query-revision.test.mjs`
+退出 0，263/263。私有副本去掉原生 proof header 时并发绑定检查退出 1，恢复后退出 0，
+源 SHA 复核相同。`python3 -m unittest discover -s knowledge/fork/deploy -p test_native_entrypoint.py`
+退出 0，31/31。该复用目录无 npm hidden lock，不将其声明为完整生产锁依赖构建。
+
+日志前缀 G 为 `/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/`，
+N 为 `/volumes/data/kailo/tmp/knowledge-native-admission-20261011.YMCeU1/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| G `native-binding-candidate-final.log` | `f460702dcd188255f3bdcbad2da4637b135c4ef3d683f0c14330d67678f0ca4a` |
+| G `native-binding-candidate-negative.log` | `6dcd943630172344a74be160de0fa1be68d813ec01777aa6b4cda35711b8984e` |
+| G `native-binding-candidate-restored.log` | `2a021e4bc429f9a73f05f239571382c8fd0a695cbc37e3333354c96ce24b327c` |
+| N `candidate-node-positive.log` | `c92d4e5f1327a7fe7f8cd5dc1667ab21f3dd96eca65c1439f27a02bca8849391` |
+| N `candidate-deploy-positive.log` | `70bc0d8ed2c454e3bc6f21b114d129bd1d7a841e051fbcdb80bb73d09c1fa33f` |
+| N `candidate-node-proof-negative.log` | `7d6c4bf0bf91ed993127210e49c0867e9fdeb629cd96606c6709559386418e04` |
+| N `candidate-node-proof-restored.log` | `c7d17bf2b2414e6be75eb47d5dea5e0267b663c26cc2259f43525bcf957af291` |
+
+本批没有运行 PostgreSQL 迁移、生产镜像构建、全局 `check.sh --full`、实际部署、
+真实平台准入联调或页面截图。SQLite 迁移与夹具 PEP 通过不替代这些门禁。
+原 Go SDK 已停止释放资源；没有停止其他项目或清理依赖缓存。
