@@ -11,6 +11,7 @@ import { initializeFontSizePreference } from "@client-kit/platform/fontSizePrefe
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { EmojiBurstProvider } from "@client-kit/platform/react/emoji-burst";
+import { AvatarClipPaths } from "@client-kit/platform/react/thread/AvatarClipPaths";
 
 initializeDocumentLanguage();
 initializeFontSizePreference();
@@ -40,6 +41,7 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
+    <AvatarClipPaths />
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>

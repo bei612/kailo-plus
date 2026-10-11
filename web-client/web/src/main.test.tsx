@@ -13,13 +13,14 @@ vi.mock("react-dom/client", async (original) => {
 });
 vi.mock("@/app/App", async () => {
   const { Tooltip, TooltipContent, TooltipTrigger } = await import("@client-kit/platform/react/sidebar/tooltip");
-  const { MessageReactions } = await import("@client-kit/platform/react/messages");
+  const { MessageReactions, UserAvatar } = await import("@client-kit/platform/react/messages");
   return { App: () => <>{["first", "second"].map(label => <Tooltip key={label}>
     <TooltipTrigger asChild><button>{label}</button></TooltipTrigger>
     <TooltipContent>{label} hint</TooltipContent>
   </Tooltip>)}<MessageReactions messageId="admitted-message" canToggle pending={false}
     reactions={[{emoji:"👍",count:1,reactedByCurrentUser:false,users:[]}]}
-    onSelect={mounted.selectReaction}/></> };
+    onSelect={mounted.selectReaction}/><UserAvatar avatarUrl={null} displayName="Agent"
+      shape="squircle" testId="agent-avatar" /></> };
 });
 vi.mock("@/shared/ui/sonner", () => ({ Toaster: () => null }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ ThemeProvider: ({ children }: { children: React.ReactNode }) => children }));
@@ -51,6 +52,12 @@ await act(async () => { await import("./main"); });
 
 it("uses the original shared root provider: deliberate dwell for every adjacent tooltip", async () => {
   vi.useFakeTimers();
+  const { ROUNDED_SQUIRCLE_CLIP_ID, ROUNDED_SQUIRCLE_PATH } = await import("@client-kit/platform/react/thread/AvatarClipPaths");
+  expect(host.querySelector('[data-testid="agent-avatar"]')?.classList.contains("rounded-squircle")).toBe(true);
+  const clips = host.querySelectorAll(`clipPath[id="${ROUNDED_SQUIRCLE_CLIP_ID}"]`);
+  expect(clips).toHaveLength(1);
+  expect(clips[0].getAttribute("clipPathUnits")).toBe("objectBoundingBox");
+  expect(clips[0].querySelector("path")?.getAttribute("d")).toBe(ROUNDED_SQUIRCLE_PATH);
   const [first, second] = [...host.querySelectorAll("button")];
   const pointer = async (button: HTMLButtonElement, type: string) => act(async () => {
     const event = new MouseEvent(type, { bubbles: true });
