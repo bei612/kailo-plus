@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Reminder wire preserves original status, optional fields and safe timestamps", () => {
+  type Request = import("../src/generated/contracts.js").ReminderPublishRequest;
+  type View = import("../src/generated/contracts.js").ReminderView;
+  type Source = import("../src/generated/contracts.js").ReminderSourceRequest;
+  const sample: {requests: Request[]; source: Source; views: View[]} = JSON.parse(readFileSync(new URL("../../../../contracts/samples/reminder.sample.json", import.meta.url), "utf8"));
+  const requests: Request[] = sample.requests.map(row => ({operation: row.operation, channelId: row.channelId, sourceEventId: row.sourceEventId, eventId: row.eventId, notBefore: row.notBefore, note: row.note}));
+  const source: Source = {channelId: sample.source.channelId, eventId: sample.source.eventId};
+  const views: View[] = sample.views.map(row => ({id: row.id, eventId: row.eventId, createdAt: row.createdAt, notBefore: row.notBefore, content: {status: row.content.status, note: row.content.note, target: row.content.target && {eventId: row.content.target.eventId, channelId: row.content.target.channelId, authorPubkey: row.content.target.authorPubkey, preview: row.content.target.preview}}}));
+  deepStrictEqual(JSON.parse(JSON.stringify({requests, source, views})), sample);
+});
+
 test("Native receiver preserves original batch and observe-only lookup", () => {
   type Request = import("../src/generated/contracts.js").ComponentNativeReceiverRequest;
   type Observation = import("../src/generated/contracts.js").ComponentNativeReceiverObservation;

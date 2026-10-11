@@ -19,9 +19,9 @@ use uuid::Uuid;
 use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
 pub use buzz_core::kind::{
-    KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY,
-    KIND_TYPING_INDICATOR, KIND_WINDOW_BOUNDS,
+    KIND_DELETION, KIND_EVENT_REMINDER, KIND_NIP29_DELETE_EVENT, KIND_REACTION,
+    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2,
+    KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_TYPING_INDICATOR, KIND_WINDOW_BOUNDS,
 };
 pub use buzz_core::nip10::parse_thread_markers;
 pub use buzz_core::relay::{
@@ -703,6 +703,57 @@ impl IdentityClient {
         crate::projects::publication_builder(request, target, channel_id, &self.pubkey_hex())?
             .sign_with_keys(&self.keys)
             .map_err(|error| OperatorError::Sign(error.to_string()))
+    }
+
+    /// Buzz 779af8886caae1317b4de962082429867ab61503 reminderService and
+    /// commands/identity::{nip44_encrypt_to_self,nip44_decrypt_from_self}.
+    /// Only a verified 30300 event owned by this SERVER identity is decrypted.
+    pub fn decrypt_reminder(&self, event: &Event) -> Result<String, OperatorError> {
+        if event.kind.as_u16() != buzz_core::kind::KIND_EVENT_REMINDER as u16
+            || event.pubkey != self.keys.public_key()
+            || event.verify().is_err()
+        {
+            return Err(OperatorError::NotConverged(
+                "Reminder identity is invalid".into(),
+            ));
+        }
+        nostr::nips::nip44::decrypt(
+            self.keys.secret_key(),
+            &self.keys.public_key(),
+            &event.content,
+        )
+        .map_err(|_| OperatorError::NotConverged("Reminder decryption failed".into()))
+    }
+
+    pub fn sign_reminder(
+        &self,
+        content: &contracts::ReminderContent,
+        tags: &[Vec<String>],
+        created_at: u64,
+    ) -> Result<Event, OperatorError> {
+        let plaintext = serde_json::to_string(content)
+            .map_err(|_| OperatorError::Sign("Invalid reminder content".into()))?;
+        let ciphertext = nostr::nips::nip44::encrypt(
+            self.keys.secret_key(),
+            &self.keys.public_key(),
+            plaintext,
+            nostr::nips::nip44::Version::V2,
+        )
+        .map_err(|_| OperatorError::Sign("Reminder encryption failed".into()))?;
+        let tags = tags
+            .iter()
+            .map(|tag| {
+                Tag::parse(tag).map_err(|_| OperatorError::Sign("Invalid reminder tag".into()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        EventBuilder::new(
+            Kind::Custom(buzz_core::kind::KIND_EVENT_REMINDER as u16),
+            ciphertext,
+        )
+        .tags(tags)
+        .custom_created_at(nostr::Timestamp::from(created_at))
+        .sign_with_keys(&self.keys)
+        .map_err(|_| OperatorError::Sign("Reminder signing failed".into()))
     }
 
     async fn send(&self, http: &reqwest::Client, event: &Event) -> Result<Value, OperatorError> {
@@ -2183,5 +2234,72 @@ mod mention_tests {
         assert!(client
             .sign_channel_result_at("channel", "legacy", Some((&root, &parent)), Some(first), 17)
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod reminder_tests {
+    use super::*;
+
+    #[test]
+    fn reminder_self_encryption_requires_the_original_author_kind_and_signature() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.test",
+            "community.test",
+        )
+        .unwrap();
+        let content = serde_json::from_value(
+            serde_json::json!({"status":"pending","note":"private original reminder"}),
+        )
+        .unwrap();
+        let event = client
+            .sign_reminder(
+                &content,
+                &[
+                    vec!["d".into(), "owned".into()],
+                    vec!["not_before".into(), "0".into()],
+                ],
+                17,
+            )
+            .unwrap();
+        assert_eq!(event.kind.as_u16(), 30300);
+        assert_eq!(event.created_at.as_secs(), 17);
+        assert!(!event.content.contains("private original reminder"));
+        assert_eq!(
+            serde_json::from_str::<contracts::ReminderContent>(
+                &client.decrypt_reminder(&event).unwrap()
+            )
+            .unwrap(),
+            content
+        );
+        let other = Keys::generate();
+        let other = IdentityClient::new(
+            Custody::Server,
+            &other.secret_key().to_secret_hex(),
+            "http://relay.test",
+            "community.test",
+        )
+        .unwrap();
+        assert!(other.decrypt_reminder(&event).is_err());
+        let mut tampered = event.clone();
+        tampered.content.push('x');
+        assert!(client.decrypt_reminder(&tampered).is_err());
+        let mut tampered_metadata = event.clone();
+        tampered_metadata.created_at = nostr::Timestamp::from(18);
+        assert!(client.decrypt_reminder(&tampered_metadata).is_err());
+        let wrong_kind = EventBuilder::new(Kind::TextNote, event.content)
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(client.decrypt_reminder(&wrong_kind).is_err());
+        assert!(IdentityClient::new(
+            Custody::Client,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.test",
+            "community.test"
+        )
+        .is_err());
     }
 }

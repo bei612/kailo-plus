@@ -28,7 +28,7 @@ import { HomeLoadingState, InboxLayout, InboxListHeader, InboxEmptyDetail, Inbox
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@client-kit/platform/react/sidebar/context-menu";
-import { ExternalLink, MailOpen } from "lucide-react";
+import { Clock, ExternalLink, MailOpen } from "lucide-react";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import type { PlatformDraftNavigation } from "@/app/platform-navigation";
@@ -45,6 +45,7 @@ import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,Pr
 import {useProjectsHost} from "./ProjectsPane";
 import {PulsePane} from "./PulsePane";
 import {UserAvatar} from "@client-kit/platform/react/messages";
+import {useReminderHost,useRemindersQuery,useRemindLater,useReminderSources,buildInboxListRows,isDue,ReminderInboxRow,RemindersPanel,ReminderDetailPane} from "@client-kit/platform/react/reminders";
 type ProjectEvent=ReturnType<typeof projectInboxMentions>[number];
 type InboxEvent=Event|ProjectEvent;
 
@@ -75,6 +76,11 @@ export function InboxPane({
   const client = useBffClient();
   const projectsHost=useProjectsHost(principalId);
   const t = useT();
+  const reminderHost=useReminderHost();
+  const reminderActions=useRemindLater();
+  const reminders=useRemindersQuery(reminderHost.pubkey);
+  const reminderSources=useReminderSources(reminders.data??[]);
+  const [selectedReminder,setSelectedReminder]=useState<string|null>(null);
   const locale = useLocale();
   const reads = useInboxState(client);
   const visibility = useConversationVisibilityHost();
@@ -301,6 +307,8 @@ export function InboxPane({
         ),
     );
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
+  const visibleInboxRows=buildInboxListRows({items:visibleRows.map(row=>({...row,id:row.item.id,groupItems:row.items,conversationId:row.scopeKey})),
+    reminders:filter==="all"&&!unreadOnly?(reminders.data??[]).filter(reminder=>isDue(reminder,Math.floor(Date.now()/1000))):[]});
   useInboxDraftSelection({ items: drafts.entries.map(entry => ({ entry })), selectedKey: selectedDraft, setSelectedKey: setSelectedDraft,
     autoSelect: filter === "drafts", selectionEnabled: filter === "drafts", viewportWidthPx: width ?? 0, isNarrowHomeViewport: narrow });
   // The original selection hook receives the admitted scope key as its stable
@@ -313,7 +321,7 @@ export function InboxPane({
     hasPersonalSelection: filter === "drafts" && selectedDraft !== null,
     homeInboxWidthPx: width ?? 0,
     isLoading: failed || reads.failed || reads.unknown || !snapshot || !reads.state,
-    isMessagesMode: filter !== "drafts",
+    isMessagesMode: filter !== "drafts" && filter !== "reminders" && selectedReminder === null,
     isNarrowHomeViewport: narrow,
     selectedConversationId: selected,
     setAutoSelectedEventId: setSelected,
@@ -333,14 +341,22 @@ export function InboxPane({
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
   const openItem = (event: InboxEvent) => { if(event.channelId!==null)void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
   const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
-  const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
+  const hasSelection = filter === "reminders" || selectedReminder!==null ? Boolean(selectedReminder) : filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
   const showList = !singleAuxiliary && (!narrow || !hasSelection);
   const showDetail = !singleAuxiliary && (!narrow || hasSelection);
   const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
   const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(readItem(event))!) ?? 0));
-  const header = <InboxListHeader filter={filter} onFilterChange={(next) => {setProfileTarget(null);setFilter(next);}} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
+  const header = <InboxListHeader filter={filter} onFilterChange={(next) => {setProfileTarget(null);setSelectedReminder(null);setFilter(next);}} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
     unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
     onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items.map(readItem)), true))} />;
+  if (filter === "reminders") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
+    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
+    {showList?<section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60">{header}
+      <div className="-mt-13 flex min-h-0 flex-1 flex-col overflow-hidden pt-13" data-testid="home-inbox-reminders">
+        <RemindersPanel pubkey={reminderHost.pubkey} onSelectReminder={setSelectedReminder} selectedReminderId={selectedReminder} presentation="inbox-list"/>
+      </div></section>:null}
+    {showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:null}
+  </InboxLayout>;
   if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} participants={snapshot.people} entries={drafts.entries}
@@ -354,8 +370,10 @@ export function InboxPane({
     {showList ? <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showDetail ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
       {header}
       <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list" ref={scrollRef}>
-        {visibleRows.length > 0 ? <VirtualizedList estimateSize={96} getItemKey={(row) => row.scopeKey}
-          items={visibleRows} scrollRef={scrollRef} renderItem={(row) => {
+        {visibleInboxRows.length > 0 ? <VirtualizedList estimateSize={96} getItemKey={(row) => row.key}
+          items={visibleInboxRows} scrollRef={scrollRef} renderItem={(entry) => {
+          if(entry.kind==="reminder")return <ReminderInboxRow reminder={entry.reminder} source={reminderSources.get(entry.reminder.id)} selected={selectedReminder===entry.reminder.id} onSelect={()=>{setProfileTarget(null);setSelected(null);setSelectedReminder(entry.reminder.id);}}/>;
+          const row=entry.item;
           const item = row.item;
           if(item.channelId===null){
             const sender=truncatePubkey(item.pubkey);
@@ -369,7 +387,7 @@ export function InboxPane({
                 timestamp={formatItemTimestamp(row.latestActivityAt)}
                 unread={row.unreadCount>1?t("inbox.unreadCount",{count:row.unreadCount}):null}
                 label={typeLabel.text} channel={null} openLabel={t("inbox.openItem",{sender})}
-                onSelect={()=>{setProfileTarget(null);setSelected(row.scopeKey);if(!read)reads.write(inboxReadContexts(row.items.map(readItem),true));}}
+                onSelect={()=>{setSelectedReminder(null);setProfileTarget(null);setSelected(row.scopeKey);if(!read)reads.write(inboxReadContexts(row.items.map(readItem),true));}}
                 preview={<MessageContent className="inbox-preview-markdown text-inherit" interactive={false} content={feedPreview(item,locale)} mediaTags={item.tags}/>}
                 actions={<InboxRowActionButton disabled={reads.pending} label={t(read?"inbox.markUnread":"inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4"/></InboxRowActionButton>}/>
             </div></ContextMenuTrigger><ContextMenuContent><ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4"/>{t(read?"inbox.markUnread":"inbox.markRead")}</ContextMenuItem></ContextMenuContent></ContextMenu>;
@@ -383,8 +401,12 @@ export function InboxPane({
           const read = isRead(row);
           const mark = () => reads.write(inboxReadContexts(row.items.map(readItem), !read));
           const target = {principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey,...(conversation ? {conversationId:conversation.id} : {})};
+          const hasActiveReminder=Boolean(entry.dueReminder)||row.items.some(event=>reminderActions.activeReminderEventIds.has(event.id));
+          const sourceChannelId=item.tags.find(tag=>tag[0]==="h")?.[1];
+          const remind=()=>{if(sourceChannelId)reminderActions.openReminder({eventId:item.id,channelId:sourceChannelId,preview:item.content.slice(0,100),authorPubkey:item.pubkey});};
           return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
+              reminderDue={Boolean(entry.dueReminder)}
               sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
               avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
               timestamp={formatItemTimestamp(row.latestActivityAt)}
@@ -392,22 +414,24 @@ export function InboxPane({
               label={typeLabel.text}
               channel={typeLabel.channelLabel}
               openLabel={t("inbox.openItem", { sender })}
-              onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
+              onSelect={() => { setSelectedReminder(null);setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
               preview={<><MessageContent className="inbox-preview-markdown text-inherit" interactive={false}
                 videoReviewCommentRootId={getInboxVideoReviewCommentRootId({item,groupItems:row.items})}
                 content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
                 <InboxRowActionButton disabled={hiddenDm.isReopenPending(item.channelId)} label={t(hiddenDm.isReopenPending(item.channelId) ? "inbox.reopening" : "inbox.open")} onClick={() => openItem(item)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>
+                {reminderActions.available&&sourceChannelId?<InboxRowActionButton active={hasActiveReminder} label={t(hasActiveReminder?"reminders.created":"reminders.remindLater")} onClick={remind}><Clock className="h-4 w-4"/></InboxRowActionButton>:null}
               </>} />
           </div></ContextMenuTrigger><ContextMenuContent>
             <ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4" />{t(read ? "inbox.markUnread" : "inbox.markRead")}</ContextMenuItem>
             <ContextMenuSeparator /><ContextMenuItem disabled={hiddenDm.isReopenPending(item.channelId)} onSelect={() => openItem(item)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
+            {reminderActions.available&&sourceChannelId?<ContextMenuItem onSelect={remind}><Clock className="h-4 w-4"/>{t(hasActiveReminder?"reminders.created":"reminders.remindLater")}</ContextMenuItem>:null}
           </ContextMenuContent></ContextMenu>;
         }} /> : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
       </div>
     </section> : null}
-    {chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>setSelected(null):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+    {selectedReminder!==null&&showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>setSelected(null):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
       workspaceId={chosen.item.channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}

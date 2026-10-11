@@ -122,6 +122,9 @@
 //     final pulsePublishRequest = pulsePublishRequestFromJson(jsonString);
 //     final pulseQueryRequest = pulseQueryRequestFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
+//     final reminderPublishRequest = reminderPublishRequestFromJson(jsonString);
+//     final reminderSourceRequest = reminderSourceRequestFromJson(jsonString);
+//     final reminderView = reminderViewFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
 //     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
@@ -984,6 +987,23 @@ ReadMarkRequest readMarkRequestFromJson(String str) =>
 
 String readMarkRequestToJson(ReadMarkRequest data) =>
     json.encode(data.toJson());
+
+ReminderPublishRequest reminderPublishRequestFromJson(String str) =>
+    ReminderPublishRequest.fromJson(json.decode(str));
+
+String reminderPublishRequestToJson(ReminderPublishRequest data) =>
+    json.encode(data.toJson());
+
+ReminderSourceRequest reminderSourceRequestFromJson(String str) =>
+    ReminderSourceRequest.fromJson(json.decode(str));
+
+String reminderSourceRequestToJson(ReminderSourceRequest data) =>
+    json.encode(data.toJson());
+
+ReminderView reminderViewFromJson(String str) =>
+    ReminderView.fromJson(json.decode(str));
+
+String reminderViewToJson(ReminderView data) => json.encode(data.toJson());
 
 RoleMemberPage roleMemberPageFromJson(String str) =>
     RoleMemberPage.fromJson(json.decode(str));
@@ -12692,6 +12712,167 @@ class ReadMarkRequest {
     "contextKey": contextKey,
     "lastReadAt": lastReadAt,
     "version": version,
+  });
+}
+
+///Original reminder create/complete/snooze/cancel. Identity comes only from the
+///authenticated host; mutations select the actual current signed 30300 head. Source
+///messages are freshly authorized and read by the host; no caller-supplied preview, author,
+///kind, ciphertext or key is trusted.
+class ReminderPublishRequest {
+  final String? channelId;
+  final String? eventId;
+  final int? notBefore;
+  final String? note;
+  final ReminderOperation operation;
+  final String? sourceEventId;
+
+  ReminderPublishRequest({
+    this.channelId,
+    this.eventId,
+    this.notBefore,
+    this.note,
+    required this.operation,
+    this.sourceEventId,
+  });
+
+  factory ReminderPublishRequest.fromJson(Map<String, dynamic> json) =>
+      ReminderPublishRequest(
+        channelId: json["channelId"],
+        eventId: json["eventId"],
+        notBefore: json["notBefore"],
+        note: json["note"],
+        operation: reminderOperationValues.map[json["operation"]]!,
+        sourceEventId: json["sourceEventId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "eventId": eventId,
+    "notBefore": notBefore,
+    "note": note,
+    "operation": reminderOperationValues.reverse[operation],
+    "sourceEventId": sourceEventId,
+  });
+}
+
+enum ReminderOperation { CANCEL, COMPLETE, CREATE, SNOOZE }
+
+final reminderOperationValues = EnumValues({
+  "CANCEL": ReminderOperation.CANCEL,
+  "COMPLETE": ReminderOperation.COMPLETE,
+  "CREATE": ReminderOperation.CREATE,
+  "SNOOZE": ReminderOperation.SNOOZE,
+});
+
+///原 Reminder 目标引用重新读取；字段只是查找键，必须重做当前用户、channel scope 与事件签名/归属检查，不能以已解密提醒或目录缓存授予正文读取。
+class ReminderSourceRequest {
+  final String channelId;
+  final String eventId;
+
+  ReminderSourceRequest({required this.channelId, required this.eventId});
+
+  factory ReminderSourceRequest.fromJson(Map<String, dynamic> json) =>
+      ReminderSourceRequest(
+        channelId: json["channelId"],
+        eventId: json["eventId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"channelId": channelId, "eventId": eventId});
+}
+
+///Original Buzz 30300 author-only encrypted reminder, decrypted only by its own SERVER or
+///local CLIENT identity. A transient Relay read, never a Core body record. Embedded target
+///metadata is a historical preview, not current authorization.
+class ReminderView {
+  final ReminderContent content;
+  final int createdAt;
+  final String eventId;
+  final String id;
+  final int? notBefore;
+
+  ReminderView({
+    required this.content,
+    required this.createdAt,
+    required this.eventId,
+    required this.id,
+    this.notBefore,
+  });
+
+  factory ReminderView.fromJson(Map<String, dynamic> json) => ReminderView(
+    content: ReminderContent.fromJson(json["content"]),
+    createdAt: json["createdAt"],
+    eventId: json["eventId"],
+    id: json["id"],
+    notBefore: json["notBefore"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "content": content.toJson(),
+    "createdAt": createdAt,
+    "eventId": eventId,
+    "id": id,
+    "notBefore": notBefore,
+  });
+}
+
+class ReminderContent {
+  final String? note;
+  final ReminderStatus status;
+  final ReminderTarget? target;
+
+  ReminderContent({this.note, required this.status, this.target});
+
+  factory ReminderContent.fromJson(Map<String, dynamic> json) =>
+      ReminderContent(
+        note: json["note"],
+        status: reminderStatusValues.map[json["status"]]!,
+        target: json["target"] == null
+            ? null
+            : ReminderTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "note": note,
+    "status": reminderStatusValues.reverse[status],
+    "target": target?.toJson(),
+  });
+}
+
+enum ReminderStatus { CANCELLED, DONE, PENDING }
+
+final reminderStatusValues = EnumValues({
+  "cancelled": ReminderStatus.CANCELLED,
+  "done": ReminderStatus.DONE,
+  "pending": ReminderStatus.PENDING,
+});
+
+class ReminderTarget {
+  final String authorPubkey;
+  final String channelId;
+  final String eventId;
+  final String preview;
+
+  ReminderTarget({
+    required this.authorPubkey,
+    required this.channelId,
+    required this.eventId,
+    required this.preview,
+  });
+
+  factory ReminderTarget.fromJson(Map<String, dynamic> json) => ReminderTarget(
+    authorPubkey: json["authorPubkey"],
+    channelId: json["channelId"],
+    eventId: json["eventId"],
+    preview: json["preview"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authorPubkey": authorPubkey,
+    "channelId": channelId,
+    "eventId": eventId,
+    "preview": preview,
   });
 }
 

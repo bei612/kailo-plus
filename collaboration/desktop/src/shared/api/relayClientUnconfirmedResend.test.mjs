@@ -333,3 +333,25 @@ test("project and default repository creation recover exact IDs without a second
     assert.equal(signed,1);assert.equal(published,1);
   }
 });
+
+test("author-encrypted reminder recovery observes only its original author and event after restart", async () => {
+  reset(); const client=connectedClient(), relay="wss://reminders.test", author="b".repeat(64);
+  client.ensureConnected=async()=>{client.relayUrl=relay;};
+  const event={id:"a".repeat(64),pubkey:author,kind:30300,created_at:1,tags:[["d","personal"]],content:"encrypted",sig:"c".repeat(128)};
+  let signed=0,published=0,prepared;
+  const create=async()=>{signed++;return event;};
+  client.publishEvent=async()=>{published++;throw new RelayPublishUnknownError(event.id,"lost ACK");};
+  const observation={onPrepared:id=>{prepared=id;}};
+  await assert.rejects(client.publishReplaceableIntent("reminder","one",relay,[30300],create,false,observation,author),RelayPublishUnknownError);
+  assert.equal(prepared,event.id);
+  client.completeReplaceableIntent("reminder","one",relay,event.id);
+  observation.eventId=event.id;
+  for(const rows of [[],[{...event,pubkey:"d".repeat(64)}],[{...event,kind:30621}]]) {
+    client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[30300],authors:[author],limit:1});return rows;};
+    await assert.rejects(client.publishReplaceableIntent("reminder","one",relay,[30300],create,true,observation,author),RelayPublishUnknownError);
+  }
+  client.fetchEvents=async()=>[event];
+  assert.equal((await client.publishReplaceableIntent("reminder","one",relay,[30300],create,true,observation,author)).id,event.id);
+  await assert.rejects(client.publishReplaceableIntent("reminder","missing",relay,[30300],create,true,undefined,author),RelayPublishUnknownError);
+  assert.equal(signed,1);assert.equal(published,1);
+});

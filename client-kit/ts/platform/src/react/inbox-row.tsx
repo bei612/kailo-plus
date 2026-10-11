@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import { Bell } from "lucide-react";
+import { useUiT } from "./context";
 import { MESSAGE_MARKDOWN_CLASS, MENTION_CHIP_BASE_CLASSES } from "./composer/shared/ui/mentionChip";
 
 /** The Buzz Home row, with host-owned profile/Markdown/actions supplied as slots. */
@@ -6,6 +8,7 @@ export function InboxRow({
   id,
   selected,
   read,
+  reminderDue = false,
   sender,
   avatar,
   timestamp,
@@ -20,6 +23,7 @@ export function InboxRow({
   id: string;
   selected: boolean;
   read: boolean;
+  reminderDue?: boolean;
   sender: ReactNode;
   avatar?: ReactNode;
   timestamp: string;
@@ -31,6 +35,7 @@ export function InboxRow({
   openLabel: string;
   onSelect: () => void;
 }) {
+  const t = useUiT();
   const highlight = selected
     ? "color-mix(in srgb, hsl(var(--background)) 70%, hsl(var(--muted)) 30%)"
     : "color-mix(in srgb, hsl(var(--background)) 75%, hsl(var(--muted)) 25%)";
@@ -114,6 +119,7 @@ export function InboxRow({
                 </span>
               ) : null}
             </div>
+            {reminderDue ? <div className="mt-1 flex items-center gap-1 text-2xs font-medium text-amber-600/80 dark:text-amber-300/80" data-testid="home-inbox-reminder-due"><Bell className="h-3 w-3" />{t("reminders.due")}</div> : null}
             <div
               className={`mt-1.5 text-message [&_a]:font-medium [&_a]:text-current ${read ? "font-normal text-muted-foreground" : "font-semibold text-foreground"}`}
             >

@@ -122,6 +122,16 @@ capabilities:
   - pulse.publish
   tools: []
   workflow_kinds: []
+- id: collab.reminders
+  exposure: end_user
+  routes:
+  - /api/v1/reminders
+  - /api/v1/reminders/source
+  - /api/v1/reminders/publish
+  actions:
+  - reminders.publish
+  tools: []
+  workflow_kinds: []
 - id: collab.user_state
   exposure: end_user
   routes:

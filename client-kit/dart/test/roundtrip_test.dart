@@ -9,6 +9,30 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'Reminder wire preserves original status, optional fields and safe timestamps',
+    () {
+      final sample = jsonDecode(
+        File('../../contracts/samples/reminder.sample.json').readAsStringSync(),
+      );
+      expect(
+        (sample['requests'] as List)
+            .map((row) => ReminderPublishRequest.fromJson(row).toJson())
+            .toList(),
+        sample['requests'],
+      );
+      expect(
+        ReminderSourceRequest.fromJson(sample['source']).toJson(),
+        sample['source'],
+      );
+      expect(
+        (sample['views'] as List)
+            .map((row) => ReminderView.fromJson(row).toJson())
+            .toList(),
+        sample['views'],
+      );
+    },
+  );
   test('Native receiver preserves original batch and observe-only lookup', () {
     final sample = jsonDecode(
       File(

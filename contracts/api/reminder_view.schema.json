@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/reminder_view.schema.json",
+  "title": "ReminderView",
+  "description": "Original Buzz 30300 author-only encrypted reminder, decrypted only by its own SERVER or local CLIENT identity. A transient Relay read, never a Core body record. Embedded target metadata is a historical preview, not current authorization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "content", "createdAt", "eventId"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "notBefore": {"type": "integer", "minimum": 0},
+    "createdAt": {"type": "integer", "minimum": 0},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content": {
+      "title": "ReminderContent", "type": "object", "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"title": "ReminderStatus", "type": "string", "enum": ["pending", "done", "cancelled"]},
+        "note": {"type": "string"},
+        "target": {
+          "title": "ReminderTarget", "type": "object", "additionalProperties": false,
+          "required": ["eventId", "channelId", "preview", "authorPubkey"],
+          "properties": {
+            "eventId": {"type": "string"}, "channelId": {"type": "string"},
+            "preview": {"type": "string"}, "authorPubkey": {"type": "string"}
+          }
+        }
+      },
+      "anyOf": [{"required": ["target"]}, {"required": ["note"], "properties": {"note": {"minLength": 1}}}]
+    }
+  }
+}

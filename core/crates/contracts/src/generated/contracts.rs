@@ -6299,6 +6299,106 @@ pub struct ReadMarkRequest {
     pub version: i64,
 }
 
+/// Original reminder create/complete/snooze/cancel. Identity comes only from the
+/// authenticated host; mutations select the actual current signed 30300 head. Source
+/// messages are freshly authorized and read by the host; no caller-supplied preview, author,
+/// kind, ciphertext or key is trusted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderPublishRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    pub operation: ReminderOperation,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_event_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ReminderOperation {
+    #[serde(rename = "CANCEL")]
+    Cancel,
+
+    #[serde(rename = "COMPLETE")]
+    Complete,
+
+    #[serde(rename = "CREATE")]
+    Create,
+
+    #[serde(rename = "SNOOZE")]
+    Snooze,
+}
+
+/// 原 Reminder 目标引用重新读取；字段只是查找键，必须重做当前用户、channel scope 与事件签名/归属检查，不能以已解密提醒或目录缓存授予正文读取。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderSourceRequest {
+    pub channel_id: String,
+
+    pub event_id: String,
+}
+
+/// Original Buzz 30300 author-only encrypted reminder, decrypted only by its own SERVER or
+/// local CLIENT identity. A transient Relay read, never a Core body record. Embedded target
+/// metadata is a historical preview, not current authorization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderView {
+    pub content: ReminderContent,
+
+    pub created_at: i64,
+
+    pub event_id: String,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReminderContent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    pub status: ReminderStatus,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<ReminderTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReminderStatus {
+    Cancelled,
+
+    Done,
+
+    Pending,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderTarget {
+    pub author_pubkey: String,
+
+    pub channel_id: String,
+
+    pub event_id: String,
+
+    pub preview: String,
+}
+
 /// GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
 /// 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

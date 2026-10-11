@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
@@ -10,11 +10,18 @@ import type { ConversationView } from "@client-kit/contracts";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InboxPane, inboxEvents } from "./InboxPane";
+import { InboxPane as OriginalInboxPane, inboxEvents } from "./InboxPane";
+import { ReminderHostProvider, RemindMeLaterProvider, type ReminderHost } from "@client-kit/platform/react/reminders";
 import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
 const api=vi.hoisted(()=>({projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
+// Existing message-only cases run with no admitted reminder identity. Dedicated
+// reminder consumers below the shared host are exercised in reminders.test.tsx.
+const reminderHost:ReminderHost={scopeKey:"inbox-message-fixture",pubkey:"",query:async()=>[],
+  publish:async()=>{throw new Error("Reminder identity not admitted");},
+  source:async()=>{throw new Error("Reminder identity not admitted");},navigate:async()=>{throw new Error("Reminder identity not admitted");}};
+function InboxPane(props:ComponentProps<typeof OriginalInboxPane>){return <ReminderHostProvider host={reminderHost}><RemindMeLaterProvider><OriginalInboxPane {...props}/></RemindMeLaterProvider></ReminderHostProvider>;}
 vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));

@@ -359,3 +359,10 @@ export function fromRawAcpRuntimeCatalogEntry(
 // ── Backend provider discovery ────────────────────────────────────────────────
 
 // ── NIP-44 encrypt-to-self ───────────────────────────────────────────────────
+
+export function nip44EncryptToSelf(plaintext: string, expectedPubkey: string): Promise<string> {
+  return invokeTauri<string>("nip44_encrypt_to_self", {plaintext, expectedPubkey});
+}
+export function nip44DecryptFromSelf(ciphertext: string, expectedPubkey: string): Promise<string> {
+  return invokeTauri<string>("nip44_decrypt_from_self", {ciphertext, expectedPubkey});
+}

@@ -42,6 +42,7 @@ import { getHomeMessageCapabilities } from "@/features/home/lib/homeMessageCapab
 import { HomeLoadingState } from "@/features/home/ui/HomeLoadingState";
 import { InboxDetailPane } from "@/features/home/ui/InboxDetailPane";
 import { InboxListPane } from "@/features/home/ui/InboxListPane";
+import { useReminderHost, useRemindersQuery, ReminderDetailPane } from "@client-kit/platform/react/reminders";
 import { useChannelMessagesQuery, useToggleReactionMutation } from "@/features/messages/hooks";
 import { collectMessageMentionPubkeys } from "@/features/messages/lib/formatTimelineMessages";
 import { formatTime } from "@/features/messages/lib/dateFormatters";
@@ -96,6 +97,10 @@ export function HomeView({
     homeInboxWidthPx > 0 &&
     homeInboxWidthPx < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
   const [filter, setFilter] = React.useState<InboxFilter>("all");
+  const reminderHost = useReminderHost();
+  const reminders = useRemindersQuery(reminderHost.pubkey);
+  const [selectedReminderId, setSelectedReminderId] = React.useState<string | null>(null);
+  const selectedReminder = reminders.data?.find(reminder => reminder.id === selectedReminderId) ?? null;
   const [unreadOnly, setUnreadOnly] = React.useState(false);
   // Explicit selections are mirrored to the URL (`?item=`), so back/forward
   // restores the detail pane each history entry was showing and reloads
@@ -104,7 +109,7 @@ export function HomeView({
   const { applyPatch: applyInboxSearchPatch, values: inboxSearchValues } =
     useHistorySearchState(INBOX_SEARCH_KEYS);
   const isDrafts = filter === "drafts";
-  const isMessagesMode = !isDrafts;
+  const isMessagesMode = !isDrafts && filter !== "reminders" && selectedReminderId === null;
   // Drafts are only listed (and selectable) under the dedicated Drafts filter.
   const {
     activeCount: activeDraftCount,
@@ -426,7 +431,7 @@ export function HomeView({
     coldResolutionPending,
     filteredItems,
     hasFeed: Boolean(feed),
-    hasPersonalSelection: selectedDraftItem !== null,
+    hasPersonalSelection: selectedDraftItem !== null || selectedReminderId !== null,
     homeInboxWidthPx,
     isLoading,
     isMessagesMode,
@@ -458,10 +463,11 @@ export function HomeView({
 
       setUnreadBoundary(null);
       setSelectedDraftKey(null);
+      setSelectedReminderId(null);
       setFilter(nextFilter);
 
-      if (nextFilter === "drafts" || selection.preserveSelection) {
-        if (nextFilter === "drafts") {
+      if (nextFilter === "drafts" || nextFilter === "reminders" || selection.preserveSelection) {
+        if (nextFilter === "drafts" || nextFilter === "reminders") {
           setAutoSelectedEventId(null);
           applyInboxSearchPatch({ item: null });
         }
@@ -528,7 +534,7 @@ export function HomeView({
     new Set([...availableChannelIds].filter(id => coreReads.visibleChannels.has(id))),
     locale,
   );
-  const detailMode = isDrafts || selectedDraftItem ? "drafts" : "messages";
+  const detailMode = filter === "reminders" || selectedReminderId !== null ? "reminders" : isDrafts || selectedDraftItem ? "drafts" : "messages";
   const {
     auxiliaryPaneWidthPx,
     effectiveInboxListWidthPx,
@@ -540,11 +546,11 @@ export function HomeView({
     hasAuxiliaryPane,
     homeWidthPx: homeInboxWidthPx,
     inboxListWidthPx,
-    isDrafts: detailMode === "drafts",
+    isDrafts: detailMode !== "messages",
     isMessagesMode: detailMode === "messages",
     isNarrow: isNarrowHomeViewport,
     isSinglePanelAuxiliaryView,
-    selectedDraft: selectedDraftItem !== null,
+    selectedDraft: selectedDraftItem !== null || selectedReminderId !== null,
     selectedEvent: selectedEventId !== null,
     threadPanelWidthPx,
   });
@@ -573,6 +579,7 @@ export function HomeView({
               isReopenErrored={hiddenDm.isReopenErrored}
               isReopenUnknown={hiddenDm.isReopenUnknown}
               onSelect={(itemId) => {
+                setSelectedReminderId(null);
                 const item = findInboxItemByEventId(inboxItems, itemId);
                 setUnreadBoundary(
                   item && !effectiveDoneSet.has(item.id)
@@ -587,6 +594,7 @@ export function HomeView({
                 markItemRead(itemId);
               }}
               onSelectDraft={(draftKey) => {
+                setSelectedReminderId(null);
                 setUnreadBoundary(null);
                 handleUserSelectItem(null);
                 setSelectedDraftKey(draftKey);
@@ -594,6 +602,13 @@ export function HomeView({
               onUnreadOnlyChange={setUnreadOnly}
               selectedConversationId={selectedConversationId}
               selectedDraftKey={selectedDraftKey}
+              selectedReminderId={selectedReminderId}
+              onSelectReminder={(id) => {
+                setUnreadBoundary(null);
+                handleUserSelectItem(null);
+                setSelectedDraftKey(null);
+                setSelectedReminderId(id);
+              }}
               showRightDivider={showListPane && showDetailPane}
               unreadOnly={unreadOnly}
             />
@@ -696,6 +711,10 @@ export function HomeView({
               replies={selectedItemReplies}
             />
           ) : null}
+          {showDetailPane && detailMode === "reminders" ? <ReminderDetailPane
+            pubkey={reminderHost.pubkey} reminder={selectedReminder}
+            onBack={isSinglePanelDraftDetailView ? () => setSelectedReminderId(null) : undefined}
+          /> : null}
           {showDetailPane && detailMode === "drafts" ? (
             <DraftDetailPane
               item={selectedDraftItem}

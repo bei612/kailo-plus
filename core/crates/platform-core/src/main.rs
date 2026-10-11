@@ -65,6 +65,7 @@ mod projects;
 mod protocol_session;
 mod publish_reconcile;
 mod pulse;
+mod reminders;
 mod resource_provision;
 mod role_reconcile;
 mod roles;

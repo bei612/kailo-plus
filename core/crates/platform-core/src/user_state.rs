@@ -587,7 +587,7 @@ async fn require_visible_workspace(
     })
 }
 
-async fn require_visible_channel(
+pub(crate) async fn require_visible_channel(
     state: &BffState,
     ctx: &ExecutionContext,
     channel_id: Uuid,

@@ -6,6 +6,24 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn reminder_wire_preserves_original_status_optional_fields_and_safe_timestamps() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("reminder.sample.json")).unwrap(),
+    )
+    .unwrap();
+    let requests: Vec<contracts::ReminderPublishRequest> =
+        serde_json::from_value(sample["requests"].clone()).unwrap();
+    let source: contracts::ReminderSourceRequest =
+        serde_json::from_value(sample["source"].clone()).unwrap();
+    let views: Vec<contracts::ReminderView> =
+        serde_json::from_value(sample["views"].clone()).unwrap();
+    assert_eq!(
+        serde_json::json!({"requests":requests,"source":source,"views":views}),
+        sample
+    );
+}
+
+#[test]
 fn delay_deadline_preserves_independent_duration_and_legacy_absence() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("agent-task-delay.sample.json")).unwrap(),

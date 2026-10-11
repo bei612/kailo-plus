@@ -4327,6 +4327,68 @@ export interface ReadMarkRequest {
 }
 
 /**
+ * Original reminder create/complete/snooze/cancel. Identity comes only from the
+ * authenticated host; mutations select the actual current signed 30300 head. Source
+ * messages are freshly authorized and read by the host; no caller-supplied preview, author,
+ * kind, ciphertext or key is trusted.
+ */
+export interface ReminderPublishRequest {
+    channelId?:     string;
+    eventId?:       string;
+    notBefore?:     number;
+    note?:          string;
+    operation:      ReminderOperation;
+    sourceEventId?: string;
+}
+
+export enum ReminderOperation {
+    Cancel = "CANCEL",
+    Complete = "COMPLETE",
+    Create = "CREATE",
+    Snooze = "SNOOZE",
+}
+
+/**
+ * 原 Reminder 目标引用重新读取；字段只是查找键，必须重做当前用户、channel scope 与事件签名/归属检查，不能以已解密提醒或目录缓存授予正文读取。
+ */
+export interface ReminderSourceRequest {
+    channelId: string;
+    eventId:   string;
+}
+
+/**
+ * Original Buzz 30300 author-only encrypted reminder, decrypted only by its own SERVER or
+ * local CLIENT identity. A transient Relay read, never a Core body record. Embedded target
+ * metadata is a historical preview, not current authorization.
+ */
+export interface ReminderView {
+    content:    ReminderContent;
+    createdAt:  number;
+    eventId:    string;
+    id:         string;
+    notBefore?: number;
+}
+
+export interface ReminderContent {
+    note?:   string;
+    status:  ReminderStatus;
+    target?: ReminderTarget;
+}
+
+export enum ReminderStatus {
+    Cancelled = "cancelled",
+    Done = "done",
+    Pending = "pending",
+}
+
+export interface ReminderTarget {
+    authorPubkey: string;
+    channelId:    string;
+    eventId:      string;
+    preview:      string;
+}
+
+/**
  * GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
  * 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
  */

@@ -1,8 +1,10 @@
 import { useUiT } from "../context";
+import { useRemindLater } from "../reminders/ui/RemindMeLaterProvider";
 import {
   BellOff,
   BellRing,
   Copy,
+  Clock,
   CornerUpLeft,
   EllipsisVertical,
   Link2,
@@ -89,6 +91,8 @@ function MoreActionsMenu({
   isUnread?: boolean;
 }) {
   const translateUi = useUiT();
+  const reminders = useRemindLater();
+  const reminderChannel = message.tags?.find(tag=>tag[0]==="h")?.[1];
   const hasCopyActions = !message.pending;
   // Original Buzz menu-to-editor focus transfer: wait for Radix to close,
   // otherwise its exit focus restoration steals the editor's first keys.
@@ -176,6 +180,10 @@ function MoreActionsMenu({
           </DropdownMenuItem>
         ) : null}
 
+        {reminders.available && reminderChannel && !message.pending ? <DropdownMenuItem
+          onClick={()=>reminders.openReminder({eventId:message.id,channelId:reminderChannel,preview:message.body.slice(0,100),authorPubkey:message.pubkey??""})}>
+          <Clock className="h-4 w-4" />{translateUi("reminders.remindLater")}
+        </DropdownMenuItem> : null}
         {onSendToChannel ? (
           <DropdownMenuItem
             aria-label={translateUi("buzz.sendToChannel")}

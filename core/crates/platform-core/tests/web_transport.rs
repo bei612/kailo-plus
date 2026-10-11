@@ -18,6 +18,64 @@ use uuid::Uuid;
 mod common;
 use common::Env;
 
+/// Run only against this batch's deployed BFF/Relay admission. This is not a
+/// substitute for the signed-plaintext unit check or an old deployment probe.
+#[tokio::test]
+async fn reminder_receipt_recovery_does_not_accept_a_different_intent() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let fx = common::provision_live_workspace(&http, &e, &pool, &token)
+        .await
+        .expect("准备真实 Workspace");
+    let outcome = std::panic::AssertUnwindSafe(async {
+        let (status, source) = bff(&http, &e, &fx.subject, reqwest::Method::POST,
+            &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+            Some(serde_json::json!({"content":"reminder recovery source"}))).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{source}");
+        let channel: Uuid = sqlx::query_scalar(
+            "select channel_id from projection.workspace_buzz_binding where workspace_id=$1 and state='ACTIVE'",
+        ).bind(fx.workspace).fetch_one(&pool).await.unwrap();
+        let publish = |key: Uuid, request: serde_json::Value| {
+            http.post(format!("{}/api/v1/reminders/publish", e.bff_url))
+                .header("x-platform-oidc-issuer", &e.oidc_issuer)
+                .header("x-platform-oidc-subject", &fx.subject)
+                .header("idempotency-key", key.to_string()).json(&request).send()
+        };
+        let key = Uuid::new_v4();
+        let due = chrono::Utc::now().timestamp() + 120;
+        let request = serde_json::json!({"operation":"CREATE","channelId":channel,
+            "sourceEventId":source["eventId"],"notBefore":due,"note":"private reminder note"});
+        let first = publish(key, request.clone()).await.unwrap();
+        assert_eq!(first.status(), reqwest::StatusCode::OK);
+        let first: serde_json::Value = first.json().await.unwrap();
+        let retry = publish(key, request.clone()).await.unwrap();
+        assert_eq!(retry.status(), reqwest::StatusCode::OK);
+        assert_eq!(retry.json::<serde_json::Value>().await.unwrap()["eventId"], first["eventId"]);
+        for (field, value) in [("note", serde_json::json!("changed note")),
+            ("notBefore", serde_json::json!(due + 1))] {
+            let mut changed = request.clone(); changed[field] = value;
+            assert_eq!(publish(key, changed).await.unwrap().status(), reqwest::StatusCode::CONFLICT);
+        }
+        let snooze_key = Uuid::new_v4();
+        let snooze = publish(snooze_key, serde_json::json!({"operation":"SNOOZE",
+            "eventId":first["eventId"],"notBefore":due + 2})).await.unwrap();
+        assert_eq!(snooze.status(), reqwest::StatusCode::OK);
+        assert_eq!(publish(snooze_key, serde_json::json!({"operation":"CANCEL",
+            "eventId":first["eventId"]})).await.unwrap().status(), reqwest::StatusCode::CONFLICT);
+        // The original CREATE event has been replaced, so its old receipt is
+        // no longer independently observable. Do not publish again or return OK.
+        let replaced = publish(key, request).await.unwrap();
+        assert_eq!(replaced.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(replaced.json::<serde_json::Value>().await.unwrap()["class"], "UNKNOWN");
+    }).catch_unwind().await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 /// 以网关投影的两条 header 调 BFF。这是 Browser 唯一能影响的输入面。
 async fn bff(
     http: &reqwest::Client,

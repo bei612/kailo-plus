@@ -1,0 +1,14 @@
+{
+  "requests": [
+    {"operation":"CREATE","channelId":"12345678-1234-4234-8234-123456789012","sourceEventId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","notBefore":0,"note":"个人提醒"},
+    {"operation":"COMPLETE","eventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    {"operation":"SNOOZE","eventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","notBefore":9007199254740991},
+    {"operation":"CANCEL","eventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  ],
+  "source": {"channelId":"12345678-1234-4234-8234-123456789012","eventId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "views": [
+    {"id":"owned","eventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","createdAt":1,"notBefore":0,"content":{"status":"pending","target":{"eventId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","channelId":"12345678-1234-4234-8234-123456789012","authorPubkey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","preview":"原始预览"}}},
+    {"id":"done","eventId":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","createdAt":2,"content":{"status":"done","note":"personal"}},
+    {"id":"cancelled","eventId":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","createdAt":3,"content":{"status":"cancelled","note":"cancelled"}}
+  ]
+}

@@ -128,6 +128,40 @@ fn backup_identity(state: &AppState, expected_pubkey: &str) -> Result<nostr::Key
     Ok(keys)
 }
 
+/// Fixed Buzz NIP-44 self encryption; the expected identity fences account changes.
+#[tauri::command]
+pub fn nip44_encrypt_to_self(
+    plaintext: String,
+    expected_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let keys = state.signing_keys()?;
+    if keys.public_key().to_hex() != expected_pubkey {
+        return Err("reminder identity changed".into());
+    }
+    nostr::nips::nip44::encrypt(
+        keys.secret_key(),
+        &keys.public_key(),
+        &plaintext,
+        nostr::nips::nip44::Version::V2,
+    )
+    .map_err(|_| "nip44 encrypt failed".into())
+}
+
+#[tauri::command]
+pub fn nip44_decrypt_from_self(
+    ciphertext: String,
+    expected_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let keys = state.signing_keys()?;
+    if keys.public_key().to_hex() != expected_pubkey {
+        return Err("reminder identity changed".into());
+    }
+    nostr::nips::nip44::decrypt(keys.secret_key(), &keys.public_key(), &ciphertext)
+        .map_err(|_| "nip44 decrypt failed".into())
+}
+
 #[tauri::command]
 pub fn get_nsec(expected_pubkey: String, state: State<'_, AppState>) -> Result<String, String> {
     let keys = backup_identity(&state, &expected_pubkey)?;

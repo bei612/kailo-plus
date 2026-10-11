@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/reminder_source_request.schema.json",
+  "title": "ReminderSourceRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channelId", "eventId"],
+  "properties": {
+    "channelId": {"type": "string", "format": "uuid"},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "description": "原 Reminder 目标引用重新读取；字段只是查找键，必须重做当前用户、channel scope 与事件签名/归属检查，不能以已解密提醒或目录缓存授予正文读取。"
+}

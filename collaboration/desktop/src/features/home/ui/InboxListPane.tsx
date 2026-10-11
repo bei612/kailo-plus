@@ -1,8 +1,9 @@
-import { ExternalLink, MailOpen } from "lucide-react";
+import { Clock, ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
 import { InboxListHeader, InboxEmptyList, InboxRowActionButton, InboxReopenStatus } from "@client-kit/platform/react/inbox-surface";
 import { useLocale, useT } from "@client-kit/platform/react/context";
+import { RemindersPanel, useReminderHost, useRemindLater, useRemindersQuery, useReminderSources, buildInboxListRows, isDue, ReminderInboxRow, type Reminder } from "@client-kit/platform/react/reminders";
 
 import {
   getInboxTypeLabel,
@@ -48,6 +49,8 @@ type InboxListPaneProps = {
   onUnreadOnlyChange: (checked: boolean) => void;
   selectedConversationId: string | null;
   selectedDraftKey: string | null;
+  selectedReminderId: string | null;
+  onSelectReminder: (id: string) => void;
   showRightDivider?: boolean;
   unreadOnly: boolean;
   isReopenPending?: (channelId: string) => boolean;
@@ -72,6 +75,8 @@ export function InboxListPane({
   onUnreadOnlyChange,
   selectedConversationId,
   selectedDraftKey,
+  selectedReminderId,
+  onSelectReminder,
   showRightDivider = false,
   unreadOnly,
   isReopenPending,
@@ -80,6 +85,11 @@ export function InboxListPane({
 }: InboxListPaneProps) {
   const t = useT();
   const locale = useLocale();
+  const reminderHost = useReminderHost();
+  const reminderActions = useRemindLater();
+  const reminders=useRemindersQuery(reminderHost.pubkey);
+  const reminderSources=useReminderSources(reminders.data??[]);
+  const visibleInboxRows=buildInboxListRows({items,reminders:filter==="all"&&!unreadOnly?(reminders.data??[]).filter(reminder=>isDue(reminder,Math.floor(Date.now()/1000))):[]});
   const isDrafts = filter === "drafts";
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const unreadVisibleItemCount = React.useMemo(
@@ -95,7 +105,7 @@ export function InboxListPane({
     }
   }, [doneSet, items, onMarkRead]);
 
-  const renderItem = (item: InboxItem) => {
+  const renderItem = (item: InboxItem, dueReminder?: Reminder) => {
     const isSelected = item.conversationId === selectedConversationId;
     const isDone = doneSet.has(item.id);
     const isReopening = Boolean(item.item.channelId && isReopenPending?.(item.item.channelId));
@@ -104,11 +114,16 @@ export function InboxListPane({
     const typeLabel = getInboxTypeLabel(item, locale);
     const isSenderAgent = agentPubkeys?.has(normalizePubkey(item.item.pubkey)) === true;
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
+    const hasActiveReminder=Boolean(dueReminder)||[item.id,...item.groupItems.map(event=>event.id)].some(id=>reminderActions.activeReminderEventIds.has(id));
+    const remind = () => {
+      if (item.item.channelId) reminderActions.openReminder({ eventId: item.item.id, channelId: item.item.channelId, preview: item.item.content.slice(0, 100), authorPubkey: item.item.pubkey });
+    };
     const row = (
       <InboxRow
         id={item.id}
         selected={isSelected}
         read={isDone}
+        reminderDue={Boolean(dueReminder)}
         openLabel={t("inbox.openItem", { sender: item.senderLabel })}
         onSelect={() => onSelect(item.id)}
         timestamp={item.timestampLabel}
@@ -177,6 +192,7 @@ export function InboxListPane({
             >
               <ExternalLink className="!h-4 !w-4" />
             </InboxRowActionButton>:null}
+            {reminderActions.available && item.item.channelId ? <InboxRowActionButton active={hasActiveReminder} label={t(hasActiveReminder?"reminders.created":"reminders.remindLater")} onClick={remind}><Clock className="!h-4 !w-4" /></InboxRowActionButton> : null}
           </>
         }
       />
@@ -209,6 +225,7 @@ export function InboxListPane({
             <ExternalLink className="h-4 w-4" />
             {openLabel}
           </ContextMenuItem></>:null}
+          {reminderActions.available && item.item.channelId ? <ContextMenuItem onClick={remind}><Clock className="h-4 w-4" />{t(hasActiveReminder?"reminders.created":"reminders.remindLater")}</ContextMenuItem> : null}
         </ContextMenuContent>
       </ContextMenu>
     );
@@ -225,7 +242,12 @@ export function InboxListPane({
         unreadOnly={unreadOnly} onUnreadOnlyChange={onUnreadOnlyChange} unreadCount={unreadVisibleItemCount}
         onMarkAllRead={handleMarkAllRead} />
 
-      {isDrafts ? (
+      {filter === "reminders" ? (
+        <div className="-mt-13 flex min-h-0 flex-1 flex-col overflow-hidden pt-13" data-testid="home-inbox-reminders">
+          <RemindersPanel pubkey={reminderHost.pubkey} onSelectReminder={onSelectReminder}
+            selectedReminderId={selectedReminderId} presentation="inbox-list" />
+        </div>
+      ) : isDrafts ? (
         <div
           className="-mt-13 flex min-h-0 flex-1 flex-col overflow-hidden pt-13"
           data-testid="home-inbox-drafts"
@@ -243,14 +265,12 @@ export function InboxListPane({
           data-testid="home-inbox-list"
           ref={scrollRef}
         >
-          {items.length > 0 ? (
+          {visibleInboxRows.length > 0 ? (
             <VirtualizedList
               estimateSize={96}
-              getItemKey={(item) =>
-                `${item.item.channelId ?? ""}:${item.conversationId}`
-              }
-              items={items}
-              renderItem={(item) => renderItem(item)}
+              getItemKey={(row) => row.key}
+              items={visibleInboxRows}
+              renderItem={(row) => row.kind==="inbox"?renderItem(row.item,row.dueReminder):<ReminderInboxRow reminder={row.reminder} source={reminderSources.get(row.reminder.id)} selected={selectedReminderId===row.reminder.id} onSelect={()=>onSelectReminder(row.reminder.id)} />}
               scrollRef={scrollRef}
             />
           ) : (

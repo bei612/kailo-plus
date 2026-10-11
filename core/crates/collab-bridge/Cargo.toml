@@ -9,7 +9,7 @@ contracts = { path = "../contracts" }
 buzz-core = { path = "../../../collaboration/crates/buzz-core" }
 buzz-sdk = { path = "../../../collaboration/crates/buzz-sdk", features = ["media"] }
 infer = "0.19"
-nostr = { version = "0.44", default-features = false, features = ["std"] }
+nostr = { version = "0.44", default-features = false, features = ["std", "nip44"] }
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"

@@ -71,6 +71,20 @@ export async function queryProjects(request:ProjectsQueryRequest):Promise<import
   return call({method:"POST",path:"/api/v1/projects/query",body:request});
 }
 
+export async function queryReminders():Promise<{pubkey:string;reminders:import("@client-kit/contracts").ReminderView[]}> {
+  return call({method:"GET",path:"/api/v1/reminders"});
+}
+export async function reminderSource(request:import("@client-kit/contracts").ReminderSourceRequest):Promise<{event:BuzzEvent}> {
+  return call({method:"POST",path:"/api/v1/reminders/source",body:request});
+}
+export async function publishReminder(request:import("@client-kit/contracts").ReminderPublishRequest,idempotencyKey:string):Promise<{eventId:string;operationId:string}> {
+  const path="/api/v1/reminders/publish";
+  const receipt=unwrap<{eventId:string;operationId:string}>({method:"POST",path},await transport.exchange(path,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request)}));
+  if(!receipt?.eventId||!receipt.operationId)throw new TransportError("Reminder publication outcome unknown");
+  return receipt;
+}
+
 export async function queryPulse(request: PulseQueryRequest): Promise<{events:BuzzEvent[];mediaPaths:Record<string,string>}> {
   const page = await call<{events: BuzzEvent[];mediaPaths:Record<string,string>}>({method: "POST", path: "/api/v1/pulse/query", body: request});
   if (!Array.isArray(page.events)) throw new TransportError("Invalid Pulse response");

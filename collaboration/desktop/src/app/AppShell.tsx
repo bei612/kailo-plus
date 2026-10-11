@@ -56,6 +56,7 @@ import { useT } from "@client-kit/platform/react/context";
 import { ReadFailure } from "@client-kit/platform/react/ui";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
+import { NativeReminderHost } from "@/features/platform/ReminderHost";
 
 export function AppShell() {
   const t=useT();
@@ -379,6 +380,7 @@ export function AppShell() {
     selectedView,
   });
   return (
+    <NativeReminderHost>
     <EncryptedBackupProvider key={`${nativeSession.devicePubkey}:${activeCommunity.relayUrl}:${platformSession.data?.platformSessionId ?? ""}`}
       onOpenSettings={() => handleOpenSettings("profile")}>
     <ChannelNavigationProvider channels={channels}>
@@ -541,5 +543,6 @@ export function AppShell() {
       </AppShellProvider>
     </ChannelNavigationProvider>
     </EncryptedBackupProvider>
+    </NativeReminderHost>
   );
 }

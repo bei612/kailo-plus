@@ -1,0 +1,92 @@
+import { act } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../src/i18n";
+import { TransportError } from "../src/transport";
+import { ReminderHostProvider, RemindMeLaterProvider, useRemindLater, useReminderMutations, RemindersPanel, buildInboxListRows, parseReminderContent, parseNotBefore, type ReminderHost, type Reminder } from "../src/react/reminders";
+import { isDue, groupReminders } from "../src/react/reminders/lib/reminderFilters";
+import { parseCustomDateTime } from "../src/react/reminders/lib/timePresets";
+import { render, click, button } from "./render";
+
+const pubkey="a".repeat(64),eventId="b".repeat(64),resultId="c".repeat(64);
+const target={eventId,channelId:"12345678-1234-4234-8234-123456789012",preview:"original message",authorPubkey:pubkey};
+const reminder=(id="one",time=1):Reminder=>({id,eventId,createdAt:0,notBefore:time,content:parseReminderContent(JSON.stringify({status:"pending",target}))!});
+function host():ReminderHost {return {scopeKey:"tenant:server",pubkey,query:vi.fn().mockResolvedValue([]),publish:vi.fn().mockResolvedValue({eventId:resultId}),source:vi.fn().mockResolvedValue({authorLabel:"Author",avatarUrl:null,channel:{channelType:"public"},channelLabel:"original"}),navigate:vi.fn().mockResolvedValue(undefined)};}
+function Cache({children}:{children:React.ReactNode}) {return <QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})}>{children}</QueryClientProvider>;}
+beforeEach(()=>{localStorage.clear();setLocale("en");});
+
+describe("original author-encrypted reminder consumers",()=>{
+  it("keeps original canonical not_before and malformed plaintext behavior",()=>{
+    for(const raw of ["01","-1","+1"," 1","1.0",String(Number.MAX_SAFE_INTEGER+1)])expect(parseNotBefore(raw)).toBeUndefined();
+    expect(parseNotBefore("0")).toBe(0);
+    expect(parseReminderContent('{"status":"pending","note":"personal"}')?.note).toBe("personal");
+    for(const text of ['[]','{"status":"pending"}','{"status":"unknown","note":"x"}','{"status":"pending","target":{}}'])expect(parseReminderContent(text)).toBeNull();
+    expect(parseCustomDateTime("2000-01-01","09:00")).toBeNull();
+  });
+  it("merges due reminders into original grouped rows without duplicating their messages",()=>{
+    const one=reminder(),orphan={...reminder("orphan",3),content:{...reminder().content,target:{...target,eventId:"d".repeat(64)}}};
+    const item={id:eventId,item:{id:eventId},groupItems:[{id:eventId}],conversationId:"same-thread",latestActivityAt:0};
+    const rows=buildInboxListRows({items:[item],reminders:[one,orphan]});
+    expect(rows.map(row=>row.kind)).toEqual(["reminder","inbox"]);
+    expect(rows[1]).toMatchObject({item,dueReminder:one,sortAt:1});
+    expect(isDue(one,1)).toBe(true);expect(isDue(one,0)).toBe(false);
+    expect(groupReminders([one]).flatMap(group=>group.reminders)).toEqual([one]);
+  });
+  it.each(["en","zh-CN"] as const)("uses the original dialog and preset to invoke the actual typed host (%s)",async locale=>{
+    setLocale(locale);const h=host();
+    function Trigger(){const reminders=useRemindLater();return <button onClick={()=>reminders.openReminder(target)}>Open original</button>;}
+    const root=await render(<Cache><ReminderHostProvider host={h}><RemindMeLaterProvider pubkey={pubkey}><Trigger/></RemindMeLaterProvider></ReminderHostProvider></Cache>);
+    await click(button(root,"Open original"));
+    const preset=[...document.querySelectorAll("button")].find(b=>b.textContent===(locale==="en"?"In 30 minutes":"30 分钟后"))!;
+    await click(preset);
+    expect(h.publish).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(h.publish).mock.calls[0]?.[0]).toEqual({operation:"CREATE",channelId:target.channelId,sourceEventId:eventId,notBefore:expect.any(Number)});
+    expect(vi.mocked(h.publish).mock.calls[0]?.[2]).toBe(false);
+  });
+  it("retains only the same intent and original event reference after UNKNOWN/remount",async()=>{
+    const h=host();let mutations!:ReturnType<typeof useReminderMutations>;
+    function Consumer(){mutations=useReminderMutations(pubkey);return null;}
+    vi.mocked(h.publish).mockImplementationOnce(async(_request,_key,_observe,observation)=>{observation.onPrepared(resultId);throw new TransportError("lost acknowledgement");});
+    await render(<Cache><ReminderHostProvider host={h}><Consumer/></ReminderHostProvider></Cache>);
+    await act(async()=>{await expect(mutations.create.mutateAsync({target,notBefore:1,note:"private note"})).rejects.toThrow("lost acknowledgement");});
+    const stored=[...Array(localStorage.length)].map((_,i)=>localStorage.getItem(localStorage.key(i)!)).join();
+    expect(stored).toContain(resultId);expect(stored).not.toContain("private note");expect(stored).not.toContain(target.preview);
+    const key=vi.mocked(h.publish).mock.calls[0]![1];
+    await render(<Cache><ReminderHostProvider host={h}><Consumer/></ReminderHostProvider></Cache>);
+    await act(async()=>{await expect(mutations.create.mutateAsync({target,notBefore:2,note:"changed note"})).rejects.toThrow("outcome unknown");});
+    expect(h.publish).toHaveBeenCalledTimes(1);
+    expect([...Array(localStorage.length)].map((_,i)=>localStorage.getItem(localStorage.key(i)!)).join()).toBe(stored);
+    await act(async()=>{await mutations.create.mutateAsync({target,notBefore:1,note:"private note"});});
+    expect(vi.mocked(h.publish).mock.calls[1]?.[1]).toBe(key);
+    expect(vi.mocked(h.publish).mock.calls[1]?.[2]).toBe(true);
+    expect(vi.mocked(h.publish).mock.calls[1]?.[3].eventId).toBe(resultId);
+    expect([...Array(localStorage.length)].map((_,i)=>localStorage.key(i)).some(key=>key?.includes("reminder-publication"))).toBe(false);
+  });
+  it("does not report a different operation or an old unbound recovery slot as success",async()=>{
+    const h=host();let mutations!:ReturnType<typeof useReminderMutations>;
+    function Consumer(){mutations=useReminderMutations(pubkey);return null;}
+    vi.mocked(h.publish).mockImplementationOnce(async(_request,_key,_observe,observation)=>{observation.onPrepared(resultId);throw new TransportError("lost acknowledgement");});
+    await render(<Cache><ReminderHostProvider host={h}><Consumer/></ReminderHostProvider></Cache>);
+    await act(async()=>{await expect(mutations.snooze.mutateAsync({reminder:reminder(),notBefore:10})).rejects.toThrow("lost acknowledgement");});
+    const slot=[...Array(localStorage.length)].map((_,i)=>localStorage.key(i)!).find(key=>key.includes("reminder-publication"))!;
+    const stored=localStorage.getItem(slot)!;
+    await act(async()=>{await expect(mutations.cancel.mutateAsync(reminder())).rejects.toThrow("outcome unknown");});
+    expect(h.publish).toHaveBeenCalledTimes(1);expect(localStorage.getItem(slot)).toBe(stored);
+    const {digest:_,...old}=JSON.parse(stored);localStorage.setItem(slot,JSON.stringify(old));
+    await act(async()=>{await expect(mutations.snooze.mutateAsync({reminder:reminder(),notBefore:10})).rejects.toThrow("outcome unknown");});
+    expect(h.publish).toHaveBeenCalledTimes(1);expect(localStorage.getItem(slot)).toBe(JSON.stringify(old));
+  });
+  it("keeps complete, snooze and cancel on the original head rather than copying plaintext",async()=>{
+    const h=host();let mutations!:ReturnType<typeof useReminderMutations>;
+    function Consumer(){mutations=useReminderMutations(pubkey);return null;}
+    await render(<Cache><ReminderHostProvider host={h}><Consumer/></ReminderHostProvider></Cache>);
+    await act(async()=>{await mutations.complete.mutateAsync(reminder());await mutations.snooze.mutateAsync({reminder:reminder(),notBefore:10});await mutations.cancel.mutateAsync(reminder());});
+    expect(vi.mocked(h.publish).mock.calls.map(call=>call[0])).toEqual([{operation:"COMPLETE",eventId},{operation:"SNOOZE",eventId,notBefore:10},{operation:"CANCEL",eventId}]);
+  });
+  it("does not present a failed authorized read as No reminders",async()=>{
+    const h=host();vi.mocked(h.query).mockRejectedValue(new Error("revoked"));
+    const root=await render(<Cache><ReminderHostProvider host={h}><RemindersPanel pubkey={pubkey}/></ReminderHostProvider></Cache>);
+    await vi.waitFor(()=>expect(root.querySelector('[role="status"]')).not.toBeNull());
+    expect(root.textContent).not.toContain("No reminders");
+  });
+});

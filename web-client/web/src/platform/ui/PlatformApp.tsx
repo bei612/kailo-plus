@@ -65,6 +65,7 @@ import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-c
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
+import { BffReminderHost } from "@/platform/ui/ReminderHost";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
 import { NewMessagePage } from "./NewMessagePage";
@@ -462,6 +463,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     );
 
   return (
+    <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>
     <BffMessageLinkHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId}
       directory={searchDirectory.isError || conversations.error ? undefined : searchDirectory.data}
       conversations={conversations.items}
@@ -573,5 +575,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       </div>
     </div>
     </BffMessageLinkHost>
+    </BffReminderHost>
   );
 }

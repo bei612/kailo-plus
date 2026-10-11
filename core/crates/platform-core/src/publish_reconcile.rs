@@ -163,6 +163,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
             PUBLISH_ACTION,
             crate::pulse::PUBLISH_ACTION,
             crate::projects::PUBLISH_ACTION,
+            crate::reminders::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -235,6 +236,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
             PUBLISH_ACTION,
             crate::pulse::PUBLISH_ACTION,
             crate::projects::PUBLISH_ACTION,
+            crate::reminders::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -309,7 +311,9 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
 async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
     if matches!(
         p.action_key.as_str(),
-        crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION
+        crate::pulse::PUBLISH_ACTION
+            | crate::projects::PUBLISH_ACTION
+            | crate::reminders::PUBLISH_ACTION
     ) {
         let community_scope = p.target_type.as_deref() == Some("TENANT")
             && p.target_id == Some(p.tenant_id)
@@ -340,7 +344,36 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             &before.community_host,
         )
         .map_err(|_| "ACTOR_UNREADABLE")?;
-        let exists = if p.action_key == crate::projects::PUBLISH_ACTION {
+        let exists = if p.action_key == crate::reminders::PUBLISH_ACTION {
+            let kind: Option<i32> = sqlx::query_scalar(
+                "select message_kind from admission.publish_attempt where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
+            ).bind(p.operation_id).bind(&p.event_id).bind(actor).fetch_optional(&state.pool)
+                .await.map_err(|_| "EVIDENCE_UNREADABLE")?;
+            if kind != Some(collab_bridge::bridge::KIND_EVENT_REMINDER as i32) {
+                return Err("EVIDENCE_MISSING");
+            }
+            let page = client
+                .query(
+                    &state.http,
+                    &[serde_json::json!({
+                        "ids":[p.event_id], "authors":[keys.public_key().to_hex()],
+                        "kinds":[collab_bridge::bridge::KIND_EVENT_REMINDER]
+                    })],
+                )
+                .await
+                .map_err(|_| "QUERY_FAILED")?;
+            let events: Vec<nostr::Event> =
+                serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
+            if events.iter().any(|e| {
+                e.id.to_hex() != p.event_id
+                    || e.pubkey != keys.public_key()
+                    || e.kind.as_u16() != collab_bridge::bridge::KIND_EVENT_REMINDER as u16
+                    || e.verify().is_err()
+            }) {
+                return Err("EVIDENCE_INVALID");
+            }
+            !events.is_empty()
+        } else if p.action_key == crate::projects::PUBLISH_ACTION {
             // The original DISPATCH, actor and immutable event reference must
             // select the same publication attempt before trusting its kind.
             let kind: i32 = sqlx::query_scalar(
@@ -398,6 +431,11 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         // proof the original mutation was never delivered, even after expiry.
         if p.action_key == crate::projects::PUBLISH_ACTION && !exists {
             return Err("PROJECT_EVENT_UNOBSERVABLE");
+        }
+        if p.action_key == crate::reminders::PUBLISH_ACTION && !exists {
+            // A newer 30300 head or expiration may have removed this exact event.
+            // Neither proves non-delivery; never replay an unknown reminder.
+            return Err("REMINDER_EVENT_UNOBSERVABLE");
         }
         return Ok(exists);
     }

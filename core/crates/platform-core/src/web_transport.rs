@@ -51,6 +51,7 @@ enum Publication {
     Pulse(contracts::PulsePublishRequest),
     Reaction(contracts::PulsePublishRequest),
     Project(contracts::ProjectsPublishRequest),
+    Reminder(contracts::ReminderPublishRequest),
     Hide,
     Reopen,
 }
@@ -726,6 +727,24 @@ pub(crate) async fn publish_project(
     publish(state, target, headers, Publication::Project(request)).await
 }
 
+pub(crate) async fn publish_reminder(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::ReminderPublishRequest>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    publish(
+        state,
+        MessageTarget::Pulse(ctx.tenant_id),
+        headers,
+        Publication::Reminder(request),
+    )
+    .await
+}
+
 pub(crate) async fn upload_pulse_media(
     State(state): State<BffState>,
     headers: HeaderMap,
@@ -1297,7 +1316,7 @@ pub(crate) fn verify_message_page(
     Ok((events, next_cursor))
 }
 
-async fn read_message_event(
+pub(crate) async fn read_message_event(
     state: &BffState,
     client: &IdentityClient,
     channel: &str,
@@ -1370,6 +1389,7 @@ async fn publish(
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
         Publication::Project(_) => crate::projects::PUBLISH_ACTION,
+        Publication::Reminder(_) => crate::reminders::PUBLISH_ACTION,
     };
     let (message_type, parent_event_id, edit_event_id, delete_event_id) = match &publication {
         Publication::Message(req) => (
@@ -1392,6 +1412,12 @@ async fn publish(
             None,
             None,
         ),
+        Publication::Reminder(req) => (
+            contracts::WebMessageType::Stream,
+            req.event_id.clone().or_else(|| req.source_event_id.clone()),
+            None,
+            None,
+        ),
         Publication::Hide | Publication::Reopen => {
             (contracts::WebMessageType::Stream, None, None, None)
         }
@@ -1408,7 +1434,12 @@ async fn publish(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = if let Publication::Project(req) = &publication {
+    let requested_kind = if let Publication::Reminder(req) = &publication {
+        if let Err(response) = crate::reminders::validate(req) {
+            return response;
+        }
+        collab_bridge::bridge::KIND_EVENT_REMINDER as i32
+    } else if let Publication::Project(req) = &publication {
         match crate::projects::publication_kind(req) {
             Ok(kind) => i32::from(kind),
             Err(response) => return response,
@@ -1463,6 +1494,7 @@ async fn publish(
         | Publication::Reopen
         | Publication::Pulse(_)
         | Publication::Project(_)
+        | Publication::Reminder(_)
         | Publication::Reaction(_) => None,
     }) {
         Some(ids) => ids,
@@ -1535,6 +1567,20 @@ async fn publish(
         }
         match p.result.as_deref() {
             Some("ACCEPTED") => {
+                if let Publication::Reminder(request) = &publication {
+                    if let Err(response) = crate::reminders::confirm_accepted(
+                        &state,
+                        &ctx,
+                        request,
+                        &p.event_id,
+                        p.parent_event_id.as_deref(),
+                        p.operation_id,
+                    )
+                    .await
+                    {
+                        return response;
+                    }
+                }
                 return (
                     StatusCode::OK,
                     Json(PublishResponse {
@@ -1600,7 +1646,10 @@ async fn publish(
         Publication::Pulse(req) | Publication::Reaction(req) => {
             Some((&req.content, req.attachments.as_deref()))
         }
-        Publication::Hide | Publication::Reopen | Publication::Project(_) => None,
+        Publication::Hide
+        | Publication::Reopen
+        | Publication::Project(_)
+        | Publication::Reminder(_) => None,
     };
     if let Some((text, attachments)) = message {
         content.push_str(text);
@@ -1699,10 +1748,13 @@ async fn publish(
     } else {
         None
     };
-    let ancestry = match parent_event_id
-        .as_deref()
-        .filter(|_| pulse_tags.is_none() && !matches!(&publication, Publication::Project(_)))
-    {
+    let ancestry = match parent_event_id.as_deref().filter(|_| {
+        pulse_tags.is_none()
+            && !matches!(
+                &publication,
+                Publication::Project(_) | Publication::Reminder(_)
+            )
+    }) {
         Some(parent) => {
             match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
             {
@@ -1711,6 +1763,14 @@ async fn publish(
             }
         }
         None => None,
+    };
+    let reminder = if let Publication::Reminder(request) = &publication {
+        match crate::reminders::prepare(&state, &ctx, &client, request).await {
+            Ok(prepared) => Some(prepared),
+            Err(response) => return response,
+        }
+    } else {
+        None
     };
     // A reply lookup is external I/O. Do not sign with admission or a key
     // revoked while its parent was being read.
@@ -1793,6 +1853,12 @@ async fn publish(
             project_target.as_ref(),
             matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
         ),
+        Publication::Reminder(_) => {
+            let Some(prepared) = reminder else {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+            client.sign_reminder(&prepared.content, &prepared.tags, prepared.created_at)
+        }
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),

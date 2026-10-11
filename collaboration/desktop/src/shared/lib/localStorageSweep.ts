@@ -326,7 +326,7 @@ function sweepChunked(now: number, isAlive: () => boolean): () => void {
  */
 export function startLocalStorageSweep(): () => void {
   let alive = true;
-  let intervalId: ReturnType<typeof window.setInterval> | null = null;
+  let intervalId: ReturnType<Window["setInterval"]> | null = null;
   let bootTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let cancelCurrentSweep: (() => void) | null = null;
 

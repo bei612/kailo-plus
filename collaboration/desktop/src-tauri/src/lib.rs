@@ -262,6 +262,8 @@ pub fn run() {
             set_window_vibrancy,
             show_native_notification,
             sign_event,
+            nip44_encrypt_to_self,
+            nip44_decrypt_from_self,
             #[cfg(target_os = "macos")]
             macos_notifications::take_pending_activations,
             take_pending_navigation_deep_link,

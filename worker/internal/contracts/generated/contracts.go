@@ -367,6 +367,15 @@
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
+//    reminderPublishRequest, err := UnmarshalReminderPublishRequest(bytes)
+//    bytes, err = reminderPublishRequest.Marshal()
+//
+//    reminderSourceRequest, err := UnmarshalReminderSourceRequest(bytes)
+//    bytes, err = reminderSourceRequest.Marshal()
+//
+//    reminderView, err := UnmarshalReminderView(bytes)
+//    bytes, err = reminderView.Marshal()
+//
 //    roleMemberPage, err := UnmarshalRoleMemberPage(bytes)
 //    bytes, err = roleMemberPage.Marshal()
 //
@@ -1905,6 +1914,36 @@ func UnmarshalReadMarkRequest(data []byte) (ReadMarkRequest, error) {
 }
 
 func (r *ReadMarkRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalReminderPublishRequest(data []byte) (ReminderPublishRequest, error) {
+	var r ReminderPublishRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ReminderPublishRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalReminderSourceRequest(data []byte) (ReminderSourceRequest, error) {
+	var r ReminderSourceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ReminderSourceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalReminderView(data []byte) (ReminderView, error) {
+	var r ReminderView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ReminderView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5661,6 +5700,49 @@ type ReadMarkRequest struct {
 	Version    int64  `json:"version"`
 }
 
+// Original reminder create/complete/snooze/cancel. Identity comes only from the
+// authenticated host; mutations select the actual current signed 30300 head. Source
+// messages are freshly authorized and read by the host; no caller-supplied preview, author,
+// kind, ciphertext or key is trusted.
+type ReminderPublishRequest struct {
+	ChannelID     *string           `json:"channelId,omitempty"`
+	EventID       *string           `json:"eventId,omitempty"`
+	NotBefore     *int64            `json:"notBefore,omitempty"`
+	Note          *string           `json:"note,omitempty"`
+	Operation     ReminderOperation `json:"operation"`
+	SourceEventID *string           `json:"sourceEventId,omitempty"`
+}
+
+// 原 Reminder 目标引用重新读取；字段只是查找键，必须重做当前用户、channel scope 与事件签名/归属检查，不能以已解密提醒或目录缓存授予正文读取。
+type ReminderSourceRequest struct {
+	ChannelID string `json:"channelId"`
+	EventID   string `json:"eventId"`
+}
+
+// Original Buzz 30300 author-only encrypted reminder, decrypted only by its own SERVER or
+// local CLIENT identity. A transient Relay read, never a Core body record. Embedded target
+// metadata is a historical preview, not current authorization.
+type ReminderView struct {
+	Content   ReminderContent `json:"content"`
+	CreatedAt int64           `json:"createdAt"`
+	EventID   string          `json:"eventId"`
+	ID        string          `json:"id"`
+	NotBefore *int64          `json:"notBefore,omitempty"`
+}
+
+type ReminderContent struct {
+	Note   *string         `json:"note,omitempty"`
+	Status ReminderStatus  `json:"status"`
+	Target *ReminderTarget `json:"target,omitempty"`
+}
+
+type ReminderTarget struct {
+	AuthorPubkey string `json:"authorPubkey"`
+	ChannelID    string `json:"channelId"`
+	EventID      string `json:"eventId"`
+	Preview      string `json:"preview"`
+}
+
 // GET /api/v1/role-members 的有界回应。只列当前 Tenant 的 ACTIVE HUMAN 成员；角色从 SpiceDB fresh
 // 读取，动作可用性只作界面提示，提交时仍重新准入（DD-82）。
 type RoleMemberPage struct {
@@ -7596,7 +7678,7 @@ const (
 type CapabilityRequiredDeclaration string
 
 const (
-	Cancel                               CapabilityRequiredDeclaration = "CANCEL"
+	CapabilityRequiredDeclarationCANCEL  CapabilityRequiredDeclaration = "CANCEL"
 	CapabilityRequiredDeclarationOBSERVE CapabilityRequiredDeclaration = "OBSERVE"
 	Meter                                CapabilityRequiredDeclaration = "METER"
 	OnlineEditing                        CapabilityRequiredDeclaration = "ONLINE_EDITING"
@@ -7806,7 +7888,7 @@ type AgentMemoryEntryPageState string
 
 const (
 	BoundExceeded    AgentMemoryEntryPageState = "BOUND_EXCEEDED"
-	Complete         AgentMemoryEntryPageState = "COMPLETE"
+	StateCOMPLETE    AgentMemoryEntryPageState = "COMPLETE"
 	TentacledUNKNOWN AgentMemoryEntryPageState = "UNKNOWN"
 )
 
@@ -7979,11 +8061,11 @@ const (
 type AutomationStepStatus string
 
 const (
+	AutomationStepStatusCancelled       AutomationStepStatus = "cancelled"
+	AutomationStepStatusPending         AutomationStepStatus = "pending"
 	AutomationStepStatusWaitingApproval AutomationStepStatus = "waiting_approval"
-	Cancelled                           AutomationStepStatus = "cancelled"
 	Completed                           AutomationStepStatus = "completed"
 	Failed                              AutomationStepStatus = "failed"
-	Pending                             AutomationStepStatus = "pending"
 	Running                             AutomationStepStatus = "running"
 	Skipped                             AutomationStepStatus = "skipped"
 	Unknown                             AutomationStepStatus = "unknown"
@@ -8048,7 +8130,7 @@ const (
 type ComponentConformanceOperation string
 
 const (
-	ComponentConformanceOperationCancel  ComponentConformanceOperation = "cancel"
+	Cancel                               ComponentConformanceOperation = "cancel"
 	ComponentConformanceOperationExecute ComponentConformanceOperation = "execute"
 	ExtractUsage                         ComponentConformanceOperation = "extract_usage"
 	Handshake                            ComponentConformanceOperation = "handshake"
@@ -8277,6 +8359,23 @@ const (
 	Notes     PulseQueryRequestView = "NOTES"
 	Profiles  PulseQueryRequestView = "PROFILES"
 	Reactions PulseQueryRequestView = "REACTIONS"
+)
+
+type ReminderOperation string
+
+const (
+	ReminderOperationCANCEL   ReminderOperation = "CANCEL"
+	ReminderOperationCOMPLETE ReminderOperation = "COMPLETE"
+	ReminderOperationCREATE   ReminderOperation = "CREATE"
+	Snooze                    ReminderOperation = "SNOOZE"
+)
+
+type ReminderStatus string
+
+const (
+	Done                    ReminderStatus = "done"
+	ReminderStatusCancelled ReminderStatus = "cancelled"
+	ReminderStatusPending   ReminderStatus = "pending"
 )
 
 type CreateActionKey string

@@ -1,0 +1,32 @@
+capability_id: collab.reminders
+title: 原版 Inbox 本人加密提醒与发布对账
+stage: S1
+status: in_progress
+exposure: end_user
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-72, DD-75, DD-77]
+  facts: []
+  seams: [SS-WEB-RELAY, SS-BUZ-GOVERNANCE]
+  blockers: []
+  entities: [BuzzIdentityBinding, TenantBuzzBinding]
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/reminders.md
+    - dimension: 上游接缝
+      ref: core/verify/reminders.md
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/reminders.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge/src/bridge.rs, client-kit/ts/platform/src/react/reminders/hooks.ts, client-kit/ts/platform/src/react/reminders/ui/RemindersPanel.tsx, client-kit/ts/platform/src/react/reminders/ui/RemindMeLaterDialog.tsx, web-client/web/src/platform/ui/ReminderHost.tsx, collaboration/desktop/src/features/platform/ReminderHost.tsx, collaboration/desktop/src/features/platform/remindersTransport.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/reminder_publish_request.schema.json, contracts/api/reminder_source_request.schema.json, contracts/api/reminder_view.schema.json]
+  migrations: [core/migrations/20261011220000_publish_reminder_kind.up.sql, core/migrations/20261011220000_publish_reminder_kind.down.sql]
+runtime:
+  routes: ["/api/v1/reminders", "/api/v1/reminders/source", "/api/v1/reminders/publish"]
+  actions: [reminders.publish]
+  workflow_kinds: []
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

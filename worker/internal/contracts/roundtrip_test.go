@@ -14,6 +14,36 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestReminderWirePreservesOriginalStatusOptionalFieldsAndSafeTimestamps(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "reminder.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed struct {
+		Requests []generated.ReminderPublishRequest `json:"requests"`
+		Source   generated.ReminderSourceRequest    `json:"source"`
+		Views    []generated.ReminderView           `json:"views"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored any
+	if err := json.Unmarshal(encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, restored) {
+		t.Fatalf("original reminder wire changed: %s", encoded)
+	}
+}
+
 func TestNativeReceiverPreservesOriginalBatchAndObserveOnlyLookup(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-native-receiver.sample.json"))
 	if err != nil {

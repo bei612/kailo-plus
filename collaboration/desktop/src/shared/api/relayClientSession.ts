@@ -650,8 +650,16 @@ export class RelayClient {
     observeOnly = false,
     observation?: {eventId?: string; onPrepared: (eventId: string) => void},
   ): Promise<RelayEvent> {
+    return this.publishReplaceableIntent("project", key, expectedRelayUrl, [5,30621,30617], create, observeOnly, observation);
+  }
+
+  async publishReplaceableIntent(
+    family: "project" | "reminder", key: string, expectedRelayUrl: string,
+    kinds: number[], create: () => Promise<RelayEvent>, observeOnly = false,
+    observation?: {eventId?: string; onPrepared: (eventId: string) => void}, author?: string,
+  ): Promise<RelayEvent> {
     const epoch = this.sessionEpoch;
-    const fingerprint = JSON.stringify(["project", expectedRelayUrl, key]);
+    const fingerprint = JSON.stringify([family, expectedRelayUrl, key]);
     let previous = this.unconfirmedEvents.get(fingerprint);
     const unknown = () => new RelayPublishUnknownError(previous?.id ?? observation?.eventId ?? "", "Project publication outcome unknown");
     if (observeOnly && !previous && !observation?.eventId) throw unknown();
@@ -668,8 +676,8 @@ export class RelayClient {
     if (previous || observeOnly) {
       const originalId = previous?.id ?? observation?.eventId;
       if (!originalId || !/^[0-9a-f]{64}$/.test(originalId)) throw unknown();
-      const observed = await this.fetchEvents({ids:[originalId],kinds:[5,30621,30617],limit:1}).catch(() => {throw unknown();});
-      const original = observed.find(event => event.id === originalId && [5,30621,30617].includes(event.kind) && (!previous || event.pubkey === previous.pubkey && event.kind === previous.kind));
+      const observed = await this.fetchEvents({ids:[originalId],kinds,...(author?{authors:[author]}:{}),limit:1}).catch(() => {throw unknown();});
+      const original = observed.find(event => event.id === originalId && kinds.includes(event.kind) && (!author || event.pubkey === author) && (!previous || event.pubkey === previous.pubkey && event.kind === previous.kind));
       if (!current() || !original) throw unknown();
       return original;
     }
@@ -697,7 +705,11 @@ export class RelayClient {
   /** Drop this session's original signed intent only after the caller has
    * durably recorded its ACK and completed the scoped directory readback. */
   completeProjectIntent(key: string, expectedRelayUrl: string, eventId: string): void {
-    const fingerprint = JSON.stringify(["project", expectedRelayUrl, key]);
+    this.completeReplaceableIntent("project",key,expectedRelayUrl,eventId);
+  }
+
+  completeReplaceableIntent(family:"project"|"reminder",key:string,expectedRelayUrl:string,eventId:string):void {
+    const fingerprint = JSON.stringify([family, expectedRelayUrl, key]);
     if (this.unconfirmedEvents.get(fingerprint)?.id === eventId) {
       this.unconfirmedEvents.delete(fingerprint);
     }

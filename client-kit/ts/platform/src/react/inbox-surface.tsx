@@ -9,10 +9,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "./conversations/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
+import { useRemindLater } from "./reminders/ui/RemindMeLaterProvider";
 export { HomeLoadingState } from "./home-loading-state";
 export { InboxMessageRowSurface } from "./inbox-message-row";
 
-export type InboxFilter = "all" | "project" | "mention" | "thread" | "agent_activity" | "drafts";
+export type InboxFilter = "all" | "project" | "mention" | "thread" | "agent_activity" | "reminders" | "drafts";
 
 /** Original InboxDetailPane effect, including its existing 1_200 ms animation delay. */
 export function useInboxFocusHighlight(conversationId: string | null): boolean {
@@ -51,6 +52,7 @@ export function InboxEmptyList({ filter, unreadOnly }: { filter: Exclude<InboxFi
     mention: ["inbox.mentionEmpty", "inbox.mentionUnreadEmpty"],
     thread: ["inbox.threadEmpty", "inbox.threadUnreadEmpty"],
     agent_activity: ["inbox.agentEmpty", "inbox.agentUnreadEmpty"],
+    reminders: ["reminders.empty", "reminders.unreadEmpty"],
   } as const;
   return <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
     <p className="text-sm font-medium text-foreground">{t(titles[filter][unreadOnly ? 1 : 0])}</p>
@@ -72,9 +74,11 @@ export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
 }) {
   const t = useUiT();
   const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : `inbox.${value}`);
-  const statusLabel = (activeDraftCount ?? 0) > 0
+  const reminders = useRemindLater();
+  const statusLabel = reminders.dueReminderCount > 0
+    ? t(reminders.dueReminderCount === 1 ? "reminders.dueStatus" : "reminders.dueStatusPlural", { count: reminders.dueReminderCount }) : (activeDraftCount ?? 0) > 0
     ? t(activeDraftCount === 1 ? "inbox.activeDraftStatus" : "inbox.activeDraftStatusPlural", { count: activeDraftCount! }) : null;
-  const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "project", "mention", "thread", "agent_activity"] : ["all", "project", "mention", "thread", "agent_activity", "drafts"];
+  const options: InboxFilter[] = ["all", "project", "mention", "thread", "agent_activity", ...(reminders.available ? ["reminders" as const] : []), ...(activeDraftCount === undefined ? [] : ["drafts" as const])];
   return <DropdownMenu><DropdownMenuTrigger asChild>
     <button aria-label={`${t("inbox.filterLabel", { filter: filterLabel(filter) })}${statusLabel ? `. ${statusLabel}` : ""}`} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
       <span>{filterLabel(filter)}</span><ChevronDown className="text-muted-foreground" />
@@ -82,9 +86,9 @@ export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
   </DropdownMenuTrigger><DropdownMenuContent align="start" className="w-52">
     <DropdownMenuRadioGroup value={filter} onValueChange={(value) => { if (options.includes(value as InboxFilter)) onFilterChange(value as InboxFilter); }}>
       {options.map((option) => <div key={option}>
-        {option === "drafts" ? <DropdownMenuSeparator className="my-2 bg-border/60" /> : null}
+        {option === "reminders" || option === "drafts" && !reminders.available ? <DropdownMenuSeparator className="my-2 bg-border/60" /> : null}
         <DropdownMenuRadioItem value={option}><span className="flex flex-1 items-center gap-2"><span>{filterLabel(option)}</span>
-          {option === "drafts" && (activeDraftCount ?? 0) > 0 ? <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground" data-testid="inbox-draft-badge-option">{activeDraftCount}</span> : null}
+          <span className="ml-auto flex items-center gap-1.5">{option === "reminders" && reminders.reminderCount > 0 ? <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground" data-testid="inbox-reminder-badge-option">{reminders.reminderCount}</span> : option === "drafts" && (activeDraftCount ?? 0) > 0 ? <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground" data-testid="inbox-draft-badge-option">{activeDraftCount}</span> : null}</span>
         </span></DropdownMenuRadioItem>
       </div>)}
     </DropdownMenuRadioGroup>

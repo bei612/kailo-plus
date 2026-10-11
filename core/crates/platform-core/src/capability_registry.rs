@@ -60,6 +60,10 @@ mod tests {
     #[test]
     fn generated_registry_closes_unreleased_user_entries() {
         assert!(route_exposed("/api/v1/session"));
+        assert!(route_exposed("/api/v1/reminders"));
+        assert!(route_exposed("/api/v1/reminders/source"));
+        assert!(route_exposed("/api/v1/reminders/publish"));
+        assert!(action_exposed("reminders.publish"));
         assert!(route_exposed("/api/v1/platform-info"));
         assert!(route_exposed("/api/v1/custom-emoji"));
         assert!(route_exposed(

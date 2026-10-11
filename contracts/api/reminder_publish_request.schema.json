@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/reminder_publish_request.schema.json",
+  "title": "ReminderPublishRequest",
+  "description": "Original reminder create/complete/snooze/cancel. Identity comes only from the authenticated host; mutations select the actual current signed 30300 head. Source messages are freshly authorized and read by the host; no caller-supplied preview, author, kind, ciphertext or key is trusted.",
+  "type": "object", "additionalProperties": false, "required": ["operation"],
+  "properties": {
+    "operation": {"title": "ReminderOperation", "type": "string", "enum": ["CREATE", "COMPLETE", "SNOOZE", "CANCEL"]},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "channelId": {"type": "string", "format": "uuid"},
+    "sourceEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "notBefore": {"type": "integer", "minimum": 0},
+    "note": {"type": "string"}
+  },
+  "oneOf": [
+    {"properties": {"operation": {"const": "CREATE"}}, "required": ["channelId", "sourceEventId", "notBefore"], "not": {"required": ["eventId"]}},
+    {"properties": {"operation": {"const": "SNOOZE"}}, "required": ["eventId", "notBefore"], "not": {"anyOf": [{"required": ["channelId"]}, {"required": ["sourceEventId"]}, {"required": ["note"]}]}},
+    {"properties": {"operation": {"enum": ["COMPLETE", "CANCEL"]}}, "required": ["eventId"], "not": {"anyOf": [{"required": ["channelId"]}, {"required": ["sourceEventId"]}, {"required": ["note"]}, {"required": ["notBefore"]}]}}
+  ]
+}
