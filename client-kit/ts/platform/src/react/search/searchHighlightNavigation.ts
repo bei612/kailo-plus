@@ -1,3 +1,5 @@
+import { newIdempotencyKey } from "../../governance";
+
 export type SearchHighlightNavigation = {
   activationId: string;
   messageId: string;
@@ -14,7 +16,7 @@ export function createSearchHighlightNavigation(
   }
 
   return {
-    activationId: crypto.randomUUID(),
+    activationId: newIdempotencyKey(),
     messageId,
     query: trimmedQuery,
   };

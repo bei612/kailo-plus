@@ -51,7 +51,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
 let root: Root | undefined;
 let node: HTMLDivElement | undefined;
 let destroyHistory: (() => void) | undefined;
-afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; node?.remove(); node = undefined; destroyHistory?.(); destroyHistory=undefined; });
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; node?.remove(); node = undefined; destroyHistory?.(); destroyHistory=undefined; vi.unstubAllGlobals(); });
 
 async function mount(url: string, browser = false) {
   if (browser) window.history.replaceState(null,"",url);
@@ -172,13 +172,17 @@ it("records a resolved deep-link thread in the same history entry without losing
   expect(platformLocationSearch({thread:"   "}).thread).toBeUndefined();
 });
 
-it("carries the original search activation in history, not the URL, and clears ordinary navigation", async () => {
+it.each(["secure", "HTTP"])("carries the original search activation in history, not the URL, and clears ordinary navigation on %s", async context => {
+  if (context === "HTTP") {
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    expect(crypto.randomUUID).toBeUndefined();
+  }
   const router = await mount("/app/inbox");
   const click = (label: string) => act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();});
   await click("search result");
   expect(node!.querySelector("[data-search-query]")?.getAttribute("data-search-query")).toBe("exact needle");
   const activation = node!.querySelector("[data-search-activation]")?.getAttribute("data-search-activation");
-  expect(activation).toBeTruthy();
+  expect(activation).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(router.history.location.href).not.toContain("needle");
   expect(router.history.location.state).toMatchObject({searchHighlight:{messageId:"diff-result",query:"exact needle"}});
   await click("search result");
