@@ -33,6 +33,16 @@
 
 - 共享迁移：原筛选分组、时间预设、Reminder 弹窗／菜单／详情与 Inbox
   混排消费者；Web/Desktop 共用这些实现，不另造缩减的提醒后台。
+- 共享迁移：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/messages/ui/MessageRow.tsx::MessageRow` 原
+  `hasActiveReminder`／`bg-blue-500/10` 接入共用
+  `client-kit/ts/platform/src/react/messages/MessageRowSurface.tsx::MessageRowSurface`。
+  Web 的 ChannelPane／ChannelThreadPane 和 Desktop 的 MessageRow 直接消费同一实现。
+  写入者仍是现有 RemindMeLaterProvider 的 scope/pubkey 隔离查询，行只读取 pending
+  target eventId 集合；done／cancelled、空集合及无 Provider 不显示底色。
+  此呈现补齐没有字段迁移、旧格式、新状态或写副作用，不更改权限／额度／发布对账，
+  `apps/06` §4 的既有错误传播不变；不把蓝色底色当作执行成功证明。
+  Mobile 消费者及三端设备验收仍未完成。
 - 已授权治理改造：原写服务拆到两个既有宿主；Web 在 Core 读取实际原消息
   生成预览，Native 在当前 Relay 会话重新读取。原自加解密使用 NIP-44 v2；
   Web 不读取 CLIENT 私钥，Native 不使用 SERVER 私钥。
@@ -135,6 +145,19 @@
   后续命令明确设置 Data 私有 TMPDIR 与 npm cache，不通过重跑覆盖原记录。
 
 ## 尚未取得的验收
+
+频道提醒底色的后续定向验证复用上述同一 SDK 和私有输入：
+`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 与
+`vitest run test/reminders.test.tsx test/message-row.test.tsx`，82421 exit 0，
+分别 9/9 和 17/17。首轮错误调用 `.bin/tsc` 实际为 6.0.3，CSS side-effect
+import 的 TS2882 导致 79770 exit 2；项目原 5.9.3 通过，没有放松类型配置。
+仅在私有输入移除原底色 class 后，相同消费者断言报 `expected false to be true`，
+30329 exit 1（1 failed、8 因定向筛选 skipped）；精确恢复后与正式源码 cmp 0，
+4364 exit 0、26/26。原输出保留 React 异步更新的 act 警告，不声明无警告。
+日志为同目录 `channel-reminder-tint-positive.log`、`channel-reminder-tint-toolchain.log`、
+`channel-reminder-tint-mutation.log`、`channel-reminder-tint-restored.log`。
+这只是原共享消费者的状态／class 验证，不是浏览器像素或真实提醒发布验收；
+未为该小改动重复运行全量、部署或重新生成契约。
 
 Core 首轮中止和第二轮漏依赖失败均保留；末版语义检查与注册消费者已执行，
 不等同真实部署的 BFF／Relay 联调。

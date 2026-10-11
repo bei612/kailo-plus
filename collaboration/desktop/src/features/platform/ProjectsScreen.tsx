@@ -1,5 +1,6 @@
 import {useEffect,useMemo} from "react";
-import {ProjectsView,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {ProjectsView,type ProjectsHost,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
+import {PulseScreen} from "./PulseScreen";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
 import {useNativeSession} from "./activeCommunity";
@@ -51,12 +52,13 @@ export function useProjectsHost(){
   },[session,scope,limit]);
   return host;
 }
-export function ProjectsScreen({selectedProjectId,onSelectedProjectChange}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void}={}){
+export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workItemTarget}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void;workItemTarget?:ProjectWorkItemTarget}={}){
   const host=useProjectsHost();const t=useUiT();
   const channels=useChannelsQuery();const {goChannel}=useAppNavigation();
   const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
     .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
-  return host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange}
+  const view=host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
     renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;
+  return workItemTarget&&(workItemTarget.repositoryId||workItemTarget.issueId||workItemTarget.pullRequestId)?<PulseScreen>{view}</PulseScreen>:view;
 }

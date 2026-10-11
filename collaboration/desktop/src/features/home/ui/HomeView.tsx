@@ -60,7 +60,8 @@ import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/Aux
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { ProfilePanelProvider } from "@/shared/context/ProfilePanelContext";
 import { Button } from "@/shared/ui/button";
-import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail} from "@client-kit/platform/react/projects";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail} from "@client-kit/platform/react/projects";
+import {useAppNavigation} from "@/app/navigation/useAppNavigation";
 import {useProjectsHost} from "@/features/platform/ProjectsScreen";
 import {PulseScreen} from "@/features/platform/PulseScreen";
 
@@ -90,6 +91,7 @@ export function HomeView({
   onRefresh,
 }: HomeViewProps) {
   const t = useT();
+  const {goProject}=useAppNavigation();
   const locale = useLocale();
   const relaySelfPubkey = useRelaySelfQuery().data;
   const [homeInboxRef, homeInboxWidthPx] = useElementWidth<HTMLDivElement>();
@@ -615,7 +617,7 @@ export function HomeView({
           ) : null}
 
 
-          {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
+          {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined} onOpenProject={()=>{void goProject(selectedProject.project.id,projectWorkItemTarget(selectedProject));}}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
               canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}

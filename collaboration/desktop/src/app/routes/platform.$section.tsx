@@ -25,10 +25,13 @@ import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
 import { AgentDefinitionsPane } from "@/features/platform/AgentDefinitionsPane";
 
 export const Route = createFileRoute("/platform/$section")({
-  validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string;repositoryId?:string;issueId?:string;pullRequestId?:string } => ({
     workspaceId: typeof search.workspaceId === "string" && search.workspaceId.trim()
       ? search.workspaceId : undefined,
     projectId: typeof search.projectId === "string" && search.projectId.trim() ? search.projectId : undefined,
+    repositoryId: typeof search.repositoryId === "string" && search.repositoryId.trim() ? search.repositoryId : undefined,
+    issueId: typeof search.issueId === "string" && search.issueId.trim() ? search.issueId : undefined,
+    pullRequestId: typeof search.pullRequestId === "string" && search.pullRequestId.trim() ? search.pullRequestId : undefined,
   }),
   params: {
     parse: ({ section }) => {
@@ -47,7 +50,7 @@ export const Route = createFileRoute("/platform/$section")({
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
   usePreviewFeatureWarning(section);
-  const { workspaceId, projectId } = Route.useSearch();
+  const { workspaceId, projectId,repositoryId,issueId,pullRequestId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
   const workflowBlocker = useBlocker({
@@ -56,19 +59,21 @@ function PlatformRouteComponent() {
     enableBeforeUnload: false,
   });
   return <PlatformScreen section={section} workspaceId={workspaceId} projectId={projectId}
+    workItemTarget={{repositoryId,issueId,pullRequestId}}
     workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
     onProjectChange={(id)=>{void navigate({search:{projectId:id??undefined}});}}
     onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
 }
 
-function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation }: {
+function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation,workItemTarget }: {
   section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
   projectId?:string;onProjectChange:(id:string|null)=>void;
+  workItemTarget:import("@client-kit/platform/react/projects").ProjectWorkItemTarget;
   workflowNavigation: WorkflowNavigation;
 }) {
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
-  if (section === "projects") return <ProjectsScreen selectedProjectId={projectId??null} onSelectedProjectChange={onProjectChange}/>;
+  if (section === "projects") return <ProjectsScreen selectedProjectId={projectId??null} onSelectedProjectChange={onProjectChange} workItemTarget={workItemTarget}/>;
   if (section === "agents") return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="platform-agents">
       <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">

@@ -200,6 +200,7 @@
     "./theme/use-theme-preview-vars": "./src/theme/use-theme-preview-vars.ts",
     "./theme/color-contrast": "./src/theme/color-contrast.ts",
     "./react/sidebar/context-menu": "./src/react/sidebar/context-menu.tsx",
+    "./react/sidebar/use-mobile": "./src/react/sidebar/use-mobile.tsx",
     "./react/sidebar/dropdown-menu": "./src/react/sidebar/dropdown-menu.tsx",
     "./react/sidebar/tooltip": "./src/react/sidebar/tooltip.tsx",
     "./react/sidebar/primitives": "./src/react/sidebar/primitives.tsx",

@@ -26,13 +26,16 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
     data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
-    data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send}>
+    data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send}
+    data-repository={navigation.projectWorkItemTarget?.repositoryId} data-issue={navigation.projectWorkItemTarget?.issueId} data-review={navigation.projectWorkItemTarget?.pullRequestId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
     <button onClick={() => { void navigation.openTab("workflows", "workspace-b"); }}>workflows</button>
     <button onClick={() => { void navigation.openApplication("binding-a", "workspace-a"); }}>application</button>
     <button onClick={() => { void navigation.openProject("signed-project"); }}>project</button>
+    <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",issueId:"task-event"}); }}>task</button>
+    <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",pullRequestId:"review-event"}); }}>review</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}, "  exact needle  "); }}>search result</button>
     <button onClick={() => { void navigation.openConversation("conversation-a", {messageId:"diff-reply",threadRootId:"diff-root"}, "reply needle"); }}>DM search result</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}); }}>ordinary link</button>
@@ -298,6 +301,23 @@ it("opens the actual selected project through the existing route and restores it
   await act(async()=>root!.unmount());root=undefined;node!.remove();
   await mount(url);
   expect(node!.querySelector("[data-project]")?.getAttribute("data-project")).toBe("signed-project");
+});
+
+it.each(["task","review"])("retains the original repository and %s event reference after project navigation and reload",async kind=>{
+  const router=await mount("/app/inbox");
+  await act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent===kind)!.click();});
+  expect(router.history.location.pathname).toBe("/app/projects");
+  expect(node!.querySelector("[data-repository]")?.getAttribute("data-repository")).toBe("signed-repository");
+  const attribute=kind==="task"?"data-issue":"data-review";
+  expect(node!.querySelector(`[${attribute}]`)?.getAttribute(attribute)).toBe(kind==="task"?"task-event":"review-event");
+  const url=router.history.location.href;
+  await act(async()=>root!.unmount());root=undefined;node!.remove();
+  await mount(url);
+  expect(node!.querySelector(`[${attribute}]`)?.getAttribute(attribute)).toBe(kind==="task"?"task-event":"review-event");
+  await act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent==="project")!.click();});
+  expect(node!.querySelector("[data-repository]")).toBeNull();
+  expect(node!.querySelector("[data-issue]")).toBeNull();
+  expect(node!.querySelector("[data-review]")).toBeNull();
 });
 
 it("routes the approved service binding in the same host and preserves its scope on reload", async () => {

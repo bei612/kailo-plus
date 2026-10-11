@@ -309,7 +309,8 @@ memory+swap 同限额和 Data 挂载后，以固定基底加本批六文件私�
 中文默认/英文适配属于已授权差异。日历规则归原样保留，同一已存在 formatter 的
 实际调用归共享迁移；本批没有新治理分支。空列表、读失败、scope/generation 失效、
 背压及 UNKNOWN 仍由原读取链处理，不改变 06 §4 错误分类，也不产生外部副作用、
-并发写入或新的待收敛状态；Mobile 无本次入口。原项目 Git/写入/作者资料缺项仍保留。
+并发写入或新的待收敛状态；Mobile 无本次入口。原 Git、Issue/PR 写操作及尚未接入
+资料触发器的任务行仍缺失；已有项目创建/删除和 PR/评论资料消费者不归为整体缺失。
 
 复用已完成且六文件逐字核对基底的私有输入 `project-rich-content.7UYjw7`，仅投递
 本批两个 Web 文件；原冻结 index/日志未覆盖。实际检查原 SDK 仅 sleep、
@@ -333,3 +334,76 @@ memory+swap 同限额和 Data 挂载后，以固定基底加本批六文件私�
 
 本批为源码恢复与定向消费者证据；未部署、未做对应新版浏览器截图或 Windows
 安装包验收，未重跑 full。已有旧部署图片不能认领本批日历时间修复。
+
+### Inbox 打开原任务/审阅的精确项目目标
+
+基底 `a3923f375435e31f587b703c1f72f9eb35825849`；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。本批恢复的是具体目标的原只读
+详情分支，不是完整 `ProjectDetailScreen` 或完整项目功能验收。
+
+四步变更核对：
+
+1. 权威为 REQ-24 原版恢复和 DD-72/75 的 Web BFF/原生本机身份边界。
+   官方 `desktop/src/features/home/ui/ProjectInboxDetailPane.tsx::ProjectInboxDetailPane`
+   的 `onOpenProject`/`openLabel` 原按钮、`useElementWidth` 和 760px 宽窄规则
+   直接进入共享原组件；`desktop/src/features/home/ui/ProjectInboxDetail.tsx::ProjectInboxDetail`
+   原调用传递 project、repository 和互斥 issue/PR 引用，不以跳公告代替。
+2. 影响面是共享 `ProjectInboxDetail`、`ProjectsView`、目标解析、既有尺寸 hook、
+   双宿主原导航/search/详情接线与同源词条。复用原 `ProjectIssueDetail`、
+   `ProjectPullRequestDetail`、`loadProjectWorkItems` 和 Pulse 资料/正文宿主；
+   没有新增治理 schema、数据库、资源权威或工作项写操作。三个 search 字段只是
+   原页面导航引用，旧无字段链接仍进原目录。Desktop 原 hook 路径薄转发同一函数。
+3. URL 不当授权：目标页重读现有有界目录与仓库历史，project/repository/互斥类型
+   全部匹配才显示正文；不从 Inbox 热缓存冒充 fresh 授权。scope 切换销毁旧查询，
+   fresh 失败隐藏正文、保留原错误态；URL 引用可保留，不自动跳公告掩盖失败。
+   原用户资料/来源频道仍由各自真实宿主核验，不把项目可读等同频道消息可读。
+4. 空目标沿原目录；缺仓库、双类型、未知目标或读取失败不落到其他详情。原读取的
+   generation、主体、分页与中止校验保持；没有外部副作用、幂等写入或新增待终结
+   状态，06 §4 分类不变。Mobile 本批无新页面入口。
+
+四类差异逐项范围：原按钮文案、ExternalLink、ghost/size/title/aria-label、
+宽窄规则及 `desktop/src/shared/hooks/use-mobile.tsx::useElementWidth` 函数语义
+原样保留；共享 hook 和原详情两端消费归共享迁移。Web BFF/Native Relay 有界读取、
+导航引用重新校验和中英词条属于已有授权接入差异。仅复用官方
+`desktop/src/features/projects/ui/ProjectDetailScreen.tsx::ProjectDetailScreen`
+的滚动容器与 `ProjectWorkspaceTabs.tsx::WorkspaceTabs` 选中只读详情分支；
+完整 `ProjectDetailChrome`、`WorkspaceTabs`、`ProjectCommitDetailPanel`/Git diff、
+Issue/PR 评论及状态/分派/合并写操作仍归缺失需恢复，不生成空标签或假写按钮。
+既有项目创建/删除、`ProjectProfileIdentity.tsx::ProfileAuthorName` 与
+`ProfileIdentityButton` 的 PR/评论资料实际消费者不再泛称全部缺失。
+
+本批复用原 `kailo-web-thread-tooltip-sdk`：4 CPU/8 GiB，memory+swap 总限额等于内存
+（无额外 swap），源码/依赖与
+TMPDIR/npm cache 均在 Data。基底六个原详情/宿主依赖逐字 cmp 0 后只更新本批
+源码输入；原 Reminder index/patch/日志保留。日志统一位于
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-open.LdrqIc/`。
+
+- 92082：规范共享 TypeScript 5.9.3 `tsc --noEmit` exit 0；原四套件 97 pass/
+  5 fail、exit 1，`shared-positive.log`。新增检查误用原错误/加载态同样具有的
+  `data-project-detail-panel`，不代表真实正文；纠正为原 Issue/PR 具体 testId，
+  保留正文、实际回调、fresh 读取、错目标与撤权断言，不改生产错误态。
+- 92498：`tsc --noEmit -p tsconfig.test.json` exit 0；原 ProjectInbox 19/19
+  exit 0；Web `tsc --noEmit` 和原 `platform-navigation.test.tsx` 26/26 exit 0。
+  Native 首轮 TS1128 发现机械移动 hook 后残留 return/括号，删除该残留；90533
+  原 Desktop `tsc --noEmit -p tsconfig.json` 最终 exit 0。原始失败日志保留。
+- 19840：只在私有 `ProjectInboxDetail` 断开原按钮 onClick；原 19 项中 17 pass/
+  2 fail、exit 1，`click-mutation.log`，实际回调 0 次，两个原目标均不能打开。
+- 正式字节还原 cmp 0；85932 原
+  `vitest run test/project-inbox.test.tsx test/projects.test.tsx test/reminders.test.tsx test/message-row.test.tsx --no-file-parallelism`
+  102/102、exit 0，`shared-restored.log`。覆盖项目精确目标 19、原目录 57、
+  同批提醒 9、消息行 17；React act 警告保留，无超时扩展。
+- 57824：原 closure 的独立 HEAD 加本批两词条小输入执行
+  `python3 tools/gen-platform-i18n.py` exit 0；日志
+  `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/project-open-i18n.aqPAH3/generation.log`。
+  仅提取生成 Dart 的两个 enum/两条消息，不覆盖公共历史暂存词条，reason 文件
+  无增量；没有修改 HOME、四侧合同或其他队友的生成输入。
+- 原只读 `bash tools/check-docs.sh /workspace/.design`：58940 exit 1，唯一失败
+  为同时在制 Gateway 文档的禁用措辞；owner 精确纠正后同容器 2389 exit 0。
+  两原件为 `/volumes/data/kailo/tmp/project-open-docs.mDbTgP/{check,restored}.log`；
+  实际 2 CPU/2 GiB，memory+swap 总限额等于内存（无额外 swap），无网络、UID 1000，apps/design 只读且缓存/tmp
+  位于 Data，无全仓导出。这是当前工作树 top/docs 与设计门禁，原脚本不逐行
+  检查 core/verify 等 receipt 子目录，不冒称固定候选或全量发布检查通过。
+
+本批没有部署、安装包或对应新版浏览器截图；现网 9d718 的图片不能认领上述改动。
+这只是源码/隔离 DOM/路由定向证据，不是实际 BFF/Relay 端到端或完整原版恢复。
+未重跑全量，已有 full 失败和发布阻断保持。

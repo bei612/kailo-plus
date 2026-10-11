@@ -1,5 +1,6 @@
 import {useEffect,useMemo} from "react";
-import {ProjectsView,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {ProjectsView,type ProjectsHost,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
+import {PulsePane} from "./PulsePane";
 import {queryProjects,publishProject} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
 import type {DiscoverableWorkspace} from "@client-kit/contracts";
@@ -21,8 +22,9 @@ export function useProjectsHost(scopeKey:string){
   return host;
 }
 
-export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void;
+export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
-  return <ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange}
+  const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     onOpenChannel={onOpenChannel} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
+  return workItemTarget&&(workItemTarget.repositoryId||workItemTarget.issueId||workItemTarget.pullRequestId)?<PulsePane scopeKey={scopeKey} onStartDm={onStartDm}>{view}</PulsePane>:view;
 }

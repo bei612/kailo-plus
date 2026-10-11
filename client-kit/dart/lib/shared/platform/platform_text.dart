@@ -363,6 +363,8 @@ enum PlatformMessageKey {
   projectsInboxBack,
   projectsInboxTask,
   projectsInboxReview,
+  projectsInboxOpenTask,
+  projectsInboxOpenReview,
   projectsCommentsShowOne,
   projectsCommentsShowMany,
   projectsCommentsCollapse,
@@ -3163,6 +3165,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '{author} sent you a review',
     '{author} 给你发送了一项审阅',
   ),
+  PlatformMessageKey.projectsInboxOpenTask: ('Open task', '打开任务'),
+  PlatformMessageKey.projectsInboxOpenReview: ('Open review', '打开审阅'),
   PlatformMessageKey.projectsCommentsShowOne: (
     'Show {count} earlier comment',
     '显示较早的 {count} 条评论',

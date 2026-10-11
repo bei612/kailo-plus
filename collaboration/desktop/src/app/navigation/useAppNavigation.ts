@@ -172,6 +172,9 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goProject=React.useCallback((projectId:string,target?:import("@client-kit/platform/react/projects").ProjectWorkItemTarget)=>
+    commitNavigation({to:"/platform/$section",params:{section:"projects"},search:{projectId,...target}}),[commitNavigation]);
+
   const closeSettings = React.useCallback(() => {
     if (canGoBack) {
       router.history.back();
@@ -210,6 +213,7 @@ export function useAppNavigation() {
     goHome,
     goNewMessage,
     goPlatform,
+    goProject,
     goApplication,
     goProfile,
     goSettings,

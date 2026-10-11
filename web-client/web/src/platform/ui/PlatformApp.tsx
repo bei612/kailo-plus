@@ -425,6 +425,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
+        onOpenProject={(id,target)=>{void navigation.openProject(id,target);}}
         onStartDm={openDirectMessage}
         onUnreadCount={setInboxUnreadCount}
         onOpen={async (channelId, target, draft) => {
@@ -439,6 +440,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={openDirectMessage}/>
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
+        workItemTarget={navigation.projectWorkItemTarget} onStartDm={openDirectMessage}
         selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}
         lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{await workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
     ) : tab === "agents" ? (

@@ -41,7 +41,7 @@ import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
-import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,type ProjectInboxWorkItem} from "@client-kit/platform/react/projects";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,type ProjectInboxWorkItem,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
 import {useProjectsHost} from "./ProjectsPane";
 import {PulsePane} from "./PulsePane";
 import {UserAvatar} from "@client-kit/platform/react/messages";
@@ -67,11 +67,13 @@ export function InboxPane({
   onOpen,
   onUnreadCount,
   onStartDm,
+  onOpenProject,
 }: {
   principalId: string;
   onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: import("@client-kit/contracts").ConversationView}) => void | Promise<void>;
   onUnreadCount?: (count: number | null) => void;
   onStartDm?: (pubkey: string) => void;
+  onOpenProject?: (projectId:string,target:ProjectWorkItemTarget)=>void;
 }) {
   const client = useBffClient();
   const projectsHost=useProjectsHost(principalId);
@@ -431,7 +433,7 @@ export function InboxPane({
         }} /> : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
       </div>
     </section> : null}
-    {selectedReminder!==null&&showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>setSelected(null):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+    {selectedReminder!==null&&showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>setSelected(null):undefined} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
       workspaceId={chosen.item.channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}

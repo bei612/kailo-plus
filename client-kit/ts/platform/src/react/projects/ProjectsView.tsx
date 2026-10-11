@@ -1,7 +1,7 @@
 // REQ-24. Original Buzz 779af8886caae1317b4de962082429867ab61503
 // ProjectsView / ProjectCards / ProjectEntityListRow presentation. This host
-// reads announcements and uses the existing governed creation/deletion hosts;
-// Git work-item/terminal consumers still require their separate production chain.
+// reads announcements/work-item targets and uses the governed creation/deletion
+// hosts; Git, work-item writes and terminals retain separate missing consumers.
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
@@ -24,11 +24,39 @@ import type { ProjectsFilter } from "./ProjectsToolbar";
 import { ProjectsSectionSearch } from "./ProjectsSectionSearch";
 import { ProjectsListHeaderBar } from "./ProjectsListHeaderBar";
 import type { ProjectMemberRenderer } from "./ProjectChannelMembers";
+import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTarget} from "./projectWorkItems";
+import {useUsersBatchQuery} from "../pulse/host";
+import {ProjectIssueDetail} from "./ProjectIssueDetail";
+import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
+import {ProjectPanelState} from "./ProjectPanelState";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void|Promise<void>;
-  onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
+  workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
 export function ProjectsView(props:ProjectsViewProps) {
+  if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget}/>;
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
+}
+
+function ProjectWorkItemPage({host,projectId,target}:{host:ProjectsHost;projectId?:string|null;target:ProjectWorkItemTarget}) {
+  const t=useUiT();const cache=useQueryClient();
+  const query=useQuery({queryKey:["project-work-item-target",host.scopeKey,projectId,target],
+    queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
+  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["project-work-item-target",host.scopeKey]});cache.removeQueries({queryKey:["project-work-item-target",host.scopeKey]});},[cache,host.scopeKey]);
+  const workItem=query.isSuccess&&!query.isFetching?resolveProjectWorkItemTarget(query.data.items,projectId,target):undefined;
+  const item=workItem?.type==="issue"?workItem.issue:workItem?.pullRequest;
+  const keys=item?[item.author,...item.comments.map(comment=>comment.author),...(workItem?.type==="issue"?workItem.issue.assignees:workItem?[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)]:[])]:[];
+  const profiles=useUsersBatchQuery(keys).data?.profiles;
+  // Original ProjectDetailScreen scroll chain and selected WorkspaceTabs detail
+  // branch. Git, other tabs, and writes remain separately un-restored.
+  return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-none px-4 pb-4" data-testid="project-detail-scroll">
+      <div className="flex min-h-full w-full flex-col space-y-3">
+        {query.isPending||query.isFetching?<ProjectPanelState title={t("platform.loading")}/>:!workItem?<ProjectPanelState error title={t(query.isError?"platform.loadFailed":"projects.unavailable")}/>:<div className="m-0" data-project-detail-panel>
+          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}
+        </div>}
+      </div>
+    </div>
+  </div>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember}:ProjectsViewProps) {

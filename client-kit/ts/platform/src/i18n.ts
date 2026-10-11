@@ -453,6 +453,8 @@ export const platformMessages = {
   "projects.inbox.back": { en: "Back to Inbox", "zh-CN": "返回收件箱" },
   "projects.inbox.task": { en: "{author} sent you a task", "zh-CN": "{author} 给你发送了一项任务" },
   "projects.inbox.review": { en: "{author} sent you a review", "zh-CN": "{author} 给你发送了一项审阅" },
+  "projects.inbox.openTask": { en: "Open task", "zh-CN": "打开任务" },
+  "projects.inbox.openReview": { en: "Open review", "zh-CN": "打开审阅" },
   "projects.comments.showOne": { en: "Show {count} earlier comment", "zh-CN": "显示较早的 {count} 条评论" },
   "projects.comments.showMany": { en: "Show {count} earlier comments", "zh-CN": "显示较早的 {count} 条评论" },
   "projects.comments.collapse": { en: "Collapse comment history", "zh-CN": "收起评论历史" },

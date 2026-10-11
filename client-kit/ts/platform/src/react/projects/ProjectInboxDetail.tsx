@@ -1,6 +1,6 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/home/ui/ProjectInboxDetailPane.tsx read detail.
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { useT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { UserAvatar } from "../messages/UserAvatar";
@@ -9,9 +9,13 @@ import { useUsersBatchQuery } from "../pulse/host";
 import { ProjectIssueDetail } from "./ProjectIssueDetail";
 import { ProjectPullRequestDetail } from "./ProjectPullRequestDetail";
 import type { ProjectInboxWorkItem } from "./projectWorkItems";
+import {useElementWidth} from "../sidebar/use-mobile";
 
-export function ProjectInboxDetail({workItem,onBack}:{workItem:ProjectInboxWorkItem;onBack?:()=>void}) {
+export function ProjectInboxDetail({workItem,onBack,onOpenProject}:{workItem:ProjectInboxWorkItem;onBack?:()=>void;onOpenProject?:()=>void}) {
   const t=useT();
+  const [detailContentRef,detailContentWidth]=useElementWidth<HTMLDivElement>();
+  const showWideActions=detailContentWidth>=760;
+  const openLabel=t(workItem.type==="issue"?"projects.inbox.openTask":"projects.inbox.openReview");
   const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
   const keys=[...new Set([item.author,...item.comments.map(comment=>comment.author),
     ...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])])];
@@ -28,9 +32,10 @@ export function ProjectInboxDetail({workItem,onBack}:{workItem:ProjectInboxWorkI
           <UserAvatar avatarUrl={author?.avatarUrl??null} className="shrink-0" displayName={authorLabel} shape={author?.isAgent?"squircle":"circle"} size="sm" testId="project-inbox-author-avatar"/>
           <h2 className="min-w-0 translate-y-px truncate text-sm font-semibold leading-5 tracking-tight text-foreground" title={inboxTitle+" · "+workItem.project.name}>{inboxTitle}</h2>
         </div>
+        {onOpenProject?<Button aria-label={openLabel} className="shrink-0" onClick={onOpenProject} size={showWideActions?"sm":"icon"} title={openLabel} type="button" variant="ghost"><ExternalLink className="h-4 w-4"/>{showWideActions?openLabel:null}</Button>:null}
       </div></div>
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" ref={detailContentRef}>
       <div className="p-3"><div className="overflow-hidden rounded-xl border border-border/60 bg-card" data-testid="project-inbox-work-item-card">
         <div data-testid="project-inbox-work-item-layout">
           {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}

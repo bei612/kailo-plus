@@ -7,6 +7,8 @@ import { ReminderHostProvider, RemindMeLaterProvider, useRemindLater, useReminde
 import { isDue, groupReminders } from "../src/react/reminders/lib/reminderFilters";
 import { parseCustomDateTime } from "../src/react/reminders/lib/timePresets";
 import { render, click, button } from "./render";
+import { MessageRowSurface, type TimelineMessage } from "../src/react/messages";
+import { remindersQueryKey } from "../src/react/reminders/hooks";
 
 const pubkey="a".repeat(64),eventId="b".repeat(64),resultId="c".repeat(64);
 const target={eventId,channelId:"12345678-1234-4234-8234-123456789012",preview:"original message",authorPubkey:pubkey};
@@ -16,6 +18,27 @@ function Cache({children}:{children:React.ReactNode}) {return <QueryClientProvid
 beforeEach(()=>{localStorage.clear();setLocale("en");});
 
 describe("original author-encrypted reminder consumers",()=>{
+  it("keeps original channel reminder tint reactive to pending, completed and cancelled heads",async()=>{
+    const h=host();
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const key=remindersQueryKey(h.scopeKey,pubkey);
+    const message:TimelineMessage={id:eventId,pubkey,author:"Author",body:target.preview,createdAt:0,depth:0,time:"",tags:[]};
+    const root=await render(<QueryClientProvider client={cache}><ReminderHostProvider host={h}><RemindMeLaterProvider pubkey={pubkey}>
+      <MessageRowSurface message={message} renderBody={()=>message.body}/>
+      <MessageRowSurface message={{...message,id:"unrelated"}} renderBody={()=>message.body}/>
+    </RemindMeLaterProvider></ReminderHostProvider></QueryClientProvider>);
+    await vi.waitFor(()=>expect(cache.getQueryState(key)?.status).toBe("success"));
+    const rows=root.querySelectorAll('[data-testid="message-row"]');
+    expect(rows[0]!.classList.contains("bg-blue-500/10")).toBe(false);
+    for(const status of ["pending","done","pending","cancelled"] as const) {
+      await act(async()=>{cache.setQueryData(key,[{...reminder(),content:{...reminder().content,status}}]);});
+      await vi.waitFor(()=>expect(rows[0]!.classList.contains("bg-blue-500/10")).toBe(status==="pending"));
+      expect(rows[1]!.classList.contains("bg-blue-500/10")).toBe(false);
+    }
+    const outside=await render(<MessageRowSurface message={message} renderBody={()=>message.body}/>);
+    expect(outside.querySelector('[data-testid="message-row"]')!.classList.contains("bg-blue-500/10")).toBe(false);
+    expect(h.publish).not.toHaveBeenCalled();
+  });
   it("keeps original canonical not_before and malformed plaintext behavior",()=>{
     for(const raw of ["01","-1","+1"," 1","1.0",String(Number.MAX_SAFE_INTEGER+1)])expect(parseNotBefore(raw)).toBeUndefined();
     expect(parseNotBefore("0")).toBe(0);

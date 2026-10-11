@@ -15,6 +15,17 @@ export type ProjectInboxWorkItem =
   | {type: "issue"; project: Project; repository: Repository; issue: ProjectIssue}
   | {type: "pull-request"; project: Project; repository: Repository; pullRequest: ProjectPullRequest};
 
+// Original goProject search references, never an authorization context.
+export type ProjectWorkItemTarget = {repositoryId?:string;issueId?:string;pullRequestId?:string};
+export function projectWorkItemTarget(item:ProjectInboxWorkItem):ProjectWorkItemTarget {
+  return {repositoryId:item.repository.id,...(item.type==="issue"?{issueId:item.issue.id}:{pullRequestId:item.pullRequest.id})};
+}
+export function resolveProjectWorkItemTarget(items:readonly ProjectInboxWorkItem[],projectId:string|null|undefined,target:ProjectWorkItemTarget) {
+  if(!projectId||!target.repositoryId||Boolean(target.issueId)===Boolean(target.pullRequestId))return undefined;
+  return items.find(item=>item.project.id===projectId&&item.repository.id===target.repositoryId&&
+    (item.type==="issue"?item.issue.id===target.issueId:item.pullRequest.id===target.pullRequestId));
+}
+
 export function resolveProjectInboxWorkItem(items: readonly ProjectInboxWorkItem[], event: Pick<PulseEvent,"id"|"kind"|"tags">) {
   const reference=getProjectInboxReference(event);
   return reference?items.find(item=>item.repository.repoAddress===reference.repoAddress&&(item.type==="issue"?item.issue.id:item.pullRequest.id)===reference.rootId):undefined;

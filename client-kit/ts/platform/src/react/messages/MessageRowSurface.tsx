@@ -1,4 +1,5 @@
 import { useUiT } from "../context";
+import { useRemindLater } from "../reminders/ui/RemindMeLaterProvider";
 import * as React from "react";
 import type { TimelineMessage } from "./types";
 import { KIND_STREAM_MESSAGE_DIFF } from "./thread/kinds";
@@ -87,6 +88,8 @@ export function MessageRowSurface({
     const [expandedDiffId, setExpandedDiffId] = React.useState<string | null>(null);
     const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
     const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
+    const { activeReminderEventIds } = useRemindLater();
+    const hasActiveReminder = activeReminderEventIds.has(message.id);
     // Keep the transient send state with its timestamp rather than collapsing
     // it into a grouped message row with no header.
     const isDisplayedAsContinuation = isContinuation && !message.pending;
@@ -473,6 +476,7 @@ export function MessageRowSurface({
                 : "px-2",
             "flex gap-2.5",
             isDisplayedAsContinuation ? "items-center" : "items-start",
+            hasActiveReminder ? "bg-blue-500/10" : "",
             highlighted
               ? "-mx-4 rounded-none px-6 before:absolute before:-inset-y-1.5 before:inset-x-0 before:animate-[route-target-highlight-fade_2s_ease-out_forwards] before:bg-primary/10 before:content-[''] motion-reduce:before:animate-none sm:-mx-6 sm:px-8"
               : "",

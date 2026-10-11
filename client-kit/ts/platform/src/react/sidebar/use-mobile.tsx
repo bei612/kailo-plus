@@ -26,4 +26,52 @@ export function useMediaBreakpoint(breakpointPx: number): boolean {
 }
 
 
+export function useElementWidth<T extends HTMLElement>(): [
+  React.RefObject<T | null>,
+  number,
+] {
+  const ref = React.useRef<T>(null);
+  const [widthPx, setWidthPx] = React.useState(0);
+
+  React.useEffect(() => {
+    let frameId: number | null = null;
+    let cleanup: (() => void) | null = null;
+
+    const attach = () => {
+      const element = ref.current;
+      if (!element) {
+        frameId = window.requestAnimationFrame(attach);
+        return;
+      }
+
+      const updateWidth = () => {
+        setWidthPx(element.getBoundingClientRect().width);
+      };
+
+      updateWidth();
+
+      if (typeof ResizeObserver === "undefined") {
+        window.addEventListener("resize", updateWidth);
+        cleanup = () => window.removeEventListener("resize", updateWidth);
+        return;
+      }
+
+      const observer = new ResizeObserver(updateWidth);
+      observer.observe(element);
+      cleanup = () => observer.disconnect();
+    };
+
+    attach();
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      cleanup?.();
+    };
+  }, []);
+
+  return [ref, widthPx];
+}
+
 export function useIsMobile() { return useMediaBreakpoint(MOBILE_BREAKPOINT); }

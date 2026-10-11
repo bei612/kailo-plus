@@ -1,11 +1,12 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
+import {act,useState} from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {createBffClient} from "../src/client";
 import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,ProjectOriginReferenceContent,type ProjectsHost} from "../src/react/projects";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,ProjectOriginReferenceContent,ProjectsView,type ProjectsHost} from "../src/react/projects";
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click} from "./render";
@@ -33,6 +34,50 @@ function fixture(){
 }
 beforeEach(()=>{setLocale("en");localStorage.clear();});
 describe("original Inbox project read closure",()=>{
+  it.each(["issue","review"] as const)("opens the exact original %s target through a fresh project read",async kind=>{
+    const f=fixture(),data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=resolveProjectInboxWorkItem(data.items,f[kind])!;
+    const opened=vi.fn();
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    function Page(){const [target,setTarget]=useState<ReturnType<typeof projectWorkItemTarget>>();return target?
+      <ProjectsView host={f.host} selectedProjectId={workItem.project.id} workItemTarget={target}/>:
+      <ProjectInboxDetail workItem={workItem} onOpenProject={()=>{const next=projectWorkItemTarget(workItem);opened(workItem.project.id,next);setTarget(next);}}/>;}
+    const view=await render(<PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><Page/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    f.query.mockClear();
+    await click(view.querySelector<HTMLButtonElement>(`[aria-label="Open ${kind==="issue"?"task":"review"}"]`)!);
+    expect(opened).toHaveBeenCalledExactlyOnceWith(workItem.project.id,{repositoryId:workItem.repository.id,...(kind==="issue"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
+    const detailSelector=kind==="issue"?'[data-testid="project-issue-detail"]':'[data-testid="project-pull-request-detail"]';
+    await vi.waitFor(()=>expect(view.querySelector(detailSelector)).not.toBeNull());
+    expect(view.textContent).toContain(kind==="issue"?"Complete task body":"Complete review body");
+    expect(view.querySelector('aside')).toBeNull();
+    expect(f.query.mock.calls.some(([request])=>request.view==="PROJECTS")).toBe(true);
+    expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEM_ACTIVITY")).toBe(true);
+    expect(host.publish).not.toHaveBeenCalled();
+    f.host.query=async()=>{throw new Error("revoked");};
+    await act(async()=>{await cache.invalidateQueries({queryKey:["project-work-item-target",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(view.querySelector(detailSelector)).toBeNull());
+    expect(view.textContent).not.toContain(kind==="issue"?"Complete task body":"Complete review body");
+    cache.clear();
+  });
+  it.each(["project","repository","ambiguous"] as const)("does not resolve a %s-mismatched URL target to an unrelated announcement or work item",async mismatch=>{
+    const f=fixture(),data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=resolveProjectInboxWorkItem(data.items,f.issue)!;
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const target={...projectWorkItemTarget(workItem),...(mismatch==="repository"?{repositoryId:"another-repository"}:{}),...(mismatch==="ambiguous"?{pullRequestId:f.review.id}:{})};
+    const view=await render(<PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}>
+      <ProjectsView host={f.host} selectedProjectId={mismatch==="project"?"another-project":workItem.project.id} workItemTarget={target}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(view.textContent).toContain("Repository unavailable"));
+    expect(view.querySelector('[data-testid="project-issue-detail"]')).toBeNull();
+    expect(view.querySelector('[data-testid="project-pull-request-detail"]')).toBeNull();expect(view.querySelector('aside')).toBeNull();
+    expect(view.textContent).not.toContain("Complete task body");cache.clear();
+  });
   it.each(["issue","review"] as const)("renders the original author-claimed origin through the actual %s detail consumer",async kind=>{
     const f=fixture(),channelId="12345678-1234-4234-8234-123456789012";
     f[kind].tags.push(["h",channelId]);
