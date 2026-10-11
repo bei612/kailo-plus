@@ -129,9 +129,11 @@ export async function middleware(request: NextRequest) {
       '/api/platform-adapter/handshake',
       '/api/platform-adapter/validate_binding',
       '/api/platform-adapter/reconcile',
+      '/api/platform-adapter/map_native_status_error',
       '/platform-adapter/v1/handshake',
       '/platform-adapter/v1/validate_binding',
       '/platform-adapter/v1/reconcile',
+      '/platform-adapter/v1/map_native_status_error',
     ].includes(request.nextUrl.pathname)
   ) {
     return NextResponse.next();

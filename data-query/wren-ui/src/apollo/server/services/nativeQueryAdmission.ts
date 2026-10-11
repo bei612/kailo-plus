@@ -275,7 +275,8 @@ export async function authorizeQuery(
     | 'observe'
     | 'handshake'
     | 'validate_binding'
-    | 'reconcile',
+    | 'reconcile'
+    | 'map_native_status_error',
   argumentsValue: unknown,
   sourceResources?: unknown,
 ): Promise<JWTPayload> {

@@ -12,6 +12,10 @@ const resolveAlias = {
 /** @type {import('next').NextConfig} */
 const nextConfig = withLess({
   output: 'standalone',
+  experimental: {
+    externalDir: true,
+    outputFileTracingRoot: path.resolve(__dirname, '../..'),
+  },
   i18n: {
     locales: ['zh-CN', 'en'],
     defaultLocale: 'zh-CN',
@@ -38,6 +42,10 @@ const nextConfig = withLess({
   // routes redirect
   async rewrites() {
     return [
+      {
+        source: '/platform-adapter/v1/map_native_status_error',
+        destination: '/api/platform-adapter/map_native_status_error',
+      },
       {
         source: '/platform-adapter/v1/handshake',
         destination: '/api/platform-adapter/handshake',

@@ -11168,3 +11168,104 @@ three-person collaboration, a full check, container release, production
 migration, active binding or deployment. Production activation must wait for
 the paired compatible PEP, native migration, actual adapter lifecycle and
 remaining release evidence. Existing images cannot be relabeled as this source.
+
+## 2026-10-11 Wren original HTTP shared error mapping
+
+This scoped increment starts at
+`2cfa7be4751915501ee8f70f81621ab40adc752a`; the upstream remains
+`c5f02a0391c87420dba78632dcd86073710deb72`.
+It implements the existing ComponentProtocol error-mapping consumer under
+SS-WRN-GOVERNANCE/SS-WRN-IDENTITY, not another query engine or error taxonomy.
+The original upstream `wren-ui/Dockerfile` and
+`wren-ui/next.config.js::module.exports` remain the build/Next entry points.
+
+Before implementation the affected boundary was the existing machine HTTP
+operation allowlist, `authorizeQuery`, Next middleware/rewrite, the shared
+`client-kit/adapter/protocol.mjs::nativeStatusErrorArguments/mapNativeStatusError`
+and standalone packaging. There is no database migration, new persisted
+execution state, business payload copy, contract change or workflow change.
+Core/native result reconciliation is not replaced by this metadata mapping.
+The browser OIDC route, independent component entry and Mobile boundary are
+unchanged.
+
+The original machine route now accepts `map_native_status_error` with the
+existing signed ActionToken and service PEP. It rejects browser Origin/Cookie,
+noncanonical or duplicate-key bodies, unsupported business action/target
+claims, wrong idempotency keys and failed fresh admission. The existing shared
+function alone classifies provider statuses into DENIED, BLOCKED,
+PRECONDITION, LIMIT, CONFLICT and UNKNOWN. Opaque provider diagnostics are not
+returned. Unknown statuses remain UNKNOWN, never an execution success/failure.
+The original request byte bound and token/service timeouts remain in force.
+Authorization is checked again before even this fixed metadata is returned;
+there is no external side effect to retry and no additional authority.
+
+The shared module is imported by its repository-relative path, not copied into
+a product-local implementation. Its three imports are Node built-ins only
+(`node:crypto`, `node:fs/promises`, `node:http`). The exact candidate shared
+blob is `bb9a0748a159fee5930b10a31a5a95bc74ec5872`, equal to HEAD; unrelated
+formal-worktree changes to this module were excluded. Docker consumes only the
+original UI inputs and this module through its dedicated Dockerfile ignore
+allowlist. Next external-directory compilation and tracing-root settings are
+compile-time packaging seams, documented in section 1 of the operations
+baseline, not runtime authorization relaxations.
+
+Post-implementation checks used the existing 4 CPU/4 GiB Wren SDK container,
+existing dependencies and Data-only temporary/Jest cache directories. Actual
+commands in the exact UI candidate were:
+
+```sh
+node /deps/node_modules/typescript/bin/tsc --noEmit --incremental false
+node /deps/node_modules/jest/bin/jest.js --runInBand --testTimeout=60000 --cacheDirectory=/runtime/wren-map.ighY7e/jest-cache --runTestsByPath src/nativeQuery.test.ts --testNamePattern="original adapter shared native error mapping HTTP consumer"
+node /deps/node_modules/prettier/bin/prettier.cjs --check 'src/pages/api/platform-adapter/[operation].ts' src/apollo/server/services/nativeQueryAdmission.ts src/middleware.ts next.config.js jest.config.js src/nativeQuery.test.ts
+```
+
+TypeScript and formatting exited 0. The actual Next HTTP handler and actual
+shared parser/mapper passed 11 selected checks; 111 checks were not selected.
+The delivered config and `authorizeQuery` are mocked in this narrow HTTP
+check; this is explicitly not live signature/Core PEP/SpiceDB conformance.
+Removing the second admission from the candidate made the revocation check
+fail with expected 403 versus actual 200 (exit 1). After exact restoration the
+11 checks passed again (exit 0).
+
+Original evidence directory:
+`/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ/wren-map.ighY7e`.
+`negative.log` SHA-256:
+`1dd4c5ec84951558d9c667c16e78061dce22d6b747ea5c6f4390f3b4f0666c5c`.
+Combined final TypeScript/HTTP `final.log` SHA-256:
+`db9c5359e47081dcdb826cfaa047a1e03d18145a71fae5a114ff794598e293c4`.
+The six-file format check printed `All matched files use Prettier code style!`.
+
+These checks do not establish the full native conformance suite, a production
+image/activation, menu visibility, iframe business acceptance, screenshots,
+complete Cells/Wren integration or the global full gate. None is relabeled
+as passed by this scoped HTTP receipt.
+
+The exact Next SDK version is 14.2.32. Its original
+`next/dist/server/config-schema.js::configSchema` nests
+`outputFileTracingRoot` under `experimental`. The first candidate placed it
+at the top level; the source candidate corrects this before submission. The
+TypeScript/HTTP checks above do not validate Next configuration placement,
+and the six-file format result predates this final small configuration fix.
+
+The original build was launched with the earlier frozen configuration, using
+`TMPDIR=/volumes/data/kailo/tmp BUILDX_BUILDER=kailo-core-data REGISTRY=127.0.0.1:55000 tools/build-upstream.sh data-query-ui`
+under the existing privileged Docker identity. Its actual builder limit is
+8 CPU/16 GiB, no extra swap, with cache at
+`/volumes/data/kailo/buildkit-core-state`. The ordinary Docker identity first
+failed its builder lookup (exit 2); no replacement builder was created.
+The existing Yarn immutable installation completed with upstream peer warnings
+in 612 seconds; at this source receipt the BuildKit dependency layer has not
+reported DONE and no build exit code or new artifact exists. The old build
+input remains byte-frozen, separate from the corrected source index, so it
+cannot attest the corrected source. Standalone entry/module packaging remains
+unverified and blocks release, not this honest source-only stage.
+
+The original docs command first failed launcher preconditions for TMPDIR and
+CHECK_NETWORK. With TMPDIR, CHECK_CPUS=2, CHECK_MEMORY=2g, CHECK_NETWORK=none and
+Data-only CHECK_CACHE_ROOT supplied, it printed all seven checks PASS and
+`全部通过。`; its outer cleanup still awaited disk I/O at this receipt. This
+is not recorded as an observed exit 0. The full formal worktree was the docs
+input, not this private candidate. Logs `build.log`, `build-root.log`,
+`docs-formal.log`, `docs-formal-configured.log` and
+`docs-formal-configured-final.log` are retained in the evidence directory.
+No additional global build or verification environment was opened to mask these boundaries.

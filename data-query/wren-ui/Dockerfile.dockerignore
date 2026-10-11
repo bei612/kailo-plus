@@ -1,0 +1,17 @@
+# This UI build consumes only its original source and the shared wire module.
+*
+!data-query/wren-ui/.yarnrc.yml
+!data-query/wren-ui/package.json
+!data-query/wren-ui/yarn.lock
+!data-query/wren-ui/.yarn/releases/yarn-4.5.3.cjs
+!data-query/wren-ui/public
+!data-query/wren-ui/src
+!data-query/wren-ui/.eslintrc.json
+!data-query/wren-ui/.eslintignore
+!data-query/wren-ui/.prettierrc
+!data-query/wren-ui/next.config.js
+!data-query/wren-ui/tsconfig.json
+!data-query/wren-ui/migrations
+!data-query/wren-ui/knexfile.js
+!data-query/wren-ui/docker-entrypoint.mjs
+!client-kit/adapter/protocol.mjs

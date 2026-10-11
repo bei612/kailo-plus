@@ -42,6 +42,136 @@ import handler, {
   config as routeConfig,
 } from './pages/api/platform-adapter/[operation]';
 
+import * as queryAdmission from './apollo/server/services/nativeQueryAdmission';
+
+describe('original adapter shared native error mapping HTTP consumer', () => {
+  let server: HttpServer;
+  let endpoint: string;
+  let admission: jest.SpyInstance;
+  const key = randomUUID();
+  const payload = (nativeStatus: number | string) =>
+    JSON.stringify({
+      idempotencyKey: key,
+      nativeError: 'opaque-provider-diagnostic',
+      nativeStatus,
+    });
+  beforeEach(async () => {
+    jest.spyOn(queryAdmission, 'loadQueryDelivery').mockResolvedValue({
+      requestMaxBytes: 65536,
+    } as NativeQueryDelivery);
+    admission = jest.spyOn(queryAdmission, 'authorizeQuery').mockResolvedValue({
+      action_key: 'data_query.query@v1',
+      action_definition_version: 1,
+      target_type: 'RESOURCE',
+      target_id: randomUUID(),
+    });
+    server = createServer((request, response) => {
+      void apiResolver(
+        request,
+        response,
+        { operation: 'map_native_status_error' },
+        { default: handler, config: routeConfig },
+        {
+          previewModeId: '',
+          previewModeEncryptionKey: '',
+          previewModeSigningKey: '',
+        },
+        false,
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/platform-adapter/v1/map_native_status_error`;
+  });
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    jest.restoreAllMocks();
+  });
+  const call = (body: string, headers: Record<string, string> = {}) =>
+    fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer fixture-native-action',
+        'idempotency-key': key,
+        ...headers,
+      },
+      body,
+    });
+  it.each([
+    [403, 'DENIED'],
+    [501, 'BLOCKED'],
+    [404, 'PRECONDITION'],
+    [429, 'LIMIT'],
+    [409, 'CONFLICT'],
+    ['unrecognized-native-status', 'UNKNOWN'],
+  ])(
+    'maps native %s through the existing shared function after two admissions',
+    async (status, expected) => {
+      const response = await call(payload(status));
+      expect(response.status).toBe(200);
+      const result = await response.text();
+      expect(JSON.parse(result).class).toBe(expected);
+      expect(result).not.toContain('opaque-provider-diagnostic');
+      expect(admission).toHaveBeenCalledTimes(2);
+      for (const args of admission.mock.calls)
+        expect(args.slice(1)).toEqual([
+          'fixture-native-action',
+          'map_native_status_error',
+          JSON.parse(payload(status)),
+        ]);
+    },
+  );
+  it.each(['cookie', 'origin'])(
+    'rejects browser %s before service admission',
+    async (header) => {
+      const response = await call(payload(403), {
+        [header]: 'not-a-machine-channel',
+      });
+      expect(response.status).toBe(403);
+      expect(admission).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses noncanonical/duplicate keys without forwarding an ambiguous signed body', async () => {
+    const response = await call(
+      `{"idempotencyKey":"${key}","nativeStatus":403,"nativeStatus":200}`,
+    );
+    expect(response.status).toBe(400);
+    expect(admission).not.toHaveBeenCalled();
+  });
+  it('withholds even error metadata when fresh authorization is revoked', async () => {
+    admission.mockRejectedValueOnce(
+      new queryAdmission.NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+    );
+    expect((await call(payload(403))).status).toBe(403);
+    admission.mockClear();
+    admission
+      .mockResolvedValueOnce({
+        action_key: 'data_query.query@v1',
+        action_definition_version: 1,
+        target_type: 'RESOURCE',
+        target_id: randomUUID(),
+      })
+      .mockRejectedValueOnce(
+        new queryAdmission.NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+      );
+    expect((await call(payload(403))).status).toBe(403);
+    expect(admission).toHaveBeenCalledTimes(2);
+  });
+  it('rejects a binding management context rather than treating an allowed PEP as arbitrary native access', async () => {
+    admission.mockResolvedValue({
+      action_key: 'application_binding.create',
+      action_definition_version: 1,
+      target_type: 'APPLICATION_BINDING',
+      target_id: randomUUID(),
+    });
+    expect((await call(payload(403))).status).toBe(403);
+    expect(admission).toHaveBeenCalledTimes(1);
+  });
+});
+
 let mockComponents: any;
 jest.mock('./common', () => ({
   get components() {

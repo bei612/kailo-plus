@@ -14,9 +14,16 @@ import {
 import { NativeBindingService } from '@server/services/nativeBindingService';
 import {
   authenticateQueryGateway,
+  authorizeQuery,
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import {
+  boundedBody,
+  nativeStatusErrorArguments,
+  mapNativeStatusError,
+  Refused,
+} from '../../../../../../client-kit/adapter/protocol.mjs';
 
 // Only these machine endpoints have their own authentication instead of the
 // independent native browser OIDC middleware. They do not accept cookies,
@@ -61,6 +68,7 @@ export default async function handler(
         'handshake',
         'validate_binding',
         'reconcile',
+        'map_native_status_error',
       ].includes(String(request.query.operation))
     ) {
       response.status(405).end();
@@ -70,6 +78,33 @@ export default async function handler(
       throw new NativeQueryRefusal(403, 'QUERY_MACHINE_CHANNEL_REQUIRED');
     }
     const delivered = await loadQueryDelivery();
+    if (request.query.operation === 'map_native_status_error') {
+      const operation = 'map_native_status_error';
+      const args = nativeStatusErrorArguments(
+        await boundedBody(request, delivered.requestMaxBytes),
+        request.headers['idempotency-key'],
+      );
+      const token = bearer(request);
+      const claims = await authorizeQuery(delivered, token, operation, args);
+      if (
+        ![
+          'data_query.query@v1',
+          'data_query.dry_run@v1',
+          'data_query.describe@v1',
+        ].includes(String(claims.action_key)) ||
+        claims.action_definition_version !== 1 ||
+        claims.target_type !== 'RESOURCE' ||
+        typeof claims.target_id !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          claims.target_id,
+        )
+      )
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const result = mapNativeStatusError(args);
+      await authorizeQuery(delivered, token, operation, args);
+      response.status(200).json(result);
+      return;
+    }
     if (
       request.query.operation === 'handshake' ||
       request.query.operation === 'validate_binding' ||
@@ -251,7 +286,11 @@ export default async function handler(
     // Do not return driver, JWT, SQL or configuration diagnostics to callers.
     if (!response.headersSent) {
       response
-        .status(error instanceof NativeQueryRefusal ? error.status : 503)
+        .status(
+          error instanceof NativeQueryRefusal || error instanceof Refused
+            ? error.status
+            : 503,
+        )
         .json({
           error:
             error instanceof NativeQueryRefusal
