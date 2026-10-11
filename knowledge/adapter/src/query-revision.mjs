@@ -394,6 +394,7 @@ export function createAdapter(rawConfig) {
         : request.url === '/platform-adapter/v1/handshake' ? 'handshake'
         : request.url === '/platform-adapter/v1/validate_binding' ? 'validate_binding'
         : request.url === '/platform-adapter/v1/execute' ? 'execute'
+          : request.url === '/platform-adapter/v1/reconcile' ? 'reconcile'
           : request.url === '/platform-adapter/v1/observe' ? 'observe'
             : request.url === '/platform-adapter/v1/extract_usage' ? 'extract_usage'
               : request.url === '/platform-adapter/v1/map_native_status_error' ? 'map_native_status_error' : undefined;
@@ -424,6 +425,11 @@ export function createAdapter(rawConfig) {
         || raw !== canonical(args))) throw new Refused(400);
       if (operation === 'execute' && (!exactKeys(args, ['idempotencyKey', 'actionKey', 'arguments'])
         || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== request.headers['idempotency-key'])) throw new Refused(400);
+      // The existing conformance recovery sends only its frozen execution key.
+      // This is not binding-wide drainage and cannot accept a binding payload.
+      if (operation === 'reconcile' && (!exactKeys(args, ['idempotencyKey'])
+        || !UUID.test(args.idempotencyKey) || args.idempotencyKey === '00000000-0000-0000-0000-000000000000'
+        || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args))) throw new Refused(400);
       if (['observe','extract_usage'].includes(operation) && (!exactKeys(args,Object.hasOwn(args,'nativeId')
         ? ['externalExecutionId','idempotencyKey','nativeType','nativeId'] : ['externalExecutionId','idempotencyKey','nativeType'])
         || !UUID.test(args.externalExecutionId) || !UUID.test(args.idempotencyKey)
@@ -446,8 +452,12 @@ export function createAdapter(rawConfig) {
       let value;
       if (operation === 'map_native_status_error') {
         value = mapNativeStatusError(args);
-      } else if (['observe','extract_usage'].includes(operation)) {
-        const ingesting=nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document';
+      } else if (['observe','reconcile','extract_usage'].includes(operation)) {
+        const action = nativeKnowledgeAction(claims.action_key);
+        const nativeType = operation === 'reconcile'
+          ? action === 'ingest' ? 'add_document' : action === 'delete' ? 'delete_document' : undefined
+          : args.nativeType;
+        const ingesting=action==='ingest' && nativeType==='add_document';
         let native;
         let observed;
         if (ingesting) {
@@ -455,7 +465,7 @@ export function createAdapter(rawConfig) {
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           });
           observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
-        } else if (nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
+        } else if (action==='delete' && nativeType==='delete_document') {
           observed={execution:deletionObservation(await nativeTool(config,deadline,'delete_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           }),config,args.idempotencyKey)};

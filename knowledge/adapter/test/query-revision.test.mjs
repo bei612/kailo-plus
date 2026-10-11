@@ -100,13 +100,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const sourceBytes = mode === 'empty-source' ? Buffer.alloc(0) : Buffer.from([0,255,1,254]);
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = managing || mapping ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
+  const intent = managing || mapping ? args : operation === 'reconcile' ? {idempotencyKey:args.idempotencyKey}
+    : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: searchQueries[mode]?.[0] ?? 'search fixture' } : reference } : args;
   if (['known-native-id','mismatched-native-id'].includes(mode)) {
     intent.nativeId = mode === 'known-native-id' ? ingest ? ids[2] : ids[9] : ingest ? ids[9] : ids[2];
   }
-  const bodyValue = managing || mapping || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = managing || mapping || ['observe','reconcile','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -192,7 +193,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
         } } });
     }
     if (body.params.name==='add_document') {
-      if (['observe','extract_usage'].includes(operation)) assert.deepEqual(body.params.arguments,{
+      if (['observe','reconcile','extract_usage'].includes(operation)) assert.deepEqual(body.params.arguments,{
         knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true});
       else assert.deepEqual(body.params.arguments,{knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,
         title:reference.displayName,filename:reference.displayName,file_base64:sourceBytes.toString('base64'),
@@ -205,7 +206,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
           parse_status:mode==='queued'||mode.endsWith('-queued')?'pending':mode==='unknown'||mode.endsWith('-unknown')?'failed':'completed'}}}});
     }
     if (body.params.name === 'delete_document') {
-      assert.deepEqual(body.params.arguments, ['observe','extract_usage'].includes(operation)
+      assert.deepEqual(body.params.arguments, ['observe','reconcile','extract_usage'].includes(operation)
         ? {knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true}
         : {knowledge_base_id:ids[1],knowledge_id:ids[2],expected_revision:revision,idempotency_key:args.idempotencyKey});
       const value = mode === 'ack-only' ? {deleted:true} : {
@@ -761,14 +762,62 @@ test('native observations retain the frozen identity across execution envelopes 
   });
 });
 
-test('unsupported reconciliation remains a closed route rather than fabricated task evidence',async t=>{
-  const {invoke,state}=await fixture(t,'ok','knowledge.ingest@v1','observe');
-  const response=await invoke('reconcile');
-  assert.equal(response.status,404);
+test('an observe token cannot authorize execution reconciliation',async t=>{
+  const {invoke,state,args}=await fixture(t,'ok','knowledge.ingest@v1','observe');
+  const response=await invoke('reconcile',{raw:canonical({idempotencyKey:args.idempotencyKey}),key:args.idempotencyKey});
+  assert.equal(response.status,401);
   assert.equal((await response.json()).execution,undefined);
   assert.equal(state.peps,0);
   assert.equal(state.native,0);
   assert.equal(state.receipts.length,0);
+});
+
+test('execution reconciliation reads the frozen native intent without replaying upload or deletion',async t=>{
+  for (const version of ['v1','v2']) for (const action of ['ingest','delete']) {
+    for (const mode of ['ok','queued','unknown','deny','revoke','foreign-token',
+      ...(action==='ingest'?['no-source-evidence','receipt-unavailable']:['no-terminal','ack-only','foreign'])]) {
+      await t.test(`${version}/${action}/${mode}`,async nested=>{
+        const {invoke,state,args}=await fixture(nested,mode,`knowledge.${action}@${version}`,'reconcile');
+        const response=await invoke();
+        const value=await response.json();
+        const readable=['ok','queued','unknown'].includes(mode);
+        // The existing shared JSON transport maps non-2xx PEP responses to 503.
+        // Neither denial nor revocation may disclose a native outcome.
+        assert.equal(response.status,readable?200:mode==='foreign-token'?401:503);
+        if (readable) {
+          assert.equal(value.execution.idempotencyKey,args.idempotencyKey);
+          assert.equal(value.execution.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
+          assert.equal(value.execution.nativeType,action==='ingest'?'add_document':'delete_document');
+          assert.equal(value.execution.terminalAt!==undefined,mode==='ok');
+        } else assert.equal(value.execution,undefined);
+        assert.equal(state.grants,0);
+        assert.equal(state.downloads,0);
+        assert.deepEqual(state.methods,['deny','foreign-token'].includes(mode)?[]:[action==='ingest'?'add_document':'delete_document']);
+        if (['queued','unknown','deny','foreign-token'].includes(mode)) assert.equal(state.receipts.length,0);
+      });
+    }
+  }
+});
+
+test('execution reconciliation cannot accept binding drainage or manufacture read task receipts',async t=>{
+  for (const action of ['read','export','search']) await t.test(action,async nested=>{
+    const {invoke,state}=await fixture(nested,'ok',`knowledge.${action}@v2`,'reconcile');
+    const response=await invoke();
+    assert.equal(response.status,403);
+    assert.equal((await response.json()).execution,undefined);
+    assert.equal(state.native,0);
+  });
+  for (const mode of ['binding','nil','unknown-field','noncanonical']) await t.test(mode,async nested=>{
+    const {invoke,state,args}=await fixture(nested,'ok','knowledge.ingest@v2','reconcile');
+    const key=mode==='nil'?'00000000-0000-0000-0000-000000000000':args.idempotencyKey;
+    const payload={idempotencyKey:key,...(mode==='binding'?{bindingId:randomUUID(),generation:1}:{}),
+      ...(mode==='unknown-field'?{nativeType:'add_document'}:{})};
+    const response=await invoke('reconcile',{raw:mode==='noncanonical'?JSON.stringify(payload,null,2):canonical(payload),key});
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).execution,undefined);
+    assert.equal(state.peps,0);
+    assert.equal(state.native,0);
+  });
 });
 
 test('actual read/export consume the signed typed reference and native content', async t => {

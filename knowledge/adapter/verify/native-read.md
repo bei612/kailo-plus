@@ -4770,6 +4770,92 @@ Operation、回执表或摘要协议。原实现只检查 operationId 与摘要�
 本批不解除 FILE_STORAGE 七必选能力、原生 share 治理与延迟删除 fresh
 PEP 的发布门禁；未验证真实 Cells→WeKnora 联调、未部署或激活 binding。
 
+### 2026-10-10 原执行结果不明的 reconcile 消费者
+
+1. 权威：`.design/07` §5.2、§8A 与现有 `worker/activities/component_conformance.go`
+   的结果不明分支要求用原 `idempotencyKey` 观察，不重发 execute。
+   `core/crates/platform-core/src/component_release.rs::authorize_probe` 同样冻结该
+   key-only 请求。此前知识 adapter 完全没有 reconcile 路由，已存在的原生
+   观察能力无法被该实际调用方消费。状态为需适配，而非新增工具或工作流。
+2. 影响：仅 `knowledge/adapter/src/query-revision.mjs::createAdapter` 分派及
+   既有检查；复用 `creationObservation`、`deletionObservation`、`nativeTool`
+   与 read receipt。固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/mcpserver/tools_ingest.go::handleAddDocument/handleDeleteDocument`
+   仍可解析；现有二开观察按同一 endpoint、KB 和 key 读取原创建/删除引用。
+   无数据库、状态、契约字段或四侧生成变更；Web/Desktop/Mobile 无新页面。
+3. 副作用：请求仅接受 canonical `{idempotencyKey}`，类型来自签名 action key，
+   不接受调用方指定 nativeType、binding 枚举或另一个 native ID。请求/响应前
+   保留原验签和 fresh PEP；observe 的签名不能跨 operation 使用。原生调用
+   始终 `observe_only:true`，不申请来源读取、不上传、不新建删除任务。成功导入
+   只沿既有原 key 记录接收回执，不产生另一份额度或审计权威。
+4. 异常：无任务、ack-only、错误 scope、终态证据不足仍拒绝；pending 保持
+   RUNNING，失败/未知状态保持 UNKNOWN，不将它们渲染或报告为完成。未声明
+   retained native task 的 search/read/export 拒绝 reconcile，不重新检索内容
+   冒充旧执行结果。nil key、额外字段、非 canonical 请求均在原生访问前拒绝。
+   撤权/PEP 不可达沿既有共享 transport 返回 UNAVAILABLE，不披露结果；本批
+   没有更改该错误映射。此接口不是绑定级 complete 枚举，不解除停用排空门禁。
+
+执行前实际检查进程与内存（available 26 GiB），原 `kailo-agent-receipt-xvkujx`
+仅 sleep；回读 4 CPU/8 GiB、memory+swap 8 GiB。仅在其镜像内运行
+`node --test test/query-revision.test.mjs`，输入/依赖/临时目录均位于 Data。
+首次 25556 退出 1：新检查错误地预期 PEP 非 2xx 映射为 403，实际既有
+`jsonFetch` 为 503；另外导出漏带两份 registration 数据。修正新断言后
+32122 为 303 通过、2 个 ENOENT 失败，`positive.log` 保留该原输出。补齐同一
+冻结树的原契约输入后 61051 退出 0：305 通过、0 失败。
+
+随后仅在隔离输入删除真实 reconcile 路由，用原检查的
+`--test-name-pattern='execution reconciliation reads'` 重跑：退出 1，报告
+35 失败，实际 404 而非预期原生观察结果。恢复生产原行、cmp 与正式源码一致，
+48937 再跑完整原文件退出 0，305 通过、0 失败。没有修改阈值或跳过失败用例。
+
+证据目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/knowledge-reconcile.3zy44T/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| `positive-complete-input.log` | `73f6eab8f912dbbd632056fc99ebfac4353fc65aa2945c4520bb0b4d679f73c2` |
+| `negative-missing-route.log` | `ba2b6dfd8d5cd2ebf16432c58dd8aa28fbf0553f8312a5c9565956ce8c730cc3` |
+| `restored.log` | `6e41ba730668144b00b0b6eabbe439fbb7fdbdb4784fc4189fda3436dd3011c5` |
+
+这些是原 HTTP/MCP 消费者专项证据，未运行真实组件 release conformance，
+未部署新知识 adapter、未激活 binding，也不代表整批 full 检查或生产就绪。
+
+2026-10-11 提交前复验：以 main
+`2641b3de0c6fb8da3b89109a3626d924838e9f95` 为底，只纳入上述 Adapter
+两份源码/检查文件，固定树 `dd5280789cde7dd41c1ea202b896a49a9d682244`。
+重新核对上述固定官方符号，以及当前 Worker 的 key-only reconcile 请求和
+原生 `platform_binding.go` 的 observe-only 消费者。原受管 add/delete 的新派发
+仍关闭；本批不改其准入，不用本地 MCP 夹具的成功响应声称原生写入已经可用。
+
+复用空闲 `kailo-wren-query-sdk-itgs2n`（仅借用同一通用 SDK，不运行 Wren 业务），
+固定镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实核 UID 1000、4 CPU/4 GiB、memory+swap 同额、原 Data cache/work 挂载。
+启动前该容器仅 sleep，主机 available 34 GiB；没有新增容器、下载依赖或镜像构建。
+私有输入导出当前树的 Adapter、实际共享协议及 knowledge v1/v2 registration，
+TMPDIR 也在该 Data 私有目录。在容器内原 Adapter 目录执行：
+
+```sh
+node --test test/query-revision.test.mjs
+node --test --test-name-pattern='execution reconciliation reads' test/query-revision.test.mjs
+node --test test/query-revision.test.mjs
+```
+
+第一条 exit 0，306 通过、0 失败。第二条仅在私有输入删除真实 reconcile 路由，
+exit 1、35 失败，实际 HTTP 404 与预期 200/503/401 不符；不是编译或环境失败。
+精确还原、两份文件与正式源码 cmp 相同后，第三条 exit 0，306 通过、0 失败、
+0 跳过，23.479 s。没有改产品 timeout、跳过用例或绕过真实验签/路由。
+HTTP Core PEP、OpenBao 和 MCP 响应仍是原检查夹具，不是线上完整业务验收。
+
+证据目录为 `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-reconcile-current.l1eYOi/`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| restored-current.log | `2de79ef4a8f646501e25df44e2251e2322bea34d25609035516113fa5901b768` | exit 0 |
+| negative-current.log | `c5c3996f1a67bb576f97a6ea59444c8d54060abd390538f09eff800147f2082a` | 破坏后 exit 1 |
+| final-current.log | `74491ae9832cc15d3ab6b3f152078f44733e0337fadc0fb4d70c70a6405fa723` | 还原后 exit 0 |
+
+本次不重复在途全局检查，不发布镜像或激活 binding。完整 v2 sync 接入、原生
+延迟写入授权、停用枚举及全量发布门禁仍未闭合，不能由本次窄复验代替。
+
 ### 2026-10-11 来源已读后接收端撤权仍保留原观察
 
 1. 权威与原因：`.design/13` §4.2、§4.4、§7 要求撤权停止后续读取和写入，
