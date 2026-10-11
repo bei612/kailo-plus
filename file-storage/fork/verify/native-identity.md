@@ -2626,3 +2626,309 @@ PydioApi 与检查输入同正式两源码 cmp 一致，精确候选 diff --chec
 后续同一产物可集中验收原普通单文件下载、固定历史版本下载与文本打开，
 但本批没有生产打包、部署、真实浏览器/Core、全量门禁或完整 conformance；
 不把源码/VM 夹具通过称为这些业务路径已经在线可用或三组件已上架。
+
+## 2026-10-11 首次字节写入的同一 AE/EE 原生消费者
+
+设计依据为 `635c42a6264081f1ca6f37e74969652a6dcf4d1d` 的 `03`、`07`、
+`18` 首字节准入纠正及 DD-48/89/90/94。固定 Cells 官方来源仍为
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`；实际接入点是原
+`frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::getClient`、
+`gateway/data/gw/gateway-pydio.go::PutObject` / `NewMultipartUpload` /
+`PutObjectPart` / `CompleteMultipartUpload`、
+`common/nodes/version/handler-version.go::PutObject` 和
+`data/versions/action-version.go::VersionAction`。不是把既有草稿提升当成首传，
+没有先走未经治理的独立上传，也没有复制文件正文到 Core。
+
+四步影响结论：
+
+1. 原 write 合同只有既有 ContentReference；本批在同一 FILE_STORAGE write
+   输入扩展原生 intent 元数据，原旧输入保留。Core 使用已经准入并派发的
+   HUMAN ActionExecution/ExternalExecution，原 ComponentTaskWorkflow 和
+   原生 Job/Task 等待首字节；writer 凭原冻结三引用在同请求重新取得短期
+   ActionToken，不新建执行或续签权威、不在 Task/history 持久化短令牌。
+2. 原生 Prepare/Observe 服务仍验证独立 HUMAN 会话、原 scope 与 CSRF；
+   用户不能用 body 指定可信 actor、代次或扩大期限。binding/generation
+   对照原 AE/EE 冻结值，安全停用与撤权拒绝新字节；不能用当前版本替换旧
+   执行的冻结版本。首字节期限来自原服务器配置且受执行准入期限约束。
+3. S3 原签名与 HUMAN cookie 之后才消费 writer admission；每个实际字节
+   请求仍核原资源 ACL、冻结节点、fresh PEP、单次 Task claim 和不可变
+   Version ACK。UI 在首个 await 前领取同一 intent 的请求槽，不能由并发
+   SDK 回调重发同一字节请求；未知结果只观察原任务，不重新发 execute。
+4. 空文件也必须最终 fresh/ACK；部分写入、取消、撤权、失联 ACK、过期及
+   不完整 Version 均不渲染成功或确定失败。无可证明终态的原 Task 保留
+   UNKNOWN，沿原 EE observe/对账，不重派发。独立实例原上传不改治理方式。
+
+Bolt/Mongo 变更是这条真实写路径的必要消费者：原 S3
+`claimNativeUpload → JobService.PutTask → MergeNativeUploadStep` 必须在各自
+原 DAO 事务内合并单步 claim；binding 截止枚举同时识别派生 upload Job，
+否则并发分片会覆盖彼此或停用后仍可领取新字节。它们不增加平台实体或
+第二任务账本；没有从旧无归属任务猜出当前 generation。Mongo 真实后端
+并发未验证，不能将 Bolt 或纯函数检查外推到 Mongo。
+
+Core 锁序沿原消费者核对：writer 先锁原 AE（FOR UPDATE），再读锁 EE 与
+冻结投影；原 `application_execution::record_observation` / usage 也按
+AE→EE，`application_action::finish` 先锁 AE。取消先锁自己的 control AE，
+再核原 AE，而 writer 不反向请求 control AE；取消事务提交后才发送
+Temporal request_cancel。evaluate/check_quota 的额外 pool 读取为普通
+SELECT，Temporal 只查询执行与取消 history。此源码核对不是实际 PostgreSQL
+并发/连接池饱和验收；持锁期间远端不可达仍按原限时失败，不声明零等待。
+
+额度边界明确保留：既有 NONE 不查计量，CHECK 只读取原 OpenMeter
+entitlement/credit 并前后核绑定，不分配或重复扣减 AE reservation；
+STRICT 当前仍以 CapabilityBlocked 拒绝。因此本批不宣称 STRICT 预留、
+结算或其并发耗尽已交付，也不另造补偿余额。
+
+当前源码和隔离验证不是部署：没有以本批生成镜像、打开组件菜单、激活
+binding 或通过完整 FILE_STORAGE release conformance。新延迟删除仍关闭；
+真实浏览器首次上传/下载、iframe 登录刷新和跨站会话均不由本批 fixture
+代替。最终验证命令、失败和正反恢复结果在本节继续如实记录。
+
+实际已运行证据与边界：
+
+- 原受限 SDK 的联合四侧生成退出 0；隔离 Core 原 `cargo check --locked
+  --offline -p platform-core` 退出 0，`report_tests::binding_` 2/2、原
+  contracts roundtrip 51/51。该 Rust 输入早于本批发现的 Unix expiry→
+  RFC3339 毫秒转换修正，不能声称最终 expiry 单元已经运行。
+- 早期隔离 Go 契约 roundtrip 退出 0、TypeScript 57/57、Dart 51/51；
+  这些历史结果不能证明后续 Admission expiry 的四侧一致性。保留 Go
+  私有输入缺 go.mod、Dart 缺原导出文件及日期拼写不一致失败。后续原
+  Go 检查再次检出 `format:date-time` 导致 `.000Z` 被改写；该声明违反
+  `contracts/README.md` §1。最终按原契约子集改为普通 string 与 RFC3339
+  说明，原样本不改、期待不归一化；Go writer 仍实际调用 RFC3339Nano
+  解析并拒绝非法或已过期值。此修正后 native-only 四侧各 1 项通过，
+  Go 私有移除 expiresAt JSON tag 捕获失败，恢复后同一用例通过。
+- 原 PydioApi 实际 VM 消费者 59/59；仅私有源恢复 await 之后才设置
+  dispatched 的旧顺序，并发两回调断言失败、exit 1；还原后 59/59、exit 0。
+  此网络/SDK/DOM 均为 fixture，不是浏览器上传。完整 Node 尝试实际
+  718 pass/41 fail，缺既有 MCP/xml2js 依赖等原失败保留，不记全套通过。
+- 原 S3 消费者隔离 fixture 集成检查使用同一既有
+  `kailo-cells-native-check-lftow7`（4 CPU/8 GiB、等额 memory+swap、UID 1000，
+  原独立 Data Go 缓存），没有新环境或重建基础设施。命令为
+  `go test ./gateway/data/gw -run TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement -count=1 -v`。
+  72999 实际 exit 1：检查引用不存在的 JobServiceStub，业务断言未执行；
+  改为原 gRPC ClientConn fixture 后 56364 自然 exit 1：0 字节正向进入
+  原 ancestors 消费时，fixture BranchInfo 缺 Workspace，发生 panic。
+  已在正式检查源码补齐原上下文；主机维护禁止新增检查，尚未复验。
+  56364 不是维护强停，不抹去这次失败。远端存储/Core 本来就是 fixture，
+  即使后续通过也只能证明原消费者隔离集成，不能称已部署端到端。
+
+原日志根为 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/` 下
+`first-byte-core.09N6oV`、`first-byte-gen.UjVpJs` 和 `first-byte-node.6Ifsfd`；
+S3 原日志为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/first-byte-s3.log`
+及同目录 `first-byte-s3-restored.log`。正式工作树不破坏，原日志保留。
+
+交叉复核检出的原发布窗口：原 VersionAction 用
+`SHA256([task.ID, NativeVersionActionID, nativeNodeUUID])` 持久化确定性
+VersionId，能定位同一上传，但不足以证明版本策略 prune 与原 draft 清理
+都完成。原 StoreVersion 先落版本、删除旧版本元数据，再在响应返回
+PruneVersions；随后 gateway 的最终 Task 回执存在崩溃窗。不能仅凭
+HeadVersion 命中改成 SUCCEEDED，也不能重跑 PromoteRevision。
+
+同批源码现已接入原生恢复消费者。维护解除后正用原受限 SDK 验证下列
+增量；未取得终态的检查不沿用前面的 Rust/Node 通过数，也不解除发布阻断：
+
+- `scheduler/jobs/native-upload-publication.go` 在原 Task output 中保留
+  完整冻结 node/draft/published/prune 引用，没有短令牌、正文、第二任务表
+  或新平台状态。原 DAO 继续拒绝丢弃已写的 output。发布者先取得此原
+  PutTask 的确切 ACK，原 CreateVersion 才返回复制目标；丢失 ACK 不复制。
+- `data/versions/grpc/native-upload-publication.go` 复用原版本策略计算，
+  在复制前通过原 Version DAO 取得有界完整快照，读取/游标/解码失败不当作
+  完整 EOF。StoreVersion 只消费同一已经持久化的 plan，不能事后补造目标。
+  新 `PublishDraftUpload` 与原 draft 截止栅栏共用 Bolt 写事务／Mongo session
+  事务；Mongo 先写同一个原 reservation document，不能靠快照读避开
+  与 cleanup 的写冲突。插入冲突整体拒绝，不通过重试发布弥补未知 ACK。
+  独立原 StoreVersion 不改变，Mongo 实际后端事务仍未验收。
+- `gateway/data/gw/native-upload.go` 在原 PromoteRevision、prune、draft
+  清理和版本读回后重读原 Task，消费已经持久化的同一 plan，再保存最终
+  NativeVersionResult/NativeUploadContent。不能拿旧内存 Task 覆盖新证据。
+- 原 `PruneDraftUploads` 到期扫描保留 native JobID/TaskID，截止后只清理
+  同一 plan 中确切的原 native 对象并读回已经发布的不可变版本，补同一
+  Task 终态 ACK；不调用上传、Promote、StoreVersion 或新平台准入。先前
+  原生删除 ACK 失联仍可按同一引用再核清理；已持久化 Finished 的历史
+  Task 不因后来正常版本策略删掉旧发布版本而倒退为 UNKNOWN。
+- 扫描时间、批量和请求期限复用既有 draftUploads 配置及原冻结 deadline，
+  不从当前 binding generation 猜测旧任务归属；原 Job 元数据必须核对
+  原冻结 binding/generation。每次失败保留原 row/location，公平排序在
+  后续 sweep 再读同一对象，不创建另一个执行。
+- plan 已落而复制／发布未完成时，先清已 fence 的原 draft；确切
+  VersionNotFound 时再回收 plan 中未发布的不可变复制体。不能把 plan
+  存在当作发布成功，也不能因 published 缺失反复提前返回而永久留住 bytes。
+
+仍无法自动认定终态的边界：没有发布 plan、发布版本缺失/与冻结值冲突，
+或只有部分实际副作用时，保留 UNKNOWN；到期暂存 bytes 仍沿原截止
+清理，原 Task.TriggerOwner 收到原 StatusMessage 对账提示，原 cleaner
+readiness 保持失败并阻止新 staging。该提示不是已经完成人工处置的证据，
+也没有伪造 FAILED/SUCCEEDED 或允许新上传来覆盖旧结果。对这些无法补证
+的历史任务，完整人工终结处置仍未验收；完整首传交付不能标记通过。
+
+维护期间只写入原 jobs/DAO/S3 检查用例，未运行：空／非空 publication
+plan 先于终态、同一 terminal 重读、cleanup fence 拒绝迟到发布、有界
+快照失败，以及 S3 发布 plan ACK 失联。S3 远端 Version fixture 同步模拟
+原持久 plan ACK，不能用该 fixture 证明原 Version DAO 或已部署 Core。
+
+维护后集中原 Go 检查首轮 17406 实际 exit 1：jobs 的 4 项及原草稿
+清理／取消检查通过；DAO 原包需要 kv/storage 标签，未投递而 setup
+失败；旧 grpc FirstWriter 夹具缺可信 Job/Task 被新原生门禁拒绝；S3
+夹具缺 Role/ACL 远端及准确版本对象查询，未形成成功上传。原日志
+`first-byte-final.LPEm6u/native-go-positive.log` 保留。修正只补真实
+原消费者所需 fixture，额外覆盖缺 Task 拒绝，不放宽生产授权。
+后续同一 5 包以 `-tags=kv` 集中复验，并包含原清理入口的 6 个恢复
+场景及传入旧 now、真实 deadline 已过且未 sweep 时拒绝发布的 DAO
+断言；未获终态前仍不计通过。Mongo 没有独立 DSN，不能将跳过计为通过。
+
+主线 Projects 合入后，本批私有候选在
+`8e3ac789d6ceb12f23ba04f88a6dce8736a5160b` 上重放；原联合
+`tools/gen.sh` 35917 exit 0，4 侧同时保留 Projects 枚举和上传字段，
+两份 Dart 词条与该主线逐字 cmp 通过，未吸入后续词条。首次 79559
+遗漏原 npm cache 投递，ENOTCACHED exit 1 如实保留；恢复既有
+`/cache/npm` 且 offline 后通过，没有新装依赖。四侧 native-only
+命令及正反恢复日志见 `first-byte-final-gen.NOi7VK/native-roundtrip-receipt.md`；
+这些仍是隔离契约证据，不是实际服务部署或原生浏览器上传证据。
+
+原五包复验 `63927` 的实际源码树为
+`acfdae34910ac33124566b1927c99c7e7674fd97`，整体 exit 1；命令是
+`go test -tags=kv ./scheduler/jobs ./data/versions ./data/versions/dao ./data/versions/grpc ./gateway/data/gw -run 'NativeUpload|NativeDraft|KailoNativeDraft' -count=1 -v`。
+jobs、versions、DAO、grpc 四包通过；DAO 的 Bolt 检查 450.526 秒，
+grpc 453.196 秒。六个原 Task 恢复场景、旧 now 跨 deadline 拒绝发布、
+空／非空 FirstWriter、丢失 object/reservation ACK、缺 cleaner/Task
+拒绝均实际通过。Mongo 无 DSN，没有执行其真实后端事务验收。
+准确日志是 `first-byte-final.LPEm6u/native-go-restored.log`，不与
+17406 的 `native-go-positive.log` 混用。
+
+S3 的 0／12 字节成功路径仍因 `Object not found: io/live/file.txt`
+失败，十个拒绝子例不能证明到达各自 ACK 注入点，也不能抵消正向失败。
+原对象 fixture 的 GET 只有 Size，丢失已存 Key/ETag，原版本复制消费者
+因此拒绝；同一 fixture 的原索引写端也缺失。已补齐远端 fixture 并强化
+plan-before-copy、发布后拒绝与终态 ACK 丢失的实际阶段断言；这些后补
+断言不在 acfdae 输入中，尚未执行，不沿用上述通过结果。
+
+最终 RFC3339 expiry 和来源目录 selector 的原 Core 检查集中在同一
+受限 SDK／原 rust-target 执行；格式后联合输入树为
+`51372417758dfcfc90bbe727e30eaceda038a33f`，上传候选之外只加入已独立
+归属的 `platform_views.rs` selector，提交仍分开。原句柄 `15114`
+实际 exit 0；先运行
+`cargo test --locked --offline -p platform-core native_writer_expiry_serializes_verified_unix_claim_as_contract_datetime -- --nocapture`
+得到 1 passed、435 filtered，再运行
+`cargo test --locked --offline -p platform-core discovery_channel_selector_keeps_legacy_cursor_and_rejects_non_uuid -- --nocapture`
+得到 1 passed、435 filtered，第二段复用同一编译产物。日志为
+`first-byte-final.LPEm6u/core-expiry-final.log` 和
+`first-byte-final.LPEm6u/core-selector-final.log`；其他集成用例被过滤，
+不是实际 PostgreSQL 业务集成通过。
+
+S3 补全对象证据后，`1572` 在原 StoreVersion 前实际检出 `conflict`
+并 exit 1；六个加强的阶段断言同时指出旧拒绝检查尚未达到注入点。
+原因是原 `FlatStorageHandler.postCreate` 在复制完成后修改目标节点
+MTime/Size/ETag，而 `VersionAction` 的 targetNode 直接别名已经冻结的
+`resp.Version.Location`。同批修正仅让原复制消费者使用节点副本，
+待存 Version 也独立 clone；受管分支验证实际目标除索引统计之外的完整
+原生身份／路由／内容哈希没有改变，并保留复制前冻结 Location，不能
+把后来可变统计写进冻结 plan。独立原事件版本行为保留，StoreVersion
+与 Task 仍要求完整精确 ACK，没有弱化比对来获得通过。
+
+最终 Go 生产输入树为
+`b84a03134528c823a1ed62d930cb3bb0ebccecca`。原命令
+`go test -tags=kv ./data/versions ./gateway/data/gw -run 'TestVersionActionRequiresExactNativePersistence|TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement' -count=1 -v`
+在同一原 SDK／独立 Data 缓存执行：`66542` exit 0，原 VersionAction
+29 个场景与 S3 12 个场景通过，包括 0／12 字节真实不可变对象读回、
+部分字节、复制前 plan ACK 丢失、版本 ACK 丢失、任务终态 ACK 丢失与
+发布后 fresh 撤权；每个后期拒绝用例同时核已实际达到注入阶段。
+日志 `first-byte-final.LPEm6u/gateway-location-restored.log`。
+
+只在私有副本进行两次破坏：`22614` 恢复可变 Location 别名，两个成功
+路径均因 conflict 失败，exit 1；还原后 `93619` 将最终 Task 精确 ACK
+误改为仅检查非 nil，两个丢失终态 ACK 场景报
+`uncertain upload returned S3 success`，exit 1。两处原样还原且与正式
+源码 cmp 通过后，`40413` 重跑同一双包命令，29＋12 场景再次通过，
+exit 0。日志分别为 `gateway-location-mutation.log`、
+`gateway-ack-mutation.log`、`gateway-final-restored.log`，均在同一
+`first-byte-final.LPEm6u` 下。正式工作树没有破坏，未重复慢速 DAO 检查。
+
+上述验证补齐的是原生消费者隔离集成及实际拒绝阶段证据。远端 Core、
+对象存储和部分 RPC 仍是 fixture；原 logger 无已挂载服务输出驱动的
+警告保留，不声称日志服务完成验收。没有运行本批全量发布门禁、生成
+本批镜像或执行浏览器上传，未开启组件 binding；Mongo、真实跨服务
+conformance、审批／额度及无证据历史任务人工终结边界仍按前述保留。
+
+合批全量输入同时更新原 CI 的唯一 `DESIGN_COMMIT` 至
+`635c42a6264081f1ca6f37e74969652a6dcf4d1d`。该设计提交只把已审的
+三文件五行首字节准入修订接到原 design-authority 历史，已经普通 push；
+外层当前工作分支的 `87625ff0e45ae1d89567105591f60da04b98e8d8`
+不是 CI 冻结分支，不混入其余工作树改动。原 `check.sh` 和 CI 都读取
+这一 pin 导出 `.design`；不改变设计语义、数据格式、工作流或运行期
+权限。旧 pin 未包含本次 writer 接缝，不能用旧设计检查宣称本批收口。
+设计导出失败仍使检查失败，不回退旧版本；本变更无数据库迁移或
+运行期副作用，新增异常状态无适用对象。
+
+### 首字节合批完整检查与原上传交互纠偏（2026-10-11）
+
+上段截至定向检查的记录之后，实际执行了唯一一次合批全量：
+`CHECK_SOURCE_REF=70aa0fa8335dfb6e0080de1b9c99cfccfae14ee6
+./tools/check.sh --full`。原句柄 `65362` 完成全部步骤及外层清理后
+真实 exit 1；日志 `/volumes/data/kailo/tmp/tmp.Mw5QBQUPRG.check.log`。
+执行配置为 8 CPU、16 GiB、memory+swap 同为 16 GiB、host 网络；
+`TMPDIR=/volumes/data/kailo/tmp`、缓存为原
+`/volumes/data/kailo/check-cache`。启动前无 Cargo／Go 编译，available
+约 36 GiB；实际容器限额由原入口回读，固定检查镜像为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+
+全量结果按原因保留，不用后续窄验覆盖原失败：
+
+- 本批 Clippy 失败：`application_native_execution.rs` 的测试模块位于
+  `authorize` 前，触发 `items_after_test_module`。只将原测试模块移到
+  文件末尾，生产与测试语义不变，不加 `allow`。
+- 已提交 Projects 检查夹具类型失败：`project-inbox.test.tsx` 两处把
+  普通 query 函数赋给推断为 Mock 的 host.query。只显式声明既有
+  `ProjectsHost`，独立 query 仍保留 Mock 断言，不改产品实现。
+- 产物来源门禁失败 11 项：Relay、Desktop、Wren UI／AI／engine、
+  Cells adapter／service、WeKnora adapter／service、AgentGateway、Web。
+  已有镜像不对应当前源码，未修改 digest 或来源声明冒充重建。
+- cargo fmt、Go／TypeScript／Dart 静态检查、四侧生成同步、304 个 schema
+  兼容、Cargo／Go／Dart 测试、Workflow replay、追溯、安全与文档步骤通过；
+  TS contracts 为 59／59，platform 测试因上述类型错误未启动。
+- 未投递 DATABASE_URL 的实际迁移演练、未投递部署 `.env` 的运行配置
+  预检为 SKIP；gitleaks 未安装，只通过内置秘密扫描。
+
+Clippy 修正的精确代码树为
+`a45a17b92824f466293c2de4f5c2648b18913ad8`。原 full 结束后，复用
+`kailo-cells-closure-kxbrvt` 的 4 CPU／8 GiB／等额 swap 与 Data 缓存，
+在独立 `first-byte-clippy.88zGwj` 固定输入执行
+`cargo clippy --locked --offline -p platform-core --all-targets -- -D warnings`。
+首次导出漏原 build.rs 的 ExtMcp proto、第二次漏原 include_str 的
+capabilities.yaml，分别 exit 101；这是本次投递错误，不归产品错误。
+补齐同一固定树的真实依赖后，原句柄 `4959` exit 0，43.82 秒。
+三份日志依次为 `first-byte-final.LPEm6u/core-clippy-fixed.log`、
+`core-clippy-complete-input.log`、`core-clippy-restored.log`，前两份未删除。
+
+固定官方 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`frontend/assets/uploader.html/res/js/model/UploadItem.js::_doPause/_doResume`
+原本消费 `frontend/assets/gui.ajax/res/js/core/http/awsLoader.js` 的
+`ManagedMultipart.pause/resume`。原版对照发现受管上传返回句柄漏转发该
+能力，现仅在 PydioApi.uploadNativeFile 的 multipart 分支委托原 manager，
+并保留 prepare 期间暂停；单 PUT 仍不能暂停。没有新传输、授权或队列权威；
+取消后恢复不重新派发，prepare 失败仍 UNKNOWN。布局及独立原生分支不变。
+
+实现后沿原 query-revision 检查消费真实 UploadItem、PydioApi 与
+ManagedMultipart：最终 295／295 正向及还原均 exit 0；私有破坏暂停
+委托后实际派发未停止、破坏拒绝签名的禁止跳转后实际 href 改变，两类
+检查均 exit 1。初次 282 pass／13 fail 保留：旧签名夹具初始 URL 非空却
+断言空串；按实际不跳转不变式改为记录初始 href 严格比较，不改签名实现。
+同一旧断言在未修改基线 a45 上复现；最终修复树
+`511853b694c1f1d04005ecbea768752ce8317b69` 的两文件已与检查输入 cmp。
+命令为原 Node `--test` 的 native consumer 过滤，日志在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/upload-pause.TYA1KO/`：
+`native-final-positive.log`、`pause-mutation.log`、`signing-mutation.log`、
+`native-final-restored.log`。远端 AWS 仍为 fixture，未声明真实浏览器上传。
+
+Projects 唯一类型修复在固定 main
+`89c3aa14ef2e2e69ff4420172ae72782cee9a089` 上实跑原
+`tsc --noEmit -p tsconfig.test.json` exit 0、project-inbox 14／14 exit 0，
+再跑 platform 全套 67 文件 1180 项全部通过；没有放宽 theme 超时。
+日志为 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/` 下
+`project-inbox-typecheck.bHDpFR/tsc-correct-dependencies.log`、`vitest.log`、
+`vitest-platform-complete-input.log`；其两次缺依赖／输入错误记录保留。
+
+最终合批仅收上述精确源码与证据，不再次运行全量。全量 exit 1 仍成立；
+定向通过不解除产物来源、真实数据库、Mongo、跨服务 conformance、完整
+审批／额度、真实原生上传及组件绑定准入门禁。本批未构建发布镜像、未部署，
+没有新页面截图、Windows／Mobile 安装包或强制激活菜单。

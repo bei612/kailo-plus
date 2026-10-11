@@ -47,8 +47,10 @@ import (
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/common/utils/i18n/languages"
 	json "github.com/pydio/cells/v5/common/utils/jsonx"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 	"github.com/pydio/cells/v5/data/versions"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
 type Handler struct {
@@ -319,6 +321,30 @@ func (h *Handler) CreateVersion(ctx context.Context, request *tree.CreateVersion
 			return nil, errors.WithStack(errors.StatusForbidden)
 		}
 		deadline := time.Now().Add(h.draftUploadTimeout)
+		// Consume the original server-owned upload intent, not a caller supplied
+		// deadline. ReserveDraftUpload remains the native atomic byte fence.
+		var delivery auth.NativeWriteDelivery
+		jobID, hasJob := propagator.CanonicalMeta(ctx, common.CtxMetaJobUuid)
+		key, hasTask := propagator.CanonicalMeta(ctx, common.CtxMetaTaskUuid)
+		if !hasJob || !hasTask || config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
+			delivery.Write.NativeJobID == "" || !auth.NativeActorUUID(key) {
+			return nil, errors.WithStack(errors.StatusForbidden)
+		}
+		task, err := jobstore.ReadNativeWriteTask(ctx, jobID, key, delivery.MaxResponseBytes)
+		if err != nil {
+			return nil, err
+		}
+		intent, err := jobstore.NativeUploadTaskIntent(task)
+		if err != nil || intent.BindingID != delivery.BindingID || intent.NativeUserID != claims.Subject ||
+			jobID != auth.NativeUploadJobID(delivery.Write.NativeJobID, delivery.BindingID, intent.Generation) ||
+			intent.Input["nativeNodeId"] != node.Uuid || intent.Input["nativeIntentId"] != c.VersionId ||
+			task.GetStartTime() <= 0 || task.GetEndTime() != 0 {
+			return nil, errors.WithStack(errors.StatusForbidden)
+		}
+		frozenDeadline := time.Unix(int64(intent.Input["nativeDeadline"].(float64)), 0)
+		if frozenDeadline.Before(deadline) {
+			deadline = frozenDeadline
+		}
 		if deadline.UnixNano() <= time.Now().UnixNano() {
 			return nil, errors.WithStack(errors.InvalidParameters)
 		}
@@ -327,6 +353,13 @@ func (h *Handler) CreateVersion(ctx context.Context, request *tree.CreateVersion
 		}
 	}
 
+	if !request.Draft {
+		if policy := versions.PolicyForNode(ctx, node); policy != nil {
+			if err := prepareNativeUploadPublication(ctx, dao, &tree.StoreVersionRequest{Node: node, Version: c}, policy); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return &tree.CreateVersionResponse{Version: c}, nil
 }
 
@@ -354,6 +387,9 @@ func (h *Handler) StoreVersion(ctx context.Context, request *tree.StoreVersionRe
 		}
 		err = dao.CompleteDraftUpload(ctx, request.Node.Uuid, request.Version, time.Now())
 	} else {
+		if response, handled, err := storeNativeUploadPublication(ctx, dao, request); handled {
+			return response, err
+		}
 		err = dao.StoreVersion(ctx, request.Node.Uuid, request.Version)
 	}
 	if err != nil {

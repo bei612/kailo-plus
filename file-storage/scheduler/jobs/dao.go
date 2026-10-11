@@ -73,7 +73,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 		}
 		for _, priorLog := range stored.ActionsLogs {
 			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
-				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" && prior.GetVars()[NativeCellShareResult] != "true" {
+				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" && prior.GetVars()[NativeCellShareResult] != "true" && prior.GetVars()[NativeUploadStep] == "" && prior.GetVars()[NativeUploadContent] != "true" && prior.GetVars()[NativeUploadPublication] != "true" {
 					continue
 				}
 				found := false
@@ -92,6 +92,17 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 				}
 			}
 		}
+		steps := map[string]bool{}
+		for _, log := range next.ActionsLogs {
+			for _, output := range log.GetOutputMessage().GetOutputChain() {
+				if step := output.GetVars()[NativeUploadStep]; step != "" {
+					if steps[step] {
+						return errors.WithMessage(errors.StatusConflict, "native upload step is already claimed")
+					}
+					steps[step] = true
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -102,13 +113,14 @@ type DAO interface {
 	ClaimJob(ctx context.Context, job *jobs.Job) error
 	// SnapshotNativeCells serializes the original Inactive fence with Task
 	// claims and returns a complete bounded snapshot, never a filtered user list.
-	SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64) ([]*jobs.Job, error)
+	SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64, uploadBase ...string) ([]*jobs.Job, error)
 	GetJob(jobId string, withTasks jobs.TaskStatus) (*jobs.Job, error)
 	DeleteJob(jobId string) error
 	ListJobs(owner string, eventsOnly bool, timersOnly bool, withTasks jobs.TaskStatus, jobIDs []string, taskCursor ...int32) (chan *jobs.Job, error)
 
 	PutTask(task *jobs.Task) error
 	ClaimTask(task *jobs.Task) error
+	StoreNativeUploadStep(ctx context.Context, task *jobs.Task, step string) (*jobs.Task, error)
 	PutTasks(task map[string]map[string]*jobs.Task) error
 	GetTask(ctx context.Context, jobId, taskId string) (*jobs.Task, error)
 	ListTasks(ctx context.Context, jobId string, taskStatus jobs.TaskStatus, cursor ...int32) (<-chan *jobs.Task, <-chan error, error)

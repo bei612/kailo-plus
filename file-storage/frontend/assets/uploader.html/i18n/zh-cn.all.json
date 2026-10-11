@@ -167,6 +167,9 @@
   "status.part.cannot-pause": {
     "other": "无法暂停片块传输"
   },
+  "status.unknown": {
+    "other": "上传结果尚未确认。刷新仅核对同一次操作，不会重新发送文件。"
+  },
   "status.error.aborted": {
     "other": "被用户打断"
   },

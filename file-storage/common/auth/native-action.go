@@ -253,9 +253,8 @@ func text(value map[string]interface{}, key string) string {
 
 // AuthorizeNativeDataMutation preserves the independent native data gateway,
 // but does not let a platform-bound UI bypass the original Action producer via
-// a direct S3 or background-job write. The current native draft PUT changes its
-// blob before the immutable Version ACK, so even "Draft-Mode" is not an
-// admissible exception.
+// a direct S3 or background-job write. Only the same-execution HUMAN writer
+// consumer may reach the original native byte-step/Version acknowledgement.
 func AuthorizeNativeDataMutation(request *http.Request) error {
 	if request.Method != http.MethodPut && request.Method != http.MethodPost && request.Method != http.MethodDelete && request.Method != http.MethodPatch {
 		// Read proofs belong to the original GetObject/HEAD consumer. Do not
@@ -276,5 +275,5 @@ func AuthorizeNativeDataMutation(request *http.Request) error {
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() == nil {
 		return nil
 	}
-	return errors.WithStack(errors.StatusForbidden)
+	return PrepareNativeHumanUpload(request)
 }

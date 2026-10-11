@@ -554,6 +554,17 @@ impl TemporalClient {
             .await
     }
 
+    /// A native writer cannot begin another byte step after any cancellation of
+    /// its original workflow chain, including one issued outside the UI.
+    pub(crate) async fn execution_cancel_requested(
+        &self,
+        workflow_id: &str,
+        first_run_id: &str,
+    ) -> Result<bool, TemporalError> {
+        self.cancel_history(workflow_id, first_run_id, None, None)
+            .await
+    }
+
     // Both the control AE and Schedule continue-as-new consume the same native
     // history walker. `before_run` never interprets a cancel in the current run
     // as an immutable input bit that should already have been present at birth.

@@ -69,6 +69,7 @@ class Store extends Observable{
     }
 
     makeStatusString(item){
+        if(item.getStatus() === StatusItem.StatusUnknown) return Pydio.getMessages()['html_uploader.status.unknown'];
         const key = 'html_uploader.status.' + (item.getType()==='file'?'file':'dir')+'.' + item.getStatus()
         // Display missing key
         return Pydio.getMessages()[key] || key
@@ -229,7 +230,7 @@ class Store extends Observable{
             session.walk(()=>{
                 items ++;
             }, (item)=>{
-                return item.getStatus() === 'error'
+                return item.getStatus() === StatusItem.StatusError || item.getStatus() === StatusItem.StatusUnknown
             }, 'both', ()=>{
                 return items >= 1
             });

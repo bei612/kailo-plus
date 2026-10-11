@@ -28,7 +28,8 @@ function fixture(){
     events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.tags.find(tag=>tag[0]==="a")?.[1]??""))&&
       (request.since===undefined||row.created_at>=request.since)&&(request.until===undefined||row.created_at<=request.until)),
   }));
-  return {issue,review,rows,host:{scopeKey:"tenant:human",query} satisfies ProjectsHost,query};
+  const host:ProjectsHost={scopeKey:"tenant:human",query};
+  return {issue,review,rows,host,query};
 }
 beforeEach(()=>{setLocale("en");localStorage.clear();});
 describe("original Inbox project read closure",()=>{

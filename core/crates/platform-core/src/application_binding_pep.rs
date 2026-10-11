@@ -103,18 +103,19 @@ async fn authorized_resource(
         "select r.id,r.native_type,r.native_id,b.native_instance_ref,b.native_scope_ref
          from catalog.resource r
          join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=r.tenant_id
-         join projection.application_runtime p on p.binding_id=b.id and p.generation=b.active_projection_generation
-           and p.component_release_id=b.component_release_id and p.state='ACTIVE'
          join admission.action_execution a on a.id=$4 and a.target_id=r.id and a.tenant_id=r.tenant_id
-           and a.component_binding_id=b.id and a.component_release_id=b.component_release_id
-           and a.component_projection_generation=b.active_projection_generation
+           and a.component_binding_id=b.id
+         join projection.application_runtime p on p.binding_id=b.id and p.generation=a.component_projection_generation
+           and p.component_release_id=a.component_release_id and p.state='ACTIVE'
          where r.id=$1 and r.tenant_id=$2 and r.application_binding_id=$3 and r.state='ACTIVE'
-           and r.projection_action_execution_id is null and b.state='ACTIVE'",
+           and r.projection_action_execution_id is null and b.state='ACTIVE'
+           and ($5 or (a.component_release_id=b.component_release_id and a.component_projection_generation=b.active_projection_generation))",
     )
     .bind(ae.target_id)
     .bind(ae.tenant_id)
     .bind(binding)
     .bind(ae.id)
+    .bind(crate::application_action::native_execution::is_native_writer(ae))
     .fetch_optional(&state.pool)
     .await?;
     let (resource, kind, reference, instance, scope) = row.ok_or_else(blocked)?;
@@ -260,11 +261,14 @@ pub(crate) async fn check(
             let parameters=ae.parameters.as_ref().ok_or_else(invalid)?;
             let attached:bool=sqlx::query_scalar("select exists(select 1 from admission.action_execution a
                 join catalog.application_binding b on b.id=a.component_binding_id
-                  and b.component_release_id=a.component_release_id
+                join projection.application_runtime runtime on runtime.binding_id=b.id
+                  and runtime.generation=a.component_projection_generation and runtime.component_release_id=a.component_release_id
                 where a.id=$1 and a.component_binding_kind='APPLICATION' and b.id=$2 and b.tenant_id=a.tenant_id
                   and (b.workspace_id is null or b.workspace_id=a.workspace_id)
-                  and b.state in ('ACTIVE','DISABLING') and b.active_projection_generation=a.component_projection_generation)")
-                .bind(ae.id).bind(binding).fetch_one(&mut *tx).await?;
+                  and b.state in ('ACTIVE','DISABLING')
+                  and ($3 or (b.component_release_id=a.component_release_id and b.active_projection_generation=a.component_projection_generation)))")
+                .bind(ae.id).bind(binding).bind(crate::application_action::native_execution::is_native_writer(&ae))
+                .fetch_one(&mut *tx).await?;
             let expected_workspace=ae.workspace_id.map(|id|json!(id));
             let operation_kind=business_operation(operation,&status)?;
             let executing=operation_kind==contracts::AdapterProtocolOperation::Execute;
@@ -313,6 +317,11 @@ pub(crate) async fn check(
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
             } else if operation_kind==contracts::AdapterProtocolOperation::QueryRevision {
                 let (_,revision)=crate::application_tool::fresh_revision_read(&state,&ae,&arguments).await?;
+                revision
+            } else if executing && crate::application_action::native_execution::is_native_writer(&ae) {
+                let (key,expected_audience,revision,_) = crate::application_action::native_execution::authorize(
+                    &state,&ae,uuid(&claims,"external_execution_id")?,binding).await?;
+                if key!=uuid(&claims,"idempotency_key")? || expected_audience!=audience { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
                 revision
             } else {
                 let decision=crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,sources).await?;

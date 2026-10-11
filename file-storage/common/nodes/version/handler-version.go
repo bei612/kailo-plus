@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/commons"
 	grpc2 "github.com/pydio/cells/v5/common/client/grpc"
@@ -41,6 +42,7 @@ import (
 	"github.com/pydio/cells/v5/common/telemetry/log"
 	"github.com/pydio/cells/v5/common/utils/cache"
 	cache_helper "github.com/pydio/cells/v5/common/utils/cache/helper"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 )
 
@@ -550,6 +552,16 @@ func (v *Handler) multipartDraft(ctx context.Context, ca cache.Cache, uploadID s
 
 func (v *Handler) routeUploadToContentRevision(ctx context.Context, node *tree.Node, userMeta map[string]string, knownSize int64) (*tree.Node, *tree.ContentRevision, nodes.LoadedSource, error) {
 	versionId := userMeta[common.XAmzMetaPrefix+common.InputVersionId]
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		if versionId != upload.NativeIntentID || node.Uuid != upload.Input["nativeNodeId"] ||
+			(upload.Step != "put" && upload.Step != "create") {
+			return nil, nil, nodes.LoadedSource{}, errors.WithStack(errors.StatusForbidden)
+		}
+		if err := upload.Fresh(ctx); err != nil {
+			return nil, nil, nodes.LoadedSource{}, err
+		}
+		ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{common.CtxMetaJobUuid: auth.NativeUploadJobID(upload.Delivery.Write.NativeJobID, upload.Delivery.BindingID, upload.Generation), common.CtxMetaTaskUuid: upload.Key})
+	}
 	if versionId == "" {
 		versionId = uuid.New()
 	}

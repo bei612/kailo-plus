@@ -203,6 +203,18 @@ fn native_human_action_preserves_trust_and_nonterminal_reference_only_receipt() 
     assert_eq!(serde_json::to_value(trust).unwrap(), sample["trust"]);
     assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
     assert_eq!(serde_json::to_value(result).unwrap(), sample["result"]);
+    let writer_request: contracts::NativeHumanActionRequest =
+        serde_json::from_value(sample["writerRequest"].clone()).unwrap();
+    let writer_result: contracts::NativeHumanActionResult =
+        serde_json::from_value(sample["writerResult"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(writer_request).unwrap(),
+        sample["writerRequest"]
+    );
+    assert_eq!(
+        serde_json::to_value(writer_result).unwrap(),
+        sample["writerResult"]
+    );
     let read_receipt: contracts::NativeHumanActionRequest =
         serde_json::from_value(sample["readReceiptRequest"].clone()).unwrap();
     assert_eq!(

@@ -222,16 +222,22 @@ export interface FileStorageReadOutput {
 }
 
 /**
- * Apply a write from the exact persisted native input revision in the admitted Resource.
- * File bytes remain at the source; the native consumer must verify the input, current
- * actor, scope and revision before execution.
+ * Apply an existing immutable native revision, or dispatch a native first-byte intent. An
+ * intent is not a ContentReference: its node/revision identifiers name reserved native
+ * locations only; bytes remain at the source and no result exists before the immutable
+ * native ACK.
  */
 export interface FileStorageWriteInput {
-    displayName:     string;
-    mediaType:       string;
-    nativeObjectRef: string;
-    nativeRevision:  string;
-    resourceId:      string;
+    contentLength?:   number;
+    displayName?:     string;
+    mediaType?:       string;
+    multipart?:       boolean;
+    nativeDeadline?:  number;
+    nativeIntentId?:  string;
+    nativeNodeId?:    string;
+    nativeObjectRef?: string;
+    nativeRevision?:  string;
+    resourceId:       string;
 }
 
 /**
@@ -3525,7 +3531,13 @@ export interface NativeHumanActionRequest {
     bindingId:       string;
     command?:        CommandClass;
     idempotencyKey?: string;
-    readReceipt?:    ReadReceiptClass;
+    /**
+     * Same-request writer admission for the original dispatched AE/EE and native intent, never
+     * another execute. Both the binding SERVICE and independent current HUMAN credentials are
+     * required.
+     */
+    nativeExecutionAdmission?: NativeHumanActionRequestNativeExecutionAdmission;
+    readReceipt?:              ReadReceiptClass;
     /**
      * Read the already-registered exact native object for the verified HUMAN and action. This
      * never creates a Resource or native object.
@@ -3693,6 +3705,17 @@ export interface CommandReceiverResource {
 }
 
 /**
+ * Same-request writer admission for the original dispatched AE/EE and native intent, never
+ * another execute. Both the binding SERVICE and independent current HUMAN credentials are
+ * required.
+ */
+export interface NativeHumanActionRequestNativeExecutionAdmission {
+    actionExecutionId:   string;
+    externalExecutionId: string;
+    nativeIntentId:      string;
+}
+
+/**
  * Original HUMAN synchronous application read completion, authenticated by its binding
  * SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
  */
@@ -3739,8 +3762,18 @@ export interface NativeHumanActionResult {
      */
     inputJson?:      string;
     inputReference?: ContentReferenceElement;
-    nativeId?:       string;
-    nativeType?:     string;
+    /**
+     * Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+     * byte completion; no bearer is exposed by observation.
+     */
+    nativeExecution?: NativeExecution;
+    /**
+     * Transient same-request writer bearer for the exact original AE/EE. The native task must
+     * atomically claim the byte step before using it; never persisted or exposed to the browser.
+     */
+    nativeExecutionAdmission?: NativeHumanActionResultNativeExecutionAdmission;
+    nativeId?:                 string;
+    nativeType?:               string;
     /**
      * First native same-request read only. Never returned by idempotency observation or retried
      * admission; the bearer is not persisted.
@@ -3748,6 +3781,31 @@ export interface NativeHumanActionResult {
     readAdmission?:  ReadAdmission;
     submission:      SubmissionClass;
     terminalStatus?: TaskStatus;
+}
+
+/**
+ * Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+ * byte completion; no bearer is exposed by observation.
+ */
+export interface NativeExecution {
+    bindingGeneration:   number;
+    externalExecutionId: string;
+    idempotencyKey:      string;
+    nativeIntentId:      string;
+}
+
+/**
+ * Transient same-request writer bearer for the exact original AE/EE. The native task must
+ * atomically claim the byte step before using it; never persisted or exposed to the browser.
+ */
+export interface NativeHumanActionResultNativeExecutionAdmission {
+    actionToken:   string;
+    argumentsJson: string;
+    /**
+     * RFC3339 admission expiry, preserved verbatim across language bindings and validated by
+     * the native writer before every byte step.
+     */
+    expiresAt: string;
 }
 
 /**

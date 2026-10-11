@@ -20,6 +20,7 @@ import (
 	"github.com/pydio/cells/v5/common/nodes/models"
 	versionhandler "github.com/pydio/cells/v5/common/nodes/version"
 	"github.com/pydio/cells/v5/common/proto/docstore"
+	"github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime/manager"
@@ -28,8 +29,11 @@ import (
 	"github.com/pydio/cells/v5/common/utils/cache/gocache"
 	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
 	"github.com/pydio/cells/v5/common/utils/openurl"
+	"github.com/pydio/cells/v5/common/utils/propagator"
+	"github.com/pydio/cells/v5/common/utils/uuid"
 	"github.com/pydio/cells/v5/data/versions"
 	"github.com/pydio/cells/v5/data/versions/dao/bolt"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -60,6 +64,7 @@ type nativeReservedObjectWriter struct {
 	nodes.Handler
 	dao     versions.DAO
 	node    string
+	draft   string
 	writes  int
 	ackLost bool
 }
@@ -145,7 +150,7 @@ func TestKailoNativeDraftUploadBlockedSweep(t *testing.T) {
 
 func (w *nativeReservedObjectWriter) PutObject(ctx context.Context, location *tree.Node, reader io.Reader, _ *models.PutRequestData) (models.ObjectInfo, error) {
 	w.writes++
-	if _, err := w.dao.GetVersion(ctx, w.node, "native-upload"); !nativeerrors.Is(err, nativeerrors.StatusConflict) {
+	if _, err := w.dao.GetVersion(ctx, w.node, w.draft); !nativeerrors.Is(err, nativeerrors.StatusConflict) {
 		return models.ObjectInfo{}, errors.New("original native reservation was absent or readable before the byte writer")
 	}
 	bytes, err := io.ReadAll(reader)
@@ -158,8 +163,38 @@ func (w *nativeReservedObjectWriter) PutObject(ctx context.Context, location *tr
 	return models.ObjectInfo{ETag: "native-byte-etag", Size: int64(len(bytes))}, nil
 }
 
+type nativeUploadTaskReader struct {
+	grpc.ClientConnInterface
+	task *jobs.Task
+}
+
+func (r *nativeUploadTaskReader) NewStream(ctx context.Context, _ *grpc.StreamDesc, method string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
+	if method != jobs.JobService_ListTasks_FullMethodName {
+		return nil, errors.New("unexpected native task RPC")
+	}
+	return &nativeUploadTaskStream{ctx: ctx, task: proto.Clone(r.task).(*jobs.Task)}, nil
+}
+
+type nativeUploadTaskStream struct {
+	grpc.ClientStream
+	ctx  context.Context
+	task *jobs.Task
+}
+
+func (s *nativeUploadTaskStream) Context() context.Context { return s.ctx }
+func (*nativeUploadTaskStream) SendMsg(interface{}) error  { return nil }
+func (*nativeUploadTaskStream) CloseSend() error           { return nil }
+func (s *nativeUploadTaskStream) RecvMsg(value interface{}) error {
+	if s.task == nil {
+		return io.EOF
+	}
+	proto.Merge(value.(proto.Message), &jobs.ListTasksResponse{Task: s.task})
+	s.task = nil
+	return nil
+}
+
 func TestKailoNativeDraftUploadFirstWriter(t *testing.T) {
-	for _, scenario := range []string{"empty", "bytes", "object-ack-lost", "reservation-ack-lost", "missing-cleaner"} {
+	for _, scenario := range []string{"empty", "bytes", "object-ack-lost", "reservation-ack-lost", "missing-cleaner", "missing-native-task"} {
 		t.Run(scenario, func(t *testing.T) {
 			test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(bolt.NewBoltStore, "native_upload_")}, t, func(ctx context.Context) {
 				dao, err := manager.Resolve[versions.DAO](ctx)
@@ -178,14 +213,37 @@ func TestKailoNativeDraftUploadFirstWriter(t *testing.T) {
 					"services", common.ServiceGrpcNamespace_+common.ServiceDataSync_+"native-source"); err != nil {
 					t.Fatal(err)
 				}
-				delivery := &auth.NativeActorDelivery{DraftUploads: &auth.NativeDraftUploadDelivery{
+				binding, key, user, principal, nodeID, draftID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+				delivery := &auth.NativeWriteDelivery{NativeActorDelivery: auth.NativeActorDelivery{DraftUploads: &auth.NativeDraftUploadDelivery{
 					Timeout: "1h", SweepInterval: "1h", SweepBatchSize: 1,
-				}}
+				}}}
+				delivery.BindingID, delivery.MaxResponseBytes = binding, 65536
+				delivery.Write.NativeJobID = "native-upload"
 				delivery.RequestTimeout = "1s"
 				if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
 					t.Fatal(err)
 				}
-				ctx = claim.ToContext(ctx, claim.Claims{Name: "native-owner", Subject: "native-owner"})
+				ctx = claim.ToContext(ctx, claim.Claims{Name: "native-owner", Subject: user})
+				body := "native bytes"
+				if scenario == "empty" {
+					body = ""
+				}
+				input := map[string]interface{}{"resourceId": uuid.New(), "nativeIntentId": draftID, "nativeNodeId": nodeID,
+					"nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(len(body)), "multipart": false}
+				claims := map[string]interface{}{"tenant_id": uuid.New(), "actor_principal_id": principal, "initiating_human_principal_id": principal,
+					"external_execution_id": uuid.New(), "idempotency_key": key, "action_execution_id": uuid.New(), "operation_id": uuid.New()}
+				job := jobstore.NativeUploadJob(delivery.Write.NativeJobID, binding, 1)
+				task, err := jobstore.NewNativeUploadTask(binding, 1, job.ID, key, "native-owner", user, claims, input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := jobstore.ClaimNativeUploadStep(task, "put", uuid.New(), "native-source/file", "", int64(len(body))); err != nil {
+					t.Fatal(err)
+				}
+				grpcclient.RegisterMock(common.ServiceJobsGRPC, &nativeUploadTaskReader{task: task})
+				if scenario != "missing-native-task" {
+					ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{common.CtxMetaJobUuid: job.ID, common.CtxMetaTaskUuid: key})
+				}
 				ctx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				native, err := NewHandler(ctx)
@@ -199,21 +257,17 @@ func TestKailoNativeDraftUploadFirstWriter(t *testing.T) {
 				}
 				grpcclient.RegisterMock(common.ServiceVersionsGRPC, &tree.NodeVersionerStub{NodeVersionerServer: native})
 				makeNode := func() *tree.Node {
-					node := &tree.Node{Uuid: "native-node", Path: "native-source/file", Type: tree.NodeType_LEAF, Etag: "old-live-etag", Size: 100}
+					node := &tree.Node{Uuid: nodeID, Path: "native-source/file", Type: tree.NodeType_LEAF, Etag: "old-live-etag", Size: 100}
 					node.MustSetMeta(common.MetaNamespaceDatasourceName, "native-source")
 					return node
 				}
-				writer := &nativeReservedObjectWriter{dao: dao, node: "native-node", ackLost: scenario == "object-ack-lost"}
+				writer := &nativeReservedObjectWriter{dao: dao, node: nodeID, draft: draftID, ackLost: scenario == "object-ack-lost"}
 				upload := &versionhandler.Handler{}
 				upload.Next = writer
-				body := "native bytes"
-				if scenario == "empty" {
-					body = ""
-				}
 				if scenario == "reservation-ack-lost" {
 					node := makeNode()
 					node.Etag, node.Size, node.MTime = "", int64(len(body)), time.Now().Unix()
-					response, err := native.CreateVersion(ctx, &tree.CreateVersionRequest{Node: node, VersionUuid: "native-upload", Draft: true, OwnerUuid: "native-owner"})
+					response, err := native.CreateVersion(ctx, &tree.CreateVersionRequest{Node: node, VersionUuid: draftID, Draft: true, OwnerUuid: user})
 					if err != nil || response.GetVersion().GetLocation() == nil {
 						t.Fatalf("original reservation did not persist: %v %v", response, err)
 					}
@@ -225,7 +279,7 @@ func TestKailoNativeDraftUploadFirstWriter(t *testing.T) {
 						DataSource: &object.DataSource{Name: "native-source", FlatStorage: true},
 					}}, true)
 					_, err := upload.PutObject(requestCtx, makeNode(), strings.NewReader(body), &models.PutRequestData{Size: int64(len(body)), Metadata: map[string]string{
-						common.XAmzMetaPrefix + common.InputDraftMode: "true", common.XAmzMetaPrefix + common.InputVersionId: "native-upload",
+						common.XAmzMetaPrefix + common.InputDraftMode: "true", common.XAmzMetaPrefix + common.InputVersionId: draftID,
 					}})
 					return err
 				}
@@ -238,15 +292,15 @@ func TestKailoNativeDraftUploadFirstWriter(t *testing.T) {
 					t.Fatal("same native reference permitted another object write")
 				}
 				expectedWrites := 1
-				if scenario == "missing-cleaner" || scenario == "reservation-ack-lost" {
+				if scenario == "missing-cleaner" || scenario == "reservation-ack-lost" || scenario == "missing-native-task" {
 					expectedWrites = 0
 				}
 				if writer.writes != expectedWrites {
 					t.Fatalf("native reservation did not fence actual byte consumer: writes=%d want=%d", writer.writes, expectedWrites)
 				}
-				stored, err := dao.GetVersion(ctx, "native-node", "native-upload")
+				stored, err := dao.GetVersion(ctx, nodeID, draftID)
 				if completed {
-					if err != nil || stored.Size != int64(len(body)) || stored.ETag != "native-byte-etag" || stored.OwnerUuid != "native-owner" {
+					if err != nil || stored.Size != int64(len(body)) || stored.ETag != "native-byte-etag" || stored.OwnerUuid != user {
 						t.Fatalf("actual native byte ACK was not the readable revision: %v %v", stored, err)
 					}
 				} else if err == nil {

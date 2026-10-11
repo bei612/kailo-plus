@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -59,36 +60,77 @@ func nativeWriteObservation(req *restful.Request, resp *restful.Response, proof 
 	if err != nil {
 		return err
 	}
+	if task == nil {
+		// Core confirms the original execution generation; current deployment
+		// generation cannot select or relabel an older upload's native Task.
+		var envelope struct {
+			ActionToken string `json:"actionToken"`
+		}
+		data, decodeErr := base64.RawURLEncoding.DecodeString(proof)
+		if decodeErr != nil || json.Unmarshal(data, &envelope) != nil {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		_, _, generation, generationErr := delivery.AuthorizeOperationGeneration(req.Request.Context(), envelope.ActionToken, raw, operation)
+		if generationErr != nil {
+			return generationErr
+		}
+		upload, readErr := jobstore.ReadNativeWriteTask(req.Request.Context(), auth.NativeUploadJobID(delivery.Write.NativeJobID, delivery.BindingID, generation), claimText(args, "idempotencyKey"), delivery.MaxResponseBytes)
+		if readErr != nil {
+			return readErr
+		}
+		if upload != nil {
+			intent, err := jobstore.NativeUploadTaskIntent(upload)
+			if err != nil || intent.Generation != generation {
+				return errors.WithStack(errors.StatusForbidden)
+			}
+			task = upload
+		}
+	}
 	if _, _, _, _, er := auth.NativeWriteAuthority(transport, proof, operation); er != nil {
 		return er
 	}
 	answer := map[string]interface{}{"idempotencyKey": args["idempotencyKey"], "nativeType": "version", "platformStatus": "UNKNOWN", "cancelCapability": "UNSUPPORTED", "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano)}
 	if task != nil {
-		if !jobstore.NativeWriteTaskMatches(task, delivery.BindingID, current.Subject, claims) {
-			return errors.WithStack(errors.StatusForbidden)
-		}
-		revision, revisionError := jobstore.NativeWriteRevision(task)
-		if revisionError == nil {
-			if nativeID, present := args["nativeId"]; present && nativeID != revision.VersionId {
-				return errors.WithStack(errors.StatusConflict)
+		if jobstore.NativeUploadTaskMatches(task, delivery.BindingID, current.Subject, claimText(args, "externalExecutionId"), claimText(args, "idempotencyKey"), claims) {
+			revision, content, receiptErr := jobstore.NativeUploadRevision(task)
+			if receiptErr == nil {
+				if nativeID, present := args["nativeId"]; present && nativeID != revision.VersionId {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
+				resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
+				return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
 			}
-			intent, _ := jobstore.NativeWriteTaskIntent(task)
-			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
-			content := intent.InputReference
-			// Retain only original metadata; no native body or task log is disclosed.
-			content = map[string]interface{}{"resourceId": content["resourceId"], "nativeRevision": revision.VersionId, "displayName": content["displayName"], "mediaType": content["mediaType"]}
-			// The native node is frozen in the original command reference, not a
-			// second resource directory. Decode only the already persisted intent.
-			var reference struct {
-				NodeUUID string `json:"nodeUuid"`
-				Publish  bool   `json:"publish"`
+			if jobstore.NativeUploadWaiting(task) {
+				answer["platformStatus"] = "RUNNING"
 			}
-			if json.Unmarshal([]byte(claimText(intent.InputReference, "nativeObjectRef")), &reference) != nil || !auth.NativeActorUUID(reference.NodeUUID) || reference.Publish {
-				return errors.WithStack(errors.StatusConflict)
+		} else {
+			if !jobstore.NativeWriteTaskMatches(task, delivery.BindingID, current.Subject, claims) {
+				return errors.WithStack(errors.StatusForbidden)
 			}
-			content["nativeObjectRef"] = reference.NodeUUID
-			resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
-			return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
+			revision, revisionError := jobstore.NativeWriteRevision(task)
+			if revisionError == nil {
+				if nativeID, present := args["nativeId"]; present && nativeID != revision.VersionId {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				intent, _ := jobstore.NativeWriteTaskIntent(task)
+				answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
+				content := intent.InputReference
+				// Retain only original metadata; no native body or task log is disclosed.
+				content = map[string]interface{}{"resourceId": content["resourceId"], "nativeRevision": revision.VersionId, "displayName": content["displayName"], "mediaType": content["mediaType"]}
+				// The native node is frozen in the original command reference, not a
+				// second resource directory. Decode only the already persisted intent.
+				var reference struct {
+					NodeUUID string `json:"nodeUuid"`
+					Publish  bool   `json:"publish"`
+				}
+				if json.Unmarshal([]byte(claimText(intent.InputReference, "nativeObjectRef")), &reference) != nil || !auth.NativeActorUUID(reference.NodeUUID) || reference.Publish {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				content["nativeObjectRef"] = reference.NodeUUID
+				resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
+				return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
+			}
 		}
 	}
 	if _, present := args["nativeId"]; present {

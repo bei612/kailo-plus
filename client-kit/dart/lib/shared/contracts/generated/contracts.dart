@@ -2123,36 +2123,57 @@ class FileStorageReadOutput {
   Map<String, dynamic> toJson() => _stripNulls({"text": text});
 }
 
-///Apply a write from the exact persisted native input revision in the admitted Resource.
-///File bytes remain at the source; the native consumer must verify the input, current
-///actor, scope and revision before execution.
+///Apply an existing immutable native revision, or dispatch a native first-byte intent. An
+///intent is not a ContentReference: its node/revision identifiers name reserved native
+///locations only; bytes remain at the source and no result exists before the immutable
+///native ACK.
 class FileStorageWriteInput {
-  final String displayName;
-  final String mediaType;
-  final String nativeObjectRef;
-  final String nativeRevision;
+  final int? contentLength;
+  final String? displayName;
+  final String? mediaType;
+  final bool? multipart;
+  final int? nativeDeadline;
+  final String? nativeIntentId;
+  final String? nativeNodeId;
+  final String? nativeObjectRef;
+  final String? nativeRevision;
   final String resourceId;
 
   FileStorageWriteInput({
-    required this.displayName,
-    required this.mediaType,
-    required this.nativeObjectRef,
-    required this.nativeRevision,
+    this.contentLength,
+    this.displayName,
+    this.mediaType,
+    this.multipart,
+    this.nativeDeadline,
+    this.nativeIntentId,
+    this.nativeNodeId,
+    this.nativeObjectRef,
+    this.nativeRevision,
     required this.resourceId,
   });
 
   factory FileStorageWriteInput.fromJson(Map<String, dynamic> json) =>
       FileStorageWriteInput(
+        contentLength: json["contentLength"],
         displayName: json["displayName"],
         mediaType: json["mediaType"],
+        multipart: json["multipart"],
+        nativeDeadline: json["nativeDeadline"],
+        nativeIntentId: json["nativeIntentId"],
+        nativeNodeId: json["nativeNodeId"],
         nativeObjectRef: json["nativeObjectRef"],
         nativeRevision: json["nativeRevision"],
         resourceId: json["resourceId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "contentLength": contentLength,
     "displayName": displayName,
     "mediaType": mediaType,
+    "multipart": multipart,
+    "nativeDeadline": nativeDeadline,
+    "nativeIntentId": nativeIntentId,
+    "nativeNodeId": nativeNodeId,
     "nativeObjectRef": nativeObjectRef,
     "nativeRevision": nativeRevision,
     "resourceId": resourceId,
@@ -10626,6 +10647,12 @@ class NativeHumanActionRequest {
   final String bindingId;
   final CommandClass? command;
   final String? idempotencyKey;
+
+  ///Same-request writer admission for the original dispatched AE/EE and native intent, never
+  ///another execute. Both the binding SERVICE and independent current HUMAN credentials are
+  ///required.
+  final NativeHumanActionRequestNativeExecutionAdmission?
+  nativeExecutionAdmission;
   final ReadReceiptClass? readReceipt;
 
   ///Read the already-registered exact native object for the verified HUMAN and action. This
@@ -10638,6 +10665,7 @@ class NativeHumanActionRequest {
     required this.bindingId,
     this.command,
     this.idempotencyKey,
+    this.nativeExecutionAdmission,
     this.readReceipt,
     this.resolveResource,
     this.sourceResources,
@@ -10653,6 +10681,11 @@ class NativeHumanActionRequest {
             ? null
             : CommandClass.fromJson(json["command"]),
         idempotencyKey: json["idempotencyKey"],
+        nativeExecutionAdmission: json["nativeExecutionAdmission"] == null
+            ? null
+            : NativeHumanActionRequestNativeExecutionAdmission.fromJson(
+                json["nativeExecutionAdmission"],
+              ),
         readReceipt: json["readReceipt"] == null
             ? null
             : ReadReceiptClass.fromJson(json["readReceipt"]),
@@ -10673,6 +10706,7 @@ class NativeHumanActionRequest {
     "bindingId": bindingId,
     "command": command?.toJson(),
     "idempotencyKey": idempotencyKey,
+    "nativeExecutionAdmission": nativeExecutionAdmission?.toJson(),
     "readReceipt": readReceipt?.toJson(),
     "resolveResource": resolveResource?.toJson(),
     "sourceResources": sourceResources == null
@@ -10986,6 +11020,35 @@ class CommandReceiverResource {
   Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
+///Same-request writer admission for the original dispatched AE/EE and native intent, never
+///another execute. Both the binding SERVICE and independent current HUMAN credentials are
+///required.
+class NativeHumanActionRequestNativeExecutionAdmission {
+  final String actionExecutionId;
+  final String externalExecutionId;
+  final String nativeIntentId;
+
+  NativeHumanActionRequestNativeExecutionAdmission({
+    required this.actionExecutionId,
+    required this.externalExecutionId,
+    required this.nativeIntentId,
+  });
+
+  factory NativeHumanActionRequestNativeExecutionAdmission.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeHumanActionRequestNativeExecutionAdmission(
+    actionExecutionId: json["actionExecutionId"],
+    externalExecutionId: json["externalExecutionId"],
+    nativeIntentId: json["nativeIntentId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "externalExecutionId": externalExecutionId,
+    "nativeIntentId": nativeIntentId,
+  });
+}
+
 ///Original HUMAN synchronous application read completion, authenticated by its binding
 ///SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
 class ReadReceiptClass {
@@ -11100,6 +11163,15 @@ class NativeHumanActionResult {
   ///result body or a new execution authority.
   final String? inputJson;
   final ReferenceElement? inputReference;
+
+  ///Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+  ///byte completion; no bearer is exposed by observation.
+  final NativeExecution? nativeExecution;
+
+  ///Transient same-request writer bearer for the exact original AE/EE. The native task must
+  ///atomically claim the byte step before using it; never persisted or exposed to the browser.
+  final NativeHumanActionResultNativeExecutionAdmission?
+  nativeExecutionAdmission;
   final String? nativeId;
   final String? nativeType;
 
@@ -11112,6 +11184,8 @@ class NativeHumanActionResult {
   NativeHumanActionResult({
     this.inputJson,
     this.inputReference,
+    this.nativeExecution,
+    this.nativeExecutionAdmission,
     this.nativeId,
     this.nativeType,
     this.readAdmission,
@@ -11125,6 +11199,14 @@ class NativeHumanActionResult {
         inputReference: json["inputReference"] == null
             ? null
             : ReferenceElement.fromJson(json["inputReference"]),
+        nativeExecution: json["nativeExecution"] == null
+            ? null
+            : NativeExecution.fromJson(json["nativeExecution"]),
+        nativeExecutionAdmission: json["nativeExecutionAdmission"] == null
+            ? null
+            : NativeHumanActionResultNativeExecutionAdmission.fromJson(
+                json["nativeExecutionAdmission"],
+              ),
         nativeId: json["nativeId"],
         nativeType: json["nativeType"],
         readAdmission: json["readAdmission"] == null
@@ -11139,11 +11221,75 @@ class NativeHumanActionResult {
   Map<String, dynamic> toJson() => _stripNulls({
     "inputJson": inputJson,
     "inputReference": inputReference?.toJson(),
+    "nativeExecution": nativeExecution?.toJson(),
+    "nativeExecutionAdmission": nativeExecutionAdmission?.toJson(),
     "nativeId": nativeId,
     "nativeType": nativeType,
     "readAdmission": readAdmission?.toJson(),
     "submission": submission.toJson(),
     "terminalStatus": taskStatusValues.reverse[terminalStatus],
+  });
+}
+
+///Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+///byte completion; no bearer is exposed by observation.
+class NativeExecution {
+  final int bindingGeneration;
+  final String externalExecutionId;
+  final String idempotencyKey;
+  final String nativeIntentId;
+
+  NativeExecution({
+    required this.bindingGeneration,
+    required this.externalExecutionId,
+    required this.idempotencyKey,
+    required this.nativeIntentId,
+  });
+
+  factory NativeExecution.fromJson(Map<String, dynamic> json) =>
+      NativeExecution(
+        bindingGeneration: json["bindingGeneration"],
+        externalExecutionId: json["externalExecutionId"],
+        idempotencyKey: json["idempotencyKey"],
+        nativeIntentId: json["nativeIntentId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingGeneration": bindingGeneration,
+    "externalExecutionId": externalExecutionId,
+    "idempotencyKey": idempotencyKey,
+    "nativeIntentId": nativeIntentId,
+  });
+}
+
+///Transient same-request writer bearer for the exact original AE/EE. The native task must
+///atomically claim the byte step before using it; never persisted or exposed to the browser.
+class NativeHumanActionResultNativeExecutionAdmission {
+  final String actionToken;
+  final String argumentsJson;
+
+  ///RFC3339 admission expiry, preserved verbatim across language bindings and validated by
+  ///the native writer before every byte step.
+  final String expiresAt;
+
+  NativeHumanActionResultNativeExecutionAdmission({
+    required this.actionToken,
+    required this.argumentsJson,
+    required this.expiresAt,
+  });
+
+  factory NativeHumanActionResultNativeExecutionAdmission.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeHumanActionResultNativeExecutionAdmission(
+    actionToken: json["actionToken"],
+    argumentsJson: json["argumentsJson"],
+    expiresAt: json["expiresAt"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionToken": actionToken,
+    "argumentsJson": argumentsJson,
+    "expiresAt": expiresAt,
   });
 }
 

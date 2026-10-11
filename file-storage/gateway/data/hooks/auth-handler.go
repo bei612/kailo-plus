@@ -145,11 +145,15 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx = propagator.WithUserNameMetadata(ctx, common.PydioContextUserKey, userName)
-	if err := auth.AuthorizeNativeDataMutation(r.WithContext(ctx)); err != nil {
+	newRequest := r.WithContext(ctx)
+	if hasProof && (r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete || r.Method == http.MethodPatch) {
 		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
 		return
 	}
-	newRequest := r.WithContext(ctx)
+	if err := auth.AuthorizeNativeDataMutation(newRequest); err != nil {
+		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
+		return
+	}
 	if hasProof {
 		read, err := auth.NativeReadAuthority(newRequest, proof, "execute", false)
 		if err != nil {
@@ -160,6 +164,9 @@ func (a *pydioAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// The source adapter refuses a native server that ignored the proof.
 			w.Header().Set("X-Kailo-Native-Actor", read.Delivery.TenantID+":"+read.Delivery.BindingID+":SERVICE:"+read.Claims["actor_principal_id"].(string))
 		}
+	} else if auth.NativeUploadFromContext(newRequest.Context()) != nil {
+		// The verified native session and same-execution byte writer retain
+		// their request-local context; do not reinterpret writes as read proofs.
 	} else if err := auth.PrepareNativeHumanRead(newRequest); err != nil {
 		cmd.ExposedWriteErrorResponse(ctx, w, cmd.ErrAccessDenied, r.URL)
 		return

@@ -25,8 +25,16 @@ function parsed(raw) {
 
 function writeInput(args) {
   if (!exactKeys(args, ['target', 'input']) || !exactKeys(args.target, ['resourceId']) || !UUID.test(args.target.resourceId)
-    || !exactKeys(args.input, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
-    || args.input.resourceId !== args.target.resourceId
+    || args.input?.resourceId !== args.target.resourceId) throw new Refused(400);
+  if (Object.hasOwn(args.input, 'nativeIntentId')) {
+    if (!exactKeys(args.input, ['resourceId', 'nativeIntentId', 'nativeNodeId', 'nativeDeadline', 'contentLength', 'multipart'])
+      || !UUID.test(args.input.nativeIntentId) || !UUID.test(args.input.nativeNodeId)
+      || !Number.isSafeInteger(args.input.nativeDeadline) || args.input.nativeDeadline <= 0
+      || !Number.isSafeInteger(args.input.contentLength) || args.input.contentLength < 0
+      || typeof args.input.multipart !== 'boolean') throw new Refused(400);
+    return args.input.nativeNodeId;
+  }
+  if (!exactKeys(args.input, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
     || !['nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(args.input[field]))) throw new Refused(400);
   const reference = parsed(args.input.nativeObjectRef);
   if (!exactKeys(reference, ['nodeUuid', 'publish']) || !UUID.test(reference.nodeUuid)
@@ -65,7 +73,8 @@ function nativeResult(config, native, key, target, input, nativeId) {
     || (nativeId !== undefined && nativeId !== execution.nativeId)) throw new Refused(503);
   if (input && (native.contentReference.nativeObjectRef !== writeInput({target:{resourceId:target}, input})
     || execution.nativeId === input.nativeRevision
-    || ['displayName', 'mediaType'].some(field => native.contentReference[field] !== input[field]))) throw new Refused(503);
+    || (Object.hasOwn(input, 'nativeIntentId') ? native.contentBytes !== input.contentLength
+      : ['displayName', 'mediaType'].some(field => native.contentReference[field] !== input[field])))) throw new Refused(503);
   const result = {execution, resultJson:'{}', contentReference:native.contentReference};
   if (Buffer.byteLength(canonical(result)) > config.maxBodyBytes) throw new Refused(503);
   return result;
@@ -78,20 +87,24 @@ export async function executeWrite(config, deadline, raw, key, token) {
     || !UUID.test(key) || request.idempotencyKey !== key) throw new Refused(400);
   const args = request.arguments;
   const node = writeInput(args);
+  const upload = Object.hasOwn(args.input, 'nativeIntentId');
   const claims = await claimsForNode(config, token, args, 'execute', [writeAction]);
   if (claims.idempotency_key !== key || !UUID.test(claims.external_execution_id)) throw new Refused(401);
-  const resource = admittedResource(config, await freshPep(config, deadline, token, args, claims, 'execute'), claims, node);
+  const admitted = await freshPep(config, deadline, token, args, claims, 'execute');
+  const nativeRoot = upload ? config.nativeRootRef : node;
+  const resource = admittedResource(config, admitted, claims, nativeRoot);
   const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
-  const nativePath = `n/node/${node}/versions/${encodeURIComponent(args.input.nativeRevision)}/promote`;
+  const nativePath = upload ? `n/upload/${args.input.nativeIntentId}`
+    : `n/node/${node}/versions/${encodeURIComponent(args.input.nativeRevision)}/promote`;
   const nativeURL = new URL(nativePath, base);
   if (nativeURL.pathname !== `${base.pathname}${nativePath}`) throw new Refused(400);
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline,
     nativeURL, {
       method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`,
-        'content-type':'application/json', 'idempotency-key':key}, body:canonical({Publish:false}),
+        'content-type':'application/json', 'idempotency-key':key}, body:canonical(upload ? {} : {Publish:false}),
     });
   const current = await claimsForNode(config, token, args, 'execute', [writeAction]);
-  const after = admittedResource(config, await freshPep(config, deadline, token, args, current, 'execute'), current, node);
+  const after = admittedResource(config, await freshPep(config, deadline, token, args, current, 'execute'), current, nativeRoot);
   if (canonical(resource) !== canonical(after)) throw new Refused(403);
   return nativeResult(config, native, key, claims.target_id, args.input);
 }

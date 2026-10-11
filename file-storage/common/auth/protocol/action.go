@@ -81,6 +81,22 @@ func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments stri
 // AuthorizeOperation observes the same frozen native Task without replaying an
 // execute token. Core deliberately omits a resource body for an old observation.
 func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, error) {
+	return d.authorizeOperation(ctx, token, arguments, operation, nil)
+}
+
+// Native byte-step ownership must use the AE generation actually confirmed by
+// Core, not the current deployment generation or a field decoded from the JWT.
+func (d Delivery) AuthorizeNativeWriter(ctx context.Context, token, arguments string) (map[string]interface{}, map[string]interface{}, int64, error) {
+	return d.AuthorizeOperationGeneration(ctx, token, arguments, "execute")
+}
+
+func (d Delivery) AuthorizeOperationGeneration(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, int64, error) {
+	var generation int64
+	claims, target, err := d.authorizeOperation(ctx, token, arguments, operation, &generation)
+	return claims, target, generation, err
+}
+
+func (d Delivery) authorizeOperation(ctx context.Context, token, arguments, operation string, generation *int64) (map[string]interface{}, map[string]interface{}, error) {
 	refused := errors.New("native action authority refused or unavailable")
 	if err := d.validate(); err != nil || int64(len(token)+len(arguments)) > d.MaxResponseBytes || (operation != "execute" && operation != "observe" && operation != "extract_usage" && operation != "reconcile") {
 		return nil, nil, refused
@@ -107,6 +123,13 @@ func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, oper
 	if !actionPEPFields(result, operation == "execute") || !aeOK || !opOK || !zedOK || zed == "" ||
 		!canonicalUUID(ae) || !canonicalUUID(op) || claims["action_execution_id"] != ae || claims["operation_id"] != op {
 		return nil, nil, refused
+	}
+	if generation != nil {
+		value, ok := result["bindingGeneration"].(float64)
+		if !ok || value < 1 {
+			return nil, nil, refused
+		}
+		*generation = int64(value)
 	}
 	if operation != "execute" {
 		return claims, nil, nil

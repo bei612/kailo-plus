@@ -26,7 +26,7 @@ func TestNativeReadBootHintDoesNotExportDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 		if governed {
-			if len(result.Other) != 1 || result.Other["nativeReadRequired"] != true {
+			if len(result.Other) != 2 || result.Other["nativeReadRequired"] != true || result.Other["nativeWriteRequired"] != true {
 				t.Fatal("binding transport hint missing or private delivery leaked")
 			}
 		} else if result.Other != nil {

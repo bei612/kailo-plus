@@ -325,6 +325,7 @@ fn request_binding(raw: &Value) -> Result<Uuid, Refusal> {
         "resolveResource",
         "authorizeScope",
         "readReceipt",
+        "nativeExecutionAdmission",
     ]
     .iter()
     .filter(|key| raw.get(**key).is_some())
@@ -345,6 +346,9 @@ pub(crate) async fn handle(
     let result = async {
         let Json(raw) = body.map_err(|_| invalid())?;
         let id = request_binding(&raw)?;
+        if let Some(intent) = raw.get("nativeExecutionAdmission") {
+            return native_execution::admit(&state, &headers, id, intent).await.map(Some);
+        }
         if let Some(receipt) = raw.get("readReceipt") {
             return native_read::record(&state, &headers, id, receipt).await.map(Some);
         }
@@ -378,7 +382,7 @@ pub(crate) async fn handle(
                 let command: ActionCommand = serde_json::from_value(command.clone()).map_err(|_| invalid())?;
                 let key = Uuid::parse_str(&command.idempotency_key).map_err(|_| invalid())?;
                 // Fence the exact existing idempotency key before the original replay path can start it.
-                check_existing_binding(&state,actor,key,id,before.generation).await?;
+                check_existing_binding(&state,actor,key,id,before.generation,false).await?;
                 if matches!(command.action_key.as_str(), "resource.grant_read" | "resource.revoke_read") {
                     state.governance.submit_native_permission(actor, &command,
                         Origin { binding_id: id, generation: before.generation }).await.map_err(|(error,_)| error)?;
@@ -390,10 +394,15 @@ pub(crate) async fn handle(
             (None,Some(key))=>super::id(key)?,
             _=>return Err(invalid()),
         };
-        let Some(action) = check_existing_binding(&state,actor,key,id,before.generation).await? else {
+        let Some(action) = check_existing_binding(&state,actor,key,id,before.generation,raw.get("command").is_none()).await? else {
             return Ok(None);
         };
         let mut ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
+        if native_execution::is_native_writer(&ae) {
+            let frozen_actor = authenticate_execution(&state,&headers,id,&ae).await?;
+            if frozen_actor.tenant_id != actor.tenant_id || frozen_actor.principal_id != actor.principal_id
+                || frozen_actor.human_identity_id != actor.human_identity_id { return Err(denied()); }
+        }
         let output = if Origin::from_execution(&ae)?.is_some() {
             if raw.get("sourceResources").is_some() { return Err(invalid()); }
             permission_result(&state, actor, &ae).await?
@@ -409,6 +418,16 @@ pub(crate) async fn handle(
             output["inputJson"] = json!(collab_bridge::limits::canonical_json(input));
         } else {
             output["inputReference"] = input.clone();
+        }
+        if native_execution::is_native_writer(&ae) {
+            let external: Option<(Uuid,Uuid,i64)> = sqlx::query_as("select id,idempotency_key,component_projection_generation
+                from admission.external_execution where action_execution_id=$1 and operation_id=$2 and component_binding_id=$3
+                  and protocol_operation='execute' and jsonb_typeof(usage_projection->'meters')='array'")
+                .bind(ae.id).bind(ae.operation_id).bind(id).fetch_optional(&state.pool).await?;
+            if let Some((external,key,generation)) = external {
+                output["nativeExecution"] = json!({"externalExecutionId":external,"idempotencyKey":key,
+                    "nativeIntentId":input["nativeIntentId"],"bindingGeneration":generation});
+            }
         }
         if raw.get("command").is_some() && native_read::is_read(&ae) {
             if let Some(admission) = native_read::admit(&state, &ae, key).await? {
@@ -444,6 +463,60 @@ pub(crate) async fn handle(
         Ok(None) => (StatusCode::NOT_FOUND, [("cache-control", "no-store")]).into_response(),
         Err(error) => error.respond(None),
     }
+}
+
+// The transport still authenticates a unique binding SERVICE and a separate
+// live HUMAN. Only its approved release is selected from the original AE;
+// browser fields cannot select a tenant, service principal or native instance.
+pub(super) async fn authenticate_execution(
+    state: &ServiceState,
+    headers: &HeaderMap,
+    id: Uuid,
+    ae: &Execution,
+) -> Result<Actor, Refusal> {
+    let current: Binding = sqlx::query_as("select b.tenant_id,b.workspace_id,runtime.generation,b.config_digest,
+        b.normalized_config->>'client_id' as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
+        from admission.action_execution a
+        join catalog.application_binding b on b.id=a.component_binding_id and b.tenant_id=a.tenant_id and b.state='ACTIVE'
+        join projection.application_runtime runtime on runtime.binding_id=b.id
+          and runtime.generation=a.component_projection_generation and runtime.component_release_id=a.component_release_id
+          and runtime.state='ACTIVE' and runtime.observation->>'configDigest'=b.config_digest
+        join catalog.component_release r on r.id=a.component_release_id and r.status='APPROVED'
+          and r.approved_by_action_execution_id is not null and r.manifest_digest=runtime.normalized_manifest_digest
+        join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
+        join identity.service_principal s on s.principal_id=b.service_principal_id
+          and s.component_binding_kind='APPLICATION' and s.component_binding_id=b.id
+        join identity.principal p on p.id=s.principal_id and p.tenant_id=b.tenant_id and p.kind='SERVICE' and p.status='ACTIVE'
+        where a.id=$1 and b.id=$2 and a.component_binding_kind='APPLICATION'
+          and r.manifest->'executionConnector'->>'mode'='REMOTE_ADAPTER'")
+        .bind(ae.id).bind(id).fetch_optional(&state.pool).await?.ok_or_else(denied)?;
+    let clients: i64 = sqlx::query_scalar("select count(*) from catalog.application_binding where normalized_config->>'client_id'=$1 and state<>'DISABLED'")
+        .bind(&current.client_id).fetch_one(&state.pool).await?;
+    if clients != 1 {
+        return Err(denied());
+    }
+    state
+        .auth
+        .verify_binding_client(Some(header(headers, "authorization")?), &current.client_id)
+        .await
+        .map_err(|e| match e {
+            crate::service_auth::ServiceAuthError::KeysUnavailable => unavailable(),
+            _ => denied(),
+        })?;
+    let actor = human(
+        state,
+        &current,
+        id,
+        header(headers, "x-kailo-native-human-token")?,
+    )
+    .await?;
+    if actor.tenant_id != ae.tenant_id
+        || actor.principal_id != ae.initiator_principal_id
+        || ae.actor_principal_id != ae.initiator_principal_id
+    {
+        return Err(denied());
+    }
+    Ok(actor)
 }
 
 async fn permission_result(
@@ -751,6 +824,7 @@ async fn check_existing_binding(
     key: Uuid,
     binding: Uuid,
     generation: i64,
+    allow_frozen_writer: bool,
 ) -> Result<Option<Uuid>, Refusal> {
     type ExistingBindingRow = (Uuid, Option<Uuid>, Option<i64>, Option<Value>, String);
 
@@ -766,6 +840,17 @@ async fn check_existing_binding(
         Some((id, Some(actual), Some(epoch), None, _))
             if actual == binding && epoch == generation =>
         {
+            Ok(Some(id))
+        }
+        Some((id, Some(actual), Some(_), None, _)) if actual == binding && allow_frozen_writer => {
+            let ae = crate::governance::load_execution(&state.pool, id)
+                .await?
+                .ok_or_else(denied)?;
+            if !native_execution::is_native_writer(&ae) {
+                return Err(denied());
+            }
+            let mut connection = state.pool.acquire().await?;
+            execution_facts(&mut connection, &ae).await?;
             Ok(Some(id))
         }
         Some((id, None, None, Some(raw), action))

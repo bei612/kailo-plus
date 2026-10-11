@@ -518,6 +518,26 @@ message PromoteVersionResponse {
   bool Published = 3;
 }
 
+// Metadata preparation/observation of the original governed upload. The body
+// never carries file content, user identity, binding, or a client deadline.
+message NativeUploadRequest {
+  string Uuid = 1;
+  string Path = 2;
+  int64 Size = 3;
+  bool Multipart = 4;
+}
+
+message NativeUploadResponse {
+  string ActionExecutionId = 1;
+  string ExternalExecutionId = 2;
+  string IdempotencyKey = 3;
+  string NativeIntentId = 4;
+  string NativeNodeId = 5;
+  bool Ready = 6;
+  bool Completed = 7;
+  string VersionId = 8;
+}
+
 message PublishNodeParameters {
   bool Cascade = 1;
   bool PromoteLatest = 2;
@@ -751,6 +771,11 @@ message NamespaceValuesResponse{
 
 // This RestAPI gather various aspects in one /node API
 service NodeService {
+
+  // Uses the existing HUMAN Action producer, never an independent upload.
+  rpc PrepareUpload(NativeUploadRequest) returns (NativeUploadResponse) {
+    option (google.api.http) = { post: "/n/upload/{Uuid}" body: "*" };
+  }
 
   // Generic request to either list (using Locators) or search (using Query) for nodes
   rpc Lookup(LookupRequest) returns (NodeCollection) {

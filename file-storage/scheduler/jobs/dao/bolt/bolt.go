@@ -125,8 +125,8 @@ func (s *boltStore) ClaimJob(ctx context.Context, job *proto.Job) error {
 		if bucket.Get([]byte(job.ID)) != nil {
 			return errors.WithStack(errors.StatusConflict)
 		}
-		if _, cell := job.Metadata[jobs.NativeCellShareJob]; cell {
-			binding, generation, err := jobs.NativeCellJobOrigin(job)
+		if jobs.IsNativeBindingJob(job) {
+			binding, generation, err := jobs.NativeBindingJobOrigin(job)
 			if err != nil {
 				return err
 			}
@@ -135,14 +135,14 @@ func (s *boltStore) ClaimJob(ctx context.Context, job *proto.Job) error {
 				if err := json.Unmarshal(raw, &prior); err != nil {
 					return err
 				}
-				if _, cell := prior.Metadata[jobs.NativeCellShareJob]; !cell {
+				if !jobs.IsNativeBindingJob(&prior) {
 					return nil
 				}
-				owner, gen, err := jobs.NativeCellJobOrigin(&prior)
+				owner, gen, err := jobs.NativeBindingJobOrigin(&prior)
 				if err != nil {
 					return err
 				}
-				if owner == binding && gen >= generation {
+				if owner == binding && (gen > generation || (gen == generation && (prior.Inactive || jobs.NativeBindingJobKind(&prior) == jobs.NativeBindingJobKind(job)))) {
 					return errors.WithStack(errors.StatusConflict)
 				}
 				return nil
@@ -341,12 +341,40 @@ func (s *boltStore) ClaimTask(task *proto.Task) error {
 		if err := json.Unmarshal(jobBucket.Get([]byte(task.JobID)), &parent); err != nil {
 			return err
 		}
-		if _, cell := parent.Metadata[jobs.NativeCellShareJob]; cell {
-			if _, _, err := jobs.NativeCellJobOrigin(&parent); err != nil {
+		if jobs.IsNativeBindingJob(&parent) {
+			if _, _, err := jobs.NativeBindingJobOrigin(&parent); err != nil {
 				return err
 			}
 			if parent.Inactive {
 				return errors.WithStack(errors.StatusConflict)
+			}
+		}
+		if jobs.NativeWriteJobMatches(&parent, task.JobID) {
+			intent, err := jobs.NativeWriteTaskIntent(task)
+			if err != nil || intent.BindingID == "" {
+				return errors.WithStack(errors.StatusConflict)
+			}
+			// A legacy promotion has no frozen generation. Once this binding
+			// has a cutoff it cannot claim against an unversioned shared Job.
+			// The scan and insertion share the same transaction as the cutoff.
+			if err := jobBucket.ForEach(func(_, value []byte) error {
+				var existing proto.Job
+				if err := json.Unmarshal(value, &existing); err != nil {
+					return err
+				}
+				if !jobs.IsNativeBindingJob(&existing) {
+					return nil
+				}
+				binding, _, err := jobs.NativeBindingJobOrigin(&existing)
+				if err != nil {
+					return err
+				}
+				if binding == intent.BindingID && existing.Inactive {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 		// Task IDs are native operation references, including across jobs. The
@@ -393,6 +421,48 @@ func (s *boltStore) PutTask(task *proto.Task) error {
 
 	})
 
+}
+
+func (s *boltStore) StoreNativeUploadStep(ctx context.Context, task *proto.Task, step string) (*proto.Task, error) {
+	var merged *proto.Task
+	err := s.DB.Update(func(tx *bbolt.Tx) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		parentBucket := tx.Bucket(jobsBucketKey)
+		if parentBucket == nil {
+			return errors.WithStack(errors.JobNotFound)
+		}
+		var parent proto.Job
+		if err := json.Unmarshal(parentBucket.Get([]byte(task.GetJobID())), &parent); err != nil {
+			return err
+		}
+		if parent.ID != task.GetJobID() || parent.Inactive {
+			return errors.WithStack(errors.StatusConflict)
+		}
+		bucket := tx.Bucket([]byte(tasksBucketString + task.GetJobID()))
+		if bucket == nil {
+			return errors.WithStack(errors.StatusConflict)
+		}
+		stored := new(proto.Task)
+		if err := json.Unmarshal(bucket.Get([]byte(task.GetID())), stored); err != nil {
+			return err
+		}
+		var err error
+		merged, err = jobs.MergeNativeUploadStep(stored, task, step)
+		if err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(merged)
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte(merged.ID), encoded)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return merged, nil
 }
 
 func validateTaskUpdate(tx *bbolt.Tx, task *proto.Task) error {

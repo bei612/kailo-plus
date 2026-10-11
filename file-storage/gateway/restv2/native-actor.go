@@ -87,6 +87,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	action := stringClaim(claims, "action_key")
 	listing := action == "file_storage.list@v1"
 	writing := action == "file_storage.write@v1"
+	uploading := writing && operation == "upload"
 	deleting := action == "file_storage.delete@v1"
 	if !listing && !writing && !deleting && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
 		return refused
@@ -100,16 +101,28 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 	inputSize := 5
 	if listing {
 		inputSize = 1
+	} else if uploading {
+		inputSize = 6
 	} else if deleting {
 		inputSize = 3
 	} else if action == "file_storage.list_revisions@v1" {
 		inputSize = 2
 	}
+	validWriting := true
+	if writing {
+		if uploading {
+			_, validWriting = auth.NativeUploadInput(input)
+			validWriting = validWriting && requested == delivery.NativeRootRef && requested == target["nativeRef"]
+		} else {
+			validWriting = validWriteReference(stringClaim(input, "nativeObjectRef"), requested, false) && operation == "promote" && requested == target["nativeRef"]
+		}
+	}
 	if !inputOK || !targetOK || len(argumentTarget) != 1 || argumentTarget["resourceId"] != target["resourceId"] || input["resourceId"] != target["resourceId"] ||
 		len(input) != inputSize ||
 		(!listing && !writing && !deleting && !actorUUID(stringClaim(input, "nativeObjectRef"))) ||
-		(writing && (!validWriteReference(stringClaim(input, "nativeObjectRef"), requested, false) || operation != "promote" || requested != target["nativeRef"])) ||
-		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions" && operation != "promote" && operation != "delete") ||
+		!validWriting ||
+		(operation == "lookup" && !listing) || (operation != "node" && operation != "lookup" && operation != "versions" && operation != "promote" && operation != "delete" && operation != "upload") ||
+		(operation == "upload" && !uploading) ||
 		(operation == "promote" && !writing) || (operation == "delete" && !deleting) || (deleting && operation != "delete") {
 		return refused
 	}

@@ -143,8 +143,8 @@ func (m *mongoImpl) ClaimJob(ctx context.Context, job *proto.Job) error {
 	if job == nil || job.ID == "" || len(job.Tasks) != 0 {
 		return errors.WithStack(errors.InvalidParameters)
 	}
-	if _, cell := job.Metadata[jobs.NativeCellShareJob]; cell {
-		if _, _, err := jobs.NativeCellJobOrigin(job); err != nil {
+	if jobs.IsNativeBindingJob(job) {
+		if _, _, err := jobs.NativeBindingJobOrigin(job); err != nil {
 			return err
 		}
 		return m.claimNativeCellJob(ctx, job)
@@ -175,6 +175,7 @@ func (m *mongoImpl) PutJob(job *proto.Job) error {
 	// The unique original Job ID plus this atomic predicate prevents a
 	// metadata-removing update from downgrading a claimed native execution.
 	_, e := m.Collection(collJobs).ReplaceOne(c, bson.D{{"id", job.ID},
+		{"job.metadata." + jobs.NativeUploadJobMarker, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}}, mj, &options.ReplaceOptions{Upsert: &upsert})
@@ -233,6 +234,7 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 
 	// Now delete job
 	deleted, e := m.Collection(collJobs).DeleteOne(c, bson.D{{"id", jobId},
+		{"job.metadata." + jobs.NativeUploadJobMarker, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}})
@@ -313,8 +315,11 @@ func (m *mongoImpl) ClaimTask(task *proto.Task) error {
 	if readErr != nil {
 		return readErr
 	}
-	if _, cell := parent.Metadata[jobs.NativeCellShareJob]; cell {
+	if jobs.IsNativeBindingJob(parent) {
 		return m.claimNativeCellTask(task)
+	}
+	if jobs.NativeWriteJobMatches(parent, task.JobID) {
+		return m.claimLegacyNativeWriteTask(task)
 	}
 	_, err := m.Collection(collTasks).InsertOne(context.Background(), &mongoTask{
 		ID: task.ID, JobId: task.JobID, Status: int(task.Status), Stamp: int64(task.StartTime), Task: task,
@@ -366,6 +371,42 @@ func (m *mongoImpl) PutTask(task *proto.Task) error {
 		return errors.WithMessage(errors.StatusConflict, "native task identity changed before persistence")
 	}
 	return nil
+}
+
+func (m *mongoImpl) StoreNativeUploadStep(ctx context.Context, task *proto.Task, step string) (*proto.Task, error) {
+	var merged *proto.Task
+	_, err := m.nativeCellTransaction(ctx, func(tx mongo.SessionContext) (interface{}, error) {
+		// Writing the original parent serializes this step against its Inactive
+		// fence. A snapshot read alone would permit write skew across collections.
+		changed, err := m.Collection(collJobs).UpdateOne(tx, bson.M{"id": task.GetJobID(), "job.inactive": false}, bson.M{"$inc": bson.M{"claim_revision": 1}})
+		if err != nil {
+			return nil, err
+		}
+		if changed.MatchedCount != 1 {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		stored := new(mongoTask)
+		if err := m.Collection(collTasks).FindOne(tx, bson.M{"id": task.GetID(), "job_id": task.GetJobID()}).Decode(stored); err != nil {
+			return nil, err
+		}
+		merged, err = jobs.MergeNativeUploadStep(stored.Task, task, step)
+		if err != nil {
+			return nil, err
+		}
+		stored.Task, stored.Status, stored.Stamp = merged, int(merged.Status), int64(merged.StartTime)
+		updated, err := m.Collection(collTasks).ReplaceOne(tx, bson.M{"id": merged.ID, "job_id": merged.JobID}, stored)
+		if err != nil {
+			return nil, err
+		}
+		if updated.MatchedCount != 1 {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return merged, nil
 }
 
 func (m *mongoImpl) PutTasks(tasks map[string]map[string]*proto.Task) error {

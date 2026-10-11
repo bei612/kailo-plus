@@ -286,6 +286,14 @@ void main() {
       );
       final legacy = Map<String, dynamic>.from(sample['result'])
         ..remove('readAdmission');
+      expect(
+        NativeHumanActionRequest.fromJson(sample['writerRequest']).toJson(),
+        sample['writerRequest'],
+      );
+      expect(
+        NativeHumanActionResult.fromJson(sample['writerResult']).toJson(),
+        sample['writerResult'],
+      );
       expect(NativeHumanActionResult.fromJson(legacy).toJson(), legacy);
       expect(
         NativeHumanActionRequest.fromJson(sample['resourceRequest']).toJson(),

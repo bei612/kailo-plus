@@ -255,6 +255,7 @@ StatusItem.StatusFolders = 'folders';
 StatusItem.StatusLoading = 'loading';
 StatusItem.StatusLoaded = 'loaded';
 StatusItem.StatusError = 'error';
+StatusItem.StatusUnknown = 'unknown';
 StatusItem.StatusPause = 'pause';
 StatusItem.StatusCannotPause = 'cannot-pause';
 StatusItem.StatusMultiPause = 'multi-pause';

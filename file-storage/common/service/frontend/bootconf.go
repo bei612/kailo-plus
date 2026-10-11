@@ -195,6 +195,7 @@ func ComputeBootConf(ctx context.Context, pool *PluginsPool, showVersion ...bool
 			b.Other = make(map[string]interface{})
 		}
 		b.Other["nativeReadRequired"] = true
+		b.Other["nativeWriteRequired"] = true
 	}
 
 	return b, nil

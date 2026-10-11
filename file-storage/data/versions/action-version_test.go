@@ -3,6 +3,7 @@ package versions
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	_ "github.com/pydio/cells/v5/common/config/memory"
+	nativeerrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/models"
 	"github.com/pydio/cells/v5/common/proto/docstore"
@@ -22,6 +24,7 @@ import (
 	cachehelper "github.com/pydio/cells/v5/common/utils/cache/helper"
 	"github.com/pydio/cells/v5/common/utils/openurl"
 	"github.com/pydio/cells/v5/common/utils/propagator"
+	"github.com/pydio/cells/v5/common/utils/uuid"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -69,6 +72,173 @@ type nativeDraftPruneStore struct {
 	upload    *DraftUpload
 	fenceErr  error
 	completed *tree.ContentRevision
+}
+
+type nativeUploadReconcileStore struct {
+	*nativeDraftPruneStore
+	versions map[string]*tree.ContentRevision
+	reads    int
+}
+
+func (d *nativeUploadReconcileStore) GetVersion(_ context.Context, _, id string) (*tree.ContentRevision, error) {
+	d.reads++
+	if revision := d.versions[id]; revision != nil {
+		return proto.Clone(revision).(*tree.ContentRevision), nil
+	}
+	return nil, nativeerrors.WithStack(nativeerrors.VersionNotFound)
+}
+
+func (d *nativeUploadReconcileStore) DeleteVersionsForNode(_ context.Context, _ string, ids ...string) error {
+	for _, id := range ids {
+		delete(d.versions, id)
+	}
+	return nil
+}
+
+type nativeUploadReconcileTasks struct {
+	grpc.ClientConnInterface
+	job          *jobs.Job
+	task         *jobs.Task
+	loseTerminal bool
+}
+
+func (s *nativeUploadReconcileTasks) Invoke(_ context.Context, method string, request, response interface{}, _ ...grpc.CallOption) error {
+	switch method {
+	case jobs.JobService_GetJob_FullMethodName:
+		if request.(*jobs.GetJobRequest).JobID != s.job.ID {
+			return errors.New("unexpected native Job")
+		}
+		proto.Merge(response.(proto.Message), &jobs.GetJobResponse{Job: proto.Clone(s.job).(*jobs.Job)})
+	case jobs.JobService_PutTask_FullMethodName:
+		s.task = proto.Clone(request.(*jobs.PutTaskRequest).Task).(*jobs.Task)
+		if s.loseTerminal && s.task.Status == jobs.TaskStatus_Finished {
+			return errors.New("native terminal ACK lost")
+		}
+		proto.Merge(response.(proto.Message), &jobs.PutTaskResponse{Task: proto.Clone(s.task).(*jobs.Task)})
+	default:
+		return errors.New("unexpected native reconciliation RPC")
+	}
+	return nil
+}
+
+func (s *nativeUploadReconcileTasks) NewStream(ctx context.Context, _ *grpc.StreamDesc, method string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
+	if method != jobs.JobService_ListTasks_FullMethodName {
+		return nil, errors.New("unexpected native task stream")
+	}
+	return &nativeUploadReconcileStream{ctx: ctx, task: proto.Clone(s.task).(*jobs.Task)}, nil
+}
+
+type nativeUploadReconcileStream struct {
+	grpc.ClientStream
+	ctx  context.Context
+	task *jobs.Task
+}
+
+func (s *nativeUploadReconcileStream) Context() context.Context { return s.ctx }
+func (*nativeUploadReconcileStream) SendMsg(interface{}) error  { return nil }
+func (*nativeUploadReconcileStream) CloseSend() error           { return nil }
+func (s *nativeUploadReconcileStream) RecvMsg(value interface{}) error {
+	if s.task == nil {
+		return io.EOF
+	}
+	proto.Merge(value.(proto.Message), &jobs.ListTasksResponse{Task: s.task})
+	s.task = nil
+	return nil
+}
+
+func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T) {
+	previousRouter := router
+	defer func() { router = previousRouter }()
+	for _, scenario := range []string{"published", "plan-without-publication", "no-plan", "prune-ACK-lost", "terminal-ACK-lost", "finished-later-pruned"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			if err := config.Set(ctx, map[string]interface{}{"maxResponseBytes": 65536}, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+			binding, key, user, principal, nodeID, draftID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+			deadline := time.Now().Add(time.Hour)
+			input := map[string]interface{}{"resourceId": uuid.New(), "nativeIntentId": draftID, "nativeNodeId": nodeID,
+				"nativeDeadline": float64(deadline.Unix()), "contentLength": float64(0), "multipart": false}
+			claims := map[string]interface{}{"tenant_id": uuid.New(), "actor_principal_id": principal, "initiating_human_principal_id": principal,
+				"external_execution_id": uuid.New(), "idempotency_key": key, "action_execution_id": uuid.New(), "operation_id": uuid.New(),
+				"action_key": "file_storage.write@v1", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": input["resourceId"],
+				"result_exposure_policy_id": uuid.New(), "result_exposure_policy_version": float64(1)}
+			job := jobstore.NativeUploadJob("native-write", binding, 3)
+			task, err := jobstore.NewNativeUploadTask(binding, 3, job.ID, key, "native-owner", user, claims, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := jobstore.ClaimNativeUploadStep(task, "put", uuid.New(), "workspace/file", "", 0); err != nil {
+				t.Fatal(err)
+			}
+			versionID, err := jobstore.NativeUploadVersionID(task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			node := &tree.Node{Uuid: nodeID, Path: "workspace/file"}
+			node.MustSetMeta(common.MetaNamespaceMime, "text/plain")
+			draft := &tree.ContentRevision{VersionId: draftID, Draft: true, OwnerUuid: user, ETag: "empty-ack", Location: &tree.Node{Path: "versions/draft"}}
+			published := &tree.ContentRevision{VersionId: versionID, OwnerUuid: user, ETag: "empty-ack", Location: &tree.Node{Path: "versions/published"}}
+			pruned := &tree.ContentRevision{VersionId: uuid.New(), Location: &tree.Node{Path: "versions/pruned"}}
+			record := &jobstore.NativeUploadPublicationRecord{Node: node, Draft: draft, Version: published, PruneVersions: []*tree.ContentRevision{pruned}}
+			if scenario != "no-plan" {
+				if err := jobstore.AppendNativeUploadPublication(task, record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "finished-later-pruned" {
+				if err := jobstore.CompleteNativeUploadPublication(task, record, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tasks := &nativeUploadReconcileTasks{job: job, task: task, loseTerminal: scenario == "terminal-ACK-lost"}
+			grpcclient.RegisterMock(common.ServiceJobsGRPC, tasks)
+			dao := &nativeUploadReconcileStore{nativeDraftPruneStore: &nativeDraftPruneStore{upload: &DraftUpload{NodeUuid: nodeID,
+				Revision: draft, JobID: job.ID, TaskID: key, Deadline: deadline.UnixNano(), CleanupOrder: deadline.UnixNano(), State: DraftUploadComplete}}, versions: map[string]*tree.ContentRevision{}}
+			if scenario != "plan-without-publication" && scenario != "no-plan" && scenario != "finished-later-pruned" {
+				dao.versions[versionID] = published
+			}
+			deleted := map[string]int{}
+			router = &versionActionRouter{prune: func(_ context.Context, request *tree.DeleteNodeRequest) (*tree.DeleteNodeResponse, error) {
+				if dao.upload.State != DraftUploadCleanup {
+					t.Fatal("cleanup ran without native cutoff")
+				}
+				deleted[request.Node.Path]++
+				if scenario == "prune-ACK-lost" && request.Node.Path == pruned.Location.Path {
+					return nil, errors.New("prune ACK lost")
+				}
+				return &tree.DeleteNodeResponse{Success: true}, nil
+			}}
+			err = PruneDraftUploads(ctx, dao, deadline.Add(time.Second), 1)
+			wantSuccess := scenario == "published" || scenario == "finished-later-pruned"
+			if (err == nil) != wantSuccess {
+				t.Fatal("native reconciliation outcome differs", scenario, err)
+			}
+			if deleted[draft.Location.Path] != 1 {
+				t.Fatal("expired draft bytes retained", scenario, deleted)
+			}
+			if scenario == "plan-without-publication" && deleted[published.Location.Path] != 1 {
+				t.Fatal("unpublished copy orphaned")
+			}
+			if wantSuccess || scenario == "terminal-ACK-lost" {
+				if _, _, err := jobstore.NativeUploadRevision(tasks.task); err != nil {
+					t.Fatal("missing original terminal receipt", err)
+				}
+			} else if tasks.task.Status == jobs.TaskStatus_Finished || tasks.task.StatusMessage == "" {
+				t.Fatal("partial result lost original owner reconciliation")
+			}
+			if scenario == "finished-later-pruned" && dao.reads != 0 {
+				t.Fatal("historical terminal regressed after legitimate later prune")
+			}
+			if scenario == "terminal-ACK-lost" {
+				delete(dao.versions, versionID)
+				tasks.loseTerminal = false
+				if err := PruneDraftUploads(ctx, dao, deadline.Add(2*time.Second), 1); err != nil {
+					t.Fatal("durable terminal did not converge", err)
+				}
+			}
+		})
+	}
 }
 
 func (d *nativeDraftPruneStore) DraftUploads(context.Context, time.Time, int64) ([]*DraftUpload, error) {

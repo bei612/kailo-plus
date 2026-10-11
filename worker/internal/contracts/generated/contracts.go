@@ -3047,15 +3047,21 @@ type FileStorageReadOutput struct {
 	Text string `json:"text"`
 }
 
-// Apply a write from the exact persisted native input revision in the admitted Resource.
-// File bytes remain at the source; the native consumer must verify the input, current
-// actor, scope and revision before execution.
+// Apply an existing immutable native revision, or dispatch a native first-byte intent. An
+// intent is not a ContentReference: its node/revision identifiers name reserved native
+// locations only; bytes remain at the source and no result exists before the immutable
+// native ACK.
 type FileStorageWriteInput struct {
-	DisplayName     string `json:"displayName"`
-	MediaType       string `json:"mediaType"`
-	NativeObjectRef string `json:"nativeObjectRef"`
-	NativeRevision  string `json:"nativeRevision"`
-	ResourceID      string `json:"resourceId"`
+	ContentLength   *int64  `json:"contentLength,omitempty"`
+	DisplayName     *string `json:"displayName,omitempty"`
+	MediaType       *string `json:"mediaType,omitempty"`
+	Multipart       *bool   `json:"multipart,omitempty"`
+	NativeDeadline  *int64  `json:"nativeDeadline,omitempty"`
+	NativeIntentID  *string `json:"nativeIntentId,omitempty"`
+	NativeNodeID    *string `json:"nativeNodeId,omitempty"`
+	NativeObjectRef *string `json:"nativeObjectRef,omitempty"`
+	NativeRevision  *string `json:"nativeRevision,omitempty"`
+	ResourceID      string  `json:"resourceId"`
 }
 
 // Metadata-only write result. The exact confirmed result revision belongs in the adapter's
@@ -5079,7 +5085,11 @@ type NativeHumanActionRequest struct {
 	BindingID      string                 `json:"bindingId"`
 	Command        *CommandClass          `json:"command,omitempty"`
 	IdempotencyKey *string                `json:"idempotencyKey,omitempty"`
-	ReadReceipt    *ReadReceiptClass      `json:"readReceipt,omitempty"`
+	// Same-request writer admission for the original dispatched AE/EE and native intent, never
+	// another execute. Both the binding SERVICE and independent current HUMAN credentials are
+	// required.
+	NativeExecutionAdmission *NativeHumanActionRequestNativeExecutionAdmission `json:"nativeExecutionAdmission,omitempty"`
+	ReadReceipt              *ReadReceiptClass                                 `json:"readReceipt,omitempty"`
 	// Read the already-registered exact native object for the verified HUMAN and action. This
 	// never creates a Resource or native object.
 	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
@@ -5177,6 +5187,15 @@ type CommandReceiverResource struct {
 	Version int64  `json:"version"`
 }
 
+// Same-request writer admission for the original dispatched AE/EE and native intent, never
+// another execute. Both the binding SERVICE and independent current HUMAN credentials are
+// required.
+type NativeHumanActionRequestNativeExecutionAdmission struct {
+	ActionExecutionID   string `json:"actionExecutionId"`
+	ExternalExecutionID string `json:"externalExecutionId"`
+	NativeIntentID      string `json:"nativeIntentId"`
+}
+
 // Original HUMAN synchronous application read completion, authenticated by its binding
 // SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
 type ReadReceiptClass struct {
@@ -5216,13 +5235,38 @@ type NativeHumanActionResult struct {
 	// result body or a new execution authority.
 	InputJSON      *string                  `json:"inputJson,omitempty"`
 	InputReference *ContentReferenceElement `json:"inputReference,omitempty"`
-	NativeID       *string                  `json:"nativeId,omitempty"`
-	NativeType     *string                  `json:"nativeType,omitempty"`
+	// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+	// byte completion; no bearer is exposed by observation.
+	NativeExecution *NativeExecution `json:"nativeExecution,omitempty"`
+	// Transient same-request writer bearer for the exact original AE/EE. The native task must
+	// atomically claim the byte step before using it; never persisted or exposed to the browser.
+	NativeExecutionAdmission *NativeHumanActionResultNativeExecutionAdmission `json:"nativeExecutionAdmission,omitempty"`
+	NativeID                 *string                                          `json:"nativeId,omitempty"`
+	NativeType               *string                                          `json:"nativeType,omitempty"`
 	// First native same-request read only. Never returned by idempotency observation or retried
 	// admission; the bearer is not persisted.
 	ReadAdmission  *ReadAdmission  `json:"readAdmission,omitempty"`
 	Submission     SubmissionClass `json:"submission"`
 	TerminalStatus *TaskStatus     `json:"terminalStatus,omitempty"`
+}
+
+// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+// byte completion; no bearer is exposed by observation.
+type NativeExecution struct {
+	BindingGeneration   int64  `json:"bindingGeneration"`
+	ExternalExecutionID string `json:"externalExecutionId"`
+	IdempotencyKey      string `json:"idempotencyKey"`
+	NativeIntentID      string `json:"nativeIntentId"`
+}
+
+// Transient same-request writer bearer for the exact original AE/EE. The native task must
+// atomically claim the byte step before using it; never persisted or exposed to the browser.
+type NativeHumanActionResultNativeExecutionAdmission struct {
+	ActionToken   string `json:"actionToken"`
+	ArgumentsJSON string `json:"argumentsJson"`
+	// RFC3339 admission expiry, preserved verbatim across language bindings and validated by
+	// the native writer before every byte step.
+	ExpiresAt string `json:"expiresAt"`
 }
 
 // First native same-request read only. Never returned by idempotency observation or retried

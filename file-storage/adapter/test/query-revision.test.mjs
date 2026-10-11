@@ -2238,7 +2238,18 @@ async function nativeDownloadFixture(failure, mobile = false) {
       displayMessage: (kind, message) => state.errors.push({ kind, message }) },
   };
   const sandbox = {
-    navigator: { userAgent: mobile ? 'iPhone' : 'Desktop' }, document: { location: { href: '' } }, window: {},
+    URL,
+    uuid4:()=>ids[6],
+    navigator: { userAgent: mobile ? 'iPhone' : 'Desktop' }, document: {
+      location: { href: 'https://cells.example.invalid/', origin: 'https://cells.example.invalid' },
+      body: { appendChild() {} },
+      createElement: () => ({click() { state.downloads.push(this.href); }, remove() {}}),
+    }, window: {},
+    fetch: async (_url, options) => {
+      assert.equal(options.credentials, 'same-origin');
+      assert.equal(options.redirect, 'error');
+      return {ok: true, blob: async () => new Blob(['original native version'])};
+    },
     // Existing cache cleanup is unrelated to the signing/error consumers.
     Math: Object.assign(Object.create(Math), { random: () => 1 }),
     lscache: { setBucket() {}, get: key => cache.get(key), set: (key, value) => cache.set(key, value) },
@@ -2338,6 +2349,62 @@ async function nativeRevisionsFixture() {
   return {...fixture, panel, pending, select, replyVersions, flushDebounce, closed:() => closed};
 }
 
+test('original governed upload waits for the original execution receipt and never resends an uncertain body', async t => {
+  for (const scenario of ['bytes', 'empty', 'lost ack', 'concurrent callbacks']) await t.test(scenario, async () => {
+    const {api,pydio,state,sandbox} = await nativeDownloadFixture();
+    pydio.Parameters.set('other',{nativeWriteRequired:true});
+    pydio.Parameters.set('ENDPOINT_REST_API_V2','/a/v2');
+    pydio.getPluginConfigs=()=>new Map([['MULTIPART_UPLOAD_TIMEOUT_MINUTES','1']]);
+    pydio.notify=event=>state.notifications.push(event);
+    Object.assign(state,{notifications:[],prepares:[],puts:[],lost:scenario==='lost ack'});
+    sandbox.URL=URL; sandbox.uuid4=()=>ids[6]; sandbox.setTimeout=setTimeout;
+    sandbox.Pydio={getInstance:()=>pydio};
+    sandbox.document.location={href:'https://cells.example.invalid/',origin:'https://cells.example.invalid'};
+    sandbox.fetch=async (url,options)=>{
+      state.prepares.push({url,options});
+      assert.equal(options.credentials,'same-origin');
+      assert.equal(options.redirect,'error');
+      assert.equal(options.headers.authorization,'Bearer native-current-user');
+      assert.deepEqual(JSON.parse(options.body),{Uuid:ids[6],Path:'documents/file.txt',Size:scenario==='empty'?'0':'3',Multipart:false});
+      if(state.puts.length && state.lost) { state.lost=false; throw new Error('native receipt unavailable'); }
+      return {ok:true,json:async()=>state.puts.length?
+        {NativeIntentId:ids[6],Completed:true,VersionId:'immutable-native-version'}:
+        {NativeIntentId:ids[6],Ready:true,ActionExecutionId:ids[1],ExternalExecutionId:ids[2],IdempotencyKey:ids[4]}};
+    };
+    sandbox.Connexion=class { uploadFile(file,_unused,url,complete,_error,_progress,options) {
+      state.puts.push({file,url,options});
+      assert.equal(options.method,'PUT');
+      assert.equal(options.withCredentials,true);
+      assert.equal(options.customHeaders['X-Kailo-Action-Execution'],ids[1]);
+      assert.equal(options.customHeaders['X-Kailo-External-Execution'],ids[2]);
+      assert.equal(options.customHeaders['X-Kailo-Native-Upload'],ids[6]);
+      assert.equal(options.customHeaders['Idempotency-Key'],ids[4]);
+      complete({status:200});
+      return {abort(){}};
+    } };
+    const file={name:'file.txt',size:scenario==='empty'?0:3};
+    const send=()=>new Promise(resolve=>api.uploadPresigned(file,'documents/file.txt',
+      value=>resolve({value}),error=>resolve({error})));
+    if (scenario==='concurrent callbacks') {
+      const answers=await Promise.all([send(),send()]);
+      assert.equal(state.puts.length,1,'only one callback may dispatch the original File/path intent');
+      assert.ok(answers.some(answer=>answer.value?.VersionId==='immutable-native-version'));
+      assert.ok(answers.every(answer=>answer.value?.VersionId==='immutable-native-version'||answer.error?.nativeExecutionUnknown===true));
+      return;
+    }
+    const result=await send();
+    if(scenario==='lost ack') {
+      assert.equal(result.error.nativeExecutionUnknown,true);
+      assert.equal(state.puts.length,1);
+      const restored=await send();
+      assert.equal(restored.value.VersionId,'immutable-native-version');
+    } else assert.equal(result.value.VersionId,'immutable-native-version');
+    assert.equal(state.puts.length,1,'same File/path keeps the first original intent');
+    assert.equal(state.notifications.filter(event=>event==='longtask_starting').length,
+      state.notifications.filter(event=>event==='longtask_finished').length);
+  });
+});
+
 // The four original browser consumers run together. Only browser storage, the
 // REST transport and the external AWS SDK are fixtures; no upload/retry/auth
 // implementation is copied from the production methods into the assertions.
@@ -2372,14 +2439,19 @@ async function nativeMultipartFixture() {
   api.constructor._PydioRestClient = rest;
   api.constructor._PydioClient = api;
   const credentials = {accessKeyId:'original-current-user'};
+  class S3 {
+    constructor() { this.config={credentials}; }
+    addAllRequestListeners() {}
+    uploadPart(params) {
+      state.parts.push(params);
+      return {on(){}, send:callback => state.partCallbacks.push(callback)};
+    }
+  }
   class ManagedUpload {
     constructor(options) {
       this.options=options; this.parts={}; this.completeInfo={}; this.activeParts=1; this.doneParts=0;
       this.totalPartNumbers=1; this.isDoneChunking=true;
-      this.service={config:{credentials}, uploadPart:params => {
-        state.parts.push(params);
-        return {on(){}, send:callback => state.partCallbacks.push(callback)};
-      }};
+      this.service=options.service || new S3();
       state.managed=this;
     }
     on() {}
@@ -2397,7 +2469,8 @@ async function nativeMultipartFixture() {
     }
     fillQueue() {}
   }
-  const awsSdk={S3:{ManagedUpload}, config:{update:value => Object.assign(credentials,{accessKeyId:value.accessKeyId})},
+  S3.ManagedUpload=ManagedUpload;
+  const awsSdk={S3, config:{update:value => Object.assign(credentials,{accessKeyId:value.accessKeyId})},
     util:{string:{byteLength:value => value.length}, isBrowser:() => true,
       error:(error,properties) => Object.assign(error,properties)}};
   const loaderSource = await readFile(new URL('../../frontend/assets/gui.ajax/res/js/core/http/awsLoader.js',import.meta.url),'utf8');
@@ -2433,6 +2506,82 @@ async function nativeMultipartFixture() {
   const flush = async () => {await new Promise(resolve => setImmediate(resolve));};
   return {...fixture,rest,item,start,flush,load};
 }
+
+test('governed multipart preserves original item pause and resume without replaying canceled uploads', async t => {
+  for(const scenario of ['pause before prepare', 'pause then resume before prepare', 'pause after prepare',
+    'abort while paused', 'prepare fails while paused']) await t.test(scenario,async () => {
+    const {api,pydio,state,sandbox,item,start,flush}=await nativeMultipartFixture();
+    pydio.Parameters.set('other',{nativeWriteRequired:true});
+    pydio.Parameters.set('ENDPOINT_REST_API_V2','/a/v2');
+    item._file.size=api.constructor.getMultipartPartSize()+1;
+    let releasePrepare, rejectPrepare;
+    const prepared=new Promise((resolve,reject)=>{releasePrepare=resolve;rejectPrepare=reject;});
+    sandbox.fetch=async () => {
+      await prepared;
+      return {ok:true,json:async()=>state.receipt
+        ? {NativeIntentId:ids[6],Completed:true,VersionId:'original-native-version'}
+        : {NativeIntentId:ids[6],Ready:true,ActionExecutionId:ids[1],ExternalExecutionId:ids[2],IdempotencyKey:ids[4]}};
+    };
+    start(); await flush();
+    if(scenario==='pause after prepare') {
+      releasePrepare(); await flush();
+      assert.equal(state.parts.length,1);
+    }
+    item.pause();
+    assert.equal(item.getStatus(),'multi-pause','original UploadItem recognizes native multipart pause');
+    if(scenario==='pause then resume before prepare') item.resume();
+    if(scenario==='prepare fails while paused') {
+      rejectPrepare(new Error('native preparation refused')); await flush();
+      assert.equal(item.getStatus(),'unknown'); assert.equal(state.sends,0);
+      item._doResume(); await flush();
+      assert.equal(state.sends,0); assert.equal(state.finished,1);
+      return;
+    }
+    if(scenario!=='pause after prepare') {releasePrepare(); await flush();}
+    assert.equal(state.sends,1);
+    if(scenario==='pause before prepare'||scenario==='abort while paused') {
+      assert.equal(state.parts.length,0,'original ManagedMultipart.uploadPart defers byte dispatch');
+      assert.equal(state.timers.length,1);
+    }
+    if(scenario==='pause after prepare') {
+      state.managed.uploadPart('second-original-part',2);
+      assert.equal(state.parts.length,1,'already in-flight part remains, next part is paused');
+      assert.equal(state.timers.length,1);
+    }
+    if(scenario==='abort while paused') {
+      item.abort(); await flush();
+      item._doResume();
+      state.timers.shift()(); await flush();
+      assert.equal(state.parts.length,0); assert.equal(state.sends,1);
+      assert.equal(state.aborts,1); assert.equal(item.getStatus(),'unknown');
+      assert.equal(state.finished,1);
+      return;
+    }
+    if(scenario!=='pause then resume before prepare') {
+      item.resume();
+      state.timers.shift()(); await flush();
+    }
+    assert.equal(state.parts.length,scenario==='pause after prepare'?2:1);
+    assert.equal(state.sends,1,'resume does not start a second managed upload');
+    state.receipt=true;
+    state.managed.callback(null,{VersionId:'original-native-version'}); await flush();
+    assert.equal(item.getStatus(),'loaded'); assert.equal(state.finished,1);
+  });
+  await t.test('single PUT retains its original non-pausable handle',async () => {
+    const {api,pydio,state,sandbox}=await nativeMultipartFixture();
+    pydio.Parameters.set('other',{nativeWriteRequired:true});
+    pydio.Parameters.set('ENDPOINT_REST_API_V2','/a/v2');
+    let releasePrepare;
+    const prepared=new Promise(resolve=>{releasePrepare=resolve;});
+    sandbox.fetch=async()=>{await prepared;return {ok:true,json:async()=>({NativeIntentId:ids[6],Ready:true})};};
+    const complete=new Promise(resolve=>{state.finish=resolve;});
+    const handle=await api.uploadMultipart({size:0},'documents/empty.txt',()=>state.finish('loaded'),error=>state.finish(error));
+    assert.equal(handle.pause,undefined); assert.equal(handle.resume,undefined);
+    handle.abort(); releasePrepare();
+    assert.equal((await complete).nativeExecutionUnknown,true);
+    assert.equal(state.sends,0);
+  });
+});
 
 test('original native refresh rejects its real failure and clears the shared refresh promise', async t => {
   await t.test('refresh failure remains the original rejection, not an undefined credential',async () => {
@@ -3189,6 +3338,7 @@ test('original native signing failures reject or reach the existing UI without h
     for (const mode of ['promise', 'callback', 'download', 'version']) {
       await t.test(`${failure}/${mode}`, async () => {
         const { api, node, selection, state, sandbox } = await nativeDownloadFixture(failure);
+        const initialHref = sandbox.document.location.href;
         let callbacks = 0;
         if (mode === 'promise') {
           const pending = api.buildPresignedGetUrl(node);
@@ -3208,7 +3358,7 @@ test('original native signing failures reject or reach the existing UI without h
         assert.equal(callbacks, 0, 'rejected signing cannot disclose a URL');
         if (state.errors.length) assert.equal(state.errors[0].kind, 'ERROR');
         assert.deepEqual(state.downloads, []);
-        assert.equal(sandbox.document.location.href, '');
+        assert.equal(sandbox.document.location.href, initialHref, 'rejected signing must not navigate');
       });
     }
   }

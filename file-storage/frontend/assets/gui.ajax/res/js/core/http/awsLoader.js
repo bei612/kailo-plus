@@ -102,7 +102,7 @@ export default () => {
                             // A received authentication refusal can renew its
                             // token. A timeout/retryable transport error is not
                             // evidence that the native part was never written.
-                            if (err.statusCode === 401 && self._partsRetries[partNumber] <= 3) {
+                            if (!self.nativeExecution && err.statusCode === 401 && self._partsRetries[partNumber] <= 3) {
                                 self.uploadPart(chunk, partNumber);
                                 return err
                             } else {

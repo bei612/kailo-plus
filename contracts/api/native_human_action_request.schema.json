@@ -9,6 +9,16 @@
     "bindingId":{"type":"string","format":"uuid"},
     "command":{"$ref":"action_command.schema.json"},
     "readReceipt":{"$ref":"native_human_read_receipt.schema.json"},
+    "nativeExecutionAdmission":{
+      "description":"Same-request writer admission for the original dispatched AE/EE and native intent, never another execute. Both the binding SERVICE and independent current HUMAN credentials are required.",
+      "type":"object","additionalProperties":false,
+      "required":["actionExecutionId","externalExecutionId","nativeIntentId"],
+      "properties":{
+        "actionExecutionId":{"type":"string","format":"uuid"},
+        "externalExecutionId":{"type":"string","format":"uuid"},
+        "nativeIntentId":{"type":"string","format":"uuid"}
+      }
+    },
     "idempotencyKey":{"type":"string","format":"uuid"},
     "sourceResources":{
       "type":"array","minItems":1,"uniqueItems":true,
@@ -36,10 +46,11 @@
     }
   },
   "oneOf":[
-    {"required":["readReceipt"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
-    {"required":["command"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
-    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["resolveResource"]},{"required":["authorizeScope"]}]}},
-    {"required":["resolveResource"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
-    {"required":["authorizeScope"],"not":{"anyOf":[{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}}
+    {"required":["readReceipt"],"not":{"anyOf":[{"required":["nativeExecutionAdmission"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["command"],"not":{"anyOf":[{"required":["nativeExecutionAdmission"]},{"required":["readReceipt"]},{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["nativeExecutionAdmission"]},{"required":["readReceipt"]},{"required":["command"]},{"required":["resolveResource"]},{"required":["authorizeScope"]}]}},
+    {"required":["resolveResource"],"not":{"anyOf":[{"required":["nativeExecutionAdmission"]},{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["authorizeScope"],"not":{"anyOf":[{"required":["nativeExecutionAdmission"]},{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}},
+    {"required":["nativeExecutionAdmission"],"not":{"anyOf":[{"required":["authorizeScope"]},{"required":["readReceipt"]},{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}}
   ]
 }

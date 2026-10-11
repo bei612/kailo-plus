@@ -41,9 +41,11 @@ export async function reconcileBinding(config, deadline, raw, key, token) {
   const keys = new Set();
   for (const item of result.observations) {
     const terminal = item?.platformStatus === 'SUCCEEDED';
-    if (!exactKeys(item,['idempotencyKey','nativeType','nativeId','nativeStatus','platformStatus','cancelCapability','lastObservedAt',
+    const upload = item?.nativeType === 'version';
+    if (!exactKeys(item,['idempotencyKey','nativeType',...(!upload || terminal ? ['nativeId'] : []),'nativeStatus','platformStatus','cancelCapability','lastObservedAt',
       ...(terminal ? ['terminalAt'] : [])]) || !UUID.test(item.idempotencyKey) || keys.has(item.idempotencyKey)
-      || item.nativeType !== 'job' || item.nativeId !== item.idempotencyKey || item.cancelCapability !== 'UNSUPPORTED'
+      || (!upload && (item.nativeType !== 'job' || item.nativeId !== item.idempotencyKey))
+      || (upload && terminal && !nonempty(item.nativeId)) || item.cancelCapability !== 'UNSUPPORTED'
       || !['SUCCEEDED','UNKNOWN'].includes(item.platformStatus) || !nonempty(item.nativeStatus)
       || !Number.isFinite(Date.parse(item.lastObservedAt))
       || (terminal && (!Number.isFinite(Date.parse(item.terminalAt)) || Date.parse(item.terminalAt)>Date.parse(item.lastObservedAt)))) throw new Refused(503);

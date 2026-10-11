@@ -167,6 +167,9 @@
   "status.part.cannot-pause":{
     "other": "Cannot pause chunk transfer"
   },
+  "status.unknown": {
+    "other": "Upload result unconfirmed. Refresh checks the same operation without sending the file again."
+  },
   "status.error.aborted": {
     "other": "interrupted by user"
   },

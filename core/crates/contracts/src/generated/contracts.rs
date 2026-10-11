@@ -287,19 +287,39 @@ pub struct FileStorageReadOutput {
     pub text: String,
 }
 
-/// Apply a write from the exact persisted native input revision in the admitted Resource.
-/// File bytes remain at the source; the native consumer must verify the input, current
-/// actor, scope and revision before execution.
+/// Apply an existing immutable native revision, or dispatch a native first-byte intent. An
+/// intent is not a ContentReference: its node/revision identifiers name reserved native
+/// locations only; bytes remain at the source and no result exists before the immutable
+/// native ACK.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStorageWriteInput {
-    pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_length: Option<i64>,
 
-    pub media_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 
-    pub native_object_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
 
-    pub native_revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multipart: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_deadline: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_intent_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_node_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_object_ref: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_revision: Option<String>,
 
     pub resource_id: String,
 }
@@ -5185,6 +5205,12 @@ pub struct NativeHumanActionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
 
+    /// Same-request writer admission for the original dispatched AE/EE and native intent, never
+    /// another execute. Both the binding SERVICE and independent current HUMAN credentials are
+    /// required.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_execution_admission: Option<NativeHumanActionRequestNativeExecutionAdmission>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_receipt: Option<ReadReceiptClass>,
 
@@ -5372,6 +5398,19 @@ pub struct CommandReceiverResource {
     pub version: i64,
 }
 
+/// Same-request writer admission for the original dispatched AE/EE and native intent, never
+/// another execute. Both the binding SERVICE and independent current HUMAN credentials are
+/// required.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanActionRequestNativeExecutionAdmission {
+    pub action_execution_id: String,
+
+    pub external_execution_id: String,
+
+    pub native_intent_id: String,
+}
+
 /// Original HUMAN synchronous application read completion, authenticated by its binding
 /// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5437,6 +5476,16 @@ pub struct NativeHumanActionResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_reference: Option<ReferenceElement>,
 
+    /// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+    /// byte completion; no bearer is exposed by observation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_execution: Option<NativeExecution>,
+
+    /// Transient same-request writer bearer for the exact original AE/EE. The native task must
+    /// atomically claim the byte step before using it; never persisted or exposed to the browser.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_execution_admission: Option<NativeHumanActionResultNativeExecutionAdmission>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_id: Option<String>,
 
@@ -5452,6 +5501,34 @@ pub struct NativeHumanActionResult {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_status: Option<TaskStatus>,
+}
+
+/// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
+/// byte completion; no bearer is exposed by observation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeExecution {
+    pub binding_generation: i64,
+
+    pub external_execution_id: String,
+
+    pub idempotency_key: String,
+
+    pub native_intent_id: String,
+}
+
+/// Transient same-request writer bearer for the exact original AE/EE. The native task must
+/// atomically claim the byte step before using it; never persisted or exposed to the browser.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanActionResultNativeExecutionAdmission {
+    pub action_token: String,
+
+    pub arguments_json: String,
+
+    /// RFC3339 admission expiry, preserved verbatim across language bindings and validated by
+    /// the native writer before every byte step.
+    pub expires_at: String,
 }
 
 /// First native same-request read only. Never returned by idempotency observation or retried

@@ -22,6 +22,7 @@ package mongo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -77,6 +78,8 @@ type mRevision struct {
 	UploadState    string `bson:"draft_upload_state,omitempty"`
 	UploadDeadline int64  `bson:"draft_upload_deadline,omitempty"`
 	CleanupOrder   int64  `bson:"draft_upload_cleanup_order,omitempty"`
+	UploadJobID    string `bson:"draft_upload_job_id,omitempty"`
+	UploadTaskID   string `bson:"draft_upload_task_id,omitempty"`
 	*tree.ContentRevision
 }
 
@@ -188,7 +191,11 @@ func (m *MongoStore) ReserveDraftUpload(ctx context.Context, nodeUuid string, re
 	if err := versions.ValidateDraftUpload(nodeUuid, revision, deadline); err != nil {
 		return err
 	}
-	_, err := m.Collection(collVersions).InsertOne(ctx, &mRevision{NodeUuid: nodeUuid,
+	jobID, taskID, err := versions.DraftUploadTaskReferences(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = m.Collection(collVersions).InsertOne(ctx, &mRevision{NodeUuid: nodeUuid, UploadJobID: jobID, UploadTaskID: taskID,
 		VersionId: revision.VersionId, Timestamp: time.Now().UnixNano(), Draft: true,
 		OwnerUuid: revision.OwnerUuid, ContentRevision: revision,
 		UploadState: versions.DraftUploadPending, UploadDeadline: deadline.UnixNano(), CleanupOrder: deadline.UnixNano()})
@@ -208,7 +215,7 @@ func (m *MongoStore) CompleteDraftUpload(ctx context.Context, nodeUuid string, r
 		return err
 	}
 	upload := &versions.DraftUpload{NodeUuid: stored.NodeUuid, Revision: stored.ContentRevision,
-		State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder}
+		State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder, JobID: stored.UploadJobID, TaskID: stored.UploadTaskID}
 	if err := versions.ValidateDraftCompletion(upload, revision, now); err != nil {
 		return err
 	}
@@ -231,11 +238,84 @@ func (m *MongoStore) CompleteDraftUpload(ctx context.Context, nodeUuid string, r
 	return nil
 }
 
+func (m *MongoStore) DraftPublicationVersions(ctx context.Context, nodeUuid string, maxBytes int64) ([]*tree.ContentRevision, error) {
+	if nodeUuid == "" || maxBytes <= 0 {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	cursor, err := m.Collection(collVersions).Find(ctx, bson.M{"node_uuid": nodeUuid, "draft": false,
+		"draft_upload_state": bson.M{"$exists": false}}, options.Find().SetSort(bson.D{{Key: "ts", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var out []*tree.ContentRevision
+	var size int64
+	for cursor.Next(ctx) {
+		revision, err := m.decodeRevision(cursor)
+		if err != nil {
+			return nil, err
+		}
+		if revision == nil || revision.VersionId == "" || revision.Draft {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		encoded, err := json.Marshal(revision)
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(encoded)) > maxBytes-size {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		size += int64(len(encoded))
+		out = append(out, revision)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (m *MongoStore) PublishDraftUpload(ctx context.Context, nodeUuid string, draft, revision *tree.ContentRevision, now time.Time) error {
+	if draft == nil || revision == nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	session, err := m.Client().StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+	_, err = session.WithTransaction(ctx, func(tx mongo.SessionContext) (interface{}, error) {
+		// Write the existing reservation row, so expiration/deletion and this
+		// transaction conflict on the same native document. Snapshot reads alone
+		// would permit both the fence and late publication to commit.
+		var stored mRevision
+		filter := bson.M{"node_uuid": nodeUuid, "version_id": draft.VersionId,
+			"draft_upload_state": versions.DraftUploadComplete}
+		if err := m.Collection(collVersions).FindOneAndUpdate(tx, filter,
+			bson.M{"$inc": bson.M{"draft_upload_cleanup_order": 1}},
+			options.FindOneAndUpdate().SetReturnDocument(options.Before)).Decode(&stored); err != nil {
+			return nil, err
+		}
+		upload := &versions.DraftUpload{NodeUuid: stored.NodeUuid, Revision: stored.ContentRevision,
+			State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder,
+			JobID: stored.UploadJobID, TaskID: stored.UploadTaskID}
+		if err := versions.ValidateDraftPublication(upload, draft, revision, now); err != nil {
+			return nil, err
+		}
+		_, err := m.Collection(collVersions).InsertOne(tx, &mRevision{NodeUuid: nodeUuid, VersionId: revision.VersionId,
+			Timestamp: time.Now().UnixNano(), Draft: false, OwnerUuid: revision.OwnerUuid, ContentRevision: revision})
+		// A duplicate reference aborts the whole transaction; only the original
+		// observer may recover an uncertain committed publication.
+		return nil, err
+	})
+	return err
+}
+
 func (m *MongoStore) FenceDraftUpload(ctx context.Context, nodeUuid, versionId string, now time.Time) (*versions.DraftUpload, error) {
 	filter := bson.D{{Key: "node_uuid", Value: nodeUuid}, {Key: "version_id", Value: versionId},
 		{Key: "$or", Value: bson.A{
 			bson.M{"draft_upload_state": versions.DraftUploadCleanup},
 			bson.M{"draft_upload_state": versions.DraftUploadPending, "draft_upload_deadline": bson.M{"$lte": now.UnixNano()}},
+			bson.M{"draft_upload_state": versions.DraftUploadComplete, "draft_upload_job_id": bson.M{"$exists": true, "$ne": ""}, "draft_upload_deadline": bson.M{"$lte": now.UnixNano()}},
 		}}}
 	var stored mRevision
 	err := m.Collection(collVersions).FindOneAndUpdate(ctx, filter,
@@ -245,7 +325,7 @@ func (m *MongoStore) FenceDraftUpload(ctx context.Context, nodeUuid, versionId s
 		return nil, err
 	}
 	upload := &versions.DraftUpload{NodeUuid: nodeUuid, Revision: stored.ContentRevision,
-		State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder}
+		State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder, JobID: stored.UploadJobID, TaskID: stored.UploadTaskID}
 	if err := versions.ValidateDraftUploadRecord(upload); err != nil {
 		return nil, err
 	}
@@ -259,6 +339,7 @@ func (m *MongoStore) DraftUploads(ctx context.Context, now time.Time, limit int6
 	cursor, err := m.Collection(collVersions).Find(ctx, bson.M{"$or": bson.A{
 		bson.M{"draft_upload_state": versions.DraftUploadCleanup},
 		bson.M{"draft_upload_state": versions.DraftUploadPending, "draft_upload_deadline": bson.M{"$lte": now.UnixNano()}},
+		bson.M{"draft_upload_state": versions.DraftUploadComplete, "draft_upload_job_id": bson.M{"$exists": true, "$ne": ""}, "draft_upload_deadline": bson.M{"$lte": now.UnixNano()}},
 	}}, options.Find().SetSort(bson.D{{Key: "draft_upload_cleanup_order", Value: 1},
 		{Key: "node_uuid", Value: 1}, {Key: "version_id", Value: 1}}).SetLimit(limit))
 	if err != nil {
@@ -272,7 +353,7 @@ func (m *MongoStore) DraftUploads(ctx context.Context, now time.Time, limit int6
 			return nil, err
 		}
 		upload := &versions.DraftUpload{NodeUuid: stored.NodeUuid, Revision: stored.ContentRevision,
-			State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder}
+			State: stored.UploadState, Deadline: stored.UploadDeadline, CleanupOrder: stored.CleanupOrder, JobID: stored.UploadJobID, TaskID: stored.UploadTaskID}
 		if err := versions.ValidateDraftUploadRecord(upload); err != nil {
 			return nil, err
 		}
@@ -377,7 +458,8 @@ func (m *MongoStore) decodeRevision(d Decoder) (*tree.ContentRevision, error) {
 			return nil, err
 		}
 		upload := &versions.DraftUpload{NodeUuid: mrv.NodeUuid, Revision: mrv.ContentRevision,
-			State: mrv.UploadState, Deadline: mrv.UploadDeadline, CleanupOrder: mrv.CleanupOrder}
+			State: mrv.UploadState, Deadline: mrv.UploadDeadline, CleanupOrder: mrv.CleanupOrder,
+			JobID: mrv.UploadJobID, TaskID: mrv.UploadTaskID}
 		if err := versions.ValidateDraftUploadRecord(upload); err != nil {
 			return nil, err
 		}

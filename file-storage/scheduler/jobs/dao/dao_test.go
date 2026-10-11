@@ -118,6 +118,80 @@ func TestDAO_ExactTask(t *testing.T) {
 	})
 }
 
+func TestDAO_NativeUploadFencesFirstByteAndLegacyClaim(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding, base, key, user := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		cell, upload := jo.NativeCellJob(uuid.New(), binding, 1), jo.NativeUploadJob(base, binding, 1)
+		for _, job := range []*jobs.Job{jo.NativeWriteJob(base), cell, upload} {
+			if err := store.ClaimJob(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+		}
+		input := map[string]interface{}{"resourceId": uuid.New(), "nativeIntentId": uuid.New(), "nativeNodeId": uuid.New(),
+			"nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(3), "multipart": false}
+		claims := map[string]interface{}{"action_execution_id": uuid.New(), "external_execution_id": uuid.New(), "idempotency_key": key}
+		original, err := jo.NewNativeUploadTask(binding, 1, upload.ID, key, "original-user", user, claims, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(original); err != nil {
+			t.Fatal(err)
+		}
+		left, right := proto.Clone(original).(*jobs.Task), proto.Clone(original).(*jobs.Task)
+		for _, task := range []*jobs.Task{left, right} {
+			if _, err = jo.ClaimNativeUploadStep(task, "put", uuid.New(), "workspace/file", "", 3); err != nil {
+				t.Fatal(err)
+			}
+		}
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		for _, task := range []*jobs.Task{left, right} {
+			go func(task *jobs.Task) {
+				<-start
+				_, err := store.StoreNativeUploadStep(ctx, task, "put")
+				results <- err
+			}(task)
+		}
+		close(start)
+		first, second := <-results, <-results
+		if (first == nil) == (second == nil) {
+			t.Fatal("two concurrent byte writers must have one winner", first, second)
+		}
+		snapshot, err := store.SnapshotNativeCells(ctx, binding, 1, cell.ID, true, 1<<20, base)
+		if err != nil || len(snapshot) != 2 {
+			t.Fatal("complete original jobs snapshot", snapshot, err)
+		}
+		if _, err = store.StoreNativeUploadStep(ctx, right, "put"); err == nil {
+			t.Fatal("writer crossed persisted cutoff")
+		}
+		legacy, err := jo.NewNativeWriteTask(binding, base, uuid.New(), "original-user", user, claims, map[string]interface{}{"original": "reference"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(legacy); err == nil {
+			t.Fatal("late unversioned promotion crossed binding cutoff")
+		}
+		other := uuid.New()
+		legacy, err = jo.NewNativeWriteTask(other, base, uuid.New(), "original-user", user, claims, map[string]interface{}{"original": "reference"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(legacy); err != nil {
+			t.Fatal("different binding was stopped", err)
+		}
+		if _, err = store.SnapshotNativeCells(ctx, binding, 1, cell.ID, true, 1<<20, base); err != nil {
+			t.Fatal("foreign binding history blocked the original cutoff", err)
+		}
+		if _, err = store.SnapshotNativeCells(ctx, other, 1, uuid.New(), true, 1<<20, base); err == nil {
+			t.Fatal("legacy task with no frozen generation vanished from snapshot")
+		}
+	})
+}
+
 func TestDAO_NativeCellFenceAndClaim(t *testing.T) {
 	test.RunStorageTests(testCases, t, func(ctx context.Context) {
 		store, err := manager.Resolve[jo.DAO](ctx)

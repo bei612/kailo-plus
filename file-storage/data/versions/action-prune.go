@@ -69,6 +69,12 @@ func PruneDraftUploads(ctx context.Context, dao DAO, now time.Time, batchSize in
 			failures = append(failures, err)
 			continue
 		}
+		if fenced.JobID != "" {
+			if err := reconcileNativeUpload(ctx, dao, getRouter(), fenced, now); err != nil {
+				failures = append(failures, err)
+			}
+			continue
+		}
 		response, err := getRouter().DeleteNode(ctx, &tree.DeleteNodeRequest{Node: fenced.Revision.Location.Clone()})
 		if err == nil && !response.GetSuccess() {
 			err = errors.WithMessage(errors.StatusInternalServerError, "native draft blob deletion was not acknowledged")

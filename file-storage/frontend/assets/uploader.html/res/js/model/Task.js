@@ -29,6 +29,7 @@ class Task {
      * @param session {Session}
      */
     constructor(session){
+		this.session = session;
         const pydio = Pydio.getInstance();
         this.job = new JobsJob();
         this.job.ID = 'local-upload-task-' + session.getId();
@@ -100,22 +101,28 @@ class Task {
 
 
     setIdle(){
-        if(this.task.Progress === 1) {
+        if(this.completed()) {
             JobsStore.getInstance().deleteLocalJob(this.job.ID);
             return;
         }
-        this.task.Status = JobsTaskStatus.constructFromObject('Idle');
-        this.task.StatusMessage = '';
+        const unknown = this.session.collectWithLimit(1, item => item.getStatus() === StatusItem.StatusUnknown).length > 0;
+        this.task.Status = JobsTaskStatus.constructFromObject(unknown ? 'Unknown' : 'Idle');
+        this.task.StatusMessage = unknown ? Pydio.getMessages()['html_uploader.status.unknown'] : '';
         this.notifyMainStore();
     }
 
     notifyMainStore(){
-        if(this.task.Progress === 1){
+        if(this.completed()){
             return // do not enqueue finished sessions !
         }
         this.task.StartTime = (new Date).getTime() / 1000;
         this.job.Tasks = [this.task];
         JobsStore.getInstance().enqueueLocalJob(this.job);
+    }
+
+    completed(){
+        return this.task.Progress === 1 && this.session.collectWithLimit(1,
+            item => item.getStatus() !== StatusItem.StatusLoaded, StatusItem.TypeFile).length === 0;
     }
 
     static create(session){

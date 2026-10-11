@@ -311,6 +311,10 @@ func (b *BoltStore) ReserveDraftUpload(ctx context.Context, nodeUuid string, rev
 	if err := versions.ValidateDraftUpload(nodeUuid, revision, deadline); err != nil {
 		return err
 	}
+	jobID, taskID, err := versions.DraftUploadTaskReferences(ctx)
+	if err != nil {
+		return err
+	}
 	return b.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(bucketName)
 		if bucket == nil {
@@ -330,7 +334,7 @@ func (b *BoltStore) ReserveDraftUpload(ctx context.Context, nodeUuid string, rev
 				return errors.WithMessage(errors.StatusConflict, "native draft reference is already claimed; observe without uploading again")
 			}
 		}
-		encoded, err := json.Marshal(&versions.DraftUpload{NodeUuid: nodeUuid, Revision: revision,
+		encoded, err := json.Marshal(&versions.DraftUpload{NodeUuid: nodeUuid, Revision: revision, JobID: jobID, TaskID: taskID,
 			Deadline: deadline.UnixNano(), CleanupOrder: deadline.UnixNano(), State: versions.DraftUploadPending})
 		if err != nil {
 			return err
@@ -359,11 +363,97 @@ func (b *BoltStore) CompleteDraftUpload(ctx context.Context, nodeUuid string, re
 	})
 }
 
+func (b *BoltStore) DraftPublicationVersions(ctx context.Context, nodeUuid string, maxBytes int64) ([]*tree.ContentRevision, error) {
+	if nodeUuid == "" || maxBytes <= 0 {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	var out []*tree.ContentRevision
+	err := b.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(bucketName)
+		if bucket == nil {
+			return errors.WithStack(errors.BucketNotFound)
+		}
+		node := bucket.Bucket([]byte(nodeUuid))
+		if node == nil {
+			return nil
+		}
+		var size int64
+		cursor := node.Cursor()
+		for key, value := cursor.Last(); key != nil; key, value = cursor.Prev() {
+			revision, upload, err := b.unmarshalRecord(value)
+			if err != nil {
+				return err
+			}
+			if revision.Draft || upload != nil {
+				continue
+			}
+			encoded, err := json.Marshal(revision)
+			if err != nil {
+				return err
+			}
+			if int64(len(encoded)) > maxBytes-size {
+				return errors.WithStack(errors.StatusConflict)
+			}
+			size += int64(len(encoded))
+			out = append(out, revision)
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (b *BoltStore) PublishDraftUpload(ctx context.Context, nodeUuid string, draft, revision *tree.ContentRevision, now time.Time) error {
+	if draft == nil || revision == nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
+	return b.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(bucketName)
+		if bucket == nil {
+			return errors.WithStack(errors.BucketNotFound)
+		}
+		node := bucket.Bucket([]byte(nodeUuid))
+		if node == nil {
+			return errors.WithStack(errors.VersionNotFound)
+		}
+		var reservation *versions.DraftUpload
+		cursor := node.Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			stored, upload, err := b.unmarshalRecord(value)
+			if err != nil {
+				return err
+			}
+			if stored.VersionId == revision.VersionId {
+				return errors.WithStack(errors.StatusConflict) // Never republish after an uncertain ACK.
+			}
+			if stored.VersionId == draft.VersionId {
+				if reservation != nil || upload == nil {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				reservation = upload
+			}
+		}
+		if err := versions.ValidateDraftPublication(reservation, draft, revision, now); err != nil {
+			return err
+		}
+		encoded, err := proto.Marshal(revision)
+		if err != nil {
+			return err
+		}
+		sequence, err := node.NextSequence()
+		if err != nil {
+			return err
+		}
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, sequence)
+		return node.Put(key, encoded)
+	})
+}
+
 func (b *BoltStore) FenceDraftUpload(ctx context.Context, nodeUuid, versionId string, now time.Time) (*versions.DraftUpload, error) {
 	var fenced *versions.DraftUpload
 	err := b.updateDraftUpload(nodeUuid, versionId, func(upload *versions.DraftUpload) error {
 		if upload.State != versions.DraftUploadCleanup &&
-			(upload.State != versions.DraftUploadPending || upload.Deadline > now.UnixNano()) {
+			((upload.State != versions.DraftUploadPending && !(upload.State == versions.DraftUploadComplete && upload.JobID != "")) || upload.Deadline > now.UnixNano()) {
 			return errors.WithMessage(errors.StatusConflict, "native draft is not eligible for cleanup")
 		}
 		upload.State = versions.DraftUploadCleanup
@@ -447,7 +537,7 @@ func (b *BoltStore) DraftUploads(ctx context.Context, now time.Time, limit int64
 					return err
 				}
 				if upload != nil && (upload.State == versions.DraftUploadCleanup ||
-					(upload.State == versions.DraftUploadPending && upload.Deadline <= now.UnixNano())) {
+					((upload.State == versions.DraftUploadPending || (upload.State == versions.DraftUploadComplete && upload.JobID != "")) && upload.Deadline <= now.UnixNano())) {
 					if upload.NodeUuid != string(nodeID) {
 						return errors.WithStack(errors.StatusConflict)
 					}

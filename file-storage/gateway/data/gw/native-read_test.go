@@ -82,6 +82,17 @@ type nativeReadTree struct {
 	root, file *tree.Node
 }
 
+// GetSourcesPool is initialized once by the original routers. Keep that one
+// test pool while changing its remote fixtures between sequential scenarios.
+var nativeGatewaySources = &struct{ nodes.SourcesPool }{}
+
+func setNativeGatewaySources(source nodes.SourcesPool) {
+	nativeGatewaySources.SourcesPool = source
+	nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
+		return nodes.NewTestPool(ctx, nativeGatewaySources)
+	})
+}
+
 func (r *nativeReadTree) ReadNode(_ context.Context, req *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
 	n := r.file
 	if req.Node.Uuid == r.root.Uuid || req.Node.Path == r.root.Path {
@@ -209,9 +220,7 @@ func TestGovernedReadCompletesBeforeReturningMinIOReader(t *testing.T) {
 						}
 						ctx := config.WithStubStore(context.Background())
 						treeClient := &nativeReadTree{root: &tree.Node{Uuid: resource, Path: "root", Type: tree.NodeType_COLLECTION}, file: &tree.Node{Uuid: node, Path: "root/file.txt", Type: tree.NodeType_LEAF}}
-						nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
-							return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(treeClient, nil))
-						})
+						setNativeGatewaySources(nodes.MakeFakeClientsPool(treeClient, nil))
 						access := permissions.NewAccessList(&idm.Role{Uuid: user})
 						access.AppendACLs(&idm.ACL{RoleID: user, NodeID: resource, WorkspaceID: resource, Action: permissions.AclRead})
 						access.Flatten(ctx)

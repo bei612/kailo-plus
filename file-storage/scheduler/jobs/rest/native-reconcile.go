@@ -84,7 +84,11 @@ func nativeBindingReconcile(req *restful.Request, resp *restful.Response, proof 
 		return refused
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-kailo-binding-reconcile", proof)
-	items, err := share.ReconcileNativeCells(ctx, delivery, true)
+	var write auth.NativeWriteDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&write) != nil {
+		return refused
+	}
+	items, err := share.ReconcileNativeCells(ctx, delivery, true, write.Write.NativeJobID)
 	if err != nil {
 		return err
 	}

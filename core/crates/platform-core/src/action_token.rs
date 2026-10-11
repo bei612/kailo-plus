@@ -348,6 +348,33 @@ pub(crate) async fn issue_component_action(
     issue_application_intent(state, ae, arguments, external, key).await
 }
 
+pub(crate) async fn issue_native_execution(
+    state: &ServiceState,
+    ae: &Execution,
+    external: Uuid,
+    key: Uuid,
+    audience: &str,
+    revision: String,
+    deadline: i64,
+) -> Result<String, Refusal> {
+    if !crate::application_action::native_execution::is_native_writer(ae)
+        || external.is_nil()
+        || key.is_nil()
+        || revision.is_empty()
+    {
+        return Err(invalid());
+    }
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let claims = application_claims(
+        ae,
+        p,
+        p["toolParameterHash"].clone(),
+        revision,
+        Some((external, key)),
+    )?;
+    sign_claims_before(state, audience, claims, Some(deadline)).await
+}
+
 /// The native HUMAN request owns a first-only synchronous read, not an EE.
 /// Its original admission caller atomically fences issuance before calling us.
 pub(crate) async fn issue_native_read(
@@ -612,7 +639,7 @@ pub(crate) async fn observation_revision(
         join admission.action_execution root on root.id=coalesce(a.parent_action_execution_id,a.id) and root.operation_id=a.operation_id
           and root.parent_action_execution_id is null
         join projection.workflow_ref w on w.action_execution_id=root.id and w.workflow_id=e.workflow_id
-        join catalog.application_binding b on b.id=e.component_binding_id and b.component_release_id=e.component_release_id
+        join catalog.application_binding b on b.id=e.component_binding_id and ($9 or b.component_release_id=e.component_release_id)
           and b.state in ('ACTIVE','DISABLING')
         join projection.application_runtime p on p.binding_id=b.id and p.generation=e.component_projection_generation
           and p.component_release_id=e.component_release_id
@@ -629,7 +656,8 @@ pub(crate) async fn observation_revision(
         .bind(ae.id).bind(Uuid::parse_str(text(args,"externalExecutionId")?).map_err(|_|invalid())?)
         .bind(binding).bind(ae.tenant_id).bind(ae.workspace_id)
         .bind(Uuid::parse_str(text(args,"idempotencyKey")?).map_err(|_|invalid())?).bind(text(args,"nativeType")?)
-        .bind(args.get("nativeId").and_then(Value::as_str)).fetch_optional(&state.pool).await?;
+        .bind(args.get("nativeId").and_then(Value::as_str))
+        .bind(crate::application_action::native_execution::is_native_writer(ae)).fetch_optional(&state.pool).await?;
     revision.ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))
 }
 

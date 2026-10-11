@@ -24,6 +24,7 @@ import (
 	"net/http"
 	pathutil "path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -460,6 +461,16 @@ func (l *pydioObjects) GetObject(ctx context.Context, bucket string, key string,
 
 // PutObject creates a new object with the incoming data,
 func (l *pydioObjects) PutObject(ctx context.Context, bucket, object string, data *minio.PutObjReader, opts minio.ObjectOptions) (objInfo minio.ObjectInfo, err error) {
+	writer, err := l.claimNativeUpload(ctx, object, "put", "", data.Size())
+	if err != nil {
+		return objInfo, pydioToMinioError(err, bucket, object)
+	}
+	var input io.Reader = data
+	if writer != nil {
+		writer.reader = data
+		input = writer
+		opts.UserDefined = writer.metadata(opts.UserDefined)
+	}
 
 	if opts.UserDefined != nil {
 		md5sum := opts.UserDefined["etag"]
@@ -470,7 +481,7 @@ func (l *pydioObjects) PutObject(ctx context.Context, bucket, object string, dat
 
 	oi, err := l.Router.PutObject(ctx, &tree.Node{
 		Path: strings.TrimLeft(object, "/"),
-	}, data, &models.PutRequestData{
+	}, input, &models.PutRequestData{
 		Size:      data.Size(),
 		Sha256Sum: data.SHA256(),
 		Md5Sum:    data.MD5(),
@@ -479,6 +490,14 @@ func (l *pydioObjects) PutObject(ctx context.Context, bucket, object string, dat
 	if err != nil {
 		log.Logger(ctx).Error("Error while putting object:" + err.Error())
 		return objInfo, pydioToMinioError(err, bucket, object)
+	}
+	if writer != nil {
+		if writer.remaining != 0 {
+			return objInfo, pydioToMinioError(io.ErrUnexpectedEOF, bucket, object)
+		}
+		if err := writer.finish(ctx, l.Router, oi); err != nil {
+			return objInfo, pydioToMinioError(err, bucket, object)
+		}
 	}
 	objInfo = minio.ObjectInfo{
 		Bucket:       bucket,
@@ -583,6 +602,13 @@ func (l *pydioObjects) ListMultipartUploads(ctx context.Context, bucket string, 
 
 // NewMultipartUpload upload object in multiple parts
 func (l *pydioObjects) NewMultipartUpload(ctx context.Context, bucket string, object string, o minio.ObjectOptions) (uploadID string, err error) {
+	writer, err := l.claimNativeUpload(ctx, object, "create", "", 0)
+	if err != nil {
+		return "", pydioToMinioError(err, bucket, object)
+	}
+	if writer != nil {
+		o.UserDefined = writer.metadata(o.UserDefined)
+	}
 
 	uploadID, err = l.Router.MultipartCreate(ctx, &tree.Node{
 		Path: object,
@@ -591,6 +617,13 @@ func (l *pydioObjects) NewMultipartUpload(ctx context.Context, bucket string, ob
 	})
 	if err != nil {
 		err = pydioToMinioError(err, bucket, object)
+	} else if writer != nil {
+		if uploadID == "" {
+			return "", pydioToMinioError(errors.WithStack(errors.StatusConflict), bucket, object)
+		}
+		if _, err = l.claimNativeUpload(ctx, object, "created", uploadID, 0); err != nil {
+			return "", pydioToMinioError(err, bucket, object)
+		}
 	}
 	return
 
@@ -606,10 +639,19 @@ func (l *pydioObjects) GetMultipartInfo(ctx context.Context, bucket, object, upl
 
 // PutObjectPart puts a part of object in bucket
 func (l *pydioObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID string, partID int, data *minio.PutObjReader, opts minio.ObjectOptions) (info minio.PartInfo, err error) {
+	writer, err := l.claimNativeUpload(ctx, object, "part/"+strconv.Itoa(partID), uploadID, data.Size())
+	if err != nil {
+		return info, pydioToMinioError(err, bucket, object)
+	}
+	var input io.Reader = data
+	if writer != nil {
+		writer.reader = data
+		input = writer
+	}
 
 	//sha256Sum, err := hex.DecodeString(data.sha256Sum)
 	//md5Sum, err := hex.DecodeString(data.md5Sum)
-	objectPart, err := l.Router.MultipartPutObjectPart(ctx, &tree.Node{Path: object}, uploadID, partID, data, &models.PutRequestData{
+	objectPart, err := l.Router.MultipartPutObjectPart(ctx, &tree.Node{Path: object}, uploadID, partID, input, &models.PutRequestData{
 		Size:              data.Size(),
 		Md5Sum:            data.MD5(),    // md5Sum,
 		Sha256Sum:         data.SHA256(), //sha256Sum,
@@ -618,6 +660,14 @@ func (l *pydioObjects) PutObjectPart(ctx context.Context, bucket, object, upload
 	})
 	if err != nil {
 		return info, err
+	}
+	if writer != nil {
+		if writer.remaining != 0 || objectPart.Size != data.Size() || objectPart.ETag == "" {
+			return info, pydioToMinioError(errors.WithStack(errors.StatusConflict), bucket, object)
+		}
+		if _, err = l.claimNativeUpload(ctx, object, "stored/"+strconv.Itoa(partID), uploadID, objectPart.Size, strings.Trim(objectPart.ETag, "\"")); err != nil {
+			return info, pydioToMinioError(err, bucket, object)
+		}
 	}
 
 	return minio.PartInfo{
@@ -676,6 +726,22 @@ func (l *pydioObjects) AbortMultipartUpload(ctx context.Context, bucket string, 
 
 // CompleteMultipartUpload completes ongoing multipart upload and finalizes object
 func (l *pydioObjects) CompleteMultipartUpload(ctx context.Context, bucket string, object string, uploadID string, uploadedParts []minio.CompletePart, opts minio.ObjectOptions) (moi minio.ObjectInfo, e error) {
+	var writer *nativeUploadWriter
+	if u := cellauth.NativeUploadFromContext(ctx); u != nil {
+		parts := map[string]string{}
+		for _, part := range uploadedParts {
+			key := strconv.Itoa(part.PartNumber)
+			if part.PartNumber <= 0 || parts[key] != "" || strings.Trim(part.ETag, "\"") == "" {
+				return moi, pydioToMinioError(errors.WithStack(errors.StatusConflict), bucket, object)
+			}
+			parts[key] = strings.Trim(part.ETag, "\"")
+		}
+		var err error
+		writer, err = l.claimNativeUpload(ctx, object, "complete", uploadID, int64(u.Input["contentLength"].(float64)), "", jobstore.NativeUploadPartsDigest(parts))
+		if err != nil {
+			return moi, pydioToMinioError(err, bucket, object)
+		}
+	}
 	mParts := make([]models.MultipartObjectPart, len(uploadedParts))
 	for i, part := range uploadedParts {
 		mParts[i] = models.MultipartObjectPart{
@@ -686,6 +752,11 @@ func (l *pydioObjects) CompleteMultipartUpload(ctx context.Context, bucket strin
 	oi, err := l.Router.MultipartComplete(ctx, &tree.Node{Path: object}, uploadID, mParts)
 	if err != nil {
 		return moi, err
+	}
+	if writer != nil {
+		if err := writer.finish(ctx, l.Router, models.ObjectInfo{Size: oi.Size, ETag: strings.Trim(oi.ETag, "\""), LastModified: oi.LastModified}); err != nil {
+			return moi, pydioToMinioError(err, bucket, object)
+		}
 	}
 
 	userDefined := minio.FromMinioClientMetadata(oi.Metadata)

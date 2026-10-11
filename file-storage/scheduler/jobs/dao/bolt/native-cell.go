@@ -12,7 +12,7 @@ import (
 
 // The original Bolt writer transaction covers both the Inactive fence and all
 // Task claims. Receipt/status updates remain permitted after the fence.
-func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64) ([]*proto.Job, error) {
+func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64, uploadBase ...string) ([]*proto.Job, error) {
 	if binding == "" || generation <= 0 || currentJob == "" || maxBytes <= 0 {
 		return nil, errors.WithStack(errors.InvalidParameters)
 	}
@@ -22,7 +22,42 @@ func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, gen
 		if bucket == nil {
 			return errors.WithStack(errors.JobNotFound)
 		}
-		found := false
+		expected := map[string]*proto.Job{currentJob: jobs.NativeCellJob(currentJob, binding, generation)}
+		if len(uploadBase) > 1 {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		if len(uploadBase) == 1 && uploadBase[0] != "" {
+			job := jobs.NativeUploadJob(uploadBase[0], binding, generation)
+			expected[job.ID] = job
+		}
+		// Older promotion tasks have no frozen generation. Their absence must
+		// be proven in this same snapshot, never inferred from new upload Jobs.
+		if len(uploadBase) == 1 && uploadBase[0] != "" {
+			if legacy := tx.Bucket([]byte(tasksBucketString + uploadBase[0])); legacy != nil {
+				var scanned int64
+				if err := legacy.ForEach(func(id, body []byte) error {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+					scanned += int64(len(body))
+					if scanned > maxBytes {
+						return errors.WithStack(errors.ServiceError)
+					}
+					var task proto.Task
+					if err := json.Unmarshal(body, &task); err != nil {
+						return err
+					}
+					intent, err := jobs.NativeWriteTaskIntent(&task)
+					if err != nil || intent.BindingID == "" || intent.BindingID == binding || task.ID != string(id) || task.JobID != uploadBase[0] {
+						return errors.WithStack(errors.StatusConflict)
+					}
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		found := map[string]bool{}
 		var size int64
 		err := bucket.ForEach(func(key, value []byte) error {
 			if err := ctx.Err(); err != nil {
@@ -32,10 +67,10 @@ func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, gen
 			if err := json.Unmarshal(value, &job); err != nil {
 				return err
 			}
-			if _, cell := job.Metadata[jobs.NativeCellShareJob]; !cell {
+			if !jobs.IsNativeBindingJob(&job) {
 				return nil
 			}
-			owner, gen, err := jobs.NativeCellJobOrigin(&job)
+			owner, gen, err := jobs.NativeBindingJobOrigin(&job)
 			if err != nil {
 				return err
 			} // Legacy unbound jobs cannot silently disappear.
@@ -45,14 +80,14 @@ func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, gen
 			if job.ID != string(key) {
 				return errors.WithStack(errors.StatusConflict)
 			}
-			if gen == generation && job.ID != currentJob {
+			if gen == generation && expected[job.ID] == nil {
 				return errors.WithStack(errors.StatusConflict)
 			}
-			if job.ID == currentJob {
+			if expected[job.ID] != nil {
 				if gen != generation {
 					return errors.WithStack(errors.StatusConflict)
 				}
-				found = true
+				found[job.ID] = true
 			}
 			if fence {
 				job.Inactive = true
@@ -89,28 +124,30 @@ func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, gen
 		if err != nil {
 			return err
 		}
-		if !found {
-			if !fence {
-				return errors.WithStack(errors.JobNotFound)
-			}
-			// Cancellation can arrive before initial ClaimJob. Reserve the same
-			// native identity as inactive under the ClaimJob/ClaimTask writer lock;
-			// absence alone would allow a delayed create to start new work.
-			if bucket.Get([]byte(currentJob)) != nil {
-				return errors.WithStack(errors.StatusConflict)
-			}
-			if tasks := tx.Bucket([]byte(tasksBucketString + currentJob)); tasks != nil {
-				if key, _ := tasks.Cursor().First(); key != nil {
+		for currentJob, expectedJob := range expected {
+			if !found[currentJob] {
+				if !fence {
+					return errors.WithStack(errors.JobNotFound)
+				}
+				// Cancellation can arrive before initial ClaimJob. Reserve the same
+				// native identity as inactive under the ClaimJob/ClaimTask writer lock;
+				// absence alone would allow a delayed create to start new work.
+				if bucket.Get([]byte(currentJob)) != nil {
 					return errors.WithStack(errors.StatusConflict)
 				}
+				if tasks := tx.Bucket([]byte(tasksBucketString + currentJob)); tasks != nil {
+					if key, _ := tasks.Cursor().First(); key != nil {
+						return errors.WithStack(errors.StatusConflict)
+					}
+				}
+				job := expectedJob
+				job.Inactive = true
+				size += int64(gproto.Size(job))
+				if size > maxBytes {
+					return errors.WithStack(errors.ServiceError)
+				}
+				result = append(result, job)
 			}
-			job := jobs.NativeCellJob(currentJob, binding, generation)
-			job.Inactive = true
-			size += int64(gproto.Size(job))
-			if size > maxBytes {
-				return errors.WithStack(errors.ServiceError)
-			}
-			result = append(result, job)
 		}
 		// bbolt cursor iteration must not mutate that bucket. Persist only after
 		// complete enumeration, still in the SAME write transaction as ClaimTask.

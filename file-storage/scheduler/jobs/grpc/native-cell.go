@@ -72,7 +72,11 @@ func (j *JobsHandler) nativeCellSnapshot(ctx context.Context, request *proto.Lis
 	}
 	// Both disable and canceled create are already DISABLING at Core PEP.
 	// Handshake/validation cannot reach this reconcile-only consumer.
-	snapshot, err := store.SnapshotNativeCells(ctx, delivery.BindingID, delivery.CellShare.BindingGeneration, delivery.CellShare.NativeJobID, true, delivery.MaxResponseBytes)
+	var write auth.NativeWriteDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&write) != nil {
+		return true, refused
+	}
+	snapshot, err := store.SnapshotNativeCells(ctx, delivery.BindingID, delivery.CellShare.BindingGeneration, delivery.CellShare.NativeJobID, true, delivery.MaxResponseBytes, write.Write.NativeJobID)
 	if err != nil {
 		return true, err
 	}

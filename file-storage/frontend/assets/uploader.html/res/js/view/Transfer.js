@@ -224,6 +224,8 @@ class Transfer extends React.Component{
 
             if(status === StatusItem.StatusLoading || status === StatusItem.StatusCannotPause || status === StatusItem.StatusMultiPause) {
                 rightButton = <span className="mdi mdi-stop" onClick={() => this.abort()}/>;
+            } else if (status === StatusItem.StatusUnknown){
+                rightButton = <span className="mdi mdi-refresh" title={messages['html_uploader.status.unknown']} onClick={() => this.retry()}/>;
             } else if (status === StatusItem.StatusError){
                 pgColor = '#e53935';
                 rightButton = <span className={"mdi mdi-restart"} style={{color:'#e53935'}} onClick={() => {this.retry()}}/>;

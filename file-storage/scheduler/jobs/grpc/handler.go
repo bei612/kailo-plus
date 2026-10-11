@@ -127,6 +127,9 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 			}
 		}
 		expected = append(expected, jobs.NativeCellJob(cellDelivery.CellShare.NativeJobID, cellDelivery.BindingID, cellDelivery.CellShare.BindingGeneration))
+		if write.NativeJobID != "" {
+			expected = append(expected, jobs.NativeUploadJob(write.NativeJobID, cellDelivery.BindingID, cellDelivery.CellShare.BindingGeneration))
+		}
 	}
 	deadline, err := time.ParseDuration(delivery.RequestTimeout)
 	if err != nil || deadline <= 0 {
@@ -178,6 +181,10 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 }
 
 func nativeActionJobMatches(actual, expected *proto.Job) bool {
+	if _, upload := expected.GetMetadata()[jobs.NativeUploadJobMarker]; upload {
+		binding, generation, err := jobs.NativeUploadJobOrigin(actual)
+		return err == nil && binding == expected.Metadata["bindingId"] && generation > 0 && actual.ID == expected.ID
+	}
 	if _, cell := expected.GetMetadata()[jobs.NativeCellShareJob]; cell {
 		binding, generation, err := jobs.NativeCellJobOrigin(expected)
 		return err == nil && jobs.NativeCellJobMatches(actual, expected.ID, binding, generation)
@@ -358,7 +365,12 @@ func (j *JobsHandler) PutTask(ctx context.Context, request *proto.PutTaskRequest
 	}
 
 	var persistenceError error
-	if mode, exists := request.StatusMeta[jobs.TaskCreateOnly]; exists {
+	if step, exists := request.StatusMeta[jobs.NativeUploadStep]; exists {
+		if len(request.StatusMeta) != 1 {
+			return nil, errors.WithStack(errors.InvalidParameters)
+		}
+		request.Task, persistenceError = store.StoreNativeUploadStep(ctx, request.Task, step)
+	} else if mode, exists := request.StatusMeta[jobs.TaskCreateOnly]; exists {
 		if mode != "true" || !jobs.TaskHasClaim(request.Task) || request.Task.Status != proto.TaskStatus_Queued || request.Task.StartTime != 0 || request.Task.EndTime != 0 {
 			return nil, errors.WithMessage(errors.InvalidParameters, "first dispatch requires an unstarted queued task")
 		}

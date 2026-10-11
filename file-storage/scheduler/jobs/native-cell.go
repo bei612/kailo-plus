@@ -46,7 +46,7 @@ func NativeCellJobOrigin(job *jobproto.Job) (string, int64, error) {
 
 func IsFrozenNativeJob(job *jobproto.Job) bool {
 	_, cell := job.GetMetadata()[NativeCellShareJob]
-	return cell || IsNativeDeleteJob(job)
+	return cell || IsNativeDeleteJob(job) || IsNativeBindingJob(job)
 }
 
 // Only references, the original native selection and normalized permission

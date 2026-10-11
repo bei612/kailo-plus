@@ -109,7 +109,7 @@ class UploadItem extends StatusItem {
         };
 
         const progress = (computableEvent)=>{
-            if (this._uploadAttempt !== attempt || this._status === StatusItem.StatusError) {
+            if (this._uploadAttempt !== attempt || this._status === StatusItem.StatusError || this._status === StatusItem.StatusUnknown) {
                 return;
             }
             if(!computableEvent.total){
@@ -158,6 +158,11 @@ class UploadItem extends StatusItem {
             this.setRetry(count-1)
             return (e, retrySafe = false)=>{
                 if(this._uploadAttempt !== attempt){
+                    return;
+                }
+                if(e && e.nativeExecutionUnknown === true){
+                    this.setStatus(StatusItem.StatusUnknown);
+                    completeCallback();
                     return;
                 }
                 if (e && e.indexOf) {
@@ -223,7 +228,8 @@ class UploadItem extends StatusItem {
                 this.xhr.abort();
             }catch(e){}
         }
-        this.setStatus(StatusItem.StatusError);
+        this.setStatus(Pydio.getInstance().Parameters.get('other')?.nativeWriteRequired === true
+            ? StatusItem.StatusUnknown : StatusItem.StatusError);
         this.setProgress(0)
     }
 

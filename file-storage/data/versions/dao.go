@@ -27,10 +27,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/service"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 )
 
 var Drivers = service.StorageDrivers{}
@@ -42,6 +44,8 @@ type DAO interface {
 	StoreVersion(ctx context.Context, nodeUuid string, revision *tree.ContentRevision) error
 	ReserveDraftUpload(ctx context.Context, nodeUuid string, revision *tree.ContentRevision, deadline time.Time) error
 	CompleteDraftUpload(ctx context.Context, nodeUuid string, revision *tree.ContentRevision, now time.Time) error
+	PublishDraftUpload(ctx context.Context, nodeUuid string, draft, revision *tree.ContentRevision, now time.Time) error
+	DraftPublicationVersions(ctx context.Context, nodeUuid string, maxBytes int64) ([]*tree.ContentRevision, error)
 	DraftUploads(ctx context.Context, now time.Time, limit int64) ([]*DraftUpload, error)
 	FenceDraftUpload(ctx context.Context, nodeUuid, versionId string, now time.Time) (*DraftUpload, error)
 	DeleteVersionsForNode(ctx context.Context, nodeUuid string, versions ...string) error
@@ -58,9 +62,23 @@ type DraftUpload struct {
 	Revision *tree.ContentRevision `json:"revision"`
 	Deadline int64                 `json:"deadline"`
 	State    string                `json:"state"`
+	JobID    string                `json:"jobId,omitempty"`
+	TaskID   string                `json:"taskId,omitempty"`
 	// Initial eligibility deadline, then the most recent sweep attempt. It is
 	// queue ordering only, never proof that the remote writer has terminated.
 	CleanupOrder int64 `json:"cleanupOrder"`
+}
+
+// These native references have already been checked by CreateVersion against
+// the persisted upload intent. They are not supplied by the browser body and
+// carry no token. Older independent reservations retain their empty pair.
+func DraftUploadTaskReferences(ctx context.Context) (string, string, error) {
+	jobID, hasJob := propagator.CanonicalMeta(ctx, common.CtxMetaJobUuid)
+	taskID, hasTask := propagator.CanonicalMeta(ctx, common.CtxMetaTaskUuid)
+	if hasJob != hasTask || (hasJob && (jobID == "" || taskID == "")) {
+		return "", "", errors.WithStack(errors.InvalidParameters)
+	}
+	return jobID, taskID, nil
 }
 
 const (
@@ -83,7 +101,7 @@ func ValidateDraftUploadRecord(upload *DraftUpload) error {
 		upload.Revision.VersionId == "" || !upload.Revision.Draft || upload.Revision.OwnerUuid == "" ||
 		upload.Revision.Size < 0 || upload.Revision.Location == nil || upload.Revision.Location.Path == "" ||
 		(upload.State != DraftUploadPending && upload.State != DraftUploadComplete && upload.State != DraftUploadCleanup) ||
-		(upload.State == DraftUploadComplete && upload.Revision.ETag == "") {
+		(upload.State == DraftUploadComplete && upload.Revision.ETag == "") || (upload.JobID == "") != (upload.TaskID == "") {
 		return errors.WithMessage(errors.StatusConflict, "invalid native draft upload record")
 	}
 	return nil
@@ -109,6 +127,25 @@ func ValidateDraftCompletion(stored *DraftUpload, next *tree.ContentRevision, no
 	frozen.ETag, frozen.ContentHash, frozen.Size = stored.Revision.ETag, stored.Revision.ContentHash, stored.Revision.Size
 	if !proto.Equal(stored.Revision, frozen) {
 		return errors.WithMessage(errors.StatusConflict, "draft upload acknowledgement changed frozen native evidence")
+	}
+	return nil
+}
+
+// Publication and the draft cutoff must share the native store transaction.
+// Reading a completed draft before StoreVersion is not enough: a concurrent
+// cleaner could otherwise fence it and a delayed RPC would still publish.
+func ValidateDraftPublication(stored *DraftUpload, draft, revision *tree.ContentRevision, now time.Time) error {
+	if err := ValidateDraftUploadRecord(stored); err != nil {
+		return err
+	}
+	if current := time.Now(); current.After(now) {
+		now = current
+	}
+	if stored.State != DraftUploadComplete || stored.Deadline <= now.UnixNano() || stored.JobID == "" ||
+		!proto.Equal(stored.Revision, draft) || revision == nil || revision.Draft || revision.VersionId == "" ||
+		revision.VersionId == draft.VersionId || revision.OwnerUuid != draft.OwnerUuid ||
+		revision.ETag != draft.ETag || revision.Size != draft.Size || revision.Location == nil {
+		return errors.WithMessage(errors.StatusConflict, "native draft is not eligible for publication")
 	}
 	return nil
 }

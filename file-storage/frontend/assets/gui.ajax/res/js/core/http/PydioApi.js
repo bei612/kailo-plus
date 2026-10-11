@@ -326,7 +326,118 @@ class PydioApi{
      * @param userMeta optional usermeta-xxx values
      * @return {Promise<any>}
      */
+    // Same original file object retains its intent after a lost response. A
+    // retry can observe that execution but cannot start a second byte writer.
+    uploadNativeFile(file, path, multipart, onComplete, onError, onProgress, userMeta = {}, isAborted = () => false) {
+        let canceled = false;
+        let paused = false;
+        const originalAborted = isAborted;
+        isAborted = () => canceled || originalAborted();
+        const handle = {abort() { canceled = true; if (this.transfer) this.transfer.abort(); }};
+        (async () => {
+        const pydio = this.getPydioObject(), user = pydio.user, userId = user?.id;
+        const refused = () => new Error(pydio.MessageHash[391]);
+        const current = () => user && pydio.user === user && user.id === userId && !isAborted();
+        pydio.notify('longtask_starting');
+        try {
+        // The original AWS ManagedUpload sends a single PUT when only one
+        // part fits. Freeze the protocol that will actually carry the bytes.
+        multipart = multipart && file.size > PydioApi.getMultipartPartSize();
+        if (multipart) {
+            handle.pause = () => { paused = true; if (handle.transfer) handle.transfer.pause(); };
+            handle.resume = () => { paused = false; if (handle.transfer) handle.transfer.resume(); };
+        }
+        const deadline = Date.now() + PydioApi.getMultipartUploadTimeout();
+        if (!this._nativeUploads) this._nativeUploads = new WeakMap();
+        let entries = this._nativeUploads.get(file);
+        if (!entries) { entries = new Map(); this._nativeUploads.set(file, entries); }
+        let intent = entries.get(path);
+        if (!intent) { intent = {id: uuid4(), user, multipart, dispatched: false}; entries.set(path, intent); }
+        const client = PydioApi.getRestClient();
+        const endpoint = pydio.Parameters.get('ENDPOINT_REST_API_V2');
+            if (!current() || intent.user !== user || intent.multipart !== multipart || !Number.isSafeInteger(file.size) || file.size < 0 || typeof endpoint !== 'string') throw refused();
+            const base = new URL(endpoint.replace(/\/$/, '') + '/', document.location.href);
+            if (base.origin !== document.location.origin || base.username || base.password || base.search || base.hash) throw refused();
+            const prepare = async () => {
+                if (!current() || Date.now() >= deadline) throw refused();
+                const token = await client.getOrUpdateJwt();
+                if (!current() || !token) throw refused();
+                const response = await fetch(new URL(`n/upload/${intent.id}`, base).href, {
+                    method: 'POST', credentials: 'same-origin', redirect: 'error',
+                    headers: {...client.defaultHeaders, authorization: `Bearer ${token}`, 'content-type': 'application/json', 'Idempotency-Key': intent.id},
+                    body: JSON.stringify({Uuid: intent.id, Path: path, Size: String(file.size), Multipart: multipart})
+                });
+                if (!response.ok || !current()) throw refused();
+                const value = await response.json();
+                if (value.NativeIntentId !== intent.id || (value.Ready && value.Completed)) throw refused();
+                if (value.Completed === true) {
+                    if (typeof value.VersionId !== 'string' || !value.VersionId) throw refused();
+                    return value;
+                }
+                if (value.Ready === true && !intent.dispatched) return value;
+                const delay = Number(response.headers.get('Retry-After')) * 1000;
+                if (!Number.isSafeInteger(delay) || delay <= 0 || Date.now() + delay >= deadline) throw refused();
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return prepare();
+            };
+            let ready = await prepare();
+            if (!ready.Completed) {
+                if (!intent.dispatched) {
+                    const refs = {'X-Kailo-Action-Execution': ready.ActionExecutionId, 'X-Kailo-External-Execution': ready.ExternalExecutionId,
+                        'X-Kailo-Native-Upload': intent.id, 'Idempotency-Key': ready.IdempotencyKey};
+                    if (!Object.values(refs).every(value => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value))) throw refused();
+                    // Claim the browser intent before awaiting a signer/session.
+                    // Concurrent callbacks only observe; the native Task remains
+                    // the authoritative first-byte fence.
+                    intent.dispatched = true;
+                    if (multipart) {
+                        const jwt = await client.getOrUpdateJwt();
+                        const {S3, ManagedMultipart} = await awsLoader();
+                        if (!current()) throw refused();
+                        const service = new S3(this.s3Options(jwt, PydioApi.getMultipartUploadTimeout(), {maxRetries: 0}));
+                        const original = service.addAllRequestListeners;
+                        service.addAllRequestListeners = function(request) {
+                            original.call(this, request);
+                            request.on('build', () => Object.assign(request.httpRequest.headers, refs));
+                        };
+                        const managed = new ManagedMultipart({service, params: {Bucket: this.getBucket(), Key: path.normalize('NFC').replace(/^\//, ''),
+                            Body: file, ContentType: 'application/octet-stream', Metadata: {'pydio-clear-size': String(file.size), ...userMeta}},
+                            partSize: PydioApi.getMultipartPartSize(), queueSize: PydioApi.getMultipartPartQueueSize(), leavePartsOnError: true});
+                        managed.nativeExecution = true;
+                        handle.transfer = managed;
+                        if (paused) managed.pause();
+                        managed.on('httpUploadProgress', onProgress);
+                        await new Promise(resolve => managed.send(() => resolve()));
+                    } else {
+                        const {url, headers} = await this.buildPresignedPutUrl(path, userMeta);
+                        if (!current() || new URL(url, document.location.href).origin !== document.location.origin) throw refused();
+                        await new Promise(resolve => {
+                            handle.transfer = new Connexion().uploadFile(file, '', url, resolve, resolve, onProgress,
+                                {method: 'PUT', customHeaders: {...headers, ...refs}, withCredentials: true});
+                        });
+                    }
+                }
+                // Native HTTP errors, timeout or a lost ACK do not authorize
+                // another send. Only the original Core/native receipt can finish.
+                ready = await prepare();
+            }
+            entries.delete(path);
+            onComplete(ready);
+        } catch (error) {
+            const unknown = refused();
+            unknown.nativeExecutionUnknown = true;
+            onError(unknown, false);
+        } finally {
+            pydio.notify('longtask_finished');
+        }
+        })();
+        return Promise.resolve(handle);
+    }
+
     uploadPresigned(file, path, onComplete=()=>{}, onError=()=>{}, onProgress=()=>{}, userMeta=undefined){
+		if(this.getPydioObject().Parameters.get('other')?.nativeWriteRequired === true){
+			return this.uploadNativeFile(file,path,false,onComplete,onError,onProgress,userMeta);
+		}
 
         const onCompleteWrapped = (xhr) => {
             this.getPydioObject().notify('longtask_finished');
@@ -347,6 +458,9 @@ class PydioApi{
     }
 
     uploadMultipart(file, path, onComplete=()=>{}, onError=()=>{}, onProgress=() => {}, userMeta = {}, isAborted = () => false) {
+		if(this.getPydioObject().Parameters.get('other')?.nativeWriteRequired === true){
+			return this.uploadNativeFile(file,path,true,onComplete,onError,onProgress,userMeta,isAborted);
+		}
         let targetPath = path;
         if (path.normalize){
             targetPath = path.normalize('NFC');

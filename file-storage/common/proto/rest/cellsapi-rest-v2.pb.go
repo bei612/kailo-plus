@@ -593,7 +593,7 @@ func (x MetaUpdate_Op) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MetaUpdate_Op.Descriptor instead.
 func (MetaUpdate_Op) EnumDescriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{52, 0}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{54, 0}
 }
 
 // Info about content locking
@@ -3152,6 +3152,176 @@ func (x *PromoteVersionResponse) GetPublished() bool {
 	return false
 }
 
+// Metadata preparation/observation of the original governed upload. The body
+// never carries file content, user identity, binding, or a client deadline.
+type NativeUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=Path,proto3" json:"Path,omitempty"`
+	Size          int64                  `protobuf:"varint,3,opt,name=Size,proto3" json:"Size,omitempty"`
+	Multipart     bool                   `protobuf:"varint,4,opt,name=Multipart,proto3" json:"Multipart,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeUploadRequest) Reset() {
+	*x = NativeUploadRequest{}
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeUploadRequest) ProtoMessage() {}
+
+func (x *NativeUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeUploadRequest.ProtoReflect.Descriptor instead.
+func (*NativeUploadRequest) Descriptor() ([]byte, []int) {
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *NativeUploadRequest) GetUuid() string {
+	if x != nil {
+		return x.Uuid
+	}
+	return ""
+}
+
+func (x *NativeUploadRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *NativeUploadRequest) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *NativeUploadRequest) GetMultipart() bool {
+	if x != nil {
+		return x.Multipart
+	}
+	return false
+}
+
+type NativeUploadResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ActionExecutionId   string                 `protobuf:"bytes,1,opt,name=ActionExecutionId,proto3" json:"ActionExecutionId,omitempty"`
+	ExternalExecutionId string                 `protobuf:"bytes,2,opt,name=ExternalExecutionId,proto3" json:"ExternalExecutionId,omitempty"`
+	IdempotencyKey      string                 `protobuf:"bytes,3,opt,name=IdempotencyKey,proto3" json:"IdempotencyKey,omitempty"`
+	NativeIntentId      string                 `protobuf:"bytes,4,opt,name=NativeIntentId,proto3" json:"NativeIntentId,omitempty"`
+	NativeNodeId        string                 `protobuf:"bytes,5,opt,name=NativeNodeId,proto3" json:"NativeNodeId,omitempty"`
+	Ready               bool                   `protobuf:"varint,6,opt,name=Ready,proto3" json:"Ready,omitempty"`
+	Completed           bool                   `protobuf:"varint,7,opt,name=Completed,proto3" json:"Completed,omitempty"`
+	VersionId           string                 `protobuf:"bytes,8,opt,name=VersionId,proto3" json:"VersionId,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *NativeUploadResponse) Reset() {
+	*x = NativeUploadResponse{}
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeUploadResponse) ProtoMessage() {}
+
+func (x *NativeUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeUploadResponse.ProtoReflect.Descriptor instead.
+func (*NativeUploadResponse) Descriptor() ([]byte, []int) {
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *NativeUploadResponse) GetActionExecutionId() string {
+	if x != nil {
+		return x.ActionExecutionId
+	}
+	return ""
+}
+
+func (x *NativeUploadResponse) GetExternalExecutionId() string {
+	if x != nil {
+		return x.ExternalExecutionId
+	}
+	return ""
+}
+
+func (x *NativeUploadResponse) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *NativeUploadResponse) GetNativeIntentId() string {
+	if x != nil {
+		return x.NativeIntentId
+	}
+	return ""
+}
+
+func (x *NativeUploadResponse) GetNativeNodeId() string {
+	if x != nil {
+		return x.NativeNodeId
+	}
+	return ""
+}
+
+func (x *NativeUploadResponse) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *NativeUploadResponse) GetCompleted() bool {
+	if x != nil {
+		return x.Completed
+	}
+	return false
+}
+
+func (x *NativeUploadResponse) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
 type PublishNodeParameters struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cascade       bool                   `protobuf:"varint,1,opt,name=Cascade,proto3" json:"Cascade,omitempty"`
@@ -3162,7 +3332,7 @@ type PublishNodeParameters struct {
 
 func (x *PublishNodeParameters) Reset() {
 	*x = PublishNodeParameters{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[33]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3174,7 +3344,7 @@ func (x *PublishNodeParameters) String() string {
 func (*PublishNodeParameters) ProtoMessage() {}
 
 func (x *PublishNodeParameters) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[33]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3187,7 +3357,7 @@ func (x *PublishNodeParameters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishNodeParameters.ProtoReflect.Descriptor instead.
 func (*PublishNodeParameters) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{33}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PublishNodeParameters) GetCascade() bool {
@@ -3216,7 +3386,7 @@ type PublishCascadeResult struct {
 
 func (x *PublishCascadeResult) Reset() {
 	*x = PublishCascadeResult{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[34]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3228,7 +3398,7 @@ func (x *PublishCascadeResult) String() string {
 func (*PublishCascadeResult) ProtoMessage() {}
 
 func (x *PublishCascadeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[34]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3241,7 +3411,7 @@ func (x *PublishCascadeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishCascadeResult.ProtoReflect.Descriptor instead.
 func (*PublishCascadeResult) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{34}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PublishCascadeResult) GetNode() *Node {
@@ -3282,7 +3452,7 @@ type PublishNodeResponse struct {
 
 func (x *PublishNodeResponse) Reset() {
 	*x = PublishNodeResponse{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[35]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3294,7 +3464,7 @@ func (x *PublishNodeResponse) String() string {
 func (*PublishNodeResponse) ProtoMessage() {}
 
 func (x *PublishNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[35]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3307,7 +3477,7 @@ func (x *PublishNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishNodeResponse.ProtoReflect.Descriptor instead.
 func (*PublishNodeResponse) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{35}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PublishNodeResponse) GetNode() *Node {
@@ -3334,7 +3504,7 @@ type PublishNodeRequest struct {
 
 func (x *PublishNodeRequest) Reset() {
 	*x = PublishNodeRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[36]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3346,7 +3516,7 @@ func (x *PublishNodeRequest) String() string {
 func (*PublishNodeRequest) ProtoMessage() {}
 
 func (x *PublishNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[36]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3359,7 +3529,7 @@ func (x *PublishNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishNodeRequest.ProtoReflect.Descriptor instead.
 func (*PublishNodeRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{36}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PublishNodeRequest) GetUuid() string {
@@ -3386,7 +3556,7 @@ type ActionOptionsDelete struct {
 
 func (x *ActionOptionsDelete) Reset() {
 	*x = ActionOptionsDelete{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[37]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3398,7 +3568,7 @@ func (x *ActionOptionsDelete) String() string {
 func (*ActionOptionsDelete) ProtoMessage() {}
 
 func (x *ActionOptionsDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[37]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3411,7 +3581,7 @@ func (x *ActionOptionsDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionOptionsDelete.ProtoReflect.Descriptor instead.
 func (*ActionOptionsDelete) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{37}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ActionOptionsDelete) GetPermanentDelete() bool {
@@ -3432,7 +3602,7 @@ type ActionOptionsCopyMove struct {
 
 func (x *ActionOptionsCopyMove) Reset() {
 	*x = ActionOptionsCopyMove{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[38]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3444,7 +3614,7 @@ func (x *ActionOptionsCopyMove) String() string {
 func (*ActionOptionsCopyMove) ProtoMessage() {}
 
 func (x *ActionOptionsCopyMove) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[38]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3457,7 +3627,7 @@ func (x *ActionOptionsCopyMove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionOptionsCopyMove.ProtoReflect.Descriptor instead.
 func (*ActionOptionsCopyMove) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{38}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ActionOptionsCopyMove) GetTargetPath() string {
@@ -3485,7 +3655,7 @@ type ActionOptionsExtractCompress struct {
 
 func (x *ActionOptionsExtractCompress) Reset() {
 	*x = ActionOptionsExtractCompress{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[39]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3497,7 +3667,7 @@ func (x *ActionOptionsExtractCompress) String() string {
 func (*ActionOptionsExtractCompress) ProtoMessage() {}
 
 func (x *ActionOptionsExtractCompress) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[39]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3510,7 +3680,7 @@ func (x *ActionOptionsExtractCompress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionOptionsExtractCompress.ProtoReflect.Descriptor instead.
 func (*ActionOptionsExtractCompress) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{39}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ActionOptionsExtractCompress) GetTargetPath() string {
@@ -3550,7 +3720,7 @@ type ActionParameters struct {
 
 func (x *ActionParameters) Reset() {
 	*x = ActionParameters{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[40]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3562,7 +3732,7 @@ func (x *ActionParameters) String() string {
 func (*ActionParameters) ProtoMessage() {}
 
 func (x *ActionParameters) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[40]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3575,7 +3745,7 @@ func (x *ActionParameters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionParameters.ProtoReflect.Descriptor instead.
 func (*ActionParameters) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{40}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ActionParameters) GetNodes() []*NodeLocator {
@@ -3680,7 +3850,7 @@ type ActionRequest struct {
 
 func (x *ActionRequest) Reset() {
 	*x = ActionRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[41]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3692,7 +3862,7 @@ func (x *ActionRequest) String() string {
 func (*ActionRequest) ProtoMessage() {}
 
 func (x *ActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[41]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3705,7 +3875,7 @@ func (x *ActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionRequest.ProtoReflect.Descriptor instead.
 func (*ActionRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{41}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ActionRequest) GetName() UserActionType {
@@ -3733,7 +3903,7 @@ type PerformActionRequest struct {
 
 func (x *PerformActionRequest) Reset() {
 	*x = PerformActionRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[42]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3745,7 +3915,7 @@ func (x *PerformActionRequest) String() string {
 func (*PerformActionRequest) ProtoMessage() {}
 
 func (x *PerformActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[42]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3758,7 +3928,7 @@ func (x *PerformActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerformActionRequest.ProtoReflect.Descriptor instead.
 func (*PerformActionRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{42}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *PerformActionRequest) GetName() UserActionType {
@@ -3794,7 +3964,7 @@ type ControlActionRequest struct {
 
 func (x *ControlActionRequest) Reset() {
 	*x = ControlActionRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[43]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3806,7 +3976,7 @@ func (x *ControlActionRequest) String() string {
 func (*ControlActionRequest) ProtoMessage() {}
 
 func (x *ControlActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[43]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3819,7 +3989,7 @@ func (x *ControlActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlActionRequest.ProtoReflect.Descriptor instead.
 func (*ControlActionRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{43}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ControlActionRequest) GetName() UserActionType {
@@ -3855,7 +4025,7 @@ type PerformActionResponse struct {
 
 func (x *PerformActionResponse) Reset() {
 	*x = PerformActionResponse{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[44]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3867,7 +4037,7 @@ func (x *PerformActionResponse) String() string {
 func (*PerformActionResponse) ProtoMessage() {}
 
 func (x *PerformActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[44]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3880,7 +4050,7 @@ func (x *PerformActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerformActionResponse.ProtoReflect.Descriptor instead.
 func (*PerformActionResponse) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{44}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *PerformActionResponse) GetStatus() ActionStatus {
@@ -3928,7 +4098,7 @@ type BackgroundAction struct {
 
 func (x *BackgroundAction) Reset() {
 	*x = BackgroundAction{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[45]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3940,7 +4110,7 @@ func (x *BackgroundAction) String() string {
 func (*BackgroundAction) ProtoMessage() {}
 
 func (x *BackgroundAction) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[45]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3953,7 +4123,7 @@ func (x *BackgroundAction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackgroundAction.ProtoReflect.Descriptor instead.
 func (*BackgroundAction) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{45}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *BackgroundAction) GetName() string {
@@ -4044,7 +4214,7 @@ type Selection struct {
 
 func (x *Selection) Reset() {
 	*x = Selection{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[46]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4056,7 +4226,7 @@ func (x *Selection) String() string {
 func (*Selection) ProtoMessage() {}
 
 func (x *Selection) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[46]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4069,7 +4239,7 @@ func (x *Selection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Selection.ProtoReflect.Descriptor instead.
 func (*Selection) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{46}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *Selection) GetUuid() string {
@@ -4105,7 +4275,7 @@ type PublicLinkRequest struct {
 
 func (x *PublicLinkRequest) Reset() {
 	*x = PublicLinkRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[47]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4117,7 +4287,7 @@ func (x *PublicLinkRequest) String() string {
 func (*PublicLinkRequest) ProtoMessage() {}
 
 func (x *PublicLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[47]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4130,7 +4300,7 @@ func (x *PublicLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicLinkRequest.ProtoReflect.Descriptor instead.
 func (*PublicLinkRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{47}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *PublicLinkRequest) GetLink() *ShareLink {
@@ -4178,7 +4348,7 @@ type NodePublicLinkRequest struct {
 
 func (x *NodePublicLinkRequest) Reset() {
 	*x = NodePublicLinkRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[48]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4190,7 +4360,7 @@ func (x *NodePublicLinkRequest) String() string {
 func (*NodePublicLinkRequest) ProtoMessage() {}
 
 func (x *NodePublicLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[48]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4203,7 +4373,7 @@ func (x *NodePublicLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodePublicLinkRequest.ProtoReflect.Descriptor instead.
 func (*NodePublicLinkRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{48}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *NodePublicLinkRequest) GetUuid() string {
@@ -4230,7 +4400,7 @@ type UpdatePublicLinkRequest struct {
 
 func (x *UpdatePublicLinkRequest) Reset() {
 	*x = UpdatePublicLinkRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[49]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4242,7 +4412,7 @@ func (x *UpdatePublicLinkRequest) String() string {
 func (*UpdatePublicLinkRequest) ProtoMessage() {}
 
 func (x *UpdatePublicLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[49]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4255,7 +4425,7 @@ func (x *UpdatePublicLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePublicLinkRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePublicLinkRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{49}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *UpdatePublicLinkRequest) GetLinkUuid() string {
@@ -4282,7 +4452,7 @@ type PublicLinkUuidRequest struct {
 
 func (x *PublicLinkUuidRequest) Reset() {
 	*x = PublicLinkUuidRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[50]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4294,7 +4464,7 @@ func (x *PublicLinkUuidRequest) String() string {
 func (*PublicLinkUuidRequest) ProtoMessage() {}
 
 func (x *PublicLinkUuidRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[50]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4307,7 +4477,7 @@ func (x *PublicLinkUuidRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicLinkUuidRequest.ProtoReflect.Descriptor instead.
 func (*PublicLinkUuidRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{50}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *PublicLinkUuidRequest) GetLinkUuid() string {
@@ -4328,7 +4498,7 @@ type PublicLinkDeleteSuccess struct {
 
 func (x *PublicLinkDeleteSuccess) Reset() {
 	*x = PublicLinkDeleteSuccess{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[51]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4340,7 +4510,7 @@ func (x *PublicLinkDeleteSuccess) String() string {
 func (*PublicLinkDeleteSuccess) ProtoMessage() {}
 
 func (x *PublicLinkDeleteSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[51]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4353,7 +4523,7 @@ func (x *PublicLinkDeleteSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicLinkDeleteSuccess.ProtoReflect.Descriptor instead.
 func (*PublicLinkDeleteSuccess) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{51}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *PublicLinkDeleteSuccess) GetUuid() string {
@@ -4381,7 +4551,7 @@ type MetaUpdate struct {
 
 func (x *MetaUpdate) Reset() {
 	*x = MetaUpdate{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[52]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4393,7 +4563,7 @@ func (x *MetaUpdate) String() string {
 func (*MetaUpdate) ProtoMessage() {}
 
 func (x *MetaUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[52]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4406,7 +4576,7 @@ func (x *MetaUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetaUpdate.ProtoReflect.Descriptor instead.
 func (*MetaUpdate) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{52}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *MetaUpdate) GetOperation() MetaUpdate_Op {
@@ -4433,7 +4603,7 @@ type MetaToggle struct {
 
 func (x *MetaToggle) Reset() {
 	*x = MetaToggle{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[53]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4445,7 +4615,7 @@ func (x *MetaToggle) String() string {
 func (*MetaToggle) ProtoMessage() {}
 
 func (x *MetaToggle) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[53]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4458,7 +4628,7 @@ func (x *MetaToggle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetaToggle.ProtoReflect.Descriptor instead.
 func (*MetaToggle) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{53}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *MetaToggle) GetValue() bool {
@@ -4483,7 +4653,7 @@ type NodeUpdates struct {
 
 func (x *NodeUpdates) Reset() {
 	*x = NodeUpdates{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[54]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4495,7 +4665,7 @@ func (x *NodeUpdates) String() string {
 func (*NodeUpdates) ProtoMessage() {}
 
 func (x *NodeUpdates) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[54]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4508,7 +4678,7 @@ func (x *NodeUpdates) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeUpdates.ProtoReflect.Descriptor instead.
 func (*NodeUpdates) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{54}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *NodeUpdates) GetMetaUpdates() []*MetaUpdate {
@@ -4543,7 +4713,7 @@ type PatchNodeRequest struct {
 
 func (x *PatchNodeRequest) Reset() {
 	*x = PatchNodeRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[55]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4555,7 +4725,7 @@ func (x *PatchNodeRequest) String() string {
 func (*PatchNodeRequest) ProtoMessage() {}
 
 func (x *PatchNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[55]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4568,7 +4738,7 @@ func (x *PatchNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PatchNodeRequest.ProtoReflect.Descriptor instead.
 func (*PatchNodeRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{55}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *PatchNodeRequest) GetUuid() string {
@@ -4595,7 +4765,7 @@ type BatchUpdateMetaList struct {
 
 func (x *BatchUpdateMetaList) Reset() {
 	*x = BatchUpdateMetaList{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[56]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4607,7 +4777,7 @@ func (x *BatchUpdateMetaList) String() string {
 func (*BatchUpdateMetaList) ProtoMessage() {}
 
 func (x *BatchUpdateMetaList) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[56]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4620,7 +4790,7 @@ func (x *BatchUpdateMetaList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchUpdateMetaList.ProtoReflect.Descriptor instead.
 func (*BatchUpdateMetaList) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{56}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *BatchUpdateMetaList) GetUpdates() []*MetaUpdate {
@@ -4641,7 +4811,7 @@ type NamespaceValuesOperation struct {
 
 func (x *NamespaceValuesOperation) Reset() {
 	*x = NamespaceValuesOperation{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[57]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4653,7 +4823,7 @@ func (x *NamespaceValuesOperation) String() string {
 func (*NamespaceValuesOperation) ProtoMessage() {}
 
 func (x *NamespaceValuesOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[57]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4666,7 +4836,7 @@ func (x *NamespaceValuesOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceValuesOperation.ProtoReflect.Descriptor instead.
 func (*NamespaceValuesOperation) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{57}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *NamespaceValuesOperation) GetOperation() NsOp {
@@ -4695,7 +4865,7 @@ type NamespaceValuesRequest struct {
 
 func (x *NamespaceValuesRequest) Reset() {
 	*x = NamespaceValuesRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[58]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4707,7 +4877,7 @@ func (x *NamespaceValuesRequest) String() string {
 func (*NamespaceValuesRequest) ProtoMessage() {}
 
 func (x *NamespaceValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[58]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4720,7 +4890,7 @@ func (x *NamespaceValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceValuesRequest.ProtoReflect.Descriptor instead.
 func (*NamespaceValuesRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{58}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *NamespaceValuesRequest) GetNamespace() string {
@@ -4748,7 +4918,7 @@ type ListNamespaceValuesRequest struct {
 
 func (x *ListNamespaceValuesRequest) Reset() {
 	*x = ListNamespaceValuesRequest{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[59]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4760,7 +4930,7 @@ func (x *ListNamespaceValuesRequest) String() string {
 func (*ListNamespaceValuesRequest) ProtoMessage() {}
 
 func (x *ListNamespaceValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[59]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4773,7 +4943,7 @@ func (x *ListNamespaceValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNamespaceValuesRequest.ProtoReflect.Descriptor instead.
 func (*ListNamespaceValuesRequest) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{59}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ListNamespaceValuesRequest) GetNamespace() string {
@@ -4794,7 +4964,7 @@ type NamespaceValuesResponse struct {
 
 func (x *NamespaceValuesResponse) Reset() {
 	*x = NamespaceValuesResponse{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[60]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4806,7 +4976,7 @@ func (x *NamespaceValuesResponse) String() string {
 func (*NamespaceValuesResponse) ProtoMessage() {}
 
 func (x *NamespaceValuesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[60]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4819,7 +4989,7 @@ func (x *NamespaceValuesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceValuesResponse.ProtoReflect.Descriptor instead.
 func (*NamespaceValuesResponse) Descriptor() ([]byte, []int) {
-	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{60}
+	return file_cellsapi_rest_v2_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *NamespaceValuesResponse) GetValues() []string {
@@ -4839,7 +5009,7 @@ type LookupFilter_SizeRange struct {
 
 func (x *LookupFilter_SizeRange) Reset() {
 	*x = LookupFilter_SizeRange{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[63]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4851,7 +5021,7 @@ func (x *LookupFilter_SizeRange) String() string {
 func (*LookupFilter_SizeRange) ProtoMessage() {}
 
 func (x *LookupFilter_SizeRange) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[63]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4892,7 +5062,7 @@ type LookupFilter_DateRange struct {
 
 func (x *LookupFilter_DateRange) Reset() {
 	*x = LookupFilter_DateRange{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[64]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4904,7 +5074,7 @@ func (x *LookupFilter_DateRange) String() string {
 func (*LookupFilter_DateRange) ProtoMessage() {}
 
 func (x *LookupFilter_DateRange) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[64]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4951,7 +5121,7 @@ type LookupFilter_PathPrefix struct {
 
 func (x *LookupFilter_PathPrefix) Reset() {
 	*x = LookupFilter_PathPrefix{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[65]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4963,7 +5133,7 @@ func (x *LookupFilter_PathPrefix) String() string {
 func (*LookupFilter_PathPrefix) ProtoMessage() {}
 
 func (x *LookupFilter_PathPrefix) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[65]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5003,7 +5173,7 @@ type LookupFilter_TextSearch struct {
 
 func (x *LookupFilter_TextSearch) Reset() {
 	*x = LookupFilter_TextSearch{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[66]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5015,7 +5185,7 @@ func (x *LookupFilter_TextSearch) String() string {
 func (*LookupFilter_TextSearch) ProtoMessage() {}
 
 func (x *LookupFilter_TextSearch) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[66]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5056,7 +5226,7 @@ type LookupFilter_MetaFilter struct {
 
 func (x *LookupFilter_MetaFilter) Reset() {
 	*x = LookupFilter_MetaFilter{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[67]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5068,7 +5238,7 @@ func (x *LookupFilter_MetaFilter) String() string {
 func (*LookupFilter_MetaFilter) ProtoMessage() {}
 
 func (x *LookupFilter_MetaFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[67]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5118,7 +5288,7 @@ type LookupFilter_StatusFilter struct {
 
 func (x *LookupFilter_StatusFilter) Reset() {
 	*x = LookupFilter_StatusFilter{}
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[68]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5130,7 +5300,7 @@ func (x *LookupFilter_StatusFilter) String() string {
 func (*LookupFilter_StatusFilter) ProtoMessage() {}
 
 func (x *LookupFilter_StatusFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_cellsapi_rest_v2_proto_msgTypes[68]
+	mi := &file_cellsapi_rest_v2_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5455,7 +5625,21 @@ const file_cellsapi_rest_v2_proto_rawDesc = "" +
 	"\x04Node\x18\x01 \x01(\v2\n" +
 	".rest.NodeR\x04Node\x12\x18\n" +
 	"\aSuccess\x18\x02 \x01(\bR\aSuccess\x12\x1c\n" +
-	"\tPublished\x18\x03 \x01(\bR\tPublished\"W\n" +
+	"\tPublished\x18\x03 \x01(\bR\tPublished\"o\n" +
+	"\x13NativeUploadRequest\x12\x12\n" +
+	"\x04Uuid\x18\x01 \x01(\tR\x04Uuid\x12\x12\n" +
+	"\x04Path\x18\x02 \x01(\tR\x04Path\x12\x12\n" +
+	"\x04Size\x18\x03 \x01(\x03R\x04Size\x12\x1c\n" +
+	"\tMultipart\x18\x04 \x01(\bR\tMultipart\"\xbc\x02\n" +
+	"\x14NativeUploadResponse\x12,\n" +
+	"\x11ActionExecutionId\x18\x01 \x01(\tR\x11ActionExecutionId\x120\n" +
+	"\x13ExternalExecutionId\x18\x02 \x01(\tR\x13ExternalExecutionId\x12&\n" +
+	"\x0eIdempotencyKey\x18\x03 \x01(\tR\x0eIdempotencyKey\x12&\n" +
+	"\x0eNativeIntentId\x18\x04 \x01(\tR\x0eNativeIntentId\x12\"\n" +
+	"\fNativeNodeId\x18\x05 \x01(\tR\fNativeNodeId\x12\x14\n" +
+	"\x05Ready\x18\x06 \x01(\bR\x05Ready\x12\x1c\n" +
+	"\tCompleted\x18\a \x01(\bR\tCompleted\x12\x1c\n" +
+	"\tVersionId\x18\b \x01(\tR\tVersionId\"W\n" +
 	"\x15PublishNodeParameters\x12\x18\n" +
 	"\aCascade\x18\x01 \x01(\bR\aCascade\x12$\n" +
 	"\rPromoteLatest\x18\x02 \x01(\bR\rPromoteLatest\"\x82\x01\n" +
@@ -5612,8 +5796,9 @@ const file_cellsapi_rest_v2_proto_rawDesc = "" +
 	"\x04NsOp\x12\a\n" +
 	"\x03PUT\x10\x00\x12\n" +
 	"\n" +
-	"\x06DELETE\x10\x012\xe3\x13\n" +
-	"\vNodeService\x12Y\n" +
+	"\x06DELETE\x10\x012\xc8\x14\n" +
+	"\vNodeService\x12c\n" +
+	"\rPrepareUpload\x12\x19.rest.NativeUploadRequest\x1a\x1a.rest.NativeUploadResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/n/upload/{Uuid}\x12Y\n" +
 	"\x06Lookup\x12\x13.rest.LookupRequest\x1a\x14.rest.NodeCollection\"$\x92A\x0eb\f\n" +
 	"\n" +
 	"\n" +
@@ -5669,7 +5854,7 @@ func file_cellsapi_rest_v2_proto_rawDescGZIP() []byte {
 }
 
 var file_cellsapi_rest_v2_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_cellsapi_rest_v2_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
+var file_cellsapi_rest_v2_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_cellsapi_rest_v2_proto_goTypes = []any{
 	(Mode)(0),                       // 0: rest.Mode
 	(Flag)(0),                       // 1: rest.Flag
@@ -5715,74 +5900,76 @@ var file_cellsapi_rest_v2_proto_goTypes = []any{
 	(*PromoteParameters)(nil),                    // 41: rest.PromoteParameters
 	(*PromoteVersionRequest)(nil),                // 42: rest.PromoteVersionRequest
 	(*PromoteVersionResponse)(nil),               // 43: rest.PromoteVersionResponse
-	(*PublishNodeParameters)(nil),                // 44: rest.PublishNodeParameters
-	(*PublishCascadeResult)(nil),                 // 45: rest.PublishCascadeResult
-	(*PublishNodeResponse)(nil),                  // 46: rest.PublishNodeResponse
-	(*PublishNodeRequest)(nil),                   // 47: rest.PublishNodeRequest
-	(*ActionOptionsDelete)(nil),                  // 48: rest.ActionOptionsDelete
-	(*ActionOptionsCopyMove)(nil),                // 49: rest.ActionOptionsCopyMove
-	(*ActionOptionsExtractCompress)(nil),         // 50: rest.ActionOptionsExtractCompress
-	(*ActionParameters)(nil),                     // 51: rest.ActionParameters
-	(*ActionRequest)(nil),                        // 52: rest.ActionRequest
-	(*PerformActionRequest)(nil),                 // 53: rest.PerformActionRequest
-	(*ControlActionRequest)(nil),                 // 54: rest.ControlActionRequest
-	(*PerformActionResponse)(nil),                // 55: rest.PerformActionResponse
-	(*BackgroundAction)(nil),                     // 56: rest.BackgroundAction
-	(*Selection)(nil),                            // 57: rest.Selection
-	(*PublicLinkRequest)(nil),                    // 58: rest.PublicLinkRequest
-	(*NodePublicLinkRequest)(nil),                // 59: rest.NodePublicLinkRequest
-	(*UpdatePublicLinkRequest)(nil),              // 60: rest.UpdatePublicLinkRequest
-	(*PublicLinkUuidRequest)(nil),                // 61: rest.PublicLinkUuidRequest
-	(*PublicLinkDeleteSuccess)(nil),              // 62: rest.PublicLinkDeleteSuccess
-	(*MetaUpdate)(nil),                           // 63: rest.MetaUpdate
-	(*MetaToggle)(nil),                           // 64: rest.MetaToggle
-	(*NodeUpdates)(nil),                          // 65: rest.NodeUpdates
-	(*PatchNodeRequest)(nil),                     // 66: rest.PatchNodeRequest
-	(*BatchUpdateMetaList)(nil),                  // 67: rest.BatchUpdateMetaList
-	(*NamespaceValuesOperation)(nil),             // 68: rest.NamespaceValuesOperation
-	(*NamespaceValuesRequest)(nil),               // 69: rest.NamespaceValuesRequest
-	(*ListNamespaceValuesRequest)(nil),           // 70: rest.ListNamespaceValuesRequest
-	(*NamespaceValuesResponse)(nil),              // 71: rest.NamespaceValuesResponse
-	nil,                                          // 72: rest.Node.EditorURLsEntry
-	nil,                                          // 73: rest.Version.EditorURLsEntry
-	(*LookupFilter_SizeRange)(nil),               // 74: rest.LookupFilter.SizeRange
-	(*LookupFilter_DateRange)(nil),               // 75: rest.LookupFilter.DateRange
-	(*LookupFilter_PathPrefix)(nil),              // 76: rest.LookupFilter.PathPrefix
-	(*LookupFilter_TextSearch)(nil),              // 77: rest.LookupFilter.TextSearch
-	(*LookupFilter_MetaFilter)(nil),              // 78: rest.LookupFilter.MetaFilter
-	(*LookupFilter_StatusFilter)(nil),            // 79: rest.LookupFilter.StatusFilter
-	(idm.WorkspaceScope)(0),                      // 80: idm.WorkspaceScope
-	(tree.NodeType)(0),                           // 81: tree.NodeType
-	(*ShareLink)(nil),                            // 82: rest.ShareLink
-	(*activity.Object)(nil),                      // 83: activity.Object
-	(*activity.Subscription)(nil),                // 84: activity.Subscription
-	(*tree.SearchFacet)(nil),                     // 85: tree.SearchFacet
-	(*Pagination)(nil),                           // 86: rest.Pagination
-	(*tree.Query)(nil),                           // 87: tree.Query
-	(jobs.TaskStatus)(0),                         // 88: jobs.TaskStatus
-	(*jobs.CtrlCommand)(nil),                     // 89: jobs.CtrlCommand
-	(*UserBookmarksRequest)(nil),                 // 90: rest.UserBookmarksRequest
-	(*idm.SearchUserMetaRequest)(nil),            // 91: idm.SearchUserMetaRequest
-	(*idm.ListUserMetaNamespaceRequest)(nil),     // 92: idm.ListUserMetaNamespaceRequest
-	(*ListTemplatesRequest)(nil),                 // 93: rest.ListTemplatesRequest
-	(*UserMetaNamespaceCollection)(nil),          // 94: rest.UserMetaNamespaceCollection
-	(*ListTemplatesResponse)(nil),                // 95: rest.ListTemplatesResponse
+	(*NativeUploadRequest)(nil),                  // 44: rest.NativeUploadRequest
+	(*NativeUploadResponse)(nil),                 // 45: rest.NativeUploadResponse
+	(*PublishNodeParameters)(nil),                // 46: rest.PublishNodeParameters
+	(*PublishCascadeResult)(nil),                 // 47: rest.PublishCascadeResult
+	(*PublishNodeResponse)(nil),                  // 48: rest.PublishNodeResponse
+	(*PublishNodeRequest)(nil),                   // 49: rest.PublishNodeRequest
+	(*ActionOptionsDelete)(nil),                  // 50: rest.ActionOptionsDelete
+	(*ActionOptionsCopyMove)(nil),                // 51: rest.ActionOptionsCopyMove
+	(*ActionOptionsExtractCompress)(nil),         // 52: rest.ActionOptionsExtractCompress
+	(*ActionParameters)(nil),                     // 53: rest.ActionParameters
+	(*ActionRequest)(nil),                        // 54: rest.ActionRequest
+	(*PerformActionRequest)(nil),                 // 55: rest.PerformActionRequest
+	(*ControlActionRequest)(nil),                 // 56: rest.ControlActionRequest
+	(*PerformActionResponse)(nil),                // 57: rest.PerformActionResponse
+	(*BackgroundAction)(nil),                     // 58: rest.BackgroundAction
+	(*Selection)(nil),                            // 59: rest.Selection
+	(*PublicLinkRequest)(nil),                    // 60: rest.PublicLinkRequest
+	(*NodePublicLinkRequest)(nil),                // 61: rest.NodePublicLinkRequest
+	(*UpdatePublicLinkRequest)(nil),              // 62: rest.UpdatePublicLinkRequest
+	(*PublicLinkUuidRequest)(nil),                // 63: rest.PublicLinkUuidRequest
+	(*PublicLinkDeleteSuccess)(nil),              // 64: rest.PublicLinkDeleteSuccess
+	(*MetaUpdate)(nil),                           // 65: rest.MetaUpdate
+	(*MetaToggle)(nil),                           // 66: rest.MetaToggle
+	(*NodeUpdates)(nil),                          // 67: rest.NodeUpdates
+	(*PatchNodeRequest)(nil),                     // 68: rest.PatchNodeRequest
+	(*BatchUpdateMetaList)(nil),                  // 69: rest.BatchUpdateMetaList
+	(*NamespaceValuesOperation)(nil),             // 70: rest.NamespaceValuesOperation
+	(*NamespaceValuesRequest)(nil),               // 71: rest.NamespaceValuesRequest
+	(*ListNamespaceValuesRequest)(nil),           // 72: rest.ListNamespaceValuesRequest
+	(*NamespaceValuesResponse)(nil),              // 73: rest.NamespaceValuesResponse
+	nil,                                          // 74: rest.Node.EditorURLsEntry
+	nil,                                          // 75: rest.Version.EditorURLsEntry
+	(*LookupFilter_SizeRange)(nil),               // 76: rest.LookupFilter.SizeRange
+	(*LookupFilter_DateRange)(nil),               // 77: rest.LookupFilter.DateRange
+	(*LookupFilter_PathPrefix)(nil),              // 78: rest.LookupFilter.PathPrefix
+	(*LookupFilter_TextSearch)(nil),              // 79: rest.LookupFilter.TextSearch
+	(*LookupFilter_MetaFilter)(nil),              // 80: rest.LookupFilter.MetaFilter
+	(*LookupFilter_StatusFilter)(nil),            // 81: rest.LookupFilter.StatusFilter
+	(idm.WorkspaceScope)(0),                      // 82: idm.WorkspaceScope
+	(tree.NodeType)(0),                           // 83: tree.NodeType
+	(*ShareLink)(nil),                            // 84: rest.ShareLink
+	(*activity.Object)(nil),                      // 85: activity.Object
+	(*activity.Subscription)(nil),                // 86: activity.Subscription
+	(*tree.SearchFacet)(nil),                     // 87: tree.SearchFacet
+	(*Pagination)(nil),                           // 88: rest.Pagination
+	(*tree.Query)(nil),                           // 89: tree.Query
+	(jobs.TaskStatus)(0),                         // 90: jobs.TaskStatus
+	(*jobs.CtrlCommand)(nil),                     // 91: jobs.CtrlCommand
+	(*UserBookmarksRequest)(nil),                 // 92: rest.UserBookmarksRequest
+	(*idm.SearchUserMetaRequest)(nil),            // 93: idm.SearchUserMetaRequest
+	(*idm.ListUserMetaNamespaceRequest)(nil),     // 94: idm.ListUserMetaNamespaceRequest
+	(*ListTemplatesRequest)(nil),                 // 95: rest.ListTemplatesRequest
+	(*UserMetaNamespaceCollection)(nil),          // 96: rest.UserMetaNamespaceCollection
+	(*ListTemplatesResponse)(nil),                // 97: rest.ListTemplatesResponse
 }
 var file_cellsapi_rest_v2_proto_depIdxs = []int32{
-	80,  // 0: rest.ContextWorkspace.Scope:type_name -> idm.WorkspaceScope
+	82,  // 0: rest.ContextWorkspace.Scope:type_name -> idm.WorkspaceScope
 	14,  // 1: rest.FilePreview.PreSignedGET:type_name -> rest.PreSignedURL
 	19,  // 2: rest.UserMetaList.UserMeta:type_name -> rest.UserMeta
-	81,  // 3: rest.Node.Type:type_name -> tree.NodeType
+	83,  // 3: rest.Node.Type:type_name -> tree.NodeType
 	0,   // 4: rest.Node.Mode:type_name -> rest.Mode
 	14,  // 5: rest.Node.PreSignedGET:type_name -> rest.PreSignedURL
-	72,  // 6: rest.Node.EditorURLs:type_name -> rest.Node.EditorURLsEntry
+	74,  // 6: rest.Node.EditorURLs:type_name -> rest.Node.EditorURLsEntry
 	12,  // 7: rest.Node.ContextWorkspace:type_name -> rest.ContextWorkspace
 	13,  // 8: rest.Node.DataSourceFeatures:type_name -> rest.DataSourceFeatures
 	11,  // 9: rest.Node.ContentLock:type_name -> rest.LockInfo
 	16,  // 10: rest.Node.Previews:type_name -> rest.FilePreview
-	82,  // 11: rest.Node.Shares:type_name -> rest.ShareLink
-	83,  // 12: rest.Node.Activities:type_name -> activity.Object
-	84,  // 13: rest.Node.Subscriptions:type_name -> activity.Subscription
+	84,  // 11: rest.Node.Shares:type_name -> rest.ShareLink
+	85,  // 12: rest.Node.Activities:type_name -> activity.Object
+	86,  // 13: rest.Node.Subscriptions:type_name -> activity.Subscription
 	15,  // 14: rest.Node.ImageMeta:type_name -> rest.ImageMeta
 	17,  // 15: rest.Node.Metadata:type_name -> rest.JsonMeta
 	18,  // 16: rest.Node.FolderMeta:type_name -> rest.CountMeta
@@ -5791,14 +5978,14 @@ var file_cellsapi_rest_v2_proto_depIdxs = []int32{
 	20,  // 19: rest.Node.VersionMeta:type_name -> rest.VersionMeta
 	1,   // 20: rest.NodeByUuidRequest.Flags:type_name -> rest.Flag
 	22,  // 21: rest.NodeCollection.Nodes:type_name -> rest.Node
-	85,  // 22: rest.NodeCollection.Facets:type_name -> tree.SearchFacet
-	86,  // 23: rest.NodeCollection.Pagination:type_name -> rest.Pagination
+	87,  // 22: rest.NodeCollection.Facets:type_name -> tree.SearchFacet
+	88,  // 23: rest.NodeCollection.Pagination:type_name -> rest.Pagination
 	14,  // 24: rest.Version.PreSignedGET:type_name -> rest.PreSignedURL
-	73,  // 25: rest.Version.EditorURLs:type_name -> rest.Version.EditorURLsEntry
+	75,  // 25: rest.Version.EditorURLs:type_name -> rest.Version.EditorURLsEntry
 	16,  // 26: rest.Version.FilePreviews:type_name -> rest.FilePreview
 	26,  // 27: rest.VersionCollection.Versions:type_name -> rest.Version
 	23,  // 28: rest.IncomingNode.Locator:type_name -> rest.NodeLocator
-	81,  // 29: rest.IncomingNode.Type:type_name -> tree.NodeType
+	83,  // 29: rest.IncomingNode.Type:type_name -> tree.NodeType
 	19,  // 30: rest.IncomingNode.Metadata:type_name -> rest.UserMeta
 	28,  // 31: rest.CreateRequest.Inputs:type_name -> rest.IncomingNode
 	28,  // 32: rest.CreateCheckRequest.Inputs:type_name -> rest.IncomingNode
@@ -5808,18 +5995,18 @@ var file_cellsapi_rest_v2_proto_depIdxs = []int32{
 	23,  // 36: rest.NodeLocators.Many:type_name -> rest.NodeLocator
 	23,  // 37: rest.LookupScope.Root:type_name -> rest.NodeLocator
 	23,  // 38: rest.LookupScope.Nodes:type_name -> rest.NodeLocator
-	77,  // 39: rest.LookupFilter.Text:type_name -> rest.LookupFilter.TextSearch
-	81,  // 40: rest.LookupFilter.Type:type_name -> tree.NodeType
-	74,  // 41: rest.LookupFilter.Size:type_name -> rest.LookupFilter.SizeRange
-	75,  // 42: rest.LookupFilter.Date:type_name -> rest.LookupFilter.DateRange
-	78,  // 43: rest.LookupFilter.Metadata:type_name -> rest.LookupFilter.MetaFilter
-	79,  // 44: rest.LookupFilter.Status:type_name -> rest.LookupFilter.StatusFilter
-	76,  // 45: rest.LookupFilter.Prefixes:type_name -> rest.LookupFilter.PathPrefix
+	79,  // 39: rest.LookupFilter.Text:type_name -> rest.LookupFilter.TextSearch
+	83,  // 40: rest.LookupFilter.Type:type_name -> tree.NodeType
+	76,  // 41: rest.LookupFilter.Size:type_name -> rest.LookupFilter.SizeRange
+	77,  // 42: rest.LookupFilter.Date:type_name -> rest.LookupFilter.DateRange
+	80,  // 43: rest.LookupFilter.Metadata:type_name -> rest.LookupFilter.MetaFilter
+	81,  // 44: rest.LookupFilter.Status:type_name -> rest.LookupFilter.StatusFilter
+	78,  // 45: rest.LookupFilter.Prefixes:type_name -> rest.LookupFilter.PathPrefix
 	34,  // 46: rest.LookupRequest.Scope:type_name -> rest.LookupScope
 	35,  // 47: rest.LookupRequest.Filters:type_name -> rest.LookupFilter
 	1,   // 48: rest.LookupRequest.Flags:type_name -> rest.Flag
 	33,  // 49: rest.LookupRequest.Locators:type_name -> rest.NodeLocators
-	87,  // 50: rest.LookupRequest.Query:type_name -> tree.Query
+	89,  // 50: rest.LookupRequest.Query:type_name -> tree.Query
 	2,   // 51: rest.NodeVersionsFilter.FilterBy:type_name -> rest.VersionsTypes
 	1,   // 52: rest.NodeVersionsFilter.Flags:type_name -> rest.Flag
 	37,  // 53: rest.NodeVersionsRequest.Query:type_name -> rest.NodeVersionsFilter
@@ -5827,91 +6014,93 @@ var file_cellsapi_rest_v2_proto_depIdxs = []int32{
 	22,  // 55: rest.PromoteVersionResponse.Node:type_name -> rest.Node
 	22,  // 56: rest.PublishCascadeResult.Node:type_name -> rest.Node
 	22,  // 57: rest.PublishNodeResponse.Node:type_name -> rest.Node
-	45,  // 58: rest.PublishNodeResponse.CascadeResults:type_name -> rest.PublishCascadeResult
-	44,  // 59: rest.PublishNodeRequest.Parameters:type_name -> rest.PublishNodeParameters
+	47,  // 58: rest.PublishNodeResponse.CascadeResults:type_name -> rest.PublishCascadeResult
+	46,  // 59: rest.PublishNodeRequest.Parameters:type_name -> rest.PublishNodeParameters
 	23,  // 60: rest.ActionParameters.Nodes:type_name -> rest.NodeLocator
-	48,  // 61: rest.ActionParameters.DeleteOptions:type_name -> rest.ActionOptionsDelete
-	49,  // 62: rest.ActionParameters.CopyMoveOptions:type_name -> rest.ActionOptionsCopyMove
-	50,  // 63: rest.ActionParameters.ExtractCompressOptions:type_name -> rest.ActionOptionsExtractCompress
-	88,  // 64: rest.ActionParameters.AwaitStatus:type_name -> jobs.TaskStatus
+	50,  // 61: rest.ActionParameters.DeleteOptions:type_name -> rest.ActionOptionsDelete
+	51,  // 62: rest.ActionParameters.CopyMoveOptions:type_name -> rest.ActionOptionsCopyMove
+	52,  // 63: rest.ActionParameters.ExtractCompressOptions:type_name -> rest.ActionOptionsExtractCompress
+	90,  // 64: rest.ActionParameters.AwaitStatus:type_name -> jobs.TaskStatus
 	3,   // 65: rest.ActionRequest.Name:type_name -> rest.UserActionType
 	3,   // 66: rest.PerformActionRequest.Name:type_name -> rest.UserActionType
-	51,  // 67: rest.PerformActionRequest.Parameters:type_name -> rest.ActionParameters
+	53,  // 67: rest.PerformActionRequest.Parameters:type_name -> rest.ActionParameters
 	3,   // 68: rest.ControlActionRequest.Name:type_name -> rest.UserActionType
-	89,  // 69: rest.ControlActionRequest.Command:type_name -> jobs.CtrlCommand
+	91,  // 69: rest.ControlActionRequest.Command:type_name -> jobs.CtrlCommand
 	4,   // 70: rest.PerformActionResponse.Status:type_name -> rest.ActionStatus
 	22,  // 71: rest.PerformActionResponse.AffectedNodes:type_name -> rest.Node
-	56,  // 72: rest.PerformActionResponse.BackgroundActions:type_name -> rest.BackgroundAction
-	88,  // 73: rest.BackgroundAction.Status:type_name -> jobs.TaskStatus
+	58,  // 72: rest.PerformActionResponse.BackgroundActions:type_name -> rest.BackgroundAction
+	90,  // 73: rest.BackgroundAction.Status:type_name -> jobs.TaskStatus
 	22,  // 74: rest.Selection.Nodes:type_name -> rest.Node
-	82,  // 75: rest.PublicLinkRequest.Link:type_name -> rest.ShareLink
-	58,  // 76: rest.NodePublicLinkRequest.PublicLinkRequest:type_name -> rest.PublicLinkRequest
-	58,  // 77: rest.UpdatePublicLinkRequest.PublicLinkRequest:type_name -> rest.PublicLinkRequest
+	84,  // 75: rest.PublicLinkRequest.Link:type_name -> rest.ShareLink
+	60,  // 76: rest.NodePublicLinkRequest.PublicLinkRequest:type_name -> rest.PublicLinkRequest
+	60,  // 77: rest.UpdatePublicLinkRequest.PublicLinkRequest:type_name -> rest.PublicLinkRequest
 	10,  // 78: rest.MetaUpdate.Operation:type_name -> rest.MetaUpdate.Op
 	19,  // 79: rest.MetaUpdate.UserMeta:type_name -> rest.UserMeta
-	63,  // 80: rest.NodeUpdates.MetaUpdates:type_name -> rest.MetaUpdate
-	64,  // 81: rest.NodeUpdates.Bookmark:type_name -> rest.MetaToggle
-	64,  // 82: rest.NodeUpdates.ContentLock:type_name -> rest.MetaToggle
-	65,  // 83: rest.PatchNodeRequest.NodeUpdates:type_name -> rest.NodeUpdates
-	63,  // 84: rest.BatchUpdateMetaList.Updates:type_name -> rest.MetaUpdate
+	65,  // 80: rest.NodeUpdates.MetaUpdates:type_name -> rest.MetaUpdate
+	66,  // 81: rest.NodeUpdates.Bookmark:type_name -> rest.MetaToggle
+	66,  // 82: rest.NodeUpdates.ContentLock:type_name -> rest.MetaToggle
+	67,  // 83: rest.PatchNodeRequest.NodeUpdates:type_name -> rest.NodeUpdates
+	65,  // 84: rest.BatchUpdateMetaList.Updates:type_name -> rest.MetaUpdate
 	5,   // 85: rest.NamespaceValuesOperation.Operation:type_name -> rest.NsOp
-	68,  // 86: rest.NamespaceValuesRequest.Operation:type_name -> rest.NamespaceValuesOperation
+	70,  // 86: rest.NamespaceValuesRequest.Operation:type_name -> rest.NamespaceValuesOperation
 	14,  // 87: rest.Node.EditorURLsEntry.value:type_name -> rest.PreSignedURL
 	14,  // 88: rest.Version.EditorURLsEntry.value:type_name -> rest.PreSignedURL
 	6,   // 89: rest.LookupFilter.TextSearch.SearchIn:type_name -> rest.LookupFilter.TextSearch.In
 	7,   // 90: rest.LookupFilter.MetaFilter.Operation:type_name -> rest.LookupFilter.MetaFilter.Op
 	8,   // 91: rest.LookupFilter.StatusFilter.Deleted:type_name -> rest.LookupFilter.StatusFilter.DeletedStatus
 	9,   // 92: rest.LookupFilter.StatusFilter.Draft:type_name -> rest.LookupFilter.StatusFilter.DraftStatus
-	36,  // 93: rest.NodeService.Lookup:input_type -> rest.LookupRequest
-	29,  // 94: rest.NodeService.Create:input_type -> rest.CreateRequest
-	30,  // 95: rest.NodeService.CreateCheck:input_type -> rest.CreateCheckRequest
-	90,  // 96: rest.NodeService.UserBookmarks:input_type -> rest.UserBookmarksRequest
-	24,  // 97: rest.NodeService.GetByUuid:input_type -> rest.NodeByUuidRequest
-	66,  // 98: rest.NodeService.PatchNode:input_type -> rest.PatchNodeRequest
-	47,  // 99: rest.NodeService.PublishNode:input_type -> rest.PublishNodeRequest
-	42,  // 100: rest.NodeService.PromoteVersion:input_type -> rest.PromoteVersionRequest
-	39,  // 101: rest.NodeService.DeleteVersion:input_type -> rest.DeleteVersionRequest
-	38,  // 102: rest.NodeService.NodeVersions:input_type -> rest.NodeVersionsRequest
-	59,  // 103: rest.NodeService.CreatePublicLink:input_type -> rest.NodePublicLinkRequest
-	91,  // 104: rest.NodeService.SearchMeta:input_type -> idm.SearchUserMetaRequest
-	67,  // 105: rest.NodeService.BatchUpdateMeta:input_type -> rest.BatchUpdateMetaList
-	92,  // 106: rest.NodeService.ListNamespaces:input_type -> idm.ListUserMetaNamespaceRequest
-	70,  // 107: rest.NodeService.ListNamespaceValues:input_type -> rest.ListNamespaceValuesRequest
-	69,  // 108: rest.NodeService.UpdateNamespaceValues:input_type -> rest.NamespaceValuesRequest
-	61,  // 109: rest.NodeService.GetPublicLink:input_type -> rest.PublicLinkUuidRequest
-	60,  // 110: rest.NodeService.UpdatePublicLink:input_type -> rest.UpdatePublicLinkRequest
-	61,  // 111: rest.NodeService.DeletePublicLink:input_type -> rest.PublicLinkUuidRequest
-	53,  // 112: rest.NodeService.PerformAction:input_type -> rest.PerformActionRequest
-	52,  // 113: rest.NodeService.BackgroundActionInfo:input_type -> rest.ActionRequest
-	54,  // 114: rest.NodeService.ControlBackgroundAction:input_type -> rest.ControlActionRequest
-	57,  // 115: rest.NodeService.CreateSelection:input_type -> rest.Selection
-	93,  // 116: rest.NodeService.Templates:input_type -> rest.ListTemplatesRequest
-	25,  // 117: rest.NodeService.Lookup:output_type -> rest.NodeCollection
-	25,  // 118: rest.NodeService.Create:output_type -> rest.NodeCollection
-	32,  // 119: rest.NodeService.CreateCheck:output_type -> rest.CreateCheckResponse
-	25,  // 120: rest.NodeService.UserBookmarks:output_type -> rest.NodeCollection
-	22,  // 121: rest.NodeService.GetByUuid:output_type -> rest.Node
-	22,  // 122: rest.NodeService.PatchNode:output_type -> rest.Node
-	46,  // 123: rest.NodeService.PublishNode:output_type -> rest.PublishNodeResponse
-	43,  // 124: rest.NodeService.PromoteVersion:output_type -> rest.PromoteVersionResponse
-	40,  // 125: rest.NodeService.DeleteVersion:output_type -> rest.DeleteVersionResponse
-	27,  // 126: rest.NodeService.NodeVersions:output_type -> rest.VersionCollection
-	82,  // 127: rest.NodeService.CreatePublicLink:output_type -> rest.ShareLink
-	21,  // 128: rest.NodeService.SearchMeta:output_type -> rest.UserMetaList
-	67,  // 129: rest.NodeService.BatchUpdateMeta:output_type -> rest.BatchUpdateMetaList
-	94,  // 130: rest.NodeService.ListNamespaces:output_type -> rest.UserMetaNamespaceCollection
-	71,  // 131: rest.NodeService.ListNamespaceValues:output_type -> rest.NamespaceValuesResponse
-	71,  // 132: rest.NodeService.UpdateNamespaceValues:output_type -> rest.NamespaceValuesResponse
-	82,  // 133: rest.NodeService.GetPublicLink:output_type -> rest.ShareLink
-	82,  // 134: rest.NodeService.UpdatePublicLink:output_type -> rest.ShareLink
-	62,  // 135: rest.NodeService.DeletePublicLink:output_type -> rest.PublicLinkDeleteSuccess
-	55,  // 136: rest.NodeService.PerformAction:output_type -> rest.PerformActionResponse
-	56,  // 137: rest.NodeService.BackgroundActionInfo:output_type -> rest.BackgroundAction
-	56,  // 138: rest.NodeService.ControlBackgroundAction:output_type -> rest.BackgroundAction
-	57,  // 139: rest.NodeService.CreateSelection:output_type -> rest.Selection
-	95,  // 140: rest.NodeService.Templates:output_type -> rest.ListTemplatesResponse
-	117, // [117:141] is the sub-list for method output_type
-	93,  // [93:117] is the sub-list for method input_type
+	44,  // 93: rest.NodeService.PrepareUpload:input_type -> rest.NativeUploadRequest
+	36,  // 94: rest.NodeService.Lookup:input_type -> rest.LookupRequest
+	29,  // 95: rest.NodeService.Create:input_type -> rest.CreateRequest
+	30,  // 96: rest.NodeService.CreateCheck:input_type -> rest.CreateCheckRequest
+	92,  // 97: rest.NodeService.UserBookmarks:input_type -> rest.UserBookmarksRequest
+	24,  // 98: rest.NodeService.GetByUuid:input_type -> rest.NodeByUuidRequest
+	68,  // 99: rest.NodeService.PatchNode:input_type -> rest.PatchNodeRequest
+	49,  // 100: rest.NodeService.PublishNode:input_type -> rest.PublishNodeRequest
+	42,  // 101: rest.NodeService.PromoteVersion:input_type -> rest.PromoteVersionRequest
+	39,  // 102: rest.NodeService.DeleteVersion:input_type -> rest.DeleteVersionRequest
+	38,  // 103: rest.NodeService.NodeVersions:input_type -> rest.NodeVersionsRequest
+	61,  // 104: rest.NodeService.CreatePublicLink:input_type -> rest.NodePublicLinkRequest
+	93,  // 105: rest.NodeService.SearchMeta:input_type -> idm.SearchUserMetaRequest
+	69,  // 106: rest.NodeService.BatchUpdateMeta:input_type -> rest.BatchUpdateMetaList
+	94,  // 107: rest.NodeService.ListNamespaces:input_type -> idm.ListUserMetaNamespaceRequest
+	72,  // 108: rest.NodeService.ListNamespaceValues:input_type -> rest.ListNamespaceValuesRequest
+	71,  // 109: rest.NodeService.UpdateNamespaceValues:input_type -> rest.NamespaceValuesRequest
+	63,  // 110: rest.NodeService.GetPublicLink:input_type -> rest.PublicLinkUuidRequest
+	62,  // 111: rest.NodeService.UpdatePublicLink:input_type -> rest.UpdatePublicLinkRequest
+	63,  // 112: rest.NodeService.DeletePublicLink:input_type -> rest.PublicLinkUuidRequest
+	55,  // 113: rest.NodeService.PerformAction:input_type -> rest.PerformActionRequest
+	54,  // 114: rest.NodeService.BackgroundActionInfo:input_type -> rest.ActionRequest
+	56,  // 115: rest.NodeService.ControlBackgroundAction:input_type -> rest.ControlActionRequest
+	59,  // 116: rest.NodeService.CreateSelection:input_type -> rest.Selection
+	95,  // 117: rest.NodeService.Templates:input_type -> rest.ListTemplatesRequest
+	45,  // 118: rest.NodeService.PrepareUpload:output_type -> rest.NativeUploadResponse
+	25,  // 119: rest.NodeService.Lookup:output_type -> rest.NodeCollection
+	25,  // 120: rest.NodeService.Create:output_type -> rest.NodeCollection
+	32,  // 121: rest.NodeService.CreateCheck:output_type -> rest.CreateCheckResponse
+	25,  // 122: rest.NodeService.UserBookmarks:output_type -> rest.NodeCollection
+	22,  // 123: rest.NodeService.GetByUuid:output_type -> rest.Node
+	22,  // 124: rest.NodeService.PatchNode:output_type -> rest.Node
+	48,  // 125: rest.NodeService.PublishNode:output_type -> rest.PublishNodeResponse
+	43,  // 126: rest.NodeService.PromoteVersion:output_type -> rest.PromoteVersionResponse
+	40,  // 127: rest.NodeService.DeleteVersion:output_type -> rest.DeleteVersionResponse
+	27,  // 128: rest.NodeService.NodeVersions:output_type -> rest.VersionCollection
+	84,  // 129: rest.NodeService.CreatePublicLink:output_type -> rest.ShareLink
+	21,  // 130: rest.NodeService.SearchMeta:output_type -> rest.UserMetaList
+	69,  // 131: rest.NodeService.BatchUpdateMeta:output_type -> rest.BatchUpdateMetaList
+	96,  // 132: rest.NodeService.ListNamespaces:output_type -> rest.UserMetaNamespaceCollection
+	73,  // 133: rest.NodeService.ListNamespaceValues:output_type -> rest.NamespaceValuesResponse
+	73,  // 134: rest.NodeService.UpdateNamespaceValues:output_type -> rest.NamespaceValuesResponse
+	84,  // 135: rest.NodeService.GetPublicLink:output_type -> rest.ShareLink
+	84,  // 136: rest.NodeService.UpdatePublicLink:output_type -> rest.ShareLink
+	64,  // 137: rest.NodeService.DeletePublicLink:output_type -> rest.PublicLinkDeleteSuccess
+	57,  // 138: rest.NodeService.PerformAction:output_type -> rest.PerformActionResponse
+	58,  // 139: rest.NodeService.BackgroundActionInfo:output_type -> rest.BackgroundAction
+	58,  // 140: rest.NodeService.ControlBackgroundAction:output_type -> rest.BackgroundAction
+	59,  // 141: rest.NodeService.CreateSelection:output_type -> rest.Selection
+	97,  // 142: rest.NodeService.Templates:output_type -> rest.ListTemplatesResponse
+	118, // [118:143] is the sub-list for method output_type
+	93,  // [93:118] is the sub-list for method input_type
 	93,  // [93:93] is the sub-list for extension type_name
 	93,  // [93:93] is the sub-list for extension extendee
 	0,   // [0:93] is the sub-list for field type_name
@@ -5936,7 +6125,7 @@ func file_cellsapi_rest_v2_proto_init() {
 		(*LookupRequest_Locators)(nil),
 		(*LookupRequest_Query)(nil),
 	}
-	file_cellsapi_rest_v2_proto_msgTypes[40].OneofWrappers = []any{
+	file_cellsapi_rest_v2_proto_msgTypes[42].OneofWrappers = []any{
 		(*ActionParameters_DeleteOptions)(nil),
 		(*ActionParameters_CopyMoveOptions)(nil),
 		(*ActionParameters_ExtractCompressOptions)(nil),
@@ -5947,7 +6136,7 @@ func file_cellsapi_rest_v2_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cellsapi_rest_v2_proto_rawDesc), len(file_cellsapi_rest_v2_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   69,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

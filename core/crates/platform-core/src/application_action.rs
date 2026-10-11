@@ -13,6 +13,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 pub(crate) const KIND: &str = "COMPONENT_ACTION";
+#[path = "application_native_execution.rs"]
+pub(crate) mod native_execution;
 #[path = "application_native_human.rs"]
 pub(crate) mod native_human;
 #[path = "application_native_read.rs"]
@@ -148,19 +150,29 @@ pub(crate) async fn fresh_execution(g: &Governance, ae: &Execution) -> Result<Ev
     }
     let p = ae.parameters.as_ref().ok_or_else(invalid)?;
     let mut tx = g.pool.begin().await?;
-    let f = facts(
-        &mut tx,
-        ae.tenant_id,
-        &Target {
-            id: ae.target_id,
-            version: ae.frozen_target_version().ok_or_else(invalid)?,
-            workspace_id: ae.workspace_id,
-        },
-        &ae.action_key,
-        ae.action_version,
-        p["targetType"].as_str().ok_or_else(invalid)?,
-    )
-    .await?;
+    let dispatched_native: bool = if native_execution::is_native_writer(ae) {
+        sqlx::query_scalar("select exists(select 1 from admission.external_execution where action_execution_id=$1 and operation_id=$2)")
+            .bind(ae.id).bind(ae.operation_id).fetch_one(&mut *tx).await?
+    } else {
+        false
+    };
+    let f = if dispatched_native {
+        execution_facts(&mut tx, ae).await?
+    } else {
+        facts(
+            &mut tx,
+            ae.tenant_id,
+            &Target {
+                id: ae.target_id,
+                version: ae.frozen_target_version().ok_or_else(invalid)?,
+                workspace_id: ae.workspace_id,
+            },
+            &ae.action_key,
+            ae.action_version,
+            p["targetType"].as_str().ok_or_else(invalid)?,
+        )
+        .await?
+    };
     let exact:bool=sqlx::query_scalar("select exists(select 1 from admission.action_execution
         where id=$1 and tenant_id=$2 and actor_principal_id=initiator_principal_id and parent_action_execution_id is null
           and component_binding_kind='APPLICATION' and component_binding_id=$3 and component_projection_generation=$4
@@ -199,6 +211,82 @@ pub(crate) async fn fresh_execution(g: &Governance, ae: &Execution) -> Result<Ev
     }
     tx.commit().await?;
     Ok(result)
+}
+
+// New admission resolves ACTIVE. A dispatched native writer instead consumes
+// its original immutable definition/runtime. Upgrade must not silently select
+// a different implementation, and revocation must not keep the old one alive.
+async fn execution_facts(conn: &mut PgConnection, ae: &Execution) -> Result<Facts, Refusal> {
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let row: Option<(Uuid, i32, i64, Uuid, Uuid, Value)> = sqlx::query_as(
+        "select b.id,e.component_binding_version,runtime.generation,r.id,d.id,d.implementation_declaration
+         from admission.action_execution a
+         join admission.external_execution e on e.action_execution_id=a.id and e.operation_id=a.operation_id
+           and e.tenant_id=a.tenant_id and e.component_binding_id=a.component_binding_id
+           and e.component_release_id=a.component_release_id and e.component_projection_generation=a.component_projection_generation
+           and e.workspace_id is not distinct from a.workspace_id
+         join catalog.application_binding b on b.id=a.component_binding_id and b.tenant_id=a.tenant_id and b.state='ACTIVE'
+         join projection.application_runtime runtime on runtime.binding_id=b.id
+           and runtime.generation=a.component_projection_generation and runtime.component_release_id=a.component_release_id
+           and runtime.state='ACTIVE' and runtime.observation->>'configDigest'=b.config_digest
+         join catalog.component_release r on r.id=a.component_release_id and r.status='APPROVED'
+           and r.approved_by_action_execution_id is not null and r.manifest_digest=runtime.normalized_manifest_digest
+         join catalog.action_definition d on d.id=a.action_definition_id and d.component_release_id=r.id
+         join identity.tenant t on t.id=a.tenant_id and t.state='ACTIVE'
+         where a.id=$1 and a.component_binding_kind='APPLICATION' and a.actor_principal_id=a.initiator_principal_id
+           and a.parent_action_execution_id is null and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
+           and e.protocol_operation='execute' and e.platform_status in ('UNKNOWN','RUNNING','SUCCEEDED','FAILED','CANCELLED')
+           and jsonb_typeof(e.usage_projection->'meters')='array'
+           and d.action_key=a.action_key and d.version=a.action_version
+           and (b.workspace_id is null or b.workspace_id=a.workspace_id)
+           and (a.workspace_id is null or exists(select 1 from identity.workspace w
+             where w.id=a.workspace_id and w.tenant_id=a.tenant_id and w.state='ACTIVE'))
+         for share of a,e,b,runtime,r,d,t")
+        .bind(ae.id).fetch_optional(&mut *conn).await?;
+    let (binding, binding_version, generation, release, definition_id, declaration) =
+        row.ok_or_else(denied)?;
+    let definition = sqlx::query_as(&format!(
+        "select {} from catalog.action_definition where id=$1",
+        crate::governance::DEFINITION_COLUMNS
+    ))
+    .bind(definition_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    let application = ApplicationDefinition {
+        definition,
+        definition_id,
+        component_release_id: release,
+        declaration,
+    };
+    if application.definition.execution_mode != "TEMPORAL"
+        || application.definition.workflow_kind.as_deref() != Some(KIND)
+        || application.definition.target_type != p["targetType"]
+        || p["bindingVersion"] != binding_version
+    {
+        return Err(denied());
+    }
+    let target_version = ae.frozen_target_version().ok_or_else(invalid)?;
+    let valid: bool = match p["targetType"].as_str() {
+        Some("RESOURCE") => sqlx::query_scalar("select exists(select 1 from catalog.resource where id=$1 and tenant_id=$2 and version=$3 and application_binding_id=$4 and state='ACTIVE' and projection_action_execution_id is null)")
+            .bind(ae.target_id).bind(ae.tenant_id).bind(target_version).bind(binding).fetch_one(&mut *conn).await?,
+        Some("ASSET") => sqlx::query_scalar("select exists(select 1 from catalog.asset asset join catalog.resource r on r.id=asset.resource_id and r.tenant_id=asset.tenant_id where asset.id=$1 and asset.tenant_id=$2 and asset.version=$3 and r.application_binding_id=$4 and asset.state='ACTIVE' and r.state='ACTIVE' and asset.projection_action_execution_id is null and r.projection_action_execution_id is null)")
+            .bind(ae.target_id).bind(ae.tenant_id).bind(target_version).bind(binding).fetch_one(&mut *conn).await?,
+        _ => false,
+    };
+    if !valid {
+        return Err(denied());
+    }
+    Ok(Facts {
+        binding,
+        binding_version,
+        generation,
+        application,
+        target: Target {
+            id: ae.target_id,
+            version: target_version,
+            workspace_id: ae.workspace_id,
+        },
+    })
 }
 
 async fn validate_reference_and_policy(

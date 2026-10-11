@@ -2,15 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "adapter/file_storage.v1/write_input.schema.json",
   "title": "FileStorageWriteInput",
-  "description": "Apply a write from the exact persisted native input revision in the admitted Resource. File bytes remain at the source; the native consumer must verify the input, current actor, scope and revision before execution.",
+  "description": "Apply an existing immutable native revision, or dispatch a native first-byte intent. An intent is not a ContentReference: its node/revision identifiers name reserved native locations only; bytes remain at the source and no result exists before the immutable native ACK.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"],
+  "required": ["resourceId"],
   "properties": {
     "resourceId": {"type": "string", "format": "uuid"},
     "nativeObjectRef": {"type": "string"},
     "nativeRevision": {"type": "string"},
     "displayName": {"type": "string"},
-    "mediaType": {"type": "string"}
-  }
+    "mediaType": {"type": "string"},
+    "nativeIntentId": {"type":"string","format":"uuid"},
+    "nativeNodeId": {"type":"string","format":"uuid"},
+    "nativeDeadline": {"type":"integer","minimum":1},
+    "contentLength": {"type":"integer","minimum":0},
+    "multipart": {"type":"boolean"}
+  },
+  "oneOf":[
+    {"required":["nativeObjectRef","nativeRevision","displayName","mediaType"],
+      "not":{"anyOf":[{"required":["nativeIntentId"]},{"required":["nativeNodeId"]},{"required":["nativeDeadline"]},{"required":["contentLength"]},{"required":["multipart"]}]}},
+    {"required":["nativeIntentId","nativeNodeId","nativeDeadline","contentLength","multipart"],
+      "not":{"anyOf":[{"required":["nativeObjectRef"]},{"required":["nativeRevision"]},{"required":["displayName"]},{"required":["mediaType"]}]}}
+  ]
 }

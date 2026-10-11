@@ -181,10 +181,31 @@ func (m *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 	} else if no != nil {
 		updateNode = no
 	}
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		// Do not substitute a path winner for the node frozen by the original
+		// upload AE. Recheck at this actual writer, not just at UI preparation.
+		if (updateNode != nil && updateNode.Uuid != upload.Input["nativeNodeId"]) ||
+			(node.Uuid != "" && node.Uuid != upload.Input["nativeNodeId"]) {
+			return models.ObjectInfo{}, errors.WithStack(errors.StatusConflict)
+		}
+		if err := upload.Fresh(ctx); err != nil {
+			return models.ObjectInfo{}, err
+		}
+	}
 
 	if updateNode == nil {
-		if e := m.createParentIfNotExist(ctx, node, ""); e != nil {
-			return models.ObjectInfo{}, e
+		if auth.NativeUploadFromContext(ctx) != nil {
+			parent, err := m.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path.Dir(node.Path)}})
+			if err != nil {
+				return models.ObjectInfo{}, err
+			}
+			if parent.GetNode().GetType() != tree.NodeType_COLLECTION {
+				return models.ObjectInfo{}, errors.WithStack(errors.StatusConflict)
+			}
+		} else {
+			if e := m.createParentIfNotExist(ctx, node, ""); e != nil {
+				return models.ObjectInfo{}, e
+			}
 		}
 	}
 
@@ -207,6 +228,9 @@ func (m *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 		log.Logger(ctx).Debug("PreLoad or PreCreate Node in tree", zap.String("path", node.Path), zap.Any("node", newNode), zap.Error(nodeErr))
 		if nodeErr != nil {
 			return models.ObjectInfo{}, nodeErr
+		}
+		if upload := auth.NativeUploadFromContext(ctx); upload != nil && newNode.GetUuid() != upload.Input["nativeNodeId"] {
+			return models.ObjectInfo{}, errors.WithStack(errors.StatusConflict)
 		}
 		if !newNode.IsLeaf() {
 			// This was a PydioSyncHiddenFile and the folder already exists, replace the content
@@ -246,10 +270,29 @@ func (m *Handler) MultipartCreate(ctx context.Context, node *tree.Node, requestD
 	} else if no != nil {
 		updateNode = no
 	}
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		if (updateNode != nil && updateNode.Uuid != upload.Input["nativeNodeId"]) ||
+			(node.Uuid != "" && node.Uuid != upload.Input["nativeNodeId"]) {
+			return "", errors.WithStack(errors.StatusConflict)
+		}
+		if err := upload.Fresh(ctx); err != nil {
+			return "", err
+		}
+	}
 
 	if updateNode == nil {
-		if e := m.createParentIfNotExist(ctx, node, ""); e != nil {
-			return "", e
+		if auth.NativeUploadFromContext(ctx) != nil {
+			parent, err := m.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: path.Dir(node.Path)}})
+			if err != nil {
+				return "", err
+			}
+			if parent.GetNode().GetType() != tree.NodeType_COLLECTION {
+				return "", errors.WithStack(errors.StatusConflict)
+			}
+		} else {
+			if e := m.createParentIfNotExist(ctx, node, ""); e != nil {
+				return "", e
+			}
 		}
 	}
 
@@ -268,9 +311,11 @@ func (m *Handler) MultipartCreate(ctx context.Context, node *tree.Node, requestD
 			if onErrorFunc != nil {
 				log.Logger(ctx).Debug("cannot get or create node ", zap.String("path", node.Path), zap.Error(nodeErr))
 				onErrorFunc()
-			} else {
-				return "", nodeErr
 			}
+			return "", nodeErr
+		}
+		if upload := auth.NativeUploadFromContext(ctx); upload != nil && newNode.GetUuid() != upload.Input["nativeNodeId"] {
+			return "", errors.WithStack(errors.StatusConflict)
 		}
 		createErrorFunc = onErrorFunc
 		node.Uuid = newNode.Uuid
@@ -301,6 +346,9 @@ func (m *Handler) MultipartPutObjectPart(ctx context.Context, target *tree.Node,
 	})
 	if err != nil {
 		return models.MultipartObjectPart{}, errors.New("cannot find initial multipart node, this is not normal")
+	}
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil && resp.GetNode().GetUuid() != upload.Input["nativeNodeId"] {
+		return models.MultipartObjectPart{}, errors.WithStack(errors.StatusConflict)
 	}
 
 	if partNumberMarker == 1 && requestData.ContentTypeUnknown() {
@@ -412,6 +460,12 @@ func (m *Handler) getOrCreatePutNode(ctx context.Context, nodePath string, reque
 		if err == nil && existingResp.Node != nil {
 			return existingResp.Node, nil, nil
 		}
+		if auth.NativeUploadFromContext(ctx) != nil && !errors.Is(err, errors.NodeNotFound) {
+			if err == nil {
+				err = errors.WithStack(errors.StatusConflict)
+			}
+			return nil, nil, err
+		}
 	}
 	// As we are not going through the real FS, make sure to normalize now the file path
 	tmpNode := &tree.Node{
@@ -434,6 +488,8 @@ func (m *Handler) getOrCreatePutNode(ctx context.Context, nodePath string, reque
 	if id := requestData.InputResourceUuid(); id != "" {
 		if _, er := treeReader.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: id}, StatFlags: []uint32{tree.StatFlagNone}}); er == nil {
 			return nil, nil, errors.WithStack(errors.NodeIndexConflict)
+		} else if auth.NativeUploadFromContext(ctx) != nil && !errors.Is(er, errors.NodeNotFound) {
+			return nil, nil, er
 		}
 		tmpNode.SetUuid(id)
 	}

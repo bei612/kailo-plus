@@ -107,6 +107,43 @@
       ],
       "type": "string"
     },
+    "NodeChangeEventEventType": {
+      "default": "CREATE",
+      "enum": [
+        "CREATE",
+        "READ",
+        "UPDATE_PATH",
+        "UPDATE_CONTENT",
+        "UPDATE_META",
+        "UPDATE_USER_META",
+        "DELETE"
+      ],
+      "type": "string"
+    },
+    "NodeServicePrepareUploadBody": {
+      "description": "Metadata preparation/observation of the original governed upload. The body\nnever carries file content, user identity, binding, or a client deadline.",
+      "properties": {
+        "Multipart": {
+          "type": "boolean"
+        },
+        "Path": {
+          "type": "string"
+        },
+        "Size": {
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ResourcePolicyPolicyEffect": {
+      "default": "deny",
+      "enum": [
+        "deny",
+        "allow"
+      ],
+      "type": "string"
+    },
     "StatusFilterDeletedStatus": {
       "default": "Not",
       "enum": [
@@ -1295,6 +1332,35 @@
       "title": "Response for Namespaces values",
       "type": "object"
     },
+    "restNativeUploadResponse": {
+      "properties": {
+        "ActionExecutionId": {
+          "type": "string"
+        },
+        "Completed": {
+          "type": "boolean"
+        },
+        "ExternalExecutionId": {
+          "type": "string"
+        },
+        "IdempotencyKey": {
+          "type": "string"
+        },
+        "NativeIntentId": {
+          "type": "string"
+        },
+        "NativeNodeId": {
+          "type": "string"
+        },
+        "Ready": {
+          "type": "boolean"
+        },
+        "VersionId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "restNode": {
       "description": "Representation of a file or folder",
       "properties": {
@@ -2141,7 +2207,7 @@
           "$ref": "#/definitions/serviceResourcePolicyAction"
         },
         "Effect": {
-          "$ref": "#/definitions/serviceResourcePolicyPolicyEffect"
+          "$ref": "#/definitions/ResourcePolicyPolicyEffect"
         },
         "JsonConditions": {
           "type": "string"
@@ -2167,14 +2233,6 @@
         "READ",
         "WRITE",
         "EDIT_RULES"
-      ],
-      "type": "string"
-    },
-    "serviceResourcePolicyPolicyEffect": {
-      "default": "deny",
-      "enum": [
-        "deny",
-        "allow"
       ],
       "type": "string"
     },
@@ -2357,23 +2415,10 @@
           "$ref": "#/definitions/treeNode"
         },
         "Type": {
-          "$ref": "#/definitions/treeNodeChangeEventEventType"
+          "$ref": "#/definitions/NodeChangeEventEventType"
         }
       },
       "type": "object"
-    },
-    "treeNodeChangeEventEventType": {
-      "default": "CREATE",
-      "enum": [
-        "CREATE",
-        "READ",
-        "UPDATE_PATH",
-        "UPDATE_CONTENT",
-        "UPDATE_META",
-        "UPDATE_USER_META",
-        "DELETE"
-      ],
-      "type": "string"
     },
     "treeNodeType": {
       "default": "UNKNOWN",
@@ -3886,6 +3931,63 @@
           }
         },
         "summary": "List available templates for hydrating empty files",
+        "tags": [
+          "NodeService"
+        ]
+      }
+    },
+    "/n/upload/{Uuid}": {
+      "post": {
+        "operationId": "PrepareUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "Uuid",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NodeServicePrepareUploadBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/restNativeUploadResponse"
+            }
+          },
+          "401": {
+            "description": "User is not authenticated",
+            "schema": {
+              "$ref": "#/definitions/restError"
+            }
+          },
+          "403": {
+            "description": "User has no permission to access this particular resource",
+            "schema": {
+              "$ref": "#/definitions/restError"
+            }
+          },
+          "404": {
+            "description": "Resource does not exist in the system",
+            "schema": {
+              "$ref": "#/definitions/restError"
+            }
+          },
+          "500": {
+            "description": "An internal error occurred in the backend",
+            "schema": {
+              "$ref": "#/definitions/restError"
+            }
+          }
+        },
+        "summary": "Uses the existing HUMAN Action producer, never an independent upload.",
         "tags": [
           "NodeService"
         ]

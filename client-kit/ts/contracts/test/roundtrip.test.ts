@@ -137,8 +137,22 @@ test("native human action preserves controlled trust and nonterminal references"
     scopeRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
     scopeResult: import("../src/generated/contracts.js").NativeHumanScopeResult;
     readReceiptRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
+    writerRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
+    writerResult: import("../src/generated/contracts.js").NativeHumanActionResult;
   } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
   const t=sample.trust, r=sample.request, o=sample.result;
+  const wq=sample.writerRequest, wr=sample.writerResult;
+  const writerRequest:typeof wq={bindingId:wq.bindingId,nativeExecutionAdmission:{
+    actionExecutionId:wq.nativeExecutionAdmission!.actionExecutionId,
+    externalExecutionId:wq.nativeExecutionAdmission!.externalExecutionId,
+    nativeIntentId:wq.nativeExecutionAdmission!.nativeIntentId}};
+  const writerResult:typeof wr={submission:wr.submission,
+    nativeExecution:{bindingGeneration:wr.nativeExecution!.bindingGeneration,externalExecutionId:wr.nativeExecution!.externalExecutionId,
+      nativeIntentId:wr.nativeExecution!.nativeIntentId,idempotencyKey:wr.nativeExecution!.idempotencyKey},
+    nativeExecutionAdmission:{actionToken:wr.nativeExecutionAdmission!.actionToken,
+      argumentsJson:wr.nativeExecutionAdmission!.argumentsJson,expiresAt:wr.nativeExecutionAdmission!.expiresAt}};
+  deepStrictEqual(JSON.parse(JSON.stringify(writerRequest)),wq);
+  deepStrictEqual(JSON.parse(JSON.stringify(writerResult)),wr);
   const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
     identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile};
   const request: typeof r = {bindingId:r.bindingId,idempotencyKey:r.idempotencyKey,command:r.command};
@@ -160,7 +174,7 @@ test("native human action preserves controlled trust and nonterminal references"
     readReceipt:{operationId:rr.operationId,idempotencyKey:rr.idempotencyKey,nativeObjectRef:rr.nativeObjectRef,nativeRevision:rr.nativeRevision,
       contentSha256:rr.contentSha256,contentBytes:rr.contentBytes,startedAt:rr.startedAt,completedAt:rr.completedAt,
       measurements:rr.measurements.map(m=>({meterKey:m.meterKey,quantity:m.quantity}))}};
-  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult,scopeRequest,scopeResult,readReceiptRequest})),sample);
+  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult,scopeRequest,scopeResult,readReceiptRequest,writerRequest,writerResult})),sample);
   const legacy={...result};
   delete legacy.readAdmission;
   deepStrictEqual(JSON.parse(JSON.stringify({...legacy,readAdmission:undefined})),JSON.parse(JSON.stringify(legacy)));

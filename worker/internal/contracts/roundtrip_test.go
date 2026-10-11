@@ -362,6 +362,8 @@ func TestNativeHumanActionRoundtrip(t *testing.T) {
 		ScopeRequest       generated.NativeHumanActionRequest       `json:"scopeRequest"`
 		ScopeResult        generated.NativeHumanScopeResult         `json:"scopeResult"`
 		ReadReceiptRequest generated.NativeHumanActionRequest       `json:"readReceiptRequest"`
+		WriterRequest      generated.NativeHumanActionRequest       `json:"writerRequest"`
+		WriterResult       generated.NativeHumanActionResult        `json:"writerResult"`
 	}
 	if err := json.Unmarshal(raw, &sample); err != nil {
 		t.Fatal(err)

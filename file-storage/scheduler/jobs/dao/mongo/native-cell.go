@@ -13,6 +13,13 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
+func nativeBindingJobsFilter() bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}},
+		bson.M{"job.metadata." + jobs.NativeUploadJobMarker: bson.M{"$exists": true}},
+	}}
+}
+
 func (m *mongoImpl) nativeCellTransaction(ctx context.Context, f func(mongo.SessionContext) (interface{}, error)) (interface{}, error) {
 	session, err := m.Client().StartSession()
 	if err != nil {
@@ -31,6 +38,7 @@ func (m *mongoImpl) nativeCellTransaction(ctx context.Context, f func(mongo.Sess
 func (m *mongoImpl) migrateNativeCellAnchors(ctx context.Context) error {
 	filter := bson.M{"$or": bson.A{
 		bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}},
+		bson.M{"job.metadata." + jobs.NativeUploadJobMarker: bson.M{"$exists": true}},
 		bson.M{"claim_binding": bson.M{"$exists": true}},
 	}}
 	count, err := m.Collection(collJobs).CountDocuments(ctx, filter, options.Count().SetLimit(1))
@@ -52,7 +60,7 @@ func (m *mongoImpl) migrateNativeCellAnchors(ctx context.Context) error {
 			if err := cursor.Decode(&stored); err != nil {
 				return nil, err
 			}
-			binding, generation, err := jobs.NativeCellJobOrigin(stored.Job)
+			binding, generation, err := jobs.NativeBindingJobOrigin(stored.Job)
 			if err != nil || stored.ID != stored.Job.GetID() {
 				return nil, errors.WithStack(errors.StatusConflict)
 			}
@@ -98,7 +106,7 @@ func (m *mongoImpl) touchNativeCellAnchor(ctx mongo.SessionContext, binding stri
 	if err != nil {
 		return false, err
 	}
-	owner, _, err := jobs.NativeCellJobOrigin(stored.Job)
+	owner, _, err := jobs.NativeBindingJobOrigin(stored.Job)
 	if err != nil || owner != binding || stored.ID != stored.Job.GetID() {
 		return false, errors.WithStack(errors.StatusConflict)
 	}
@@ -111,7 +119,7 @@ func (m *mongoImpl) claimNativeCellTask(task *proto.Task) error {
 		if err := m.Collection(collJobs).FindOne(ctx, bson.M{"id": task.JobID}).Decode(&parent); err != nil {
 			return nil, err
 		}
-		if _, _, err := jobs.NativeCellJobOrigin(parent.Job); err != nil {
+		if _, _, err := jobs.NativeBindingJobOrigin(parent.Job); err != nil {
 			return nil, err
 		}
 		if parent.Inactive {
@@ -135,8 +143,42 @@ func (m *mongoImpl) claimNativeCellTask(task *proto.Task) error {
 	return err
 }
 
+func (m *mongoImpl) claimLegacyNativeWriteTask(task *proto.Task) error {
+	intent, err := jobs.NativeWriteTaskIntent(task)
+	if err != nil || intent.BindingID == "" {
+		return errors.WithStack(errors.StatusConflict)
+	}
+	_, err = m.nativeCellTransaction(context.Background(), func(tx mongo.SessionContext) (interface{}, error) {
+		// Serialize with the snapshot's shared Job write, including when no
+		// generation Job existed at either transaction's initial snapshot.
+		changed, err := m.Collection(collJobs).UpdateOne(tx, bson.M{"id": task.JobID}, bson.M{"$inc": bson.M{"claim_revision": 1}})
+		if err != nil {
+			return nil, err
+		}
+		if changed.MatchedCount != 1 {
+			return nil, errors.WithStack(errors.JobNotFound)
+		}
+		filter := nativeBindingJobsFilter()
+		filter["job.metadata.bindingId"] = intent.BindingID
+		filter["job.inactive"] = true
+		count, err := m.Collection(collJobs).CountDocuments(tx, filter, options.Count().SetLimit(1))
+		if err != nil {
+			return nil, err
+		}
+		if count != 0 {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
+		_, err = m.Collection(collTasks).InsertOne(tx, &mongoTask{ID: task.ID, JobId: task.JobID, Status: int(task.Status), Stamp: int64(task.StartTime), Task: task})
+		return nil, err
+	})
+	if mongo.IsDuplicateKeyError(err) {
+		return errors.WithStack(errors.StatusConflict)
+	}
+	return err
+}
+
 func (m *mongoImpl) claimNativeCellJob(ctx context.Context, job *proto.Job) error {
-	binding, generation, err := jobs.NativeCellJobOrigin(job)
+	binding, generation, err := jobs.NativeBindingJobOrigin(job)
 	if err != nil {
 		return err
 	}
@@ -145,7 +187,7 @@ func (m *mongoImpl) claimNativeCellJob(ctx context.Context, job *proto.Job) erro
 		if err != nil {
 			return nil, err
 		}
-		cursor, err := m.Collection(collJobs).Find(tx, bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}})
+		cursor, err := m.Collection(collJobs).Find(tx, nativeBindingJobsFilter())
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +198,7 @@ func (m *mongoImpl) claimNativeCellJob(ctx context.Context, job *proto.Job) erro
 			if err := cursor.Decode(&prior); err != nil {
 				return nil, err
 			}
-			owner, gen, err := jobs.NativeCellJobOrigin(prior.Job)
+			owner, gen, err := jobs.NativeBindingJobOrigin(prior.Job)
 			if err != nil {
 				return nil, err
 			}
@@ -166,7 +208,7 @@ func (m *mongoImpl) claimNativeCellJob(ctx context.Context, job *proto.Job) erro
 			if !anchored {
 				return nil, errors.WithStack(errors.StatusConflict)
 			}
-			if gen >= generation {
+			if gen > generation || (gen == generation && (prior.Inactive || jobs.NativeBindingJobKind(prior.Job) == jobs.NativeBindingJobKind(job))) {
 				return nil, errors.WithStack(errors.StatusConflict)
 			}
 			priorIDs = append(priorIDs, prior.ID)
@@ -198,29 +240,74 @@ func (m *mongoImpl) claimNativeCellJob(ctx context.Context, job *proto.Job) erro
 	return err
 }
 
-func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64) ([]*proto.Job, error) {
+func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64, uploadBase ...string) ([]*proto.Job, error) {
 	if binding == "" || generation <= 0 || currentJob == "" || maxBytes <= 0 {
 		return nil, errors.WithStack(errors.InvalidParameters)
 	}
 	value, err := m.nativeCellTransaction(ctx, func(tx mongo.SessionContext) (interface{}, error) {
+		if len(uploadBase) > 1 {
+			return nil, errors.WithStack(errors.InvalidParameters)
+		}
+		if len(uploadBase) == 1 && uploadBase[0] != "" {
+			changed, err := m.Collection(collJobs).UpdateOne(tx, bson.M{"id": uploadBase[0]}, bson.M{"$inc": bson.M{"claim_revision": 1}})
+			if err != nil {
+				return nil, err
+			}
+			if changed.MatchedCount != 1 {
+				return nil, errors.WithStack(errors.JobNotFound)
+			}
+		}
 		anchored, err := m.touchNativeCellAnchor(tx, binding)
 		if err != nil {
 			return nil, err
 		}
-		cursor, err := m.Collection(collJobs).Find(tx, bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}})
+		cursor, err := m.Collection(collJobs).Find(tx, nativeBindingJobsFilter())
 		if err != nil {
 			return nil, err
 		}
 		defer cursor.Close(tx)
 		result := []*proto.Job{}
-		found := false
+		expected := map[string]*proto.Job{currentJob: jobs.NativeCellJob(currentJob, binding, generation)}
+		if len(uploadBase) > 1 {
+			return nil, errors.WithStack(errors.InvalidParameters)
+		}
+		if len(uploadBase) == 1 && uploadBase[0] != "" {
+			job := jobs.NativeUploadJob(uploadBase[0], binding, generation)
+			expected[job.ID] = job
+		}
+		if len(uploadBase) == 1 && uploadBase[0] != "" {
+			legacy, err := m.Collection(collTasks).Find(tx, bson.M{"job_id": uploadBase[0]})
+			if err != nil {
+				return nil, err
+			}
+			defer legacy.Close(tx)
+			var scanned int64
+			for legacy.Next(tx) {
+				var task mongoTask
+				if err := legacy.Decode(&task); err != nil {
+					return nil, err
+				}
+				scanned += int64(gproto.Size(task.Task))
+				if scanned > maxBytes {
+					return nil, errors.WithStack(errors.ServiceError)
+				}
+				intent, err := jobs.NativeWriteTaskIntent(task.Task)
+				if err != nil || intent.BindingID == "" || intent.BindingID == binding || task.ID != task.Task.GetID() || task.JobId != task.Task.GetJobID() {
+					return nil, errors.WithStack(errors.StatusConflict)
+				}
+			}
+			if err := legacy.Err(); err != nil {
+				return nil, err
+			}
+		}
+		found := map[string]bool{}
 		var size int64
 		for cursor.Next(tx) {
 			var stored mongoJob
 			if err := cursor.Decode(&stored); err != nil {
 				return nil, err
 			}
-			owner, gen, err := jobs.NativeCellJobOrigin(stored.Job)
+			owner, gen, err := jobs.NativeBindingJobOrigin(stored.Job)
 			if err != nil {
 				return nil, err
 			}
@@ -236,14 +323,14 @@ func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, gen
 			if stored.ID != stored.Job.ID {
 				return nil, errors.WithStack(errors.StatusConflict)
 			}
-			if gen == generation && stored.ID != currentJob {
+			if gen == generation && expected[stored.ID] == nil {
 				return nil, errors.WithStack(errors.StatusConflict)
 			}
-			if stored.ID == currentJob {
+			if expected[stored.ID] != nil {
 				if gen != generation {
 					return nil, errors.WithStack(errors.StatusConflict)
 				}
-				found = true
+				found[stored.ID] = true
 			}
 			if fence {
 				changed, err := m.Collection(collJobs).UpdateOne(tx, bson.M{"id": stored.ID}, bson.M{"$set": bson.M{"job.inactive": true}, "$inc": bson.M{"claim_revision": 1}})
@@ -294,37 +381,40 @@ func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, gen
 		if err = cursor.Err(); err != nil {
 			return nil, err
 		}
-		if !found {
-			if !fence {
-				return nil, errors.WithStack(errors.JobNotFound)
+		for currentJob, expectedJob := range expected {
+			if !found[currentJob] {
+				if !fence {
+					return nil, errors.WithStack(errors.JobNotFound)
+				}
+				// Persist the original Job identity before acknowledging an empty
+				// cancellation snapshot. The unique Job/generation indexes serialize
+				// a racing initial ClaimJob; no synthetic Task or terminal receipt is made.
+				if err := m.Collection(collJobs).FindOne(tx, bson.M{"id": currentJob}).Err(); err == nil {
+					return nil, errors.WithStack(errors.StatusConflict)
+				} else if err != mongo.ErrNoDocuments {
+					return nil, err
+				}
+				if err := m.Collection(collTasks).FindOne(tx, bson.M{"job_id": currentJob}).Err(); err == nil {
+					return nil, errors.WithStack(errors.StatusConflict)
+				} else if err != mongo.ErrNoDocuments {
+					return nil, err
+				}
+				job := expectedJob
+				job.Inactive = true
+				size += int64(gproto.Size(job))
+				if size > maxBytes {
+					return nil, errors.WithStack(errors.ServiceError)
+				}
+				stored := &mongoJob{ID: job.ID, Owner: job.Owner, Job: job}
+				if !anchored {
+					stored.ClaimBinding = binding
+				}
+				if _, err := m.Collection(collJobs).InsertOne(tx, stored); err != nil {
+					return nil, err
+				}
+				anchored = true
+				result = append(result, job)
 			}
-			// Persist the original Job identity before acknowledging an empty
-			// cancellation snapshot. The unique Job/generation indexes serialize
-			// a racing initial ClaimJob; no synthetic Task or terminal receipt is made.
-			if err := m.Collection(collJobs).FindOne(tx, bson.M{"id": currentJob}).Err(); err == nil {
-				return nil, errors.WithStack(errors.StatusConflict)
-			} else if err != mongo.ErrNoDocuments {
-				return nil, err
-			}
-			if err := m.Collection(collTasks).FindOne(tx, bson.M{"job_id": currentJob}).Err(); err == nil {
-				return nil, errors.WithStack(errors.StatusConflict)
-			} else if err != mongo.ErrNoDocuments {
-				return nil, err
-			}
-			job := jobs.NativeCellJob(currentJob, binding, generation)
-			job.Inactive = true
-			size += int64(gproto.Size(job))
-			if size > maxBytes {
-				return nil, errors.WithStack(errors.ServiceError)
-			}
-			stored := &mongoJob{ID: job.ID, Owner: job.Owner, Job: job}
-			if !anchored {
-				stored.ClaimBinding = binding
-			}
-			if _, err := m.Collection(collJobs).InsertOne(tx, stored); err != nil {
-				return nil, err
-			}
-			result = append(result, job)
 		}
 		return result, nil
 	})

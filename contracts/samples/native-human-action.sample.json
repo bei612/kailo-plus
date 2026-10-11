@@ -57,6 +57,34 @@
       "contentBytes":7,"startedAt":"2026-10-08T23:59:59Z","completedAt":"2026-10-09T00:00:00Z","measurements":[{"meterKey":"read_count","quantity":1}]
     }
   },
+  "writerRequest": {
+    "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+    "nativeExecutionAdmission": {
+      "actionExecutionId": "736d7562-5678-4d27-9c82-4e6ea165837f",
+      "externalExecutionId": "e75c0307-2614-4786-ac31-14e719f728a9",
+      "nativeIntentId": "49279014-2fbe-4893-b020-fa3b3920f1c9"
+    }
+  },
+  "writerResult": {
+    "submission": {
+      "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",
+      "actionExecutionId": "736d7562-5678-4d27-9c82-4e6ea165837f",
+      "actionKey": "file_storage.write@v1",
+      "gateState": "ALLOWED",
+      "dispatchState": "DISPATCHED"
+    },
+    "nativeExecution": {
+      "externalExecutionId": "e75c0307-2614-4786-ac31-14e719f728a9",
+      "nativeIntentId": "49279014-2fbe-4893-b020-fa3b3920f1c9",
+      "idempotencyKey": "49279014-2fbe-4893-b020-fa3b3920f1c9",
+      "bindingGeneration": 2
+    },
+    "nativeExecutionAdmission": {
+      "actionToken": "fixture-not-a-real-token",
+      "argumentsJson": "{}",
+      "expiresAt": "2026-10-11T00:00:00.000Z"
+    }
+  },
   "result": {
     "submission": {
       "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",

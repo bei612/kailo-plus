@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
@@ -173,6 +174,11 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 			request.TriggerEvent = ce
 		}
 	}
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		if err := upload.Fresh(ctx); err != nil {
+			return input.WithError(err), err
+		}
+	}
 	resp, err := versionClient.CreateVersion(ctx, request)
 	if err != nil {
 		return input.WithError(err), err
@@ -211,7 +217,30 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 		log.TasksLogger(ctx).Error("version.GetLocation is empty", zap.Any("version", resp.Version))
 		return input.WithError(er), er
 	}
+	// The original flat writer adds object statistics to its mutable index
+	// node. Do not alias that node to the pre-copy, durably frozen Location.
+	targetNode = targetNode.Clone()
 
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		jobID, hasJob := propagator.CanonicalMeta(ctx, common.CtxMetaJobUuid)
+		if !hasJob || jobID == "" {
+			err = errors.WithStack(errors.StatusForbidden)
+			return input.WithError(err), err
+		}
+		task, er := jobstore.ReadNativeWriteTask(ctx, jobID, upload.Key, upload.Delivery.MaxResponseBytes)
+		if er != nil {
+			return input.WithError(er), er
+		}
+		publication, er := jobstore.NativeUploadPublicationFromTask(task)
+		if er != nil || publication == nil || !proto.Equal(publication.Version, resp.Version) ||
+			publication.Node.GetUuid() != node.Uuid || publication.Node.GetPath() != node.Path {
+			er = errors.WithStack(errors.StatusConflict)
+			return input.WithError(er), er
+		}
+		if err := upload.Fresh(ctx); err != nil {
+			return input.WithError(err), err
+		}
+	}
 	objectInfo, err := handler.CopyObject(ctx, sourceNode, targetNode, &models.CopyRequestData{SrcVersionId: sourceRevision})
 	if err != nil {
 		err = errors.WithMessage(err, fmt.Sprintf("Copying %s -> %s", sourceNode.GetPath(), targetNode.GetUuid()))
@@ -225,12 +254,33 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 		err = errors.WithMessage(errors.StatusConflict, "native copied version has an unknown size")
 		return input.WithError(err), err
 	}
-	storedVersion := resp.Version
+	storedVersion := proto.Clone(resp.Version).(*tree.ContentRevision)
 	storedVersion.Size = objectInfo.Size
-	storedVersion.Location = targetNode.Clone()
-	if h := node.GetStringMeta(common.MetaNamespaceHash); h != "" {
-		storedVersion.ContentHash = h
-		storedVersion.Location.MustSetMeta(common.MetaNamespaceHash, h)
+	if auth.NativeUploadFromContext(ctx) == nil {
+		storedVersion.Location = targetNode.Clone()
+		if h := node.GetStringMeta(common.MetaNamespaceHash); h != "" {
+			storedVersion.ContentHash = h
+			storedVersion.Location.MustSetMeta(common.MetaNamespaceHash, h)
+		}
+	} else {
+		// Only the index's post-copy statistics may change. UUID, path and all
+		// routing metadata must still identify the exact pre-copy target; the
+		// immutable Version retains that frozen reference, not mutable stats.
+		identity := targetNode.Clone()
+		identity.Size = storedVersion.Location.Size
+		identity.MTime = storedVersion.Location.MTime
+		identity.Etag = storedVersion.Location.Etag
+		hash := node.GetStringMeta(common.MetaNamespaceHash)
+		if !proto.Equal(identity, storedVersion.Location) || storedVersion.ContentHash != hash ||
+			storedVersion.Location.GetStringMeta(common.MetaNamespaceHash) != hash {
+			err = errors.WithMessage(errors.StatusConflict, "native copy changed its frozen target location")
+			return input.WithError(err), err
+		}
+	}
+	if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+		if err := upload.Fresh(ctx); err != nil {
+			return input.WithError(err), err
+		}
 	}
 	response, err2 := versionClient.StoreVersion(ctx, &tree.StoreVersionRequest{
 		Node:    node,
@@ -246,6 +296,11 @@ func (c *VersionAction) run(ctx context.Context, input *jobs.ActionMessage, hand
 	log.TasksLogger(ctx).Info(T("Job.Version.StatusMeta", resp.Version))
 	ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
 	for _, version := range response.PruneVersions {
+		if upload := auth.NativeUploadFromContext(ctx); upload != nil {
+			if err := upload.Fresh(ctx); err != nil {
+				return input.WithError(err), err
+			}
+		}
 		deleted, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})
 		if errDel != nil {
 			return input.WithError(errDel), errDel

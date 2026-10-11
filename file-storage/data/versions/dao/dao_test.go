@@ -32,10 +32,12 @@ import (
 	"go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/runtime/manager"
 	"github.com/pydio/cells/v5/common/storage/test"
+	"github.com/pydio/cells/v5/common/utils/propagator"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 	"github.com/pydio/cells/v5/data/versions"
 	"github.com/pydio/cells/v5/data/versions/dao/bolt"
@@ -240,6 +242,84 @@ func TestDAO_CRUD(t *testing.T) {
 		})
 	})
 
+}
+
+func TestNativeDraftPublicationSharesCleanupFence(t *testing.T) {
+	test.RunStorageTests(testcases, t, func(ctx context.Context) {
+		dao, err := manager.Resolve[versions.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{common.CtxMetaJobUuid: "native-upload-job", common.CtxMetaTaskUuid: uuid.New()})
+		deadline := time.Now().Add(time.Hour)
+		for _, fenced := range []bool{false, true} {
+			node := uuid.New()
+			draft := &tree.ContentRevision{VersionId: uuid.New(), OwnerUuid: "native-owner", Draft: true,
+				Size: 0, Location: &tree.Node{Path: "versions/" + uuid.New()}}
+			if err := dao.ReserveDraftUpload(ctx, node, draft, deadline); err != nil {
+				t.Fatal(err)
+			}
+			draft.ETag = "empty-byte-ack"
+			if err := dao.CompleteDraftUpload(ctx, node, draft, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			published := proto.Clone(draft).(*tree.ContentRevision)
+			published.Draft, published.VersionId, published.Location = false, uuid.New(), &tree.Node{Path: "versions/" + uuid.New()}
+			if fenced {
+				if _, err := dao.FenceDraftUpload(ctx, node, draft.VersionId, deadline.Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if err := dao.PublishDraftUpload(ctx, node, draft, published, time.Now()); err == nil {
+					t.Fatal("late publication bypassed native cleanup fence")
+				}
+				if _, err := dao.GetVersion(ctx, node, published.VersionId); !errors.Is(err, errors.VersionNotFound) {
+					t.Fatal("late version was persisted", err)
+				}
+				continue
+			}
+			if err := dao.PublishDraftUpload(ctx, node, draft, published, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.PublishDraftUpload(ctx, node, draft, published, time.Now()); err == nil {
+				t.Fatal("uncertain publication was replayed")
+			}
+			stored, err := dao.GetVersion(ctx, node, published.VersionId)
+			if err != nil || !proto.Equal(stored, published) {
+				t.Fatal("published version differs", err)
+			}
+			rows, err := dao.DraftPublicationVersions(ctx, node, int64(proto.Size(published))*10)
+			if err != nil || len(rows) != 1 || rows[0].VersionId != published.VersionId {
+				t.Fatal("native snapshot lost immutable publication", err)
+			}
+			if _, err := dao.DraftPublicationVersions(ctx, node, 1); err == nil {
+				t.Fatal("partial oversized snapshot acknowledged")
+			}
+		}
+		// Model a caller whose captured time predates the native deadline while
+		// the DAO transaction itself starts only after that deadline. No sweep
+		// runs here: publication must check the real clock inside its transaction.
+		captured := time.Now()
+		expiry := captured.Add(2 * time.Second)
+		node := uuid.New()
+		draft := &tree.ContentRevision{VersionId: uuid.New(), OwnerUuid: "native-owner", Draft: true,
+			Location: &tree.Node{Path: "versions/" + uuid.New()}}
+		if err := dao.ReserveDraftUpload(ctx, node, draft, expiry); err != nil {
+			t.Fatal(err)
+		}
+		draft.ETag = "expired-empty-ack"
+		if err := dao.CompleteDraftUpload(ctx, node, draft, captured); err != nil {
+			t.Fatal(err)
+		}
+		published := proto.Clone(draft).(*tree.ContentRevision)
+		published.Draft, published.VersionId, published.Location = false, uuid.New(), &tree.Node{Path: "versions/" + uuid.New()}
+		time.Sleep(time.Until(expiry) + time.Millisecond)
+		if err := dao.PublishDraftUpload(ctx, node, draft, published, captured); err == nil {
+			t.Fatal("stale caller clock allowed expired native publication")
+		}
+		if _, err := dao.GetVersion(ctx, node, published.VersionId); !errors.Is(err, errors.VersionNotFound) {
+			t.Fatal("expired publication reached the original store", err)
+		}
+	})
 }
 
 func TestNativeDraftUploadReservation(t *testing.T) {

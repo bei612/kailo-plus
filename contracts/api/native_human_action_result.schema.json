@@ -12,6 +12,23 @@
     "terminalStatus":{"$ref":"../enums/task_status.schema.json"},
     "nativeType":{"type":"string"},
     "nativeId":{"type":"string"},
+    "nativeExecution":{
+      "description":"Original dispatched native-writer reference only. Neither existence nor RUNNING proves byte completion; no bearer is exposed by observation.",
+      "type":"object","additionalProperties":false,
+      "required":["externalExecutionId","idempotencyKey","nativeIntentId","bindingGeneration"],
+      "properties":{
+        "externalExecutionId":{"type":"string","format":"uuid"},
+        "idempotencyKey":{"type":"string","format":"uuid"},
+        "nativeIntentId":{"type":"string","format":"uuid"},
+        "bindingGeneration":{"type":"integer","minimum":1}
+      }
+    },
+    "nativeExecutionAdmission":{
+      "description":"Transient same-request writer bearer for the exact original AE/EE. The native task must atomically claim the byte step before using it; never persisted or exposed to the browser.",
+      "type":"object","additionalProperties":false,
+      "required":["actionToken","argumentsJson","expiresAt"],
+      "properties":{"actionToken":{"type":"string"},"argumentsJson":{"type":"string"},"expiresAt":{"type":"string","description":"RFC3339 admission expiry, preserved verbatim across language bindings and validated by the native writer before every byte step."}}
+    },
     "readAdmission":{
       "description":"First native same-request read only. Never returned by idempotency observation or retried admission; the bearer is not persisted.",
       "type":"object","additionalProperties":false,
