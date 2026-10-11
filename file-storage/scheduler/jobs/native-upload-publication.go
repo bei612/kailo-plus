@@ -140,7 +140,8 @@ func CompleteNativeUploadPublication(task *jobproto.Task, record *NativeUploadPu
 		_, _, err := NativeUploadRevision(task)
 		return err
 	}
-	if task.Status != jobproto.TaskStatus_Running || task.EndTime != 0 {
+	if task.Status != jobproto.TaskStatus_Running || task.EndTime != 0 || task.StartTime <= 0 ||
+		now.Unix() < int64(task.StartTime) || now.After(time.Now()) || int64(int32(now.Unix())) != now.Unix() {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	intent, _ := NativeUploadTaskIntent(task)

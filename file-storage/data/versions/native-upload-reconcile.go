@@ -150,7 +150,9 @@ func reconcileNativeUpload(ctx context.Context, dao DAO, router nodes.Client, up
 	if !jobstore.NativeUploadPublishedVersionMatches(published, record.Version) {
 		return uncertain(errors.WithStack(errors.StatusConflict))
 	}
-	if err := jobstore.CompleteNativeUploadPublication(task, record, now); err != nil {
+	// The sweep cutoff selects expired rows; it is not the time at which the
+	// final publication and cleanup acknowledgements were actually observed.
+	if err := jobstore.CompleteNativeUploadPublication(task, record, time.Now()); err != nil {
 		return uncertain(err)
 	}
 	ack, err := client.PutTask(ctx, &jobs.PutTaskRequest{Task: task})

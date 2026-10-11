@@ -149,7 +149,7 @@ func (s *nativeUploadReconcileStream) RecvMsg(value interface{}) error {
 func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T) {
 	previousRouter := router
 	defer func() { router = previousRouter }()
-	for _, scenario := range []string{"published", "plan-without-publication", "no-plan", "prune-ACK-lost", "terminal-ACK-lost", "finished-later-pruned"} {
+	for _, scenario := range []string{"published", "plan-without-publication", "no-plan", "prune-ACK-lost", "terminal-ACK-lost", "finished-later-pruned", "finished-without-dispatch", "finished-reversed-time", "finished-in-future"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := config.WithStubStore(context.Background())
 			if err := config.Set(ctx, map[string]interface{}{"maxResponseBytes": 65536}, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
@@ -186,9 +186,18 @@ func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T)
 					t.Fatal(err)
 				}
 			}
-			if scenario == "finished-later-pruned" {
+			invalidTerminal := scenario == "finished-without-dispatch" || scenario == "finished-reversed-time" || scenario == "finished-in-future"
+			if scenario == "finished-later-pruned" || invalidTerminal {
 				if err := jobstore.CompleteNativeUploadPublication(task, record, time.Now()); err != nil {
 					t.Fatal(err)
+				}
+				switch scenario {
+				case "finished-without-dispatch":
+					task.StartTime = 0
+				case "finished-reversed-time":
+					task.EndTime = task.StartTime - 1
+				case "finished-in-future":
+					task.EndTime = int32(deadline.Unix())
 				}
 			}
 			tasks := &nativeUploadReconcileTasks{job: job, task: task, loseTerminal: scenario == "terminal-ACK-lost"}
@@ -214,6 +223,12 @@ func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T)
 			if (err == nil) != wantSuccess {
 				t.Fatal("native reconciliation outcome differs", scenario, err)
 			}
+			if invalidTerminal {
+				if len(deleted) != 0 || dao.reads != 0 {
+					t.Fatal("invalid historical terminal authorized cleanup", deleted, dao.reads)
+				}
+				return
+			}
 			if deleted[draft.Location.Path] != 1 {
 				t.Fatal("expired draft bytes retained", scenario, deleted)
 			}
@@ -223,6 +238,9 @@ func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T)
 			if wantSuccess || scenario == "terminal-ACK-lost" {
 				if _, _, err := jobstore.NativeUploadRevision(tasks.task); err != nil {
 					t.Fatal("missing original terminal receipt", err)
+				}
+				if time.Unix(int64(tasks.task.EndTime), 0).After(time.Now()) {
+					t.Fatal("sweep cutoff substituted for actual completion time")
 				}
 			} else if tasks.task.Status == jobs.TaskStatus_Finished || tasks.task.StatusMessage == "" {
 				t.Fatal("partial result lost original owner reconciliation")

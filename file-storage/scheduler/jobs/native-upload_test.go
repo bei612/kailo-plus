@@ -147,6 +147,31 @@ func TestNativeUploadDurablePublicationPrecedesTerminal(t *testing.T) {
 		if err != nil || stored.PruneVersions[0].VersionId != "old-version" {
 			t.Fatal("lost pre-deletion cleanup evidence", err)
 		}
+		for _, scenario := range []string{"missing-dispatch", "negative-dispatch", "before-dispatch", "future-completion", "overflow-completion"} {
+			t.Run(scenario, func(t *testing.T) {
+				candidate := proto.Clone(task).(*jobproto.Task)
+				completedAt := time.Now()
+				switch scenario {
+				case "missing-dispatch":
+					candidate.StartTime = 0
+				case "negative-dispatch":
+					candidate.StartTime = -1
+				case "before-dispatch":
+					completedAt = time.Unix(int64(candidate.StartTime)-1, 0)
+				case "future-completion":
+					completedAt = completedAt.Add(time.Hour)
+				case "overflow-completion":
+					completedAt = time.Unix(1<<32+int64(candidate.StartTime), 0)
+				}
+				before := proto.Clone(candidate)
+				if err := CompleteNativeUploadPublication(candidate, stored, completedAt); err == nil {
+					t.Fatal("invalid dispatch/completion time became terminal")
+				}
+				if !proto.Equal(before, candidate) {
+					t.Fatal("rejected completion mutated original task evidence")
+				}
+			})
+		}
 		if err := CompleteNativeUploadPublication(task, stored, time.Now()); err != nil {
 			t.Fatal(err)
 		}
@@ -155,6 +180,27 @@ func TestNativeUploadDurablePublicationPrecedesTerminal(t *testing.T) {
 		}
 		if err := CompleteNativeUploadPublication(task, stored, time.Now()); err != nil {
 			t.Fatal("same native terminal is not stable", err)
+		}
+		for _, scenario := range []string{"missing-dispatch", "negative-dispatch", "reversed-time", "future-terminal"} {
+			t.Run("read-"+scenario, func(t *testing.T) {
+				candidate := proto.Clone(task).(*jobproto.Task)
+				switch scenario {
+				case "missing-dispatch":
+					candidate.StartTime = 0
+				case "negative-dispatch":
+					candidate.StartTime = -1
+				case "reversed-time":
+					candidate.EndTime = candidate.StartTime - 1
+				case "future-terminal":
+					candidate.EndTime = int32(time.Now().Add(time.Hour).Unix())
+				}
+				if _, _, err := NativeUploadRevision(candidate); err == nil {
+					t.Fatal("invalid original task time accepted as terminal evidence")
+				}
+				if err := CompleteNativeUploadPublication(candidate, stored, time.Now()); err == nil {
+					t.Fatal("invalid terminal accepted on recovery")
+				}
+			})
 		}
 		changed := proto.Clone(version).(*tree.ContentRevision)
 		changed.IsHead = true

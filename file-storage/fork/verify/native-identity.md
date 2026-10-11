@@ -3196,3 +3196,76 @@ UID 1000、无网络、apps／.design 只读和 Data 临时目录／npm 缓存�
 日志中原 virtual node／docstore 探查的 gRPC PrintStack 亦保留，不能据此
 宣称完整原生后端、浏览器上传、部署、Mongo 或有效 binding 上架已验收。
 本批未运行 `tools/check.sh --full`，不覆盖此前全量失败与产物来源缺口。
+
+## 2026-10-11 上传恢复使用真实完成时刻并拒绝无派发终态
+
+基于 main `32271da386d97092b9581437abe3af15ca0c2833`，仅原上传三份生产
+源码、两份既有事后检查和本回执。没有新合同、权限、状态、默认阈值或迁移。
+
+四步影响结论：
+
+1. 权威是 `.design/07` §5.2 的不可变 revision ACK、原生任务对账与 UNKNOWN
+   语义。固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `scheduler/tasks/task.go::Task.CleanUp/SetStartTime/SetEndTime` 使用原执行时间
+   写入 Task；当前 `NativeShareTerminal` 同样要求首次派发、结束不早于开始且
+   不在未来。本批为已授权治理接入，不改原页面或独立上传。
+2. `PruneDraftUploads` 的时间参数只用于选择过期行，不能代替收齐版本与清理
+   ACK 后的实际完成时刻。`reconcileNativeUpload` 现在以当时 `time.Now()`
+   调原 `CompleteNativeUploadPublication`；该函数在修改 Task 前检查派发时间、
+   时序、未来时间及原 int32 时间字段可表示性。`NativeUploadRevision` 在原
+   终态解析处统一拒绝缺派发、倒序或未来时间；没有另包一层外部成功判断。
+3. 原 `PrepareUpload`、任务 observe、binding reconcile、过期恢复均消费同一
+   validator；原 publication、AE/EE、binding/generation、内容与版本引用校验
+   保持。无效证据不能披露 Completed，也不能驱动 Finished 快路径清理；不
+   回填历史时间、不重传或重派发，不把不明写成 FAILED。现有历史合法终态仍
+   稳定，后来正常 prune 不使其回退。恢复拒绝保留原 Task/清理栅栏和原错误，
+   继续沿现有有界 sweep/readiness 与 owner 对账，不造第二账本。
+4. 合法空文件、非空文件及同一终态重读维持既有行为；无发布计划、部分清理或
+   ACK 不明保持 UNKNOWN，缺首次派发、负数、倒序、未来及整数溢出的时间证据
+   拒绝。不引入时钟容差。
+   Web/Desktop 原页面回读合同不变，Mobile 无新增组件入口。受管延迟 delete
+   仍拒绝；现有同请求 HUMAN writer 准入不是后台 SERVICE 通用续签。
+
+验证复用原 `kailo-cells-native-check-lftow7`，4 CPU / 8 GiB、等额 swap、
+UID 1000，独立 Data `native-go-cache` / `native-mod-cache`。启动前该 SDK
+只有 sleep，宿主 available 32 GiB，另有 Reminder Cargo 与 Knowledge Go；
+未使用共享 Rust target、安装依赖、启动新容器或加载镜像。
+私有输入及日志目录为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-upload-terminal.KIrSKd`。
+五文件与正式源 cmp 0；只替换私有硬链接副本中的这些文件，不改旧留证输入。
+
+原 SDK 执行 gofmt，环境 `GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off`
+`GOCACHE=/cache/build GOMODCACHE=/cache/mod`，TMPDIR 和 CELLS 工作/数据目录
+均在该 Data 快照。实际命令为：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run 'TestNativeUpload(DurablePublicationPrecedesTerminal|FirstByteClaimIsNotTerminal|ConcurrentPartsMergeAndCompletion|JobFrozenIdentity|PublicationRecoveryUsesOriginalTaskAndCleanup)$' \
+  ./scheduler/jobs ./data/versions
+```
+
+- `94596` 正向 exit 0：jobs 四顶层及 18 个子项、versions 原恢复一顶层及
+  九个场景全部通过，原 `terminal-positive.log` 保留；未把前一个包的成功
+  提前当作整个命令通过。versions 链接阶段发生磁盘写回等待，未重启。
+- `23900` 私有反证 exit 1：仅移除三处生产修正，jobs 的 18 个子项及恢复的
+  五个子项失败；其中实际恢复报 `sweep cutoff substituted for actual completion
+  time`，并捕获非法 Finished 被当作可清理终态。日志 `terminal-mutation.log`。
+- apply_patch 还原原字节、五文件 cmp 0；`77725` 同两包恢复 exit 0，四加一
+  顶层及 18 加九子项全部通过，日志 `terminal-restored.log`。没有新检查框架。
+
+上述为原 Task/恢复消费者的隔离检查，Job RPC、Version DAO 与对象删除为夹具，
+不是完整原生后端或浏览器验收。未跑 full、Mongo、部署、绑定激活或三端验收。
+
+同期只读部署事实：Cells 运行镜像仍为
+`sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4`，
+OCI revision `afc462d836c770b6f402372b53cd05b3c203786a`，未含已提交上传链；
+只有原 data/install/oauth/OIDC 挂载，没有 native-actions 投递。Core 只读事务
+查询 component_definition/release/application_binding 均零条，能力合同只有
+knowledge@1 ACTIVE，新增 file_storage seed 尚未部署。这些是当次事实，不是
+永久配置或成功状态。原 `deploy/start.sh --platform-adapter ENV` 与
+`compose.native-actions.yaml`、entrypoint `config-set --value-file` 是既有
+投递链；不能在缺真实 binding/service/Resource/actor 映射及完整 conformance
+时填造配置。旧 identity-source 只有 subject/username，不能冒充当前可信
+principal→native User/scope 映射。必须先部署种子与当前源码、走原注册/验证/
+绑定生命周期，才可由既有 owner-only 目录交付真实配置；这次时序修正不解除
+七项能力门禁，也不掩盖完整受管删除与分享的剩余缺项。

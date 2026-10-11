@@ -203,7 +203,8 @@ func NativeUploadWaiting(task *jobproto.Task) bool {
 func NativeUploadRevision(task *jobproto.Task) (*tree.ContentRevision, map[string]interface{}, error) {
 	refused := errors.WithStack(errors.StatusConflict)
 	intent, err := NativeUploadTaskIntent(task)
-	if err != nil || task.Status != jobproto.TaskStatus_Finished || task.EndTime <= 0 {
+	if err != nil || task.Status != jobproto.TaskStatus_Finished || task.StartTime <= 0 ||
+		task.EndTime < task.StartTime || time.Unix(int64(task.EndTime), 0).After(time.Now()) {
 		return nil, nil, refused
 	}
 	publication, err := NativeUploadPublicationFromTask(task)
