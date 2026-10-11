@@ -8,10 +8,11 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { MessageAuthorText, UserAvatar } from "@client-kit/platform/react/messages";
 import { MoreUnreadButton, type UnreadDmPreview } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
-import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { canonicalNpub, truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
 import { ForumAuthorButton } from "@client-kit/platform/react/forum/ForumView";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { KIND_STREAM_MESSAGE, KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
+import { toast } from "sonner";
 
 const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn()}));
 vi.mock("../bff-client",()=>({bff:api}));
@@ -308,6 +309,44 @@ it("uses the same original public sections in Chinese without offering unsupport
   expect(host.querySelector('[data-testid="user-profile-huddle"]')).toBeNull();
   expect(host.querySelector('[data-testid="user-profile-wave"]')).toBeNull();
   expect(host.querySelector('[data-testid="user-profile-agent-primary-action"]')).toBeNull();
+});
+
+it("copies the admitted author's original public-key field on HTTP and reports refused writes",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  const originalExec=Object.getOwnPropertyDescriptor(document,"execCommand");
+  const success=vi.spyOn(toast,"success").mockImplementation(()=>0);
+  const error=vi.spyOn(toast,"error").mockImplementation(()=>0);
+  vi.stubGlobal("navigator",{clipboard:undefined});
+  let copied="";
+  const execute=vi.fn(()=>{copied=(document.activeElement as HTMLTextAreaElement).value;return true;});
+  Object.defineProperty(document,"execCommand",{configurable:true,value:execute});
+  try {
+    await render(<MessageAuthorProfile target={target} onClose={()=>{}}/>);
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-public-key"]')).not.toBeNull());
+    const button=host.querySelector<HTMLButtonElement>('[data-testid="user-profile-public-key"]')!;
+    await act(async()=>button.click());
+    expect(copied).toBe(canonicalNpub(author));
+    expect(execute).toHaveBeenCalledExactlyOnceWith("copy");
+    expect(success).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+    expect(document.querySelector("textarea")).toBeNull();
+    execute.mockReturnValue(false);success.mockClear();
+    await act(async()=>button.click());
+    expect(error).toHaveBeenLastCalledWith("Could not copy to clipboard");
+    expect(success).not.toHaveBeenCalled();
+    const writes=execute.mock.calls.length;
+    const modern=vi.fn().mockRejectedValue(new Error("Permission denied"));
+    vi.stubGlobal("navigator",{clipboard:{writeText:modern}});
+    await act(async()=>button.click());
+    expect(modern).toHaveBeenCalledExactlyOnceWith(canonicalNpub(author));
+    expect(execute).toHaveBeenCalledTimes(writes);
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(success).not.toHaveBeenCalled();
+  } finally {
+    if(originalExec)Object.defineProperty(document,"execCommand",originalExec);
+    else Reflect.deleteProperty(document,"execCommand");
+    success.mockRestore();error.mockRestore();
+  }
 });
 
 it("does not expose another author's profile when a response mismatches the signed message",async()=>{

@@ -12,6 +12,7 @@ import { normalizePubkey } from "@client-kit/platform/react/conversations/pubkey
 import { KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
 import { bff } from "../bff-client";
 import { Button } from "@/shared/ui/button";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 export type MessageAuthor = {
   principalId: string;
@@ -41,8 +42,6 @@ function messageAuthorQuery(target: MessageAuthor) {
 function useMessageAuthor(target: MessageAuthor) {
   return useQuery(messageAuthorQuery(target));
 }
-
-const copy = (value: string) => navigator.clipboard.writeText(value);
 
 // Resolve before constructing TimelineMessage, as in Buzz formatMessageAuthor:
 // rows, reply targets, accessibility and video comments share the same author.
@@ -140,7 +139,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
     </AuxiliaryPanelHeader>}>
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
-        profile={data} pubkey={data.pubkey} copy={copy} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
+        profile={data} pubkey={data.pubkey} copy={writeTextToClipboard} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
         messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
         :query.isError?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
         :<p role="status">{t("platform.loading")}</p>}
