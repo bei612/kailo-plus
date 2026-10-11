@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next'
@@ -26,6 +26,10 @@ const { formatRole, roleIcon } = useRoleLabel()
 const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+// A parent's mounted hook runs after its children. Keep the original page and
+// global resource hosts unmounted until the callback has established the native
+// session and selected scope; their requests must not capture an anonymous owner.
+const sessionInitialized = ref(false)
 
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
@@ -117,12 +121,12 @@ const persistOIDCLoginResponse = async (response: any) => {
     if (result.ok) MessagePlugin.success(t('inviteRegister.joined'))
     else MessagePlugin.warning(t('inviteRegister.invalidBody'))
     // 会话已有效，无论 token 是否兑换成功都进入应用。
-    router.replace('/platform/knowledge-bases')
+    await router.replace('/platform/knowledge-bases')
     return
   }
 
   await nextTick()
-  router.replace(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
+  await router.replace(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
 }
 
 const handleGlobalOIDCCallback = async () => {
@@ -202,7 +206,7 @@ const stopInvitationPolling = () => {
 // here (rather than only on first mount) handles the OIDC callback
 // flow where the user logs in well after App.vue has already mounted.
 watch(
-  () => authStore.isLoggedIn,
+  () => sessionInitialized.value && authStore.isLoggedIn,
   (logged) => {
     if (logged) startInvitationPolling()
     else stopInvitationPolling()
@@ -238,8 +242,9 @@ const showPendingTenantSwitchToast = () => {
   })
 }
 
-onMounted(() => {
-  handleGlobalOIDCCallback()
+onMounted(async () => {
+  await handleGlobalOIDCCallback()
+  sessionInitialized.value = true
   showPendingTenantSwitchToast()
 
   // Auto check for updates on startup
@@ -276,10 +281,12 @@ onUnmounted(() => {
 <template>
   <t-config-provider :globalConfig="tdGlobalConfig">
     <div id="app">
-      <RouterView />
-      <ManualKnowledgeEditor />
-      <ProtectedResourcePreview />
-      <UploadConfirmHost />
+      <template v-if="sessionInitialized">
+        <RouterView />
+        <ManualKnowledgeEditor />
+        <ProtectedResourcePreview />
+        <UploadConfirmHost />
+      </template>
     </div>
   </t-config-provider>
 </template>
