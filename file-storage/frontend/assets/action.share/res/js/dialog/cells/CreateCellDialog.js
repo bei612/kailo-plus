@@ -74,7 +74,7 @@ class CreateCellDialog extends React.Component {
             this.props.onDismiss();
             this.setState({saving: false});
         }).catch(reason => {
-            pydio.UI.displayMessage('ERROR', reason.message);
+            if(!reason.nativeCellPending){ pydio.UI.displayMessage('ERROR', reason.message); }
             this.setState({saving: false});
         });
     };

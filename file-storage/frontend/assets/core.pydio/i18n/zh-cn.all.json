@@ -2497,6 +2497,8 @@
   },
   "action.delete.awaiting-admission": {"other": "删除正在等待准入或审批。再次操作此选择将查询同一请求。"},
   "action.delete.unknown": {"other": "删除结果尚未确认。再次操作此选择将查询同一请求，不会重新发起删除。"},
+  "action.share.unknown": {"other": "成员变更结果尚未确认。再次保存此选择将查询同一请求，不会重放结果不明的原生写入。"},
+  "action.share.awaiting-admission": {"other": "成员变更正在等待准入或审批，当前编辑已保留。"},
   "action.delete.permanently.warning": {
     "other": "警告！你不能撤消此操作。"
   },

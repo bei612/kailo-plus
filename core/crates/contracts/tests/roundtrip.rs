@@ -587,6 +587,24 @@ fn application_binding_observation_roundtrip_preserves_mapping_and_optional_scop
 }
 
 #[test]
+fn binding_reconcile_roundtrip_preserves_frozen_reference_and_unknown_absence() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("adapter-binding-reconcile-request.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::AdapterBindingReconcileRequest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("adapter-binding-reconcile-responses.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AdapterBindingReconcileResponse> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn execution_reference_roundtrip_does_not_invent_unknown_native_id() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("adapter-execution-references.sample.json"),

@@ -403,11 +403,39 @@ pub struct AdapterSecretRead {
     pub version: i64,
 }
 
+/// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterBindingReconcileRequest {
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub generation: i64,
+
+    pub idempotency_key: String,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+}
+
+/// 完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
+/// 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdapterBindingReconcileResponse {
+    pub complete: bool,
+
+    pub observations: Vec<ExecutionElement>,
+
+    pub reference: ReferenceClass,
+}
+
 /// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 /// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterExecutionObservation {
+pub struct ExecutionElement {
     pub cancel_capability: NativeCancelCapability,
 
     pub idempotency_key: String,
@@ -447,6 +475,49 @@ pub enum ExternalExecutionStatus {
     Unknown,
 }
 
+/// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceClass {
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub generation: i64,
+
+    pub idempotency_key: String,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+}
+
+/// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+/// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterExecutionObservation {
+    pub cancel_capability: NativeCancelCapability,
+
+    pub idempotency_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_observed_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_status: Option<String>,
+
+    pub native_type: String,
+
+    pub platform_status: ExternalExecutionStatus,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_at: Option<String>,
+}
+
 /// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
 /// 未取得时只用冻结幂等键查证。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -474,39 +545,13 @@ pub struct AdapterExecutionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_references: Option<Vec<ReferenceElement>>,
 
-    pub execution: ExecutionClass,
+    pub execution: ExecutionElement,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_json: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_resources: Option<Vec<SourceResourceElement>>,
-}
-
-/// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
-/// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecutionClass {
-    pub cancel_capability: NativeCancelCapability,
-
-    pub idempotency_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_observed_at: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_status: Option<String>,
-
-    pub native_type: String,
-
-    pub platform_status: ExternalExecutionStatus,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminal_at: Option<String>,
 }
 
 /// Actual native planner source within the existing execution binding. Metadata only:
@@ -1285,7 +1330,7 @@ pub struct ActionCommand {
     pub receiver_resource: Option<ActionCommandReceiverResource>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ReferenceClass>,
+    pub resource_create: Option<ResourceCreateClass>,
 
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2022,7 +2067,7 @@ pub struct ActionCommandReceiverResource {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferenceClass {
+pub struct ResourceCreateClass {
     pub evidence_digest: String,
 
     pub evidence_ref: String,
@@ -5270,7 +5315,7 @@ pub struct CommandClass {
     pub receiver_resource: Option<CommandReceiverResource>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ReferenceClass>,
+    pub resource_create: Option<ResourceCreateClass>,
 
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5363,8 +5408,11 @@ pub struct NativeHumanResourceQuery {
     pub workspace_id: Option<String>,
 }
 
-/// Reference-only observation of the original HUMAN AE. Terminal status comes from original
-/// component-action audit after native/usage reconciliation, never from HTTP acceptance.
+/// Reference-only observation of the original HUMAN AE. Component terminal status comes from
+/// original component-action audit after native/usage reconciliation. Native-origin platform
+/// resource permission actions use their exact permission-outcome audit; that outcome does
+/// not assert completion of a component's native sharing RPCs. Never infer a terminal result
+/// from HTTP acceptance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHumanActionResult {
@@ -8490,7 +8538,7 @@ pub struct ObservationElement {
     pub mcp_result_kind: Option<McpResultKind>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_observation: Option<ExecutionClass>,
+    pub native_observation: Option<ExecutionElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,
@@ -8626,7 +8674,7 @@ pub struct ComponentConformanceStepObservation {
     pub mcp_result_kind: Option<McpResultKind>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_observation: Option<ExecutionClass>,
+    pub native_observation: Option<ExecutionElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,
@@ -8839,7 +8887,7 @@ pub struct ResourceProvisionAdvanceRequestTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ResourceCreateClass,
 
     pub resource_id: String,
 
@@ -8875,7 +8923,7 @@ pub struct ResourceProvisionTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ResourceCreateClass,
 
     pub resource_id: String,
 

@@ -57,7 +57,7 @@ func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments stri
 // execute token. Core deliberately omits a resource body for an old observation.
 func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, error) {
 	refused := errors.New("native action authority refused or unavailable")
-	if err := d.validate(); err != nil || int64(len(token)+len(arguments)) > d.MaxResponseBytes || (operation != "execute" && operation != "observe" && operation != "extract_usage") {
+	if err := d.validate(); err != nil || int64(len(token)+len(arguments)) > d.MaxResponseBytes || (operation != "execute" && operation != "observe" && operation != "extract_usage" && operation != "reconcile") {
 		return nil, nil, refused
 	}
 	parts := strings.Split(token, ".")

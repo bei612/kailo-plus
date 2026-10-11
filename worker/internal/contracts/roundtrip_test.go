@@ -858,6 +858,8 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"application-model-delivery.sample.json", new(generated.ApplicationAdapterDirectory)},
 		{"application-native-resources.sample.json", new(generated.ApplicationAdapterDirectory)},
 		{"application-binding-observations.sample.json", new([]generated.AdapterBindingObservation)},
+		{"adapter-binding-reconcile-request.sample.json", new(generated.AdapterBindingReconcileRequest)},
+		{"adapter-binding-reconcile-responses.sample.json", new([]generated.AdapterBindingReconcileResponse)},
 		{"adapter-execution-references.sample.json", new([]generated.AdapterExecutionReference)},
 		{"resource-create.sample.json", new(generated.ActionCommand)},
 		{"resource-provision.sample.json", new(generated.ResourceProvisionAdvanceRequest)},

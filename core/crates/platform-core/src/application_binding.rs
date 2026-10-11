@@ -692,7 +692,7 @@ pub(crate) async fn advance(
             projection::metering(&state,&ae).await?;
             gateway::publish(&state,&ae).await?;
             crate::model_route::application::provision(&state,&ae).await?;
-            finish_generation(&state,&ae,true).await?;
+            finish_generation(&state,&ae,true,None).await?;
             return Ok(json!({"bindingId":id,"status":"COMPLETED","waitingReason":"NONE"}));
         }
         if status=="DISABLING" || (input["cancelRequested"]==true && ae.action_key==CREATE) {
@@ -700,6 +700,9 @@ pub(crate) async fn advance(
             gateway::revoke(&state,&ae).await?;
             crate::model_route::application::revoke(&state,&ae).await?;
             if !crate::application_action::native_read::drained(&state.pool,id).await? {
+                return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
+            }
+            if crate::application_action::native_human::permission_binding_pending(&mut *state.pool.acquire().await?,id).await? {
                 return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
             }
             if !crate::protocol_session::maintenance::drain_binding(&state,id).await? {
@@ -713,7 +716,13 @@ pub(crate) async fn advance(
                     return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
                 }
             }
-            finish_generation(&state,&ae,false).await?;
+            let native = native::reconcile_binding(&state,&ae).await?;
+            if let Some(ref observation) = native {
+                if !native::reconcile_complete(&observation["reference"],observation)? {
+                    return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
+                }
+            }
+            finish_generation(&state,&ae,false,native.as_ref()).await?;
             let status=if ae.action_key==CREATE {"CANCELED"} else {"COMPLETED"};
             return Ok(json!({"bindingId":id,"status":status,"waitingReason":"NONE"}));
         }
@@ -794,6 +803,7 @@ async fn finish_generation(
     state: &crate::service_api::ServiceState,
     ae: &Execution,
     activate: bool,
+    native_observation: Option<&Value>,
 ) -> Result<(), Refusal> {
     let mut tx = state.pool.begin().await?;
     let current = crate::governance::lock_execution(&mut tx, ae.id).await?;
@@ -936,6 +946,22 @@ async fn finish_generation(
             .bind(ae.target_id).bind(ae.id).bind(scope).bind(generation).bind(version).bind(release)
             .execute(&mut *tx).await?;
     } else {
+        // Recheck the frozen reference under the same binding lock that
+        // commits DISABLED. No observation of another generation/config may
+        // retire credentials. Native new execution is denied since DISABLING.
+        let (reference,manifest):(Value,Value)=sqlx::query_as("select jsonb_build_object(
+            'bindingId',b.id,'generation',p.generation,'configDigest',b.config_digest,
+            'nativeInstanceRef',b.native_instance_ref,'nativeScopeRef',b.native_scope_ref,'idempotencyKey',$2::uuid),r.manifest
+            from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id
+            join projection.application_runtime p on p.binding_id=b.id and p.component_release_id=b.component_release_id
+            where b.id=$1 and ((b.active_projection_generation is not null and p.generation=b.active_projection_generation)
+              or (b.active_projection_generation is null and p.action_execution_id=b.created_by_action_execution_id))")
+            .bind(ae.target_id).bind(ae.id).fetch_one(&mut *tx).await?;
+        if native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter
+            && !native::reconcile_complete(&reference, native_observation.ok_or_else(blocked)?)?
+        {
+            return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+        }
         let pending:bool=sqlx::query_scalar("select exists(select 1 from projection.application_runtime
             where binding_id=$1 and native_gateway_route_id is not null and gateway_state is distinct from 'REVOKED')
             or exists(select 1 from projection.application_category where binding_id=$1)
@@ -953,6 +979,11 @@ async fn finish_generation(
                       and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')))")
             .bind(ae.target_id).fetch_one(&mut *tx).await?;
         if pending
+            || crate::application_action::native_human::permission_binding_pending(
+                &mut tx,
+                ae.target_id,
+            )
+            .await?
             || crate::protocol_session::maintenance::binding_pending(&mut tx, ae.target_id).await?
         {
             return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));

@@ -16,6 +16,8 @@
 //     final fileStorageWriteOutput = fileStorageWriteOutputFromJson(jsonString);
 //     final knowledgeSyncInput = knowledgeSyncInputFromJson(jsonString);
 //     final adapterBindingObservation = adapterBindingObservationFromJson(jsonString);
+//     final adapterBindingReconcileRequest = adapterBindingReconcileRequestFromJson(jsonString);
+//     final adapterBindingReconcileResponse = adapterBindingReconcileResponseFromJson(jsonString);
 //     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
 //     final adapterExecutionReference = adapterExecutionReferenceFromJson(jsonString);
 //     final adapterExecutionResponse = adapterExecutionResponseFromJson(jsonString);
@@ -321,6 +323,22 @@ AdapterBindingObservation adapterBindingObservationFromJson(String str) =>
 
 String adapterBindingObservationToJson(AdapterBindingObservation data) =>
     json.encode(data.toJson());
+
+AdapterBindingReconcileRequest adapterBindingReconcileRequestFromJson(
+  String str,
+) => AdapterBindingReconcileRequest.fromJson(json.decode(str));
+
+String adapterBindingReconcileRequestToJson(
+  AdapterBindingReconcileRequest data,
+) => json.encode(data.toJson());
+
+AdapterBindingReconcileResponse adapterBindingReconcileResponseFromJson(
+  String str,
+) => AdapterBindingReconcileResponse.fromJson(json.decode(str));
+
+String adapterBindingReconcileResponseToJson(
+  AdapterBindingReconcileResponse data,
+) => json.encode(data.toJson());
 
 AdapterExecutionObservation adapterExecutionObservationFromJson(String str) =>
     AdapterExecutionObservation.fromJson(json.decode(str));
@@ -2331,6 +2349,178 @@ class AdapterSecretRead {
   });
 }
 
+///07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+class AdapterBindingReconcileRequest {
+  final String bindingId;
+  final String configDigest;
+  final int generation;
+  final String idempotencyKey;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+
+  AdapterBindingReconcileRequest({
+    required this.bindingId,
+    required this.configDigest,
+    required this.generation,
+    required this.idempotencyKey,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+  });
+
+  factory AdapterBindingReconcileRequest.fromJson(Map<String, dynamic> json) =>
+      AdapterBindingReconcileRequest(
+        bindingId: json["bindingId"],
+        configDigest: json["configDigest"],
+        generation: json["generation"],
+        idempotencyKey: json["idempotencyKey"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        nativeScopeRef: json["nativeScopeRef"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "generation": generation,
+    "idempotencyKey": idempotencyKey,
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+  });
+}
+
+///完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
+///保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
+class AdapterBindingReconcileResponse {
+  final bool complete;
+  final List<ExecutionElement> observations;
+  final ReferenceClass reference;
+
+  AdapterBindingReconcileResponse({
+    required this.complete,
+    required this.observations,
+    required this.reference,
+  });
+
+  factory AdapterBindingReconcileResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterBindingReconcileResponse(
+        complete: json["complete"],
+        observations: List<ExecutionElement>.from(
+          json["observations"].map((x) => ExecutionElement.fromJson(x)),
+        ),
+        reference: ReferenceClass.fromJson(json["reference"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "complete": complete,
+    "observations": List<dynamic>.from(observations.map((x) => x.toJson())),
+    "reference": reference.toJson(),
+  });
+}
+
+///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+class ExecutionElement {
+  final NativeCancelCapability cancelCapability;
+  final String idempotencyKey;
+  final String? lastObservedAt;
+  final String? nativeId;
+  final String? nativeStatus;
+  final String nativeType;
+  final ExternalExecutionStatus platformStatus;
+  final String? terminalAt;
+
+  ExecutionElement({
+    required this.cancelCapability,
+    required this.idempotencyKey,
+    this.lastObservedAt,
+    this.nativeId,
+    this.nativeStatus,
+    required this.nativeType,
+    required this.platformStatus,
+    this.terminalAt,
+  });
+
+  factory ExecutionElement.fromJson(Map<String, dynamic> json) =>
+      ExecutionElement(
+        cancelCapability:
+            nativeCancelCapabilityValues.map[json["cancelCapability"]]!,
+        idempotencyKey: json["idempotencyKey"],
+        lastObservedAt: json["lastObservedAt"],
+        nativeId: json["nativeId"],
+        nativeStatus: json["nativeStatus"],
+        nativeType: json["nativeType"],
+        platformStatus:
+            externalExecutionStatusValues.map[json["platformStatus"]]!,
+        terminalAt: json["terminalAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelCapability": nativeCancelCapabilityValues.reverse[cancelCapability],
+    "idempotencyKey": idempotencyKey,
+    "lastObservedAt": lastObservedAt,
+    "nativeId": nativeId,
+    "nativeStatus": nativeStatus,
+    "nativeType": nativeType,
+    "platformStatus": externalExecutionStatusValues.reverse[platformStatus],
+    "terminalAt": terminalAt,
+  });
+}
+
+///design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
+enum ExternalExecutionStatus {
+  CANCELLED,
+  FAILED,
+  PENDING_DISPATCH,
+  RUNNING,
+  SUCCEEDED,
+  UNKNOWN,
+}
+
+final externalExecutionStatusValues = EnumValues({
+  "CANCELLED": ExternalExecutionStatus.CANCELLED,
+  "FAILED": ExternalExecutionStatus.FAILED,
+  "PENDING_DISPATCH": ExternalExecutionStatus.PENDING_DISPATCH,
+  "RUNNING": ExternalExecutionStatus.RUNNING,
+  "SUCCEEDED": ExternalExecutionStatus.SUCCEEDED,
+  "UNKNOWN": ExternalExecutionStatus.UNKNOWN,
+});
+
+///07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+class ReferenceClass {
+  final String bindingId;
+  final String configDigest;
+  final int generation;
+  final String idempotencyKey;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+
+  ReferenceClass({
+    required this.bindingId,
+    required this.configDigest,
+    required this.generation,
+    required this.idempotencyKey,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+  });
+
+  factory ReferenceClass.fromJson(Map<String, dynamic> json) => ReferenceClass(
+    bindingId: json["bindingId"],
+    configDigest: json["configDigest"],
+    generation: json["generation"],
+    idempotencyKey: json["idempotencyKey"],
+    nativeInstanceRef: json["nativeInstanceRef"],
+    nativeScopeRef: json["nativeScopeRef"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "generation": generation,
+    "idempotencyKey": idempotencyKey,
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+  });
+}
+
 ///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 ///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 class AdapterExecutionObservation {
@@ -2380,25 +2570,6 @@ class AdapterExecutionObservation {
   });
 }
 
-///design03§6 ExternalExecution 的既定平台状态；HTTP成功和cancel accepted均不构成终态。
-enum ExternalExecutionStatus {
-  CANCELLED,
-  FAILED,
-  PENDING_DISPATCH,
-  RUNNING,
-  SUCCEEDED,
-  UNKNOWN,
-}
-
-final externalExecutionStatusValues = EnumValues({
-  "CANCELLED": ExternalExecutionStatus.CANCELLED,
-  "FAILED": ExternalExecutionStatus.FAILED,
-  "PENDING_DISPATCH": ExternalExecutionStatus.PENDING_DISPATCH,
-  "RUNNING": ExternalExecutionStatus.RUNNING,
-  "SUCCEEDED": ExternalExecutionStatus.SUCCEEDED,
-  "UNKNOWN": ExternalExecutionStatus.UNKNOWN,
-});
-
 ///原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
 ///未取得时只用冻结幂等键查证。
 class AdapterExecutionReference {
@@ -2437,7 +2608,7 @@ class AdapterExecutionResponse {
 
   ///来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
   final List<ReferenceElement>? contentReferences;
-  final ExecutionClass execution;
+  final ExecutionElement execution;
   final String? resultJson;
   final List<SourceResourceElement>? sourceResources;
 
@@ -2461,7 +2632,7 @@ class AdapterExecutionResponse {
                   (x) => ReferenceElement.fromJson(x),
                 ),
               ),
-        execution: ExecutionClass.fromJson(json["execution"]),
+        execution: ExecutionElement.fromJson(json["execution"]),
         resultJson: json["resultJson"],
         sourceResources: json["sourceResources"] == null
             ? null
@@ -2482,53 +2653,6 @@ class AdapterExecutionResponse {
     "sourceResources": sourceResources == null
         ? null
         : List<dynamic>.from(sourceResources!.map((x) => x.toJson())),
-  });
-}
-
-///ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
-///允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
-class ExecutionClass {
-  final NativeCancelCapability cancelCapability;
-  final String idempotencyKey;
-  final String? lastObservedAt;
-  final String? nativeId;
-  final String? nativeStatus;
-  final String nativeType;
-  final ExternalExecutionStatus platformStatus;
-  final String? terminalAt;
-
-  ExecutionClass({
-    required this.cancelCapability,
-    required this.idempotencyKey,
-    this.lastObservedAt,
-    this.nativeId,
-    this.nativeStatus,
-    required this.nativeType,
-    required this.platformStatus,
-    this.terminalAt,
-  });
-
-  factory ExecutionClass.fromJson(Map<String, dynamic> json) => ExecutionClass(
-    cancelCapability:
-        nativeCancelCapabilityValues.map[json["cancelCapability"]]!,
-    idempotencyKey: json["idempotencyKey"],
-    lastObservedAt: json["lastObservedAt"],
-    nativeId: json["nativeId"],
-    nativeStatus: json["nativeStatus"],
-    nativeType: json["nativeType"],
-    platformStatus: externalExecutionStatusValues.map[json["platformStatus"]]!,
-    terminalAt: json["terminalAt"],
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "cancelCapability": nativeCancelCapabilityValues.reverse[cancelCapability],
-    "idempotencyKey": idempotencyKey,
-    "lastObservedAt": lastObservedAt,
-    "nativeId": nativeId,
-    "nativeStatus": nativeStatus,
-    "nativeType": nativeType,
-    "platformStatus": externalExecutionStatusValues.reverse[platformStatus],
-    "terminalAt": terminalAt,
   });
 }
 
@@ -3781,7 +3905,7 @@ class ActionCommand {
   ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
   ///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
   final ActionCommandReceiverResource? receiverResource;
-  final ReferenceClass? resourceCreate;
+  final ResourceCreateClass? resourceCreate;
 
   ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
   final String? resourceId;
@@ -3911,7 +4035,7 @@ class ActionCommand {
         : ActionCommandReceiverResource.fromJson(json["receiverResource"]),
     resourceCreate: json["resourceCreate"] == null
         ? null
-        : ReferenceClass.fromJson(json["resourceCreate"]),
+        : ResourceCreateClass.fromJson(json["resourceCreate"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     slug: json["slug"],
@@ -5211,14 +5335,14 @@ class ActionCommandReceiverResource {
   Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
-class ReferenceClass {
+class ResourceCreateClass {
   final String evidenceDigest;
   final String evidenceRef;
   final String nativeRef;
   final String nativeType;
   final String typeKey;
 
-  ReferenceClass({
+  ResourceCreateClass({
     required this.evidenceDigest,
     required this.evidenceRef,
     required this.nativeRef,
@@ -5226,13 +5350,14 @@ class ReferenceClass {
     required this.typeKey,
   });
 
-  factory ReferenceClass.fromJson(Map<String, dynamic> json) => ReferenceClass(
-    evidenceDigest: json["evidenceDigest"],
-    evidenceRef: json["evidenceRef"],
-    nativeRef: json["nativeRef"],
-    nativeType: json["nativeType"],
-    typeKey: json["typeKey"],
-  );
+  factory ResourceCreateClass.fromJson(Map<String, dynamic> json) =>
+      ResourceCreateClass(
+        evidenceDigest: json["evidenceDigest"],
+        evidenceRef: json["evidenceRef"],
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+        typeKey: json["typeKey"],
+      );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "evidenceDigest": evidenceDigest,
@@ -10644,7 +10769,7 @@ class CommandClass {
   ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
   ///Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
   final CommandReceiverResource? receiverResource;
-  final ReferenceClass? resourceCreate;
+  final ResourceCreateClass? resourceCreate;
 
   ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
   final String? resourceId;
@@ -10774,7 +10899,7 @@ class CommandClass {
         : CommandReceiverResource.fromJson(json["receiverResource"]),
     resourceCreate: json["resourceCreate"] == null
         ? null
-        : ReferenceClass.fromJson(json["resourceCreate"]),
+        : ResourceCreateClass.fromJson(json["resourceCreate"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     slug: json["slug"],
@@ -10950,8 +11075,11 @@ class NativeHumanResourceQuery {
   });
 }
 
-///Reference-only observation of the original HUMAN AE. Terminal status comes from original
-///component-action audit after native/usage reconciliation, never from HTTP acceptance.
+///Reference-only observation of the original HUMAN AE. Component terminal status comes from
+///original component-action audit after native/usage reconciliation. Native-origin platform
+///resource permission actions use their exact permission-outcome audit; that outcome does
+///not assert completion of a component's native sharing RPCs. Never infer a terminal result
+///from HTTP acceptance.
 class NativeHumanActionResult {
   ///Original admitted canonical capability metadata input; exactly one input form, never a
   ///result body or a new execution authority.
@@ -17279,7 +17407,7 @@ class ObservationElement {
   final ErrorClass? errorClass;
   final int httpStatus;
   final McpResultKind? mcpResultKind;
-  final ExecutionClass? nativeObservation;
+  final ExecutionElement? nativeObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
   final ComponentConformanceOperation operation;
   final String requestDigest;
@@ -17319,7 +17447,7 @@ class ObservationElement {
             : mcpResultKindValues.map[json["mcpResultKind"]]!,
         nativeObservation: json["nativeObservation"] == null
             ? null
-            : ExecutionClass.fromJson(json["nativeObservation"]),
+            : ExecutionElement.fromJson(json["nativeObservation"]),
         nativeScopeObservation: json["nativeScopeObservation"] == null
             ? null
             : NativeScopeObservationClass.fromJson(
@@ -17560,7 +17688,7 @@ class ComponentConformanceStepObservation {
   final ErrorClass? errorClass;
   final int httpStatus;
   final McpResultKind? mcpResultKind;
-  final ExecutionClass? nativeObservation;
+  final ExecutionElement? nativeObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
   final ComponentConformanceOperation operation;
   final String requestDigest;
@@ -17601,7 +17729,7 @@ class ComponentConformanceStepObservation {
         : mcpResultKindValues.map[json["mcpResultKind"]]!,
     nativeObservation: json["nativeObservation"] == null
         ? null
-        : ExecutionClass.fromJson(json["nativeObservation"]),
+        : ExecutionElement.fromJson(json["nativeObservation"]),
     nativeScopeObservation: json["nativeScopeObservation"] == null
         ? null
         : NativeScopeObservationClass.fromJson(json["nativeScopeObservation"]),
@@ -18047,7 +18175,7 @@ class ResourceProvisionAdvanceRequestTarget {
   final String nativeInstanceRef;
   final String nativeScopeRef;
   final int projectionGeneration;
-  final ReferenceClass reference;
+  final ResourceCreateClass reference;
   final String resourceId;
   final int resourceVersion;
   final String workflowId;
@@ -18076,7 +18204,7 @@ class ResourceProvisionAdvanceRequestTarget {
     nativeInstanceRef: json["nativeInstanceRef"],
     nativeScopeRef: json["nativeScopeRef"],
     projectionGeneration: json["projectionGeneration"],
-    reference: ReferenceClass.fromJson(json["reference"]),
+    reference: ResourceCreateClass.fromJson(json["reference"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     workflowId: json["workflowId"],
@@ -18130,7 +18258,7 @@ class ResourceProvisionTarget {
   final String nativeInstanceRef;
   final String nativeScopeRef;
   final int projectionGeneration;
-  final ReferenceClass reference;
+  final ResourceCreateClass reference;
   final String resourceId;
   final int resourceVersion;
   final String workflowId;
@@ -18158,7 +18286,7 @@ class ResourceProvisionTarget {
         nativeInstanceRef: json["nativeInstanceRef"],
         nativeScopeRef: json["nativeScopeRef"],
         projectionGeneration: json["projectionGeneration"],
-        reference: ReferenceClass.fromJson(json["reference"]),
+        reference: ResourceCreateClass.fromJson(json["reference"]),
         resourceId: json["resourceId"],
         resourceVersion: json["resourceVersion"],
         workflowId: json["workflowId"],

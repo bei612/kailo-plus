@@ -26,12 +26,14 @@ package rest
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	restful "github.com/emicklei/go-restful/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
@@ -99,9 +101,17 @@ func (h *SharesHandler) PutCell(req *restful.Request, rsp *restful.Response) err
 	if er != nil {
 		return er
 	}
-
 	if err := h.docStoreStatus(ctx); err != nil {
 		return err
+	}
+	if handled, output, pending, err := h.sc.NativeCellPut(req.Request, shareRequest.Room, shareRequest.CreateEmptyRoot, ownerUser); handled {
+		if err != nil {
+			return err
+		}
+		if pending != nil {
+			return rsp.WriteHeaderAndEntity(http.StatusAccepted, pending)
+		}
+		return rsp.WriteEntity(output)
 	}
 
 	// Init Root Nodes and check permissions
@@ -152,6 +162,10 @@ func (h *SharesHandler) GetCell(req *restful.Request, rsp *restful.Response) err
 	if output, err := h.sc.WorkspaceToCellObject(ctx, workspace, acl); err != nil {
 		return err
 	} else {
+		domain, err := share.CellShareDomain(ctx)
+		if err == nil && domain != "" {
+			rsp.AddHeader("X-Kailo-Native-Cell-Binding", domain)
+		}
 		return rsp.WriteEntity(output)
 	}
 
@@ -159,6 +173,9 @@ func (h *SharesHandler) GetCell(req *restful.Request, rsp *restful.Response) err
 
 // DeleteCell loads the workspace and its root nodes and eventually removes room root totally.
 func (h *SharesHandler) DeleteCell(req *restful.Request, rsp *restful.Response) error {
+	if err := auth.AuthorizeNativeDataMutation(req.Request); err != nil {
+		return err
+	}
 
 	ctx := req.Request.Context()
 	id := req.PathParameter("Uuid")

@@ -66,10 +66,12 @@ var (
 )
 
 type mongoJob struct {
-	ID          string `bson:"id"`
-	Owner       string `bson:"owner"`
-	HasEvents   bool   `bson:"has_events"`
-	HasSchedule bool   `bson:"has_schedule"`
+	ID            string `bson:"id"`
+	Owner         string `bson:"owner"`
+	HasEvents     bool   `bson:"has_events"`
+	HasSchedule   bool   `bson:"has_schedule"`
+	ClaimRevision int64  `bson:"claim_revision,omitempty"`
+	ClaimBinding  string `bson:"claim_binding,omitempty"`
 	*proto.Job
 }
 
@@ -103,6 +105,14 @@ func (m *mongoImpl) Init(ctx context.Context, values kv.Values) error {
 // Duplicated historical references stop startup rather than select or overwrite
 // a task. The unique native key is also the concurrent first-dispatch fence.
 func (m *mongoImpl) Migrate(ctx context.Context) error {
+	if _, err := m.Collection(collJobs).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "job.metadata.bindingId", Value: 1}, {Key: "job.metadata.generation", Value: 1}},
+		Options: options.Index().SetName("native_cell_binding_generation").SetUnique(true).SetPartialFilterExpression(bson.M{
+			"job.metadata." + jobs.NativeCellShareJob: "true", "job.metadata.bindingId": bson.M{"$type": "string"}, "job.metadata.generation": bson.M{"$type": "string"},
+		}),
+	}); err != nil {
+		return err
+	}
 	if _, err := m.Collection(collTasks).Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "id", Value: 1}},
 		Options: options.Index().SetName("native_task_reference").SetUnique(true),
@@ -113,12 +123,31 @@ func (m *mongoImpl) Migrate(ctx context.Context) error {
 		Keys:    bson.D{{Key: "id", Value: 1}},
 		Options: options.Index().SetName("native_job_reference").SetUnique(true),
 	})
+	if err != nil {
+		return err
+	}
+	// Backfill original Job rows before enabling the binding-wide first-claim
+	// index. No new execution or synthetic terminal record is introduced.
+	if err = m.migrateNativeCellAnchors(ctx); err != nil {
+		return err
+	}
+	_, err = m.Collection(collJobs).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "claim_binding", Value: 1}},
+		Options: options.Index().SetName("native_cell_binding_claim").SetUnique(true).
+			SetPartialFilterExpression(bson.M{"claim_binding": bson.M{"$type": "string"}}),
+	})
 	return err
 }
 
 func (m *mongoImpl) ClaimJob(ctx context.Context, job *proto.Job) error {
 	if job == nil || job.ID == "" || len(job.Tasks) != 0 {
 		return errors.WithStack(errors.InvalidParameters)
+	}
+	if _, cell := job.Metadata[jobs.NativeCellShareJob]; cell {
+		if _, _, err := jobs.NativeCellJobOrigin(job); err != nil {
+			return err
+		}
+		return m.claimNativeCellJob(ctx, job)
 	}
 	_, err := m.Collection(collJobs).InsertOne(ctx, &mongoJob{ID: job.ID, Owner: job.Owner,
 		HasEvents: len(job.EventNames) > 0, HasSchedule: job.Schedule != nil, Job: job})
@@ -129,7 +158,7 @@ func (m *mongoImpl) ClaimJob(ctx context.Context, job *proto.Job) error {
 }
 
 func (m *mongoImpl) PutJob(job *proto.Job) error {
-	if jobs.IsNativeDeleteJob(job) {
+	if jobs.IsFrozenNativeJob(job) {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	c := context.Background()
@@ -146,6 +175,7 @@ func (m *mongoImpl) PutJob(job *proto.Job) error {
 	// The unique original Job ID plus this atomic predicate prevents a
 	// metadata-removing update from downgrading a claimed native execution.
 	_, e := m.Collection(collJobs).ReplaceOne(c, bson.D{{"id", job.ID},
+		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}}, mj, &options.ReplaceOptions{Upsert: &upsert})
 	if mongo.IsDuplicateKeyError(e) {
@@ -183,7 +213,7 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 	if readErr != nil && !errors.Is(readErr, errors.JobNotFound) {
 		return readErr
 	}
-	if jobs.IsNativeDeleteJob(prior) {
+	if jobs.IsFrozenNativeJob(prior) {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	protected, err := m.Collection(collTasks).CountDocuments(c, bson.D{{Key: "job_id", Value: jobId}, {Key: claimMarkerPath, Value: "true"}})
@@ -203,6 +233,7 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 
 	// Now delete job
 	deleted, e := m.Collection(collJobs).DeleteOne(c, bson.D{{"id", jobId},
+		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}})
 	if e != nil {
@@ -213,7 +244,7 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 		if err != nil && !errors.Is(err, errors.JobNotFound) {
 			return err
 		}
-		if jobs.IsNativeDeleteJob(current) {
+		if jobs.IsFrozenNativeJob(current) {
 			return errors.WithStack(errors.StatusConflict)
 		}
 	}
@@ -278,6 +309,13 @@ func (m *mongoImpl) ClaimTask(task *proto.Task) error {
 		return errors.WithMessage(errors.InvalidParameters, "task and job references are required")
 	}
 	jobs.StripTaskData(task)
+	parent, readErr := m.GetJob(task.JobID, proto.TaskStatus_Unknown)
+	if readErr != nil {
+		return readErr
+	}
+	if _, cell := parent.Metadata[jobs.NativeCellShareJob]; cell {
+		return m.claimNativeCellTask(task)
+	}
 	_, err := m.Collection(collTasks).InsertOne(context.Background(), &mongoTask{
 		ID: task.ID, JobId: task.JobID, Status: int(task.Status), Stamp: int64(task.StartTime), Task: task,
 	})

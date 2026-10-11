@@ -73,7 +73,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 		}
 		for _, priorLog := range stored.ActionsLogs {
 			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
-				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" {
+				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" && prior.GetVars()[NativeCellShareResult] != "true" {
 					continue
 				}
 				found := false
@@ -100,6 +100,9 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 type DAO interface {
 	PutJob(job *jobs.Job) error
 	ClaimJob(ctx context.Context, job *jobs.Job) error
+	// SnapshotNativeCells serializes the original Inactive fence with Task
+	// claims and returns a complete bounded snapshot, never a filtered user list.
+	SnapshotNativeCells(ctx context.Context, binding string, generation int64, currentJob string, fence bool, maxBytes int64) ([]*jobs.Job, error)
 	GetJob(jobId string, withTasks jobs.TaskStatus) (*jobs.Job, error)
 	DeleteJob(jobId string) error
 	ListJobs(owner string, eventsOnly bool, timersOnly bool, withTasks jobs.TaskStatus, jobIDs []string, taskCursor ...int32) (chan *jobs.Job, error)
@@ -168,7 +171,7 @@ func Migrate(ctx, fromCtx, toCtx context.Context, dryRun bool, status chan servi
 			break
 		}
 		var writeErr error
-		if IsNativeDeleteJob(j) {
+		if IsFrozenNativeJob(j) {
 			j.Tasks = nil
 			writeErr = to.ClaimJob(ctx, j)
 		} else {

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
@@ -394,6 +395,16 @@ func (sc *Client) CellsForNode(ctx context.Context, node *tree.Node, owner *idm.
 
 // UpsertCell creates or update an existing cell with specific ACLs
 func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *idm.User, hasReadonly bool, parentPolicy string) (*rest.Cell, error) {
+	managed, err := nativeCellWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if managed != nil {
+		selection, err := cellSelection(cell)
+		if err != nil || parentPolicy != "" || cell.AccessEnd != 0 || !sameCellValue(selection, managed.intent.Selection) {
+			return nil, nativeCellRefused()
+		}
+	}
 
 	workspace, wsCreated, err := sc.GetOrCreateWorkspace(ctx, ownerUser, cell.Uuid, idm.WorkspaceScope_ROOM, cell.Label, "", cell.Description, false)
 	if err != nil {
@@ -447,6 +458,9 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 	}
 	log.Logger(ctx).Debug("Share ACLS", log.DangerouslyZapSmallSlice("current", currentAcls), log.DangerouslyZapSmallSlice("target", targetAcls))
 	add, remove := sc.DiffAcls(ctx, currentAcls, targetAcls)
+	if managed != nil && (wsCreated || !managed.matchesDiff(add, remove)) {
+		return nil, nativeCellRefused()
+	}
 	log.Logger(ctx).Debug("Diff ACLS", log.DangerouslyZapSmallSlice("add", add), log.DangerouslyZapSmallSlice("remove", remove))
 
 	for _, acl := range remove {
@@ -456,17 +470,37 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 			WorkspaceIDs: []string{acl.WorkspaceID},
 			Actions:      []*idm.ACLAction{acl.Action},
 		})
-		_, err := aclClient.DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service2.Query{SubQueries: []*anypb.Any{removeQuery}}})
+		if _, err := nativeCellWrite(ctx); err != nil {
+			return nil, err
+		}
+		removed, err := aclClient.DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service2.Query{SubQueries: []*anypb.Any{removeQuery}}})
 		if err != nil {
 			log.Logger(ctx).Error("Share: Error while deleting ACLs", zap.Error(err))
 			return nil, err
 		}
+		if managed != nil && (removed == nil || removed.RowsDeleted <= 0) {
+			return nil, nativeCellUnknown()
+		}
 	}
 	for _, acl := range add {
-		_, err := aclClient.CreateACL(ctx, &idm.CreateACLRequest{ACL: acl})
+		if _, err := nativeCellWrite(ctx); err != nil {
+			return nil, err
+		}
+		created, err := aclClient.CreateACL(ctx, &idm.CreateACLRequest{ACL: acl})
 		if err != nil {
 			log.Logger(ctx).Error("Share: Error while creating ACLs", zap.Error(err))
 			return nil, err
+		}
+		if managed != nil {
+			if created.GetACL() == nil {
+				return nil, nativeCellUnknown()
+			}
+			actual := proto.Clone(created.ACL).(*idm.ACL)
+			expected := proto.Clone(acl).(*idm.ACL)
+			actual.ID, expected.ID = "", ""
+			if !proto.Equal(actual, expected) {
+				return nil, nativeCellUnknown()
+			}
 		}
 	}
 
@@ -527,8 +561,15 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 
 	// Now update workspace
 	log.Logger(ctx).Debug("Updating workspace", zap.Any("workspace", workspace))
-	if _, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: workspace}); err != nil {
+	if _, err := nativeCellWrite(ctx); err != nil {
 		return nil, err
+	}
+	updated, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: workspace})
+	if err != nil {
+		return nil, err
+	}
+	if managed != nil && !nativeCellWorkspaceACK(workspace, updated.GetWorkspace()) {
+		return nil, nativeCellUnknown()
 	}
 
 	// Put an Audit log if this cell has been newly created

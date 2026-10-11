@@ -20,7 +20,7 @@ func (d Delivery) HumanAction(ctx context.Context, accessToken string, intent ma
 	observing := false
 	for key := range intent {
 		switch key {
-		case "command", "resolveResource":
+		case "command", "resolveResource", "authorizeScope":
 		case "idempotencyKey":
 			id, ok := intent[key].(string)
 			if !ok || !canonicalUUID(id) {

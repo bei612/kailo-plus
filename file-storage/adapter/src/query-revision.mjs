@@ -9,6 +9,7 @@ import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
+import { cellShareConfiguration, reconcileBinding } from './binding-reconcile.mjs';
 import { executeNode, observeNode, nodeActions, readExecutionConfiguration } from './node-execution.mjs';
 import { writeAction, writeConfiguration, executeWrite, observeWrite } from './write-execution.mjs';
 import { deleteAction, deleteConfiguration, executeDelete, observeDelete } from './delete-execution.mjs';
@@ -58,7 +59,7 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'readExecution', 'management', 'mcp', 'write', 'delete'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'readExecution', 'management', 'mcp', 'write', 'delete', 'cellShare'].includes(key))) throw new Refused(503);
   if (value.readExecution !== undefined && value.readEdge === undefined) throw new Refused(503);
   if (value.write !== undefined) writeConfiguration(value.write, value);
   if (value.delete !== undefined) deleteConfiguration(value.delete, value);
@@ -91,6 +92,7 @@ export function configuration(value) {
     executionMapping: action => executionMapping(action, value),
   });
   return Object.freeze({ ...value, ...(value.write === undefined ? {} : {write:writeConfiguration(value.write, value)}),
+    ...(value.cellShare === undefined ? {} : {cellShare:cellShareConfiguration(value.cellShare)}),
     ...(value.delete === undefined ? {} : {delete:deleteConfiguration(value.delete, value)}),
     ...(value.readExecution === undefined ? {} : {readExecution:readExecutionConfiguration(value.readExecution)}),
     ...(value.mcp === undefined ? {} : {mcp:mcpConfiguration(value.mcp, value)}),
@@ -322,11 +324,17 @@ export function createAdapter(rawConfig) {
       }
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
         '/platform-adapter/v1/observe', '/platform-adapter/v1/extract_usage', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
-        '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
+        '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/reconcile', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
       const deadline = Date.now() + config.timeoutMs;
       const raw = await boundedBody(request, config.maxBodyBytes);
+      if (request.url === '/platform-adapter/v1/reconcile') {
+        const value = await reconcileBinding(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+        response.writeHead(200, {'content-type':'application/json','cache-control':'no-store'});
+        response.end(canonical(value));
+        return;
+      }
       if (['/platform-adapter/v1/handshake', '/platform-adapter/v1/validate_binding'].includes(request.url)) {
         const value = await bindingManagement(config, deadline, raw, request.headers['idempotency-key'],
           request.headers.authorization.slice(7), request.url.slice('/platform-adapter/v1/'.length));

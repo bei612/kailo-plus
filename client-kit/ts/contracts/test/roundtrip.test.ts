@@ -422,7 +422,7 @@ import type { AutomationVersionContent } from "../src/generated/contracts.js";
 import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";
 import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
 import type { ApplicationNativePage } from "../src/generated/contracts.js";
-import type { AdapterBindingObservation, AdapterExecutionReference } from "../src/generated/contracts.js";
+import type { AdapterBindingObservation, AdapterBindingReconcileRequest, AdapterBindingReconcileResponse, AdapterExecutionReference } from "../src/generated/contracts.js";
 import type { ApplicationAdapterDirectory } from "../src/generated/contracts.js";
 import type { ApplicationModelAdmission, ApplicationModelGatewayConfig } from "../src/generated/contracts.js";
 
@@ -531,6 +531,29 @@ test("binding observation preserves execution mappings, credential references an
       version: read.version, audience: read.audience })),
   }));
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+});
+
+test("binding reconcile preserves frozen reference and unknown absence", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/adapter-binding-reconcile-request.sample.json", import.meta.url), "utf8");
+  const typed: AdapterBindingReconcileRequest = JSON.parse(raw);
+  const reference = (row: AdapterBindingReconcileRequest): AdapterBindingReconcileRequest => ({
+    bindingId: row.bindingId, generation: row.generation, configDigest: row.configDigest,
+    nativeInstanceRef: row.nativeInstanceRef, nativeScopeRef: row.nativeScopeRef,
+    idempotencyKey: row.idempotencyKey,
+  });
+  deepStrictEqual(JSON.parse(JSON.stringify(reference(typed))), JSON.parse(raw));
+  const responsesRaw = readFileSync(new URL("../../../../contracts/samples/adapter-binding-reconcile-responses.sample.json", import.meta.url), "utf8");
+  const responses: AdapterBindingReconcileResponse[] = JSON.parse(responsesRaw);
+  const reconstructed: AdapterBindingReconcileResponse[] = responses.map(row => ({
+    reference: reference(row.reference), complete: row.complete,
+    observations: row.observations.map(item => ({
+      idempotencyKey: item.idempotencyKey, nativeType: item.nativeType, nativeId: item.nativeId,
+      nativeStatus: item.nativeStatus, platformStatus: item.platformStatus,
+      cancelCapability: item.cancelCapability, lastObservedAt: item.lastObservedAt,
+      terminalAt: item.terminalAt,
+    })),
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(responsesRaw));
 });
 
 test("execution reference does not invent an unknown native ID", () => {

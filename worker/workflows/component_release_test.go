@@ -112,7 +112,7 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 					attempts++
 					if attempts == 1 {
 						return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute",
-							NativeObservation: &generated.ExecutionClass{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
+							NativeObservation: &generated.ExecutionElement{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
 					}
 					unsafe = unsafe || probe.StepIndex != 1 || probe.Plan.Steps[probe.StepIndex].IdempotencyKey != "original-key" ||
 						(attempts > 2 && (probe.Reconcile == nil || !*probe.Reconcile))
@@ -145,10 +145,10 @@ func TestComponentReleaseCheckedSameKeyTerminalCanFinishFailedSuite(t *testing.T
 		func(_ context.Context, _ generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
 			attempts++
 			if attempts == 1 {
-				return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionClass{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
+				return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
 			}
 			now, status := "2026-10-04T00:00:00Z", "completed"
-			actual := generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionClass{
+			actual := generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{
 				IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 				NativeStatus: &status, TerminalAt: &now, LastObservedAt: &now}}
 			return actual, temporal.NewNonRetryableApplicationError("cancel expectation failed but native is terminal", activities.ErrTypeRejected, nil, actual)
@@ -180,7 +180,7 @@ func TestComponentReleaseCancellationDrainsUnknownWithoutAnotherProbe(t *testing
 			if attempts >= 3 {
 				status = generated.ExternalExecutionStatus("SUCCEEDED")
 			}
-			return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionClass{PlatformStatus: status}}, nil
+			return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{PlatformStatus: status}}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, retry.RoundInterval/2)
 	env.ExecuteWorkflow(ComponentTaskKind, in)
@@ -293,7 +293,7 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 				return generated.ComponentConformanceStepObservation{}, errors.New("native ACK lost")
 			}
 			return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute",
-				NativeObservation: &generated.ExecutionClass{PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED")}}, nil
+				NativeObservation: &generated.ExecutionElement{PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED")}}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, retry.RoundInterval/2)
 	env.RegisterDelayedCallback(func() { env.SetContinueAsNewSuggested(true) }, retry.RoundInterval+retry.RoundInterval/2)

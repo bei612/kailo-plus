@@ -158,6 +158,14 @@ async function setup(t, changes = {}) {
       state.redirectReads += 1;
       return reply(response, 200, versions);
     }
+    if (changes.bindingReconcile && request.url === '/v2/jobs/user') {
+      state.nativeReads.push(request.url);
+      assert.equal(request.headers['x-kailo-native-operation'],'reconcile');
+      const proof=JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'],'base64url').toString('utf8'));
+      assert.equal(proof.argumentsJson,canonical(requestArguments));
+      if (!changes.missingReconcileAck) response.setHeader('x-kailo-native-actor',`${ids[4]}:${ids[0]}:RECONCILE:${ids[7]}`);
+      return reply(response,200,changes.bindingObservation??{reference:requestArguments,complete:true,observations:[]});
+    }
     if (request.url === `/native-bytes?versionId=${changes.downloadRevision ?? 'frozen-version'}` && changes.serviceRead) {
       assert.equal(request.headers.authorization, undefined);
       if (changes.readExecution || !business) {
@@ -324,6 +332,7 @@ async function setup(t, changes = {}) {
     ...(changes.serviceRead || changes.serviceList || changes.validation ? {readEdge:{downloadOrigin:origin,
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const proofFiles = [];
+  if (changes.bindingReconcile) config.cellShare={nativeJobId:'delivered-cell-job',bindingGeneration:2};
   if (changes.delete) config.delete={nativeJobId:'delivered-delete-job',usageMeasurements:[{meterKey:'approved_delete_count',quantitySource:'COUNT'}],...changes.deleteConfig};
   if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
   if (changes.readExecution) config.readExecution={nativeJobId:'delivered-read-job',usageMeasurements:[{meterKey:'approved_read_count',quantitySource:'COUNT'},{meterKey:'approved_read_bytes',quantitySource:'CONTENT_BYTES'}],...changes.readExecutionConfig};
@@ -372,6 +381,9 @@ async function setup(t, changes = {}) {
       secretRefs: secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience })),
       idempotencyKey: ids[7], ...changes.validationArguments };
   }
+  if (changes.bindingReconcile) requestArguments={bindingId:config.bindingId,generation:config.cellShare.bindingGeneration,
+    configDigest:createHash('sha256').update(canonical(config.management.validation.normalizedConfig)).digest('hex'),
+    nativeInstanceRef:config.management.validation.nativeInstanceRef,nativeScopeRef:config.management.validation.nativeScopeRef,idempotencyKey:ids[7]};
   if (changes.mcp) {
     const inputSchema = changes.businessAction === undefined
       ? {type:'object',additionalProperties:false,required:Object.keys(requestArguments.input),

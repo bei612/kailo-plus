@@ -285,7 +285,7 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 			if decodeConformanceJSON(body, &wire) != nil {
 				return uncertain()
 			}
-			native := generated.ExecutionClass(wire.Execution)
+			native := generated.ExecutionElement(wire.Execution)
 			if !validNativeObservation(native, step.IdempotencyKey) {
 				return uncertain()
 			}
@@ -330,7 +330,7 @@ func validContentReference(reference generated.ContentReference, resource string
 
 // These are the frozen ExternalExecution states, not a new suite state machine.
 // HTTP acceptance alone never supplies a terminal timestamp or native status.
-func validNativeObservation(native generated.ExecutionClass, key string) bool {
+func validNativeObservation(native generated.ExecutionElement, key string) bool {
 	if native.IdempotencyKey != key || strings.TrimSpace(native.NativeType) == "" ||
 		(native.NativeID != nil && strings.TrimSpace(*native.NativeID) == "") ||
 		(native.CancelCapability != generated.NativeCancelCapability("SUPPORTED") &&
@@ -409,7 +409,7 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 		}
 		return nil
 	}
-	var expected generated.ExecutionClass
+	var expected generated.ExecutionElement
 	if decodeConformanceJSON([]byte(step.ExpectedResponseJSON), &expected) != nil {
 		return errors.New("native expectation is not an Adapter Protocol observation")
 	}

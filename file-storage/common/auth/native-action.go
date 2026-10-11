@@ -79,6 +79,53 @@ func (d NativeActorDelivery) User(tenant, principal, kind string) (string, error
 	return selected, nil
 }
 
+// HumanPrincipal reverses the same controlled one-to-one delivery consumed by
+// User. Native role/group identifiers and service accounts are not identities.
+// The platform permission Action independently checks the recipient's current
+// tenant membership; this mapping is never an authorization decision.
+func (d NativeActorDelivery) HumanPrincipal(nativeUser string) (string, error) {
+	if !NativeActorUUID(nativeUser) {
+		return "", errors.WithStack(errors.StatusForbidden)
+	}
+	for _, link := range d.Actors {
+		if link.UserUUID != nativeUser || link.Kind != "HUMAN" {
+			continue
+		}
+		resolved, err := d.User(d.TenantID, link.PrincipalID, "HUMAN")
+		if err != nil || resolved != nativeUser {
+			return "", errors.WithStack(errors.StatusForbidden)
+		}
+		return link.PrincipalID, nil
+	}
+	return "", errors.WithStack(errors.StatusForbidden)
+}
+
+// CellShare is non-secret, approved binding metadata for the original PutCell
+// consumer. It neither supplies a HUMAN credential nor grants any permission.
+type NativeCellShareDelivery struct {
+	NativeActorDelivery
+	WorkspaceID string `json:"workspaceId"`
+	CellShare   struct {
+		NativeJobID         string `json:"nativeJobId"`
+		BindingGeneration   int64  `json:"bindingGeneration"`
+		NativeType          string `json:"nativeType"`
+		GrantActionVersion  int64  `json:"grantActionVersion"`
+		RevokeActionVersion int64  `json:"revokeActionVersion"`
+	} `json:"cellShare"`
+}
+
+func (d NativeCellShareDelivery) Validate() error {
+	s := d.CellShare
+	if !NativeActorUUID(d.BindingID) || !NativeActorUUID(d.TenantID) ||
+		s.NativeJobID == "" || strings.TrimSpace(s.NativeJobID) != s.NativeJobID ||
+		s.BindingGeneration <= 0 || s.NativeType == "" || strings.TrimSpace(s.NativeType) != s.NativeType ||
+		s.GrantActionVersion <= 0 || s.RevokeActionVersion <= 0 || d.MaxResponseBytes <= 0 ||
+		(d.WorkspaceID != "" && !NativeActorUUID(d.WorkspaceID)) {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	return nil
+}
+
 type NativeWriteDelivery struct {
 	NativeActorDelivery
 	WorkspaceID string `json:"workspaceId"`

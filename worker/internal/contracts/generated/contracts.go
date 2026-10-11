@@ -49,6 +49,12 @@
 //    adapterBindingObservation, err := UnmarshalAdapterBindingObservation(bytes)
 //    bytes, err = adapterBindingObservation.Marshal()
 //
+//    adapterBindingReconcileRequest, err := UnmarshalAdapterBindingReconcileRequest(bytes)
+//    bytes, err = adapterBindingReconcileRequest.Marshal()
+//
+//    adapterBindingReconcileResponse, err := UnmarshalAdapterBindingReconcileResponse(bytes)
+//    bytes, err = adapterBindingReconcileResponse.Marshal()
+//
 //    adapterExecutionObservation, err := UnmarshalAdapterExecutionObservation(bytes)
 //    bytes, err = adapterExecutionObservation.Marshal()
 //
@@ -827,6 +833,26 @@ func UnmarshalAdapterBindingObservation(data []byte) (AdapterBindingObservation,
 }
 
 func (r *AdapterBindingObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterBindingReconcileRequest(data []byte) (AdapterBindingReconcileRequest, error) {
+	var r AdapterBindingReconcileRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterBindingReconcileRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterBindingReconcileResponse(data []byte) (AdapterBindingReconcileResponse, error) {
+	var r AdapterBindingReconcileResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterBindingReconcileResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3076,6 +3102,47 @@ type AdapterSecretRead struct {
 	Version   int64  `json:"version"`
 }
 
+// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+type AdapterBindingReconcileRequest struct {
+	BindingID         string `json:"bindingId"`
+	ConfigDigest      string `json:"configDigest"`
+	Generation        int64  `json:"generation"`
+	IdempotencyKey    string `json:"idempotencyKey"`
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	NativeScopeRef    string `json:"nativeScopeRef"`
+}
+
+// 完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
+// 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
+type AdapterBindingReconcileResponse struct {
+	Complete     bool               `json:"complete"`
+	Observations []ExecutionElement `json:"observations"`
+	Reference    ReferenceClass     `json:"reference"`
+}
+
+// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+type ExecutionElement struct {
+	CancelCapability NativeCancelCapability  `json:"cancelCapability"`
+	IdempotencyKey   string                  `json:"idempotencyKey"`
+	LastObservedAt   *string                 `json:"lastObservedAt,omitempty"`
+	NativeID         *string                 `json:"nativeId,omitempty"`
+	NativeStatus     *string                 `json:"nativeStatus,omitempty"`
+	NativeType       string                  `json:"nativeType"`
+	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
+	TerminalAt       *string                 `json:"terminalAt,omitempty"`
+}
+
+// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+type ReferenceClass struct {
+	BindingID         string `json:"bindingId"`
+	ConfigDigest      string `json:"configDigest"`
+	Generation        int64  `json:"generation"`
+	IdempotencyKey    string `json:"idempotencyKey"`
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	NativeScopeRef    string `json:"nativeScopeRef"`
+}
+
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 // 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 type AdapterExecutionObservation struct {
@@ -3104,22 +3171,9 @@ type AdapterExecutionResponse struct {
 	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
 	// 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
 	ContentReferences []ContentReferenceElement `json:"contentReferences,omitempty"`
-	Execution         ExecutionClass            `json:"execution"`
+	Execution         ExecutionElement          `json:"execution"`
 	ResultJSON        *string                   `json:"resultJson,omitempty"`
 	SourceResources   []SourceResourceElement   `json:"sourceResources,omitempty"`
-}
-
-// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
-// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
-type ExecutionClass struct {
-	CancelCapability NativeCancelCapability  `json:"cancelCapability"`
-	IdempotencyKey   string                  `json:"idempotencyKey"`
-	LastObservedAt   *string                 `json:"lastObservedAt,omitempty"`
-	NativeID         *string                 `json:"nativeId,omitempty"`
-	NativeStatus     *string                 `json:"nativeStatus,omitempty"`
-	NativeType       string                  `json:"nativeType"`
-	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
-	TerminalAt       *string                 `json:"terminalAt,omitempty"`
 }
 
 // Actual native planner source within the existing execution binding. Metadata only:
@@ -5146,8 +5200,11 @@ type NativeHumanResourceQuery struct {
 	WorkspaceID   *string `json:"workspaceId,omitempty"`
 }
 
-// Reference-only observation of the original HUMAN AE. Terminal status comes from original
-// component-action audit after native/usage reconciliation, never from HTTP acceptance.
+// Reference-only observation of the original HUMAN AE. Component terminal status comes from
+// original component-action audit after native/usage reconciliation. Native-origin platform
+// resource permission actions use their exact permission-outcome audit; that outcome does
+// not assert completion of a component's native sharing RPCs. Never infer a terminal result
+// from HTTP acceptance.
 type NativeHumanActionResult struct {
 	// Original admitted canonical capability metadata input; exactly one input form, never a
 	// result body or a new execution authority.
@@ -6760,7 +6817,7 @@ type ObservationElement struct {
 	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
 	HTTPStatus             int64                         `json:"httpStatus"`
 	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
-	NativeObservation      *ExecutionClass               `json:"nativeObservation,omitempty"`
+	NativeObservation      *ExecutionElement             `json:"nativeObservation,omitempty"`
 	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
 	Operation              ComponentConformanceOperation `json:"operation"`
 	RequestDigest          string                        `json:"requestDigest"`
@@ -6831,7 +6888,7 @@ type ComponentConformanceStepObservation struct {
 	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
 	HTTPStatus             int64                         `json:"httpStatus"`
 	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
-	NativeObservation      *ExecutionClass               `json:"nativeObservation,omitempty"`
+	NativeObservation      *ExecutionElement             `json:"nativeObservation,omitempty"`
 	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
 	Operation              ComponentConformanceOperation `json:"operation"`
 	RequestDigest          string                        `json:"requestDigest"`

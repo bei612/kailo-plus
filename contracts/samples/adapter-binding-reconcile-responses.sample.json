@@ -1,0 +1,56 @@
+[
+  {
+    "reference": {
+      "bindingId": "00000000-0000-4000-8000-000000000001",
+      "generation": 2,
+      "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nativeInstanceRef": "native-instance",
+      "nativeScopeRef": "native-scope",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    },
+    "complete": true,
+    "observations": []
+  },
+  {
+    "reference": {
+      "bindingId": "00000000-0000-4000-8000-000000000001",
+      "generation": 2,
+      "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nativeInstanceRef": "native-instance",
+      "nativeScopeRef": "native-scope",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    },
+    "complete": false,
+    "observations": [
+      {
+        "idempotencyKey": "00000000-0000-4000-8000-000000000003",
+        "nativeType": "job",
+        "platformStatus": "UNKNOWN",
+        "cancelCapability": "UNSUPPORTED"
+      }
+    ]
+  },
+  {
+    "reference": {
+      "bindingId": "00000000-0000-4000-8000-000000000001",
+      "generation": 2,
+      "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nativeInstanceRef": "native-instance",
+      "nativeScopeRef": "native-scope",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    },
+    "complete": true,
+    "observations": [
+      {
+        "idempotencyKey": "00000000-0000-4000-8000-000000000004",
+        "nativeType": "job",
+        "nativeId": "00000000-0000-4000-8000-000000000004",
+        "nativeStatus": "Finished",
+        "platformStatus": "SUCCEEDED",
+        "cancelCapability": "UNSUPPORTED",
+        "lastObservedAt": "2026-10-10T00:00:01.000Z",
+        "terminalAt": "2026-10-10T00:00:00.000Z"
+      }
+    ]
+  }
+]

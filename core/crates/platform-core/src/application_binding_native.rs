@@ -59,6 +59,89 @@ pub(crate) struct Adapter {
     http: reqwest::Client,
 }
 
+/// Binding drainage, including native work without an EE (for
+/// example a component's synchronous continuation of a platform permission).
+/// The adapter fences its original dedicated native job before observation.
+/// Missing/old adapter support must keep DISABLING; never infer an empty set.
+pub(crate) async fn reconcile_binding(
+    state: &ServiceState,
+    ae: &Execution,
+) -> Result<Option<Value>, Refusal> {
+    let (reference, service, manifest): (Value, String, Value) = sqlx::query_as(
+        "select jsonb_build_object('bindingId',b.id,'generation',p.generation,
+            'configDigest',b.config_digest,'nativeInstanceRef',b.native_instance_ref,
+            'nativeScopeRef',b.native_scope_ref,'idempotencyKey',$4::uuid),b.adapter_service_ref,r.manifest
+         from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id
+         join projection.application_runtime p on p.binding_id=b.id and p.component_release_id=b.component_release_id
+         where b.id=$1 and b.tenant_id=$2 and b.workspace_id is not distinct from $3
+           and b.projection_action_execution_id=$4 and b.state='DISABLING'
+           and ((b.active_projection_generation is not null and p.generation=b.active_projection_generation)
+             or (b.active_projection_generation is null and p.action_execution_id=b.created_by_action_execution_id))")
+        .bind(ae.target_id).bind(ae.tenant_id).bind(ae.workspace_id).bind(ae.id)
+        .fetch_one(&state.pool).await?;
+    if Connector::from_manifest(&manifest)? == Connector::ProtocolPeer {
+        return Ok(None);
+    }
+    let typed: contracts::AdapterBindingReconcileRequest =
+        serde_json::from_value(reference.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(typed).map_err(|_| invalid())? != reference {
+        return Err(invalid());
+    }
+    let adapter = Adapter::resolve(&service, text(&reference, "nativeInstanceRef")?, &manifest)?;
+    let result = adapter
+        .call(state, ae, "reconcile", ae.id, &reference)
+        .await?;
+    reconcile_complete(&reference, &result)?;
+    Ok(Some(result))
+}
+
+pub(super) fn reconcile_complete(reference: &Value, result: &Value) -> Result<bool, Refusal> {
+    let parsed: contracts::AdapterBindingReconcileResponse =
+        serde_json::from_value(result.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(parsed).map_err(|_| invalid())? != *result
+        || result["reference"] != *reference
+        || reference["generation"].as_i64().is_none_or(|v| v <= 0)
+    {
+        return Err(invalid());
+    }
+    let mut keys = BTreeSet::new();
+    let mut complete = result["complete"] == true;
+    let now = chrono::Utc::now();
+    for item in result["observations"].as_array().ok_or_else(invalid)? {
+        let key = text(item, "idempotencyKey")?;
+        if Uuid::parse_str(key).map_or(true, |id| id.is_nil())
+            || !keys.insert((text(item, "nativeType")?, key))
+        {
+            return Err(invalid());
+        }
+        let last = chrono::DateTime::parse_from_rfc3339(text(item, "lastObservedAt")?)
+            .map_err(|_| invalid())?;
+        // Match the original ExternalExecution observation boundary: a
+        // future timestamp is not evidence available to this disable.
+        if last > now {
+            return Err(invalid());
+        }
+        if matches!(
+            text(item, "platformStatus")?,
+            "SUCCEEDED" | "FAILED" | "CANCELLED"
+        ) {
+            text(item, "nativeId")?;
+            text(item, "nativeStatus")?;
+            let terminal = chrono::DateTime::parse_from_rfc3339(text(item, "terminalAt")?)
+                .map_err(|_| invalid())?;
+            if terminal > last {
+                return Err(invalid());
+            }
+        } else {
+            if item.get("terminalAt").is_some() {
+                return Err(invalid());
+            }
+            complete = false;
+        }
+    }
+    Ok(complete)
+}
+
 impl Adapter {
     pub(crate) fn native_human_identity(
         &self,
@@ -502,4 +585,80 @@ pub(super) async fn validate(
         .await
         .map_err(|_| Refusal::Unavailable("binding secret read audit unavailable".into()))?;
     Ok(observed)
+}
+
+#[cfg(test)]
+mod binding_reconcile_tests {
+    use super::*;
+
+    #[test]
+    fn native_binding_reconcile_requires_complete_exact_terminal_evidence() {
+        let reference = json!({"bindingId":Uuid::new_v4(),"generation":2,
+            "configDigest":"a".repeat(64),"nativeInstanceRef":"native","nativeScopeRef":"scope","idempotencyKey":Uuid::new_v4()});
+        let terminal = json!({"idempotencyKey":Uuid::new_v4(),"nativeType":"job","nativeId":"original-task",
+            "nativeStatus":"Finished","platformStatus":"SUCCEEDED","cancelCapability":"UNSUPPORTED",
+            "lastObservedAt":"2026-10-10T00:00:01Z","terminalAt":"2026-10-10T00:00:00Z"});
+        let baseline = json!({"reference":reference,"complete":true,"observations":[terminal]});
+        assert!(reconcile_complete(&reference, &baseline).unwrap());
+        for scenario in [
+            "incomplete",
+            "unknown",
+            "wrong-generation",
+            "duplicate",
+            "missing-terminal",
+            "future-terminal",
+            "future-observation",
+            "future-unknown-observation",
+            "extra",
+        ] {
+            let mut result = baseline.clone();
+            match scenario {
+                "incomplete" => result["complete"] = json!(false),
+                "unknown" => {
+                    result["observations"][0]["platformStatus"] = json!("UNKNOWN");
+                    result["observations"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("terminalAt");
+                }
+                "wrong-generation" => result["reference"]["generation"] = json!(1),
+                "duplicate" => result["observations"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(terminal.clone()),
+                "missing-terminal" => {
+                    result["observations"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("terminalAt");
+                }
+                "future-terminal" => {
+                    result["observations"][0]["terminalAt"] = json!("2026-10-11T00:00:00Z")
+                }
+                "future-observation" | "future-unknown-observation" => {
+                    let future = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+                    result["observations"][0]["lastObservedAt"] = json!(future);
+                    result["observations"][0]["terminalAt"] = json!(future);
+                    if scenario == "future-unknown-observation" {
+                        result["observations"][0]["platformStatus"] = json!("UNKNOWN");
+                        result["observations"][0]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("terminalAt");
+                    }
+                }
+                "extra" => result["drained"] = json!(true),
+                _ => unreachable!(),
+            }
+            let outcome = reconcile_complete(&reference, &result);
+            if matches!(
+                scenario,
+                "future-observation" | "future-unknown-observation"
+            ) {
+                assert!(outcome.is_err(), "{scenario}");
+            } else {
+                assert!(!matches!(outcome, Ok(true)), "{scenario}");
+            }
+        }
+    }
 }

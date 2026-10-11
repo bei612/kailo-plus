@@ -24,6 +24,133 @@ struct Binding {
     manifest: Value,
 }
 
+// Transport provenance for a platform resource permission Action. This is
+// trusted normalized AE metadata, not an APPLICATION definition snapshot.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Origin {
+    binding_id: Uuid,
+    generation: i64,
+}
+
+impl Origin {
+    pub(crate) fn binding_id(&self) -> Uuid {
+        self.binding_id
+    }
+
+    pub(crate) fn from_execution(ae: &Execution) -> Result<Option<Self>, Refusal> {
+        ae.parameters
+            .as_ref()
+            .and_then(|v| v.get("nativeHumanOrigin"))
+            .map(|v| {
+                let origin: Self = serde_json::from_value(v.clone()).map_err(|_| unavailable())?;
+                if origin.generation <= 0 || origin.binding_id.is_nil() {
+                    return Err(unavailable());
+                }
+                Ok(origin)
+            })
+            .transpose()
+    }
+
+    pub(crate) async fn check(
+        &self,
+        conn: &mut PgConnection,
+        actor: Actor,
+        resource: Uuid,
+        version: i32,
+    ) -> Result<(), Refusal> {
+        if self.generation <= 0 || version <= 0 {
+            return Err(invalid());
+        }
+        let row: Option<Uuid> = sqlx::query_scalar("select r.id from catalog.resource r
+            join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=r.tenant_id
+            join catalog.component_release release on release.id=b.component_release_id
+              and release.status='APPROVED' and release.approved_by_action_execution_id is not null
+            join projection.application_runtime runtime on runtime.binding_id=b.id
+              and runtime.generation=b.active_projection_generation and runtime.component_release_id=release.id
+              and runtime.normalized_manifest_digest=release.manifest_digest and runtime.state='ACTIVE'
+            join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
+            join identity.tenant_membership membership on membership.tenant_id=t.id
+              and membership.tenant_principal_id=$6 and membership.state='ACTIVE'
+            join identity.principal actor on actor.id=membership.tenant_principal_id
+              and actor.tenant_id=t.id and actor.kind='HUMAN' and actor.status='ACTIVE'
+            join identity.human_identity human on human.id=membership.human_identity_id and human.status='ACTIVE'
+            where r.id=$1 and r.tenant_id=$2 and r.version=$3 and r.state='ACTIVE'
+              and b.id=$4 and b.active_projection_generation=$5 and b.state='ACTIVE'
+              and (b.workspace_id is null or b.workspace_id=r.home_workspace_id)
+              and (r.home_workspace_id is null or exists(select 1 from identity.workspace w
+                where w.id=r.home_workspace_id and w.tenant_id=t.id and w.state='ACTIVE'))
+            for share of r,b,release,runtime,t,membership,actor,human")
+            .bind(resource).bind(actor.tenant_id).bind(version).bind(self.binding_id)
+            .bind(self.generation).bind(actor.principal_id).fetch_optional(conn).await?;
+        if row != Some(resource) {
+            return Err(denied());
+        }
+        Ok(())
+    }
+}
+
+pub(crate) async fn check_permission_origin(
+    conn: &mut PgConnection,
+    ae: &Execution,
+    version: i32,
+) -> Result<(), Refusal> {
+    let Some(origin) = Origin::from_execution(ae)? else {
+        return Ok(());
+    };
+    if !matches!(
+        ae.action_key.as_str(),
+        "resource.grant_read" | "resource.revoke_read"
+    ) || ae.actor_principal_id != ae.initiator_principal_id
+    {
+        return Err(denied());
+    }
+    let platform: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution
+        where id=$1 and parent_action_execution_id is null and component_binding_kind is null
+          and component_binding_id is null and component_release_id is null and component_projection_generation is null)")
+        .bind(ae.id).fetch_one(&mut *conn).await?;
+    if !platform {
+        return Err(denied());
+    }
+    origin
+        .check(
+            conn,
+            Actor {
+                tenant_id: ae.tenant_id,
+                principal_id: ae.initiator_principal_id,
+                human_identity_id: None,
+            },
+            ae.target_id,
+            version,
+        )
+        .await
+}
+
+// Original platform permission AEs have no component execution quartet or EE.
+// Keep every generation of this binding behind its existing disable barrier;
+// malformed metadata or missing terminal evidence never drains an UNKNOWN.
+pub(crate) async fn permission_binding_pending(
+    conn: &mut PgConnection,
+    binding: Uuid,
+) -> Result<bool, Refusal> {
+    Ok(sqlx::query_scalar("select exists(select 1 from admission.action_execution a
+        where a.parameters->'nativeHumanOrigin'->>'bindingId'=$1::text
+          and (a.gate_state in ('EVALUATING','WAITING')
+            or (a.gate_state='ALLOWED' and a.dispatch_state='NOT_DISPATCHED')
+            or a.dispatch_state='UNKNOWN'
+            or (a.dispatch_state in ('DISPATCHED','ABORTED') and not exists(
+                select 1 from audit.audit_event outcome
+                where outcome.event_key=a.operation_id::text||':permission-outcome'
+                  and outcome.tenant_id=a.tenant_id and outcome.operation_id=a.operation_id
+                  and outcome.target_id=a.target_id and outcome.action_key=a.action_key
+                  and outcome.action_version=a.action_version and outcome.parameter_hash=a.parameter_hash
+                  and outcome.event_type='OUTCOME'
+                  and ((a.dispatch_state='DISPATCHED' and a.action_key='resource.grant_read' and outcome.result_code='HUMAN_READ_GRANTED')
+                    or (a.dispatch_state='DISPATCHED' and a.action_key='resource.revoke_read' and outcome.result_code='HUMAN_READ_REVOKED')
+                    or (a.dispatch_state='ABORTED' and outcome.result_code='NOT_APPLIED'))))))")
+        .bind(binding).fetch_one(conn).await?)
+}
+
 async fn binding(state: &ServiceState, id: Uuid) -> Result<Binding, Refusal> {
     sqlx::query_as("select b.tenant_id,b.workspace_id,b.active_projection_generation as generation,b.config_digest,
         b.normalized_config->>'client_id' as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
@@ -249,11 +376,16 @@ pub(crate) async fn handle(
         let key = match (raw.get("command"),raw.get("idempotencyKey")) {
             (Some(command),None) => {
                 let command: ActionCommand = serde_json::from_value(command.clone()).map_err(|_| invalid())?;
-                let parsed = normalized(&command)?;
+                let key = Uuid::parse_str(&command.idempotency_key).map_err(|_| invalid())?;
                 // Fence the exact existing idempotency key before the original replay path can start it.
-                check_existing_binding(&state,actor,parsed.key,id,before.generation).await?;
-                submit_inner(&state.governance,actor,&command,Some((id,before.generation)),Some(&state)).await?;
-                parsed.key
+                check_existing_binding(&state,actor,key,id,before.generation).await?;
+                if matches!(command.action_key.as_str(), "resource.grant_read" | "resource.revoke_read") {
+                    state.governance.submit_native_permission(actor, &command,
+                        Origin { binding_id: id, generation: before.generation }).await.map_err(|(error,_)| error)?;
+                } else {
+                    submit_inner(&state.governance,actor,&command,Some((id,before.generation)),Some(&state)).await?;
+                }
+                key
             },
             (None,Some(key))=>super::id(key)?,
             _=>return Err(invalid()),
@@ -262,6 +394,10 @@ pub(crate) async fn handle(
             return Ok(None);
         };
         let mut ae = crate::governance::load_execution(&state.pool,action).await?.ok_or_else(unavailable)?;
+        let output = if Origin::from_execution(&ae)?.is_some() {
+            if raw.get("sourceResources").is_some() { return Err(invalid()); }
+            permission_result(&state, actor, &ae).await?
+        } else {
         if !is_human(&ae) { return Err(denied()); }
         if ae.gate_state == "DENIED" && raw.get("sourceResources").is_some() { return Err(denied()); }
         if ae.gate_state != "DENIED" && !crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,raw.get("sourceResources")).await?.allowed { return Err(denied()); }
@@ -294,6 +430,8 @@ pub(crate) async fn handle(
                 output["nativeType"] = json!(kind); output["nativeId"] = json!(reference);
             }
         }
+        output
+        };
         // Revocation/config switches cannot authorize disclosure under a stale snapshot.
         let after_actor = human(&state,&before,id,token).await?;
         if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
@@ -305,6 +443,74 @@ pub(crate) async fn handle(
         Ok(Some(value)) => ([("cache-control", "no-store")], Json(value)).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, [("cache-control", "no-store")]).into_response(),
         Err(error) => error.respond(None),
+    }
+}
+
+async fn permission_result(
+    state: &ServiceState,
+    actor: Actor,
+    ae: &Execution,
+) -> Result<Value, Refusal> {
+    let version = ae
+        .parameters
+        .as_ref()
+        .and_then(|value| value.get("permissionIntent"))
+        .and_then(|value| value.get("resourceVersion"))
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .or_else(|| ae.frozen_target_version())
+        .ok_or_else(unavailable)?;
+    let mut tx = state.pool.begin().await?;
+    check_permission_origin(&mut tx, ae, version).await?;
+    let definition = crate::governance::exact_definition_for_execution(&state.pool, ae).await?;
+    let evaluation = state
+        .governance
+        .evaluate(
+            actor,
+            &definition,
+            &Target {
+                id: ae.target_id,
+                version,
+                workspace_id: ae.workspace_id,
+            },
+        )
+        .await?;
+    if !evaluation.allowed {
+        return Err(denied());
+    }
+    let terminal: Option<String> = sqlx::query_scalar("select result_code from audit.audit_event
+        where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4 and event_type='OUTCOME'
+          and target_id=$5 and action_version=$6 and parameter_hash=$7")
+        .bind(format!("{}:permission-outcome",ae.operation_id)).bind(ae.tenant_id)
+        .bind(ae.operation_id).bind(&ae.action_key).bind(ae.target_id).bind(ae.action_version)
+        .bind(&ae.parameter_hash).fetch_optional(&mut *tx).await?;
+    let mut output = json!({"submission":ae.submission()});
+    if let Some(status) = permission_terminal(ae, terminal.as_deref())? {
+        output["terminalStatus"] = json!(status);
+    }
+    tx.commit().await?;
+    Ok(output)
+}
+
+fn permission_terminal(
+    ae: &Execution,
+    outcome: Option<&str>,
+) -> Result<Option<&'static str>, Refusal> {
+    match (ae.dispatch_state.as_str(), outcome) {
+        ("DISPATCHED", Some("HUMAN_READ_GRANTED"))
+            if ae.action_key == "resource.grant_read" && ae.gate_state == "ALLOWED" =>
+        {
+            Ok(Some("COMPLETED"))
+        }
+        ("DISPATCHED", Some("HUMAN_READ_REVOKED"))
+            if ae.action_key == "resource.revoke_read" && ae.gate_state == "ALLOWED" =>
+        {
+            Ok(Some("COMPLETED"))
+        }
+        ("ABORTED", Some("NOT_APPLIED")) => Ok(Some("FAILED")),
+        ("DISPATCHED", _) | (_, Some(_)) => Err(unavailable()),
+        ("NOT_DISPATCHED" | "UNKNOWN" | "ABORTED", None) => Ok(None),
+        _ => Err(unavailable()),
     }
 }
 
@@ -423,7 +629,7 @@ async fn resource_facts(
     binding_id: Uuid,
     current: &Binding,
     query: &Value,
-) -> Result<(Target, crate::application_catalog::ApplicationDefinition), Refusal> {
+) -> Result<(Target, crate::governance::Definition), Refusal> {
     let text = |field: &str| {
         query[field]
             .as_str()
@@ -464,6 +670,28 @@ async fn resource_facts(
         version: *resource_version,
         workspace_id: workspace,
     };
+    if matches!(action, "resource.grant_read" | "resource.revoke_read") {
+        let definition: crate::governance::Definition = sqlx::query_as(&format!(
+            "select {} from catalog.action_definition where action_key=$1 and version=$2
+             and status='ACTIVE' and component_release_id is null for share",
+            crate::governance::DEFINITION_COLUMNS
+        ))
+        .bind(action)
+        .bind(version)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(blocked)?;
+        if definition.target_type != "RESOURCE"
+            || definition.permission_object_type != "resource"
+            || definition.permission != "share"
+            || definition.tenant_rule != "SESSION_TENANT"
+            || definition.workspace_rule != "TARGET_HOME_WORKSPACE"
+            || definition.execution_mode != "SYNC"
+        {
+            return Err(blocked());
+        }
+        return Ok((target, definition));
+    }
     // Selecting an authorized reference is not dispatch. In particular native
     // metadata uses its registered read action, not a fabricated Temporal task.
     // Submit and execution revalidation retain the original facts() gate.
@@ -482,7 +710,7 @@ async fn resource_facts(
     {
         return Err(denied());
     }
-    Ok((target, application))
+    Ok((target, application.definition))
 }
 
 async fn resolve_resource(
@@ -493,10 +721,10 @@ async fn resolve_resource(
     query: &Value,
 ) -> Result<contracts::NativeHumanResourceResult, Refusal> {
     let mut tx = state.pool.begin().await?;
-    let (target, application) = resource_facts(&mut tx, actor, binding_id, current, query).await?;
+    let (target, definition) = resource_facts(&mut tx, actor, binding_id, current, query).await?;
     let evaluation = state
         .governance
-        .evaluate(actor, &application.definition, &target)
+        .evaluate(actor, &definition, &target)
         .await?;
     if !evaluation.allowed {
         return Err(Refusal::Denied(
@@ -509,9 +737,10 @@ async fn resolve_resource(
     {
         return Err(blocked());
     }
-    let result = serde_json::from_value(json!({"resource":{"resourceId":target.id,"resourceVersion":target.version,
+    let result = json!({"resource":{"resourceId":target.id,"resourceVersion":target.version,
         "nativeType":query["nativeType"],"nativeRef":query["nativeRef"],"nativeInstanceRef":current.native_instance_ref,
-        "nativeScopeRef":current.native_scope_ref}})).map_err(|_| unavailable())?;
+        "nativeScopeRef":current.native_scope_ref}});
+    let result = serde_json::from_value(result).map_err(|_| unavailable())?;
     tx.commit().await?;
     Ok(result)
 }
@@ -523,16 +752,37 @@ async fn check_existing_binding(
     binding: Uuid,
     generation: i64,
 ) -> Result<Option<Uuid>, Refusal> {
-    let foreign: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution where component_binding_id=$1 and idempotency_key=$2 and initiator_principal_id<>$3)")
+    type ExistingBindingRow = (Uuid, Option<Uuid>, Option<i64>, Option<Value>, String);
+
+    let foreign: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution where (component_binding_id=$1 or parameters->'nativeHumanOrigin'->>'bindingId'=$1::text) and idempotency_key=$2 and initiator_principal_id<>$3)")
         .bind(binding).bind(key).bind(actor.principal_id).fetch_one(&state.pool).await?;
     if foreign {
         return Err(denied());
     }
-    let row: Option<(Uuid,Option<Uuid>,Option<i64>)> = sqlx::query_as("select id,component_binding_id,component_projection_generation from admission.action_execution where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
+    let row: Option<ExistingBindingRow> = sqlx::query_as("select id,component_binding_id,component_projection_generation,parameters->'nativeHumanOrigin',action_key from admission.action_execution where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
         .bind(actor.tenant_id).bind(actor.principal_id).bind(key).fetch_optional(&state.pool).await?;
     match row {
         None => Ok(None),
-        Some((id, Some(actual), Some(epoch))) if actual == binding && epoch == generation => {
+        Some((id, Some(actual), Some(epoch), None, _))
+            if actual == binding && epoch == generation =>
+        {
+            Ok(Some(id))
+        }
+        Some((id, None, None, Some(raw), action))
+            if matches!(
+                action.as_str(),
+                "resource.grant_read" | "resource.revoke_read"
+            ) =>
+        {
+            let origin: Origin = serde_json::from_value(raw).map_err(|_| denied())?;
+            if origin
+                != (Origin {
+                    binding_id: binding,
+                    generation,
+                })
+            {
+                return Err(denied());
+            }
             Ok(Some(id))
         }
         _ => Err(denied()),
@@ -544,6 +794,95 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use ring::signature::KeyPair;
+
+    fn permission_execution() -> Execution {
+        let actor = Uuid::new_v4();
+        let operation = Uuid::new_v4();
+        Execution {
+            id: Uuid::new_v4(),
+            operation_id: operation,
+            tenant_id: Uuid::new_v4(),
+            workspace_id: None,
+            action_key: "resource.grant_read".into(),
+            action_version: 1,
+            initiator_principal_id: actor,
+            actor_principal_id: actor,
+            target_id: Uuid::new_v4(),
+            parameter_hash: "frozen".into(),
+            parameters: None,
+            temporal_workflow_id: None,
+            cancel_first_run_id: None,
+            approval_workflow_id: None,
+            approval_expires_at: None,
+            gate_state: "ALLOWED".into(),
+            dispatch_state: "DISPATCHED".into(),
+            reason_code: None,
+            correlation_id: operation,
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn native_permission_origin_is_optional_only_for_legacy_and_strict_when_present() {
+        let mut ae = permission_execution();
+        assert_eq!(Origin::from_execution(&ae).unwrap(), None);
+        ae.parameters = Some(json!({"params":{}}));
+        assert_eq!(Origin::from_execution(&ae).unwrap(), None);
+        let binding = Uuid::new_v4();
+        ae.parameters = Some(json!({"nativeHumanOrigin":{"bindingId":binding,"generation":2}}));
+        assert_eq!(
+            Origin::from_execution(&ae).unwrap(),
+            Some(Origin {
+                binding_id: binding,
+                generation: 2
+            })
+        );
+        for invalid in [
+            Value::Null,
+            json!({}),
+            json!({"bindingId":binding,"generation":0}),
+            json!({"bindingId":binding,"generation":-1}),
+            json!({"bindingId":binding,"generation":"2"}),
+            json!({"bindingId":Uuid::nil(),"generation":2}),
+            json!({"bindingId":binding,"generation":2,"principalId":Uuid::new_v4()}),
+        ] {
+            ae.parameters = Some(json!({"nativeHumanOrigin":invalid}));
+            assert!(Origin::from_execution(&ae).is_err());
+        }
+    }
+
+    #[test]
+    fn native_permission_terminal_requires_exact_original_permission_outcome() {
+        let mut ae = permission_execution();
+        assert_eq!(
+            permission_terminal(&ae, Some("HUMAN_READ_GRANTED")).unwrap(),
+            Some("COMPLETED")
+        );
+        for missing in [
+            None,
+            Some("HUMAN_READ_REVOKED"),
+            Some("SERVICE_READ_GRANTED"),
+            Some("SUCCEEDED"),
+        ] {
+            assert!(permission_terminal(&ae, missing).is_err());
+        }
+        ae.action_key = "resource.revoke_read".into();
+        assert_eq!(
+            permission_terminal(&ae, Some("HUMAN_READ_REVOKED")).unwrap(),
+            Some("COMPLETED")
+        );
+        ae.dispatch_state = "UNKNOWN".into();
+        assert_eq!(permission_terminal(&ae, None).unwrap(), None);
+        assert!(permission_terminal(&ae, Some("HUMAN_READ_REVOKED")).is_err());
+        ae.dispatch_state = "ABORTED".into();
+        assert_eq!(
+            permission_terminal(&ae, Some("NOT_APPLIED")).unwrap(),
+            Some("FAILED")
+        );
+        assert_eq!(permission_terminal(&ae, None).unwrap(), None);
+        ae.dispatch_state = "UNRECOGNIZED".into();
+        assert!(permission_terminal(&ae, None).is_err());
+    }
 
     #[test]
     fn native_human_request_keeps_legacy_choices_and_rejects_scope_selection_or_combination() {
@@ -627,8 +966,70 @@ mod tests {
             .unwrap();
         assert_eq!(found.0.id, resource);
         assert_eq!(found.0.version, 2);
-        assert_eq!(found.1.definition.permission, "read");
-        assert_eq!(found.1.definition.execution_mode, "PROTOCOL");
+        assert_eq!(found.1.permission, "read");
+        assert_eq!(found.1.execution_mode, "PROTOCOL");
+        let origin = Origin {
+            binding_id,
+            generation: current.generation,
+        };
+        origin
+            .check(&mut tx, actor, resource, found.0.version)
+            .await
+            .unwrap();
+        assert!(origin
+            .check(&mut tx, actor, resource, found.0.version + 1)
+            .await
+            .is_err());
+        assert!(Origin {
+            generation: current.generation + 1,
+            ..origin.clone()
+        }
+        .check(&mut tx, actor, resource, found.0.version)
+        .await
+        .is_err());
+        assert!(origin
+            .check(
+                &mut tx,
+                Actor {
+                    principal_id: Uuid::new_v4(),
+                    ..actor
+                },
+                resource,
+                found.0.version
+            )
+            .await
+            .is_err());
+        assert!(!permission_binding_pending(&mut tx, binding_id)
+            .await
+            .unwrap());
+        let native = Uuid::new_v4();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,parameters,gate_state,dispatch_state,correlation_id)
+            values ($1,$1,$2,'resource.grant_read',1,$3,$3,$4,$5,$6,'EVALUATING','NOT_DISPATCHED',$1)")
+            .bind(native).bind(tenant).bind(principal).bind(resource).bind("a".repeat(64))
+            .bind(json!({"nativeHumanOrigin":origin,"targetVersion":found.0.version}))
+            .execute(&mut *tx).await.unwrap();
+        assert!(permission_binding_pending(&mut tx, binding_id)
+            .await
+            .unwrap());
+        sqlx::query("update admission.action_execution set gate_state='ALLOWED',dispatch_state='UNKNOWN' where id=$1")
+            .bind(native).execute(&mut *tx).await.unwrap();
+        assert!(permission_binding_pending(&mut tx, binding_id)
+            .await
+            .unwrap());
+        sqlx::query(
+            "update admission.action_execution set dispatch_state='DISPATCHED' where id=$1",
+        )
+        .bind(native)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert!(
+            permission_binding_pending(&mut tx, binding_id)
+                .await
+                .unwrap(),
+            "missing original OUTCOME cannot drain"
+        );
         assert!(
             facts(
                 &mut tx,

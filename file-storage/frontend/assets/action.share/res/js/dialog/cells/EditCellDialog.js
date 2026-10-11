@@ -64,6 +64,7 @@ export default class extends React.Component {
                 pydio.fireContextRefresh();
             }
         }).catch(reason => {
+            if(reason.nativeCellPending){ return; }
             pydio.UI.displayMessage('ERROR', reason.message);
         });
     };

@@ -42,6 +42,7 @@ import (
 	"go.etcd.io/bbolt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -49,6 +50,110 @@ import (
 )
 
 type deleteReceiptServer struct{ *taskLookupContextServer }
+
+type nativeCellJobStream struct {
+	grpc.ServerStream
+	ctx  context.Context
+	jobs []*jobproto.Job
+}
+
+func (s *nativeCellJobStream) Context() context.Context { return s.ctx }
+func (s *nativeCellJobStream) Send(r *jobproto.ListJobsResponse) error {
+	s.jobs = append(s.jobs, r.Job)
+	return nil
+}
+
+func TestNativeCellReconcileLifecycleFencesOriginalDAO(t *testing.T) {
+	test.RunStorageTests([]test.StorageTestCase{test.TemplateBoltWithPrefix(bolt.NewBoltDAO, "native_cell_fence_")}, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jobstore.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index, scenario := range []string{"disable", "create-cancel", "create-cancel-before-job", "PEP-denied", "wrong-service", "wrong-generation"} {
+			t.Run(scenario, func(t *testing.T) {
+				binding := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
+				tenant := "00000000-0000-4000-8000-000000000011"
+				serviceID := "00000000-0000-4000-8000-000000000012"
+				key := "00000000-0000-4000-8000-000000000013"
+				job := jobstore.NativeCellJob("share-"+scenario, binding, 1)
+				if scenario != "create-cancel-before-job" {
+					if err := store.ClaimJob(ctx, job); err != nil {
+						t.Fatal(err)
+					}
+				}
+				action := "application_binding.disable"
+				if scenario == "create-cancel" || scenario == "create-cancel-before-job" {
+					action = "application_binding.create"
+				}
+				args := map[string]interface{}{"bindingId": binding, "generation": 1, "configDigest": strings.Repeat("a", 64), "nativeInstanceRef": "native", "nativeScopeRef": "scope", "idempotencyKey": key}
+				if scenario == "wrong-generation" {
+					args["generation"] = 2
+				}
+				raw, _ := json.Marshal(args)
+				claims, _ := json.Marshal(map[string]interface{}{"tenant_id": tenant, "target_id": binding, "target_type": "APPLICATION_BINDING", "action_execution_id": key, "operation_id": key, "action_key": action})
+				token := "header." + base64.RawURLEncoding.EncodeToString(claims) + ".signature"
+				pep := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if r.URL.Path == "/token" {
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "fixture-service", "token_type": "Bearer", "expires_in": 60})
+						return
+					}
+					if scenario == "PEP-denied" {
+						w.WriteHeader(403)
+						return
+					}
+					var request map[string]interface{}
+					if json.NewDecoder(r.Body).Decode(&request) != nil || request["operation"] != "reconcile" || request["argumentsJson"] != string(raw) || request["actionToken"] != token {
+						w.WriteHeader(403)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"actionExecutionId": key, "operationId": key, "authorizationMinZedToken": "original-lifecycle-decision"})
+				}))
+				defer pep.Close()
+				secret := filepath.Join(t.TempDir(), "client-secret")
+				if err := os.WriteFile(secret, []byte("controlled-test-secret"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				local := config.WithStubStore(ctx)
+				delivery := map[string]interface{}{"bindingId": binding, "tenantId": tenant, "nativeInstanceRef": "native", "nativeScopeRef": "scope", "instanceServiceUuid": serviceID,
+					"corePepUrl": pep.URL + "/service/v1/adapter/pep_check", "oidcTokenUrl": pep.URL + "/token", "clientId": "test-binding", "clientSecretFile": secret, "clientSecretMaxBytes": 256, "maxResponseBytes": 65536, "requestTimeout": "2s",
+					"cellShare": map[string]interface{}{"nativeJobId": job.ID, "bindingGeneration": 1, "nativeType": "node", "grantActionVersion": 1, "revokeActionVersion": 1}}
+				if err := config.Set(local, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+					t.Fatal(err)
+				}
+				actor := serviceID
+				if scenario == "wrong-service" {
+					actor = tenant
+				}
+				local = claim.ToContext(local, claim.Claims{Subject: actor})
+				envelope, _ := json.Marshal(map[string]interface{}{"actionToken": token, "argumentsJson": string(raw)})
+				local = metadata.NewIncomingContext(local, metadata.Pairs("x-kailo-binding-reconcile", base64.RawURLEncoding.EncodeToString(envelope)))
+				stream := &nativeCellJobStream{ctx: local}
+				err = (&JobsHandler{}).ListJobs(&jobproto.ListJobsRequest{JobIDs: []string{job.ID}, LoadTasks: jobproto.TaskStatus_Any}, stream)
+				allowed := scenario == "disable" || scenario == "create-cancel" || scenario == "create-cancel-before-job"
+				if (err == nil) != allowed {
+					t.Fatal("wrong lifecycle decision", err)
+				}
+				if scenario == "create-cancel-before-job" {
+					if len(stream.jobs) != 1 || len(stream.jobs[0].Tasks) != 0 {
+						t.Fatal("empty cancellation invented task history", stream.jobs)
+					}
+					if err := (&JobsHandler{}).EnsureNativeActionJobs(local); err != nil {
+						t.Fatal("late startup rejected matching fenced identity", err)
+					}
+				}
+				stored, readErr := store.GetJob(job.ID, jobproto.TaskStatus_Unknown)
+				if readErr != nil || stored.Inactive != allowed {
+					t.Fatal("actual original Job fence differs", stored, readErr)
+				}
+				late, _ := jobstore.NewNativeCellTask(job.ID, "late-"+scenario, "owner", []byte(`{}`))
+				if claimErr := store.ClaimTask(late); (claimErr != nil) != allowed {
+					t.Fatal("late task escaped actual lifecycle fence", claimErr)
+				}
+			})
+		}
+	})
+}
 
 func (s *deleteReceiptServer) GetJob(_ context.Context, request *jobproto.GetJobRequest) (*jobproto.GetJobResponse, error) {
 	return s.JobsHandler.GetJob(s.ctx, request)

@@ -118,6 +118,261 @@ func TestDAO_ExactTask(t *testing.T) {
 	})
 }
 
+func TestDAO_NativeCellFenceAndClaim(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding := uuid.New()
+		old, current := jo.NativeCellJob(uuid.New(), binding, 1), jo.NativeCellJob(uuid.New(), binding, 2)
+		for _, job := range []*jobs.Job{old, current} {
+			if err := store.ClaimJob(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.ClaimJob(ctx, jo.NativeCellJob(uuid.New(), binding, 2)); err == nil {
+			t.Fatal("second Job for frozen generation accepted")
+		}
+		oldTask, _ := jo.NewNativeCellTask(old.ID, uuid.New(), "native-human", []byte(`{"original":"claim"}`))
+		if err := store.ClaimTask(oldTask); err != nil {
+			t.Fatal(err)
+		}
+		observed, err := store.SnapshotNativeCells(ctx, binding, 2, current.ID, false, 1<<20)
+		if err != nil || len(observed) != 2 {
+			t.Fatal("history was not fully enumerated", observed, err)
+		}
+		for _, job := range observed {
+			if job.Inactive {
+				t.Fatal("create observation stopped native job")
+			}
+		}
+		// Race a late coordinator claim with the real DAO fence: it either
+		// commits before and appears in the snapshot, or cannot create a task.
+		late, _ := jo.NewNativeCellTask(current.ID, uuid.New(), "native-human", []byte(`{"original":"late"}`))
+		start := make(chan struct{})
+		done := make(chan error, 1)
+		go func() { <-start; done <- store.ClaimTask(late) }()
+		close(start)
+		snapshot, err := store.SnapshotNativeCells(ctx, binding, 2, current.ID, true, 1<<20)
+		claimErr := <-done
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		oldFound := false
+		for _, job := range snapshot {
+			if !job.Inactive {
+				t.Fatal("fence not persisted")
+			}
+			for _, task := range job.Tasks {
+				found = found || task.ID == late.ID
+				oldFound = oldFound || task.ID == oldTask.ID
+			}
+		}
+		if !oldFound || (claimErr == nil) != found {
+			t.Fatal("fence lost concurrent/historical native claim", claimErr, found, oldFound)
+		}
+		for _, job := range []*jobs.Job{old, current} {
+			late, _ := jo.NewNativeCellTask(job.ID, uuid.New(), "native-human", []byte(`{}`))
+			if err := store.ClaimTask(late); err == nil {
+				t.Fatal("post-fence claim accepted")
+			}
+			if task, err := store.GetTask(ctx, job.ID, late.ID); err != nil || task != nil {
+				t.Fatal("rejected claim left a task", task, err)
+			}
+		}
+		oldTask.Status = jobs.TaskStatus_Running
+		if err := store.PutTask(oldTask); err != nil {
+			t.Fatal("fence blocked existing task reconciliation", err)
+		}
+		next := jo.NativeCellJob(uuid.New(), binding, 3)
+		if err := store.ClaimJob(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+		nextTask, _ := jo.NewNativeCellTask(next.ID, uuid.New(), "native-human", []byte(`{}`))
+		if err := store.ClaimTask(nextTask); err != nil {
+			t.Fatal("new generation inherited retired Job fence", err)
+		}
+	})
+}
+
+func TestDAO_NativeCellCancelBeforeCreate(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding, jobID := uuid.New(), uuid.New()
+		if snapshot, err := store.SnapshotNativeCells(ctx, binding, 1, jobID, false, 1<<20); err == nil || snapshot != nil {
+			t.Fatal("observation invented an absent Job", snapshot, err)
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			snapshot, err := store.SnapshotNativeCells(ctx, binding, 1, jobID, true, 1<<20)
+			if err != nil || len(snapshot) != 1 || !jo.NativeCellJobMatches(snapshot[0], jobID, binding, 1) || !snapshot[0].Inactive || len(snapshot[0].Tasks) != 0 {
+				t.Fatal("empty cancellation was not durably fenced", snapshot, err)
+			}
+		}
+		for _, job := range []*jobs.Job{jo.NativeCellJob(jobID, binding, 1), jo.NativeCellJob(uuid.New(), binding, 1)} {
+			if err := store.ClaimJob(ctx, job); err == nil {
+				t.Fatal("late create replaced canceled generation")
+			}
+		}
+		for _, job := range []*jobs.Job{jo.NativeCellJob(jobID, binding, 1), {ID: jobID}} {
+			if err := store.PutJob(job); err == nil {
+				t.Fatal("ordinary Job update replaced cancellation fence")
+			}
+		}
+		if err := store.DeleteJob(jobID); err == nil {
+			t.Fatal("deleting fence reopened delayed create")
+		}
+		late, _ := jo.NewNativeCellTask(jobID, uuid.New(), "native-human", []byte(`{}`))
+		if err := store.ClaimTask(late); err == nil {
+			t.Fatal("late task crossed pre-create fence")
+		}
+		if job, err := store.GetJob(jobID, 0); err != nil || !job.Inactive || len(job.Tasks) != 0 {
+			t.Fatal("cancellation evidence changed", job, err)
+		}
+		// An absent current generation must retain earlier cancellation fences.
+		old, err := store.SnapshotNativeCells(ctx, binding, 2, uuid.New(), true, 1<<20)
+		if err != nil || len(old) != 2 {
+			t.Fatal("cancellation omitted predecessor", old, err)
+		}
+	})
+}
+
+func TestDAO_NativeCellAbsentFenceRetainsInFlight(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding := uuid.New()
+		prior := jo.NativeCellJob(uuid.New(), binding, 1)
+		if err := store.ClaimJob(ctx, prior); err != nil {
+			t.Fatal(err)
+		}
+		pending, _ := jo.NewNativeCellTask(prior.ID, uuid.New(), "native-human", []byte(`{}`))
+		if err := store.ClaimTask(pending); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := store.SnapshotNativeCells(ctx, binding, 2, uuid.New(), true, 1<<20)
+		if err != nil || len(snapshot) != 2 {
+			t.Fatal("absent-current cancellation lost predecessor", snapshot, err)
+		}
+		found := false
+		for _, job := range snapshot {
+			if !job.Inactive {
+				t.Fatal("predecessor can still accept work", job)
+			}
+			for _, task := range job.Tasks {
+				found = found || proto.Equal(task, pending)
+			}
+		}
+		if !found {
+			t.Fatal("unresolved original task was lost or rewritten")
+		}
+	})
+}
+
+func TestDAO_NativeCellAbsentFenceRejectsConflict(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, scenario := range []string{"orphan-task", "ordinary-job", "generation-owner", "size-limit", "canceled-context"} {
+			t.Run(scenario, func(t *testing.T) {
+				binding, jobID := uuid.New(), uuid.New()
+				requestCtx, maxBytes := ctx, int64(1<<20)
+				switch scenario {
+				case "orphan-task":
+					err = store.PutTask(&jobs.Task{ID: uuid.New(), JobID: jobID, Status: jobs.TaskStatus_Running})
+				case "ordinary-job":
+					err = store.PutJob(&jobs.Job{ID: jobID})
+				case "generation-owner":
+					err = store.ClaimJob(ctx, jo.NativeCellJob(uuid.New(), binding, 1))
+				case "size-limit":
+					maxBytes = 1
+				case "canceled-context":
+					var cancel context.CancelFunc
+					requestCtx, cancel = context.WithCancel(ctx)
+					cancel()
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if snapshot, err := store.SnapshotNativeCells(requestCtx, binding, 1, jobID, true, maxBytes); err == nil || snapshot != nil {
+					t.Fatal("incomplete cancellation was acknowledged", snapshot, err)
+				}
+				job, err := store.GetJob(jobID, 0)
+				if scenario == "ordinary-job" {
+					if err != nil || job.Inactive || jo.IsFrozenNativeJob(job) {
+						t.Fatal("conflicting ordinary Job was overwritten", job, err)
+					}
+				} else if err == nil || job != nil {
+					t.Fatal("rejected cancellation left a Job", job, err)
+				}
+			})
+		}
+	})
+}
+
+func TestDAO_NativeCellCreateRacesCancellation(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, crossGeneration := range []bool{false, true} {
+			t.Run(fmt.Sprintf("cross-generation=%t", crossGeneration), func(t *testing.T) {
+				binding, jobID := uuid.New(), uuid.New()
+				fenceID, generation := jobID, int64(1)
+				if crossGeneration {
+					fenceID, generation = uuid.New(), 2
+				}
+				late, _ := jo.NewNativeCellTask(jobID, uuid.New(), "native-human", []byte(`{}`))
+				start, done := make(chan struct{}), make(chan error, 1)
+				go func() {
+					<-start
+					if err := store.ClaimJob(ctx, jo.NativeCellJob(jobID, binding, 1)); err != nil {
+						done <- err
+						return
+					}
+					done <- store.ClaimTask(late)
+				}()
+				close(start)
+				snapshot, err := store.SnapshotNativeCells(ctx, binding, generation, fenceID, true, 1<<20)
+				claimErr := <-done
+				if errors.Is(err, errors.StatusConflict) {
+					// A conflicting first-claim anchor aborts the whole transaction;
+					// re-observe the SAME fence identity, never accept an empty result.
+					snapshot, err = store.SnapshotNativeCells(ctx, binding, generation, fenceID, true, 1<<20)
+				}
+				if err != nil || len(snapshot) == 0 {
+					t.Fatal("racing initial create escaped cancellation", snapshot, err)
+				}
+				found, fenced := false, false
+				for _, job := range snapshot {
+					if !job.Inactive {
+						t.Fatal("cancellation left a generation open", job)
+					}
+					fenced = fenced || job.ID == fenceID
+					for _, task := range job.Tasks {
+						found = found || proto.Equal(task, late)
+					}
+				}
+				if !fenced || (claimErr == nil) != found {
+					t.Fatal("cancellation lost accepted native work", claimErr, snapshot)
+				}
+				if err := store.ClaimJob(ctx, jo.NativeCellJob(jobID, binding, 1)); err == nil {
+					t.Fatal("older first generation appeared after acknowledged fence")
+				}
+			})
+		}
+	})
+}
+
 func TestDAO_CRUD(t *testing.T) {
 
 	test.RunStorageTests(testCases, t, func(ctx context.Context) {

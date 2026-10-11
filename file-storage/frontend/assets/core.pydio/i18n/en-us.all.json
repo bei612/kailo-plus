@@ -2497,6 +2497,8 @@
   },
   "action.delete.awaiting-admission": {"other": "Deletion is awaiting admission or approval. Retry this selection to check the same request."},
   "action.delete.unknown": {"other": "Deletion outcome is not yet confirmed. Retry this selection to check the same request; it will not start a new deletion."},
+  "action.share.unknown": {"other": "Membership change is not yet confirmed. Retry this selection to check the same request; unknown native writes will not be repeated."},
+  "action.share.awaiting-admission": {"other": "Membership change is awaiting admission or approval. Your edit has been retained."},
   "action.delete.permanently.warning": {
     "other": "warning, you cannot undo this operation!"
   },

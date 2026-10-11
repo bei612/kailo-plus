@@ -23,6 +23,9 @@ import (
 // Dispatch alone is untrusted; each branch verifies its own original PEP,
 // transport subject, actor, input and native Task before returning any evidence.
 func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof string) error {
+	if req.Request.Header.Get("X-Kailo-Native-Operation") == "reconcile" {
+		return nativeBindingReconcile(req, resp, proof)
+	}
 	data, err := base64.RawURLEncoding.DecodeString(proof)
 	var envelope struct {
 		ArgumentsJSON string `json:"argumentsJson"`

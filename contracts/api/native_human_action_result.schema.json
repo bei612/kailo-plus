@@ -2,7 +2,7 @@
   "$schema":"https://json-schema.org/draft/2020-12/schema",
   "$id":"api/native_human_action_result.schema.json",
   "title":"NativeHumanActionResult",
-  "description":"Reference-only observation of the original HUMAN AE. Terminal status comes from original component-action audit after native/usage reconciliation, never from HTTP acceptance.",
+  "description":"Reference-only observation of the original HUMAN AE. Component terminal status comes from original component-action audit after native/usage reconciliation. Native-origin platform resource permission actions use their exact permission-outcome audit; that outcome does not assert completion of a component's native sharing RPCs. Never infer a terminal result from HTTP acceptance.",
   "type":"object","additionalProperties":false,
   "required":["submission"],
   "properties":{

@@ -132,7 +132,7 @@ export async function verifiedClaims(token, config) {
 // Existing binding-create management tokens carry no business Resource or
 // ResultExposure authority. Both native adapters use the same signed shape.
 export async function verifyBindingManagementToken(token, config, args, operation) {
-  if (!['handshake', 'validate_binding'].includes(operation)) throw new Refused(401);
+  if (!['handshake', 'validate_binding', 'reconcile'].includes(operation)) throw new Refused(401);
   const claims = await verifiedClaims(token, config);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   for (const key of ['jti', 'tenant_id', 'actor_principal_id', 'initiating_human_principal_id',
@@ -141,7 +141,9 @@ export async function verifyBindingManagementToken(token, config, args, operatio
   }
   if (claims.tenant_id !== config.tenantId || claims.workspace_id !== config.workspaceId
     || claims.target_type !== 'APPLICATION_BINDING' || claims.target_id !== config.bindingId
-    || claims.action_key !== 'application_binding.create'
+    || !(operation === 'reconcile'
+      ? ['application_binding.create', 'application_binding.disable'].includes(claims.action_key)
+      : claims.action_key === 'application_binding.create')
     || claims.actor_principal_id !== claims.initiating_human_principal_id
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
     || !nonempty(claims.authorization_min_zed_token)

@@ -1495,12 +1495,24 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
 /// （.design/10 §2 的五元组之一）。serde_json 的对象按键排序序列化，因此同一组
 /// 参数永远得到同一个摘要。
 fn parameter_hash(def: &Definition, target_id: Uuid, params: &Params) -> String {
-    let canonical = json!({
+    parameter_hash_with_origin(def, target_id, params, None)
+}
+
+fn parameter_hash_with_origin(
+    def: &Definition,
+    target_id: Uuid,
+    params: &Params,
+    origin: Option<&crate::application_action::native_human::Origin>,
+) -> String {
+    let mut canonical = json!({
         "actionKey": def.action_key,
         "actionVersion": def.version,
         "targetId": target_id,
         "params": params.to_json(),
     });
+    if let Some(origin) = origin {
+        canonical["nativeHumanOrigin"] = json!(origin);
+    }
     hex::encode(Sha256::digest(canonical.to_string().as_bytes()))
 }
 
@@ -4095,6 +4107,72 @@ impl Governance {
         actor: Actor,
         cmd: &contracts::ActionCommand,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        self.submit_with_native_origin(actor, cmd, None).await
+    }
+
+    pub(crate) async fn submit_native_permission(
+        &self,
+        actor: Actor,
+        cmd: &contracts::ActionCommand,
+        origin: crate::application_action::native_human::Origin,
+    ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        if !matches!(
+            cmd.action_key.as_str(),
+            "resource.grant_read" | "resource.revoke_read"
+        ) || cmd.receiver_resource.is_some()
+        {
+            return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
+        }
+        self.submit_with_native_origin(actor, cmd, Some(origin))
+            .await
+    }
+
+    async fn replay_with_native_origin(
+        &self,
+        actor: Actor,
+        existing: Execution,
+        key: &str,
+        params: &Params,
+        origin: &Option<crate::application_action::native_human::Origin>,
+    ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
+        let op = Some(existing.operation_id);
+        if &crate::application_action::native_human::Origin::from_execution(&existing)
+            .map_err(|error| (error, op))?
+            != origin
+        {
+            return Err((Refusal::Denied(ReasonCode::ScopeGuardFailed), op));
+        }
+        if origin.is_some() {
+            let version = existing
+                .parameters
+                .as_ref()
+                .and_then(|value| value.get("permissionIntent"))
+                .and_then(|intent| intent.get("resourceVersion"))
+                .and_then(Value::as_i64)
+                .and_then(|version| i32::try_from(version).ok())
+                .or_else(|| existing.frozen_target_version())
+                .ok_or((Refusal::Precondition(ReasonCode::InvalidParameters), op))?;
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .map_err(|error| (error.into(), op))?;
+            crate::application_action::native_human::check_permission_origin(
+                &mut tx, &existing, version,
+            )
+            .await
+            .map_err(|error| (error, op))?;
+            tx.commit().await.map_err(|error| (error.into(), op))?;
+        }
+        self.replay(actor, existing, key, params).await
+    }
+
+    async fn submit_with_native_origin(
+        &self,
+        actor: Actor,
+        cmd: &contracts::ActionCommand,
+        origin: Option<crate::application_action::native_human::Origin>,
+    ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
         if cmd.memory_write.is_some() || cmd.protocol_session_open.is_some() {
             return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
         }
@@ -4128,7 +4206,9 @@ impl Governance {
             .await
             .map_err(|e| (e.into(), None))?
         {
-            return self.replay(actor, existing, &cmd.action_key, &params).await;
+            return self
+                .replay_with_native_origin(actor, existing, &cmd.action_key, &params, &origin)
+                .await;
         }
 
         let mut conn = self.pool.acquire().await.map_err(|e| (e.into(), None))?;
@@ -4147,6 +4227,33 @@ impl Governance {
         drop(conn);
 
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), None))?;
+        if let Some(origin) = &origin {
+            if !crate::roles::lock_tenant(&mut tx, actor.tenant_id)
+                .await
+                .map_err(|e| (e.into(), None))?
+            {
+                return Err((Refusal::Denied(ReasonCode::ScopeGuardFailed), None));
+            }
+            let foreign: bool = sqlx::query_scalar(
+                "select exists(select 1 from admission.action_execution
+                where tenant_id=$1 and parameters->'nativeHumanOrigin'->>'bindingId'=$2
+                  and idempotency_key=$3 and initiator_principal_id<>$4)",
+            )
+            .bind(actor.tenant_id)
+            .bind(origin.binding_id().to_string())
+            .bind(idempotency_key)
+            .bind(actor.principal_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| (error.into(), None))?;
+            if foreign {
+                return Err((Refusal::Denied(ReasonCode::ScopeGuardFailed), None));
+            }
+            origin
+                .check(&mut tx, actor, target.id, target.version)
+                .await
+                .map_err(|error| (error, None))?;
+        }
         let revoked = if matches!(
             sem,
             Semantic::AgentInstallationExecuteRevoke | Semantic::ResourceRevokeRead
@@ -4157,23 +4264,49 @@ impl Governance {
         } else {
             Vec::new()
         };
-        let inserted = open_execution(
-            &mut tx,
-            actor,
-            &def,
-            &target,
-            &params,
-            idempotency_key,
-            None,
-        )
-        .await;
+        let inserted = if let Some(origin) = &origin {
+            let parameters = json!({"params":params.to_json(),"targetVersion":target.version,
+                "nativeHumanOrigin":origin});
+            let hash = parameter_hash_with_origin(&def, target.id, &params, Some(origin));
+            open_execution_values(
+                &mut tx,
+                actor,
+                actor.principal_id,
+                &def,
+                &target,
+                parameters,
+                hash,
+                idempotency_key,
+                None,
+            )
+            .await
+        } else {
+            open_execution(
+                &mut tx,
+                actor,
+                &def,
+                &target,
+                &params,
+                idempotency_key,
+                None,
+            )
+            .await
+        };
         if let Err(sqlx::Error::Database(e)) = &inserted {
             if e.is_unique_violation() {
                 drop(tx);
                 // 并发的同键请求先落了库：回答它
                 if e.constraint() == Some("action_execution_idempotency") {
                     if let Ok(Some(existing)) = self.by_idempotency(actor, idempotency_key).await {
-                        return self.replay(actor, existing, &cmd.action_key, &params).await;
+                        return self
+                            .replay_with_native_origin(
+                                actor,
+                                existing,
+                                &cmd.action_key,
+                                &params,
+                                &origin,
+                            )
+                            .await;
                     }
                 }
                 // 同一目标已有在途的准入或审批
@@ -4557,7 +4690,12 @@ impl Governance {
         // 事实变化即不成立：target 换了对象或版本（.design/10 §2）
         if target.id != ae.target_id
             || Some(target.version) != ae.frozen_target_version()
-            || parameter_hash(def, target.id, params) != ae.parameter_hash
+            || parameter_hash_with_origin(
+                def,
+                target.id,
+                params,
+                crate::application_action::native_human::Origin::from_execution(ae)?.as_ref(),
+            ) != ae.parameter_hash
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
@@ -6888,6 +7026,14 @@ impl Governance {
             if Some(owner.target_version) != ae.frozen_target_version().map(i64::from) {
                 return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
             }
+            crate::application_action::native_human::check_permission_origin(
+                &mut tx,
+                &locked,
+                i32::try_from(owner.target_version)
+                    .map_err(|_| (Refusal::Conflict(ReasonCode::TargetStateConflict), op))?,
+            )
+            .await
+            .map_err(|error| (error, op))?;
             let params = ae
                 .params()
                 .ok_or((Refusal::Precondition(ReasonCode::InvalidParameters), op))?;
@@ -8277,7 +8423,59 @@ pub async fn record_owned_decision(
 
 #[cfg(test)]
 mod dispatch_tests {
-    use super::{Dispatch, StatusCode};
+    use super::*;
+
+    #[test]
+    fn native_permission_hash_binds_origin_without_changing_legacy_hash() {
+        let target = Uuid::new_v4();
+        let params = Params::from_json(
+            &json!({"resourceId":target,"resourceVersion":1,"principalId":Uuid::new_v4()}),
+        )
+        .unwrap();
+        let def = Definition {
+            action_key: "resource.grant_read".into(),
+            version: 1,
+            component_type_key: "core".into(),
+            target_type: "RESOURCE".into(),
+            tenant_rule: "SESSION_TENANT".into(),
+            workspace_rule: "TARGET_HOME_WORKSPACE".into(),
+            permission: "share".into(),
+            permission_object_type: "resource".into(),
+            confirmation_mode: "APPROVAL".into(),
+            approval_policy_id: None,
+            approval_policy_version: None,
+            workflow_kind: None,
+            result_exposure: "NONE".into(),
+            execution_mode: "SYNC".into(),
+            quota_policy: "NONE".into(),
+            meters: vec![],
+            role_template_key: None,
+            role_template_version: None,
+        };
+        let original = json!({"actionKey":def.action_key,"actionVersion":def.version,"targetId":target,"params":params.to_json()});
+        let legacy = hex::encode(Sha256::digest(original.to_string().as_bytes()));
+        assert_eq!(parameter_hash(&def, target, &params), legacy);
+        let binding = Uuid::new_v4();
+        let origin = serde_json::from_value(json!({"bindingId":binding,"generation":1})).unwrap();
+        let actual = parameter_hash_with_origin(&def, target, &params, Some(&origin));
+        let mut expected = original;
+        expected["nativeHumanOrigin"] = json!({"bindingId":binding,"generation":1});
+        assert_eq!(
+            actual,
+            hex::encode(Sha256::digest(expected.to_string().as_bytes()))
+        );
+        assert_ne!(actual, legacy);
+        for changed in [
+            json!({"bindingId":binding,"generation":2}),
+            json!({"bindingId":Uuid::new_v4(),"generation":1}),
+        ] {
+            let origin = serde_json::from_value(changed).unwrap();
+            assert_ne!(
+                actual,
+                parameter_hash_with_origin(&def, target, &params, Some(&origin))
+            );
+        }
+    }
 
     #[test]
     fn launch_result_maps_to_dispatch_outcome() {

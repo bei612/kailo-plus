@@ -1348,6 +1348,351 @@ PutJob、broker 派发及响应边界，但异步 child `scheduler/tasks/task.go
 `cmp` 均退出 0，三份日志 SHA-256 与本节一致。排除同文件 NativeCell 新增测试，
 不纳入尚未闭合的分享/绑定停用代码；复用上述窄验，未重新构建或部署。
 
+## 2026-10-10 原 PutCell 的 HUMAN 只读成员增删消费者（源码候选）
+
+本批直接接原 `CellModel.save → PUT /share/cell → Client.UpsertCell`，保留原
+分享弹窗、布局与独立原生安装路径；只接已有 Cell 的 HUMAN 只读成员整项增删。
+这不是完整 `file_storage.share@v1`：创建、roots/标签修改、WRITE、群组、到期及
+分享链接仍未闭合；受管入口拒绝未支持模式，不能据本刀注册六键子集或激活整个
+FILE_STORAGE release/binding。平台 READ 授权成功不等于 Cells 多 RPC 已完成。
+
+四步影响说明：
+
+1. 权威：`.design/03` 原平台 `resource.grant_read/revoke_read`、`.design/07`
+   七必选与 `.design/18` 身份/原生接缝，复用当前 Core NativeHumanAction 可信
+   `nativeHumanOrigin` 消费者，不把平台权限动作伪装成 component execution。
+   固定官方 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+   `idm/share/rest/handler.go::PutCell`、`idm/share/client.go::UpsertCell`、
+   `idm/share/client-acls.go::ComputeTargetAcls/UpdatePoliciesFromAcls` 为原调用链。
+2. 影响面：原 `NativeActorDelivery.Actors` 同一受控映射反查 HUMAN principal，
+   唯一、非 SERVICE、非群组且全部条目有效才接受；原真实用户查询及 Core 同
+   Tenant/active 检查仍执行。配置 `cellShare` 显式投递 binding generation、
+   原 Task job ID、native type 与两原权限动作版本，无默认身份或 generation。
+   `authorizeScope` 复用既有合同，写前逐次核 exact tenant/binding/generation/
+   native refs、permission 与非空 checkedRevision；原权限 AE 则逐项重新观察。
+   原 REST GetCell 只在本人已有原生读取准入之后返回非秘密意图隔离元数据。
+3. 副作用：先用原 Job/Task create-only 保存选择、精确平台命令与第二 Task ID，
+   才调用权限动作；相同 UI key 只重放同一不可变平台命令，不换 principal/key。
+   全部权限 outcome 已确认后，第二原 Task create-only 和 Running ACK 均确认
+   才调用原 UpsertCell。原 Job 无 actions/events/schedule，不承担另一个执行器。
+   原 Bolt/Mongo ClaimJob、PutJob/DeleteJob 保护及 Task 不可变 evidence 规则一并
+   覆盖新用途。每个原 ACL/Workspace 写入前都有同一 request-local fresh 检查；
+   丢失上下文或运行期撤掉配置不能回退独立模式。实际 native diff 必须与冻结
+   root/HUMAN/READ 增删集合完全相同，不经继承策略或新建 root 偷做额外写入。
+4. 异常：DeleteACL 要求真实 RowsDeleted；CreateACL 要求 exact ACL ACK；
+   CreateWorkspace 要求完整 workspace/policy ACK。固定上游
+   `idm/workspace/dao/sql/sql.go::Add` 会设置 LastUpdated，
+   `common/storage/sql/resources/gorm.go::AddPolicies` 会重新分配政策行 ID；
+   只归一化这两个服务端字段，LastUpdated 必须为正，政策正文不得缺失。
+   只有全部原 RPC/原 reload 成功才持久化原 Task Finished + intent digest ACK；
+   PutTask ACK 不明不向 UI 返回完成。读回已有 execution Task 永远不再 Upsert。
+   已确认 execution 的 coordinator 终态 ACK 丢失可沿同 key 查询并重存相同
+   终态；没有完整原 Task 回执不以对象存在、目标 ACL 看似一致推断成功。
+
+UI 在原 localStorage 只存无秘密选择/key/binding domain；JSON 损坏或存储不可写
+在派发前拒绝。浏览器重开复用原 key；旧 generation/选择不一致保留 UNKNOWN，
+不删除旧意图并生成新 key。202 不清选择、不让 CompositeModel 将 pending 计成
+成功；登录对象/本人 ID/repository 改变后旧 await 不再派发或消费新身份响应。
+独立安装没有 domain 仍使用原 API；原视图不会因缺少尚未投递的 share 配置消失。
+
+本刀尚不解决多平台权限 AE 的部分成功、本地多 RPC 后崩溃且未写 terminal ACK、
+并发修改 workspace 缺原子 CAS，以及平台权限 AE 完成后 native Task 的完整
+binding 排空关联。此类请求保留同一原 Task/意图，按 UNKNOWN 对账，不自动重写
+ACL、补造成功、补造失败或释放意图；没有肯定证据的人工终结消费者仍不足，
+因此此候选不能开放受管分享或解除原 release 门禁。其余原分享功能仍是交付缺项。
+
+兼容与验收边界：新增 `cellShare` 是原受控 native 配置的实际消费者，不是新的
+平台实体/合同。旧 binary 不识别该守卫与冻结 Job 标识；新配置不得投递给旧
+writer，启用前需同批替换原 Core 可信来源及 Cells 消费者并验证实际运行版本。
+此时仅私有源码写入，原 SDK `kailo-cells-native-check-lftow7` 回读为 UID
+1000:1000、4 CPU / 8 GiB memory+swap、Data 缓存，原 gofmt 句柄 89661 退出 0。
+新增原 auth/jobs/share 与原 UI save 消费者检查尚未执行；没有把原 full 或其他
+组件验证称为本候选通过。真实 SQL AddPolicies 返回、Mongo、完整原 REST/SSO、
+真实 Core grant/revoke、故障恢复与界面截图亦未验收；未构建、未部署、未激活。
+
+随后取得本批 UI 原消费者证据：复用已空闲的
+`kailo-agent-receipt-xvkujx`，回读 UID 1000:1000、4 CPU、8 GiB memory+swap，
+只在独立 Data 目录执行 `node --test adapter/test/native-cell.test.mjs`。
+首次退出 1（9/10）：检查夹具用 `Map.get` 将缺失响应头返回为 undefined，
+而实际 Fetch Headers.get 返回 null；只纠正这一夹具返回，不更改生产拒绝边界。
+最终正向退出 0（10/10）；在 SDK 私有 `nativeCell.js` 中实际删除
+`attempt.domain !== domain` 拒绝行，原 generation 与 missing-domain 场景报错，
+反证退出 1。还原后与候选生产源码 `cmp` 退出 0，同一检查再次退出 0（10/10）。
+此处是实际 save helper 的 VM 请求/存储消费者检查，不是浏览器截图、原 Cells
+后端或真实 Core 权限联调。完成后容器 top 仅 sleep，已交还原 UI 队友。
+
+原日志根为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/native-cell-ui.naLFgK`：
+
+| 原件 | SHA-256 | 实际结果 |
+| --- | --- | --- |
+| `positive.log` | `58f6c1161c9544815c073a1eabf4228d7fbead46ebcce3d52c932e9195454ff2` | exit 1，夹具缺失头语义错误 |
+| `positive-final.log` | `7c80a430f177e827665e8e961a3672bc9a2fa370dec20655842927c827e2f6c8` | exit 0，10/10 |
+| `negative.log` | `92747b7d1f3c455b897b82c883fdafdcd0b40390c8d128823fc2eba40c6000be` | exit 1，真实生产反证 |
+| `restored.log` | `da531a744e3199c17c5825f3dac99f4b8238e1944e21e0087f7bb42ae9b8e0db` | exit 0，10/10 |
+
+Go 原 SDK 单任务 73306 已启动，原目标为 `go test -count=1 -v -run
+'^TestNativeCell' ./common/auth ./scheduler/jobs ./idm/share ./idm/share/rest
+./scheduler/jobs/grpc ./scheduler/jobs/dao/bolt ./scheduler/jobs/dao/mongo`；
+此段记录时尚无终态，不据此填通过。镜像内 input/TMPDIR 都在 Data 私有目录，
+未启动第二份 Go 或全量作业，也未改 Cargo 并行度。
+
+### 本批 Go 最终正向、生产反证和还原
+
+原 73306 已实际退出 1：auth/jobs/share/rest/grpc 的原生初始化均因本次调用
+漏投递 `CELLS_WORKING_DIR` 报 `Could not create local data dir ...
+-/.config/pydio/cells`；没有进入用例。只补齐已有 runtime/dirs.go 消费的该
+环境项，明确指向本次 Data 私有 `.cells-runtime`，没有更改 HOME 或产品默认值。
+各次 TMPDIR 也保持同 Data 私有目录。原失败日志原样保留。
+
+冻结后发现并修正一处真实原版差异：固定
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`idm/share/client-acls.go::AclsToCellAcls/LoadCellAclsObjects` 读取已有用户时
+不设置 `IsUserRole`（原 UI 添加成员才设置该提示位）。后端不再要求这个 UI 位，
+仍要求真实 User UUID、无 Group/Role、非群组和仅 READ，后续原 User 查询、
+受控 Actors 反查及 Core active/同 Tenant 准入全部保留。事后检查真正调用原
+两函数及原 Role/User RPC 消费者；恢复旧提示位要求时该检查真实失败。
+
+同一受限 SDK 的最终命令沿前述七目标，另加原
+`./common/storage/sql/resources`，仍使用 `go test -count=1 -v -run
+'^TestNativeCell'`。仅私有既有 `dao_test.go` 追加 TemplateSQL 后验：实际
+SQLite `AddPolicies` 新增/更新返回与 `GetPoliciesForResource` 的持久行、
+ID 及政策正文均一致，且强制实际执行计数为 1；没有 MySQL/PG 投递，也没有
+早退被记通过。因此此前 AddPolicies 返回值疑点已排除，生产 DAO 未修改，
+没有放宽空 ACK。该私有后验文件 SHA-256 为
+`4e0b6e3d9f294956c1ba0b4753df0fd1cf93577208180f8c0f40a3e609f2c8c3`，
+不进入交付源码。
+
+正向 81798 实际退出 0：7 个顶层检查、30 个子场景通过。随后仅在 SDK 私有
+三份生产源中破坏 HUMAN 映射完整性检查、原 Task share receipt 不可变检查、
+binding generation 检查和负 ACK 判定，并恢复旧 IsUserRole 要求；37939
+实际退出 1，五个顶层检查真实失败（包括八个失败子场景及一个原 ACL 对象
+读取场景），不是编译错误。全部三份生产源用 apply_patch 还原，候选中所有
+Go 源与 SDK 输入逐一 `cmp` 退出 0，再运行同一完整窄命令，24582 实际退出 0，
+7 顶层/30 子场景再次通过。未用旧 binary 冒充本次命令，也未更改正式源作反证。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-cell-share.Itii5l`。
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `positive.log` | `caeac78b06a4eb537a2c02df85b7d423f7dd7efc7f8216ca49b07b6e394aff92` | 73306 exit 1，原生工作目录未投递 |
+| `positive-final.log` | `8d1d5c351b8efec882fa94958a15370278cb43bcb0ff5700ef6ba1c9f49bf4a2` | 81798 exit 0 |
+| `negative.log` | `fdc336d3a5114504f7c1700945a1173de63dd57c1f3c9558d16b5d761415239e` | 37939 exit 1，生产反证 |
+| `restored.log` | `7d961d30cc7268697050d2b39c832e5acff73eee2f80c6120185804f2bb22a2b` | 24582 exit 0 |
+
+rest/grpc 目标仅编译且报告 no tests；Bolt/Mongo 目标 no test files，不记为
+真实 Task DAO 持久化或 Mongo 实例验收。上述消费者检查也不等于原 REST 完整
+PutCell/SSO/UI 截图验收。原 Task 在多 RPC 部分成功、崩溃和 binding 排空的
+剩余缺口保持；未构建或激活组件。实际正向接入仍必须有已批准的七键 release、
+真实 binding/generation、同一受控 Actors 的调用人和收件人、原已有 Cell 及
+各 root 的 Resource 归属/版本，以及明确投递的 cellShare 元数据；已有三用户
+SSO 不证明这些批准事实存在，不能直接补库、复制身份或伪造 ACTIVE 来过门禁。
+
+### 2026-10-10 原分享 Task 绑定排空与原子 Claim 栅栏（源码批）
+
+本批依据 `.design/07` §5.2、§6.2 的既有 binding reconcile/停用语义，
+以及固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`scheduler/jobs/rest/handler.go::UserListJobs`、原 Job.Inactive/Task 存储消费者。
+前批 readonly HUMAN 分享可以先持久 coordinator 再产生平台授权 AE；
+因此仅查 Core EE 或已存在的 nativeHumanOrigin 会漏掉原生 UNKNOWN。
+
+四步影响：
+
+1. 权威：复用原 binding disable Workflow、原系统策略签发 management ActionToken、
+   Core PEP、原 Job/Task 与原 Task receipt；不新建 EE、任务账本或权限权威。
+   原 REMOTE_ADAPTER reconcile 现在有真实 binding 请求/结果 DTO；旧适配器不支持时
+   保持 DISABLING，不把 404、失败或缺 ACK 当空集合。PROTOCOL_PEER 原路径保持。
+2. 影响面：Core 停用 advance/finish 在锁内比对原 reference；client-kit 管理验签、
+   Cells adapter、jobs/user、原 gRPC ListJobs、Bolt/Mongo DAO 同链消费。
+   NativeCellJob.Metadata 固定 bindingId/generation；同 binding 旧代次一起枚举。
+   ClaimJob 拒绝已有更高或相同 generation，且当前 Job 未存在时排空必拒绝；
+   因此快照后不能另建旧代次 Job 躲过枚举。Mongo 创建新代次写所有原前代 Job，
+   ClaimTask 与停用也写同 Job.claim_revision，事务冲突重验，而非只读后 Insert。
+3. 副作用：只有 Core lifecycle PEP 已证明 DISABLING 的 reconcile 可置专属
+   Job.Inactive，覆盖 disable 及取消 create；原 create handshake/validate_binding
+   不进入此消费者，也不触碰 Cells 其他 Job。Bolt 先完整枚举再同写事务封禁，
+   不在迭代原 bucket 时写它；Mongo 使用原存储 snapshot transaction/majority ACK，
+   不支持事务则拒绝，绝不降级为 GetJob+Insert。fence 后原 Task 回执/状态写入仍可进行。
+4. 异常：完整 EOF、同 binding/generation、原冻结 intent、两个 Task 的成功回执均需成立。
+   UNKNOWN、缺配对/ACK、部分 RPC、流错误、超限、缺当前 Job、畸形/旧无归属 Job，
+   均不得完成停用；不重派原业务写入、不从当前 Cell 对象推断历史成功。
+   超限按现有响应上限拒绝，本批未实现分页；长期 UNKNOWN 仍需既定肯定证据收敛，
+   没有新增自动失败/零用量结算。旧分享 Job 不自动归属或解封；新代次投递新的专属 Job。
+
+兼容：新增 DTO 和 Job.Metadata 是本批实际格式扩展，未自动提升线上 release 能力。
+旧无归属 Job 仅阻断本分享能力/排空；Mongo 唯一索引仅匹配 NativeCellShareJob=true
+且两个归属字段均为 string，不把普通/旧缺字段 Job 索引为相同 null。
+必须同步升级 Core/adapter/native writer 再交付该能力，不能混跑旧 Claim writer。
+原受管组件 release/binding 尚未激活；本批不证明完整 FILE_STORAGE 七键。
+
+已执行：原 4CPU/8GiB、UID1000 SDK/Data 缓存预检后，tools/gen.sh 四侧生成
+22757 exit 0；Dart 两 i18n 生成文件与正式 cmp 0。quicktype 原生嵌套类型从
+ExecutionClass 变为 ExecutionElement，三个现有 Worker 消费文件机械同步，wire 不变。
+首次 rustfmt 因小快照缺兄弟 mod 报错，未算通过；随后原 rustfmt
+`--edition 2021 --config skip_children=true` 四个 Core 文件退出 0。
+没有执行 Cargo、Core SQL/行锁或四语言双向运行检查，不以生成成功替代这些验收。
+
+Node 原 HTTP adapter 消费者：正向 16131 exit 0，10/10；实际删除生产
+`canonical(result.reference) !== raw` 后 wrong-reference 被放行 200，检查真实失败
+（8 pass / 2 fail、exit 1）；apply_patch 原字节还原且 cmp 0 后 10/10、exit 0。
+日志目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/cells-binding-reconcile/`：
+
+| 原文件 | SHA256 |
+|---|---|
+| generation.log | 52b398e382b2959e01fb16033b4e4b80dde009698f1f262ed6881c8f1db4f1f2 |
+| node-positive.log | c439d6ef54c8c62c261746ed994551de2eb9b12c632bf3095bdd5fab98be841c |
+| node-negative.log | d259920ed82f3cd5bb50ea1a65ed70809a479c01ffbb07eae1374fc0abe4e345 |
+| node-restored.log | 84328483f38018be6e5d6c912c6c1d051338e4168361dac92367272c7d938330 |
+
+原 Go 28994 仍在途：`go test -tags=kv -count=1 -v -run
+'^Test(NativeCell|DAO_NativeCellFenceAndClaim)' ./scheduler/jobs ./scheduler/jobs/dao
+./idm/share ./scheduler/jobs/grpc`，Data 私有目录 `.native-cell-reconcile.MHdjoL`。
+尚无其终态，不声明原 DAO/Mongo/真实部署排空验收通过；后续只补事后证据。
+
+v2 交叉复核修正：binding reconcile 分支落入实际签票/PEP 消费的
+`action_token::lifecycle_observation_revision`，普通 EE `observation_revision`
+没有扩展为 binding 操作；取消 create 已处于 DISABLING，同样必须 fence。
+原 28994 输入是 v1，终态不能当 v2 REST/gRPC 验收，须顺序补最终窄验。
+PROVISIONING 边界：`application_binding::prewrite` 在同一事务中
+插入 binding 及 PENDING application_runtime，正常已提交 binding 不存在无 runtime
+的合法窗口；但原 Cells Job 来自 `EnsureNativeActionJobs` 的独立启动投递，
+不由该 Core 事务保证。取消发生在 native Job 未创建时，本批仍拒绝完成排空；
+没有持久肯定的未创建/未执行证明接缝，不把缺 Job 当空集合或称所有取消闭环。
+
+2026-10-11 主线程接管 v2 验证。原 28994 日志实际包含
+`undefined: jobproto.JobServiceStub`，不是通过；该符号在固定源码不存在。
+`native-cell-reconcile_test.go` 已复用原 `task-receipt_test.go` 的 bufconn、
+JobServiceServer 注册与真实 gRPC ClientConn，不创建另一套 stub。
+原 gRPC 生命周期检查的 OIDC 响应漏掉原消费者必需的 `expires_in`，现补齐
+测试响应，不放宽生产 token 校验。两份最终源码与 SDK 输入逐字节 cmp 退出 0。
+
+同一 4 CPU/8 GiB、UID1000 SDK 和 Data 缓存执行，最初一次漏投递
+CELLS_WORKING_DIR/CELLS_DATA_DIR，退出 1、没有业务检查通过；失败日志保留。
+正确投递到原私有 `.cells-runtime` 后，最终命令 79963 退出 0：
+
+```sh
+go test -tags=kv -count=1 -v -run '^Test(NativeCell|DAO_NativeCellFenceAndClaim)' \
+  ./scheduler/jobs ./scheduler/jobs/dao ./idm/share ./scheduler/jobs/grpc ./scheduler/jobs/rest
+```
+
+原 jobs、Bolt DAO、share 和 gRPC 四包通过；REST 包无检查对象，只经过编译，
+不是 REST 业务验收。gRPC 的 disable、create-cancel 均实际冻结原 Job，随后
+ClaimTask 拒绝；PEP 拒绝、错误 SERVICE 和错误 generation 不冻结 Job。
+私有生产副本把 SnapshotNativeCells 的 fence 参数改为 false，原检查在两条允许
+路径报 `actual original Job fence differs`，34360 退出 1。按正式字节还原、cmp 0，
+同一检查 24191 退出 0。没有改生产状态、删除数据或弱化检查来取得通过。
+
+日志位于 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-cell-reconcile.MHdjoL/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| binding-v2-final.log | `2fd46e2b36c357588f832ce87fffa2fb10dd8486bc150e1590557136700274bc` |
+| binding-v2-negative.log | `101005a8f4ffe87d4541b57514df0207fb5a1f26293f9b8b73004207120f12d5` |
+| binding-v2-restored.log | `cef65275addc0576557befa4bf9491edacaf5ca279ee53a9429fdd2575ecb298` |
+
+Mongo 事务、真实 HTTP/部署排空和 native Job 尚未生成的取消窗口仍未验收。
+这组结果不表示 release/binding 已激活，也不表示三组件菜单或完整文件操作已交付。
+
+### 2026-10-11 完整原生页面构建发现的删除依赖遗漏
+
+DD-87/88 与原生删除接入沿原 access.gateway 的 deleteAction 与
+emptyRecycle 调用 nativeDelete；后者引入 uuid4 生成并持久化请求幂等键，
+但该 workspace 没有声明依赖。完整 Cells 服务构建在真实 webpack 阶段报
+`Module not found: Error: Can't resolve 'uuid4'`，不是原页面可交付。
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`frontend/assets/gui.ajax/package.json::dependencies.uuid4` 已固定 1.1.4，
+同一 pnpm 锁已含 package 与 snapshot。本次只给真实消费者 access.gateway
+补同版本直接依赖和 importer；没有增加依赖版本、替换 UUID 实现或页面。
+影响仅构建依赖解析；请求键、重复投递、UNKNOWN、作用域、审批与授权逻辑
+保持不变，无数据迁移与兼容窗口，无三端协议变化。后续构建结果另记，不能
+用此前镜像代表此输入已经验收。原失败日志为 Data 下
+`build-file-storage-service.njBcUC.log`。
+
+同批 adapter 已实际构建、推送并以 registry HEAD 200 回读：source digest
+`2faa5d991004a95e3d830a5e5d748201b4fb2e6a01db06632fa498240ce459d7`，
+artifact digest `08803a9e0b617f557580c4c28de6d6ac3d4fb3e590b1f61aebbc595cdacf5995`。
+正式 manifest 采用实际回执；未部署，未激活 binding，不代表左侧菜单交付。
+
+随后原 `tools/build-upstream.sh file-storage-service` 完整构建（33443）退出 0。
+原前端 webpack 完成，Go 二进制实际输出 Cells 5.0.3-dev / Go 1.26.8，
+完整镜像导出、推送和来源登记成功。受限 builder 为 8 CPU/16 GiB，
+输入快照为 `/volumes/data/kailo/tmp/cells-delivery-release.qFNxaW`，
+原日志 `/volumes/data/kailo/tmp/build-file-storage-service.L9RTmB.log` 的
+SHA-256 为 `b821e0c3060630980083a440495d8bb9fc83646975df164eeb004aaead9a0932`。
+
+对全部 9023 个源码输入逐字节比较，最初只有 Compose 环境项顺序和
+`discovery/install/assets/src/res/build/PydioInstall.js` 的 3 处 CRLF 不同。
+后者快照 blob 与 HEAD 均为 `61774b1dce9cd341b613c70f4414f23b2849f80c`；
+正式工作树按已跟踪 LF 归一，Compose 保留全部相同值并对齐顺序，未改功能。
+原 manifest helper 再算实际 source digest 为
+`sha256:dd72501afd81832b75996dc97db559e8a375138a5f105b169ce9392b8fa2b0ba`，
+与构建输入一致后才采用原工具的登记结果。registry 独立 HEAD 返回 200，
+`Docker-Content-Digest` 为
+`sha256:1900f564fa4e64318752369c2a392f76981285c9dfade72b6c93e4c2ac846283`。
+这是完整产物构建/推送回执，不是 Git 提交/push、部署、浏览器视觉验收、
+ApplicationBinding 激活或 Cells 全功能治理闭合证明。
+
+### 2026-10-11 原生 Job 创建前取消的原子栅栏
+
+本批补齐上文已记录的 native Job 尚未生成窗口，不改变 DD-87/88 与
+`.design/07` §5.2、§6.3 的绑定停用、原生副作用及在途对账语义。
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`scheduler/jobs/dao/bolt/bolt.go::PutJob` 原为无条件 bucket.Put，
+`scheduler/jobs/dao/mongo/mongo.go::PutJob` 原为按 ID ReplaceOne/upsert；
+不能把这两个原版写者直接用作受治理 Job 的幂等创建。
+
+变更影响面与边界结论：
+
+- 权威：沿原 Job/Task、Inactive 和 binding/generation；没有新增状态、契约字段、
+  注册表或审计/工作流权威。属于已授权治理改造，不是页面或功能重设计。
+- 写读链：`JobsHandler.nativeCellSnapshot` 在原生命周期 PEP 通过后调用
+  Bolt/Mongo `SnapshotNativeCells`。当当前 Job 不存在时，只有 fence 请求才在
+  原事务中插入同一 ID、同一 binding/generation 的 Inactive Job；普通观察仍拒绝。
+  `ClaimJob`、`ClaimTask` 与该事务/唯一键串行；`PutJob`、`DeleteJob` 不得覆盖或
+  删除 frozen Job；`EnsureNativeActionJobs` 接受同一停用身份而不重新启用。
+- 副作用：不是将“未找到”直接当作排空。插入前拒绝冲突普通 Job、同代次异 ID
+  和孤儿 Task；原所有历史代次与 Task 全量保留，不写任何伪造任务、SUCCEEDED
+  或零用量。`ReconcileNativeCells` 仍要求完整 EOF 和当前栅栏；已有在途、缺 ACK
+  或缺配对回执仍为 UNKNOWN，不重放原生 ACL/Workspace 操作。
+- 异常：取消 context、超限、数据库异常均使事务回滚；竞争创建在同一事务或
+  原唯一键冲突处拒绝，不能获得成功空集合；重复 fence 保留同一事实。既有 PEP
+  DENIED、投递 PRECONDITION、大小 LIMIT、原存储 CONFLICT 不变；无法取得完整
+  观察时沿原 UNKNOWN 收敛路径，不声明停用完成。Web/Desktop 原生页面消费者
+  不变，Mobile 非组件宿主边界不变；无需契约迁移或新增兼容读路径。
+
+先实现两个 DAO 分支，再扩展现有 DAO/gRPC 用例。复用
+`kailo-cells-native-check-lftow7`，回读 4 CPU、8 GiB、等量 memory+swap、
+UID1000；Go mod/build 缓存、临时文件、私有源码均实际 bind 在 Data。
+镜像 `golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+四个改动源码与 SDK 输入经 gofmt 后逐字节 cmp 退出 0。最终命令：
+
+```sh
+go test -tags=kv -count=1 -v -run '^Test(NativeCell|DAO_NativeCell)' \
+  ./scheduler/jobs ./scheduler/jobs/dao ./idm/share ./scheduler/jobs/grpc ./scheduler/jobs/rest
+```
+
+57139 退出 0：jobs、Bolt DAO、share、gRPC 四包通过；真实 gRPC 的
+create-cancel-before-job 经 PEP 到 DAO 后再执行实际 EnsureNativeActionJobs，
+栅栏仍停用，迟到 Task 被拒。DAO 覆盖首次创建竞争、重复取消、迟到覆盖/删除、
+历史在途 Task 保留、孤儿任务、错 Job/代次、超限及取消 context。
+仅私有副本将缺 Job 分支的 Inactive 改 false，20556 退出 1，原文
+`empty cancellation was not durably fenced`；还原与正式源码 cmp 0 后，
+同一最终命令 82756 退出 0。正式源码未被破坏。
+
+日志仍在 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-cell-reconcile.MHdjoL/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| cancel-before-create-final.log | `efc66877c4841dc33b59ef5f1e9e7acc1700e09b93e938643d9fdf8f6e7538e0` |
+| cancel-before-create-negative.log | `119829f9740ce588be436d745c2205e31dd265f952ba90193f2e97980a5637e8` |
+| cancel-before-create-restored.log | `b10a088ecc892d86161d63755554dee92fd1b060bf57f239ea222c1adeb15985` |
+
+Mongo 实例未投递，只有编译，不是 Mongo 事务验收；REST 包显示 no test files。
+未做真实 HTTP/部署排空、进程崩溃恢复、浏览器截图或 Windows/Mobile 验收。
+本批源码尚未进入上文完整镜像，不将旧产物摘要冒充本批产物；没有部署或激活
+binding，也没有因本批宣称三个菜单已交付。全量工程检查与 Git 收口由主线程集中执行。
+
 ## 2026-10-11：PEP 冻结 binding 代次兼容闭包
 
 本批只交付 Adapter PEP 可选 `bindingGeneration`，不是 Cells/Wren 完整治理、
@@ -1415,6 +1760,100 @@ Rust 101 / Go 1 / TypeScript 1 / Dart 1；`pep-independent-*-negative.log`
 63 个失败名称逐项相同；本批新增 8 项通过，但完整 adapter 套件仍未通过。
 本批未执行全局 `--full`、真实 Core PEP 数据库 HTTP 链或 UI/设备验收，未部署。
 
+## 2026-10-11：绑定停用拒绝未来原生观察时间
+
+本次仅修正既有停用对账消费者 `application_binding_native::reconcile_complete`
+的观察边界：`lastObservedAt` 不得晚于 Core 本次读取的当前时间，既有
+`terminalAt <= lastObservedAt` 判断保留。终态及 UNKNOWN 的未来时间均拒绝，
+不能靠未来证据完成停用或退休凭据。没有新状态、时间阈值、数据库字段或降级路径。
+语义沿 `.design/07` §5.2、§6.3 与既有
+`application_execution::observation` 的未来观察拒绝规则；只改原消费者及其事后检查。
+
+该函数属于尚未提交的 NativeCell/Core 绑定停用闭包，本修复不能脱离其 schema、
+四侧生成及原生消费者直接算作可发布补丁。窄验使用此前原闭包树
+`3e1eda2c0e4046863d4ccb4a0dd7cb8897fa5ffa` 加本次单文件修正，不冒充当前
+main 全量验证。复用 `kailo-cells-closure-kxbrvt` 原 SDK，4 CPU/8 GiB、无额外
+swap；原缓存、输入和日志全在 Data，不新建构建环境。
+
+实际命令为：
+
+```text
+cargo test --offline --locked --manifest-path core/Cargo.toml \
+  -p platform-core --bin platform-core \
+  native_binding_reconcile_requires_complete_exact_terminal_evidence -- --nocapture
+```
+
+证据目录为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/future-observation.9Lgfes`。
+`positive-registry-input.log` 退出 0：1 passed、424 filtered out，SHA-256
+`1101303161bc95349cba040fefc1b40f758cd7001a83dbb6abd3e840a482ae50`。
+仅在私有副本删除本次生产判断后，同一检查以 `future-observation` panic
+退出 101（`negative.log`），SHA-256
+`b10e8ea320b1439ad40e8733d321b829041bce22d86adf51200d664961ccfd41`。
+判断随后恢复，正式与私有单文件 `cmp` 退出 0；恢复复验命令增加该文件
+`rustfmt --edition 2021 --check`，session 45830 最终退出 0：格式检查通过，
+1 passed、424 filtered out。`restored.log` 的 SHA-256 为
+`662f0fc49133652f58658aa8d261aa00eacd75c4b13f79215b67a097d77e5fe4`。
+
+首次格式检查失败已修正；两次私有输入缺失（原 Buzz workspace Cargo.toml、
+原 tools/registry/capabilities.yaml）分别造成编译退出 101，补齐同树原输入后
+才得到上述正向结果。最后复验曾在 Docker 执行入口无输出，主机当时只读采样
+D 状态 612 个、load 651.47/379.42/204.12；未追加容器或重试构建，原作业恢复后
+完成编译 35.25 秒并通过。该恢复终态仍仅属于上述旧闭包加单文件修正。
+本节不证明真实 HTTP/数据库停用、完整 NativeCell、其他组件治理、上线或菜单验收。
+
+### 同日：精确归并候选四侧生成同步
+
+以 main `8ec54d517c17157e8f5a3e14a6eb9ed37d795309` 为基线的 60 路径私有
+候选 tree `ea2d35de24c501034fbb4ce53d1196210ab9463e`，保留已提交 Agent
+时间字符串及可选 PEP 代次。四份生成文件由原生成结果与已提交修复三方归并，
+本轮随后实际使用原 `tools/gen.sh --check` 验证，不靠合并成功判断同步。
+
+仅从该 tree 导出 contracts、原生成脚本、四侧生成落点及 i18n 原实际输入/输出；
+未复制全仓、未混入正式 i18n 脏改、未写入正式生成物。输入和日志在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/gen-check-ea2d.vi1XYe`。
+复用原 `kailo-cells-closure-kxbrvt` 4 CPU/8 GiB SDK；启动前确认 Wren 原
+builder 8 CPU/16 GiB、知识 Go 与 Web 各 4 CPU/8 GiB，主机可用内存约
+40.6 GiB、D 状态 1 个；没有增加容器或重开任何构建。
+
+首轮 43577 退出 1：复用 SDK 未补原 `tools/check.sh` 的 npm 缓存环境投递，
+四语言均报 `npm EAI_AGAIN registry.npmjs.org`，尚未比对生成物；Mobile 词条
+同步通过。保留 `generation-check.log`，SHA-256
+`a7b8db0ed9ac60c5ab690ec2079ef521f6c10af50b05cdb478ff632564cf25f2`。
+确认 Data 原缓存中固定 quicktype `23.0.171` 已存在后，只恢复原 runner 的
+`npm_config_cache=/cache/npm` 并增加 `npm_config_offline=true`，同输入、同 SDK
+运行 `bash tools/gen.sh --check`；未联网安装或修改原生成脚本。
+
+原句柄 25851 退出 0：Dart、Rust、TypeScript、Go 四侧均显示同步 PASS，
+Mobile platform/reason 词条同步 PASS。`generation-check-offline.log` SHA-256
+`e4f0fe74c3ed4493881f06f68e24c100aa7ccf811e925991008ed7a448a18975`。
+本步骤不包含四侧运行回环、Core/Worker 编译、数据库停用或完整工程检查；后续
+Cargo 窗口由主线程协调，未因本结果宣称这 60 路径全部验收或组件可上架。
+
+### 同日：精确归并候选 Core 原生消费者
+
+获主线程单批窗口后，对同 tree `ea2d35de24c501034fbb4ce53d1196210ab9463e`
+导出 Core/contracts、原 Buzz Cargo workspace/crates、AgentGateway proto 与 registry
+实际编译输入；未复制全仓、未混入正式树其他修改。复用原 4 CPU/8 GiB SDK 和
+Data 缓存；启动前主机可用内存约 36.5 GiB，原 SDK 仅有 sleep，无并行 Cargo。
+
+```text
+cargo test --offline --locked --manifest-path core/Cargo.toml \
+  -p platform-core --bin platform-core native_ -- --nocapture
+```
+
+原句柄 96237 最终退出 0，编译链接 5m09s；108 passed、0 failed、11 ignored、
+307 filtered out。其中原权限来源、精确权限结果、幂等来源 hash 和原绑定完整
+终态证据（包括未来时间拒绝）均通过。链接进程曾等待磁盘 I/O，未取消或重复执行。
+输入与日志为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/core-ea2d.k2xgy8/native-core.log`，
+SHA-256 `a5ef96e66f25c5441ce55aa66219b7af4263a5154cccca13454e7a7bcf86d5cf`。
+
+11 项 ignored 需要原独立已迁移数据库；日志另明确
+`SKIP Automation阶段SQL证据：未投递独立空库 DATABASE_URL`。它们不是数据库
+通过证据，本步骤也不等于完整工程门禁、真实原生 HTTP 停用、Mongo 运行验收或
+组件发布。仅随后追加回执、重组 Git 基线，不改变本次已验源码。
+
 ## 2026-10-11：SOURCE 目录回执后原生披露复核
 
 权威与影响：按 `.design/13` §4.4/§7 和 `.design/07` §8.2，只有完整且
@@ -1473,3 +1912,134 @@ SHA-256：
 本批未运行全局 --full、真实数据库/原生部署、浏览器截图或三端设备验收，
 未产出镜像、未部署或激活组件。知识库延迟接收任务的可信持久关联和 fresh
 执行入口仍由对应消费者闭合，不因本 SOURCE 披露修复而宣称跨服务同步完整。
+
+## 2026-10-11：NativeCell 首次跨代次 Mongo 竞争更正
+
+继续沿原 ClaimJob / SnapshotNativeCells 消费者追查，确认此前 Mongo 说明
+不覆盖首次跨代次竞争：两个 snapshot transaction 都可能读到同 binding
+无 Job，低代次创建与高代次空集停用各插不同 Job ID / generation，原唯一键
+不冲突。Bolt 单 writer 事务没有这个窗口；旧 Mongo 编译结果不能证明它安全。
+
+按 `.design/07` 原 generation 停用和完整在途对账边界修正原 Mongo Job DAO：
+在同一原 Job 行持久化 `claim_binding` 协调键，首次 ClaimJob 和空集 fence
+争用同一 partial unique index；有原行时两者都在原事务内触碰该原 Job。
+没有新 collection、合成 Task/终态、平台实体、权限或第二账本。原 Migrate
+先核对原 Job 可信 binding/generation 并迁移现存行，再启用唯一索引；重复或
+错误归属拒绝启动，不覆盖、不猜来源。没有适用 NativeCell 行时无数据迁移，
+不要求独立安装为了普通原生业务使用事务。已有锚点原 Job 随原任务证据保留，
+原 PutJob/DeleteJob 保护仍生效；后续新 generation 不继承旧 generation 的
+Inactive 状态，其他 binding 和独立原生 Job 不变。
+
+唯一键竞争必须使整个事务失败，保持原 UNKNOWN / 同一意图重试；不能吞异常
+返回空 `complete`。既有任务完成证据更新不被截止，新任务 claim 与截止在
+同一原 Job 写冲突下串行。新增数据库协调字段不出原 Job API / 四语言契约，
+不改变 Web/Desktop 原页面或 Mobile 非组件宿主边界。原 DAO 事后检查现同时
+覆盖同代次与首次跨代次创建竞争，仍使用原存储测试入口。
+
+在此更正前，精确旧候选 tree
+`260a9487ed90f7a18a9fddd5cdacd157ccddd011` 已用原受限 Node SDK 取得：
+
+```text
+node --test --test-name-pattern="binding reconcile|original Cell|unknown Cell|Cell save" file-storage/adapter/test/native-cell.test.mjs file-storage/adapter/test/binding-reconcile.test.mjs
+  exit 0，26 passed / 0 failed / 0 skipped
+node --test --experimental-strip-types --test-name-pattern="binding reconcile preserves" client-kit/ts/contracts/test/roundtrip.test.ts
+  exit 0，1 passed / 0 failed / 0 skipped
+```
+
+日志目录为 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/native-node-260a.fehJNf`；
+`consumer.log` SHA-256 `d52d4c6afa86158783a39d73a67d1080987f4257863fe3ba5b5283b83821a552`；
+`ts-roundtrip.log` SHA-256 `eebbb72a86a0981ae333c70259a08e1a1daa9b212c6f71fe8d5356f9bdee1e35`。
+它们调用原 UI 函数/adapter HTTP fixture，不是 Mongo 或在线 Core 停用验证。
+
+本次三文件更正经原 `kailo-cells-native-check-lftow7` gofmt；容器复用原
+4 CPU/8 GiB 限额、独立 Data Go mod/build 缓存，依赖访问为 offline/readonly。
+原句柄 23983 执行 `go test -tags=kv -mod=readonly -count=1 -v -run
+'^TestDAO_NativeCell' ./scheduler/jobs/dao` 尚无终态；原 Go 线程有 Data 页读取
+等待，未重复启动。隔离 `CELLS_TEST_MONGODB_DSN` 未投递，Mongo 实例事务、
+迁移与针对性破坏反证均未验证。旧 60 路径 tree 不包含本更正，不可直接提交；
+也不得将此前 Node/TS 或后续 Bolt 结果当作 Mongo 实例验收。未部署、未激活。
+
+### 当前部署后端与精确候选证据适用性
+
+2026-10-11 只读核验：原 `kailo-cells-native-cells-1` 的实际 Cells 子进程
+`3627` 在 `/proc/3627/fd/24` 打开
+`/var/cells/services/pydio.grpc.jobs/jobs.db`；该容器原 bind mount 指向
+`/volumes/data/kailo/components/cells/data`，其 `pydio.json` 的
+`databases.boltdb.driver` 为 `bolt`，没有 jobs 服务存储覆盖。核验仅输出
+driver、挂载与打开文件路径，没有读取任务正文或投递秘密。Compose 的独立
+PostgreSQL 是其他原生数据的后端，不能据此推断 Jobs 使用 SQL 或 Mongo。
+因此本部署按 Bolt 适用性验收，不另起 Mongo 基础设施；Mongo 的首次并发、
+迁移和真实事务反证仍未验收，Mongo 部署不得引用 Bolt 结果批准这项能力。
+
+本轮候选以 `36e63a2d0cbe2ce4c89f90696215b80bd635247f` 为底，仍限定原
+60 路径。已完整对照旧验证输入与新候选：Core 七源码、契约 schema/sample、
+共享 PEP 与原 Cell UI/adapter 消费者保持原验证内容；新差异是 Mongo 两源码、
+原 DAO 竞争检查、回执及已提交 SOURCE 披露检查的保留，不回退 main 成果。
+下面逐项区分重用证据和未跑范围，不将整个新树写成全量通过：
+
+| 范围 | 实际结果与新候选关系 |
+| --- | --- |
+| 四侧生成同步 | 精确 ea2d35de 原 `gen.sh --check` exit 0；本批 schema、生成文件与该输入逐字节相同。未重复生成。 |
+| TypeScript binding reconcile 回环 | 精确 260a 原运行 1 passed，生成文件、检查和样例与新树相同。 |
+| Rust / Go / Dart binding reconcile 回环 | 原 `cells-native-closure.KxbRvt` 中各一组正向、未知字段反证和恢复通过。两 schema/样例与新树相同；已完整复核生成差异只涉及 main 已提交的 Agent 时间字段及注释，binding DTO/序列化未变。Rust/Dart 检查仅格式差异，Go 检查原字节相同。这是该合同的历史等价窄证据，未重跑新树三语言整套回环。 |
+| Core 原生消费者 | ea2d 原 `native_` 108 passed、11 ignored；七个实际源码与新树相同。依赖原数据库的 ignored/SQL SKIP 仍不计通过。 |
+| 原 Cell UI / adapter | 260a 原 26 passed；生产消费者与新树相同，未重新执行整个 adapter 套件。 |
+| Bolt / Mongo DAO | 23983 因缺原运行目录配置退出 1；补齐后的 49474 与反证还原后的 2514 均 exit 0，Bolt 五组通过。Mongo 无隔离 DSN，真实事务不在本轮范围。 |
+| 平台与原生实际停用 | 没有真实 Core HTTP/数据库至原生完整链验收；release/binding 不激活，未新部署。 |
+
+旧三语言回环恢复日志均在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/`：
+
+- `rust-binding-restored.log`：`5dc60a8231aff3c93b53d969d8441f80e03562db7528fd8f5006f10935b3af88`
+- `go-binding-restored.log`：`aa20249bfb3eeb39fcdd60756e716ec38a517fbb4331063561c64510e74be934`
+- `dart-binding-restored.log`：`c2372174d682ef2df983890316f4858c85da2b34ea8ee8e138d7c09583eeecdc`
+
+对应 `rust-binding-negative.log`、`go-binding-negative.log`、
+`dart-binding-negative.log` 实际拒绝新增的未知字段，恢复样例后上述检查通过；
+没有将这些旧日志改名或冒充本轮新树完整运行。
+
+原 23983 于 09:49:35 UTC 输出 `Could not create local data dir ...
+-/.config/pydio/cells` 及 DAO `FAIL`：本次命令遗漏原
+`CELLS_WORKING_DIR` / `CELLS_DATA_DIR`，测试进程在原 runtime 初始化即退出，
+没有执行 DAO 业务断言。`mongo-anchor-bolt.log` SHA-256 为
+`674b7e5ee69ea362500e82007d535b06d2e57674fd34c9294a37ce5a324d0c28`。
+原 `.cells-runtime` Data 目录仍存在；只补回这两个既有配置，不修改生产源码、
+不重建容器、不联网下载，并保留原失败。外层 Go 清理尚未结束，不并行重跑。
+
+### 同批 Bolt 正向、破坏与还原终态
+
+原 23983 外层最终退出 1 后，确认原 Go 进程消失，才顺序补齐配置执行：
+
+```sh
+CELLS_WORKING_DIR=/workspace/file-storage/.native-cell-reconcile.MHdjoL/.cells-runtime \
+CELLS_DATA_DIR=/workspace/file-storage/.native-cell-reconcile.MHdjoL/.cells-runtime/data \
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local \
+go test -tags=kv -mod=readonly -count=1 -v -run '^TestDAO_NativeCell' ./scheduler/jobs/dao
+```
+
+入口仍是原 `kailo-cells-native-check-lftow7`，4 CPU / 8 GiB、无额外 swap，
+独立 Data Go mod/build 缓存；未创建新容器、安装依赖或并发写共享缓存。
+49474 exit 0：五个顶层 DAO 检查在 Boltdb 后端通过，包含原完整枚举/Claim、
+取消先于创建、原在途保留、冲突拒绝及同/跨代次首次创建竞争；业务运行 0.347s。
+Mongo 模板的 `CELLS_TEST_MONGODB_DSN` 未投递，原 Condition=false，没有执行
+真实 Mongo；两份 Mongo 新源码随原 DAO 包编译不等于事务或迁移实测。
+
+事后只在私有输入的 `scheduler/jobs/dao/bolt/native-cell.go`，将缺失 Job
+分支的 `job.Inactive = true` 改为 false。92973 exit 1：原
+`TestDAO_NativeCellCancelBeforeCreate` 在 `empty cancellation was not durably
+fenced` 断言真实失败；随后同进程原检查框架发生父级 Fatal/DAO 清理超时，
+日志完整保留，这些级联失败不另计为新的反证。正式工作树和私有提交候选
+从未包含该故障。apply_patch 原字节还原、cmp 正式文件退出 0 后，2514
+同命令 exit 0，五组全部恢复通过（0.430s）。最终三份 Mongo/DAO 改动及
+Bolt 生产输入均再次与正式源码逐字节比对成功。
+
+日志仍在原 `.native-cell-reconcile.MHdjoL`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `mongo-anchor-bolt-configured.log` | `5ce7c53ab8b645451af1e61a12354e0d4804b702d092372f67a1535b8821587d` | 正向 exit 0 |
+| `mongo-anchor-bolt-negative.log` | `c3c960c2dc70f85e9f4540e03362eb105cece421467961ec84d8beb7767320f3` | 破坏 exit 1 |
+| `mongo-anchor-bolt-restored.log` | `1430f53e483b06fc984e8c78dbdba4f9cdd987098dcda23fb5ddf9c430de2b9d` | 还原 exit 0 |
+
+本轮只闭合实际部署所用 Bolt DAO 的该源码与反证；没有新部署、真实 Core
+停用全链、Mongo 实例验证、浏览器/设备验收或新增 release/binding 激活。

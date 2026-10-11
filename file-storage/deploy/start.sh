@@ -88,7 +88,7 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads', 'delete'}, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads', 'delete', 'cellShare'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
@@ -127,6 +127,14 @@ try:
                 require(isinstance(deletion[key], str) and deletion[key].strip() == deletion[key] != '', 'native delete identifiers must be delivered')
             canonical_uuid(deletion['resultExposurePolicyId'])
             require(deletion['nativeJobId'] not in (delivery.get('read', {}).get('nativeJobId'), delivery.get('write', {}).get('nativeJobId')), 'native delete task owner must be distinct')
+        if 'cellShare' in delivery:
+            share = delivery['cellShare']
+            require(isinstance(share, dict) and set(share) == {'nativeJobId', 'bindingGeneration', 'nativeType', 'grantActionVersion', 'revokeActionVersion'}, 'native Cell metadata must match its original Task/HUMAN consumers')
+            for key in ('bindingGeneration', 'grantActionVersion', 'revokeActionVersion'):
+                require(type(share[key]) is int and share[key] > 0, 'native Cell versions must come from the approved binding and original platform actions')
+            for key in ('nativeJobId', 'nativeType'):
+                require(isinstance(share[key], str) and share[key].strip() == share[key] != '', 'native Cell identifiers must be delivered')
+            require(share['nativeJobId'] not in tuple(delivery.get(kind, {}).get('nativeJobId') for kind in ('read', 'write', 'delete')), 'native Cell task owner must be distinct')
         for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
             require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
         for key in ('maxResponseBytes', 'clientSecretMaxBytes'):
@@ -202,6 +210,13 @@ try:
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
+    if 'cellShare' in conf:
+        native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
+        require(conf['cellShare'] == {key: native['cellShare'][key] for key in ('nativeJobId', 'bindingGeneration')})
+        require(all(conf[key] == native[key] for key in ('bindingId', 'tenantId', 'nativeRootRef')))
+        require(conf.get('workspaceId') == native.get('workspaceId'))
+        require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
+        require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
     if 'readExecution' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['readExecution'] == native['read'])

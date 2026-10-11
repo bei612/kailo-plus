@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/binding_reconcile_response.schema.json",
+  "title": "AdapterBindingReconcileResponse",
+  "description": "完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。",
+  "type": "object", "additionalProperties": false,
+  "required": ["reference", "complete", "observations"],
+  "properties": {
+    "reference": {"$ref": "binding_reconcile_request.schema.json"},
+    "complete": {"type": "boolean"},
+    "observations": {"type": "array", "items": {"$ref": "execution_observation.schema.json"}}
+  }
+}

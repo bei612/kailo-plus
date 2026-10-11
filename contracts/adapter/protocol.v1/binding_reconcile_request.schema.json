@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/binding_reconcile_request.schema.json",
+  "title": "AdapterBindingReconcileRequest",
+  "description": "07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "generation", "configDigest", "nativeInstanceRef", "nativeScopeRef", "idempotencyKey"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "generation": {"type": "integer"},
+    "configDigest": {"type": "string"},
+    "nativeInstanceRef": {"type": "string"},
+    "nativeScopeRef": {"type": "string"},
+    "idempotencyKey": {"type": "string", "format": "uuid"}
+  }
+}

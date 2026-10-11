@@ -81,9 +81,13 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 	if err := value.Scan(&deleteDelivery); err != nil {
 		return errors.WithStack(errors.InvalidParameters)
 	}
+	var cellDelivery auth.NativeCellShareDelivery
+	if err := value.Scan(&cellDelivery); err != nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
 	// An optional, absent write Job preserves the original admission-only
 	// delivery. The native execute consumer still refuses without that Job ID.
-	if delivery.Read == nil && delivery.Write.NativeJobID == "" && deleteDelivery.Delete.NativeJobID == "" {
+	if delivery.Read == nil && delivery.Write.NativeJobID == "" && deleteDelivery.Delete.NativeJobID == "" && cellDelivery.CellShare.NativeJobID == "" {
 		return nil
 	}
 	var expected []*proto.Job
@@ -112,6 +116,17 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 			return errors.WithStack(errors.InvalidParameters)
 		}
 		expected = append(expected, jobs.NativeReadJob(deletion.NativeJobID))
+	}
+	if cellDelivery.CellShare.NativeJobID != "" {
+		if cellDelivery.Validate() != nil {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		for _, job := range expected {
+			if job.ID == cellDelivery.CellShare.NativeJobID {
+				return errors.WithStack(errors.InvalidParameters)
+			}
+		}
+		expected = append(expected, jobs.NativeCellJob(cellDelivery.CellShare.NativeJobID, cellDelivery.BindingID, cellDelivery.CellShare.BindingGeneration))
 	}
 	deadline, err := time.ParseDuration(delivery.RequestTimeout)
 	if err != nil || deadline <= 0 {
@@ -163,6 +178,10 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 }
 
 func nativeActionJobMatches(actual, expected *proto.Job) bool {
+	if _, cell := expected.GetMetadata()[jobs.NativeCellShareJob]; cell {
+		binding, generation, err := jobs.NativeCellJobOrigin(expected)
+		return err == nil && jobs.NativeCellJobMatches(actual, expected.ID, binding, generation)
+	}
 	if len(expected.Actions) == 0 {
 		return jobs.NativeReadJobMatches(actual, expected.ID)
 	}
@@ -183,7 +202,7 @@ func (j *JobsHandler) PutJob(ctx context.Context, request *proto.PutJobRequest) 
 
 	log.Logger(ctx).Debug("Scheduler PutJob", zap.Any("job", request.Job))
 	var putErr error
-	if jobs.IsNativeDeleteJob(job) {
+	if jobs.IsFrozenNativeJob(job) {
 		// An admitted child is a one-shot definition. A lost ACK is observed
 		// via its persisted coordinator, never overwritten or started again.
 		putErr = store.ClaimJob(ctx, job)
@@ -295,6 +314,9 @@ func (j *JobsHandler) DeleteJob(ctx context.Context, request *proto.DeleteJobReq
 func (j *JobsHandler) ListJobs(request *proto.ListJobsRequest, streamer proto.JobService_ListJobsServer) error {
 
 	ctx := streamer.Context()
+	if handled, err := j.nativeCellSnapshot(ctx, request, streamer); handled {
+		return err
+	}
 	log.Logger(ctx).Debug("Scheduler ListJobs", zap.Any("req", request))
 
 	store, err := manager.Resolve[jobs.DAO](ctx)

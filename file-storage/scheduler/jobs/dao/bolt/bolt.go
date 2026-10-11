@@ -80,7 +80,7 @@ func newBoltStore(db boltdb.DB) (*boltStore, error) {
 }
 
 func (s *boltStore) PutJob(job *proto.Job) error {
-	if jobs.IsNativeDeleteJob(job) {
+	if jobs.IsFrozenNativeJob(job) {
 		return errors.WithStack(errors.StatusConflict)
 	}
 
@@ -92,7 +92,7 @@ func (s *boltStore) PutJob(job *proto.Job) error {
 			if err := json.Unmarshal(prior, &frozen); err != nil {
 				return err
 			}
-			if jobs.IsNativeDeleteJob(&frozen) {
+			if jobs.IsFrozenNativeJob(&frozen) {
 				return errors.WithStack(errors.StatusConflict)
 			}
 		}
@@ -124,6 +124,31 @@ func (s *boltStore) ClaimJob(ctx context.Context, job *proto.Job) error {
 		bucket := tx.Bucket(jobsBucketKey)
 		if bucket.Get([]byte(job.ID)) != nil {
 			return errors.WithStack(errors.StatusConflict)
+		}
+		if _, cell := job.Metadata[jobs.NativeCellShareJob]; cell {
+			binding, generation, err := jobs.NativeCellJobOrigin(job)
+			if err != nil {
+				return err
+			}
+			if err := bucket.ForEach(func(_, raw []byte) error {
+				var prior proto.Job
+				if err := json.Unmarshal(raw, &prior); err != nil {
+					return err
+				}
+				if _, cell := prior.Metadata[jobs.NativeCellShareJob]; !cell {
+					return nil
+				}
+				owner, gen, err := jobs.NativeCellJobOrigin(&prior)
+				if err != nil {
+					return err
+				}
+				if owner == binding && gen >= generation {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
 		}
 		data, err := json.Marshal(job)
 		if err != nil {
@@ -174,7 +199,7 @@ func (s *boltStore) DeleteJob(jobID string) error {
 			if err := json.Unmarshal(prior, &frozen); err != nil {
 				return err
 			}
-			if jobs.IsNativeDeleteJob(&frozen) {
+			if jobs.IsFrozenNativeJob(&frozen) {
 				return errors.WithStack(errors.StatusConflict)
 			}
 		}
@@ -311,6 +336,18 @@ func (s *boltStore) ClaimTask(task *proto.Task) error {
 		jobBucket := tx.Bucket(jobsBucketKey)
 		if jobBucket == nil || jobBucket.Get([]byte(task.JobID)) == nil {
 			return errors.WithMessage(errors.JobNotFound, "Job ID not found")
+		}
+		var parent proto.Job
+		if err := json.Unmarshal(jobBucket.Get([]byte(task.JobID)), &parent); err != nil {
+			return err
+		}
+		if _, cell := parent.Metadata[jobs.NativeCellShareJob]; cell {
+			if _, _, err := jobs.NativeCellJobOrigin(&parent); err != nil {
+				return err
+			}
+			if parent.Inactive {
+				return errors.WithStack(errors.StatusConflict)
+			}
 		}
 		// Task IDs are native operation references, including across jobs. The
 		// absence check and insertion share the original Bolt write transaction.

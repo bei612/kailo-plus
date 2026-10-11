@@ -22,6 +22,7 @@ import PydioApi from '../http/PydioApi'
 import Observable from '../lang/Observable'
 import PathUtils from '../util/PathUtils'
 import IdmObjectHelper from './IdmObjectHelper'
+import nativeCell from './nativeCell'
 import {ShareServiceApi, RestPutCellRequest, RestCell, RestCellAcl, IdmACLAction, TreeNode} from 'cells-sdk'
 
 class CellModel extends Observable{
@@ -326,7 +327,14 @@ class CellModel extends Observable{
             }
         });
         request.Room = this.cell;
-        return api.putCell(request).then(response=>{
+        return nativeCell(Pydio.getInstance(), request, api).then(response=>{
+            if(response === null){
+                // The original edit remains dirty while its exact request is
+                // awaiting admission or a confirmed native outcome.
+                const pending = new Error();
+                pending.nativeCellPending = true;
+                throw pending;
+            }
             if(!response || !response.Uuid){
                 throw new Error('Error while saving cell');
             }
@@ -341,6 +349,9 @@ class CellModel extends Observable{
                 });
             }
         }).catch((err) => {
+            if(err.nativeCellPending){
+                throw err;
+            }
             let msg = err.Detail || err.message || err;
             if (err.response && err.response.body && err.response.body.Title){
                 msg = err.response.body.Title;

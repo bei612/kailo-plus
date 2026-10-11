@@ -350,7 +350,7 @@ pub(crate) async fn check(
             || claims["authorization_min_zed_token"].as_str().is_none_or(str::is_empty)
         {return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));}
         tx.commit().await?;
-        let revision=if status=="DISABLING" && matches!(operation,"observe"|"extract_usage") {
+        let revision=if status=="DISABLING" && matches!(operation,"observe"|"extract_usage"|"reconcile") {
             crate::action_token::lifecycle_observation_revision(&state,&ae,operation,&arguments).await?
         } else {
             let decision=state.governance.evaluate(crate::governance::Actor{tenant_id:tenant,

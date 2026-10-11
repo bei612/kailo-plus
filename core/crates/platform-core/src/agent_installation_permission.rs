@@ -700,6 +700,7 @@ pub(super) async fn validate_approval_owner(
     {
         return Err(conflict());
     }
+    crate::application_action::native_human::check_permission_origin(conn, ae, row.version).await?;
     projection(g, &row).await?;
     // Owner approval eligibility is not share/execute: exact active HUMAN owner
     // and same frozen scope are required, as in the original owner approval contract.
@@ -866,6 +867,7 @@ pub(super) async fn prewrite(
     if row.version != version || row.workspace_id != ae.workspace_id {
         return Err(conflict());
     }
+    crate::application_action::native_human::check_permission_origin(tx, ae, row.version).await?;
     if is_grant(&ae.action_key)
         && ae
             .parameters
@@ -1017,6 +1019,8 @@ pub(super) async fn dispatch(
     }
     projection(g, &row).await?;
     let fresh = async {
+        crate::application_action::native_human::check_permission_origin(&mut tx, &ae, row.version)
+            .await?;
         human(g, &mut tx, &row, ae.initiator_principal_id, &ae.action_key).await?;
         if grant && first {
             approved(g, &mut tx, &ae).await?;

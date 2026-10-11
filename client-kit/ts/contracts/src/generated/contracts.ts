@@ -298,10 +298,32 @@ export interface AdapterSecretRead {
 }
 
 /**
+ * 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+ */
+export interface AdapterBindingReconcileRequest {
+    bindingId:         string;
+    configDigest:      string;
+    generation:        number;
+    idempotencyKey:    string;
+    nativeInstanceRef: string;
+    nativeScopeRef:    string;
+}
+
+/**
+ * 完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
+ * 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
+ */
+export interface AdapterBindingReconcileResponse {
+    complete:     boolean;
+    observations: ExecutionElement[];
+    reference:    ReferenceClass;
+}
+
+/**
  * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
  * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
  */
-export interface AdapterExecutionObservation {
+export interface ExecutionElement {
     cancelCapability: NativeCancelCapability;
     idempotencyKey:   string;
     lastObservedAt?:  string;
@@ -325,6 +347,33 @@ export enum ExternalExecutionStatus {
 }
 
 /**
+ * 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+ */
+export interface ReferenceClass {
+    bindingId:         string;
+    configDigest:      string;
+    generation:        number;
+    idempotencyKey:    string;
+    nativeInstanceRef: string;
+    nativeScopeRef:    string;
+}
+
+/**
+ * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
+ * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
+ */
+export interface AdapterExecutionObservation {
+    cancelCapability: NativeCancelCapability;
+    idempotencyKey:   string;
+    lastObservedAt?:  string;
+    nativeId?:        string;
+    nativeStatus?:    string;
+    nativeType:       string;
+    platformStatus:   ExternalExecutionStatus;
+    terminalAt?:      string;
+}
+
+/**
  * 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
  * 未取得时只用冻结幂等键查证。
  */
@@ -345,24 +394,9 @@ export interface AdapterExecutionResponse {
      * 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
      */
     contentReferences?: ContentReferenceElement[];
-    execution:          ExecutionClass;
+    execution:          ExecutionElement;
     resultJson?:        string;
     sourceResources?:   SourceResourceElement[];
-}
-
-/**
- * ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
- * 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
- */
-export interface ExecutionClass {
-    cancelCapability: NativeCancelCapability;
-    idempotencyKey:   string;
-    lastObservedAt?:  string;
-    nativeId?:        string;
-    nativeStatus?:    string;
-    nativeType:       string;
-    platformStatus:   ExternalExecutionStatus;
-    terminalAt?:      string;
 }
 
 /**
@@ -3681,8 +3715,11 @@ export interface NativeHumanResourceQuery {
 }
 
 /**
- * Reference-only observation of the original HUMAN AE. Terminal status comes from original
- * component-action audit after native/usage reconciliation, never from HTTP acceptance.
+ * Reference-only observation of the original HUMAN AE. Component terminal status comes from
+ * original component-action audit after native/usage reconciliation. Native-origin platform
+ * resource permission actions use their exact permission-outcome audit; that outcome does
+ * not assert completion of a component's native sharing RPCs. Never infer a terminal result
+ * from HTTP acceptance.
  */
 export interface NativeHumanActionResult {
     /**
@@ -5930,7 +5967,7 @@ export interface ObservationElement {
     errorClass?:             ErrorClass;
     httpStatus:              number;
     mcpResultKind?:          MCPResultKind;
-    nativeObservation?:      ExecutionClass;
+    nativeObservation?:      ExecutionElement;
     nativeScopeObservation?: NativeScopeObservationClass;
     operation:               ComponentConformanceOperation;
     requestDigest:           string;
@@ -6019,7 +6056,7 @@ export interface ComponentConformanceStepObservation {
     errorClass?:             ErrorClass;
     httpStatus:              number;
     mcpResultKind?:          MCPResultKind;
-    nativeObservation?:      ExecutionClass;
+    nativeObservation?:      ExecutionElement;
     nativeScopeObservation?: NativeScopeObservationClass;
     operation:               ComponentConformanceOperation;
     requestDigest:           string;

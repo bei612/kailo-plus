@@ -133,8 +133,10 @@ pub(crate) async fn issue_binding_management(
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     let revision = if binding_state == "DISABLING"
-        && matches!(protocol_operation, "observe" | "extract_usage")
-    {
+        && matches!(
+            protocol_operation,
+            "observe" | "extract_usage" | "reconcile"
+        ) {
         lifecycle_observation_revision(state, ae, protocol_operation, arguments).await?
     } else {
         let evaluated = state
@@ -666,7 +668,7 @@ pub(crate) async fn lifecycle_observation_revision(
     operation: &str,
     args: &Value,
 ) -> Result<String, Refusal> {
-    if !matches!(operation, "observe" | "extract_usage")
+    if !matches!(operation, "observe" | "extract_usage" | "reconcile")
         || !matches!(
             ae.action_key.as_str(),
             crate::application_binding::CREATE | crate::application_binding::DISABLE
@@ -675,6 +677,35 @@ pub(crate) async fn lifecycle_observation_revision(
         || ae.dispatch_state != "DISPATCHED"
     {
         return Err(invalid());
+    }
+    if operation == "reconcile" {
+        let parsed: contracts::AdapterBindingReconcileRequest =
+            serde_json::from_value(args.clone()).map_err(|_| invalid())?;
+        if serde_json::to_value(parsed).map_err(|_| invalid())? != *args
+            || args["bindingId"] != json!(ae.target_id)
+            || args["idempotencyKey"] != json!(ae.id)
+            || args["generation"].as_i64().is_none_or(|v| v <= 0)
+        {
+            return Err(invalid());
+        }
+        // System observation retains the original lifecycle decision. A
+        // revoked human cannot stop reconciliation, nor use it for new work.
+        let revision: Option<String> = sqlx::query_scalar("select d.zed_token
+            from catalog.application_binding b join projection.application_runtime p on p.binding_id=b.id
+              and p.generation=$5 and p.component_release_id=b.component_release_id
+            join admission.action_decision d on d.action_execution_id=b.projection_action_execution_id
+              and d.scope_decision='ALLOW' and d.authorization_decision='ALLOW' and d.zed_token is not null and d.zed_token<>''
+            where b.id=$1 and b.tenant_id=$2 and b.workspace_id is not distinct from $3
+              and b.projection_action_execution_id=$4 and b.state='DISABLING'
+              and p.generation=coalesce(b.active_projection_generation,
+                (select generation from projection.application_runtime where binding_id=b.id and action_execution_id=b.created_by_action_execution_id))
+              and b.config_digest=$6 and b.native_instance_ref=$7 and b.native_scope_ref=$8
+            order by d.decided_at desc limit 1")
+            .bind(ae.target_id).bind(ae.tenant_id).bind(ae.workspace_id).bind(ae.id)
+            .bind(args["generation"].as_i64().ok_or_else(invalid)?)
+            .bind(text(args,"configDigest")?).bind(text(args,"nativeInstanceRef")?).bind(text(args,"nativeScopeRef")?)
+            .fetch_optional(&state.pool).await?;
+        return revision.ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     let parsed: contracts::AdapterExecutionReference =
         serde_json::from_value(args.clone()).map_err(|_| invalid())?;

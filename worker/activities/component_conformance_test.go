@@ -45,7 +45,7 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 				observed := generated.ComponentConformanceStepObservation{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
 					HTTPStatus: 0, MCPResultKind: &kind, RequestDigest: requestDigest, ResponseDigest: resultDigest, ResultDigest: &resultDigest}
 				if scenario == "invented-job" {
-					observed.NativeObservation = &generated.ExecutionClass{NativeType: "invented"}
+					observed.NativeObservation = &generated.ExecutionElement{NativeType: "invented"}
 				}
 				if scenario == "missing-protocol-result" {
 					observed.MCPResultKind = nil
@@ -218,7 +218,7 @@ func TestComponentConformanceActualWireAndNativeIdempotency(t *testing.T) {
 			effects.Add(1)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		response := generated.ExecutionClass{
+		response := generated.ExecutionElement{
 			IdempotencyKey: body["idempotencyKey"], NativeType: "fixture_task", NativeID: &nativeID,
 			NativeStatus: &nativeStatus, PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 			CancelCapability: generated.NativeCancelCapability("SUPPORTED"),
@@ -283,7 +283,7 @@ func TestComponentConformanceWirePersistenceEvidence(t *testing.T) {
 			t.Error("unexpected adapter operation")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"execution": generated.ExecutionClass{
+		_ = json.NewEncoder(w).Encode(map[string]any{"execution": generated.ExecutionElement{
 			IdempotencyKey: key, NativeType: "fixture_task", NativeID: &nativeID, NativeStatus: &nativeStatus,
 			PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"), CancelCapability: generated.NativeCancelCapability("SUPPORTED"),
 			LastObservedAt: &observed, TerminalAt: &observed,
@@ -334,7 +334,7 @@ func TestComponentConformanceNativeTerminalRequiresEvidence(t *testing.T) {
 	key, nativeID, nativeStatus := uuid.NewString(), uuid.NewString(), "done"
 	now := time.Now().UTC()
 	observedAt := now.Format(time.RFC3339Nano)
-	native := generated.ExecutionClass{
+	native := generated.ExecutionElement{
 		IdempotencyKey: key, NativeType: "fixture_task", NativeID: &nativeID, NativeStatus: &nativeStatus,
 		PlatformStatus:   generated.ExternalExecutionStatus("SUCCEEDED"),
 		CancelCapability: generated.NativeCancelCapability("SUPPORTED"), LastObservedAt: &observedAt, TerminalAt: &observedAt,
@@ -344,22 +344,22 @@ func TestComponentConformanceNativeTerminalRequiresEvidence(t *testing.T) {
 	}
 	for _, change := range []struct {
 		name   string
-		mutate func(*generated.ExecutionClass)
+		mutate func(*generated.ExecutionElement)
 	}{
-		{"wrong_reference", func(n *generated.ExecutionClass) { n.IdempotencyKey = uuid.NewString() }},
-		{"unknown_state", func(n *generated.ExecutionClass) {
+		{"wrong_reference", func(n *generated.ExecutionElement) { n.IdempotencyKey = uuid.NewString() }},
+		{"unknown_state", func(n *generated.ExecutionElement) {
 			n.PlatformStatus = generated.ExternalExecutionStatus("NEW_STATE")
 		}},
-		{"unknown_cancel", func(n *generated.ExecutionClass) {
+		{"unknown_cancel", func(n *generated.ExecutionElement) {
 			n.CancelCapability = generated.NativeCancelCapability("MAYBE")
 		}},
-		{"no_native_status", func(n *generated.ExecutionClass) { n.NativeStatus = nil }},
-		{"no_terminal_time", func(n *generated.ExecutionClass) { n.TerminalAt = nil }},
-		{"no_observation_time", func(n *generated.ExecutionClass) { n.LastObservedAt = nil }},
-		{"running_marked_terminal", func(n *generated.ExecutionClass) {
+		{"no_native_status", func(n *generated.ExecutionElement) { n.NativeStatus = nil }},
+		{"no_terminal_time", func(n *generated.ExecutionElement) { n.TerminalAt = nil }},
+		{"no_observation_time", func(n *generated.ExecutionElement) { n.LastObservedAt = nil }},
+		{"running_marked_terminal", func(n *generated.ExecutionElement) {
 			n.PlatformStatus = generated.ExternalExecutionStatus("RUNNING")
 		}},
-		{"future_terminal", func(n *generated.ExecutionClass) {
+		{"future_terminal", func(n *generated.ExecutionElement) {
 			future := now.Add(time.Second).Format(time.RFC3339Nano)
 			n.TerminalAt = &future
 		}},
@@ -413,7 +413,7 @@ func TestComponentConformanceMatchesNativeEvidenceWithoutPredictingTime(t *testi
 	step := conformanceStepForTest()
 	nativeID, nativeStatus := uuid.NewString(), "native_done"
 	observedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	native := generated.ExecutionClass{
+	native := generated.ExecutionElement{
 		IdempotencyKey: step.IdempotencyKey, NativeType: "fixture_task", NativeID: &nativeID,
 		NativeStatus: &nativeStatus, PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 		CancelCapability: generated.NativeCancelCapability("SUPPORTED"), LastObservedAt: &observedAt, TerminalAt: &observedAt,
