@@ -119,7 +119,7 @@ vi.mock("@client-kit/platform/react/new-message", () => ({
   useDirectMessageOpen: () => ({open: state.openDm}),
   ConversationList: () => <div data-testid="shared-conversation-list" />,
 }));
-vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => null }));
+vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => <div data-testid="new-message-page"><header data-testid="new-message-header">To:</header></div> }));
 vi.mock("./SidebarProfileCard", () => ({
   WebSidebarProfileCard: ({ onOpenSettings }: { onOpenSettings: () => void }) =>
     <button data-testid="sidebar-settings" onClick={onOpenSettings} />,
@@ -265,6 +265,18 @@ it.each(["channel", "conversation"])("copies the actual %s title through the HTT
     if (commandDescriptor) Object.defineProperty(document, "execCommand", commandDescriptor);
     else Reflect.deleteProperty(document, "execCommand");
   }
+});
+
+it("keeps the original new-message full-height surface and only its inline recipient header", () => {
+  state.tab = "new-message";
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<PlatformApp />);
+  const page = host.querySelector("[data-testid=new-message-page]")!;
+  const main = page.parentElement!;
+  expect(main.tagName).toBe("MAIN");
+  expect(main.className).toBe("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden");
+  expect(main.parentElement!.querySelectorAll("header")).toHaveLength(1);
+  expect(main.parentElement!.querySelector("header")?.getAttribute("data-testid")).toBe("new-message-header");
 });
 
 it("passes the actual search thread root only to its selected admitted stream workspace",()=>{

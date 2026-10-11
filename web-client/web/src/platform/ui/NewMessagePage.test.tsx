@@ -126,8 +126,8 @@ it("uses selected recipients in the real first-message composer and preserves th
   const open = vi.fn();
   await mount("alice", open);
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
-  expect(host.querySelectorAll('[aria-label="Mention someone Bob"]')).toHaveLength(1);
-  await act(async () => host.querySelector('[aria-label="Mention someone Bob"]')!.dispatchEvent(new MouseEvent("mousedown", {bubbles: true})));
+  expect(host.querySelectorAll('[aria-label="Mention Bob"]')).toHaveLength(1);
+  await act(async () => host.querySelector('[aria-label="Mention Bob"]')!.dispatchEvent(new MouseEvent("mousedown", {bubbles: true})));
   await sendMessage();
   expect(state.publish).toHaveBeenCalledOnce();
   const original = state.publish.mock.calls[0];
