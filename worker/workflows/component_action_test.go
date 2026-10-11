@@ -79,7 +79,7 @@ func TestComponentActionCancellationWaitsForAuthoritativeReceipt(t *testing.T) {
 			}
 			status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 			if calls == 2 {
-				status, reason = generated.Canceled, "NONE"
+				status, reason = generated.TaskStatusCANCELED, "NONE"
 			}
 			return generated.ComponentActionAdvanceResult{ActionExecutionID: target.ActionExecutionID, Status: status, WaitingReason: reason}, nil
 		})

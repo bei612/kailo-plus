@@ -184,7 +184,7 @@ func TestProtocolSessionCancellationDrainsUnknownSameSession(t *testing.T) {
 			if request.Round == nil {
 				t.Fatal("cancel abandoned the committed original write")
 			}
-			return protocolResult(in, 10, "REVOKED", generated.Canceled, "first-write"), nil
+			return protocolResult(in, 10, "REVOKED", generated.TaskStatusCANCELED, "first-write"), nil
 		})
 	env.ExecuteWorkflow(ComponentTaskKind, in)
 	if err := env.GetWorkflowError(); !temporal.IsCanceledError(err) || calls != 3 {

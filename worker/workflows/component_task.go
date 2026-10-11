@@ -304,7 +304,7 @@ func (t *task) cancel() error {
 	next := t.in
 	next.CancelPending = true
 	err := converge(detached, next, t.project, func(ctx workflow.Context) workflow.Future {
-		return t.project(ctx, generated.Canceled, nil)
+		return t.project(ctx, generated.TaskStatusCANCELED, nil)
 	}, nil)
 	if err != nil {
 		return err
@@ -685,7 +685,7 @@ func tenantDelete(ctx workflow.Context, in ComponentTaskInput) error {
 				if canceled || completed {
 					status := generated.TaskStatusCOMPLETED
 					if canceled {
-						status = generated.Canceled
+						status = generated.TaskStatusCANCELED
 					}
 					if err = t.project(execCtx, status, nil).Get(execCtx, nil); err == nil {
 						if canceled {

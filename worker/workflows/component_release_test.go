@@ -276,7 +276,7 @@ func TestComponentReleaseCommittedReportLostACKContinuesWithoutProbes(t *testing
 
 func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.T) {
 	env, in := releaseWorkflowTest(t, func(_ context.Context, projection generated.TaskStateReport) error {
-		if projection.Status == generated.Canceled {
+		if projection.Status == generated.TaskStatusCANCELED {
 			return errors.New("cancel projection ACK lost")
 		}
 		return nil

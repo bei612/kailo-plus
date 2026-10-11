@@ -119,7 +119,7 @@ func TestComponentTaskCancelResumeDoesNotRepeatBusinessStep(t *testing.T) {
 	env.OnActivity("ProjectTaskState", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, report generated.TaskStateReport) error {
 			called++
-			if report.Status != generated.Canceled {
+			if report.Status != generated.TaskStatusCANCELED {
 				return errors.New("续跑重新执行了业务 Workflow")
 			}
 			return nil
@@ -151,7 +151,7 @@ func runComponentCancellation(t *testing.T, failCancelOnce bool) {
 		func(_ context.Context, report generated.TaskStateReport) error {
 			mu.Lock()
 			defer mu.Unlock()
-			if report.Status == generated.Canceled {
+			if report.Status == generated.TaskStatusCANCELED {
 				cancelAttempts++
 				if failCancelOnce && cancelAttempts == 1 {
 					return errors.New("Core temporarily unavailable")
@@ -172,7 +172,7 @@ func runComponentCancellation(t *testing.T, failCancelOnce bool) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(statuses) == 0 || statuses[len(statuses)-1] != generated.Canceled {
+	if len(statuses) == 0 || statuses[len(statuses)-1] != generated.TaskStatusCANCELED {
 		t.Fatalf("取消后必须写入 CANCELED 终态，得到 %v", statuses)
 	}
 	if failCancelOnce && cancelAttempts != 2 {

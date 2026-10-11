@@ -58,7 +58,7 @@ func agentInstallation(ctx workflow.Context, in ComponentTaskInput) error {
 			switch status {
 			case generated.TaskStatusCOMPLETED:
 				return nil
-			case generated.Canceled:
+			case generated.TaskStatusCANCELED:
 				return temporal.NewCanceledError()
 			default:
 				return temporal.NewNonRetryableApplicationError("Installation 权威事实确认失败", activities.ErrTypeRejected, nil)

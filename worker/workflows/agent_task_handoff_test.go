@@ -89,7 +89,7 @@ func TestAgentTaskConfirmedHandoffStillDrainsCancellation(t *testing.T) {
 			if !actual.CancelPending {
 				t.Fatal("handoff dropped pending cancellation")
 			}
-			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Canceled, WaitingReason: "NONE", FinishActivity: true}, nil
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCANCELED, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, time.Second/2)
 	env.ExecuteWorkflow(AgentTaskKind, in)

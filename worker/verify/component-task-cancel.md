@@ -51,3 +51,62 @@ go test ./workflows ./replay-tests
 两项 reason code 闭合后的原 `tools/gen.sh` 与 `--check` 已实际退出 0，四侧与 Mobile catalog 同步，日志在 `/volumes/data/kailo/tmp/codex-delete-candidate-reasons-gen-20261002.1ReYtS/`；这一次没有运行 Go vet/workflows/replay，不当作第二次 Worker 通过。
 
 本轮没有新 DELETE 录制历史，没有实际原生 CAS 保留统计、四类 provider 合流、不可逆窗口取消或结果不明的业务验收；现有 replay 通过不证明这些新增路径。候选尚未提交、push、构建或部署，不把上述窄验证记为 Stage 3 完成。四侧最终生成与 Core 的真实失败另见 [Tenant 删除记录](../../core/verify/tenant-deletion.md)。
+
+## TaskStatus 生成常量消费者收口（2026-10-11 UTC）
+
+本节保留上述历史证据，只记录独立的 Worker 编译修复。基线为
+`a94d0ed35a843003f83ae4e977527ee2f806e3d4`，精确源码候选树为
+`f92cbdb48782d378994ae40c401e69d1979cab28`；本节是验证后追加，未包含在该源码树中。
+
+1. 权威为 `.design/06` 的 TaskProjection 与取消收尾合同，以及
+   `contracts/enums/task_status.schema.json` 的既有 `CANCELED`。
+   `c442f2bb6e5c9e4db624057fe756272574a807f2` 的生成变更将 Go 符号
+   `Canceled` 消歧为 `TaskStatusCANCELED`，但消费者未同步。基线生成文件
+   `worker/internal/contracts/generated/contracts.go::TaskStatusCANCELED`
+   已有该常量；本批不修改 Schema 或生成代码。
+2. 全 Worker 源码检索得到 17 个 Go 文件的 24 处旧引用，涉及五个 Activity
+   消费者、Agent/组件/绑定/协议会话 Workflow、Tenant 删除取消投影及既有检查。
+   精确候选仅替换这 24 处常量名；`component_release_test.go` 的未提交
+   reconcile 类型变化未混入。没有新增 API、字段、别名、迁移或执行入口。
+3. 线格式仍为 `CANCELED`，分支、Activity 调度、投影时序、取消重试和
+   continue-as-new 未变，不增加 Temporal version 分支或第二份状态权威。
+   取消请求不是终态证据；未知响应、超时及撤权后的收敛沿原逻辑，仍不可把
+   UNKNOWN 当作成功或失败。
+4. 空输入、重复投递、并发取消、部分完成及恢复后重入没有新的行为或兼容格式。
+   该变更不涉及 secret、quota 或租户存储；六类错误的原分类不变。
+   既有 Workflow 与 replay 检查复核原路径，不据此声称完整故障演练或业务验收。
+
+验证复用固定 SDK 镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Go `1.25.14`；执行 UID/GID `1000:1000`，实际 cgroup 为
+`cpu.max=400000 100000`、`memory.max=8589934592`、`memory.swap.max=0`。
+候选与基线由各自 Git 树导出，构建缓存及临时目录均位于
+`/volumes/data/kailo/tmp/worker-canceled-compile.srdpyp`；已有 Go 模块缓存只读挂载，
+不与原全量检查并行写入共享缓存。未调用宿主 Go，结束时已停止验证容器。
+
+基线执行 `go test ./activities -run '^$'` 实际退出 `1`：
+
+```text
+activities/agent_installation.go:33:105: undefined: generated.Canceled
+activities/agent_task.go:107:105: undefined: generated.Canceled
+activities/application_binding.go:23:77: undefined: generated.Canceled
+activities/component_action.go:21:77: undefined: generated.Canceled
+activities/protocol_session.go:67:48: undefined: generated.Canceled
+FAIL apps/worker/activities [build failed]
+```
+
+精确候选随后串行执行：
+
+- 对 17 个变更文件执行 `gofmt -l`：输出为空；`git diff --check` 退出 `0`。
+- `go vet ./...`：退出 `0`。
+- `go test ./... -run '^$'`：退出 `0`，只证明全包编译，不冒充测试执行。
+- `go test ./activities ./workflows ./replay-tests -count=1`：退出 `0`，三个包均 `ok`。
+- 固定基线就是本轮反例，旧符号真实导致失败；候选恢复对同一生成权威的消费后通过。
+  没有新增测试或修改既有断言语义。
+
+原始输出分别为上述 Data 目录的 `baseline-compile.log`、`candidate-format.log`、
+`candidate-vet.log`、`candidate-compile.log` 与 `candidate-tests.log`。
+本轮没有运行 contracts 的业务往返检查；其 Agent Session/Invocation 时间格式问题
+不属于本次常量修复，见 [Agent Session 查询](../../core/verify/agent-session-query.md)。
+没有重跑全量检查、修改正式工作树的其他脏改动、构建发布镜像或部署 Worker；
+窄检查通过不等于全局门禁通过、Cells 治理接入完成或生产就绪。

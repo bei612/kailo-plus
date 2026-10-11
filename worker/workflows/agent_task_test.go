@@ -45,7 +45,7 @@ func finishTaskMock(env *testsuite.TestWorkflowEnvironment, check func(generated
 			check(in)
 			status := generated.TaskStatusCOMPLETED
 			if in.CancelPending {
-				status = generated.Canceled
+				status = generated.TaskStatusCANCELED
 			}
 			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: status, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
@@ -138,7 +138,7 @@ func TestAgentTaskCancelDuringOrderedDelayDrainsWithoutPublishing(t *testing.T) 
 			if !actual.CancelPending {
 				t.Fatal("canceled Delay proceeded to a side effect")
 			}
-			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Canceled, WaitingReason: "NONE", FinishActivity: true}, nil
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCANCELED, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, 10*time.Second)
 	raw, _ := json.Marshal(in)
@@ -477,7 +477,7 @@ func TestAgentTaskStepApprovalCancellationRemainsOnOriginalInvocation(t *testing
 			if !actual.CancelPending {
 				t.Fatal("lost cancellation while approval was pending")
 			}
-			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Canceled, WaitingReason: "NONE", FinishActivity: true}, nil
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCANCELED, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, 30*time.Second)
 	env.ExecuteWorkflow(AgentTaskKind, in)
