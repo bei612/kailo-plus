@@ -485,10 +485,13 @@ func (r *retirementPlanChunkRepository) ListImageInfoByKnowledgeIDs(ctx context.
 
 func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 	for _, scenario := range []string{"admitted", "same-generation", "missing-ownership", "wrong-binding", "future-generation", "invalid-generation",
-		"revoked-after-checkpoint", "revoked-after-plan", "missing-write", "wrong-native", "wrong-task", "independent-native"} {
+		"revoked-after-checkpoint", "revoked-after-plan", "closed-after-plan", "missing-write", "wrong-native", "wrong-task", "independent-native"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newDocumentWriteFixture(t)
 			kb, id, source, root, binding := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			require.NoError(t, f.db.AutoMigrate(&types.MCPEndpoint{}))
+			endpoint := &types.MCPEndpoint{ID: uuid.NewString(), TenantID: 7, Enabled: true, PlatformBindingID: binding, KnowledgeBaseIDs: types.StringArray{kb}}
+			require.NoError(t, f.db.Create(endpoint).Error)
 			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: kb, tenantID: 7}
 			ownership := map[string]string{"datasource_id": run.dataSourceID, "external_id": "group",
 				fileStorageBindingMetadataKey: binding, fileStorageGenerationMetadataKey: "2"}
@@ -555,6 +558,9 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 						"operationId": key, "items": []any{}, "listingDigest": fileStorageDigest([]byte("[]")), "nativeRevision": fileStorageDigest([]byte("[]"))}))
 				case "/service/v1/adapter/pep_check":
 					pepCalls++
+					if scenario == "closed-after-plan" && planned {
+						require.NoError(t, f.db.Model(endpoint).UpdateColumn("platform_closed_generation", 3).Error)
+					}
 					if (scenario == "revoked-after-checkpoint" && len(ds.LastSyncCursor) > 0) || (scenario == "revoked-after-plan" && planned) {
 						w.WriteHeader(http.StatusForbidden)
 						return

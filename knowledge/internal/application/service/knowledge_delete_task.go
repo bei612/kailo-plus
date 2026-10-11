@@ -114,6 +114,10 @@ func (s *knowledgeService) StartKnowledgeDeleteTask(ctx context.Context, kbID, i
 		if err := write.requireOriginalOwnership(row.GetMetadata()); err != nil {
 			return nil, err
 		}
+		ctx, err = write.transactionContext(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	pending, ok := s.taskPendingRepo.(interfaces.KnowledgeDeletionPendingOps)
 	if !ok {

@@ -557,10 +557,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
                 }}/>
-            </AvatarHostProvider> : tab === "new-message" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+            </AvatarHostProvider> : tab === "new-message" || tab === "agents" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
-          <main className={tab === "inbox" || tab === "new-message" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
+          <main className={tab === "inbox" || tab === "new-message" || tab === "agents" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
             {body}
           </main>
         </ContentSurface>

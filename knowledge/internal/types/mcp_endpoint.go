@@ -28,6 +28,9 @@ type MCPEndpoint struct {
 	// is not accepted by the workspace endpoint settings API. Removing delivery
 	// never turns this endpoint into an independent, ungoverned credential.
 	PlatformBindingID string `json:"-" gorm:"type:varchar(36);not null;default:'';index"`
+	// Native admission cutoff, installed only by authenticated binding reconcile.
+	// It is monotonic and does not disable this independently running service.
+	PlatformClosedGeneration int64 `json:"-" gorm:"not null;default:0"`
 	// TokenHash is the SHA-256 hex digest of the bearer token. The plaintext
 	// is shown once on create/rotate and never stored, mirroring
 	// TenantAPIKey.KeyHash rather than the plaintext embed publish token.

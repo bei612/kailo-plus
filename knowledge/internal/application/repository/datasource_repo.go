@@ -35,6 +35,9 @@ func (r *DataSourceRepository) Create(ctx context.Context, ds *types.DataSource)
 	// the HTTP 201 body) match the database.
 	syncDeletions := ds.SyncDeletions
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNativeReceiverSchedule(tx, ds); err != nil {
+			return err
+		}
 		if err := tx.Create(ds).Error; err != nil {
 			return err
 		}
@@ -95,7 +98,7 @@ func (r *DataSourceRepository) Update(ctx context.Context, ds *types.DataSource)
 		// runtime cursor/result back over the native worker's retained intent.
 		result := tx.Model(&next).
 			Clauses(clause.Returning{Columns: []clause.Column{{Name: "updated_at"}}}).
-			Omit("last_sync_at", "last_sync_cursor", "last_sync_result", "created_at", "deleted_at").
+			Omit("last_sync_at", "last_sync_cursor", "last_sync_result", "created_at", "deleted_at", "platform_binding_id").
 			Updates(&next)
 		if result.Error != nil {
 			return result.Error
@@ -203,11 +206,14 @@ func (r *SyncLogRepository) CreatePending(ctx context.Context, source *types.Dat
 	}
 	var log types.SyncLog
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNativeReceiverSchedule(tx, source); err != nil {
+			return err
+		}
 		var current types.DataSource
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", source.ID).Error; err != nil {
 			return err
 		}
-		if current.TenantID != source.TenantID || current.KnowledgeBaseID != source.KnowledgeBaseID ||
+		if current.TenantID != source.TenantID || current.KnowledgeBaseID != source.KnowledgeBaseID || current.PlatformBindingID != source.PlatformBindingID || current.Type != source.Type ||
 			!current.UpdatedAt.Equal(source.UpdatedAt) {
 			return datasource.ErrDataSourceInvalid
 		}
@@ -276,6 +282,21 @@ func (r *SyncLogRepository) DispatchPending(ctx context.Context, logID string, d
 		after = next.ID
 		var deliveryErr error
 		err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Match receiver admission lock order: endpoint before handoff row.
+			// Taking the endpoint after the handoff could deadlock with source
+			// deletion and another endpoint -> source admission transaction.
+			var original types.DataSourceSyncPayload
+			if err := json.Unmarshal(next.Payload, &original); err != nil {
+				return err
+			}
+			var admitted types.DataSource
+			if err := tx.Unscoped().First(&admitted, "id = ?", original.DataSourceID).Error; err != nil {
+				return err
+			}
+			var schedulingErr error
+			if !admitted.DeletedAt.Valid {
+				schedulingErr = lockNativeReceiverSchedule(tx, &admitted)
+			}
 			var op types.TaskPendingOp
 			if err := query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&op, "id = ?", next.ID).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -313,7 +334,8 @@ func (r *SyncLogRepository) DispatchPending(ctx context.Context, logID string, d
 			if err := tx.Unscoped().First(&source, "id = ?", payload.DataSourceID).Error; err != nil {
 				return err
 			}
-			if op.ScopeID == "" || source.KnowledgeBaseID != op.ScopeID || source.TenantID != op.TenantID ||
+			if source.ID != admitted.ID || source.PlatformBindingID != admitted.PlatformBindingID || source.Type != admitted.Type ||
+				op.ScopeID == "" || source.KnowledgeBaseID != op.ScopeID || source.TenantID != op.TenantID ||
 				(payload.Trigger != "manual" && payload.Trigger != "schedule") {
 				return datasource.ErrDataSourceInvalid
 			}
@@ -327,6 +349,9 @@ func (r *SyncLogRepository) DispatchPending(ctx context.Context, logID string, d
 					return err
 				}
 				return tx.Delete(&op).Error
+			}
+			if schedulingErr != nil {
+				return schedulingErr // Observation/cancellation above remain available.
 			}
 			if deliveryErr = dispatch(&payload); deliveryErr != nil {
 				return tx.Model(&op).UpdateColumn("fail_count", gorm.Expr("fail_count + 1")).Error

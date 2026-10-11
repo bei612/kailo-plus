@@ -55,8 +55,12 @@ func NewKnowledgeRepository(db *gorm.DB) interfaces.KnowledgeRepository {
 // CreateKnowledge creates knowledge
 func (r *knowledgeRepository) CreateKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
 	knowledge.ErrorMessage = common.CleanInvalidUTF8(knowledge.ErrorMessage)
-	err := r.db.WithContext(ctx).Create(knowledge).Error
-	return err
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNativeReceiverAdmission(tx, knowledge.TenantID, knowledge.KnowledgeBaseID); err != nil {
+			return err
+		}
+		return tx.Create(knowledge).Error
+	})
 }
 
 // GetKnowledgeByID gets knowledge

@@ -36,7 +36,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const handshake = protocolOperation === 'handshake';
   const validating = protocolOperation === 'validate_binding';
   const mapping = protocolOperation === 'map_native_status_error';
-  const managing = handshake || validating;
+  const bindingReconcile = protocolOperation === 'reconcile' && action === 'application_binding.disable';
+  const managing = handshake || validating || bindingReconcile;
   const management = { componentTypeKey: 'knowledge-native', componentReleaseId: ids[9],
     artifactDigest: 'a'.repeat(64), protocolRange: '1' };
   const validation = { bindingVersion: 1, servicePrincipalId: ids[4], adapterServiceRef: 'fixture-adapter',
@@ -44,7 +45,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     normalizedConfig: { knowledgeBaseId: ids[1] }, actionVersions: [{ actionKey: 'knowledge.search@v2', actionVersion: 1 }],
     secretDeliveries: [] };
   const baoReads = [];
-  if (validating) {
+  if (validating || bindingReconcile) {
     const secretSocket = join(directory, 'agent.sock');
     const values = new Map([['native', nativeSecret], ['pep', await readFile(oidcSecretFile, 'utf8')]]);
     const proxy = createServer((request, response) => {
@@ -72,7 +73,11 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     if (mode !== 'missing-validation') management.validation = validation;
   }
   const refs = validation.secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience }));
-  const args = mapping ? { idempotencyKey: ids[3], ...mappingInput }
+  if (bindingReconcile) management.validation = validation;
+  const args = bindingReconcile ? { bindingId: ids[0], generation: 4,
+    configDigest: createHash('sha256').update(canonical(validation.normalizedConfig)).digest('hex'),
+    nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: ids[1], idempotencyKey: ids[5] }
+    : mapping ? { idempotencyKey: ids[3], ...mappingInput }
     : validating ? { bindingId: ids[0], bindingVersion: mode === 'wrong-binding-version' ? 2 : 1,
     tenantId: ids[7], componentReleaseId: ids[9], servicePrincipalId: ids[4], adapterServiceRef: validation.adapterServiceRef,
     nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: mode === 'wrong-scope' ? ids[9] : ids[1],
@@ -167,6 +172,18 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     assert.equal(JSON.parse(Buffer.from(nativeProof.actionToken.split('.')[1], 'base64url')).action_execution_id, ids[5]);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name === 'kailo_binding_reconcile') {
+      assert.equal(bindingReconcile, true);
+      assert.deepEqual(body.params.arguments, {});
+      const value = { reference: intent, complete: mode === 'empty-binding', observations: mode === 'empty-binding' ? [] : [{
+        idempotencyKey: ids[3], nativeType: 'datasource:sync', nativeId: ids[2],
+        platformStatus: 'UNKNOWN', cancelCapability: 'UNSUPPORTED', lastObservedAt: new Date().toISOString(),
+      }] };
+      if (mode === 'drift-reference') value.reference = { ...intent, generation: 5 };
+      if (mode === 'false-terminal') value.observations[0].platformStatus = 'SUCCEEDED';
+      if (mode === 'duplicate-observation') value.observations.push(value.observations[0]);
+      return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value } });
+    }
     if (body.params.name === 'list_knowledge_bases') {
       assert.equal(managing, true);
       assert.deepEqual(body.params.arguments, {});
@@ -426,6 +443,25 @@ test('knowledge binding handshake uses the real management token, native KB obse
   assert.deepEqual(await response.json(), { protocolVersion: '1', artifactDigest: 'a'.repeat(64) });
   assert.equal(run.state.peps, 2);
   assert.deepEqual(run.state.methods, ['list_knowledge_bases']);
+});
+
+test('knowledge binding reconcile consumes its native management result without inventing drainage', async t => {
+  for (const [mode, status] of [['ok', 200], ['empty-binding', 200], ['drift-reference', 503],
+    ['false-terminal', 503], ['duplicate-observation', 503], ['deny', 503], ['revoke', 503], ['agent', 401]]) {
+    await t.test(mode, async nested => {
+      const run = await fixture(nested, mode, 'application_binding.disable', 'reconcile');
+      const response = await run.invoke();
+      assert.equal(response.status, status);
+      if (status === 200) {
+        const value = await response.json();
+        assert.deepEqual(value.reference, run.intent);
+        assert.equal(value.complete, mode === 'empty-binding');
+        if (!value.complete) assert.equal(value.observations[0].platformStatus, 'UNKNOWN');
+        assert.equal(run.state.peps, 2);
+        assert.deepEqual(run.state.methods, ['kailo_binding_reconcile']);
+      }
+    });
+  }
 });
 
 test('knowledge validate_binding returns native scope and actual Agent read references without secret values', async t => {

@@ -306,6 +306,12 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 			if err := authorizeFileStorageWrite(ctx, tenantID, kbID, metadata["datasource_id"]); err != nil {
 				return nil, err
 			}
+			write, _ := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite)
+			var err error
+			ctx, err = write.transactionContext(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
 			prior, readErr := s.fileCreation(ctx, tenantID, kbID, creationID, creationDigest)

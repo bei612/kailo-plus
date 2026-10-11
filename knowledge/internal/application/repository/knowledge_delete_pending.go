@@ -32,6 +32,9 @@ func (r *taskPendingOpsRepository) StageKnowledgeDeletion(ctx context.Context, p
 		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNativeReceiverAdmission(tx, payload.TenantID, payload.KnowledgeBaseID); err != nil {
+			return err
+		}
 		var kb types.KnowledgeBase
 		if err := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND tenant_id = ?", payload.KnowledgeBaseID, payload.TenantID).Take(&kb).Error; err != nil {

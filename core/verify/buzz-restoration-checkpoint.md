@@ -1,5 +1,23 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-11 共享模块四分类增量与真实页面边界
+
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`，本次 main 基底
+`3b5a589e8b8fba2b4241d485ef1231a9aead45a1`。复用本台账原全量映射，只更新
+实际读到的模块，不重新计算总体比例；旧完整快照不是当前 main 全量一致证明。
+
+| 原模块与分类 | 当前实际证据 | 仍缺失范围 |
+| --- | --- | --- |
+| `desktop/src/features/profile/ui/UserProfilePanelFrame.tsx::UserProfilePanelFrame`：原呈现保留、共享迁移 | 0dacc9268 已迁移完整框架及三个消费者，见 profile-panel-frame-restoration.md；旧透明壳不再冒称授权差异 | Agent 的完整 tabs/sections/管理行为不因框架恢复而完成；未部署新版实拍 |
+| `desktop/src/features/workflows/ui/WorkflowsView.tsx::WorkflowsListSkeleton`：缺失需恢复→本候选共享迁移 | 四卡/32条原 Skeleton 与实际 AutomationList 接线；35项正向和还原、断开消费者反证失败 | 未部署，旧线上截图不能验证新骨架；列表其他状态不整体归为原样 |
+| 原步骤 Run controls 的 Delay timeout：共享原字段，已授权 Temporal 治理改造 | 3b5a589e8 已闭合表单/契约/Core/Worker 双Timer及终态，见 workflow-delay-timeout.md | 非Delay timeout、未闭合的原步骤条件仍缺失；规范full的11项产物摘要不一致仍在，不能称整套控制恢复 |
+| `desktop/src/features/agents/ui/AgentsView.tsx::AgentsView`：缺失需恢复 | 普通SSO现网 agents-current.png 已打开，当前为定义卡片/平台工具/安装区域；这些治理接口不证明原页面一致 | 原默认配置、批量停止、UnifiedAgentsSection/TeamsSection、catalog、snapshot及完整管理弹窗；需沿既有治理闭合真实消费者，不另写缩水UI |
+
+Agents/Workflows 的治理请求替换属于用户授权边界；上述尚未恢复布局和功能
+不能笼统归为治理差异。三组件侧栏仍依赖真实有效绑定，本次没有写死入口。
+源码、DOM、实际旧版截图和业务操作分别记录于
+[本批有限证据](workflow-list-loading-restoration.md)，不把代码量或截图张数算完成率。
+
 ## 2026-10-06 23:08 UTC 发布回执与真实动态发布修复
 
 Core、Worker、Web 已从固定源码 `10c839d34186d4b1e72a44f83c82d7c420949e7e`

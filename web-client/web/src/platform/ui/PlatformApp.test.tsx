@@ -512,6 +512,15 @@ it.each(["agents", "workflows"])("passes the exact %s URL workspace to the share
   expect(markup).not.toContain('data-workspace="workspace-b"');
 });
 
+it("lets the shared original Agents page own its heading, padding and scroll region", () => {
+  state.tab = "agents";
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<PlatformApp />);
+  const viewport = host.querySelector('[data-testid="agents-scope"]')!.closest("main")!;
+  expect(viewport.className).toBe("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden");
+  expect(viewport.previousElementSibling?.tagName).not.toBe("HEADER");
+});
+
 it.each(["inbox", "pulse", "stream", "forum", "conversation", "members"])("the actual %s profile consumer opens the confirmed DM, not a new-message page", async (surface) => {
   state.tab = surface === "stream" || surface === "forum" ? "channel" : surface;
   state.channelType = surface;

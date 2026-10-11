@@ -72,6 +72,9 @@ type DataSource struct {
 	// Target knowledge base ID
 	KnowledgeBaseID string `json:"knowledge_base_id" gorm:"index"`
 
+	// Controlled receiver ownership, not an authorization or inferred generation.
+	PlatformBindingID string `json:"-" gorm:"not null;default:''"`
+
 	// User-friendly name
 	Name string `json:"name"`
 

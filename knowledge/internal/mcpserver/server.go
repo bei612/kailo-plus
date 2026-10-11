@@ -54,6 +54,7 @@ type Server struct {
 	endpointRepo     interfaces.MCPEndpointRepository
 	db               *gorm.DB
 	cfg              *config.Config
+	redisClient      *redis.Client
 
 	limiter   *ratelimit.Limiter
 	lastTouch sync.Map // endpoint id -> time.Time of the last last_used_at write
@@ -91,6 +92,7 @@ func NewServer(
 		endpointRepo:     endpointRepo,
 		db:               db,
 		cfg:              cfg,
+		redisClient:      redisClient,
 		limiter:          ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
 	}
 	if err := s.initializeNativeBindings(context.Background()); err != nil {
@@ -149,6 +151,9 @@ func (s *Server) filterTools(ctx context.Context, all []mcp.Tool) []mcp.Tool {
 		return nil
 	}
 	for _, t := range all {
+		if t.Name == nativeBindingReconcileTool {
+			continue
+		}
 		if delivery.values != nil && (t.Name == types.MCPEndpointToolAddDocument || t.Name == types.MCPEndpointToolDeleteDocument || t.Name == types.MCPEndpointToolUpdateDocument) {
 			continue
 		}
@@ -167,11 +172,14 @@ func (s *Server) guardTool(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("unauthorized"), nil
 		}
-		if !ep.HasTool(req.Params.Name) {
+		if req.Params.Name != nativeBindingReconcileTool && !ep.HasTool(req.Params.Name) {
 			return mcp.NewToolResultErrorf("tool %q is not enabled on this endpoint", req.Params.Name), nil
 		}
 		if !s.limiter.Allow(ctx, ep.ID, ep.RateLimitPerMinute) {
 			return mcp.NewToolResultError("rate limit exceeded for this endpoint, retry shortly"), nil
+		}
+		if req.Params.Name == nativeBindingReconcileTool {
+			return next(ctx, req)
 		}
 		ctx, err = s.authorizeNativePlatformTool(ctx, ep, req)
 		if err != nil {
@@ -212,6 +220,7 @@ func (s *Server) touchLastUsed(ctx context.Context, endpointID string) {
 // catalog so tools/list is stable.
 func (s *Server) toolCatalog() []server.ServerTool {
 	return []server.ServerTool{
+		{Tool: mcp.NewTool(nativeBindingReconcileTool, mcp.WithReadOnlyHintAnnotation(false)), Handler: s.handleNativeBindingReconcile},
 		{Tool: listKnowledgeBasesTool(), Handler: s.handleListKnowledgeBases},
 		{Tool: searchKnowledgeTool(), Handler: s.handleSearchKnowledge},
 		{Tool: grepChunksTool(), Handler: s.handleGrepChunks},

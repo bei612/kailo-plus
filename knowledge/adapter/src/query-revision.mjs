@@ -85,6 +85,38 @@ async function bindingManagement(config, deadline, token, args, operation) {
   return value;
 }
 
+async function reconcileNativeBinding(config, deadline, token, args) {
+  const fixed = config.management?.validation;
+  if (!fixed || !exactKeys(args, ['bindingId','generation','configDigest','nativeInstanceRef','nativeScopeRef','idempotencyKey'])
+    || args.bindingId !== config.bindingId || !Number.isSafeInteger(args.generation) || args.generation <= 0
+    || args.configDigest !== createHash('sha256').update(canonical(fixed.normalizedConfig)).digest('hex')
+    || args.nativeInstanceRef !== fixed.nativeInstanceRef || args.nativeScopeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
+  const claims = await verifyBindingManagementToken(token, config, args, 'reconcile');
+  if (claims.action_execution_id !== args.idempotencyKey) throw new Refused(401);
+  await freshPep(config, deadline, token, args, claims, 'reconcile');
+  const value = await nativeTool(config, deadline, 'kailo_binding_reconcile', {});
+  if (!exactKeys(value, ['reference','complete','observations']) || canonical(value.reference) !== canonical(args)
+    || typeof value.complete !== 'boolean' || !Array.isArray(value.observations)) throw new Refused(503);
+  const seen = new Set();
+  for (const observation of value.observations) {
+    if (!object(observation) || !UUID.test(observation.idempotencyKey) || !nonempty(observation.nativeType)
+      || !['UNKNOWN','RUNNING','SUCCEEDED','FAILED','CANCELLED'].includes(observation.platformStatus)
+      || observation.cancelCapability !== 'UNSUPPORTED'
+      || !Number.isFinite(Date.parse(observation.lastObservedAt)) || Date.parse(observation.lastObservedAt) > Date.now()) throw new Refused(503);
+    const key = `${observation.nativeType}:${observation.idempotencyKey}`;
+    if (seen.has(key)) throw new Refused(503);
+    seen.add(key);
+    if (['SUCCEEDED','FAILED','CANCELLED'].includes(observation.platformStatus)) {
+      if (!nonempty(observation.nativeId) || !nonempty(observation.nativeStatus)
+        || !Number.isFinite(Date.parse(observation.terminalAt))
+        || Date.parse(observation.terminalAt) > Date.parse(observation.lastObservedAt)) throw new Refused(503);
+    } else if (Object.hasOwn(observation,'terminalAt')) throw new Refused(503);
+  }
+  const current = await verifyBindingManagementToken(token, config, args, 'reconcile');
+  await freshPep(config, deadline, token, args, current, 'reconcile');
+  return value;
+}
+
 export async function verifyKnowledgeToken(token, config, args, operation = 'query_revision') {
   const claims = await verifiedClaims(token, config);
   for (const key of ['jti', 'tenant_id', 'actor_principal_id', 'initiating_human_principal_id',
@@ -418,6 +450,15 @@ export function createAdapter(rawConfig) {
         response.end(JSON.stringify(value));
         return;
       }
+      if (operation === 'reconcile' && object(args) && Object.hasOwn(args, 'bindingId')) {
+        if (!exactKeys(args, ['bindingId','generation','configDigest','nativeInstanceRef','nativeScopeRef','idempotencyKey'])
+          || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== request.headers['idempotency-key']
+          || raw !== canonical(args)) throw new Refused(400);
+        const value = await reconcileNativeBinding(config, deadline, request.headers.authorization.slice('Bearer '.length), args);
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
       if (operation === 'map_native_status_error') args = nativeStatusErrorArguments(raw, request.headers['idempotency-key']);
       if (operation === 'query_revision' && (!exactKeys(args, ['nativeObjectRef', 'idempotencyKey', 'authorizationTargetNativeRef'])
         || !UUID.test(args.nativeObjectRef) || !UUID.test(args.authorizationTargetNativeRef)
@@ -426,7 +467,7 @@ export function createAdapter(rawConfig) {
       if (operation === 'execute' && (!exactKeys(args, ['idempotencyKey', 'actionKey', 'arguments'])
         || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== request.headers['idempotency-key'])) throw new Refused(400);
       // The existing conformance recovery sends only its frozen execution key.
-      // This is not binding-wide drainage and cannot accept a binding payload.
+      // Binding-wide management is handled above using its distinct admission.
       if (operation === 'reconcile' && (!exactKeys(args, ['idempotencyKey'])
         || !UUID.test(args.idempotencyKey) || args.idempotencyKey === '00000000-0000-0000-0000-000000000000'
         || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args))) throw new Refused(400);

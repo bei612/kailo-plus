@@ -59,6 +59,36 @@ async function setup(override: (request: BffRequest) => BffReply | undefined = (
 }
 
 describe("original complete Definition view with immutable pinned governance", () => {
+  it("keeps the original four-card loading surface until the authorized list resolves", async () => {
+    let resolveList!: (reply: BffReply) => void;
+    const pendingList = new Promise<BffReply>(resolve => { resolveList = resolve; });
+    const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
+      if (request.path === "/api/v1/workspaces") return {status: 200, body: [{id: "workspace", name: "Channel", slug: "channel"}]};
+      if (request.path.startsWith("/api/v1/automations?")) return pendingList;
+      return {status: 503, body: undefined};
+    });
+    const cache = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const host = await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en">
+      <AutomationManagement />
+    </PlatformProvider></QueryClientProvider>);
+    await settle();
+    const bars = host.querySelectorAll(".t-skel-bar");
+    expect(bars).toHaveLength(32);
+    const grid = bars[0]!.parentElement!.parentElement!.parentElement!.parentElement!;
+    expect(grid.className).toBe("grid grid-cols-1 gap-3 [@container(min-width:42rem)]:grid-cols-2 [@container(min-width:63rem)]:grid-cols-3");
+    expect(grid.children).toHaveLength(4);
+    for (const card of grid.children) {
+      expect(card.className).toBe("flex min-h-60 flex-col rounded-2xl bg-muted/50 p-5 shadow-xs");
+      expect(card.querySelectorAll('.t-skel-bar[aria-hidden="true"]')).toHaveLength(8);
+    }
+    expect(host.querySelector('[data-testid="new-workflow-card"]')).toBeNull();
+    await act(async () => { resolveList({status: 200, body: {automations: [], canCreate: false, availableApprovalPolicies: []}}); });
+    await settle();
+    expect(host.querySelector(".t-skel-bar")).toBeNull();
+    expect(host.querySelector('[data-testid="new-workflow-card"]')).toBeNull();
+    expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+
   it("keeps an explicit Delay timeout unchanged through the real form and YAML editor", async () => {
     const timed = {...content, steps: content.steps.map(step => step.action === "delay"
       ? {...step, timeout_secs: 1} : step)};

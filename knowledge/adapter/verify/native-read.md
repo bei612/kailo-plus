@@ -5349,3 +5349,150 @@ SQLite 仓库与原服务 fixture 不证明 PostgreSQL 行锁并发、真实 Gat
 调用或所有异步 parser/VLM/ASR 路径。本批未部署，MCP add/delete 写门槛未解除；
 完整 binding reconcile、v2 release conformance 与实际组件上架仍有缺口，
 全局发布门禁未通过。读取/观察及独立原生能力不因本批改为假成功或被整体关闭。
+
+### 2026-10-11 v2 发布向量与原生 receiver 入口的实际阻断
+
+本次在 Kailo `7ec1b88986836d95ee1e3a5f992f2401ff1f2818` 核对源码，
+未修改动作映射、发布契约、Core 或运行配置，未部署或执行新的发布套件。
+权威仍为 `.design/07` §5.2、§8.2 与 `.design/13` §4.4：接收方拥有原生
+拉取、导入配置、批次及增量状态；发布 conformance Workflow 不等于为每批业务同步
+另建平台 Workflow。不能把原生内部 parse 一概解释成缺少平台 execute 准入。
+
+实际调用不匹配如下：
+
+- `contracts/adapter/knowledge.v2/registration.json` 的 `knowledge_native_sync`
+  向量包含 `knowledge.sync_apply@v2`、`knowledge.sync_retire@v2`；其输入冻结
+  `sourceResourceId/importConfigRef/batchId/sourceReadActionExecutionId`。
+- `core/crates/platform-core/src/component_release.rs::prewrite` 将能力向量展开为
+  `operation=execute`。`knowledge/adapter/src/binding-validation.mjs::executionMapping`
+  只具有五个既有原生动作；`query-revision.mjs::configuration` 经共享
+  `bindingValidationConfiguration` 逐项调用该映射，故完整 v2 配置在此拒绝。
+- 原 `knowledge/internal/handler/datasource.go::ManualSync` 只接收 datasource ID；
+  当前 `internal/application/service/datasource_service.go::ManualSync` 经
+  `internal/application/repository/datasource_repo.go::CreatePending` 创建自己的 SyncLog，
+  再由原 `datasource.DispatchSync` 投递。它不能消费上述已冻结的批次及 SOURCE AE。
+- 真正的 receiver 链是 `ProcessSync` 读取原 SyncLog 后调用
+  `datasource_file_storage.go::FetchStream`；其 transport `grant` 请求既有
+  `request_read_grant`，Core `application_read_receiver.rs::arguments/admit` 关联真实
+  SOURCE 执行并产生 receiverWrite。随后原 `pep`、`StreamHandler.Emit`、Knowledge
+  writer 和 Applying/Retiring 游标完成执行与观察，`receipt` 汇报原生完成证据。
+  不能把向量中的 SOURCE AE 字面量当作这条链已经执行的证明。
+
+固定官方证据为 `/volumes/kailo/.references/WeKnora` 的
+`2be7bd40631dda1dd485306038f07a62e9ee287e`：
+`internal/application/service/datasource_service.go::ManualSync`（456 行）及
+`ProcessSync`（590 行），由 `git grep <完整 commit> -- <路径>` 重新核验；
+上游目录未编辑、执行或构建。当前持久投递接缝是 Kailo 的授权改造，不冒称上游自带。
+
+因此，增加 sync 名称白名单、复用 ManualSync 生成另一个批次、伪造 SOURCE AE、
+删除同步向量或把五动作通过当作完整 v2 通过，都不能解除本阻断。跨 Core 的发布
+receiver 驱动与观察接缝尚未有实际闭合证据，由主线程协调；知识库现有读取、原生
+receiver 与独立业务入口不因本次调查被整体关闭。本段是源码核验与阻断记录，
+不是新增实现验收，也不增加生产就绪完成度。未运行新编译、镜像或全局门禁；
+尚无此完整 v2 release 的真实成功回执。
+
+### 2026-10-11 binding 停用的原生截止、写入与观察消费者
+
+权威与影响面：`.design/07` §6.2、§8.2 要求停用先关闭新的平台准入并对账
+在途任务，不删除原生数据或关闭独立入口。实际调用者是 Core
+`application_binding_native.rs::reconcile_binding` 的 DISABLING 管理执行，
+不是普通 active generation 升级；使用既有
+`contracts/adapter/protocol.v1/binding_reconcile_request.schema.json` 六字段和原回复合同。
+固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整路径
+`internal/application/repository/datasource_repo.go::Create`、
+`internal/application/service/datasource_service.go::CreateDataSource/ManualSync/ProcessSync`
+经只读 `git grep` 复核。以下是授权治理差异，未改原版页面、Core、公共契约或工作流权威。
+
+实际闭包：adapter 的六字段 reconcile 通过原 MCP 传输调用仅管理使用的
+`kailo_binding_reconcile`；普通工具发现不暴露它，仍消费原限流、受控 endpoint、
+管理 ActionToken、前后 fresh PEP 和精确 reference。原 MCPEndpoint 持久保存
+`platform_closed_generation`；原 DataSource 保存投递确定的 binding，不保存调用令牌。
+receiver fresh PEP 的冻结 generation 只通过请求上下文交给真实 CreateKnowledge、
+CAS checkpoint、删除意图事务。三者与 cutoff 采用相同 endpoint 行锁；普通 native
+clone 不因复制了历史 metadata 就被当作新的 receiver 准入，已有字节内部 parse 不改。
+
+同锁截止也进入原 CreatePending 与 DispatchPending。后者先锁 endpoint 再锁原
+pending 行，避免 endpoint/source/pending 反向锁序；截止后拒绝新队列投递，但保留
+原意图、终态观察及删除取消路径。已开始的原生执行不被虚构为 CANCELLED。
+SyncLog 尚没有可在调度时消费的可信冻结代次，因此存在 cutoff 时不能凭当前配置
+继续新建/重投；普通升代不安装 cutoff，停用后的重新启用仍需真实新代次投递接缝。
+
+副作用与异常：枚举读取原 TaskPendingOp、SyncLog、Knowledge 归属及 Asynq 原队列
+pending/scheduled/retry/active/archived/completed，不建第二任务表。原队列 ACK 不等于
+成功；缺少冻结归属、原任务/终态坐标时返回 UNKNOWN 或 complete=false，不回填当前
+generation。Redis 缺失、读取失败、未知状态、重复引用、截断或引用漂移不能报告排空。
+历史不明项继续由原 Core binding 对账调用保留在 DISABLING，由组件运维核对原队列、
+批次和 receipt；不能通过删除原生数据、重放副作用或超时改成功消除阻断。
+
+迁移使用原 PG `000106` / SQLite `000026`：旧 endpoint 截止为 0、旧 datasource
+binding 为空，不推断历史归属；独立 connector 保留原行为。已持久归属或 cutoff
+存在时 down 拒绝丢弃证据。新增列要求先迁移再运行新服务，未执行生产数据库迁移。
+
+验证目录：
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/binding-drain.sNXEDS`。
+Go 使用原 `kailo-knowledge-delete-handoff` 4 CPU / 8 GiB、原 Data build/mod 缓存；
+Node 使用原 SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+与既有只读 MCP 依赖，2 CPU / 2 GiB；未安装依赖、未执行全局构建。
+
+实际命令与结果：
+
+- `go test ./internal/application/repository ./internal/mcpserver ./internal/application/service -run 'TestNative(Receiver|BindingReconcile)|TestFileStorageRetirementAuthorizesAtNativeEnqueue' -count=1 -timeout=5m`
+  正验三包通过。后续恢复阶段 service 通过（115.626s），MCP 测试 fixture 缺少原 limiter
+  初始化而 panic；已修正 fixture，最终同筛选 repository/mcpserver 分项还原均退出 0
+  （0.513s / 1.970s）。不把该中间三包命令的退出 1 写成整批通过。
+- 原生 SQLite 与 miniredis 验证真实写入、调度/重投截止、PEP 允许后 cutoff 到达、
+  旧任务 UNKNOWN、ACK 后队列观察、外 scope 排除、独立 clone 及迁移拒绝丢证。
+  私有 Go overlay 分别破坏截止比较、调度截止、Redis 缺失语义，三处真实断言失败，
+  退出 1；移除 overlay 后同包退出 0，工作树未注入反证改动。
+- `node --test --test-timeout=60000 knowledge/adapter/test/query-revision.test.mjs`：
+  正验 315 项通过；私有固定源码删去 reference 对比后 drift-reference 得到 200
+  而非 503，退出 1；恢复原文件后 315 项通过，退出 0。
+- 前置失败也保留：Go 请求/模型字段误用已修正；SQLite fixture 默认 JSON 类型已修正；
+  Node fixture 缺少原 structuredContent/完整投递，初轮失败并留下悬挂 fixture，
+  仅停止该专用容器（137），未停止其他工作。完整日志未冒充最终通过证据。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| go-positive.log | `4a3d70cf3c84ad08a94fabaef6f27ec6b5ef3692aedee472fa25f0cc077154d6` |
+| go-restored.log（含上述 fixture 失败及 service 通过） | `9f76fdf99788670383bf0d2e76a9950f369a07aae75f824277dc553ceafae508` |
+| go-final-negative.log | `b29025fbef85d943a328b7ee6e8fc5df9e1b83f8e388a81446e43141196536ce` |
+| go-final-restored-after-negative.log | `d47c63cc55dd12709ad74afce644c8725973bf2442cee7336c6e917f5d31a8b6` |
+| node-final-positive.log | `71cdc15b9afba120f880f6027e0c055dd304c7cd5c4c86cee202f0df5241874d` |
+| node-negative.log | `f33dd6103b4c4a7bc046a9ca660a9ff152fcb1274a25236b06b880b92c3e6309` |
+| node-restored.log | `402c60be628aea45cc32164d4da44213f0338112025f1666f39612c70ff58b82` |
+
+本批未部署，未验证 PostgreSQL 并发锁、生产队列全量扫描、全链真实停用和重新启用。
+SQLite 不证明 PG 并发串行化；历史不明任务仍可阻断 drain，不能声称所有旧 binding
+已经能够排空。上节完整 v2 sync conformance 缺口及 MCP bound add/delete 门槛均保留。
+源码局部检查通过不等于全局发布门禁通过，也不等于三个组件已上架或用户菜单已可用。
+
+补充末版边界及反证：普通停用和创建取消经 Core
+`application_binding.rs::advance` 调用
+`application_binding_native.rs::reconcile_binding`；后者要求 DISABLING 与当前
+projection 管理 AE，并将原六字段送到 adapter 的 reconcile 分流。active 升级不调用
+该截止入口。原 SyncLog（即使记录 success）仍缺少冻结任务集合和代次终态关联；
+已有受管 Knowledge 也不能单凭存在证明任务结束。因此本批非空 binding 仍不能完成
+完整停用，后续必须沿原 SyncLog、任务及 receipt 真实终态闭合，不增加另一账本。
+
+最终复核发现 Asynq 六状态逐页读取并非原子快照，且原库还有 aggregation group。
+本批只将分页结果用于已见观察：存在任何队列（包括保留空队列或其他 scope 队列）
+就保持 complete=false，不以空页、计数相等或另一状态中没找到任务推断完整排空。
+未知 tenant/资源 scope 的任务直接拒绝观察，不披露其原生 ID；已提交 cutoff 保留。
+仅原持久集合无适用项且原队列目录为空的路径能报告完整，缺失数据库/Redis 证据不适用。
+
+同一 SDK 的 `go test ./internal/mcpserver -run TestNativeBindingReconcile -count=1 -timeout=5m`
+末版正验退出 0（0.648s）。私有 overlay 恢复旧队列观察后，foreign-task、
+unavailable-queue、unscoped-task、aggregating-task、empty-retained-queue 五处
+实际断言失败，退出 1；移除 overlay 后末版还原退出 0（0.542s）。
+新增 aggregation 用例实际调用原 Asynq Group，空队列用例实际 enqueue 后 DeleteTask，
+不使用固定空列表替代 Redis。此前 scope 专项也完成正验 0、反证 1、还原 0。
+这仍不是生产队列快照或 PostgreSQL 并发验收，不解除以上发布阻断。
+
+| 末版日志 | SHA-256 |
+| --- | --- |
+| go-scope-final.log | `46e39e922789b424c265dc5e0ed8434cd467d0c8406f12f2c64b855dfc232c88` |
+| go-scope-negative.log | `ec7b2c238992bf8a5d38cd3e24640d4db9b3b953dc7e136d508b7f90fa1e8e7a` |
+| go-scope-restored.log | `ef26ea4950f6a82a2269cfe25fed829eb3fb7446592c8c46b57ca59a8a915e13` |
+| go-queue-final.log | `ca10515701501109291937b22837a14684d899136e5e75b53c5ebe9c50efc4d0` |
+| go-queue-negative.log | `9763492b61c1d813e067c3306370c443e1490b635014ce48eb2b1dc5270e9ef9` |
+| go-queue-restored.log | `b9cb95f2e6adc82e2d7a77efc4aa9d73203f736da35438166dab9a3a65906ca6` |

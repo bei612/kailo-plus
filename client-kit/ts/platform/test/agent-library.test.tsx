@@ -57,6 +57,25 @@ afterEach(() => vi.unstubAllGlobals());
 const card = (id: string) => document.querySelector<HTMLElement>(`[data-testid="agent-${id}"]`)!;
 
 describe("original Agent library identity consumers", () => {
+  it("keeps the original complete page frame around real governed definition and installation consumers", async () => {
+    const f = fixture(); const host = await render(f.ui); await settle();
+    const page = host.querySelector('[data-testid="agent-definitions"]')!;
+    expect(page.className).toBe("flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8");
+    const content = page.querySelector('[data-testid="agents-page-content"]')!;
+    expect(content.className).toBe("mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]");
+    const header = content.firstElementChild!;
+    expect(header.className).toBe("flex min-w-0 items-start justify-between gap-4");
+    expect(header.querySelector("h1")?.className).toBe("text-2xl font-semibold tracking-tight");
+    expect(header.querySelector("h1")?.textContent).toBe("Agents");
+    expect(header.querySelector("p")?.textContent).toBe("Set up and manage your agents.");
+    expect(page.querySelectorAll("h1")).toHaveLength(1);
+    const sections = content.lastElementChild!;
+    expect(sections.className).toBe("flex flex-col gap-8");
+    expect(sections.contains(card("definition-definition"))).toBe(true);
+    expect(sections.contains(card("installation-installation"))).toBe(true);
+    expect(f.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+
   it("loads the published Persona face in the original card instead of a slug and fabricated readiness badge", async () => {
     const f = fixture(); await render(f.ui); await settle();
     const face = card("definition-definition");

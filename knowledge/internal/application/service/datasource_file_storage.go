@@ -106,6 +106,20 @@ func (write *fileStorageWrite) requireOriginalOwnership(metadata map[string]stri
 	return nil
 }
 
+func (write *fileStorageWrite) transactionContext(ctx context.Context) (context.Context, error) {
+	binding, generation, err := write.creationOwnership()
+	if err != nil {
+		return ctx, err
+	}
+	frozen, err := strconv.ParseInt(generation, 10, 64)
+	if err != nil {
+		return ctx, err
+	}
+	return types.WithNativeReceiverAdmission(ctx, types.NativeReceiverAdmission{
+		BindingID: binding, Generation: frozen, TenantID: write.run.tenantID, KnowledgeBaseID: write.run.knowledgeBaseID,
+	}), nil
+}
+
 type fileStorageGroup struct {
 	KnowledgeID string                       `json:"knowledgeId"`
 	Revision    string                       `json:"revision"`
@@ -857,6 +871,10 @@ func (s *DataSourceService) finishFileStorageIngest(ctx context.Context, ds *typ
 		return err
 	}
 	if err := write.requireOriginalOwnership(metadata); err != nil {
+		return err
+	}
+	ctx, err = write.transactionContext(ctx)
+	if err != nil {
 		return err
 	}
 	if err := s.knowledgeService.GetRepository().UpdateKnowledgeForTransfer(ctx, current, &next); err != nil {

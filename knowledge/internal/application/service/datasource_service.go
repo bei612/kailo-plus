@@ -87,10 +87,12 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	if err != nil {
 		return nil, err
 	}
+	ds.PlatformBindingID = ""
 	if native, ok := connector.(*fileStorageConnector); ok {
 		if err := native.bindingScope(ds.TenantID, ds.KnowledgeBaseID); err != nil {
 			return nil, err
 		}
+		ds.PlatformBindingID = native.transport.config.BindingID
 	}
 
 	// Validate configuration
@@ -192,6 +194,10 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	// including credential filtering, validation, scheduling and the response.
 	if ds.Type == "" {
 		ds.Type = existing.Type
+	}
+	ds.PlatformBindingID = existing.PlatformBindingID
+	if ds.Type != existing.Type && (existing.PlatformBindingID != "" || ds.Type == fileStorageConnectorType || existing.Type == fileStorageConnectorType) {
+		return nil, datasource.ErrDataSourceInvalid
 	}
 	if ds.Type == fileStorageConnectorType {
 		connector, err := s.connectorRegistry.Get(ds.Type)

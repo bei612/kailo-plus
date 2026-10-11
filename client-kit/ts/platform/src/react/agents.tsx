@@ -51,6 +51,7 @@ import { InstallationMemory } from "./memory";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
+import { WorkflowsListSkeleton } from "./workflow-list-skeleton";
 import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "./workflow-form-canvas";
 import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
@@ -65,6 +66,7 @@ import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
+import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
@@ -138,15 +140,13 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const nextOffset = page?.nextOffset;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-definitions">
-      <div className="flex min-w-0 items-start justify-between gap-4">
-        <p className="text-base font-normal text-muted-foreground">{t("agents.description")}</p>
+    <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={
         <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
           disabled={blocked || installationLocked || state.status === "pending"}
           onClick={() => { reload(); setRefreshRevision((value) => value + 1); }}>
           <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
         </WorkflowButton>
-      </div>
+    }>
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
@@ -192,7 +192,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
         <ToolManagement />
       </AgentManagementDialog>
       <InstallationManagement {...navigation} versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
-    </div>
+    </AgentsPageFrame>
   );
 }
 
@@ -423,7 +423,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
     && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset)) ? data : null;
   const next = page?.nextOffset;
   return <div className="flex flex-col gap-3">
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+    {state.status === "pending" ? <WorkflowsListSkeleton />
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
         {/* Original Buzz WorkflowsView grid/CreateWorkflowCard and WorkflowCard surface.

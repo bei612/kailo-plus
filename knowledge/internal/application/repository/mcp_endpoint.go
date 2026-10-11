@@ -66,7 +66,7 @@ func (r *mcpEndpointRepository) Update(ctx context.Context, ep *types.MCPEndpoin
 	// endpoint without its retained binding. Update only the existing owner row.
 	result := r.db.WithContext(ctx).Model(&types.MCPEndpoint{}).
 		Where("id = ? AND tenant_id = ?", ep.ID, ep.TenantID).
-		Select("*").Omit("ID", "TenantID", "PlatformBindingID").Updates(ep)
+		Select("*").Omit("ID", "TenantID", "PlatformBindingID", "PlatformClosedGeneration").Updates(ep)
 	if result.Error != nil {
 		return result.Error
 	}

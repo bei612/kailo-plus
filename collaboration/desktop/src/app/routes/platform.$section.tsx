@@ -69,6 +69,13 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
   if (section === "projects") return <ProjectsScreen selectedProjectId={projectId??null} onSelectedProjectChange={onProjectChange}/>;
+  if (section === "agents") return (
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="platform-agents">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+        <AgentDefinitionsPane workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
+      </div>
+    </div>
+  );
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 pt-14"
@@ -80,8 +87,6 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
       {section === "members" ? (
         <WorkspaceMembersPage renderIdentity={(pubkey,children,label)=><UserProfilePopover pubkey={pubkey}
           triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
-      ) : section === "agents" ? (
-        <AgentDefinitionsPane workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "workflows" ? (
         <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} workflowNavigation={workflowNavigation} />
       ) : section === "tasks" ? (
