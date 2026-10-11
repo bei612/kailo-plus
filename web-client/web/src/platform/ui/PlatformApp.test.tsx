@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   paneTarget:null as null|{targetMessageId?:string;targetThreadRootId?:string},
   searchHighlight:null as null|{activationId:string;messageId:string;query:string},
   paneSearch:null as null|{targetSearchMessageId?:string;targetSearchQuery?:string},
+  openPaneMessageLink:undefined as import("react").ComponentProps<typeof import("./ChannelPane").ChannelPane>["onOpenMessageLink"],
   forumSearch:null as null|Pick<import("react").ComponentProps<typeof import("./ForumPane").ForumPane>,"target"|"searchMessageId"|"searchQuery"|"searchActivationId">,
 }));
 const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
@@ -148,8 +149,9 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
   TenantInvitations: () => <div data-testid="tenant-invitations" />,
   RedemptionProgress: () => null,
 }));
-vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm, targetMessageId, targetThreadRootId, targetSearchMessageId, targetSearchQuery}: {conversation?: unknown; onStartDm: (pubkey: string) => void | Promise<void>;targetMessageId?:string;targetThreadRootId?:string;targetSearchMessageId?:string;targetSearchQuery?:string}) => {
-  state.startDm[conversation ? "conversation" : "stream"] = onStartDm;
+vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: ({conversation, onStartDm, onOpenMessageLink, targetMessageId, targetThreadRootId, targetSearchMessageId, targetSearchQuery}: import("react").ComponentProps<typeof import("./ChannelPane").ChannelPane>) => {
+  state.startDm[conversation ? "conversation" : "stream"] = onStartDm!;
+  state.openPaneMessageLink=onOpenMessageLink;
   state.paneTarget={targetMessageId,targetThreadRootId};
   state.paneSearch={targetSearchMessageId,targetSearchQuery};
   return null;
@@ -202,7 +204,7 @@ beforeEach(() => {
   state.headerReady = true;
   state.conversationState = "ACTIVE";
   state.privateWorkspace = false;
-  state.messageTarget=null;state.paneTarget=null;state.searchHighlight=null;state.paneSearch=null;state.forumSearch=null;
+  state.messageTarget=null;state.paneTarget=null;state.searchHighlight=null;state.paneSearch=null;state.forumSearch=null;state.openPaneMessageLink=undefined;
   state.startDm = {};
   state.search = null;
   state.openChannel.mockReset().mockResolvedValue(undefined);
@@ -294,6 +296,36 @@ it("resolves a fresh participant DM by native channel without treating that ID a
   renderToStaticMarkup(<PlatformApp/>);
   state.search!.onOpenResult(searchHit("native-private"),"actual");
   await vi.waitFor(()=>expect(state.openConversation).toHaveBeenCalledWith("actual-private",{messageId:"actual-message",threadRootId:null},"actual"));
+  expect(state.openChannel).not.toHaveBeenCalled();
+});
+
+it.each(["channel", "conversation"])("the actual %s pane source-link callback resolves its native channel through fresh admission",async(surface)=>{
+  state.tab=surface;
+  state.conversationId=surface==="conversation"?"actual-private":null;
+  state.reloadConversations.mockResolvedValue([{id:"actual-private",channelId:"native-private",state:"ACTIVE",participantPrincipalIds:["human-a","human-b"]}]);
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.openPaneMessageLink).toBeTypeOf("function");
+  state.openPaneMessageLink!({channelId:surface==="conversation"?"native-private":"native-a",messageId:"source-root",threadRootId:"source-root"});
+  if(surface==="conversation") {
+    await vi.waitFor(()=>expect(state.openConversation).toHaveBeenCalledWith("actual-private",{messageId:"source-root",threadRootId:"source-root"},undefined));
+    expect(state.openChannel).not.toHaveBeenCalled();
+  } else {
+    await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",{channelId:"workspace-a",messageId:"source-root",threadRootId:"source-root"},undefined));
+    expect(state.openConversation).not.toHaveBeenCalled();
+  }
+  expect(state.searchRefetch).toHaveBeenCalledOnce();
+});
+
+it.each(["directory-unavailable","not-participant","inactive"])("the actual pane source-link callback refuses %s DM targets",async(failure)=>{
+  state.tab="conversation";state.conversationId="actual-private";
+  state.reloadConversations.mockResolvedValue([{id:"actual-private",channelId:"native-private",state:failure==="inactive"?"INACTIVE":"ACTIVE",participantPrincipalIds:failure==="not-participant"?["human-b"]:["human-a","human-b"]}]);
+  if(failure==="directory-unavailable")state.searchRefetch.mockResolvedValue({isError:true});
+  renderToStaticMarkup(<PlatformApp/>);
+  expect(state.openPaneMessageLink).toBeTypeOf("function");
+  state.openPaneMessageLink!({channelId:"native-private",messageId:"source-root",threadRootId:"source-root"});
+  await vi.waitFor(()=>expect(state.searchRefetch).toHaveBeenCalledOnce());
+  await Promise.resolve();
+  expect(state.openConversation).not.toHaveBeenCalled();
   expect(state.openChannel).not.toHaveBeenCalled();
 });
 

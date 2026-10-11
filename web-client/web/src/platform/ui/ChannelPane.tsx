@@ -463,12 +463,12 @@ export function ChannelPane({
   const channelId = conversation?.channelId ?? admittedChannelId ?? events
     .find((e) => e.tags.some((tag) => tag[0] === "h"))
     ?.tags.find((tag) => tag[0] === "h")?.[1];
-  const openThreadReference = !conversation && channelId && live && !denied && !metadataPending && onOpenMessageLink
+  const openThreadReference = channelId && live && !denied && !metadataPending && onOpenMessageLink
     ? (link: ParsedMessageLink) => {
       if (link.channelId !== channelId || !requireThreadEditResolution()) return;
-      // The original reference identifies the native channel; the Web route
-      // resolves this already-admitted channel through its current Workspace.
-      onOpenMessageLink({ ...link, channelId: workspaceId });
+      // The original reference carries the native channel ID. The same host
+      // navigator freshly resolves either its Workspace or active conversation.
+      onOpenMessageLink(link);
     }
     : undefined;
   const copyMessageLink = channelId ? async (target: TimelineMessage) => {

@@ -155,27 +155,29 @@ function acceptReadMarks() {
   });
 }
 
-it.each(["main", "thread"])("the actual %s row restores original sent-from-thread navigation through the admitted native-channel/workspace mapping", async surface => {
+it.each(["channel-main", "channel-thread", "dm-main", "dm-thread"])("the actual %s row keeps original sent-from-thread navigation in the native channel namespace", async surface => {
   const navigate = vi.fn();
   const sent = {...event(20), content: "Copied thread reply", tags: [["h", "channel-a"], ["buzz:sent-from-thread", "original-root", "🧭 Shipping plan"]]};
   threadMessages.splice(0, threadMessages.length, {...sent, createdAt: 20});
-  await renderChannel({onOpenMessageLink: navigate});
+  await renderChannel({onOpenMessageLink: navigate, ...(surface.startsWith("dm") ? {
+    conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ItemState.Active, version: 1, operationId: "op"},
+  } : {})});
   await act(async () => {
     state.receive!({type: "snapshot", events: windowEvents([event(10), sent].sort(compareRelayOrder))});
     state.receive!({type: "live"});
   });
   await flush();
-  if (surface === "thread") {
+  if (surface.endsWith("thread")) {
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-20"]')!.click());
     await flush();
   }
-  const within = surface === "thread" ? host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')! : host;
+  const within = surface.endsWith("thread") ? host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')! : host;
   const reference = within.querySelector<HTMLElement>('[data-testid="sent-from-thread"]')!;
   expect(reference?.textContent).toContain("🧭 Shipping plan");
   const link = reference.querySelector<HTMLButtonElement>('button[data-message-link]')!;
   expect(link).not.toBeNull();
   await act(async () => link.click());
-  expect(navigate).toHaveBeenCalledExactlyOnceWith({channelId: "workspace-a", messageId: "original-root", threadRootId: "original-root"});
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({channelId: "channel-a", messageId: "original-root", threadRootId: "original-root"});
   expect(state.publish).not.toHaveBeenCalled();
   await act(async () => state.receive!({type: "closed", reason: "scope-revoked"}));
   await flush();
