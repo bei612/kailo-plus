@@ -376,6 +376,43 @@ type processSyncSyncLogRepo struct {
 	writes    int
 }
 
+func TestFileStorageBatchSnapshotUsesOriginalSyncLogConsumer(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		ds := &types.DataSource{ID: uuid.NewString(), Type: fileStorageConnectorType, TenantID: 1}
+		log := &types.SyncLog{ID: uuid.NewString(), DataSourceID: ds.ID, TenantID: ds.TenantID, Status: types.SyncLogStatusRunning}
+		logs := &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{log.ID: log}}
+		if fail {
+			logs.updateErr = errors.New("original batch unavailable")
+		}
+		handler := &streamSyncHandler{svc: &DataSourceService{dsRepo: &fileStorageDiscoveryCheckpointRepo{}, syncLogRepo: logs}, ds: ds, syncLog: log, result: &types.SyncResult{}}
+		state := fileStorageCursor{BatchID: log.ID, BindingID: uuid.NewString(), Generation: 4, Groups: map[string]fileStorageGroup{}, Applying: map[string]fileStorageApplication{}, Retiring: map[string]fileStorageRetirement{}}
+		cursor, err := fileStorageCheckpoint(context.Background(), handler, state, time.Now().UTC())
+		if fail {
+			require.ErrorContains(t, err, "persist original receiver batch snapshot")
+			continue
+		}
+		require.NoError(t, err)
+		var stored types.SyncResult
+		require.NoError(t, json.Unmarshal(logs.logs[log.ID].Result, &stored))
+		require.NotNil(t, stored.NextCursor)
+		require.Equal(t, log.ID, stored.NextCursor.ConnectorCursor["batchId"])
+		require.Equal(t, float64(4), stored.NextCursor.ConnectorCursor["generation"])
+		require.NoError(t, handler.svc.updateSyncRunResult(context.Background(), ds, log, &types.SyncResult{}, nil, types.SyncLogStatusFailed, "source revoked before checkpoint", false))
+		require.NoError(t, json.Unmarshal(logs.logs[log.ID].Result, &stored))
+		require.Equal(t, log.ID, stored.NextCursor.ConnectorCursor["batchId"])
+		require.Equal(t, float64(4), stored.NextCursor.ConnectorCursor["generation"])
+		_, present := stored.NextCursor.ConnectorCursor["applying"]
+		require.False(t, present, "the real native producer omits an empty Applying map")
+		restored, err := fileStorageState(stored.NextCursor)
+		require.NoError(t, err)
+		require.EqualValues(t, 4, restored.Generation)
+		// A later datasource cursor cannot rewrite the already serialized run.
+		cursor.ConnectorCursor["generation"] = 5
+		require.NoError(t, json.Unmarshal(logs.logs[log.ID].Result, &stored))
+		require.Equal(t, float64(4), stored.NextCursor.ConnectorCursor["generation"])
+	}
+}
+
 func (r *processSyncSyncLogRepo) Create(_ context.Context, log *types.SyncLog) error {
 	r.logs[log.ID] = log
 	return nil

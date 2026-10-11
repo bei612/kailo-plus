@@ -136,9 +136,14 @@ type fileStorageRetirement struct {
 }
 
 type fileStorageCursor struct {
-	Groups   map[string]fileStorageGroup       `json:"groups"`
-	Retiring map[string]fileStorageRetirement  `json:"retiring"`
-	Applying map[string]fileStorageApplication `json:"applying,omitempty"`
+	// This is the original native run's observed PEP ownership, not permission
+	// for another write. SyncLog.Result retains this cursor for that run.
+	BatchID    string                            `json:"batchId,omitempty"`
+	BindingID  string                            `json:"bindingId,omitempty"`
+	Generation int64                             `json:"generation,omitempty"`
+	Groups     map[string]fileStorageGroup       `json:"groups"`
+	Retiring   map[string]fileStorageRetirement  `json:"retiring"`
+	Applying   map[string]fileStorageApplication `json:"applying,omitempty"`
 	// Discovery receipts acknowledge a persisted native observation, not a
 	// prematurely replaced desired set. Groups retains previous materializations
 	// and fully confirmed applications until their native retirement completes.
@@ -583,6 +588,9 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	if err := c.Validate(ctx, cfg); err != nil {
 		return nil, err
 	}
+	if state.BatchID != run.syncLogID {
+		state.BatchID, state.BindingID, state.Generation = run.syncLogID, "", 0
+	}
 	listings := map[string]*fileStorageListing{}
 	// Finish every source enumeration before applying any missing-item set.
 	for _, source := range cfg.ResourceIDs {
@@ -605,6 +613,13 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		}
 		if fileStorageText(listing.grant.value, "outcome") != "COMPLETED" {
 			if err := c.transport.pep(ctx, listing.grant); err != nil {
+				return nil, err
+			}
+			if state.Generation != 0 && (state.BindingID != c.transport.config.BindingID || state.Generation != listing.grant.generation) {
+				return nil, fmt.Errorf("native sync batch admitted generation changed")
+			}
+			state.BindingID, state.Generation = c.transport.config.BindingID, listing.grant.generation
+			if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
 				return nil, err
 			}
 		}
@@ -708,6 +723,9 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			if fileStorageText(file.grant.value, "outcome") != "COMPLETED" {
 				if err := c.transport.pep(ctx, file.grant); err != nil {
 					return nil, err
+				}
+				if state.Generation <= 0 || state.BindingID != c.transport.config.BindingID || file.grant.generation != state.Generation {
+					return nil, fmt.Errorf("native sync read differs from its admitted batch generation")
 				}
 			}
 		}
@@ -929,6 +947,9 @@ func (c *fileStorageConnector) retire(ctx context.Context, run fileStorageRun, k
 	} else {
 		if err := c.transport.pep(ctx, grant); err != nil {
 			return err
+		}
+		if state.BatchID != run.syncLogID || state.BindingID != c.transport.config.BindingID || state.Generation <= 0 || grant.generation != state.Generation {
+			return fmt.Errorf("native retirement differs from its admitted batch generation")
 		}
 		native, readErr := c.knowledge.GetKnowledgeByID(ctx, old.KnowledgeID)
 		if readErr != nil || native == nil || native.TenantID != run.tenantID || native.KnowledgeBaseID != run.knowledgeBaseID ||

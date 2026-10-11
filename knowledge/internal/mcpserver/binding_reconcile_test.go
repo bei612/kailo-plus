@@ -119,3 +119,77 @@ func TestNativeBindingReconcileConsumesManagementProofAndOriginalRows(t *testing
 		})
 	}
 }
+
+func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
+	for _, scenario := range []string{"complete", "foreign-queue", "redelivered-parse", "missing-generation", "wrong-binding", "running-batch", "pending-document", "unconfirmed-application"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newNativeBindingFixture(t)
+			r := miniredis.RunT(t)
+			f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
+			t.Cleanup(func() { _ = f.server.redisClient.Close() })
+			require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
+			kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+			source, batch, document := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			revision := time.Now().Add(-time.Minute).UTC()
+			finished := time.Now().Add(-time.Second).UTC()
+			cursor := map[string]interface{}{"batchId": batch, "bindingId": binding, "generation": 4, "groups": map[string]interface{}{"original": map[string]string{"knowledgeId": document, "revision": revision.Format(time.RFC3339Nano)}}, "applying": map[string]interface{}{}, "retiring": map[string]interface{}{}}
+			delete(cursor, "applying") // fileStorageCheckpoint omits the empty native map.
+			if scenario == "missing-generation" {
+				delete(cursor, "generation")
+			}
+			if scenario == "wrong-binding" {
+				cursor["bindingId"] = uuid.NewString()
+			}
+			if scenario == "unconfirmed-application" {
+				cursor["applying"] = map[string]interface{}{"original": map[string]string{"knowledgeId": document}}
+			}
+			result, err := (&types.SyncResult{NextCursor: &types.SyncCursor{LastSyncTime: finished, ConnectorCursor: cursor}}).ToJSON()
+			require.NoError(t, err)
+			log := &types.SyncLog{ID: batch, DataSourceID: source, TenantID: f.ep.TenantID, Status: types.SyncLogStatusSuccess, StartedAt: revision, FinishedAt: &finished, Result: result}
+			if scenario == "running-batch" {
+				log.Status = types.SyncLogStatusRunning
+				log.FinishedAt = nil
+			}
+			require.NoError(t, f.server.db.Create(&types.DataSource{ID: source, TenantID: f.ep.TenantID, KnowledgeBaseID: kb, PlatformBindingID: binding, Type: "file_storage"}).Error)
+			require.NoError(t, f.server.db.Create(log).Error)
+			metadata, err := json.Marshal(map[string]string{"platform_receiver_binding_id": binding, "platform_receiver_generation": "4"})
+			require.NoError(t, err)
+			row := &types.Knowledge{ID: document, TenantID: f.ep.TenantID, KnowledgeBaseID: kb, Metadata: metadata, Channel: "file_storage", ParseStatus: types.ParseStatusCompleted, UpdatedAt: revision}
+			if scenario == "pending-document" {
+				row.ParseStatus = types.ParseStatusFinalizing
+				row.PendingSubtasksCount = 1
+			}
+			require.NoError(t, f.server.db.Create(row).Error)
+			if scenario == "foreign-queue" || scenario == "redelivered-parse" {
+				payload := types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: document}
+				if scenario == "foreign-queue" {
+					payload.TenantID++
+				}
+				raw, err := json.Marshal(payload)
+				require.NoError(t, err)
+				_, err = asynq.NewClientFromRedisClient(f.server.redisClient).Enqueue(asynq.NewTask(types.TypeDocumentProcess, raw))
+				require.NoError(t, err)
+			}
+			delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+			require.NoError(t, err)
+			value, err := f.server.observeNativeBinding(context.Background(), delivery.ep, fileStorageReferenceForTest(t, binding, kb))
+			require.NoError(t, err)
+			require.Equal(t, scenario == "complete", value["complete"])
+			observations := value["observations"].([]map[string]any)
+			require.Len(t, observations, 1)
+			if scenario == "complete" || scenario == "foreign-queue" || scenario == "redelivered-parse" {
+				require.Equal(t, "SUCCEEDED", observations[0]["platformStatus"])
+				require.Equal(t, batch, observations[0]["idempotencyKey"])
+			}
+		})
+	}
+}
+
+func fileStorageReferenceForTest(t *testing.T, binding, kb string) map[string]json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]interface{}{"bindingId": binding, "generation": 4, "nativeScopeRef": kb})
+	require.NoError(t, err)
+	var result map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &result))
+	return result
+}

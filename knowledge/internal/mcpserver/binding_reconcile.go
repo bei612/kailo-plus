@@ -95,6 +95,8 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 	observations := []map[string]any{}
 	complete := true
 	seen := map[string]bool{}
+	finishedBatches := map[string]string{}
+	finishedDocuments := map[string]string{}
 	unknown := func(kind, key, nativeID string) {
 		complete = false
 		if !nativeUUID(key) || seen[kind+":"+key] {
@@ -140,7 +142,57 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 			_ = rows.Close()
 			return nil, err
 		}
-		unknown(types.TypeDataSourceSync, log.ID, log.ID)
+		var result types.SyncResult
+		var snapshot struct {
+			BatchID    string `json:"batchId"`
+			BindingID  string `json:"bindingId"`
+			Generation int64  `json:"generation"`
+			Groups     map[string]struct {
+				KnowledgeID string `json:"knowledgeId"`
+				Revision    string `json:"revision"`
+			} `json:"groups"`
+			Applying map[string]json.RawMessage `json:"applying"`
+			Retiring map[string]json.RawMessage `json:"retiring"`
+		}
+		valid := json.Unmarshal(log.Result, &result) == nil && result.NextCursor != nil
+		if valid {
+			raw, marshalErr := json.Marshal(result.NextCursor.ConnectorCursor)
+			valid = marshalErr == nil && json.Unmarshal(raw, &snapshot) == nil && snapshot.BatchID == log.ID &&
+				snapshot.BindingID == ep.PlatformBindingID && snapshot.Generation > 0 && snapshot.Generation <= nativeNumber(reference, "generation") &&
+				snapshot.Groups != nil && len(snapshot.Applying) == 0 && snapshot.Retiring != nil && len(snapshot.Retiring) == 0
+		}
+		if !valid || log.Status != types.SyncLogStatusSuccess || log.FinishedAt == nil || log.StartedAt.IsZero() ||
+			log.FinishedAt.Before(log.StartedAt) || log.FinishedAt.After(time.Now()) ||
+			result.NextCursor.LastSyncTime.IsZero() || result.NextCursor.LastSyncTime.After(*log.FinishedAt) {
+			unknown(types.TypeDataSourceSync, log.ID, log.ID)
+			continue
+		}
+		for _, group := range snapshot.Groups {
+			revision, revisionErr := time.Parse(time.RFC3339Nano, group.Revision)
+			if !nativeUUID(group.KnowledgeID) || revisionErr != nil || revision.IsZero() || revision.After(*log.FinishedAt) {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			unknown(types.TypeDataSourceSync, log.ID, log.ID)
+			continue
+		}
+		finishedBatches[log.ID] = log.DataSourceID
+		for _, group := range snapshot.Groups {
+			prior, _ := time.Parse(time.RFC3339Nano, finishedDocuments[group.KnowledgeID])
+			revision, _ := time.Parse(time.RFC3339Nano, group.Revision)
+			if revision.After(prior) {
+				finishedDocuments[group.KnowledgeID] = group.Revision
+			}
+		}
+		if seen[types.TypeDataSourceSync+":"+log.ID] {
+			continue
+		}
+		seen[types.TypeDataSourceSync+":"+log.ID] = true
+		observations = append(observations, map[string]any{"idempotencyKey": log.ID, "nativeType": types.TypeDataSourceSync,
+			"nativeId": log.ID, "nativeStatus": log.Status, "platformStatus": "SUCCEEDED", "cancelCapability": "UNSUPPORTED",
+			"terminalAt": log.FinishedAt.UTC().Format(time.RFC3339Nano), "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano)})
 	}
 	readErr = rows.Err()
 	_ = rows.Close()
@@ -150,7 +202,7 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 	// Missing native task/receipt coordinates are not empty drainage. Inspect
 	// retained managed and historical receiver documents without copying body.
 	rows, err = s.db.WithContext(ctx).Unscoped().Model(&types.Knowledge{}).
-		Select("metadata", "channel").Where("tenant_id = ? AND knowledge_base_id = ?", ep.TenantID, kb).Rows()
+		Select("id", "metadata", "channel", "parse_status", "pending_subtasks_count", "updated_at", "deleted_at").Where("tenant_id = ? AND knowledge_base_id = ?", ep.TenantID, kb).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +217,10 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 		if binding == ep.PlatformBindingID {
 			generation, err := strconv.ParseInt(metadata["platform_receiver_generation"], 10, 64)
 			if err == nil && generation > nativeNumber(reference, "generation") && strconv.FormatInt(generation, 10) == metadata["platform_receiver_generation"] {
+				continue
+			}
+			if err == nil && generation > 0 && strconv.FormatInt(generation, 10) == metadata["platform_receiver_generation"] && !document.DeletedAt.Valid && document.ParseStatus == types.ParseStatusCompleted && document.PendingSubtasksCount == 0 &&
+				finishedDocuments[document.ID] == document.UpdatedAt.UTC().Format(time.RFC3339Nano) {
 				continue
 			}
 			complete = false
@@ -187,10 +243,8 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 		if err != nil {
 			return nil, err
 		}
-		// These paginated state lists are not an atomic queue snapshot. Tasks
-		// can move across states/pages (including aggregation groups) while we
-		// read. Observed tasks are useful evidence, but even an empty page or
-		// unchanged queue count cannot prove a complete binding task set.
+		// A completed batch proves its own outcome, not the complete set of
+		// other native tasks. Pagination cannot establish that missing set.
 		if len(queues) != 0 {
 			complete = false
 		}
@@ -223,6 +277,16 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 							return nil, err
 						}
 						if belongs {
+							var batch types.DataSourceSyncPayload
+							if task.Type == types.TypeDataSourceSync && json.Unmarshal(task.Payload, &batch) == nil && batch.SyncLogID == task.ID &&
+								batch.TenantID == ep.TenantID && finishedBatches[task.ID] != "" && finishedBatches[task.ID] == batch.DataSourceID {
+								continue
+							}
+							var payload types.DocumentProcessPayload
+							if task.Type == types.TypeDocumentProcess && json.Unmarshal(task.Payload, &payload) == nil &&
+								payload.TenantID == ep.TenantID && payload.KnowledgeBaseID == kb && finishedDocuments[payload.KnowledgeID] != "" {
+								continue
+							}
 							unknown(task.Type, task.ID, task.ID)
 						}
 					}

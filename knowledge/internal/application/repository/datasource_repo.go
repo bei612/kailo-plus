@@ -479,9 +479,9 @@ func (r *SyncLogRepository) UpdateResult(ctx context.Context, log *types.SyncLog
 	if log.ID == "" {
 		return errors.New("sync log id is empty")
 	}
-	if err := r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Model(&types.SyncLog{}).
-		Where("id = ?", log.ID).
+		Where("id = ? AND tenant_id = ? AND data_source_id = ?", log.ID, log.TenantID, log.DataSourceID).
 		Updates(map[string]interface{}{
 			"status":        log.Status,
 			"finished_at":   log.FinishedAt,
@@ -494,8 +494,12 @@ func (r *SyncLogRepository) UpdateResult(ctx context.Context, log *types.SyncLog
 			"error_message": log.ErrorMessage,
 			"result":        log.Result,
 			"updated_at":    time.Now().UTC(),
-		}).Error; err != nil {
-		return err
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("original sync log snapshot owner is unavailable")
 	}
 	return nil
 }

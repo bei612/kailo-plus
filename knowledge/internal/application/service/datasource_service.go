@@ -1067,8 +1067,15 @@ func (h *streamSyncHandler) Checkpoint(ctx context.Context, cursor *types.SyncCu
 		h.ds.LastSyncCursor = previous
 		return err
 	}
+	h.result.NextCursor = cursor
+	resultJSON, err := h.result.ToJSON()
+	if err != nil {
+		return err
+	}
+	h.syncLog.Result = resultJSON
 
-	// Best-effort live progress; a failure here must not abort the sync.
+	// File-storage checkpoints require durable batch ownership; other native
+	// connectors retain their best-effort live progress behavior.
 	h.syncLog.ItemsTotal = h.result.Total
 	h.syncLog.ItemsCreated = h.result.Created
 	h.syncLog.ItemsUpdated = h.result.Updated
@@ -1076,6 +1083,9 @@ func (h *streamSyncHandler) Checkpoint(ctx context.Context, cursor *types.SyncCu
 	h.syncLog.ItemsSkipped = h.result.Skipped
 	h.syncLog.ItemsFailed = h.result.Failed
 	if err := h.svc.syncLogRepo.UpdateResult(ctx, h.syncLog); err != nil {
+		if h.ds.Type == fileStorageConnectorType {
+			return fmt.Errorf("persist original receiver batch snapshot: %w", err)
+		}
 		logger.Warnf(ctx, "failed to persist sync log progress at checkpoint: %v", err)
 	}
 	return nil
@@ -1221,6 +1231,23 @@ func (s *DataSourceService) updateSyncRunResult(
 	errorMessage string,
 	wasPaused bool,
 ) error {
+	// A retry can fail before its first new checkpoint (for example when a
+	// source permission was withdrawn). Keep the original run's persisted
+	// snapshot instead of replacing its admitted ownership with a nil cursor.
+	if ds.Type == fileStorageConnectorType {
+		if result.NextCursor == nil && len(syncLog.Result) != 0 {
+			var retained types.SyncResult
+			if err := json.Unmarshal(syncLog.Result, &retained); err != nil {
+				return fmt.Errorf("read original receiver batch snapshot: %w", err)
+			}
+			result.NextCursor = retained.NextCursor
+		}
+		var err error
+		resultJSON, err = result.ToJSON()
+		if err != nil {
+			return err
+		}
+	}
 	syncLog.ItemsTotal = result.Total
 	syncLog.ItemsCreated = result.Created
 	syncLog.ItemsUpdated = result.Updated

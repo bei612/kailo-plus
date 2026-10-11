@@ -597,7 +597,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 				_, err = f.svc.StartKnowledgeDeleteTask(ctx, kb, id, old.Revision, key)
 			} else {
 				connector := &fileStorageConnector{transport: transport, knowledge: f.svc}
-				state := fileStorageCursor{Retiring: map[string]fileStorageRetirement{}}
+				state := fileStorageCursor{BatchID: run.syncLogID, BindingID: binding, Generation: 3, Retiring: map[string]fileStorageRetirement{}}
 				err = connector.retire(ctx, run, "group", old, map[string]*fileStorageListing{source: {digest: fileStorageDigest([]byte("[]"))}}, &state, checkpoint, time.Time{})
 				require.Error(t, err, "queued deletion is not a terminal receiver receipt")
 				require.Equal(t, 1, sourceCalls)

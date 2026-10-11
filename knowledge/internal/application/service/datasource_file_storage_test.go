@@ -709,7 +709,15 @@ func TestFileStorageDiscoveryCheckpointsBeforeNextSource(t *testing.T) {
 			result := &types.SyncResult{}
 			_, err = connector.FetchStream(ctx, cfg, previous, newStreamHandler(svc, ds, result, &types.SyncLog{}))
 			require.Error(t, err)
-			require.Equal(t, types.SyncResult{}, *result, "partial enumeration must not become an empty deletion baseline")
+			counts := *result
+			counts.NextCursor = nil
+			require.Equal(t, types.SyncResult{}, counts, "partial enumeration must not report applied items")
+			if result.NextCursor != nil {
+				retained, err := fileStorageState(result.NextCursor)
+				require.NoError(t, err)
+				require.Equal(t, state.Groups, retained.Groups, "partial enumeration must not become an empty deletion baseline")
+				require.Equal(t, at, result.NextCursor.LastSyncTime, "a checkpoint is not a completed batch")
+			}
 			require.Equal(t, 1, sourceCalls)
 			require.Zero(t, receipts)
 			if stage != "later-source-refused" {

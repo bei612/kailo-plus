@@ -5496,3 +5496,72 @@ unavailable-queue、unscoped-task、aggregating-task、empty-retained-queue 五�
 | go-queue-final.log | `ca10515701501109291937b22837a14684d899136e5e75b53c5ebe9c50efc4d0` |
 | go-queue-negative.log | `9763492b61c1d813e067c3306370c443e1490b635014ce48eb2b1dc5270e9ef9` |
 | go-queue-restored.log | `b9cb95f2e6adc82e2d7a77efc4aa9d73203f736da35438166dab9a3a65906ca6` |
+
+### 2026-10-11 原 receiver 批次快照与单批终态观察
+
+权威和范围：沿 .design/07 §6.2 的停用排空及 §8.2、.design/13 §4
+的 NATIVE_MANAGED 接收者执行边界；本批不改变注册动作或制造平台同步工作流。
+基线为 Kailo `dcd6ed4dbc97a4c910ba6d2c2514c508dccc101b`。
+固定官方 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+`internal/types/datasource.go::SyncResult.NextCursor`、
+`internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+和 `processSyncStreaming` 已提供原游标、结果和批次身份。本批复用这些原生
+存储/调用点，不另建任务表、注册表或正文副本。
+
+影响闭包：fileStorageConnector.FetchStream 在真实 receiver PEP 后取得冻结代次，
+写原 fileStorageCursor 的 batchId/bindingId/generation；同批后续导入和退休必须
+匹配该代次。读取 SOURCE 字节本身不等于 receiver PEP，比较实际位于原 receiver
+PEP 成功之后、Emit 之前。Checkpoint 把实际序列化游标存入原 SyncLog.Result，
+仅 file_storage 持久失败中止，其他原 connector 保留 best-effort 进度行为。
+UpdateResult 以原 id/tenant/dataSource 三字段限定已有行并检查 RowsAffected；
+重试尚未取得新 checkpoint 即失败时保留此前批次快照。没有数据库 schema 改动，
+旧 JSON 仍可读取，历史缺归属不回填当前代次。
+
+真实 reader：observeNativeBinding 只将归属、代次、成功状态、起止时间与完整原
+快照均成立的 SyncLog 报为 SUCCEEDED。原 fileStorageCheckpoint 空 Applying
+使用 omitempty，reader 接受省略的空映射；非空 Applying/Retiring 不能完成。
+仍存在文档必须同一绑定、有效冻结代次、parse completed、无待处理子任务且与该
+成功快照 revision 一致。后续修订、软删除或仍在途解析不由旧成功快照抵消。
+重复原批次/文档队列任务可观察其既有完成事实，但不能证明整个队列集合已排空。
+
+明确剩余：原 Asynq 跨状态分页不是原子全集；只要有原队列，本批继续
+complete=false，不因一个成功批次或外国 binding 的任务就伪造完整集合。
+原始持久任务全集/完整队列归属闭合仍未交付；历史缺失或不确定结果保持 UNKNOWN，
+沿现有 binding reconcile 重观测与原责任人处置，不自动重发旧副作用，
+既有 retention 到期后禁止重发。没有持久 token、当前代次回填、权限降级或
+新执行权威。knowledge.v2 sync_apply/sync_retire 与通用 execute conformance 的
+真实 receiver 接缝仍是独立发布阻断；本批不等于完整 binding drain 或服务上架。
+
+验收使用原 4 CPU / 8 GiB SDK `kailo-knowledge-delete-handoff`、
+Data 的既有 Go 缓存；没有新镜像/环境。实际 producer 检查调用
+fileStorageCheckpoint 后反序列化其 SyncLog.Result，不用手造空 Applying 代替。
+数据库使用 SQLite，队列使用 miniredis + 原 Asynq；不证明 PostgreSQL 行锁并发、
+真实队列部署或端到端生产接入。三处私有 overlay 分别破坏快照持久化、已有行
+精确 owner 和 reader 冻结归属，三包原断言均真实失败，退出 1。
+
+中间失败保留：首次加入 NextCursor 后旧“整个 SyncResult 为空”断言失败，
+修正为检查原计数和保留的 Groups。扩展原 FileStorage 验证发现代次比较早于
+receiver PEP 的真实回归，已移动至实际 PEP 成功点；原直接退休 fixture 补齐
+真实前置批次冻结身份，仍保留 enqueue 前撤权断言。旧日志不冒充末版通过。
+
+最终验证范围分别记录，不合并成全包通过：
+`go test ./internal/application/repository ./internal/application/service ./internal/mcpserver -run "TestSyncLogRepositoryUpdateResult|TestFileStorage|TestNativeBindingReconcile" -count=1 -timeout=5m`
+退出 1；repository 2.249s、mcpserver 1.133s 通过，service 300.865s 超时。
+原栈表明是 service 包累计 5m，退休父用例也已运行 5m，最后 independent-native
+子项只运行 16s，位于 newDocumentWriteFixture::AutoMigrate 的 SQLite syscall。
+未删除断言或放宽超时，仅再执行原完整退休用例：
+`go test ./internal/application/service -run "^TestFileStorageRetirementAuthorizesAtNativeEnqueue$" -count=1 -timeout=5m`，
+实际退出 0，输出 `ok github.com/Tencent/WeKnora/internal/application/service 59.819s`。
+所有原子项均保留。此次分项通过不改写之前整包超时的失败记录。
+
+证据目录为
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/binding-drain.sNXEDS`。
+本批 9 源路径单独 diff --check 通过；公共暂存及其他工作树差异不纳入。
+没有生产部署、PG 并发验收或新的全局通过结论；仅可作保留剩余门禁的阶段源码提交。
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| batch-snapshot-negative.log | 三处私有反证 1 | `6377ef65cfd371a9f98dc8a3dea33ee4987907d6fc8f06556280e22f45e9f51d` |
+| batch-snapshot-restored.log | 扩展检查发现 PEP 时序回归 1 | `76d566cf788906262da1915f279ee6333cf02d2ac50b0bec22e3f6575be27909` |
+| batch-snapshot-fixed-restored.log | 修复后 repo/MCP 0；service 超时 1 | `81d1204553c88c78f20549249758e7676b17ebe02fbeac39f5ab45ad1b1acb35` |
+| batch-snapshot-retirement-only.log | 原完整退休用例 0 | `a588650cb2530cc8088bf073c67955e7c8df7f7eb7ffcf992c83dbc28f2b8591` |

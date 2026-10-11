@@ -532,4 +532,16 @@ func TestSyncLogRepositoryUpdateResultClearsErrorMessage(t *testing.T) {
 	assert.Zero(t, stored.ItemsFailed)
 	assert.Equal(t, result.ToString(), stored.Result.ToString())
 	require.NotNil(t, stored.FinishedAt)
+	for _, scenario := range []string{"tenant", "source", "missing"} {
+		wrong := *log
+		switch scenario {
+		case "tenant":
+			wrong.TenantID++
+		case "source":
+			wrong.DataSourceID += "-other"
+		case "missing":
+			wrong.ID += "-missing"
+		}
+		require.Error(t, repo.UpdateResult(context.Background(), &wrong), scenario)
+	}
 }
