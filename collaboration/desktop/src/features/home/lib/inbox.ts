@@ -127,7 +127,7 @@ export function getInboxConversationId(
 
 /** Returns the stable conversation identity for a complete Inbox feed item. */
 export function getInboxItemConversationId(item: FeedItem) {
-  return getInboxConversationId(item.tags, item.id, item.channelId, item.channelType);
+  return inboxConversation(item);
 }
 
 /** Finds the Inbox row containing an event, including grouped events. */

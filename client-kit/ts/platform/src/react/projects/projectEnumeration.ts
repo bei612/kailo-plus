@@ -13,6 +13,27 @@ export type ProjectsHost = {scopeKey: string; query: (request: ProjectsQueryRequ
     observation?:{eventId?:string;onPrepared:(eventId:string)=>void})=>Promise<{eventId:string}>;
   completePublication?: (idempotencyKey:string,eventId:string)=>void};
 
+/** Original bounded second-boundary drain, shared by directory and work items. */
+export async function enumerateProjectEvents(fetchPage: (request: ProjectsQueryRequest) => Promise<PulseEvent[]>,
+  view: ProjectsQueryRequest["view"], limit: number, signal: AbortSignal, coordinates?: string[], seed?: PulseEvent[]) {
+  const eventsById = new Map<string, PulseEvent>();
+  let until: number | undefined;
+  for (;;) {
+    signal.throwIfAborted();
+    const page = seed ?? await fetchPage({view, coordinates, until}); seed = undefined;
+    if (page.length > limit) throw new Error("Invalid project page");
+    for (const event of page) eventsById.set(event.id, event);
+    if (page.length < limit) return [...eventsById.values()];
+    const oldest = Math.min(...page.map(event => event.created_at));
+    if (!Number.isSafeInteger(oldest) || oldest < 0 || (until !== undefined && oldest > until)) throw new Error("Invalid project cursor");
+    const boundary = await fetchPage({view, coordinates, since: oldest, until: oldest});
+    for (const event of boundary) eventsById.set(event.id, event);
+    if (boundary.length >= limit) throw new Error("Project timestamp bucket exceeds Relay page limit");
+    if (oldest <= 0) return [...eventsById.values()];
+    until = oldest - 1;
+  }
+}
+
 export async function loadProjects(host: ProjectsHost, signal: AbortSignal) {
   return (await loadProjectDirectory(host,signal)).projects;
 }
@@ -28,24 +49,8 @@ export async function loadProjectDirectory(host: ProjectsHost, signal: AbortSign
     if (page.limit !== first.limit || page.pubkey !== first.pubkey || page.bindingVersion !== first.bindingVersion) throw new Error("Project scope changed");
     return page.events;
   };
-  const enumerate = async (view: ProjectsQueryRequest["view"], coordinates?: string[], seed?: PulseEvent[]) => {
-    const eventsById = new Map<string,PulseEvent>();
-    let until: number | undefined;
-    for (;;) {
-      signal.throwIfAborted();
-      const page = seed ?? await fetchPage({view,coordinates,until}); seed=undefined;
-      if(page.length>first.limit)throw new Error("Invalid project page");
-      for(const event of page)eventsById.set(event.id,event);
-      if(page.length<first.limit)return [...eventsById.values()];
-      const oldest=Math.min(...page.map(event=>event.created_at));
-      if(!Number.isSafeInteger(oldest)||oldest<0||(until!==undefined&&oldest>until))throw new Error("Invalid project cursor");
-      const boundary=await fetchPage({view,coordinates,since:oldest,until:oldest});
-      for(const event of boundary)eventsById.set(event.id,event);
-      if(boundary.length>=first.limit)throw new Error("Project timestamp bucket exceeds Relay page limit");
-      if(oldest<=0)return [...eventsById.values()];
-      until=oldest-1;
-    }
-  };
+  const enumerate = (view: ProjectsQueryRequest["view"], coordinates?: string[], seed?: PulseEvent[]) =>
+    enumerateProjectEvents(fetchPage, view, first.limit, signal, coordinates, seed);
   const [projectEvents,repositoryEvents]=await Promise.all([
     enumerate("PROJECTS" as ProjectsQueryRequest["view"],undefined,first.events),
     enumerate("REPOSITORIES" as ProjectsQueryRequest["view"]),
@@ -59,7 +64,7 @@ export async function loadProjectDirectory(host: ProjectsHost, signal: AbortSign
     deletionEvents.push(...await enumerate("DELETIONS" as ProjectsQueryRequest["view"],coordinates.slice(index,index+first.limit)));
   }
   signal.throwIfAborted();
-  return {viewerPubkey:first.pubkey,projectEvents,repositoryEvents,
+  return {viewerPubkey:first.pubkey,limit:first.limit,bindingVersion:first.bindingVersion,projectEvents,repositoryEvents,
     projects:absorbStandaloneProjectRepositories(buildProjectReadModels({projectEvents,repositoryEvents,deletionEvents,viewerPubkey:first.pubkey}))
     .sort((a,b)=>b.createdAt-a.createdAt)};
 }

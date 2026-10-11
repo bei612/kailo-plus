@@ -11816,8 +11816,8 @@ final projectListingVisibilityValues = EnumValues({
   "unlisted": ProjectListingVisibility.UNLISTED,
 });
 
-///Original Buzz Community project/repository announcements and coordinate-scoped tombstones
-///only; no Git content or mutation authorization.
+///Original Buzz Community project/repository announcements, coordinate-scoped work-item
+///events and tombstones. Reads do not authorize Git transport or mutations.
 class ProjectsQueryRequest {
   final List<String>? coordinates;
   final int? since;
@@ -11851,12 +11851,20 @@ class ProjectsQueryRequest {
   });
 }
 
-enum ProjectsQueryRequestView { DELETIONS, PROJECTS, REPOSITORIES }
+enum ProjectsQueryRequestView {
+  DELETIONS,
+  PROJECTS,
+  REPOSITORIES,
+  WORK_ITEMS,
+  WORK_ITEM_ACTIVITY,
+}
 
 final projectsQueryRequestViewValues = EnumValues({
   "DELETIONS": ProjectsQueryRequestView.DELETIONS,
   "PROJECTS": ProjectsQueryRequestView.PROJECTS,
   "REPOSITORIES": ProjectsQueryRequestView.REPOSITORIES,
+  "WORK_ITEMS": ProjectsQueryRequestView.WORK_ITEMS,
+  "WORK_ITEM_ACTIVITY": ProjectsQueryRequestView.WORK_ITEM_ACTIVITY,
 });
 
 ///03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,

@@ -504,6 +504,20 @@ void main() {
     for (final value in [
       sample,
       <String, dynamic>{'view': 'PROJECTS'},
+      {
+        ...sample,
+        'view': 'WORK_ITEMS',
+        'coordinates': (sample['coordinates'] as List)
+            .map((value) => (value as String).replaceFirst('30621:', '30617:'))
+            .toList(),
+      },
+      {
+        ...sample,
+        'view': 'WORK_ITEM_ACTIVITY',
+        'coordinates': (sample['coordinates'] as List)
+            .map((value) => (value as String).replaceFirst('30621:', '30617:'))
+            .toList(),
+      },
     ]) {
       expect(ProjectsQueryRequest.fromJson(value).toJson(), value);
     }

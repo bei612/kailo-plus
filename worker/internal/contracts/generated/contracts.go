@@ -5393,8 +5393,8 @@ type ProjectsPublishRequest struct {
 	WorkspaceID   *string                     `json:"workspaceId,omitempty"`
 }
 
-// Original Buzz Community project/repository announcements and coordinate-scoped tombstones
-// only; no Git content or mutation authorization.
+// Original Buzz Community project/repository announcements, coordinate-scoped work-item
+// events and tombstones. Reads do not authorize Git transport or mutations.
 type ProjectsQueryRequest struct {
 	Coordinates []string                 `json:"coordinates,omitempty"`
 	Since       *int64                   `json:"since,omitempty"`
@@ -7978,9 +7978,11 @@ const (
 type ProjectsQueryRequestView string
 
 const (
-	Deletions    ProjectsQueryRequestView = "DELETIONS"
-	Projects     ProjectsQueryRequestView = "PROJECTS"
-	Repositories ProjectsQueryRequestView = "REPOSITORIES"
+	Deletions        ProjectsQueryRequestView = "DELETIONS"
+	Projects         ProjectsQueryRequestView = "PROJECTS"
+	Repositories     ProjectsQueryRequestView = "REPOSITORIES"
+	WorkItemActivity ProjectsQueryRequestView = "WORK_ITEM_ACTIVITY"
+	WorkItems        ProjectsQueryRequestView = "WORK_ITEMS"
 )
 
 type ProtocolSessionViewState string

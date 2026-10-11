@@ -1,0 +1,113 @@
+import {beforeEach,describe,expect,it,vi} from "vitest";
+import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
+import {createBffClient} from "../src/client";
+import {setLocale} from "../src/i18n";
+import {PlatformProvider} from "../src/react/context";
+import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
+import {TooltipProvider} from "../src/react/sidebar/tooltip";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,type ProjectsHost} from "../src/react/projects";
+import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
+import {inboxReadContexts} from "../src/react/use-inbox-state";
+import {render,click} from "./render";
+
+const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
+const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
+function fixture(){
+  const issue=event("1",1621,[["a",repository],["subject","Original task"],["p",viewer]],"Complete task body");
+  const review=event("2",1618,[["a",repository],["subject","Original review"],["p",viewer],["commit","f".repeat(40)],["branch","feature"],["branch-name","feature"],["target-branch","main"]],"Complete review body");
+  const comments=Array.from({length:4},(_,index)=>event(String(index+3),1,[["a",repository],["e",issue.id],["p",viewer]],`Original comment ${index}`,30+index));
+  const rows=[
+    event("8",30617,[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]]),
+    event("9",30621,[["d","project"],["name","Original project"],["a",repository]]),
+    issue,review,...comments,
+    event("e",1619,[["a",repository],["E",review.id],["c","e".repeat(40)]],"Original review update",35),
+  ];
+  const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633]};
+  const query=vi.fn<ProjectsHost["query"]>(async request=>({
+    pubkey:viewer,limit:20,bindingVersion:3,
+    events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.tags.find(tag=>tag[0]==="a")?.[1]??""))&&
+      (request.since===undefined||row.created_at>=request.since)&&(request.until===undefined||row.created_at<=request.until)),
+  }));
+  return {issue,review,rows,host:{scopeKey:"tenant:human",query} satisfies ProjectsHost,query};
+}
+beforeEach(()=>{setLocale("en");localStorage.clear();});
+describe("original Inbox project read closure",()=>{
+  it("hydrates canonical Issue and PR bodies, updates and comment history from only bounded coordinate reads",async()=>{
+    const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    expect(data.items).toHaveLength(2);
+    const issue=resolveProjectInboxWorkItem(data.items,f.issue);expect(issue?.type).toBe("issue");
+    if(issue?.type!=="issue")throw new Error("Missing task");
+    expect(issue.issue.content).toBe("Complete task body");expect(issue.issue.comments).toHaveLength(4);
+    const pr=resolveProjectInboxWorkItem(data.items,f.review);if(pr?.type!=="pull-request")throw new Error("Missing review");
+    expect(pr.pullRequest.updates[0]?.content).toBe("Original review update");
+    for(const [request]of f.query.mock.calls.filter(([request])=>request.view==="WORK_ITEMS"||request.view==="WORK_ITEM_ACTIVITY"))expect(request.coordinates).toEqual([repository]);
+    const mentions=projectInboxMentions(data);
+    expect(mentions).toHaveLength(6);expect(mentions.every(item=>item.channelId===null)).toBe(true);
+    const rows=aggregateInbox({mentions,activity:[]},()=>null);
+    expect(rows).toHaveLength(2);expect(rows.reduce((sum,row)=>sum+row.unreadCount,0)).toBe(6);
+    expect(rows.every(row=>matchesInbox({categories:row.categories,groupItems:row.items,item:row.item},"project"))).toBe(true);
+    expect(rows.every(row=>!matchesInbox({categories:row.categories,groupItems:row.items,item:row.item},"thread"))).toBe(true);
+    expect(inboxReadContext(mentions[0]!)).toBe(`msg:${mentions[0]!.id}`);
+    expect(inboxReadContexts(mentions,true).every(mark=>mark.key.startsWith("msg:"))).toBe(true);
+  });
+  it.each(["identity","generation","coordinate","activity"] as const)("refuses %s changes instead of rendering partial history",async(fault)=>{
+    const f=fixture();const original=f.host.query;
+    f.host.query=async request=>{
+      const page=await original(request);
+      if(request.view==="WORK_ITEM_ACTIVITY"){
+        if(fault==="activity")throw new Error("Unavailable activity");
+        if(fault==="identity")return {...page,pubkey:"c".repeat(64)};
+        if(fault==="generation")return {...page,bindingVersion:4};
+        return {...page,events:[{...f.issue,tags:[["a",`30617:${author}:other`]]}]};
+      }
+      return page;
+    };
+    await expect(loadProjectWorkItems(f.host,new AbortController().signal)).rejects.toThrow();
+  });
+  it("does not continue the old project identity after an awaited root read is aborted",async()=>{
+    const f=fixture(),controller=new AbortController(),original=f.host.query;
+    f.host.query=async request=>{const page=await original(request);if(request.view==="WORK_ITEMS")controller.abort();return page;};
+    await expect(loadProjectWorkItems(f.host,controller.signal)).rejects.toThrow();
+    expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEM_ACTIVITY")).toBe(false);
+  });
+  it("uses the original full task body and expandable history without exposing ungoverned writers",async()=>{
+    const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=resolveProjectInboxWorkItem(data.items,f.issue)!;
+    const host:PulseHost={scopeKey:"tenant:human",pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:(content)=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const view=await render(<PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><ProjectInboxDetail workItem={workItem}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    expect(view.querySelector('[data-testid="project-issue-detail"]')).not.toBeNull();
+    expect(view.textContent).toContain("Complete task body");
+    expect(view.querySelectorAll('[data-testid="project-issue-comment-timeline-row"]')).toHaveLength(3);
+    await click(view.querySelector<HTMLElement>('[data-testid="project-issue-earlier-comments"]')!);
+    expect(view.querySelectorAll('[data-testid="project-issue-comment-timeline-row"]')).toHaveLength(4);
+    await click(view.querySelector<HTMLElement>('[data-testid="project-issue-comment-history-toggle"]')!);
+    expect(view.querySelectorAll('[data-testid="project-issue-comment-timeline-row"]')).toHaveLength(0);
+    expect(view.querySelector('[data-testid="project-issue-comment-composer"]')).toBeNull();
+    expect(host.publish).not.toHaveBeenCalled();
+    cache.clear();
+  });
+  it.each(["en","zh-CN"] as const)("keeps the original PR commit attribution and exact timestamp formatting in %s",async locale=>{
+    setLocale(locale);
+    const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=resolveProjectInboxWorkItem(data.items,f.review)!;
+    const host:PulseHost={scopeKey:"tenant:human",pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const view=await render(<PlatformProvider client={bff} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><ProjectInboxDetail workItem={workItem}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    const commits=[...view.querySelectorAll<HTMLButtonElement>('[data-testid="project-detail-section"] > button')].find(button=>button.textContent===(locale==="en"?"Commits":"提交"));
+    expect(commits?.getAttribute("aria-expanded")).toBe("false");
+    await click(commits!);
+    const row=view.querySelector('[data-testid="project-pull-request-commit-row"]');
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain(locale==="en"?"authored":"提交");
+    if(locale==="zh-CN")expect(row?.textContent).not.toContain("authored");
+    expect(row?.querySelector('[data-testid="project-pull-request-commit-row-date"]')?.getAttribute("title")).toBe(
+      new Date(f.review.created_at*1_000).toLocaleString(locale,{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"}));
+    expect(host.publish).not.toHaveBeenCalled();
+    cache.clear();
+  });
+});

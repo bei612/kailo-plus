@@ -1,4 +1,4 @@
-//! REQ-24 / DD-39: NIP-MP/NIP-34 announcement directory, not a project database.
+//! REQ-24 / DD-39: NIP-MP/NIP-34 reads, not a project database or Git transport.
 //! Buzz 779af8886caae1317b4de962082429867ab61503:
 //! crates/buzz-relay/src/handlers/ingest.rs::is_global_only_kind makes both
 //! 30621 and 30617 Community-global. `buzz-channel` does not authorize Git reads.
@@ -93,13 +93,18 @@ pub(crate) async fn publication_target(
 
 // Keep the existing BFF HTTP refusal type; no second error wrapper.
 #[allow(clippy::result_large_err)]
-fn filter(request: &contracts::ProjectsQueryRequest, cap: i64) -> Result<(u16, Value), Response> {
+fn filter(
+    request: &contracts::ProjectsQueryRequest,
+    cap: i64,
+) -> Result<(Vec<u16>, Value), Response> {
     let view =
         serde_json::to_value(&request.view).map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
-    let kind = match view.as_str() {
-        Some("PROJECTS") => 30621,
-        Some("REPOSITORIES") => 30617,
-        Some("DELETIONS") => 5,
+    let kinds = match view.as_str() {
+        Some("PROJECTS") => vec![30621],
+        Some("REPOSITORIES") => vec![30617],
+        Some("DELETIONS") => vec![5],
+        Some("WORK_ITEMS") => vec![1618, 1621],
+        Some("WORK_ITEM_ACTIVITY") => vec![1, 1619, 1630, 1631, 1632, 1633],
         _ => return Err(StatusCode::BAD_REQUEST.into_response()),
     };
     if cap <= 0
@@ -109,14 +114,21 @@ fn filter(request: &contracts::ProjectsQueryRequest, cap: i64) -> Result<(u16, V
     {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
-    let mut filter = json!({"kinds":[kind],"limit":cap});
-    if kind == 5 {
+    let mut filter = json!({"kinds":kinds,"limit":cap});
+    if !matches!(view.as_str(), Some("PROJECTS" | "REPOSITORIES")) {
         let coordinates = request
             .coordinates
             .as_ref()
             .filter(|v| !v.is_empty() && v.len() as i64 <= cap)
             .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?;
-        if coordinates.iter().any(|v| !coordinate(v)) {
+        if coordinates.iter().any(|v| {
+            !coordinate(v) || view.as_str() != Some("DELETIONS") && !v.starts_with("30617:")
+        }) || coordinates
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != coordinates.len()
+        {
             return Err(StatusCode::BAD_REQUEST.into_response());
         }
         filter["#a"] = json!(coordinates);
@@ -129,7 +141,7 @@ fn filter(request: &contracts::ProjectsQueryRequest, cap: i64) -> Result<(u16, V
     if let Some(until) = request.until {
         filter["until"] = json!(until);
     }
-    Ok((kind, filter))
+    Ok((kinds, filter))
 }
 
 fn coordinate(value: &str) -> bool {
@@ -141,6 +153,86 @@ fn coordinate(value: &str) -> bool {
                     .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
         })
         && parts.next().is_some_and(|v| !v.is_empty())
+}
+
+/// NIP-34 work-item reference. `h`/buzz-channel are not an authorization scope.
+pub(crate) fn work_item_root(event: &nostr::Event) -> Option<nostr::EventId> {
+    let tags: Vec<_> = event.tags.iter().map(nostr::Tag::as_slice).collect();
+    let repository = tags
+        .iter()
+        .find(|tag| tag.first().is_some_and(|name| name == "a"))?
+        .get(1)?;
+    if !repository.starts_with("30617:") || !coordinate(repository) {
+        return None;
+    }
+    match event.kind.as_u16() {
+        1618 | 1621 => Some(event.id),
+        1 | 1619 | 1630..=1633 => tags
+            .iter()
+            .find(|tag| tag.first().is_some_and(|name| name == "e"))
+            .or_else(|| {
+                tags.iter()
+                    .find(|tag| tag.first().is_some_and(|name| name == "E"))
+            })
+            .and_then(|tag| tag.get(1))
+            .and_then(|id| nostr::EventId::from_hex(id).ok()),
+        _ => None,
+    }
+}
+
+/// Reuse actor-bound Community admission for channel-less Inbox read markers.
+/// This consumes existing Relay events, never a second work-item/read database.
+pub(crate) async fn readable_work_items(
+    state: &BffState,
+    ctx: &crate::bff::ExecutionContext,
+    requested: &[nostr::EventId],
+) -> Result<std::collections::HashMap<nostr::EventId, bool>, Response> {
+    if requested.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let before = pulse::admit(state, ctx).await?;
+    let keys = actor_keys(state, ctx).await?;
+    let client = community_client(state, &keys, &before.community_host)?;
+    let cap = community_limits(state, &before.community_host)
+        .await
+        .map_err(IntoResponse::into_response)?
+        .max_limit;
+    let size = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let mut readable = std::collections::HashMap::new();
+    for ids in requested.chunks(size) {
+        let value = client
+            .query(
+                &state.http,
+                &[
+                    json!({"ids":ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "kinds":[1,1618,1619,1621,1630,1631,1632,1633],"limit":ids.len()}),
+                ],
+            )
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(value).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        if events.len() > ids.len() {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        for event in events {
+            if !ids.contains(&event.id) || event.verify().is_err() {
+                return Err(StatusCode::BAD_GATEWAY.into_response());
+            }
+            if let Some(root) = work_item_root(&event) {
+                readable.insert(event.id, root == event.id);
+            }
+        }
+    }
+    if pulse::admit(state, ctx).await? != before
+        || actor_keys(state, ctx).await?.public_key() != keys.public_key()
+    {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    Ok(readable)
 }
 
 pub(crate) async fn query(
@@ -171,7 +263,7 @@ async fn query_inner(
         .await
         .map_err(IntoResponse::into_response)?
         .max_limit;
-    let (kind, filter) = filter(&request, cap)?;
+    let (kinds, filter) = filter(&request, cap)?;
     let value = client
         .query(&state.http, &[filter])
         .await
@@ -182,7 +274,7 @@ async fn query_inner(
     for row in rows {
         let event: nostr::Event = serde_json::from_value(row.clone())
             .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
-        if event.kind.as_u16() != kind
+        if !kinds.contains(&event.kind.as_u16())
             || event.verify().is_err()
             || request
                 .since
@@ -190,7 +282,7 @@ async fn query_inner(
             || request
                 .until
                 .is_some_and(|v| event.created_at.as_secs() > v as u64)
-            || kind == 5
+            || request.coordinates.is_some()
                 && !event.tags.iter().any(|tag| {
                     let t = tag.as_slice();
                     t.first().is_some_and(|v| v == "a")
@@ -224,13 +316,13 @@ mod tests {
     #[test]
     fn announcement_filter_never_grants_a_git_or_workspace_scope() {
         let (kind, value) = filter(&request(json!({"view":"PROJECTS","until":42})), 73).unwrap();
-        assert_eq!(kind, 30621);
+        assert_eq!(kind, vec![30621]);
         assert_eq!(value, json!({"kinds":[30621],"limit":73,"until":42}));
         assert_eq!(
             filter(&request(json!({"view":"REPOSITORIES"})), 73)
                 .unwrap()
                 .0,
-            30617
+            vec![30617]
         );
     }
     #[test]
@@ -254,6 +346,58 @@ mod tests {
             )
             .is_err());
         }
+    }
+    #[test]
+    fn work_item_reads_are_closed_kind_sets_scoped_to_repositories() {
+        let address = format!("30617:{}:repo", "a".repeat(64));
+        for (view, expected) in [
+            ("WORK_ITEMS", vec![1618, 1621]),
+            ("WORK_ITEM_ACTIVITY", vec![1, 1619, 1630, 1631, 1632, 1633]),
+        ] {
+            let (kinds, value) =
+                filter(&request(json!({"view":view,"coordinates":[address]})), 73).unwrap();
+            assert_eq!(kinds, expected);
+            assert_eq!(value["#a"], json!([address]));
+            assert!(filter(&request(json!({"view":view})), 73).is_err());
+            assert!(filter(&request(json!({"view":view,"coordinates":[]})), 73).is_err());
+            assert!(filter(
+                &request(json!({"view":view,"coordinates":[address,address]})),
+                73
+            )
+            .is_err());
+            assert!(filter(
+                &request(
+                    json!({"view":view,"coordinates":[format!("30621:{}:project", "a".repeat(64))]})
+                ),
+                73
+            )
+            .is_err());
+        }
+    }
+    #[test]
+    fn project_read_marks_require_original_repository_and_work_item_reference() {
+        let keys = nostr::Keys::generate();
+        let root = nostr::EventBuilder::new(nostr::Kind::from(1621), "task")
+            .tags([nostr::Tag::parse(["a", &format!("30617:{}:repo", keys.public_key())]).unwrap()])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(work_item_root(&root), Some(root.id));
+        let comment = nostr::EventBuilder::new(nostr::Kind::from(1), "activity")
+            .tags([
+                nostr::Tag::parse(["a", &format!("30617:{}:repo", keys.public_key())]).unwrap(),
+                nostr::Tag::parse(["e", &root.id.to_hex()]).unwrap(),
+            ])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(work_item_root(&comment), Some(root.id));
+        let note = nostr::EventBuilder::new(nostr::Kind::from(1), "not a work item")
+            .tags([
+                nostr::Tag::parse(["h", "workspace"]).unwrap(),
+                nostr::Tag::parse(["e", &root.id.to_hex()]).unwrap(),
+            ])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(work_item_root(&note), None);
     }
     #[test]
     fn filters_reject_reversed_windows_unbounded_tombstones_and_cross_view_tags() {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
@@ -14,7 +14,7 @@ import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 import { channelsQueryKey } from "@/features/channels/hooks";
 
-export function PulseScreen() {
+export function PulseScreen({children}:{children?:ReactNode}={}) {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
   const cache=useQueryClient();
   const platformSession=useQuery({queryKey:["platform","session"],queryFn:()=>session.client.session()});
@@ -52,5 +52,5 @@ export function PulseScreen() {
     };
   },[session,scope,limit,navigate,t,cache,directMessage.open,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
   if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
-  return <PulseHostProvider host={host}><PulseView currentPubkey={session.devicePubkey}/></PulseHostProvider>;
+  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={session.devicePubkey}/>}</PulseHostProvider>;
 }

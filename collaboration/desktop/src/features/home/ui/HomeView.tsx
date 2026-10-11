@@ -59,6 +59,9 @@ import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/Aux
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { ProfilePanelProvider } from "@/shared/context/ProfilePanelContext";
 import { Button } from "@/shared/ui/button";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail} from "@client-kit/platform/react/projects";
+import {useProjectsHost} from "@/features/platform/ProjectsScreen";
+import {PulseScreen} from "@/features/platform/PulseScreen";
 
 const INBOX_SEARCH_KEYS = ["item", "profile"] as const;
 
@@ -162,6 +165,9 @@ export function HomeView({
     inboxListWidthPx,
   } = useResizableInboxListWidth();
   const nativeSession = useNativeSession();
+  const projectsHost=useProjectsHost();
+  const projectQuery=useQuery({queryKey:["projects",projectsHost?.scopeKey,"inbox-work-items"],enabled:Boolean(projectsHost),
+    queryFn:({signal})=>{if(!projectsHost)throw new Error("Project scope unavailable");return loadProjectWorkItems(projectsHost,signal);},retry:false});
   const coreReads = useAppShell().coreReads;
   if (!coreReads) throw new Error("Missing Core read-state context");
   const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: `${nativeSession.facts.relayUrl}:${nativeSession.devicePubkey}`,
@@ -179,17 +185,17 @@ export function HomeView({
     () =>
       feed && coreReads.state
         ? {
-            mentions: feed.mentions.filter(
+            mentions: [...feed.mentions.filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
-            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),
+            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),...(projectQuery.isSuccess?projectInboxMentions(projectQuery.data):[])],
             activity: [...feed.activity, ...(ownedAgents.data?.activity ?? [])].filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
             ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),
           }
         : undefined,
-    [feed, coreReads.state, coreReads.visibleChannels, coreReads.conversations, ownedAgents.data],
+    [feed, coreReads.state, coreReads.visibleChannels, coreReads.conversations, ownedAgents.data,projectQuery.data,projectQuery.isSuccess],
   );
   const getMessageReadAt = React.useCallback(
     (id: string) => coreReads.readAt(`msg:${id}`),
@@ -393,6 +399,7 @@ export function HomeView({
     },
     [hiddenDm.openContext],
   );
+  const selectedProject=selectedItem&&projectQuery.isSuccess?resolveProjectInboxWorkItem(projectQuery.data.items,selectedItem.item):undefined;
   const unreadBoundaryEventId = React.useMemo(() => {
     if (!selectedItem) return null;
     if (unreadBoundary?.conversationId === selectedItem.conversationId) {
@@ -476,11 +483,11 @@ export function HomeView({
     ],
   );
 
-  if ((isLoading && !feed) || (!coreReads.state && !coreReads.failed) || (coreReads.state && !coreReads.failed && !coreReads.unknown && ownedAgents.isPending)) {
+  if ((isLoading && !feed) || (!coreReads.state && !coreReads.failed) || (coreReads.state && !coreReads.failed && !coreReads.unknown && (ownedAgents.isPending||(projectsHost&&projectQuery.isPending)))) {
     return <HomeLoadingState />;
   }
 
-  if (!feed || !coreReads.state || coreReads.unknown || coreReads.failed || ownedAgents.isError) {
+  if (!feed || !coreReads.state || coreReads.unknown || coreReads.failed || ownedAgents.isError || projectQuery.isError || !projectsHost) {
     return (
       <div className="flex-1 overflow-hidden px-4 pb-3 pt-4 sm:px-6">
         <div className="flex w-full max-w-3xl flex-col gap-4">
@@ -503,6 +510,7 @@ export function HomeView({
                 onRefresh();
                 void coreReads.refresh();
                 void ownedAgents.refetch();
+                void projectQuery.refetch();
               }}
               type="button"
             >
@@ -592,7 +600,7 @@ export function HomeView({
           ) : null}
 
 
-          {showDetailPane && detailMode === "messages" ? (
+          {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
               canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}

@@ -1,13 +1,14 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
 import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl } from "../bff-client";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Composer } from "./ChannelPane";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 /** The original Pulse surface; only transport/signing/media belong to Web. */
-export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>}) {
+export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode}) {
   const t=useT();
   const directory=usePeopleDirectory(scopeKey);
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false});
@@ -21,7 +22,7 @@ export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubke
         for(const [url,path] of Object.entries(page.mediaPaths))scope.media.set(url,path);
         return page.events;},
       publish:async(request,key)=>{check();const receipt=await publishPulse(request,key);check();return receipt;},
-      copy:(text)=>navigator.clipboard.writeText(text),
+      copy:writeTextToClipboard,
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
@@ -34,5 +35,5 @@ export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubke
     };
   },[scopeKey,scope,profile.data?.pubkey,onStartDm,t,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
   if(!profile.data||profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
-  return <PulseHostProvider host={host}><PulseView currentPubkey={profile.data.pubkey}/></PulseHostProvider>;
+  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={profile.data.pubkey}/>}</PulseHostProvider>;
 }

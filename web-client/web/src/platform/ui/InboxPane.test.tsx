@@ -13,10 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
+const api=vi.hoisted(()=>({projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
 vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
-vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,openStream:()=>()=>{}}));
+vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));
 
 const event = {
@@ -29,6 +29,7 @@ const event = {
 };
 
 beforeEach(() => {
+  api.projectQuery.mockReset().mockResolvedValue({events:[],pubkey:"c".repeat(64),limit:20,bindingVersion:1});
   api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
   api.readAt.mockReset().mockReturnValue(null);
   // Keep the actual original virtualizer; jsdom supplies no layout of its own.
@@ -98,6 +99,36 @@ describe("Inbox uses the original shared HomeLoadingState at the real read bound
 });
 
 describe("Web Inbox's actual BFF page scope consumer", () => {
+  it("opens the original project task detail and marks only project event IDs without inventing a Workspace", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    setLocale("en"); localStorage.clear(); sessionStorage.clear();
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    const self="c".repeat(64), author="b".repeat(64), repository=`30617:${author}:repo`;
+    const task={...event,id:"f".repeat(64),kind:1621,content:"Original complete project task",tags:[["a",repository],["subject","Project task"],["p",self]]};
+    const rows=[task,{...event,id:"1".repeat(64),kind:30617,tags:[["d","repo"],["name","Repository"]]},
+      {...event,id:"2".repeat(64),kind:30621,tags:[["d","project"],["name","Project"],["a",repository]]}];
+    const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633]};
+    api.projectQuery.mockImplementation(async(request:{view:string;since?:number;until?:number})=>({pubkey:self,limit:20,bindingVersion:1,
+      events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(request.since===undefined||row.created_at>=request.since)&&(request.until===undefined||row.created_at<=request.until))}));
+    api.profile.mockResolvedValue({pubkey:self});
+    api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});api.conversationParticipants.mockResolvedValue({items:[]});
+    api.workspaces.mockResolvedValue([]);api.agentInstallations.mockResolvedValue({installations:[]});api.write.mockReset();
+    api.readFailed=false;api.readUnknown=false;
+    const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const onOpen=vi.fn();
+    try {
+      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen} onStartDm={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${task.id}"]`)).not.toBeNull());
+      const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${task.id}"]`)!;
+      await act(async()=>row.querySelector<HTMLButtonElement>(":scope > button")!.click());
+      await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-project-inbox-detail"]')?.textContent).toContain("Original complete project task"));
+      expect(api.write).toHaveBeenCalledWith([{key:`msg:${task.id}`,seconds:task.created_at}]);
+      expect(onOpen).not.toHaveBeenCalled();
+      expect(host.querySelector('[data-testid="project-issue-comment-composer"]')).toBeNull();
+    } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+  });
   it("renders the original empty preview through the shared locale consumer and updates it without refetching identity", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     setLocale("en"); localStorage.clear(); sessionStorage.clear();

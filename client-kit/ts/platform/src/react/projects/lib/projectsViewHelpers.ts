@@ -3,6 +3,16 @@
 // or missing Git activity producer is migrated into this presentation module.
 import { getLocale, platformTimeSeconds, translate, type PlatformLocale } from "../../../i18n";
 export type ProjectsViewMode = "grid" | "list";
+export function formatExactTimestamp(createdAt: number) {
+  return new Date(createdAt * 1_000).toLocaleString(getLocale(), {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
 const PROJECTS_VIEW_MODE_STORAGE_KEY = "buzz.projects.viewMode";
 
 export function readStoredViewMode(): ProjectsViewMode | null {

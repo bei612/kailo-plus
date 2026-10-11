@@ -28,7 +28,7 @@ function projectTagValue(item: Pick<InboxLabelEvent, "tags">, name: string) {
   )?.[1];
 }
 
-function getProjectInboxReference(item: InboxLabelEvent) {
+export function getProjectInboxReference(item: Pick<InboxLabelEvent, "id" | "kind" | "tags">) {
   const repoAddress = projectTagValue(item, "a");
   if (!repoAddress || !REPO_ADDRESS_PATTERN.test(repoAddress)) return null;
   if (PROJECT_ROOT_KINDS.has(item.kind)) return { repoAddress, rootId: item.id };
@@ -37,7 +37,7 @@ function getProjectInboxReference(item: InboxLabelEvent) {
   return rootId ? { repoAddress, rootId } : null;
 }
 
-function isProjectInboxItem(item: InboxLabelEvent) {
+export function isProjectInboxItem(item: Pick<InboxLabelEvent, "id" | "kind" | "tags">) {
   return getProjectInboxReference(item) !== null;
 }
 
@@ -163,6 +163,7 @@ export function conversationNotificationMutes(
 }
 export type InboxEvent = {
   id: string;
+  kind?: number;
   tags: string[][];
   createdAt: number;
   channelId: string | null;
@@ -194,8 +195,10 @@ export function inboxReply(tags: string[][]) {
 }
 
 export function inboxConversation(
-  item: Pick<InboxEvent, "id" | "tags"> & Partial<Pick<InboxEvent, "channelId" | "channelType">>,
+  item: Pick<InboxEvent, "id" | "tags"> & Partial<Pick<InboxEvent, "channelId" | "channelType" | "kind">>,
 ) {
+  const project = item.kind === undefined ? null : getProjectInboxReference({...item, kind: item.kind});
+  if (project) return `project:${project.repoAddress}:${project.rootId}`;
   // Original getInboxConversationId: a DM is one conversation, not one row
   // per NIP-10 root. Hosts derive the type from the admitted directory.
   if (item.channelType === "dm" && item.channelId) return `dm:${item.channelId}`;
@@ -205,7 +208,7 @@ export function inboxConversation(
 
 /** Same event/root IDs in another admitted scope must never merge conversations. */
 export function inboxScopeKey(
-  item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType">,
+  item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType" | "kind">,
 ) {
   return `${item.channelId ?? ""}:${inboxConversation(item)}`;
 }
@@ -243,7 +246,7 @@ export function aggregateInbox<T extends InboxEvent>(
         : getThreadReadAt?.(conversationId, latest.channelId);
       const unread = items
         .filter((item) => {
-          if (!directMessage && !inboxReply(item.tags)) return false;
+          if (!directMessage && !inboxReply(item.tags) && !(item.kind !== undefined && isProjectInboxItem({...item,kind:item.kind}))) return false;
           const mark = directMessage ? readAt : getMessageReadAt ? getMessageReadAt(item.id) : readAt;
           return mark !== undefined && item.createdAt > (mark ?? 0);
         })
@@ -264,24 +267,27 @@ export function aggregateInbox<T extends InboxEvent>(
 }
 
 /** Original DM read position is its channel, including threaded messages. */
-export function inboxReadContext(item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType">) {
+export function inboxReadContext(item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType" | "kind">) {
+  if (item.kind !== undefined && isProjectInboxItem({...item,kind:item.kind})) return `msg:${item.id}`;
   return item.channelType !== "dm" && inboxReply(item.tags) ? `msg:${item.id}` : item.channelId;
 }
 
 export function matchesInbox(
   item: {
     categories: readonly string[];
-    groupItems: readonly (Pick<InboxEvent, "tags" | "channelType"> & { pubkey?: string })[];
+    groupItems: readonly (Pick<InboxEvent, "tags" | "channelType" | "kind"> & {id?:string;pubkey?: string })[];
     item?: { pubkey?: string; channelType?: string };
   },
   filter: string,
   ownedAgentPubkeys?: ReadonlySet<string>,
 ) {
-  const thread = item.groupItems.some((event) => inboxReply(event.tags));
+  const project = item.groupItems.some(event=>event.id!==undefined&&event.kind!==undefined&&isProjectInboxItem({...event,id:event.id,kind:event.kind}));
+  const thread = !project && item.groupItems.some((event) => inboxReply(event.tags));
   const representative = item.item ?? item.groupItems.at(-1);
   const ownedAgent = representative?.pubkey && ownedAgentPubkeys?.has(representative.pubkey.toLowerCase()) === true;
   if (filter === "agent_activity") return Boolean(ownedAgent);
-  if (filter === "all") return representative?.channelType === "dm" || item.categories.includes("mention") || thread || Boolean(ownedAgent);
+  if (filter === "project") return project;
+  if (filter === "all") return project || representative?.channelType === "dm" || item.categories.includes("mention") || thread || Boolean(ownedAgent);
   if (filter === "thread") return thread;
   return item.categories.includes(filter);
 }

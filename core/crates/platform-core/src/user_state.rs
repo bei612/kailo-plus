@@ -116,7 +116,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 .collect();
             let mut channel_ids: Vec<Uuid> =
                 contexts.keys().filter_map(|key| key.parse().ok()).collect();
-            channel_ids.extend(readable_events.values().map(|(channel, _)| *channel));
+            channel_ids.extend(readable_events.values().filter_map(|(channel, _)| *channel));
             channel_ids.sort_unstable();
             channel_ids.dedup();
             let channels: Vec<(Uuid, Uuid)> = if channel_ids.is_empty() {
@@ -210,7 +210,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                                     .and_then(|id| EventId::from_hex(id).ok())
                                     .and_then(|id| readable_events.get(&id))
                                     .is_some_and(|(channel, is_root)| {
-                                        visible_channels.contains(channel)
+                                        channel.is_none_or(|id| visible_channels.contains(&id))
                                             && (!key.starts_with("thread:") || *is_root)
                                     })
                             })
@@ -457,7 +457,11 @@ pub async fn put_read_mark(
                 return StatusCode::FORBIDDEN.into_response();
             }
             // Relay 查询期间撤权后，旧可读结果不能成为这次写入的准入依据。
-            if let Err(r) = require_visible_channel(&state, &ctx, *channel_id).await {
+            if let Some(channel_id) = channel_id {
+                if let Err(r) = require_visible_channel(&state, &ctx, *channel_id).await {
+                    return r;
+                }
+            } else if let Err(r) = crate::pulse::admit(&state, &ctx).await {
                 return r;
             }
         }
@@ -723,7 +727,7 @@ async fn readable_event_ids(
     state: &BffState,
     ctx: &ExecutionContext,
     requested: &HashSet<EventId>,
-) -> Result<HashMap<EventId, (Uuid, bool)>, Response> {
+) -> Result<HashMap<EventId, (Option<Uuid>, bool)>, Response> {
     use crate::web_transport::{self, AdmissionFailure};
 
     let mut readable = HashMap::new();
@@ -757,9 +761,6 @@ async fn readable_event_ids(
         .map(ReadTarget::Workspace)
         .chain(conversation_ids.into_iter().map(ReadTarget::Conversation))
         .collect();
-    if targets.is_empty() {
-        return Ok(readable);
-    }
     let keys = web_transport::actor_keys(state, ctx).await?;
     for target in targets {
         if readable.len() == requested.len() {
@@ -854,9 +855,24 @@ async fn readable_event_ids(
         readable.extend(
             observed
                 .into_iter()
-                .map(|(id, is_root)| (id, (channel_id, is_root))),
+                .map(|(id, is_root)| (id, (Some(channel_id), is_root))),
         );
     }
+    // Only unresolved IDs enter the original Community-global NIP-34 path.
+    // Existing Workspace/private-channel admission is neither skipped nor
+    // inferred from a project's optional buzz-channel metadata.
+    let mut remaining: Vec<_> = requested
+        .iter()
+        .filter(|id| !readable.contains_key(*id))
+        .copied()
+        .collect();
+    remaining.sort_unstable();
+    readable.extend(
+        crate::projects::readable_work_items(state, ctx, &remaining)
+            .await?
+            .into_iter()
+            .map(|(id, is_root)| (id, (None, is_root))),
+    );
     Ok(readable)
 }
 

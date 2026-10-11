@@ -6,6 +6,18 @@ import { twMerge as cn } from "tailwind-merge";
 const META_ROW_CLASS =
   "flex min-h-7 min-w-0 items-center gap-2 py-1 text-xs leading-4";
 
+export function ProjectDetailMetaPills({ labels }: { labels: string[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {labels.map((label) => (
+        <span className={PROJECT_DETAIL_META_PILL_CLASS} key={label}>
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Chip height matches the meta row's text/avatar line so Labels isn't taller. */
 export const PROJECT_DETAIL_META_PILL_CLASS =
   "inline-flex h-5 items-center rounded-full border border-border/60 px-1.5 text-2xs leading-none text-muted-foreground";

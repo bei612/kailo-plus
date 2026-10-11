@@ -39,10 +39,17 @@ import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,type ProjectInboxWorkItem} from "@client-kit/platform/react/projects";
+import {useProjectsHost} from "./ProjectsPane";
+import {PulsePane} from "./PulsePane";
+import {UserAvatar} from "@client-kit/platform/react/messages";
+type ProjectEvent=ReturnType<typeof projectInboxMentions>[number];
+type InboxEvent=Event|ProjectEvent;
 
 type Snapshot = {
-  mentions: Event[];
-  activity: Event[];
+  mentions: InboxEvent[];
+  activity: InboxEvent[];
+  projectItems: ProjectInboxWorkItem[];
   workspaces: WorkspaceView[];
   channelIds: Map<string, string>;
   members: Map<string, WorkspaceMemberView[]>;
@@ -64,6 +71,7 @@ export function InboxPane({
   onStartDm?: (pubkey: string) => void;
 }) {
   const client = useBffClient();
+  const projectsHost=useProjectsHost(principalId);
   const t = useT();
   const locale = useLocale();
   const reads = useInboxState(client);
@@ -95,8 +103,12 @@ export function InboxPane({
     return () => observer.disconnect();
   }, [snapshot !== null, reads.state !== null, failed, reads.failed, reads.unknown]);
   const generation = useRef(0);
+  const projectRead = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     const epoch = ++generation.current;
+    projectRead.current?.abort();
+    const controller = new AbortController();
+    projectRead.current = controller;
     setSnapshot(null);
     setFailed(false);
     try {
@@ -123,7 +135,7 @@ export function InboxPane({
       }
       if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
       const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
-      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, channelIds: new Map(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
+      const next: Snapshot = { mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -216,14 +228,19 @@ export function InboxPane({
       const currentConversations = await loadInboxConversations(client, () => epoch === generation.current);
       next.conversations = next.conversations.filter(item => currentConversations.some(current => current.id === item.id && current.channelId === item.channelId && current.participantPrincipalIds.includes(principalId)));
       next.conversations.forEach(item => visible.add(item.channelId));
-      next.mentions = next.mentions.filter((event) => visible.has(event.channelId));
-      next.activity = next.activity.filter((event) => visible.has(event.channelId));
+      next.mentions = next.mentions.filter((event) => event.channelId!==null&&visible.has(event.channelId));
+      next.activity = next.activity.filter((event) => event.channelId!==null&&visible.has(event.channelId));
       next.workspaces = next.workspaces.filter((workspace) => visible.has(workspace.id));
+      if (epoch !== generation.current) return;
+      const projectSnapshot=await loadProjectWorkItems(projectsHost,controller.signal);
+      if (epoch!==generation.current) return;
+      next.projectItems=projectSnapshot.items;
+      next.mentions.push(...projectInboxMentions(projectSnapshot));
       if (epoch === generation.current) setSnapshot(next);
     } catch {
       if (epoch === generation.current) setFailed(true);
     }
-  }, [client, principalId, visibility]);
+  }, [client, principalId, visibility,projectsHost]);
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -232,10 +249,12 @@ export function InboxPane({
     window.addEventListener("focus", refresh);
     return () => {
       generation.current += 1;
+      projectRead.current?.abort();
       window.removeEventListener("focus", refresh);
     };
   }, [load]);
-  const readItem = useCallback((event: Event) => {
+  const readItem = useCallback((event: InboxEvent) => {
+    if(event.channelId===null) return event;
     const channelId = event.channelType === "dm" ? event.channelId : snapshot?.channelIds.get(event.channelId);
     if (!channelId) throw new Error("Unverifiable Inbox read context binding");
     return { ...event, channelId };
@@ -246,10 +265,10 @@ export function InboxPane({
         ? aggregateInbox(
             {
               mentions: snapshot.mentions.filter((event) =>
-                reads.visibleChannels.has(event.channelId),
+                event.channelId===null || reads.visibleChannels.has(event.channelId),
               ),
               activity: snapshot.activity.filter((event) =>
-                reads.visibleChannels.has(event.channelId),
+                event.channelId===null || reads.visibleChannels.has(event.channelId),
               ),
             },
             (id) => reads.readAt(`msg:${id}`),
@@ -307,9 +326,10 @@ export function InboxPane({
     );
   if (!snapshot || !reads.state) return <HomeLoadingState />;
   const chosen = visibleRows.find((row) => row.scopeKey === selected);
+  const chosenProject=chosen&&chosen.item.channelId===null?resolveProjectInboxWorkItem(snapshot.projectItems,chosen.item):undefined;
   const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
-  const openItem = (event: Event) => { void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
+  const openItem = (event: InboxEvent) => { if(event.channelId!==null)void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
   const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
   const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
   const showList = !singleAuxiliary && (!narrow || !hasSelection);
@@ -335,6 +355,23 @@ export function InboxPane({
         {visibleRows.length > 0 ? <VirtualizedList estimateSize={96} getItemKey={(row) => row.scopeKey}
           items={visibleRows} scrollRef={scrollRef} renderItem={(row) => {
           const item = row.item;
+          if(item.channelId===null){
+            const sender=truncatePubkey(item.pubkey);
+            const read=isRead(row);
+            const mark=()=>reads.write(inboxReadContexts(row.items.map(readItem),!read));
+            const typeLabel=getInboxTypeLabel({item,groupItems:row.items,senderLabel:sender,channelLabel:null},locale);
+            return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
+              <InboxRow id={item.id} selected={row.scopeKey===selected} read={read}
+                sender={<span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{sender}</span>}
+                avatar={<UserAvatar avatarUrl={null} className="h-9 w-9" displayName={sender} size="md" shape="circle"/>}
+                timestamp={relativeTime(locale,new Date(row.latestActivityAt*1000).toISOString())}
+                unread={row.unreadCount>1?t("inbox.unreadCount",{count:row.unreadCount}):null}
+                label={typeLabel.text} channel={null} openLabel={t("inbox.openItem",{sender})}
+                onSelect={()=>{setProfileTarget(null);setSelected(row.scopeKey);if(!read)reads.write(inboxReadContexts(row.items.map(readItem),true));}}
+                preview={<MessageContent content={feedPreview(item,locale)} mediaTags={item.tags}/>}
+                actions={<InboxRowActionButton disabled={reads.pending} label={t(read?"inbox.markUnread":"inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4"/></InboxRowActionButton>}/>
+            </div></ContextMenuTrigger><ContextMenuContent><ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4"/>{t(read?"inbox.markUnread":"inbox.markRead")}</ContextMenuItem></ContextMenuContent></ContextMenu>;
+          }
           const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
           const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
           const sender = member?.displayName || truncatePubkey(item.pubkey);
@@ -366,7 +403,7 @@ export function InboxPane({
         }} /> : <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />}
       </div>
     </section> : null}
-    {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+    {chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>setSelected(null):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
       workspaceId={chosen.item.channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}

@@ -5829,8 +5829,8 @@ pub enum ProjectListingVisibility {
     Unlisted,
 }
 
-/// Original Buzz Community project/repository announcements and coordinate-scoped tombstones
-/// only; no Git content or mutation authorization.
+/// Original Buzz Community project/repository announcements, coordinate-scoped work-item
+/// events and tombstones. Reads do not authorize Git transport or mutations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectsQueryRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5846,15 +5846,19 @@ pub struct ProjectsQueryRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectsQueryRequestView {
-    #[serde(rename = "DELETIONS")]
     Deletions,
 
-    #[serde(rename = "PROJECTS")]
     Projects,
 
-    #[serde(rename = "REPOSITORIES")]
     Repositories,
+
+    #[serde(rename = "WORK_ITEM_ACTIVITY")]
+    WorkItemActivity,
+
+    #[serde(rename = "WORK_ITEMS")]
+    WorkItems,
 }
 
 /// 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,

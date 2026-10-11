@@ -12,7 +12,7 @@ import { Switch } from "./switch";
 export { HomeLoadingState } from "./home-loading-state";
 export { InboxMessageRowSurface } from "./inbox-message-row";
 
-export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
+export type InboxFilter = "all" | "project" | "mention" | "thread" | "agent_activity" | "drafts";
 
 /** Original InboxDetailPane effect, including its existing 1_200 ms animation delay. */
 export function useInboxFocusHighlight(conversationId: string | null): boolean {
@@ -47,6 +47,7 @@ export function InboxEmptyList({ filter, unreadOnly }: { filter: Exclude<InboxFi
   const t = useUiT();
   const titles = {
     all: ["inbox.noActivity", "inbox.noUnread"],
+    project: ["inbox.projectEmpty", "inbox.projectUnreadEmpty"],
     mention: ["inbox.mentionEmpty", "inbox.mentionUnreadEmpty"],
     thread: ["inbox.threadEmpty", "inbox.threadUnreadEmpty"],
     agent_activity: ["inbox.agentEmpty", "inbox.agentUnreadEmpty"],
@@ -73,7 +74,7 @@ export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
   const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : `inbox.${value}`);
   const statusLabel = (activeDraftCount ?? 0) > 0
     ? t(activeDraftCount === 1 ? "inbox.activeDraftStatus" : "inbox.activeDraftStatusPlural", { count: activeDraftCount! }) : null;
-  const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "mention", "thread", "agent_activity"] : ["all", "mention", "thread", "agent_activity", "drafts"];
+  const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "project", "mention", "thread", "agent_activity"] : ["all", "project", "mention", "thread", "agent_activity", "drafts"];
   return <DropdownMenu><DropdownMenuTrigger asChild>
     <button aria-label={`${t("inbox.filterLabel", { filter: filterLabel(filter) })}${statusLabel ? `. ${statusLabel}` : ""}`} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
       <span>{filterLabel(filter)}</span><ChevronDown className="text-muted-foreground" />

@@ -708,7 +708,9 @@ func TestProjectsQueryRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, input := range [][]byte{raw, []byte(`{"view":"PROJECTS"}`)} {
+	for _, input := range [][]byte{raw, []byte(`{"view":"PROJECTS"}`),
+		[]byte(`{"view":"WORK_ITEMS","coordinates":["30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:example"]}`),
+		[]byte(`{"view":"WORK_ITEM_ACTIVITY","coordinates":["30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:example"],"since":7,"until":9}`)} {
 		var typed generated.ProjectsQueryRequest
 		if err := json.Unmarshal(input, &typed); err != nil {
 			t.Fatal(err)

@@ -435,6 +435,8 @@ fn projects_query_keeps_scoped_coordinates_and_optional_window() {
     for value in [
         serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
         serde_json::json!({"view":"PROJECTS"}),
+        serde_json::json!({"view":"WORK_ITEMS","coordinates":["30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:example"]}),
+        serde_json::json!({"view":"WORK_ITEM_ACTIVITY","coordinates":["30617:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:example"],"since":7,"until":9}),
     ] {
         let typed: contracts::ProjectsQueryRequest = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(typed).unwrap(), value);

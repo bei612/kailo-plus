@@ -199,13 +199,13 @@ export function InboxListPane({
                 <MailOpen className="!h-4 !w-4" />
               </InboxRowActionButton>
             )}
-            <InboxRowActionButton
+            {item.item.channelId?<InboxRowActionButton
               disabled={!canOpen}
               label={openLabel}
               onClick={() => onOpenDirect(item)}
             >
               <ExternalLink className="!h-4 !w-4" />
-            </InboxRowActionButton>
+            </InboxRowActionButton>:null}
           </>
         }
       />
@@ -226,7 +226,7 @@ export function InboxListPane({
               {t("inbox.markRead")}
             </ContextMenuItem>
           )}
-          <ContextMenuSeparator />
+          {item.item.channelId?<><ContextMenuSeparator />
           <ContextMenuItem
             disabled={!canOpen}
             onClick={() => {
@@ -237,7 +237,7 @@ export function InboxListPane({
           >
             <ExternalLink className="h-4 w-4" />
             {openLabel}
-          </ContextMenuItem>
+          </ContextMenuItem></>:null}
         </ContextMenuContent>
       </ContextMenu>
     );

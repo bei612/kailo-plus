@@ -315,7 +315,9 @@ import type { ProjectsQueryRequest } from "../src/generated/contracts.js";
 
 test("Projects query preserves scoped coordinates and absent optional window", () => {
   const sample: ProjectsQueryRequest = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-query.sample.json", import.meta.url), "utf8"));
-  for (const value of [sample, {view:"PROJECTS"} as ProjectsQueryRequest]) {
+  for (const value of [sample, {view:"PROJECTS"} as ProjectsQueryRequest,
+    {...sample,view:"WORK_ITEMS",coordinates:sample.coordinates!.map(value=>value.replace(/^30621:/,"30617:"))} as ProjectsQueryRequest,
+    {...sample,view:"WORK_ITEM_ACTIVITY",coordinates:sample.coordinates!.map(value=>value.replace(/^30621:/,"30617:"))} as ProjectsQueryRequest]) {
     const back:ProjectsQueryRequest={view:value.view,coordinates:value.coordinates,since:value.since,until:value.until};
     deepStrictEqual(JSON.parse(JSON.stringify(back)),value);
   }

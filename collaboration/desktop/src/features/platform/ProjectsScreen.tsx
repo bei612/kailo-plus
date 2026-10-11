@@ -35,11 +35,18 @@ export function useProjectsHost(){
     const scopeKey=`${session.facts.communityHost}:${session.devicePubkey}`;
     return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active,session.client),
       completePublication:(key,eventId)=>{check();relayClient.completeProjectIntent(`${scopeKey}:${key}`,session.facts.relayUrl,eventId);},query:async request=>{
-      check();const kind=request.view==="PROJECTS"?30621:request.view==="REPOSITORIES"?30617:request.view==="DELETIONS"?5:null;
-      if(kind===null||kind===5&&!request.coordinates?.length)throw new Error("Invalid project query");
-      const events=await relayClient.fetchEvents({kinds:[kind],limit,since:request.since,until:request.until,
+      check();const kinds=request.view==="PROJECTS"?[30621]:request.view==="REPOSITORIES"?[30617]:request.view==="DELETIONS"?[5]
+        :request.view==="WORK_ITEMS"?[1618,1621]:request.view==="WORK_ITEM_ACTIVITY"?[1,1619,1630,1631,1632,1633]:null;
+      const coordinateScoped=request.view!=="PROJECTS"&&request.view!=="REPOSITORIES";
+      if(kinds===null||coordinateScoped&&(!request.coordinates?.length||request.coordinates.length>limit||
+        new Set(request.coordinates).size!==request.coordinates.length||request.coordinates.some(value=>
+          !(request.view==="DELETIONS"?/^(30617|30621):[0-9a-f]{64}:.+$/:/^30617:[0-9a-f]{64}:.+$/).test(value)))
+        ||!coordinateScoped&&request.coordinates!==undefined)throw new Error("Invalid project query");
+      const events=await relayClient.fetchEvents({kinds,limit,since:request.since,until:request.until,
         ...(request.coordinates?{"#a":request.coordinates}:{})});
-      check();return {events,limit,pubkey:session.devicePubkey};
+      check();if(events.length>limit||events.some(event=>!kinds.includes(event.kind)||
+        request.coordinates&&!event.tags.some(tag=>tag[0]==="a"&&request.coordinates!.includes(tag[1]??""))))throw new Error("Invalid project response");
+      return {events,limit,pubkey:session.devicePubkey};
     }};
   },[session,scope,limit]);
   return host;

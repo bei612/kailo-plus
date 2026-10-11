@@ -4001,8 +4001,8 @@ export enum ProjectListingVisibility {
 }
 
 /**
- * Original Buzz Community project/repository announcements and coordinate-scoped tombstones
- * only; no Git content or mutation authorization.
+ * Original Buzz Community project/repository announcements, coordinate-scoped work-item
+ * events and tombstones. Reads do not authorize Git transport or mutations.
  */
 export interface ProjectsQueryRequest {
     coordinates?: string[];
@@ -4015,6 +4015,8 @@ export enum ProjectsQueryRequestView {
     Deletions = "DELETIONS",
     Projects = "PROJECTS",
     Repositories = "REPOSITORIES",
+    WorkItemActivity = "WORK_ITEM_ACTIVITY",
+    WorkItems = "WORK_ITEMS",
 }
 
 /**
