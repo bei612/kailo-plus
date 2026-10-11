@@ -842,7 +842,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 			t.Error("original read Task event preceded durable persistence", err)
 		}})
 		defer broker.Register(previousBroker)
-		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost", "directory-complete", "directory-empty", "directory-response-failed", "directory-source-failed", "directory-completion-ACK-lost"} {
+		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "revoked-before-disclosure", "empty-revoked-before-disclosure", "empty-completion-ACK-lost", "oversized-content", "unbounded-source", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost", "directory-complete", "directory-empty", "directory-response-failed", "directory-source-failed", "directory-completion-ACK-lost"} {
 			t.Run(scenario, func(t *testing.T) {
 				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+30)
 				claims := map[string]interface{}{"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[2], "action_execution_id": ids[3], "target_id": ids[4], "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "action_definition_version": float64(1), "result_exposure_policy_id": ids[5], "result_exposure_policy_version": float64(1), "external_execution_id": ids[6], "idempotency_key": key}
@@ -867,7 +867,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 						return
 					}
 					pepCalls++
-					if (scenario == "revoked-before-open" && pepCalls == 1) || (scenario == "revoked-after-copy" && pepCalls == 2) {
+					if (scenario == "revoked-before-open" && pepCalls == 1) || (scenario == "revoked-after-copy" && pepCalls == 2) || (strings.HasSuffix(scenario, "revoked-before-disclosure") && pepCalls == 3) {
 						w.WriteHeader(403)
 						return
 					}
@@ -892,7 +892,7 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					serverJobs.loseACK = 1
 				case "running-ACK-lost":
 					serverJobs.loseACK = 2
-				case "completion-ACK-lost", "versions-completion-ACK-lost", "directory-completion-ACK-lost":
+				case "completion-ACK-lost", "empty-completion-ACK-lost", "versions-completion-ACK-lost", "directory-completion-ACK-lost":
 					serverJobs.loseACK = 3
 				}
 				grpcclient.RegisterMock(common.ServiceJobsGRPC, serverJobs)
@@ -906,8 +906,11 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 						body = []byte(`{}`)
 					}
 				}
-				if scenario == "empty" {
+				if scenario == "empty" || strings.HasPrefix(scenario, "empty-") {
 					body = []byte{}
+				}
+				if scenario == "oversized-content" || scenario == "unbounded-source" {
+					body = bytes.Repeat([]byte("x"), int(read.Delivery.MaxResponseBytes)+2)
 				}
 				opens, closes := 0, 0
 				var output bytes.Buffer
@@ -927,6 +930,9 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 					return &readReceiptSource{Reader: source, closeErr: closeErr, closes: &closes}, nil
 				}
 				expected := int64(len(body))
+				if scenario == "unbounded-source" {
+					expected = read.Delivery.MaxResponseBytes
+				}
 				var writer io.Writer = &output
 				if revisions || listing {
 					expected = -1
@@ -939,6 +945,9 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 				if (err == nil) != complete {
 					t.Fatalf("source completion error mismatch: %v", err)
 				}
+				if output.Len() > int(read.Delivery.MaxResponseBytes)+1 {
+					t.Fatal("governed content exceeded the delivered buffer bound")
+				}
 				persisted, err := store.GetJob(job.ID, jobproto.TaskStatus_Any)
 				if err != nil {
 					t.Fatal(err)
@@ -949,15 +958,24 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 						retained = task
 					}
 				}
+				if scenario == "oversized-content" {
+					if retained != nil || opens != 0 || pepCalls != 0 || output.Len() != 0 {
+						t.Fatal("oversized content was admitted or opened")
+					}
+					return
+				}
 				if retained == nil || !jobstore.TaskHasClaim(retained) {
 					t.Fatal("original first-dispatch claim was not retained")
 				}
 				receipt, receiptErr := jobstore.NativeReadTaskReceipt(retained)
-				terminal := complete || scenario == "completion-ACK-lost" || scenario == "versions-completion-ACK-lost" || scenario == "directory-completion-ACK-lost"
+				terminal := complete || strings.HasSuffix(scenario, "completion-ACK-lost") || strings.HasSuffix(scenario, "revoked-before-disclosure")
 				if (receiptErr == nil) != terminal {
 					t.Fatalf("unknown/partial stream was asserted terminal: %v", receiptErr)
 				}
 				if terminal {
+					if !strings.HasSuffix(scenario, "completion-ACK-lost") && pepCalls != 3 {
+						t.Fatal("even empty content must pass the final disclosure PEP")
+					}
 					if (revisions || listing) && receipt.ContentReference != nil {
 						t.Fatal("native listing payload entered the Task as content")
 					}

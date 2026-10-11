@@ -2349,3 +2349,88 @@ gateway/restv2 本轮编译通过但输出 `[no tests to run]`，不计 HTTP 删
 版本。未做全量门禁、新镜像、部署、绑定激活、真实三端或多人业务验收。
 完整受管删除仍未交付；后续必须闭合同 AE/EE 的延迟 fresh 授权及实际撤权
 业务证据后才可恢复新派发，不能持久化 ActionToken 或用观察权限替代写权限。
+
+## 2026-10-11 受管 read/export 在完整核验后交付正文
+
+本批关联 DD-48/90/94、`07` §4.6/§5.2 与工程准则 9/10/15，修正现有
+受管读取消费者，不增加协议、持久状态、权限、默认阈值或迁移。固定官方
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`gateway/data/gw/gateway-pydio.go::GetObjectNInfo/GetObject` 使用原 io.Pipe
+流式读取；本批独立原生读取原样保留，受管读取属于已授权治理差异。
+
+### 权威与完整影响
+
+原 `GetObjectNInfo` 只对同步 Human 与 SERVICE SOURCE 等待完整读取，
+已携带原 NativeReadExecution 的 HUMAN/AGENT read/export 却仍先返回
+MinIO reader；异步 GetObject 的最后 fresh 拒绝或 ACK 丢失来不及阻止
+调用方发送成功头，空文件尤其不能靠读正文触发错误。现在任意非空原
+NativeReadExecution 都沿已有同步请求内 buffer，GetObject、原 UUID/ACL
+核对、CopyNativeRead 的 claim/running/completion ACK 和最后 PEP 全部
+成功后才构造返回 reader，不新增存储或复刻正文权威。
+
+CopyNativeRead 的非枚举正文统一消费原投递 MaxResponseBytes：非正、
+溢出边界及已知正文超限在 claim/source open 前拒绝；实际源读取至多
+MaxResponseBytes+1，再用原 expectedBytes 精确长度检查拒绝超吐与截断。
+这不是新默认数值，受管可读取大小由既有受控投递决定。枚举调用方
+`api-lookup.go::Lookup` 与 `api-versions.go::NodeVersions` 的原分支未变。
+独立 GetObject/Pipe 不受影响；没有改 Core、四侧契约或三端宿主边界。
+
+原 Task 不明/重入/终态规则保持：open、copy、Close、fresh 或 ACK 任一
+失败不返回成功 reader；已有 Task 仍保留供同一执行对账，不能重开源。
+最后披露被拒绝或 ACK 丢失前可能已持久化完整读取证据，不删除该证据，
+也不把 HTTP 拒绝推断为整个 ExternalExecution FAILED。零字节同样等待
+最后 PEP 和 ACK。未新增需要后台回收的状态；正文仅存在请求生命周期。
+
+原 MinIO 固定依赖 `github.com/pydio/minio` 的锁定版本
+`v0.0.0-20251127102432-d3b575770589`，
+`cmd/object-api-utils.go::NewGetObjectReaderFromReader` 构造失败会调用
+cleanup；本消费者传空 ObjectOptions，没有另造 Pipe 补丁。独立提前 Close
+与正常读完均实际确认源 Close，受管路径不再创建该 Pipe 协程；不据此声称
+所有独立远端阻塞源的取消行为已验收。
+
+### 实际命令与事后反证
+
+复用原 `kailo-cells-native-check-lftow7`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+4 CPU/8 GiB/等额 memory+swap，独立 Data Go 缓存；启动前容器仅 sleep，
+主机 available 35 GiB，load 25。没有新容器、SDK 安装、并发编译或生成。
+原私有输入按当前 HEAD 导出 gateway/data，四份本批源码与最终执行输入
+逐文件 cmp exit 0。保持 GOPROXY=off、GOSUMDB=off、GOTOOLCHAIN=local
+及既有 Data CELLS_WORKING_DIR/CELLS_DATA_DIR。原 SDK gofmt 后执行：
+
+```sh
+go test -mod=readonly -count=1 -v -run 'TestGovernedReadCompletesBeforeReturningMinIOReader|TestIndependentReadKeepsStreamingAndClosesSource|TestNativeReadTaskRecordsActualStreamOnce' ./gateway/data/gw ./scheduler/jobs/grpc
+```
+
+最终 52163 exit 0，gofmt -l 无输出。原受管 GetObjectNInfo 的 32 场景
+覆盖 HUMAN/AGENT × read/export × 0/12 字节 × 合法、版本不符、最后 PEP
+拒绝、completion ACK 丢失。合法返回前断言实际 4 次 PEP、3 次 Task 写入
+ACK、Finished 与源 Close，再从原 reader 读回精确正文。实际消费原
+NativeReadAuthority、UuidClient 与预置原 AccessList 规则，无 skip/admin
+旁路；HTTP Core/OIDC、原生树/用户/策略/Job RPC 为受控夹具，不是线上服务。
+原 Bolt Task 的 24 场景同时通过，包括源失败、部分正文、Close/ACK 失败、
+最后撤权、空文件、超限、重入和原枚举；独立 Pipe 提前关闭及读完通过。
+
+50953 私有反证仅撤回三个生产谓词，两包均 exit 1：8 个 GetObjectNInfo
+拒绝场景捕获提前返回成功 reader；原 Bolt 检查捕获超限伪成功及源超吐
+越界。随后恢复原三行，最终同批命令退出 0，正式工作树未加入破坏内容。
+首轮失败原样保留：35171 新检查误用未导出的 minio.NoLock；53238 引用
+未生成 JobServiceStub；随后直接注册服务缺 ClientConnInterface；48153
+夹具误用非合同 PEP 路径而被拒绝。均为本轮检查接线错误，按锁定原接口
+修正后 62442 的 32 场景通过，再做上述反证/还原，不以失败轮充当通过。
+
+日志均在 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `read-disclosure-positive.log` | `19545fc561be4aea3ecaa4c570ef44e25c8722eb0bf9df2ca4321cda2090003b` | exit 1；Bolt 通过，gateway 编译失败 |
+| `read-disclosure-consumer.log` | `ffff10dd259c5f1b47b6d99dc66d97ee805bb48fde73fc910d351f3d3d35b42f` | exit 1；Job Stub 不存在 |
+| `read-disclosure-gateway.log` | `e1a7a8c35b505e66d32ef914d07b92b6b99ba8050129d887fc87d05d0dcb5954` | exit 1；RPC fixture 接口不符 |
+| `read-disclosure-gateway-rpc.log` | `b8f8ed4557e86c5b9e4d4d7c8a2af5a144684f370a5f16ea33b674d2064af9b0` | exit 1；错误 PEP 路径被拒绝 |
+| `read-disclosure-native-chain.log` | `3c59b7b31ec431d12fad92759889da2ab5c55cbf93b77fce4e83c81928133916` | exit 0；32 场景及独立流 |
+| `read-disclosure-negative.log` | `518c16f30727b6215e4ed9e941526f10b9317a32c1225bf862eb25c0b2e1334a` | exit 1；10 个真实反证失败 |
+| `read-disclosure-restored.log` | `6bc38dcb8ef72acdf92a84324fe5f96365b3992b5f7402779da1ca248c99a0c9` | exit 0；同批恢复 |
+
+本批没有运行全量门禁，没有新镜像、部署、组件绑定激活、浏览器下载或
+三端验收。它闭合既有受管读取出口，不代表完整 Cells 治理集成已上架，
+前节延迟删除 fresh 消费者仍未交付；不借本批恢复未治理写入口。
