@@ -85,6 +85,9 @@ const (
 	// concurrency governor uses this to throttle only background LLM traffic,
 	// leaving interactive chat latency untouched. See WithBackgroundTask.
 	BackgroundTaskContextKey ContextKey = "BackgroundTask"
+	// KnowledgeModelOwnerContextKey restricts model construction to the
+	// persisted Knowledge currently being parsed/indexed. It is not a grant.
+	KnowledgeModelOwnerContextKey ContextKey = "KnowledgeModelOwner"
 	// LLMCallPurposeContextKey labels the product-level reason for a model
 	// request (for example agent_round or wiki_page_modify).
 	LLMCallPurposeContextKey ContextKey = "LLMCallPurpose"

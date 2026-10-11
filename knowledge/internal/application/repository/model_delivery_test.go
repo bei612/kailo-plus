@@ -48,6 +48,76 @@ func writeModelDelivery(t *testing.T, path string, input map[string]any) {
 	require.NoError(t, os.WriteFile(path, raw, 0600))
 }
 
+func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {
+	db, cfg, model, input := modelDeliveryFixture(t)
+	require.NoError(t, db.AutoMigrate(&types.Knowledge{}))
+	repo, err := NewModelRepository(db, cfg)
+	require.NoError(t, err)
+	projection := input["projection"].(map[string]any)
+	binding := projection["bindingId"].(string)
+	projection["generation"] = 2
+	writeModelDelivery(t, cfg.ModelDeliveryInputFile, input)
+	independent := &types.Model{ID: uuid.NewString(), TenantID: model.TenantID, Name: "independent-native",
+		Source: types.ModelSourceRemote, Type: types.ModelTypeEmbedding, Status: types.ModelStatusActive,
+		Parameters: types.ModelParameters{BaseURL: "https://independent.example.test/v1", Provider: "openai"}}
+	require.NoError(t, db.Create(independent).Error)
+	owner := &types.Knowledge{ID: uuid.NewString(), TenantID: model.TenantID, KnowledgeBaseID: uuid.NewString(), Type: "file"}
+	require.NoError(t, db.Create(owner).Error)
+	metadata := func(binding any, generation any) types.JSON {
+		value, err := json.Marshal(map[string]any{"platform_receiver_binding_id": binding, "platform_receiver_generation": generation})
+		require.NoError(t, err)
+		return types.JSON(value)
+	}
+	for _, tc := range []struct {
+		name             string
+		stored, snapshot types.JSON
+		modelID          string
+		allowed          bool
+	}{
+		{"older-same-binding", metadata(binding, "1"), metadata(binding, "1"), model.ID, true},
+		{"current-generation", metadata(binding, "2"), metadata(binding, "2"), model.ID, true},
+		{"unmanaged-provider", metadata(binding, "1"), metadata(binding, "1"), independent.ID, false},
+		{"different-binding", metadata(uuid.NewString(), "1"), metadata(binding, "1"), model.ID, false},
+		{"future-generation", metadata(binding, "3"), metadata(binding, "3"), model.ID, false},
+		{"noncanonical-generation", metadata(binding, "01"), metadata(binding, "01"), model.ID, false},
+		{"numeric-generation", metadata(binding, 1), metadata(binding, 1), model.ID, false},
+		{"malformed-binding", metadata(map[string]string{"binding": binding}, "1"), metadata(map[string]string{"binding": binding}, "1"), model.ID, false},
+		{"removed-ownership", nil, metadata(binding, "1"), model.ID, false},
+		{"late-ownership", metadata(binding, "1"), nil, model.ID, false},
+		{"independent-native", nil, nil, independent.ID, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, db.Model(owner).UpdateColumn("metadata", tc.stored).Error)
+			snapshot := *owner
+			snapshot.Metadata = tc.snapshot
+			ctx := context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, &snapshot)
+			got, err := repo.GetByID(ctx, owner.TenantID, tc.modelID)
+			if tc.allowed {
+				require.NoError(t, err)
+				require.NotNil(t, got)
+			} else {
+				require.ErrorIs(t, err, errPlatformModelDelivery)
+				require.Nil(t, got)
+			}
+		})
+	}
+	owner.Metadata = metadata(binding, "1")
+	owner.Channel = "file_storage"
+	require.NoError(t, db.Model(owner).Updates(map[string]any{"channel": owner.Channel, "metadata": nil}).Error)
+	historical := *owner
+	historical.Metadata = nil
+	_, err = repo.GetByID(context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, &historical), owner.TenantID, independent.ID)
+	require.ErrorIs(t, err, errPlatformModelDelivery, "missing receiver ownership is not evidence of an independent document")
+	require.NoError(t, db.Model(owner).UpdateColumn("metadata", owner.Metadata).Error)
+	ctx := context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, owner)
+	input["projection"].(map[string]any)["bindingId"] = uuid.NewString()
+	writeModelDelivery(t, cfg.ModelDeliveryInputFile, input)
+	_, err = repo.GetByID(ctx, owner.TenantID, model.ID)
+	require.ErrorIs(t, err, errPlatformModelDelivery, "a current but foreign route projection cannot replace the original binding")
+	_, err = repo.GetByID(context.Background(), model.TenantID, independent.ID)
+	require.NoError(t, err, "independent model consumers are unchanged")
+}
+
 func TestPlatformModelDeliveryProtectsOriginalRowAndCredentials(t *testing.T) {
 	db, cfg, original, _ := modelDeliveryFixture(t)
 	repo, err := NewModelRepository(db, cfg)

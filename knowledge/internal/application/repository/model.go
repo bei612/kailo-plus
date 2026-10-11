@@ -49,6 +49,9 @@ func (r *modelRepository) GetByID(ctx context.Context, tenantID uint64, id strin
 	if err := r.validateModelDelivery(&m); err != nil {
 		return nil, err
 	}
+	if err := r.validateKnowledgeModel(ctx, &m); err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 

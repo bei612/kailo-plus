@@ -288,6 +288,13 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []types.ParsedChunk,
 	opts ...ProcessChunksOptions,
 ) error {
+	// This restriction survives only as native ownership, never as a saved
+	// platform token. Model construction rereads the persisted document.
+	if ctx.Value(types.KnowledgeModelOwnerContextKey) == nil {
+		modelOwner := *knowledge
+		modelOwner.Metadata = append(types.JSON(nil), knowledge.Metadata...)
+		ctx = context.WithValue(ctx, types.KnowledgeModelOwnerContextKey, &modelOwner)
+	}
 	// Get options
 	var options ProcessChunksOptions
 	if len(opts) > 0 {
@@ -3423,6 +3430,10 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		payload.KnowledgeID); err != nil {
 		return err
 	}
+
+	modelOwner := *knowledge
+	modelOwner.Metadata = append(types.JSON(nil), knowledge.Metadata...)
+	ctx = context.WithValue(ctx, types.KnowledgeModelOwnerContextKey, &modelOwner)
 
 	// 检查是否正在删除 / 已被用户取消 - 如果是则直接退出
 	if knowledge.ParseStatus == types.ParseStatusDeleting {

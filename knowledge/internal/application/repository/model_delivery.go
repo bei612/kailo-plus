@@ -25,9 +25,11 @@ var errPlatformModelDelivery = errors.New("platform model mapping is unavailable
 // registry or an authorization decision. Gateway remains the fresh binding,
 // generation, route, permission and quota authority for every model request.
 type deliveredNativeModel struct {
-	tenantID uint64
-	name     string
-	baseURL  string
+	tenantID   uint64
+	name       string
+	baseURL    string
+	bindingID  string
+	generation int64
 }
 
 func (r *modelRepository) modelDelivery() (map[string]deliveredNativeModel, error) {
@@ -101,7 +103,8 @@ func (r *modelRepository) modelDelivery() (map[string]deliveredNativeModel, erro
 			return nil, errPlatformModelDelivery
 		}
 		delete(seenRoutes, model.RouteResourceID)
-		models[model.NativeModelRef] = deliveredNativeModel{tenantID: tenantID, name: routes[model.RouteResourceID], baseURL: model.BaseURL}
+		models[model.NativeModelRef] = deliveredNativeModel{tenantID: tenantID, name: routes[model.RouteResourceID], baseURL: model.BaseURL,
+			bindingID: p.BindingID, generation: p.Generation}
 	}
 	return models, nil
 }
@@ -149,6 +152,58 @@ func (r *modelRepository) validateModelDelivery(m *types.Model) error {
 	}
 	models, err := r.modelDelivery()
 	if err != nil || !models[m.ID].matches(m) {
+		return errPlatformModelDelivery
+	}
+	return nil
+}
+
+// The original worker supplies only its native document identity, never a
+// saved ActionToken. Reload ownership here so retries cannot substitute an
+// independent provider or a different binding before constructing a client.
+// Gateway still authorizes each real model request; this check is a restriction,
+// not a replacement for its current route/binding/quota admission.
+func (r *modelRepository) validateKnowledgeModel(ctx context.Context, m *types.Model) error {
+	value := ctx.Value(types.KnowledgeModelOwnerContextKey)
+	if value == nil {
+		return nil
+	}
+	owner, ok := value.(*types.Knowledge)
+	if !ok || owner == nil || owner.TenantID == 0 || owner.ID == "" || owner.KnowledgeBaseID == "" {
+		return errPlatformModelDelivery
+	}
+	var current types.Knowledge
+	if err := r.db.WithContext(ctx).Select("id", "tenant_id", "knowledge_base_id", "channel", "metadata").
+		Where("id = ? AND tenant_id = ? AND knowledge_base_id = ?", owner.ID, owner.TenantID, owner.KnowledgeBaseID).
+		Take(&current).Error; err != nil {
+		return errPlatformModelDelivery
+	}
+	original, originalErr := owner.Metadata.Map()
+	fields, fieldsErr := current.Metadata.Map()
+	if originalErr != nil || fieldsErr != nil {
+		return errPlatformModelDelivery
+	}
+	const bindingKey, generationKey = "platform_receiver_binding_id", "platform_receiver_generation"
+	_, hasBinding := fields[bindingKey]
+	_, hasGeneration := fields[generationKey]
+	_, originallyBound := original[bindingKey]
+	_, originallyVersioned := original[generationKey]
+	if !hasBinding && !hasGeneration && !originallyBound && !originallyVersioned {
+		if current.Channel == "file_storage" || owner.Channel == "file_storage" {
+			return errPlatformModelDelivery // Historical receiver rows cannot acquire a current generation by inference.
+		}
+		return nil // Original independent native documents keep their provider choice.
+	}
+	binding, bindingOK := fields[bindingKey].(string)
+	generationText, generationOK := fields[generationKey].(string)
+	originalBinding, originalBindingOK := original[bindingKey].(string)
+	originalGeneration, originalGenerationOK := original[generationKey].(string)
+	generation, err := strconv.ParseInt(generationText, 10, 64)
+	models, deliveryErr := r.modelDelivery()
+	mapping := models[m.ID]
+	if !bindingOK || !generationOK || !originalBindingOK || !originalGenerationOK || binding != originalBinding || generationText != originalGeneration ||
+		err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != generationText ||
+		deliveryErr != nil || m.ManagedBy != platformModelManagedBy || !mapping.matches(m) ||
+		mapping.bindingID != binding || generation > mapping.generation || current.TenantID != m.TenantID {
 		return errPlatformModelDelivery
 	}
 	return nil

@@ -5283,3 +5283,69 @@ go test ./internal/application/service -run '^(TestFileStorageRetirementAuthoriz
 SQLite/Miniredis/fake PEP 不证明真实 PostgreSQL 并发行锁或线上治理；
 完整绑定截止栅栏、在途原生枚举、延迟外部副作用 fresh 授权及 release conformance
 仍未闭合。本批未部署、未上架，不解除全局发布门禁；未重复全局检查或修改其他组件。
+
+## 2026-10-11：原生文档模型构造消费持久绑定归属
+
+本批是可验证前置闭包，不是 MCP 写入开放或组件完整上架。固定上游仍为
+WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`：
+`internal/application/repository/model.go::GetByID`、
+`internal/application/service/knowledge_process.go::ProcessDocument` 与
+`processChunks` 均保留原调用主体。语义依据为设计 07 §7.2–7.3、§8.2–8.3：
+旧执行保留冻结归属，已导入字节沿原生处理，不另造平台子工作流；
+模型实际外呼仍由 AgentGateway fresh 授权，模型映射校验不是授权凭据。
+
+影响面为原文档处理 context → 原 ModelService.GetEmbeddingModel →
+GetModelByID → modelRepository.GetByID。ProcessDocument 与 processChunks
+保存原 Knowledge 身份和 Metadata 深拷贝，原 detach 决策显式保留该限制。
+仓库在构造客户端前按 ID、tenant、KB 重新读取原文档，校验两份原始归属一致，
+模型须为同 binding 的受控投递且投递代次不早于原文档冻结代次。未新增数据库
+字段、契约或账本；没有保存 ActionToken，不以当前代次回填历史归属。
+
+独立原生文档保留原 provider；file_storage 历史缺归属、归属缺失/变更/格式错误、
+跨绑定、未来代次及非受管模型均拒绝构造客户端。原调用将错误向上传递，
+不降级其他模型。已有 processChunks 调用均处理该调用所持同一文档：
+ProcessDocument 两分支、processDocumentFromPassage 与 triggerManualProcessing；
+本批没有扩展为新的任务调度器。Metadata 捕获复制底层字节，避免原生处理中
+原位更新源 JSON 改写执行开始时的限制。
+
+源码输入：7 路径冻结 tree `b883cc50039f2d4ab3ee764f3af6e5938c840325`，
+本批源差异 170 行增加、8 行删除。隔离反证仅用 Data 上 Go overlay，未改工作树。
+原 SDK `kailo-knowledge-delete-handoff` 的实际限制为 4 CPU、8 GiB memory/swap，
+沿既有 Data build/module cache；没有新增全局检查或镜像构建。
+
+末版正验（exit 0，包含 41 条父项/子项 PASS）：
+
+```sh
+go test ./internal/application/repository ./internal/types ./internal/application/service -run '^(TestKnowledgeModelConstructionConsumesPersistedBinding|TestPlatformModelDelivery|TestEveryContextKeyDeclaresACloneDecision|TestTheCloneTableHasNoEntriesForKeysThatNoLongerExist|TestContextClone|TestProcessChunksIndexesEveryTextChild)' -count=1 -timeout=10m -v
+```
+
+实际输出：repository `ok 7.065s`，types `ok 0.711s`，service `ok 0.462s`。
+原有受管模型的配置/凭据保护检查一并通过；新仓库案例覆盖同绑定旧代次及当前代次、
+独立原生模型、受管 provider 限制、跨绑定、未来/非规范/数字代次、畸形绑定、
+归属删除及晚加归属。实际 processChunks 的 GetEmbeddingModel 消费者确认原文档
+身份与独立 Metadata 字节，并主动原位修改源字节验证捕获值不变。
+
+反证命令在上述同 SDK 加入
+`-overlay /tmp/knowledge-model-owner-negative/overlay.json`，
+仅运行 repository/service 的
+`^(TestKnowledgeModelConstructionConsumesPersistedBinding|TestProcessChunksIndexesEveryTextChild)$`。
+移除 GetByID 的归属消费及两处深拷贝后 exit 1：错误绑定、非法代次等断言失败，
+原 processChunks 检查明确报 `metadata bytes must not alias mutable processing state`。
+移除 overlay 后以相同两测试再次执行，exit 0：
+repository `ok 2.572s`、service `ok 0.493s`。此前只含 repository/types 的
+中间输入检查不作为末版证据；两处复制同时被破坏不证明 ProcessDocument
+各异步分支都已逐一运行。
+
+日志目录：
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D`。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| knowledge-model-owner-final.log | `946cfbf4f0d5dff3f7371e1cff52a654a9f27964e39d53a0d92b62ea534b0506` |
+| knowledge-model-owner-negative.log | `25b9cc874a8bcc6f71f2757da269554e153293881bde77a5cc76667fd300a947` |
+| knowledge-model-owner-restored.log | `725abe9cfdc07e88bd987ff70e11daf5322b4509f1f18e038544af762b4e9260` |
+
+SQLite 仓库与原服务 fixture 不证明 PostgreSQL 行锁并发、真实 Gateway/provider
+调用或所有异步 parser/VLM/ASR 路径。本批未部署，MCP add/delete 写门槛未解除；
+完整 binding reconcile、v2 release conformance 与实际组件上架仍有缺口，
+全局发布门禁未通过。读取/观察及独立原生能力不因本批改为假成功或被整体关闭。

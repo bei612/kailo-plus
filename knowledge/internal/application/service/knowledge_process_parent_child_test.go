@@ -60,9 +60,13 @@ type parentChildModelService struct {
 	interfaces.ModelService
 	embedder embedding.Embedder
 	err      error
+	onGet    func(context.Context)
 }
 
-func (s parentChildModelService) GetEmbeddingModel(context.Context, string) (embedding.Embedder, error) {
+func (s parentChildModelService) GetEmbeddingModel(ctx context.Context, _ string) (embedding.Embedder, error) {
+	if s.onGet != nil {
+		s.onGet(ctx)
+	}
 	return s.embedder, s.err
 }
 
@@ -173,6 +177,7 @@ func TestProcessChunksIndexesEveryTextChild(t *testing.T) {
 		TenantID:        1,
 		KnowledgeBaseID: "kb-1",
 		ParseStatus:     types.ParseStatusProcessing,
+		Metadata:        types.JSON(`{"native":"original"}`),
 	}
 	chunkService := &parentChildChunkService{}
 	retrieveEngine := &parentChildRetrieveEngine{}
@@ -187,9 +192,21 @@ func TestProcessChunksIndexesEveryTextChild(t *testing.T) {
 	}
 	ctx := context.WithValue(context.Background(), types.TenantInfoContextKey, tenant)
 	svc := &knowledgeService{
-		repo:           &parentChildKnowledgeRepo{knowledge: knowledge},
-		chunkRepo:      chunkService,
-		modelService:   parentChildModelService{embedder: parentChildEmbedder{}},
+		repo:      &parentChildKnowledgeRepo{knowledge: knowledge},
+		chunkRepo: chunkService,
+		modelService: parentChildModelService{embedder: parentChildEmbedder{}, onGet: func(ctx context.Context) {
+			owner, ok := ctx.Value(types.KnowledgeModelOwnerContextKey).(*types.Knowledge)
+			require.True(t, ok, "the real indexing consumer must carry its persisted document restriction")
+			require.Equal(t, knowledge.ID, owner.ID)
+			require.Equal(t, knowledge.KnowledgeBaseID, owner.KnowledgeBaseID)
+			require.NotSame(t, knowledge, owner, "processing writes must not mutate the model ownership snapshot")
+			require.Equal(t, knowledge.Metadata, owner.Metadata)
+			require.NotSame(t, &knowledge.Metadata[0], &owner.Metadata[0], "metadata bytes must not alias mutable processing state")
+			original := string(owner.Metadata)
+			knowledge.Metadata[0] = '['
+			require.Equal(t, original, string(owner.Metadata), "in-place native processing mutation cannot rewrite captured ownership")
+			knowledge.Metadata[0] = '{'
+		}},
 		retrieveEngine: parentChildRetrieveRegistry{engine: retrieveEngine},
 		graphEngine:    parentChildGraphRepo{},
 		tenantRepo:     parentChildTenantRepo{},
