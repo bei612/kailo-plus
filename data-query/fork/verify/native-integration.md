@@ -11501,3 +11501,31 @@ Prettier checked the selected test file and passed (session 53008, exit 0,
 four unrelated formatting remnants and earlier uncommitted receipt sections
 are excluded from its private index. Full suite, source SQL and deployment
 remain outside this acceptance.
+
+### 2026-10-11 feedback background consumer fixture closure
+
+This closes the existing one-line Python fixture correction, not a new product
+feature. In main `a3923f375435e31f587b703c1f72f9eb35825849`,
+`data-query/wren-ai-service/src/web/v1/routers/ask_feedbacks.py::ask_feedback`
+already schedules `run_native_ask(native, service.ask_feedback, request)`.
+The original producer assertion must check that same wrapper for both ask and
+feedback, instead of expecting feedback to schedule the service directly.
+No identity, scope, task ID, schema, migration or production behavior changes;
+the existing missing-task, duplicate-ID and unknown-terminal assertions remain.
+
+The existing idle `kailo-wren-query-sdk-itgs2n` (UID 1000, 4 CPU, 4 GiB,
+equal memory-plus-swap limit) ran the fixed main source snapshot plus this
+one-line fixture under `/cache/wren-feedback-final.hKphVW/data-query/wren-ai-service`:
+`python3 -B tests/pytest/providers/test_native_sql_answer_stream.py -v`.
+Positive exit 0: 17 tests. Removing only the private feedback producer's
+`run_native_ask` and `native` scheduled arguments caused exit 1, exactly one
+failure at the feedback wrapper assertion. Restoring the producer, with both
+producer and fixture cmp-equal to the working implementation, again exited 0:
+17 tests. Dependency-boundary substitutes in this existing unittest are not
+live HTTP, model, SQL, SSO or deployment evidence. No image build ran.
+
+Logs: `/volumes/data/kailo/check-cache/wren-feedback-final.hKphVW/`.
+`positive.log` SHA-256 `024ebe09e0b626ee138af5a7fe5a1432927e6d5781302688de3db00061560ef6`;
+`negative.log` SHA-256 `e15add54cda63c496b8df580d90e2d83913cd9ffc38cdaf89e1bca2d74d718e5`;
+`restored.log` SHA-256 `c7c0863a70c399a3cf72141b024d10bc7ff694eecaf805c3bb91ed2dbfb4b116`.
+Earlier uncommitted artifact and receipt changes are not validated by this run.

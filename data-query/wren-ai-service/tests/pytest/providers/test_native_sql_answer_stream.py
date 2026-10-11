@@ -197,7 +197,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.query_id, str(identifier))
                 self.assertEqual(request.query_id, str(identifier))
                 self.assertEqual(len(scheduled), 1)
-                if router is ask_router:
+                if router in (ask_router, feedback_router):
                     self.assertEqual(scheduled[0][0][0], ask_router.run_native_ask)
                     self.assertEqual(scheduled[0][0][2], getattr(service, create))
                 else:
