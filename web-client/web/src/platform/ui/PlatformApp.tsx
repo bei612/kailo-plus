@@ -310,6 +310,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     enabled: Boolean(active) && activeRow?.isMember === true && tab === "channel",
     queryFn: () => bff.workspaceChannel(active!),
   });
+  const replaceDefaultChannel = navigation.replaceDefaultChannel;
+  useEffect(() => {
+    if (active && activeRow?.isMember === true && workspaces.isSuccess && !workspaces.isFetching
+      && channel.isSuccess && !channel.isFetching) replaceDefaultChannel(active);
+  }, [active, activeRow?.isMember, workspaces.isSuccess, workspaces.isFetching,
+    channel.isSuccess, channel.isFetching, replaceDefaultChannel]);
   const openMessageLink = (link: ParsedMessageLink) => {
     setMessageLinkProblem(null);
     void openSearchChannel(link.channelId, {eventId:link.messageId,threadRootId:link.threadRootId})
@@ -362,7 +368,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : workspaces.isPending ? (
     <Notice text={t("platform.loadingWorkspaces")} />
   ) : !active ? (
-    <Notice text={t("platform.noWorkspace")} />
+    <Notice text={t(chosen ? "platform.linkChannelUnavailable" : "platform.noWorkspace")} />
   ) : tab === "channel" ? (
     activeRow?.isMember !== true ? <div className="flex flex-col gap-3 p-4">
       <p role="status">{t("platform.channel.membershipRequired")}</p>

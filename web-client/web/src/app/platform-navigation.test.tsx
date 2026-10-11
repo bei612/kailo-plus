@@ -37,6 +37,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     <button onClick={() => { void navigation.openConversation("conversation-a", {messageId:"diff-reply",threadRootId:"diff-root"}, "reply needle"); }}>DM search result</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}); }}>ordinary link</button>
     <button onClick={() => setScopeKey("next-session")}>switch session</button>
+    <button onClick={() => navigation.replaceDefaultChannel("workspace-a")}>admitted default</button>
     <button onClick={() => { navigation.clearMessageRouteTarget(); navigation.setThreadHeadId("thread-a"); }}>open thread</button>
     <button onClick={() => { navigation.clearMessageRouteTarget(); navigation.setThreadHeadId(null); }}>close thread</button>
     <button onClick={() => navigation.setThreadHeadId("thread-a", {replace:true})}>resolve linked thread</button>
@@ -61,6 +62,33 @@ async function mount(url: string, browser = false) {
   await act(async () => { await router.load(); root!.render(<RouterProvider router={router} />); });
   return router;
 }
+
+it("pins an admitted index channel with replace before thread navigation and restores its thread on reload", async () => {
+  let router = await mount("/app/?thread=root-a&messageId=reply-a&threadRootId=root-a&body=never-copy");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  const length = router.history.length;
+  await act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === "admitted default")!.click();});
+  expect(router.history.location.pathname).toBe("/app/channels/workspace-a");
+  expect(router.history.length).toBe(length);
+  expect(router.history.location.search).not.toContain("body");
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("root-a");
+  expect(node!.querySelector("[data-message]")?.getAttribute("data-message")).toBe("reply-a");
+  const reloadUrl = router.history.location.href;
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  router = await mount(reloadUrl);
+  expect(node!.querySelector("[data-workspace]")?.getAttribute("data-workspace")).toBe("workspace-a");
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("root-a");
+});
+
+it.each(["/app/channels/revoked?thread=root-a", "/app/conversations/conversation-a?thread=root-a", "/app/inbox?thread=root-a", "/app/?workspaceId=other&thread=root-a"])(
+  "never rewrites an explicit or differently scoped destination %s to a directory default", async url => {
+    const router = await mount(url);
+    const before = router.history.location.href;
+    await act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === "admitted default")!.click();});
+    expect(router.history.location.href).toBe(before);
+    expect(router.history.length).toBe(1);
+  },
+);
 
 it("carries only a same-session draft reference and consumes its send marker before history can replay it", async () => {
   const router = await mount("/app/inbox");

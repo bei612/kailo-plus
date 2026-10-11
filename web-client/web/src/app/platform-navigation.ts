@@ -74,10 +74,20 @@ export function usePlatformNavigation(scopeKey?: string) {
   const newMessage = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/_platform/messages/new") });
   const tab: PlatformTab = params.channelId ? "channel" : params.conversationId ? "conversation"
     : params.bindingId ? "application" : newMessage ? "new-message" : params.section ?? "channel";
+  const replaceDefaultChannel = useCallback((channelId: string) => {
+    // The host supplies a freshly admitted default. An explicit route is never
+    // rewritten to a directory fallback, including after access is revoked.
+    if (tab !== "channel" || params.channelId || (search.workspaceId && search.workspaceId !== channelId)) return;
+    void navigate({
+      to: "/channels/$channelId", params: { channelId }, replace: true, resetScroll: false,
+      search: previous => platformLocationSearch(previous),
+    });
+  }, [navigate, params.channelId, search.workspaceId, tab]);
   return {
     goBack: () => { if (canGoBack) router.history.back(); },
     goForward: () => router.history.forward(),
     tab,
+    replaceDefaultChannel,
     searchHighlight,
     draftTarget,
     consumeDraftSend: () => navigate({to:".", replace:true, resetScroll:false, state:(previous:typeof location.state) => {
