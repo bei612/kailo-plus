@@ -569,13 +569,19 @@ func (sc *Client) DeleteWorkspace(ctx context.Context, ownerUuid string, scope i
 		}
 	}
 	// Deleting workspace will delete associated policies and associated ACLs
+	if err := nativeLinkStep(ctx, workspaceId); err != nil {
+		return err
+	}
 	wsClient := idmc.WorkspaceServiceClient(ctx)
 	q, _ := anypb.New(&idm.WorkspaceSingleQuery{
 		Uuid: workspaceId,
 	})
-	_, err = wsClient.DeleteWorkspace(ctx, &idm.DeleteWorkspaceRequest{Query: &service.Query{
+	response, err := wsClient.DeleteWorkspace(ctx, &idm.DeleteWorkspaceRequest{Query: &service.Query{
 		SubQueries: []*anypb.Any{q},
 	}})
+	if _, managed := ctx.Value(nativeLinkContextKey{}).(*nativeLinkMutation); managed && err == nil && response.GetRowsDeleted() != 1 {
+		return nativeCellUnknown()
+	}
 
 	return err
 }

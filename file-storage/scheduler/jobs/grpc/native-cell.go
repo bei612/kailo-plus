@@ -76,7 +76,11 @@ func (j *JobsHandler) nativeCellSnapshot(ctx context.Context, request *proto.Lis
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&write) != nil {
 		return true, refused
 	}
-	snapshot, err := store.SnapshotNativeCells(ctx, delivery.BindingID, delivery.CellShare.BindingGeneration, delivery.CellShare.NativeJobID, true, delivery.MaxResponseBytes, write.Write.NativeJobID)
+	var sharing auth.NativeShareDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&sharing) != nil {
+		return true, refused
+	}
+	snapshot, err := store.SnapshotNativeCells(ctx, delivery.BindingID, delivery.CellShare.BindingGeneration, delivery.CellShare.NativeJobID, true, delivery.MaxResponseBytes, write.Write.NativeJobID, sharing.Share.NativeJobID)
 	if err != nil {
 		return true, err
 	}

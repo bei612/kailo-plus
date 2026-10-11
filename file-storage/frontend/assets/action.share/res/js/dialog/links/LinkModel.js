@@ -24,6 +24,7 @@ import Observable from 'pydio/lang/observable'
 import ShareHelper from '../main/ShareHelper'
 import {ShareServiceApi, RestPutShareLinkRequest, RestShareLink, RestShareLinkAccessType} from 'cells-sdk'
 import PassUtils from 'pydio/util/pass'
+import nativeRevoke from './nativeRevoke'
 
 class LinkModel extends Observable {
 
@@ -229,7 +230,8 @@ class LinkModel extends Observable {
      */
     deleteLink(emptyLink){
         const api = new ShareServiceApi(PydioApi.getRestClient());
-        return api.deleteShareLink(this.link.Uuid).then(result => {
+        return nativeRevoke(Pydio.getInstance(), this.link.Uuid).then(result => result === undefined ? api.deleteShareLink(this.link.Uuid) : result).then(result => {
+            if (result === null) return;
             this.link = emptyLink;
             this.dirty = false;
             this.updatePassword = this.createPassword = this.customLink = null;

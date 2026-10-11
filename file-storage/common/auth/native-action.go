@@ -153,13 +153,42 @@ type NativeDeleteDelivery struct {
 	} `json:"delete"`
 }
 
+// Native sharing uses its own registered share Action; it is not a platform
+// reader grant. The service credential only authenticates the transport.
+type NativeShareDelivery struct {
+	NativeActorDelivery
+	WorkspaceID string `json:"workspaceId"`
+	Share       struct {
+		NativeJobID                 string `json:"nativeJobId"`
+		ActionVersion               int64  `json:"actionVersion"`
+		NativeType                  string `json:"nativeType"`
+		ResultExposurePolicyID      string `json:"resultExposurePolicyId"`
+		ResultExposurePolicyVersion int64  `json:"resultExposurePolicyVersion"`
+	} `json:"share"`
+}
+
+func NativeShareAuthority(request *http.Request, raw, operation string) (NativeShareDelivery, map[string]interface{}, map[string]interface{}, string, int64, error) {
+	var delivery NativeShareDelivery
+	refused := errors.WithStack(errors.StatusForbidden)
+	if config.Get(request.Context(), "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
+		delivery.Share.NativeJobID == "" || strings.TrimSpace(delivery.Share.NativeJobID) != delivery.Share.NativeJobID {
+		return delivery, nil, nil, "", 0, refused
+	}
+	// Keep the AE's frozen generation, including observation after upgrade;
+	// never infer task ownership from the current delivered generation.
+	var generation int64
+	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
+		"file_storage.share@v1", delivery.Share.ActionVersion, delivery.Share.ResultExposurePolicyID, delivery.Share.ResultExposurePolicyVersion, &generation)
+	return delivery, claims, target, arguments, generation, err
+}
+
 func NativeDeleteAuthority(request *http.Request, raw, operation string) (NativeDeleteDelivery, map[string]interface{}, map[string]interface{}, string, error) {
 	var delivery NativeDeleteDelivery
 	if config.Get(request.Context(), "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil || delivery.Delete.NativeJobID == "" || strings.TrimSpace(delivery.Delete.NativeJobID) != delivery.Delete.NativeJobID {
 		return delivery, nil, nil, "", errors.WithStack(errors.StatusForbidden)
 	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion)
+		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion, nil)
 	return delivery, claims, target, arguments, err
 }
 
@@ -188,11 +217,11 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 		return delivery, nil, nil, "", refused
 	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion)
+		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion, nil)
 	return delivery, claims, target, arguments, err
 }
 
-func nativeMutationAuthority(request *http.Request, raw, operation string, delivery NativeActorDelivery, workspace, action string, version int64, policy string, policyVersion int64) (map[string]interface{}, map[string]interface{}, string, error) {
+func nativeMutationAuthority(request *http.Request, raw, operation string, delivery NativeActorDelivery, workspace, action string, version int64, policy string, policyVersion int64, frozenGeneration *int64) (map[string]interface{}, map[string]interface{}, string, error) {
 	refused := errors.WithStack(errors.StatusForbidden)
 	ctx := request.Context()
 	if delivery.MaxResponseBytes <= 0 || int64(len(raw)) > delivery.MaxResponseBytes || version <= 0 || policyVersion <= 0 || !NativeActorUUID(policy) {
@@ -212,7 +241,14 @@ func nativeMutationAuthority(request *http.Request, raw, operation string, deliv
 	if err != nil || decoder.Decode(&proof) != nil || decoder.Decode(new(interface{})) != io.EOF {
 		return nil, nil, "", refused
 	}
-	claims, target, err := delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
+	var claims, target map[string]interface{}
+	if frozenGeneration == nil {
+		claims, target, err = delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
+	} else {
+		var generation int64
+		claims, target, generation, err = delivery.AuthorizeOperationGeneration(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
+		*frozenGeneration = generation
+	}
 	if err != nil || claims["action_key"] != action || claims["tenant_id"] != delivery.TenantID || !NativeActorUUID(text(claims, "target_id")) || (workspace != "" && claims["workspace_id"] != workspace) || claims["action_definition_version"] != float64(version) || claims["result_exposure_policy_id"] != policy || claims["result_exposure_policy_version"] != float64(policyVersion) {
 		return nil, nil, "", refused
 	}

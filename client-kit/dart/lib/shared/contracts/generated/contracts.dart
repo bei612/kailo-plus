@@ -12,6 +12,8 @@
 //     final fileStorageListRevisionsOutput = fileStorageListRevisionsOutputFromJson(jsonString);
 //     final fileStorageReadInput = fileStorageReadInputFromJson(jsonString);
 //     final fileStorageReadOutput = fileStorageReadOutputFromJson(jsonString);
+//     final fileStorageShareInput = fileStorageShareInputFromJson(jsonString);
+//     final fileStorageShareOutput = fileStorageShareOutputFromJson(jsonString);
 //     final fileStorageWriteInput = fileStorageWriteInputFromJson(jsonString);
 //     final fileStorageWriteOutput = fileStorageWriteOutputFromJson(jsonString);
 //     final knowledgeSyncInput = knowledgeSyncInputFromJson(jsonString);
@@ -298,6 +300,18 @@ FileStorageReadOutput fileStorageReadOutputFromJson(String str) =>
     FileStorageReadOutput.fromJson(json.decode(str));
 
 String fileStorageReadOutputToJson(FileStorageReadOutput data) =>
+    json.encode(data.toJson());
+
+FileStorageShareInput fileStorageShareInputFromJson(String str) =>
+    FileStorageShareInput.fromJson(json.decode(str));
+
+String fileStorageShareInputToJson(FileStorageShareInput data) =>
+    json.encode(data.toJson());
+
+FileStorageShareOutput fileStorageShareOutputFromJson(String str) =>
+    FileStorageShareOutput.fromJson(json.decode(str));
+
+String fileStorageShareOutputToJson(FileStorageShareOutput data) =>
     json.encode(data.toJson());
 
 FileStorageWriteInput fileStorageWriteInputFromJson(String str) =>
@@ -2121,6 +2135,53 @@ class FileStorageReadOutput {
       FileStorageReadOutput(text: json["text"]);
 
   Map<String, dynamic> toJson() => _stripNulls({"text": text});
+}
+
+///Manage an existing native share under the admitted Resource. Revocation removes access
+///through that exact share; it neither deletes file content nor grants platform resource
+///permission. Native share identity alone is not evidence of ownership or successful
+///revocation.
+class FileStorageShareInput {
+  final String nativeShareRef;
+  final FileStorageShareOperation operation;
+  final String resourceId;
+
+  FileStorageShareInput({
+    required this.nativeShareRef,
+    required this.operation,
+    required this.resourceId,
+  });
+
+  factory FileStorageShareInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageShareInput(
+        nativeShareRef: json["nativeShareRef"],
+        operation: fileStorageShareOperationValues.map[json["operation"]]!,
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeShareRef": nativeShareRef,
+    "operation": fileStorageShareOperationValues.reverse[operation],
+    "resourceId": resourceId,
+  });
+}
+
+enum FileStorageShareOperation { REVOKE }
+
+final fileStorageShareOperationValues = EnumValues({
+  "REVOKE": FileStorageShareOperation.REVOKE,
+});
+
+///Metadata-only share result. Revocation requires an authorized first-dispatch claim and
+///confirmed removal of the frozen native share access. An unowned missing identifier,
+///accepted request or partial native cleanup is not successful revocation.
+class FileStorageShareOutput {
+  FileStorageShareOutput();
+
+  factory FileStorageShareOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageShareOutput();
+
+  Map<String, dynamic> toJson() => _stripNulls({});
 }
 
 ///Apply an existing immutable native revision, or dispatch a native first-byte intent. An

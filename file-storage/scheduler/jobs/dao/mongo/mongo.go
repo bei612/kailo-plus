@@ -176,6 +176,7 @@ func (m *mongoImpl) PutJob(job *proto.Job) error {
 	// metadata-removing update from downgrading a claimed native execution.
 	_, e := m.Collection(collJobs).ReplaceOne(c, bson.D{{"id", job.ID},
 		{"job.metadata." + jobs.NativeUploadJobMarker, bson.M{"$exists": false}},
+		{"job.metadata." + jobs.NativeShareJobMarker, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}}, mj, &options.ReplaceOptions{Upsert: &upsert})
@@ -235,6 +236,7 @@ func (m *mongoImpl) DeleteJob(jobId string) error {
 	// Now delete job
 	deleted, e := m.Collection(collJobs).DeleteOne(c, bson.D{{"id", jobId},
 		{"job.metadata." + jobs.NativeUploadJobMarker, bson.M{"$exists": false}},
+		{"job.metadata." + jobs.NativeShareJobMarker, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeCellShareJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteJob, bson.M{"$exists": false}},
 		{"job.metadata." + jobs.NativeDeleteTask, bson.M{"$exists": false}}})

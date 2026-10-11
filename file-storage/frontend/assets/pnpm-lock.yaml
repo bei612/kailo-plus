@@ -303,6 +303,10 @@ importers:
         version: 5.1.4(webpack@5.104.1)
 
   action.share:
+    dependencies:
+      uuid4:
+        specifier: 1.1.4
+        version: 1.1.4
     devDependencies:
       '@babel/core':
         specifier: ^7.14.6

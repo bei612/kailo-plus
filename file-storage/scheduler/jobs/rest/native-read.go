@@ -41,6 +41,20 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 		return nativeWriteObservation(req, resp, proof)
 	}
 	if reference.NativeType == "job" {
+		// Untrusted payload selects only a verifier. The selected consumer still
+		// authenticates the exact signed action and frozen execution at Core.
+		parts := strings.Split(envelope.ActionToken, ".")
+		if len(parts) != 3 {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		var claims map[string]interface{}
+		if err != nil || json.Unmarshal(payload, &claims) != nil {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		if claims["action_key"] == "file_storage.share@v1" {
+			return nativeShareObservation(req, resp, proof)
+		}
 		return nativeDeleteObservation(req, resp, proof)
 	}
 	if reference.NativeType != "node" {

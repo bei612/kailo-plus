@@ -88,7 +88,11 @@ func nativeBindingReconcile(req *restful.Request, resp *restful.Response, proof 
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&write) != nil {
 		return refused
 	}
-	items, err := share.ReconcileNativeCells(ctx, delivery, true, write.Write.NativeJobID)
+	var sharing auth.NativeShareDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&sharing) != nil {
+		return refused
+	}
+	items, err := share.ReconcileNativeCells(ctx, delivery, true, write.Write.NativeJobID, sharing.Share.NativeJobID)
 	if err != nil {
 		return err
 	}

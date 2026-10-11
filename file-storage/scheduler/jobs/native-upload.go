@@ -53,10 +53,14 @@ func NativeUploadJobOrigin(job *jobproto.Job) (string, int64, error) {
 func IsNativeBindingJob(job *jobproto.Job) bool {
 	_, cell := job.GetMetadata()[NativeCellShareJob]
 	_, upload := job.GetMetadata()[NativeUploadJobMarker]
-	return cell || upload
+	_, share := job.GetMetadata()[NativeShareJobMarker]
+	return cell || upload || share
 }
 
 func NativeBindingJobOrigin(job *jobproto.Job) (string, int64, error) {
+	if _, share := job.GetMetadata()[NativeShareJobMarker]; share {
+		return NativeShareJobOrigin(job)
+	}
 	if _, upload := job.GetMetadata()[NativeUploadJobMarker]; upload {
 		return NativeUploadJobOrigin(job)
 	}
@@ -64,6 +68,9 @@ func NativeBindingJobOrigin(job *jobproto.Job) (string, int64, error) {
 }
 
 func NativeBindingJobKind(job *jobproto.Job) string {
+	if _, share := job.GetMetadata()[NativeShareJobMarker]; share {
+		return NativeShareJobMarker
+	}
 	if _, upload := job.GetMetadata()[NativeUploadJobMarker]; upload {
 		return NativeUploadJobMarker
 	}

@@ -189,6 +189,9 @@ func (h *SharesHandler) DeleteCell(req *restful.Request, rsp *restful.Response) 
 
 // PutShareLink creates or updates a link to a shared item.
 func (h *SharesHandler) PutShareLink(req *restful.Request, rsp *restful.Response) error {
+	if err := nativeShareUnsupported(req); err != nil {
+		return err
+	}
 
 	ctx := req.Request.Context()
 
@@ -215,6 +218,11 @@ func (h *SharesHandler) GetShareLink(req *restful.Request, rsp *restful.Response
 	if err != nil {
 		return err
 	}
+	if domain, err := nativeShareDomain(req); err != nil {
+		return err
+	} else if domain != "" {
+		rsp.Header().Set("X-Kailo-Native-Share-Binding", domain)
+	}
 	return rsp.WriteEntity(output)
 
 }
@@ -224,6 +232,9 @@ func (h *SharesHandler) DeleteShareLink(req *restful.Request, rsp *restful.Respo
 
 	ctx := req.Request.Context()
 	id := req.PathParameter("Uuid")
+	if handled, err := h.nativeRevokeShare(req, rsp, id); handled {
+		return err
+	}
 
 	if err := h.docStoreStatus(ctx); err != nil {
 		return err
@@ -248,6 +259,9 @@ func (h *SharesHandler) DeleteShareLink(req *restful.Request, rsp *restful.Respo
 
 // UpdateSharePolicies updates policies associated to the underlying workspace
 func (h *SharesHandler) UpdateSharePolicies(req *restful.Request, rsp *restful.Response) error {
+	if err := nativeShareUnsupported(req); err != nil {
+		return err
+	}
 	var input rest.UpdateSharePoliciesRequest
 	if e := req.ReadEntity(&input); e != nil {
 		return e

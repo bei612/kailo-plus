@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -271,6 +272,20 @@ func (sc *Client) DeleteLink(ctx context.Context, id string) error {
 	storedLink := &rest.ShareLink{Uuid: id}
 	if err := sc.LoadHashDocumentData(ctx, storedLink, []*idm.ACL{}); err != nil {
 		return err
+	}
+	if mutation, ok := ctx.Value(nativeLinkContextKey{}).(*nativeLinkMutation); ok {
+		if mutation.intent.ShareID != id || storedLink.UserUuid != mutation.intent.HiddenUserID ||
+			storedLink.UserLogin != mutation.intent.HiddenUserLogin || storedLink.LinkHash != mutation.intent.DocumentID {
+			return nativeCellRefused()
+		}
+		_, roots, err := sc.CommonAclsForWorkspace(ctx, id)
+		if err != nil {
+			return err
+		}
+		sort.Strings(roots)
+		if !sameCellValue(roots, mutation.intent.Roots) {
+			return nativeCellRefused()
+		}
 	}
 	// Delete associated Document from Docstore
 	if err := sc.DeleteHashDocument(ctx, id); err != nil {

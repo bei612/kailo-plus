@@ -85,9 +85,13 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 	if err := value.Scan(&cellDelivery); err != nil {
 		return errors.WithStack(errors.InvalidParameters)
 	}
+	var shareDelivery auth.NativeShareDelivery
+	if err := value.Scan(&shareDelivery); err != nil {
+		return errors.WithStack(errors.InvalidParameters)
+	}
 	// An optional, absent write Job preserves the original admission-only
 	// delivery. The native execute consumer still refuses without that Job ID.
-	if delivery.Read == nil && delivery.Write.NativeJobID == "" && deleteDelivery.Delete.NativeJobID == "" && cellDelivery.CellShare.NativeJobID == "" {
+	if delivery.Read == nil && delivery.Write.NativeJobID == "" && deleteDelivery.Delete.NativeJobID == "" && cellDelivery.CellShare.NativeJobID == "" && shareDelivery.Share.NativeJobID == "" {
 		return nil
 	}
 	var expected []*proto.Job
@@ -130,6 +134,19 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 		if write.NativeJobID != "" {
 			expected = append(expected, jobs.NativeUploadJob(write.NativeJobID, cellDelivery.BindingID, cellDelivery.CellShare.BindingGeneration))
 		}
+	}
+	if sharing := shareDelivery.Share; sharing.NativeJobID != "" {
+		if cellDelivery.Validate() != nil || strings.TrimSpace(sharing.NativeJobID) != sharing.NativeJobID || sharing.ActionVersion <= 0 ||
+			sharing.NativeType == "" || !auth.NativeActorUUID(sharing.ResultExposurePolicyID) || sharing.ResultExposurePolicyVersion <= 0 {
+			return errors.WithStack(errors.InvalidParameters)
+		}
+		job := jobs.NativeShareJob(sharing.NativeJobID, cellDelivery.BindingID, cellDelivery.CellShare.BindingGeneration)
+		for _, other := range expected {
+			if other.ID == job.ID {
+				return errors.WithStack(errors.InvalidParameters)
+			}
+		}
+		expected = append(expected, job)
 	}
 	deadline, err := time.ParseDuration(delivery.RequestTimeout)
 	if err != nil || deadline <= 0 {
@@ -181,6 +198,10 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 }
 
 func nativeActionJobMatches(actual, expected *proto.Job) bool {
+	if _, share := expected.GetMetadata()[jobs.NativeShareJobMarker]; share {
+		binding, generation, err := jobs.NativeShareJobOrigin(actual)
+		return err == nil && binding == expected.Metadata["bindingId"] && generation > 0 && actual.ID == expected.ID
+	}
 	if _, upload := expected.GetMetadata()[jobs.NativeUploadJobMarker]; upload {
 		binding, generation, err := jobs.NativeUploadJobOrigin(actual)
 		return err == nil && binding == expected.Metadata["bindingId"] && generation > 0 && actual.ID == expected.ID

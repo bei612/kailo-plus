@@ -1257,6 +1257,35 @@ func TestCapabilityVectorsRoundtrip(t *testing.T) {
 	}
 }
 
+func TestFileStorageShareRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "file-storage-share.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed struct {
+		Input  generated.FileStorageShareInput  `json:"input"`
+		Output generated.FileStorageShareOutput `json:"output"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("share intent or metadata-only result changed: %s", encoded)
+	}
+}
+
 func TestFileStorageRevisionIORoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "file-storage-revision-io.sample.json"))
 	if err != nil {

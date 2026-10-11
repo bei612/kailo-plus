@@ -17,6 +17,7 @@ func nativeBindingJobsFilter() bson.M {
 	return bson.M{"$or": bson.A{
 		bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}},
 		bson.M{"job.metadata." + jobs.NativeUploadJobMarker: bson.M{"$exists": true}},
+		bson.M{"job.metadata." + jobs.NativeShareJobMarker: bson.M{"$exists": true}},
 	}}
 }
 
@@ -39,6 +40,7 @@ func (m *mongoImpl) migrateNativeCellAnchors(ctx context.Context) error {
 	filter := bson.M{"$or": bson.A{
 		bson.M{"job.metadata." + jobs.NativeCellShareJob: bson.M{"$exists": true}},
 		bson.M{"job.metadata." + jobs.NativeUploadJobMarker: bson.M{"$exists": true}},
+		bson.M{"job.metadata." + jobs.NativeShareJobMarker: bson.M{"$exists": true}},
 		bson.M{"claim_binding": bson.M{"$exists": true}},
 	}}
 	count, err := m.Collection(collJobs).CountDocuments(ctx, filter, options.Count().SetLimit(1))
@@ -245,10 +247,10 @@ func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, gen
 		return nil, errors.WithStack(errors.InvalidParameters)
 	}
 	value, err := m.nativeCellTransaction(ctx, func(tx mongo.SessionContext) (interface{}, error) {
-		if len(uploadBase) > 1 {
+		if len(uploadBase) > 2 {
 			return nil, errors.WithStack(errors.InvalidParameters)
 		}
-		if len(uploadBase) == 1 && uploadBase[0] != "" {
+		if len(uploadBase) >= 1 && uploadBase[0] != "" {
 			changed, err := m.Collection(collJobs).UpdateOne(tx, bson.M{"id": uploadBase[0]}, bson.M{"$inc": bson.M{"claim_revision": 1}})
 			if err != nil {
 				return nil, err
@@ -268,14 +270,21 @@ func (m *mongoImpl) SnapshotNativeCells(ctx context.Context, binding string, gen
 		defer cursor.Close(tx)
 		result := []*proto.Job{}
 		expected := map[string]*proto.Job{currentJob: jobs.NativeCellJob(currentJob, binding, generation)}
-		if len(uploadBase) > 1 {
+		if len(uploadBase) > 2 {
 			return nil, errors.WithStack(errors.InvalidParameters)
 		}
-		if len(uploadBase) == 1 && uploadBase[0] != "" {
+		if len(uploadBase) >= 1 && uploadBase[0] != "" {
 			job := jobs.NativeUploadJob(uploadBase[0], binding, generation)
 			expected[job.ID] = job
 		}
-		if len(uploadBase) == 1 && uploadBase[0] != "" {
+		if len(uploadBase) == 2 && uploadBase[1] != "" {
+			job := jobs.NativeShareJob(uploadBase[1], binding, generation)
+			if expected[job.ID] != nil {
+				return nil, errors.WithStack(errors.StatusConflict)
+			}
+			expected[job.ID] = job
+		}
+		if len(uploadBase) >= 1 && uploadBase[0] != "" {
 			legacy, err := m.Collection(collTasks).Find(tx, bson.M{"job_id": uploadBase[0]})
 			if err != nil {
 				return nil, err

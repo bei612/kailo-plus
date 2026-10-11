@@ -829,6 +829,16 @@ test("forum query, cursor and native channel preserve each generated field and l
   deepStrictEqual([query.before, query.beforeId], [cursor.createdAt, cursor.eventId]);
 });
 
+test("file storage share preserves exact native reference", () => {
+  const row: {
+    input: import("../src/generated/contracts.js").FileStorageShareInput;
+    output: import("../src/generated/contracts.js").FileStorageShareOutput;
+  } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/file-storage-share.sample.json", import.meta.url), "utf8"));
+  const input: typeof row.input = {resourceId:row.input.resourceId, nativeShareRef:row.input.nativeShareRef, operation:row.input.operation};
+  const output: typeof row.output = {};
+  deepStrictEqual(JSON.parse(JSON.stringify({input, output})), row);
+});
+
 test("file storage revision IO preserves exact versions, empty text and binary", () => {
   const rows: {
     readInput: import("../src/generated/contracts.js").FileStorageReadInput;

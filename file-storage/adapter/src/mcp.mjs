@@ -6,6 +6,7 @@ import { Refused, exactKeys, object, nonempty, canonical, boundedBody,
 import { executeNode, nodeActions } from './node-execution.mjs';
 import { executeWrite, writeAction } from './write-execution.mjs';
 import { executeDelete, deleteAction } from './delete-execution.mjs';
+import { executeShare, shareAction } from './share-execution.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const transportHeader = 'x-kailo-gateway-authorization';
@@ -31,6 +32,7 @@ export function mcpConfiguration(value, config) {
       || !nonempty(tool.name) || names.has(tool.name)
       || (nodeActions.includes(tool.actionKey) ? !config.readEdge
         : tool.actionKey === writeAction ? !config.write
+        : tool.actionKey === shareAction ? !config.share
         : tool.actionKey !== deleteAction || !config.delete)
       || !Number.isSafeInteger(tool.actionVersion) || tool.actionVersion <= 0
       || !object(tool.inputSchema) || tool.inputSchema.type !== 'object'
@@ -103,6 +105,7 @@ export async function handleMcp(config, request, response) {
       // HUMAN/AGENT delegation and all fresh PEP checks remain executeNode's.
       const args = { target: { resourceId: claims.target_id }, input: value.params.arguments };
       const execute = tool.actionKey === writeAction ? executeWrite
+        : tool.actionKey === shareAction ? executeShare
         : tool.actionKey === deleteAction ? executeDelete : executeNode;
       const structuredContent = await execute(config, deadline, canonical({ actionKey: tool.actionKey,
         idempotencyKey: key, arguments: args }), key, token);

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/share_output.schema.json",
+  "title": "FileStorageShareOutput",
+  "description": "Metadata-only share result. Revocation requires an authorized first-dispatch claim and confirmed removal of the frozen native share access. An unowned missing identifier, accepted request or partial native cleanup is not successful revocation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

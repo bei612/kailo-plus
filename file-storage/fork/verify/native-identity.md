@@ -2932,3 +2932,199 @@ Projects 唯一类型修复在固定 main
 定向通过不解除产物来源、真实数据库、Mongo、跨服务 conformance、完整
 审批／额度、真实原生上传及组件绑定准入门禁。本批未构建发布镜像、未部署，
 没有新页面截图、Windows／Mobile 安装包或强制激活菜单。
+
+### 2026-10-11 原分享链接撤销的受管调用链
+
+本批只闭合已有链接的 REVOKE 用户操作，不把它声明为完整 share 能力，
+不激活要求七项能力全部成立的 FILE_STORAGE release 或 binding。创建／更新
+分享与受管延迟删除仍关闭；独立实例的原分享行为保留。
+
+动手前的四项结论：
+
+1. 权威是 `.design/07` 的必选 `file_storage.share@v1`、`.design/03`
+   的 Resource／scope 授权和 `.design/18` 的原生动作治理。复用固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `/volumes/kailo/.references/cells/idm/share/client.go::DeleteLink` 原三步删除：分享文档、隐藏
+   用户、分享 Workspace；不删除文件正文，不以 grant_read 替代分享。
+2. 影响沿原 LinkModel → 分享 REST → Core 既有 componentAction／AE／EE →
+   adapter HTTP／MCP → 原 DeleteLink；原 Job／Task 持久冻结 binding 代次、
+   AE／EE／key、原文档主键、隐藏用户和 Workspace／roots。复用原 Jobs DAO
+   的 create-only 和 binding fence；没有新增平台状态、执行账本或持久 token。
+3. 受管 GET 的 binding header 只是页面接缝提示，不是权限权威。缺 header
+   可进入独立原调用，但受管实例的 DELETE 后端仍拒绝没有可信证明的请求。
+   首次派发前校验 actor、Tenant、资源根与全部分享 roots；原三次副作用前各做
+   同一冻结执行的 fresh PEP。原 Workspace policy 读取错误不能被吞成不存在。
+4. 重复请求／刷新／丢 ACK 只读取同一原 Task，不重放 DeleteLink、不另发 AE。
+   原多 RPC 不构成分布式事务；部分删除、fresh 拒绝、读取错误或终态 ACK
+   缺失保持 UNKNOWN。仅有首次派发记录且三个冻结原生引用均由权威读取确认
+   移除，才归档原 Task 的精确 receipt。终态同时验证冻结 AE／EE／三引用、
+   StartTime、EndTime 顺序及非未来时间；无归属的 404 不能证明成功。不能证实
+   的任务留在既有外部副作用对账路径，不自动重派发或伪造零用量。
+
+源码不改变原分享页面布局。原 LinkModel 继续保留原链接直到 Core 确认成功；
+浏览器只持久请求键及非秘密 binding 域，沿既有 JWT／CSRF／同源通道，账号或
+仓库切换拒绝继续。`action.share` 使用已有锁中的 uuid4 1.1.4，不新增版本。
+新 share 输入／输出 schema 是该已有动作的线协议消费，本批四侧生成和往返
+结果仅在实际运行后追加；未把未生成内容称为完成。
+
+原隔离 Go 输入为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-share-revoke.obZu8o`，
+复用原 4 CPU／8 GiB、UID 1000 SDK 和独立 Data module/build 缓存，
+`GOPROXY=off GOSUMDB=off`。原句柄 67158 exit 0，日志
+`native-share-positive.log`：idm/share 1.728s，原 Bolt DAO 17.962s；其他六包
+无命中／无测试文件，只计编译通过。Mongo 没有隔离 DSN、未运行，不能计通过。
+
+交叉复核发现首次归档跨秒时，提前记录 lastObservedAt 会早于稍后 Task receipt
+的 terminalAt。原 NativeShareExecution 改为 archive 和最后 fresh 完成后统一
+记录观察时间；不放宽 adapter 的时序验证。新增原函数实际 observe 消费用例，
+经过 HTTP PEP、原 SERVICE→native actor、原三引用读回和 Task ACK，令一次
+原生查询跨秒，验证三次 PEP、一次 receipt 写入、零删除重放以及时间顺序。
+该用例首次句柄 38401 exit 1：夹具未使用原 RouteRegistrar，HTTPPolicyRequest
+因缺 resolved URI panic。补原路由 context，不改变生产鉴权容错，93943
+exit 0（2.460s）。私有真实源码移除 fresh、首派发时间检查并还原旧提前观察
+时间，5548 exit 1，分别捕获未授权删除、缺 StartTime／逆序和跨秒时序错误。
+生产原字节 cmp 0 还原后 17446 exit 0（1.959s）。未重复原 DAO 的完整检查。
+新增日志依次为 `native-share-final-positive.log`（路由夹具失败）、
+`native-share-routed-positive.log`、`native-share-mutation.log`、
+`native-share-restored.log`。命令为：
+
+```sh
+go test -tags=kv -mod=readonly -count=1 -v -run 'TestNativeShare|TestDAO_NativeShare' \
+  ./common/auth ./idm/share ./idm/share/rest ./idm/workspace/grpc \
+  ./scheduler/jobs ./scheduler/jobs/grpc ./scheduler/jobs/rest ./scheduler/jobs/dao
+# 时序修正和私有反证／恢复仅复验原消费者包，不重复 DAO
+go test -tags=kv -mod=readonly -count=1 -v -run TestNativeShare ./idm/share
+```
+
+原 Node 输入为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/share-native-node.nzkE5h`。
+首次句柄 46672 exit 1：24 项计数中 21 pass／3 fail，两个 MCP 子例缺
+`@modelcontextprotocol/sdk`，父项一并失败；其 HTTP／原页面／观察拒绝用例
+通过不抵消 MCP 环境失败。按此前本文件原回执定位现成
+`delete-governed.hb2FHx/file-storage/adapter/node_modules`，确认 SDK 1.26.0、
+xml2js 0.6.2 及 package-lock 与本批 cmp 0 后，只读复用到独立 Data 输入；
+没有下载或安装。修正环境后的同目标句柄 13887 exit 0，24／24；真实 MCP
+Client transport 的 HUMAN／AGENT init/call 与 HTTP 均运行。私有生产源码移除
+EE 校验和已有浏览器意图读取后，原目标 exit 1，捕获 missing-ee 返回 200
+以及丢 ACK 后再次 GET 的两个真实错误；不是改 fixture 制造拒绝。原字节恢复、
+两个文件与正式源码 cmp 0 后同目标再次 exit 0，24／24。日志依次为
+`share-positive.log`（首次缺依赖）、`share-dependencies-positive.log`、
+`share-mutation.log`、`share-restored.log`。命令为：
+
+```sh
+node --test --test-name-pattern='native share|original share revoke|share pending|independent share' \
+  file-storage/adapter/test/query-revision.test.mjs file-storage/adapter/test/native-share.test.mjs
+```
+
+上述均是原消费者加隔离服务 fixture，不是在线 Core→Cells 浏览器验收。
+本批未部署、未截图、未运行 full，不解除原产物来源及完整 conformance 门禁。
+
+契约私有输入在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/share-contract-gen.TrupYU`，
+基于已提交 `fc6ff4c3c15a8d1b3343320eb719cf95afe4da8d` 的 contracts／原
+gen 工具／i18n，只叠本批两 schema 与样例，未收公共 dirty。准备提取时两次
+命令错误（未指定 Git 根、请求未跟踪的 Dart lock）均在验证前退出，随后按
+真实已跟踪输入纠正；没有据此判断产品成败。原 closure SDK 4 CPU／8 GiB、
+UID 1000、Data 缓存，原 `tools/gen.sh` 32192 exit 0。复核生成物发现未经
+命名的 share.operation 枚举使旧 Pulse Operation 改名；虽三侧往返 19088
+各一项通过，不把它作为旧消费者兼容证明。只为新枚举明确 schema title
+`FileStorageShareOperation`，不改线格式；66003 再生成 exit 0，四侧仅新增
+61／24／26／48 行，无旧类型删除或改名。两份生成 Dart 词条对 HEAD cmp 0。
+
+最终命名输入 69527：Go／TypeScript／Dart 各一项原往返 exit 0；原 Go
+生成物 nativeShareRef JSON tag 私有破坏为 `-`，29024 exit 1，确实捕获原
+引用丢失；还原后 68117 exit 0。原始样例未改以迁就结果。日志为
+`share-gen.log`、`share-gen-named.log`、`share-*-roundtrip.log`、
+`share-*-final.log`、`share-go-mutation.log`、`share-go-restored.log`。
+命令沿原入口：
+
+```sh
+npm_config_cache=/cache/npm npm_config_offline=true bash tools/gen.sh
+# worker/
+GOPROXY=off GOSUMDB=off go test -mod=readonly ./internal/contracts -run '^TestFileStorageShareRoundtrip$' -count=1 -v
+# client-kit/ts/contracts/
+node --test --experimental-strip-types --test-name-pattern='file storage share preserves' test/roundtrip.test.ts
+# client-kit/dart/（依赖只从原 /cache/pub 离线解析）
+dart pub get --offline
+dart test test/roundtrip_test.dart --name 'file storage share preserves'
+```
+
+Rust 补验使用同一 closure SDK 的原 Cargo 环境和 `/cache/rust-target`，
+显式 `CARGO_INCREMENTAL=0`、`-j16`；当时原 incremental 清理仍在进行，
+没有另建 target 或安装依赖。私有输入
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/share-contract-rust.9hVClp`
+取已提交 `562156ae7f12953e3eea61305fe282ae98b6c416` 原 Core／Buzz manifests
+及依赖源码，只叠本批已生成 Rust、原往返检查和样例。43231 因投递漏原 Buzz
+manifest exit 101；11596 因误投 `CARGO_HOME=/cache/cargo`、离线找不到 png
+exit 101，二者均未执行用例。补齐原路径并恢复 SDK 本身
+`CARGO_HOME=/usr/local/cargo`（registry／git 原挂载均在 Data）后，44199
+真实 exit 0：1 passed、51 filtered；日志 `share-rust-original-cache.log`。
+
+```sh
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=16 CARGO_TARGET_DIR=/cache/rust-target \
+  cargo test --offline -j16 -p contracts --test roundtrip \
+  file_storage_share_preserves_exact_native_reference -- --exact
+```
+
+四侧本批原往返至此均实际通过。TS 此处是原运行期往返，不等于 tsc 全量
+通过；历史 contracts tag 兼容门禁与本批 full 未运行。生成物只进入私有
+候选，未覆盖其他人的正式生成物改动。
+
+#### 首次撤销原消费者与持久派发补验
+
+补验只扩原 `idm/share/native-link_test.go`，不改产品接口。真实调用
+`NativeShareExecution(execute)` → 原 `NewNativeShareTask` →
+`boltdb.OpenPool`／Jobs Bolt `ClaimTask`、`PutTask` → 原 `DeleteLink` 的
+文档、隐藏用户、工作区三步删除 → 原 `archiveNativeShare`／终态校验。
+每步 RPC 入口都回读原 Bolt Task，验证首派发 claim、Running／StartTime、
+精确原生引用、原生用户、先后次序和 fresh 次数；缺原源 ACL 时不写任务。
+文档、用户、工作区和 PEP 是有状态隔离 RPC／HTTP 夹具，不是线上服务，
+因此本项不是线上三服务或浏览器端到端验收。原 NativeShareExecution、
+DeleteLink、UUID ACL router 和 Bolt DAO 是实际生产消费者，不以固定返回
+成功替代这些消费者。
+
+原 SDK／Data Go 缓存和日志仍在 `.native-share-revoke.obZu8o`。58038
+`native-share-first-execute.log` exit 1：新增夹具误用 Storage.Close 和新版
+泛型 DocStore stream，按原 `boltdb.DB.Close`、原生成 stream 接口修正。
+18146 `native-share-first-execute-routed.log` exit 0，14 分支全部通过，
+522.233 秒：完整成功、claim／dispatch ACK 丢失、文档／用户／工作区
+各自错误及 ACK 丢失、终态 ACK 丢失、三个删除步骤前 fresh 拒绝、缺源 ACL。
+同 key 重试只观察，只有三个原引用均已确定移除才允许写终态；工作区删除
+ACK 丢失后可依据原引用对账归档，终态 ACK 丢失则读取已持久 receipt。
+原 router 的可选 draft 展示查询因夹具未注册 RoleService 打印 no-registry，
+没有把它算作授权通过，也没有以此推断实际 I/O 延迟原因或重启检查。
+
+末版新增 RPC 入口 attempt 断言，连被原 fence 拒绝的重派尝试也须捕获。
+65926 `native-share-first-dispatch-mutation.log` exit 1：仅私有生产输入
+故意把 DeleteLink 移到持久化前，实际 DeleteDocuments 尝试时 Bolt 无 Task，
+捕获 `writes=0 PEP=3`。精确还原后，66809
+`native-share-first-replay-mutation.log` exit 1：仅私有输入故意对已有 Task
+同 key 再次 DeleteLink，即使吞掉错误、返回仍是 UNKNOWN，入口 attempt
+变化仍触发 `retry replayed or invented outcome`。两次破坏均未进入正式
+工作树；私有生产文件还原后与正式 `native-link.go` 字节一致。
+
+最后原句柄 26736 `native-share-first-execute-restored.log` exit 0，
+401.310 秒，含末版 attempt 断言的上述 14 分支全部通过；执行的
+`native-link_test.go` 与正式源字节一致。没有重跑整套 Go 或新建环境。
+该恢复证明只覆盖原 NativeShareExecution／DeleteLink／Bolt 与隔离 RPC
+接缝，不升级为线上 Mongo、完整 share、浏览器验收或 release 准入通过。
+
+补充历史契约兼容：原统一 contract 入口在限定快照因缺根 package.json
+退出 2；另一次原 gen.sh --check 容器退出 255、无输出、OOMKilled=false，
+保留原日志，不据此声明生成比对通过或改产品迁就环境。此前 66003 原生成
+与四侧实际往返证据仍分别成立。随后对最终候选 contracts／私有 index 和
+原 Git 历史，只读执行原 tools/check.sh::step_contract 的原 Python
+历史兼容谓词，容器 79f45453 实际 exit 0：相对 contracts-v0.1.0 无
+破坏性变更（306 schema，匹配 3 历史 schema）。日志在
+`/volumes/data/kailo/tmp/cells-share-contract-check.9GBcGX/historical-compatibility.log`；
+这不是完整 contract 入口或 full 门禁通过。本批未重新运行 full；此前
+d712 全量同时存在产物来源不匹配和 Projects mock 类型失败，后者已由
+后续独立提交修正，不能把旧全量失败简写为仅产物来源不匹配。
+
+主线程逐一核对候选 a58dad92e57e119eb86988b85fae1fa3fefb5479 的全部
+contracts 与四侧生成物，393 个 blob 与 share-contract-gen.TrupYU 字节
+一致，exit 0。文档检查复用原固定检查镜像，2 CPU／2 GiB／等额 swap、
+UID 1000、无网络、apps／.design 只读和 Data 临时目录／npm 缓存，不导出
+全仓；原 tools/check-docs.sh 的 7 项全部通过，句柄 32450 实际 exit 0。
+日志为 `/volumes/data/kailo/tmp/cells-share-docs.NXMuAj/docs.log`。文档
+检查读取当时只读工作区，不把它称为产品构建或最终部署验证。

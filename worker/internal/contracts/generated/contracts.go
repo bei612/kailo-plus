@@ -37,6 +37,12 @@
 //    fileStorageReadOutput, err := UnmarshalFileStorageReadOutput(bytes)
 //    bytes, err = fileStorageReadOutput.Marshal()
 //
+//    fileStorageShareInput, err := UnmarshalFileStorageShareInput(bytes)
+//    bytes, err = fileStorageShareInput.Marshal()
+//
+//    fileStorageShareOutput, err := UnmarshalFileStorageShareOutput(bytes)
+//    bytes, err = fileStorageShareOutput.Marshal()
+//
 //    fileStorageWriteInput, err := UnmarshalFileStorageWriteInput(bytes)
 //    bytes, err = fileStorageWriteInput.Marshal()
 //
@@ -793,6 +799,26 @@ func UnmarshalFileStorageReadOutput(data []byte) (FileStorageReadOutput, error) 
 }
 
 func (r *FileStorageReadOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageShareInput(data []byte) (FileStorageShareInput, error) {
+	var r FileStorageShareInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageShareInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageShareOutput(data []byte) (FileStorageShareOutput, error) {
+	var r FileStorageShareOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageShareOutput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3045,6 +3071,22 @@ type FileStorageReadInput struct {
 // files use export.
 type FileStorageReadOutput struct {
 	Text string `json:"text"`
+}
+
+// Manage an existing native share under the admitted Resource. Revocation removes access
+// through that exact share; it neither deletes file content nor grants platform resource
+// permission. Native share identity alone is not evidence of ownership or successful
+// revocation.
+type FileStorageShareInput struct {
+	NativeShareRef string                    `json:"nativeShareRef"`
+	Operation      FileStorageShareOperation `json:"operation"`
+	ResourceID     string                    `json:"resourceId"`
+}
+
+// Metadata-only share result. Revocation requires an authorized first-dispatch claim and
+// confirmed removal of the frozen native share access. An unowned missing identifier,
+// accepted request or partial native cleanup is not successful revocation.
+type FileStorageShareOutput struct {
 }
 
 // Apply an existing immutable native revision, or dispatch a native first-byte intent. An
@@ -7149,6 +7191,12 @@ const (
 	File    VariantKind = "FILE"
 	Message VariantKind = "MESSAGE"
 	Task    VariantKind = "TASK"
+)
+
+type FileStorageShareOperation string
+
+const (
+	Revoke FileStorageShareOperation = "REVOKE"
 )
 
 type NativeCancelCapability string

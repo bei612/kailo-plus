@@ -180,7 +180,7 @@ func (h *Handler) SearchWorkspace(request *idm.SearchWorkspaceRequest, response 
 		ws, ok := in.(*idm.Workspace)
 		if ws.Policies, e = dao.GetPoliciesForResource(ctx, ws.UUID); e != nil {
 			log.Logger(ctx).Error("cannot load policies for workspace "+ws.UUID, zap.Error(e))
-			continue
+			return e
 		}
 		if !ok {
 			if e := response.SendMsg(errors.WithMessage(errors.StatusInternalServerError, "Wrong type")); e != nil {

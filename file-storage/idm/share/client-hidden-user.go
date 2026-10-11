@@ -198,16 +198,33 @@ func (sc *Client) UpdateACLsForHiddenUser(ctx context.Context, roleId string, wo
 
 // DeleteHiddenUser removes hidden user associated with this link
 func (sc *Client) DeleteHiddenUser(ctx context.Context, link *rest.ShareLink) error {
+	if err := nativeLinkStep(ctx, link.Uuid); err != nil {
+		return err
+	}
 	if link.UserLogin == "" {
 		return nil
 	}
 	uClient := idmc.UserServiceClient(ctx)
 	q1, _ := anypb.New(&idm.UserSingleQuery{Login: link.UserLogin})
 	q2, _ := anypb.New(&idm.UserSingleQuery{AttributeName: idm.UserAttrHidden, AttributeValue: "true"})
-	_, e := uClient.DeleteUser(ctx, &idm.DeleteUserRequest{Query: &service.Query{
-		SubQueries: []*anypb.Any{q1, q2},
+	queries := []*anypb.Any{q1, q2}
+	if mutation, ok := ctx.Value(nativeLinkContextKey{}).(*nativeLinkMutation); ok {
+		if link.UserUuid != mutation.intent.HiddenUserID || link.UserLogin != mutation.intent.HiddenUserLogin {
+			return nativeCellRefused()
+		}
+		q3, err := anypb.New(&idm.UserSingleQuery{Uuid: mutation.intent.HiddenUserID})
+		if err != nil {
+			return err
+		}
+		queries = append(queries, q3)
+	}
+	response, e := uClient.DeleteUser(ctx, &idm.DeleteUserRequest{Query: &service.Query{
+		SubQueries: queries,
 		Operation:  service.OperationType_AND,
 	}})
+	if _, managed := ctx.Value(nativeLinkContextKey{}).(*nativeLinkMutation); managed && e == nil && response.GetRowsDeleted() != 1 {
+		return nativeCellUnknown()
+	}
 	return e
 }
 

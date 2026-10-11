@@ -73,7 +73,7 @@ func ValidateTaskUpdate(stored, next *jobs.Task) error {
 		}
 		for _, priorLog := range stored.ActionsLogs {
 			for _, prior := range priorLog.GetOutputMessage().GetOutputChain() {
-				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" && prior.GetVars()[NativeCellShareResult] != "true" && prior.GetVars()[NativeUploadStep] == "" && prior.GetVars()[NativeUploadContent] != "true" && prior.GetVars()[NativeUploadPublication] != "true" {
+				if prior.GetVars()[NativeVersionResult] != "true" && prior.GetVars()[NativeReadResult] != "true" && prior.GetVars()[NativeNodeMutationResult] != "true" && prior.GetVars()[NativeDeleteJob] != "true" && prior.GetVars()[NativeDeleteDispatchComplete] != "true" && prior.GetVars()[NativeCellShareResult] != "true" && prior.GetVars()[NativeShareResult] != "true" && prior.GetVars()[NativeUploadStep] == "" && prior.GetVars()[NativeUploadContent] != "true" && prior.GetVars()[NativeUploadPublication] != "true" {
 					continue
 				}
 				found := false

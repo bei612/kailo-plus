@@ -222,6 +222,30 @@ export interface FileStorageReadOutput {
 }
 
 /**
+ * Manage an existing native share under the admitted Resource. Revocation removes access
+ * through that exact share; it neither deletes file content nor grants platform resource
+ * permission. Native share identity alone is not evidence of ownership or successful
+ * revocation.
+ */
+export interface FileStorageShareInput {
+    nativeShareRef: string;
+    operation:      FileStorageShareOperation;
+    resourceId:     string;
+}
+
+export enum FileStorageShareOperation {
+    Revoke = "REVOKE",
+}
+
+/**
+ * Metadata-only share result. Revocation requires an authorized first-dispatch claim and
+ * confirmed removal of the frozen native share access. An unowned missing identifier,
+ * accepted request or partial native cleanup is not successful revocation.
+ */
+export interface FileStorageShareOutput {
+}
+
+/**
  * Apply an existing immutable native revision, or dispatch a native first-byte intent. An
  * intent is not a ContentReference: its node/revision identifiers name reserved native
  * locations only; bytes remain at the source and no result exists before the immutable

@@ -82,6 +82,18 @@ void main() {
       rows,
     );
   });
+  test('file storage share preserves exact native reference', () {
+    final row = jsonDecode(
+      File(
+        '../../contracts/samples/file-storage-share.sample.json',
+      ).readAsStringSync(),
+    );
+    expect(FileStorageShareInput.fromJson(row['input']).toJson(), row['input']);
+    expect(
+      FileStorageShareOutput.fromJson(row['output']).toJson(),
+      row['output'],
+    );
+  });
   test(
     'file storage revision IO preserves exact versions, empty text and binary',
     () {

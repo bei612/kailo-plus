@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/share_input.schema.json",
+  "title": "FileStorageShareInput",
+  "description": "Manage an existing native share under the admitted Resource. Revocation removes access through that exact share; it neither deletes file content nor grants platform resource permission. Native share identity alone is not evidence of ownership or successful revocation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeShareRef", "operation"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeShareRef": {"type": "string", "minLength": 1},
+    "operation": {"title": "FileStorageShareOperation", "type": "string", "enum": ["REVOKE"]}
+  }
+}

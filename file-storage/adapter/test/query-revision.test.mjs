@@ -193,7 +193,7 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
-    if (business && (operation === 'execute' || changes.write || changes.readExecution || changes.delete)) {
+    if (business && (operation === 'execute' || changes.write || changes.readExecution || changes.delete || changes.share)) {
       const proof = JSON.parse(Buffer.from(request.headers['x-kailo-native-execution'], 'base64url').toString('utf8'));
       assert.deepEqual(Object.keys(proof).sort(), ['actionToken','argumentsJson']);
       assert.equal(proof.argumentsJson, canonical(requestArguments));
@@ -205,6 +205,20 @@ async function setup(t, changes = {}) {
       if (!changes.missingActorAck) response.setHeader('x-kailo-native-actor', changes.actorAck ??
         `${actor.tenant_id}:${ids[0]}:${kind}:${actor.actor_principal_id}`);
     } else assert.equal(request.headers['x-kailo-native-execution'], undefined);
+    if (changes.share && (request.url === `/v2/share/link/${ids[3]}` || request.url === '/v2/jobs/user')) {
+      let raw=''; for await (const chunk of request) raw+=chunk;
+      if (operation === 'execute') {
+        assert.equal(request.method,'DELETE'); assert.equal(request.url,`/v2/share/link/${ids[3]}`);
+        assert.equal(request.headers['idempotency-key'],ids[7]); assert.equal(raw,'');
+        state.shareRevocations=(state.shareRevocations??0)+1;
+      } else {
+        assert.equal(request.url,'/v2/jobs/user'); assert.equal(request.headers['x-kailo-native-operation'],operation);
+        assert.deepEqual(JSON.parse(raw),{JobIDs:['delivered-share-job'],LoadTasks:'Any'});
+        state.shareObservations=(state.shareObservations??0)+1;
+      }
+      return reply(response,changes.nativeStatus??200,changes.shareResult??{execution:{idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7],
+        platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'}});
+    }
     if (changes.delete && (request.url === '/v2/n/action/delete' || request.url === '/v2/jobs/user')) {
       let raw = ''; for await (const chunk of request) raw += chunk;
       if (operation === 'execute') {
@@ -333,6 +347,10 @@ async function setup(t, changes = {}) {
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const proofFiles = [];
   if (changes.bindingReconcile) config.cellShare={nativeJobId:'delivered-cell-job',bindingGeneration:2};
+  if (changes.share) {
+    config.cellShare={nativeJobId:'delivered-cell-job',bindingGeneration:2};
+    config.share={nativeJobId:'delivered-share-job',usageMeasurements:[{meterKey:'approved_share_count',quantitySource:'COUNT'}]};
+  }
   if (changes.delete) config.delete={nativeJobId:'delivered-delete-job',usageMeasurements:[{meterKey:'approved_delete_count',quantitySource:'COUNT'}],...changes.deleteConfig};
   if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
   if (changes.readExecution) config.readExecution={nativeJobId:'delivered-read-job',usageMeasurements:[{meterKey:'approved_read_count',quantitySource:'COUNT'},{meterKey:'approved_read_bytes',quantitySource:'CONTENT_BYTES'}],...changes.readExecutionConfig};
@@ -432,7 +450,7 @@ async function setup(t, changes = {}) {
         target_type:'RESOURCE',target_id:ids[10],action_key:businessAction,
         delegation_id:changes.businessHuman ? undefined : ids[11], delegation_version:changes.businessHuman ? undefined : 1,
         result_exposure_policy_id:ids[9],result_exposure_policy_version:1,idempotency_key:ids[7],
-        ...(changes.businessHuman || changes.write || changes.readExecution || changes.delete ? {external_execution_id:ids[8]} : {}),
+        ...(changes.businessHuman || changes.write || changes.readExecution || changes.delete || changes.share ? {external_execution_id:ids[8]} : {}),
         normalized_parameter_hash:createHash('sha256').update(canonical(operation==='execute'
           ? requestArguments : {operation,arguments:requestArguments})).digest('hex')} : {}), ...change };
     return signedClaims(claims,key);
@@ -459,6 +477,53 @@ async function setup(t, changes = {}) {
 }
 
 export { setup, mcpWireClient };
+
+test('native share revocation keeps original route, actor proof and same execution through HTTP and MCP',async t=>{
+  for(const businessHuman of [false,true])for(const mcp of [false,true])await t.test(`${businessHuman?'HUMAN':'AGENT'} ${mcp?'MCP':'HTTP'}`,async nested=>{
+    const input={resourceId:ids[10],nativeShareRef:ids[3],operation:'REVOKE'};
+    const fixture=await setup(nested,{share:true,mcp,operation:'execute',validation:true,businessHuman,businessAction:'file_storage.share@v1',arguments:{target:{resourceId:ids[10]},input}});
+    let result;
+    if(mcp){
+      const {client,outgoing}=await mcpWireClient(nested,fixture);const listed=await client.listTools();
+      assert.equal(listed.tools.length,1);outgoing.authorization=`Bearer ${fixture.token()}`;outgoing['idempotency-key']=ids[7];
+      const called=await client.callTool({name:listed.tools[0].name,arguments:input});assert.equal(called.isError,false);result=called.structuredContent;
+    }else{
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:'file_storage.share@v1',idempotencyKey:ids[7],arguments:fixture.requestArguments})});
+      assert.equal(response.status,200);result=await response.json();
+    }
+    assert.equal(result.execution.nativeId,ids[7]);assert.equal(result.execution.platformStatus,'SUCCEEDED');assert.equal(result.resultJson,'{}');
+    assert.equal(fixture.state.shareRevocations,1);assert.equal(fixture.state.peps,2);
+    assert.deepEqual(fixture.state.nativeReads,[`/v2/share/link/${ids[3]}`]);
+  });
+});
+
+test('native share observe and usage only read the same original Job task',async t=>{
+  for(const operation of ['observe','extract_usage'])await t.test(operation,async nested=>{
+    const fixture=await setup(nested,{share:true,operation,validation:true,businessAction:'file_storage.share@v1',arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7]}});
+    const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`});assert.equal(response.status,200);
+    const result=await response.json();
+    if(operation==='observe')assert.equal(result.execution.platformStatus,'SUCCEEDED');
+    else assert.deepEqual(result,{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7],measurements:[{meterKey:'approved_share_count',quantity:1,occurredAt:'2026-10-09T00:00:00Z'}]});
+    assert.equal(fixture.state.shareRevocations,undefined);assert.equal(fixture.state.shareObservations,1);assert.equal(fixture.state.peps,2);
+  });
+});
+
+test('native share rejects wrong scope, unsupported operation and absent terminal proof without replay',async t=>{
+  for(const scenario of ['create','wrong-resource','missing-ee','missing-key','missing-actor-ack','native-unavailable','unknown','wrong-native-id','missing-terminal','revoked-after-native'])await t.test(scenario,async nested=>{
+    const input={resourceId:ids[10],nativeShareRef:ids[3],operation:'REVOKE'};
+    if(scenario==='create')input.operation='CREATE';if(scenario==='wrong-resource')input.resourceId=ids[2];
+    const execution={idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7],platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'};
+    if(scenario==='unknown'){execution.platformStatus='UNKNOWN';delete execution.nativeId;delete execution.terminalAt;}
+    if(scenario==='wrong-native-id')execution.nativeId=ids[2];if(scenario==='missing-terminal')delete execution.terminalAt;
+    const fixture=await setup(nested,{share:true,operation:'execute',validation:true,businessAction:'file_storage.share@v1',arguments:{target:{resourceId:ids[10]},input},shareResult:{execution},
+      missingActorAck:scenario==='missing-actor-ack',nativeStatus:scenario==='native-unavailable'?503:200,
+      ...(scenario==='revoked-after-native'?{pep:(state,response)=>reply(response,state.peps===1?200:403,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',targetResource:{resourceId:ids[10],nativeType:'node',nativeRef:ids[3],nativeInstanceRef:'delivered-instance',nativeScopeRef:ids[1]}})}:{})});
+    const claims=scenario==='missing-ee'?{external_execution_id:undefined}:scenario==='missing-key'?{idempotency_key:undefined}:{};
+    const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],token:fixture.token(claims),raw:canonical({actionKey:'file_storage.share@v1',idempotencyKey:ids[7],arguments:fixture.requestArguments})});
+    if(scenario==='unknown'){assert.equal(response.status,200);assert.deepEqual(await response.json(),{execution});}else assert.notEqual(response.status,200);
+    assert((fixture.state.shareRevocations??0)<=1,'uncertain share deletion was replayed');
+  });
+});
 
 test('native write executes the frozen opaque draft and only discloses a durable version reference',async t=>{
  for (const businessHuman of [false,true]) for (const mcp of [false,true]) await t.test(`${businessHuman?'HUMAN':'AGENT'} ${mcp?'SDK MCP':'HTTP'}`,async nested=>{

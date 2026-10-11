@@ -205,11 +205,19 @@ func (sc *Client) LoadHashDocumentData(ctx context.Context, shareLink *rest.Shar
 
 // DeleteHashDocument removes link data from the storage.
 func (sc *Client) DeleteHashDocument(ctx context.Context, shareId string) error {
+	if err := nativeLinkStep(ctx, shareId); err != nil {
+		return err
+	}
 
 	store := docstorec.DocStoreClient(ctx)
-	resp, err := store.DeleteDocuments(ctx, &docstore.DeleteDocumentsRequest{StoreID: common.DocStoreIdShares, Query: &docstore.DocumentQuery{
+	request := &docstore.DeleteDocumentsRequest{StoreID: common.DocStoreIdShares, Query: &docstore.DocumentQuery{
 		MetaQuery: "+REPOSITORY:\"" + shareId + "\" +SHARE_TYPE:minisite",
-	}})
+	}}
+	if mutation, ok := ctx.Value(nativeLinkContextKey{}).(*nativeLinkMutation); ok {
+		request.Query = nil
+		request.DocumentID = mutation.intent.DocumentID
+	}
+	resp, err := store.DeleteDocuments(ctx, request)
 	if err != nil {
 		return err
 	}

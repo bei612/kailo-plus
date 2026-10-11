@@ -828,6 +828,21 @@ fn pulse_requests_and_native_limit_roundtrip() {
 }
 
 #[test]
+fn file_storage_share_preserves_exact_native_reference() {
+    let row: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("file-storage-share.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let input: contracts::FileStorageShareInput =
+        serde_json::from_value(row["input"].clone()).unwrap();
+    let output: contracts::FileStorageShareOutput =
+        serde_json::from_value(row["output"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(input).unwrap(), row["input"]);
+    assert_eq!(serde_json::to_value(output).unwrap(), row["output"]);
+}
+
+#[test]
 fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
     let rows: Vec<serde_json::Value> = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("file-storage-revision-io.sample.json"))

@@ -192,6 +192,64 @@ func TestDAO_NativeUploadFencesFirstByteAndLegacyClaim(t *testing.T) {
 	})
 }
 
+func TestDAO_NativeShareUsesOriginalBindingFence(t *testing.T) {
+	test.RunStorageTests(testCases, t, func(ctx context.Context) {
+		store, err := manager.Resolve[jo.DAO](ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding, user, key := uuid.New(), uuid.New(), uuid.New()
+		cell := jo.NativeCellJob(uuid.New(), binding, 1)
+		share := jo.NativeShareJob("native-share", binding, 1)
+		for _, job := range []*jobs.Job{cell, share} {
+			if err := store.ClaimJob(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+		}
+		intent := jo.NativeShareIntent{BindingID: binding, Generation: 1, NativeUserID: user, ShareID: uuid.New(), HiddenUserID: uuid.New(), HiddenUserLogin: "original-hidden", DocumentID: "original-hash", Roots: []string{uuid.New()}}
+		claims := map[string]interface{}{"action_key": "file_storage.share@v1", "external_execution_id": uuid.New(), "idempotency_key": key,
+			"tenant_id": uuid.New(), "actor_principal_id": user, "initiating_human_principal_id": user, "operation_id": uuid.New(), "action_execution_id": uuid.New(),
+			"target_type": "RESOURCE", "target_id": uuid.New(), "result_exposure_policy_id": uuid.New(), "result_exposure_policy_version": 1, "action_definition_version": 1}
+		task, err := jo.NewNativeShareTask(share.ID, key, "native-user", intent, claims)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(task); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimTask(task); err == nil {
+			t.Fatal("same revoke was dispatched twice")
+		}
+		snapshot, err := store.SnapshotNativeCells(ctx, binding, 1, cell.ID, true, 1<<20, "", "native-share")
+		if err != nil || len(snapshot) != 2 {
+			t.Fatalf("share omitted from original fence: %v %v", snapshot, err)
+		}
+		for _, job := range snapshot {
+			if !job.Inactive {
+				t.Fatal("unfenced job returned")
+			}
+		}
+		late := proto.Clone(task).(*jobs.Task)
+		late.ID = uuid.New()
+		if err = store.ClaimTask(late); err == nil {
+			t.Fatal("late revoke crossed persisted cutoff")
+		}
+		other := uuid.New()
+		otherJob := jo.NativeShareJob("native-share", other, 1)
+		if err = store.ClaimJob(ctx, otherJob); err != nil {
+			t.Fatal("other binding blocked", err)
+		}
+		absent := uuid.New()
+		absentCell := uuid.New()
+		if _, err = store.SnapshotNativeCells(ctx, absent, 1, absentCell, true, 1<<20, "", "native-share"); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ClaimJob(ctx, jo.NativeShareJob("native-share", absent, 1)); err == nil {
+			t.Fatal("late create overwrote cancel-before-create fence")
+		}
+	})
+}
+
 func TestDAO_NativeCellFenceAndClaim(t *testing.T) {
 	test.RunStorageTests(testCases, t, func(ctx context.Context) {
 		store, err := manager.Resolve[jo.DAO](ctx)

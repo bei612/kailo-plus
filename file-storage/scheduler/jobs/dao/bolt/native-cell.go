@@ -23,16 +23,23 @@ func (s *boltStore) SnapshotNativeCells(ctx context.Context, binding string, gen
 			return errors.WithStack(errors.JobNotFound)
 		}
 		expected := map[string]*proto.Job{currentJob: jobs.NativeCellJob(currentJob, binding, generation)}
-		if len(uploadBase) > 1 {
+		if len(uploadBase) > 2 {
 			return errors.WithStack(errors.InvalidParameters)
 		}
-		if len(uploadBase) == 1 && uploadBase[0] != "" {
+		if len(uploadBase) >= 1 && uploadBase[0] != "" {
 			job := jobs.NativeUploadJob(uploadBase[0], binding, generation)
+			expected[job.ID] = job
+		}
+		if len(uploadBase) == 2 && uploadBase[1] != "" {
+			job := jobs.NativeShareJob(uploadBase[1], binding, generation)
+			if expected[job.ID] != nil {
+				return errors.WithStack(errors.StatusConflict)
+			}
 			expected[job.ID] = job
 		}
 		// Older promotion tasks have no frozen generation. Their absence must
 		// be proven in this same snapshot, never inferred from new upload Jobs.
-		if len(uploadBase) == 1 && uploadBase[0] != "" {
+		if len(uploadBase) >= 1 && uploadBase[0] != "" {
 			if legacy := tx.Bucket([]byte(tasksBucketString + uploadBase[0])); legacy != nil {
 				var scanned int64
 				if err := legacy.ForEach(func(id, body []byte) error {

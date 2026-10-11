@@ -20,7 +20,7 @@ import (
 // The management-only ListJobs consumer propagates transaction/EOF errors and
 // returns every historical generation of this binding, without user filtering.
 func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDelivery, fenced bool, uploadBase ...string) ([]map[string]interface{}, error) {
-	if len(uploadBase) > 1 {
+	if len(uploadBase) > 2 {
 		return nil, nativeCellUnknown()
 	}
 	client := jobsc.JobServiceClient(ctx)
@@ -30,6 +30,7 @@ func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDeli
 	}
 	tasks := map[string]*jobproto.Task{}
 	uploads := map[string]*jobproto.Task{}
+	shares := map[string]*jobproto.Task{}
 	var size int64
 	seenJobs := map[string]bool{}
 	found := false
@@ -56,8 +57,16 @@ func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDeli
 		}
 		for _, task := range job.Tasks {
 			if task == nil || task.JobID != job.ID ||
-				!auth.NativeActorUUID(task.ID) || task.TriggerOwner == "" || tasks[task.ID] != nil || uploads[task.ID] != nil {
+				!auth.NativeActorUUID(task.ID) || task.TriggerOwner == "" || tasks[task.ID] != nil || uploads[task.ID] != nil || shares[task.ID] != nil {
 				return nil, nativeCellUnknown()
+			}
+			if jobstore.NativeBindingJobKind(job) == jobstore.NativeShareJobMarker {
+				intent, err := jobstore.NativeShareTaskIntent(task)
+				if err != nil || intent.BindingID != binding || intent.Generation != generation {
+					return nil, nativeCellUnknown()
+				}
+				shares[task.ID] = task
+				continue
 			}
 			if jobstore.NativeBindingJobKind(job) == jobstore.NativeUploadJobMarker {
 				intent, err := jobstore.NativeUploadTaskIntent(task)
@@ -81,7 +90,10 @@ func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDeli
 	if !found {
 		return nil, nativeCellUnknown()
 	}
-	if len(uploadBase) == 1 && uploadBase[0] != "" && !seenJobs[auth.NativeUploadJobID(uploadBase[0], delivery.BindingID, delivery.CellShare.BindingGeneration)] {
+	if len(uploadBase) >= 1 && uploadBase[0] != "" && !seenJobs[auth.NativeUploadJobID(uploadBase[0], delivery.BindingID, delivery.CellShare.BindingGeneration)] {
+		return nil, nativeCellUnknown()
+	}
+	if len(uploadBase) == 2 && uploadBase[1] != "" && !seenJobs[jobstore.NativeShareJob(uploadBase[1], delivery.BindingID, delivery.CellShare.BindingGeneration).ID] {
 		return nil, nativeCellUnknown()
 	}
 	if ctx.Err() != nil {
@@ -90,6 +102,24 @@ func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDeli
 	observations, err := nativeCellObservations(tasks, delivery.BindingID, delivery.CellShare.BindingGeneration)
 	if err != nil {
 		return nil, err
+	}
+	shareIDs := make([]string, 0, len(shares))
+	for id := range shares {
+		shareIDs = append(shareIDs, id)
+	}
+	sort.Strings(shareIDs)
+	for _, id := range shareIDs {
+		task := shares[id]
+		item := map[string]interface{}{"idempotencyKey": id, "nativeType": "job", "nativeId": id,
+			"nativeStatus": task.Status.String(), "platformStatus": "UNKNOWN", "cancelCapability": "UNSUPPORTED", "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano)}
+		terminal, err := archiveNativeShare(ctx, task, nil)
+		if err != nil {
+			return nil, err
+		}
+		if terminal != "" {
+			item["platformStatus"], item["terminalAt"] = "SUCCEEDED", terminal
+		}
+		observations = append(observations, item)
 	}
 	ids := make([]string, 0, len(uploads))
 	for id := range uploads {
