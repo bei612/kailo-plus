@@ -54,9 +54,14 @@ export default async function handler(
   try {
     if (
       request.method !== 'POST' ||
-      !['mcp', 'execute', 'observe', 'handshake', 'validate_binding'].includes(
-        String(request.query.operation),
-      )
+      ![
+        'mcp',
+        'execute',
+        'observe',
+        'handshake',
+        'validate_binding',
+        'reconcile',
+      ].includes(String(request.query.operation))
     ) {
       response.status(405).end();
       return;
@@ -67,7 +72,8 @@ export default async function handler(
     const delivered = await loadQueryDelivery();
     if (
       request.query.operation === 'handshake' ||
-      request.query.operation === 'validate_binding'
+      request.query.operation === 'validate_binding' ||
+      request.query.operation === 'reconcile'
     ) {
       const key = request.headers['idempotency-key'];
       if (typeof key !== 'string')
@@ -85,6 +91,7 @@ export default async function handler(
             request.query.operation,
             key,
             await body(request, delivered.requestMaxBytes),
+            components.apiHistoryRepository,
           ),
         );
       return;

@@ -270,7 +270,12 @@ async function jsonResponse(
 export async function authorizeQuery(
   config: NativeQueryDelivery,
   token: string,
-  operation: 'execute' | 'observe' | 'handshake' | 'validate_binding',
+  operation:
+    | 'execute'
+    | 'observe'
+    | 'handshake'
+    | 'validate_binding'
+    | 'reconcile',
   argumentsValue: unknown,
   sourceResources?: unknown,
 ): Promise<JWTPayload> {
@@ -317,6 +322,9 @@ export async function authorizeQuery(
   if (
     admitted.actionExecutionId !== payload.action_execution_id ||
     admitted.operationId !== payload.operation_id ||
+    (operation === 'execute' &&
+      (!Number.isSafeInteger(admitted.bindingGeneration) ||
+        admitted.bindingGeneration <= 0)) ||
     typeof admitted.authorizationMinZedToken !== 'string' ||
     !admitted.authorizationMinZedToken
   ) {
@@ -325,7 +333,11 @@ export async function authorizeQuery(
   await jwtVerify(token, keys, options);
   // Native target facts come from the current Core PEP, never a caller JWT
   // extension. Missing facts remain missing and native consumers fail closed.
-  return { ...payload, targetResource: admitted.targetResource };
+  return {
+    ...payload,
+    targetResource: admitted.targetResource,
+    bindingGeneration: admitted.bindingGeneration,
+  };
 }
 
 export async function bindingServiceCall(

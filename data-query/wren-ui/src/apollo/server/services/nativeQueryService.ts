@@ -347,6 +347,7 @@ export class NativeQueryService {
   async sqlReference(
     resourceId: string,
     draft: Awaited<ReturnType<NativeQueryService['sqlSelection']>>,
+    generation: number,
   ) {
     if (!uuid.test(resourceId)) throw invalid();
     const selected = draft.objects[0];
@@ -369,6 +370,7 @@ export class NativeQueryService {
       },
       governanceBindingId: this.config.bindingId,
       governanceKey: draft.key,
+      governanceGeneration: generation,
       governanceDeploymentId: draft.input.deploymentId,
       governanceDeploymentHash: draft.input.deploymentHash,
     });
@@ -1095,6 +1097,7 @@ export class NativeQueryService {
           governanceBindingId: this.config.bindingId,
           governanceKey: key,
           governanceActionExecutionId: String(claims.action_execution_id),
+          governanceGeneration: Number(claims.bindingGeneration),
           governanceOperationId: String(claims.operation_id),
           governanceParameterHash: hash,
           governanceState: 'UNKNOWN',
@@ -1200,6 +1203,7 @@ export class NativeQueryService {
       governanceBindingId: this.config.bindingId,
       governanceKey: key,
       governanceActionExecutionId: String(claims.action_execution_id),
+      governanceGeneration: Number(claims.bindingGeneration),
       governanceOperationId: String(claims.operation_id),
       governanceParameterHash: hash,
       governanceState: 'UNKNOWN',

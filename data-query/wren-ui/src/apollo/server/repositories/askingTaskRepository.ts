@@ -1,5 +1,10 @@
 import { Knex } from 'knex';
-import { BaseRepository, IBasicRepository } from './baseRepository';
+import {
+  BaseRepository,
+  IBasicRepository,
+  IQueryOptions,
+} from './baseRepository';
+import { lockNativeBinding } from './projectRepository';
 import {
   camelCase,
   isPlainObject,
@@ -12,6 +17,7 @@ import { AskFeedbackResult, AskResult } from '../models/adaptor';
 
 export interface NativeAskingScope {
   bindingId: string;
+  generation: number;
   identityScope: string;
   metadataReference: { hash: string; digest: string };
 }
@@ -77,6 +83,18 @@ export class AskingTaskRepository
     super({ knexPg, tableName: 'asking_task' });
   }
 
+  public override async createOne(
+    data: Partial<AskingTask>,
+    options?: IQueryOptions,
+  ) {
+    const create = async (tx: Knex.Transaction) => {
+      if (data.detail?.nativeScope)
+        await lockNativeBinding(tx, data.projectId, data.detail.nativeScope);
+      return super.createOne(data, { ...options, tx });
+    };
+    return options?.tx ? create(options.tx) : this.knex.transaction(create);
+  }
+
   public async findByQueryId(queryId: string): Promise<AskingTask | null> {
     return this.findOneBy({ queryId });
   }
@@ -123,20 +141,53 @@ export class AskingTaskRepository
     tx?: Knex.Transaction,
   ) {
     const update = async (transaction: Knex.Transaction) => {
+      if (data.queryId && data.queryId !== queryId && data.detail?.nativeScope)
+        await lockNativeBinding(
+          transaction,
+          projectId,
+          data.detail.nativeScope,
+        );
       const current = await this.lockQuery(id, queryId, projectId, transaction);
       if (!current) return null;
+      if (
+        current.detail?.nativeScope &&
+        data.queryId &&
+        data.queryId !== queryId &&
+        !data.detail?.nativeScope
+      )
+        return null;
+      if (
+        data.detail?.nativeScope &&
+        (!data.queryId || data.queryId === queryId) &&
+        !isEqual(data.detail.nativeScope, current.detail?.nativeScope)
+      )
+        return null;
       const next =
         data.detail && (!data.queryId || data.queryId === queryId)
           ? {
               ...data,
               detail: {
                 ...data.detail,
+                ...(current.detail?.nativeScope
+                  ? { nativeScope: current.detail.nativeScope }
+                  : {}),
                 ...(current.detail?.nativeQueries
                   ? { nativeQueries: current.detail.nativeQueries }
                   : {}),
               },
             }
           : data;
+      // A late native poll cannot reopen a closed query or replace its actual
+      // terminal evidence. A new query_id is the existing explicit rerun path.
+      // Return conflict, not the current row: callers must roll back any
+      // associated API-history/thread-response writes in the same transaction.
+      if (
+        data.detail &&
+        (!data.queryId || data.queryId === queryId) &&
+        ['FINISHED', 'FAILED', 'STOPPED'].includes(current.detail?.status) &&
+        !isEqual(current.detail, next.detail)
+      )
+        return null;
       const [row] = await transaction(this.tableName)
         .where({ id, query_id: queryId, project_id: projectId })
         .update(this.transformToDBData(next))
@@ -155,6 +206,7 @@ export class AskingTaskRepository
     key: string,
   ) {
     return this.knex.transaction(async (tx) => {
+      await lockNativeBinding(tx, projectId, scope);
       const row = await tx(this.tableName)
         .where({ query_id: queryId, project_id: projectId })
         .forUpdate()

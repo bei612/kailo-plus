@@ -1080,6 +1080,7 @@ integration('original Wren query handler, SDK and native history', () => {
               actionExecutionId: claims.action_execution_id,
               operationId: claims.operation_id,
               authorizationMinZedToken: 'actual-fixture-pep-revision',
+              ...(body.operation === 'execute' ? { bindingGeneration: 1 } : {}),
               ...(body.operation === 'execute' && authorizedTarget
                 ? { targetResource: authorizedTarget }
                 : {}),
@@ -2004,7 +2005,7 @@ integration('original Wren query handler, SDK and native history', () => {
         undefined,
         cache,
       );
-      const reference = await service.sqlReference(resource, draft);
+      const reference = await service.sqlReference(resource, draft, 1);
       const selection = JSON.parse(reference.nativeObjectRef);
       expect(selection.cache).toEqual(cache);
       expect(reference.nativeRevision).toBe(
@@ -2126,7 +2127,7 @@ integration('original Wren query handler, SDK and native history', () => {
         scope,
         `${action}@v1` as 'data_query.query@v1' | 'data_query.dry_run@v1',
       );
-      const reference = await service.sqlReference(resource, draft);
+      const reference = await service.sqlReference(resource, draft, 1);
       const selection = JSON.parse(reference.nativeObjectRef);
       expect(JSON.stringify(reference)).not.toContain(input.sql);
       const before = await mockComponents.apiHistoryRepository.findOneBy({
@@ -2236,7 +2237,7 @@ integration('original Wren query handler, SDK and native history', () => {
       'f'.repeat(64),
       'data_query.query@v1',
     );
-    const reference = await service.sqlReference(resource, draft);
+    const reference = await service.sqlReference(resource, draft, 1);
     const token = await signed('data_query.query', reference);
     engineFails = true;
     const first = (await call(token, key, 'data_query.query', reference))
@@ -2282,6 +2283,7 @@ integration('original Wren query handler, SDK and native history', () => {
         'd'.repeat(64),
         'data_query.query@v1',
       ),
+      1,
     );
     const token = await signed('data_query.query', reference);
     let started: () => void, release: () => void;

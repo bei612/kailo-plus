@@ -15,6 +15,7 @@ import { IWrenAIAdaptor } from '../adaptors';
 import { TelemetryEvent, WrenService } from '../telemetry/telemetry';
 import { PostHogTelemetry } from '../telemetry/telemetry';
 import { randomUUID } from 'crypto';
+import { isEqual } from 'lodash';
 import { GeneralErrorCodes } from '../utils/error';
 import type { NativeAskingScope } from '../repositories/askingTaskRepository';
 import {
@@ -450,6 +451,7 @@ export class AdjustmentBackgroundTaskTracker
     const jobs = Array.from(this.trackedTasks.entries()).map(
       ([queryId, task]) =>
         async () => {
+          let observed: AskingTask | undefined;
           try {
             // Skip if the job is already running
             if (this.runningJobs.has(queryId)) {
@@ -473,10 +475,22 @@ export class AdjustmentBackgroundTaskTracker
             // Mark the job as running
             this.runningJobs.add(queryId);
 
+            observed = await this.askingTaskRepository.findOneBy({
+              id: task.taskId,
+              queryId,
+              projectId: task.projectId,
+            });
+            if (!observed)
+              throw new Error('Adjustment task changed during observation');
+
             // Poll for updates
             logger.info(`Polling for updates for task ${queryId}`);
             const result =
               await this.wrenAIAdaptor.getAskFeedbackResult(queryId);
+            if (await this.discardClosedObservation(task, observed)) {
+              this.runningJobs.delete(queryId);
+              return;
+            }
             task.lastPolled = now;
 
             // if result is not changed, we don't need to update the database
@@ -529,6 +543,7 @@ export class AdjustmentBackgroundTaskTracker
             this.runningJobs.delete(queryId);
           } catch (err) {
             this.runningJobs.delete(queryId);
+            if (observed) await this.discardClosedObservation(task, observed);
             logger.error(err.stack);
             throw err;
           }
@@ -720,6 +735,30 @@ export class AdjustmentBackgroundTaskTracker
       await this.askingTaskRepository.rollback(tx);
       throw error;
     }
+  }
+
+  private async discardClosedObservation(
+    task: TrackedTask,
+    observed: AskingTask,
+  ) {
+    const current = await this.askingTaskRepository.findOneBy({
+      id: task.taskId,
+      queryId: task.queryId,
+      projectId: task.projectId,
+    });
+    if (
+      !current ||
+      !this.isTaskFinalized(current.detail?.status as AskFeedbackStatus) ||
+      !isEqual(current.detail?.nativeScope, observed.detail?.nativeScope)
+    )
+      return false;
+    // The row is authoritative. Evict only this exact old observation; reads
+    // reattach from the same native repository, never from the stale AI result.
+    if (this.trackedTasks.get(task.queryId) === task)
+      this.trackedTasks.delete(task.queryId);
+    if (this.trackedTasksById.get(task.taskId) === task)
+      this.trackedTasksById.delete(task.taskId);
+    return true;
   }
 
   private isTaskFinalized(status: AskFeedbackStatus): boolean {

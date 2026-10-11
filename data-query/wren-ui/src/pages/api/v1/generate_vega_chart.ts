@@ -151,6 +151,7 @@ async function governedChart(req: NextApiRequest, res: NextApiResponse) {
       threadId: originalThreadId,
       governanceBindingId: config.bindingId,
       headers: {},
+      governanceGeneration: query.governanceGeneration,
       statusCode: 202,
       durationMs: 0,
       requestPayload: {

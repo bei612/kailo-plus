@@ -128,8 +128,10 @@ export async function middleware(request: NextRequest) {
       '/platform-adapter/v1/observe',
       '/api/platform-adapter/handshake',
       '/api/platform-adapter/validate_binding',
+      '/api/platform-adapter/reconcile',
       '/platform-adapter/v1/handshake',
       '/platform-adapter/v1/validate_binding',
+      '/platform-adapter/v1/reconcile',
     ].includes(request.nextUrl.pathname)
   ) {
     return NextResponse.next();

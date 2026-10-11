@@ -143,6 +143,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       threadId: originalThreadId,
       governanceBindingId: config.bindingId,
       statusCode: 202,
+      governanceGeneration: query.governanceGeneration,
       durationMs: 0,
       headers: {},
       requestPayload: {

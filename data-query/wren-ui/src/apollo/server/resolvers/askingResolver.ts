@@ -35,6 +35,7 @@ import {
   NativeHumanQuery,
   nativePreviewScope,
   resolveNativeResource,
+  authorizeNativeScope,
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
 import { ApiType } from '../repositories/apiHistoryRepository';
@@ -126,6 +127,9 @@ export class AskingResolver {
     );
     return {
       bindingId: config.bindingId,
+      generation: (
+        await authorizeNativeScope(config, ctx.nativeHumanToken, 'discover')
+      ).generation,
       identityScope: ctx.nativeIdentityScope,
       metadataReference: { hash: deployment.hash, digest: digest(mdl) },
     };

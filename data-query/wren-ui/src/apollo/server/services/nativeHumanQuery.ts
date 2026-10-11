@@ -520,6 +520,7 @@ export class NativeHumanQuery {
       const reference = await this.queries.sqlReference(
         resources[0].resourceId,
         draft,
+        (await authorizeNativeScope(this.config, token, 'discover')).generation,
       );
       selectedResource = resources[0].resourceId;
       // Authorization may race the analyzer or native history write. Retain

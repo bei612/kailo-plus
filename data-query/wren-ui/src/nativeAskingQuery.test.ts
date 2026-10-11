@@ -29,6 +29,7 @@ describe('original Asking SQLite task and SQL receipt ownership', () => {
   let repository: AskingTaskRepository;
   const scope = {
     bindingId: randomUUID(),
+    generation: 1,
     identityScope: 'a'.repeat(64),
     metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
   };
@@ -48,6 +49,11 @@ describe('original Asking SQLite task and SQL receipt ownership', () => {
       table.text('detail');
       table.string('question');
     });
+    await db.schema.createTable('project', (table) => {
+      table.integer('id').primary();
+      table.json('native_binding_fences');
+    });
+    await db('project').insert({ id: 7 });
     repository = new AskingTaskRepository(db);
     id = (
       await repository.createOne({

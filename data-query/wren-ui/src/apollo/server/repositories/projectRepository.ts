@@ -9,10 +9,59 @@ import {
   isEmpty,
 } from 'lodash';
 import { DataSourceName } from '@server/types';
+import type { NativeAskingScope } from './askingTaskRepository';
 import {
   IbisRedshiftConnectionType,
   IbisDatabricksConnectionType,
 } from '@server/adaptors/ibisAdaptor';
+
+// Every governed native task writer takes this original project-row lock
+// before its task/history lock. Reconcile closes the same binding generation
+// under this lock; independent Wren operations have no binding to close.
+export async function lockNativeBinding(
+  tx: Knex.Transaction,
+  projectId: number,
+  scope: Pick<NativeAskingScope, 'bindingId' | 'generation'>,
+  close = false,
+) {
+  if (
+    typeof scope?.bindingId !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      scope.bindingId,
+    ) ||
+    !Number.isSafeInteger(scope.generation) ||
+    scope.generation <= 0
+  )
+    throw new Error('NATIVE_BINDING_PROVENANCE_UNAVAILABLE');
+  const bindingId = scope.bindingId.toLowerCase();
+  const project = await tx('project')
+    .where({ id: projectId })
+    .forUpdate()
+    .first();
+  if (!project) throw new Error('NATIVE_BINDING_PROVENANCE_UNAVAILABLE');
+  const fences =
+    typeof project.native_binding_fences === 'string'
+      ? JSON.parse(project.native_binding_fences)
+      : project.native_binding_fences ?? {};
+  if (
+    !isPlainObject(fences) ||
+    Object.values(fences).some(
+      (generation) =>
+        !Number.isSafeInteger(generation) || Number(generation) <= 0,
+    )
+  )
+    throw new Error('NATIVE_BINDING_PROVENANCE_UNAVAILABLE');
+  if (close) {
+    fences[bindingId] = Math.max(fences[bindingId] ?? 0, scope.generation);
+    await tx('project')
+      .where({ id: projectId })
+      .update({
+        native_binding_fences: JSON.stringify(fences),
+      });
+  } else if (fences[bindingId] >= scope.generation) {
+    throw new Error('NATIVE_BINDING_CLOSED');
+  }
+}
 
 export interface BIG_QUERY_CONNECTION_INFO {
   projectId: string;

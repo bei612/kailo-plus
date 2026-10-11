@@ -11082,3 +11082,89 @@ end-to-end AE/EE quota/audit settlement. Other AI/native operations and
 overall component release gates retain their own acceptance gaps. Both
 wren-ui and wren-ai-service source inputs changed; existing image digests
 do not represent this batch and must not be relabeled as its build.
+
+### Native task ownership and closed binding generation (2026-10-11)
+
+This scoped source batch implements REQ-22 / DD-76 and DD-87 lifecycle
+admission in the original Wren repositories. The official restoration base is
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/repositories/apiHistoryRepository.ts::ApiHistoryRepository`,
+`wren-ui/src/apollo/server/repositories/askingTaskRepository.ts::AskingTaskRepository`,
+`wren-ui/src/apollo/server/repositories/projectRepository.ts::ProjectRepository`,
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts::AskingTaskTracker`,
+and
+`wren-ui/src/apollo/server/backgrounds/adjustmentBackgroundTracker.ts::AdjustmentBackgroundTaskTracker`.
+It depends on the committed PEP compatibility change
+`541f67064e41c19d99091f3a6082b730f4e6f68e`, not on uncommitted Cells or Core
+global binding-reconcile changes.
+
+Authority and impact: HUMAN writers consume the existing Core native-scope
+generation; machine execute consumes the same AE's frozen `bindingGeneration`
+from PEP, overwriting any untrusted token extension and refusing its absence.
+The original `api_history.governance_generation`, Asking detail's native scope
+and `project.native_binding_fences` retain provenance and a binding-specific
+closed-generation watermark. No platform ledger, copied business body or
+second task store is added. Web/Desktop presentation and Mobile boundaries
+are unchanged. Only authenticated adapter routing exposes reconciliation.
+
+Writers and reconciliation lock the same original project row before task or
+history locks. Closing generation N rejects its late/new writers but leaves
+other bindings, newer generations and never-bound native operations intact.
+The original REST generation reserves API History and Asking ownership in one
+transaction; replay must retain the same owner and cannot reparent another
+task. Native terminal updates reject conflicting late polling results, and
+both original trackers discard only the exact closed observation after
+rereading the authoritative task. An explicit new-query rerun still goes
+through the same fence. The REST 1000ms cadence is retained from the existing
+REST polling implementation, not a new delivered configuration default.
+
+Reconciliation uses keyset enumeration of the original histories and tasks.
+Known newer generations are outside the requested closed generation; missing
+or malformed historical generation remains UNKNOWN with `complete=false`.
+No automatic provenance backfill is permitted. Missing/uncertain terminal
+evidence stays UNKNOWN; oversized output fails instead of reporting a partial
+list as complete. Native callbacks may settle the original in-flight record;
+unresolved historical provenance requires operator/native evidence review
+before this binding can finish disabling. The migration supports rollback
+only while its generation/fence columns contain no evidence; otherwise it
+refuses evidence erasure and requires a forward correction. No production
+migration was run and no mixed-version writer rollout is accepted.
+
+Validation used the existing immutable SDK, 4 CPU / 4 GiB limits, existing
+read-only dependencies and Data-only output/cache. The existing native
+PostgreSQL connection stayed inside the process; each check created and
+dropped only its random dedicated schema, never public. Actual commands:
+`node /deps/node_modules/typescript/bin/tsc --noEmit --incremental false`;
+`node /deps/node_modules/jest/bin/jest.js --runInBand --testTimeout=60000
+--cacheDirectory=/runtime/wren-independent.SG6cy2/jest-cache --runTestsByPath
+src/nativeRestAskOwnership.test.ts src/nativeAdjustmentScope.test.ts`.
+The final scoped run exited 0: 25 actual PostgreSQL ownership/fence/migration/
+concurrency/late-observation checks and 17 unchanged adjustment checks, 42/42.
+The original HUMAN REST suite additionally passed eight selected native
+callback/UNKNOWN/replay/source-authorization cases, with 519 explicitly
+unselected cases. That selection does not represent its full-suite result.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ/wren-independent.SG6cy2`.
+`native-ownership-scoped-final.log` SHA-256:
+`cb84effe2d6e5e6579b380c35196780df144a19dcdfbe99797a145b95a008be1`.
+`native-rest-scoped.log` SHA-256:
+`807a098bea382460c013920c86305b37c855e2e50eb41d5c63332df509ba7950`.
+Disabling the project fence in the private candidate made both selected
+writer/fence checks fail (exit 1); restoring it passed. The negative log is
+`fence-negative.log`, SHA-256
+`ab7347a47fe5a7fb137940631c833bcd8678c744f84cc4f1aee048252f07c445`.
+Earlier SQLite checks failed on the absent native addon; no dependency
+reinstallation or silent database substitution was called a pass. Original
+prettier configuration and the final scoped TypeScript check are retained as
+`format-scoped-final.log` and `types-scoped-final.log`.
+
+Adjustment request/header transport expansion and UNKNOWN-to-STOPPED response
+mapping are explicitly excluded: their Python receiver was not in this
+validated closure. This batch does not claim adjustment generation restored.
+It does not include the independent broad native query PostgreSQL suite,
+full binding HTTP lifecycle, live AE/EE/quota/audit settlement, screenshots,
+three-person collaboration, a full check, container release, production
+migration, active binding or deployment. Production activation must wait for
+the paired compatible PEP, native migration, actual adapter lifecycle and
+remaining release evidence. Existing images cannot be relabeled as this source.

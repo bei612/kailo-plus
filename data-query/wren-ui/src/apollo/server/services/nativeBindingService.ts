@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises';
 import { request } from 'http';
 import { Client } from 'pg';
 import { IProjectRepository } from '../repositories/projectRepository';
+import { ApiHistoryRepository } from '../repositories/apiHistoryRepository';
 import { encryptConnectionInfo, toIbisConnectionInfo } from '../dataSource';
 import { DataSourceName } from '../types';
 import {
@@ -209,20 +210,57 @@ export class NativeBindingService {
 
   async call(
     token: string,
-    operation: 'handshake' | 'validate_binding',
+    operation: 'handshake' | 'validate_binding' | 'reconcile',
     key: string,
     raw: unknown,
+    history?: ApiHistoryRepository,
   ) {
     const args = raw as Record<string, any>;
     if (!uuid.test(key) || !args || args.idempotencyKey !== key) throw denied();
     const claims = await authorizeQuery(this.config, token, operation, args);
     if (
-      claims.action_key !== 'application_binding.create' ||
+      (operation === 'reconcile'
+        ? ![
+            'application_binding.create',
+            'application_binding.disable',
+          ].includes(String(claims.action_key))
+        : claims.action_key !== 'application_binding.create') ||
       claims.target_type !== 'APPLICATION_BINDING' ||
       claims.target_id !== this.config.bindingId
     )
       throw denied();
     const delivery = await loadBindingDelivery(this.config);
+    if (operation === 'reconcile') {
+      if (
+        !history ||
+        !Number.isSafeInteger(args.generation) ||
+        args.generation <= 0 ||
+        canonical(args) !==
+          canonical({
+            bindingId: this.config.bindingId,
+            generation: args.generation,
+            configDigest: delivery.binding.configDigest,
+            nativeInstanceRef: this.config.nativeInstanceRef,
+            nativeScopeRef: this.config.nativeScopeRef,
+            idempotencyKey: key,
+          })
+      )
+        throw denied();
+      const result = await history.reconcileNativeBinding(
+        this.config.projectId,
+        this.config.bindingId,
+        args.generation,
+        this.config.responseMaxBytes,
+      );
+      await authorizeQuery(this.config, token, operation, args);
+      const response = { reference: args, ...result };
+      if (
+        Buffer.byteLength(JSON.stringify(response)) >
+        this.config.responseMaxBytes
+      )
+        throw unavailable();
+      return response;
+    }
     if (operation === 'handshake') {
       if (
         canonical(args) !==

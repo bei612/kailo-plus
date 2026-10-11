@@ -3,6 +3,8 @@ import { StringDecoder } from 'string_decoder';
 import { components } from '@/common';
 import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 import { ModelResolver } from '../resolvers/modelResolver';
+import { AskingResolver } from '../resolvers/askingResolver';
+import { getConfig } from '../config';
 import { DataSourceName, IContext } from '../types';
 import {
   AskResult,
@@ -42,6 +44,7 @@ import {
   nativePreviewScope,
 } from './nativeHumanQuery';
 import { NativeQueryService } from './nativeQueryService';
+import { ModelService } from './modelService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 
 type MetadataContext = Pick<
@@ -53,6 +56,8 @@ type MetadataContext = Pick<
 >;
 const unavailable = () =>
   new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+// Preserve the original REST poll cadence for the same native AI callback.
+const pollingIntervalMs = 1000;
 
 // Keep the original native classifier as the error-payload authority. A stored
 // HTTP 400 alone never proves that an UNKNOWN task actually finished.
@@ -388,6 +393,14 @@ export async function governedRestAsk(
       components.apiHistoryRepository,
     );
     const history = components.apiHistoryRepository;
+    const taskContext: IContext = {
+      ...components,
+      ...ctx,
+      config: getConfig(),
+      ibisServerAdaptor: components.ibisAdaptor,
+      modelService: new ModelService(components),
+    };
+    const taskResolver = new AskingResolver();
     const apiType = sqlOnly
       ? streaming
         ? ApiType.STREAM_GENERATE_SQL
@@ -425,6 +438,9 @@ export async function governedRestAsk(
       { hash: deploy.hash },
       ctx,
     );
+    const generation = existing
+      ? existing.governanceGeneration
+      : (await authorizeNativeScope(config, token, 'discover')).generation;
     const metadataReference = existing?.requestPayload.nativeAsk
       .metadataReference ?? {
       hash: deploy.hash,
@@ -432,8 +448,7 @@ export async function governedRestAsk(
       ...(sqlOnly
         ? {
             queryScope: scope,
-            generation: (await authorizeNativeScope(config, token, 'discover'))
-              .generation,
+            generation,
           }
         : {}),
     };
@@ -496,6 +511,7 @@ export async function governedRestAsk(
       projectId: project.id,
       apiType,
       governanceBindingId: config.bindingId,
+      governanceGeneration: generation,
       threadId: originalThreadId,
       headers: {},
       statusCode: 202,
@@ -515,9 +531,60 @@ export async function governedRestAsk(
       respond(202, {
         id: key,
         threadId: originalThreadId,
+        error: 'NATIVE_EXECUTION_UNKNOWN',
         ...(queryReceipt ? { queryReceipt } : {}),
       });
+    let settledNativeQueries: string[] = [];
+    const settledQueries = async (recoverMissing = false) => {
+      try {
+        settledNativeQueries = await taskResolver.settledNativeAskingQueries(
+          key,
+          taskContext,
+          recoverMissing,
+        );
+        return true;
+      } catch (error) {
+        if (
+          !(error instanceof NativeQueryRefusal) ||
+          error.code !== 'NATIVE_EXECUTION_UNKNOWN'
+        )
+          throw error;
+        pending();
+        return false;
+      }
+    };
+    const advance = async (payload: Record<string, unknown>, status = 202) => {
+      if (
+        Buffer.byteLength(JSON.stringify(payload), 'utf8') >
+        config.responseMaxBytes
+      )
+        throw unavailable();
+      const changed = await history.advanceNativeGeneration(
+        current,
+        payload,
+        status,
+        Date.now() - started,
+        settledNativeQueries,
+      );
+      if (!changed) return false;
+      current = changed;
+      return true;
+    };
+    // A previously observed native DONE is evidence even when a concurrent
+    // child made the final compare-and-close refuse. Reuse the durable text
+    // after settlement; do not reopen the non-replayable stream or create AI.
+    if (
+      current.statusCode === 202 &&
+      current.responsePayload.nativeAsk.doneQueryId === key
+    ) {
+      if (!(await settledQueries())) return;
+      if (!(await advance(current.responsePayload, 200))) {
+        pending();
+        return;
+      }
+    }
     if (current.statusCode === 200) {
+      if (!(await settledQueries())) return;
       const visible = await readNativeAskHistory(ctx, config, native, current);
       if (streaming) {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -556,6 +623,7 @@ export async function governedRestAsk(
         )
       )
         throw unavailable();
+      if (!(await settledQueries(Boolean(proof?.status)))) return;
       respond(409, {
         id: key,
         threadId: originalThreadId,
@@ -577,15 +645,36 @@ export async function governedRestAsk(
       language: originalLanguage,
     });
     if (prepared.created) {
-      await authorize();
       try {
-        const task = await components.wrenAIAdaptor.ask({
-          queryId: key,
-          query: question,
-          deployId: deploy.hash,
-          histories: transformHistoryInput(visibleHistories) as any,
-          configurations: { language: originalLanguage },
-        });
+        await authorize();
+        await taskResolver.authorizeNativeAskingTask(key, taskContext);
+      } catch (error) {
+        // No AI POST has happened. Persist this definite refusal, rather than
+        // leave a reserved UNDERSTANDING task permanently unobservable.
+        await advance(
+          {
+            threadId: originalThreadId,
+            error: 'ASK_GENERATION_FAILED',
+            nativeAsk: {
+              status: AskResultStatus.FAILED,
+              askResult: { status: AskResultStatus.FAILED },
+            },
+          },
+          409,
+        );
+        throw error;
+      }
+      try {
+        const task = await components.wrenAIAdaptor.ask(
+          {
+            queryId: key,
+            query: question,
+            deployId: deploy.hash,
+            histories: transformHistoryInput(visibleHistories) as any,
+            configurations: { language: originalLanguage },
+          },
+          { humanToken: token, projectId: project.id, pollingIntervalMs },
+        );
         if (task?.queryId !== key) {
           pending();
           return;
@@ -594,22 +683,6 @@ export async function governedRestAsk(
         /* The original fixed task can exist despite a lost ACK. */
       }
     }
-    const advance = async (payload: Record<string, unknown>, status = 202) => {
-      if (
-        Buffer.byteLength(JSON.stringify(payload), 'utf8') >
-        config.responseMaxBytes
-      )
-        throw unavailable();
-      const changed = await history.advanceNativeGeneration(
-        current,
-        payload,
-        status,
-        Date.now() - started,
-      );
-      if (!changed) return false;
-      current = changed;
-      return true;
-    };
     let askResult = current.responsePayload.nativeAsk.askResult;
     if (!askResult) {
       const deadline = Date.now() + MAX_WAIT_TIME;
@@ -654,30 +727,8 @@ export async function governedRestAsk(
           [AskResultStatus.FAILED, AskResultStatus.STOPPED].includes(
             askResult.status,
           )
-        ) {
-          if (
-            !(await advance(
-              {
-                threadId: originalThreadId,
-                error:
-                  askResult.status === AskResultStatus.FAILED
-                    ? 'ASK_GENERATION_FAILED'
-                    : 'ASK_GENERATION_STOPPED',
-                nativeAsk: { status: askResult.status },
-              },
-              409,
-            ))
-          ) {
-            pending();
-            return;
-          }
-          respond(409, {
-            id: key,
-            threadId: originalThreadId,
-            error: current.responsePayload.error,
-          });
-          return;
-        }
+        )
+          break;
         if (
           askResult.status === AskResultStatus.FINISHED ||
           (!sqlOnly && askResult.type === AskResultType.GENERAL)
@@ -687,15 +738,18 @@ export async function governedRestAsk(
           pending();
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, pollingIntervalMs));
       }
       if (
-        askResult.error ||
-        ![
-          AskResultType.GENERAL,
-          AskResultType.TEXT_TO_SQL,
-          ...(sqlOnly ? [AskResultType.MISLEADING_QUERY] : []),
-        ].includes(askResult.type)
+        ![AskResultStatus.FAILED, AskResultStatus.STOPPED].includes(
+          askResult.status,
+        ) &&
+        (askResult.error ||
+          ![
+            AskResultType.GENERAL,
+            AskResultType.TEXT_TO_SQL,
+            ...(sqlOnly ? [AskResultType.MISLEADING_QUERY] : []),
+          ].includes(askResult.type))
       )
         throw unavailable();
       if (
@@ -707,6 +761,40 @@ export async function governedRestAsk(
         pending();
         return;
       }
+    }
+    const stopped = [AskResultStatus.FAILED, AskResultStatus.STOPPED].includes(
+      askResult.status,
+    );
+    // Repeated POST observes/reconciles the SAME child SQL keys. The original
+    // AI job may have stopped while an approval/query remains in flight.
+    // Never report that SQL was cancelled or restart AI from an uncertain ACK.
+    if (!(await settledQueries(stopped))) return;
+    if (stopped) {
+      if (
+        !(await advance(
+          {
+            threadId: originalThreadId,
+            error:
+              askResult.status === AskResultStatus.FAILED
+                ? 'ASK_GENERATION_FAILED'
+                : 'ASK_GENERATION_STOPPED',
+            nativeAsk: {
+              ...current.responsePayload.nativeAsk,
+              status: askResult.status,
+            },
+          },
+          409,
+        ))
+      ) {
+        pending();
+        return;
+      }
+      respond(409, {
+        id: key,
+        threadId: originalThreadId,
+        error: current.responsePayload.error,
+      });
+      return;
     }
     if (sqlOnly) {
       if (
@@ -988,9 +1076,14 @@ export async function governedRestAsk(
                   },
                   [general ? 'explanation' : 'summary']: text,
                 },
-                200,
+                202,
               ))
             ) {
+              pending();
+              return;
+            }
+            if (!(await settledQueries())) return;
+            if (!(await advance(current.responsePayload, 200))) {
               pending();
               return;
             }
@@ -1004,6 +1097,7 @@ export async function governedRestAsk(
             respond(200, { id: key, ...visible.responsePayload });
             return;
           }
+          if (!(await settledQueries())) return;
           if (typeof event.message !== 'string' || event.done !== undefined)
             throw unavailable();
           text += event.message;

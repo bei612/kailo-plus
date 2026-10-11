@@ -6311,7 +6311,8 @@ describe('native saved-view HUMAN query consumer', () => {
       endpoint: string,
       row: any,
       observed: any,
-      summaryRow: any;
+      summaryRow: any,
+      restTask: any;
     let completed: boolean, revoked: boolean;
     let prepared: jest.Mock, appended: jest.Mock, direct: jest.Mock;
     let summaryCreate: jest.Mock,
@@ -6333,6 +6334,9 @@ describe('native saved-view HUMAN query consumer', () => {
       'idempotency-key': key,
       'x-kailo-native-human-token': 'verified-native-token',
       'x-kailo-native-identity-scope': identityScope,
+      // Each HTTP check owns its connection; GraphQL schema initialization
+      // between requests must not reuse a server-expired keep-alive socket.
+      connection: 'close',
     };
     const send = (input: any = body, changes = {}, method = 'POST') =>
       fetch(endpoint, {
@@ -6406,6 +6410,7 @@ describe('native saved-view HUMAN query consumer', () => {
       jest.mocked(loadQueryDelivery).mockResolvedValue(config);
       row = undefined;
       summaryRow = undefined;
+      restTask = undefined;
       observed = null;
       completed = true;
       revoked = false;
@@ -6458,6 +6463,26 @@ describe('native saved-view HUMAN query consumer', () => {
       );
       prepareSummary = jest.fn(async (input) => {
         const created = !summaryRow;
+        if (created && input.requestPayload.nativeAsk) {
+          const proof = input.requestPayload.nativeAsk;
+          restTask = {
+            id: 31,
+            queryId: input.id,
+            projectId: input.projectId,
+            question: input.requestPayload.question,
+            detail: {
+              status: AskResultStatus.UNDERSTANDING,
+              nativeScope: {
+                bindingId: input.governanceBindingId,
+                identityScope: proof.identityScope,
+                metadataReference: {
+                  hash: proof.metadataReference.hash,
+                  digest: proof.metadataReference.digest,
+                },
+              },
+            },
+          };
+        }
         summaryRow ??= {
           ...structuredClone(input),
           createdAt: new Date().toISOString(),
@@ -6473,7 +6498,13 @@ describe('native saved-view HUMAN query consumer', () => {
           : null;
       });
       advanceSummary = jest.fn(
-        async (expected, responsePayload, statusCode, durationMs) => {
+        async (
+          expected,
+          responsePayload,
+          statusCode,
+          durationMs,
+          settledNativeQueries,
+        ) => {
           if (
             summaryRow.statusCode !== 202 ||
             expected.statusCode !== 202 ||
@@ -6483,12 +6514,30 @@ describe('native saved-view HUMAN query consumer', () => {
               digest(expected.responsePayload)
           )
             return null;
+          if (
+            restTask &&
+            responsePayload.nativeAsk?.askResult &&
+            statusCode !== 202 &&
+            JSON.stringify(restTask.detail.nativeQueries ?? []) !==
+              JSON.stringify(settledNativeQueries)
+          )
+            return null;
           summaryRow = {
             ...summaryRow,
             responsePayload,
             statusCode,
             durationMs,
           };
+          if (restTask && responsePayload.nativeAsk?.askResult)
+            restTask.detail = {
+              ...responsePayload.nativeAsk.askResult,
+              ...(statusCode === 200 &&
+              responsePayload.nativeAsk.doneQueryId === expected.id
+                ? { status: AskResultStatus.FINISHED }
+                : {}),
+              nativeScope: restTask.detail.nativeScope,
+              nativeQueries: restTask.detail.nativeQueries,
+            };
           return structuredClone(summaryRow);
         },
       );
@@ -6505,6 +6554,16 @@ describe('native saved-view HUMAN query consumer', () => {
         nativeObjectRefs: [capturedSources[0]],
       };
       Object.assign(components, {
+        askingTaskRepository: {
+          findOneBy: jest.fn(async (where) =>
+            restTask &&
+            Object.entries(where).every(
+              ([name, value]) => restTask[name] === value,
+            )
+              ? structuredClone(restTask)
+              : null,
+          ),
+        },
         projectService: {
           getCurrentProject: jest.fn(async () => nativeProject),
         },
@@ -6592,6 +6651,7 @@ describe('native saved-view HUMAN query consumer', () => {
           const command = input.command as any;
           observed = {
             ...receipt,
+            submission: { ...submission, actionKey: command.actionKey },
             inputReference: command.componentAction.inputReference,
             ...(completed
               ? {
@@ -6611,8 +6671,12 @@ describe('native saved-view HUMAN query consumer', () => {
                 input: observed.inputReference,
               }),
               responsePayload: {
-                columns: [{ name: 'customer', type: 'VARCHAR' }],
-                data: [['native']],
+                ...(command.actionKey === 'data_query.dry_run@v1'
+                  ? { valid: true }
+                  : {
+                      columns: [{ name: 'customer', type: 'VARCHAR' }],
+                      data: [['native']],
+                    }),
                 deploymentId: 12,
                 deploymentHash: selection.deploymentHash,
               },
@@ -6715,6 +6779,15 @@ describe('native saved-view HUMAN query consumer', () => {
             queryId: key,
             deployId: selection.deploymentHash,
           });
+          expect(askCreate.mock.calls[0][1]).toMatchObject({
+            humanToken: headers['x-kailo-native-human-token'],
+            projectId: config.projectId,
+          });
+          expect(restTask.queryId).toBe(key);
+          expect(restTask.detail.status).toBe(AskResultStatus.FINISHED);
+          expect(JSON.stringify(summaryRow)).not.toContain(
+            headers['x-kailo-native-human-token'],
+          );
           expect((await generate(streaming)).status).toBe(200);
           expect(askCreate).toHaveBeenCalledTimes(1);
           noExecution();
@@ -7215,6 +7288,170 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
           0,
         );
+      },
+    );
+
+    it('REST native dry-run remains UNKNOWN after AI stops until the SAME child receipt is terminal', async () => {
+      const child = randomUUID();
+      askCreate.mockImplementation(async (input, transport) => {
+        expect(restTask.queryId).toBe(input.queryId);
+        expect(transport.humanToken).toBe(
+          headers['x-kailo-native-human-token'],
+        );
+        restTask.detail.nativeQueries = [child];
+        return { queryId: input.queryId };
+      });
+      askResult = {
+        status: AskResultStatus.STOPPED,
+        error: { code: 'OTHERS', message: 'NATIVE_EXECUTION_UNKNOWN' },
+      };
+      observed = {
+        ...receipt,
+        submission: { ...submission, dispatchState: 'UNKNOWN' },
+      };
+      const first = await sendAsk();
+      expect(first.status).toBe(202);
+      expect(await first.json()).toMatchObject({
+        id: key,
+        error: 'NATIVE_EXECUTION_UNKNOWN',
+      });
+      expect(summaryRow.statusCode).toBe(202);
+      expect(restTask.detail.status).toBe(AskResultStatus.STOPPED);
+      observed = {
+        ...receipt,
+        terminalStatus: 'COMPLETED',
+        nativeType: 'wren.api_history',
+        nativeId: randomUUID(),
+      };
+      const settled = await sendAsk();
+      expect(settled.status).toBe(409);
+      expect(await settled.json()).toMatchObject({
+        error: 'ASK_GENERATION_STOPPED',
+      });
+      expect(askCreate).toHaveBeenCalledTimes(1);
+      expect(askGet).toHaveBeenCalledTimes(1);
+      expect(
+        calls.mock.calls.some(
+          (call) =>
+            call[1] === 'human-action' && call[2].idempotencyKey === child,
+        ),
+      ).toBe(true);
+      expect(direct).not.toHaveBeenCalled();
+    });
+
+    it.each(['data_query.query@v1', 'data_query.dry_run@v1'] as const)(
+      'REST explicit same-key POST recovers a persisted %s child with no admission ACK, never a second AI job',
+      async (action) => {
+        const child = randomUUID();
+        jest
+          .mocked(loadQueryDelivery)
+          .mockResolvedValue({ ...config, dryRunAction: config.humanAction });
+        askCreate.mockImplementation(async (input) => {
+          restTask.detail.nativeQueries = [child];
+          const queries = new NativeQueryService(
+            config,
+            components.projectRepository,
+            components.deployLogRepository,
+            components.apiHistoryRepository,
+            components.queryService,
+            components.viewRepository,
+            components.modelRepository,
+            components.modelColumnRepository,
+          );
+          const draft = await queries.sqlSelection(
+            child,
+            statement,
+            10,
+            nativePreviewScope(config, identityScope),
+            action,
+            key,
+            selection.deploymentHash,
+          );
+          await queries.sqlReference(resource, draft, 2);
+          return { queryId: input.queryId };
+        });
+        askResult = {
+          status: AskResultStatus.STOPPED,
+          error: { code: 'OTHERS', message: 'NATIVE_EXECUTION_UNKNOWN' },
+        };
+        const response = await sendAsk();
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          error: 'ASK_GENERATION_STOPPED',
+        });
+        const commands = calls.mock.calls.filter((call) => call[2].command);
+        expect(commands).toHaveLength(1);
+        expect((commands[0][2].command as any).idempotencyKey).toBe(child);
+        expect((await sendAsk()).status).toBe(409);
+        expect(askCreate).toHaveBeenCalledTimes(1);
+        expect(direct).not.toHaveBeenCalled();
+      },
+    );
+
+    it('REST callback ownership refusal before POST closes the original reserved generation without calling AI', async () => {
+      jest
+        .mocked(components.askingTaskRepository.findOneBy)
+        .mockResolvedValue(null);
+      expect((await sendAsk()).status).toBe(403);
+      expect(restTask.detail.status).toBe(AskResultStatus.FAILED);
+      expect(summaryRow.statusCode).toBe(409);
+      expect(askCreate).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+      'GENERAL DONE retains actual text while a concurrent child delays terminal publication (stream=%s)',
+      async (streaming) => {
+        askResult = {
+          status: AskResultStatus.UNDERSTANDING,
+          type: AskResultType.GENERAL,
+        };
+        const child = randomUUID();
+        const advance = advanceSummary.getMockImplementation();
+        advanceSummary.mockImplementation(async (...args) => {
+          const changed = await advance(...args);
+          if (
+            changed &&
+            args[2] === 202 &&
+            args[1].nativeAsk?.doneQueryId === key
+          ) {
+            restTask.detail.nativeQueries = [child];
+            observed = {
+              ...receipt,
+              submission: { ...submission, dispatchState: 'UNKNOWN' },
+            };
+          }
+          return changed;
+        });
+        const first = await sendAsk(askBody, {}, streaming);
+        if (streaming) {
+          const events = await first.text();
+          expect(events).toContain('NATIVE_EXECUTION_UNKNOWN');
+          expect(events).not.toContain('message_stop');
+        } else {
+          expect(first.status).toBe(202);
+          expect(await first.json()).toMatchObject({
+            error: 'NATIVE_EXECUTION_UNKNOWN',
+          });
+        }
+        expect(summaryRow.responsePayload.nativeAsk.doneQueryId).toBe(key);
+        expect(summaryRow.statusCode).toBe(202);
+        observed = {
+          ...receipt,
+          terminalStatus: 'COMPLETED',
+          nativeType: 'wren.api_history',
+          nativeId: randomUUID(),
+        };
+        const replay = await sendAsk(askBody, {}, streaming);
+        expect(replay.status).toBe(200);
+        if (streaming)
+          expect(await replay.text()).toContain('Original explanation');
+        else
+          expect((await replay.json()).explanation).toBe(
+            'Original explanation',
+          );
+        expect(restTask.detail.status).toBe(AskResultStatus.FINISHED);
+        expect(askStream).toHaveBeenCalledTimes(1);
+        expect(askCreate).toHaveBeenCalledTimes(1);
       },
     );
 

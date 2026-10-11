@@ -47,6 +47,10 @@ const nextConfig = withLess({
         destination: '/api/platform-adapter/validate_binding',
       },
       {
+        source: '/platform-adapter/v1/reconcile',
+        destination: '/api/platform-adapter/reconcile',
+      },
+      {
         source: '/platform-adapter/v1/observe',
         destination: '/api/platform-adapter/observe',
       },

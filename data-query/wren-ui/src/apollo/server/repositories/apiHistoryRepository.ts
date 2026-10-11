@@ -9,6 +9,9 @@ import {
 import { BaseRepository, IBasicRepository } from './baseRepository';
 import { Knex } from 'knex';
 import type { NativeDeploymentObject } from './deployLogRepository';
+import { AskingTaskRepository } from './askingTaskRepository';
+import { AskResultStatus } from '../models/adaptor';
+import { lockNativeBinding } from './projectRepository';
 
 // SS-WRN-IDENTITY: request credentials must never become API history.
 // Keep protocol metadata only; a denylist would miss provider-specific keys.
@@ -55,6 +58,7 @@ export interface ApiHistory {
   createdAt?: string;
   updatedAt?: string;
   governanceBindingId?: string;
+  governanceGeneration?: number;
   governanceKey?: string;
   governanceActionExecutionId?: string;
   governanceOperationId?: string;
@@ -96,10 +100,155 @@ export class ApiHistoryRepository
     super({ knexPg, tableName: 'api_history' });
   }
 
+  public async reconcileNativeBinding(
+    projectId: number,
+    bindingId: string,
+    generation: number,
+    maximumBytes: number,
+  ) {
+    return this.knex.transaction(async (tx) => {
+      await lockNativeBinding(tx, projectId, { bindingId, generation }, true);
+      const observations: Record<string, unknown>[] = [];
+      let complete = true;
+      let size = 0;
+      const observedAt = new Date().toISOString();
+      const append = (observation: Record<string, unknown>) => {
+        size += Buffer.byteLength(JSON.stringify(observation));
+        if (size > maximumBytes)
+          throw new Error('NATIVE_BINDING_RECONCILE_TOO_LARGE');
+        observations.push(observation);
+      };
+      // Original records are consumed with keyset pagination, not a capped
+      // first page presented as a complete task enumeration. New governed
+      // writers cannot pass the project-row fence while this transaction runs.
+      let historyId: string | undefined;
+      for (;;) {
+        const query = tx(this.tableName)
+          .where({ project_id: projectId })
+          .whereRaw('lower(??) = ?', [
+            'governance_binding_id',
+            bindingId.toLowerCase(),
+          ])
+          .orderBy('id')
+          .first();
+        if (historyId !== undefined) query.andWhere('id', '>', historyId);
+        const row = await query;
+        if (!row) break;
+        const record = this.transformFromDBData(row);
+        historyId = record.id;
+        if (
+          Number.isSafeInteger(record.governanceGeneration) &&
+          record.governanceGeneration > generation
+        )
+          continue;
+        const attributable =
+          Number.isSafeInteger(record.governanceGeneration) &&
+          record.governanceGeneration > 0 &&
+          record.governanceGeneration <= generation;
+        if (!attributable) complete = false;
+        let status = 'UNKNOWN';
+        let nativeStatus: string | undefined;
+        if (attributable && record.governanceState === 'SUCCEEDED') {
+          status = 'SUCCEEDED';
+          nativeStatus = 'SUCCEEDED';
+        } else if (attributable && record.governanceState === 'FAILED') {
+          status = 'FAILED';
+          nativeStatus = 'FAILED';
+        } else if (attributable && record.statusCode === 200) {
+          const proof = record.requestPayload?.nativeAsk
+            ? 'nativeAsk'
+            : record.requestPayload?.nativeSummary
+              ? 'nativeSummary'
+              : record.requestPayload?.nativeChart
+                ? 'nativeChart'
+                : undefined;
+          if (
+            proof &&
+            record.responsePayload?.[proof]?.doneQueryId === record.id
+          ) {
+            status = 'SUCCEEDED';
+            nativeStatus = 'FINISHED';
+          }
+        }
+        const terminalAt = record.updatedAt && new Date(record.updatedAt);
+        if (
+          status !== 'UNKNOWN' &&
+          (!terminalAt || !Number.isFinite(terminalAt.getTime()))
+        ) {
+          status = 'UNKNOWN';
+          nativeStatus = undefined;
+        }
+        append({
+          idempotencyKey: record.governanceKey ?? record.id,
+          nativeType: 'wren.api_history',
+          nativeId: record.id,
+          platformStatus: status,
+          cancelCapability: 'UNSUPPORTED',
+          lastObservedAt: observedAt,
+          ...(status === 'UNKNOWN'
+            ? {}
+            : { nativeStatus, terminalAt: terminalAt.toISOString() }),
+        });
+      }
+      const tasks = new AskingTaskRepository(this.knex);
+      let taskId: number | undefined;
+      for (;;) {
+        const query = tx('asking_task')
+          .where({ project_id: projectId })
+          .orderBy('id')
+          .first();
+        if (taskId !== undefined) query.andWhere('id', '>', taskId);
+        const row = await query;
+        if (!row) break;
+        taskId = row.id;
+        const task = await tasks.findOneBy({ id: taskId, projectId }, { tx });
+        const scope = task.detail?.nativeScope;
+        if (
+          !scope ||
+          typeof scope.bindingId !== 'string' ||
+          scope.bindingId.toLowerCase() !== bindingId.toLowerCase()
+        )
+          continue;
+        if (
+          Number.isSafeInteger(scope.generation) &&
+          scope.generation > generation
+        )
+          continue;
+        const attributable =
+          Number.isSafeInteger(scope.generation) &&
+          scope.generation > 0 &&
+          scope.generation <= generation;
+        if (!attributable) complete = false;
+        const terminalAt = task.updatedAt && new Date(task.updatedAt);
+        const terminal =
+          attributable &&
+          task.detail.status === 'FINISHED' &&
+          terminalAt &&
+          Number.isFinite(terminalAt.getTime());
+        append({
+          idempotencyKey: task.queryId,
+          nativeType: 'wren.asking_task',
+          nativeId: String(task.id),
+          platformStatus: terminal ? 'SUCCEEDED' : 'UNKNOWN',
+          cancelCapability: 'UNSUPPORTED',
+          lastObservedAt: observedAt,
+          ...(terminal
+            ? { nativeStatus: 'FINISHED', terminalAt: terminalAt.toISOString() }
+            : {}),
+        });
+      }
+      return { complete, observations };
+    });
+  }
+
   // Commit the original query record before calling the native engine. A
   // duplicate key never starts another query, including after process death.
   public async reserveGovernedQuery(record: ApiHistory): Promise<boolean> {
     return this.knex.transaction(async (tx) => {
+      await lockNativeBinding(tx, record.projectId, {
+        bindingId: record.governanceBindingId,
+        generation: record.governanceGeneration,
+      });
       const rows = await tx(this.tableName)
         .insert(this.transformToDBData(record))
         .onConflict(['governance_binding_id', 'governance_key'])
@@ -126,6 +275,7 @@ export class ApiHistoryRepository
         prepared.governanceParameterHash != null ||
         typeof prepared.requestPayload?.previewScope !== 'string' ||
         prepared.projectId !== record.projectId ||
+        prepared.governanceGeneration !== record.governanceGeneration ||
         prepared.apiType !== record.apiType ||
         prepared.governanceDeploymentId !== record.governanceDeploymentId ||
         prepared.governanceDeploymentHash !== record.governanceDeploymentHash ||
@@ -160,6 +310,10 @@ export class ApiHistoryRepository
     record: ApiHistory,
   ): Promise<ApiHistory | null> {
     return this.knex.transaction(async (tx) => {
+      await lockNativeBinding(tx, record.projectId, {
+        bindingId: record.governanceBindingId,
+        generation: record.governanceGeneration,
+      });
       await tx(this.tableName)
         .insert(this.transformToDBData(record))
         .onConflict(['governance_binding_id', 'governance_key'])
@@ -174,6 +328,7 @@ export class ApiHistoryRepository
       if (!row) return null;
       const current = this.transformFromDBData(row);
       return current.projectId === record.projectId &&
+        current.governanceGeneration === record.governanceGeneration &&
         current.apiType === record.apiType &&
         current.governanceDeploymentId === record.governanceDeploymentId &&
         current.governanceDeploymentHash === record.governanceDeploymentHash &&
@@ -189,6 +344,10 @@ export class ApiHistoryRepository
     record: ApiHistory,
   ): Promise<{ record: ApiHistory; created: boolean } | null> {
     return this.knex.transaction(async (tx) => {
+      await lockNativeBinding(tx, record.projectId, {
+        bindingId: record.governanceBindingId,
+        generation: record.governanceGeneration,
+      });
       const inserted = await tx(this.tableName)
         .insert(this.transformToDBData(record))
         .onConflict('id')
@@ -200,21 +359,72 @@ export class ApiHistoryRepository
         .forUpdate();
       if (!row) return null;
       const current = this.transformFromDBData(row);
-      return [
-        ApiType.GENERATE_SUMMARY,
-        ApiType.GENERATE_VEGA_CHART,
-        ApiType.ASK,
-        ApiType.STREAM_ASK,
-        ApiType.GENERATE_SQL,
-        ApiType.STREAM_GENERATE_SQL,
-      ].includes(record.apiType) &&
+      const matches =
+        [
+          ApiType.GENERATE_SUMMARY,
+          ApiType.GENERATE_VEGA_CHART,
+          ApiType.ASK,
+          ApiType.STREAM_ASK,
+          ApiType.GENERATE_SQL,
+          ApiType.STREAM_GENERATE_SQL,
+        ].includes(record.apiType) &&
         current.apiType === record.apiType &&
         current.projectId === record.projectId &&
         current.governanceBindingId === record.governanceBindingId &&
+        current.governanceGeneration === record.governanceGeneration &&
         current.threadId === record.threadId &&
-        isEqual(current.requestPayload, record.requestPayload)
-        ? { record: current, created: inserted.length === 1 }
-        : null;
+        isEqual(current.requestPayload, record.requestPayload);
+      if (!matches) return null;
+      if (current.requestPayload?.nativeAsk) {
+        const proof = current.requestPayload.nativeAsk;
+        if (
+          proof.taskId !== current.id ||
+          typeof proof.identityScope !== 'string' ||
+          !proof.identityScope ||
+          typeof proof.metadataReference?.hash !== 'string' ||
+          typeof proof.metadataReference.digest !== 'string'
+        )
+          throw new Error('QUERY_INTENT_CONFLICT');
+        const nativeScope = {
+          bindingId: current.governanceBindingId,
+          generation: current.governanceGeneration,
+          identityScope: proof.identityScope,
+          metadataReference: {
+            hash: proof.metadataReference.hash,
+            digest: proof.metadataReference.digest,
+          },
+        };
+        const tasks = new AskingTaskRepository(this.knex);
+        // The original unique query_id and API id are committed together.
+        // A task collision rolls back the history INSERT; a replay may never
+        // adopt another task or repair missing provenance with a new identity.
+        const task =
+          inserted.length === 1
+            ? await tasks.createOne(
+                {
+                  projectId: current.projectId,
+                  queryId: current.id,
+                  question: current.requestPayload.question,
+                  detail: {
+                    status: AskResultStatus.UNDERSTANDING,
+                    type: null,
+                    response: null,
+                    error: null,
+                    nativeScope,
+                  },
+                },
+                { tx },
+              )
+            : await tasks.findOneBy({ queryId: current.id }, { tx });
+        if (
+          !task ||
+          task.projectId !== current.projectId ||
+          task.question !== current.requestPayload.question ||
+          !isEqual(task.detail?.nativeScope, nativeScope)
+        )
+          throw new Error('QUERY_INTENT_CONFLICT');
+      }
+      return { record: current, created: inserted.length === 1 };
     });
   }
 
@@ -223,6 +433,7 @@ export class ApiHistoryRepository
     responsePayload: Record<string, unknown>,
     statusCode: number,
     durationMs: number,
+    settledNativeQueries?: string[],
   ): Promise<ApiHistory | null> {
     return this.knex.transaction(async (tx) => {
       const row = await tx(this.tableName)
@@ -250,6 +461,57 @@ export class ApiHistoryRepository
         !isEqual(current.responsePayload, expected.responsePayload)
       )
         return null;
+      const nativeAsk = responsePayload.nativeAsk as
+        | Record<string, any>
+        | undefined;
+      if (current.requestPayload?.nativeAsk && nativeAsk?.askResult) {
+        const tasks = new AskingTaskRepository(this.knex);
+        const found = await tasks.findOneBy({ queryId: current.id }, { tx });
+        const task =
+          found &&
+          (await tasks.lockQuery(found.id, current.id, current.projectId, tx));
+        const proof = current.requestPayload.nativeAsk;
+        const scope = {
+          bindingId: current.governanceBindingId,
+          generation: current.governanceGeneration,
+          identityScope: proof.identityScope,
+          metadataReference: {
+            hash: proof.metadataReference.hash,
+            digest: proof.metadataReference.digest,
+          },
+        };
+        if (
+          !task ||
+          task.projectId !== current.projectId ||
+          task.question !== current.requestPayload.question ||
+          !isEqual(task.detail?.nativeScope, scope)
+        )
+          throw new Error('QUERY_INTENT_CONFLICT');
+        // Serialize final history publication and task closure with the
+        // original callback registration lock. A fresh external receipt read
+        // alone cannot prove that no child appeared during that await.
+        if (
+          statusCode !== 202 &&
+          !isEqual(task.detail?.nativeQueries ?? [], settledNativeQueries)
+        )
+          return null;
+        const updated = await tasks.updateQuery(
+          task.id,
+          task.queryId,
+          task.projectId,
+          {
+            detail: {
+              ...nativeAsk.askResult,
+              ...(statusCode === 200 && nativeAsk.doneQueryId === current.id
+                ? { status: AskResultStatus.FINISHED }
+                : {}),
+              nativeScope: scope,
+            },
+          },
+          tx,
+        );
+        if (!updated) throw new Error('QUERY_INTENT_CONFLICT');
+      }
       const [changed] = await tx(this.tableName)
         .where({ id: expected.id })
         .update(
