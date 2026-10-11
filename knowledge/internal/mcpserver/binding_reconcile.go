@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,6 +19,65 @@ import (
 // This private management seam shares the authenticated native MCP transport.
 // It is not in the workspace tool catalog or model-facing tool discovery.
 const nativeBindingReconcileTool = "kailo_binding_reconcile"
+
+// Asynq v0.26.0 owns these indexes (internal/base and internal/rdb). The
+// original runtime inspector already consumes the same queue-key format.
+// Queue discovery and membership must share one Redis execution boundary:
+// separate Inspector pages can miss a task that changes state between pages.
+// This is for the original single-server RedisClientOpt deployment, not Redis
+// Cluster: queue hash tags intentionally differ and a cross-slot call must fail.
+var nativeBindingTaskSnapshot = redis.NewScript(`
+local result = {}
+local remaining = tonumber(ARGV[1])
+if not remaining or remaining <= 0 then
+    return redis.error_reply('native task snapshot budget is unavailable')
+end
+local function charge(bytes)
+    remaining = remaining - bytes
+    if remaining < 0 then error('native task snapshot exceeds delivery limit') end
+end
+local function members(key, command, cardinality)
+    if redis.call(cardinality, key) > remaining then
+        error('native task snapshot exceeds delivery limit')
+    end
+    if command == 'SMEMBERS' then return redis.call(command, key) end
+    return redis.call(command, key, 0, -1)
+end
+local function collect(queue, key, state, command)
+    local cardinality = 'ZCARD'
+    if command == 'LRANGE' then cardinality = 'LLEN' end
+    for _, id in ipairs(members(key, command, cardinality)) do
+        local entry = {queue, id, state}
+        charge(string.len(cjson.encode(entry)))
+        table.insert(result, entry)
+    end
+end
+for _, queue in ipairs(members(KEYS[1], 'SMEMBERS', 'SCARD')) do
+    charge(string.len(queue) + 1)
+    local prefix = 'asynq:{' .. queue .. '}:'
+    for _, state in ipairs({'pending', 'active'}) do
+        collect(queue, prefix .. state, state, 'LRANGE')
+    end
+    for _, state in ipairs({'scheduled', 'retry', 'archived', 'completed', 'lease'}) do
+        collect(queue, prefix .. state, state, 'ZRANGE')
+    end
+    for _, group in ipairs(members(prefix .. 'groups', 'SMEMBERS', 'SCARD')) do
+        charge(string.len(group) + 1)
+        collect(queue, prefix .. 'g:' .. group, 'aggregating', 'ZRANGE')
+    end
+    for _, key in ipairs(members(prefix .. 'aggregation_sets', 'ZRANGE', 'ZCARD')) do
+        charge(string.len(key) + 1)
+        if string.sub(key, 1, string.len(prefix .. 'g:')) ~= prefix .. 'g:' then
+            return redis.error_reply('native aggregation set scope differs')
+        end
+        if redis.call('ZCARD', key) == 0 then
+            return redis.error_reply('native aggregation set evidence is missing')
+        end
+        collect(queue, key, 'aggregating', 'ZRANGE')
+    end
+end
+return result
+`)
 
 func (s *Server) handleNativeBindingReconcile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	ep, err := endpointFromContext(ctx)
@@ -75,7 +136,7 @@ func (s *Server) reconcileNativeBinding(ctx context.Context, ep *types.MCPEndpoi
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("native binding cutoff unavailable", err), nil
 	}
-	value, err := s.observeNativeBinding(ctx, delivery.ep, reference)
+	value, err := s.observeNativeBinding(ctx, delivery, reference)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("native binding observation unavailable", err), nil
 	}
@@ -90,7 +151,8 @@ func (s *Server) reconcileNativeBinding(ctx context.Context, ep *types.MCPEndpoi
 	return jsonResult(value)
 }
 
-func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint, reference map[string]json.RawMessage) (map[string]any, error) {
+func (s *Server) observeNativeBinding(ctx context.Context, delivery *nativeAdapterDelivery, reference map[string]json.RawMessage) (map[string]any, error) {
+	ep := delivery.ep
 	kb := nativeText(reference, "nativeScopeRef")
 	observations := []map[string]any{}
 	complete := true
@@ -99,7 +161,17 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 	finishedDocuments := map[string]string{}
 	unknown := func(kind, key, nativeID string) {
 		complete = false
-		if !nativeUUID(key) || seen[kind+":"+key] {
+		if !nativeUUID(key) {
+			return
+		}
+		if seen[kind+":"+key] {
+			for _, observation := range observations {
+				if observation["nativeType"] == kind && observation["idempotencyKey"] == key {
+					observation["platformStatus"] = "UNKNOWN"
+					delete(observation, "nativeStatus")
+					delete(observation, "terminalAt")
+				}
+			}
 			return
 		}
 		seen[kind+":"+key] = true
@@ -239,59 +311,76 @@ func (s *Server) observeNativeBinding(ctx context.Context, ep *types.MCPEndpoint
 		complete = false
 	} else {
 		inspector := asynq.NewInspectorFromRedisClient(s.redisClient)
-		queues, err := inspector.Queues()
+		cluster, err := s.redisClient.Info(ctx, "cluster").Result()
 		if err != nil {
 			return nil, err
 		}
-		// A completed batch proves its own outcome, not the complete set of
-		// other native tasks. Pagination cannot establish that missing set.
-		if len(queues) != 0 {
-			complete = false
+		standalone := false
+		for _, field := range strings.Fields(cluster) {
+			if strings.HasPrefix(field, "cluster_enabled:") {
+				if field != "cluster_enabled:0" || standalone {
+					return nil, errors.New("native binding snapshot requires standalone Redis")
+				}
+				standalone = true
+			}
 		}
-		for _, queue := range queues {
-			for _, list := range []func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error){
-				inspector.ListPendingTasks, inspector.ListScheduledTasks, inspector.ListRetryTasks,
-				inspector.ListActiveTasks, inspector.ListArchivedTasks, inspector.ListCompletedTasks,
-			} {
-				for page := 1; ; page++ {
-					if err := ctx.Err(); err != nil {
-						return nil, err
-					}
-					tasks, err := list(queue, asynq.Page(page))
-					if errors.Is(err, asynq.ErrQueueNotFound) {
-						break
-					}
-					if err != nil {
-						return nil, err
-					}
-					if len(tasks) == 0 {
-						break
-					}
-					for _, task := range tasks {
-						if task == nil {
-							complete = false
-							continue
-						}
-						belongs, err := s.nativeTaskMayBelong(ctx, ep, kb, task.Payload)
-						if err != nil {
-							return nil, err
-						}
-						if belongs {
-							var batch types.DataSourceSyncPayload
-							if task.Type == types.TypeDataSourceSync && json.Unmarshal(task.Payload, &batch) == nil && batch.SyncLogID == task.ID &&
-								batch.TenantID == ep.TenantID && finishedBatches[task.ID] != "" && finishedBatches[task.ID] == batch.DataSourceID {
-								continue
-							}
-							var payload types.DocumentProcessPayload
-							if task.Type == types.TypeDocumentProcess && json.Unmarshal(task.Payload, &payload) == nil &&
-								payload.TenantID == ep.TenantID && payload.KnowledgeBaseID == kb && finishedDocuments[payload.KnowledgeID] != "" {
-								continue
-							}
-							unknown(task.Type, task.ID, task.ID)
-						}
-					}
+		if !standalone {
+			return nil, errors.New("native binding Redis topology is unavailable")
+		}
+		// Reuse the controlled adapter's existing response budget. Cardinality
+		// checks precede bulk reads; Lua must bound its own work because a
+		// cancelled HTTP/Redis context cannot interrupt a running script.
+		snapshot, err := nativeBindingTaskSnapshot.Run(ctx, s.redisClient, []string{"asynq:queues"}, nativeNumber(delivery.values, "maxBodyBytes")).Slice()
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range snapshot {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			fields, ok := entry.([]interface{})
+			if !ok || len(fields) != 3 {
+				return nil, errors.New("native task snapshot is invalid")
+			}
+			queue, queueOK := fields[0].(string)
+			id, idOK := fields[1].(string)
+			state, stateOK := fields[2].(string)
+			if !queueOK || !idOK || !stateOK || queue == "" || id == "" {
+				return nil, errors.New("native task snapshot coordinates are unavailable")
+			}
+			task, err := inspector.GetTaskInfo(queue, id)
+			if errors.Is(err, asynq.ErrTaskNotFound) || errors.Is(err, asynq.ErrQueueNotFound) {
+				// Expiry/deletion after the snapshot is not terminal evidence and
+				// no longer has enough scope information to disclose this ID.
+				complete = false
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			belongs, err := s.nativeTaskMayBelong(ctx, ep, kb, task.Payload)
+			if err != nil {
+				return nil, err
+			}
+			if !belongs {
+				continue
+			}
+			// A parent may persist SUCCESS before spawning a child and returning.
+			// Only a task already completed at the atomic snapshot can be ruled
+			// out by matching native terminal evidence; live/replayed work cannot.
+			if state == "completed" && task.State == asynq.TaskStateCompleted {
+				var batch types.DataSourceSyncPayload
+				if task.Type == types.TypeDataSourceSync && json.Unmarshal(task.Payload, &batch) == nil && batch.SyncLogID == task.ID &&
+					batch.TenantID == ep.TenantID && finishedBatches[task.ID] != "" && finishedBatches[task.ID] == batch.DataSourceID {
+					continue
+				}
+				var payload types.DocumentProcessPayload
+				if task.Type == types.TypeDocumentProcess && json.Unmarshal(task.Payload, &payload) == nil &&
+					payload.TenantID == ep.TenantID && payload.KnowledgeBaseID == kb && finishedDocuments[payload.KnowledgeID] != "" {
+					continue
 				}
 			}
+			unknown(task.Type, task.ID, task.ID)
 		}
 	}
 	return map[string]any{"reference": reference, "complete": complete, "observations": observations}, nil
@@ -313,6 +402,12 @@ func (s *Server) nativeTaskMayBelong(ctx context.Context, ep *types.MCPEndpoint,
 	}
 	if ref := nativeText(fields, "knowledge_base_id"); ref != "" {
 		return ref == kb, nil
+	}
+	if source, target := nativeText(fields, "source_kb_id"), nativeText(fields, "target_kb_id"); source != "" || target != "" {
+		if !nativeUUID(source) || !nativeUUID(target) {
+			return false, errors.New("native move task scope is unavailable")
+		}
+		return source == kb || target == kb, nil
 	}
 	if ref := nativeText(fields, "data_source_id"); ref != "" {
 		var source types.DataSource
@@ -346,8 +441,13 @@ func (s *Server) nativeTaskMayBelong(ctx context.Context, ep *types.MCPEndpoint,
 			return false, err
 		}
 		binding := document.GetMetadata()["platform_receiver_binding_id"]
-		if document.KnowledgeBaseID == kb && (binding == "" || binding == ep.PlatformBindingID) {
+		// A move can change the current KB before its parent task exits. The
+		// original managed binding remains evidence even after that change.
+		if binding == ep.PlatformBindingID || (document.KnowledgeBaseID == kb && binding == "") {
 			return true, nil
+		}
+		if binding == "" {
+			return false, errors.New("native task historical document scope is unavailable")
 		}
 	}
 	return false, nil

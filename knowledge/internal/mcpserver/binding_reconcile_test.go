@@ -3,12 +3,14 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/ratelimit"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/alicebob/miniredis/v2"
+	redisserver "github.com/alicebob/miniredis/v2/server"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -21,7 +23,7 @@ func TestNativeBindingReconcileConsumesManagementProofAndOriginalRows(t *testing
 		t.Run(scenario, func(t *testing.T) {
 			f := newNativeBindingFixture(t)
 			if scenario != "unavailable-queue" {
-				r := miniredis.RunT(t)
+				r := newNativeBindingRedis(t)
 				f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
 				t.Cleanup(func() { _ = f.server.redisClient.Close() })
 			}
@@ -107,8 +109,8 @@ func TestNativeBindingReconcileConsumesManagementProofAndOriginalRows(t *testing
 			var response map[string]any
 			require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &response))
 			require.Equal(t, f.arguments, response["reference"])
-			require.Equal(t, scenario == "empty" || scenario == "later-generation", response["complete"])
-			if scenario == "legacy-task" || scenario == "legacy-sync" || scenario == "acked-task" {
+			require.Equal(t, scenario == "empty" || scenario == "later-generation" || scenario == "foreign-task" || scenario == "empty-retained-queue", response["complete"])
+			if scenario == "legacy-task" || scenario == "legacy-sync" || scenario == "acked-task" || scenario == "aggregating-task" {
 				observations := response["observations"].([]any)
 				require.Len(t, observations, 1)
 				require.Equal(t, key, observations[0].(map[string]any)["idempotencyKey"])
@@ -121,10 +123,10 @@ func TestNativeBindingReconcileConsumesManagementProofAndOriginalRows(t *testing
 }
 
 func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
-	for _, scenario := range []string{"complete", "foreign-queue", "redelivered-parse", "missing-generation", "wrong-binding", "running-batch", "pending-document", "unconfirmed-application"} {
+	for _, scenario := range []string{"complete", "foreign-queue", "redelivered-parse", "active-parent", "completed-native-task", "missing-generation", "wrong-binding", "running-batch", "pending-document", "unconfirmed-application"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newNativeBindingFixture(t)
-			r := miniredis.RunT(t)
+			r := newNativeBindingRedis(t)
 			f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
 			t.Cleanup(func() { _ = f.server.redisClient.Close() })
 			require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
@@ -170,16 +172,69 @@ func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
 				_, err = asynq.NewClientFromRedisClient(f.server.redisClient).Enqueue(asynq.NewTask(types.TypeDocumentProcess, raw))
 				require.NoError(t, err)
 			}
+			if scenario == "active-parent" || scenario == "completed-native-task" {
+				payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: document})
+				require.NoError(t, err)
+				client := asynq.NewClient(asynq.RedisClientOpt{Addr: r.Addr()})
+				t.Cleanup(func() { _ = client.Close() })
+				entered, release := make(chan struct{}), make(chan struct{})
+				var releaseOnce sync.Once
+				worker := asynq.NewServer(asynq.RedisClientOpt{Addr: r.Addr()}, asynq.Config{Concurrency: 1})
+				require.NoError(t, worker.Start(asynq.HandlerFunc(func(context.Context, *asynq.Task) error {
+					close(entered)
+					<-release
+					if scenario == "active-parent" {
+						_, err := client.Enqueue(asynq.NewTask(types.TypeKnowledgePostProcess, payload), asynq.Queue("descendant"))
+						return err
+					}
+					return nil
+				})))
+				t.Cleanup(func() { releaseOnce.Do(func() { close(release) }); worker.Shutdown() })
+				info, err := client.Enqueue(asynq.NewTask(types.TypeDocumentProcess, payload), asynq.Retention(time.Hour))
+				require.NoError(t, err)
+				select {
+				case <-entered:
+				case <-time.After(10 * time.Second):
+					t.Fatal("original Asynq worker did not start")
+				}
+				finish := func() {
+					releaseOnce.Do(func() { close(release) })
+					inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: r.Addr()})
+					defer inspector.Close()
+					require.Eventually(t, func() bool {
+						current, err := inspector.GetTaskInfo(info.Queue, info.ID)
+						return err == nil && current.State == asynq.TaskStateCompleted
+					}, 10*time.Second, 10*time.Millisecond)
+				}
+				if scenario == "active-parent" {
+					require.NoError(t, nativeBindingTaskSnapshot.Load(context.Background(), f.server.redisClient).Err())
+					f.server.redisClient.AddHook(&nativeSnapshotHook{after: finish})
+				} else {
+					finish()
+				}
+			}
 			delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
 			require.NoError(t, err)
-			value, err := f.server.observeNativeBinding(context.Background(), delivery.ep, fileStorageReferenceForTest(t, binding, kb))
+			value, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
 			require.NoError(t, err)
-			require.Equal(t, scenario == "complete", value["complete"])
+			require.Equal(t, scenario == "complete" || scenario == "foreign-queue" || scenario == "completed-native-task", value["complete"])
 			observations := value["observations"].([]map[string]any)
-			require.Len(t, observations, 1)
+			if scenario == "redelivered-parse" || scenario == "active-parent" {
+				require.Len(t, observations, 2, "pending redelivery is not a completed native task")
+			} else {
+				require.Len(t, observations, 1)
+			}
 			if scenario == "complete" || scenario == "foreign-queue" || scenario == "redelivered-parse" {
 				require.Equal(t, "SUCCEEDED", observations[0]["platformStatus"])
 				require.Equal(t, batch, observations[0]["idempotencyKey"])
+			}
+			if scenario == "active-parent" {
+				next, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
+				require.NoError(t, err)
+				require.Equal(t, false, next["complete"], "new descendant queue must remain in the next atomic snapshot")
+				nextObservations := next["observations"].([]map[string]any)
+				require.Len(t, nextObservations, 2)
+				require.Equal(t, types.TypeKnowledgePostProcess, nextObservations[1]["nativeType"])
 			}
 		})
 	}
@@ -192,4 +247,190 @@ func fileStorageReferenceForTest(t *testing.T, binding, kb string) map[string]js
 	var result map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &result))
 	return result
+}
+
+// The hook runs after Redis has returned the immutable membership snapshot,
+// before the observer asks the original Inspector for each task's current row.
+type nativeSnapshotHook struct {
+	once  sync.Once
+	after func()
+}
+
+func (h *nativeSnapshotHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h *nativeSnapshotHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (h *nativeSnapshotHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		err := next(ctx, cmd)
+		args := cmd.Args()
+		if err == nil && len(args) > 1 && args[1] == nativeBindingTaskSnapshot.Hash() {
+			h.once.Do(h.after)
+		}
+		return err
+	}
+}
+
+func TestNativeBindingAtomicSnapshotPreservesDisappearedTask(t *testing.T) {
+	f := newNativeBindingFixture(t)
+	r := newNativeBindingRedis(t)
+	f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
+	t.Cleanup(func() { _ = f.server.redisClient.Close() })
+	other := redis.NewClient(&redis.Options{Addr: r.Addr()})
+	t.Cleanup(func() { _ = other.Close() })
+	require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
+	kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+	payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: uuid.NewString()})
+	require.NoError(t, err)
+	info, err := asynq.NewClientFromRedisClient(other).Enqueue(asynq.NewTask(types.TypeDocumentProcess, payload))
+	require.NoError(t, err)
+	require.NoError(t, nativeBindingTaskSnapshot.Load(context.Background(), f.server.redisClient).Err())
+	f.server.redisClient.AddHook(&nativeSnapshotHook{after: func() {
+		require.NoError(t, asynq.NewInspectorFromRedisClient(other).DeleteTask(info.Queue, info.ID))
+	}})
+	delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+	require.NoError(t, err)
+	result, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
+	require.NoError(t, err)
+	require.Equal(t, false, result["complete"], "a disappearing task is not completion evidence")
+	require.Empty(t, result["observations"], "missing scope must not expose a possibly foreign task ID")
+}
+
+func TestNativeBindingSnapshotIncludesOriginalAggregationInFlight(t *testing.T) {
+	f := newNativeBindingFixture(t)
+	r := newNativeBindingRedis(t)
+	f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
+	t.Cleanup(func() { _ = f.server.redisClient.Close() })
+	require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
+	kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+	payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: uuid.NewString()})
+	require.NoError(t, err)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	server := asynq.NewServer(asynq.RedisClientOpt{Addr: r.Addr()}, asynq.Config{
+		Concurrency: 1, GroupGracePeriod: time.Second, GroupMaxSize: 1,
+		GroupAggregator: asynq.GroupAggregatorFunc(func(_ string, tasks []*asynq.Task) *asynq.Task {
+			close(entered)
+			<-release
+			return tasks[0]
+		}),
+	})
+	require.NoError(t, server.Start(asynq.HandlerFunc(func(context.Context, *asynq.Task) error { return nil })))
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }); server.Shutdown() })
+	info, err := asynq.NewClientFromRedisClient(f.server.redisClient).Enqueue(asynq.NewTask(types.TypeDocumentProcess, payload), asynq.Group(uuid.NewString()))
+	require.NoError(t, err)
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("original Asynq aggregator did not acquire its task")
+	}
+	groups, err := f.server.redisClient.SMembers(context.Background(), "asynq:{"+info.Queue+"}:groups").Result()
+	require.NoError(t, err)
+	require.Empty(t, groups, "native producer moved the task out of the ordinary group index")
+	delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+	require.NoError(t, err)
+	result, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
+	require.NoError(t, err)
+	require.Equal(t, false, result["complete"])
+	observations := result["observations"].([]map[string]any)
+	require.Len(t, observations, 1)
+	require.Equal(t, info.ID, observations[0]["nativeId"])
+	require.Equal(t, "UNKNOWN", observations[0]["platformStatus"])
+}
+
+func TestNativeBindingSnapshotRejectsDeliveryLimit(t *testing.T) {
+	f := newNativeBindingFixture(t)
+	r := newNativeBindingRedis(t)
+	f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
+	t.Cleanup(func() { _ = f.server.redisClient.Close() })
+	require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
+	kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+	payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: uuid.NewString()})
+	require.NoError(t, err)
+	_, err = asynq.NewClientFromRedisClient(f.server.redisClient).Enqueue(asynq.NewTask(types.TypeDocumentProcess, payload))
+	require.NoError(t, err)
+	delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+	require.NoError(t, err)
+	delivery.values["maxBodyBytes"] = json.RawMessage(`1`)
+	result, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
+	require.ErrorContains(t, err, "exceeds delivery limit")
+	require.Nil(t, result, "an over-limit snapshot is not a successful empty observation")
+}
+
+func TestNativeBindingTaskScopeKeepsOriginalMoveOwnership(t *testing.T) {
+	for _, scenario := range []string{"move-source", "move-target", "moved-managed-document", "legacy-moved-document", "foreign-managed-document"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newNativeBindingFixture(t)
+			require.NoError(t, f.server.db.AutoMigrate(&types.Knowledge{}))
+			kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+			other := uuid.NewString()
+			owner := binding
+			if scenario == "legacy-moved-document" {
+				owner = ""
+			} else if scenario == "foreign-managed-document" {
+				owner = uuid.NewString()
+			}
+			metadata, err := json.Marshal(map[string]string{"platform_receiver_binding_id": owner})
+			require.NoError(t, err)
+			document := &types.Knowledge{ID: uuid.NewString(), TenantID: f.ep.TenantID, KnowledgeBaseID: other, Metadata: metadata}
+			require.NoError(t, f.server.db.Create(document).Error)
+			payload := map[string]any{"tenant_id": f.ep.TenantID, "knowledge_id": document.ID}
+			if scenario == "move-source" {
+				payload["source_kb_id"], payload["target_kb_id"] = kb, other
+			} else if scenario == "move-target" {
+				payload["source_kb_id"], payload["target_kb_id"] = other, kb
+			}
+			raw, err := json.Marshal(payload)
+			require.NoError(t, err)
+			delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+			require.NoError(t, err)
+			belongs, err := f.server.nativeTaskMayBelong(context.Background(), delivery.ep, kb, raw)
+			if scenario == "legacy-moved-document" {
+				require.ErrorContains(t, err, "historical document scope")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, scenario != "foreign-managed-document", belongs)
+		})
+	}
+}
+
+func newNativeBindingRedis(t *testing.T) *miniredis.Miniredis {
+	t.Helper()
+	r := miniredis.RunT(t)
+	// miniredis implements the real Asynq commands/Lua but not INFO cluster.
+	// Only that environment fact is supplied; task/index state is never mocked.
+	r.Server().SetPreHook(func(peer *redisserver.Peer, command string, args ...string) bool {
+		if command == "INFO" && len(args) == 1 && args[0] == "cluster" {
+			peer.WriteBulk("# Cluster\r\ncluster_enabled:0\r\n")
+			return true
+		}
+		return false
+	})
+	return r
+}
+
+func TestNativeBindingSnapshotRefusesUnknownRedisTopology(t *testing.T) {
+	for _, reply := range []string{"cluster_enabled:1", "", "cluster_enabled:0\r\ncluster_enabled:1"} {
+		t.Run(reply, func(t *testing.T) {
+			f := newNativeBindingFixture(t)
+			r := newNativeBindingRedis(t)
+			r.Server().SetPreHook(func(peer *redisserver.Peer, command string, args ...string) bool {
+				if command == "INFO" {
+					peer.WriteBulk(reply)
+					return true
+				}
+				return false
+			})
+			f.server.redisClient = redis.NewClient(&redis.Options{Addr: r.Addr()})
+			t.Cleanup(func() { _ = f.server.redisClient.Close() })
+			require.NoError(t, f.server.db.AutoMigrate(&types.TaskPendingOp{}, &types.DataSource{}, &types.SyncLog{}, &types.Knowledge{}))
+			kb, binding := f.config["nativeKnowledgeBaseId"].(string), f.config["bindingId"].(string)
+			delivery, err := f.server.nativeAdapter(context.Background(), f.ep, false)
+			require.NoError(t, err)
+			result, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
+			require.Error(t, err)
+			require.Nil(t, result, "even an empty directory cannot prove a cross-slot snapshot")
+		})
+	}
 }

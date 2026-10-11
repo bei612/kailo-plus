@@ -5565,3 +5565,63 @@ receiver PEP 的真实回归，已移动至实际 PEP 成功点；原直接退�
 | batch-snapshot-restored.log | 扩展检查发现 PEP 时序回归 1 | `76d566cf788906262da1915f279ee6333cf02d2ac50b0bec22e3f6575be27909` |
 | batch-snapshot-fixed-restored.log | 修复后 repo/MCP 0；service 超时 1 | `81d1204553c88c78f20549249758e7676b17ebe02fbeac39f5ab45ad1b1acb35` |
 | batch-snapshot-retirement-only.log | 原完整退休用例 0 | `a588650cb2530cc8088bf073c67955e7c8df7f7eb7ffcf992c83dbc28f2b8591` |
+
+## 原 Asynq 原子任务快照与 binding 停用观察（2026-10-11）
+
+本批只修原 `reconcileNativeBinding → observeNativeBinding` 消费链。权威为
+`.design/07-组件接入标准.md` §6.3 的停止新调用、原生在途对账与 UNKNOWN
+不得排空；不改变 §6.2 的普通升代语义，不增加任务表、调度器或平台权限权威。
+
+固定官方 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`：
+`internal/router/task.go::getAsynqRedisClientOpt` 是单节点 Redis 投递；
+`internal/router/task_inspector.go::runtimeTaskStateKey` 已消费原 Asynq 状态键；
+`go.mod` 固定 Asynq v0.26.0，`go.sum` 模块摘要为
+`h1:1Zxr92MlDnb1Zt/QR5g2vSCqUS03i95lUfqx5X7/wrw=`。
+核验该原依赖 `internal/rdb/rdb.go::Enqueue/EnqueueUnique/AddToGroup/AddToGroupUnique/Schedule/ScheduleUnique`
+均先向 `asynq:queues` SADD，再执行原任务入队 Lua；`aggregationCheckCmd`
+会把聚合中任务从 groups 移到 aggregation_sets，不能只枚举普通组。
+
+影响与失败边界：
+- 同一只读 Lua 原子取得原队列目录及 pending/active/scheduled/retry/archived/completed/lease、
+  groups 与 aggregation_sets 成员；随后仍用原 Inspector 和已有 SyncLog/Knowledge 终态证据观察。
+  不再因无关 binding 队列永久存在而一概拒绝排空。
+- 脚本内部按既有受控 `maxBodyBytes` 限制项数预检与编码字节；超限拒绝，不截断后声称完整。
+  Redis 拓扑证据缺失或非 standalone 拒绝，未增加 Cluster 支持。
+- 快照时 active 的父任务即使观察时 completed，也不能抵消其快照之后入队的子任务；
+  成员消失、归属/冻结代次缺失仍 UNKNOWN，既有成功观察必须降为 UNKNOWN 而非留下矛盾终态。
+  原实际 producer 在返回前入队，Wiki 子工作显式等待；没有以通用“父子任务”假设代替调用核验。
+- 移动任务同时消费原 source_kb_id/target_kb_id；已移动文档仍按持久 binding 归属识别。
+  不回填旧 generation，不更改独立 endpoint、原 cutoff/新写事务边界或业务正文。
+  已有原对账入口继续承担 UNKNOWN 收敛，不能凭零项或记录丢失创造成功。
+
+真实部署只读核验与模拟检查分开：原 `fork/deploy/provision.py`/
+`redis_entrypoint.sh` 使用 requirepass，无自定义 INFO 禁令；对当前
+`kailo-knowledge-redis-1` 首次无认证 INFO 返回 NOAUTH，随后仅以原受控密码文件
+经 stdin 执行 `redis-cli --no-auth-warning --askpass INFO cluster`，退出 0，
+返回 `cluster_enabled:0`。没有记录凭据。miniredis 检查仅补其缺失的 INFO
+环境回复；任务入队、聚合与 worker 仍走真实 Asynq，不把该回复当真实 Cluster 验收。
+
+固定检查输入为提交 `d712e9e3130d9fc6171c34c866a9871e22f5048b` 加本批两源文件；
+交付候选重放到 `2ce0f8342f0e424ae3284a709a926ce075bc8f95`，仅另追加本节。
+复用 `kailo-knowledge-delete-handoff`（4 CPU / 8 GiB、swap 0），Go 1.26.8；
+源码、日志、临时文件及原 Go 缓存均在 Data，无新镜像/依赖安装。
+证据目录：
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/binding-snapshot.X5nnds`。
+
+原命令：`go test ./internal/mcpserver -run TestNativeBinding -count=1 -timeout=5m -v`
+（容器工作目录 `/tmp/binding-snapshot.X5nnds/knowledge`，GOPROXY/GOSUMDB=off）。
+初版 `positive.log` 退出 0、24.505s，但不代表含后续拓扑/移动归属的末版。
+末版正验与还原各 65 条顶层/子项 PASS；包含真实 worker 延迟子任务、原聚合迁移、
+任务消失、超限、独立 endpoint 与撤权回读。私有两处破坏分别删除 aggregation_sets
+消费、允许 active 快照被当前 completed 抵消，原两断言均真实失败；公共源码未破坏。
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| final-positive.log | 0；7.561s | `a8eaadd68ffdedc6c812e1e1cf8bfe02f7c44781946a10626e4adbe82a19dc75` |
+| negative.log | 1；两处原消费者断言失败 | `052251d014b4a8aa34f82dea045ce07151ac2188810426fd9c89784dc482b9bd` |
+| restored.log | 0；12.181s | `e949bfa612c7afadb4dd14e7fff426450079f791d1558903043c2f161da1a385` |
+
+本批只证明原 MCP/SQLite/miniredis 与 Asynq 消费者定向闭包。未做 PostgreSQL
+行锁并发、真实 Redis Cluster、组件生产部署或 binding 激活；未重跑全局检查。
+knowledge.v2 sync_apply/sync_retire 的完整 release conformance 接缝仍未闭合，
+不声明菜单上架、完整治理接入或 Cells→WeKnora 端到端通过。
