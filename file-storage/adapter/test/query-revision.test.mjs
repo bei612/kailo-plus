@@ -2598,6 +2598,60 @@ test('original native multipart cancellation fences late token, part and complet
   });
 });
 
+test('governed original single-file download freezes the published head before native admission', async t => {
+  for (const mode of ['complete','empty','two-heads','duplicate','draft','unknown-head','metadata-denied','body-denied','moved','changed-user','folder','selection','cross-origin','later-head']) {
+    await t.test(mode, async () => {
+      const {api,node,selection,state,sandbox,pydio,NativeNode}=await nativeDownloadFixture();
+      pydio.Parameters.set('other',{nativeReadRequired:true});
+      pydio.Parameters.set('ENDPOINT_REST_API_V2',mode==='cross-origin'?'https://other.invalid/a':'/a');
+      const location={origin:'https://cells.example.invalid',href:'https://cells.example.invalid/'};
+      const downloads=[]; const calls=[];
+      sandbox.document={location,body:{appendChild(){}},createElement:()=>({click(){downloads.push(this.download);},remove(){}})};
+      sandbox.URL=class extends URL {static createObjectURL(){return 'blob:original';}static revokeObjectURL(){}};
+      sandbox.uuid4=()=>ids[5];
+      let versions=[{VersionId:'selected-original-head',IsHead:true,Draft:false}];
+      if(mode==='empty') versions=[];
+      if(mode==='two-heads') versions.push({VersionId:'another',IsHead:true});
+      if(mode==='duplicate') versions.push({...versions[0]});
+      if(mode==='draft') versions[0].Draft=true;
+      if(mode==='unknown-head') versions[0].IsHead='true';
+      sandbox.fetch=async (url,options)=>{
+        calls.push({url,options});
+        if(options.method==='POST') {
+          assert.equal(options.headers.authorization,'Bearer native-current-user');
+          assert.equal(options.credentials,'same-origin'); assert.equal(options.redirect,'error');
+          assert.deepEqual(JSON.parse(options.body),{FilterBy:'VersionsPublished',Offset:0,Limit:0,Flags:['WithMetaNone']});
+          assert.equal(url,`https://cells.example.invalid/a/n/node/${ids[3]}/versions`);
+          return {ok:mode!=='metadata-denied',async json(){
+            if(mode==='moved') node.path='/different/file.txt';
+            if(mode==='changed-user') pydio.user={...pydio.user};
+            const result={Versions:structuredClone(versions)};
+            if(mode==='later-head') versions=[{VersionId:'new-head-after-selection',IsHead:true}];
+            return result;
+          }};
+        }
+        assert.equal(new URL(url).searchParams.get('versionId'),'selected-original-head');
+        assert.equal(options.headers['Idempotency-Key'],ids[5]);
+        assert.equal(options.headers['X-Kailo-Native-Read'],'file_storage.export@v1');
+        return {ok:mode!=='body-denied',blob:async()=>new Blob(['actual fixed bytes'])};
+      };
+      await api.downloadSelection(selection(mode!=='selection',mode==='folder'?new NativeNode('/folder',false):node));
+      const succeeds=mode==='complete'||mode==='later-head';
+      assert.deepEqual(downloads,succeeds?['file.txt']:[]);
+      assert.equal(state.errors.length,succeeds?0:1);
+      assert.deepEqual(state.downloads,[]); assert.deepEqual(state.selections,[]);
+      assert.equal(calls.length,['folder','selection','cross-origin'].includes(mode)?0:(succeeds||mode==='body-denied'?2:1));
+      assert.equal(location.href,'https://cells.example.invalid/');
+    });
+  }
+  await t.test('independent ordinary download keeps its original hidden form',async()=>{
+    const {api,selection,state}=await nativeDownloadFixture();
+    await api.downloadSelection(selection());
+    assert.equal(state.downloads.length,1); assert.equal(state.signed[0].params.VersionId,undefined);
+    assert.deepEqual(state.errors,[]);
+  });
+});
+
 test('original native download, archive, preview and version consumers use the loaded signer', async t => {
   for (const mode of ['file', 'folder', 'selection', 'mobile', 'preview', 'version', 'cache']) {
     await t.test(mode, async () => {

@@ -2495,3 +2495,71 @@ exit 1，准确捕获 3 个同步响应与 2 个 HTTP 观察错误；正式源�
 
 未运行全量门禁、完整组件绑定、真实上传或浏览器业务；没有新镜像、部署、
 菜单激活或安装包。现有全局失败与其他组件未交付状态不因本批窄验证改变。
+
+## 2026-10-11 普通单文件下载接回原 HUMAN 固定版本读取
+
+基线 `bfea12442835657e1a8d541805fb0c753de0a931`。关联 DD-48/89/90/94、
+`03` §6 HUMAN 同请求 SYNC、`07` §4.6 与 `18` 原生接缝；不是解除完整
+FILE_STORAGE release/binding 门禁。固定 Cells 官方来源
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+`common/service/frontend/bootconf.go::ComputeBootConf`、
+`frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::downloadSelection` 和
+`common/proto/rest/cellsapi-rest-v2.proto::NodeVersions` 均沿原路径消费。
+
+四步影响结论：
+
+1. 原普通下载走 presigned URL/hidden form，没有固定版本及 read/export 头，
+   被已存在的 `PrepareNativeHumanRead`/`NativeHumanReadRequired` 正确拒绝。
+   原 `openVersion` 已消费固定版本、请求 key 与 HUMAN 准入，复用它接普通
+   单文件按钮，不重写下载页面或另造下载服务。
+2. 原 `BootConf.Other` 只投递 `nativeReadRequired:true`，来源为已有
+   `services.pydio.rest.n.platform` 的存在性。原 PydioBootstrap 将 Other
+   原样装入 Parameters，downloadSelection 实际消费；不输出 binding、身份、
+   凭据、权限快照，不作为后端权限或 ACTIVE 证明，无新增运行期/编译期开关。
+   未配置的独立实例保留原 BootConf 和原下载调用。
+3. 受管单文件从原 REST v2 NodeVersions 读取唯一已发布 IsHead，固定其不透明
+   VersionId 传给原 openVersion。元数据使用原当前 native JWT，同源、禁止
+   redirect；正文仍由现有 Core 准入、原生 ACL、fresh PEP 与 receipt 决定。
+   文件名沿原 node label，媒体类型及原签名参数保留。没有新 token、实体、
+   工作流、schema、迁移、自动重试或 latest 回退。
+4. 空历史、重复版本、多个 head、draft、未知 IsHead、HTTP 拒绝、跨源、用户/
+   UUID/路径/仓库变更均拒绝，不能去独立旧路由重试。选中后版本继续变化时
+   仍请求刚冻结的 VersionId；已不存在则由原读取拒绝，不读当前 latest。
+   目录和多文件仍未具有完整受管归档消费者，在调用端直接拒绝，不创建 selection
+   再走旧下载。此处没有解除普通预览、Range、上传、延迟删除、完整归档门禁。
+
+源码完成后复用原 SDK：Node `kailo-cells-closure-kxbrvt`、Go
+`kailo-cells-native-check-lftow7`，均 4 CPU/8 GiB；两个 SDK 原来均仅 sleep，
+主机 available 36 GiB、load 8.38。原 Data 私有源码和独立 Go cache，顺序执行，
+无新容器、依赖下载或大型构建。实际命令：
+
+```text
+node --test --test-name-pattern="governed original single-file download" file-storage/adapter/test/query-revision.test.mjs
+go test -mod=readonly -count=1 -v -run TestNativeReadBootHintDoesNotExportDelivery ./common/service/frontend
+```
+
+Node 执行实际 PydioApi 原类、元数据 fetch、签名、固定版本 body fetch 与本地
+下载消费者，15 子场景/16 tests 通过；包含独立 hidden form 原行为。网络、
+DOM、JWT 与 SDK 使用受控夹具，不是浏览器或真实 Core 业务。Go 调用真实
+ComputeBootConf，两配置场景证明受管提示有消费者且不导出私有 delivery。
+34954 实际 Node=0/Go=0。仅私有源将所选 revision 改成 undefined、boot hint
+改成 false 后，44784 实际 Node=1/Go=1，分别捕获完整/later-head 下载退回
+未固定版本及服务提示断开。原字节还原后 38627 实际 Node=0/Go=0；Go 格式
+检查无输出，正式源码和实际私有输入逐文件核对一致。
+
+完整日志根：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/native-download.p5qkbC/`。
+
+| 原日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `node-positive.log` | `2224164ae41429e7a0f7f3af75c476ce6d6450bb50825b29968eeeed50b78560` | exit 0 |
+| `go-positive.log` | `e63add06ba1f188e35102bbfba8c198fac442f3a3acc5d5e4712177540fafcb1` | exit 0 |
+| `node-negative.log` | `c25cb49f7774e23e2b19f5b520e937f1d9ca8d6036adfa5de72edb7ad0180f50` | exit 1 |
+| `go-negative.log` | `a0f8666a436e400a51faf30fc35dd7f747c3102efa4bdb8cc0e90c8108f123be` | exit 1 |
+| `node-restored.log` | `b420ff5cc34c3cd5ee6ed45abd46fced6dda42af7cb50fc79babb004dd549b9c` | exit 0 |
+| `go-restored.log` | `e63add06ba1f188e35102bbfba8c198fac442f3a3acc5d5e4712177540fafcb1` | exit 0 |
+
+本批未跑全量检查、完整绑定 conformance、生产前端打包或实际浏览器下载，
+没有镜像、部署、菜单激活或新安装包。原 iframe 精确 CSP 和独立 OIDC 登录
+代码未修改；Desktop 跨站 iframe 与 Strict Cookie 的安全会话取得仍未验收，
+不通过放宽 Cookie/CSRF、复制平台 Cookie 或共享身份解除这一门禁。

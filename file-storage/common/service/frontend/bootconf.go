@@ -188,6 +188,14 @@ func ComputeBootConf(ctx context.Context, pool *PluginsPool, showVersion ...bool
 	if e := ApplyBootConfModifiers(ctx, b); e != nil {
 		return nil, e
 	}
+	// Transport selection only: native body access still performs its own
+	// binding, identity, resource and action admission. No credentials leave Go.
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Get() != nil {
+		if b.Other == nil {
+			b.Other = make(map[string]interface{})
+		}
+		b.Other["nativeReadRequired"] = true
+	}
 
 	return b, nil
 

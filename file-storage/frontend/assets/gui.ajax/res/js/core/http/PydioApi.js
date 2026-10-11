@@ -217,6 +217,12 @@ class PydioApi{
 
         const download = Promise.resolve().then(() => {
             requireOriginalUser();
+            if (pydio.Parameters.get('other')?.nativeReadRequired === true) {
+                if (!userSelection.isUnique() || !userSelection.getUniqueNode().isLeaf()) {
+                    throw new Error(pydio.MessageHash[391]);
+                }
+                return this.downloadNativeHead(userSelection.getUniqueNode()).then(() => null);
+            }
             if (userSelection.isUnique()) {
                 let downloadNode, attachmentName;
                 const uniqueNode = userSelection.getUniqueNode();
@@ -260,12 +266,48 @@ class PydioApi{
 
         return download.then(url => {
             requireOriginalUser();
+            if (url === null) return;
             if(agentIsMobile || !hiddenForm){
                 document.location.href = url;
             } else {
                 pydio.UI.sendDownloadToHiddenForm(userSelection, {presignedUrl: url});
             }
         }).catch(error => pydio.UI.displayMessage('ERROR', error.message || error));
+    }
+
+    // Freeze the existing published version through the original native API.
+    // The boot hint selects transport, never authorizes a resource or action.
+    async downloadNativeHead(node) {
+        const pydio = this.getPydioObject();
+        const target = this.getVersionTarget(node);
+        const current = () => this.isVersionTargetCurrent(node, target);
+        const refused = () => new Error(pydio.MessageHash[391]);
+        if (typeof target.uuid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(target.uuid)) throw refused();
+        const endpoint = pydio.Parameters.get('ENDPOINT_REST_API_V2');
+        if (typeof endpoint !== 'string' || !endpoint) throw refused();
+        const base = new URL(endpoint.replace(/\/$/, '') + '/', document.location.href);
+        if (base.origin !== document.location.origin || base.username || base.password || base.search || base.hash) throw refused();
+        const client = PydioApi.getRestClient();
+        const token = await client.getOrUpdateJwt();
+        if (!token || !current()) throw refused();
+        const response = await fetch(new URL(`n/node/${target.uuid}/versions`, base).href, {
+            method: 'POST', credentials: 'same-origin', redirect: 'error',
+            headers: {...client.defaultHeaders, authorization: `Bearer ${token}`, 'content-type': 'application/json'},
+            body: JSON.stringify({FilterBy: 'VersionsPublished', Offset: 0, Limit: 0, Flags: ['WithMetaNone']})
+        });
+        if (!response.ok || !current()) throw refused();
+        const result = await response.json();
+        if (!current() || !Array.isArray(result?.Versions)) throw refused();
+        const ids = new Set();
+        for (const version of result.Versions) {
+            if (!version || typeof version.VersionId !== 'string' || !version.VersionId || ids.has(version.VersionId) ||
+                (version.Draft !== undefined && version.Draft !== false) ||
+                (version.IsHead !== undefined && typeof version.IsHead !== 'boolean')) throw refused();
+            ids.add(version.VersionId);
+        }
+        const heads = result.Versions.filter(version => version.IsHead === true);
+        if (heads.length !== 1) throw refused();
+        return this.openVersion(node, heads[0].VersionId);
     }
 
     /**
