@@ -10,6 +10,7 @@ import { initializeConversationDensityPreference } from "@client-kit/platform/co
 import { initializeFontSizePreference } from "@client-kit/platform/fontSizePreference";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
+import { EmojiBurstProvider } from "@client-kit/platform/react/emoji-burst";
 
 initializeDocumentLanguage();
 initializeFontSizePreference();
@@ -42,8 +43,10 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <App />
-          <Toaster />
+          <EmojiBurstProvider>
+            <App />
+            <Toaster />
+          </EmojiBurstProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

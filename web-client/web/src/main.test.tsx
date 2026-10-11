@@ -3,7 +3,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-const mounted = vi.hoisted(() => ({ root: undefined as Root | undefined }));
+const mounted = vi.hoisted(() => ({ root: undefined as Root | undefined, selectReaction: vi.fn() }));
 vi.mock("react-dom/client", async (original) => {
   const actual = await original<typeof import("react-dom/client")>();
   return { ...actual, default: { ...actual, createRoot: (...args: Parameters<typeof actual.createRoot>) => {
@@ -13,10 +13,13 @@ vi.mock("react-dom/client", async (original) => {
 });
 vi.mock("@/app/App", async () => {
   const { Tooltip, TooltipContent, TooltipTrigger } = await import("@client-kit/platform/react/sidebar/tooltip");
+  const { MessageReactions } = await import("@client-kit/platform/react/messages");
   return { App: () => <>{["first", "second"].map(label => <Tooltip key={label}>
     <TooltipTrigger asChild><button>{label}</button></TooltipTrigger>
     <TooltipContent>{label} hint</TooltipContent>
-  </Tooltip>)}</> };
+  </Tooltip>)}<MessageReactions messageId="admitted-message" canToggle pending={false}
+    reactions={[{emoji:"👍",count:1,reactedByCurrentUser:false,users:[]}]}
+    onSelect={mounted.selectReaction}/></> };
 });
 vi.mock("@/shared/ui/sonner", () => ({ Toaster: () => null }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ ThemeProvider: ({ children }: { children: React.ReactNode }) => children }));
@@ -28,7 +31,14 @@ afterEach(async () => {
   document.body.replaceChildren();
   document.head.querySelector('meta[name="platform-display-name"]')?.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+const motion = {matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()};
+vi.stubGlobal("matchMedia",()=>motion);
+const canvasContext={setTransform:vi.fn(),clearRect:vi.fn(),drawImage:vi.fn(),fillText:vi.fn()};
+vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue(canvasContext as unknown as CanvasRenderingContext2D);
 
 const host = document.createElement("div");
 host.id = "root";
@@ -64,4 +74,29 @@ it("uses the original shared root provider: deliberate dwell for every adjacent 
   await advance(1);
   expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("second hint");
   expect(second.getAttribute("data-state")).toBe("delayed-open");
+
+  // Drive the original MessageReactions consumer under the actual main root,
+  // rather than invoking a test hook or creating a separate provider tree.
+  const reaction=host.querySelector<HTMLButtonElement>('[data-testid="message-reactions"] button')!;
+  await act(async()=>reaction.click());
+  await advance(20);
+  expect(canvasContext.drawImage).toHaveBeenCalled();
+  expect(mounted.selectReaction).toHaveBeenCalledExactlyOnceWith("👍");
+
+  const shared=await import("@client-kit/platform/react/emoji-burst");
+  const desktop=await import("../../../collaboration/desktop/src/shared/ui/EmojiBurstProvider");
+  expect(desktop.EmojiBurstProvider).toBe(shared.EmojiBurstProvider);
+  expect(desktop.useEmojiBurst).toBe(shared.useEmojiBurst);
+
+  // Let the original finite animation finish, then change the real preference
+  // subscription: reduced motion suppresses visuals, not the governed action.
+  await advance(4_000);
+  canvasContext.drawImage.mockClear();
+  motion.matches=true;
+  const sync=motion.addEventListener.mock.calls.at(-1)![1] as () => void;
+  sync();
+  await act(async()=>reaction.click());
+  await advance(20);
+  expect(canvasContext.drawImage).not.toHaveBeenCalled();
+  expect(mounted.selectReaction).toHaveBeenCalledTimes(2);
 });
