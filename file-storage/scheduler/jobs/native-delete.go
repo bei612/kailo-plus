@@ -140,7 +140,11 @@ func NativeDeleteTerminal(ctx context.Context, task *jobproto.Task, limit int64)
 			children[reference.JobID] = reference.JobDigest
 		}
 	}
-	if !complete || len(children) == 0 {
+	// A crash after the last broker ACK may precede the coordinator's
+	// dispatch-complete write. That marker is not a native terminal: the
+	// frozen children and their exact per-node ACKs below prove completion
+	// independently. Without full coverage the operation remains UNKNOWN.
+	if len(children) == 0 {
 		return 0, refused
 	}
 	acknowledged := make(map[string]bool, len(wanted))

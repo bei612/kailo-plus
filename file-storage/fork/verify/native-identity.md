@@ -1287,6 +1287,67 @@ PutJob、broker 派发及响应边界，但异步 child `scheduler/tasks/task.go
 运行未执行。本节只计源码接线及上述受限消费者证据，后续沿已有 PEP/绑定
 链闭合延迟执行门禁，不新建执行或终态权威。
 
+### 原删除完整 ACK 与末尾派发标记丢失的收敛
+
+- 权威与原逻辑：`.design/03` §6、`.design/06` §5.1 和 ADR-12 §8 允许按原
+  ExternalExecution 的真实 native 事实观察终态，不重放。固定 Cells
+  `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+  `scheduler/jobs/userspace/userspace.go::DeleteNodesTask` 在返回前提交原生子任务；
+  当前治理 producer `userspace/native-delete.go::DeleteNodesGoverned` 最后只写
+  `nativeDeleteDispatchComplete`。进程在最后子任务提交后、这个标记落盘前崩溃，
+  已有所有节点终态 ACK 仍被 `NativeDeleteTerminal` 拒绝，是本次修正对象。
+- 影响面：只改变 `scheduler/jobs/native-delete.go::NativeDeleteTerminal` 的末尾
+  派发标记必填条件。实际消费者仍是 `scheduler/jobs/rest/native-delete.go::nativeDeleteObservation`；
+  原 binding/actor/operation 匹配、observe/extract_usage PEP、响应前 fresh PEP 都不变。
+  无字段、schema、数据库迁移或新状态；旧带标记记录与缺标记记录沿同一原生证据读取。
+- 副作用：不派发新任务、不补写伪 ACK。必须读取每个冻结 child Job 的精确 digest、
+  owner、selector、create-only claim、Finished/EndTime 及逐项 mutation ACK，所选 UUID
+  全覆盖且无重复才将原 coordinator 持久化为 Finished；这份观察 ACK 未确认仍不返回终态。
+  标记存在但失败或重复仍拒绝。marker 不是副作用成功证据，也不替代任何节点 ACK。
+- 边界：永久删除与回收使用同一规则；缺 child、部分 ACK、未覆盖 UUID、空 selector、
+  错 action/节点/回收目标/digest 或查询/落盘响应不明均保持 UNKNOWN（`06` §4），
+  不将缺失解释为零用量或可重试删除。存储不可达继续原查询，完整肯定证据到齐后原
+  observe 收敛；没有证据不设猜测终态时限，也不声明部分副作用 UNKNOWN 已全部解决。
+
+延迟 child 副作用前平台 fresh 授权仍是发布阻断。本次核对 `.design/03:718`、
+`.design/10` §1/§4、ADR-12 §8 与 `action_token.rs::issue_component_action` /
+`application_action.rs::advance_inner`：现 execute 只由原首次派发签票，EE 已存在时
+只走 reconcile；系统观察令牌不能续 execute。Adapter Protocol v1 `pep_check`
+要求完整未过期 ActionToken，尚无 binding SERVICE 按原 EE 取得延迟执行授权的
+实际消费者。本次未将票据写入持久 broker、未借用 SOURCE/PROTOCOL/observe 授权、
+未增加协议或延长业务票据，也未激活 release/binding。
+
+本增量取得以下实现后正向、真实生产反证与还原窄验：原 4 CPU / 8 GiB SDK
+`kailo-cells-native-check-lftow7` 已沿 Data 上的 Go 缓存与临时目录启动
+`go test -count=1 -v -run '^TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements$' ./scheduler/jobs/grpc`，
+句柄 `45329` 已实际退出 0，16 个场景及原 BoltDB DAO/gRPC 目标通过，
+包耗时 78.962s；`gofmt -d` 未输出差异。窄验日志在
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-delete-governed.WFcXfh/terminal-positive.log`。
+日志 SHA-256 为 `8e413cd0183c02c35066661683f7bd511f8ecceee6a16a9718582428e77c14ce`。
+仅在 SDK 私有生产副本恢复旧 `!complete` 条件，原目标反证句柄 `56416`
+实际退出 1，包耗时 94.511s：`missing-dispatch-ack` 与
+`recycle-missing-dispatch-ack` 两场景报
+`actual complete ACKs not accepted: 0 conflict`，其余 14 场景通过，
+不是编译失败。还原该生产行后，两份 Go 文件与正式源码分别 `cmp` 退出 0；
+同一原目标还原句柄 `21275` 实际退出 0，16 场景全通过，包耗时 349.062s。
+原正向/反证/还原均使用原 BoltDB DAO 与 gRPC 消费者，未以 Mongo mock
+冒充 Mongo 实例验收，未新增或重启 SDK，未清缓存。
+
+同一日志目录另两份原件为：
+
+| 日志 | SHA-256 | 退出码 |
+| --- | --- | --- |
+| `terminal-negative.log` | `51889f44526e31d1a8efc2f81e3a3bce7c62ebdd61257391cc8035ce1821271d` | 1，预期反证 |
+| `terminal-restored.log` | `f2fb3436f77de618262dadb71c758b74d8cb24113230b28e71680beb9f000851` | 0 |
+
+本增量的全量检查、真实 Mongo、实际 binding 与 UI 操作验收未执行；不将这
+16 场景称为删除完整治理、Cells 七必选批准或真实跨服务业务验收。
+
+2026-10-11 阶段收口以 `4bc73369666644a05bf79369922d8b7ebc54c199` 为基线，
+仅提取本节、上述生产函数及对应原测试；两份 Go 候选与已验证 SDK 输入逐字节
+`cmp` 均退出 0，三份日志 SHA-256 与本节一致。排除同文件 NativeCell 新增测试，
+不纳入尚未闭合的分享/绑定停用代码；复用上述窄验，未重新构建或部署。
+
 ## 2026-10-11：PEP 冻结 binding 代次兼容闭包
 
 本批只交付 Adapter PEP 可选 `bindingGeneration`，不是 Cells/Wren 完整治理、

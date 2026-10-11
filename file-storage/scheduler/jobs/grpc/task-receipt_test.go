@@ -76,7 +76,7 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 		}
 		defer connection.Close()
 		grpcclient.RegisterMock(common.ServiceJobsGRPC, connection)
-		for index, mode := range []string{"delete-complete", "recycle-complete", "missing-ack", "partial-ack", "wrong-node", "wrong-action", "wrong-recycle-target", "wrong-job-digest", "missing-dispatch-ack", "failed-child", "missing-child", "empty-selector"} {
+		for index, mode := range []string{"delete-complete", "recycle-complete", "missing-ack", "partial-ack", "wrong-node", "wrong-action", "wrong-recycle-target", "wrong-job-digest", "missing-dispatch-ack", "recycle-missing-dispatch-ack", "partial-missing-dispatch-ack", "uncovered-missing-dispatch-ack", "invalid-dispatch-ack", "failed-child", "missing-child", "empty-selector"} {
 			t.Run(mode, func(t *testing.T) {
 				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1)
 				ids := []string{"00000000-0000-4000-8000-000000000101", "00000000-0000-4000-8000-000000000102"}
@@ -84,7 +84,7 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 				if err := store.ClaimJob(ctx, coordinatorJob); err != nil {
 					t.Fatal(err)
 				}
-				coordinator, err := jobstore.NewNativeWriteTask("binding", coordinatorJob.ID, key, "owner", "native-user", map[string]interface{}{"action_key": "file_storage.delete@v1"}, map[string]interface{}{"nativeObjectRefs": ids, "removePermanently": mode != "recycle-complete" && mode != "wrong-recycle-target"})
+				coordinator, err := jobstore.NewNativeWriteTask("binding", coordinatorJob.ID, key, "owner", "native-user", map[string]interface{}{"action_key": "file_storage.delete@v1"}, map[string]interface{}{"nativeObjectRefs": ids, "removePermanently": !strings.Contains(mode, "recycle")})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -100,6 +100,9 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 				if mode == "empty-selector" {
 					action.NodesSelector.Query.SubQueries[0], _ = anypb.New(&tree.Query{})
 				}
+				if mode == "uncovered-missing-dispatch-ack" {
+					action.NodesSelector.Query.SubQueries[0], _ = anypb.New(&tree.Query{UUIDs: ids[:1]})
+				}
 				childJob := &jobproto.Job{ID: coordinatorJob.ID + "-" + key + "-0", Owner: "owner", Actions: []*jobproto.Action{action}, Metadata: map[string]string{jobstore.NativeDeleteJob: coordinatorJob.ID, jobstore.NativeDeleteTask: key}}
 				if err := store.ClaimJob(ctx, childJob); err != nil {
 					t.Fatal(err)
@@ -110,8 +113,8 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 				}
 				ref, _ := json.Marshal(map[string]string{"jobId": childJob.ID, "taskId": childJob.ID, "jobDigest": digest})
 				coordinator.ActionsLogs = append(coordinator.ActionsLogs, &jobproto.ActionLog{OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{JsonBody: ref, Vars: map[string]string{jobstore.NativeDeleteJob: "true"}}}}})
-				if mode != "missing-dispatch-ack" {
-					coordinator.ActionsLogs = append(coordinator.ActionsLogs, &jobproto.ActionLog{OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: true, Vars: map[string]string{jobstore.NativeDeleteDispatchComplete: "true"}}}}})
+				if !strings.HasSuffix(mode, "missing-dispatch-ack") {
+					coordinator.ActionsLogs = append(coordinator.ActionsLogs, &jobproto.ActionLog{OutputMessage: &jobproto.ActionMessage{OutputChain: []*jobproto.ActionOutput{{Success: mode != "invalid-dispatch-ack", Vars: map[string]string{jobstore.NativeDeleteDispatchComplete: "true"}}}}})
 				}
 				if err := store.ClaimTask(coordinator); err != nil {
 					t.Fatal(err)
@@ -127,7 +130,7 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 					child.Status = jobproto.TaskStatus_Error
 				}
 				for n, id := range ids {
-					if mode == "missing-ack" || mode == "partial-ack" && n == 1 {
+					if mode == "missing-ack" || (mode == "partial-ack" || mode == "partial-missing-dispatch-ack" || mode == "uncovered-missing-dispatch-ack") && n == 1 {
 						continue
 					}
 					event := &tree.NodeChangeEvent{Type: tree.NodeChangeEvent_DELETE, Source: &tree.Node{Uuid: id, Path: "native/item"}}
@@ -157,7 +160,7 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 					}
 				}
 				completed, err := jobstore.NativeDeleteTerminal(ctx, coordinator, 65536)
-				want := mode == "delete-complete" || mode == "recycle-complete"
+				want := mode == "delete-complete" || mode == "recycle-complete" || mode == "missing-dispatch-ack" || mode == "recycle-missing-dispatch-ack"
 				if want && (err != nil || completed != 123) {
 					t.Fatalf("actual complete ACKs not accepted: %d %v", completed, err)
 				}
@@ -170,6 +173,12 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 				}
 				if (stored.Status == jobproto.TaskStatus_Finished) != want {
 					t.Fatal("coordinator terminal did not match native evidence")
+				}
+				if want {
+					completed, err := jobstore.NativeDeleteTerminal(ctx, stored, 65536)
+					if err != nil || completed != 123 {
+						t.Fatalf("persisted terminal did not survive observation: %d %v", completed, err)
+					}
 				}
 				stripped := proto.Clone(childJob).(*jobproto.Job)
 				stripped.Metadata = nil
