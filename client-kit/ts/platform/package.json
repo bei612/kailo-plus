@@ -8,6 +8,7 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/button": "./src/react/profile/buzz/shared/ui/button.tsx",
     "./react/use-history-search-state": "./src/react/use-history-search-state.ts",
     "./react/search/*": "./src/react/search/*.ts",
     "./react/search/TopbarSearch": "./src/react/search/TopbarSearch.tsx",
