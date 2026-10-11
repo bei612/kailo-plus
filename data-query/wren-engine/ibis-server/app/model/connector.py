@@ -41,6 +41,8 @@ class Connector:
             self._connector = MSSqlConnector(connection_info)
         elif data_source == DataSource.canner:
             self._connector = CannerConnector(connection_info)
+        elif data_source == DataSource.postgres:
+            self._connector = PostgresConnector(connection_info)
         elif data_source == DataSource.bigquery:
             self._connector = BigQueryConnector(connection_info)
         elif data_source in {
@@ -104,19 +106,20 @@ class MSSqlConnector(SimpleConnector):
             return rows[0][0]
 
 
-class CannerConnector:
+class PostgresConnector:
     def __init__(self, connection_info: ConnectionInfo):
-        self.connection = DataSource.canner.get_connection(connection_info)
+        self.connection = DataSource.postgres.get_connection(connection_info)
 
     @tracer.start_as_current_span("connector_query", kind=trace.SpanKind.CLIENT)
     def query(self, sql: str, limit: int) -> pd.DataFrame:
-        # Canner enterprise does not support `CREATE TEMPORARY VIEW` for getting schema
+        # Reuse the native Canner PostgreSQL schema reader: a read-only source
+        # need not grant CREATE TEMPORARY VIEW just to describe a query.
         schema = self._get_schema(sql)
         return self.connection.sql(sql, schema=schema).limit(limit).to_pandas()
 
     @tracer.start_as_current_span("connector_dry_run", kind=trace.SpanKind.CLIENT)
     def dry_run(self, sql: str) -> Any:
-        # Canner enterprise does not support dry-run, so we have to query with limit zero
+        # Describe through the original SELECT-only, zero-row execution path.
         return self.connection.raw_sql(f"SELECT * FROM ({sql}) LIMIT 0")
 
     @tracer.start_as_current_span("get_schema", kind=trace.SpanKind.CLIENT)
@@ -133,6 +136,11 @@ class CannerConnector:
     @staticmethod
     def _to_ibis_type(type_name: str) -> dt.DataType:
         return postgres_compiler.type_mapper.from_string(type_name)
+
+
+class CannerConnector(PostgresConnector):
+    def __init__(self, connection_info: ConnectionInfo):
+        self.connection = DataSource.canner.get_connection(connection_info)
 
 
 class BigQueryConnector(SimpleConnector):

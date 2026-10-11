@@ -11269,3 +11269,106 @@ input, not this private candidate. Logs `build.log`, `build-root.log`,
 `docs-formal.log`, `docs-formal-configured.log` and
 `docs-formal-configured-final.log` are retained in the evidence directory.
 No additional global build or verification environment was opened to mask these boundaries.
+
+## 2026-10-11 — PostgreSQL reader metadata/query without TEMP
+
+Authority and scope: the required source credential is genuinely read-only;
+granting TEMP to accommodate schema discovery would contradict native
+`verifyPostgresReader`. Fixed engine
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0`,
+`ibis-server/app/model/connector.py::CannerConnector._get_schema` already
+implements PostgreSQL wire schema discovery with SELECT LIMIT 0 and pg_type.
+This authorized governance adaptation shares that implementation with the
+existing PostgreSQL Connector dispatch; Canner retains the same methods.
+`ibis-server/app/model/metadata/postgres.py::get_table_list/get_constraints/get_version`
+supply the known catalog-result schemas to Ibis' native sql(schema=...) API.
+
+Impact and compatibility: no database migration, permission increase, new query
+engine, credential format, platform entity or API is introduced. Existing
+query limits, schema type mapping and QueryDryRunError remain the consumers.
+Catalog comments/nulls and original business table enumeration remain native.
+Zero rows are still zero rows; unknown SQL/permissions raise the existing
+errors. This does not authorize a query: native admission, binding and source
+credential checks remain unchanged. Source reads are not a new execution
+authority and no document/query result body is copied to Core.
+
+Actual failure before implementation: the isolated original authenticated
+updateDataSource API returned GraphQL INTERNAL_SERVER_ERROR because Ibis'
+implicit PostgreSQL schema inference creates a temporary view. Independent
+ProjectRepository readback confirmed the source was unchanged. The observation
+is `reader.iotRGl/source-update-observation.json`, operation
+`fd5f9013-f657-481c-b811-db52df71e453`; no identical API retry followed.
+The temporary preparation listener PID 397 was stopped, session 15623 exit 0.
+
+Verification used the existing Ibis container, 2 CPU/2 GiB, with 37 GiB host
+available and four D-state processes before execution. The fixed app source
+plus these two edits was exported to the private RAM-backed
+`/dev/shm/kailo-reader-candidate`; the running service files were untouched.
+The existing Ibis 10.3.1 dependencies executed the original consumers against
+the real isolated PostgreSQL reader. The private credential went through stdin,
+not argv or logs. All six native privilege assertions were false: TEMP,
+superuser, createdb, createrole, replication, bypassrls.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ/reader.iotRGl`.
+The command body was:
+`jq ".connectionInfo | .port |= tostring" connection-secret.json | docker exec -i -w /dev/shm/kailo-reader-candidate -e PYTHONDONTWRITEBYTECODE=1 kailo-wren-conformance-pawcoz-ibis-server-1 python readonly-consumers.py`.
+The pipeline used pipefail. The reader script SHA-256 is
+`3f1cc355639f133bf14ff87f669cbbceaccf3aa66a81afd5f0a172b3ea4a2652`.
+
+- Positive session 71797 exit 0: queryRows=1, dryRun=true,
+  nativeErrorMapping=true, metadataEndpoints=3, sharedCannerMethods=true.
+  `readonly-final-positive.log` SHA-256
+  `aa8a083223a49279232a8073635e9a82368bc879933a8f145f21920c86b15a1e`.
+- Private single-branch destruction routed PostgreSQL back to SimpleConnector.
+  Session 32949 exit 1 raised the real PostgreSQL InsufficientPrivilege:
+  permission denied to create temporary tables in database wren_native.
+  `readonly-negative.log` SHA-256
+  `fa5efb3123f834170721d1d58bf659af2d4a1b3283b303d8e41742a011ae2d5a`.
+- Restored exact production source, session 44325 exit 0 with the same positive
+  output. `readonly-restored.log` SHA-256 equals the positive log above.
+  The two production files also pass git diff --check.
+
+Boundaries: the first direct probe rejected numeric port before conversion to
+the native string field; another attempt imported the older fixed source into
+the current image's different app API and failed UnknownIbisError import.
+Using the complete fixed app source resolved that evidence-input mismatch.
+Docker cp cannot target the private /dev/shm mount; tar export was used instead.
+No failures are reported as passes. An independent Canner deployment, complete
+upstream pytest suite, full release suite and actual HTTP source update after
+this source repair have not been validated. The live Ibis image is still
+`sha256:54f1f060d64982c09d9b5f68420a95810a40e37da83449af8f68e8f25ae86940`;
+it was not replaced. Source-built Ibis artifact registration and deployment,
+the real project reader switch, Agent/binding validation and complete suite
+remain separate unfinished delivery steps.
+
+
+Correction before source submission: the RAM-backed input above did not satisfy
+apps/07 §2.1's Data-only validation-input requirement. It remains recorded as
+historical evidence, not Data evidence. The running Ibis had no bind mounts and
+its containerd writable snapshot was on the root filesystem. It was not moved.
+An explicitly authorized, one-off check reused the same cached image with
+--pull never, read-only rootfs, 2 CPU/2 GiB, no-new-privileges, cap-drop ALL,
+log-driver none and only the original private fixture network. Candidate source
+was read-only mounted from `/volumes/data/kailo/tmp/wren-ibis-readonly.OU4Q5j/source`
+to `/candidate`; its /tmp was explicitly mounted from the sibling Data tmp
+directory. No dependencies or ports were added. The image's relative service
+entrypoint initially failed under the private workdir (exit 1); that created-only
+container was removed and the authorized check used explicit /bin/sleep.
+
+The same stdin command ran `python check.py` in this bounded Data-only check.
+It additionally exercised actual Connector(DataSource.canner, CannerConnectionInfo)
+dispatch, native connection creation and inherited query/dry_run against the
+real PostgreSQL wire. An independent Canner server remains untested. Check script
+SHA-256: `63a6f521de9355802ab6eb83d672264ca9b05870c533fca8078ffe3597641deb`.
+Data positive session 91003 exit 0; private same-branch destruction session 51271
+exit 1 with the same real TEMP denial; exact-source restoration session 71291
+exit 0. These three Data-only rerun logs are in
+`/volumes/data/kailo/tmp/wren-ibis-readonly.OU4Q5j/`, not the earlier
+`reader.iotRGl/` evidence directory. `data-positive.log` and
+`data-restored.log` SHA-256:
+`0031bb75433b3e5cf6d0142765653a3a93cc0e0d6b843cfee109f5a63361fde1`;
+`data-negative.log` SHA-256:
+`b18387c45e3af3458a2bab4c316aaa1f6dd31837391ec8e0007b3d930cbc4a83`.
+Only that one-off check container was stopped and removed; online Ibis remained
+untouched. These are source-consumer checks, not a successful HTTP deployment.

@@ -48,7 +48,27 @@ class PostgresMetadata(Metadata):
                 t.table_type IN ('BASE TABLE', 'VIEW')
                 AND t.table_schema NOT IN ('information_schema', 'pg_catalog');
             """
-        response = self.connection.sql(sql).to_pandas().to_dict(orient="records")
+        # These catalog columns have a fixed schema. Supplying it avoids Ibis
+        # creating a temporary view to infer the result, which requires TEMP
+        # even though listing a read-only source does not write anything.
+        response = (
+            self.connection.sql(
+                sql,
+                schema={
+                    "table_catalog": "string",
+                    "table_schema": "string",
+                    "table_name": "string",
+                    "column_name": "string",
+                    "data_type": "string",
+                    "is_nullable": "string",
+                    "ordinal_position": "int32",
+                    "table_comment": "string",
+                    "column_comment": "string",
+                },
+            )
+            .to_pandas()
+            .to_dict(orient="records")
+        )
 
         unique_tables = {}
         for row in response:
@@ -99,7 +119,21 @@ class PostgresMetadata(Metadata):
                 ON ccu.constraint_name = tc.constraint_name
             WHERE tc.constraint_type = 'FOREIGN KEY'
             """
-        res = self.connection.sql(sql).to_pandas().to_dict(orient="records")
+        res = (
+            self.connection.sql(
+                sql,
+                schema={
+                    "table_schema": "string",
+                    "table_name": "string",
+                    "column_name": "string",
+                    "foreign_table_schema": "string",
+                    "foreign_table_name": "string",
+                    "foreign_column_name": "string",
+                },
+            )
+            .to_pandas()
+            .to_dict(orient="records")
+        )
         constraints = []
         for row in res:
             constraints.append(
@@ -124,7 +158,11 @@ class PostgresMetadata(Metadata):
         return constraints
 
     def get_version(self) -> str:
-        return self.connection.sql("SELECT version()").to_pandas().iloc[0, 0]
+        return (
+            self.connection.sql("SELECT version()", schema={"version": "string"})
+            .to_pandas()
+            .iloc[0, 0]
+        )
 
     def _format_postgres_compact_table_name(self, schema: str, table: str):
         return f"{schema}.{table}"
