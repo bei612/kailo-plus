@@ -59,6 +59,9 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *idm.CreateWorkspaceR
 		req.Workspace.Slug = slug.Make(req.Workspace.Label)
 	}
 	update, err := dao.Add(ctx, req.Workspace)
+	if err != nil {
+		return nil, err
+	}
 	// ADD POLICIES
 	if len(req.Workspace.Policies) > 0 {
 		if req.Workspace.Policies, err = dao.AddPolicies(ctx, update, req.Workspace.UUID, req.Workspace.Policies); err != nil {
@@ -68,10 +71,6 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *idm.CreateWorkspaceR
 	resp := &idm.CreateWorkspaceResponse{
 		Workspace: req.Workspace,
 	}
-	if err != nil {
-		return nil, err
-	}
-
 	if update {
 		// Propagate creation or update event
 		broker.MustPublish(ctx, common.TopicIdmEvent, &idm.ChangeEvent{

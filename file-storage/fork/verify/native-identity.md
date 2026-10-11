@@ -2043,3 +2043,61 @@ Bolt 生产输入均再次与正式源码逐字节比对成功。
 
 本轮只闭合实际部署所用 Bolt DAO 的该源码与反证；没有新部署、真实 Core
 停用全链、Mongo 实例验证、浏览器/设备验收或新增 release/binding 激活。
+
+## 2026-10-11：原 Workspace 写入失败不得被策略写入覆盖
+
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`idm/workspace/grpc/handler.go::Handler.CreateWorkspace` 在 `DAO.Add` 返回
+错误后仍执行 `DAO.AddPolicies`，后者会覆盖同一个 err。策略写入成功时，
+原 handler 会返回 Workspace 并发布 CREATE/UPDATE，掩盖 Workspace 写入失败。
+本批直接把原错误检查移到 Add 之后，不增加第二条写入链或成功条件。
+
+四步影响结论：
+
+1. 权威为 DD-87/88、工程规则 9/10/15 与原生终态证据要求；状态是原上游
+   缺陷需二开修正，不扩大 NativeCell 只读成员变更的授权范围。
+2. 实际消费者是原 share.Client.UpsertCell 最后的 CreateWorkspace RPC，以及
+   原独立 Workspace 写入口；DAO、schema、协议和四侧生成不变，无数据迁移。
+   NativeCellPut 对 UpsertCell 错误仍返回原 nativeCellUnknown，保留原 Task
+   与同一请求键，不追加完成回执，不把部分 ACL 副作用标记为失败或成功。
+3. Add 错误必须原样返回，之后不调用策略持久化、不发布成功事件；AddPolicies
+   自身失败仍保持原错误。没有新增状态、账本、重试或自动清理副作用。
+4. 已覆盖有/无策略、DAO 取消/超时/写入错误及成功 CREATE/UPDATE；错误
+   沿原 RPC 映射，不新增六类错误之外的分类。异步撤权、分区恢复与重复
+   投递仍走既有消费者，不因本修复增加验收范围。
+
+事后检查 `idm/workspace/grpc/handler_test.go::TestCreateWorkspacePreservesWriteFailure`
+复用原 TemplateSQL/SQLite、原 Workspace DAO 和原 handler；只在 DAO 边界
+注入写入错误，以原 broker 接口记录事件。九个场景包含六种 Add 失败组合、
+正常创建/更新、策略写入失败。它不等于真实 Core 准入或在线数据库故障演练。
+
+原受限 SDK `kailo-cells-native-check-lftow7`（4 CPU / 8 GiB、Data 独立
+mod/build 缓存）顺序运行，无下载和新容器。沿原 CELLS_WORKING_DIR 与
+CELLS_DATA_DIR，命令为：
+
+```sh
+GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local \
+go test -tags=sql -mod=readonly -count=1 -v \
+  -run '^TestCreateWorkspacePreservesWriteFailure$' ./idm/workspace/grpc
+```
+
+首次外层误用 sh 的 pipefail，exit 2，Go 未启动；改用 bash 后 48807 exit 0，
+SQLite 一组九场景通过。随后仅在私有生产副本移除新增早返，90262 exit 1，
+六种 Add 错误实际返回 nil error/非空 Workspace 并发布事件，有策略时还执行
+了策略写入，检查准确拒绝。此破坏未恢复原来靠后的检查，故无策略三项属于
+移除早返的反证，而有策略三项直接覆盖原错误被覆盖的缺陷。还原且两文件
+与正式源码 cmp 均为 0 后，30209 同命令 exit 0。gofmt 已在原 SDK 执行，
+正式两文件与实际验证输入一致。
+
+日志目录 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `workspace-write-positive.log` | `f7e685db0505c980f3a93c36d7729f916c15c39cb35418045a3e7246084531fc` | exit 0 |
+| `workspace-write-negative.log` | `5ce5cfe60977eb7e5c6b57fde19d99257780ec48896fe4f8fecaa3ec82ee3444` | exit 1，抓到伪成功 |
+| `workspace-write-restored.log` | `13f5fa295f58b9417cbc4ad8735f564629345acf1689a465fdc0bca6b8823bdf` | exit 0 |
+
+边界纠正：原 GetOrCreateWorkspace 对非空 UUID 查无对象会拒绝，不会自动
+新建；因此没有给该 helper 叠加无效保护。真正的最终 DAO.Add 仍为 upsert，
+读取与最终写入间对象被删除的竞态尚未闭合，本批不能替代原子存在性控制。
+本批仅源码与定向正反验证；未跑全量门禁、未部署、未激活组件 binding。
