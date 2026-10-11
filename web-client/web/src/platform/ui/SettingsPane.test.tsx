@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPane } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
@@ -10,6 +10,7 @@ import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
 import { npubEncode } from "nostr-tools/nip19";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserNotificationsProvider } from "./BrowserNotifications";
+import { preloadThemePreviewVars } from "@client-kit/platform/theme/use-theme-preview-vars";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,8 +38,38 @@ vi.mock("@/shared/theme/ThemeProvider", () => ({
   useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isDark: false, isLoading: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }),
 }));
 
+// Prepare the original theme assets before timing settings interactions; this
+// host suite does not measure cold asset loading and does not fake the palette.
+beforeAll(async () => { await preloadThemePreviewVars(); });
 beforeEach(() => { setLocale("en"); });
 describe("Web original settings host", () => {
+  it.each([
+    ["Linux x86_64", "Mozilla/5.0 (X11; Linux x86_64)", false],
+    ["Linux aarch64", "Mozilla/5.0 (Linux; Android 15)", true],
+    ["Win32", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", true],
+    ["MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X)", true],
+  ] as const)("preserves original glass visibility on %s (%s)", async (platform, userAgent, visible) => {
+    vi.stubGlobal("navigator", Object.create(navigator, { platform: { value: platform }, userAgent: { value: userAgent } }));
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><SettingsPane /></SidebarProvider></PlatformProvider>));
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-appearance"]')!.click());
+      const glass = host.querySelector<HTMLButtonElement>('[data-testid="glass-background-toggle"]');
+      expect(Boolean(glass)).toBe(visible);
+      if (visible) expect(glass!.disabled).toBe(true);
+      expect(host.querySelector('[data-testid="glass-opacity-row"]')).toBeNull();
+      expect(host.querySelector('[data-testid="conversation-display-group"]')).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
   it("renders one original notification page without the invented workspace settings block", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));

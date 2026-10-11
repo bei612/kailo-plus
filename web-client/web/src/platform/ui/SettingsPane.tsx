@@ -1,5 +1,6 @@
 import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { getPlatformKeys, getShortcutsByCategory } from "@client-kit/platform/keyboard-shortcuts";
+import { isLinuxPlatform } from "@client-kit/platform/keyboard-platform";
 import { useEffect, useId, useRef, useState } from "react";
 import { translate } from "@client-kit/platform/i18n";
 import {
@@ -46,7 +47,7 @@ export function SettingsPane({ active = true, fallbackDisplayName, onClose }: { 
       <div hidden={section !== "profile"}><WebProfileSettings fallbackDisplayName={fallbackDisplayName} /></div>
       {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
       {section === "appearance" ? (
-        <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
+        <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} hideGlass={isLinuxPlatform()} />
       ) : section === "notifications" ? (
         <BrowserNotificationSettings />
       ) : section==="shortcuts" ? (

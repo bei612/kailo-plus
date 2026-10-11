@@ -111,3 +111,66 @@ SDK 的已安装 `file:` 包仍是旧副本；将本批准确的 package export�
 实际显示“此处不可用”，不能标记该功能已验收。本批未发布新版本，未把旧图
 当成新 hook 的浏览器行为验收；未做 Windows 安装包/设备验证、Mobile 验证，
 也未单独重复全量 `check.sh --full`，由主线批次统一收口。
+
+## 2026-10-11 Linux 外观原平台分支恢复
+
+本批仍属 `REQ-24`、`DD-53/74` 的原版共源恢复。固定官方
+`779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::GlassBackgroundSetting`
+对 Linux 直接返回 null；
+`desktop/src/shared/lib/platform.ts::isLinuxPlatform` 排除 Android。
+当前 Desktop 已传 `hideGlass`，Web `SettingsPane` 漏传，导致 Linux
+显示原版不会呈现的禁用玻璃背景行。原函数逐字迁入已有
+`client-kit/ts/platform/src/keyboard-platform.ts`，Desktop 原路径仅薄转发，
+Web 使用同一函数向已有 `AppearanceSettings` 投递；未改共享组件布局。
+
+四步结论：
+
+1. 权威及分类：原函数为共享迁移，Web 漏失的原平台显示分支为缺失需恢复；
+   不是新增配置或以治理名义重新设计设置页。
+2. 影响面：原 Desktop 调用路径和 Web 设置页消费同一函数；仅读取原
+   navigator 平台事实，不增加持久字段、契约、网络请求、状态权威或迁移。
+   现有外观偏好读写与 native glass 支持判断不变。
+3. 副作用：不启动原生窗口能力、不开放禁用控制、不改变 BFF/Relay 的
+   身份、scope、授权和写入；未生成 Voice 等无消费者设置入口。
+4. 边界：无 navigator 返回 false；Linux 非 Android 隐藏该行；Android、
+   Windows、macOS 保留原行，Web 无原生支持仍禁用。无业务操作或异步终态，
+   六类业务错误、重试、额度和在途撤权状态无新增适用对象。
+
+私有验证输入基于 `356de668d08a5245e6eec1a7d3ba4734eaa0763a`，仅叠加本批
+四源码路径。复用 `kailo-web-thread-tooltip-sdk`，实际 4 CPU、8 GiB
+memory/memory+swap；执行前可用内存约 33 GiB、容器仅 sleep，无其他编译。
+源码、依赖符号链接、临时目录和日志均在 Data，未复制依赖实体或安装包。
+日志目录为
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/settings-linux-glass.UyrHI7/`。
+命令在私有 `web-client/web` 目录执行：
+
+```sh
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/vitest/vitest.mjs run src/platform/ui/SettingsPane.test.tsx --no-file-parallelism
+```
+
+- 29143、27833 均退出 2：私有输入漏原 `main.test.tsx` 动态引用的 Desktop
+  `EmojiBurstProvider.tsx`，中间补入命令含不存在路径而失败；按固定 Git
+  对象补齐唯一真实薄转发后类型检查通过，未改正式配置或删断言。
+- 47162：类型检查退出 0；9 项中 8 通过，Linux 首项因首次主题素材加载
+  超过原 5000 ms 预算而失败。保留 `positive-fixed-input.log`，不算全过。
+- 按已有主题套件方式，以原 `preloadThemePreviewVars` 在 `beforeAll`
+  预载真实素材，不 mock、不增加超时。85705 退出 0：末版类型检查通过，
+  实际设置宿主 9 项通过，包括四平台可见性和原页面交互；日志
+  `positive-preloaded.log`。
+- 82896：只在私有副本将 Web `hideGlass` 改为 false，原四平台检查
+  Linux 断言 `expected true to be false`，退出 1；另三项通过，五项因
+  `-t "preserves original glass visibility"` 未执行。日志 `mutation.log`。
+- 恢复后与正式源码 `cmp` 退出 0；10296 重跑原完整单文件，9 项通过、
+  退出 0，日志 `restored.log`。限定四路径 `git diff --check` 退出 0；
+  原函数与固定官方逐字 `cmp` 退出 0。未运行 Desktop 整端编译或设备验收。
+
+正常 SSO 的 Linux Chrome 实拍
+`appearance-linux-settings-before.png` 已打开复核：玻璃行真实可见且禁用。
+当次实读 `navigator.platform=Linux x86_64`，build-info 仍为
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`，
+对应已部署 `9d718234b74b688d9b81816f9b67470d4fc80440`。同目录较早误名
+`appearance-linux-before.png` 实际是频道页，不作为设置差异证据。
+本批未构建、未部署；无修复后截图，不把 DOM 通过当视觉或完整设置验收。
+公共旧暂存三路径未改，未重复全量检查，不解除既有发布阻断。
