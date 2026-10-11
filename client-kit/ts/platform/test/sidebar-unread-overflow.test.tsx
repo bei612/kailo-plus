@@ -1,9 +1,11 @@
 import { act, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
-import { MoreUnreadButton } from "../src/react/sidebar/MoreUnreadButton";
+import { MoreUnreadButton, canPreviewUnreadDm, preferredUnreadTarget, visibleUnreadDmPreviews, type UnreadDmPreview } from "../src/react/sidebar/MoreUnreadButton";
+import { useConversationUnreadProjection, useSidebarUnreadOverflow, type ConversationUnreadEntry } from "../src/react/sidebar/useSidebarUnreadOverflow";
 import { deriveUnreadOverflow, useUnreadOverflow } from "../src/react/sidebar/useUnreadOverflow";
 import { click, render, settle } from "./render";
+import { UserAvatar, type UserAvatarProps } from "../src/react/messages/UserAvatar";
 
 let intersections: Array<{ callback: IntersectionObserverCallback; elements: Element[] }>;
 beforeEach(() => {
@@ -39,6 +41,77 @@ function Sidebar() {
 }
 
 describe("original sidebar unread observers and real scroll controls", () => {
+  it("passes the original avatar shape, animation and stack props to the actual host adapter",async()=>{
+    const renderAvatar=vi.fn((_preview:UnreadDmPreview,props:UserAvatarProps)=><UserAvatar {...props}/>);
+    const host=await render(<MoreUnreadButton count={1} position="bottom" emphasis="primary" onClick={()=>{}} testId="avatar-host"
+      renderAvatar={renderAvatar} dmPreviews={[{channelId:"dm",label:"Bob",accessibleLabel:"Bob",avatarUrl:null,
+        author:{conversationId:"conversation",eventId:"message",pubkey:"b".repeat(64)}}]}/>);
+    expect(renderAvatar).toHaveBeenCalledWith(expect.objectContaining({author:{conversationId:"conversation",eventId:"message",pubkey:"b".repeat(64)}}),
+      {avatarUrl:null,className:"ring-2 ring-primary",displayName:"Bob",shape:"circle",fallbackDelayMs:0,size:"xs",testId:"sidebar-unread-dm-avatar-dm"});
+    expect(host.querySelector('[data-testid="sidebar-unread-dm-avatar-dm"]')?.className).toContain("ring-2");
+    expect(host.querySelector("img")).toBeNull();
+  });
+  it("keeps the original 1v1 preview gate, three-avatar cap, and DM-priority scroll target", async () => {
+    expect(canPreviewUnreadDm(2,1)).toBe(true);
+    expect(canPreviewUnreadDm(3,2)).toBe(false);
+    expect(canPreviewUnreadDm(2,0)).toBe(false);
+    const previews: UnreadDmPreview[] = ["Bob","Zara","Alice","Dan"].map(label=>({
+      channelId:label,accessibleLabel:label,label,avatarUrl:null,
+    }));
+    expect(visibleUnreadDmPreviews(previews).map(preview=>preview.label)).toEqual(["Bob","Zara","Alice"]);
+    const ids=new Set(["Bob"]), ordinary=new Set(["channel"]), highPriority=new Set<string>();
+    function DmSidebar() {
+      const scrollRef=useRef<HTMLDivElement>(null);
+      const overflow=useSidebarUnreadOverflow({scrollRef,dmChannelIds:ids,highPriorityUnreadChannelIds:highPriority,
+        previewActivityChannelIds:ids,unreadChannelIds:ordinary});
+      const target=preferredUnreadTarget(overflow.unreadMessageBelowChannelIds,ids);
+      return <><div ref={scrollRef}><button data-channel-id="channel" data-top="120"/><button data-channel-id="Bob" data-top="150"/></div>
+        <MoreUnreadButton count={overflow.unreadBelowCount} position="bottom" dmPreviews={previews} targetChannelId={target}
+          emphasis={overflow.hasHighPriorityBelow?"primary":"default"} testId="dm-below"
+          onClick={()=>target?overflow.scrollToChannel(target):overflow.scrollToNextBelow()}/></>;
+    }
+    const host=await render(<DmSidebar/>);
+    const target=host.querySelector<HTMLElement>('[data-channel-id="Bob"]')!;
+    target.scrollIntoView=vi.fn();
+    const button=host.querySelector<HTMLElement>('[data-testid="dm-below"]')!;
+    expect(button.getAttribute("aria-label")).toBe("Go to unread direct message from Bob. 2 unread below.");
+    expect(button.className).toContain("bg-primary");
+    expect(host.querySelectorAll('[data-avatar-shape][data-testid^="sidebar-unread-dm-avatar-"]').length).toBe(3);
+    expect(host.querySelector('[data-testid="sidebar-unread-dm-avatar-Dan"]')).toBeNull();
+    expect(host.querySelector("img")).toBeNull();
+    await click(button);
+    expect(target.scrollIntoView).toHaveBeenCalledWith({behavior:"smooth",block:"center"});
+  });
+
+  it("rejects the previous scope publisher and clears the projected names synchronously on a scope change",async()=>{
+    const scopes=[{},{}];
+    const publishers: Array<(entries: readonly ConversationUnreadEntry[])=>void> = [];
+    function Host() {
+      const [scope,setScope]=useState(scopes[0]!);
+      const projection=useConversationUnreadProjection(scope);
+      publishers[scope===scopes[0]?0:1]=projection.onUnreadChange;
+      return <><output>{projection.entries.map(entry=>entry.preview?.label).join(",")}</output><button onClick={()=>setScope(scopes[1]!)}>Switch scope</button></>;
+    }
+    const host=await render(<Host/>);
+    const bob={channelId:"bob",preview:{channelId:"bob",accessibleLabel:"Bob",label:"Bob",avatarUrl:null}};
+    await act(async()=>publishers[0]!([bob]));
+    expect(host.querySelector("output")?.textContent).toBe("Bob");
+    await click(host.querySelector("button")!);
+    expect(host.querySelector("output")?.textContent).toBe("");
+    await act(async()=>publishers[0]!([bob]));
+    expect(host.querySelector("output")?.textContent).toBe("");
+    await act(async()=>publishers[1]!([bob]));
+    expect(host.querySelector("output")?.textContent).toBe("Bob");
+    await act(async()=>publishers[1]!([]));
+    expect(host.querySelector("output")?.textContent).toBe("");
+  });
+
+  it("keeps the complete original DM target sentence through the same Chinese catalog",async()=>{
+    setLocale("zh-CN");
+    const host=await render(<MoreUnreadButton count={2} position="bottom" emphasis="primary" onClick={()=>{}} testId="dm"
+      targetChannelId="bob" dmPreviews={[{channelId:"bob",label:"Bob",accessibleLabel:"Bob",avatarUrl:null}]}/>);
+    expect(host.querySelector('[data-testid="dm"]')?.getAttribute("aria-label")).toBe("前往来自Bob的未读私聊。下方2 项未读。");
+  });
   it("scrolls to the nearest real unread row and removes the controls after the read projection changes", async () => {
     const host = await render(<Sidebar />);
     const above = host.querySelector<HTMLElement>('[data-testid="above"]')!;

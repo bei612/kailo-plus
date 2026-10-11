@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
-import { ChannelPane } from "./ChannelPane";
+import { ChannelPane as ActualChannelPane } from "./ChannelPane";
 import { setLocale } from "@client-kit/platform/i18n";
+import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import type { TimelineMessage } from "@client-kit/platform/react/messages";
 import { ItemState } from "@client-kit/contracts";
 import type { MessageAuthor } from "./MessageAuthorProfile";
@@ -36,12 +37,22 @@ const state = vi.hoisted(() => ({
     thread:{isSuccess:true,isError:false,isFetching:false,hasNextPage:false,isFetchingNextPage:false,fetchNextPage:vi.fn()}},
   routeRead:vi.fn(),
 }));
+type HistoryProps = Pick<ComponentProps<typeof ActualChannelPane>, "threadHeadId" | "onThreadHeadIdChange" | "onClearMessageRouteTarget" | "onNavigationGuardChange">;
+const ignoreNavigationGuard = () => {};
+function ChannelPane(props: Omit<ComponentProps<typeof ActualChannelPane>, keyof HistoryProps> & Partial<HistoryProps>) {
+  const [headId, setHeadId] = useState<string | null>(null);
+  return <ActualChannelPane {...props} threadHeadId={props.threadHeadId === undefined ? headId : props.threadHeadId}
+    onThreadHeadIdChange={props.onThreadHeadIdChange ?? setHeadId}
+    onClearMessageRouteTarget={props.onClearMessageRouteTarget ?? (() => {})}
+    onNavigationGuardChange={props.onNavigationGuardChange ?? ignoreNavigationGuard} />;
+}
 vi.mock("./useWorkspaceThread",()=>({useWorkspaceThread:(...args:unknown[])=>{state.routeRead(...args);return state.route;}}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
+  useQueries: ({queries}: {queries: readonly unknown[]}) => queries.map(() => ({isSuccess:false,isFetching:false})),
   useQuery: (options: { queryKey: readonly unknown[] }) => {
     if (options.queryKey.includes("composer-agent-directory")) return state.typingAgents;
     if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
@@ -76,12 +87,14 @@ vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
   const { useState } = await import("react");
-  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, typingEntries, onOpenAuthor, onAuthorScopeUnavailable, onClose}: {
+  return { ChannelThreadPane: ({selected, routeTargetMessageId, conversation, typingEntries, onOpenAuthor, onAuthorScopeUnavailable, onClose, onEdit, onCancelEdit}: {
     selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
     routeTargetMessageId?:string;
     conversation?:{id:string};
     typingEntries?: readonly import("@client-kit/platform/react/messages/typingState").TypingIndicatorEntry[];
     onClose: () => void;
+    onEdit: (message: TimelineMessage) => void;
+    onCancelEdit: () => void;
   }) => {
     const [pending, setPending] = useState(false);
     return <section data-testid="thread-lifetime" data-selected-id={selected.id} data-route-target={routeTargetMessageId} data-conversation-id={conversation?.id} data-typing={JSON.stringify(typingEntries ?? [])}>
@@ -90,6 +103,8 @@ vi.mock("./ChannelThreadPane", async () => {
       <button onClick={() => onOpenAuthor(selected)}>thread author</button>
       <button onClick={onAuthorScopeUnavailable}>thread unavailable</button>
       <button onClick={onClose}>close thread</button>
+      <button onClick={() => onEdit({...selected,id:"edited-reply",tags:[["e",selected.id,"","root"],["e",selected.id,"","reply"]]})}>edit reply</button>
+      <button onClick={onCancelEdit}>finish reply edit</button>
     </section>;
   }};
 });
@@ -141,6 +156,7 @@ beforeEach(async () => {
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
   setLocale("en");
+  setThreadViewMode("split");
   state.stop.mockClear();
   state.notify.mockClear();
   state.richContent = false;
@@ -173,8 +189,108 @@ beforeEach(async () => {
   });
 });
 
+it.each(["denied", "interrupted", "error"] as const)("does not fall back to warm root or selected reply rows after thread %s", async boundary => {
+  await act(async () => state.receive!({type:"event",event:{id:"warm-reply",pubkey:"author-a",kind:9,created_at:2,
+    tags:[["e","event-a","","root"],["e","event-a","","reply"]],content:"warm reply"}}));
+  state.route.messages=[{id:"event-a",pubkey:"author-a",kind:9,createdAt:1,created_at:1,channelId:"channel-a",category:"activity",tags:[],content:"existing message"},
+    {id:"warm-reply",pubkey:"author-a",kind:9,createdAt:2,created_at:2,channelId:"channel-a",category:"activity",tags:[["e","event-a","","root"],["e","event-a","","reply"]],content:"warm reply"}];
+  const renderHistory = (targetMessageId?: string) => act(async () => root.render(<TooltipProvider><ChannelPane
+    workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" threadHeadId="event-a"
+    targetMessageId={targetMessageId} targetThreadRootId="event-a"/></TooltipProvider>));
+  for (const selected of [undefined,"warm-reply"]) {
+    state.route.denied=false; state.route.interrupted=false; state.route.thread.isError=false;
+    await renderHistory(selected);
+    expect(host.querySelector('[data-testid="thread-lifetime"]')).not.toBeNull();
+    if (boundary === "error") state.route.thread.isError=true;
+    else state.route[boundary]=true;
+    await renderHistory(selected);
+    expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  }
+});
+
+it.each(["thread-read", "scope"] as const)("clears original focus coverage after %s denial and fresh readmission", async boundary => {
+  const renderHistory = (headId: string | null, workspaceId="workspace-a") => act(async () => root.render(<TooltipProvider><ChannelPane
+    workspaceId={workspaceId} channelId="channel-a" myPrincipalId="human-a" threadHeadId={headId}/></TooltipProvider>));
+  await act(async () => setThreadViewMode("focus"));
+  await renderHistory("event-a");
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).not.toBeNull();
+  expect(host.querySelector("[inert]")).not.toBeNull();
+  if (boundary === "thread-read") {
+    state.route.denied = true;
+    await renderHistory("event-a");
+  } else await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  expect(host.querySelector("[inert]")).toBeNull();
+  // A terminal revoked subscription cannot be revived by late frames. Leave
+  // and return through the actual scope effect to obtain a new subscription.
+  if (boundary === "scope") await renderHistory(null, "workspace-b");
+  await renderHistory(null);
+  state.route.denied = false;
+  await act(async () => {
+    state.receive!({type:"snapshot",events:[
+      {id:"event-a",pubkey:"author-a",kind:9,created_at:1,tags:[],content:"existing message"},
+      {id:"fresh-bounds",pubkey:"relay",kind:39006,created_at:1,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})},
+    ]});
+    state.receive!({type:"live"});
+  });
+  expect(host.querySelector("[inert]")).toBeNull();
+  await renderHistory("event-a");
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).not.toBeNull();
+  expect(host.querySelector("[inert]")).not.toBeNull();
+});
+
+it("keeps the original edit guard and mounted draft during metadata refetch but never blocks actual revocation", async () => {
+  let guard: (() => boolean) | null = null;
+  const register = (next: (() => boolean) | null) => { guard=next; };
+  const renderHistory = (metadataPending=false) => act(async () => root.render(<TooltipProvider><ChannelPane
+    workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" threadHeadId="event-a"
+    metadataPending={metadataPending} onNavigationGuardChange={register}/></TooltipProvider>));
+  await renderHistory();
+  await act(async () => {
+    [...host.querySelectorAll("button")].find(button => button.textContent === "pending reply")!.click();
+    [...host.querySelectorAll("button")].find(button => button.textContent === "edit reply")!.click();
+  });
+  expect(guard!()).toBe(false);
+  await renderHistory(true);
+  expect(guard!()).toBe(false);
+  expect(host.querySelector('[data-testid="thread-lifetime"]')?.textContent).toContain("reply pending");
+  await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(guard!()).toBe(true);
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+});
+
+it.each(["channel", "conversation"] as const)("freshly reads a reloaded %s thread reference and follows its history without storing a body", async scope => {
+  const conversation=scope === "conversation" ? {id:"workspace-a",channelId:"channel-a",state:ItemState.Active,
+    participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1} : undefined;
+  const renderHistory = (headId: string | null) => act(async () => root.render(<TooltipProvider><ChannelPane
+    workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} threadHeadId={headId}/></TooltipProvider>));
+  state.route.thread.isFetching = true;
+  await renderHistory("cold-root");
+  if (conversation) await act(async () => {
+    state.receive!({type:"snapshot",events:[{id:"dm-bounds",pubkey:"relay",kind:39006,created_at:1,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+    state.receive!({type:"live"});
+  });
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a", "workspace-a", "cold-root", conversation?.id, undefined, true, conversation?.channelId);
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  state.route.thread.isFetching = false;
+  state.route.messages = [{id:"cold-root",pubkey:"author-a",kind:9,createdAt:1,created_at:1,channelId:"channel-a",category:"activity",tags:[],content:"freshly admitted root"}];
+  await renderHistory("cold-root");
+  expect(host.querySelector('[data-testid="thread-lifetime"]')?.getAttribute("data-selected-id")).toBe("cold-root");
+  await renderHistory(null);
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull());
+  await renderHistory("cold-root");
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).not.toBeNull();
+  state.route.denied = true;
+  await renderHistory("cold-root");
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+  expect(host.textContent).not.toContain("freshly admitted root");
+  await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a", "workspace-a", "cold-root", conversation?.id, undefined, false, conversation?.channelId);
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
+});
+
 it.each(["channel", "conversation"] as const)("passes admitted %s thread typing from the live window and clears completed, expired and revoked indicators", async scope => {
-  state.typingAgents.data.agents=[{pubkey:"agent",installation:{resourceId:"agent-installation"}}];
+  state.typingAgents.data={agents:[{pubkey:"agent",installation:{resourceId:"agent-installation"}}]};
   state.members.data = [{principalId:"human-a",pubkeys:["self-key"],displayName:"Me"}, {principalId:"human-b",pubkeys:["peer"],displayName:"Peer"}];
   const conversation=scope==="conversation"?{id:"workspace-a",channelId:"channel-a",state:ItemState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1}:undefined;
   await act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>));
@@ -198,7 +314,7 @@ it.each(["channel", "conversation"] as const)("passes admitted %s thread typing 
   await send("typing-next", "next-peer");
   expect(indicators()).toEqual([{pubkey:"next-peer",threadHeadId:"event-a"}]);
   await act(async () => state.receive!({type:"closed",reason:"readmission-unavailable"}));
-  expect(indicators()).toEqual([]);
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
 });
 
 it.each([9, 40002])("highlights only the matching searchable kind %s live body and clears it on ordinary navigation", async (kind) => {
@@ -456,7 +572,7 @@ it("opens an off-window thread search target only from the freshly admitted orig
   expect(host.querySelector('[data-testid="thread-lifetime"]')).toBeNull();
   state.route.thread.isFetching=false;
   await mount();
-  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,true);
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,true,undefined);
   const thread=host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]');
   expect(thread?.dataset.selectedId).toBe(replyId);expect(thread?.dataset.routeTarget).toBe(replyId);
   await act(async()=>[...thread!.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==="close thread")!.click());
@@ -474,7 +590,7 @@ it("opens an off-window thread search target only from the freshly admitted orig
   expect(host.querySelector(`[data-message-id="${replyId}"]`)).toBeNull();
   expect(host.textContent).not.toContain("platform.linkMessageOutsideHistory");
   await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
-  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,false);
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,undefined,undefined,false,undefined);
   expect(host.querySelector(`[data-message-id="${rootId}"]`)).toBeNull();
 });
 
@@ -498,10 +614,10 @@ it("opens an off-window DM link using the admitted conversation root and the ori
     state.receive!({type:"snapshot",events:[{id:"bounds",pubkey:"relay",kind:39006,created_at:1,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
     state.receive!({type:"live"});
   });
-  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,true);
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,true,conversation.channelId);
   const pane=host.querySelector<HTMLElement>('[data-testid="thread-lifetime"]');
   expect(pane?.dataset.conversationId).toBe("dm");
   expect(pane?.dataset.selectedId).toBe(replyId);expect(pane?.dataset.routeTarget).toBe(replyId);
   await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
-  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,false);
+  expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,false,conversation.channelId);
 });

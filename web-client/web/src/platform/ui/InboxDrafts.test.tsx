@@ -10,12 +10,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { draftMessageTarget, useInboxDrafts, InboxDrafts } from "./InboxDrafts";
 import { initDraftStore, saveDraftEntry, loadDraftEntry, type DraftState } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 
-vi.mock("./ChannelPane", () => ({ChannelPane: () => null}));
-vi.mock("./ForumPane", () => ({ForumPane: () => null}));
-const views = vi.hoisted(()=>({items:[] as ConversationView[], error:false, loading:false, hidden:new Set<string>(), thread:vi.fn()}));
+const views = vi.hoisted(()=>({items:[] as ConversationView[], error:false, loading:false, hidden:new Set<string>(), open:vi.fn(), toast:vi.fn()}));
 vi.mock("@client-kit/platform/react/new-message", async importOriginal => ({...await importOriginal<typeof import("@client-kit/platform/react/new-message")>(),
   useConversations:()=>views, useConversationVisibilityHost:()=>({read:async()=>views.hidden})}));
-vi.mock("./InboxThreadPane", () => ({InboxThreadPane: (props: unknown) => {views.thread(props);return <output data-testid="actual-draft-thread-target">thread restored</output>;}}));
+vi.mock("sonner", () => ({toast:{error:(message:string)=>views.toast(message)}}));
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const draft: DraftState = {content: "private draft", channelId: "scope", selectionStart: 0, selectionEnd: 0,
   createdAt: "2026-10-06T10:00:00Z", updatedAt: "2026-10-06T10:00:00Z", pendingImeta: [], spoileredAttachmentUrls: [], status: "active"};
@@ -51,11 +49,11 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
   const nativeChannel="native-dm", binding="conversation-binding", parent="a".repeat(64), reply="b".repeat(64);
   const entry={key:`thread:${nativeChannel}:${parent}${explicit ? `:${reply}` : ""}`,draft:{...draft,channelId:nativeChannel}};
   const conversation:ConversationView={id:binding,channelId:nativeChannel,participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"operation",version:1};
-  views.items=[conversation];views.error=false;views.loading=false;views.hidden=new Set();views.thread.mockClear();
+  views.items=[conversation];views.error=false;views.loading=false;views.hidden=new Set();views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const client={workspaceChannel:vi.fn()} as unknown as BffClient;
   const render=()=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
-    <InboxDrafts principalId="alice" workspaces={[]} members={new Map()} participants={[{principalId:"alice",displayName:"Alice",pubkeys:["c".repeat(64)]},{principalId:"peer",displayName:"Actual peer",pubkeys:["d".repeat(64)]},{principalId:"foreign",displayName:"Unrelated",pubkeys:["e".repeat(64)]}]}
+    <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[{principalId:"alice",displayName:"Alice",pubkeys:["c".repeat(64)]},{principalId:"peer",displayName:"Actual peer",pubkeys:["d".repeat(64)]},{principalId:"foreign",displayName:"Unrelated",pubkeys:["e".repeat(64)]}]}
       entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   try {
@@ -63,31 +61,49 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
     expect(host.textContent).toContain("Actual peer");
     const edit=host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]');expect(edit).not.toBeNull();
     await act(async()=>edit!.click());
-    await vi.waitFor(()=>expect(views.thread).toHaveBeenCalled());
-    expect(views.thread.mock.lastCall?.[0]).toMatchObject({workspaceId:nativeChannel,conversation,rootId:parent,selectedEventId:explicit?reply:parent,replyTargetEventId:explicit?reply:parent,restoreDraftKey:entry.key,
-      members:[{principalId:"alice"},{principalId:"peer"}]});
+    await vi.waitFor(()=>expect(views.open).toHaveBeenCalled());
+    expect(views.open.mock.lastCall).toEqual([nativeChannel, {channelId:nativeChannel,conversation,messageId:explicit?reply:parent,threadRootId:parent}, {key:entry.key,send:false,editEventId:undefined,conversation}]);
     expect(client.workspaceChannel).not.toHaveBeenCalled();
     views.items=[];await render();
-    expect(host.querySelector('[data-testid="actual-draft-thread-target"]')).toBeNull();
-    expect(host.textContent).toContain("Destination unavailable");
-  } finally {cache.clear();views.items=[];views.thread.mockClear();}
+    expect(host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')?.disabled).toBe(true);
+    expect(views.open).toHaveBeenCalledTimes(1);
+  } finally {cache.clear();views.items=[];views.open.mockClear();}
 });
 
 it("does not open a hidden DM draft or confuse a native channel draft with another binding ID", async()=>{
   const channel="native-dm", parent="a".repeat(64), entry={key:`thread:${channel}:${parent}`,draft:{...draft,channelId:channel}};
   views.items=[{id:channel,channelId:"other-native",participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"op",version:1}];
-  views.error=false;views.loading=false;views.hidden=new Set([channel]);views.thread.mockClear();
+  views.error=false;views.loading=false;views.hidden=new Set([channel]);views.open.mockClear();views.toast.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const render=()=>act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
-    <InboxDrafts principalId="alice" workspaces={[]} members={new Map()} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
+    <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   try {
     await render();expect(host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')?.disabled).toBe(true);
     views.items=[{...views.items[0]!,id:"correct-binding",channelId:channel}];await render();
     await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')!.click());
-    await vi.waitFor(()=>expect(host.textContent).toContain("Destination unavailable"));
-    expect(views.thread).not.toHaveBeenCalled();
+    await vi.waitFor(()=>expect(views.toast).toHaveBeenCalledWith("Destination unavailable"));
+    expect(views.open).not.toHaveBeenCalled();
   } finally {cache.clear();views.items=[];views.hidden=new Set();}
+});
+
+it("uses the original confirmation then opens the admitted DM composer with only its saved draft reference", async()=>{
+  const entry={key:"conversation-binding",draft:{...draft,channelId:"conversation-binding"}};
+  const conversation:ConversationView={id:entry.key,channelId:"native-dm",participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"operation",version:1};
+  views.items=[conversation]; views.error=false; views.loading=false; views.hidden=new Set(); views.open.mockClear();
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+  try {
+    await act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+      <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
+    </TooltipProvider></QueryClientProvider></PlatformProvider>));
+    await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click());
+    expect(views.open).not.toHaveBeenCalled();
+    const dialog=document.querySelector('[role="alertdialog"]')!;
+    await act(async()=>[...dialog.querySelectorAll("button")].find(button=>button.textContent==="Send message")!.click());
+    await vi.waitFor(()=>expect(views.open).toHaveBeenCalledTimes(1));
+    expect(views.open.mock.lastCall).toEqual([conversation.channelId,undefined,{key:entry.key,send:true,editEventId:undefined,conversation}]);
+    expect(JSON.stringify(views.open.mock.lastCall)).not.toContain(draft.content);
+  } finally {cache.clear();views.items=[];}
 });
 
 it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM source preview in the actual Web draft surfaces (%s)", async locale => {
@@ -98,7 +114,7 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
   const cache = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
   try {
     await act(async () => root.render(<PlatformProvider client={{} as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider>
-      <InboxDrafts principalId={people[0]!.principalId} workspaces={[]} members={new Map()} participants={people}
+      <InboxDrafts onOpen={views.open} principalId={people[0]!.principalId} workspaces={[]} participants={people}
         entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList showDetail header={null} />
     </TooltipProvider></QueryClientProvider></PlatformProvider>));
     const expected = locale === "en" ? "First, Second, Third, +1 more" : "First, Second, Third, +1 人";

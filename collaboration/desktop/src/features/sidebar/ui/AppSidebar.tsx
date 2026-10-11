@@ -17,6 +17,10 @@ import { toast } from "sonner";
 import { useAppShell } from "@/app/AppShellContext";
 import { useHomeFeedQuery } from "@/features/home/hooks";
 import type { Channel } from "@/shared/api/types";
+import { UserAvatar, type UserAvatarProps } from "@client-kit/platform/react/messages";
+import { useUserProfileQuery } from "@/features/profile/hooks";
+import { useNativeSession } from "@/features/platform/activeCommunity";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { sortChannelsForSidebar } from "@/features/sidebar/lib/channelSortPreference";
@@ -31,7 +35,8 @@ import {
   AppSidebarPinnedHeader,
   AppSidebarPrimaryMenu,
 } from "@/features/sidebar/ui/AppSidebarPinnedHeader";
-import { MoreUnreadButton } from "@/features/sidebar/ui/MoreUnreadButton";
+import { MoreUnreadButton, preferredUnreadTarget } from "@/features/sidebar/ui/MoreUnreadButton";
+import { useConversationUnreadProjection, type ConversationUnreadEntry } from "@client-kit/platform/react/sidebar/useSidebarUnreadOverflow";
 import { ChannelGroupSection } from "@/features/sidebar/ui/ChannelGroupSection";
 import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import type {
@@ -132,18 +137,33 @@ export function AppSidebar({
   const isMobile = useIsMobile();
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useSidebarScrollLock(scrollRef);
+  const dmUnread = useConversationUnreadProjection(directMessageOwner);
+  const nativeDmChannelIds = React.useMemo(() => new Set(channels.filter(channel => channel.channelType === "dm").map(channel => channel.id)), [channels]);
+  const messageUnread = React.useMemo(() => new Set([
+    ...[...unreadChannelIds].filter(id => !nativeDmChannelIds.has(id)), ...dmUnread.dmChannelIds,
+  ]), [unreadChannelIds, nativeDmChannelIds, dmUnread.dmChannelIds]);
+  const channelPreviewActivity = React.useMemo(() => new Set([...previewActivityChannelIds].filter(id => !nativeDmChannelIds.has(id))),
+    [previewActivityChannelIds, nativeDmChannelIds]);
   const {
     hasHighPriorityAbove,
     hasHighPriorityBelow,
     scrollToNextAbove,
     scrollToNextBelow,
+    scrollToChannel,
+    unreadMessageBelowChannelIds,
     unreadAboveCount,
     unreadBelowCount,
   } = useSidebarUnreadOverflow({
+    dmChannelIds: dmUnread.dmChannelIds,
     highPriorityUnreadChannelIds,
-    previewActivityChannelIds,
+    previewActivityChannelIds: channelPreviewActivity,
     scrollRef,
-    unreadChannelIds,
+    unreadChannelIds: messageUnread,
+  });
+  const nextUnreadDmBelowId = preferredUnreadTarget(unreadMessageBelowChannelIds, dmUnread.dmChannelIds);
+  const unreadDmPreviewsBelow = unreadMessageBelowChannelIds.flatMap(channelId => {
+    const preview = dmUnread.entries.find(entry => entry.channelId === channelId)?.preview;
+    return preview ? [preview] : [];
   });
 
   const [collapsedGroups, setCollapsedGroups] = React.useState<
@@ -240,9 +260,13 @@ export function AppSidebar({
             <MoreUnreadButton
               bottomClassName="bottom-full"
               count={unreadBelowCount}
+              dmPreviews={unreadDmPreviewsBelow}
+              renderAvatar={(preview, props) => preview.author ? <UnreadDmAvatar {...props}
+                key={`${preview.author.conversationId}:${preview.author.eventId}`} pubkey={preview.author.pubkey} /> : <UserAvatar {...props} />}
+              targetChannelId={nextUnreadDmBelowId}
               emphasis={hasHighPriorityBelow ? "primary" : "default"}
               label={sidebarOverflowUnreadLabel(unreadBelowCount)}
-              onClick={scrollToNextBelow}
+              onClick={() => nextUnreadDmBelowId ? scrollToChannel(nextUnreadDmBelowId) : scrollToNextBelow()}
               position="bottom"
               testId="sidebar-more-unread-below"
             />
@@ -290,6 +314,8 @@ export function AppSidebar({
                 selectedId={selectedApplicationBindingId} onSelect={onSelectApplication}
                 workspace={applicationWorkspace} /> : null}
               {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId} channels={channels}
+                key={JSON.stringify([activeCommunity.id, activeCommunity.relayUrl, currentPrincipalId, currentPubkey])}
+                onUnreadChange={dmUnread.onUnreadChange}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
                 onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}
               {isLoading ? (
@@ -397,18 +423,27 @@ export function AppSidebar({
   );
 }
 
-function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage, onCloseSelected, channels }: {
+function UnreadDmAvatar({pubkey, ...props}: UserAvatarProps & {pubkey: string}) {
+  const session = useNativeSession();
+  const query = useUserProfileQuery(pubkey, `${session.facts.communityHost}:${session.devicePubkey}`);
+  const profile = query.isSuccess && !query.isFetching && query.data.pubkey === pubkey ? query.data : undefined;
+  return <UserAvatar {...props} avatarUrl={profile?.avatarUrl ?? null} resolveMediaUrl={rewriteRelayUrl} />;
+}
+
+function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage, onCloseSelected, channels, onUnreadChange }: {
   currentPrincipalId: string; selectedChannelId: string | null;
   channels: readonly Channel[];
   onSelectChannel: (id: string) => void; onNewMessage: () => void;
   onCloseSelected: () => void;
+  onUnreadChange: (entries: readonly ConversationUnreadEntry[]) => void;
 }) {
   const conversations = useConversations();
   const { coreReads: reads } = useAppShell();
   const feed = useHomeFeedQuery();
-  const activity = React.useMemo(() => feed.isSuccess ? feed.data.feed.activity.filter(item => item.channelType === "dm") : undefined, [feed.isSuccess, feed.data]);
+  const activity = React.useMemo(() => feed.isSuccess && !feed.isFetching ? feed.data.feed.activity.filter(item => item.channelType === "dm") : undefined, [feed.isSuccess, feed.isFetching, feed.data]);
   const lastMessageAt = React.useMemo(() => new Map(channels.filter(channel => channel.channelType === "dm").map(channel => [channel.id, channel.lastMessageAt ?? null])), [channels]);
   return <ConversationList currentPrincipalId={currentPrincipalId} items={conversations.items}
+    onUnreadChange={onUnreadChange}
     loading={conversations.loading} error={conversations.error ?? feed.error}
     events={activity} lastMessageAtByChannelId={lastMessageAt} reads={reads}
     selectedId={conversations.items.find((conversation) => conversation.channelId === selectedChannelId)?.id ?? null}

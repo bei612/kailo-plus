@@ -39,7 +39,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
   const [unresolved, setUnresolved] = useState(false);
   const publication = useRef<{ key: string; parent: string | null; unknown: boolean } | null>(null);
   const composerContainer = useRef<HTMLDivElement>(null);
-  const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined);
+  const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:canInteract && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const scroller = useRef<HTMLDivElement>(null);

@@ -154,3 +154,31 @@ React act 警告保留。没有修改超时、断言或执行器，也没有循�
 本次没有重新执行负向用例，不称为本次精确候选的负向复验。
 主线程交叉复核后允许按已验证范围阶段提交；两线程消费者仍受启动失败阻断。
 全量门禁由主线程另行汇总，本记录不宣称全量通过、已部署、修复后截图或完整恢复。
+
+## 2026-10-11 已提交输入的两线程消费者补验
+
+主线程推送 `3df3c396c065b8500a2da648d9b7aa8f508d19ea` 后，在资源窗口释放时，
+复用上述逐字相同候选、固定 SDK 镜像和私有 Data 依赖副本，串行执行两个原套件。
+容器 `kailo-web-author-serial-rwjqmf` 启动前回读为 4 CPU、8 GiB memory/swap、
+UID/GID 1000，旧依赖只读挂载；没有更改生产代码、断言、worker 池或超时。
+
+```sh
+node node_modules/vitest/vitest.mjs run src/platform/ui/ChannelThreadPane.test.tsx --maxWorkers=1 --pool=threads
+node node_modules/vitest/vitest.mjs run src/platform/ui/InboxThreadPane.test.tsx --maxWorkers=1 --pool=threads
+```
+
+实际结果：频道线程 17/17，通过耗时 12.16s；私聊线程 22/22，通过耗时 4.41s；
+`CHANNEL_EXIT=0 INBOX_EXIT=0`，容器终态 exited 0，随后仅删除本次已退出容器。
+React act 警告保留。日志为同候选目录的 `consumer-serial-20261011.log`，SHA-256：
+`f3cb490bce900ad753e62527bf0487e540b0c6d9bbc3416aba41dde968ebe332`。
+该结果补齐最小提交两线程消费者验收，不抹去前次启动失败，不代表真实部署或全量恢复。
+
+发布前另核对现网冻结树 `252cf1239c04717370df803dec302aba354a8e32` 与当前 main
+`1e8811854de99cefabfca2cf79cdd0cba93e79d8`：Web 原构建输入相差 47 文件、+293/-2357。
+main 尚不包含现网已有的线程历史、线程模式及 Workflow 频道选择器等未提交恢复。
+因此不能把当前 main 镜像直接替换现网并称作无回归发布；在这项来源收口前未切换在线 Web。
+完整差异留在 `/volumes/data/kailo/tmp/web-author-release-20261011.1kMi4F/live-to-main.patch`。
+该 main 输入曾通过原 `tools/build-upstream.sh web-client` 启动既有 8 CPU/16 GiB
+BuildKit；确认上述回退范围后，精确取消本次 buildx PID 472768，句柄 15353
+退出 130，原输出 `Canceled: context canceled`。保留同目录
+`build-web-client.pDpajt.log` 和缓存；未完成产物、未更新部署 pin、未切换在线服务。

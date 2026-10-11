@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, useState } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
+import { createBrowserHistory, createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { platformLocationSearch, usePlatformNavigation } from "./platform-navigation";
 import { useHistoryShortcuts, useHomeShortcut } from "@client-kit/platform/react/use-navigation-shortcuts";
+import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true });
@@ -14,12 +15,18 @@ const state = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   const [scopeKey, setScopeKey] = useState("current-session");
   const navigation = usePlatformNavigation(scopeKey);
+  const edit = useChannelMessageEdit(scopeKey);
+  useLayoutEffect(() => {
+    navigation.registerThreadNavigationGuard(edit.requireThreadEditResolution);
+    return () => navigation.registerThreadNavigationGuard(null);
+  }, [navigation.registerThreadNavigationGuard, edit.requireThreadEditResolution]);
   useHomeShortcut({ disabled: navigation.tab === "settings", onGoHome: () => navigation.openTab("inbox", navigation.workspaceId) });
   useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
-    data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId}>
+    data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
+    data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
@@ -30,20 +37,112 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     <button onClick={() => { void navigation.openConversation("conversation-a", {messageId:"diff-reply",threadRootId:"diff-root"}, "reply needle"); }}>DM search result</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}); }}>ordinary link</button>
     <button onClick={() => setScopeKey("next-session")}>switch session</button>
+    <button onClick={() => { navigation.clearMessageRouteTarget(); navigation.setThreadHeadId("thread-a"); }}>open thread</button>
+    <button onClick={() => { navigation.clearMessageRouteTarget(); navigation.setThreadHeadId(null); }}>close thread</button>
+    <button onClick={() => navigation.setThreadHeadId("thread-a", {replace:true})}>resolve linked thread</button>
+    <button onClick={() => edit.setEditTarget({id:"reply-a",createdAt:1,author:"Me",body:"unsaved reply",time:"",depth:0,tags:[["e","thread-a","","root"],["e","thread-a","","reply"]]})}>edit thread reply</button>
+    <button onClick={edit.handleCancelEdit}>finish thread edit</button>
+    <button onClick={() => {void navigation.openConversation("conversation-a", {messageId:"reply-a",threadRootId:"root-a"}, undefined, {key:"thread:native-dm:root-a:reply-a",send:true});}}>send draft</button>
+    <button onClick={() => {void navigation.consumeDraftSend();}}>consume draft send</button>
   </div>;
 } }));
 
 let root: Root | undefined;
 let node: HTMLDivElement | undefined;
-afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; node?.remove(); node = undefined; });
+let destroyHistory: (() => void) | undefined;
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; node?.remove(); node = undefined; destroyHistory?.(); destroyHistory=undefined; });
 
-async function mount(url: string) {
-  const history = createMemoryHistory({ initialEntries: [url] });
+async function mount(url: string, browser = false) {
+  if (browser) window.history.replaceState(null,"",url);
+  const history = browser ? createBrowserHistory() : createMemoryHistory({ initialEntries: [url] });
+  destroyHistory=()=>history.destroy();
   const router = createRouter({ routeTree, history, basepath: "/app", defaultPendingMinMs: 0 });
   node = document.createElement("div"); document.body.append(node); root = createRoot(node);
   await act(async () => { await router.load(); root!.render(<RouterProvider router={router} />); });
   return router;
 }
+
+it("carries only a same-session draft reference and consumes its send marker before history can replay it", async () => {
+  const router = await mount("/app/inbox");
+  const click = (label:string) => act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent===label)!.click();});
+  await click("send draft");
+  expect(node!.querySelector("[data-draft]")?.getAttribute("data-send")).toBe("true");
+  expect(router.history.location.search).not.toMatch(/autoSend|draft|send=true/);
+  const length=router.history.length;
+  await click("consume draft send");
+  expect(router.history.length).toBe(length);
+  expect(node!.querySelector("[data-draft]")?.getAttribute("data-send")).toBe("false");
+  await click("audit");
+  await act(async()=>{router.history.back();await router.load();});
+  expect(node!.querySelector("[data-draft]")?.getAttribute("data-send")).toBe("false");
+  await click("switch session");
+  expect(node!.querySelector("[data-draft]")).toBeNull();
+});
+
+it.each(["channels/workspace-a", "conversations/conversation-a"])("restores the original thread URL on back, forward and reload for %s", async route => {
+  let router = await mount(`/app/${route}?messageId=reply-a&threadRootId=root-a&workspaceId=scope-a`);
+  const click = (label: string) => act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();});
+  const startLength = router.history.length;
+  await click("open thread");
+  expect(router.history.length).toBe(startLength + 1);
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  expect(router.history.location.search).toContain("workspaceId=scope-a");
+  expect(router.history.location.search).not.toContain("messageId");
+  expect(router.history.location.search).not.toContain("threadRootId");
+  await click("open thread");
+  expect(router.history.length).toBe(startLength + 1);
+  await click("close thread");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  await act(async () => { router.history.back(); await router.load(); });
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  const reloadUrl = router.history.location.href;
+  await act(async () => { router.history.forward(); await router.load(); });
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  router = await mount(reloadUrl);
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  await click("audit");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  expect(router.history.location.search).not.toContain("thread=");
+});
+
+it("blocks Back with the original thread edit guard and keeps the URL and edit until explicitly resolved", async () => {
+  // The installed memory history applies blockers to PUSH/REPLACE, not POP.
+  // Exercise the same browser popstate/rollback implementation as the host.
+  const router = await mount("/app/channels/workspace-a", true);
+  const click = (label: string) => act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();});
+  await click("open thread");
+  await click("edit thread reply");
+  const url = router.history.location.href;
+  await act(async () => {
+    const popped=new Promise<void>(resolve=>window.addEventListener("popstate",()=>resolve(),{once:true}));
+    router.history.back(); await popped;
+    await vi.waitFor(()=>expect(window.location.pathname+window.location.search).toBe(url));
+  });
+  expect(router.history.location.href).toBe(url);
+  expect(node!.querySelector("[data-editing]")?.getAttribute("data-editing")).toBe("reply-a");
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  await click("finish thread edit");
+  await act(async () => {
+    const popped=new Promise<void>(resolve=>window.addEventListener("popstate",()=>resolve(),{once:true}));
+    router.history.back(); await popped; await router.load();
+  });
+  expect(node!.querySelector("[data-editing]")).toBeNull();
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  expect(router.history.location.pathname).toBe("/app/channels/workspace-a");
+});
+
+it("records a resolved deep-link thread in the same history entry without losing its target", async () => {
+  const router = await mount("/app/channels/workspace-a?messageId=reply-a&threadRootId=root-a");
+  const length = router.history.length;
+  await act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === "resolve linked thread")!.click();});
+  expect(router.history.length).toBe(length);
+  expect(router.history.location.search).toContain("thread=thread-a");
+  expect(router.history.location.search).toContain("messageId=reply-a");
+  expect(router.history.location.search).toContain("threadRootId=root-a");
+  expect(platformLocationSearch({thread: {body:"not a reference"}}).thread).toBeUndefined();
+  expect(platformLocationSearch({thread:"   "}).thread).toBeUndefined();
+});
 
 it("carries the original search activation in history, not the URL, and clears ordinary navigation", async () => {
   const router = await mount("/app/inbox");

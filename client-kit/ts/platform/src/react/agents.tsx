@@ -34,6 +34,7 @@ import {
   type AutomationVersionView,
   type AutomationVersionContent,
   type TaskView,
+  type WorkspaceView,
   type PlatformToolPage,
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -56,6 +57,9 @@ import { parseConditionExpressions, type ParsedConditionExpression } from "./wor
 import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./workflow-author-directory";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { WorkflowDiscardDialog, type WorkflowNavigation } from "./workflow-discard-dialog";
+import { WorkflowDeleteDialog } from "./workflow-delete-dialog";
+import { Skeleton } from "./sidebar/skeleton";
+import { ChannelCombobox } from "./workflow-channel-combobox";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
 import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
@@ -377,7 +381,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("platform.noWorkspace")}</Notice> : null}
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
-    <AutomationAction workspaceId={workspace?.id} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation} onClose={() => setEditorOpen(false)}
+    <AutomationAction workspaceId={workspace?.id} workspaces={workspaces} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation} onClose={() => setEditorOpen(false)}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
       onRecorded={(command, submission) => {
         if (command.actionKey === "automation.run" && command.resourceId && command.workspaceId
@@ -386,6 +390,12 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
           setRunReceipt({ resourceId: command.resourceId, workspaceId: command.workspaceId, submission });
         } else { setSelectedAutomation(null); setRunReceipt(null); }
         setEdit(null); setEditorOpen(false); setRevision((old) => old + 1);
+        if (command.actionKey === "automation.create" && command.workspaceId
+          && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched
+          && workspaces?.some((candidate) => candidate.id === command.workspaceId)) {
+          if (onWorkspaceChange) onWorkspaceChange(command.workspaceId);
+          else setSelected(command.workspaceId);
+        }
       }} />
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
       selected={selectedAutomation} onSelect={setSelectedAutomation}
@@ -583,8 +593,28 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
   const detail = value && validAutomationDetail(value, resourceId, workspaceId)
     && (value.nextVersionOffset === undefined || (Number.isSafeInteger(value.nextVersionOffset) && value.nextVersionOffset > versionOffset))
     && (value.nextDelegationOffset === undefined || (Number.isSafeInteger(value.nextDelegationOffset) && value.nextDelegationOffset > grantOffset)) ? value : null;
-  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
-  if (!detail) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  // Keep the original WorkflowDetailPanel shell throughout its authorized read.
+  // The outer Dialog intentionally has no separate close control. Do not replace
+  // this shell with a notice, or expose stale definition/actions while reloading.
+  if (!detail) return <section className="flex h-full min-h-0 flex-col border-l bg-background pt-4" data-testid="workflow-detail-panel">
+    <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2"><Skeleton className="h-4 w-36" /></div>
+        {state.status === "pending" ? <><Skeleton className="mt-1 h-3 w-full max-w-64" /><Skeleton className="mt-1 h-3 w-40" /></> : null}
+      </div>
+      <div className="flex items-center gap-1">
+        <WorkflowButton size="icon" variant="ghost" disabled={locked} aria-label={t("buzz.close")} onClick={onClose}><X aria-hidden className="h-4 w-4" /></WorkflowButton>
+      </div>
+    </div>
+    <div className="flex-1 overflow-y-auto" data-scroll-restoration-id={`workflow-detail:${resourceId}`}>
+      {state.status === "pending" ? <div className="space-y-4 p-4" role="status" aria-label={t("platform.loading")}>
+        <div><Skeleton className="mb-2 h-4 w-28" /><Skeleton className="h-40 w-full rounded-xl" /></div>
+        <div><Skeleton className="mb-2 h-4 w-24" /><div className="space-y-2"><Skeleton className="h-16 w-full rounded-xl" /><Skeleton className="h-16 w-full rounded-xl" /></div></div>
+      </div> : <div className="flex h-32 flex-col items-center justify-center gap-2">
+        <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      </div>}
+    </div>
+  </section>;
   const row = detail.automation;
   // A pinned definition is not interchangeable with the newest readable draft.
   // If its Asset is absent from this authorized page, do not substitute a version.
@@ -742,8 +772,8 @@ function WorkflowNameEditor({ disabled, name, onCommit }: {
   </div>;
 }
 
-function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked, onRecorded, workflowNavigation }: {
-  workspaceId?: string; edit: AutomationEdit | null; onReset: () => void;
+function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open, onClose, onReset, onLocked, onRecorded, workflowNavigation }: {
+  workspaceId?: string; workspaces: WorkspaceView[] | null; edit: AutomationEdit | null; onReset: () => void;
   open: boolean; onClose: () => void;
   onLocked: (locked: boolean) => void; onRecorded: (command: ActionCommand, submission: ActionSubmission) => void;
   workflowNavigation?: WorkflowNavigation;
@@ -753,6 +783,12 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const reasonText = useReasonText();
   const failureText = useFailureText();
   const creating = !edit || edit.action === "copy";
+  const [draftScope, setDraftScope] = useState<{hostWorkspaceId?: string; edit: AutomationEdit | null; id: string} | null>(null);
+  const selectedScopeId = creating && draftScope && draftScope.hostWorkspaceId === hostWorkspaceId && draftScope.edit === edit
+    ? draftScope.id : hostWorkspaceId;
+  // Discovery is not create permission. Losing a discovered scope invalidates
+  // this read key immediately; the fresh automation/executor readers still gate writes.
+  const workspaceId = workspaces?.some((candidate) => candidate.id === selectedScopeId) ? selectedScopeId : undefined;
   const [name, setName] = useState("");
   const [description, setDescription] = useState<string | undefined>();
   const [executorId, setExecutorId] = useState("");
@@ -891,7 +927,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setTemplate(content ? workflowAction(content)?.template ?? "" : "");
     setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.AgentTurn : ActionKind.AgentTurn);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
-    setVersionId(""); setGrantId(""); setExecutorId("");
+    setVersionId(""); setGrantId(""); setExecutorId(""); setDraftScope(null);
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
       && content.trigger.scheduleSpec.cron.trim().split(/\s+/).length !== 5;
     // Original yamlToFormState cannot represent empty/untrimmed descriptions.
@@ -901,10 +937,10 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setEditorMode(needsYaml ? "yaml" : "form"); setYamlText(needsYaml ? stringify(content) : ""); setEditorError(false);
     formDraftYaml.current = "";
     setInitialDraft(null); setDraftEpoch((epoch) => epoch + 1); setDiscardOpen(false);
-  }, [edit, workspaceId, open]);
+  }, [edit, hostWorkspaceId, open]);
   // Original WorkflowDialog dirty comparison, applied to the existing typed form
   // and raw YAML. Capture after its initialization batch, not async admission data.
-  const formSnapshot = JSON.stringify({ name, description, executorId, trigger, prefix, filter, conditionDrafts,
+  const formSnapshot = JSON.stringify({ scope: selectedScopeId, name, description, executorId, trigger, prefix, filter, conditionDrafts,
     interval, offsetSeconds, scheduleMode, intervalTagged, cron, catchupWindowSeconds,
     template, steps, stepsFormat, actionKind, policyKey });
   useEffect(() => {
@@ -987,15 +1023,16 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       command.delegationId = grant.delegationId; command.delegationVersion = grant.delegationVersion;
     }
     setIntent(command); setFailure(null); setSubmission(null); onLocked(true);
+    return command;
   };
-  const submit = async () => {
-    if (!intent || inFlight.current) return;
+  const submit = async (command = intent) => {
+    if (!command || inFlight.current) return;
     const wasUnknown = unknown;
     const priorOperation = submission?.operationId ?? (failure?.kind === "unknown" ? failure.operationId : undefined);
     inFlight.current = true; setBusy(true); setFailure(null); setSubmission(null);
     try {
-      const result = await client.submitAction(intent);
-      if (!result || result.actionKey !== intent.actionKey || !result.actionExecutionId || !result.operationId
+      const result = await client.submitAction(command);
+      if (!result || result.actionKey !== command.actionKey || !result.actionExecutionId || !result.operationId
         || (priorOperation !== undefined && result.operationId !== priorOperation)
         || (frozenResponse.current !== null && (result.operationId !== frozenResponse.current.operationId
           || result.actionExecutionId !== frozenResponse.current.actionExecutionId))
@@ -1007,7 +1044,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       frozenResponse.current = { operationId: result.operationId, actionExecutionId: result.actionExecutionId };
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
-        setIntent(null); onLocked(false); onReset(); onRecorded(intent, result); reloadAdmission(); reloadInstallations();
+        setIntent(null); onLocked(false); onReset(); onRecorded(command, result); reloadAdmission(); reloadInstallations();
         frozenResponse.current = null;
       }
     } catch (error) {
@@ -1017,6 +1054,15 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       if (failed.kind !== "unknown" && !wasUnknown) { setIntent(null); onLocked(false); }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
+  const scopeField = <ChannelCombobox channels={workspaces ?? []} id="wf-channel-select"
+    disabled={busy || !!intent || unknown || workspaces === null} readOnly={!creating} required={creating}
+    variant={editorMode === "yaml" ? "field" : "header"} value={selectedScopeId ?? ""}
+    onChange={(id) => {
+      if (!creating || busy || intent || id === selectedScopeId || !workspaces?.some((candidate) => candidate.id === id)) return;
+      setDraftScope({hostWorkspaceId, edit, id});
+      setExecutorId(""); setExecutorIndex(0); setExecutorOffsets([0]);
+      setFailure(null); setSubmission(null);
+    }} />;
   const triggerFields = <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
           <select value={trigger} onChange={(event) => {
@@ -1064,6 +1110,23 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
   if (!workspaceId && !intent) return null;
+  if (edit?.action === "delete") return <WorkflowDeleteDialog open={open || !!intent}
+    name={(edit.detail.automation.pinnedVersionAssetId
+      ? edit.detail.versions.find(version => version.assetId === edit.detail.automation.pinnedVersionAssetId)
+      : edit.detail.versions[0])?.content.name || t("workflows.unnamed")} isPending={busy} locked={!!intent}
+    disabled={!intent && (requestBlocked || edit.detail.canManage !== true)} unknown={unknown}
+    error={failure && failure.kind !== "unknown" ? failureText(failure) : null}
+    onOpenChange={(next) => { if (!next) requestClose(); }} onConfirm={async () => {
+      const command = intent ?? prepare();
+      if (command) await submit(command);
+    }}>
+    {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
+      : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
+    {failure?.kind === "unknown" ? <p role="status" className="break-words text-sm">{t("agents.unknown", {operation: failure.operationId ?? "—"})}</p> : null}
+    {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
+      : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm">{pending.map((task) => <p className="break-words" key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}
+        <Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
+  </WorkflowDeleteDialog>;
   return <>
     <Dialog open={open || !!intent} onOpenChange={(next) => { if (!next) requestClose(); }}>
     <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
@@ -1095,7 +1158,6 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     {!intent ? <form className="flex min-h-full flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {!creating ? <p className="break-words text-sm">{edit.detail.automation.resourceId} · {t("agents.resourceVersion")}: {edit.detail.automation.resourceVersion}</p> : null}
       {edit?.action === "run" ? <Notice>{t("agents.automation.runConfirm")}</Notice> : null}
-      {edit?.action === "delete" ? <Notice>{t("agents.automation.deleteConfirm")}</Notice> : null}
       {creating ? <>
         {installations.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
           : !executorPage ? <AgentReadFailure error={installations.status === "error" ? installations.error : undefined} onRetry={reloadInstallations} />
@@ -1115,9 +1177,9 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       {contentAction ? <>
         {!creating && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
         {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
-        {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} disabled={busy || !!intent || unknown}
-          onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
-        {actionKind === ActionKind.AgentTurn ? triggerFields : null}
+        {editorMode === "yaml" ? <><div className="max-w-md flex-shrink-0">{scopeField}</div><WorkflowYamlEditor value={yamlText} disabled={busy || !!intent || unknown}
+          onChange={(value) => { setYamlText(value); setEditorError(false); }} /></> : <>
+        {actionKind === ActionKind.AgentTurn ? <><div className="mx-auto mb-3 w-full max-w-sm">{scopeField}</div>{triggerFields}</> : null}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
@@ -1138,7 +1200,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         </label>
         {actionKind === ActionKind.AgentTurn ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
-        </label> : <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields}
+        </label> : <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
           disabled={busy || !!intent || unknown} policies={policies}
           steps={steps.length ? steps : template && actionKind === ActionKind.PostMessage
             ? [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}] : []}
@@ -1843,8 +1905,6 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
       statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />;
   return <div className="flex min-w-0 flex-col gap-2">
     {state.status === "pending" ? <IdentityCardSkeleton /> : host ? <AvatarHostProvider value={host}>{card}</AvatarHostProvider> : card}
-    <p className="break-all text-xs text-muted-foreground">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
-    <p className="break-all text-xs text-muted-foreground">{t("agents.installation.principal")}: {row.agentPrincipalId}</p>
     {state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
   </div>;
 }

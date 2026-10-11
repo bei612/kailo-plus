@@ -152,6 +152,48 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     expect(supportedSteps(read(host), 3)).toBe(true);
   });
 
+  it.each(["en","zh-CN"] as const)("keeps the original delay text input and exact duration draft on blur (%s)",async(locale)=>{
+    const {host}=await setup([{id:"wait",action:ActionEnum.Delay,duration:"5s"},first],{locale});
+    await node(host,1);
+    const input=host.querySelector<HTMLInputElement>('#wf-step-0-duration')!;
+    expect(input.placeholder).toBe(locale==="en"?"e.g. 5s, 1m, 1h":"例如 5s、1m、1h");
+    expect(host.querySelector('input[type="range"]')).toBeNull();
+    await type(input,"0s");
+    await act(async()=>input.dispatchEvent(new FocusEvent("focusout",{bubbles:true})));
+    expect(read(host)).toEqual([{id:"wait",action:ActionEnum.Delay,duration:"0s"},first]);
+    expect(supportedSteps(read(host),3)).toBe(true);
+    await type(input,"invalid draft");
+    expect(read(host)[0]?.duration).toBe("invalid draft");
+    expect(supportedSteps(read(host),3)).toBe(false);
+  });
+
+  it("uses the original message editor presentation and preserves template text in the governed step",async()=>{
+    const {host}=await setup([first]);
+    await node(host,1);
+    const input=host.querySelector<HTMLTextAreaElement>('#wf-step-0-text')!;
+    expect(host.querySelector('label[for="wf-step-0-text"]')?.textContent).toBe("Message text");
+    expect(input.placeholder).toBe("e.g. Deployment started by {{trigger.author}}");
+    expect(input.className).toContain("min-h-[60px] resize-y text-xs");
+    expect(input.className).not.toContain("p-2");
+    expect(host.textContent).toContain("Messages post to the workflow channel selected above.");
+    await type(input,"Deployment started by {{trigger.author}}");
+    expect(read(host)).toEqual([{...first,text:"Deployment started by {{trigger.author}}"}]);
+  });
+
+  it.each([
+    [{id:"gate",action:ActionEnum.RequestApproval,message:"Review",approvalPolicy:policy},"message","Approval request message"],
+    [{id:"reaction",action:ActionEnum.AddReaction,emoji:"👍"},"emoji","e.g. thumbsup"],
+    [{id:"topic",action:ActionEnum.SetChannelTopic,topic:"Discussion"},"topic","New channel topic"],
+  ] satisfies Array<[AutomationStep,string,string]>)("restores the supported original field for %j without changing its governed payload",async(step,field,placeholder)=>{
+    const {host,changes}=await setup([step],{policies:true});
+    await node(host,1);
+    expect(host.querySelector<HTMLInputElement>(`#wf-step-0-${field}`)?.placeholder).toBe(placeholder);
+    expect(read(host)).toEqual([step]);
+    expect(changes).not.toHaveBeenCalled();
+    expect(host.querySelector('#wf-step-0-timeout')).toBeNull();
+    expect(host.querySelector('#wf-step-0-timeout-secs')).toBeNull();
+  });
+
   it("does not offer an approval after a side effect, or a side effect before approval", async () => {
     const {host} = await setup([{id:"gate", action:ActionEnum.RequestApproval, message:"Approve", approvalPolicy:policy}, first], {policies:true});
     const popup = await menu(host.querySelectorAll<HTMLElement>('[data-testid="workflow-node-ingress"] button')[0]!);
@@ -196,7 +238,11 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     const {host} = await setup([first, second]);
     await node(host, 1);
     await click([...host.querySelectorAll<HTMLElement>('[data-testid="workflow-node-inspector"] button[aria-expanded="false"]')]
-      .find(button => button.textContent?.startsWith("Details"))!);
+      .find(button => button.textContent?.startsWith("Step details"))!);
+    expect(host.querySelector('label[for="wf-step-0-name"]')?.textContent).toBe("Name (optional)");
+    expect(host.querySelector<HTMLInputElement>('#wf-step-0-name')?.placeholder).toBe("e.g. Notify deployment channel");
+    expect(host.querySelector<HTMLInputElement>('#wf-step-0-id')?.placeholder).toBe("unique_step_id");
+    expect(host.textContent).toContain("Used in configuration and run history.");
     await type(host.querySelector<HTMLInputElement>('#wf-step-0-id')!, "renamed_step");
     await settledMotion();
     expect(read(host)[0]?.id).toBe("renamed_step");

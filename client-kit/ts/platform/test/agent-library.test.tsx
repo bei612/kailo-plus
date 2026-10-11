@@ -96,6 +96,24 @@ describe("original Agent library identity consumers", () => {
     expect(face.textContent).not.toContain("Published persona");
     expect(f.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/pinned" });
   });
+  it("keeps the original installation identity card compact while retaining exact references in its authorized detail", async () => {
+    const f = fixture(request => request.path === "/api/v1/agent-installations/installation"
+      ? { status: 200, body: installation } : undefined);
+    await render(f.ui); await settle();
+    const face = card("installation-installation");
+    expect(face.className).toContain("aspect-[4/5]");
+    expect(face.textContent).toContain("Exact pinned persona");
+    expect(face.textContent).toContain("Active installation record");
+    expect(face.parentElement?.textContent).not.toContain("Exact version reference");
+    expect(face.parentElement?.textContent).not.toContain(installation.agentPrincipalId);
+    await click(face.querySelector<HTMLButtonElement>("button")!);
+    const detail = document.querySelector('[data-testid="agent-installation-detail"]');
+    expect(detail).not.toBeNull();
+    expect(detail?.textContent).toContain(`Exact version reference: ${installation.pinnedVersionAssetId}`);
+    expect(detail?.textContent).toContain(`Agent identity: ${installation.agentPrincipalId}`);
+    expect(f.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations/installation" });
+    expect(f.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
   it.each(["asset", "definition", "denied"])("does not show another installation Persona when the pinned version is %s", async condition => {
     const f = fixture(request => request.path === "/api/v1/agent-versions/pinned" ? condition === "denied" ? denied : { status: 200,
       body: { ...version, ...(condition === "asset" ? { assetId: "other" } : { assetId: "pinned", agentResourceId: "other" }) } } : undefined);

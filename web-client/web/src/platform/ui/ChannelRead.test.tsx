@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ComponentProps } from "react";
+import { act, useCallback, useRef, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { frameData, frameSteps, MotionGlobalConfig } from "motion/react";
 import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
 import type { StreamFrame, UserState } from "../bff-client";
-import { ChannelPane } from "./ChannelPane";
+import { ChannelPane as ActualChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
 import { setLocale, translateCurrent as t } from "@client-kit/platform/i18n";
 import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
@@ -84,6 +84,15 @@ const event = (seconds: number) => ({
   content: "",
 });
 const threadMessages = [{...event(10), createdAt: 10}];
+function ChannelPane(props: Omit<ComponentProps<typeof ActualChannelPane>, "threadHeadId" | "onThreadHeadIdChange" | "onClearMessageRouteTarget" | "onNavigationGuardChange">) {
+  const [threadHeadId, setThreadHeadId] = useState<string | null>(null);
+  const [target, setTarget] = useState<string | null>(null);
+  const guard = useRef<(() => boolean) | null>(null);
+  const register = useCallback((next: (() => boolean) | null) => { guard.current = next; }, []);
+  const clearTarget = useCallback(() => setTarget(null), []);
+  return <ActualChannelPane {...props} targetMessageId={target ?? undefined} threadHeadId={threadHeadId}
+    onThreadHeadIdChange={setThreadHeadId} onClearMessageRouteTarget={clearTarget} onNavigationGuardChange={register} />;
+}
 const windowEvents = (events: ReturnType<typeof event>[]) => [...events, {
   ...event(0), id: "bounds", kind: 39006, tags: [["d", "channel-a:head"]],
   content: JSON.stringify({ has_more: false, next_cursor: null }),
@@ -1283,7 +1292,9 @@ it("restores the original channel avatar without adding one to continuation rows
   expect(state.dmAuthorProfile).not.toHaveBeenCalled();
   await act(async()=>state.receive!({type:"event",event:event(20)}));await flush();
   expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
-  expect(state.authorProfile).not.toHaveBeenCalledWith("workspace-a","event-20");
+  // Continuation rows omit an avatar, not their independent author authorization.
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace-a","event-20");
+  expect(state.authorProfile.mock.calls.filter(call => call[1] === "event-20")).toHaveLength(1);
   expect(state.publish).not.toHaveBeenCalled();
   await act(async()=>state.receive!({type:"interrupted"}));await flush();
   expect(image()).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();

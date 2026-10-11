@@ -8,7 +8,6 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { Input } from "./composer/shared/ui/input";
 import { useT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
-import { WorkflowDurationField } from "./workflow-duration-field";
 import { parseDurationSeconds } from "./workflow-duration";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 
@@ -107,8 +106,12 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
       </Button> : null}
     </div> : null}
     <section className="space-y-4 pb-5">
-      {step.action === "delay" ? <WorkflowDurationField disabled={disabled} id={`${prefix}-duration`} value={step.duration ?? ""}
-        onChange={(duration) => onUpdate({ ...step, duration })} />
+      {step.action === "delay" ? <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-duration`}>{t("workflows.steps.duration")}</label>
+        <Input autoCapitalize="off" disabled={disabled} id={`${prefix}-duration`} value={step.duration ?? ""}
+          placeholder={t("workflows.steps.durationExample")}
+          onChange={(event) => onUpdate({ ...step, duration: event.target.value })} />
+      </div>
         : step.action === "request_approval" ? <div className="space-y-2">
           <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-policy`}>
             {t("agents.automation.approvalPolicy")}
@@ -126,25 +129,30 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
           </label>
           <p className="text-xs text-muted-foreground">{t("workflows.steps.approvalPolicyHint")}</p>
           <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-message`}>
-            {t("workflows.steps.message")}<Input disabled={disabled} id={`${prefix}-message`} value={step.message ?? ""}
+            {t("workflows.steps.message")}<Input autoCapitalize="off" disabled={disabled} id={`${prefix}-message`} value={step.message ?? ""}
+              placeholder={t("workflows.steps.approvalMessageExample")}
               onChange={(event) => onUpdate({ ...step, message: event.target.value })} />
           </label>
         </div>
         : step.action === "add_reaction" ? <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-emoji`}>
           {t("workflows.steps.emoji")}<Input disabled={disabled} autoCapitalize="off" id={`${prefix}-emoji`} value={step.emoji ?? ""}
+            placeholder={t("workflows.steps.emojiExample")}
             onChange={(event) => onUpdate({ ...step, emoji: event.target.value })} />
           <span className="block font-normal">{t("workflows.steps.reactionTarget")}</span>
         </label>
         : step.action === "set_channel_topic" ? <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-topic`}>
           {t("workflows.steps.topic")}<Input disabled={disabled} autoCapitalize="off" id={`${prefix}-topic`} value={step.topic ?? ""}
+            placeholder={t("workflows.steps.topicExample")}
             onChange={(event) => onUpdate({ ...step, topic: event.target.value })} />
           <span className="block font-normal">{t("workflows.steps.topicTarget")}</span>
         </label>
-        : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
-          {t("workflows.steps.message")}<WorkflowTemplateTextarea disabled={disabled} id={`${prefix}-text`} value={step.text ?? ""}
+        : <div className="space-y-2"><div className="space-y-1.5">
+          <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>{t("workflows.steps.messageText")}</label>
+          <WorkflowTemplateTextarea autoCapitalize="off" disabled={disabled} id={`${prefix}-text`} value={step.text ?? ""}
+            placeholder={t("workflows.steps.messageExample")}
             triggerType={trigger} previousSteps={previousSteps} onValueChange={(text) => onUpdate({ ...step, text })}
-            className="min-h-[60px] w-full resize-y rounded-md border border-input bg-transparent p-2 text-xs" />
-        </label>}
+            className="min-h-[60px] resize-y text-xs" />
+        </div><p className="text-xs text-muted-foreground">{t("workflows.steps.channelTarget")}</p></div>}
     </section>
     <section className="divide-y divide-border/50 border-t border-border/50"><div>
       <button aria-expanded={expanded} disabled={disabled}
@@ -156,11 +164,13 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
       </button>
       {expanded ? <div className="animate-in pb-4 pt-1 fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none"><div className="space-y-4">
         <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-name`}>
-          {t("workflows.steps.name")}<Input disabled={disabled} id={`${prefix}-name`} value={step.name ?? ""} onChange={(event) => {
+          {t("workflows.steps.name")}<Input autoCapitalize="off" disabled={disabled} id={`${prefix}-name`} value={step.name ?? ""}
+            placeholder={t("workflows.steps.nameExample")} onChange={(event) => {
             const next = { ...step }; if (event.target.value) next.name = event.target.value; else delete next.name; onUpdate(next);
           }} /></label>
         <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-id`}>
-          {t("workflows.steps.id")}<Input disabled={disabled} id={`${prefix}-id`} value={step.id} onChange={(event) => onUpdate({ ...step, id: event.target.value })} /></label>
+          {t("workflows.steps.id")}<Input autoCapitalize="off" disabled={disabled} id={`${prefix}-id`} value={step.id}
+            placeholder={t("workflows.steps.idExample")} onChange={(event) => onUpdate({ ...step, id: event.target.value })} /></label>
         <p className="text-xs text-muted-foreground">{t("workflows.steps.reference")}</p>
       </div></div> : null}
     </div></section>

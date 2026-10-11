@@ -15,8 +15,10 @@ import type { InboxEvent } from "../../inbox";
 import { useConversationDirectory } from "./use-conversations";
 import { useConversationState } from "./use-conversation-state";
 import { ChannelContextMenuItems } from "../sidebar/channel-context-menu";
+import { canPreviewUnreadDm } from "../sidebar/MoreUnreadButton";
+import type { ConversationUnreadEntry } from "../sidebar/useSidebarUnreadOverflow";
 
-export function ConversationList({ currentPrincipalId, items, loading, error, selectedId, onSelect, onNewMessage, onReload, onCloseSelected, events, lastMessageAtByChannelId, reads }: {
+export function ConversationList({ currentPrincipalId, items, loading, error, selectedId, onSelect, onNewMessage, onReload, onCloseSelected, events, lastMessageAtByChannelId, reads, onUnreadChange }: {
   currentPrincipalId: string;
   items: ConversationView[];
   loading: boolean;
@@ -26,9 +28,10 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
   onNewMessage: () => void;
   onReload: () => void;
   onCloseSelected?: () => void;
-  events?: readonly InboxEvent[];
+  events?: readonly (InboxEvent & { pubkey?: string })[];
   lastMessageAtByChannelId?: ReadonlyMap<string, string | null>;
   reads?: ReturnType<typeof useInboxState>;
+  onUnreadChange?: (entries: readonly ConversationUnreadEntry[]) => void;
 }) {
   const t = useT();
   const directory = useConversationDirectory(currentPrincipalId);
@@ -38,7 +41,7 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
   const { sortModeFor, setSortModeFor } = useChannelSortPreference(currentPrincipalId);
   const admitted = new Set(items.filter(item => item.state === "ACTIVE" && item.participantPrincipalIds.includes(currentPrincipalId)).map(item => item.channelId));
   const knownActivity = events !== undefined && reads?.state !== null && reads !== undefined && !reads.failed && !reads.unknown;
-  const byChannel = new Map<string, InboxEvent[]>();
+  const byChannel = new Map<string, (InboxEvent & { pubkey?: string })[]>();
   if (knownActivity) for (const event of events) {
     if (event.channelType !== "dm" || !event.channelId || !admitted.has(event.channelId) || !reads.visibleChannels.has(event.channelId)) continue;
     const group = byChannel.get(event.channelId) ?? [];
@@ -60,6 +63,31 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     lastMessageAt: lastMessageAtByChannelId?.get(conversation.channelId) ?? null,
     name: conversation.participantPrincipalIds.filter((id) => id !== currentPrincipalId).map((id) => names.get(id) ?? id).join(", "),
   }));
+  // Use precisely the rows/counts already admitted for this menu. Unknown reads,
+  // revoked/hidden conversations and failed refreshes must not leave a preview.
+  const unreadEntries: ConversationUnreadEntry[] = !loading && !error && userState.ready &&
+    !userState.failed && !userState.unknown && knownActivity ? rows.flatMap(conversation => {
+      if ((unreadCounts.get(conversation.channelId) ?? 0) === 0) return [];
+      const people = !directory.isDirectoryLoading && !directory.searchError
+        ? conversation.participantPrincipalIds.filter(id => id !== currentPrincipalId)
+          .flatMap(id => directory.items.filter(person => person.principalId === id)) : [];
+      const person = people[0];
+      // The admitted message must belong to the unique other HUMAN. A display
+      // label is never an identity lookup key, nor is a shared/ambiguous key.
+      const author = person && canPreviewUnreadDm(conversation.participantPrincipalIds.length, people.length)
+        ? byChannel.get(conversation.channelId)?.find(event => event.pubkey &&
+          /^[a-f0-9]{64}$/.test(event.pubkey) && person.pubkeys.includes(event.pubkey) &&
+          !directory.items.some(candidate => candidate.principalId !== person.principalId && candidate.pubkeys.includes(event.pubkey!)))
+        : undefined;
+      return [{ channelId: conversation.channelId, preview: person &&
+        canPreviewUnreadDm(conversation.participantPrincipalIds.length, people.length) ? {
+          channelId: conversation.channelId, accessibleLabel: person.displayName,
+          label: conversation.name, avatarUrl: null,
+          ...(author?.pubkey ? {author: {conversationId: conversation.id, eventId: author.id, pubkey: author.pubkey}} : {}),
+        } : undefined }];
+    }) : [];
+  useEffect(() => { onUnreadChange?.(unreadEntries); });
+  useEffect(() => () => { onUnreadChange?.([]); }, [onUnreadChange]);
   const group = (starred: boolean) => <ChannelGroupSection
       title={t(starred ? "sidebar.starred" : "sidebar.messages")}
       items={error ? [] : sortDmChannelsForSidebar(rows.filter((row) => Boolean(userState.preferences[row.id]?.starred) === starred), {}, sortModeFor(starred ? "starred" : "dms"))}

@@ -6,7 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
-import { MessageAuthorText } from "@client-kit/platform/react/messages";
+import { MessageAuthorText, UserAvatar } from "@client-kit/platform/react/messages";
+import { MoreUnreadButton, type UnreadDmPreview } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
 import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
 import { ForumAuthorButton } from "@client-kit/platform/react/forum/ForumView";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
@@ -29,6 +30,27 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();});
 async function render(content:React.ReactNode){await act(async()=>root.render(<QueryClientProvider client={cache}><TooltipProvider>{content}</TooltipProvider></QueryClientProvider>));}
 function profile(pubkey=author){return {pubkey,eventId,displayName:"Message author",about:"Original biography",avatarUrl:null,nip05Handle:"author@example.org",avatarMediaPaths:{}};}
+
+it("resolves the original DM overflow avatar through the same admitted message and drops removed proof",async()=>{
+  loadedImages();
+  const url=`https://community.example/media/${eventId}.png`;
+  const path=`/api/v1/conversations/private/media/${eventId}`;
+  api.conversationMessageAuthorProfile.mockResolvedValue({...profile(),avatarUrl:url,avatarMediaPaths:{[url]:path}});
+  const preview:UnreadDmPreview={channelId:"dm",label:"Recipient",accessibleLabel:"Recipient",avatarUrl:null,
+    author:{conversationId:"private",eventId,pubkey:author}};
+  const overflow=(row:UnreadDmPreview)=><MoreUnreadButton count={1} position="bottom" emphasis="primary" onClick={()=>{}}
+    testId="dm-overflow" dmPreviews={[row]} renderAvatar={(item,props)=>item.author
+      ? <MessageAuthorAvatar {...props} target={{...item.author,principalId:target.principalId,workspaceId:""}}/>
+      : <UserAvatar {...props}/>}/>;
+  await render(overflow(preview));
+  await vi.waitFor(()=>expect(host.querySelector<HTMLImageElement>('[data-testid="sidebar-unread-dm-avatar-dm-image"]')?.getAttribute("src")).toBe(path));
+  expect(api.conversationMessageAuthorProfile).toHaveBeenCalledExactlyOnceWith("private",eventId);
+  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="sidebar-unread-dm-avatar-dm"]')?.className).toContain("h-5 w-5");
+  await render(overflow({...preview,author:undefined}));
+  expect(host.querySelector("img")).toBeNull();
+  expect(api.conversationMessageAuthorProfile).toHaveBeenCalledTimes(1);
+});
 
 function ResolvedAuthor({target, fallbackName, available=true, surface="text"}: {
   target:MessageAuthor; fallbackName?:string; available?:boolean; surface?:"text"|"avatar"|"inbox"|"forum";

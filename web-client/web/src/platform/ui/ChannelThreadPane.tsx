@@ -1,6 +1,6 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
+import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
 import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
@@ -15,13 +15,16 @@ import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPa
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   conversation?: ConversationView;
   typingEntries?: readonly TypingIndicatorEntry[];
   profiles?: ComponentProps<typeof ThreadPanelSurface>["profiles"];
+  restoreDraftKey?: string;
+  autoSendDraftKey?: string;
+  onAutoSendConsumed?: () => void | Promise<void>;
   routeTargetMessageId?: string;
   routeActivationId?: string;
   searchMessageId?: string | null;
@@ -31,6 +34,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   onOpenAuthor?: (message: TimelineMessage) => void;
   onAuthorScopeUnavailable?: () => void;
   isFocusMode?: boolean;
+  useSplitAuxiliaryPane?: boolean;
+  onThreadViewModeChange?: () => void;
   channelName?: string;
   channelId?: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -50,18 +55,36 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
-  const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId, conversation?.id);
+  const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId, conversation?.id, undefined, true, conversation?.channelId);
   const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
     !denied && !interrupted && thread.isSuccess && !thread.isError);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:!disabled && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
-  const [replyId, setReplyId] = useState(routeTargetMessageId ? rootId : selected.id);
+  const restoredDraft = useMemo(() => {
+    if (!restoreDraftKey) return null;
+    for (const scope of new Set([workspaceId, conversation?.channelId].filter((value): value is string => Boolean(value)))) {
+      const prefix = `thread:${scope}:${rootId}`;
+      if (restoreDraftKey === prefix) return {key:restoreDraftKey, scope, replyId:rootId};
+      const replyId = restoreDraftKey.startsWith(`${prefix}:`) ? restoreDraftKey.slice(prefix.length + 1) : "";
+      if (/^[0-9a-f]{64}$/.test(replyId)) return {key:restoreDraftKey, scope, replyId};
+    }
+    return null;
+  }, [restoreDraftKey, workspaceId, conversation?.channelId, rootId]);
+  const [replyId, setReplyId] = useState(restoredDraft?.replyId ?? (routeTargetMessageId ? rootId : selected.id));
   const [isSending, setIsSending] = useState(false);
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set([selected.id]));
   const expandedTarget = useRef<string | null>(null);
-  useEffect(() => { setReplyId(routeTargetMessageId ? rootId : selected.id); setScrollTargetId(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id); expandedTarget.current = null; }, [selected.id, routeTargetMessageId, routeActivationId, rootId]);
+  useEffect(() => { setReplyId(restoredDraft?.replyId ?? (routeTargetMessageId ? rootId : selected.id)); setScrollTargetId(routeTargetMessageId === rootId ? null : routeTargetMessageId ?? selected.id); expandedTarget.current = null; }, [selected.id, routeTargetMessageId, routeActivationId, rootId, restoredDraft]);
   const width = useThreadPanelWidth();
+  const resolveExternalScrollTarget = useCallback(() => setScrollTargetId(null), []);
+  const { changeThreadViewMode, layoutScrollTargetId, resolveScrollTarget } =
+    useThreadViewModeSwitch({
+      activeThreadHeadId: rootId,
+      externalScrollTargetId: scrollTargetId,
+      onExternalTargetResolved: resolveExternalScrollTarget,
+      onModeChange: onThreadViewModeChange,
+    });
   // Native getThreadReplies traverses the original Relay cursor until complete.
   // Web traverses that same bounded server window, never inventing a time fence.
   useEffect(() => {
@@ -137,26 +160,35 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     onEdit: canEdit && !editBusy && onEdit ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined,
     threadHeadMessage: data.threadHead?.kind === 9 ? data.threadHead : undefined,
     threadMessages: rows.filter(row => row.parentId !== null && row.parentId !== undefined && row.kind === 9),
-    useFocusThreadDrawer: false,
+    useFocusThreadDrawer: isFocusMode,
   });
-  const panelLayout = {...getThreadPanelLayout({isFocusDrawer:isFocusMode,isSinglePanelView:false,useSplitAuxiliaryPane:false}), onClose, widthPx: width.widthPx,
+  const headerLeading = useSplitAuxiliaryPane
+    ? <ThreadViewModeToggle onChange={changeThreadViewMode} /> : undefined;
+  const panelLayout = {...getThreadPanelLayout({headerLeading,isFocusDrawer:isFocusMode,isSinglePanelView:false,useSplitAuxiliaryPane}), onClose, widthPx: width.widthPx,
     onResizeStart: width.onResizeStart, onResetWidth: width.onResetWidth, canResetWidth: width.canReset};
+  // Presentation changes cannot unmount a composer holding an uncertain write.
+  const wrapThreadPanel = (panel: ReactNode) =>
+      <RightAuxiliaryPane active={useSplitAuxiliaryPane && !isFocusMode} canResetWidth={width.canReset} onResetWidth={width.onResetWidth}
+        onResizeStart={width.onResizeStart} testId="message-thread-panel" widthPx={width.widthPx}>
+        {panel}
+      </RightAuxiliaryPane>;
   if (denied || !data.threadHead) {
-    if (!unavailable) return <MessageThreadPanelSkeleton {...panelLayout} />;
-    return <AuxiliaryPanel {...panelLayout}
-      header={<MessageThreadPanelHeader isFocusMode={isFocusMode} isSinglePanelView={panelLayout.isSinglePanelView ?? false} onClose={onClose} />}>
+    if (!unavailable) return wrapThreadPanel(<MessageThreadPanelSkeleton {...panelLayout} />);
+    return wrapThreadPanel(<AuxiliaryPanel {...panelLayout}
+      header={<MessageThreadPanelHeader headerLeading={headerLeading} isFocusMode={isFocusMode} isSinglePanelView={panelLayout.isSinglePanelView ?? false} onClose={onClose} />}>
       <ThreadRepliesErrorCard onRetry={denied ? undefined : () => {void thread.refetch();}} />
-    </AuxiliaryPanel>;
+    </AuxiliaryPanel>);
   }
-  return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id} channelName={channelName} channelType={conversation ? "dm" : "stream"}
+  return wrapThreadPanel(<BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id} channelName={channelName} channelType={conversation ? "dm" : "stream"}
     messages={rows} available={canReply} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
     profiles={profiles} currentPubkey={editAuthorPubkey}
     threadTypingPubkeys={canReply ? typingEntries.filter(entry => entry.threadHeadId === data.threadHead?.id && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey) : []}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
-    replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
+    replyTargetMessage={data.replyTargetMessage} scrollTargetId={layoutScrollTargetId ?? scrollTargetId}
+    scrollTargetHighlights={!layoutScrollTargetId}
     searchMessageId={searchMessageId} searchQuery={searchQuery}
-    onScrollTargetResolved={() => setScrollTargetId(null)} onCancelReply={() => setReplyId(rootId)}
+    onScrollTargetResolved={resolveScrollTarget} onScrollTargetSettled={resolveScrollTarget} onCancelReply={() => setReplyId(rootId)}
     onSelectReplyTarget={handleSelectReplyTarget}
     onExpandReplies={(message) => setExpanded((prior) => {const next = new Set(prior); if (!next.delete(message.id)) next.add(message.id); return next;})}
     threadRepliesPending={loading} threadRepliesError={unavailable}
@@ -197,8 +229,9 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       onEditLastOwnMessage={handleEditLastOwnThreadMessage}
       onConfirmed={editTarget ? () => onEditConfirmed?.(editTarget) : undefined}
       mentionPeople={mentionPeopleFromMembers(members)}
-      draftKey={editTarget ? `edit:${workspaceId}:${editTarget.id}` : `thread:${workspaceId}:${rootId}:${replyId}`}
-      draftChannelId={workspaceId} disabled={composer.disabled || Boolean(editTarget && !canSaveEdit)}
+      draftKey={editTarget ? `edit:${workspaceId}:${editTarget.id}` : restoredDraft?.replyId === replyId ? restoredDraft.key : `thread:${workspaceId}:${rootId}:${replyId}`}
+      autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
+      draftChannelId={restoredDraft?.replyId === replyId ? restoredDraft.scope : workspaceId} disabled={composer.disabled || Boolean(editTarget && !canSaveEdit)}
       onSendingChange={handleSendingChange}
       containerClassName={composer.containerClassName} layoutMode="dock"
       replyTarget={editTarget ? null : composer.replyTarget} onCancelReply={editTarget ? undefined : composer.onCancelReply}
@@ -212,5 +245,5 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}
-  /></BffVideoReviewProvider>;
+  /></BffVideoReviewProvider>);
 }

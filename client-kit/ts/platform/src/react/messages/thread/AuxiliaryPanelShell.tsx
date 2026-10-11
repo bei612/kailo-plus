@@ -131,31 +131,20 @@ export function AuxiliaryPanel({
       </button>
     ) : null;
 
-  if (isSplitLayout) {
-    return (
-      <AuxiliaryPanelContext.Provider value={contextValue}>
-        <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-          {header}
-          {children}
-          {footer}
-        </div>
-        {siblings}
-      </AuxiliaryPanelContext.Provider>
-    );
-  }
-
+  // Keep the content owner mounted when switching split/focus presentation.
+  // Replacing div with aside used to destroy editors with pending write receipts.
   return (
     <AuxiliaryPanelContext.Provider value={contextValue}>
-      {isFloatingOverlay ? <OverlayPanelBackdrop onClose={onClose} /> : null}
+      {!isSplitLayout && isFloatingOverlay ? <OverlayPanelBackdrop onClose={onClose} /> : null}
       <aside
-        className={cn(
+        className={isSplitLayout ? cn("flex min-h-0 flex-1 flex-col", className) : cn(
           enterMotion ? PANEL_ENTER_BASE_CLASS : PANEL_BASE_CLASS,
           isSinglePanelView && "border-l-0",
           isFloatingOverlay && PANEL_OVERLAY_CLASS,
           className,
         )}
-        data-testid={testId}
-        style={{ width: panelWidth }}
+        data-testid={isSplitLayout ? undefined : testId}
+        style={isSplitLayout ? undefined : { width: panelWidth }}
       >
         {resizeHandle}
         {header}

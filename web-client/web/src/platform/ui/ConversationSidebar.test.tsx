@@ -11,14 +11,14 @@ const event={id:"c".repeat(64),pubkey:peer,created_at:10,kind:9,content:"incomin
 const bounds={...event,id:"d".repeat(64),kind:39006,tags:[["h","native-dm"],["d","native-dm:head"]],content:JSON.stringify({has_more:false,next_cursor:null})};
 
 describe("Web DM sidebar admitted real window adapter",()=>{
-  function fixture(options:{scope?:string;own?:string[];current?:ConversationView[];principal?:string;cursorLoop?:boolean;signal?:AbortController}={}){
+  function fixture(options:{scope?:string;own?:string[];current?:ConversationView[];principal?:string;cursorLoop?:boolean;signal?:AbortController;overlays?:typeof event[]}={}){
     const requests:BffRequest[]=[];
     const client=createBffClient({send:async request=>{
       requests.push(request);
       if(request.path.startsWith("/api/v1/conversation-participants"))return {status:200,body:{items:[{principalId:"self",displayName:"Me",pubkeys:options.own??[self]}],maxParticipants:9,nextCursor:options.cursorLoop?"same":undefined}};
       if(request.path==="/api/v1/conversations/dm/messages"){
         options.signal?.abort();
-        return {status:200,body:{events:[{...event,tags:[["h",options.scope??"native-dm"]]},{...event,id:"e".repeat(64),pubkey:self,created_at:30},bounds]}};
+        return {status:200,body:{events:[{...event,tags:[["h",options.scope??"native-dm"]]},{...event,id:"e".repeat(64),pubkey:self,created_at:30},...(options.overlays??[]),bounds]}};
       }
       if(request.path==="/api/v1/conversations")return {status:200,body:{items:options.current??[conversation]}};
       if(request.path==="/api/v1/session")return {status:200,body:{tenantPrincipalId:options.principal??"self",accessMode:"FULL"}};
@@ -34,6 +34,25 @@ describe("Web DM sidebar admitted real window adapter",()=>{
     expect(result.lastMessageAt.get("native-dm")).toBe(new Date(30_000).toISOString());
     expect(requests.every(request=>request.method==="GET")).toBe(true);
     expect(requests.filter(request=>request.path.includes("/messages"))).toHaveLength(1);
+  });
+  it.each([5,9005])("folds admitted kind %i deletion before selecting unread/avatar proof or Recent activity",async kind=>{
+    const marker=(id:string,target:string)=>({...event,id,kind,pubkey:self,
+      tags:kind===5?[["e",target]]:[["h","native-dm"],["e",target]]});
+    const {client}=fixture({overlays:[marker("f".repeat(64),event.id),marker("1".repeat(64),"e".repeat(64))]});
+    const result=await loadConversationSidebarActivity(client,"self",[conversation],new AbortController().signal);
+    expect(result.events).toEqual([]);
+    expect(result.lastMessageAt.get("native-dm")).toBeNull();
+  });
+  it("does not treat reaction references as deletions or a deletion of an auxiliary event as deletion of its message",async()=>{
+    const reaction={...event,id:"f".repeat(64),kind:7,tags:[["e",event.id]]};
+    const removal={...event,id:"1".repeat(64),kind:5,tags:[["e",reaction.id]]};
+    const {client}=fixture({overlays:[reaction,removal]});
+    const result=await loadConversationSidebarActivity(client,"self",[conversation],new AbortController().signal);
+    expect(result.events.map(item=>item.id)).toEqual([event.id]);
+  });
+  it("refuses a cross-channel deletion instead of offering the remaining window as admitted activity",async()=>{
+    const {client}=fixture({overlays:[{...event,id:"f".repeat(64),kind:9005,tags:[["h","foreign"],["e",event.id]]}]});
+    await expect(loadConversationSidebarActivity(client,"self",[conversation],new AbortController().signal)).rejects.toThrow("scope");
   });
   it.each([
     {scope:"foreign-channel"},{own:[]},{own:["not-a-pubkey"]},{current:[]},

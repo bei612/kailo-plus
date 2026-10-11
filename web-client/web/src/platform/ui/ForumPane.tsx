@@ -34,7 +34,7 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onStartDm }: {
+export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, onStartDm }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
   metadataPending?: boolean;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -44,6 +44,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   searchActivationId?: string;
   restoreDraftKey?: string;
   autoSendDraftKey?: string;
+  onAutoSendConsumed?: () => void | Promise<void>;
   onStartDm?: (pubkey: string) => void;
 }) {
   const labels = useForumLabels();
@@ -170,7 +171,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
       mentionPeople={mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : [])}
-      draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
+      draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
       onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds, mentionPubkeys) => {
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installationIds,
           { messageType: parentId ? WebMessageType.ForumComment : WebMessageType.ForumPost, mentionPubkeys, ...(parentId ? { parentEventId: parentId } : {}) });

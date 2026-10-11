@@ -32,8 +32,9 @@ async function mount(t: BffTransport, ui: React.ReactNode, locale: "en" | "zh-CN
       {ui}
     </PlatformProvider>,
   );
-  // Original Agent dialogs portal beside the page; queries include both real surfaces.
-  return isValidElement(ui) && ui.type === AgentDefinitionsPage ? document.body : host;
+  // Original Agent and Workflow dialogs portal beside the page; query both surfaces.
+  return isValidElement(ui) && (ui.type === AgentDefinitionsPage || ui.type === WorkflowsPage)
+    ? document.body : host;
 }
 
 const key = (pubkey: string, state = "ACTIVE") => ({
@@ -413,7 +414,7 @@ describe("independent shared Workflows page", () => {
     expect(platformNavigationSections).toContain("workflows");
     await click(host.querySelector("[data-testid=sidebar-platform-workflows]") as HTMLElement);
     expect(host.querySelector("[data-testid=workflows-page]")).not.toBeNull();
-    expect(host.textContent).toContain("workflow-one");
+    expect(host.querySelector('[data-testid="workflow-card-workflow-one"]')).not.toBeNull();
   });
   it("both host routes import and render the same page export", async () => {
     const ts = await import("typescript");
@@ -678,8 +679,13 @@ describe("shared Automation schedule consumer", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     // Original Dialog portals its content; exercise the same user-visible tree.
     const section = document.body;
-    const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))
-      ?? (label === "Instruction template" ? [...section.querySelectorAll("label")].find(node => node.htmlFor.endsWith("-text"))! : undefined!);
+    const field = (label: string) => {
+      const node = [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))
+        ?? (label === "Instruction template" ? [...section.querySelectorAll("label")].find(node => node.htmlFor.endsWith("-text")) : undefined);
+      // Original step labels use htmlFor; the associated editor is a sibling,
+      // unlike the existing governance fields which wrap their controls.
+      return node?.control && !node.contains(node.control) ? node.control.parentElement! : node!;
+    };
     const choose = async (label: string, value: string) => {
       const select = field(label).querySelector("select")!;
       await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -997,13 +1003,14 @@ describe("shared Automation schedule consumer", () => {
   it("renders real authorized version semantics in the original card, without inventing a workflow name", async () => {
     const { section } = await setup(["CHANNEL"], scheduleContent);
     const card = section.querySelector('[data-testid="workflow-card-schedule-automation"]')!;
-    expect(card.querySelector('[data-testid="workflow-card-semantic-label"]')?.textContent).toBe("Scheduled report");
-    expect(card.textContent).toContain("Report");
-    expect(card.textContent).toContain("Schedule");
-    expect(card.textContent).toContain("schedule-version");
+    expect(card.querySelector('[data-testid="workflow-card-semantic-label"]')?.textContent).toBe("Every 5m, run an Agent turn");
+    expect(card.textContent).toContain("Scheduled report");
     expect(card.textContent).toContain("#Schedule workspace");
     await click(button(section, "View definition"));
-    expect(section.querySelector('[data-testid="workflow-detail-panel"]')).not.toBeNull();
+    const detail = section.querySelector('[data-testid="workflow-detail-panel"]')!;
+    expect(detail).not.toBeNull();
+    expect(detail.textContent).toContain("Report");
+    expect(detail.textContent).toContain("schedule-version");
   });
 
   const enabled = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
@@ -1053,7 +1060,7 @@ describe("shared Automation schedule consumer", () => {
       (request) => request.path === "/api/v1/tasks" ? { status: 200, body: [originalRun] } : reads(request));
     await click(button(section, "View definition")); await click(button(section, "Delete"));
     expect(section.textContent).toContain("Versions and run history remain; admitted runs are not canceled");
-    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    await click(button(section.querySelector<HTMLElement>('[role="alertdialog"]')!, "Delete"));
     await click(button(section, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
     expect(writes).toHaveLength(2);
@@ -1252,7 +1259,7 @@ describe("shared Automation schedule consumer", () => {
     "rejects invalid or implicit interval values %j/%j/%j", async (every, offset, catchup) => {
       const { section, fill } = await setup(["CHANNEL"], scheduleContent);
       await click(button(section, "View definition"));
-      await click(button(section, "Publish a new version"));
+      await click(button(section, "Edit"));
       await type(section.querySelector<HTMLInputElement>('#wf-trigger-interval')!, every);
       await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
       await fill("Instruction template", "Report");
@@ -1281,7 +1288,7 @@ describe("shared Automation schedule consumer", () => {
     const { section, t } = await setup(["CHANNEL"], scheduleContent);
     await click(button(section, "View definition"));
     expect(section.textContent).toContain("Interval (seconds): 300");
-    await click(button(section, "Publish a new version"));
+    await click(button(section, "Edit"));
     await settle();
     await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
     expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
@@ -1296,7 +1303,7 @@ describe("shared Automation schedule consumer", () => {
       const {section,t}=await setup(["CHANNEL"],content,undefined,undefined,policies);
       await click(button(section,"View definition"));
       expect(section.textContent).toContain(content.approvalPolicy.id);
-      await click(button(section,"Publish a new version")); await settle();
+      await click(button(section,"Edit")); await settle();
       expect(button(section,"Review request").disabled).toBe(true);
       await act(async()=>section.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
       expect(t.send.mock.calls.filter(([r])=>r.path==="/api/v1/actions")).toHaveLength(0);
@@ -1876,7 +1883,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.update", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion, assetId: version.assetId,
       assetVersion: version.assetVersion, agentVersionContent: { ...content, instructions: "Edited exact draft" } });
-    expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
+    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
     expect(posts(t)).toHaveLength(1);
   });
 
@@ -1992,7 +2000,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(create, "Review request"));
     expect(create.textContent).toContain(`${version.assetId} · ${version.assetVersion + 1}`);
     expect(posts(t)).toHaveLength(1);
-    expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
+    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
   });
 
   it("refreshes installation candidates from the authority without changing Workspace", async () => {
@@ -2032,7 +2041,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.retire", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: published.assetId, assetVersion: published.assetVersion, explicitConfirmation: true });
-    expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
+    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
     expect(posts(t)).toHaveLength(1);
   });
 
@@ -3706,7 +3716,7 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalTint)).toHaveLength(2);
         text = text.replace(originalTint, "active");
       }
-      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx") {
+      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx" || source.name === "workflow-delete-dialog.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
         // This exact modal backdrop is original; other literal colours remain
@@ -3930,10 +3940,10 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain("Being installed");
-    expect(section.textContent).toContain("pinned-asset-1");
-    expect(section.textContent).toContain("agent-principal-1");
     await click(button(section, "View installation"));
     const detail = host.querySelector("[data-testid=agent-installation-detail]") as HTMLElement;
+    expect(detail.textContent).toContain("pinned-asset-1");
+    expect(detail.textContent).toContain("agent-principal-1");
     expect(detail.textContent).toContain("Projection pending");
     expect(detail.textContent).toContain("Disabled channel binding");
     expect(detail.textContent).toContain("Mention · Manual assignment");
@@ -3960,7 +3970,8 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain("No agents to show on this page.");
     await click(button(section, "Next page"));
-    expect(section.textContent).toContain("pinned-asset-1");
+    expect(section.querySelector('[data-testid="agent-installation-installation-1"]')).not.toBeNull();
+    expect(t.send).toHaveBeenCalledWith({method: "GET", path: "/api/v1/agent-versions/pinned-asset-1"});
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=9" });
     expect(button(section, "Previous page")).toBeTruthy();
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);

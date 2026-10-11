@@ -7,12 +7,15 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { frameData, frameSteps, MotionGlobalConfig } from "motion/react";
 import type { StreamFrame } from "../bff-client";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
+import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
+import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({composer:vi.fn(),richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query,conversationMessages:state.conversationQuery}), useLocale: () => "en", useT: () => (key: string) => key,
@@ -29,20 +32,32 @@ vi.mock("@/platform/bff-client", async(original) => ({
   publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
-vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: ({disabled, onPublish, replyTarget}: {disabled: boolean; replyTarget?:{id:string;body:string;author:string}|null; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
-  <><ComposerReplyBanner replyTarget={replyTarget}/><button data-testid="host-send" disabled={disabled} onClick={async () => {try {await onPublish("reply", [], "original-intent", []); state.outcome = "confirmed";} catch {state.outcome = "unknown";}}}>send</button></>}));
+vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: (props: import("react").ComponentProps<typeof import("./ChannelPane").Composer>) => {
+  state.composer(props); const {disabled,onPublish,replyTarget}=props;
+  return <><ComposerReplyBanner replyTarget={replyTarget}/><button data-testid="host-send" disabled={disabled} onClick={async () => {try {await onPublish!("reply", [], "original-intent", []); state.outcome = "confirmed";} catch {state.outcome = "unknown";}}}>send</button></>; }}));
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const author = "c".repeat(64);
 const event = (id: string, content: string, tags: string[][], created_at: number) => ({id, pubkey: author, content, tags: [["h", "workspace"], ...tags], created_at, kind: 9});
 const rootEvent = event(rootId, "Root body", [], 1);
 const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", rootId, "", "reply"]], 2);
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
-async function settle() {for (let i = 0; i < 12; i++) await act(async () => {await vi.advanceTimersByTimeAsync(10);});}
-async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}, typingEntries: import("react").ComponentProps<typeof ChannelThreadPane>["typingEntries"] = []) {
+async function settle() {for (let i = 0; i < 30; i++) await act(async () => {
+  await vi.advanceTimersByTimeAsync(10);
+  frameData.delta=10; frameData.timestamp+=10; frameData.isProcessing=true;
+  try { for(const step of Object.values(frameSteps)) step.process(frameData); }
+  finally { frameData.isProcessing=false; }
+});}
+function LayoutThread({layoutEnabled, ...props}: import("react").ComponentProps<typeof ChannelThreadPane> & {layoutEnabled?:boolean}) {
+  const mode = useThreadViewMode();
+  const pane = <ChannelThreadPane {...props} useSplitAuxiliaryPane={layoutEnabled}
+    isFocusMode={Boolean(layoutEnabled && mode === "focus")} />;
+  return layoutEnabled ? <FocusThreadDrawer active={mode === "focus"} onClose={props.onClose}>{pane}</FocusThreadDrawer> : pane;
+}
+async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}, typingEntries: import("react").ComponentProps<typeof ChannelThreadPane>["typingEntries"] = [], layoutEnabled = false, restoreDraftKey?:string) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
-    <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
+    <LayoutThread workspaceId="workspace" principalId="human" selected={selected} layoutEnabled={layoutEnabled}
       conversation={conversation} channelId={conversation?.channelId}
-      routeTargetMessageId={routeTargetMessageId}
+      routeTargetMessageId={routeTargetMessageId} restoreDraftKey={restoreDraftKey} autoSendDraftKey={restoreDraftKey}
       {...search}
       typingEntries={typingEntries}
       profiles={{["d".repeat(64)]:{displayName:"Peer",avatarUrl:null,nip05Handle:null,ownerPubkey:null}}}
@@ -52,7 +67,9 @@ async function mount(routeTargetMessageId?:string, conversation?:ConversationVie
   await settle();
 }
 beforeEach(() => {
+  MotionGlobalConfig.useManualTiming=true;
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";state.receive=null;
+  setThreadViewMode("split");
   state.richContent=false;
   vi.stubGlobal("Image",function(){
     const image=document.createElement("img");let source="";
@@ -73,7 +90,53 @@ beforeEach(() => {
   query = new QueryClient({defaultOptions: {queries: {retry: false}}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();vi.unstubAllGlobals();});
+afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); MotionGlobalConfig.useManualTiming=false; vi.useRealTimers();vi.unstubAllGlobals();});
+it("restores the exact admitted native DM root/reply key without changing the transport scope", async () => {
+  const nativeChannel="native-dm";
+  const conversation:ConversationView={id:"conversation-binding",channelId:nativeChannel,state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  state.conversationQuery.mockResolvedValue({events:[rootEvent,reply].map(event=>({...event,tags:event.tags.map(tag=>tag[0]==="h"?["h",nativeChannel]:tag)}))});
+  const key=`thread:${nativeChannel}:${rootId}:${replyId}`;
+  await mount(replyId,conversation,undefined,[],false,key);
+  expect(state.composer.mock.lastCall?.[0]).toMatchObject({draftKey:key,draftChannelId:nativeChannel,autoSendDraftKey:key,disabled:false,replyTarget:{id:replyId}});
+  expect(state.composer.mock.lastCall?.[0].workspaceId).toBeUndefined();
+  expect(state.conversationQuery).toHaveBeenCalledWith(conversation.id,{messageType:"STREAM",parentEventId:rootId});
+  expect(state.query).not.toHaveBeenCalled();
+  await mount(replyId,conversation,undefined,[],false,`thread:foreign:${rootId}:${replyId}`);
+  expect(state.composer.mock.lastCall?.[0].draftKey).not.toContain("foreign");
+  expect(state.publish).not.toHaveBeenCalled(); expect(state.conversationPublish).not.toHaveBeenCalled();
+  // A different admitted native channel must not reuse this binding's warm rows.
+  await mount(replyId,{...conversation,channelId:"different-native-dm"},undefined,[],false,key);
+  expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
+  expect(host.textContent).not.toContain("Nested body");
+});
+
+it.each(["channel", "conversation"] as const)("switches the real %s thread between the original split pane and focus drawer without publishing", async(scope) => {
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  await mount(undefined, conversation, undefined, [], true);
+  expect(host.querySelector('[data-testid="right-auxiliary-pane-resize-handle"]')).not.toBeNull();
+  let toggle = host.querySelector<HTMLButtonElement>('[data-testid="thread-view-mode-toggle"]')!;
+  expect(toggle.getAttribute("aria-label")).toBe("Expand thread");
+  await act(async () => toggle.click()); await settle();
+  expect(getThreadViewMode()).toBe("focus");
+  expect(host.querySelector('[data-testid="focus-thread-drawer"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="right-auxiliary-pane-resize-handle"]')).toBeNull();
+  toggle = host.querySelector<HTMLButtonElement>('[data-testid="thread-view-mode-toggle"]')!;
+  expect(toggle.getAttribute("aria-label")).toBe("Show thread beside channel");
+  expect(document.activeElement).toBe(toggle);
+  expect(host.textContent).toContain("Root body");
+  expect(host.textContent).toContain("Nested body");
+  await act(async () => toggle.dispatchEvent(new MouseEvent("click", {bubbles:true,detail:1}))); await settle();
+  expect(getThreadViewMode()).toBe("split");
+  expect(host.querySelector('[data-testid="focus-thread-drawer"]')).toBeNull();
+  expect(host.querySelector('[data-testid="right-auxiliary-pane-resize-handle"]')).not.toBeNull();
+  expect(document.activeElement).toBe(host.querySelector('[data-testid="message-thread-body"]'));
+  expect(state.publish).not.toHaveBeenCalled();
+  expect(state.conversationPublish).not.toHaveBeenCalled();
+});
+it("does not offer the original two-column switch in the single-panel host", async () => {
+  await mount();
+  expect(host.querySelector('[data-testid="thread-view-mode-toggle"]')).toBeNull();
+});
 it.each(["channel","conversation"] as const)("resolves the %s message author before the original thread reply banner and clears it on interruption",async(scope)=>{
   const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   await mount(undefined,conversation);

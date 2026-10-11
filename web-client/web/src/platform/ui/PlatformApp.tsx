@@ -50,12 +50,14 @@ import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport
 import { ChannelSidebar } from "./ChannelSidebar";
 import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
 import { AppSidebarFrame, AppSidebarPinnedHeaderFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
-import { MoreUnreadButton } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
-import { useUnreadOverflow } from "@client-kit/platform/react/sidebar/useUnreadOverflow";
+import { MoreUnreadButton, preferredUnreadTarget } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
+import { useConversationUnreadProjection, useSidebarUnreadOverflow } from "@client-kit/platform/react/sidebar/useSidebarUnreadOverflow";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
+import { MessageAuthorAvatar } from "./MessageAuthorProfile";
+import { UserAvatar } from "@client-kit/platform/react/messages";
 import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
@@ -227,7 +229,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
-  const sidebarOverflow = useUnreadOverflow({ scrollRef: sidebarScrollRef, unreadChannelIds: sidebarUnread });
+  const dmUnread = useConversationUnreadProjection(directMessageOwner);
+  const sidebarOverflow = useSidebarUnreadOverflow({ scrollRef: sidebarScrollRef, unreadChannelIds: sidebarUnread,
+    dmChannelIds: dmUnread.dmChannelIds, highPriorityUnreadChannelIds: dmUnread.dmChannelIds,
+    previewActivityChannelIds: dmUnread.dmChannelIds });
+  const nextUnreadDmBelowId = preferredUnreadTarget(sidebarOverflow.unreadMessageBelowChannelIds, dmUnread.dmChannelIds);
+  const unreadDmPreviewsBelow = sidebarOverflow.unreadMessageBelowChannelIds.flatMap(channelId => {
+    const preview = dmUnread.entries.find(entry => entry.channelId === channelId)?.preview;
+    return preview ? [preview] : [];
+  });
   const rows = useMemo(() => workspaces.isError ? [] : workspaces.data ?? [], [workspaces.isError, workspaces.data]);
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
   // An explicit URL target is not permission and must never fall back to another channel.
@@ -363,11 +373,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </div> :
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
+      restoreDraftKey={navigation.draftTarget?.key} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
       onStartDm={openDirectMessage}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink}
       target={messageTarget?.channelId === active ? {...messageTarget,channelId:channel.data.channelId} : undefined}
       searchMessageId={navigation.searchHighlight?.messageId} searchQuery={navigation.searchHighlight?.query} searchActivationId={navigation.searchHighlight?.activationId} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+      threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
+      onNavigationGuardChange={navigation.registerThreadNavigationGuard}
+      restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
       onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
       onStartDm={openDirectMessage}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
@@ -388,6 +402,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+        threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
+        onNavigationGuardChange={navigation.registerThreadNavigationGuard}
+        restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
         targetMessageId={messageTarget?.channelId === chosenConversation.id ? messageTarget.messageId : undefined}
         targetThreadRootId={messageTarget?.channelId === chosenConversation.id ? messageTarget.threadRootId ?? undefined : undefined}
         targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
@@ -402,10 +419,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         principalId={session.tenantPrincipalId}
         onStartDm={openDirectMessage}
         onUnreadCount={setInboxUnreadCount}
-        onOpen={async (channelId, target) => {
-          if (target?.conversation) {
-            await navigation.openConversation(target.conversation.id, target);
-          } else await navigation.openChannel(channelId, target ? {channelId,messageId:target.messageId,threadRootId:target.threadRootId ?? null} : undefined);
+        onOpen={async (channelId, target, draft) => {
+          const conversation = target?.conversation ?? draft?.conversation;
+          const draftReference = draft ? {key:draft.key,send:draft.send,editEventId:draft.editEventId} : undefined;
+          if (conversation) {
+            await navigation.openConversation(conversation.id, target, undefined, draftReference);
+          } else await navigation.openChannel(channelId, target ? {channelId,messageId:target.messageId,threadRootId:target.threadRootId ?? null} : undefined, undefined, draftReference);
         }}
       />
     ) : tab === "pulse" ? (
@@ -464,9 +483,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)} />
               </AppSidebarPinnedHeaderFrame>}
               above={sidebarOverflow.unreadAboveCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadAboveCount}
-                emphasis="default" onClick={sidebarOverflow.scrollToNextAbove} position="top" testId="sidebar-unread-above" /> : null}
+                emphasis={sidebarOverflow.hasHighPriorityAbove ? "primary" : "default"} onClick={sidebarOverflow.scrollToNextAbove} position="top" testId="sidebar-unread-above" /> : null}
               below={sidebarOverflow.unreadBelowCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadBelowCount}
-                bottomClassName="bottom-full" emphasis="default" onClick={sidebarOverflow.scrollToNextBelow} position="bottom" testId="sidebar-unread-below" /> : null}
+                dmPreviews={unreadDmPreviewsBelow} targetChannelId={nextUnreadDmBelowId}
+                renderAvatar={(preview, props) => preview.author ? <MessageAuthorAvatar {...props}
+                  key={`${searchScopeKey}:${preview.author.conversationId}:${preview.author.eventId}`}
+                  target={{...preview.author, principalId: session.tenantPrincipalId, workspaceId: ""}} /> : <UserAvatar {...props} />}
+                bottomClassName="bottom-full" emphasis={sidebarOverflow.hasHighPriorityBelow ? "primary" : "default"}
+                onClick={() => nextUnreadDmBelowId ? sidebarOverflow.scrollToChannel(nextUnreadDmBelowId) : sidebarOverflow.scrollToNextBelow()}
+                position="bottom" testId="sidebar-unread-below" /> : null}
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
@@ -488,7 +513,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               selectedId={navigation.applicationBindingId}
               onSelect={(binding) => { void navigation.openApplication(binding.bindingId, binding.workspaceId); }}
               workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
-            <ConversationSidebar currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
+            <ConversationSidebar key={searchScopeKey} currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
+              onUnreadChange={dmUnread.onUnreadChange}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
               onCloseSelected={() => setTab("inbox")}

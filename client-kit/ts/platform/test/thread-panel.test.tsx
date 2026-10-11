@@ -6,10 +6,53 @@ import { buildMainTimelineEntries } from "../src/react/messages/thread/threadPan
 import { MessageRowSurface, type TimelineMessage } from "../src/react/messages";
 import { render, click } from "./render";
 import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
+import { ThreadViewModeToggle, useThreadViewModeSwitch } from "../src/react/messages/thread";
+import { getThreadViewMode, setThreadViewMode } from "../src/react/messages/thread/threadViewModePreference";
+import { TooltipProvider } from "../src/react/sidebar/tooltip";
 
 const head: TimelineMessage = {id: "head", createdAt: 1, author: "Alice", pubkey: "alice", body: "Root", depth: 0, time: ""};
 const branch: TimelineMessage = {...head, id: "branch", parentId: "head", rootId: "head", body: "Branch", createdAt: 2};
 const child: TimelineMessage = {...branch, id: "child", parentId: "branch", body: "Child", createdAt: 3};
+it.each(["en", "zh-CN"] as const)("keeps the original %s thread layout control, reading anchor and focus destination", async (locale) => {
+  setLocale(locale);
+  setThreadViewMode("split");
+  const resolved = vi.fn();
+  function LayoutControl() {
+    const [thread, setThread] = useState("head");
+    const {changeThreadViewMode, layoutScrollTargetId, resolveScrollTarget} = useThreadViewModeSwitch({
+      activeThreadHeadId: thread, externalScrollTargetId: "external", onExternalTargetResolved: resolved,
+    });
+    return <TooltipProvider>
+      <ThreadViewModeToggle onChange={changeThreadViewMode} />
+      <div data-testid="message-thread-body" tabIndex={-1}><p data-message-id="above" /><p data-message-id="reading" /></div>
+      <output data-testid="layout-target">{layoutScrollTargetId}</output>
+      <button onClick={() => resolveScrollTarget("reading")}>settled</button>
+      <button onClick={() => setThread("different")}>change thread</button>
+    </TooltipProvider>;
+  }
+  const host = await render(<LayoutControl />);
+  const body = host.querySelector<HTMLElement>('[data-testid="message-thread-body"]')!;
+  body.getBoundingClientRect = () => ({top: 10}) as DOMRect;
+  host.querySelector<HTMLElement>('[data-message-id="above"]')!.getBoundingClientRect = () => ({bottom: 5}) as DOMRect;
+  host.querySelector<HTMLElement>('[data-message-id="reading"]')!.getBoundingClientRect = () => ({bottom: 20}) as DOMRect;
+  const toggle = host.querySelector<HTMLButtonElement>('[data-testid="thread-view-mode-toggle"]')!;
+  expect(toggle.getAttribute("aria-label")).toBe(locale === "en" ? "Expand thread" : "展开线程");
+  expect(toggle.querySelector(".lucide-panel-right-open")).not.toBeNull();
+  await click(toggle);
+  expect(getThreadViewMode()).toBe("focus");
+  expect(toggle.getAttribute("aria-label")).toBe(locale === "en" ? "Show thread beside channel" : "在频道旁显示线程");
+  expect(toggle.querySelector(".lucide-columns-2")).not.toBeNull();
+  expect(host.querySelector('[data-testid="layout-target"]')?.textContent).toBe("reading");
+  await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
+  await click([...host.querySelectorAll("button")].find(button => button.textContent === "settled")!);
+  expect(resolved).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="layout-target"]')?.textContent).toBe("");
+  await act(async () => toggle.dispatchEvent(new MouseEvent("click", {bubbles: true, detail: 1})));
+  expect(getThreadViewMode()).toBe("split");
+  await vi.waitFor(() => expect(document.activeElement).toBe(body));
+  await click([...host.querySelectorAll("button")].find(button => button.textContent === "change thread")!);
+  expect(host.querySelector('[data-testid="layout-target"]')?.textContent).toBe("");
+});
 beforeEach(() => {
   setLocale("zh-CN");
   Object.defineProperty(window, "matchMedia", {configurable: true, value: () => ({matches: false, addEventListener() {}, removeEventListener() {}})});

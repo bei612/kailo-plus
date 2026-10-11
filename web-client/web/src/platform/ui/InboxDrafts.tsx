@@ -1,17 +1,14 @@
-import { ChannelType, ItemState, WebMessageType, type ConversationView, type ConversationParticipant, type WorkspaceView, type WorkspaceMemberView } from "@client-kit/contracts";
+import { ChannelType, ItemState, WebMessageType, type ConversationView, type ConversationParticipant, type WorkspaceView } from "@client-kit/contracts";
 import { useBffClient, useT } from "@client-kit/platform/react/context";
 import { useConversations, useConversationVisibilityHost } from "@client-kit/platform/react/new-message";
 import { DraftDetailSurface, DraftListSurface, type DraftListEntry, type DraftSurfaceItem } from "@client-kit/platform/react/draft-surfaces";
 import { initDraftStore, getActiveDraftEntries, useDraftsSnapshot, deleteDraftEntry, loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
-import { InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
 import { formatItemTimestamp } from "@client-kit/platform/react/messages/datetime";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import type { InboxNavigationTarget } from "@client-kit/platform/react/new-message";
+import type { PlatformDraftNavigation } from "@/app/platform-navigation";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
-import { ChannelPane } from "./ChannelPane";
-import { InboxThreadPane } from "./InboxThreadPane";
-import { ForumPane } from "./ForumPane";
-import { MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 
 /** Existing Web composer namespaces, resolved against the stored destination (never inferred from a secret or a fallback scope). */
@@ -45,14 +42,14 @@ export function useInboxDrafts(principalId: string) {
 
 type Destination = { kind: "workspace"; workspace: WorkspaceView } | { kind: "conversation"; conversation: ConversationView };
 
-export function InboxDrafts({ principalId, workspaces, members, participants, entries, selectedKey, onSelect, onDelete, showList, showDetail, onBack, header, onStartDm }: {
+export function InboxDrafts({ principalId, workspaces, participants, entries, selectedKey, onSelect, onDelete, showList, showDetail, onBack, header, onOpen }: {
   principalId: string; workspaces: WorkspaceView[]; entries: DraftListEntry[]; selectedKey: string | null;
   onSelect: (key: string | null) => void; onDelete: (key: string) => void; showList: boolean; showDetail: boolean; onBack?: () => void;
-  members: Map<string, WorkspaceMemberView[]>; participants: ConversationParticipant[]; header: ReactNode;
-  onStartDm?: (pubkey: string) => void;
+  participants: ConversationParticipant[]; header: ReactNode;
+  onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: ConversationView}) => void | Promise<void>;
 }) {
-  const t = useT(); const conversations = useConversations();
-  const [editing, setEditing] = useState<{ key: string; send: boolean } | null>(null);
+  const t = useT(); const client = useBffClient(); const conversations = useConversations();
+  const visibility = useConversationVisibilityHost();
   const destination = (entry: DraftListEntry): Destination | null => {
     const target = draftMessageTarget(entry);
     if (!target) return null;
@@ -74,9 +71,23 @@ export function InboxDrafts({ principalId, workspaces, members, participants, en
       canOpen: target !== null && supported, canSend: target !== null && supported };
   });
   const selected = items.find((item) => item.entry.key === selectedKey) ?? null;
-  const opened = selected && editing?.key === selected.entry.key ? selected : null;
-  const openedDestination = opened ? destination(opened.entry) : null;
-  const open = (entry: DraftListEntry, send: boolean) => { onSelect(entry.key); setEditing({ key: entry.key, send }); };
+  const open = async (entry: DraftListEntry, send: boolean) => {
+    const resolved = destination(entry); const target = draftMessageTarget(entry);
+    if (!resolved || !target) return;
+    try {
+      if (resolved.kind === "conversation") {
+        if (!visibility || (await visibility.read(resolved.conversation)).has(resolved.conversation.channelId)) throw new Error("Conversation unavailable");
+      } else {
+        const channel = await client.workspaceChannel(resolved.workspace.id);
+        if (channel.archived || (channel.channelType === ChannelType.Forum ? target.messageType === WebMessageType.Stream : target.messageType !== WebMessageType.Stream)) throw new Error("Draft destination unavailable");
+      }
+      const channelId = resolved.kind === "conversation" ? resolved.conversation.channelId : resolved.workspace.id;
+      const message = target.parentEventId ? {channelId, messageId:target.parentEventId, threadRootId:target.threadRootId ?? target.parentEventId,
+        ...(resolved.kind === "conversation" ? {conversation:resolved.conversation} : {})} : undefined;
+      await onOpen(channelId, message, {key:entry.key, send, editEventId:target.editEventId,
+        ...(resolved.kind === "conversation" ? {conversation:resolved.conversation} : {})});
+    } catch { toast.error(t("drafts.noChannel")); }
+  };
   const preview = (draft: DraftListEntry["draft"], className: string) => {
     const entry = entries.find(item => item.draft === draft);
     const target = entry ? destination(entry) : null;
@@ -84,42 +95,7 @@ export function InboxDrafts({ principalId, workspaces, members, participants, en
       ? <MessageContent content={draft.content} workspaceId={draft.channelId} conversationId={target?.kind === "conversation" ? target.conversation.id : undefined} />
       : t("drafts.attachments", { count: draft.pendingImeta.length })}</div>;
   };
-  return <>{showList ? <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60">{header}<div className="min-h-0 flex-1 overflow-y-auto"><DraftListSurface items={items} selectedKey={selectedKey} onSelect={(key) => { setEditing(null); onSelect(key); }} onOpen={(entry) => open(entry, false)} onSend={(entry) => open(entry, true)} onDelete={onDelete} renderPreview={preview} /></div></section> : null}
-    {showDetail ? opened ? <DraftEditor key={`${principalId}:${opened.entry.key}`} principalId={principalId} item={opened} destination={openedDestination}
-      members={openedDestination?.kind === "conversation" ? participants.filter(person => openedDestination.conversation.participantPrincipalIds.includes(person.principalId)) : members.get(opened.entry.draft.channelId) ?? []} autoSend={editing?.send ?? false} onBack={() => setEditing(null)} onStartDm={onStartDm} /> : <DraftDetailSurface item={selected} onBack={onBack} onOpen={(entry) => open(entry, false)} onSend={(entry) => open(entry, true)} onDelete={onDelete} renderPreview={preview} /> : null}
+  return <>{showList ? <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60">{header}<div className="min-h-0 flex-1 overflow-y-auto"><DraftListSurface items={items} selectedKey={selectedKey} onSelect={onSelect} onOpen={(entry) => open(entry, false)} onSend={(entry) => open(entry, true)} onDelete={onDelete} renderPreview={preview} /></div></section> : null}
+    {showDetail ? <DraftDetailSurface item={selected} onBack={onBack} onOpen={(entry) => {void open(entry, false);}} onSend={(entry) => {void open(entry, true);}} onDelete={onDelete} renderPreview={preview} /> : null}
   </>;
-}
-
-function DraftEditor({ principalId, item, destination, members, autoSend, onBack, onStartDm }: { principalId: string; item: DraftSurfaceItem; destination: Destination | null; members: (WorkspaceMemberView | ConversationParticipant)[]; autoSend: boolean; onBack: () => void; onStartDm?: (pubkey: string) => void }) {
-  const client = useBffClient(); const t = useT(); const { entry } = item;
-  const [profileTarget, setProfileTarget] = useState<MessageAuthor | null>(null);
-  const closeAuthorScope = useCallback((workspaceId: string) => setProfileTarget((current) => current?.workspaceId === workspaceId ? null : current), []);
-  const target = draftMessageTarget(entry);
-  const isDm = destination?.kind === "conversation";
-  const visibility = useConversationVisibilityHost();
-  const dmVisibility = useQuery({ queryKey: ["platform", "draft-dm-visibility", principalId, isDm ? destination.conversation.id : null, isDm ? destination.conversation.version : null], enabled: isDm,
-    queryFn: async () => {
-      if (!visibility || destination?.kind !== "conversation") throw new Error("Conversation visibility unavailable");
-      return visibility.read(destination.conversation);
-    } });
-  const channel = useQuery({ queryKey: ["platform", "draft-channel", principalId, entry.draft.channelId], enabled: destination?.kind === "workspace",
-    queryFn: () => client.workspaceChannel(entry.draft.channelId) });
-  const valid = destination !== null && target !== null && (isDm ? target.messageType === WebMessageType.Stream && dmVisibility.isSuccess && !dmVisibility.isError && !dmVisibility.data.has(destination.conversation.channelId)
-    : !channel.isError && channel.isSuccess && !channel.data.archived && (channel.data.channelType === ChannelType.Forum ? target.messageType !== WebMessageType.Stream : target.messageType === WebMessageType.Stream));
-  if (!valid || !target || !destination) return <section><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} /><p role="status" className="p-5">{destination?.kind === "workspace" && channel.isPending || isDm && dmVisibility.isPending ? t("platform.loading") : t("drafts.noChannel")}</p></section>;
-  const autoSendDraftKey = autoSend ? entry.key : undefined;
-  if (target.parentEventId && target.messageType === WebMessageType.Stream) return <div className="flex min-h-0 min-w-0 overflow-hidden"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><InboxThreadPane principalId={principalId} workspaceId={entry.draft.channelId}
-    conversation={destination.kind === "conversation" ? destination.conversation : undefined}
-    rootId={target.threadRootId ?? target.parentEventId} selectedEventId={target.parentEventId}
-    onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
-    replyTargetEventId={target.parentEventId} restoreDraftKey={entry.key}
-    channelName={item.channelLabel} members={members} onBack={onBack} onOpen={onBack} autoSendDraftKey={autoSendDraftKey} /></div>
-    {profileTarget ? <MessageAuthorProfile target={profileTarget} onClose={() => setProfileTarget(null)}
-      onStartDm={members.some((member) => member.principalId === principalId && member.pubkeys.includes(profileTarget.pubkey)) ? undefined : onStartDm} /> : null}</div>;
-  return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60"><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} />
-    {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />
-      : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId} onStartDm={onStartDm}
-          restoreDraftKey={entry.key} autoSendDraftKey={autoSendDraftKey} />
-        : <ChannelPane workspaceId={entry.draft.channelId} channelId={channel.data?.channelId} channelName={channel.data?.name} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />}
-  </section>;
 }

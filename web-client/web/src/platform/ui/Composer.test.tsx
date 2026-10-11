@@ -17,6 +17,7 @@ import {
   type AgentInstallationView,
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
+import { draftMessageTarget } from "./InboxDrafts";
 import { clearAllDrafts, loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import {resetPersistentAgentAudienceStore} from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
@@ -117,6 +118,8 @@ function voiceDevices() {
   vi.stubGlobal("Blob", RecordingBlob);
   vi.stubGlobal("File", RecordingFile);
   const microphoneNavigator = Object.create(navigator);
+  Object.defineProperty(microphoneNavigator, "platform", {value: navigator.platform});
+  Object.defineProperty(microphoneNavigator, "userAgent", {value: navigator.userAgent});
   Object.defineProperty(microphoneNavigator, "mediaDevices", {value: {getUserMedia}});
   vi.stubGlobal("navigator", microphoneNavigator);
   return {track, getUserMedia};
@@ -524,16 +527,66 @@ it("restores UNKNOWN Inbox drafts without automatically redispatching their publ
 });
 
 it("sends an unsent Inbox draft once after confirmation", async () => {
+  let consumed = false;
+  const consume = vi.fn(async () => { consumed = true; });
+  const publish = state.publish.getMockImplementation()!;
+  state.publish.mockImplementation((...args: unknown[]) => { expect(consumed).toBe(true); return publish(...args); });
   let host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" />);
   await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "unsent Inbox draft");
   await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
-  host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent" />);
+  host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent" onAutoSendConsumed={consume} />);
   await settle();
   expect(state.publish).toHaveBeenCalledTimes(1);
   expect(state.publish.mock.calls[0][1]).toBe("unsent Inbox draft");
+  expect(consume).toHaveBeenCalledTimes(1);
   await rerender(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent" />);
   await settle();
   expect(state.publish).toHaveBeenCalledTimes(1);
+});
+
+it("does not dispatch a draft when its one-shot navigation reference cannot be consumed", async () => {
+  let host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "not dispatched");
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent"
+    onAutoSendConsumed={async () => {throw new Error("Navigation unavailable");}} />);
+  await settle();
+  expect(state.publish).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("platform.sendFailed");
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("not dispatched");
+});
+
+it("persists and reopens the native DM draft scope through the actual Composer", async () => {
+  const nativeChannel = "native-dm"; const rootId = "a".repeat(64); const replyId = "b".repeat(64);
+  const key = `thread:${nativeChannel}:${rootId}:${replyId}`;
+  const props = {draftIdentity:"alice", draftKey:key, draftChannelId:nativeChannel, channelType:"dm" as const, onPublish:state.publish};
+  let host = await render(<Composer {...props} />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "native scoped draft");
+  expect(loadDraftEntry(key)?.channelId).toBe(nativeChannel);
+  expect(draftMessageTarget({key,draft:loadDraftEntry(key)!})).toMatchObject({parentEventId:replyId,threadRootId:rootId});
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer {...props} />);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("native scoped draft");
+  expect(loadDraftEntry(key)?.channelId).toBe(nativeChannel);
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("does not automatically retry an UNKNOWN intent created while navigation consumption is pending", async () => {
+  state.publish.mockRejectedValue(new TransportError("lost response"));
+  let release!: () => void;
+  const consumption = new Promise<void>(resolve => { release=resolve; });
+  let host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "same retained intent");
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" autoSendDraftKey="workspace-a" onAutoSendConsumed={() => consumption} />);
+  await click(button(host,"platform.send"));
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  const intent = loadDraftEntry("workspace-a")?.sendIntent;
+  expect(intent).toBeDefined();
+  await act(async () => release()); await settle();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(loadDraftEntry("workspace-a")?.sendIntent).toEqual(intent);
+  expect(host.textContent).toContain("platform.sendUnknown");
 });
 
 it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {

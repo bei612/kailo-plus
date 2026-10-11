@@ -29,6 +29,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { ExternalLink, MailOpen } from "lucide-react";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
+import type { PlatformDraftNavigation } from "@/app/platform-navigation";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useHomeInboxAutoSelection } from "@client-kit/platform/react/use-inbox-auto-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +59,7 @@ export function InboxPane({
   onStartDm,
 }: {
   principalId: string;
-  onOpen: (channelId: string, target?: InboxNavigationTarget) => void | Promise<void>;
+  onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: import("@client-kit/contracts").ConversationView}) => void | Promise<void>;
   onUnreadCount?: (count: number | null) => void;
   onStartDm?: (pubkey: string) => void;
 }) {
@@ -320,9 +321,9 @@ export function InboxPane({
     onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items.map(readItem)), true))} />;
   if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
-    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} participants={snapshot.people} entries={drafts.entries}
+    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} participants={snapshot.people} entries={drafts.entries}
       selectedKey={selectedDraft} onSelect={setSelectedDraft} onDelete={drafts.remove} showList={showList} showDetail={showDetail} header={header}
-      onStartDm={onStartDm}
+      onOpen={onOpen}
       onBack={narrow ? () => setSelectedDraft(null) : undefined} />
   </InboxLayout>;
   return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}

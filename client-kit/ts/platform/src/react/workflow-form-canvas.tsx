@@ -110,9 +110,9 @@ export type WorkflowFormCanvasHandle = {
 
 export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   steps: AutomationStep[]; onStepsChange: (steps: AutomationStep[]) => void;
-  trigger: AutomationTriggerKind; triggerFields: ReactNode;
+  trigger: AutomationTriggerKind; triggerFields: ReactNode; scopeField?: ReactNode;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
-}>(function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerFields, policies, disabled }, ref) {
+}>(function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerFields, scopeField, policies, disabled }, ref) {
   const t = useT();
   const [pane, setPane] = useState<Pane>(null);
   const [selectionDirection, setSelectionDirection] = useState<1 | -1>(1);
@@ -201,6 +201,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   return <div className="flex h-full min-h-0 flex-col [container-type:inline-size]" ref={containerRef}>
     <div className="flex min-h-0 flex-1 flex-col"><div className="relative isolate flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5"><div className="mx-auto w-full max-w-sm">
+        {scopeField ? <div className="mb-3">{scopeField}</div> : null}
         <ol aria-label={t("workflows.sequence")}>
           <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} label={`${t("agents.automation.trigger")}: ${triggerLabel}`} disabled={disabled}
             icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}

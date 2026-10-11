@@ -21,7 +21,7 @@ import { ConversationPreparationPending, useConversationInvalidation } from "@cl
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBrowserNotifications } from "./BrowserNotifications";
 import { formatMessageNotification } from "@client-kit/platform/react/notifications";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
@@ -112,6 +112,10 @@ function useVisible() {
 
 export function ChannelPane({
   workspaceId,
+  threadHeadId,
+  onThreadHeadIdChange,
+  onClearMessageRouteTarget,
+  onNavigationGuardChange,
   channelName,
   channelId: admittedChannelId,
   myPrincipalId,
@@ -126,12 +130,18 @@ export function ChannelPane({
   targetSearchQuery,
   targetSearchActivationId,
   autoSendDraftKey,
+  onAutoSendConsumed,
+  restoreDraftKey,
   archived = false,
   metadataPending = false,
   restoreEditEventId,
   onStartDm,
 }: {
   workspaceId: string;
+  threadHeadId: string | null;
+  onThreadHeadIdChange: (headId: string | null, options?: import("@client-kit/platform/react/use-history-search-state").HistorySearchSetterOptions) => void;
+  onClearMessageRouteTarget: () => void;
+  onNavigationGuardChange: (guard: (() => boolean) | null) => void;
   channelName?: string;
   channelId?: string;
   myPrincipalId: string;
@@ -146,6 +156,8 @@ export function ChannelPane({
   targetSearchQuery?: string;
   targetSearchActivationId?: string;
   autoSendDraftKey?: string;
+  onAutoSendConsumed?: () => void | Promise<void>;
+  restoreDraftKey?: string;
   archived?: boolean;
   metadataPending?: boolean;
   restoreEditEventId?: string;
@@ -173,6 +185,10 @@ export function ChannelPane({
     useChannelMessageEdit<TimelineMessage>(JSON.stringify([myPrincipalId, conversation?.id ?? workspaceId]));
   const mainEditTarget = editTarget && !isThreadReply(editTarget.tags ?? []) ? editTarget : null;
   const threadEditTarget = editTarget && isThreadReply(editTarget.tags ?? []) ? editTarget : null;
+  useLayoutEffect(() => {
+    onNavigationGuardChange(() => denied || requireThreadEditResolution());
+    return () => onNavigationGuardChange(null);
+  }, [onNavigationGuardChange, denied, requireThreadEditResolution]);
   const [composerBusy, setComposerBusy] = useState(false);
   const restoredEdit = useRef(false);
   const timelineRef = useRef<MessageTimelineHandle>(null);
@@ -180,7 +196,18 @@ export function ChannelPane({
     setComposerBusy(sending);
     if (sending) timelineRef.current?.scrollToBottomOnNextUpdate();
   }, []);
-  const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
+  const [selectedReplyId, setSelectedReplyId] = useState<string | null>(null);
+  const [optimisticThreadHeadId, setOptimisticThreadHeadId] = useState<string | null>();
+  const effectiveThreadHeadId = optimisticThreadHeadId === undefined ? threadHeadId : optimisticThreadHeadId;
+  const threadScope = JSON.stringify([myPrincipalId, workspaceId, conversation?.id]);
+  const previousThreadScope = useRef(threadScope);
+  useEffect(() => {
+    const changedScope = previousThreadScope.current !== threadScope;
+    previousThreadScope.current = threadScope;
+    if (changedScope) setSelectedReplyId(null);
+    setOptimisticThreadHeadId(current =>
+      changedScope || threadHeadId === current ? undefined : current);
+  }, [threadScope, threadHeadId]);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
   const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
   const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); }, []);
@@ -197,15 +224,21 @@ export function ChannelPane({
       handleCancelEdit();
       setProfileTarget(null);
       setSystemProfileTarget(null);
-      setReplyTarget(message);
+      const headId = getThreadReference(message.tags ?? []).rootId ?? message.id;
+      setSelectedReplyId(message.id);
+      setOptimisticThreadHeadId(headId);
+      onClearMessageRouteTarget();
+      onThreadHeadIdChange(headId);
     },
-    [handleCancelEdit, requireThreadEditResolution],
+    [handleCancelEdit, requireThreadEditResolution, onClearMessageRouteTarget, onThreadHeadIdChange],
   );
   const handleCloseThread = useCallback(() => {
-    if (requireThreadEditResolution()) setReplyTarget(null);
-  }, [requireThreadEditResolution]);
-  const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget);
-  const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer, handleCloseThread);
+    if (!requireThreadEditResolution()) return;
+    setSelectedReplyId(null);
+    setOptimisticThreadHeadId(null);
+    onClearMessageRouteTarget();
+    onThreadHeadIdChange(null);
+  }, [requireThreadEditResolution, onClearMessageRouteTarget, onThreadHeadIdChange]);
   const handleEditConfirmed = useCallback(
     (message: TimelineMessage) => {
       setEditTarget((current) => (current?.id === message.id ? null : current));
@@ -284,21 +317,40 @@ export function ChannelPane({
   })), [events, byPubkey, messageReactions.reactions, authorLabel]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
-  const routeContextEnabled = Boolean(targetMessageId && live && !denied && !metadataPending);
-  const routeContext = useWorkspaceThread(myPrincipalId, workspaceId, targetThreadRootId ?? targetMessageId ?? "", conversation?.id, undefined, routeContextEnabled);
+  const routeReadId = targetMessageId ?? effectiveThreadHeadId;
+  const routeReadRootId = targetMessageId ? targetThreadRootId ?? targetMessageId : effectiveThreadHeadId;
+  const routeContextEnabled = Boolean(routeReadId && live && !denied && !metadataPending);
+  const routeContext = useWorkspaceThread(myPrincipalId, workspaceId, routeReadRootId ?? "", conversation?.id, undefined, routeContextEnabled, conversation?.channelId);
   useEffect(() => {
     if (routeContextEnabled && !routeContext.denied && !routeContext.thread.isError && routeContext.thread.hasNextPage && !routeContext.thread.isFetchingNextPage) void routeContext.thread.fetchNextPage();
   }, [routeContextEnabled, routeContext.denied, routeContext.thread.isError, routeContext.thread.hasNextPage, routeContext.thread.isFetchingNextPage, routeContext.thread.fetchNextPage]);
   const routeContextReady = routeContextEnabled && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError && !routeContext.thread.isFetching;
+  // A same-key background refetch is not revocation and must not unmount a
+  // mounted editor. Never retain this data after an actual read failure.
+  const routeContextAvailable = Boolean(routeReadId && live && !denied && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError);
   const routeAuthorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
-    routeContext.messages, routeContextReady);
-  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextReady ? routeContext.messages.map(event => ({
+    routeContext.messages, routeContextAvailable);
+  const routeMessages = useMemo<TimelineMessage[]>(() => routeContextAvailable ? routeContext.messages.map(event => ({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
     author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
     ...getThreadReference(event.tags),
-  })) : [], [routeContextReady, routeContext.messages, byPubkey, routeAuthorLabel]);
+  })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
+  const selectedReply = selectedReplyId ? routeMessageById.get(selectedReplyId) : undefined;
+  const threadReadUnavailable = !routeContext.thread.isSuccess || routeContext.denied || routeContext.interrupted || routeContext.thread.isError;
+  const threadAdmissionAvailable = live && !denied && (!effectiveThreadHeadId || !threadReadUnavailable);
+  const replyTarget = effectiveThreadHeadId && threadAdmissionAvailable
+    ? selectedReply && (getThreadReference(selectedReply.tags ?? []).rootId ?? selectedReply.id) === effectiveThreadHeadId
+      ? selectedReply : routeMessageById.get(effectiveThreadHeadId) ?? null
+    : null;
+  const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget);
+  const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer, handleCloseThread);
+  useLayoutEffect(() => {
+    // A revoked/unreadable scope cannot retain exiting content. Its presence
+    // owner is removed immediately, so it cannot deliver onExitComplete.
+    if (!threadAdmissionAvailable) markExitComplete();
+  }, [threadAdmissionAvailable, markExitComplete]);
   const routeTarget = targetMessageId ? routeMessageById.get(targetMessageId) ?? null : null;
   const mainTimelineTargetMessageId = getRouteMainTimelineTargetId(targetMessageId ?? null, routeTarget);
   const routedTimelineMessages = useMemo(() => {
@@ -317,10 +369,13 @@ export function ChannelPane({
     if (!requireThreadEditResolution()) return;
     // Original root and reply deep links open the existing reply panel. Its
     // exact selected event resolves ancestors and scrolls in the same read cache.
-    setProfileTarget(null); setSystemProfileTarget(null); setReplyTarget(routeTarget);
+    const headId = getThreadReference(routeTarget.tags ?? []).rootId ?? routeTarget.id;
+    setProfileTarget(null); setSystemProfileTarget(null); setSelectedReplyId(routeTarget.id);
+    setOptimisticThreadHeadId(headId);
+    onThreadHeadIdChange(headId, { replace: true });
     handleCancelEdit();
     handledRouteTarget.current = key;
-  }, [targetMessageId, targetSearchActivationId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit]);
+  }, [targetMessageId, targetSearchActivationId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit, onThreadHeadIdChange]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
   const directMessageIntro = useMemo<MessageTimelineProps["directMessageIntro"]>(() => {
     if (!conversation || !live || denied || metadataPending || !members.isSuccess || members.isError || members.isFetching) return null;
@@ -636,7 +691,7 @@ export function ChannelPane({
       </div> : null}
       {routeContextEnabled && (routeContext.thread.isError || routeContext.denied || routeContext.interrupted) ? <ThreadRepliesErrorCard
         onRetry={routeContext.denied ? undefined : () => {void routeContext.thread.refetch();}}/> : null}
-      {targetMessageId && live && !events.some((event) => event.id === targetMessageId) && !routeTarget && (!routeContextEnabled || (routeContextReady && !routeContext.thread.hasNextPage)) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
+      {routeReadId && live && !routeMessageById.has(routeReadId) && (!routeContextEnabled || (routeContextReady && !routeContext.thread.hasNextPage)) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
       {!denied ? <MessageTimelineSurface
         ref={timelineRef}
         channelId={`${myPrincipalId}:${conversation?.id ?? workspaceId}`}
@@ -715,7 +770,7 @@ export function ChannelPane({
         editTarget={mainEditTarget} onCancelEdit={handleCancelEdit} onConfirmed={() => handleEditConfirmed(mainEditTarget)} draftIdentity={myPrincipalId}
         onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
         draftKey={`edit:${workspaceId}:${mainEditTarget.id}`} draftChannelId={workspaceId}
-        autoSendDraftKey={autoSendDraftKey}
+        autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
         disabled={deleteMessageDialog.pending || denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== mainEditTarget.signerPubkey}
         onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
         onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
@@ -734,7 +789,7 @@ export function ChannelPane({
             channelType="dm"
             placeholder={composerPlaceholder}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
-            draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
+            draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
@@ -746,7 +801,7 @@ export function ChannelPane({
             disabled={archived || metadataPending}
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
-            autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
+            autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink} /></>}
       <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row"
         visible={typingPubkeys.length > 0}>
         <div className="flex w-full items-center gap-2 overflow-visible pl-2">
@@ -762,13 +817,16 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
+    {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
+      restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}
       onOpenMessageLink={openThreadReference}
       isFocusMode={focusThread}
+      useSplitAuxiliaryPane={!threadOverlay}
+      onThreadViewModeChange={markExitComplete}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={routeMessageById.get(replyTarget.id) ?? replyTarget}
       routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}
       {...searchHighlightProps.thread}
@@ -786,7 +844,7 @@ export function ChannelPane({
       isMessageUnread={isMessageUnread}
       onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}
       onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : null}
-    </AnimatePresence>
+    </AnimatePresence> : null}
     {deleteMessageDialog.dialog}
     </div>
     </BffVideoReviewProvider>
@@ -807,7 +865,7 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
@@ -838,6 +896,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   draftKey?: string;
   /** Original Inbox sends only after its explicit confirmation, using this editor's existing intent. */
   autoSendDraftKey?: string;
+  onAutoSendConsumed?: () => void | Promise<void>;
 }) {
   const customEmoji = useBffCustomEmojiPalette(bff);
   const [confirmedSendRevision, setConfirmedSendRevision] = useState(0);
@@ -1297,6 +1356,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified ||
         (!richText.getMarkdown().trim() && pending.length === 0)) return;
     autoSent.current = owner;
+    void Promise.resolve().then(() => onAutoSendConsumed?.()).then(() => {
+    if (!owner.active) return;
     if (intent.current) {
       // A restored UNKNOWN intent may predate complete draft metadata. Opening
       // it must not derive a new signature/key and dispatch another effect.
@@ -1304,8 +1365,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       setProblem(t("platform.sendUnknown", { operation: "" }));
       return;
     }
-    send();
-  }, [autoSendDraftKey, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, voiceNote.status, mentionVerified, pending.length, richText.getMarkdown, send]);
+    sendRef.current();
+    }).catch(() => { if (owner.active) setProblem(t("platform.sendFailed")); });
+  }, [autoSendDraftKey, onAutoSendConsumed, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, voiceNote.status, mentionVerified, pending.length, richText.getMarkdown, send]);
 
   // Pinned Buzz MessageComposer.tsx keeps this callback empty; Tiptap owns selection.
   const handleCaptureSelection = useCallback(() => {}, []);

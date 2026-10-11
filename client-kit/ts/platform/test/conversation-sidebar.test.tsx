@@ -9,6 +9,7 @@ import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-
 import { TransportError, type BffRequest } from "../src/transport";
 import type { InboxEvent } from "../src/inbox";
 import { sortDmChannelsForSidebar } from "../src/react/sidebar/dmSidebarSort";
+import type { ConversationUnreadEntry } from "../src/react/sidebar/useSidebarUnreadOverflow";
 import { click, render, settle } from "./render";
 
 const items: ConversationView[] = [
@@ -21,9 +22,14 @@ const incoming: InboxEvent[] = [
   {id:"three",tags:[],createdAt:30,channelId:"dm-zara",channelType:"dm",category:"activity"},
 ];
 beforeEach(() => {setLocale("en");localStorage.clear();});
-async function mount(unknown = false, initial: Record<string,string> = {}) {
+async function mount(unknown = false, initial: Record<string,string> = {}, initialEvents: (InboxEvent & {pubkey?: string})[] = incoming) {
   let version = 0; const contexts: Record<string,string> = {...initial};
   const writes: BffRequest[] = []; let opened = 0;
+  const hidden = new Set<string>();
+  let unread: readonly ConversationUnreadEntry[] = [];
+  let replaceConversations!: (next: ConversationView[]) => void;
+  let replaceEvents!: (next: (InboxEvent & {pubkey?: string})[]) => void;
+  const observeUnread = (entries: readonly ConversationUnreadEntry[]) => { unread = entries; };
   const client = createBffClient({send:async request => {
     if(request.path === "/api/v1/workspaces") return {status:200,body:[]};
     if(request.path === "/api/v1/conversations") return {status:200,body:{items}};
@@ -44,15 +50,23 @@ async function mount(unknown = false, initial: Record<string,string> = {}) {
   const latest=new Map([["dm-bob",new Date(20_000).toISOString()],["dm-zara",new Date(30_000).toISOString()]]);
   function Sidebar(){
     const reads=useInboxState(client);
+    const [listed,setListed]=useState(items);
+    const [activity,setActivity]=useState(initialEvents);
+    replaceEvents=setActivity;
+    replaceConversations=setListed;
     const [selected,setSelected]=useState<string|null>(null);
-    return <ConversationList currentPrincipalId="self" items={items} loading={false} error={null}
+    return <ConversationList currentPrincipalId="self" items={listed} loading={false} error={null}
       selectedId={selected} onSelect={item=>setSelected(item.id)} onNewMessage={()=>{opened++;}} onReload={()=>{}}
-      reads={reads} events={[...incoming,incoming[0]!,{...incoming[0]!,id:"foreign",channelId:"unadmitted"}]}
+      onUnreadChange={observeUnread}
+      reads={reads} events={[...activity,...(activity[0]?[activity[0]]:[]),{...incoming[0]!,id:"foreign",channelId:"unadmitted"}]}
       lastMessageAtByChannelId={latest}/>;
   }
-  const host=await render(<PlatformProvider client={client} locale="en"><ConversationVisibilityProvider value={{read:async()=>new Set(),prepare:async()=>async()=>{}}}><Sidebar/></ConversationVisibilityProvider></PlatformProvider>);
+  const host=await render(<PlatformProvider client={client} locale="en"><ConversationVisibilityProvider value={{read:async()=>new Set(hidden),prepare:async(conversation,hide)=>async()=>{
+    if(hide) hidden.add(conversation.channelId); else hidden.delete(conversation.channelId);
+  }}}><Sidebar/></ConversationVisibilityProvider></PlatformProvider>);
   await settle();
-  return {host,writes,opened:()=>opened};
+  return {host,writes,opened:()=>opened,unread:()=>unread,replaceConversations:(next:ConversationView[])=>replaceConversations(next),
+    replaceEvents:(next:(InboxEvent & {pubkey?:string})[])=>replaceEvents(next)};
 }
 async function openContext(host:HTMLElement){
   const row=host.querySelector('[data-channel-id="dm-bob"]')!.closest("li")!;
@@ -61,6 +75,48 @@ async function openContext(host:HTMLElement){
 function menu(text:string){return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item=>item.textContent===text)!;}
 
 describe("original governed DM sidebar consumers",()=>{
+  it("only hands a current other-participant message proof to the avatar host and drops removed evidence",async()=>{
+    const bobKey="b".repeat(64), selfKey="a".repeat(64);
+    const events=[{...incoming[0]!,pubkey:bobKey},{...incoming[1]!,pubkey:selfKey},incoming[2]!];
+    const {unread,replaceEvents,replaceConversations}=await mount(false,{},events);
+    expect(unread()[0]?.preview?.author).toEqual({conversationId:"bob",eventId:"one",pubkey:bobKey});
+    expect(unread()[1]?.preview?.author).toBeUndefined();
+    await act(async()=>replaceEvents(events.slice(1)));
+    expect(unread()[0]?.preview?.author).toBeUndefined();
+    await act(async()=>replaceEvents([{...incoming[0]!,pubkey:"f".repeat(64)},incoming[2]!]));
+    expect(unread()[0]?.preview?.author).toBeUndefined();
+    await act(async()=>replaceEvents(events));
+    await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,participantPrincipalIds:["self","bob","zara"]}:item)));
+    expect(unread()[0]?.preview).toBeUndefined();
+  });
+  it("hands the actual admitted row counts and directory names to the original overflow host without an avatar request",async()=>{
+    const {host,writes,unread}=await mount();
+    expect(unread()).toEqual([
+      {channelId:"dm-bob",preview:{channelId:"dm-bob",accessibleLabel:"Bob",label:"Bob",avatarUrl:null}},
+      {channelId:"dm-zara",preview:{channelId:"dm-zara",accessibleLabel:"Zara",label:"Zara",avatarUrl:null}},
+    ]);
+    await openContext(host);await click(menu("Mark as read"));await settle();
+    expect(unread().map(entry=>entry.channelId)).toEqual(["dm-zara"]);
+    expect(writes).toHaveLength(1);
+  });
+  it("removes the actual overflow projection when the existing read writer reports UNKNOWN",async()=>{
+    const {host,writes,unread}=await mount(true);
+    expect(unread()).toHaveLength(2);
+    await openContext(host);await click(menu("Mark as read"));await settle();
+    expect(unread()).toEqual([]);
+    expect(writes).toHaveLength(1);
+  });
+  it("drops disabled, removed-member and hidden DM rows from overflow without changing Core read state",async()=>{
+    const {host,writes,unread,replaceConversations}=await mount();
+    await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,state:ItemState.Disabled}:item)));
+    expect(unread().map(entry=>entry.channelId)).toEqual(["dm-zara"]);
+    await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,participantPrincipalIds:["other","bob"]}:item)));
+    expect(unread().map(entry=>entry.channelId)).toEqual(["dm-zara"]);
+    await click(host.querySelector<HTMLElement>('[data-testid="hide-dm-Zara"]')!);
+    await settle();
+    expect(unread()).toEqual([]);
+    expect(writes).toHaveLength(0);
+  });
   it("folds confirmed message markers and explicit unread resets those same Core keys",async()=>{
     const {host,writes}=await mount(false,{"msg:one":new Date(10_000).toISOString(),"msg:two":new Date(20_000).toISOString()});
     expect(host.querySelector('[data-testid="channel-unread-Bob"]')).toBeNull();

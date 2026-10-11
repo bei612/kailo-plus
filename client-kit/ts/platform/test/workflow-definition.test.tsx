@@ -127,7 +127,7 @@ describe("original complete Definition view with immutable pinned governance", (
   });
 
   it("keeps the original schedule summary distinct from the time-specific card", async () => {
-    const body = {...content, trigger:{kind:"SCHEDULE", scheduleSpec:{cron:"0 9 * * *"}}};
+    const body = {...content, resultTarget:"CHANNEL", trigger:{kind:"SCHEDULE", scheduleSpec:{kind:"CRON",cron:"0 9 * * *",catchupWindowSeconds:60}}};
     const {host, panel} = await setup(request => request.path.startsWith("/api/v1/automations/workflow?")
       ? {status:200, body:{...detail, versions:[{...pinned, content:body}]}} : undefined);
     expect(host.querySelector('[data-testid="workflow-card-semantic-label"]')?.textContent).toBe("Every day at 09:00 UTC, wait 2 seconds, then 2 more steps");
@@ -263,5 +263,72 @@ describe("original complete Definition view with immutable pinned governance", (
     await click(button(panel, "Edit"));
     expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     expect(panel.textContent).toContain("Couldn't load this");
+  });
+});
+
+describe("original workflow detail loading and failure shell", () => {
+  async function openPendingDetail(locale: "en" | "zh-CN") {
+    let resolveRead!: (reply: BffReply) => void;
+    const pending = new Promise<BffReply>(resolve => { resolveRead = resolve; });
+    let reads = 0;
+    const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
+      if (request.path === "/api/v1/workspaces") return {status: 200, body: [{id: "workspace", name: "Channel", slug: "channel"}]};
+      if (request.path === "/api/v1/tasks") return {status: 200, body: []};
+      if (request.path.startsWith("/api/v1/automations?")) return {status: 200, body: {automations: [automation], canCreate: true, availableApprovalPolicies: []}};
+      if (request.path.startsWith("/api/v1/automations/workflow?")) {
+        reads += 1;
+        // The card's separate authorized read completes. Only the actual opened
+        // detail read is pending; retry uses the same real BFF consumer.
+        return reads === 2 ? pending : {status: 200, body: detail};
+      }
+      if (request.path.startsWith("/api/v1/agent-installations?")) return {status: 200, body: {installations: [installation]}};
+      if (request.path === "/api/v1/agent-installations/executor") return {status: 200, body: installation};
+      return {status: 503, body: undefined};
+    });
+    const cache = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const host = await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale={locale}>
+      <AutomationManagement />
+    </PlatformProvider></QueryClientProvider>);
+    await settle();
+    const card = host.querySelector<HTMLElement>('[data-testid="workflow-card-workflow"]')!;
+    await click(card.querySelector<HTMLButtonElement>("button.absolute")!);
+    const panel = () => document.querySelector<HTMLElement>('[data-testid="workflow-detail-panel"]');
+    return {panel, send, resolveRead, closeLabel: locale === "en" ? "Close" : "关闭"};
+  }
+
+  it.each(["en", "zh-CN"] as const)("retains original skeleton geometry and explicit close during the real read in %s", async locale => {
+    const {panel, send, resolveRead, closeLabel} = await openPendingDetail(locale);
+    const pendingPanel = panel()!;
+    expect(pendingPanel.className).toBe("flex h-full min-h-0 flex-col border-l bg-background pt-4");
+    expect(pendingPanel.querySelectorAll(".t-skel-bar")).toHaveLength(8);
+    expect(pendingPanel.querySelector('[role="status"]')).not.toBeNull();
+    expect(pendingPanel.querySelector('[data-scroll-restoration-id="workflow-detail:workflow"]')).not.toBeNull();
+    expect(pendingPanel.querySelector("h3, pre, select, dl")).toBeNull();
+    await click(pendingPanel.querySelector<HTMLButtonElement>(`button[aria-label="${closeLabel}"]`)!);
+    expect(panel()).toBeNull();
+    await act(async () => { resolveRead({status: 200, body: detail}); });
+    await settle();
+    expect(panel()).toBeNull();
+    expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
+  });
+
+  it.each(["rejected", "wrong-scope"] as const)("keeps %s a real failure with close and the original authorized retry", async failure => {
+    const {panel, send, resolveRead, closeLabel} = await openPendingDetail("en");
+    await act(async () => { resolveRead(failure === "rejected"
+      ? {status: 403, body: {reasonCode: "PERMISSION_DENIED"}}
+      : {status: 200, body: {...detail, automation: {...automation, workspaceId: "different-workspace"}}}); });
+    await settle();
+    const failedPanel = panel()!;
+    expect(failedPanel.querySelector(failure === "rejected" ? '[role="alert"]' : '[role="status"]')).not.toBeNull();
+    expect(failedPanel.querySelectorAll(".t-skel-bar")).toHaveLength(1);
+    expect(failedPanel.querySelector("h3, pre, select, dl")).toBeNull();
+    expect(failedPanel.querySelector<HTMLButtonElement>(`button[aria-label="${closeLabel}"]`)!.disabled).toBe(false);
+    await click(button(failedPanel, "Try again"));
+    await settle();
+    expect(panel()!.querySelector("h3")?.textContent).toBe(content.name);
+    expect(send.mock.calls.filter(([request]) => request.path.startsWith("/api/v1/automations/workflow?"))).toHaveLength(3);
+    expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
+    await click(panel()!.querySelector<HTMLButtonElement>(`button[aria-label="${closeLabel}"]`)!);
+    expect(panel()).toBeNull();
   });
 });

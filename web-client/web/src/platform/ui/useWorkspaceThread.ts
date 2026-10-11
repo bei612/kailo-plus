@@ -9,16 +9,18 @@ import { parseChannelWindowResponse, type RelayEvent } from "@client-kit/platfor
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
-export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string, enabled = true) {
+export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string, enabled = true, conversationChannelId?: string) {
   const client = useBffClient();
   const cache = useQueryClient();
   const [denied, setDenied] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
   const fullChannel = Boolean(conversationId && selectedEventId);
-  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null], [principalId, workspaceId, rootId, conversationId, selectedEventId]);
+  const eventChannelId = conversationId ? conversationChannelId : workspaceId;
+  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null, eventChannelId], [principalId, workspaceId, rootId, conversationId, selectedEventId, eventChannelId]);
   const thread = useInfiniteQuery({
     queryKey: key, enabled: enabled && !denied, initialPageParam: null as WebMessageCursor | null,
     queryFn: async ({ pageParam, signal }) => {
+      if (!eventChannelId) throw new Error("Missing admitted message channel");
       const query = {
         messageType: WebMessageType.Stream, ...(!fullChannel ? { parentEventId: rootId } : {}),
         ...(pageParam ? { before: pageParam.createdAt, beforeId: pageParam.eventId } : {}),
@@ -26,7 +28,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
       const page = await (conversationId ? client.conversationMessages(conversationId, query) : client.workspaceMessages(workspaceId, query));
       if (!Array.isArray(page.events)) throw new Error("Invalid thread page");
       const cursor = fullChannel
-        ? parseChannelWindowResponse(page.events as RelayEvent[], workspaceId, pageParam).nextCursor
+        ? parseChannelWindowResponse(page.events as RelayEvent[], eventChannelId, pageParam).nextCursor
         : page.nextCursor;
       if (cursor && pageParam) {
         const order = cursor.createdAt - pageParam.createdAt || cursor.eventId.localeCompare(pageParam.eventId);
@@ -65,11 +67,11 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
         if (!found) throw new Error("Selected message is unavailable");
       }
       signal.throwIfAborted();
-      const events = raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 9 || event.kind === 40002) ? inboxEvents([event], workspaceId, event.kind) : []);
-      const edits = inboxEvents(raw.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), workspaceId, 40003);
+      const events = raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 9 || event.kind === 40002) ? inboxEvents([event], eventChannelId, event.kind) : []);
+      const edits = inboxEvents(raw.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), eventChannelId, 40003);
       const deleted = new Set(raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 5 || event.kind === 9005) && "tags" in event && Array.isArray(event.tags)
         ? event.tags.filter((tag: string[]) => tag[0] === "e").map((tag: string[]) => tag[1]) : []));
-      return { events, edits, deleted, contextIds, reactions:inboxReactionEvents(raw,workspaceId), nextCursor: cursor };
+      return { events, edits, deleted, contextIds, reactions:inboxReactionEvents(raw,eventChannelId), nextCursor: cursor };
     },
     getNextPageParam: (page) => page.nextCursor,
   });

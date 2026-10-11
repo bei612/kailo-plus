@@ -5,7 +5,8 @@ import { ConversationList, loadInboxConversations } from "@client-kit/platform/r
 import { useBffClient } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
 import type { ConversationView } from "@client-kit/contracts";
-import { hex, inboxWindowEvents, type Event } from "./inbox-events";
+import { hex, inboxReactionEvents, inboxWindowEvents, type Event } from "./inbox-events";
+import { KIND_DELETION, KIND_NIP29_DELETE_EVENT } from "@client-kit/platform/react/thread/kinds";
 
 export async function loadConversationSidebarActivity(client: BffClient, principal: string, conversations: readonly ConversationView[], signal: AbortSignal) {
   const own = new Set<string>();
@@ -31,7 +32,16 @@ export async function loadConversationSidebarActivity(client: BffClient, princip
     if (conversation.state !== "ACTIVE" || !conversation.participantPrincipalIds.includes(principal)) throw new Error("Conversation not admitted");
     const page = await client.conversationMessages(conversation.id);
     signal.throwIfAborted();
-    const rows = inboxWindowEvents(page.events, conversation.channelId);
+    const windowRows = inboxWindowEvents(page.events, conversation.channelId);
+    // As in Buzz formatTimelineMessages, fold only accepted deletion kinds.
+    // Core verifies this window's signatures/scope/aux closure; Relay ingest
+    // already checks effective authorship/agent ownership (5), or same-channel
+    // target and author/admin permission (9005). Client pubkey equality would
+    // incorrectly reject legitimate owner and relay-attributed deletions.
+    const deleted = new Set(inboxReactionEvents(page.events, conversation.channelId)
+      .filter(event => event.kind === KIND_DELETION || event.kind === KIND_NIP29_DELETE_EVENT)
+      .flatMap(event => event.tags.filter(tag => tag[0] === "e" && hex.test(tag[1] ?? "")).map(tag => tag[1])));
+    const rows = windowRows.filter(row => !deleted.has(row.id));
     const latest = rows.reduce<number | null>((at, row) => Math.max(at ?? row.createdAt, row.createdAt), null);
     lastMessageAt.set(conversation.channelId, latest === null ? null : new Date(latest * 1000).toISOString());
     events.push(...rows.filter(row => !own.has(row.pubkey)).map(row => ({...row, channelType: "dm"})));
@@ -54,7 +64,7 @@ export function ConversationSidebar(props: ComponentProps<typeof ConversationLis
     enabled: !props.loading && !props.error && admitted.length > 0,
     queryFn: ({signal}) => loadConversationSidebarActivity(client, props.currentPrincipalId, admitted, signal),
   });
-  return <ConversationList {...props} events={admitted.length > 0 && activity.isSuccess ? activity.data.events : undefined}
+  return <ConversationList {...props} events={admitted.length > 0 && activity.isSuccess && !activity.isFetching ? activity.data.events : undefined}
     lastMessageAtByChannelId={admitted.length > 0 && activity.isSuccess ? activity.data.lastMessageAt : undefined}
     error={props.error ?? (admitted.length > 0 ? activity.error : null)}
     onReload={() => { props.onReload(); void activity.refetch(); }} />;

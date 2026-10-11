@@ -9,10 +9,11 @@ export const PopoverTrigger = PopoverPrimitive.Trigger;
 export const PopoverAnchor = PopoverPrimitive.Anchor;
 export const PopoverContent = React.forwardRef<
  React.ElementRef<typeof PopoverPrimitive.Content>,
- React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({className, align = "center", sideOffset = 4, style, ...props}, ref) => (
- <PopoverPrimitive.Portal><PopoverPrimitive.Content ref={ref} align={align} sideOffset={sideOffset}
+ React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {portalled?: boolean}
+>(({className, align = "center", sideOffset = 4, style, portalled = true, ...props}, ref) => {
+ const content = <PopoverPrimitive.Content ref={ref} align={align} sideOffset={sideOffset}
  className={cn("z-50 w-72 origin-(--radix-popover-content-transform-origin) outline-hidden rounded-xl p-4", POPOVER_RADIX_MOTION_CLASS, POPOVER_RADIX_SIDE_MOTION_CLASS, POPOVER_SURFACE_CLASS, className)}
- style={{...POPOVER_SHADOW_STYLE, ...style}} {...props} /></PopoverPrimitive.Portal>
-));
+ style={{...POPOVER_SHADOW_STYLE, ...style}} {...props} />;
+ return portalled ? <PopoverPrimitive.Portal>{content}</PopoverPrimitive.Portal> : content;
+});
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
