@@ -420,6 +420,8 @@ def model_delivery(env):
             # Missing nonce support must fail before sending any credential.
             if proof.get("verification_nonce") != challenge["verificationNonce"]:
                 raise ConfigurationError("model delivery: native challenge unsupported or stale")
+            if proof.get("managed_by") != "kailo-model-route":
+                raise ConfigurationError("model delivery: native controlled mapping not installed")
             if "api_key_proof" not in proof:
                 if proof.get("fields", {}).get("api_key", {}).get("configured") is not False:
                     raise ConfigurationError("model delivery: native proof is absent")

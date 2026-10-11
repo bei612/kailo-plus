@@ -1,0 +1,12 @@
+# Added only after native models exist and their controlled mapping is delivered.
+# The first transport-only startup can still use the original native model UI.
+services:
+  app:
+    environment:
+      KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE: ${KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE:?controlled native model mapping required}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE:?controlled native model mapping required}
+        target: ${KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE:?controlled native model mapping required}
+        read_only: true
+        bind: {create_host_path: false}

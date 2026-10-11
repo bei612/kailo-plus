@@ -40,6 +40,12 @@ fi
 args+=(-f "$deployment_dir/compose.yaml")
 if [[ -n "$platform_env" ]]; then
   args+=(-f "$deployment_dir/compose.model-gateway.yaml")
+  # model-delivery already requires pre-existing nativeModelRef rows. First
+  # enable transport and create them through the native UI; only a delivered
+  # mapping enables ownership projection, before provisioning any service key.
+  if grep -Eq '^KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE=.+$' "$native_env"; then
+    args+=(-f "$deployment_dir/compose.model-delivery.yaml")
+  fi
 fi
 if [[ "$platform_adapter" == true ]]; then
   args+=(-f "$deployment_dir/compose.adapter.yaml")

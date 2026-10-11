@@ -4985,3 +4985,83 @@ N 为 `/volumes/data/kailo/tmp/knowledge-native-admission-20261011.YMCeU1/`：
 本批没有运行 PostgreSQL 迁移、生产镜像构建、全局 `check.sh --full`、实际部署、
 真实平台准入联调或页面截图。SQLite 迁移与夹具 PEP 通过不替代这些门禁。
 原 Go SDK 已停止释放资源；没有停止其他项目或清理依赖缓存。
+
+### 2026-10-11 原生模型投递映射与凭据并发更新
+
+本批代码基准为 Kailo `36e63a2d0cbe2ce4c89f90696215b80bd635247f`，
+最终 13 路径代码树为 `71f1aa18be5836df6813d24401a41fa195be1e72`。
+固定官方 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+`internal/application/repository/model.go::Update`、
+`internal/application/service/model.go::GetEmbeddingModel` /
+`GetEmbeddingModelForTenant` 与 `internal/handler/model.go::UpdateModel`
+已重新用 git cat-file/git grep 核验。授权差异仅为既有模型治理投递接入；
+未改页面、未新增模型注册表、数据库表、平台权限或执行权威。
+
+纠偏依据是 .design/07 §8.2 与 .design/08 §5：已取得数据后的原生 parse/index
+不是每一步重新创建平台动作；来源读取撤销也不自动禁止处理已导入内容。
+之前一概拒绝原生解析的新写候选已撤回，五个源/检查文件恢复；其历史检查不作为本批验收。
+真正跨服务模型请求仍由原 `application_model_route.rs::check` 执行
+SERVICE binding/generation、route、权限和 quota 校验，未使用观察 token 代替 execute。
+
+原仓库现在消费与 provision.py 相同的 `KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE`。
+启动核对 tenant、原模型 ID、route.nativeId/BaseURL、remote 来源、明确的
+generic/openai provider 及受支持模型类型，拒绝额外 headers/provider config/cloud fallback，
+再在原模型行保存 ManagedBy 归属。实际 Get*Model 构造客户端都经 GetByID 再核映射；
+持久归属存在而文件/映射丢失时拒绝，不能降回独立模型。
+配置标识不是准入证明；它不代替 Gateway 的实时授权，也没有给历史任务回填代次。
+
+普通 Update 在原事务行锁下保留数据库当前 APIKey/AppSecret，拒绝受控模型的
+Name、Type、Source 及执行 Parameters 改动，DisplayName 等原显示元数据仍可保存。
+原 credentials 子资源消费显式字段指针：未提供字段不变，原空 PUT 不清除，
+DELETE 明确清除；相同值不更新，不改变 builtin YAML ownership。
+凭据写入前核对当前受控目标，原 nonce 回读同时证明持久归属，provision 才发送密钥。
+移除原 Update 的 Debug，避免主动输出包含凭据参数的 SQL。
+原模型删除不得抹掉受控归属。独立原生模型保留原设置、凭据和删除入口。
+
+首装保持原顺序：--platform-model 先只接通既有 Gateway transport，
+通过原生 UI/API 创建模型；已有 mapping 配置投递后，原 start.sh 才加入
+compose.model-delivery.yaml，仅更新 app。原 provision::model_delivery 本就只
+GET 已有 nativeModelRef 与 PUT credentials，不负责创建模型。未配置 mapping 的独立启动
+可用；曾受控行在同样缺失配置时仍拒绝，二者均有实际原仓库检查。
+
+验证复用原 Go 1.26.8 SDK `kailo-knowledge-delete-handoff`，
+镜像 `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+4 CPU/8 GiB，memory+swap 同值，network none，缓存、临时目录及日志均在 Data。
+启动前核验原作业终态及约 37 GiB available；未另建环境、运行全局构建或修改其他组件。
+实际命令在原 /workspace/knowledge 执行：
+
+```sh
+go test ./internal/application/repository ./internal/application/service ./internal/handler -run '^(TestPlatformModelDelivery|TestModelCredentialsDelivery|TestUpdateBuiltinModel|TestDeleteModel)' -count=1 -timeout=10m -v
+python3 -m unittest discover -s fork/deploy -p test_native_entrypoint.py
+go test -overlay /tmp/model-route-negative/overlay.json ./internal/application/repository -run '^(TestPlatformModelDeliveryProtectsOriginalRowAndCredentials|TestPlatformModelDeliveryMissingMappingDoesNotDowngrade|TestPlatformModelDeliveryRejectsUnsafeFirstCredentialDestination)$' -count=1 -timeout=10m -v
+# 下条仅在 Data 隔离的 provision 副本运行：
+python3 -B -m unittest test_native_entrypoint.NativeProvisioningTests.test_model_delivery_rejects_configured_only_stale_nonce_and_wrong_native_scope
+# 恢复原源码，覆盖末次原幂等修正：
+go test ./internal/application/repository -run '^TestPlatformModelDelivery' -count=1 -timeout=10m -v
+python3 -B -m unittest discover -s fork/deploy -p test_native_entrypoint.py
+```
+
+初始固定树 6412e8 的三包退出 0，分别 29.224 s / 0.504 s / 0.496 s，
+原部署检查 32 项、43.718 s、退出 0。之后仅修正原幂等凭据行为及其仓库检查，
+形成上述最终代码树；未拿旧结果冒充末版验收。
+Data 反证去掉最新 APIKey 保留、绕过运行时 mapping 检查、放开首次 provider 限定，
+实际退出 1，分别抓住旧值覆盖、六类映射缺失/漂移放行及两类不安全首次 provider。
+另去掉 provision 的持久归属回读要求，unmanaged 场景实际退出 1
+（ConfigurationError not raised），而非编译失败。
+恢复末版仓库退出 0、0.514 s，5 个顶层及 21 个子场景；
+原部署 32 项再验退出 0、74.836 s。正式源码从未套用反证。
+首次 Python 检查生成的 bytecode 已移至 Data 候选目录保留；后续 -B 禁止再写代码盘缓存。
+
+日志目录为 `/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| model-delivery-final.log | `2e9b6957b5ada70ac8a1ad2e8dc69284beca3e09320cdaaf8949b9462594d3dc` |
+| model-delivery-negative.log | `e94ec1c5e3940bc7d6d0cf2aa51afe52a4cde9d737fc8ae8bee540b2dad6d50e` |
+| model-delivery-python-negative.log | `1f746193f3e07afb25233b195fdfde4a31f0402bf0bb8ca216eb962de3fe5291` |
+| model-delivery-restored.log | `211723ff160c5269312396f91c9bd3864bc6600d44701b43f59eda1f7d8f75f7` |
+
+边界：SQLite 结果不证明 PostgreSQL 行锁并发；start 检查执行原 shell + recorder，
+不是实际部署。未重新构建/部署后端、运行真实 Gateway/完整 release conformance、
+完成 native binding/generation fence、任务冻结归属或三组件上架。
+本批不是完整治理接入，也不解除既有全局发布门禁；未修改 .design 或平台契约。

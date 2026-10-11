@@ -54,6 +54,7 @@ func TestModelCredentialsDeliveryUsesStoredTenantModelNonce(t *testing.T) {
 	nonce := strings.Repeat("a1", 32)
 	s := &deliveryModelService{model: &types.Model{ID: "native-model", TenantID: 42}}
 	s.model.Parameters.APIKey = "isolated-fixture-value"
+	s.model.ManagedBy = "kailo-model-route"
 	c, w := credentialPut(s, `{"verification_nonce":"`+nonce+`"}`)
 	if len(c.Errors) > 0 || s.reads != 1 || s.writes != 0 {
 		t.Fatal("challenge must read once without writing", c.Errors)
@@ -66,6 +67,9 @@ func TestModelCredentialsDeliveryUsesStoredTenantModelNonce(t *testing.T) {
 	}
 	if response.Data.VerificationNonce != nonce || strings.Contains(w.Body.String(), s.model.Parameters.APIKey) {
 		t.Fatal("response must echo only the nonce and scoped proof")
+	}
+	if response.Data.ManagedBy != s.model.ManagedBy {
+		t.Fatal("delivery must read back the persisted native ownership")
 	}
 	proof, err := hex.DecodeString(response.Data.APIKeyProof)
 	if err != nil {

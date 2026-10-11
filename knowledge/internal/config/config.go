@@ -40,6 +40,9 @@ type Config struct {
 	// files. The native service reads their original endpoint mapping and PEP
 	// credentials; callers and workspace settings cannot supply these paths.
 	MCPAdapterConfigs []string `yaml:"mcp_adapter_configs" json:"-"`
+	// ModelDeliveryInputFile is the same controlled mapping used by the native
+	// credential provisioner. It contains references, never model credentials.
+	ModelDeliveryInputFile string `yaml:"model_delivery_input_file" json:"-"`
 	// FrontendBaseURL is the externally-visible origin of the SPA, used
 	// to compose absolute share-link URLs. Empty falls back to a host-
 	// relative URL ("/register?token=…") which the SPA then resolves
@@ -593,6 +596,12 @@ func LoadConfig() (*Config, error) {
 		if !found {
 			cfg.MCPAdapterConfigs = append(cfg.MCPAdapterConfigs, path)
 		}
+	}
+	if path, supplied := os.LookupEnv("KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE"); supplied {
+		if !filepath.IsAbs(path) || strings.TrimSpace(path) != path {
+			return nil, fmt.Errorf("KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE requires an absolute path")
+		}
+		cfg.ModelDeliveryInputFile = path
 	}
 	fmt.Printf("Using configuration file: %s\n", viper.ConfigFileUsed())
 

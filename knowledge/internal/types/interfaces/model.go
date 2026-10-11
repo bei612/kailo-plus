@@ -61,6 +61,9 @@ type ModelRepository interface {
 	) ([]*types.Model, error)
 	// Update updates a model
 	Update(ctx context.Context, model *types.Model) error
+	// UpdateCredentials changes only explicitly supplied credential fields on
+	// the current row. nil preserves that field; a pointer to "" clears it.
+	UpdateCredentials(ctx context.Context, tenantID uint64, id string, apiKey, appSecret *string) (*types.Model, error)
 	// Delete deletes a model
 	Delete(ctx context.Context, tenantID uint64, id string) error
 	// ClearDefaultByType clears the default flag for all models of a specific type

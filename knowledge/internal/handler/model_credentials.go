@@ -43,6 +43,7 @@ type modelCredentialsResponse struct {
 	dto.CredentialsResponse
 	VerificationNonce string `json:"verification_nonce,omitempty"`
 	APIKeyProof       string `json:"api_key_proof,omitempty"`
+	ManagedBy         string `json:"managed_by,omitempty"`
 }
 
 func modelCredentialResponse(model *types.Model, nonce *string) modelCredentialsResponse {
@@ -54,6 +55,7 @@ func modelCredentialResponse(model *types.Model, nonce *string) modelCredentials
 	}}
 	if nonce != nil {
 		response.VerificationNonce = *nonce
+		response.ManagedBy = model.ManagedBy
 	}
 	if nonce != nil && model.Parameters.APIKey != "" {
 		// A fresh challenge proves the value loaded from this native row, without

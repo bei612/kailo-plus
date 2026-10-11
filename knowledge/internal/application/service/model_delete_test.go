@@ -129,6 +129,22 @@ func (s *stubModelRepoForDelete) Update(_ context.Context, model *types.Model) e
 	}
 	return nil
 }
+func (s *stubModelRepoForDelete) UpdateCredentials(ctx context.Context, _ uint64, _ string, apiKey, appSecret *string) (*types.Model, error) {
+	model := *s.model
+	if apiKey != nil {
+		model.Parameters.APIKey = *apiKey
+	}
+	if appSecret != nil {
+		model.Parameters.AppSecret = *appSecret
+	}
+	if model.IsBuiltin {
+		model.ManagedBy = ""
+	}
+	if err := s.Update(ctx, &model); err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
 func (s *stubModelRepoForDelete) Delete(_ context.Context, _ uint64, id string) error {
 	if s.delete != nil {
 		return s.delete(id)

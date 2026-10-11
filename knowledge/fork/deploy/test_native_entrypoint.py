@@ -197,6 +197,27 @@ class NativeEntrypointTests(unittest.TestCase):
             self.assertEqual(len(calls.read_text().splitlines()), 1)
             calls.unlink()
 
+    def test_model_start_separates_transport_from_existing_mapping_delivery(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        platform = root / "platform.env"
+        platform.write_text("PLATFORM_EDGE_NETWORK=fixture\nAGENTGATEWAY_MODEL_HOST=gateway.example.test\nAGENTGATEWAY_MODEL_PORT=80\nAGENTGATEWAY_MODEL_BASE_URL=http://gateway.example.test/v1\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                (root / ".env").write_text("KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE=" + (str(root / "delivery.json") if configured else "") + "\n")
+                subprocess.run(["bash", str(root / "start.sh"), "--platform-model", str(platform)], env=env, check=True, capture_output=True)
+                operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertEqual(len(operations), 2)
+                self.assertIn(str(root / "compose.model-gateway.yaml"), operations[0])
+                self.assertEqual(str(root / "compose.model-delivery.yaml") in operations[0], configured)
+                self.assertEqual(operations[1][-8:], ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps", "app"])
+                calls.unlink()
+
     def test_adapter_reader_generates_actual_scoped_uncached_agent_input(self):
         root = Path(self.directory.name)
         outputs, bootstrap = root / "outputs", root / "bootstrap"
@@ -423,7 +444,7 @@ class NativeProvisioningTests(unittest.TestCase):
                         return 503, {}, b'{}'  # Committed by native service; acknowledgement lost.
                     nonce = body["verification_nonce"]
                     message = "application-model-key:v1\0" + projection["nativeScopeRef"] + "\0" + model["nativeModelRef"] + "\0" + nonce
-                    payload = {"verification_nonce": nonce, "api_key_proof": hmac.new(stored["key"].encode(), message.encode(), hashlib.sha256).hexdigest()}
+                    payload = {"managed_by": "kailo-model-route", "verification_nonce": nonce, "api_key_proof": hmac.new(stored["key"].encode(), message.encode(), hashlib.sha256).hexdigest()}
                 return 200, {}, json.dumps({"success": True, "data": payload}).encode()
 
             with self.native_http(response) as (origin, received), redirect_stdout(io.StringIO()) as output:
@@ -439,7 +460,7 @@ class NativeProvisioningTests(unittest.TestCase):
                 self.assertNotIn(material["value"], (root / "model-delivery-receipt.json").read_text())
 
     def test_model_delivery_rejects_configured_only_stale_nonce_and_wrong_native_scope(self):
-        for failure in ("configured", "stale", "wrong-key", "foreign-tenant", "foreign-model", "wrong-endpoint"):
+        for failure in ("configured", "stale", "wrong-key", "foreign-tenant", "foreign-model", "wrong-endpoint", "unmanaged"):
             with self.subTest(failure=failure), self.model_delivery_fixture() as (env, value, material, root):
                 model = value["models"][0]
                 nonce = value["projection"]["deliveryChallenges"][0]["verificationNonce"]
@@ -460,7 +481,8 @@ class NativeProvisioningTests(unittest.TestCase):
                         chosen = "ef"*32 if failure == "stale" else nonce
                         key = "wrong-fixture" if failure == "wrong-key" else material["value"]
                         message = "application-model-key:v1\0" + "42\0" + model["nativeModelRef"] + "\0" + chosen
-                        data = {"verification_nonce": chosen, "api_key_proof": hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()}
+                        data = {"managed_by": "kailo-model-route", "verification_nonce": chosen, "api_key_proof": hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()}
+                        if failure == "unmanaged": data.pop("managed_by")
                         if failure == "configured": data = {"fields": {"api_key": {"configured": True}}}
                     return 200, {}, json.dumps({"success": True, "data": data}).encode()
 
@@ -468,6 +490,7 @@ class NativeProvisioningTests(unittest.TestCase):
                     env["KNOWLEDGE_NATIVE_ORIGIN"] = origin
                     provision.model_delivery(env)
                 self.assertLessEqual(len(writes), 1)
+                if failure == "unmanaged": self.assertEqual(len(writes), 0)
                 self.assertFalse((root / "model-delivery-receipt.json").exists())
 
     def test_model_delivery_rejects_mismatched_agent_version_and_duplicate_route(self):

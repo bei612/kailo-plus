@@ -285,27 +285,23 @@ func (s *modelService) UpdateModelCredentials(
 			"only system administrators can modify builtin model credentials")
 	}
 
-	changed := false
-	if apiKey != nil && *apiKey != "" && *apiKey != existing.Parameters.APIKey {
-		existing.Parameters.APIKey = *apiKey
-		changed = true
+	// Legacy empty PUT values mean unchanged. Only the explicit DELETE
+	// subresource clears a credential. Never write another field's stale value.
+	if apiKey != nil && *apiKey == "" {
+		apiKey = nil
 	}
-	if appSecret != nil && *appSecret != "" && *appSecret != existing.Parameters.AppSecret {
-		existing.Parameters.AppSecret = *appSecret
-		changed = true
+	if appSecret != nil && *appSecret == "" {
+		appSecret = nil
 	}
-	if !changed {
+	if apiKey == nil && appSecret == nil {
 		return existing, nil
 	}
-	if existing.IsBuiltin {
-		// Credential changes are also runtime overrides of YAML-managed data.
-		existing.ManagedBy = ""
-	}
-	if err := s.repo.Update(ctx, existing); err != nil {
+	updated, err := s.repo.UpdateCredentials(ctx, existing.TenantID, id, apiKey, appSecret)
+	if err != nil {
 		return nil, err
 	}
 	logger.Infof(ctx, "Model credentials updated: id=%s", id)
-	return existing, nil
+	return updated, nil
 }
 
 // ClearModelCredential removes a single credential field. Idempotent.
@@ -323,28 +319,17 @@ func (s *modelService) ClearModelCredential(ctx context.Context, id, field strin
 			"only system administrators can modify builtin model credentials")
 	}
 
-	changed := false
+	empty := ""
+	var apiKey, appSecret *string
 	switch field {
 	case "api_key":
-		if existing.Parameters.APIKey != "" {
-			existing.Parameters.APIKey = ""
-			changed = true
-		}
+		apiKey = &empty
 	case "app_secret":
-		if existing.Parameters.AppSecret != "" {
-			existing.Parameters.AppSecret = ""
-			changed = true
-		}
+		appSecret = &empty
 	default:
 		return errors.New("unknown credential field: " + field)
 	}
-	if !changed {
-		return nil
-	}
-	if existing.IsBuiltin {
-		existing.ManagedBy = ""
-	}
-	if err := s.repo.Update(ctx, existing); err != nil {
+	if _, err := s.repo.UpdateCredentials(ctx, existing.TenantID, id, apiKey, appSecret); err != nil {
 		return err
 	}
 	logger.Infof(ctx, "Model credential cleared by user: id=%s field=%s", id, field)
