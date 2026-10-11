@@ -12,6 +12,7 @@ import {
   isStreamAuthError,
   refreshAccessTokenShared,
   runStreamWithAuthRetry,
+  captureAuthRequestContext,
 } from '@/utils/authRefresh';
 
 interface StreamOptions {
@@ -53,6 +54,7 @@ export function useStream() {
     const apiUrl = getApiBaseUrl();
     
     const embedToken = params.embed_token;
+    const authContext = embedToken ? undefined : captureAuthRequestContext();
     const token = embedToken || localStorage.getItem('weknora_token');
     if (!token) {
       error.value = i18n.global.t('error.tokenNotFound');
@@ -163,7 +165,9 @@ export function useStream() {
       // Wrapped so an expired access token can be refreshed and the request
       // replayed once. Nothing has been streamed to the UI yet when the
       // handshake 401s, so the replay is invisible to the user.
-      const runStream = (authToken: string) => fetchEventSource(url, {
+      const runStream = (authToken: string) => {
+        authContext?.assertCurrent(i18n.global.t('error.pleaseRelogin'));
+        return fetchEventSource(url, {
         method: params.method,
         headers: {
           "Content-Type": "application/json",
@@ -182,6 +186,7 @@ export function useStream() {
         openWhenHidden: true,
 
         onopen: async (res) => {
+          authContext?.assertCurrent(i18n.global.t('error.pleaseRelogin'));
           // 401 is recoverable (refresh + replay); everything else is not.
           if (res.status === 401) throw new StreamAuthError(res.status);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -191,6 +196,7 @@ export function useStream() {
 
         onmessage: (ev) => {
           if (myGeneration !== streamGeneration) return
+          authContext?.assertCurrent(i18n.global.t('error.pleaseRelogin'));
           const parsed = JSON.parse(ev.data);
           // Log first answer chunk for end-to-end TTFB measurement.
           // Filter by event type so non-answer events (references, tool
@@ -212,9 +218,11 @@ export function useStream() {
         },
 
         onclose: () => {
+          if (myGeneration !== streamGeneration) return;
           stopStream();
         },
-      });
+        });
+      };
 
       await runStreamWithAuthRetry({
         run: runStream,
@@ -222,6 +230,7 @@ export function useStream() {
         isEmbed: Boolean(embedToken),
         isCurrent: () => myGeneration === streamGeneration && !streamAbort.signal.aborted,
         refreshAccessToken: () => refreshAccessTokenShared({
+          context: authContext,
           messages: {
             pleaseRelogin: i18n.global.t('error.pleaseRelogin'),
             tokenRefreshFailed: i18n.global.t('error.tokenRefreshFailed'),
@@ -230,6 +239,7 @@ export function useStream() {
         reloginMessage: i18n.global.t('error.pleaseRelogin'),
       });
     } catch (err) {
+      if (myGeneration !== streamGeneration) return;
       error.value = err instanceof Error ? err.message : String(err)
       stopStream()
     }

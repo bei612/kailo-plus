@@ -11,6 +11,7 @@ import { BUILTIN_QUICK_ANSWER_ID } from '@/api/agent'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useOrganizationStore } from '@/stores/organization'
+import { invalidateAuthRequestContext } from '@/utils/authRefresh'
 
 /** 登出时丢弃 Pinia 内的空间级资源缓存，避免 SPA 重登复用上一账号数据。 */
 function clearSessionResourceCaches() {
@@ -207,6 +208,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const setToken = (tokenValue: string) => {
+    invalidateAuthRequestContext()
     token.value = tokenValue
     localStorage.setItem('weknora_token', tokenValue)
   }
@@ -418,6 +420,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const logout = () => {
+    invalidateAuthRequestContext()
     // 清空状态
     user.value = null
     tenant.value = null

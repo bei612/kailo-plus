@@ -18,11 +18,58 @@ const AUTH_STORAGE_KEYS = [
   'weknora_memberships',
 ] as const
 
-let isRefreshing = false
-let failedQueue: Array<{
-  resolve: (token: string) => void
-  reject: (error: unknown) => void
-}> = []
+type RefreshSession = {
+  token: string | null
+  refreshToken: string | null
+  pending?: Promise<string>
+}
+let currentSession: RefreshSession | undefined
+
+function sessionMatchesStorage(session: RefreshSession): boolean {
+  return session === currentSession &&
+    session.token === localStorage.getItem('weknora_token') &&
+    session.refreshToken === localStorage.getItem('weknora_refresh_token')
+}
+
+// A request-local ownership snapshot, not a new persisted session or authority.
+// Class identity survives axios config merging; only this module's successful
+// refresh may advance the captured session's credentials.
+export class AuthRequestContext {
+  readonly initialToken: string | null
+  readonly tenantId = localStorage.getItem('weknora_selected_tenant_id')
+
+  constructor(private readonly session: RefreshSession) {
+    this.initialToken = session.token
+  }
+
+  isCurrent(): boolean {
+    return sessionMatchesStorage(this.session) &&
+      this.tenantId === localStorage.getItem('weknora_selected_tenant_id')
+  }
+
+  assertCurrent(message = defaultMessages.pleaseRelogin): void {
+    if (!this.isCurrent()) throw new Error(message)
+  }
+
+  get token(): string | null {
+    this.assertCurrent()
+    return this.session.token
+  }
+}
+
+export function captureAuthRequestContext(): AuthRequestContext {
+  if (!currentSession || !sessionMatchesStorage(currentSession)) {
+    currentSession = {
+      token: localStorage.getItem('weknora_token'),
+      refreshToken: localStorage.getItem('weknora_refresh_token'),
+    }
+  }
+  return new AuthRequestContext(currentSession)
+}
+
+export function invalidateAuthRequestContext(): void {
+  currentSession = undefined
+}
 
 export type TokenRefreshResult = {
   success: boolean
@@ -31,6 +78,7 @@ export type TokenRefreshResult = {
 }
 
 export type RefreshAccessTokenOptions = {
+  context?: AuthRequestContext
   refresh?: (refreshToken: string) => Promise<TokenRefreshResult>
   messages?: {
     pleaseRelogin: string
@@ -69,6 +117,7 @@ export function redirectToLogin() {
 }
 
 export function clearAuthStorage() {
+  invalidateAuthRequestContext()
   for (const key of AUTH_STORAGE_KEYS) {
     localStorage.removeItem(key)
   }
@@ -79,74 +128,55 @@ export function forceReloginRedirect() {
   redirectToLogin()
 }
 
-function processQueue(error: unknown, token: string | null = null) {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error)
-    } else {
-      resolve(token as string)
-    }
-  })
-  failedQueue = []
-}
-
 async function defaultRefresh(refreshToken: string): Promise<TokenRefreshResult> {
   const { refreshToken: refreshTokenAPI } = await import('../api/auth/index')
   return refreshTokenAPI(refreshToken)
 }
 
 /**
- * Refresh the access token, de-duplicated across all callers.
+ * Refresh the access token, de-duplicated only within the original session.
  *
  * Resolves with the new access token. On failure it has already cleared
- * credentials and redirected to /login.
+ * credentials and redirected to /login only if that session still owns them.
  */
 export async function refreshAccessTokenShared(
   options: RefreshAccessTokenOptions = {},
 ): Promise<string> {
   const messages = { ...defaultMessages, ...options.messages }
   const refresh = options.refresh ?? defaultRefresh
+  const context = options.context ?? captureAuthRequestContext()
+  context.assertCurrent(messages.pleaseRelogin)
+  const session = currentSession!
+  // Another request already rotated these exact credentials. Do not submit
+  // the old refresh token again after its successful single-flight finished.
+  if (session.token && context.initialToken !== session.token) return session.token
 
-  if (isRefreshing) {
-    return new Promise<string>((resolve, reject) => {
-      failedQueue.push({ resolve, reject })
-    })
+  if (!session.pending) {
+    session.pending = (async () => {
+      try {
+        if (!session.refreshToken) throw new Error(messages.pleaseRelogin)
+        const response = await refresh(session.refreshToken)
+        if (!sessionMatchesStorage(session)) throw new Error(messages.pleaseRelogin)
+        if (!response.success || !response.data?.token) {
+          throw new Error(response.message || messages.tokenRefreshFailed)
+        }
+        const { token, refreshToken: newRefreshToken } = response.data
+        localStorage.setItem('weknora_token', token)
+        if (newRefreshToken) localStorage.setItem('weknora_refresh_token', newRefreshToken)
+        session.token = token
+        session.refreshToken = newRefreshToken || session.refreshToken
+        return token
+      } catch (refreshError) {
+        // A stale success/failure must never overwrite or log out a newer
+        // login (including a new login by the same human).
+        if (context.isCurrent()) forceReloginRedirect()
+        throw refreshError
+      }
+    })().finally(() => { session.pending = undefined })
   }
-
-  isRefreshing = true
-  const storedRefreshToken = localStorage.getItem('weknora_refresh_token')
-
-  if (!storedRefreshToken) {
-    clearAuthStorage()
-    const noRefreshTokenError = new Error(messages.pleaseRelogin)
-    processQueue(noRefreshTokenError, null)
-    isRefreshing = false
-    redirectToLogin()
-    throw noRefreshTokenError
-  }
-
-  try {
-    const response = await refresh(storedRefreshToken)
-
-    if (!response.success || !response.data?.token) {
-      throw new Error(response.message || messages.tokenRefreshFailed)
-    }
-
-    const { token, refreshToken: newRefreshToken } = response.data
-    localStorage.setItem('weknora_token', token)
-    if (newRefreshToken) {
-      localStorage.setItem('weknora_refresh_token', newRefreshToken)
-    }
-    processQueue(null, token)
-    return token
-  } catch (refreshError) {
-    clearAuthStorage()
-    processQueue(refreshError, null)
-    redirectToLogin()
-    throw refreshError
-  } finally {
-    isRefreshing = false
-  }
+  const token = await session.pending
+  context.assertCurrent(messages.pleaseRelogin)
+  return token
 }
 
 /**
@@ -191,6 +221,5 @@ export async function runStreamWithAuthRetry<T>(options: {
 
 /** Reset module locks between unit tests. */
 export function resetAuthRefreshStateForTests() {
-  isRefreshing = false
-  failedQueue = []
+  currentSession = undefined
 }

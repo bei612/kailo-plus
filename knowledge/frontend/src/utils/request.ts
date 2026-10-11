@@ -1,5 +1,5 @@
 // src/utils/request.js
-import axios from "axios";
+import axios, { type InternalAxiosRequestConfig } from "axios";
 import { generateRandomString, MAX_FILE_SIZE_MB, MAX_SKILL_BUNDLE_SIZE_MB } from "./index";
 import i18n from '@/i18n'
 import { getApiBaseUrl } from './api-base';
@@ -9,6 +9,8 @@ import {
   forceReloginRedirect,
   isEmbedPage,
   refreshAccessTokenShared,
+  captureAuthRequestContext,
+  type AuthRequestContext,
 } from './authRefresh';
 
 export { forceReloginRedirect, refreshAccessTokenShared };
@@ -63,6 +65,8 @@ const instance = axios.create({
   },
 });
 
+type OwnedRequest = InternalAxiosRequestConfig & { _authContext?: AuthRequestContext };
+
 // 获取当前用户语言（用于 Accept-Language header）
 export function getCurrentLanguage(): string {
   return i18n.global.locale?.value || localStorage.getItem('locale') || 'zh-CN'
@@ -70,16 +74,23 @@ export function getCurrentLanguage(): string {
 
 
 instance.interceptors.request.use(
-  (config) => {
+  (config: OwnedRequest) => {
     const existingAuth = config.headers?.Authorization ?? config.headers?.authorization;
     const isEmbedAuth = typeof existingAuth === 'string' && existingAuth.startsWith('Embed ');
     const isEmbedPath = typeof config.url === 'string' && config.url.includes('/api/v1/embed/');
 
+    if (!isEmbedAuth && !isEmbedPath && !isPublicAuthRequest(config.url)) {
+      config._authContext ??= captureAuthRequestContext();
+      config._authContext.assertCurrent(t('error.pleaseRelogin'));
+    }
+
     // 嵌入渠道使用 Embed token；勿用本地 JWT 覆盖（否则调试页会 401）
     if (!isEmbedAuth) {
-      const token = localStorage.getItem('weknora_token');
+      const token = config._authContext ? config._authContext.token : localStorage.getItem('weknora_token');
       if (token) {
         config.headers["Authorization"] = `Bearer ${token}`;
+      } else {
+        delete config.headers["Authorization"];
       }
     }
     
@@ -99,6 +110,8 @@ instance.interceptors.request.use(
       const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
       if (selectedTenantId) {
         config.headers["X-Tenant-ID"] = selectedTenantId;
+      } else {
+        delete config.headers["X-Tenant-ID"];
       }
     }
     
@@ -106,8 +119,11 @@ instance.interceptors.request.use(
     return config;
   },
   (error) => {
-    return Promise.reject(error);
-  }
+    // Axios's synchronous chain continues dispatch if onRejected only returns
+    // a rejected Promise; throw to stop it before any network side effect.
+    throw error;
+  },
+  { synchronous: true }
 );
 
 // Share-link endpoints (/auth/invitations/lookup, /auth/register-by-invite)
@@ -115,7 +131,10 @@ instance.interceptors.request.use(
 // must surface to the page (e.g. expired token), not trigger the
 // refresh-then-redirect-to-login flow (issue #1617). '/auth/register' already
 // covers '/auth/register-by-invite' via substring match.
-const PUBLIC_AUTH_PATHS = ['/auth/auto-setup', '/auth/login', '/auth/register', '/auth/oidc/', '/auth/invitations/lookup', '/api/v1/embed/'];
+// Refresh is credential-scoped, not selected-tenant-scoped. Its shared caller
+// checks the original login before accepting rotated credentials; discarding
+// its response on a tenant switch would lose the now-consumed refresh token.
+const PUBLIC_AUTH_PATHS = ['/auth/auto-setup', '/auth/login', '/auth/register', '/auth/refresh', '/auth/oidc/', '/auth/invitations/lookup', '/api/v1/embed/'];
 
 function isPublicAuthRequest(url?: string): boolean {
   if (!url) return false;
@@ -124,6 +143,7 @@ function isPublicAuthRequest(url?: string): boolean {
 
 instance.interceptors.response.use(
   (response) => {
+    (response.config as OwnedRequest)._authContext?.assertCurrent(t('error.pleaseRelogin'));
     // 根据业务状态码处理逻辑
     const { status, data } = response;
     if (status >= 200 && status < 300) {
@@ -134,6 +154,7 @@ instance.interceptors.response.use(
   },
   async (error: any) => {
     const originalRequest = error.config;
+    originalRequest?._authContext?.assertCurrent(t('error.pleaseRelogin'));
     
     if (!error.response) {
       // A timeout and an unreachable server both arrive without a response, but
@@ -156,6 +177,7 @@ instance.interceptors.response.use(
         // 非法 JSON 继续使用原有错误处理。
       }
     }
+    originalRequest?._authContext?.assertCurrent(t('error.pleaseRelogin'));
     
     // 公开接口（auto-setup / login / register / oidc）的 401 不走 refresh 逻辑，直接返回错误
     if ((error.response.status === 401 || error.response.status === 403) && isPublicAuthRequest(originalRequest?.url)) {
@@ -180,6 +202,7 @@ instance.interceptors.response.use(
       originalRequest._retry = true;
       try {
         const token = await refreshAccessTokenShared({
+          context: originalRequest._authContext,
           messages: {
             pleaseRelogin: t('error.pleaseRelogin'),
             tokenRefreshFailed: t('error.tokenRefreshFailed'),
@@ -188,7 +211,7 @@ instance.interceptors.response.use(
         originalRequest.headers['Authorization'] = 'Bearer ' + token;
         return instance(originalRequest);
       } catch (refreshError) {
-        // refreshAccessTokenShared already cleared credentials and redirected.
+        // Only a failed refresh of the still-current session clears credentials.
         return Promise.reject(refreshError);
       }
     }

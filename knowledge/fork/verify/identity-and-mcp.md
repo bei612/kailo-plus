@@ -1614,3 +1614,168 @@ frozen tree `73f7d70189c100ba7b40d426783365e7c23ef8f7`, not this increment.
 Its actual database drill was skipped without DATABASE_URL. Neither that
 check nor these focused results establish the whole Knowledge release,
 cross-replica database behavior, active bindings or a deployed sync feature.
+
+### 2026-10-10 native HUMAN request ownership across token refresh
+
+This increment changes the original native frontend consumers, not the platform
+identity authority or the original page layout. Fixed evidence is WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`frontend/src/utils/authRefresh.ts::refreshAccessTokenShared`,
+`frontend/src/utils/request.ts` request/response interceptors, and
+`frontend/src/api/chat/streame.ts::useStream`. The former global refresh queue
+could apply human A's delayed success/failure to human B's later login; an old
+401 could also retry its original business payload using B's current token.
+
+Four-step change boundary:
+
+1. Authority: the existing HUMAN identity/scope isolation requirement and
+   DD-58/63/70/71 component admission remain unchanged. Native tokens and native
+   tenant selection remain the original WeKnora storage; no new persistent
+   session, permission authority, credential key or backend protocol is added.
+2. Impact: all production `refreshAccessTokenShared` callers are the original
+   Axios interceptor and chat SSE retry. A request-local class captures the
+   current credential-continuity object and selected tenant. Only a successful
+   same-login refresh advances that object. Axios config merging preserves its
+   identity. The original auth store `setToken`/`logout` invalidate it: native
+   `generateTokensForTenant` has second-resolution JWT claims without a jti,
+   so a new same-human login cannot safely be distinguished by token bytes
+   alone. Actual setToken consumers are Login, App OIDC, router login and
+   storage hydration; shared refresh does not call setToken.
+3. Side effects: the Axios interceptor is explicitly synchronous, freezing
+   ownership before its first dispatch microtask. Its error callback throws,
+   because merely returning a rejected Promise from Axios's synchronous chain
+   would continue dispatch. Success responses, delayed Blob error handling,
+   retry dispatch and SSE handshake/chunk delivery all retain original scope.
+   Original Embed/public-login behavior is retained. No old response clears a
+   new login; a stale stream does not stop a newer stream generation.
+4. Exceptions: concurrent same-login 401s share one refresh; a late 401 consumes
+   that proven rotation without another refresh. Scope switching during the
+   refresh saves the same-login rotated credentials but rejects the old-scope
+   request. Different login, explicit logout/relogin (even identical bytes),
+   missing credentials and unproven continuity refuse old request reuse.
+   This is document-local continuity, not a global browser session id:
+   cross-tab replacement with different bytes is refused, but an unobserved
+   same-byte logout/relogin in another tab is not claimed detectable. No bearer
+   is newly persisted, logged or sent to another endpoint by this mechanism.
+
+Checks used the existing `kailo-wren-native-sdk-vuc6uo`, UID/GID 1000:1000,
+4 CPU / 4 GiB memory and memory+swap, image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+Node `v24.21.0`. Before execution its process list contained only sleep;
+host available memory was 16 GiB. Inputs/logs stay under Data at
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/knowledge-refresh.vd01QO`.
+The locked Axios `1.16.0` tarball was recovered offline from existing npm
+content cache by the exact package-lock sha512 integrity. No dependency install,
+new SDK, image build or full check was started. Its original
+`lib/core/Axios.js::_request` synchronous chain and browser bundle are consumed;
+the real Axios case proves initial synchronous ownership and no dispatch after
+interceptor rejection. Original request/SSE/store modules are also executed
+with their host/network imports substituted, not rewritten consumer logic.
+
+```text
+node --experimental-transform-types --test src/utils/authRefresh.test.ts
+positive-locked-browser.log: exit 0; 23 pass, 0 fail
+negative-locked-final.log:   exit 1; 15 pass, 8 fail
+restored-final.log:          exit 0; 23 pass, 0 fail
+```
+
+The private negative removed actual credential-write/failure ownership checks,
+made the request interceptor asynchronous, removed explicit-login invalidation
+and removed SSE chunk ownership enforcement. The checks caught new-login token
+corruption, old chunk delivery, same-byte relogin reuse and first-microtask
+identity drift. All five source/check files were restored byte-for-byte from
+the unchanged formal source before rerunning. The earlier 21-case run and
+negative remain historical evidence; final evidence is the 23-case run above.
+An intermediate normal Node Axios import failed with `ERR_MODULE_NOT_FOUND:
+Cannot find package 'form-data'`; `positive-locked.log` preserves that failure.
+The final check uses Axios's original self-contained browser bundle (the
+frontend runtime target), not an install or a fake replacement Axios.
+
+Final log SHA-256, in the directory above:
+
+```text
+4192a12c745138702e56e53175c7ffc19a9e3f9c1dc2d6875010e04bb6c9139d  positive-locked-browser.log
+25a10a673109f9de538576f8b657f067d6ad84cbbee102d7bcd85e1929607207  negative-locked-final.log
+d96e841c86c397a22d52d6727d0949f784bec016f35fb3537957bd9780ca286d  restored-final.log
+```
+
+This establishes the bounded native browser request consumers only. Full
+frontend type/build, real IdP/browser multi-account interaction, cross-tab
+session coordination, native image publication/deployment and the complete
+Cells-to-WeKnora business chain were not executed by this increment. Existing
+release/binding approval gates remain closed; no quota or audit exemption is
+introduced and existing server authorization remains required.
+
+### 2026-10-11 native refresh API preserves same-login rotation across scope changes
+
+The preceding request-ownership implementation was reviewed as a complete
+five-file delta, including original Axios, SSE and auth-store consumers. One
+integration gap remained: its scope-switch refresh check replaced the native
+refresh API with a callback, but the real `defaultRefresh` calls
+`frontend/src/api/auth/index.ts::refreshToken`, which calls the same Axios
+`post('/api/v1/auth/refresh')`. The business-request scope guard rejected that
+response after a tenant switch, losing credentials already rotated upstream.
+
+1. Authority: unchanged HUMAN/login isolation and DD-58/63/70/71. Fixed WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` sources
+   `frontend/src/utils/authRefresh.ts::defaultRefresh`,
+   `frontend/src/api/auth/index.ts::refreshToken` and
+   `internal/router/routes_auth_tenant.go::RegisterAuthRoutes` retain the native
+   refresh route. `internal/handler/auth.go::AuthHandler.RefreshToken` validates
+   the submitted refresh token through the original user service, rather than
+   granting business access from a selected frontend tenant.
+2. Impact: classify `/auth/refresh` with the existing authentication endpoints
+   in `request.ts::PUBLIC_AUTH_PATHS`. This avoids a business-scope response
+   guard on credential rotation; it does not change endpoint authentication.
+   `refreshAccessTokenShared` remains the only production consumer of the auth
+   API refresh function and checks original login continuity before storing
+   either token. No API/schema, storage key, permission or workflow changes.
+3. Side effects: same-login scope switch may preserve rotated credentials but
+   the old business context still rejects and does not replay. Different login
+   or logout discards the old refresh response; it cannot overwrite credentials
+   or redirect the new session. Native refresh-token validation, backend scope
+   checks and governance remain unchanged. No business response is exempted.
+4. Boundaries: missing/invalid credentials remain DENIED through the original
+   auth handler; transport failure retains the existing failed-refresh handling.
+   No new UNKNOWN, LIMIT, PRECONDITION, CONFLICT or BLOCKED state is introduced.
+   Same-login concurrent refresh deduplication, late 401 reuse, old SSE chunks,
+   same-byte explicit relogin and synchronous Axios redispatch remain covered
+   by the original checks. This does not claim cross-tab same-byte detection.
+
+Implementation preceded the added checks. The existing loader now executes the
+original auth API as well as the original request module, using locked Axios
+`1.16.0` and a delayed network adapter. Three added cases cover scope switch,
+new login and logout while the actual native refresh request is outstanding;
+the wire request keeps original `refreshToken` and Bearer credentials. There
+is no copied API/transport implementation or additional check script.
+
+Reused `kailo-wren-native-sdk-vuc6uo`, UID 1000:1000, 4 CPU / 4 GiB memory and
+memory+swap; before execution it was exited and host available memory was
+44 GiB. Inputs, original locked Axios bundle and logs remain in Data, no
+dependency install, image build, global check or GitNexus was run for this
+increment. The actual command in `/work/knowledge-refresh.vd01QO` was
+`node --experimental-transform-types --test src/utils/authRefresh.test.ts`:
+
+| Run | Exit and result |
+| --- | --- |
+| `refresh-native-api-positive.log` | 0; 26 passed, 0 failed |
+| Remove only `/auth/refresh` classification in isolated source; run `--test-name-pattern='original auth API and axios'` | 1; scope case fails with `'A' !== 'A2'`; login/logout remain passed |
+| Restore exact source, `cmp` 0, rerun complete original check | 0; 26 passed, 0 failed |
+
+Logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/knowledge-refresh.vd01QO/`:
+
+```text
+77061e5fccc6595ea2417e8a28d0fad9ab733b9d867cfbfa7f3e4a4a515d1b81  refresh-native-api-positive.log
+89e65ab1b360460ac3f14d72933d7ac9f4a41f40caaa5dbf2bf19f7c0d7b7ec2  refresh-native-api-negative.log
+ef25ecbfa2fe8a7292966f811805a15fe6cae41cdd066b6a4b39370558b284c5  refresh-native-api-restored.log
+```
+
+Source SHA-256: `request.ts`
+`01f8392a3858374e05d353a2331c98fc8188b6aed79ee8f9b9917e78facaf5df`;
+`authRefresh.test.ts`
+`55a11e0c2721e4f93db44d43fc4fcb032ac16814c0d6c4b4cf7b1895b52eb3d7`.
+`git diff --check -- knowledge/frontend` exited 0. The SDK was stopped after
+verification. No frontend build, full-project gate, live IdP/browser acceptance,
+screenshots, deployment or component binding activation is claimed; this is
+not proof of complete component governance or Cells-to-WeKnora integration.
