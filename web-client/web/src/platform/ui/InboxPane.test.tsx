@@ -298,7 +298,7 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     const profilePanel = host.querySelector<HTMLElement>('[data-testid="home-user-profile-panel"]')!;
     expect(profilePanel.classList.contains("z-31")).toBe(true);
     expect(profilePanel.classList.contains("isolate")).toBe(true);
-    expect(profilePanel.querySelector('[data-testid="user-profile-panel-header"]')?.classList.contains("backdrop-blur-md")).toBe(false);
+    expect(profilePanel.querySelector('[data-testid="user-profile-panel-header"]')?.classList.contains("backdrop-blur-md")).toBe(true);
     expect(profilePanel.style.width).toBe(`${AUXILIARY_PANEL_DEFAULT_WIDTH_PX}px`);
     expect(host.querySelector<HTMLElement>('[data-testid="home-inbox"]')?.style.getPropertyValue("--home-auxiliary-width")).toBe(profilePanel.style.width);
     await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-filter-trigger"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));

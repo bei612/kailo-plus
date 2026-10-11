@@ -1,5 +1,6 @@
 export { PulseView } from "./ui/PulseView";
 export { ProfileSummaryView } from "./ProfileSummaryView";
+export { UserProfilePanelFrame } from "./UserProfilePanelFrame";
 export { UserProfilePopoverSurface, UserProfilePopoverBody } from "./UserProfilePopover";
 export type { ProfilePopoverBodyProps } from "./UserProfilePopover";
 export { PulseHostProvider } from "./host";

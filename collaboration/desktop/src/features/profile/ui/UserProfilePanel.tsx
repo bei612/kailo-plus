@@ -6,15 +6,13 @@ import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey } from "@/features/channels/hooks";
-import { ProfileSummaryView } from "@client-kit/platform/react/pulse";
+import { ProfileSummaryView, UserProfilePanelFrame } from "@client-kit/platform/react/pulse";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import {
-  AuxiliaryPanel,
   AuxiliaryPanelBody,
-  AuxiliaryPanelHeader,
   AuxiliaryPanelHeaderGroup,
   AuxiliaryPanelHeaderTitleBlock,
 } from "@/shared/layout/AuxiliaryPanel";
@@ -92,32 +90,30 @@ export function UserProfilePanel({
   }
 
   return (
-    <AuxiliaryPanel
+    <UserProfilePanelFrame
       canResetWidth={canResetWidth}
-      className="relative"
       isSinglePanelView={isSinglePanelView}
-      layout={isSplitLayout ? "split" : "standalone"}
+      isSplitLayout={isSplitLayout}
+      isOverlay={isOverlay}
       onClose={onClose}
       onResetWidth={onResetWidth}
       onResizeStart={onResizeStart}
-      resizeHandleAriaLabel={translate(locale, "platform.profile.resize")}
-      resizeHandleTestId="user-profile-resize-handle"
       splitPaneClamp={splitPaneClamp}
-      testId="user-profile-panel"
       transparentChrome={transparentChrome}
       widthPx={widthPx}
-      header={
-        <AuxiliaryPanelHeader
-          data-testid="user-profile-panel-header"
-          inset={!isSplitLayout ? "wide" : "default"}
-          resizeBorder={!isSinglePanelView && !isOverlay && !isSplitLayout}
-        >
+      addAgentToChannelDialog={null}
+      editAgentDialog={null}
+      personaDialogs={null}
+      headerActions={null}
+      stickyChromeActive={false}
+      stickyChromeEnabled={false}
+      stickyChromeHeight={0}
+      headerLeftContent={
           <AuxiliaryPanelHeaderGroup>
             <AuxiliaryPanelHeaderTitleBlock title={translate(locale, "platform.settings.profile")} />
           </AuxiliaryPanelHeaderGroup>
-        </AuxiliaryPanelHeader>
       }
-    >
+      profileBody={
       <AuxiliaryPanelBody
         className="overflow-y-auto px-4 pb-6"
         data-testid="user-profile-scroll-body"
@@ -136,6 +132,7 @@ export function UserProfilePanel({
           </div> : <p role="status">{translate(locale, "platform.loading")}</p>}
         {openFailed ? <p role="alert">{directMessage.notice ?? translate(locale, "platform.loadFailed")}</p> : null}
       </AuxiliaryPanelBody>
-    </AuxiliaryPanel>
+      }
+    />
   );
 }

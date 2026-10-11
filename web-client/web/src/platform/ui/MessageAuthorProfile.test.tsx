@@ -13,6 +13,7 @@ import { ForumAuthorButton } from "@client-kit/platform/react/forum/ForumView";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { KIND_STREAM_MESSAGE, KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
 import { toast } from "sonner";
+import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread/auxiliaryPanelLayout";
 
 const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn()}));
 vi.mock("../bff-client",()=>({bff:api}));
@@ -279,7 +280,7 @@ it("opens the actual message author, uses the private scope and passes the verif
   expect(start).toHaveBeenCalledWith(author);
 });
 
-it("uses the original split profile pane above Inbox's shared blur while keeping its real title, X and resize consumers",async()=>{
+it("uses the original human profile frame surface while keeping its real title, X and resize consumers",async()=>{
   api.messageAuthorProfile.mockResolvedValue(profile());const close=vi.fn();
   await render(<MessageAuthorProfile target={target} onClose={close} layout="split" transparentChrome/>);
   await vi.waitFor(()=>expect(host.textContent).toContain("Original biography"));
@@ -288,8 +289,9 @@ it("uses the original split profile pane above Inbox's shared blur while keeping
   expect(pane.classList.contains("isolate")).toBe(true);
   expect(pane.classList.contains("buzz-side-panel-enter")).toBe(false);
   const header=pane.querySelector('[data-testid="user-profile-panel-header"]')!;
-  expect(header.classList.contains("bg-transparent")).toBe(true);
-  expect(header.classList.contains("backdrop-blur-md")).toBe(false);
+  expect(header.classList.contains("bg-transparent")).toBe(false);
+  expect(header.classList.contains("backdrop-blur-md")).toBe(true);
+  expect(pane.querySelector('[data-testid="user-profile-sticky-chrome-surface"]')?.getAttribute("data-active")).toBe("false");
   expect(header.querySelector("h2")?.textContent).toBe("Profile");
   expect(pane.querySelectorAll('[data-testid="right-auxiliary-pane-resize-handle"]')).toHaveLength(1);
   expect(pane.querySelector('[data-testid="user-profile-resize-handle"]')).toBeNull();
@@ -297,6 +299,20 @@ it("uses the original split profile pane above Inbox's shared blur while keeping
   expect(button.querySelector("svg")).not.toBeNull();
   await act(async()=>button.click());
   expect(close).toHaveBeenCalledOnce();
+});
+
+it("uses the original overlay profile header without a desktop resize border",async()=>{
+  vi.stubGlobal("innerWidth",AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX-1);
+  vi.stubGlobal("matchMedia",()=>({matches:true,addEventListener:()=>{},removeEventListener:()=>{}}));
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  await render(<MessageAuthorProfile target={target} onClose={()=>{}}/>);
+  await vi.waitFor(()=>expect(host.textContent).toContain("Original biography"));
+  const header=host.querySelector<HTMLElement>('[data-testid="user-profile-panel-header"]')!;
+  expect(header.className).not.toContain("after:w-px");
+  expect(header.className).toContain("backdrop-blur-md");
+  expect(header.querySelector("h2")?.textContent).toBe("Profile");
+  expect(host.querySelector('[data-testid="user-profile-sticky-chrome-surface"]')?.getAttribute("data-active")).toBe("false");
+  expect(api.messageAuthorProfile).toHaveBeenCalledExactlyOnceWith("workspace",eventId);
 });
 
 it("uses the same original public sections in Chinese without offering unsupported actions",async()=>{

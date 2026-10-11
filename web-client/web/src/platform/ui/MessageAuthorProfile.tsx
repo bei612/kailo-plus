@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
-import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
+import { ProfileSummaryView, UserProfilePanelFrame, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
+import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useIsThreadPanelOverlay, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
 import { useUiT } from "@client-kit/platform/react/context";
 import { TransportError } from "@client-kit/platform/transport";
@@ -114,6 +114,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
   const [problem,setProblem]=useState<string|null>(null);
   useEffect(()=>{owner.active=true;setOpening(false);setProblem(null);return()=>{owner.active=false;};},[owner]);
   const width=useThreadPanelWidth();
+  const isOverlay=useIsThreadPanelOverlay();
   useLayoutEffect(() => { onWidthChange?.(width.widthPx); }, [onWidthChange, width.widthPx]);
   useEscapeKey(onClose,true);
   const data=query.isSuccess&&!query.isFetching?query.data:undefined;
@@ -131,12 +132,12 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       if(owner.active&&currentOwner.current===owner)setOpening(false);
     }
   }
-  const panel = <AuxiliaryPanel className="relative" layout={layout} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
-    onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
-    resizeHandleAriaLabel={t("platform.profile.resize")} resizeHandleTestId="user-profile-resize-handle"
-    header={<AuxiliaryPanelHeader data-testid="user-profile-panel-header" inset={layout === "split" ? "default" : "wide"} resizeBorder={!isSinglePanelView && layout !== "split"}>
-      <AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>
-    </AuxiliaryPanelHeader>}>
+  const panel = <UserProfilePanelFrame isSplitLayout={layout === "split"} isOverlay={isOverlay} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
+    onResetWidth={width.onResetWidth} canResetWidth={width.canReset}
+    addAgentToChannelDialog={null} editAgentDialog={null} personaDialogs={null} headerActions={null}
+    stickyChromeActive={false} stickyChromeEnabled={false} stickyChromeHeight={0}
+    headerLeftContent={<AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>}
+    profileBody={
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
         profile={data} pubkey={data.pubkey} copy={writeTextToClipboard} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
@@ -145,7 +146,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
         :<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
-  </AuxiliaryPanel>;
+  }/>;
   return layout === "split" ? <RightAuxiliaryPane canResetWidth={width.canReset} constrainToAvailableSpace={false}
     onResetWidth={width.onResetWidth} onResizeStart={width.onResizeStart} widthPx={width.widthPx} testId="home-user-profile-panel">{panel}</RightAuxiliaryPane> : panel;
 }

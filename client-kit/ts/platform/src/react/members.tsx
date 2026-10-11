@@ -17,7 +17,9 @@ import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar"
 import { AvatarHostProvider } from "./profile/avatar-host";
 import { UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "./pulse/UserProfilePopover";
 import { ProfileSummaryView } from "./pulse/ProfileSummaryView";
-import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock } from "./messages/thread/auxiliary";
+import { UserProfilePanelFrame } from "./pulse/UserProfilePanelFrame";
+import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock } from "./messages/thread/auxiliary";
+import { useIsThreadPanelOverlay } from "./messages/thread/use-thread-overlay";
 import { useThreadPanelWidth } from "./messages/thread/useThreadPanelWidth";
 import { useEscapeKey } from "./messages/thread/useEscapeKey";
 import { VirtualizedList } from "./forum/VirtualizedList";
@@ -63,6 +65,7 @@ export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:Me
 
 export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarget;onClose:()=>void;onStartDm?:(pubkey:string)=>void|Promise<void>}) {
   const t=useT();const query=useMemberProfile(target);const width=useThreadPanelWidth();
+  const isOverlay=useIsThreadPanelOverlay();
   const owner=useMemo(()=>({active:true,busy:false}),[target.workspaceId,target.principalId,target.pubkey]);
   const currentOwner=useRef(owner);currentOwner.current=owner;
   const [opening,setOpening]=useState(false);const [problem,setProblem]=useState<string|null>(null);
@@ -83,12 +86,15 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
       if(owner.active&&currentOwner.current===owner)setOpening(false);
     }
   }
-  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
+  return <UserProfilePanelFrame onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="member-profile-panel"
-    resizeHandleAriaLabel={t("platform.profile.resize")}
-    header={<AuxiliaryPanelHeader inset="wide" resizeBorder><AuxiliaryPanelHeaderGroup>
+    isOverlay={isOverlay} isSinglePanelView={false} isSplitLayout={false} splitPaneClamp={false}
+    addAgentToChannelDialog={null} editAgentDialog={null} personaDialogs={null} headerActions={null}
+    stickyChromeActive={false} stickyChromeEnabled={false} stickyChromeHeight={0}
+    headerLeftContent={<AuxiliaryPanelHeaderGroup>
       <AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/>
-    </AuxiliaryPanelHeaderGroup></AuxiliaryPanelHeader>}>
+    </AuxiliaryPanelHeaderGroup>}
+    profileBody={
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6">
       {profile?<ProfileSummaryView profile={profile} displayName={profile.displayName??truncatePubkey(profile.pubkey)}
         pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
@@ -96,7 +102,7 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
-  </AuxiliaryPanel>;
+  }/>;
 }
 
 /** The original row keeps its name/key hover and avatar/profile affordance.
