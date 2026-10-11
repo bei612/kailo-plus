@@ -10,6 +10,7 @@ import {
 import {
   NativeQueryService,
   queryInputSchema,
+  describeInputSchema,
 } from '@server/services/nativeQueryService';
 import { NativeBindingService } from '@server/services/nativeBindingService';
 import {
@@ -221,11 +222,7 @@ export default async function handler(
           name: 'data_query.describe',
           description:
             'Read this native model deployment reference and column metadata',
-          inputSchema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {},
-          },
+          inputSchema: describeInputSchema,
         },
       ],
     }));

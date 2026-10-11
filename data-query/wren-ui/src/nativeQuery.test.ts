@@ -1,7 +1,7 @@
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { randomInt, randomUUID } from 'crypto';
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import knex, { Knex } from 'knex';
@@ -9,6 +9,7 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js';
 import { ProjectRepository } from './apollo/server/repositories/projectRepository';
 import { SqlPairRepository } from './apollo/server/repositories/sqlPairRepository';
 import { DeployLogRepository } from './apollo/server/repositories/deployLogRepository';
@@ -26,7 +27,11 @@ import {
 import { ThreadRepository } from './apollo/server/repositories/threadRepository';
 import { AskingService } from './apollo/server/services/askingService';
 import { QueryService } from './apollo/server/services/queryService';
-import { NativeQueryService } from './apollo/server/services/nativeQueryService';
+import {
+  NativeQueryService,
+  queryInputSchema,
+  describeInputSchema,
+} from './apollo/server/services/nativeQueryService';
 import { canReadNativeMetadata } from './apollo/server/services/nativeHumanQuery';
 import { WrenEngineAdaptor } from './apollo/server/adaptors/wrenEngineAdaptor';
 import { IbisAdaptor } from './apollo/server/adaptors/ibisAdaptor';
@@ -43,6 +48,34 @@ import handler, {
 } from './pages/api/platform-adapter/[operation]';
 
 import * as queryAdmission from './apollo/server/services/nativeQueryAdmission';
+
+function expectCatalogQueryOutput(action: string, resultJson: string) {
+  const registration = JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        '../../../contracts/adapter/data_query.v1/registration.json',
+      ),
+      'utf8',
+    ),
+  );
+  const operation = registration.operationContracts.find(
+    (entry) => entry.contractKey === `${action}@v1`,
+  );
+  expect(operation).toBeDefined();
+  expect(operation.inputSchemaDigest).toBe(
+    digest(
+      action === 'data_query.describe' ? describeInputSchema : queryInputSchema,
+    ),
+  );
+  const schema = registration.schemaDocuments
+    .map((document) => JSON.parse(document))
+    .find((document) => digest(document) === operation.outputSchemaDigest);
+  expect(schema).toBeDefined();
+  expect(
+    new AjvJsonSchemaValidator().getValidator(schema)(JSON.parse(resultJson)),
+  ).toMatchObject({ valid: true, errorMessage: undefined });
+}
 
 describe('original adapter shared native error mapping HTTP consumer', () => {
   let server: HttpServer;
@@ -2291,6 +2324,7 @@ integration('original Wren query handler, SDK and native history', () => {
         .structuredContent as any;
       expect(first.execution.platformStatus).toBe('SUCCEEDED');
       expect(first.execution.nativeId).toBe(selection.historyId);
+      expectCatalogQueryOutput(action, first.resultJson);
       expect(queries).toBe(1);
       const after = await mockComponents.apiHistoryRepository.findOneBy({
         id: selection.historyId,
@@ -3097,6 +3131,264 @@ integration('original Wren query handler, SDK and native history', () => {
     return { models, manifest, captures, expected, execute, clean };
   };
 
+  it('executes the delivered typed-reference conformance sequence through original HTTP, native PG history and query consumers', async () => {
+    const registration = JSON.parse(
+      readFileSync(
+        join(
+          __dirname,
+          '../../../contracts/adapter/data_query.v1/registration.json',
+        ),
+        'utf8',
+      ),
+    );
+    const vector = JSON.parse(registration.testVectorsJson).cases[0];
+    const expectedDescription = JSON.parse(vector.steps[0].expectedOutputJson);
+    const expectedQuery = JSON.parse(
+      vector.steps.find((step) => step.contractKey === 'data_query.query@v1')
+        .expectedOutputJson,
+    );
+    const fixtureModel = expectedDescription.models[0];
+    const fixtureManifest = {
+      ...rawManifest,
+      models: [
+        {
+          name: fixtureModel.name,
+          refSql: 'SELECT 1 AS value',
+          cached: false,
+          columns: fixtureModel.columns.map((column) => ({
+            ...column,
+            isCalculated: false,
+          })),
+        },
+      ],
+    };
+    const fixtureResource = vector.steps[0].referenceResourceId;
+    await database('model').where({ id: rawModel.id }).update({
+      reference_name: fixtureModel.name,
+      ref_sql: 'SELECT 1 AS value',
+    });
+    await database('deploy_log')
+      .where({ id: 1 })
+      .update({
+        hash: expectedDescription.deploymentHash,
+        manifest: JSON.stringify(fixtureManifest),
+        native_object_refs: JSON.stringify([
+          {
+            nativeType: 'model',
+            nativeId: rawModel.id,
+            nativeName: fixtureModel.name,
+          },
+        ]),
+      });
+    authorizedTarget.resourceId = fixtureResource;
+    expectedSourceManifest = fixtureManifest;
+    expectedSourceSql = `select * from "${fixtureModel.name}"`;
+    sourceEvidence = [
+      {
+        catalog: fixtureManifest.catalog,
+        schemaTable: {
+          schema: fixtureManifest.schema,
+          table: fixtureModel.name,
+        },
+      },
+    ];
+    queryResponse = JSON.stringify({
+      columns: expectedQuery.columns,
+      data: expectedQuery.data,
+    });
+    const references = new Map<string, unknown>();
+    try {
+      for (const step of vector.steps) {
+        const action = step.contractKey.replace(/@v1$/, '');
+        const raw = step.referenceFromStepKey
+          ? references.get(step.referenceFromStepKey)
+          : JSON.parse(step.inputJson);
+        expect(raw).toBeDefined();
+        const key = randomUUID();
+        const argumentsValue = {
+          target: { resourceId: fixtureResource },
+          input: raw,
+        };
+        const token = await signed(
+          action,
+          raw,
+          randomUUID(),
+          randomUUID(),
+          false,
+          {
+            target_id: fixtureResource,
+            normalized_parameter_hash: digest(argumentsValue),
+          },
+        );
+        const invoke = () =>
+          fetch(`${endpoint}/execute`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+              'idempotency-key': key,
+            },
+            body: JSON.stringify({
+              actionKey: step.contractKey,
+              idempotencyKey: key,
+              arguments: argumentsValue,
+            }),
+          });
+        const response = await invoke();
+        expect(response.status).toBe(200);
+        const result = await response.json();
+        expect(result.execution.platformStatus).toBe('SUCCEEDED');
+        expect(JSON.parse(result.resultJson)).toEqual(
+          JSON.parse(step.expectedOutputJson),
+        );
+        expectCatalogQueryOutput(action, result.resultJson);
+        expect(result.contentReference).toEqual({
+          resourceId: fixtureResource,
+          nativeObjectRef: expect.any(String),
+          nativeRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+          displayName: fixtureModel.name,
+          mediaType: 'application/json',
+        });
+        expect(JSON.parse(result.contentReference.nativeObjectRef)).toEqual({
+          modelId: rawModel.id,
+          deploymentId: 1,
+          deploymentHash: expectedDescription.deploymentHash,
+          limit: 1,
+        });
+        expect(result.contentReference.nativeObjectRef).not.toContain('sql');
+        if (step.referenceFromStepKey)
+          expect(result.contentReference).toEqual(raw);
+        references.set(step.stepKey, result.contentReference);
+        const replay = await (await invoke()).json();
+        expect(replay.execution.nativeId).toBe(result.execution.nativeId);
+        expect(replay.contentReference).toEqual(result.contentReference);
+      }
+      expect(queries).toBe(2);
+      expect(references.size).toBe(3);
+    } finally {
+      await database('model')
+        .where({ id: rawModel.id })
+        .update({ reference_name: rawName, ref_sql: 'SELECT 1 AS one' });
+      await database('deploy_log')
+        .where({ id: 1 })
+        .update({ hash: input.deploymentHash });
+    }
+  });
+
+  it.each([0, -1, 1.5, '5', null])(
+    'refuses invalid describe reference limit %s before native history is reserved',
+    async (limit) => {
+      const raw = { limit };
+      const ae = randomUUID();
+      await expect(
+        call(
+          await signed('data_query.describe', raw, ae),
+          randomUUID(),
+          'data_query.describe',
+          raw,
+        ),
+      ).rejects.toThrow('INVALID_QUERY_PARAMETERS');
+      expect(
+        await database('api_history').where({
+          governance_action_execution_id: ae,
+        }),
+      ).toHaveLength(0);
+      expect(queries).toBe(0);
+    },
+  );
+
+  it('keeps a typed describe reference on its captured deployment and rejects changed current model columns on replay', async () => {
+    const raw = { limit: input.limit };
+    const token = await signed('data_query.describe', raw),
+      key = randomUUID();
+    const first = (await call(token, key, 'data_query.describe', raw))
+      .structuredContent as any;
+    const stored = await mockComponents.apiHistoryRepository.findOneBy({
+      id: first.execution.nativeId,
+    });
+    expect(stored.requestPayload.contentReference).toEqual(
+      first.contentReference,
+    );
+    const newer = await mockComponents.deployLogRepository.createOne({
+      projectId: 1,
+      hash: 'b'.repeat(40),
+      status: 'SUCCESS',
+      manifest: rawManifest,
+      nativeObjectRefs: [
+        { nativeType: 'model', nativeId: rawModel.id, nativeName: rawName },
+      ],
+    });
+    try {
+      const replay = (await call(token, key, 'data_query.describe', raw))
+        .structuredContent as any;
+      expect(replay.contentReference).toEqual(first.contentReference);
+      expect(
+        JSON.parse(replay.contentReference.nativeObjectRef).deploymentId,
+      ).toBe(1);
+      await mockComponents.modelColumnRepository.createOne({
+        modelId: rawModel.id,
+        displayName: 'Changed',
+        referenceName: 'changed',
+        sourceColumnName: 'changed',
+        type: 'INTEGER',
+        isCalculated: false,
+        notNull: false,
+        isPk: false,
+      });
+      await expect(
+        call(token, key, 'data_query.describe', raw),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(
+        (await mockComponents.apiHistoryRepository.findOneBy({ id: stored.id }))
+          .requestPayload.contentReference,
+      ).toEqual(first.contentReference);
+      expect(queries).toBe(0);
+    } finally {
+      await database('model_column').where({ model_id: rawModel.id }).del();
+      await database('deploy_log').where({ id: newer.id }).del();
+    }
+  });
+
+  it.each(['revocation', 'target', 'connection', 'revision'])(
+    'refuses a produced typed reference after %s changes before query execution',
+    async (changed) => {
+      const raw = { limit: input.limit };
+      const first = (
+        await call(
+          await signed('data_query.describe', raw),
+          randomUUID(),
+          'data_query.describe',
+          raw,
+        )
+      ).structuredContent as any;
+      const reference = { ...first.contentReference };
+      expectedSourceSql = `select * from "${rawName}"`;
+      if (changed === 'revocation') denyAt = peps + 1;
+      if (changed === 'target') authorizedTarget.nativeRef = 'foreign-model';
+      if (changed === 'revision') reference.nativeRevision = 'b'.repeat(64);
+      if (changed === 'connection')
+        await database('project')
+          .where({ id: 1 })
+          .update({ connection_info: '{"changed":true}' });
+      try {
+        await expect(
+          call(
+            await signed('data_query.query', reference),
+            randomUUID(),
+            'data_query.query',
+            reference,
+          ),
+        ).rejects.toThrow();
+        expect(queries).toBe(0);
+      } finally {
+        if (changed === 'connection')
+          await database('project')
+            .where({ id: 1 })
+            .update({ connection_info: '{}' });
+      }
+    },
+  );
+
   it('describes exactly the Core-authorized captured model through real MCP and HTTP execute without revealing other models or SQL', async () => {
     const { expected, models, execute, clean } = await description();
     try {
@@ -3119,6 +3411,8 @@ integration('original Wren query handler, SDK and native history', () => {
         .structuredContent as any;
       expect(first.execution.platformStatus).toBe('SUCCEEDED');
       expect(JSON.parse(first.resultJson)).toEqual(expected);
+      expectCatalogQueryOutput('data_query.describe', first.resultJson);
+      expect(first.contentReference).toBeUndefined();
       expect(first.resultJson).not.toContain(models[1].referenceName);
       expect(first.resultJson).not.toContain('private-');
       const response = await execute(

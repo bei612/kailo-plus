@@ -77,6 +77,16 @@ export const queryInputSchema = {
   ],
 };
 
+// An explicit admitted limit requests a reusable model-preview reference.
+// The original empty describe input remains metadata-only; no default query
+// size or permission is inferred from being allowed to read model metadata.
+export const describeInputSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: { limit: { type: 'integer', minimum: 1 } },
+  required: [],
+};
+
 const invalid = () => new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
 const scopeDenied = () => new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
 const unavailable = () =>
@@ -200,7 +210,12 @@ export class NativeQueryService {
     };
   }
 
-  async modelReference(resourceId: string, modelId: number, limit: number) {
+  async modelReference(
+    resourceId: string,
+    modelId: number,
+    limit: number,
+    frozenDeployment?: Deploy,
+  ) {
     if (
       !uuid.test(resourceId) ||
       !Number.isSafeInteger(modelId) ||
@@ -210,9 +225,9 @@ export class NativeQueryService {
     )
       throw invalid();
     const model = await this.modelQuery(modelId);
-    const deployment = await this.deployments.findLastProjectDeployLog(
-      this.config.projectId,
-    );
+    const deployment =
+      frozenDeployment ??
+      (await this.deployments.findLastProjectDeployLog(this.config.projectId));
     if (
       !deployment ||
       deployment.status !== 'SUCCESS' ||
@@ -659,6 +674,7 @@ export class NativeQueryService {
     deployment: Deploy,
     target: unknown,
     resourceId: string,
+    referenceLimit?: number,
   ) {
     const authorized = target as Record<string, unknown> | undefined;
     if (
@@ -711,7 +727,12 @@ export class NativeQueryService {
       )
     )
       throw unavailable();
+    const contentReference =
+      referenceLimit === undefined
+        ? undefined
+        : await this.modelReference(resourceId, id, referenceLimit, deployment);
     return {
+      contentReference,
       value: {
         deploymentId: deployment.id,
         deploymentHash: deployment.hash,
@@ -740,6 +761,7 @@ export class NativeQueryService {
           nativeObjectRefs: captured,
         },
         model: { id: model.id, referenceName: model.referenceName },
+        ...(contentReference ? { contentReference } : {}),
       }),
     };
   }
@@ -921,12 +943,17 @@ export class NativeQueryService {
   ) {
     if (!uuid.test(key)) throw invalid();
     const describing = action === 'data_query.describe@v1';
+    const referenceLimit = (raw as { limit?: number } | undefined)?.limit;
     if (
       describing &&
       (!raw ||
         Array.isArray(raw) ||
         typeof raw !== 'object' ||
-        Object.keys(raw).length !== 0)
+        Object.keys(raw).some((field) => field !== 'limit') ||
+        ('limit' in raw &&
+          (typeof referenceLimit !== 'number' ||
+            !Number.isSafeInteger(referenceLimit) ||
+            referenceLimit <= 0)))
     )
       throw invalid();
     const referenced =
@@ -1038,6 +1065,7 @@ export class NativeQueryService {
               frozen,
               current.targetResource,
               String(claims.target_id),
+              referenceLimit,
             )
           ).fingerprint !== described.fingerprint
         )
@@ -1185,6 +1213,7 @@ export class NativeQueryService {
         deployment,
         claims.targetResource,
         String(claims.target_id),
+        referenceLimit,
       );
     const referenceSelection = referenced
       ? JSON.parse(String((raw as Record<string, unknown>).nativeObjectRef))
@@ -1196,7 +1225,13 @@ export class NativeQueryService {
       projectId: project.id,
       apiType: describing ? ApiType.GET_MODELS : ApiType.RUN_SQL,
       // Native SQL stays in the original native history, never Core/Temporal.
-      requestPayload: { action, ...input },
+      requestPayload: {
+        action,
+        ...input,
+        ...(described?.contentReference
+          ? { contentReference: described.contentReference }
+          : {}),
+      },
       headers: {},
       statusCode: 202,
       durationMs: 0,
@@ -1237,12 +1272,17 @@ export class NativeQueryService {
           throw unavailable();
         if (
           describing &&
-          digest(prior.responsePayload) !== digest(described.value)
+          (digest(prior.responsePayload) !== digest(described.value) ||
+            digest(prior.requestPayload?.contentReference ?? null) !==
+              digest(described.contentReference ?? null))
         )
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
         return {
           execution: this.observation(prior),
           resultJson: JSON.stringify(prior.responsePayload),
+          ...(described?.contentReference || referenced
+            ? { contentReference: described?.contentReference ?? raw }
+            : {}),
           ...(!describing
             ? { sourceResources: nativeSourceResources(querySources) }
             : {}),
@@ -1363,6 +1403,9 @@ export class NativeQueryService {
     return {
       execution: this.observation(completed),
       resultJson: JSON.stringify(value),
+      ...(described?.contentReference || referenced
+        ? { contentReference: described?.contentReference ?? raw }
+        : {}),
       ...(!describing
         ? { sourceResources: nativeSourceResources(querySources) }
         : {}),
