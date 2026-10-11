@@ -46,6 +46,29 @@ todo 0
 
 验证过程中离线依赖安装因 ENOTCACHED 失败，随后在同一受限 SDK 按原锁版本补齐最小依赖；未修改正式依赖清单。初版验证 renderer 的不完整树操作导致挂起，已停止所属进程并修正验证宿主。浏览器 response 监听脚本曾出现 Session closed，不能计作业务验收；过早截取的空白刷新截图也不计作通过。
 
+## 固定提交发布及实际浏览器复验
+
+生命周期修复已随 `8a47534c96c9bf09048ee282ca4e62d5d9d73079` 合入 main 并推送。从该提交隔离导出原构建输入，以私有 index 固定跟踪文件，不使用其他脏修改。原 `tools/build-upstream.sh knowledge-native-ui` 退出 0，既有 `kailo-core-data` builder 为 8 CPU / 16 GiB，缓存 `/volumes/data/kailo/buildkit-core-state`；npm ci 命中缓存，COPY 在 Data I/O 压力下耗时 422.8 秒，Vite 6626 模块生产构建 34.60 秒，大 chunk 警告保留。
+
+- 源码摘要：`sha256:b8909da811690461605a6ea46cdd3e93d6a5eb7450b0a0b028fa0c7210a71728`。
+- 产物摘要：`sha256:bcd43618a3c6ee85e8a130b2a74e292f7210286c2239318884fa7bab70bfe01e`。Registry HEAD 返回 200 且 Docker-Content-Digest、本地 RepoDigest 一致。
+- 构建日志：`/volumes/data/kailo/tmp/knowledge-ui-8a47534-release-20261011.WXV5CC/build.log`，SHA-256 `df192d00b3a5753ce2073263444b504526c1c950f491cd11401a5e16b3548bfd`。
+- 原 Compose frontend-only 命令退出 0；新容器 `41c03065ac8820d2d6e74cd8ca57563503fdde5358b2bf7dd4c1a1f52aad0d7c`，启动时间 `2026-10-11T06:00:05.962505615Z`。该 frontend 没有 Docker Health 配置，Compose 的 Healthy 文案不作为业务验收依据。
+- 部署回执目录 `/volumes/data/kailo/tmp/knowledge-ui-8a47534-deploy-20261011.I6vMUQ`。`deploy.log` SHA-256 `a344e800c8d3b1014771835c371dc0d63c03af1b9f5d3c48a6c39253dc9ee72b`。前后容器快照证明知识 backend、数据库及其他常驻服务 ID/StartedAt 未变；期间 Cells 队友停止三个自身验收容器，不是本次 Compose 连带操作。
+
+独立 Data 浏览器 profile 从匿名原生登录页点击 OIDC，在现有 IdP 用普通 bootstrap 账户正常登录，未注入 session。首次回调直接显示真实原生用户 `local-administrator` 与知识库空态，未靠刷新恢复；auth/me、模型、知识库、收藏、邀请计数等原生请求返回 200，控制台 0 错误、0 警告。随后原生刷新成功，用户和页面保持正确。只跳过原有引导弹窗，未删改 UI。请求回执为同目录 `requests-after-refresh-and-chat.txt`。
+
+截图均已实际打开视觉复核：
+
+| 实际状态 | 文件 | SHA-256 |
+| --- | --- | --- |
+| 修复后全新首次 OIDC 登录 | `first-sso-fixed.png` | `c17f4d31af33df531bd2a7fa19c68d94014241258a8d18f750edf2da1e951499` |
+| 刷新后完整知识库页 | `reload-fixed-ready.png` | `c17f4d31af33df531bd2a7fa19c68d94014241258a8d18f750edf2da1e951499` |
+| 已有 workspace 列表 | `scope-memberships.png` | `102d6f5c3e75b5109012be510e1c7098a0df1622ab77b19d8a5f067a6585e299` |
+| 原生发送被模型就绪检查拒绝 | `chat-readiness-toast.png` | `c6d0b6520bf2b3d930f7321e2502d30eaba994d4031f1302f9d33ad4848dd4b0` |
+
+期间直接读取缺失 `.State.Health` 的 inspect 模板退出 1，改为可选索引读取确认 null；引导弹窗和模型选择器遮罩拦截的两类点击曾超时，随后通过原 UI 关闭遮罩后操作成功，未 force-click 绕过。
+
 ## 尚未成立的交付结论
 
-本回执只证明当前生命周期修复的窄验收。修复尚未按固定提交生产构建、部署，也尚未完成修复后全新普通用户首次 OIDC、刷新、有效 membership 内 scope 切换与在线 SSE 的浏览器复验。全局 `./tools/check.sh --full` 未因本回执而通过。不得据此宣称完整治理接入、三组件菜单上线或生产就绪。
+当前账号仅有一个已有 workspace，未新增 membership，不能宣称跨空间切换已验收。进入原“新对话”后提交最小连接验证消息，原就绪检查明确提示“快速问答未就绪，需要配置对话模型”，没有发出 SSE，因此在线 SSE 未验收。原 auth/refresh/SSE 窄验证通过不能代替这一在线结果。全局 `./tools/check.sh --full` 未因本回执而通过；不得据此宣称完整治理接入、三组件菜单上线或生产就绪。

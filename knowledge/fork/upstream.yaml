@@ -31,9 +31,9 @@ artifacts:
     build_context: knowledge/frontend
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/]
-    source_digest: sha256:8ed14452498e8236df9d87c9157cb2de9d99f9c38033087f9621e2d0c6dde124
-    artifact_digest: sha256:0d6f4235a9beebccb8167f851ca749d332852fcf4b45800680c0d55a4186671b
-    blocked: The full native UI from Kailo commit e71757861238eeaa4473a1b09e35db251fcac1e8 is deployed with digest readback and selected Chinese/English page screenshots. Live data-source scope-switch/log acceptance has no populated native knowledge base; complete business/browser acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261009-e717-ui.md.
+    source_digest: sha256:b8909da811690461605a6ea46cdd3e93d6a5eb7450b0a0b028fa0c7210a71728
+    artifact_digest: sha256:bcd43618a3c6ee85e8a130b2a74e292f7210286c2239318884fa7bab70bfe01e
+    blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image
     build_context: knowledge
