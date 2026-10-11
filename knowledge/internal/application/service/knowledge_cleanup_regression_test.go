@@ -543,7 +543,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 						w.WriteHeader(http.StatusForbidden)
 						return
 					}
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"actionExecutionId": binding, "operationId": key, "authorizationMinZedToken": "current-receiver-permission"}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"actionExecutionId": binding, "operationId": key, "authorizationMinZedToken": "current-receiver-permission", "bindingGeneration": 3}))
 				default:
 					t.Errorf("unconfirmed retirement attempted %s", request.URL.Path)
 					w.WriteHeader(http.StatusForbidden)

@@ -1222,7 +1222,8 @@ func TestIngestItem_URLCreationMetadataAttachFailure(t *testing.T) {
 
 type replacementKnowledgeRepo struct {
 	deletionLookupKnowledgeRepo
-	writes int
+	writes    int
+	lastWrite *types.Knowledge
 }
 
 func (r *replacementKnowledgeRepo) UpdateKnowledgeForTransfer(_ context.Context, before, after *types.Knowledge) error {
@@ -1230,6 +1231,7 @@ func (r *replacementKnowledgeRepo) UpdateKnowledgeForTransfer(_ context.Context,
 		return r.metadataUpdateErr
 	}
 	r.writes++
+	r.lastWrite = after
 	return nil
 }
 
@@ -1471,7 +1473,7 @@ func TestFileStorageRecoveredApplicationSurvivesNextBatchAndSourceRevocation(t *
 					require.NoError(t, json.Unmarshal([]byte(request["argumentsJson"].(string)), &args))
 					id := args["input"].(map[string]any)["sourceReadActionExecutionId"].(string)
 					require.NotEqual(t, readKey, id, "observing the prior creation is not authorization for a new write")
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": id, "actionExecutionId": fileStorageKey(id, "receiver"), "authorizationMinZedToken": "confirmed"}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": id, "actionExecutionId": fileStorageKey(id, "receiver"), "authorizationMinZedToken": "confirmed", "bindingGeneration": 3}))
 				case "/execute":
 					sourceCalls++
 					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))

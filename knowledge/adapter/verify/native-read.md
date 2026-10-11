@@ -5065,3 +5065,78 @@ Data 反证去掉最新 APIKey 保留、绕过运行时 mapping 检查、放开�
 不是实际部署。未重新构建/部署后端、运行真实 Gateway/完整 release conformance、
 完成 native binding/generation fence、任务冻结归属或三组件上架。
 本批不是完整治理接入，也不解除既有全局发布门禁；未修改 .design 或平台契约。
+
+### 2026-10-11 原生 receiver 冻结代次归属与真实入站消费者
+
+本批基于 Kailo `e186cf33829251d2946a6d6e0834c1149a5f9eac` 实现，
+最终八文件代码树 `f7075a7ee332cbff3a538458fa66c08e6096522b` 已验；
+合入候选移到 `653f07887467982bda6beb37592a02d9139d567f`，相关路径无上游变化。
+固定官方 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+`internal/application/service/knowledge_create.go::CreateKnowledgeFromFile`、
+`internal/application/service/datasource_service.go::ingestItem`、
+`internal/application/service/knowledge.go::UpdateKnowledge` 和
+`internal/types/datasource.go::SyncLog` 已经用 git cat-file/git grep 重新核验。
+差异仅为已授权治理接入；无页面重绘、平台契约、表或第二任务账本。
+
+权威与影响面：.design/07 §7.2、§7.3、§8.2 及 DD-89 要求原执行保留冻结
+binding/generation，并复用原生接收任务。实际 PEP producer 为
+`core/crates/platform-core/src/application_binding_pep.rs` 的 SERVICE_READ_RECEIVER 返回分支；
+原 `fileStorageTransport.pep` 现在消费其 authenticated bindingGeneration。
+缺失、非正整数、字符串或同一 grant 返回代次漂移均拒绝，不读取当前投递代次或 JWT 扩展补值。
+
+原 `createKnowledgeFromFile` 在 fresh PEP 之后，把可信 binding 与冻结代次写入
+原 Knowledge.Metadata 的 `platform_receiver_binding_id` /
+`platform_receiver_generation`，覆盖不可信调用方同名字段。
+原 `finishFileStorageIngest` 在每次新写的 fresh PEP 后校验原持久归属，再走原
+`UpdateKnowledgeForTransfer` CAS。相同 binding 的新代次允许合法更新，但保留原创建代次；
+其他 binding、缺失/坏历史代次、非规范整数或未来代次不能获得当前归属。
+已有无变更分支仍只观察；没有给旧数据回填当前代次，也未改已导入字节后的合法 parse/index。
+
+外部元数据完整入口复核：原上传 handler 的 metadata JSON 进入 createKnowledgeFromFile；
+Content 与 URL connector 都先进入 ingestItem，URL 原本还有直接 Metadata 附着路径。
+这两个实际入站处理点共用 reserved 校验，字段存在即拒绝（包括空值），普通业务 metadata 保留。
+受控 file_storage writer 仍由真实 PEP 产生归属，未误拒可信写路径。
+原更新 handler/service 只消费 title、description、CustomMetadata，不接受替换原 Metadata；
+URL/Passage/Manual 请求不开放任意 Metadata，MCP 只构造固定来源字段，IM 传 nil。
+手工编辑原本拒绝非 manual 条目，未增加绕行路径。
+clone/move 是原内部复制且要求不同 KB；后续同步保留原 KB、datasource、native ID 校验，
+不为复制体重新签发当前代次，不把跨 KB 副本认作原 datasource 的写目标。
+
+兼容与异常：仅扩展服务自身现有 JSON 元数据，旧代码可读取但不能证明新治理校验，
+因此部署依赖先具备 PEP 冻结代次响应。旧历史缺失不自动迁移，不以成功掩盖归属未知。
+并发更新仍由原 revision/CAS 判据负责；超时、部分成功、观察与来源撤权继续走原对账路径，
+不因本批字段存在授予权限、不新增自动重试或未知状态终结。
+按 apps/06 §4，缺失可信证据属于 PRECONDITION、冲突原行属于 CONFLICT；
+UNKNOWN 不转成功/失败，既有 DENIED/LIMIT 行为不变。本批未新增错误码。
+
+实际验收复用原 Go 1.26.8 SDK `kailo-knowledge-delete-handoff`，
+镜像 `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+4 CPU/8 GiB、memory+swap 同值、network none，缓存与日志均在 Data。
+启动前核验无原 Go/Cargo/build 子进程、available 31 GiB；未另开全局构建。
+以下命令在原 /workspace/knowledge 执行：
+
+```sh
+go test ./internal/application/service -run '^(TestFileStorage|TestCreateKnowledgeFromFileAtID|TestProcessSync|TestKnowledge.*Delete|Test.*Delete.*Knowledge)' -count=1 -timeout=10m -v
+go test -overlay /tmp/receiver-generation-negative/overlay.json ./internal/application/service -run '^(TestFileStorageOwnershipMetadataRejectsExternalWriters|TestFileStorageReceiverGenerationComesOnlyFromFrozenPEP|TestFileStorageMetadataKeepsHashGroupAndReadinessFence|TestCreateKnowledgeFromFileAtIDKeepsDataSourceTagsAndChannel)$' -count=1 -timeout=10m -v
+go test ./internal/application/service -run '^(TestFileStorage|TestCreateKnowledgeFromFileAtID|TestProcessSync|TestKnowledge.*Delete|Test.*Delete.*Knowledge|TestIngestItem|TestUpdateKnowledge)' -count=1 -timeout=10m -v
+```
+
+正向 50 个顶层检查、147.953 s、退出 0。之后仅补一行外部元数据 helper 断言，
+确保反证是明确断言失败而非下游 nil panic；生产输入未再改变。
+Data 私有 overlay 同时移除 PEP 代次校验、原归属校验、可信覆盖及 reserved 拒绝，
+四个顶层检查实际断言失败，0.541 s、退出 1，没有编译失败。
+正式源码从未套用反证；末版还原覆盖新增断言、正常 connector 与更新回归，
+68 个顶层检查、42.346 s、退出 0。
+
+日志目录：`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/`。
+
+| 日志 | SHA-256 |
+| --- | --- |
+| receiver-generation-final-positive.log | `678f2b46398a3ad7ceb3611d5869e212b3df97c75e2c7759db63a90a4105957e` |
+| receiver-generation-negative.log | `2d203708d52917e2b16885db6a3221577c180270f8f467bdf55559178027a736` |
+| receiver-generation-restored.log | `f6235b0dd70e9095ec614f39491063c47e66598800dc6f45f0aba714926a9bd6` |
+
+边界：原服务检查中的 fake HTTP PEP、stub CAS 与 SQLite 不证明实际 PostgreSQL 并发行锁、
+真实平台授权或跨服务部署。未改 parse worker，未闭合完整 binding 截止栅栏/在途枚举、
+延迟外部副作用 fresh 授权或完整 release conformance；未重新构建镜像、部署后端、
+进行三组件上架或宣称生产就绪。全局门禁仍未通过；本批为可复核的必要接入前置闭包。

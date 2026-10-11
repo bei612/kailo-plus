@@ -76,12 +76,15 @@ func TestCreateKnowledgeFromFileAtIDKeepsDataSourceTagsAndChannel(t *testing.T) 
 	svc := &knowledgeService{repo: repo, fileSvc: &createKnowledgeFileServiceStub{}, task: &createKnowledgeTaskEnqueuerStub{},
 		tagRepo: &createKnowledgeFileTagStub{kbID: run.knowledgeBaseID}, kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: run.knowledgeBaseID}}}
 	ctx := newFileStorageWriteContext(t, run, func() bool { return false })
-	metadata := map[string]string{"datasource_id": run.dataSourceID, "external_id": fmt.Sprintf("%x:txt", md5.Sum([]byte("body")))}
+	metadata := map[string]string{"datasource_id": run.dataSourceID, "external_id": fmt.Sprintf("%x:txt", md5.Sum([]byte("body"))),
+		fileStorageBindingMetadataKey: uuid.NewString(), fileStorageGenerationMetadataKey: "999"}
 	id := "7263e13f-4153-4bb0-a91e-0a21490cf3a9"
 	ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID = id
 	created, err := svc.CreateKnowledgeFromFileAtID(ctx, run.knowledgeBaseID, "doc.txt", []byte("body"), metadata, id, []string{"source-tag"}, fileStorageConnectorType)
 	require.NoError(t, err)
 	require.Equal(t, fileStorageConnectorType, created.Channel)
+	require.Equal(t, ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).transport.config.BindingID, created.GetMetadata()[fileStorageBindingMetadataKey])
+	require.Equal(t, "3", created.GetMetadata()[fileStorageGenerationMetadataKey])
 	require.Equal(t, []string{"source-tag"}, repo.assignedTags)
 	_, err = svc.CreateKnowledgeFromFileAtID(ctx, run.knowledgeBaseID, "doc.txt", []byte("body"), metadata, id, []string{"different-tag"}, fileStorageConnectorType)
 	require.Error(t, err)
@@ -90,10 +93,56 @@ func TestCreateKnowledgeFromFileAtIDKeepsDataSourceTagsAndChannel(t *testing.T) 
 	require.Equal(t, 1, repo.createCalls)
 }
 
+func TestFileStorageOwnershipMetadataRejectsExternalWriters(t *testing.T) {
+	for _, key := range []string{fileStorageBindingMetadataKey, fileStorageGenerationMetadataKey} {
+		for _, value := range []string{"", "caller-controlled"} {
+			metadata := map[string]string{key: value, "description": "ordinary user metadata"}
+			require.ErrorContains(t, validateFileStorageOwnershipInput(metadata), "ownership metadata is reserved")
+			_, err := (&knowledgeService{}).createKnowledgeFromFile(context.Background(), "kb", nil, metadata, nil, "", nil, "web", nil, "")
+			require.ErrorContains(t, err, "ownership metadata is reserved")
+			for _, item := range []*types.FetchedItem{
+				{Content: []byte("body"), Metadata: metadata},
+				{URL: "https://example.com/document", Metadata: metadata},
+			} {
+				_, err = (&DataSourceService{}).ingestItem(context.Background(), &types.DataSource{Type: "gitlab"}, item, nil)
+				require.ErrorContains(t, err, "ownership metadata is reserved")
+			}
+		}
+	}
+	require.NoError(t, validateFileStorageOwnershipInput(map[string]string{"description": "ordinary user metadata"}))
+}
+
+func TestFileStorageReceiverGenerationComesOnlyFromFrozenPEP(t *testing.T) {
+	for _, generation := range []any{nil, 0, -1, "3", 1.5} {
+		t.Run(fmt.Sprint(generation), func(t *testing.T) {
+			run := fileStorageRun{tenantID: 1, knowledgeBaseID: uuid.NewString(), dataSourceID: uuid.NewString(), syncLogID: uuid.NewString()}
+			ctx := newFileStorageWriteContextAtGeneration(t, run, func() bool { return false }, func() any { return generation })
+			require.ErrorContains(t, authorizeFileStorageWrite(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID), "frozen generation")
+			_, _, err := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).creationOwnership()
+			require.Error(t, err)
+		})
+	}
+	run := fileStorageRun{tenantID: 1, knowledgeBaseID: uuid.NewString(), dataSourceID: uuid.NewString(), syncLogID: uuid.NewString()}
+	generation := int64(7)
+	ctx := newFileStorageWriteContextAtGeneration(t, run, func() bool { return false }, func() any { return generation })
+	require.NoError(t, authorizeFileStorageWrite(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID))
+	write := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite)
+	_, original, err := write.creationOwnership()
+	require.NoError(t, err)
+	require.Equal(t, "7", original)
+	generation++
+	require.ErrorContains(t, authorizeFileStorageWrite(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID), "frozen generation")
+	require.Equal(t, int64(7), write.grants[0].generation, "a changed response cannot overwrite the admitted generation")
+}
+
 // Use the actual receiver transport and HTTP PEP consumer. Revocation is
 // injected by completed native awaits, not by replacing authorization with
 // an optional successful callback in the production writer.
 func newFileStorageWriteContext(t *testing.T, run fileStorageRun, revoked func() bool) context.Context {
+	return newFileStorageWriteContextAtGeneration(t, run, revoked, func() any { return int64(3) })
+}
+
+func newFileStorageWriteContextAtGeneration(t *testing.T, run fileStorageRun, revoked func() bool, generation func() any) context.Context {
 	t.Helper()
 	operation, execution := uuid.NewString(), uuid.NewString()
 	binding, resource := uuid.NewString(), uuid.NewString()
@@ -118,8 +167,8 @@ func newFileStorageWriteContext(t *testing.T, run fileStorageRun, revoked func()
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation,
-			"actionExecutionId": execution, "authorizationMinZedToken": "confirmed"}))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": operation,
+			"actionExecutionId": execution, "authorizationMinZedToken": "confirmed", "bindingGeneration": generation()}))
 	}))
 	t.Cleanup(server.Close)
 	secret := filepath.Join(t.TempDir(), "receiver-secret")

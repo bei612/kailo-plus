@@ -69,6 +69,11 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 	processOverrides *types.KnowledgeProcessOverrides, creationID string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
+	if channel != fileStorageConnectorType {
+		if err := validateFileStorageOwnershipInput(metadata); err != nil {
+			return nil, err
+		}
+	}
 	if channel == fileStorageConnectorType {
 		tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
 		if creationID == "" {
@@ -80,6 +85,19 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 		if ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID != creationID {
 			return nil, fmt.Errorf("native file-storage creation differs from its checkpointed identity")
 		}
+		binding, generation, err := ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).creationOwnership()
+		if err != nil {
+			return nil, err
+		}
+		// Only authenticated receiver evidence can establish these fields;
+		// connector/caller metadata cannot choose an execution's ownership.
+		owned := make(map[string]string, len(metadata)+2)
+		for key, value := range metadata {
+			owned[key] = value
+		}
+		owned[fileStorageBindingMetadataKey] = binding
+		owned[fileStorageGenerationMetadataKey] = generation
+		metadata = owned
 	}
 
 	// Use custom filename if provided, otherwise use original filename. Folder

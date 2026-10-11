@@ -1334,6 +1334,9 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 //
 // Returns (isUpdate, error) — isUpdate is true when an existing item was replaced.
 func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, tagIDs []string) (bool, error) {
+	if err := validateFileStorageOwnershipInput(item.Metadata); err != nil {
+		return false, err
+	}
 	if ds.Type == fileStorageConnectorType {
 		if err := authorizeFileStorageWrite(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID); err != nil {
 			return false, err

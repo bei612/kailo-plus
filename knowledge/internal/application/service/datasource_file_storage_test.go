@@ -396,10 +396,32 @@ func TestFileStorageMetadataKeepsHashGroupAndReadinessFence(t *testing.T) {
 	revoked := false
 	ctx := newFileStorageWriteContext(t, run, func() bool { return revoked })
 	ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).nativeID = native.ID
+	metadata[fileStorageBindingMetadataKey] = ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).transport.config.BindingID
+	metadata[fileStorageGenerationMetadataKey] = "2"
+	raw, err = json.Marshal(metadata)
+	require.NoError(t, err)
+	native.Metadata = types.JSON(raw)
 	require.Error(t, service.finishFileStorageIngest(context.Background(), dataSource, item, native))
 	require.Zero(t, repo.writes)
 	require.NoError(t, service.finishFileStorageIngest(ctx, dataSource, item, native))
 	require.Equal(t, 1, repo.writes)
+	require.Equal(t, "2", native.GetMetadata()[fileStorageGenerationMetadataKey], "new generation must not relabel original creation")
+	require.Equal(t, "2", repo.lastWrite.GetMetadata()[fileStorageGenerationMetadataKey])
+	require.Equal(t, metadata[fileStorageBindingMetadataKey], repo.lastWrite.GetMetadata()[fileStorageBindingMetadataKey])
+	for _, stored := range []struct{ binding, generation string }{
+		{"", ""}, {uuid.NewString(), "2"}, {metadata[fileStorageBindingMetadataKey], "0"},
+		{metadata[fileStorageBindingMetadataKey], "-1"}, {metadata[fileStorageBindingMetadataKey], "02"},
+		{metadata[fileStorageBindingMetadataKey], "4"},
+	} {
+		copy := *native
+		fields := native.GetMetadata()
+		fields[fileStorageBindingMetadataKey], fields[fileStorageGenerationMetadataKey] = stored.binding, stored.generation
+		raw, err := json.Marshal(fields)
+		require.NoError(t, err)
+		copy.Metadata = types.JSON(raw)
+		require.ErrorContains(t, service.finishFileStorageIngest(ctx, dataSource, item, &copy), "original binding generation")
+		require.Equal(t, 1, repo.writes, "unknown or mismatched history must not acquire current ownership")
+	}
 	revoked = true
 	require.Error(t, service.finishFileStorageIngest(ctx, dataSource, item, native))
 	for _, change := range []func(*types.Knowledge){
@@ -471,7 +493,9 @@ func TestFileStorageDedupeUsesCheckpointedReceiverCompletion(t *testing.T) {
 				body := []byte("source body")
 				hash := fmt.Sprintf("%x", md5.Sum(body))
 				metadata := map[string]string{"datasource_id": run.dataSourceID, "external_id": hash + ":txt",
-					"source_content_sha256": fileStorageDigest(body), "source_references": "old"}
+					"source_content_sha256": fileStorageDigest(body), "source_references": "old",
+					fileStorageBindingMetadataKey:    ctx.Value(fileStorageWriteKey{}).(*fileStorageWrite).transport.config.BindingID,
+					fileStorageGenerationMetadataKey: "2"}
 				previous, err := json.Marshal(datasourceReplacement{KnowledgeID: uuid.NewString(), Revision: time.Now().UTC().Format(time.RFC3339Nano)})
 				require.NoError(t, err)
 				metadata[datasourceReplacementMetadataKey] = string(previous)
@@ -657,7 +681,7 @@ func TestFileStorageDiscoveryCheckpointsBeforeNextSource(t *testing.T) {
 						w.WriteHeader(http.StatusForbidden)
 						return
 					}
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"actionExecutionId": receiver, "operationId": key, "authorizationMinZedToken": "confirmed"}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"actionExecutionId": receiver, "operationId": key, "authorizationMinZedToken": "confirmed", "bindingGeneration": 3}))
 				case "/service/v1/adapter/read_receipt":
 					receipts++
 					require.NotNil(t, repo.stored)
@@ -1234,7 +1258,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					var arguments map[string]any
 					require.NoError(t, json.Unmarshal([]byte(request["argumentsJson"].(string)), &arguments))
 					key := arguments["input"].(map[string]any)["sourceReadActionExecutionId"].(string)
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "actionExecutionId": fileStorageKey(key, "receiver"), "authorizationMinZedToken": "confirmed"}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": key, "actionExecutionId": fileStorageKey(key, "receiver"), "authorizationMinZedToken": "confirmed", "bindingGeneration": 3}))
 				case "/execute":
 					sourceCalls++
 					require.False(t, observing, "old invocation recovery must never repeat a source call")

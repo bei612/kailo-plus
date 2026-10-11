@@ -27,6 +27,20 @@ import (
 // It owns no scheduler, platform resource registry or alternate work queue.
 const fileStorageConnectorType = "file_storage"
 
+const fileStorageBindingMetadataKey = "platform_receiver_binding_id"
+const fileStorageGenerationMetadataKey = "platform_receiver_generation"
+
+// File/URL connector inputs and ordinary uploads are user-authored metadata.
+// These two internal fields are established only by the admitted native writer.
+func validateFileStorageOwnershipInput(metadata map[string]string) error {
+	for _, key := range []string{fileStorageBindingMetadataKey, fileStorageGenerationMetadataKey} {
+		if _, supplied := metadata[key]; supplied {
+			return fmt.Errorf("native receiver ownership metadata is reserved")
+		}
+	}
+	return nil
+}
+
 type fileStorageRun struct {
 	dataSourceID, syncLogID, knowledgeBaseID string
 	tenantID                                 uint64
@@ -63,6 +77,23 @@ func authorizeFileStorageWrite(ctx context.Context, tenantID uint64, kbID, sourc
 		}
 	}
 	return nil
+}
+
+// Creation ownership is retained on the original native row. It is not an
+// authorization token: every new mutation still consumes fresh PEP evidence.
+func (write *fileStorageWrite) creationOwnership() (string, string, error) {
+	if write == nil || write.transport == nil || write.transport.config == nil ||
+		!fileStorageUUID(write.transport.config.BindingID) || len(write.grants) == 0 {
+		return "", "", fmt.Errorf("native receiver creation ownership is unavailable")
+	}
+	generation := int64(0)
+	for _, grant := range write.grants {
+		if grant == nil || grant.generation <= 0 || (generation != 0 && generation != grant.generation) {
+			return "", "", fmt.Errorf("native receiver creation has no consistent admitted generation")
+		}
+		generation = grant.generation
+	}
+	return write.transport.config.BindingID, strconv.FormatInt(generation, 10), nil
 }
 
 type fileStorageGroup struct {
@@ -814,6 +845,12 @@ func (s *DataSourceService) finishFileStorageIngest(ctx context.Context, ds *typ
 	next.Metadata = types.JSON(raw)
 	if err := authorizeFileStorageWrite(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID); err != nil {
 		return err
+	}
+	binding, _, err := write.creationOwnership()
+	originalGeneration, generationErr := strconv.ParseInt(metadata[fileStorageGenerationMetadataKey], 10, 64)
+	if err != nil || metadata[fileStorageBindingMetadataKey] != binding || generationErr != nil || originalGeneration <= 0 || originalGeneration > write.grants[0].generation ||
+		strconv.FormatInt(originalGeneration, 10) != metadata[fileStorageGenerationMetadataKey] {
+		return fmt.Errorf("native file-storage original binding generation requires reconciliation")
 	}
 	if err := s.knowledgeService.GetRepository().UpdateKnowledgeForTransfer(ctx, current, &next); err != nil {
 		return err

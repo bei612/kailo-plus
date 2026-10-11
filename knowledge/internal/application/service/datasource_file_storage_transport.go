@@ -24,10 +24,11 @@ import (
 // Wire objects deliberately consume the existing protocol JSON, rather than
 // maintaining another copy of its generated platform contract types here.
 type fileStorageGrant struct {
-	key      string
-	value    map[string]json.RawMessage
-	receiver map[string]json.RawMessage
-	request  map[string]any
+	key        string
+	value      map[string]json.RawMessage
+	receiver   map[string]json.RawMessage
+	request    map[string]any
+	generation int64 // Frozen by the authenticated PEP, never by delivery or JWT claims.
 }
 
 type fileStorageTransport struct {
@@ -253,6 +254,11 @@ func (t *fileStorageTransport) pep(ctx context.Context, grant *fileStorageGrant)
 		fileStorageText(result, "authorizationMinZedToken") == "" {
 		return fmt.Errorf("receiver PEP evidence mismatch")
 	}
+	generation := fileStorageNumber(result, "bindingGeneration")
+	if generation <= 0 || (grant.generation != 0 && grant.generation != generation) {
+		return fmt.Errorf("receiver PEP frozen generation is missing or changed")
+	}
+	grant.generation = generation
 	return nil
 }
 
