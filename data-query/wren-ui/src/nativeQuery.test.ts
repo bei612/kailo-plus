@@ -522,18 +522,24 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     'original %s task owns one JSONB snapshot and rejects cross-surface adoption',
     async (apiType) => {
       const history = new ApiHistoryRepository(tx);
+      const id = randomUUID();
       const input = {
-        id: randomUUID(),
+        id,
         projectId,
         apiType,
         governanceBindingId: randomUUID(),
+        governanceGeneration: 1,
         threadId: randomUUID(),
         headers: {},
         statusCode: 202,
         durationMs: 0,
         requestPayload: {
           question: 'Original',
-          nativeAsk: { taskId: randomUUID(), identityScope: 'a'.repeat(64) },
+          nativeAsk: {
+            taskId: id,
+            identityScope: 'a'.repeat(64),
+            metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+          },
         },
         responsePayload: { nativeAsk: {} },
       };
@@ -711,7 +717,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
   });
 
   it.each([ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL])(
-    'uses the original %s history task for one durable create and terminal, without another native owner',
+    'uses the original %s history and callback task for one durable create and terminal',
     async (apiType) => {
       const history = new ApiHistoryRepository(tx);
       const id = randomUUID();
@@ -720,13 +726,18 @@ integration('original Wren native answer PostgreSQL CAS', () => {
         projectId,
         apiType,
         governanceBindingId: randomUUID(),
+        governanceGeneration: 1,
         threadId: randomUUID(),
         headers: {},
         statusCode: 202,
         durationMs: 0,
         requestPayload: {
           question: 'Original SQL question',
-          nativeAsk: { taskId: id },
+          nativeAsk: {
+            taskId: id,
+            identityScope: 'a'.repeat(64),
+            metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+          },
         },
         responsePayload: {},
       };

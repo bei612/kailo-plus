@@ -114,7 +114,12 @@ export function createBffClient(transport: BffTransport) {
 
     /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
     workspaces: () => get<WorkspaceView[]>("/api/v1/workspaces"),
-    discoverableWorkspaces: (cursor?: string) => get<DiscoverableWorkspacePage>(`/api/v1/discoverable-workspaces${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+    discoverableWorkspaces: (cursor?: string, channelId?: string) => {
+      const query = new URLSearchParams();
+      if (cursor) query.set("cursor", cursor);
+      if (channelId) query.set("channelId", channelId);
+      return get<DiscoverableWorkspacePage>(`/api/v1/discoverable-workspaces${query.size ? `?${query}` : ""}`);
+    },
     conversations: (cursor?: string) => get<ConversationPage>(`/api/v1/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
     conversationParticipants: (cursor?: string) => get<ConversationParticipantPage>(`/api/v1/conversation-participants${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
 

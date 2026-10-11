@@ -15,11 +15,15 @@ window.cancelAnimationFrame=globalThis.cancelAnimationFrame=clearTimeout;
 Object.defineProperties(HTMLElement.prototype,{offsetHeight:{configurable:true,get:()=>420},offsetWidth:{configurable:true,get:()=>800}});
 HTMLElement.prototype.getBoundingClientRect=()=>new dom.window.DOMRect(0,0,800,420);
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
-window.__TAURI_INTERNALS__=globalThis.__TAURI_INTERNALS__={invoke:async command=>{
+const originId="12345678-1234-4234-8234-123456789012";
+let nativeOrigin,originReads=[];
+window.__TAURI_INTERNALS__=globalThis.__TAURI_INTERNALS__={invoke:async (command,args)=>{
   if(command==="get_identity")return {pubkey:own,displayName:"Viewer"};
   if(command==="get_custom_emoji")return {items:[]};
   if(command==="plugin:event|listen")return 1;
   if(command==="plugin:event|unlisten")return;
+  if(command==="get_channels")return {hash:"original-member-snapshot",channels:[],last_messages:{}};
+  if(command==="get_channel_details"){originReads.push(args.channelId);return nativeOrigin;}
   throw new Error(`Unexpected native command ${command}`);
 }};
 const React=await import("react");const {act}=React;
@@ -30,6 +34,7 @@ const {PlatformProvider}=await import("@client-kit/platform/react/context");
 const {createBffClient}=await import("@client-kit/platform/client");
 const {ConversationVisibilityProvider}=await import("@client-kit/platform/react/new-message");
 const {TooltipProvider}=await import("@client-kit/platform/react/sidebar/tooltip");
+const {usePulseHost}=await import("@client-kit/platform/react/pulse");
 const {setLocale}=await import("@client-kit/platform/i18n");
 const {ActiveCommunityProvider}=await import("./activeCommunity.tsx");
 const {PulseScreen}=await import("./PulseScreen.tsx");
@@ -61,7 +66,8 @@ async function mount(options={}) {
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
   const base=createRootRoute();
-  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:PulseScreen});
+  function OriginConsumer(){const {OriginReference}=usePulseHost();assert.ok(OriginReference);return React.createElement(OriginReference,{channelId:originId});}
+  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):PulseScreen});
   const channel=createRoute({getParentRoute:()=>base,path:"/channels/$channelId",component:()=>React.createElement("p",null,"Actual governed DM")});
   const compose=createRoute({getParentRoute:()=>base,path:"/messages/new",component:()=>React.createElement("p",null,"Wrong compose route")});
   const router=createRouter({routeTree:base.addChildren([pulse,channel,compose]),history:createMemoryHistory({initialEntries:["/"]})});
@@ -116,3 +122,27 @@ test("Native Pulse fences a late confirmed DM when the Community session changes
     assert.equal(view.router.state.location.pathname,"/");
   }finally{await view.close();}
 });
+
+for(const visibility of ["open","private"]){
+  test(`Native original project origin uses bounded metadata and preserves ${visibility} navigation`,async()=>{
+    originReads=[];
+    nativeOrigin={id:originId,name:"Native origin",channel_type:"stream",visibility,description:"",topic:null,purpose:null,
+      member_count:1,member_pubkeys:[],last_message_at:null,archived_at:null,participants:[],participant_pubkeys:[],
+      ttl_seconds:null,ttl_deadline:null,created_by:peer,created_at:"2026-10-07T00:00:00Z",updated_at:"2026-10-07T00:00:00Z",
+      topic_set_by:null,topic_set_at:null,purpose_set_by:null,purpose_set_at:null,topic_required:false,max_members:null,nip29_group_id:null};
+    const view=await mount({origin:true});try{
+      await until(()=>view.host.textContent.includes("author-claimed"));
+      assert.deepEqual(originReads,[originId]);
+      if(visibility==="open"){
+        const button=view.host.querySelector('[aria-label="Open author-claimed origin channel #Native origin"]');
+        assert.ok(button);await act(async()=>button.click());
+        await until(()=>view.router.state.location.pathname===`/channels/${originId}`);
+      }else{
+        assert.equal(view.host.querySelector("button"),null);
+        assert.ok(view.host.textContent.includes("a private channel"));
+        assert.equal(view.router.state.location.pathname,"/");
+      }
+      assert.equal(view.requests.filter(request=>request.method==="POST").length,0);
+    }finally{await view.close();}
+  });
+}

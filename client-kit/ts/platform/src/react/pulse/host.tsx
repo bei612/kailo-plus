@@ -29,6 +29,7 @@ export type PulseHost = {
   copy:(text:string)=>Promise<void>;
   startDm:(pubkey:string)=>Promise<void>;
   openProfile?:(pubkey:string)=>void;
+  OriginReference?:React.ComponentType<{agentName?:string|null;channelId?:string|null}>;
 };
 const Context=React.createContext<PulseHost|null>(null);
 export function PulseHostProvider({host,children}:{host:PulseHost;children:React.ReactNode}) {

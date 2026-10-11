@@ -1,5 +1,6 @@
 export { ProjectsView } from "./ProjectsView";
 export { ProjectInboxDetail } from "./ProjectInboxDetail";
+export { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "./ProjectOriginReference";
 export { loadProjectWorkItems, projectInboxMentions, resolveProjectInboxWorkItem, type ProjectInboxWorkItem } from "./projectWorkItems";
 export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedProject } from "./projectCreation";
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";

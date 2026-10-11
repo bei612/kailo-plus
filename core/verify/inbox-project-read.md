@@ -35,7 +35,122 @@ viewer、binding generation、limit 改变或任一活动页失败，整个快�
 - 原样保留：Issue/PR canonical reducer 的状态、可信 actor、review decision 与历史处理；原 section/feed-row/profile identity/评论折叠结构。
 - 共享迁移：原任务/审阅完整只读正文、metadata、description、updates、commits、checks、review/history JSX 搬到 `client-kit/ts/platform/src/react/projects/`；Web/Desktop 共用 `ProjectInboxDetail`，不各造摘要页。
 - 已授权治理改造：Host transport 与关闭未接通写分支、封闭 Core query、已有用户读账本 fresh admission、scope/generation fencing、中文默认/英文同源词条；Web copy 使用既有宿主 clipboard adapter。
-- 缺失需恢复：任务分派/状态写入/评论、审阅请求/决定/合并等原写接缝；Git 文件差异与 commit 文件导航、DiscussedInChannels、buzz:// 项目深链及 ShareLinkButton；两页原 ProjectOriginReference 的来源 Agent/频道只读入口也未迁移，不归并为写操作或 Git 缺项。Web 项目通知行作者资料/头像目前未达到原完整资料触发器。这些不是已授权的永久删减，不冒称完整原版恢复。
+- 缺失需恢复：任务分派/状态写入/评论、审阅请求/决定/合并等原写接缝；Git 文件差异与 commit 文件导航、DiscussedInChannels、buzz:// 项目深链及 ShareLinkButton。两页原 ProjectOriginReference 的来源 Agent/频道只读入口在下述独立批次恢复源码接线，不能据此认领部署验收。Web 项目通知行作者资料/头像目前未达到原完整资料触发器。这些不是已授权的永久删减，不冒称完整原版恢复。
+
+### ProjectOriginReference 的具体读取接缝
+
+固定官方 `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectOriginReference.tsx::ProjectOriginReference`
+由 `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`、
+`desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::PullRequestDetailHeader` 及
+`desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx::ProjectCommitDetailPanel` 消费。
+本批只接前两者既有真实读详情，第三者仍缺完整 Git commit/diff 消费者。其来源必须明确标注
+“author-claimed”，不能把事件作者的声明升级为 Relay 认证事实；私聊来源只显示
+Agent 名称，刻意不暴露私聊标识。现有共享两个 canonical reducer 已原样读取
+`h` → `channelId`、`buzz-origin-agent` → `originAgentName`，不需要猜测或另存来源。
+
+四步结论：原模块支持、设计要求恢复，缺的是宿主读/导航而不是来源数据；影响面是
+`PulseHost.OriginReference`、两详情原 metadata 插入点、两宿主和现有目录查询。
+Core 不复制来源正文、不新增持久状态；单 ID 仅收窄当前 tenant 的原 discovery SQL，
+不接受调用方 tenant/scope，不改变 `open || ACTIVE membership`、SpiceDB fully-consistent
+discover、binding/window-author 及外部读取后的再次校验。旧 cursor-only 请求保持兼容，
+未知/错误/跨范围 ID 不产生猜测的频道；身份/投影/Relay 失败仍走原六类错误，不降级为成功。
+
+- 原样保留：原完整外层/文本/按钮 class、作者声明说明、`isMember || visibility === "open"`
+  分支、私聊 Agent 名称而非会话 ID，及两个详情的原 header 位置。
+- 共享迁移：完整展示由共享 `ProjectOriginReferenceContent` 承载，两页通过既有
+  `PulseHost` 的实际宿主使用，不借用完整其他页面、不另造来源摘要。
+- 已授权治理改造：Desktop 消费现有 `channelReference.ts::useChannelReferences`
+  与 `useAppNavigation::goChannel`；Web 通过原目录服务的 `channelId` 可选筛选读取，
+  点击时重读，再交原 `PlatformApp::openSearchChannel` 进行最新目录映射。元数据发现
+  不是加入或读消息准入；不把热缓存当授权。空成功保留原不可见说明；尚未结束/失败
+  不虚称私密，不露来源名称或按钮。scope 离开后禁止旧请求导航；重复点击只读、无写副作用。
+  有界响应不匹配 ID、重复目标或携带 nextCursor 均拒绝；旧服务器忽略筛选不能作为成功。
+  中英 8 词条沿原投影生成 Dart，不维护第二翻译权威。
+- 缺失需恢复/验收：上段原写/Git/分享/Web 作者资料缺项未扩大；本批没有新镜像、部署或
+  新版本截图，真实 Core HTTP/SpiceDB/Relay 与两端设备验收不能用 DOM fixture 替代。
+
+逐项对照边界：本批对应固定官方两个实际插入点分别在
+`desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail` 的原 header
+与 `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::PullRequestDetailHeader`；
+当前对应共享 `ProjectIssueDetail` 与 `PullRequestDetailHeader`，不是新增页面。
+全 `desktop/src` 的固定 commit `git grep ProjectOriginReference` 还确认
+`desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx::ProjectCommitDetailPanel`
+第三调用；该完整 commit 元数据/正文/讨论/文件 diff 模块不在本批，不生成空壳或假入口，
+仍归「缺失需恢复」，不能用前两处接线宣称原 Origin 所有消费者完整恢复。
+原 `desktop/src/features/channels/openChannelDirectory.ts::useChannelReferences` 还消费
+warm-open-directory；当前 Native 已有 `channelReference.ts` 不消费该支路。本批复用
+这一既有实现，没有把整个原目录模块归为「原样保留」，也没有把热缓存升级为权限事实。
+本批改变的等待/错误呈现、Web fresh read、scope fencing 与翻译均单列为治理/本地化
+适配，不能笼统说两个文件与官方 100% 相同。
+
+全量台账边界保持：旧 `dd399` 比较点的 5314 union、1970 原 blob、115 已证共享、
+0 整文件授权、3229 未证恢复队列不是当前 main 的功能缺失数。当前已提交 `8e3ac`
+的 project filter/Issue/PR 只读详情不再计为完全缺失；本 Origin 批也不消除原写入、
+Git、分享、Web 作者资料触发器等明确缺项。其余 Settings/Agents/Workflows/Mobile
+历史队列仍须逐项核当前源码、对应版本截图与操作，不能从本批减几行就声称全量完成。
+
+本批独立 i18n 输入 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/project-origin-i18n.mMdBKx`
+是固定 `8e3ac789d6ceb12f23ba04f88a6dce8736a5160b` 加唯一 8 词条，原
+`python3 tools/gen-platform-i18n.py` 与 `--check` 均退出 0（52519）；不混入 Cells 生成或
+既有公共暂存删词。生成只在私有目录，不覆盖工作区 Dart。
+
+首次 Web SDK 检查 95622 误早于私有文件复制终态，仅执行旧 21 项，被精确终止退出 137，
+结果作废。复制 29975 退出 0 且 13 路径逐一 `cmp` 退出 0 后，原
+`vitest run test/project-inbox.test.tsx test/projects-channels.test.tsx --pool=threads --no-file-parallelism`
+在同 4 CPU/8 GiB SDK 执行 2201：30/30 通过、退出 0；记录
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-origin-shared-frozen.log`。
+这些是实际 React 详情与目录校验消费者的隔离证据，不是线上项目数据或 SQL 授权证据。
+
+Web 原 `vitest run src/platform/ui/PulsePane.test.tsx --pool=threads --no-file-parallelism`
+首次 78136 退出 1（4 通过、3 失败）：撤权等测试等待 toast 后立即断言 DOM，早于
+React Query 通知。保留原安全断言，仅用既有默认 `vi.waitFor` 等实际按钮消失，未改
+生产或超时；94622 为 7/7、退出 0。私有反证 97351 分别只删除私密频道成员门槛、
+将 Web 点击重读替换为热缓存：共享 13 通过/1 失败、Web 2 通过/5 失败，两个子进程
+均退出 1。Web 其中一项因根本没有发起预期读取而没有生成测试 resolver，其 TypeError
+不单独作为安全证明；其余实际 fresh-read 次数/拒绝失败断言均捕获破坏。
+两生产文件还原且逐字 `cmp` 退出 0 后，43272 同套件共享 30/30、Web 7/7，均退出 0。
+日志均在上述 Data 根，分别为 `project-origin-web-positive.log`、`project-origin-web-settled.log`、
+`project-origin-private-negative.log`、`project-origin-fresh-negative.log`、
+`project-origin-shared-restored.log`、`project-origin-web-restored.log`。
+
+Desktop 原 `node --import ./test-loader.mjs --experimental-strip-types --test
+src/features/platform/PulseScreen.test.mjs`（18361）退出 1，加载期
+`ERR_MODULE_NOT_FOUND: @tauri-apps/api`，0 个业务断言执行。随后一次精确核查发现
+原 `collaboration/pnpm-lock.yaml` 固定 2.11.1，既有只读
+`/evidence/profile-settings-ortsoo.DRR20F/apps/collaboration/desktop/node_modules` 已有该包。
+私有 Desktop 原链接只通向 Web 依赖，父层 `collaboration/node_modules` 不存在；仅在
+私有父层链接该既有原依赖入口，不安装/复制依赖、不修改 loader 或原 Tauri 消费者。
+同一原命令 30562 为 5/5、退出 0，新增两项实际 Native Host 通过原有界 metadata
+读取与 `goChannel` 分别核 open 导航/private 非成员不导航，无写请求。日志
+`project-origin-native-linked.log` 保留完整 210.47 秒耗时；首次缺包失败不抹去。
+这是原调用链的隔离 fixture，不是 Windows 安装包/设备验收。
+
+Core 与 Cells 共用一次原受限 SDK 编译窗口；联合输入只用于验证，提交范围仍分离。
+原 `rustfmt --edition 2021` 退出 0，格式后 `platform_views.rs` Git blob 为
+`585c85724a24635ca0e40a56e691152fb4134635`。在原 4 CPU/8 GiB SDK 的
+`/evidence/first-byte-core.09N6oV/core` 执行
+`cargo test --locked --offline -p platform-core discovery_channel_selector_keeps_legacy_cursor_and_rejects_non_uuid -- --nocapture`，
+15114 第二段退出 0：1 passed、435 filtered out；41.26 秒复用首段编译结果，未另启编译。
+日志 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/first-byte-final.LPEm6u/core-selector-final.log`。
+该用例证明旧 cursor-only、合法单 ID 与非法 UUID 的解析边界，不替代下述实际 SQL
+隔离验证或 Core HTTP 联调。私有候选 `git diff --cached --check` 退出 0；
+本 Origin 批尚未运行规范整端类型检查、全量门禁或新版视觉验收。
+
+主线补充原 SQL 实证：`discovery_rows` 的 SELECT 直接从正式 Rust 字符串提取，
+在既有隔离 `kailo-installation-scope-pg-e4agxd`（2 CPU/1 GiB、Data 存储）的
+`kailo_human_reader_20261010` 使用原 `psql -X` 事务执行，不碰生产库/不迁移。
+53600 为 9 PASS、退出 0、ROLLBACK：旧目录、有界 open、private 成员、private 非成员、
+跨租户、未知 ID、binding 停用、重读时撤权及 Workspace 暂停。私有 SQL 流只去掉
+`w.tenant_id = $1 and`，92845 退出 3（`expected 2, got 3`）；错误断开且未 COMMIT。
+恢复原流 89179 为 9 PASS、退出 0、ROLLBACK。正式文件在三轮检查中 SHA-256 都是
+`91dbb29357ee47e561e710071e26da5b2ea01b3f990117d4dad09683584651b2`。
+证据 `/volumes/data/kailo/tmp/project-origin-sql.1KllbW/receipt.md`、`positive.log`、
+`negative.log`、`restored.log`；正向/恢复摘要同为
+`b3f8817ff52b82bdb2bccd564342af722deeadfae5f117da079c6398a9d493cf`。
+先前只读探测缺 PG 环境变量报 `role root does not exist`，改用该实例原 postgres OS
+用户后完成；另一无表旧 DB 未用于本验证。这仅证明真实 PostgreSQL 选择器边界，
+不证明 Core HTTP、SSO、SpiceDB、Relay、投影竞态或生产就绪。
 
 ## 实际验证与失败记录
 

@@ -113,6 +113,22 @@ describe("original Projects channels with real governed consumers",()=>{
     const pending=loadChannelDirectory(client,()=>current);current=false;release({items:[channel()]});
     await expect(pending).rejects.toThrow("scope changed");
   });
+  it("uses the existing discovery route with a bounded channel selector without changing cursor-only callers",async()=>{
+    const f=fixture(()=>({items:[channel()]}));
+    expect(await loadChannelDirectory(f.client,()=>true,stream)).toEqual([channel()]);
+    expect(f.send.mock.calls[0]?.[0].path).toBe(`/api/v1/discoverable-workspaces?channelId=${stream}`);
+    await f.client.discoverableWorkspaces("old-cursor");
+    expect(f.send.mock.calls[1]?.[0].path).toBe("/api/v1/discoverable-workspaces?cursor=old-cursor");
+  });
+  it.each(["wrong-channel","unbounded-page"])("rejects %s instead of treating unrelated discovery as an origin",async fault=>{
+    const f=fixture(()=>fault==="wrong-channel"?{items:[channel(discussion)]}:{items:[channel()],nextCursor:"more"});
+    await expect(loadChannelDirectory(f.client,()=>true,stream)).rejects.toThrow();
+    expect(f.send).toHaveBeenCalledTimes(1);
+  });
+  it("accepts a completed empty origin lookup without guessing a channel or membership",async()=>{
+    const f=fixture(()=>({items:[]}));
+    expect(await loadChannelDirectory(f.client,()=>true,stream)).toEqual([]);
+  });
   it("restores the actual original search close/Escape and Channels tab in the shared Projects page",async()=>{
     const f=fixture();const h:ProjectsHost={scopeKey:"page",query:async request=>({events:request.view==="PROJECTS"?[event]:[],limit:20,pubkey:owner})};
     const ui=await render(<PlatformProvider client={f.client} locale="en"><QueryClientProvider client={cache()}><ProjectsView host={h} onOpenChannel={f.open}/></QueryClientProvider></PlatformProvider>);

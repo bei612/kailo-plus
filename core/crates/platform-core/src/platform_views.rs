@@ -29,6 +29,8 @@ use crate::spicedb::{Consistency, RelationshipFilter};
 #[derive(Deserialize)]
 pub struct DiscoveryQuery {
     cursor: Option<Uuid>,
+    #[serde(rename = "channelId")]
+    channel_id: Option<Uuid>,
 }
 
 #[derive(sqlx::FromRow, PartialEq)]
@@ -49,6 +51,7 @@ async fn discovery_rows(
     ctx: &crate::bff::ExecutionContext,
     cursor: Option<Uuid>,
     limit: i64,
+    channel_id: Option<Uuid>,
 ) -> Result<Vec<DiscoveryRow>, sqlx::Error> {
     sqlx::query_as(
         "select w.id, w.visibility, w.version, b.channel_id::text as channel_id,
@@ -61,8 +64,9 @@ async fn discovery_rows(
          left join identity.workspace_membership wm on wm.workspace_id = w.id and wm.tenant_principal_id = $2
          where w.tenant_id = $1 and w.state = 'ACTIVE' and ($3::uuid is null or w.id > $3)
            and (w.visibility = 'open' or wm.state = 'ACTIVE')
+           and ($5::uuid is null or b.channel_id = $5)
          order by w.id limit $4",
-    ).bind(ctx.tenant_id).bind(ctx.tenant_principal_id).bind(cursor).bind(limit).fetch_all(&state.pool).await
+    ).bind(ctx.tenant_id).bind(ctx.tenant_principal_id).bind(cursor).bind(limit).bind(channel_id).fetch_all(&state.pool).await
 }
 
 async fn discover_tenant(
@@ -109,7 +113,7 @@ pub async fn discoverable_workspaces(
     let Some(limit) = page.checked_add(1) else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let mut rows = match discovery_rows(&state, &ctx, query.cursor, limit).await {
+    let mut rows = match discovery_rows(&state, &ctx, query.cursor, limit, query.channel_id).await {
         Ok(rows) => rows,
         Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
@@ -192,10 +196,11 @@ pub async fn discoverable_workspaces(
     if let Err(r) = discover_tenant(&state, &current).await {
         return r;
     }
-    let mut observed = match discovery_rows(&state, &current, query.cursor, limit).await {
-        Ok(v) => v,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-    };
+    let mut observed =
+        match discovery_rows(&state, &current, query.cursor, limit, query.channel_id).await {
+            Ok(v) => v,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
     observed.truncate(page as usize);
     if observed != rows {
         return StatusCode::CONFLICT.into_response();
@@ -1004,6 +1009,22 @@ pub async fn list_own_audit(State(state): State<BffState>, headers: HeaderMap) -
 #[cfg(test)]
 mod member_action_tests {
     use super::*;
+    #[test]
+    fn discovery_channel_selector_keeps_legacy_cursor_and_rejects_non_uuid() {
+        let legacy: DiscoveryQuery = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(legacy.cursor.is_none() && legacy.channel_id.is_none());
+        let id = Uuid::new_v4();
+        let selected: DiscoveryQuery = serde_json::from_value(serde_json::json!({
+            "cursor": id, "channelId": id,
+        }))
+        .unwrap();
+        assert_eq!(selected.cursor, Some(id));
+        assert_eq!(selected.channel_id, Some(id));
+        assert!(serde_json::from_value::<DiscoveryQuery>(
+            serde_json::json!({"channelId":"other-tenant:not-a-uuid"})
+        )
+        .is_err());
+    }
     #[tokio::test]
     #[ignore = "requires disposable migrated AGENT_INVOKE_TEST_DATABASE_URL; rolls back DDL and fixture"]
     async fn generated_catalog_guard_roundtrip_keeps_status_mutable_and_evidence_immutable() {

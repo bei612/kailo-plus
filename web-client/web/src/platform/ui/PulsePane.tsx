@@ -6,6 +6,29 @@ import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl } from "
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Composer } from "./ChannelPane";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { usePulseHost } from "@client-kit/platform/react/pulse";
+import { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "@client-kit/platform/react/projects";
+import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
+import { useBffChannelLinkRuntime } from "@/features/chat/ui/BffMessageLinkHost";
+import { toast } from "sonner";
+
+function BffProjectOriginReference(props:ProjectOriginReferenceProps) {
+  const {scopeKey}=usePulseHost();const t=useT();
+  const runtime=useBffChannelLinkRuntime();
+  const lifetime=useMemo(()=>({active:true}),[scopeKey]);
+  useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
+  const query=useQuery({queryKey:["project-origin",scopeKey,props.channelId],enabled:Boolean(props.channelId),retry:false,
+    refetchOnWindowFocus:"always",queryFn:({signal})=>loadChannelDirectory(bff,()=>lifetime.active&&!signal.aborted,props.channelId!)});
+  const found=query.isSuccess&&!query.isFetching?query.data[0]:undefined;
+  const channel=found?{id:found.channel.channelId,name:found.channel.name,visibility:found.visibility,isMember:found.isMember}:undefined;
+  const open=(channelId:string)=>{void (async()=>{
+    const fresh=await query.refetch();
+    const current=fresh.data?.find(item=>item.channel.channelId===channelId);
+    if(!lifetime.active||fresh.isError||!current||!(current.isMember||current.visibility==="open"))throw new Error("Origin channel unavailable");
+    runtime.onOpenChannel(channelId);
+  })().catch(()=>{if(lifetime.active)toast.error(t("platform.linkChannelUnavailable"));});};
+  return <ProjectOriginReferenceContent {...props} channel={channel} ready={query.isSuccess&&!query.isFetching} onOpenChannel={open}/>;
+}
 
 /** The original Pulse surface; only transport/signing/media belong to Web. */
 export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode}) {
@@ -23,6 +46,7 @@ export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStart
         return page.events;},
       publish:async(request,key)=>{check();const receipt=await publishPulse(request,key);check();return receipt;},
       copy:writeTextToClipboard,
+      OriginReference:BffProjectOriginReference,
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,

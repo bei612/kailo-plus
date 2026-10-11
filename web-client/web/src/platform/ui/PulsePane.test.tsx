@@ -9,9 +9,12 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { TransportError } from "@client-kit/platform/transport";
 import { createBffClient } from "@client-kit/platform/client";
 import { PulsePane } from "./PulsePane";
+import { usePulseHost } from "@client-kit/platform/react/pulse";
+import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 
-const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn()}));
-vi.mock("../bff-client",()=>({bff:{profile:api.profile},queryPulse:api.queryPulse,
+const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
+vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
+vi.mock("../bff-client",()=>({bff:{profile:api.profile,discoverableWorkspaces:api.discoverableWorkspaces},queryPulse:api.queryPulse,
   publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value}));
 // This batch exercises the original Pulse/Profile/Message consumer, not post editing.
 vi.mock("./ChannelPane",()=>({Composer:()=>null}));
@@ -27,6 +30,7 @@ beforeEach(()=>{
   vi.spyOn(HTMLElement.prototype,"offsetWidth","get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,800,420));
   api.profile.mockReset().mockResolvedValue({pubkey:own});
+  api.error.mockReset();api.discoverableWorkspaces.mockReset();
   api.queryPulse.mockReset().mockImplementation(async(request:{view:string;authors?:string[]})=>({mediaPaths:{},events:
     request.view==="NOTES"?[{id:eventId,pubkey:peer,created_at:1,kind:1,tags:[],content:"Actual Pulse note"}]:
       request.view==="PROFILES"?(request.authors??[]).map(pubkey=>({id:eventId,pubkey,created_at:1,kind:0,tags:[],
@@ -67,4 +71,48 @@ it("the actual Web Pulse adapter propagates an unknown result and keeps the orig
   expect(start).toHaveBeenCalledWith(peer);
   expect(host.querySelector('[data-testid="user-profile-panel"]')).not.toBeNull();
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Direct message result unknown");
+});
+
+const originId="12345678-1234-4234-8234-123456789012";
+const origin=()=>({id:"origin-workspace",visibility:"open",isMember:false,memberCount:1,
+  createdAt:new Date("2026-10-07T00:00:00Z"),channel:{channelId:originId,channelType:"stream",name:"Visible origin",description:"",archived:false}});
+function OriginConsumer(){const {OriginReference}=usePulseHost();if(!OriginReference)throw new Error("Missing original origin consumer");return <OriginReference channelId={originId}/>;}
+async function mountOrigin(open:(id:string)=>void,scopeKey="tenant:viewer") {
+  const client=createBffClient({send:async()=>({status:200,body:{maxParticipants:9,items:[]}})});
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en"><TooltipProvider>
+    <BffMessageLinkHost scopeKey={scopeKey} principalId="viewer" conversations={[]} onOpenChannel={open} onOpenMessageLink={vi.fn()}>
+      <PulsePane scopeKey={scopeKey} onStartDm={vi.fn()}><OriginConsumer/></PulsePane>
+    </BffMessageLinkHost>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+}
+it("the Web origin host performs a fresh bounded metadata read before original open-channel navigation",async()=>{
+  const open=vi.fn();api.discoverableWorkspaces.mockResolvedValue({items:[origin()]});
+  await mountOrigin(open);
+  await vi.waitFor(()=>expect(host.querySelector('[aria-label="Open author-claimed origin channel #Visible origin"]')).not.toBeNull());
+  expect(api.discoverableWorkspaces).toHaveBeenCalledWith(undefined,originId);
+  const reads=api.discoverableWorkspaces.mock.calls.length;
+  await act(async()=>host.querySelector<HTMLButtonElement>("button")!.click());
+  await vi.waitFor(()=>expect(open).toHaveBeenCalledWith(originId));
+  expect(api.discoverableWorkspaces).toHaveBeenCalledTimes(reads+1);
+});
+it.each(["revoked","unavailable","wrong-channel"])("the Web origin host refuses %s on click instead of using a warm label as authorization",async fault=>{
+  const open=vi.fn();api.discoverableWorkspaces.mockResolvedValue({items:[origin()]});
+  await mountOrigin(open);
+  await vi.waitFor(()=>expect(host.querySelector("button")).not.toBeNull());
+  if(fault==="unavailable")api.discoverableWorkspaces.mockRejectedValue(new Error("Discovery unavailable"));
+  else api.discoverableWorkspaces.mockResolvedValue(fault==="revoked"?{items:[]}:{items:[{...origin(),channel:{...origin().channel,channelId:"22345678-1234-4234-8234-123456789012"}}]});
+  await act(async()=>host.querySelector<HTMLButtonElement>("button")!.click());
+  await vi.waitFor(()=>expect(api.error).toHaveBeenCalled());
+  expect(open).not.toHaveBeenCalled();await vi.waitFor(()=>expect(host.querySelector("button")).toBeNull());
+  if(fault!=="revoked")expect(host.textContent).not.toContain("a private channel");
+});
+it("a lookup completing after the original scope leaves cannot navigate",async()=>{
+  const open=vi.fn();api.discoverableWorkspaces.mockResolvedValue({items:[origin()]});
+  await mountOrigin(open);await vi.waitFor(()=>expect(host.querySelector("button")).not.toBeNull());
+  let finish!:(page:{items:ReturnType<typeof origin>[]})=>void;
+  api.discoverableWorkspaces.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  await act(async()=>host.querySelector<HTMLButtonElement>("button")!.click());
+  await mountOrigin(open,"tenant:other");
+  await act(async()=>finish({items:[origin()]}));
+  expect(open).not.toHaveBeenCalled();
 });

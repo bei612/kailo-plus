@@ -13,6 +13,7 @@ import { ProjectIssueCommentTimeline } from "./ProjectIssueCommentTimeline";
 import {UserAvatar} from "../messages/UserAvatar";
 import {Tooltip,TooltipContent,TooltipTrigger} from "../sidebar/tooltip";
 import { ProjectRichContent } from "./ProjectRichContent";
+import { ProjectOriginReference } from "./ProjectOriginReference";
 import { useT } from "../context";
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
@@ -84,6 +85,7 @@ export function ProjectIssueDetail({issue,profiles}:{issue:ProjectIssue;profiles
           >
             {relativeTime(issue.createdAt)}
           </span>
+          <ProjectOriginReference agentName={issue.originAgentName} channelId={issue.channelId}/>
         </p>
       </header>
       <ProjectDetailMetaList>

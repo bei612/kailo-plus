@@ -15,6 +15,7 @@ import {ProjectDetailSection} from "./ProjectDetailSection";
 import {ProfileAuthorName,ProfileIdentityButton} from "./ProjectProfileIdentity";
 import {ProjectRichContent} from "./ProjectRichContent";
 import {PullRequestMetaHeader} from "./PullRequestMetaHeader";
+import {ProjectOriginReference} from "./ProjectOriginReference";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -184,6 +185,7 @@ export function PullRequestDetailHeader({
         >
           {relativeTime(pullRequest.createdAt)}
         </span>
+        <ProjectOriginReference agentName={pullRequest.originAgentName} channelId={pullRequest.channelId}/>
       </p>
     </header>
   );

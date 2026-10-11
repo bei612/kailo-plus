@@ -5,7 +5,7 @@ import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
 import {PulseHostProvider,type PulseHost,type PulseEvent} from "../src/react/pulse/host";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
-import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,type ProjectsHost} from "../src/react/projects";
+import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,ProjectInboxDetail,ProjectOriginReferenceContent,type ProjectsHost} from "../src/react/projects";
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click} from "./render";
@@ -32,6 +32,39 @@ function fixture(){
 }
 beforeEach(()=>{setLocale("en");localStorage.clear();});
 describe("original Inbox project read closure",()=>{
+  it.each(["issue","review"] as const)("renders the original author-claimed origin through the actual %s detail consumer",async kind=>{
+    const f=fixture(),channelId="12345678-1234-4234-8234-123456789012";
+    f[kind].tags.push(["h",channelId]);
+    const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=resolveProjectInboxWorkItem(data.items,f[kind])!;
+    const open=vi.fn();
+    const host:PulseHost={scopeKey:"tenant:human",pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:content=><p>{content}</p>,
+      OriginReference:props=><ProjectOriginReferenceContent {...props} ready channel={{id:channelId,name:"Original origin",isMember:false,visibility:"open"}} onOpenChannel={open}/>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const view=await render(<PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><ProjectInboxDetail workItem={workItem}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    const link=view.querySelector<HTMLButtonElement>('[aria-label="Open author-claimed origin channel #Original origin"]');
+    expect(link?.parentElement?.getAttribute("title")).toBe("Origin is claimed by the event author and is not relay-verified.");
+    expect(link?.parentElement?.textContent).toBe("started from#Original origin(author-claimed)");
+    await click(link!);expect(open).toHaveBeenCalledWith(channelId);
+    expect(host.publish).not.toHaveBeenCalled();cache.clear();
+  });
+  it.each([true,false])("retains original private-channel membership rule: member=%s",async isMember=>{
+    const open=vi.fn();const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const view=await render(<PlatformProvider client={bff} locale="en"><ProjectOriginReferenceContent channelId="origin" ready
+      channel={{id:"origin",name:"Private source",visibility:"private",isMember}} onOpenChannel={open}/></PlatformProvider>);
+    expect(view.querySelector("button")!==null).toBe(isMember);
+    if(!isMember){expect(view.textContent).toContain("a private channel");expect(view.textContent).not.toContain("Private source");}
+  });
+  it("does not mislabel a failed/pending lookup as private, and keeps the original private agent attribution",async()=>{
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    const view=await render(<PlatformProvider client={bff} locale="en"><ProjectOriginReferenceContent channelId="unresolved" ready={false} onOpenChannel={vi.fn()}/>
+      <ProjectOriginReferenceContent agentName="Original agent" ready={false} onOpenChannel={vi.fn()}/></PlatformProvider>);
+    expect(view.textContent).toBe("started privately withOriginal agent");
+    expect(view.querySelector("button")).toBeNull();
+    expect(view.querySelector("[title]")?.getAttribute("title")).toBe("The private conversation identifier is intentionally omitted.");
+  });
   it("hydrates canonical Issue and PR bodies, updates and comment history from only bounded coordinate reads",async()=>{
     const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);
     expect(data.items).toHaveLength(2);

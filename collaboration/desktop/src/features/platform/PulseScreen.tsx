@@ -13,6 +13,18 @@ import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 import { channelsQueryKey } from "@/features/channels/hooks";
+import { useAppNavigation } from "@/app/navigation/useAppNavigation";
+import { channelReferenceQueryKey, useChannelReferences } from "@/features/channels/channelReference";
+import { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "@client-kit/platform/react/projects";
+
+function NativeProjectOriginReference(props:ProjectOriginReferenceProps) {
+  const references=useChannelReferences(props.channelId?[props.channelId]:[]);
+  const cache=useQueryClient();const {goChannel}=useAppNavigation();
+  const channel=props.channelId?references.channelsById.get(props.channelId):undefined;
+  const lookup=props.channelId?cache.getQueryState(channelReferenceQueryKey(props.channelId)):undefined;
+  const ready=references.isReady&&(channel!==undefined||lookup?.status==="success");
+  return <ProjectOriginReferenceContent {...props} channel={channel} ready={ready} onOpenChannel={id=>{void goChannel(id);}}/>;
+}
 
 export function PulseScreen({children}:{children?:ReactNode}={}) {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
@@ -28,6 +40,7 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
     const transport=createPulseTransport(session.devicePubkey,limit,()=>scope.active);
     return {scopeKey:`${session.facts.communityHost}:${session.devicePubkey}`,pubkey:session.devicePubkey,...transport,
       mediaUrl:rewriteRelayUrl,copy:writeTextToClipboard,
+      OriginReference:NativeProjectOriginReference,
       startDm:async(pubkey)=>{
         const check=()=>{if(!scope.active)throw new Error(t("dm.viewInactive"));};
         check();

@@ -11419,3 +11419,85 @@ digests were not changed in this candidate. Actual source build, registry
 verification, Ibis-only deployment, source-update HTTP operation and complete
 Wren conformance remain uncompleted; neither an empty image variable nor
 artifact registration is evidence of a working deployment.
+
+### 2026-10-11 original native owner PostgreSQL fixture closure
+
+This evidence closes the two previously unexecuted compatibility fixture changes
+noted above; it does not extend the earlier 42-case ownership evidence to another
+suite. Authority remains REQ-22 / DD-76 / DD-87 and the original Wren native
+history/task ownership boundary. The fixed Wren upstream remains
+`c5f02a0391c87420dba78632dcd86073710deb72`. The isolated implementation input
+was main `8e3ac789d6ceb12f23ba04f88a6dce8736a5160b` plus only
+`wren-ui/src/nativeQuery.test.ts`.
+
+The actual consumers are
+`src/apollo/server/repositories/apiHistoryRepository.ts::prepareNativeGeneration`
+and `advanceNativeGeneration`, together with the original project fence and
+asking-task owner. Both ASK variants and both SQL-generation variants now supply
+the same history/task ID, identity scope, captured metadata reference and explicit
+isolated generation. The original missing generation is rejected by
+`projectRepository.ts::lockNativeBinding`; production authorization was not
+relaxed. These values are private repository fixtures, not an asserted production
+PEP response or a current-generation backfill. Cross-surface reuse, duplicate
+creation and late/conflicting history updates retain their original assertions.
+No production schema, migration, protocol or runtime behavior changed.
+
+Runtime used the existing `kailo-wren-query-sdk-itgs2n`, UID 1000:1000,
+4 CPU / 4 GiB with memory+swap also 4 GiB, immutable SDK image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`.
+The SDK was idle before this check; inputs, dependencies, temporary files and
+Jest cache stayed on Data. The existing secret connection was consumed in-process
+without printing it. Read-only preflight confirmed database
+`wren_query_itgs2n`, project 1 named `isolated-query-fixture`, and the original
+generation/fence columns. Each selected case uses an original transaction and
+rolls it back, with the existing afterEach checking removed thread/response rows.
+No migration, fixture-project replacement, production catalog or live source
+connection update was performed.
+
+The metadata connection is `postgres` with `rolsuper=true`. This is explicitly
+not read-only source SQL validation: the selected cases never execute the SQL
+response text through QueryService/Ibis. It cannot prove the separate source
+reader role, its permissions, governed SQL execution, the ask page, full suite,
+production deployment or release/binding activation.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-owner-final.XGSW4Z`.
+
+Actual original command, from its `data-query/wren-ui` directory:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --cacheDirectory=/work/native-owner-final.XGSW4Z/jest-cache \
+  --runTestsByPath src/nativeQuery.test.ts \
+  --testNamePattern="original Wren native answer PostgreSQL CAS (original .* task owns one JSONB snapshot|uses the original .* history and callback task)"
+```
+
+No test timeout or assertion was changed. The initial snapshot export named a
+nonexistent adapter-protocol directory and failed before execution; it was
+corrected to actual paths. Session 35135 then exited 1 with TS2307 because the
+snapshot omitted the real `client-kit/adapter/protocol.mjs` dependency:
+`positive.log`, SHA-256
+`5f297173d6269bf2bbe8f658c4264c6d7c054253f50385f92e46eac2806137d8`,
+zero tests executed. Adding that original dependency from the same fixed commit
+led to session 40483: exit 1, four actual
+`NATIVE_BINDING_PROVENANCE_UNAVAILABLE` failures for absent fixture generation,
+`complete-input.log`, SHA-256
+`e6b9591ff056c3a9f32385c7c9121a0dfefa75889a18122ed88f9282fd41756a`.
+
+After correcting only those two fixture inputs, session 83589 passed four cases,
+130 skipped, exit 0 (`corrected.log`, SHA-256
+`36a0e974ee90f12be9be55add608ae9dc88796108758a578697a0c8ae6dd62f8`).
+Removing only the private production copy's `current.apiType === record.apiType`
+comparison made all four original cross-surface assertions fail, session 73767,
+exit 1 (`negative.log`, SHA-256
+`71343c5fb0691a9c4a0dbeea85b90c57beddf04bd09b4208bf42ddc422193603`).
+Restoring the original production bytes, verified by cmp, passed all four again,
+130 skipped, session 32229, exit 0 (`restored.log`, SHA-256
+`66c4a4fcce986fce425863a53d74928b099ac848e1d5d5ea9e993b77117b0a04`).
+The negative log includes both ASK cross-surface checks and both GENERATE_SQL /
+STREAM_GENERATE_SQL cross-surface checks, not only a setup failure. Original
+Prettier checked the selected test file and passed (session 53008, exit 0,
+`format.log`). Only this test and this appended receipt belong to the batch;
+four unrelated formatting remnants and earlier uncommitted receipt sections
+are excluded from its private index. Full suite, source SQL and deployment
+remain outside this acceptance.
