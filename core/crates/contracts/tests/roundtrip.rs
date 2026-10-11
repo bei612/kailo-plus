@@ -6,6 +6,18 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn pep_binding_generation_preserves_legacy_absence() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("adapter-pep-resource.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::AdapterPepCheckResponse> =
+        serde_json::from_value(sample.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), sample);
+}
+
+#[test]
 fn agent_sessions_and_native_control_preserve_wire_and_legacy() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("agent-session-control.sample.json"))

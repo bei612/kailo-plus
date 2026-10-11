@@ -9,6 +9,21 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('PEP binding generation preserves legacy absence', () {
+    final rows =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-pep-resource.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      rows
+          .map((row) => AdapterPepCheckResponse.fromJson(row).toJson())
+          .toList(),
+      rows,
+    );
+  });
   test('Agent sessions and native control preserve wire and legacy', () {
     final sample = jsonDecode(
       File(

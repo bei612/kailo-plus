@@ -264,6 +264,11 @@ export async function freshPep(config, deadline, token, args, claims, operation 
       operation, argumentsJson: canonical(args) }),
   });
   const keys = ['actionExecutionId', 'operationId', 'authorizationMinZedToken'];
+  if (object(answer) && Object.hasOwn(answer, 'bindingGeneration')) {
+    keys.push('bindingGeneration');
+    if (!Number.isSafeInteger(answer.bindingGeneration) || answer.bindingGeneration <= 0)
+      throw new Refused(503);
+  }
   if (object(answer) && Object.hasOwn(answer, 'targetResource')) {
     keys.push('targetResource');
     const resource = answer.targetResource;

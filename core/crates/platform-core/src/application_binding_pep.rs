@@ -13,6 +13,22 @@ use axum::{
 
 type BindingIdentity = (Uuid, Option<Uuid>, String, String, String, Option<Uuid>);
 
+async fn frozen_binding_generation(
+    conn: &mut sqlx::PgConnection,
+    execution: Uuid,
+    binding: Uuid,
+) -> Result<i64, Refusal> {
+    sqlx::query_scalar(
+        "select component_projection_generation from admission.action_execution
+         where id=$1 and component_binding_id=$2 and component_projection_generation>0",
+    )
+    .bind(execution)
+    .bind(binding)
+    .fetch_optional(conn)
+    .await?
+    .ok_or_else(blocked)
+}
+
 // Transport classification only; the ActionExecution remains the authority.
 // Business reads cannot borrow the DISABLING/system-observation exception.
 fn business_operation(
@@ -186,17 +202,21 @@ pub(crate) async fn check(
         if super::read_grant::native_receiver::is_receiver(&ae) {
             if status!="ACTIVE" || raw.get("contentReference").is_some() || sources.is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
             let revision=super::read_grant::native_receiver::authorize(&state,&mut tx,&ae,binding,&claims,operation,&arguments).await?;
+            let generation=frozen_binding_generation(&mut tx,ae.id,binding).await?;
             tx.commit().await?;
             let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
-                "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision,
+                "bindingGeneration":generation})).map_err(|_|invalid())?;
             return Ok(response);
         }
         if super::read_grant::is_service(&ae) {
             if status!="ACTIVE" || raw.get("contentReference").is_some() || sources.is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
             let revision=super::read_grant::authorize(&state,&ae,binding,&claims,operation,&arguments).await?;
+            let generation=frozen_binding_generation(&mut tx,ae.id,binding).await?;
             tx.commit().await?;
             let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
-                "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision,
+                "bindingGeneration":generation})).map_err(|_|invalid())?;
             return Ok(response);
         }
         let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
@@ -287,6 +307,7 @@ pub(crate) async fn check(
                     ).await?;
                 }
             }
+            let binding_generation=frozen_binding_generation(&mut tx,ae.id,binding).await?;
             tx.commit().await?;
             let revision=if matches!(operation_kind,contracts::AdapterProtocolOperation::Observe|contracts::AdapterProtocolOperation::ExtractUsage) {
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
@@ -299,7 +320,8 @@ pub(crate) async fn check(
                 decision.zed_token.filter(|v|!v.is_empty()).ok_or_else(blocked)?
             };
             let mut response=json!({"actionExecutionId":ae.id,
-                "operationId":ae.operation_id,"authorizationMinZedToken":revision});
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision,
+                "bindingGeneration":binding_generation});
             if executing && def.target_type=="RESOURCE" {
                 response["targetResource"]=authorized_resource(&state,&ae,binding).await?;
             }

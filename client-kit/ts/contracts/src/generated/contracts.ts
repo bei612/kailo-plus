@@ -412,7 +412,12 @@ export interface AdapterPepCheckRequest {
 export interface AdapterPepCheckResponse {
     actionExecutionId:        string;
     authorizationMinZedToken: string;
-    operationId:              string;
+    /**
+     * 原业务 AE 冻结的 component_projection_generation；由 Core 核验同 binding 后返回，不从调用方 token
+     * 扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
+     */
+    bindingGeneration?: number;
+    operationId:        string;
     /**
      * 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
      */

@@ -14,6 +14,31 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestPepBindingGenerationPreservesLegacyAbsence(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-pep-resource.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.AdapterPepCheckResponse
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("wire changed: %s", back)
+	}
+}
+
 func TestAgentSessionsAndNativeControlRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-session-control.sample.json"))
 	if err != nil {

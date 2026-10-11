@@ -138,7 +138,7 @@ async function setup(t, changes = {}) {
       assert.equal(parsed.operation, operation);
       assert.deepEqual(JSON.parse(parsed.argumentsJson), requestArguments);
       if (changes.pep) return changes.pep(state, response, parsed);
-      return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}`,
+      return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}`, bindingGeneration: 1,
         ...(business && operation === 'execute' ? {targetResource: {
           resourceId: ids[10], nativeType: changes.write ? 'node' : 'folder', nativeRef: changes.write ? ids[3] : ids[2],
           nativeInstanceRef: 'delivered-instance', nativeScopeRef: ids[1],
@@ -1349,6 +1349,22 @@ test('PEP response must refer to exact signed original action and operation', as
     { actionExecutionId: ids[0], operationId: ids[6], authorizationMinZedToken: 'wrong-parent' }) });
   assert.equal((await invoke()).status, 503);
   assert.equal(state.nativeReads.length, 0);
+});
+
+test('shared PEP consumer preserves legacy generation absence and validates the frozen generation', async (t) => {
+  for (const generation of [undefined, 3, 0, -1, 1.5, '3', null]) {
+    await t.test(String(generation), async (nested) => {
+      const { state, invoke } = await setup(nested, {
+        pep: (_current, response) => reply(response, 200, {
+          actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh',
+          ...(generation === undefined ? {} : { bindingGeneration: generation }),
+        }),
+      });
+      const valid = generation === undefined || generation === 3;
+      assert.equal((await invoke()).status, valid ? 200 : 503);
+      if (!valid) assert.equal(state.nativeReads.length, 0);
+    });
+  }
 });
 
 test('shared PEP consumer accepts optional complete native target facts and rejects malformed additions', async (t) => {

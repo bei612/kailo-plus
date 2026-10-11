@@ -1286,3 +1286,70 @@ PutJob、broker 派发及响应边界，但异步 child `scheduler/tasks/task.go
 三用户真实端到端或 Cells→WeKnora 已验收；原 UI 视觉截图和实际绑定审批
 运行未执行。本节只计源码接线及上述受限消费者证据，后续沿已有 PEP/绑定
 链闭合延迟执行门禁，不新建执行或终态权威。
+
+## 2026-10-11：PEP 冻结 binding 代次兼容闭包
+
+本批只交付 Adapter PEP 可选 `bindingGeneration`，不是 Cells/Wren 完整治理、
+原生 binding fence、绑定停用 reconcile 或运行部署完成。独立源码输入为
+`39c0f45c8801576a2cd006c5eb5ce658c18d1f05` 加本节列出的 13 个相关文件；
+提交基线重组到 `e33e3bcf1d8f6f59c9070fde3ea30aed62adb50b`，其间变更不碰本批
+文件。未夹带尚未闭合的 binding reconcile schema、生成类型及管理动作放行。
+
+权威与影响：沿既有 ActionExecution 冻结 `component_projection_generation`，
+不加第二份 token 或凭据权威。Core 普通业务、SERVICE_READ_RECEIVER 与
+SERVICE_READ 三个返回点均先通过原授权，再用同 AE、同 binding 查正数代次；
+读不到、绑定不匹配、代次非正数均拒绝，不借当前部署 generation 填补。
+该可选字段经原 `tools/gen.sh` 生成 Rust/Go/TypeScript/Dart，缺省保持省略；
+共享 `freshPep` 对已出现字段强制安全正整数。旧响应继续可读，不代表缺字段的
+原生写入消费者可以猜测来源；需要冻结代次的新任务仍须自行拒绝缺省。
+本批不改数据库字段、既有执行状态或 Temporal 历史，不产生外部副作用。
+
+发布顺序不可颠倒：旧版共享 `freshPep` 使用 exactKeys，会拒绝新 Core 带
+`bindingGeneration` 的响应。先部署本批兼容消费者（接受有/无字段），再部署
+Core，最后启用依赖代次的新原生任务；未配对升级不可激活。schema 可选只保证
+本批消费者保留旧响应读取能力，不代表旧 adapter 接受新回应。PROTOCOL、
+protocol session 和管理 PEP 分支本批保持现状，不承诺返回该字段。
+
+执行环境：复用固定 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+生成/Node/contract 为 2 CPU/4 GiB，Rust/Go/Dart 为 4 CPU/8 GiB，禁额外 swap，
+缓存、临时文件与日志均在 Data。证据根为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt`；独立源码目录
+`pep-independent.rcQHRc`。原执行命令与终态：
+
+```text
+bash tools/gen.sh
+  exit 0；四侧实际生成（pep-independent-gen.log）
+cargo test --manifest-path core/Cargo.toml -p contracts pep_binding_generation_preserves_legacy_absence
+  exit 0；1 passed（pep-independent-rust-restored.log）
+(cd worker && go test ./internal/contracts -run TestPepBindingGenerationPreservesLegacyAbsence -count=1)
+  exit 0（pep-independent-go-restored.log）
+node --test --experimental-strip-types --test-name-pattern="PEP binding generation" client-kit/ts/contracts/test/roundtrip.test.ts
+  exit 0；1 passed（pep-independent-ts-restored.log）
+(cd client-kit/dart && dart test test/roundtrip_test.dart --name "PEP binding generation")
+  exit 0；1 passed（pep-independent-dart-restored.log）
+node --test --test-name-pattern="shared PEP consumer|PEP response|HTTP protocol reaches|binding validation|binding handshake|native actor proof|native error mapping" file-storage/adapter/test/query-revision.test.mjs
+  exit 0；93 passed（pep-independent-consumer-restored.log）
+cargo clippy --manifest-path core/Cargo.toml -p platform-core --all-targets -- -D warnings
+  exit 0（pep-independent-clippy-restored.log）
+```
+
+contract 沿原 `tools/check.sh` 的 `step_contract` 函数执行（加载原函数、跳过
+全工程依赖安装，仅执行该已有步骤；未新建检查器），`pep-independent-contract.log`
+exit 0：四侧生成物同步、相对 contracts-v0.1.0 无破坏性变更，302 个 schema 中
+匹配 3 个历史 schema。该历史门禁覆盖范围不是对所有旧客户端实现的运行证明。
+
+事后破坏验证仅改私有候选：删除共享代次合法性判断后测试实际收到 200、预期
+503 而失败（`pep-independent-consumer-negative.log`），恢复后 93 项通过。
+样例增加未知字段 `unexpectedBindingGeneration` 后，四侧回环分别退出
+Rust 101 / Go 1 / TypeScript 1 / Dart 1；`pep-independent-*-negative.log`
+保留失败，恢复样例后上述四侧全部通过。正式树从未写入这些故障。
+
+失败如实保留：首次独立 Core 导出缺少已提交 ext_mcp.proto，clippy exit 101；
+补齐同基线原文件后通过。完整 adapter 文件首次导出缺原 frontend 测试输入，
+718 项中 429 通过/289 失败；补齐同基线原输入后仍 655 通过/63 失败
+（`pep-independent-consumer-full-restored.log`），包括既有浏览器 fixture
+`ReferenceError: uuid4 is not defined`。独立导出原 HEAD、无本批修改的同文件
+基线为 710 项 647 通过/63 失败（`pep-independent-head-baseline.log`），
+63 个失败名称逐项相同；本批新增 8 项通过，但完整 adapter 套件仍未通过。
+本批未执行全局 `--full`、真实 Core PEP 数据库 HTTP 链或 UI/设备验收，未部署。

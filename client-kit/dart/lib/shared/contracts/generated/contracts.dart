@@ -2669,6 +2669,10 @@ class AdapterPepCheckRequest {
 class AdapterPepCheckResponse {
   final String actionExecutionId;
   final String authorizationMinZedToken;
+
+  ///原业务 AE 冻结的 component_projection_generation；由 Core 核验同 binding 后返回，不从调用方 token
+  ///扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
+  final int? bindingGeneration;
   final String operationId;
 
   ///本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
@@ -2677,6 +2681,7 @@ class AdapterPepCheckResponse {
   AdapterPepCheckResponse({
     required this.actionExecutionId,
     required this.authorizationMinZedToken,
+    this.bindingGeneration,
     required this.operationId,
     this.targetResource,
   });
@@ -2685,6 +2690,7 @@ class AdapterPepCheckResponse {
       AdapterPepCheckResponse(
         actionExecutionId: json["actionExecutionId"],
         authorizationMinZedToken: json["authorizationMinZedToken"],
+        bindingGeneration: json["bindingGeneration"],
         operationId: json["operationId"],
         targetResource: json["targetResource"] == null
             ? null
@@ -2694,6 +2700,7 @@ class AdapterPepCheckResponse {
   Map<String, dynamic> toJson() => _stripNulls({
     "actionExecutionId": actionExecutionId,
     "authorizationMinZedToken": authorizationMinZedToken,
+    "bindingGeneration": bindingGeneration,
     "operationId": operationId,
     "targetResource": targetResource?.toJson(),
   });

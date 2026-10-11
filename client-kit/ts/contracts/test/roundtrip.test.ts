@@ -8,6 +8,13 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("PEP binding generation preserves legacy absence", () => {
+  const sample: import("../src/generated/contracts.js").AdapterPepCheckResponse[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-pep-resource.sample.json", import.meta.url), "utf8"));
+  const actual: typeof sample = sample.map(row => ({ actionExecutionId: row.actionExecutionId, operationId: row.operationId,
+    authorizationMinZedToken: row.authorizationMinZedToken, bindingGeneration: row.bindingGeneration, targetResource: row.targetResource }));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
+});
+
 test("Agent sessions and native control preserve wire and legacy", () => {
   type Wire = import("../src/generated/contracts.js").AgentSessionPage;
   type Invocations = import("../src/generated/contracts.js").AgentInvocationPage;
