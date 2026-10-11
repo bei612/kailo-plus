@@ -3128,3 +3128,71 @@ UID 1000、无网络、apps／.design 只读和 Data 临时目录／npm 缓存�
 全仓；原 tools/check-docs.sh 的 7 项全部通过，句柄 32450 实际 exit 0。
 日志为 `/volumes/data/kailo/tmp/cells-share-docs.NXMuAj/docs.log`。文档
 检查读取当时只读工作区，不把它称为产品构建或最终部署验证。
+
+### 2026-10-11 首次上传完成响应的原生读回
+
+本批只修原 `gateway/restv2/native-upload.go::PrepareUpload` 的完成响应，
+不增加上传、分享或平台合同。四步影响结论：
+
+1. 权威沿已提交首字节设计与原生结果必须可核验的既定约束。Core 已确认
+   COMPLETED 是必要条件，不替代 Cells 当前节点 ACL、不可变 Version 与
+   原 Task receipt。固定上游仍为
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`；复用其原
+   `/volumes/kailo/.references/cells/gateway/restv2/api-versions.go` 的
+   `versionClient`，以及现有受管 `platformPromoteVersion` 的最终读回链。
+2. 实际消费者是原 PydioApi.uploadNativeFile 的 prepare → PrepareUpload →
+   原 JobService.ListTasks／HeadVersion／PathClient／UuidClient(true) →
+   NativeUploadResponse.Completed → 原上传 onComplete。Core 的已有终态
+   响应仍携带原 EE 冻结 nativeExecution，无新字段或生成物；native Task
+   与等待分支复用同一归属校验，不以当前 generation 回填。
+3. 原完成分支只凭 Core 的 VersionId 就回复 Completed，跳过自己的 Task
+   核验。现在缺 Task、非终态、AE／EE／代次／用户不符、原字节派发路径
+   不符、版本读回不符或当前节点不可访问均拒绝披露完成；不写任务、不
+   改 Core 终态、不重派字节。独立原上传和已有等待语义保持不变。
+4. 空文件与非空文件同样要求精确 receipt；同 key 换路径、节点被替换、
+   原版本丢失、撤权和 RPC 失联都不能变成已完成或新上传授权。IsHead
+   仅沿既有 NativeUploadPublishedVersionMatches 排除动态标志，owner／
+   location／size／ETag 等不可变字段仍精确比较。此处错误经原页面保留
+   UNKNOWN，而不是把读回失败宣布为外部动作最终 FAILED。
+
+实现后验证复用 `kailo-cells-native-check-lftow7` 原 SDK：4 CPU／8 GiB／
+等额 swap、UID 1000，预检 available 33 GiB；另一知识库原 Go 检查保留
+在途，本批只使用独立 Data `native-go-cache`、`native-mod-cache`。
+无新镜像、无全量检查、无 Rust 构建。精确检查源与日志目录为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-upload-complete.48HCP6`。
+仅本批两个 Go 文件解除硬链接后替换；旧验证输入未改变。
+
+原执行命令为 `docker exec -w /workspace/file-storage/.native-upload-complete.48HCP6`
+并投递 `GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOCACHE=/cache/build`
+`GOMODCACHE=/cache/mod`，`TMPDIR` 指向该快照 `.tmp`，
+`CELLS_WORKING_DIR`／`CELLS_DATA_DIR` 指向该快照 `.share-runtime`；容器内
+运行 `go test -mod=readonly -count=1 -v -run 'TestNativeUploadCompletionReadsOriginalReceiptVersionAndCurrentNode|TestNativePromoteUsesOriginalHumanAction|TestDeleteVersionRequiresEveryNativeAcknowledgement' ./gateway/restv2`。
+
+- 首次句柄 13869 exit 1：夹具缺原祖先 ListNodes 消费，产生 panic；
+  `native-upload-completion-positive.log` 保留。补原祖先流后，15322
+  仍在平台观察前拒绝：预加载 Client 却无 Root 跳过原根解析，且错误的
+  datasource 名触发原重试。核实本快照测试 PID 3051224 后仅对其 TERM；
+  句柄真实 exit 1、日志含 `signal: terminated`／334.231s，明确是因
+  已定位错误夹具主动终止，不把未达到目标分支的否定样例记作有效反证。
+  `native-upload-completion-routed.log` 保留。
+- 夹具使用原 MakeFakeClientsPool 已提供的 `datasource`，移除预加载
+  Client，让原 Workspace／Root／Datasource／ACL 全链实际解析；未改
+  生产权限判断、未加管理员或跳过 ACL。35303 exit 0／13.605s：
+  新增完成读回 17 项、原 promotion 42 项、原 delete 22 项，共 81 项
+  通过，日志 `native-upload-completion-resolved.log`。
+- 私有破坏只移除新完成证据核验、退回按 Core nativeId 回复 Completed；
+  74258 exit 1／7.678s，原 17 项中 13 项失败：两正向检测到缺少真实
+  HeadVersion，另外 11 项捕获缺 Task／未完成／缺冻结执行／换路径／
+  缺 Version／错误 owner 或 location／节点替换或失联／ACL 撤销／gate
+  撤销仍返回 Completed。日志 `native-upload-completion-mutation.log`。
+- apply_patch 原字节还原后与正式生产文件 cmp 0；13112 exit 0／
+  7.009s，原 17 项全部恢复通过，日志
+  `native-upload-completion-restored.log`。格式沿原 SDK gofmt，未增加
+  新检查器；原 promotion／delete 的 64 项依据同字节正向运行，不称在
+  最后的单过滤还原命令中再次运行。
+
+这是原 PrepareUpload／原 Task receipt 解析／原 PathClient 与 UuidClient
+的隔离夹具集成检查；Core HTTP、Task RPC、Version RPC、原生树为夹具。
+日志中原 virtual node／docstore 探查的 gRPC PrintStack 亦保留，不能据此
+宣称完整原生后端、浏览器上传、部署、Mongo 或有效 binding 上架已验收。
+本批未运行 `tools/check.sh --full`，不覆盖此前全量失败与产物来源缺口。

@@ -21,6 +21,7 @@ import (
 	"github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/config/routing"
 	"github.com/pydio/cells/v5/common/middleware"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/acl"
@@ -28,11 +29,13 @@ import (
 	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/install"
+	"github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/common/proto/rest"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	"github.com/pydio/cells/v5/common/utils/openurl"
 	"github.com/pydio/cells/v5/data/versions"
+	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	. "github.com/smartystreets/goconvey/convey"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -84,6 +87,8 @@ type uploadNativeTree struct {
 	err               error
 	reads             int
 	allowDefaultFlags bool
+	read              func(context.Context, *tree.ReadNodeRequest) (*tree.ReadNodeResponse, error)
+	root              *tree.Node
 }
 
 // SourcesPool is process-wide and lazily opened once, including when these
@@ -313,8 +318,11 @@ func TestDeleteVersionRequiresEveryNativeAcknowledgement(t *testing.T) {
 	}
 }
 
-func (s *uploadNativeTree) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
+func (s *uploadNativeTree) ReadNode(ctx context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
 	s.reads++
+	if s.read != nil {
+		return s.read(ctx, request)
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -324,9 +332,302 @@ func (s *uploadNativeTree) ReadNode(_ context.Context, request *tree.ReadNodeReq
 	return &tree.ReadNodeResponse{Node: s.node.Clone()}, nil
 }
 
+func (s *uploadNativeTree) ListNodes(ctx context.Context, request *tree.ListNodesRequest, _ ...grpc.CallOption) (tree.NodeProvider_ListNodesClient, error) {
+	if !request.Ancestors || s.read == nil || s.root == nil {
+		return nil, fmt.Errorf("unexpected native ancestor lookup")
+	}
+	response, err := s.read(ctx, &tree.ReadNodeRequest{Node: request.Node})
+	if err != nil {
+		return nil, err
+	}
+	rows := []*tree.Node{response.Node}
+	if response.Node.Uuid != s.root.Uuid {
+		rows = append(rows, s.root.Clone())
+	}
+	return &uploadCompletionAncestors{rows: rows}, nil
+}
+
+type uploadCompletionAncestors struct {
+	grpc.ClientStream
+	rows []*tree.Node
+}
+
+func (s *uploadCompletionAncestors) Recv() (*tree.ListNodesResponse, error) {
+	if len(s.rows) == 0 {
+		return nil, io.EOF
+	}
+	n := s.rows[0]
+	s.rows = s.rows[1:]
+	return &tree.ListNodesResponse{Node: n}, nil
+}
+
 func (s *uploadNativePolicy) StreamPolicyGroups(_ *idm.ListPolicyGroupsRequest, stream idm.PolicyEngineService_StreamPolicyGroupsServer) error {
 	return stream.Send(&idm.PolicyGroup{Policies: []*idm.Policy{{ID: "native-upload-login-policy",
 		Subjects: []string{"subject:" + s.user}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}})
+}
+
+func (s *uploadNativePolicy) IsAllowed(_ context.Context, request *idm.PolicyEngineRequest) (*idm.PolicyEngineResponse, error) {
+	for _, subject := range request.Subjects {
+		if subject == "subject:"+s.user && request.Action == http.MethodPost {
+			return &idm.PolicyEngineResponse{Allowed: true}, nil
+		}
+	}
+	return &idm.PolicyEngineResponse{}, nil
+}
+
+type uploadCompletionTasks struct {
+	grpc.ClientConnInterface
+	task          *jobs.Task
+	jobID, key    string
+	reads, writes int
+}
+
+func (f *uploadCompletionTasks) Invoke(context.Context, string, interface{}, interface{}, ...grpc.CallOption) error {
+	f.writes++
+	return fmt.Errorf("upload completion must not write or repeat dispatch")
+}
+func (f *uploadCompletionTasks) NewStream(_ context.Context, _ *grpc.StreamDesc, method string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
+	if method != "/jobs.JobService/ListTasks" {
+		return nil, fmt.Errorf("unexpected task stream %s", method)
+	}
+	f.reads++
+	return &uploadCompletionStream{state: f}, nil
+}
+
+type uploadCompletionStream struct {
+	grpc.ClientStream
+	state *uploadCompletionTasks
+	sent  bool
+}
+
+func (s *uploadCompletionStream) SendMsg(value interface{}) error {
+	r, ok := value.(*jobs.ListTasksRequest)
+	if !ok || r.JobID != s.state.jobID || r.TaskID != s.state.key {
+		return fmt.Errorf("not the frozen upload task")
+	}
+	return nil
+}
+func (*uploadCompletionStream) CloseSend() error { return nil }
+func (s *uploadCompletionStream) RecvMsg(value interface{}) error {
+	if s.sent || s.state.task == nil {
+		return io.EOF
+	}
+	s.sent = true
+	proto.Merge(value.(*jobs.ListTasksResponse), &jobs.ListTasksResponse{Task: s.state.task})
+	return nil
+}
+
+type uploadCompletionVersion struct {
+	tree.UnimplementedNodeVersionerServer
+	nodeID  string
+	version *tree.ContentRevision
+	err     error
+	reads   int
+}
+
+func (s *uploadCompletionVersion) HeadVersion(_ context.Context, r *tree.HeadVersionRequest) (*tree.HeadVersionResponse, error) {
+	s.reads++
+	if r.NodeUuid != s.nodeID || r.VersionId != s.version.VersionId {
+		return nil, fmt.Errorf("not the frozen immutable version")
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &tree.HeadVersionResponse{Version: proto.Clone(s.version).(*tree.ContentRevision)}, nil
+}
+
+func TestNativeUploadCompletionReadsOriginalReceiptVersionAndCurrentNode(t *testing.T) {
+	ids := make([]string, 12)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)
+	}
+	nodes.SetSourcesPoolOpener(func(ctx context.Context) *openurl.Pool[nodes.SourcesPool] {
+		return nodes.NewTestPool(ctx, nodes.MakeFakeClientsPool(nativeVersionsTree, nativeVersionDeleteIndex))
+	})
+	for _, scenario := range []string{"complete", "empty", "missing-task", "unfinished-task", "wrong-action", "wrong-external", "wrong-generation", "missing-execution", "different-path", "missing-version", "wrong-owner", "wrong-location", "node-replaced", "node-unavailable", "node-acl-revoked", "gate-revoked", "missing-human-session"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			user := &idm.User{Uuid: ids[2], Login: "native-user"}
+			claims := claim.Claims{Subject: user.Uuid, Name: user.Login, SessionID: "native-session", AuthSource: "native-oidc"}
+			ctx = claim.ToContext(ctx, claims)
+			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &uploadNativeUser{user: user}})
+			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &uploadNativePolicy{user: user.Uuid}})
+			grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadNativeRoles{}})
+			root := &tree.Node{Uuid: ids[7], Path: "native", Type: tree.NodeType_COLLECTION}
+			root.MustSetMeta(common.MetaNamespaceDatasourceName, "datasource")
+			leaf := &tree.Node{Uuid: ids[3], Path: "native/file.txt", Type: tree.NodeType_LEAF}
+			leaf.MustSetMeta(common.MetaNamespaceDatasourceName, "datasource")
+			workspace := &idm.Workspace{UUID: ids[7], Slug: "workspace", RootUUIDs: []string{root.Uuid}}
+			access := permissions.NewAccessList(&idm.Role{Uuid: user.Uuid})
+			access.AppendACLs(&idm.ACL{RoleID: user.Uuid, NodeID: root.Uuid, WorkspaceID: workspace.UUID, Action: permissions.AclRead})
+			if scenario == "node-acl-revoked" {
+				access.AppendACLs(&idm.ACL{RoleID: user.Uuid, NodeID: leaf.Uuid, WorkspaceID: workspace.UUID, Action: permissions.AclDeny})
+			}
+			access.Flatten(ctx)
+			access.GetWorkspaces()[workspace.UUID] = workspace
+			ctx = acl.WithPresetACL(ctx, access)
+			*nativeVersionsTree = uploadNativeTree{root: root, read: func(_ context.Context, r *tree.ReadNodeRequest) (*tree.ReadNodeResponse, error) {
+				if r.Node.Uuid == root.Uuid || (r.Node.Uuid == "" && (r.Node.Path == "native" || r.Node.Path == "workspace")) {
+					return &tree.ReadNodeResponse{Node: root.Clone()}, nil
+				}
+				if r.Node.Uuid == leaf.Uuid || (r.Node.Uuid == "" && strings.HasSuffix(r.Node.Path, "/file.txt")) {
+					if scenario == "node-unavailable" {
+						return nil, fmt.Errorf("original node unavailable")
+					}
+					n := leaf.Clone()
+					if scenario == "node-replaced" {
+						n.Uuid = ids[11]
+					}
+					return &tree.ReadNodeResponse{Node: n}, nil
+				}
+				return nil, fmt.Errorf("unexpected native lookup uuid=%s path=%s", r.Node.Uuid, r.Node.Path)
+			}}
+			defer func() { *nativeVersionsTree = uploadNativeTree{} }()
+			for _, entry := range []struct {
+				value interface{}
+				path  []string
+			}{
+				{[]map[string]interface{}{{"id": claims.AuthSource, "type": "kailo-oidc", "config": map[string]interface{}{"issuer": "https://issuer.example.invalid", "clientId": "native-client", "users": []auth.NativeOIDCUser{{Subject: "native-subject", UserUUID: user.Uuid}}}}}, []string{"services", "pydio.web.oauth", "connectors"}},
+				{[]*install.ProxyConfig{{ReverseProxyURL: "https://cells.example.invalid"}}, []string{"defaults", "sites"}},
+				{base64.StdEncoding.EncodeToString(make([]byte, 64)), []string{"frontend", "session", "secureKey"}},
+			} {
+				if err := config.Set(ctx, entry.value, entry.path...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			length := float64(12)
+			if scenario == "empty" {
+				length = 0
+			}
+			input := map[string]interface{}{"resourceId": ids[1], "nativeIntentId": ids[5], "nativeNodeId": leaf.Uuid, "nativeDeadline": float64(time.Now().Add(time.Minute).Unix()), "contentLength": length, "multipart": false}
+			scope := map[string]interface{}{"tenant_id": ids[1], "actor_principal_id": ids[8], "initiating_human_principal_id": ids[8], "action_execution_id": ids[6], "external_execution_id": ids[9], "idempotency_key": ids[10]}
+			task, err := jobstore.NewNativeUploadTask(ids[0], 3, auth.NativeUploadJobID("upload-job", ids[0], 3), ids[10], user.Login, user.Uuid, scope, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = jobstore.ClaimNativeUploadStep(task, "put", ids[11], "workspace/file.txt", "", int64(length)); err != nil {
+				t.Fatal(err)
+			}
+			task.Status, task.StartTime = jobs.TaskStatus_Running, int32(time.Now().Unix())
+			versionID, err := jobstore.NativeUploadVersionID(task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			version := &tree.ContentRevision{VersionId: versionID, OwnerUuid: user.Uuid, Size: int64(length), ETag: "immutable-etag", Location: &tree.Node{Uuid: "immutable-object", Path: "native-version"}}
+			draft := proto.Clone(version).(*tree.ContentRevision)
+			draft.VersionId, draft.Draft = ids[5], true
+			n := leaf.Clone()
+			n.Path = "workspace/file.txt"
+			n.MustSetMeta(common.MetaNamespaceMime, "text/plain")
+			publication := &jobstore.NativeUploadPublicationRecord{Node: n, Draft: draft, Version: version}
+			if err = jobstore.AppendNativeUploadPublication(task, publication); err != nil {
+				t.Fatal(err)
+			}
+			if err = jobstore.CompleteNativeUploadPublication(task, publication, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			store := &uploadCompletionTasks{task: task, jobID: task.JobID, key: task.ID}
+			if scenario == "missing-task" {
+				store.task = nil
+			}
+			if scenario == "unfinished-task" {
+				task.Status, task.EndTime = jobs.TaskStatus_Running, 0
+			}
+			grpcclient.RegisterMock(common.ServiceJobsGRPC, store)
+			versions := &uploadCompletionVersion{nodeID: leaf.Uuid, version: proto.Clone(version).(*tree.ContentRevision)}
+			versions.version.IsHead = true
+			if scenario == "missing-version" {
+				versions.err = fmt.Errorf("version unavailable")
+			}
+			if scenario == "wrong-owner" {
+				versions.version.OwnerUuid = ids[11]
+			}
+			if scenario == "wrong-location" {
+				versions.version.Location.Uuid = "other-object"
+			}
+			grpcclient.RegisterMock(common.ServiceVersionsGRPC, &tree.NodeVersionerStub{NodeVersionerServer: versions})
+			encodedInput, _ := json.Marshal(input)
+			reference := map[string]interface{}{"externalExecutionId": ids[9], "idempotencyKey": ids[10], "nativeIntentId": ids[5], "bindingGeneration": 3}
+			observed := map[string]interface{}{"submission": map[string]interface{}{"actionKey": "file_storage.write@v1", "operationId": ids[5], "actionExecutionId": ids[6], "gateState": "ALLOWED", "dispatchState": "DISPATCHED"}, "inputJson": string(encodedInput), "nativeExecution": reference, "terminalStatus": "COMPLETED", "nativeType": "version", "nativeId": versionID}
+			switch scenario {
+			case "wrong-action":
+				observed["submission"].(map[string]interface{})["actionExecutionId"] = ids[11]
+			case "wrong-external":
+				reference["externalExecutionId"] = ids[11]
+			case "wrong-generation":
+				reference["bindingGeneration"] = 4
+			case "missing-execution":
+				delete(observed, "nativeExecution")
+			case "gate-revoked":
+				observed["submission"].(map[string]interface{})["gateState"] = "REVOKED"
+			}
+			observations := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/token" {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "binding-service-only", "token_type": "Bearer", "expires_in": 60})
+					return
+				}
+				var request map[string]interface{}
+				if r.URL.Path != "/service/v1/adapter/human-action" || json.NewDecoder(r.Body).Decode(&request) != nil || r.Header.Get("Authorization") != "Bearer binding-service-only" || r.Header.Get("X-Kailo-Native-Human-Token") != "verified-upstream-access" || request["bindingId"] != ids[0] || request["idempotencyKey"] != ids[5] || request["command"] != nil || request["resolveResource"] != nil {
+					t.Error("observation lost original HUMAN/execution or re-dispatched")
+					w.WriteHeader(403)
+					return
+				}
+				observations++
+				_ = json.NewEncoder(w).Encode(observed)
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "binding-secret")
+			if err := os.WriteFile(secret, []byte("fixture-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			delivery := map[string]interface{}{"bindingId": ids[0], "instanceServiceUuid": ids[0], "tenantId": ids[1], "nativeRootRef": root.Uuid, "nativeInstanceRef": "native-instance", "nativeScopeRef": ids[7], "workspaceId": ids[7], "corePepUrl": server.URL + "/service/v1/adapter/pep_check", "oidcTokenUrl": server.URL + "/token", "clientId": "native-binding", "clientSecretFile": secret, "requestTimeout": "1s", "maxResponseBytes": 65536, "clientSecretMaxBytes": 128, "actors": []map[string]interface{}{{"principalId": ids[8], "kind": "HUMAN", "userUuid": user.Uuid}}, "draftUploads": map[string]interface{}{"timeout": "1m", "sweepInterval": "1s", "sweepBatchSize": 1}, "write": map[string]interface{}{"nativeJobId": "upload-job", "actionVersion": 1, "nativeType": "native-file", "resultExposurePolicyId": ids[6], "resultExposurePolicyVersion": 1}}
+			if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
+				t.Fatal(err)
+			}
+			targetPath := "workspace/file.txt"
+			if scenario == "different-path" {
+				targetPath = "workspace/renamed.txt"
+			}
+			body, _ := json.Marshal(map[string]interface{}{"Uuid": ids[5], "Path": targetPath, "Size": fmt.Sprint(int64(length)), "Multipart": false})
+			request := httptest.NewRequest(http.MethodPost, "https://cells.example.invalid/n/upload/"+ids[5], strings.NewReader(string(body))).WithContext(ctx)
+			request.Header.Set("Content-Type", restful.MIME_JSON)
+			request.Header.Set("Idempotency-Key", ids[5])
+			cookieResponse := httptest.NewRecorder()
+			if err := auth.SaveNativeHumanToken(request, cookieResponse, "verified-upstream-access", "https://issuer.example.invalid", "native-subject", "native-client", user.Uuid, "native-session", time.Now().Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if scenario != "missing-human-session" {
+				request.AddCookie(cookieResponse.Result().Cookies()[0])
+			}
+			if _, exists := routing.RouteById(common.RouteApiRESTv2); !exists {
+				routing.RegisterRoute(common.RouteApiRESTv2, "REST API v2", common.DefaultRouteRESTv2)
+			}
+			recorder := httptest.NewRecorder()
+			var failure error
+			registrar := routing.NewRouteRegistrar()
+			registrar.Route(common.RouteApiRESTv2).Handle("/n/upload/"+ids[5], http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				rq := restful.NewRequest(r)
+				rq.PathParameters()["Uuid"] = ids[5]
+				rp := restful.NewResponse(recorder)
+				rp.SetRequestAccepts(restful.MIME_JSON)
+				failure = (&Handler{}).PrepareUpload(rq, rp)
+			}))
+			registrar.IteratePatterns(ctx, func(_ string, handler http.Handler) { handler.ServeHTTP(recorder, request) })
+			if scenario == "complete" || scenario == "empty" {
+				var response rest.NativeUploadResponse
+				if failure != nil || json.Unmarshal(recorder.Body.Bytes(), &response) != nil || !response.Completed || response.Ready || response.VersionId != versionID || versions.reads != 1 || observations != 1 || store.reads != 1 {
+					t.Fatalf("original completion failed: %v body=%s version=%d observation=%d task=%d", failure, recorder.Body.String(), versions.reads, observations, store.reads)
+				}
+			} else if failure == nil || strings.Contains(recorder.Body.String(), `"Completed":true`) {
+				t.Fatalf("unproved completion returned success: %s", recorder.Body.String())
+			}
+			if store.writes != 0 {
+				t.Fatal("completion replayed native write")
+			}
+		})
+	}
 }
 
 func (s *uploadNativeVersion) HeadVersion(_ context.Context, request *tree.HeadVersionRequest) (*tree.HeadVersionResponse, error) {

@@ -151,14 +151,8 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		return refused
 	}
 	result := &rest.NativeUploadResponse{ActionExecutionId: stringClaim(submission, "actionExecutionId"), NativeIntentId: input.Uuid, NativeNodeId: stringClaim(metadata, "nativeNodeId")}
-	if observed["terminalStatus"] == "COMPLETED" {
-		if stringClaim(observed, "nativeId") == "" || observed["nativeType"] != "version" {
-			return refused
-		}
-		result.Completed, result.VersionId = true, stringClaim(observed, "nativeId")
-	} else if observed["terminalStatus"] != nil || submission["gateState"] == "DENIED" || submission["gateState"] == "REVOKED" || submission["gateState"] == "EXPIRED" {
-		return errors.WithStack(errors.StatusConflict)
-	} else if reference, ok := observed["nativeExecution"].(map[string]interface{}); ok {
+	var task *jobs.Task
+	if reference, ok := observed["nativeExecution"].(map[string]interface{}); ok {
 		if !actorUUID(stringClaim(reference, "externalExecutionId")) || !actorUUID(stringClaim(reference, "idempotencyKey")) || reference["nativeIntentId"] != input.Uuid {
 			return refused
 		}
@@ -167,7 +161,7 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		if !ok || generation < 1 || generation > 1<<53-1 || generation != float64(int64(generation)) {
 			return refused
 		}
-		task, err := jobstore.ReadNativeWriteTask(ctx, auth.NativeUploadJobID(delivery.Write.NativeJobID, delivery.BindingID, int64(generation)), result.IdempotencyKey, delivery.MaxResponseBytes)
+		task, err = jobstore.ReadNativeWriteTask(ctx, auth.NativeUploadJobID(delivery.Write.NativeJobID, delivery.BindingID, int64(generation)), result.IdempotencyKey, delivery.MaxResponseBytes)
 		if err != nil {
 			return err
 		}
@@ -180,6 +174,35 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 			}
 			result.Ready = jobstore.NativeUploadWaiting(task)
 		}
+	}
+	if observed["terminalStatus"] == "COMPLETED" {
+		// Core's terminal is necessary, but it does not replace the original
+		// native Task receipt, immutable Version or the current user's node ACL.
+		// Re-entry must still name the exact path that the byte writer claimed.
+		published, _, err := jobstore.NativeUploadRevision(task)
+		if err != nil || submission["gateState"] != "ALLOWED" || submission["dispatchState"] != "DISPATCHED" ||
+			observed["nativeType"] != "version" || published.GetVersionId() != stringClaim(observed, "nativeId") {
+			return refused
+		}
+		publication, err := jobstore.NativeUploadPublicationFromTask(task)
+		if err != nil || publication == nil || publication.Node.GetPath() != strings.Trim(input.Path, "/") {
+			return refused
+		}
+		version, err := versionClient(ctx).HeadVersion(ctx, &tree.HeadVersionRequest{NodeUuid: result.NativeNodeId, VersionId: published.VersionId})
+		if err != nil || !jobstore.NativeUploadPublishedVersionMatches(version.GetVersion(), published) {
+			return refused
+		}
+		byPath, err := router.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Path: strings.Trim(input.Path, "/")}})
+		if err != nil || byPath.GetNode().GetUuid() != result.NativeNodeId || byPath.GetNode().GetType() != tree.NodeType_LEAF {
+			return refused
+		}
+		fresh, err := h.UuidClient(true).ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: result.NativeNodeId}, StatFlags: []uint32{tree.StatFlagNone}})
+		if err != nil || fresh.GetNode().GetUuid() != result.NativeNodeId || fresh.GetNode().GetType() != tree.NodeType_LEAF {
+			return refused
+		}
+		result.Ready, result.Completed, result.VersionId = false, true, published.VersionId
+	} else if observed["terminalStatus"] != nil || submission["gateState"] == "DENIED" || submission["gateState"] == "REVOKED" || submission["gateState"] == "EXPIRED" {
+		return errors.WithStack(errors.StatusConflict)
 	}
 	resp.Header().Set("Cache-Control", "no-store")
 	if !result.Completed {
