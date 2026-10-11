@@ -16,7 +16,8 @@ import {
   getInboxTypeLabel,
   feedPreview,
 } from "@client-kit/platform/inbox";
-import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
+import { truncatePubkey } from "@client-kit/platform/format";
+import { formatItemTimestamp } from "@client-kit/platform/react/messages/datetime";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
@@ -365,7 +366,7 @@ export function InboxPane({
               <InboxRow id={item.id} selected={row.scopeKey===selected} read={read}
                 sender={<span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{sender}</span>}
                 avatar={<UserAvatar avatarUrl={null} className="h-9 w-9" displayName={sender} size="md" shape="circle"/>}
-                timestamp={relativeTime(locale,new Date(row.latestActivityAt*1000).toISOString())}
+                timestamp={formatItemTimestamp(row.latestActivityAt)}
                 unread={row.unreadCount>1?t("inbox.unreadCount",{count:row.unreadCount}):null}
                 label={typeLabel.text} channel={null} openLabel={t("inbox.openItem",{sender})}
                 onSelect={()=>{setProfileTarget(null);setSelected(row.scopeKey);if(!read)reads.write(inboxReadContexts(row.items.map(readItem),true));}}
@@ -386,7 +387,7 @@ export function InboxPane({
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
               sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
               avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
-              timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
+              timestamp={formatItemTimestamp(row.latestActivityAt)}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
               label={typeLabel.text}
               channel={typeLabel.channelLabel}

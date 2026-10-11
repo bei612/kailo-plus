@@ -28,6 +28,15 @@ const event = {
   tags: [["h", "workspace-a"]],
 };
 
+const calendarNow = new Date(2026, 9, 11, 15, 30).getTime();
+const timestampCases = (["en", "zh-CN"] as const).flatMap(locale => [
+  {locale, band:"today", date:new Date(2026,9,11,14,5), expected:new Intl.DateTimeFormat(locale,{hour:"numeric",minute:"2-digit"}).format(new Date(2026,9,11,14,5))},
+  {locale, band:"yesterday", date:new Date(2026,9,10,23,59), expected:locale==="en"?"Yesterday":"昨天"},
+  {locale, band:"weekday", date:new Date(2026,9,8,12), expected:new Intl.DateTimeFormat(locale,{weekday:"long"}).format(new Date(2026,9,8,12))},
+  {locale, band:"same-year", date:new Date(2026,5,20,12), expected:new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric"}).format(new Date(2026,5,20,12))},
+  {locale, band:"previous-year", date:new Date(2025,5,20,12), expected:new Intl.DateTimeFormat(locale,{month:"short",day:"numeric",year:"numeric"}).format(new Date(2025,5,20,12))},
+]);
+
 beforeEach(() => {
   api.projectQuery.mockReset().mockResolvedValue({events:[],pubkey:"c".repeat(64),limit:20,bindingVersion:1});
   api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
@@ -99,13 +108,14 @@ describe("Inbox uses the original shared HomeLoadingState at the real read bound
 });
 
 describe("Web Inbox's actual BFF page scope consumer", () => {
-  it("opens the original project task detail and marks only project event IDs without inventing a Workspace", async () => {
+  it.each(timestampCases)("opens the original project task detail with its $band calendar timestamp in $locale and marks only project event IDs", async ({locale,date,expected}) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    setLocale("en"); localStorage.clear(); sessionStorage.clear();
+    localStorage.clear(); sessionStorage.clear(); setLocale(locale);
+    vi.spyOn(Date,"now").mockReturnValue(calendarNow);
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     const self="c".repeat(64), author="b".repeat(64), repository=`30617:${author}:repo`;
-    const task={...event,id:"f".repeat(64),kind:1621,content:"Original complete project task",tags:[["a",repository],["subject","Project task"],["p",self]]};
+    const task={...event,id:"f".repeat(64),kind:1621,created_at:date.getTime()/1_000,content:"Original complete project task",tags:[["a",repository],["subject","Project task"],["p",self]]};
     const rows=[task,{...event,id:"1".repeat(64),kind:30617,tags:[["d","repo"],["name","Repository"]]},
       {...event,id:"2".repeat(64),kind:30621,tags:[["d","project"],["name","Project"],["a",repository]]}];
     const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633]};
@@ -119,10 +129,11 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const onOpen=vi.fn();
     try {
-      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen} onStartDm={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen} onStartDm={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
       await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${task.id}"]`)).not.toBeNull());
       const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${task.id}"]`)!;
       expect(row.querySelector(".inbox-preview-markdown.text-inherit")).not.toBeNull();
+      expect(row.querySelector('[class*="group-hover/inbox-item:opacity-0"]')?.textContent).toBe(expected);
       await act(async()=>row.querySelector<HTMLButtonElement>(":scope > button")!.click());
       await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-project-inbox-detail"]')?.textContent).toContain("Original complete project task"));
       expect(api.write).toHaveBeenCalledWith([{key:`msg:${task.id}`,seconds:task.created_at}]);
@@ -130,9 +141,12 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
       expect(host.querySelector('[data-testid="project-issue-comment-composer"]')).toBeNull();
     } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
   });
-  it("selects the actual Inbox row when its original inert link preview is clicked without opening another page", async () => {
+  it.each(timestampCases)("selects the actual Inbox row with its $band calendar timestamp in $locale when its original inert link preview is clicked", async ({locale,date,expected}) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    setLocale("en");localStorage.clear();sessionStorage.clear();
+    localStorage.clear();sessionStorage.clear();setLocale(locale);
+    const scrollDescriptor=Object.getOwnPropertyDescriptor(Element.prototype,"scrollIntoView");
+    Object.defineProperty(Element.prototype,"scrollIntoView",{configurable:true,value:vi.fn()});
+    vi.spyOn(Date,"now").mockReturnValue(calendarNow);
     vi.stubGlobal("ResizeObserver",class {observe(){}unobserve(){}disconnect(){}});
     vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
     const self="c".repeat(64);
@@ -143,7 +157,7 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
     api.agentInstallations.mockResolvedValue({installations:[]});
     api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"}]);
     api.workspaceMessages.mockReset().mockResolvedValue({events:[
-      {...event,content:"[original link](https://example.com)",tags:[...event.tags,["p",self]]},
+      {...event,created_at:date.getTime()/1_000,content:"[original link](https://example.com)",tags:[...event.tags,["p",self]]},
       {...event,id:"d".repeat(64),kind:39006,tags:[...event.tags,["d","workspace-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})},
     ]});
     api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,eventId:"profile",displayName:"Author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
@@ -151,17 +165,18 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const onOpen=vi.fn();
     try {
-      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
       await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"] .inbox-preview-markdown`)).not.toBeNull());
       const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"]`)!;
       const preview=row.querySelector<HTMLElement>(".inbox-preview-markdown")!;
+      expect(row.querySelector('[class*="group-hover/inbox-item:opacity-0"]')?.textContent).toBe(expected);
       expect(preview.querySelector("a,button,[role=button]")).toBeNull();
       api.write.mockClear();
       await act(async()=>preview.querySelector<HTMLElement>("span.font-medium")!.click());
       expect(row.getAttribute("aria-current")).toBe("true");
       expect(api.write).toHaveBeenCalledTimes(1);
       expect(onOpen).not.toHaveBeenCalled();
-    } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+    } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();if(scrollDescriptor)Object.defineProperty(Element.prototype,"scrollIntoView",scrollDescriptor);else Reflect.deleteProperty(Element.prototype,"scrollIntoView");}
   });
   it("renders the original empty preview through the shared locale consumer and updates it without refetching identity", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

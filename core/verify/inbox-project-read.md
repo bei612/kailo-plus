@@ -291,3 +291,45 @@ memory+swap 同限额和 Data 挂载后，以固定基底加本批六文件私�
 
 本批没有部署、新版浏览器截图、Windows 安装包验收或 full 门禁通过；
 现网旧 `9d718234b74b688d9b81816f9b67470d4fc80440` 截图不认领本次修复。
+
+### Inbox 原日历时间呈现恢复
+
+本批基底 `f35b70a8329a91ef02cb0151e6ebac46d72a3217`，固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/lib/inbox.ts::formatInboxTimestamp` 直接消费
+`desktop/src/shared/lib/datetime.ts::formatItemTimestamp`：当天时分、昨日、周内星期、
+同年月日和跨年月日年，而非管理面“几小时前/几个月前”。Web 原有项目行与频道/DM 行
+调用 `relativeTime` 是未授权呈现差异。本批两处均改用既有共享
+`client-kit/ts/platform/src/react/messages/datetime.ts::formatItemTimestamp`，
+不重写 formatter；Desktop 既有同名薄转发保持不变。
+
+四步核对：权威为原版恢复要求与上述固定源码；影响面只有 Web 两个真实 InboxRow
+时间参数、既有检查和本回执，无 schema、数据库、排序或读账本变化。共享 formatter
+沿原本地日界与 `calendarDaysBetween` 处理跨日，语言取既有 `resolveLocale()`，
+中文默认/英文适配属于已授权差异。日历规则归原样保留，同一已存在 formatter 的
+实际调用归共享迁移；本批没有新治理分支。空列表、读失败、scope/generation 失效、
+背压及 UNKNOWN 仍由原读取链处理，不改变 06 §4 错误分类，也不产生外部副作用、
+并发写入或新的待收敛状态；Mobile 无本次入口。原项目 Git/写入/作者资料缺项仍保留。
+
+复用已完成且六文件逐字核对基底的私有输入 `project-rich-content.7UYjw7`，仅投递
+本批两个 Web 文件；原冻结 index/日志未覆盖。实际检查原 SDK 仅 sleep、
+4 CPU/8 GiB、等额 swap 和 Data 挂载后运行，无新镜像/依赖/大导出。
+本批日志目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-calendar-closure/`。
+
+- 5034：`node node_modules/typescript/bin/tsc --noEmit` exit 0；原 Inbox 套件
+  37 passed/11 failed，exit 1，保留 `positive.log`。夹具先设英文再清 storage，
+  导致真实共享 formatter 正确回到默认中文；另有 jsdom 缺 `scrollIntoView`。
+  仅纠正两处夹具初始化顺序及还原式 DOM 方法投递，未改生产语言或断言期望。
+- 90811：上述 tsc exit 0；
+  `node node_modules/vitest/vitest.mjs run src/platform/ui/InboxPane.test.tsx --pool=threads --no-file-parallelism`
+  48/48、exit 0，6.34s，日志 `positive-fixture.log`。项目与频道真实行各执行
+  当天/昨日/周内/同年/跨年、中英共二十组，检查实际时间 span；原详情、预览点击、
+  精确读标记与不得外跳断言保留，不 mock formatter。
+- 2307：只在私有 `InboxPane.tsx` 恢复旧 `relativeTime` 两调用；上述命令加
+  `-t "calendar timestamp"`，20 failed/28 skipped、exit 1，日志 `mutation.log`。
+  实际中文跨年收到 `16 个月前`，原规则期望 `2025年6月20日`，两行均捕获退化。
+- 还原两个文件与正式源码逐字 cmp 0；69972 原完整套件 48/48、exit 0，
+  6.10s，日志 `restored.log`。原 act 警告保留，不提高检查超时。
+
+本批为源码恢复与定向消费者证据；未部署、未做对应新版浏览器截图或 Windows
+安装包验收，未重跑 full。已有旧部署图片不能认领本批日历时间修复。
