@@ -36,23 +36,38 @@ fn builtin_knowledge() -> Result<Registration, Refusal> {
     registration(&raw)
 }
 
+fn builtin_data_query() -> Result<Registration, Refusal> {
+    let raw = serde_json::from_str(include_str!(
+        "../../../../contracts/adapter/data_query.v1/registration.json"
+    ))
+    .map_err(|_| bad())?;
+    registration(&raw)
+}
+
 /// Seed data is compiled into the same Core that validates Catalog content.
 /// A deployment may install the missing v1 once; it cannot reactivate a retired
 /// category, replace a registered contract, or approve a component release.
-pub(crate) async fn ensure_builtin_knowledge(
+pub(crate) async fn ensure_builtin_contracts(
     pool: &sqlx::PgPool,
     tenant: Uuid,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    bootstrap_knowledge(&mut tx, tenant).await?;
+    for seed in [builtin_knowledge(), builtin_data_query()] {
+        bootstrap_contract(
+            &mut tx,
+            tenant,
+            seed.map_err(|_| "compiled capability contract is invalid")?,
+        )
+        .await?;
+    }
     tx.commit().await.map_err(|e| e.to_string())
 }
 
-async fn bootstrap_knowledge(
+async fn bootstrap_contract(
     tx: &mut Transaction<'_, Postgres>,
     tenant: Uuid,
+    seed: Registration,
 ) -> Result<(), String> {
-    let seed = builtin_knowledge().map_err(|_| "built-in knowledge contract is invalid")?;
     let catalog: Option<Uuid> = sqlx::query_scalar(
         "select t.id from identity.tenant t where t.id=$1
          and t.state in ('PROVISIONING','ACTIVE') and exists (
@@ -86,7 +101,9 @@ async fn bootstrap_knowledge(
             || schema != seed.schema_digest
             || suite != seed.suite_digest
         {
-            return Err("built-in knowledge v1 conflicts with immutable Catalog content".into());
+            return Err(
+                "compiled capability contract conflicts with immutable Catalog content".into(),
+            );
         }
         // Deliberately do not update state: later governance remains authoritative.
         return Ok(());
@@ -99,7 +116,7 @@ async fn bootstrap_knowledge(
     .await
     .map_err(|e| e.to_string())?;
     if category_exists {
-        return Err("built-in knowledge bootstrap is zero-to-one only".into());
+        return Err("capability contract bootstrap is zero-to-one only".into());
     }
     let actor = crate::tenant_bootstrap::deployment_principal(tx, tenant).await?;
     let ae = Uuid::new_v4();
@@ -855,6 +872,7 @@ pub async fn list(
 #[cfg(test)]
 mod registration_tests {
     use super::*;
+    use sqlx::Acquire;
 
     #[test]
     fn prior_native_reference_defers_only_the_empty_input_slot() {
@@ -950,6 +968,57 @@ mod registration_tests {
         {
             assert_eq!(step["referenceFromStepKey"], "ingest");
         }
+    }
+
+    #[test]
+    fn builtin_data_query_uses_only_the_three_existing_native_consumers() {
+        let seed = builtin_data_query().expect("compiled data-query schema and vectors");
+        assert_eq!(seed.category, "data_query");
+        assert_eq!(seed.version, 1);
+        let keys: BTreeMap<_, _> = seed.content["operationContracts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|op| {
+                (
+                    op["contractKey"].as_str().unwrap(),
+                    op["permission"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            BTreeMap::from([
+                ("data_query.query@v1", "execute"),
+                ("data_query.dry_run@v1", "execute"),
+                ("data_query.describe@v1", "read"),
+            ])
+        );
+        assert_eq!(seed.content["protocolSessionKinds"], json!([]));
+        let documents: BTreeMap<String, Value> = seed
+            .schemas
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                (
+                    entry["digest"].as_str().unwrap().to_owned(),
+                    entry["schema"].clone(),
+                )
+            })
+            .collect();
+        let query = &seed.content["operationContracts"][0];
+        let schema = &documents[query["inputSchemaDigest"].as_str().unwrap()];
+        let validator = schema_validator(schema, &documents).unwrap();
+        let reference = json!({"resourceId":Uuid::new_v4(),"nativeObjectRef":"opaque native intent",
+            "nativeRevision":"a".repeat(64),"displayName":"query","mediaType":"application/json"});
+        assert!(validator.is_valid(&reference));
+        let mut credential_override = reference.clone();
+        credential_override["secretRef"] = json!("caller-selected");
+        assert!(!validator.is_valid(&credential_override));
+        let mut invalid_revision = reference;
+        invalid_revision["nativeRevision"] = json!("unknown");
+        assert!(!validator.is_valid(&invalid_revision));
     }
 
     #[test]
@@ -1051,8 +1120,12 @@ mod registration_tests {
         sqlx::query("insert into identity.relay_operator_identity(catalog_tenant_id,pubkey,private_key_secret_ref,audience,relay_operator_api_origin,state,private_key_secret_version,private_key_secret_audience)
             values($1,$2,'fixture-reference','fixture-audience','https://relay.invalid','ACTIVE',1,'fixture-service')")
             .bind(tenant).bind(format!("{:0>64}", tenant.simple())).execute(&mut *tx).await.unwrap();
-        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
-        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_knowledge().unwrap())
+            .await
+            .unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_knowledge().unwrap())
+            .await
+            .unwrap();
         let row: (String, Option<Uuid>, Option<Uuid>, Option<Uuid>) = sqlx::query_as(
             "select status,registered_by_action_execution_id,approved_by_action_execution_id,bootstrap_action_execution_id
              from catalog.capability_contract where category_key='knowledge' and catalog_tenant_id=$1")
@@ -1064,6 +1137,66 @@ mod registration_tests {
                     (select count(*) from audit.audit_event where tenant_id=$1 and action_key=$2)")
             .bind(tenant).bind(BOOTSTRAP).fetch_one(&mut *tx).await.unwrap();
         assert_eq!((actions, audits), (1, 3));
+        bootstrap_contract(&mut tx, tenant, builtin_data_query().unwrap())
+            .await
+            .unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_data_query().unwrap())
+            .await
+            .unwrap();
+        let counts: (i64, i64) = sqlx::query_as(
+            "select (select count(*) from admission.action_execution where tenant_id=$1 and action_key=$2),
+                    (select count(*) from audit.audit_event where tenant_id=$1 and action_key=$2)")
+            .bind(tenant).bind(BOOTSTRAP).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(counts, (2, 6));
+        let query_seed: (String, Uuid) = sqlx::query_as(
+            "select status,bootstrap_action_execution_id from catalog.capability_contract
+             where category_key='data_query' and contract_version=1 and catalog_tenant_id=$1",
+        )
+        .bind(tenant)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(query_seed.0, "ACTIVE");
+        let query_target = target_id(tenant, "data_query", 1);
+        {
+            // Revert must not orphan an installed immutable seed. Use the
+            // actual down migration in a savepoint, not a copied predicate.
+            let mut rollback = tx.begin().await.unwrap();
+            let refused = sqlx::raw_sql(include_str!(
+                "../../../migrations/20261010040000_capability_data_query_seed.down.sql"
+            ))
+            .execute(&mut *rollback)
+            .await
+            .unwrap_err();
+            assert_eq!(
+                refused.as_database_error().unwrap().code().as_deref(),
+                Some("23514")
+            );
+            rollback.rollback().await.unwrap();
+        }
+        for (category, version, expected) in [
+            ("data_query", 1, true),
+            ("data_query", 2, false),
+            ("unknown", 1, false),
+        ] {
+            let accepted: bool = sqlx::query_scalar(
+                "select catalog.valid_capability_seed_bootstrap($1,$2,$3,$4,$5)",
+            )
+            .bind(query_seed.1)
+            .bind(tenant)
+            .bind(category)
+            .bind(version)
+            .bind(query_target)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(accepted, expected);
+        }
+        let mut conflicting = builtin_data_query().unwrap();
+        conflicting.content["requiredDeclarations"] = json!([]);
+        assert!(bootstrap_contract(&mut tx, tenant, conflicting)
+            .await
+            .is_err());
         let target = target_id(tenant, "knowledge", 1);
         let accepted: bool = sqlx::query_scalar(
             "select catalog.valid_capability_seed_bootstrap($1,$2,'knowledge',1,$3)",
@@ -1085,7 +1218,9 @@ mod registration_tests {
             .bind(deprecation).bind(tenant).bind(actor).bind(target).bind("a".repeat(64)).execute(&mut *tx).await.unwrap();
         sqlx::query("update catalog.capability_contract set status='DEPRECATED',deprecated_by_action_execution_id=$1 where id=$2")
             .bind(deprecation).bind(target).execute(&mut *tx).await.unwrap();
-        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_knowledge().unwrap())
+            .await
+            .unwrap();
         let status: String =
             sqlx::query_scalar("select status from catalog.capability_contract where id=$1")
                 .bind(target)

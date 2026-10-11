@@ -70,7 +70,7 @@ pub async fn ensure(
     http: &reqwest::Client,
 ) -> Result<Uuid, String> {
     let tenant = ensure_operator(pool, secrets, audit, cfg, http).await?;
-    crate::capability_contract::ensure_builtin_knowledge(pool, tenant).await?;
+    crate::capability_contract::ensure_builtin_contracts(pool, tenant).await?;
     Ok(tenant)
 }
 

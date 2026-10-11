@@ -265,3 +265,48 @@ adapter 原生消费者闭合。此处没有伪造 fixture native ID/revision，
 Remote Adapter 套件接通阻断，不能把隔离通过当作真实 read/export 通过；不会在
 Adapter 添加另一条只为套件通过的执行或鉴权路径。原生独立服务开发与平台协作
 主线继续，不因这一组件接缝停工。
+
+## 2026-10-11 data_query.v1 种子收口
+
+依据 DD-102/DD-108、设计07 §2.4，补入已定三类预置种子中的问数契约，
+不是登记 Wren release 或启用 binding。沿原 Catalog 部署引导的同一事务、
+ServicePrincipal、ActionExecution 和审计写者安装；只做缺失类别的 0→1。
+已有内容或 digest 不同即拒绝，不覆盖 ACTIVE 内容、不恢复 DEPRECATED 状态。
+原幂等引导与 Tenant 行锁处理重复/并发；事务失败全部回滚，不产生半份契约。
+
+影响为 `capability_contract::ensure_builtin_contracts` 及其唯一引导调用者、
+`contracts/adapter/data_query.v1/registration.json`、Core Docker/COPY/发布归档输入，
+和原部署凭证校验函数的 up/down 迁移。没有新增平台实体、工作流或权限；
+仅交付既有 query/dry_run/describe 三键。数据源仍在服务自身存储。
+迁移只扩原受控 seed 凭证谓词，不写 Catalog 行；down 遇已有问数种子以
+SQLSTATE 23514 拒绝，不能为回滚删除不可变内容或审计。
+这是 Catalog 内容文档，不改四侧生成线格式；通用登记验证器仍检查全部 schema/digest。
+
+本次固定原生 Wren `c5f02a0391c87420dba78632dcd86073710deb72` 的
+`wren-ui/src/apollo/server/services/deployService.ts::DeployService.createMDLHash`
+与 `wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview`。
+未登记的向量改为实际原生 SUCCESS 部署
+`b6868695012f1cadd395755ace4189a75bcc81bc`、模型 `public_source`；describe 的
+INTEGER 与真实 Ibis 查询的 int32 分开保留。06:04 UTC 重跑原 QueryService：
+dryRunAccepted=true，columns=[{"name":"value","type":"int32"}]，data=[[1]]，exit 0。
+原件在 `/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ/preparation/`。
+这只是隔离合成数据的真实输出，不证明受治理查询、撤权或完整组件套件。
+
+Rust 两实现文件及两迁移与此前隔离数据库验证输入逐字 cmp 均为 0。该原件在
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/data-query-seed.fDLqU2/`：
+原 SQLx up/down/up 和 13/13（含真实 PostgreSQL 引导）通过；删除原不可变内容
+比较的实际反证退出 101，恢复后 13/13。此次重新读取日志并核验 SHA-256：
+`registration-restored.log` 为 `3dca07d25e54ad4eede4a2293480c45c6f99a175a3594279d48fb7ee603c7cca`。
+
+本次将当前 registration 只读挂入原输入，复用 SDK 镜像及 Data Rust 缓存；
+启动前核对实际 4 CPU/8 GiB、memory+swap=8 GiB、UID 1000、network none，Cargo jobs 16。
+原命令 `cargo test --offline -p platform-core --bin platform-core capability_contract::registration_tests -- --nocapture`
+退出 0：12 passed / 1 ignored。被忽略的是上述数据库用例，本次没有重启或重跑数据库。
+日志为 `/volumes/data/kailo/tmp/data-query-seed-current.f91hOi/registration-current.log`；
+临时检查容器退出 0 后移除，源码与日志保留。`bash -n tools/release.sh` 退出 0。
+原 `tools/check-docs.sh` 在同镜像的 2 CPU/4 GiB 只读源码容器退出 0，
+277 引用、87 实体、115 DD、29 SS、87 场景均闭合，日志为同目录 `docs.log`。
+
+当前全局 full 仍有既有格式/产物追溯失败，本批未声称全量通过；未部署这个 Core
+候选、未执行线上迁移、未批准组件、未激活 binding，三个组件菜单不会因种子提交
+自动出现。接收方内部同步与普通 execute 套件的接缝也没有在本批冒充解决。

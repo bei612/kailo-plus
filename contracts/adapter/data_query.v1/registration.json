@@ -1,0 +1,60 @@
+{
+  "categoryKey": "data_query",
+  "contractVersion": 1,
+  "resourceTypeFamily": [
+    {
+      "typeKey": "data_query.model",
+      "kind": "MODEL"
+    },
+    {
+      "typeKey": "data_query.view",
+      "kind": "VIEW"
+    }
+  ],
+  "operationContracts": [
+    {
+      "contractKey": "data_query.query@v1",
+      "surface": "TOOL",
+      "inputSchemaDigest": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
+      "outputSchemaDigest": "1fffd9fda38ecd3770c81b4760d4366d679d1f4d274fe47111b9f1eeb64f7eab",
+      "permission": "execute",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "data_query.dry_run@v1",
+      "surface": "TOOL",
+      "inputSchemaDigest": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
+      "outputSchemaDigest": "0ef47f1c08c5bf8752cd2be1267b6f8ba11fdfb2370929b0470b4cc0070195ea",
+      "permission": "execute",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "data_query.describe@v1",
+      "surface": "TOOL",
+      "inputSchemaDigest": "7c68c781cb877a03a71cc21c403a22e4f21ad21cc55657adc53c6ac1e836c8d4",
+      "outputSchemaDigest": "e620ba8ea4f29f185fc7c01b56098c7831d8534c5b9c5a4ceb2a31e59c56c3a1",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    }
+  ],
+  "contentReferenceSemantics": {
+    "nativeObjectRefRule": "Opaque native query intent supplied by the source service in a typed ContentReference; never reconstruct a reference from resultJson.",
+    "nativeRevisionRule": "Immutable digest of the source query intent, binding, native scope, connection and captured deployment. Changed source intent or revision is rejected before execution; it is not a snapshot of database rows.",
+    "authorizationTargetRule": "The Resource identifies the admitted native model or view in the same binding and scope. Query execution authorizes every actual source, including view dependencies; describe reveals only the authorized model."
+  },
+  "requiredDeclarations": [
+    "CANCEL",
+    "OBSERVE",
+    "METER",
+    "TENANT_DELETE"
+  ],
+  "protocolSessionKinds": [],
+  "schemaDocuments": [
+    "{\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"pattern\":\"^[a-f0-9]{40}$\",\"type\":\"string\"},\"deploymentId\":{\"minimum\":1,\"type\":\"integer\"},\"limit\":{\"minimum\":1,\"type\":\"integer\"},\"sql\":{\"minLength\":1,\"type\":\"string\"}},\"required\":[\"sql\",\"deploymentId\",\"deploymentHash\",\"limit\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"const\":\"application/json\"},\"nativeObjectRef\":{\"minLength\":1,\"type\":\"string\"},\"nativeRevision\":{\"pattern\":\"^[a-f0-9]{64}$\",\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"type\":\"object\"}],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"cacheCreatedAt\":{\"type\":[\"string\",\"null\"]},\"cacheHit\":{\"type\":\"boolean\"},\"cacheOverrodeAt\":{\"type\":[\"string\",\"null\"]},\"columns\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"},\"type\":{\"type\":\"string\"}},\"required\":[\"name\",\"type\"],\"type\":\"object\"},\"type\":\"array\"},\"data\":{\"items\":{\"items\":{},\"type\":\"array\"},\"type\":\"array\"},\"deploymentHash\":{\"pattern\":\"^[a-f0-9]{40}$\",\"type\":\"string\"},\"deploymentId\":{\"minimum\":1,\"type\":\"integer\"},\"override\":{\"type\":\"boolean\"}},\"required\":[\"columns\",\"data\",\"deploymentId\",\"deploymentHash\"],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"pattern\":\"^[a-f0-9]{40}$\",\"type\":\"string\"},\"deploymentId\":{\"minimum\":1,\"type\":\"integer\"},\"valid\":{\"const\":true}},\"required\":[\"valid\",\"deploymentId\",\"deploymentHash\"],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"limit\":{\"minimum\":1,\"type\":\"integer\"}},\"required\":[],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"pattern\":\"^[a-f0-9]{40}$\",\"type\":\"string\"},\"deploymentId\":{\"minimum\":1,\"type\":\"integer\"},\"models\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"columns\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"name\":{\"minLength\":1,\"type\":\"string\"},\"type\":{\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"},\"type\":\"array\"},\"name\":{\"type\":\"string\"}},\"required\":[\"name\",\"columns\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"deploymentId\",\"deploymentHash\",\"models\"],\"type\":\"object\"}"
+  ],
+  "testVectorsJson": "{\"cases\":[{\"caseKey\":\"native_query\",\"steps\":[{\"contractKey\":\"data_query.describe@v1\",\"expectedOutputJson\":\"{\\\"deploymentHash\\\":\\\"b6868695012f1cadd395755ace4189a75bcc81bc\\\",\\\"deploymentId\\\":1,\\\"models\\\":[{\\\"columns\\\":[{\\\"name\\\":\\\"value\\\",\\\"type\\\":\\\"INTEGER\\\"}],\\\"name\\\":\\\"public_source\\\"}]}\",\"inputJson\":\"{\\\"limit\\\":1}\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"stepKey\":\"describe\"},{\"contractKey\":\"data_query.dry_run@v1\",\"expectedOutputJson\":\"{\\\"deploymentHash\\\":\\\"b6868695012f1cadd395755ace4189a75bcc81bc\\\",\\\"deploymentId\\\":1,\\\"valid\\\":true}\",\"inputJson\":\"{}\",\"referenceFromStepKey\":\"describe\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"stepKey\":\"dry_run\"},{\"contractKey\":\"data_query.query@v1\",\"expectedOutputJson\":\"{\\\"columns\\\":[{\\\"name\\\":\\\"value\\\",\\\"type\\\":\\\"int32\\\"}],\\\"data\\\":[[1]],\\\"deploymentHash\\\":\\\"b6868695012f1cadd395755ace4189a75bcc81bc\\\",\\\"deploymentId\\\":1}\",\"inputJson\":\"{}\",\"referenceFromStepKey\":\"describe\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"stepKey\":\"query\"}]}],\"formatVersion\":\"V1\"}"
+}
