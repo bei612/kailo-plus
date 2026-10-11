@@ -10,12 +10,13 @@ vi.mock("@tanstack/react-router", () => ({ useBlocker: () => ({ status: "idle" }
 vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChannelDialog: () => null }));
 
 const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false,
-  channelType: "stream", conversationId: null as string | null,
+  channelType: "stream", conversationId: null as string | null, emptyWorkspaces: false,
   startDm: {} as Record<string, (pubkey: string) => void | Promise<void>>,
   openDm: vi.fn(), reloadConversations: vi.fn(), openConversation: vi.fn(), openTab: vi.fn(),
   search: null as import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch> | null,
   openChannel: vi.fn(), searchRefetch: vi.fn(),
   headerReady: true, conversationState: "ACTIVE", privateWorkspace: false,
+  copyTitle: undefined as undefined | ((title: string) => Promise<void>),
   messageTarget:null as null|{channelId:string;messageId:string;threadRootId:string|null},
   paneTarget:null as null|{targetMessageId?:string;targetThreadRootId?:string},
   searchHighlight:null as null|{activationId:string;messageId:string;query:string},
@@ -23,6 +24,15 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   openPaneMessageLink:undefined as import("react").ComponentProps<typeof import("./ChannelPane").ChannelPane>["onOpenMessageLink"],
   forumSearch:null as null|Pick<import("react").ComponentProps<typeof import("./ForumPane").ForumPane>,"target"|"searchMessageId"|"searchQuery"|"searchActivationId">,
 }));
+const copyFeedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: copyFeedback }));
+vi.mock("@client-kit/platform/react/messages/chat-header", async original => {
+  const actual = await original<typeof import("@client-kit/platform/react/messages/chat-header")>();
+  return { ...actual, ChatHeader: (props: import("react").ComponentProps<typeof actual.ChatHeader>) => {
+    state.copyTitle = props.onCopyTitle;
+    return <actual.ChatHeader {...props} />;
+  } };
+});
 const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
 function searchHit(channelId:string,threadRootId:string|null=null):import("@client-kit/platform/react/search/types").SearchHit {
   return {channelId,eventId:"actual-message",threadRootId,content:"actual result",pubkey:"b".repeat(64),kind:9,channelName:null,createdAt:12,score:1};
@@ -63,7 +73,7 @@ vi.mock("@tanstack/react-query", () => ({
     return ({
     data:
       options.queryKey[1] === "workspaces"
-        ? [
+        ? state.emptyWorkspaces ? [] : [
             { id: "workspace-a", name: "A", isMember: state.memberA, visibility: "open" },
             { id: "workspace-b", name: "B", isMember: state.memberB, visibility: state.privateWorkspace ? "private" : "open" },
           ]
@@ -191,11 +201,15 @@ vi.mock("@/platform/bff-client", () => ({
 }));
 
 beforeEach(() => {
+  state.copyTitle = undefined;
+  copyFeedback.success.mockReset();
+  copyFeedback.error.mockReset();
   state.hook = 0;
   state.accessMode = "FULL";
   state.documentTheme = "";
   state.memberA = true;
   state.memberB = true;
+  state.emptyWorkspaces = false;
   state.tab = "members";
   state.workspaceId = null;
   state.channelEnabled = false;
@@ -214,6 +228,43 @@ beforeEach(() => {
   state.openConversation.mockReset().mockResolvedValue(undefined);
   state.openTab.mockReset();
   window.history.replaceState({}, "", "/app/");
+});
+
+it.each(["channel", "conversation"])("copies the actual %s title through the HTTP host and preserves refusal", async surface => {
+  state.tab = surface;
+  state.conversationId = surface === "conversation" ? "actual-dm" : null;
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  const commandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+  const copy = vi.fn(() => {
+    expect((document.activeElement as HTMLTextAreaElement).value).toBe("Actual title");
+    return true;
+  });
+  Object.defineProperty(document, "execCommand", { configurable: true, value: copy });
+  try {
+    renderToStaticMarkup(<PlatformApp />);
+    expect(state.copyTitle).toBeTypeOf("function");
+    await state.copyTitle!("Actual title");
+    expect(copy).toHaveBeenCalledExactlyOnceWith("copy");
+    expect(copyFeedback.success).toHaveBeenCalledOnce();
+    expect(copyFeedback.error).not.toHaveBeenCalled();
+    copy.mockReturnValueOnce(false);
+    await state.copyTitle!("Actual title");
+    expect(copyFeedback.error).toHaveBeenCalledOnce();
+    expect(copyFeedback.success).toHaveBeenCalledOnce();
+    const writeText = vi.fn().mockRejectedValue(new Error("permission denied"));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await state.copyTitle!("Actual title");
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("Actual title");
+    expect(copy).toHaveBeenCalledTimes(2);
+    expect(copyFeedback.error).toHaveBeenCalledTimes(2);
+    expect(copyFeedback.success).toHaveBeenCalledOnce();
+  } finally {
+    if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    else Reflect.deleteProperty(navigator, "clipboard");
+    if (commandDescriptor) Object.defineProperty(document, "execCommand", commandDescriptor);
+    else Reflect.deleteProperty(document, "execCommand");
+  }
 });
 
 it("passes the actual search thread root only to its selected admitted stream workspace",()=>{
@@ -424,9 +475,21 @@ it("does not substitute a default channel for a route outside the fresh workspac
   state.tab = "channel";
   state.workspaceId = "revoked-workspace";
   const markup = renderToStaticMarkup(<PlatformApp />);
-  expect(markup).toContain("platform.noWorkspace");
+  expect(markup).toContain("platform.linkChannelUnavailable");
+  expect(markup).not.toContain("platform.noWorkspace");
   expect(state.channelEnabled).toBe(false);
   expect(markup).not.toContain('data-selected="workspace-b"');
+});
+
+it.each([null, "unknown-workspace"])("distinguishes an empty directory from an explicit target %s", workspaceId => {
+  state.tab = "channel";
+  state.workspaceId = workspaceId;
+  state.emptyWorkspaces = true;
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain(workspaceId ? "platform.linkChannelUnavailable" : "platform.noWorkspace");
+  expect(markup).not.toContain(workspaceId ? "platform.noWorkspace" : "platform.linkChannelUnavailable");
+  expect(state.channelEnabled).toBe(false);
+  expect(markup).toContain('data-channels="0"');
 });
 
 it.each(["agents", "workflows"])("passes the exact %s URL workspace to the shared page, even when unavailable", (section) => {

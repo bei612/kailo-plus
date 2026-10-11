@@ -23,6 +23,7 @@ import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-ch
 import { useSearchShortcuts } from "@client-kit/platform/react/use-search-shortcuts";
 import { ConversationVisibilityProvider, useConversations, useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { ConversationSidebar } from "./ConversationSidebar";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
 import { useHomeShortcut, useHistoryShortcuts } from "@client-kit/platform/react/use-navigation-shortcuts";
@@ -547,13 +548,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               channelType={channel.data.channelType}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               onCopyTitle={async (title) => {
-                try { await navigator.clipboard.writeText(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
+                try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
               }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>url}}>
               <ChatHeader title={dmHeaderTitle} channelType="dm" visibility="private"
                 leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
                 onCopyTitle={async title=>{
-                  try { await navigator.clipboard.writeText(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
+                  try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
                 }}/>
             </AvatarHostProvider> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
