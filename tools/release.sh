@@ -44,6 +44,7 @@ git archive --format=tar "$COMMIT" .dockerignore core worker \
   contracts/api/conversation_open_request.schema.json \
   contracts/adapter/knowledge.v1/registration.json \
   contracts/adapter/data_query.v1/registration.json \
+  contracts/adapter/file_storage.v1/registration.json \
   contracts/api/agent_memory_entry_page.schema.json \
   contracts/api/agent_memory_entry_view.schema.json \
   contracts/api/agent_memory_read_view.schema.json \

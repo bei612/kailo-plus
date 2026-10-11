@@ -310,3 +310,107 @@ Rust 两实现文件及两迁移与此前隔离数据库验证输入逐字 cmp �
 当前全局 full 仍有既有格式/产物追溯失败，本批未声称全量通过；未部署这个 Core
 候选、未执行线上迁移、未批准组件、未激活 binding，三个组件菜单不会因种子提交
 自动出现。接收方内部同步与普通 execute 套件的接缝也没有在本批冒充解决。
+
+## 2026-10-11 file_storage.v1 原种子消费者
+
+本批权威为 DD-102/DD-108、设计07 §2.4 的七个必选键与设计08 §4 的原生
+空间/子文件边界。原运行库只读查询时尚无 file_storage 契约、组件定义、release
+或 binding；源码新增的是平台构建交付的能力种子，不是补造一个可用 Cells。
+`file_storage.space` 保留原空间 Resource 的语义，文件/文件夹仍是原生子对象。
+
+影响面为 `capability_contract::ensure_builtin_contracts` 的原第三个种子、
+`registration.json`、原部署身份谓词迁移及 Core 的 Docker COPY、ignore 和
+发布归档输入。唯一部署调用者 `platform_bootstrap` 仍消费同一 ensure 函数，
+没有新注册端点、产品名判断、权限、工作流或账本。现有 schema、四侧线格式、
+SERVICE 传输和独立原生入口均不变；本批无需生成新的四侧类型。
+
+列表工具与版本列表均沿 HUMAN/AGENT 原 `executeNode` 的 `{citations}` 结果，
+因此登记复用已有 `list_revisions_output`；`list_output` 的完整 desired-set、
+operationId 与接收方读取回执属于 SERVICE 传输，保持其独立原消费者不变。
+read/export 输入仍使用各自原 schema，不能替换为允许额外 assetId 的通用
+ContentReference。这个错误设想已在写入前排除，没有修改原输入合同。
+
+列表输出确实引用 ContentReference 文档；原登记器只数 operation 直接摘要会
+误拒绝它。现在先由原离线 jsonschema 验证器完整校验，再仅预载 operation 根，
+沿原 Retrieve 接缝按需供给固定顶层 `$id` 的辅助文档；只有原编译器真正请求
+到的辅助摘要才算消费，孤立循环不能凭互相引用自证消费。未知引用、重复
+根 `$id`、远端引用仍被原校验拒绝；孤立文档不能借此进入注册。URI、循环引用
+及嵌套 `$id` 仍由同一固定解析器处理，不新增字符串扫描器或联网解析路径。
+
+副作用边界：原 Catalog Tenant 行锁、部署 ServicePrincipal、AE 与三条审计
+同事务安装。重复引导不重复写入；已登记内容冲突即拒绝，退役状态不重新激活。
+迁移只扩受控 seed 谓词，不直接写 Catalog；已有 file_storage 种子时 down
+以 SQLSTATE 23514 拒绝，不能靠删除内容或审计回退。异常沿原注册器
+PRECONDITION/CONFLICT 与引导事务回滚收敛，不生成“半份可用组件”。
+
+固定上游核对基准为 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+`gateway/restv2/api-lookup.go::Handler.Lookup`、
+`gateway/restv2/api-versions.go::Handler.NodeVersions/PromoteVersion`、
+`gateway/data/gw/gateway-pydio.go::pydioObjects.GetObjectNInfo/PutObject`、
+`idm/share/client.go::Client.DeleteLink`。未执行或修改只读上游。
+
+注册向量是需要隔离服务实际预置的空间、原生版本、草稿与已有分享条件，
+不是已存在生产对象的声明；write 后 read/export 必须消费同一步真实终态的
+typed ContentReference，不能拿固定草稿引用冒充产出。本批向量只固定合法
+输入/输出与七键覆盖，尚未执行完整原生 conformance。受管延迟删除仍关闭，
+分享仍仅已交付 REVOKE，完整创建/编辑未交付；无 release 批准或 binding 激活。
+初次上传、SERVICE 读取边、真实浏览器页面及部署均不能凭种子注册记为通过。
+
+首轮原定向命令在固定 SDK（4 CPU/8 GiB、memory+swap 8 GiB、UID 1000、
+Data Cargo 缓存）执行 `cargo test --locked --offline -j16 -p platform-core
+--bin platform-core capability_contract::registration_tests -- --nocapture`，
+退出 101：12 passed / 1 failed / 1 ignored。新增 file_storage 种子在原
+registration 消费处返回 InvalidParameters，未把迁移通过冒充种子安装成功。
+固定 jsonschema 0.33 / referencing 0.33 对相对顶层 `$id` 同时用作注册 URI
+及相对基址会重复路径；本批仅在编译副本把顶层 `$id` 投给原 base/resource
+URI 后移除该副本字段，保留嵌套 `$id`、原文档和摘要，继续禁止外部解析。
+该修正及孤立/可达循环断言已由下述末版原消费者执行确认。原库会提前编译
+全部预载文档，曾尝试的移除文档/淘汰辅助规则可能被孤立环污染真实依赖；
+该未验规则已删除，不保留额外 URI 解析或推测引用路径的实现。
+
+第一次增量复验退出 101、未进入断言：共享 Cargo target 在另一精确输入编译后
+误复用了不同生成契约的产物，报 `AdapterProtocolOperation` 不存在。该名字
+实际仍在本批冻结 `contracts.rs` 第 7587 行，其 SHA-256 为
+`2e562b571db9766ef5bce7d4fdcb0e2b460d3afcddf6cb16fbc7a5693e5c2b52`。
+没有把别批 PEP 修改混入本批；仅更新该私有生成输入的 mtime，令原 Cargo
+重新读取相同内容，未删除或更换缓存。失败日志为同目录
+`registration-relative-id-restored.log`，不能算 schema 修正执行结果。
+
+隔离 PostgreSQL 库 `file_storage_seed_wfngxs` 使用已有
+`kailo-installation-scope-pg-e4agxd`，未读写生产库或其它验证库。原 SQLx
+完整 migrate run、末条 revert、再次 run 退出 0；新增迁移三次耗时分别
+63.772164 ms / 57.148825 ms / 54.888419 ms。原只读 runner 为 2 CPU/2 GiB、
+等额 swap、UID 1000，退出 0 且 OOM=false；这只证明迁移，不代替下面的原
+bootstrap 事务用例。原始日志分别为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/file-storage-seed.wfngxs/registration-positive.log`
+及同目录 `migration-up-down-up.log`，首轮失败不覆盖。
+
+引用修正后的首次目标执行退出 101：原 file_storage 注册、七组合同及真实
+ContentReference 引用已通过，新增合成可达环使用 URN 失败。诊断日志保留
+`registration-root-references.log`、`registration-cycle-diagnostic.log`；固定
+referencing 0.33 的 `registry.rs::collect_external_resources` 明确不对 URN
+执行外部依赖发现。合成环改用与实际合同相同的相对分层 ID；不改生产契约，
+不为 URN 新增解析绕行。原全部直接-root URN 用例继续通过；辅助文档仅按
+固定顶层 ID 按需供给，嵌套 ID 和 fragment 仍由原库定位，无法证明的引用拒绝。
+私有诊断输出已移除。
+
+末版仍运行上述同一原命令，`registration-final-positive.log` 退出 0：
+13 passed / 1 ignored。被忽略的原 PostgreSQL 用例单独使用同次编译 binary
+`platform_core-e8d17c3567662e48`，过滤
+`capability_contract::registration_tests::builtin_knowledge_bootstrap_is_audited_idempotent_and_cannot_reactivate
+--exact --ignored --nocapture`，在上述专属库退出 0：1 passed。日志
+`bootstrap-postgres.log`；原事务始终 rollback。它真实验证三种 seed 的
+重复引导、3 个 bootstrap AE/9 条审计、无组件 release/binding 生成、
+不可变内容冲突拒绝、原 Tenant/version/target 谓词及有 seed 时 down 拒绝；
+不等于对生产库执行了安装。
+
+私有反证仅把最终辅助消费判定改成“带 `$id` 即可免检”，保持所有测试原样。
+`registration-orphan-cycle-mutation.log` 退出 101，准确捕获孤立环被错误接受的
+`registration(&unused_cycle).is_err()` 断言；没有用正常失败样例冒充反证。
+原字节恢复并运行原 rustfmt 后，`registration-final-restored.log` 退出 0：
+13 passed / 1 ignored；正式实现与恢复输入逐字 cmp 为 0。
+`bash -n tools/release.sh` 与本批 scoped `git diff --check` 均退出 0。
+
+本批未运行全局 `check.sh --full`，未构建/加载/部署新镜像、未注册或批准
+组件 release、未激活 binding、未进行浏览器/Windows/Mobile 验收。文档检查
+由主线程对本批与并行接缝的固定联合输入统一执行，不能用这些窄验替代全量门禁。

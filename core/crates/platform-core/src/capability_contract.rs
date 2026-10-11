@@ -2,6 +2,7 @@
 //! 这里不执行业务 adapter、不授予 consume，不把契约 ACTIVE 当 release/binding 可用。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Query, State},
@@ -44,6 +45,14 @@ fn builtin_data_query() -> Result<Registration, Refusal> {
     registration(&raw)
 }
 
+fn builtin_file_storage() -> Result<Registration, Refusal> {
+    let raw = serde_json::from_str(include_str!(
+        "../../../../contracts/adapter/file_storage.v1/registration.json"
+    ))
+    .map_err(|_| bad())?;
+    registration(&raw)
+}
+
 /// Seed data is compiled into the same Core that validates Catalog content.
 /// A deployment may install the missing v1 once; it cannot reactivate a retired
 /// category, replace a registered contract, or approve a component release.
@@ -52,7 +61,11 @@ pub(crate) async fn ensure_builtin_contracts(
     tenant: Uuid,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    for seed in [builtin_knowledge(), builtin_data_query()] {
+    for seed in [
+        builtin_knowledge(),
+        builtin_data_query(),
+        builtin_file_storage(),
+    ] {
         bootstrap_contract(
             &mut tx,
             tenant,
@@ -248,6 +261,29 @@ impl jsonschema::Retrieve for NoExternalSchema {
     }
 }
 
+/// Used only after full offline validation: the original compiler asks for
+/// dependencies of operation roots, rather than preloading unrelated documents.
+struct SchemaDependencies {
+    documents: BTreeMap<String, (String, Value)>,
+    consumed: Arc<Mutex<BTreeSet<String>>>,
+}
+impl jsonschema::Retrieve for SchemaDependencies {
+    fn retrieve(
+        &self,
+        uri: &jsonschema::Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let (digest, document) = self
+            .documents
+            .get(uri.as_str())
+            .ok_or("schema reference is not in the fixed registration")?;
+        self.consumed
+            .lock()
+            .map_err(|_| "schema dependency tracking failed")?
+            .insert(digest.clone());
+        Ok(document.clone())
+    }
+}
+
 pub(crate) fn schema_validator(
     schema: &Value,
     documents: &BTreeMap<String, Value>,
@@ -255,13 +291,24 @@ pub(crate) fn schema_validator(
     let mut options = jsonschema::options().with_retriever(NoExternalSchema);
     for other in documents.values() {
         if let Some(id) = other.get("$id").and_then(Value::as_str) {
+            // The registry URI already locates this document. Reapplying its
+            // relative top-level $id would duplicate the path before resolving
+            // child $refs. Only the compiler copy loses that redundant $id;
+            // nested identifiers and the stored/digested document stay intact.
+            let mut resource = other.clone();
+            resource.as_object_mut().ok_or_else(bad)?.remove("$id");
             options = options.with_resource(
                 id.to_owned(),
-                jsonschema::Resource::from_contents(other.clone()).map_err(|_| bad())?,
+                jsonschema::Resource::from_contents(resource).map_err(|_| bad())?,
             );
         }
     }
-    options.build(schema).map_err(|_| bad())
+    let mut root = schema.clone();
+    if let Some(id) = schema.get("$id").and_then(Value::as_str) {
+        options = options.with_base_uri(id.to_owned());
+        root.as_object_mut().ok_or_else(bad)?.remove("$id");
+    }
+    options.build(&root).map_err(|_| bad())
 }
 
 fn validate_schemas(documents: &BTreeMap<String, Value>) -> Result<(), Refusal> {
@@ -484,8 +531,63 @@ fn registration(raw: &Value) -> Result<Registration, Refusal> {
             referenced.insert(digest.to_owned());
         }
     }
-    if documents.is_empty() || referenced.len() != documents.len() {
+    if documents.is_empty() {
         return Err(bad());
+    }
+    // Full schema validation above includes every fixed document. For auxiliary
+    // consumption, preload only the operation roots and let the same compiler
+    // request actual dependencies. An isolated cycle cannot consume itself.
+    if referenced.len() != documents.len() {
+        let registry = jsonschema::Registry::options()
+            .retriever(NoExternalSchema)
+            .build(std::iter::empty::<(&str, jsonschema::Resource)>())
+            .map_err(|_| bad())?;
+        let mut supplied = BTreeMap::new();
+        for (digest, document) in &documents {
+            if let Some(id) = document.get("$id").and_then(Value::as_str) {
+                let uri = registry
+                    .try_resolver(id)
+                    .map_err(|_| bad())?
+                    .base_uri()
+                    .to_string();
+                let mut resource = document.clone();
+                resource.as_object_mut().ok_or_else(bad)?.remove("$id");
+                if supplied.insert(uri, (digest.clone(), resource)).is_some() {
+                    return Err(bad());
+                }
+            }
+        }
+        let consumed = Arc::new(Mutex::new(BTreeSet::new()));
+        for root in &referenced {
+            let mut options = jsonschema::options().with_retriever(SchemaDependencies {
+                documents: supplied.clone(),
+                consumed: Arc::clone(&consumed),
+            });
+            for digest in &referenced {
+                let document = &documents[digest];
+                if let Some(id) = document.get("$id").and_then(Value::as_str) {
+                    let mut resource = document.clone();
+                    resource.as_object_mut().ok_or_else(bad)?.remove("$id");
+                    options = options.with_resource(
+                        id.to_owned(),
+                        jsonschema::Resource::from_contents(resource).map_err(|_| bad())?,
+                    );
+                }
+            }
+            let mut schema = documents[root].clone();
+            if let Some(id) = documents[root].get("$id").and_then(Value::as_str) {
+                options = options.with_base_uri(id.to_owned());
+                schema.as_object_mut().ok_or_else(bad)?.remove("$id");
+            }
+            options.build(&schema).map_err(|_| bad())?;
+        }
+        let consumed = consumed.lock().map_err(|_| bad())?;
+        if documents
+            .keys()
+            .any(|digest| !referenced.contains(digest) && !consumed.contains(digest))
+        {
+            return Err(bad());
+        }
     }
     let vectors = vectors(
         value["testVectorsJson"].as_str().ok_or_else(bad)?,
@@ -1022,6 +1124,195 @@ mod registration_tests {
     }
 
     #[test]
+    fn builtin_file_storage_preserves_seven_native_contracts_and_reference_closure() {
+        let raw: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/file_storage.v1/registration.json"
+        ))
+        .unwrap();
+        let typed: contracts::CapabilityContractRegistration =
+            serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), raw);
+        let supplied: BTreeMap<String, Value> = raw["schemaDocuments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                let schema: Value = serde_json::from_str(entry.as_str().unwrap()).unwrap();
+                (collab_bridge::limits::canonical_digest(&schema), schema)
+            })
+            .collect();
+        validate_schemas(&supplied).expect("original offline resolver compiles native schema refs");
+        let seed =
+            builtin_file_storage().expect("original registration consumes the file-storage seed");
+        assert_eq!((seed.category.as_str(), seed.version), ("file_storage", 1));
+        let operations = seed.content["operationContracts"].as_array().unwrap();
+        let permissions: BTreeMap<_, _> = operations
+            .iter()
+            .map(|op| {
+                (
+                    op["contractKey"].as_str().unwrap(),
+                    op["permission"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            permissions,
+            BTreeMap::from([
+                ("file_storage.list@v1", "discover"),
+                ("file_storage.read@v1", "read"),
+                ("file_storage.list_revisions@v1", "read"),
+                ("file_storage.export@v1", "export"),
+                ("file_storage.write@v1", "update"),
+                ("file_storage.delete@v1", "delete"),
+                ("file_storage.share@v1", "share"),
+            ])
+        );
+        let documents: BTreeMap<String, Value> = seed
+            .schemas
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                (
+                    entry["digest"].as_str().unwrap().to_owned(),
+                    entry["schema"].clone(),
+                )
+            })
+            .collect();
+        // All operation schemas remain the actual files; the only shared result
+        // is the existing HUMAN/AGENT citations shape, not SERVICE list_output.
+        let sources = [
+            include_str!("../../../../contracts/adapter/file_storage.v1/list_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/read_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/read_output.schema.json"),
+            include_str!(
+                "../../../../contracts/adapter/file_storage.v1/list_revisions_input.schema.json"
+            ),
+            include_str!(
+                "../../../../contracts/adapter/file_storage.v1/list_revisions_output.schema.json"
+            ),
+            include_str!("../../../../contracts/adapter/file_storage.v1/export_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/export_output.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/write_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/write_output.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/delete_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/delete_output.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/share_input.schema.json"),
+            include_str!("../../../../contracts/adapter/file_storage.v1/share_output.schema.json"),
+            include_str!("../../../../contracts/domain/content_reference.schema.json"),
+        ];
+        assert_eq!(documents.len(), sources.len());
+        for source in sources {
+            let schema: Value = serde_json::from_str(source).unwrap();
+            assert_eq!(
+                documents.get(&collab_bridge::limits::canonical_digest(&schema)),
+                Some(&schema)
+            );
+        }
+        let step = &seed.vectors["cases"][0]["steps"][1];
+        let output: Value =
+            serde_json::from_str(step["expectedOutputJson"].as_str().unwrap()).unwrap();
+        let reference = output["citations"][0].clone();
+        for key in ["file_storage.read@v1", "file_storage.export@v1"] {
+            let operation = operations
+                .iter()
+                .find(|op| op["contractKey"] == key)
+                .unwrap();
+            let schema = &documents[operation["inputSchemaDigest"].as_str().unwrap()];
+            let validator = schema_validator(schema, &documents).unwrap();
+            assert!(validator.is_valid(&reference));
+            let mut asset = reference.clone();
+            asset["assetId"] = json!(Uuid::new_v4());
+            assert!(
+                !validator.is_valid(&asset),
+                "do not replace native input with looser ContentReference"
+            );
+        }
+        let list = operations
+            .iter()
+            .find(|op| op["contractKey"] == "file_storage.list@v1")
+            .unwrap();
+        let validator = schema_validator(
+            &documents[list["outputSchemaDigest"].as_str().unwrap()],
+            &documents,
+        )
+        .unwrap();
+        assert!(validator.is_valid(&output));
+        assert!(validator.is_valid(&json!({"citations":[]})));
+        assert!(!validator.is_valid(&json!({"items":[]})));
+        let mut malformed = output;
+        malformed["citations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeRevision");
+        assert!(!validator.is_valid(&malformed));
+        let reference_digest = collab_bridge::limits::canonical_digest(
+            &serde_json::from_str::<Value>(sources[13]).unwrap(),
+        );
+        let mut missing = raw.clone();
+        missing["schemaDocuments"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|doc| {
+                collab_bridge::limits::canonical_digest(
+                    &serde_json::from_str::<Value>(doc.as_str().unwrap()).unwrap(),
+                ) != reference_digest
+            });
+        assert!(registration(&missing).is_err());
+        let mut unused = raw.clone();
+        unused["schemaDocuments"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(json!({"type":"boolean"}).to_string()));
+        assert!(registration(&unused).is_err());
+        let cycle = [
+            json!({"$id":"domain/cycle-a.schema.json","type":"object","properties":{"child":{"$ref":"cycle-b.schema.json"}}}),
+            json!({"$id":"domain/cycle-b.schema.json","type":"object","properties":{"child":{"$ref":"cycle-a.schema.json"}}}),
+        ];
+        let mut unused_cycle = raw.clone();
+        for schema in &cycle {
+            unused_cycle["schemaDocuments"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(schema.to_string()));
+        }
+        assert!(registration(&unused_cycle).is_err());
+        let mut reachable_cycle = input(
+            json!({"type":"object","properties":{"child":{"$ref":"domain/cycle-a.schema.json"}}}),
+        );
+        for schema in &cycle {
+            reachable_cycle["schemaDocuments"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(schema.to_string()));
+        }
+        assert!(registration(&reachable_cycle).is_ok());
+        let mut duplicate = raw.clone();
+        let mut duplicate_id: Value = serde_json::from_str(sources[13]).unwrap();
+        duplicate_id["description"] = json!("conflicting same schema identity");
+        duplicate["schemaDocuments"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(duplicate_id.to_string()));
+        assert!(registration(&duplicate).is_err());
+        let mut external = raw;
+        let document = external["schemaDocuments"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|doc| {
+                serde_json::from_str::<Value>(doc.as_str().unwrap()).unwrap()["title"]
+                    == "FileStorageListRevisionsOutput"
+            })
+            .unwrap();
+        let mut schema: Value = serde_json::from_str(document.as_str().unwrap()).unwrap();
+        schema["properties"]["citations"]["items"]["$ref"] =
+            json!("https://unregistered.invalid/reference");
+        *document = json!(schema.to_string());
+        assert!(registration(&external).is_err());
+    }
+
+    #[test]
     fn native_sync_contract_preserves_all_existing_knowledge_operations() {
         let raw: Value = serde_json::from_str(include_str!(
             "../../../../contracts/adapter/knowledge.v2/registration.json"
@@ -1157,6 +1448,76 @@ mod registration_tests {
         .await
         .unwrap();
         assert_eq!(query_seed.0, "ACTIVE");
+        let providers_before: (i64, i64) = sqlx::query_as(
+            "select (select count(*) from catalog.component_release),
+                    (select count(*) from catalog.application_binding)",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_file_storage().unwrap())
+            .await
+            .unwrap();
+        bootstrap_contract(&mut tx, tenant, builtin_file_storage().unwrap())
+            .await
+            .unwrap();
+        let counts: (i64, i64, i64, i64) = sqlx::query_as(
+            "select (select count(*) from admission.action_execution where tenant_id=$1 and action_key=$2),
+                    (select count(*) from audit.audit_event where tenant_id=$1 and action_key=$2),
+                    (select count(*) from catalog.component_release),
+                    (select count(*) from catalog.application_binding)")
+            .bind(tenant).bind(BOOTSTRAP).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!((counts.0, counts.1), (3, 9));
+        assert_eq!(
+            (counts.2, counts.3),
+            providers_before,
+            "seed does not register or activate any provider"
+        );
+        let file_seed: (String, Uuid) = sqlx::query_as(
+            "select status,bootstrap_action_execution_id from catalog.capability_contract
+             where category_key='file_storage' and contract_version=1 and catalog_tenant_id=$1",
+        )
+        .bind(tenant)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(file_seed.0, "ACTIVE");
+        for (owner, version, expected) in [
+            (tenant, 1, true),
+            (tenant, 2, false),
+            (Uuid::new_v4(), 1, false),
+        ] {
+            let accepted: bool = sqlx::query_scalar(
+                "select catalog.valid_capability_seed_bootstrap($1,$2,'file_storage',$3,$4)",
+            )
+            .bind(file_seed.1)
+            .bind(owner)
+            .bind(version)
+            .bind(target_id(tenant, "file_storage", 1))
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(accepted, expected);
+        }
+        {
+            let mut rollback = tx.begin().await.unwrap();
+            let refused = sqlx::raw_sql(include_str!(
+                "../../../migrations/20261011010000_capability_file_storage_seed.down.sql"
+            ))
+            .execute(&mut *rollback)
+            .await
+            .unwrap_err();
+            assert_eq!(
+                refused.as_database_error().unwrap().code().as_deref(),
+                Some("23514")
+            );
+            rollback.rollback().await.unwrap();
+        }
+        let mut conflicting_file = builtin_file_storage().unwrap();
+        conflicting_file.content["requiredDeclarations"] = json!([]);
+        assert!(bootstrap_contract(&mut tx, tenant, conflicting_file)
+            .await
+            .is_err());
         let query_target = target_id(tenant, "data_query", 1);
         {
             // Revert must not orphan an installed immutable seed. Use the
