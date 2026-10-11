@@ -242,6 +242,40 @@ describe("original Projects directory management consumers",()=>{
     await act(async()=>{trigger.focus();trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
     await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
   }
+  it.each(["en","zh-CN"] as const)("restores original announcement status, empty description and list date in %s",async locale=>{
+    setLocale(locale);
+    const source=project("Original announcement","original",Math.floor(Date.now()/1000)-60);
+    source.tags=source.tags.filter(tag=>tag[0]!=="description");source.tags.push(["buzz-visibility","unlisted"]);
+    const onSelectedProjectChange=vi.fn();
+    const ui=await directory(host([source]),bff,onSelectedProjectChange);
+    const card=ui.querySelector('[data-testid="project-card-original"]')!;
+    expect(card.querySelector('[data-testid="projects-grid-card-body"]')?.textContent).toBe(locale==="en"?"A shared space for internal git work.":"用于内部 Git 协作的共享空间。");
+    expect(card.querySelector("span.rounded-full")?.textContent).toBe(locale==="en"?"Unlisted":"未公开列出");
+    expect(card.textContent).toContain(locale==="en"?"1 repository":"1 个仓库");
+    await click(ui.querySelector<HTMLButtonElement>(`[aria-label="${locale==="en"?"List layout":"列表布局"}"]`)!);
+    const row=ui.querySelector('[data-testid="project-row-original"]')!;
+    expect(row.querySelector("span.rounded-full")?.textContent).toBe(locale==="en"?"Unlisted":"未公开列出");
+    expect(row.querySelector('[data-testid="projects-row-date"]')?.getAttribute("title")).toBe(new Date(source.created_at*1000).toLocaleString());
+    expect(row.querySelector('[data-testid="projects-row-date"]')?.textContent).toBe(locale==="en"?"1 minute ago":"1 分钟前");
+    expect(row.querySelector('[data-testid="projects-row-context"]')?.getAttribute("title")).toBe(locale==="en"?"1 repository":"1 个仓库");
+    expect(row.tagName).toBe("BUTTON");
+    onSelectedProjectChange.mockClear();
+    await click(row as HTMLButtonElement);
+    expect(onSelectedProjectChange).toHaveBeenCalledOnce();
+    expect(onSelectedProjectChange).toHaveBeenCalledWith(`30621:${owner}:original`);
+    expect(ui.querySelector("aside")?.textContent).toContain("Original announcement");
+    expect(ui.querySelectorAll("button button")).toHaveLength(0);
+    expect(ui.querySelector('[data-testid="project-activity-bar"]')).toBeNull();
+  });
+  it("preserves original legacy repository status without inventing Git availability",async()=>{
+    const source:PulseEvent={id:"legacy",pubkey:owner,kind:30617,created_at:10,content:"",tags:[["d","legacy"],["name","Original legacy"],["status","archived"]]};
+    const h:ProjectsHost={scopeKey:"legacy-scope",query:async req=>({events:req.view==="REPOSITORIES"?[source]:[],pubkey:owner,limit:3})};
+    const ui=await directory(h);
+    expect(ui.querySelector('[data-testid="project-card-legacy"] span.rounded-full')?.textContent).toBe("archived");
+    await click(ui.querySelector<HTMLButtonElement>('[aria-label="List layout"]')!);
+    expect(ui.querySelector('[data-testid="project-row-legacy"] span.rounded-full')?.textContent).toBe("archived");
+    expect(ui.querySelector('[aria-label^="Repository "]')).toBeNull();
+  });
   it("opens the original empty-state form and completes the existing governed creation chain",async()=>{
     const f=await creationFixture();const original=f.send.getMockImplementation()!;
     f.send.mockImplementation(async request=>{

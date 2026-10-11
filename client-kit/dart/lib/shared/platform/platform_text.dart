@@ -1139,7 +1139,9 @@ enum PlatformMessageKey {
   projectsList,
   projectsView,
   projectsRepositoryCount,
+  projectsOneRepository,
   projectsUnlisted,
+  projectsDefaultDescription,
   projectsEmpty,
   projectsEmptyHint,
   projectsNoMatch,
@@ -4764,7 +4766,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '{count} repositories',
     '{count} 个仓库',
   ),
+  PlatformMessageKey.projectsOneRepository: ('1 repository', '1 个仓库'),
   PlatformMessageKey.projectsUnlisted: ('Unlisted', '未公开列出'),
+  PlatformMessageKey.projectsDefaultDescription: (
+    'A shared space for internal git work.',
+    '用于内部 Git 协作的共享空间。',
+  ),
   PlatformMessageKey.projectsEmpty: ('No projects yet', '暂无项目'),
   PlatformMessageKey.projectsEmptyHint: (
     'Projects published to this relay will appear here.',

@@ -6736,6 +6736,35 @@ taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::task
 打开截图也未见正文高亮。这是旧部署中可复核的缺口，不是本批新消费者失败或通过证据。
 `live-4c099-settings-invitations.png` 还可见重复标题／说明；完整页面一致性仍未成立。
 
+### 2026-10-10 原 Projects 公告卡片与列表元信息恢复
+
+- 权威：用户固定官方完整恢复要求、DD-53/75、`.design/09` §3「原版 Projects 的公告与内容边界」。本批不把目录准入当作 Git/Issue/PR 内容授权，也不生成尚无受治理后端的详情页入口。
+- 固定上游：Buzz `779af8886caae1317b4de962082429867ab61503`，`desktop/src/features/projects/ui/ProjectCards.tsx::{StatusPill,ProjectGridCard,ProjectListRow}`、`desktop/src/features/projects/lib/projectsViewHelpers.ts::getProjectUpdatedAt`。按真实消费者恢复状态 pill、网格空描述原文、仓库单复数与列表日期；列表删掉重复精简 JSX，复用已有 `ProjectEntityListRow`。无 Git activity summary 时日期取原函数既定 fallback `project.createdAt`，不将其声称为最近提交时间。
+- 影响面：共享 `ProjectsView::ProjectDirectory` 仍从现有 `ProjectsHost` 的已准入公告读模型取得 `status/createdAt/repositoryAddresses`，Web `ProjectsPane` 与 Native `ProjectsScreen` 同源消费；host、Core/BFF、Relay 查询/发布、契约、数据库迁移均未更改。Mobile 只随同源词条生成，不代表 Mobile Projects 页面验收。
+- 边界与副作用：`active` 状态按原版不显示 pill；非 active 的真实状态保留原文本，既定 unlisted 使用中文/英文词条。空描述恢复原版 fallback；零仓库不变成授权判断；未知仓库引用不触发额外读取。既有菜单/删除/UNKNOWN 和撤权清空消费者保留，列表复用原 overlay 动作槽，不生成嵌套按钮。
+- 全量差异分类更新仅限本次相关条目：`ProjectListRow` 的重复精简布局改为「共享迁移」；状态、公告日期与空描述从「缺失需恢复」改为源码已恢复；i18n 及既有治理 actions slot 属已授权差异。`ProjectDetailScreen/ProjectIssuesPanel`、Git 内容、人员/活动、原终端/选择消费仍是明确未恢复项，不能用本批公告呈现计为 Projects 完整交付。
+- 实现后证据目录：`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/project-card-20261010.dD5l0n/`。原受限 `kailo-agent-receipt-xvkujx` 为 4 CPU / 8 GiB / 无额外 swap，原命令 `-u 1000` 的实际身份为 uid 1000 / gid 0，并非此前记载的 uid/gid 均 1000；开跑前仅 sleep，主机可用约 19 GiB。正式 4 路径与私有候选逐文件 cmp 全为 0。
+- 原 `tools/gen-platform-i18n.py` 生成 exit 0；`--check` exit 0，输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。选定源码 `git diff --check` exit 0。首次命令调用镜像不存在的 pnpm 返回 127，未安装工具链，改用该副本既有 `node_modules/.bin/vitest`；该失败不记为业务失败。
+- 原 Projects DOM 作业 5934 实际 exit 1：`Failed to start forks worker` / `Timeout waiting for worker to respond`；`Test Files no tests` / `Tests no tests`，耗时 60.82s，transform/import/tests 均 0ms。日志 `projects-positive.log` 保留真实失败，不能计为业务用例通过或业务功能失败；未改 worker 超时阈值，也未盲目重复。生产负向与还原尚未执行。
+- 同一冻结候选共享 `tsc --noEmit` 作业 52938 实际 exit 0，输出 `shared-types-exit=0`。原进程预检 51645 仅 sleep、输入核验 97903 的三个 TS 哈希逐项匹配，二者均实际 exit 0 后才启动唯一类型作业；无并发重启。限额仍为原 4 CPU / 8 GiB，Node 堆上限 3072 MiB。该类型结果不外推为 Web/Native/Mobile 全侧验收，原输入和终态见 `shared-types-result.txt`。
+- Wren 原类型作业 48488 真实退出 0 释放窗口后，重新预检原 SDK 仅 sleep、4 CPU / 8 GiB / 无额外 swap，主机可用 16 GiB，未见 Node/Cargo 并发；正式四源与冻结副本逐文件 cmp 均为 0。原 `vitest run test/projects.test.tsx --maxWorkers=1` 作业 38562 实际 exit 1，输出仍为 `Failed to start forks worker` / `Timeout waiting for worker to respond`，60.11s，`Test Files no tests` / `Tests no tests`，transform/import/tests 均 0ms。日志 `projects-positive-final.log` 与终态 `projects-dom-result.txt` 保留。未改超时阈值、配置或用例；没有可用正向业务结果，生产变异及还原检查未执行，不记为通过，也未再盲重试。
+- 一次有界只读诊断：原 Vitest 配置仅 jsdom 与原 test include；真实 worker 入口 `dist/workers/forks.js`、测试及生产输入均可读，作业退出后 SDK 仅 sleep，无遗留 worker。固定 Vitest 4.1.11 的 `waitForStart` 未收到 `started` ACK，尚未进入实际用例。cgroup 的累计 `oom=2/oom_kill=2` 没有本轮前值，不能据此归因本次 OOM；I/O 压力也不能单独证明根因。没有核实到配置/路径投递缺项，不改产品、依赖、框架或阈值；不宣称根因已查明，验证窗口已释放。
+- 当前源码检查点不代表完整 DOM、生产负向还原、新版截图或部署完成。没有新建镜像、替换在线 Web 或新增账号。现网仍旧 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，空 Projects 截图不能证明本批卡片/列表的实际视觉与操作结果；本轮只读页面事实及逐图复核详见 `live-ui-findings.md`，不计入候选验收。
+
+### 2026-10-11 原 Projects 公告卡片旧暂存收口（未部署）
+
+- 当前基底 `d712e9e3130d9fc6171c34c866a9871e22f5048b`；上述 10 月 10 日记录及两次 worker 零断言失败原样保留。本轮不把旧空 Projects 截图作为卡片验收，也没有重新拍摄空态。
+- 重新解析固定官方 `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/projects/ui/ProjectCards.tsx::{StatusPill,ProjectGridCard,ProjectListRow}` 及 `desktop/src/features/projects/lib/projectsViewHelpers.ts::getProjectUpdatedAt`。pill class、默认描述、仓库单复数、列表行与日期 fallback 为原样保留/共享迁移；中文及原治理动作槽是授权接入差异。人员、Git activity/repository availability、终端与选择上下文仍缺真实完整消费者，未伪造数据或新增按钮。
+- 10 月 10 日的详情缺项是历史状态：当前 main 已有 `8e3ac789d6ceb12f23ba04f88a6dce8736a5160b` 的 Issue/PR 只读详情与 Inbox 项目读链、`89c3aa14ef2e2e69ff4420172ae72782cee9a089` 的原来源读取；写操作、Git/CommitDetailPanel、Web 项目作者资料触发器仍未全部恢复。本批仅公告卡片显示，不声称完整 Projects。
+- 五路径候选从当前 HEAD 组装；只消费旧 `ProjectCards.tsx`/`projects.test.tsx` 两 blob、两个项目词条及对应同源 Dart、上段项目记录。旧暂存中的 thread/workflow/DM 词条删除不纳入；工作树额外 DM/Agent 词条、旧 Workflow 实拍 23 行及其它未暂存记录不混入本批。公共 index 未修改。
+- 四步复核：要求为固定原版呈现；读写影响仅既有公告读模型 `status/createdAt/repositoryAddresses` 到共源 `ProjectsView::ProjectDirectory`，无字段/契约/DB 迁移；不复制权限权威、不增加请求/写动作；active 不显示 pill、未知真实状态原样显示，未知/撤权/旧作用域清空仍沿既有消费者。日期无 activity summary 只取原公告时间，不标作 Git 最近提交。
+- 原 SDK `kailo-web-thread-tooltip-sdk` 实读 idle、4 CPU/8 GiB/equal swap、1000:1000，Data 挂载，MemAvailable 约 26.5 GiB。独立输入 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-cards.tNU1dY` 未复制依赖树；`node node_modules/vitest/vitest.mjs run test/projects.test.tsx --pool=threads --maxWorkers=1` 原套件正向 57/57、exit 0，日志 `projects-positive.log`。
+- 实现后私有反证分别去掉网格空描述 fallback、列表 `dateSeconds`，原中英文真实 DOM 消费者各 2 failed、exit 1（其余 55 因指定用例未执行）；日志 `projects-description-negative.log` / `projects-date-negative.log`。原字节还原并 cmp 0 后整套 57/57、exit 0，`projects-restored.log`。原 React act 警告保留，不修改原超时/断言/产品语义消音。
+- 原词条生成首次失败保留：Web SDK 的 Dart 尝试创建 `/.dart-tool` 被拒，gen exit 1 / dart format exit 255；不修改 HOME 或生产工具。改用此前已正确配置的原 `kailo-cells-closure-kxbrvt` 空闲 SDK，在独立 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/project-cards-gen.wBq3Uk` 执行 `python3 tools/gen-platform-i18n.py` 与 `--check` 均 exit 0，Mobile 共源目录一致；生成 Dart 逐字 cmp 后仅纳入本两个项目词条，保留已提交 Origin 词条。
+- 规范依赖只复用现有 Data 链接（不复制包树）：TypeScript 5.9.3、@types/node 24.13.6、Vitest 4.1.11；原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 作业 43978 exit 0。主线交叉核实当前无 publish 的 fixture 渲染真实 button，并非菜单 overlay 的 div；随后仅在原中英文用例增加 tagName BUTTON、清空后一次正确项目 ID 回调断言，正式与私有 cmp 0。末版 4758 顺序 tsc 成功后进入 Vitest，但原 worker 启动 60.01s 超时，0 tests、transform/import/tests 均 0，聚合 exit 1（`projects-final.log`）。新增回调断言未执行，不将既有 57 项结果冒充这版通过。未执行本批 full、打包、部署、带真实公告的浏览器截图或 Windows/Mobile 验收，不声明原版 100% 恢复。
+
+- 主线释放 I/O 窗口后只运行末版原套件：50317 实际 exit 0、57/57，通过包含真实 button/一次正确项目 ID 回调；`projects-window.log` 总耗时 158.87s，断言实际 2.49s。私有生产仅将列表 `onClick` 委托改为 NOOP，25098 实际 exit 1，两种语言都在新增回调断言报 `expected vi.fn once, got 0`（其余 55 因指定用例未执行），日志 `projects-click-negative.log`。原样还原并 cmp 正式文件 0 后，6654 原整套还原检查 exit 1：worker 启动 60.32s 超时、0 tests，日志 `projects-click-restored.log`；不冒称还原执行通过，不再循环重跑。恢复后字节与 50317 成功输入一致，生产、用例和超时均未改。当前是已知环境启动失败下的源码检查点，不是发布验收。
+
 ### 2026-10-10 实拍审计代码的共享中英文显示（DOM 已验证，未部署）
 
 - 权威与发现：用户要求平台页面完整中文/英文、结果不明不伪报终态；`06` §4 固定 reason code 不随本地化变化。正常 SSO 的旧 Web `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 实拍 `27-audit.png` 发现作用域/成员跃迁显示未识别动作、多种实际结果只显示代码，证据目录 `/volumes/data/kailo/tmp/kailo-live-handoff-20261010.tvomwE/`。这是已授权治理页面的文案缺口，不是另写或重排 Buzz 原版页面；该截图不是新源码验收。

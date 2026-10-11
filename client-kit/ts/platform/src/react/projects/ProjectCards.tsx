@@ -8,6 +8,15 @@ import {useUiT} from "../context";
 import type {Project} from "./projectModels";
 import {Button} from "../profile/buzz/shared/ui/button";
 import {listRowDescription} from "./lib/projectsViewHelpers";
+import {ProjectEntityListRow} from "./ProjectEntityListRow";
+
+function StatusPill({status}:{status:string}) {
+  const t=useUiT();
+  if(status==="active")return null;
+  return <span className="shrink-0 rounded-full border border-border/60 bg-muted/40 px-2 pb-[3px] pt-[5px] text-2xs font-semibold uppercase leading-none tracking-[0.18em] text-muted-foreground">
+    {status==="unlisted"?t("projects.unlisted"):status}
+  </span>;
+}
 
 export function EmptyState({onCreateProject}:{onCreateProject?:()=>void}) {
   const t=useUiT();
@@ -60,10 +69,9 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
                 data-projects-text-priority="secondary"
               >
                 <span>
-                  {t("projects.repositoryCount",{count:project.repositoryAddresses.length})}
+                  {t(project.repositoryAddresses.length===1?"projects.oneRepository":"projects.repositoryCount",{count:project.repositoryAddresses.length})}
                 </span>
-                {project.visibility==="unlisted"?<span>{t("projects.unlisted")}</span>:null}
-
+                <StatusPill status={project.status}/>
               </div>
             </div>
           </div>
@@ -77,7 +85,7 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
           )}
           data-testid="projects-grid-card-body"
         >
-          {project.description}
+          {project.description || t("projects.defaultDescription")}
         </p>
 
 
@@ -86,32 +94,32 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
   );
 });
 
-// Original ProjectListRow -> ProjectEntityListRow overlay/body. Only actual
-// announcement facts and the governed management consumer are supplied here;
-// absent people/activity/selection producers are not represented as empty data.
+// Original ProjectListRow consumes the same shared row as project channels.
+// Until the Git activity read chain is restored, use the original
+// getProjectUpdatedAt fallback (project.createdAt), not fabricated activity.
 export const ProjectListRow = React.memo(function ProjectListRow({project,onOpen,actions}:{
   project:Project;onOpen:(project:Project)=>void;actions?:React.ReactNode;
 }) {
-  const description=listRowDescription(project.description,project.name);
-  const body=<>
-    <span className="relative flex h-4 w-4 shrink-0 items-center justify-center" data-testid="project-entity-leading-icon">
-      <span className="flex items-center justify-center"><Folders className="h-3.5 w-3.5 text-muted-foreground/70"/></span>
-    </span>
-    <span className="min-w-0 flex-1 text-sm font-medium text-foreground" data-projects-text-priority="primary">
-      {description?<span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
-        <span className="max-w-full shrink-0 truncate" data-testid="project-entity-title">{project.name}</span>
-        <span className="min-w-0 flex-1 truncate text-left font-normal text-muted-foreground/65" data-projects-text-priority="secondary"
-          data-testid="projects-row-description" title={description}>{description}</span>
-      </span>:<span className="block truncate" data-testid="project-entity-title">{project.name}</span>}
-    </span>
-    <span className="hidden w-auto shrink-0 truncate text-left text-xs text-muted-foreground/65 md:block" data-projects-text-priority="secondary" data-testid="projects-row-context">
+  const t=useUiT();
+  return <ProjectEntityListRow
+    affiliation={
       <span className="flex items-center justify-end gap-1"><FolderGit2 className="h-3.5 w-3.5"/><span>{project.repositoryAddresses.length}</span></span>
-    </span>
-    {actions?<span className="pointer-events-auto relative z-10 shrink-0">{actions}</span>:null}
-  </>;
-  const rowClass="mx-2 flex min-h-9 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/30";
-  return actions?<div className="group relative" data-testid={`project-row-${project.dtag}`}>
-    <button className="absolute inset-0" onClick={()=>onOpen(project)} title={project.name} type="button"><span className="sr-only">{project.name}</span></button>
-    <div className={cn(rowClass,"pointer-events-none relative z-10 group-hover:bg-muted/30")}>{body}</div>
-  </div>:<button className={rowClass} data-testid={`project-row-${project.dtag}`} onClick={()=>onOpen(project)} title={project.name} type="button">{body}</button>;
+    }
+    affiliationClassName="w-auto"
+    affiliationTestId="projects-row-context"
+    affiliationTitle={t(project.repositoryAddresses.length===1?"projects.oneRepository":"projects.repositoryCount",{count:project.repositoryAddresses.length})}
+    dateSeconds={project.createdAt}
+    dateTestId="projects-row-date"
+    icon={<Folders className="h-3.5 w-3.5 text-muted-foreground/70"/>}
+    onClick={()=>onOpen(project)}
+    testId={`project-row-${project.dtag}`}
+    title={<span className="flex min-w-0 items-center gap-2">
+      <span className="truncate">{project.name}</span>
+      <StatusPill status={project.status}/>
+    </span>}
+    titleAttr={project.name}
+    titleSecondary={listRowDescription(project.description,project.name)}
+    titleSecondaryTestId="projects-row-description"
+    trailing={actions}
+  />;
 });
