@@ -74,7 +74,7 @@ services:
         condition: service_completed_successfully
 
   ibis-server:
-    image: ${WREN_IBIS_IMAGE:?fixed compatible native Ibis image is required}
+    image: ${WREN_IBIS_IMAGE:?source-built data-query-ibis image is required}
     restart: on-failure
     platform: ${WREN_PLATFORM:?native platform is required}
     expose:

@@ -11372,3 +11372,50 @@ exit 0. These three Data-only rerun logs are in
 `b18387c45e3af3458a2bab4c316aaa1f6dd31837391ec8e0007b3d930cbc4a83`.
 Only that one-off check container was stopped and removed; online Ibis remained
 untouched. These are source-consumer checks, not a successful HTTP deployment.
+
+
+## 2026-10-11 — Native Ibis source artifact input closure
+
+Authority: the just-verified PostgreSQL repair is part of Wren's delivered
+source, so the native service must be built from that source rather than keep
+the unrelated upstream 0.22.0 image. This batch registers only the existing
+Ibis service as `data-query-ibis` in the original artifact mechanism. It does
+not add a service, build system, registry, platform entity or execution path.
+
+The fixed upstream engine is
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0`.
+Original `ibis-server/justfile::install/install-core` builds
+`wren-core-py/justfile::build`; its ENV=prod selects --release and
+`wren-core-py/pyproject.toml` already sets maturin locked=true.
+The existing Dockerfile now executes those same locked Poetry/Maturin commands
+explicitly with --release --locked and no live rustup/just installer. The
+original three lockfiles are unchanged. Rust uses the existing Core's frozen
+1.90-bookworm image; Python 3.11 bookworm and slim-bookworm image digests were
+read from the registry by imagetools sessions 16790 and 26898, both exit 0.
+Bookworm's matching Debian 12 Microsoft driver repository preserves the native
+MSSQL dependency. No provider is removed.
+
+Impact: the original artifact helper supports one build context. Its input is
+now the engine parent containing exactly ibis-server, wren-core-py, wren-core
+and wren-core-base, replacing upstream named-context COPY with local COPY of
+the same source directories. Original Poetry/Rust caches are BuildKit cache
+mounts under the already Data-backed bounded builder. Runtime WORKDIR=/app
+makes package loading explicit; resources remain /resources as in the original
+runtime, whose base image had no workdir. Compose still consumes WREN_IBIS_IMAGE,
+now required to be the source artifact. Only that sample environment entry is
+cleared until a real registry digest exists; an empty entry refuses startup.
+
+Validation: `python3 tools/upstream_manifest.py plan data-query-ibis` exit 0,
+and its original `stage` exit 0 exported the source to
+`/volumes/data/kailo/tmp/wren-ibis-artifact.khjtCA`. Both Poetry locks, the Rust
+lock, extension/core/base Cargo manifests and Dockerfile were present. Moving
+only the private staged core-py/Cargo.lock away made the required-input check
+exit 1; restoring it made the same check exit 0. The selected source diff
+passes git diff --check. These are input/staging checks, not a completed build.
+No builder, Rust compilation or additional global check was started.
+
+Both new artifact digests are explicitly none. The existing three artifact
+digests were not changed in this candidate. Actual source build, registry
+verification, Ibis-only deployment, source-update HTTP operation and complete
+Wren conformance remain uncompleted; neither an empty image variable nor
+artifact registration is evidence of a working deployment.
