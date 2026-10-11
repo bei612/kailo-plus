@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorkspaceMembershipState, ItemState } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale, translate } from "@client-kit/platform/i18n";
+import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -20,7 +21,8 @@ vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
 vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
-vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople,placeholder }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[];placeholder?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)} data-placeholder={placeholder}>
+vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople,placeholder }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string;author:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[];placeholder?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)} data-placeholder={placeholder}>
+  <ComposerReplyBanner replyTarget={replyTarget}/>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
   <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", [], state.mentionPubkeys); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
 </div> }));
@@ -63,6 +65,27 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it("uses the resolved Inbox row author in the actual selected reply banner and removes it when scope closes",async()=>{
+  state.authorProfile.mockResolvedValue({pubkey,eventId:"profile",displayName:"Actual inbox author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+  await mount();
+  expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Actual inbox author");
+  await act(async()=>host.querySelector<HTMLButtonElement>(`[data-testid="reply-message-${replyId}"]`)!.click());
+  expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("Replying to Actual inbox author");
+  expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("selected reply");
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));await settle();
+  expect(host.textContent).not.toContain("Actual inbox author");
+  expect(host.querySelector('[data-testid="reply-target"]')).toBeNull();
+});
+
+it("uses the admitted private profile for the DM reply banner without a workspace profile request",async()=>{
+  state.dmQuery.mockResolvedValue({events:[rootEvent,reply,bounds()]});
+  state.dmAuthorProfile.mockResolvedValue({pubkey,eventId:"profile",displayName:"Private author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+  await mountDm(replyId,rootId,[{principalId:"human",displayName:"Member",pubkeys:[pubkey]}],{key:"draft",parent:replyId});
+  expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("Replying to Private author");
+  expect(state.authorProfile).not.toHaveBeenCalled();
+  expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding",replyId);
+});
 
 it("reads the true thread and preserves the original selected-reply parent when publishing", async () => {
   await mount();
@@ -119,7 +142,9 @@ it("uses the original Inbox row layout, dated timestamp and actual same-author c
   expect(row(rootId).querySelector('[class*="absolute right-2"]')?.classList.contains("sm:-translate-y-1/2")).toBe(false);
   expect(row(replyId).querySelector('[class*="absolute right-2"]')?.classList.contains("sm:-translate-y-1/2")).toBe(true);
   expect(state.authorProfile).toHaveBeenCalledWith("workspace",replyId);
-  expect(state.authorProfile).not.toHaveBeenCalledWith("workspace",follow.id);
+  // Continuation rows still resolve their own author for reply/video consumers.
+  expect(state.authorProfile).toHaveBeenCalledWith("workspace",follow.id);
+  expect(state.authorProfile).toHaveBeenCalledTimes(4);
 });
 
 it("keeps hidden DM thread read, live subscription and confirmed reply on the existing conversation routes",async()=>{

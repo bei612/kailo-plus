@@ -14,11 +14,10 @@ import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { bff, deleteMessage, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { relativeTime } from "@/shared/lib/relative-time";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
-import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import { useMessageReactions } from "./useMessageReactions";
 
@@ -115,10 +114,13 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const error = denied || members.error || selectedQuery.error ? t("buzz.forumUnavailable")
     : selectedPostId && thread.isSuccess && !root ? t("buzz.forumRootUnavailable") : null;
   const canReview = !error && !interrupted && !metadataPending && isMember && !archived && selectedQuery.isSuccess;
+  const authorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId},
+    inChannel.filter(event => event.kind === 45001 || event.kind === 45003 || event.kind === 9),
+    !error && !interrupted && !metadataPending && selectedQuery.isSuccess);
   const messageReactions = useMessageReactions({principalId: myPrincipalId, workspaceId, events: all,
     available: canReview, refresh: () => queryClient.invalidateQueries({queryKey: key})});
   const videoMessages: TimelineMessage[] = inChannel.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
-    author: authors.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey), body: event.content, tags: event.tags,
+    author: authorLabel(event, authors.get(event.pubkey)?.displayName), body: event.content, tags: event.tags,
     createdAt: event.created_at, time: relativeTime(event.created_at), depth: 0,
     reactions: messageReactions.reactions.get(event.id), ...getThreadReference(event.tags)}));
   const authorTarget = !error && !interrupted && profileTarget?.principalId === myPrincipalId && profileTarget.workspaceId === workspaceId
@@ -156,12 +158,13 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
         if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
         void queryClient.invalidateQueries({ queryKey: key });
       }} /> : null}
-    renderAuthor={(message, large, preview) => { const name = authors.get(message.pubkey)?.displayName ?? truncatePubkey(message.pubkey);
+    renderAuthor={(message, large, preview) => { const name = authorLabel({id:message.eventId,pubkey:message.pubkey}, authors.get(message.pubkey)?.displayName);
       const target = {principalId:myPrincipalId,workspaceId,eventId:message.eventId,pubkey:message.pubkey};
-      const identity = <ForumAuthorButton displayName={name} large={large} preview={preview} disabled={Boolean(error) || interrupted} avatar={!error && !interrupted
-        ? <MessageAuthorAvatar target={target} displayName={name} size={large ? "md" : "sm"} />
-        : <UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />;
-      return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>{identity}</MessageAuthorIdentity> : identity; }}
+      return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>
+        <ForumAuthorButton displayName={name}
+          large={large} preview={preview} avatar={<MessageAuthorAvatar target={target} displayName={name} size={large ? "md" : "sm"} />} />
+      </MessageAuthorIdentity> : <ForumAuthorButton displayName={name} large={large} preview={preview} disabled
+        avatar={<UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />; }}
     renderContent={(message, preview) => <MessageContent messageId={message.eventId} workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       searchQuery={searchMessageId === message.eventId ? searchQuery : undefined}
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}

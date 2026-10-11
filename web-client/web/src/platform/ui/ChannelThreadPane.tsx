@@ -3,14 +3,14 @@ import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
 import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
+import { relativeTime } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import { publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
-import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
@@ -51,6 +51,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
   const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId, conversation?.id);
+  const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
+    !denied && !interrupted && thread.isSuccess && !thread.isError);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:!disabled && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const [replyId, setReplyId] = useState(routeTargetMessageId ? rootId : selected.id);
@@ -68,10 +70,10 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   const rows = useMemo(() => messages.map((event): TimelineMessage => {
     const edge = getThreadReference(event.tags);
     return {id: event.id, pubkey: event.pubkey, signerPubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
-      author: members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey),
+      author: authorLabel(event, members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName),
       body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0, reactions:messageReactions.reactions.get(event.id),
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
-  }), [messages, members, locale, messageReactions.reactions]);
+  }), [messages, members, locale, messageReactions.reactions, authorLabel]);
   useEffect(() => {
     const targetId = routeTargetMessageId ?? selected.id;
     if (expandedTarget.current === targetId) return;
@@ -169,7 +171,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       renderIdentity={row.message.pubkey && !unavailable && !interrupted ? (node,kind) => {
         const target={principalId,workspaceId,conversationId:conversation?.id,eventId:row.message.id,pubkey:row.message.pubkey!};
         const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar target={target}
-          accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div> : node;
+          accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div>
+          : node;
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}
       renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} conversationId={conversation?.id} content={row.message.body} mediaTags={row.message.tags}

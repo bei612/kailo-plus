@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
 import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
@@ -7,6 +7,9 @@ import { useUiT } from "@client-kit/platform/react/context";
 import { TransportError } from "@client-kit/platform/transport";
 import { truncatePubkey } from "@client-kit/platform/format";
 import { UserAvatar, type UserAvatarProps } from "@client-kit/platform/react/messages";
+import { resolveUserLabel } from "@client-kit/platform/react/messages/system/identity";
+import { normalizePubkey } from "@client-kit/platform/react/conversations/pubkey";
+import { KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
 import { bff } from "../bff-client";
 import { Button } from "@/shared/ui/button";
 
@@ -20,8 +23,8 @@ export type MessageAuthor = {
 
 // The original avatars and open/hover surfaces share this admitted-event read.
 // No Community directory lookup: the current message is the authorization proof.
-function useMessageAuthor(target: MessageAuthor) {
-  return useQuery({
+function messageAuthorQuery(target: MessageAuthor) {
+  return {
     queryKey: ["platform", "message-author", target.principalId, target.conversationId ? "conversation" : "workspace", target.conversationId ?? target.workspaceId, target.pubkey, target.eventId],
     queryFn: async () => {
       const profile = await (target.conversationId
@@ -30,12 +33,42 @@ function useMessageAuthor(target: MessageAuthor) {
       if (profile.pubkey !== target.pubkey) throw new TransportError("Message author did not match the admitted event.");
       return profile;
     },
-    retry: false,
+    retry: false as const,
     staleTime: 0,
-  });
+  };
+}
+
+function useMessageAuthor(target: MessageAuthor) {
+  return useQuery(messageAuthorQuery(target));
 }
 
 const copy = (value: string) => navigator.clipboard.writeText(value);
+
+// Resolve before constructing TimelineMessage, as in Buzz formatMessageAuthor:
+// rows, reply targets, accessibility and video comments share the same author.
+// The event remains the read proof; even another event by this author cannot
+// supply a profile for a failed/disabled query. Avatars share these exact keys.
+export function useMessageAuthorLabels(scope: Omit<MessageAuthor, "eventId" | "pubkey">,
+  events: readonly {id: string; pubkey: string; kind: number}[], available: boolean) {
+  const t = useUiT();
+  // System rows resolve their actors through the admitted member surface;
+  // their Relay signer is not a message author (Buzz collectMessageAuthorPubkeys).
+  const targets = [...new Map(events.filter(event => event.kind !== KIND_SYSTEM_MESSAGE)
+    .map(event => [event.id, {...scope, eventId: event.id, pubkey: event.pubkey}])).values()];
+  const queries = useQueries({
+    queries: targets.map(target => ({...messageAuthorQuery(target), enabled: available})),
+  });
+  const profiles = new Map(targets.flatMap((target, index) => {
+    const query = queries[index];
+    return available && query.isSuccess && !query.isFetching ? [[target.eventId, query.data] as const] : [];
+  }));
+  return (event: {id: string; pubkey: string}, fallbackName?: string | null) => {
+    const profile = profiles.get(event.id);
+    return resolveUserLabel({pubkey: event.pubkey, fallbackName,
+      profiles: profile ? {[normalizePubkey(profile.pubkey)]: {...profile, ownerPubkey: null}} : undefined,
+      preferResolvedSelfLabel: true, t});
+  };
+}
 
 export function MessageAuthorAvatar({ target, ...props }: {
   target: MessageAuthor;

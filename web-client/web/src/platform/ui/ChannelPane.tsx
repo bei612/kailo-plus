@@ -40,7 +40,6 @@ import {
 } from "@/platform/bff-client";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
 import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
@@ -70,7 +69,7 @@ import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewM
 import { useFocusDrawerPresence, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
 import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
-import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { resolveConversationHeaderParticipants, formatDmParticipantDisplayName } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
@@ -259,8 +258,7 @@ export function ChannelPane({
     if (conversation) void queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
   }, [conversation?.id, conversationInvalidation?.revision, queryClient]);
 
-  // 作者按成员名显示。一个人可能有多把公钥（Web 与各台原生设备，DD-77），
-  // 任一把签发的消息都归到同一个人名下；取不到时退回上游统一的 pubkey 缩写。
+  // Admitted profile first, then the DD-77 member name and original npub fallback.
   const byPubkey = useMemo(
     () => new Map((members.data ?? []).flatMap((m) => m.pubkeys.map((k) => [k, m] as const))),
     [members.data],
@@ -276,12 +274,14 @@ export function ChannelPane({
   const typingPubkeys = humanTypingEntries
     .filter(entry => entry.threadHeadId === null)
     .map(entry => entry.pubkey);
+  const authorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
+    events, live && !denied && !metadataPending);
   const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
-    signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
+    signerPubkey: event.pubkey, author: authorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
     ...getThreadReference(event.tags),
-  })), [events, byPubkey, messageReactions.reactions]);
+  })), [events, byPubkey, messageReactions.reactions, authorLabel]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
   const routeContextEnabled = Boolean(targetMessageId && live && !denied && !metadataPending);
@@ -290,12 +290,14 @@ export function ChannelPane({
     if (routeContextEnabled && !routeContext.denied && !routeContext.thread.isError && routeContext.thread.hasNextPage && !routeContext.thread.isFetchingNextPage) void routeContext.thread.fetchNextPage();
   }, [routeContextEnabled, routeContext.denied, routeContext.thread.isError, routeContext.thread.hasNextPage, routeContext.thread.isFetchingNextPage, routeContext.thread.fetchNextPage]);
   const routeContextReady = routeContextEnabled && !routeContext.denied && !routeContext.interrupted && routeContext.thread.isSuccess && !routeContext.thread.isError && !routeContext.thread.isFetching;
+  const routeAuthorLabel = useMessageAuthorLabels({principalId: myPrincipalId, workspaceId, conversationId: conversation?.id},
+    routeContext.messages, routeContextReady);
   const routeMessages = useMemo<TimelineMessage[]>(() => routeContextReady ? routeContext.messages.map(event => ({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
-    author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
+    author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
     ...getThreadReference(event.tags),
-  })) : [], [routeContextReady, routeContext.messages, byPubkey]);
+  })) : [], [routeContextReady, routeContext.messages, byPubkey, routeAuthorLabel]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
   const routeTarget = targetMessageId ? routeMessageById.get(targetMessageId) ?? null : null;
   const mainTimelineTargetMessageId = getRouteMainTimelineTargetId(targetMessageId ?? null, routeTarget);
@@ -767,7 +769,7 @@ export function ChannelPane({
       conversation={conversation}
       onOpenMessageLink={openThreadReference}
       isFocusMode={focusThread}
-      workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
+      workspaceId={workspaceId} principalId={myPrincipalId} selected={routeMessageById.get(replyTarget.id) ?? replyTarget}
       routeTargetMessageId={replyTarget.id === routeTarget?.id ? targetMessageId : undefined}
       {...searchHighlightProps.thread}
       routeActivationId={targetSearchActivationId}

@@ -4,7 +4,7 @@ import { useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxDetailHeader, InboxMessageRowSurface, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
 import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
-import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
+import { relativeTime } from "@client-kit/platform/format";
 import { inboxReply, inboxThread } from "@client-kit/platform/inbox";
 import { BffError, isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import { publishMessage, publishConversationMessage, uploadConversationMedia, me
 import { Button } from "@/shared/ui/button";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
-import { MessageAuthorAvatar, MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
@@ -55,17 +55,25 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
     else if (thread.hasNextPage && !thread.isFetchingNextPage && !thread.isError) void thread.fetchNextPage();
   }, [anchor, messages.length, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === (conversation ? anchor : anchorRoot)));
+  const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
+    !unavailable && !interrupted && thread.isSuccess);
+  const rows: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
+    body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0,
+    author: authorLabel(event, members.find(member => member.pubkeys.includes(event.pubkey))?.displayName),
+    time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()),
+    reactions: messageReactions.reactions.get(event.id), ...inboxThread(event.tags)}));
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.(workspaceId);
   }, [unavailable, interrupted, workspaceId, onAuthorScopeUnavailable]);
   const parentId = replyId ?? (conversation ? null : replyParent.current);
-  const replyTarget = replyId ? messages.find((message) => message.id === replyId) : undefined;
+  const replyTarget = replyId ? rows.find((message) => message.id === replyId) : undefined;
   const hasReplyParent = parentId !== null && (messages.some((message) => message.id === parentId) || contextIds.has(parentId));
   const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && (conversation && parentId === null || hasReplyParent) && (conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === workspaceId && conversation.participantPrincipalIds.includes(principalId)
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
   const isThreadContext = !conversation && messages.some(message => inboxReply(message.tags));
-  const directMessageSender = senderLabel ?? (anchoredMessage ? members.find(member => member.pubkeys.includes(anchoredMessage.pubkey))?.displayName || truncatePubkey(anchoredMessage.pubkey) : "");
+  const directMessageSender = senderLabel ?? (anchoredMessage ? authorLabel(anchoredMessage,
+    members.find(member => member.pubkeys.includes(anchoredMessage.pubkey))?.displayName) : "");
   const contextLabel = isThreadContext
     ? channelName ? t("inbox.detailThreadIn", {channel:channelName}) : t("inbox.threadLabel")
     : conversation ? t("inbox.detailDmWith", {sender:directMessageSender})
@@ -88,24 +96,16 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
       toast.success(t("buzz.copiedMessage"));
     } catch { toast.error(t("buzz.copyFailed")); }
   };
-  const videoMessages: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
-    body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0,
-    author: members.find(member => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey),
-    time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()),
-    reactions: messageReactions.reactions.get(event.id), ...inboxThread(event.tags)}));
   return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id}
-    channelName={channelName} channelType={conversation ? "dm" : "stream"} messages={videoMessages}
+    channelName={channelName} channelType={conversation ? "dm" : "stream"} messages={rows}
     available={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
     <InboxDetailHeader title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel} />
     <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
       {unavailable ? <div role="status" className="p-5">{t("platform.loadFailed")}{!denied ? <Button onClick={() => { void thread.refetch(); }}>{t("platform.refresh")}</Button> : null}</div>
         : thread.isPending ? <p role="status" className="p-5">{t("platform.loading")}</p> : messages.map((event, index) => {
-          const author = members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey);
-          const edge = inboxThread(event.tags);
-          const message: TimelineMessage = { id:event.id, author, pubkey:event.pubkey, createdAt:event.createdAt,
-            body:event.content, time:relativeTime(locale,new Date(event.createdAt*1000).toISOString()),
-            depth:0, tags:event.tags, rootId:edge.rootId, parentId:edge.parentId,kind:event.kind,reactions:messageReactions.reactions.get(event.id) };
+          const message = rows[index];
+          const author = message.author;
           const previous = messages[index - 1];
           // Original InboxDetailPane keeps the first context boundary distinct.
           const isContinuation = index !== 1 && !startsNewMessageGroup(event)
@@ -117,7 +117,8 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
             renderIdentity={!interrupted ? (node,kind) => {
               const target={principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey};
               const identity=kind === "avatar" ? <span className="inline-flex shrink-0"><MessageAuthorAvatar
-                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></span> : node;
+                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></span>
+                : node;
               return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(target)}>{identity}</MessageAuthorIdentity> : identity;
             } : undefined}
             message={message}
@@ -134,7 +135,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onSendingChange={setSending}
-      replyTarget={replyTarget ? {id:replyTarget.id, body:replyTarget.content, author:members.find((member) => member.pubkeys.includes(replyTarget.pubkey))?.displayName || truncatePubkey(replyTarget.pubkey)} : null}
+      replyTarget={replyTarget ?? null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
       placeholder={conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
         if (!canReply || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");

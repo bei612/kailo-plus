@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ItemState, WorkspaceMembershipState, type ConversationView } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
+import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ChannelThreadPane } from "./ChannelThreadPane";
@@ -28,8 +29,8 @@ vi.mock("@/platform/bff-client", async(original) => ({
   publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
-vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: ({disabled, onPublish}: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
-  <button data-testid="host-send" disabled={disabled} onClick={async () => {try {await onPublish("reply", [], "original-intent", []); state.outcome = "confirmed";} catch {state.outcome = "unknown";}}}>send</button>}));
+vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: ({disabled, onPublish, replyTarget}: {disabled: boolean; replyTarget?:{id:string;body:string;author:string}|null; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) =>
+  <><ComposerReplyBanner replyTarget={replyTarget}/><button data-testid="host-send" disabled={disabled} onClick={async () => {try {await onPublish("reply", [], "original-intent", []); state.outcome = "confirmed";} catch {state.outcome = "unknown";}}}>send</button></>}));
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const author = "c".repeat(64);
 const event = (id: string, content: string, tags: string[][], created_at: number) => ({id, pubkey: author, content, tags: [["h", "workspace"], ...tags], created_at, kind: 9});
 const rootEvent = event(rootId, "Root body", [], 1);
@@ -73,6 +74,16 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers();vi.unstubAllGlobals();});
+it.each(["channel","conversation"] as const)("resolves the %s message author before the original thread reply banner and clears it on interruption",async(scope)=>{
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  await mount(undefined,conversation);
+  expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Verified author");
+  expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("Replying to Verified author");
+  expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("Nested body");
+  await act(async()=>state.receive!({type:"interrupted"}));await settle();
+  expect(host.textContent).not.toContain("Verified author");
+});
+
 it.each(["channel", "conversation"] as const)("renders only the admitted %s thread typing and clears expired or revoked state", async (scope) => {
   const peer = "d".repeat(64);
   const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
@@ -194,10 +205,12 @@ it("traverses forward cursors and refuses a repeated cursor without offering an 
 it("keeps opening the actual admitted thread author separate from its restored avatar reads", async () => {
   await mount();
   expect(state.profile).toHaveBeenCalledWith("workspace",rootId);
-  expect(state.profile).not.toHaveBeenCalledWith("workspace",replyId);
+  // A collapsed avatar does not remove the reply's independent author proof.
+  expect(state.profile).toHaveBeenCalledWith("workspace",replyId);
+  expect(state.profile).toHaveBeenCalledTimes(2);
   expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
   expect(state.openAuthor).not.toHaveBeenCalled();
-  const trigger = [...host.querySelectorAll<HTMLElement>('[role="button"][aria-label="Profile"]')].find((node) => node.textContent === "Alice")!;
+  const trigger = [...host.querySelectorAll<HTMLElement>('[role="button"][aria-label="Profile"]')].find((node) => node.textContent === "Verified author")!;
   expect(trigger).toBeDefined();
   await act(async () => {trigger.dispatchEvent(new MouseEvent("mouseover", {bubbles:true})); await vi.advanceTimersByTimeAsync(600);});
   await settle();

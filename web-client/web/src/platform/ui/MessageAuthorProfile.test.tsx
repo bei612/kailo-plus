@@ -5,7 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
-import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorText } from "@client-kit/platform/react/messages";
+import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
+import { ForumAuthorButton } from "@client-kit/platform/react/forum/ForumView";
+import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { KIND_STREAM_MESSAGE, KIND_SYSTEM_MESSAGE } from "@client-kit/platform/react/thread/kinds";
 
 const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn()}));
 vi.mock("../bff-client",()=>({bff:api}));
@@ -24,6 +29,19 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();});
 async function render(content:React.ReactNode){await act(async()=>root.render(<QueryClientProvider client={cache}><TooltipProvider>{content}</TooltipProvider></QueryClientProvider>));}
 function profile(pubkey=author){return {pubkey,eventId,displayName:"Message author",about:"Original biography",avatarUrl:null,nip05Handle:"author@example.org",avatarMediaPaths:{}};}
+
+function ResolvedAuthor({target, fallbackName, available=true, surface="text"}: {
+  target:MessageAuthor; fallbackName?:string; available?:boolean; surface?:"text"|"avatar"|"inbox"|"forum";
+}) {
+  const event={id:target.eventId,pubkey:target.pubkey,kind:KIND_STREAM_MESSAGE};
+  const label=useMessageAuthorLabels(target,[event],available);
+  const message={...event,author:label(event,fallbackName),createdAt:1,body:"Message body",depth:0,time:""};
+  if(surface==="inbox") return <InboxMessageRowSurface message={message} renderBody={()=>message.body}/>;
+  if(surface==="forum") return <ForumAuthorButton displayName={message.author} large preview
+    avatar={<MessageAuthorAvatar target={target} displayName={message.author}/>}/>;
+  return <>{surface==="avatar"?<MessageAuthorAvatar target={target} displayName={message.author} testId="author-avatar"/>:null}
+    <MessageAuthorText hoverUnderline>{message.author}</MessageAuthorText></>;
+}
 
 function loadedImages() {
   vi.stubGlobal("Image", function () {
@@ -54,6 +72,111 @@ it("reads the admitted author's actual avatar into the original inbox avatar wit
   expect(host.querySelector("img")?.getAttribute("alt")).toBe("Message author Avatar");
   await act(async () => setLocale("zh-CN"));
   expect(host.querySelector("img")?.getAttribute("alt")).toBe("Message author 头像");
+});
+
+it("uses one admitted read for the original author text and avatar, preferring the real profile over the member fallback", async () => {
+  loadedImages();
+  const avatarUrl = `https://community.example/media/${eventId}.png`;
+  const mediaPath = `/api/v1/workspaces/${target.workspaceId}/media/${eventId}`;
+  api.messageAuthorProfile.mockResolvedValue({...profile(), displayName:"  Actual public name  ", avatarUrl,
+    avatarMediaPaths:{[avatarUrl]:mediaPath}});
+  await render(<ResolvedAuthor target={target} fallbackName="Member fallback" surface="avatar"/>);
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Actual public name"));
+  await vi.waitFor(() => expect(host.querySelector("img")?.getAttribute("alt")).toBe("Actual public name Avatar"));
+  expect(host.querySelector('[data-testid="message-author"]')?.className).toBe("truncate text-message font-semibold leading-message-author tracking-normal hover:underline");
+  expect(api.messageAuthorProfile).toHaveBeenCalledExactlyOnceWith("workspace", eventId);
+  expect(api.conversationMessageAuthorProfile).not.toHaveBeenCalled();
+});
+
+it.each([
+  [{displayName:"",nip05Handle:"  person@example.org  "}, "Member fallback", "person@example.org"],
+  [{displayName:null,nip05Handle:null}, "  Member fallback  ", "Member fallback"],
+  [{displayName:null,nip05Handle:null}, undefined, truncateNpub(author)],
+] as const)("keeps the original NIP-05, explicit fallback and npub precedence %#", async (fields, fallbackName, expected) => {
+  api.conversationMessageAuthorProfile.mockResolvedValue({...profile(), ...fields});
+  await render(<ResolvedAuthor target={{...target,conversationId:"private"}} fallbackName={fallbackName} />);
+  await vi.waitFor(() => expect(cache.isFetching()).toBe(0));
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe(expected));
+  expect(api.conversationMessageAuthorProfile).toHaveBeenCalledExactlyOnceWith("private", eventId);
+  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+});
+
+it("keeps the exact original forum author button while resolving its visible and accessible label through the same profile read", async () => {
+  api.messageAuthorProfile.mockResolvedValue({...profile(), displayName:"Actual forum author"});
+  await render(<ResolvedAuthor target={target} fallbackName="Member fallback" surface="forum"/>);
+  await vi.waitFor(() => expect(host.querySelector("button")?.textContent).toContain("Actual forum author"));
+  expect(host.querySelector("button")?.className).toBe("flex items-center gap-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring rounded-xl");
+  expect(api.messageAuthorProfile).toHaveBeenCalledOnce();
+});
+
+it("preserves the original Inbox author element rather than replacing it with a different message-row layout", async () => {
+  api.messageAuthorProfile.mockResolvedValue({...profile(),displayName:"Actual inbox author"});
+  await render(<ResolvedAuthor target={target} fallbackName="Member fallback" surface="inbox"/>);
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Actual inbox author"));
+  expect(host.querySelector('[data-testid="message-author"]')?.className).toBe("block max-w-full truncate rounded text-message font-semibold leading-message-author text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring");
+  expect(host.querySelectorAll('[data-testid="message-author"]')).toHaveLength(1);
+  expect(host.querySelector('[data-testid="message-body"]')?.textContent).toContain("Message body");
+});
+
+it("drops the resolved name while rechecking, on 403 and on a different principal/scope without accepting a late response", async () => {
+  api.messageAuthorProfile.mockResolvedValue({...profile(), displayName:"First scoped name"});
+  await render(<ResolvedAuthor target={target} fallbackName="First member" />);
+  await vi.waitFor(() => expect(host.textContent).toBe("First scoped name"));
+  let finish!: (value: ReturnType<typeof profile>) => void;
+  api.messageAuthorProfile.mockReturnValue(new Promise(resolve => {finish=resolve;}));
+  await act(async () => {void cache.invalidateQueries({queryKey:["platform","message-author"]});});
+  await vi.waitFor(() => expect(host.textContent).toBe("First member"));
+  api.conversationMessageAuthorProfile.mockRejectedValue(new Error("403 forbidden"));
+  await render(<ResolvedAuthor target={{...target,principalId:"another-human",conversationId:"not-admitted"}} fallbackName="Second member" />);
+  await vi.waitFor(() => expect(api.conversationMessageAuthorProfile).toHaveBeenCalledOnce());
+  await act(async () => finish({...profile(),displayName:"Late first scoped name"}));
+  expect(host.textContent).toBe("Second member");
+  expect(host.textContent).not.toContain("First scoped name");
+  expect(host.textContent).not.toContain("Late first scoped name");
+});
+
+it("does not show a mismatched author's display name or NIP-05", async () => {
+  api.messageAuthorProfile.mockResolvedValue({...profile(other),displayName:"Wrong identity",nip05Handle:"wrong@example.org"});
+  await render(<ResolvedAuthor target={target} fallbackName="Admitted member" />);
+  await vi.waitFor(() => expect(cache.isFetching()).toBe(0));
+  expect(host.textContent).toBe("Admitted member");
+  expect(host.textContent).not.toContain("Wrong identity");
+  expect(host.textContent).not.toContain("wrong@example.org");
+});
+
+it("removes a cached profile immediately when the event's read scope becomes unavailable", async()=>{
+  api.messageAuthorProfile.mockResolvedValue({...profile(),displayName:"Admitted name"});
+  await render(<ResolvedAuthor target={target} fallbackName="Member"/>);
+  await vi.waitFor(()=>expect(host.textContent).toBe("Admitted name"));
+  await render(<ResolvedAuthor target={target} fallbackName="Member" available={false}/>);
+  expect(host.textContent).toBe("Member");
+  expect(api.messageAuthorProfile).toHaveBeenCalledOnce();
+});
+
+it("does not reuse another event's successful profile for a refused event by the same author",async()=>{
+  api.messageAuthorProfile.mockImplementation((_scope:string,id:string)=>id===eventId?Promise.resolve(profile()):Promise.reject(new Error("403 forbidden")));
+  function TwoEvents(){
+    const events=[{id:eventId,pubkey:author,kind:KIND_STREAM_MESSAGE},{id:"d".repeat(64),pubkey:author,kind:KIND_STREAM_MESSAGE}];
+    const label=useMessageAuthorLabels(target,events,true);
+    return <>{events.map(event=><output key={event.id}>{label(event,"Member")}</output>)}</>;
+  }
+  await render(<TwoEvents/>);
+  await vi.waitFor(()=>expect(cache.isFetching()).toBe(0));
+  await vi.waitFor(() => expect([...host.querySelectorAll("output")].map(node=>node.textContent)).toEqual(["Message author","Member"]));
+});
+
+it("does not query a Relay system-row signer as an admitted message author",async()=>{
+  api.messageAuthorProfile.mockResolvedValue(profile());
+  function MixedEvents(){
+    const message={id:eventId,pubkey:author,kind:KIND_STREAM_MESSAGE};
+    const system={id:"d".repeat(64),pubkey:other,kind:KIND_SYSTEM_MESSAGE};
+    const label=useMessageAuthorLabels(target,[system,message],true);
+    return <output>{label(message,"Member")}</output>;
+  }
+  await render(<MixedEvents/>);
+  await vi.waitFor(()=>expect(host.textContent).toBe("Message author"));
+  expect(api.messageAuthorProfile).toHaveBeenCalledExactlyOnceWith(target.workspaceId,eventId);
+  expect(api.conversationMessageAuthorProfile).not.toHaveBeenCalled();
 });
 
 it("preserves the original animated avatar poster and hover playback through authorized media paths", async () => {
