@@ -1604,11 +1604,11 @@ pub enum AutomationResultTarget {
 
 /// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct StepElement {
     pub action: ActionEnum,
 
     /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+    #[serde(rename = "approvalPolicy")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
 
@@ -1629,6 +1629,11 @@ pub struct StepElement {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+
+    /// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+    /// 执行，缺省保持既有版本行为，不给历史补写默认值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<i64>,
 
     /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2328,6 +2333,9 @@ pub enum ReasonCode {
 
     #[serde(rename = "SESSION_NOT_ACTIVE")]
     SessionNotActive,
+
+    #[serde(rename = "STEP_TIMEOUT")]
+    StepTimeout,
 
     #[serde(rename = "SURFACE_CAPABILITY_UNAVAILABLE")]
     SurfaceCapabilityUnavailable,
@@ -7094,11 +7102,11 @@ pub struct AutomationScheduleSpec {
 
 /// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AutomationStep {
     pub action: ActionEnum,
 
     /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+    #[serde(rename = "approvalPolicy")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
 
@@ -7119,6 +7127,11 @@ pub struct AutomationStep {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+
+    /// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+    /// 执行，缺省保持既有版本行为，不给历史补写默认值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<i64>,
 
     /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8098,10 +8111,15 @@ pub enum ApprovalSelfApproval {
 
 /// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DelayStep {
     pub id: String,
 
     pub seconds: i64,
+
+    /// 显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<i64>,
 }
 
 /// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。

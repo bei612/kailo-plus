@@ -4,6 +4,12 @@ use serde_json::{json, Value};
 
 use super::{invalid_management, Refusal};
 
+/// Frozen timing inputs for the admitted Delay prefix and its independent deadlines.
+pub(crate) struct DelayTimings<'a> {
+    pub(crate) steps: &'a [(String, i64)],
+    pub(crate) timeouts: &'a std::collections::HashMap<String, i64>,
+}
+
 fn fields(value: &Value, allowed: &[&str]) -> bool {
     value
         .as_object()
@@ -97,7 +103,8 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         } else {
             match step["action"].as_str() {
                 Some("delay")
-                    if fields(step, &["id", "name", "action", "duration"])
+                    if fields(step, &["id", "name", "action", "duration", "timeout_secs"])
+                        && valid_timeout(step)
                         && step["duration"]
                             .as_str()
                             .and_then(duration_seconds)
@@ -161,7 +168,8 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
                 messages += 1
             }
             Some("delay")
-                if fields(step, &["id", "name", "action", "duration"])
+                if fields(step, &["id", "name", "action", "duration", "timeout_secs"])
+                    && valid_timeout(step)
                     && step["duration"]
                         .as_str()
                         .and_then(duration_seconds)
@@ -190,6 +198,32 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
 
 pub(crate) fn is_sequence(action: &Value) -> bool {
     action["stepsVersion"] == 3
+}
+
+fn valid_timeout(step: &Value) -> bool {
+    step.get("timeout_secs").is_none_or(|value| {
+        value
+            .as_i64()
+            .is_some_and(|seconds| seconds > 0 && seconds <= i64::MAX / 1_000_000_000)
+    })
+}
+
+pub(crate) fn delay_timeouts(action: &Value) -> std::collections::HashMap<String, i64> {
+    action["steps"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|step| {
+            (step["action"] == "delay")
+                .then(|| {
+                    Some((
+                        step["id"].as_str()?.to_owned(),
+                        step["timeout_secs"].as_i64()?,
+                    ))
+                })
+                .flatten()
+        })
+        .collect()
 }
 
 pub(crate) fn message_step(action: &Value, ordinal: usize) -> Result<&Value, Refusal> {
@@ -330,6 +364,39 @@ pub(crate) fn delays(native_action: &Value) -> Result<Vec<(String, i64)>, Refusa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delay_deadline_preserves_duration_and_rejects_unexecuted_action_controls() {
+        let source = json!([
+            {"id":"wait","action":"delay","duration":"62s","timeout_secs":5},
+            {"id":"last","action":"send_message","text":"after delay"}
+        ]);
+        for projected in [action(&source).unwrap(), message_sequence(&source).unwrap()] {
+            assert!(supported(&projected));
+            assert_eq!(delays(&projected).unwrap(), vec![("wait".into(), 62)]);
+            assert_eq!(delay_timeouts(&projected).get("wait"), Some(&5));
+            let mut exposed = json!({});
+            expose(&mut exposed, &projected).unwrap();
+            assert_eq!(exposed["steps"], source);
+        }
+        for value in [
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!("5s"),
+            json!(null),
+            json!(i64::MAX),
+        ] {
+            let mut invalid = source.clone();
+            invalid[0]["timeout_secs"] = value;
+            assert!(action(&invalid).is_err());
+            assert!(message_sequence(&invalid).is_err());
+        }
+        let mut unsupported = source;
+        unsupported[1]["timeout_secs"] = json!(1);
+        assert!(action(&unsupported).is_err());
+        assert!(message_sequence(&unsupported).is_err());
+    }
 
     #[test]
     fn ordered_messages_preserve_each_effect_and_do_not_run_later_timers_early() {

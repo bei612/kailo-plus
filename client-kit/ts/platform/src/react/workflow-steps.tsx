@@ -8,11 +8,29 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { Input } from "./composer/shared/ui/input";
 import { useT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
-import { parseDurationSeconds } from "./workflow-duration";
+import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
+import { WorkflowDurationField } from "./workflow-duration-field";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 
 // Original workflowFormTypes.ts::nextStepId. Step references are not request IDs.
 const STEP_ID_PATTERN = /^step_(\d+)$/;
+// Original WorkflowStepCard display fallback only; never persisted as a default
+// deadline or added to an old immutable AutomationVersion.
+const DEFAULT_STEP_TIMEOUT_SECONDS = 5 * 60;
+// Original StepFormState.timeoutSecs is authoring text, not a wire field.
+export type WorkflowStepDraft = AutomationStep & { timeoutSecs?: string };
+export function validStepTimeout(value: unknown): boolean {
+  return value === undefined || typeof value === "number" && Number.isSafeInteger(value)
+    && value > 0 && value <= 9223372036;
+}
+export function workflowStepsContent(steps: WorkflowStepDraft[]): AutomationStep[] {
+  return steps.map(({timeoutSecs, ...step}) => {
+    if (timeoutSecs === undefined) return step;
+    if (!timeoutSecs.trim()) delete step.timeout_secs;
+    else step.timeout_secs = parseDurationSeconds(timeoutSecs) ?? NaN;
+    return step;
+  });
+}
 export function nextStepId(existingSteps: AutomationStep[]): string {
   const existingIds = new Set(existingSteps.map((s) => s.id));
   let maxN = 0;
@@ -70,7 +88,8 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
       return Object.keys(row).every((key) => ["id", "name", "action", "approvalPolicy", "message"].includes(key))
         && validApprovalPolicy(row.approvalPolicy) && typeof row.message === "string" && !!row.message.trim();
     }
-    return Object.keys(row).every((key) => ["id", "name", "action", "duration"].includes(key))
+    return Object.keys(row).every((key) => ["id", "name", "action", "duration", "timeout_secs"].includes(key))
+      && validStepTimeout(row.timeout_secs)
       && row.action === "delay" && typeof row.duration === "string"
       && parseDurationSeconds(row.duration) !== null && parseDurationSeconds(row.duration)! <= 9223372036;
   });
@@ -88,7 +107,7 @@ export function workflowAction(content: AutomationVersionContent): {kind: Workfl
 }
 
 export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, trigger, previousSteps, bare = false, showHeader = true, disabled }: {
-  step: AutomationStep; index: number; onUpdate: (step: AutomationStep) => void; onRemove?: () => void;
+  step: WorkflowStepDraft; index: number; onUpdate: (step: WorkflowStepDraft) => void; onRemove?: () => void;
   policies?: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null;
   trigger: TriggerKind;
   previousSteps?: AutomationStep[];
@@ -96,7 +115,8 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
   disabled?: boolean;
 }) {
   const t = useT();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState<"details" | "run-controls" | null>(null);
+  const timeoutDraft = step.timeoutSecs ?? (step.timeout_secs === undefined ? "" : formatDurationSeconds(step.timeout_secs));
   const prefix = `wf-step-${index}`;
   return <div className={cn("space-y-0", !bare && "rounded-lg border border-border/70 bg-muted/10 p-3")}>
     {showHeader ? <div className="mb-3 flex items-center justify-between gap-2">
@@ -154,15 +174,30 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
             className="min-h-[60px] resize-y text-xs" />
         </div><p className="text-xs text-muted-foreground">{t("workflows.steps.channelTarget")}</p></div>}
     </section>
-    <section className="divide-y divide-border/50 border-t border-border/50"><div>
-      <button aria-expanded={expanded} disabled={disabled}
+    <section className="divide-y divide-border/50 border-t border-border/50">
+      {step.action === "delay" ? <div>
+        <button aria-expanded={expanded === "run-controls"} disabled={disabled}
+          className="flex min-h-12 w-full items-center gap-3 py-3 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => setExpanded((value) => value === "run-controls" ? null : "run-controls")} type="button">
+          <span className="min-w-0 flex-1 truncate text-base font-medium">{t("workflows.steps.runControls")}</span>
+          <span className="max-w-40 truncate text-sm text-muted-foreground">{timeoutDraft.trim() || t("workflows.steps.default")}</span>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-150 motion-reduce:transition-none", expanded === "run-controls" && "rotate-90")} />
+        </button>
+        {expanded === "run-controls" ? <div className="animate-in pb-4 pt-1 fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none"><div className="space-y-4">
+          <WorkflowDurationField disabled={disabled} fallbackSeconds={DEFAULT_STEP_TIMEOUT_SECONDS}
+            id={`${prefix}-timeout-secs`} label={t("workflows.steps.timeout")} placeholder="5m"
+            value={timeoutDraft} onChange={(timeoutSecs) => onUpdate({...step, timeoutSecs})} />
+        </div></div> : null}
+      </div> : null}
+      <div>
+      <button aria-expanded={expanded === "details"} disabled={disabled}
         className="flex min-h-12 w-full items-center gap-3 py-3 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        onClick={() => setExpanded((value) => !value)} type="button">
+        onClick={() => setExpanded((value) => value === "details" ? null : "details")} type="button">
         <span className="min-w-0 flex-1 truncate text-base font-medium">{t("workflows.steps.details")}</span>
         <span className="max-w-40 truncate text-sm text-muted-foreground">{step.name?.trim() || step.id}</span>
-        <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-150 motion-reduce:transition-none", expanded && "rotate-90")} />
+        <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-150 motion-reduce:transition-none", expanded === "details" && "rotate-90")} />
       </button>
-      {expanded ? <div className="animate-in pb-4 pt-1 fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none"><div className="space-y-4">
+      {expanded === "details" ? <div className="animate-in pb-4 pt-1 fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none"><div className="space-y-4">
         <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-name`}>
           {t("workflows.steps.name")}<Input autoCapitalize="off" disabled={disabled} id={`${prefix}-name`} value={step.name ?? ""}
             placeholder={t("workflows.steps.nameExample")} onChange={(event) => {

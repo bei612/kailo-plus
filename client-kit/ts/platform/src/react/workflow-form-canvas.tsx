@@ -12,7 +12,7 @@ import { formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-d
 import { Button } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
-import { nextStepId, WorkflowStepCard } from "./workflow-steps";
+import { nextStepId, WorkflowStepCard, type WorkflowStepDraft } from "./workflow-steps";
 
 type Pane = { type: "trigger" } | { type: "step"; stepId: string } | { type: "action" } | null;
 type DraftAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
@@ -109,7 +109,7 @@ export type WorkflowFormCanvasHandle = {
 };
 
 export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
-  steps: AutomationStep[]; onStepsChange: (steps: AutomationStep[]) => void;
+  steps: WorkflowStepDraft[]; onStepsChange: (steps: WorkflowStepDraft[]) => void;
   action?: NonNullable<AutomationVersionContent["action"]>; actionFields?: ReactNode;
   trigger: AutomationTriggerKind; triggerFields: ReactNode; scopeField?: ReactNode;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
@@ -183,7 +183,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   const actionLabel = (step: AutomationStep) => t(actionKeys[step.action as DraftAction]);
   const legacyActionLabel = action ? t(action.kind === ActionKind.AgentTurn ? "agents.automation.agentTurn" : "agents.automation.postMessage") : "";
   const legacyActionDescription = action?.template.trim() ? `“${compact(action.template)}”` : legacyActionLabel;
-  const updateStep = (next: AutomationStep) => {
+  const updateStep = (next: WorkflowStepDraft) => {
     if (disabled || !selectedStep) return;
     onStepsChange(steps.map((step, index) => index === selectedIndex ? next : step));
     if (next.id !== selectedStep.id) setPane({type: "step", stepId: next.id});

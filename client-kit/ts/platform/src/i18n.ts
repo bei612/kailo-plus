@@ -1717,6 +1717,9 @@ export const platformMessages = {
   "workflows.steps.nameExample": { en: "e.g. Notify deployment channel", "zh-CN": "例如 通知部署频道" },
   "workflows.steps.idExample": { en: "unique_step_id", "zh-CN": "unique_step_id" },
   "workflows.steps.details": { en: "Step details", "zh-CN": "步骤详情" },
+  "workflows.steps.runControls": { en: "Run controls", "zh-CN": "运行控制" },
+  "workflows.steps.default": { en: "Default", "zh-CN": "默认" },
+  "workflows.steps.timeout": { en: "Timeout", "zh-CN": "超时" },
   "workflows.steps.name": { en: "Name (optional)", "zh-CN": "名称（可选）" },
   "workflows.steps.id": { en: "Step ID", "zh-CN": "步骤标识" },
   "workflows.steps.reference": { en: "Used in configuration and run history.", "zh-CN": "用于配置和运行历史。" },
@@ -2919,6 +2922,7 @@ export const reasonMessages = {
     en: "The content is larger than the server accepts. Nothing was sent; shorten it and try again.",
     "zh-CN": "内容超过服务器允许的大小，本次未发出；请缩短后再试。",
   },
+  [ReasonCode.StepTimeout]: { en: "Step timed out.", "zh-CN": "步骤已超时。" },
   [ReasonCode.PublishRejected]: { en: "The message was rejected.", "zh-CN": "消息被拒绝。" },
   [ReasonCode.PublishResultUnknown]: {
     en: "Whether the message was delivered is not known yet.",

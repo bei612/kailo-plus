@@ -9,6 +9,21 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Delay deadline preserves independent duration and legacy absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/agent-task-delay.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      sample
+          .map((row) => AgentTaskAdvanceResult.fromJson(row).toJson())
+          .toList(),
+      sample,
+    );
+  });
   test('PEP binding generation preserves legacy absence', () {
     final rows =
         jsonDecode(
@@ -701,20 +716,29 @@ void main() {
     );
   });
   test('binding reconcile preserves frozen reference and unknown absence', () {
-    final request = jsonDecode(
-      File('../../contracts/samples/adapter-binding-reconcile-request.sample.json')
-          .readAsStringSync(),
-    ) as Map<String, dynamic>;
+    final request =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-binding-reconcile-request.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
     expect(
-      jsonDecode(jsonEncode(AdapterBindingReconcileRequest.fromJson(request).toJson())),
+      jsonDecode(
+        jsonEncode(AdapterBindingReconcileRequest.fromJson(request).toJson()),
+      ),
       equals(request),
     );
-    final responses = jsonDecode(
-      File('../../contracts/samples/adapter-binding-reconcile-responses.sample.json')
-          .readAsStringSync(),
-    ) as List<dynamic>;
+    final responses =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-binding-reconcile-responses.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
     final typed = responses.map(
-      (row) => AdapterBindingReconcileResponse.fromJson(row as Map<String, dynamic>),
+      (row) =>
+          AdapterBindingReconcileResponse.fromJson(row as Map<String, dynamic>),
     );
     expect(
       jsonDecode(jsonEncode(typed.map((row) => row.toJson()).toList())),

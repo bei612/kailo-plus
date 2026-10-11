@@ -4539,6 +4539,10 @@ class StepElement {
   final String? name;
   final String? text;
 
+  ///固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+  ///执行，缺省保持既有版本行为，不给历史补写默认值。
+  final int? timeoutSecs;
+
   ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
   final String? topic;
 
@@ -4551,6 +4555,7 @@ class StepElement {
     this.message,
     this.name,
     this.text,
+    this.timeoutSecs,
     this.topic,
   });
 
@@ -4565,6 +4570,7 @@ class StepElement {
     message: json["message"],
     name: json["name"],
     text: json["text"],
+    timeoutSecs: json["timeout_secs"],
     topic: json["topic"],
   );
 
@@ -4577,6 +4583,7 @@ class StepElement {
     "message": message,
     "name": name,
     "text": text,
+    "timeout_secs": timeoutSecs,
     "topic": topic,
   });
 }
@@ -5581,6 +5588,7 @@ enum ReasonCode {
   SCOPE_GUARD_FAILED,
   SELF_APPROVAL_DENIED,
   SESSION_NOT_ACTIVE,
+  STEP_TIMEOUT,
   SURFACE_CAPABILITY_UNAVAILABLE,
   TARGET_NOT_FOUND,
   TARGET_STATE_CONFLICT,
@@ -5631,6 +5639,7 @@ final reasonCodeValues = EnumValues({
   "SCOPE_GUARD_FAILED": ReasonCode.SCOPE_GUARD_FAILED,
   "SELF_APPROVAL_DENIED": ReasonCode.SELF_APPROVAL_DENIED,
   "SESSION_NOT_ACTIVE": ReasonCode.SESSION_NOT_ACTIVE,
+  "STEP_TIMEOUT": ReasonCode.STEP_TIMEOUT,
   "SURFACE_CAPABILITY_UNAVAILABLE": ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE,
   "TARGET_NOT_FOUND": ReasonCode.TARGET_NOT_FOUND,
   "TARGET_STATE_CONFLICT": ReasonCode.TARGET_STATE_CONFLICT,
@@ -14351,6 +14360,10 @@ class AutomationStep {
   final String? name;
   final String? text;
 
+  ///固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+  ///执行，缺省保持既有版本行为，不给历史补写默认值。
+  final int? timeoutSecs;
+
   ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
   final String? topic;
 
@@ -14363,6 +14376,7 @@ class AutomationStep {
     this.message,
     this.name,
     this.text,
+    this.timeoutSecs,
     this.topic,
   });
 
@@ -14377,6 +14391,7 @@ class AutomationStep {
     message: json["message"],
     name: json["name"],
     text: json["text"],
+    timeoutSecs: json["timeout_secs"],
     topic: json["topic"],
   );
 
@@ -14389,6 +14404,7 @@ class AutomationStep {
     "message": message,
     "name": name,
     "text": text,
+    "timeout_secs": timeoutSecs,
     "topic": topic,
   });
 }
@@ -16470,12 +16486,22 @@ class DelayStep {
   final String id;
   final int seconds;
 
-  DelayStep({required this.id, required this.seconds});
+  ///显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。
+  final int? timeoutSeconds;
 
-  factory DelayStep.fromJson(Map<String, dynamic> json) =>
-      DelayStep(id: json["id"], seconds: json["seconds"]);
+  DelayStep({required this.id, required this.seconds, this.timeoutSeconds});
 
-  Map<String, dynamic> toJson() => _stripNulls({"id": id, "seconds": seconds});
+  factory DelayStep.fromJson(Map<String, dynamic> json) => DelayStep(
+    id: json["id"],
+    seconds: json["seconds"],
+    timeoutSeconds: json["timeoutSeconds"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "seconds": seconds,
+    "timeoutSeconds": timeoutSeconds,
+  });
 }
 
 ///DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。

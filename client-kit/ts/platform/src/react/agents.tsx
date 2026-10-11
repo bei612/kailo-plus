@@ -80,8 +80,7 @@ import { WorkflowScheduleFields } from "./workflow-schedule-fields";
 import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
-import type { AutomationStep } from "@client-kit/contracts";
-import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, nextStepId, type WorkflowActionKind } from "./workflow-steps";
+import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, nextStepId, workflowStepsContent, validStepTimeout, type WorkflowStepDraft, type WorkflowActionKind } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -804,7 +803,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const [cron, setCron] = useState("");
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
-  const [steps, setSteps] = useState<AutomationStep[]>([]);
+  const [steps, setSteps] = useState<WorkflowStepDraft[]>([]);
   const [stepsFormat, setStepsFormat] = useState<2 | 3>(2);
   const [actionKind, setActionKind] = useState<WorkflowActionKind>(ActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
@@ -880,7 +879,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : {
       ...(prefix ? { textPrefix: prefix } : {}), ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    ...(steps.length ? {formatVersion: stepsFormat, steps} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
+    ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
@@ -975,7 +974,8 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     if (mode === "yaml") {
       // Never serialize an unavailable policy as NONE or turn an invalid numeric
       // form draft into a different valid configuration.
-      if (!policyAvailable || (trigger === TriggerKind.Schedule && !scheduleValid)
+      if (!policyAvailable || formContent.steps?.some(step => !validStepTimeout(step.timeout_secs))
+        || (trigger === TriggerKind.Schedule && !scheduleValid)
         || (trigger === TriggerKind.Mention && !executor)) { setEditorError(true); return; }
       formDraftYaml.current = stringify(formContent);
       setYamlText(formDraftYaml.current); setEditorMode(mode); setEditorError(false);

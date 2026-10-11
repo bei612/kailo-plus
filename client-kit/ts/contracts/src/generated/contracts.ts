@@ -1173,6 +1173,11 @@ export interface StepElement {
     name?:    string;
     text?:    string;
     /**
+     * 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+     * 执行，缺省保持既有版本行为，不给历史补写默认值。
+     */
+    timeout_secs?: number;
+    /**
      * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
      */
     topic?: string;
@@ -1628,6 +1633,7 @@ export enum ReasonCode {
     ScopeGuardFailed = "SCOPE_GUARD_FAILED",
     SelfApprovalDenied = "SELF_APPROVAL_DENIED",
     SessionNotActive = "SESSION_NOT_ACTIVE",
+    StepTimeout = "STEP_TIMEOUT",
     SurfaceCapabilityUnavailable = "SURFACE_CAPABILITY_UNAVAILABLE",
     TargetNotFound = "TARGET_NOT_FOUND",
     TargetStateConflict = "TARGET_STATE_CONFLICT",
@@ -4921,6 +4927,11 @@ export interface AutomationStep {
     name?:    string;
     text?:    string;
     /**
+     * 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+     * 执行，缺省保持既有版本行为，不给历史补写默认值。
+     */
+    timeout_secs?: number;
+    /**
      * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
      */
     topic?: string;
@@ -5640,6 +5651,10 @@ export enum ApprovalSelfApproval {
 export interface DelayStep {
     id:      string;
     seconds: number;
+    /**
+     * 显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。
+     */
+    timeoutSeconds?: number;
 }
 
 /**

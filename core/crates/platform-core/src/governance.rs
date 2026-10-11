@@ -199,7 +199,10 @@ impl Refusal {
             | ReasonCode::PermissionDenied
             | ReasonCode::ApprovalDenied) => Self::Denied(r),
             r @ ReasonCode::CapabilityBlocked => Self::Blocked(r),
-            r @ (ReasonCode::QuotaExhausted | ReasonCode::RateLimited) => Self::Limit(r),
+            r
+            @ (ReasonCode::QuotaExhausted | ReasonCode::RateLimited | ReasonCode::StepTimeout) => {
+                Self::Limit(r)
+            }
             r @ ReasonCode::TargetStateConflict => Self::Conflict(r),
             r => Self::Precondition(r),
         }

@@ -110,7 +110,10 @@ pub(crate) async fn capture(
             &observed.first_run_id,
             activity,
             &source.id.to_string(),
-            &delays,
+            super::steps::DelayTimings {
+                steps: &delays,
+                timeouts: &super::steps::delay_timeouts(&source.action),
+            },
             Some(report),
         )
         .await

@@ -8,6 +8,15 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Delay deadline preserves independent duration and legacy absence", () => {
+  type Wire = import("../src/generated/contracts.js").AgentTaskAdvanceResult;
+  const sample: Wire[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-task-delay.sample.json", import.meta.url), "utf8"));
+  const actual: Wire[] = sample.map(row => ({invocationId: row.invocationId, status: row.status,
+    waitingReason: row.waitingReason, finishActivity: row.finishActivity,
+    delayStep: row.delayStep && {id: row.delayStep.id, seconds: row.delayStep.seconds, timeoutSeconds: row.delayStep.timeoutSeconds}}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
+});
+
 test("PEP binding generation preserves legacy absence", () => {
   const sample: import("../src/generated/contracts.js").AdapterPepCheckResponse[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-pep-resource.sample.json", import.meta.url), "utf8"));
   const actual: typeof sample = sample.map(row => ({ actionExecutionId: row.actionExecutionId, operationId: row.operationId,
@@ -641,7 +650,7 @@ test("ordered automation steps retain IDs, duration, names and version discrimin
   const reconstructed: AutomationVersionContent = {name:typed.name,description:typed.description,formatVersion:typed.formatVersion,
     trigger: {kind:typed.trigger.kind,textPrefix:typed.trigger.textPrefix,filter:typed.trigger.filter,
       mentionPrincipalId:typed.trigger.mentionPrincipalId,scheduleSpec:typed.trigger.scheduleSpec},
-    steps:typed.steps.map((step) => ({id:step.id,name:step.name,action:step.action,duration:step.duration,text:step.text})),resultTarget:typed.resultTarget};
+    steps:typed.steps.map((step) => ({id:step.id,name:step.name,action:step.action,duration:step.duration,timeout_secs:step.timeout_secs,text:step.text})),resultTarget:typed.resultTarget};
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)),original);
   }
 });

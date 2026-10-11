@@ -6,6 +6,17 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn delay_deadline_preserves_independent_duration_and_legacy_absence() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-task-delay.sample.json")).unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::AgentTaskAdvanceResult> =
+        serde_json::from_value(sample.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), sample);
+}
+
+#[test]
 fn pep_binding_generation_preserves_legacy_absence() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("adapter-pep-resource.sample.json"))
@@ -600,7 +611,8 @@ fn binding_reconcile_roundtrip_preserves_frozen_reference_and_unknown_absence() 
     )
     .unwrap();
     let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let typed: Vec<contracts::AdapterBindingReconcileResponse> = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AdapterBindingReconcileResponse> =
+        serde_json::from_str(&raw).unwrap();
     assert_eq!(original, serde_json::to_value(typed).unwrap());
 }
 

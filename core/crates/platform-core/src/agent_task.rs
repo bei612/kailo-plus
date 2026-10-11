@@ -216,7 +216,8 @@ async fn advance_accepted(
         if delays.is_empty() || automation_cancel {
             None
         } else {
-            let completed = match state
+            let timeouts = crate::automation::steps::delay_timeouts(&action);
+            let (completed, timed_out) = match state
                 .temporal
                 .automation_delay_progress(
                     &invocation.workflow_id,
@@ -224,22 +225,55 @@ async fn advance_accepted(
                     &input.run_id,
                     &input.activity_id,
                     &input.invocation_id,
-                    &delays,
+                    crate::automation::steps::DelayTimings {
+                        steps: &delays,
+                        timeouts: &timeouts,
+                    },
                 )
                 .await
             {
                 Ok(completed) => completed,
                 Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
             };
-            let next = delays.get(completed).cloned();
+            if timed_out.is_some() {
+                // A deadline alone is not failure: the native history reader
+                // also proved the Delay timer canceled. Fence cancellation once
+                // more and close only an invocation with no unproved effects.
+                let cancel = match post_message::activity_fence(&state, &invocation, &input, true)
+                    .await
+                {
+                    Ok(native) => native || input.cancel_requested || invocation.cancel_pending,
+                    Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                };
+                let reason = if cancel {
+                    contracts::ReasonCode::AdmissionAbandoned
+                } else {
+                    contracts::ReasonCode::StepTimeout
+                };
+                return match refuse_step_before_dispatch(&state, &invocation, &reason, cancel).await
+                {
+                    Ok(true) => result(
+                        id,
+                        if cancel {
+                            TaskStatus::Canceled
+                        } else {
+                            TaskStatus::Failed
+                        },
+                        &crate::governance::wire(&reason),
+                    ),
+                    _ => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                };
+            }
+            let next = delays
+                .get(completed)
+                .map(|(step, seconds)| (step.clone(), *seconds, timeouts.get(step).copied()));
             // A policy-backed step starts only after the earlier original
             // timers fired. Legacy version-level approval still precedes all timers.
             if crate::automation::steps::delays_before_approval(&action)
                 .is_some_and(|before| completed < before)
             {
                 return match next {
-                    Some((step, seconds)) => (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
-                        "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response(),
+                    Some((step, seconds, timeout)) => delay_result(id, step, seconds, timeout),
                     None => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
                 };
             }
@@ -305,9 +339,8 @@ async fn advance_accepted(
         .as_deref()
         .is_some_and(crate::automation::steps::is_native_kind)
     {
-        if let Some((step, seconds)) = pending_delay {
-            return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
-                "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response();
+        if let Some((step, seconds, timeout)) = pending_delay {
+            return delay_result(id, step, seconds, timeout);
         }
         return post_message::advance(&state, &invocation, &input, sequence_ordinal).await;
     }
@@ -3022,7 +3055,11 @@ async fn refuse_step_before_dispatch(
         &ae,
         invocation.id,
         (
-            "approval-step:refused",
+            if *reason == contracts::ReasonCode::StepTimeout {
+                "delay-step:timeout"
+            } else {
+                "approval-step:refused"
+            },
             "OUTCOME",
             &crate::governance::wire(reason),
         ),
@@ -3115,6 +3152,26 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
             approval_workflow_id: None,
             approval_input: None,
             delay_step: None,
+        }),
+    )
+        .into_response()
+}
+
+fn delay_result(id: Uuid, step: String, seconds: i64, timeout_seconds: Option<i64>) -> Response {
+    (
+        StatusCode::OK,
+        Json(AgentTaskAdvanceResult {
+            invocation_id: id.to_string(),
+            status: TaskStatus::Running,
+            waiting_reason: "WAITING_TIMER".into(),
+            finish_activity: true,
+            approval_workflow_id: None,
+            approval_input: None,
+            delay_step: Some(contracts::DelayStep {
+                id: step,
+                seconds,
+                timeout_seconds,
+            }),
         }),
     )
         .into_response()

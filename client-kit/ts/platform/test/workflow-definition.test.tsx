@@ -59,6 +59,32 @@ async function setup(override: (request: BffRequest) => BffReply | undefined = (
 }
 
 describe("original complete Definition view with immutable pinned governance", () => {
+  it("keeps an explicit Delay timeout unchanged through the real form and YAML editor", async () => {
+    const timed = {...content, steps: content.steps.map(step => step.action === "delay"
+      ? {...step, timeout_secs: 1} : step)};
+    const {panel, send} = await setup(request => request.path.startsWith("/api/v1/automations/workflow?")
+      ? {status: 200, body: {...detail, versions: [{...pinned, content: timed}]}} : undefined);
+    await click(button(panel, "Edit"));
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(dialog.querySelectorAll<HTMLElement>('ol > li > div > button[aria-pressed]')[1]!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    await click([...dialog.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent?.includes("Run controls"))!);
+    const timeout = dialog.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!;
+    await type(timeout, "not-finished");
+    await click(button(dialog, "Workflow YAML"));
+    expect(button(dialog, "Form").getAttribute("aria-pressed")).toBe("true");
+    expect(timeout.value).toBe("not-finished");
+    await type(timeout, "1m");
+    const edited = {...timed, steps: timed.steps.map(step => step.action === "delay" ? {...step, timeout_secs: 60} : step)};
+    await click(button(dialog, "Workflow YAML"));
+    expect(parse(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value)).toEqual(edited);
+    await click(button(dialog, "Form"));
+    expect(button(dialog, "Form").getAttribute("aria-pressed")).toBe("true");
+    await click(button(dialog, "Workflow YAML"));
+    expect(parse(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value)).toEqual(edited);
+    expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
+  });
+
   it.each(["en", "zh-CN"] as const)("keeps original description separate from the trigger and through form/YAML in %s", async locale => {
     const described = { ...content, description: "Original description <script>inert</script>" };
     const { panel, send } = await setup(request => request.path.startsWith("/api/v1/automations/workflow?")

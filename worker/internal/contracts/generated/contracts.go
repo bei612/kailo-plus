@@ -3676,6 +3676,9 @@ type StepElement struct {
 	Message *string `json:"message,omitempty"`
 	Name    *string `json:"name,omitempty"`
 	Text    *string `json:"text,omitempty"`
+	// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+	// 执行，缺省保持既有版本行为，不给历史补写默认值。
+	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
 	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
 	Topic *string `json:"topic,omitempty"`
 }
@@ -6028,6 +6031,9 @@ type AutomationStep struct {
 	Message *string `json:"message,omitempty"`
 	Name    *string `json:"name,omitempty"`
 	Text    *string `json:"text,omitempty"`
+	// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
+	// 执行，缺省保持既有版本行为，不给历史补写默认值。
+	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
 	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
 	Topic *string `json:"topic,omitempty"`
 }
@@ -6562,6 +6568,8 @@ type RefusalElement struct {
 type DelayStep struct {
 	ID      string `json:"id"`
 	Seconds int64  `json:"seconds"`
+	// 显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。
+	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
 // DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
@@ -7451,6 +7459,7 @@ const (
 	ScopeGuardFailed             ReasonCode = "SCOPE_GUARD_FAILED"
 	SelfApprovalDenied           ReasonCode = "SELF_APPROVAL_DENIED"
 	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
+	StepTimeout                  ReasonCode = "STEP_TIMEOUT"
 	SurfaceCapabilityUnavailable ReasonCode = "SURFACE_CAPABILITY_UNAVAILABLE"
 	TargetNotFound               ReasonCode = "TARGET_NOT_FOUND"
 	TargetStateConflict          ReasonCode = "TARGET_STATE_CONFLICT"

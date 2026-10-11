@@ -14,7 +14,8 @@
     "approvalWorkflowId": {"type":"string","minLength":1},
     "approvalInput": {"$ref":"approval_input.schema.json"},
     "delayStep": {"type":"object", "additionalProperties":false, "required":["id","seconds"], "properties": {
-      "id":{"type":"string","minLength":1}, "seconds":{"type":"integer","minimum":1}
+      "id":{"type":"string","minLength":1}, "seconds":{"type":"integer","minimum":1},
+      "timeoutSeconds":{"type":"integer","minimum":1,"description":"显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。"}
     }, "description":"同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。"}
   }
 }

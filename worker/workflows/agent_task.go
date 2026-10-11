@@ -190,8 +190,20 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 						out.DelayStep.Seconds > math.MaxInt64/int64(time.Second) {
 						return temporal.NewNonRetryableApplicationError("Delay input invalid", activities.ErrTypeUnknownExternalResult, nil)
 					}
-					timer := workflow.NewTimerWithOptions(ctx, time.Duration(out.DelayStep.Seconds)*time.Second,
+					timerContext, cancelTimer := workflow.WithCancel(ctx)
+					timer := workflow.NewTimerWithOptions(timerContext, time.Duration(out.DelayStep.Seconds)*time.Second,
 						workflow.TimerOptions{Summary: "automation-delay:" + in.InvocationID + ":" + out.DelayStep.ID})
+					var deadline workflow.Future
+					var cancelDeadline workflow.CancelFunc
+					if out.DelayStep.TimeoutSeconds != nil && workflow.GetVersion(loop, "agent-task-delay-step-timeout", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+						if *out.DelayStep.TimeoutSeconds <= 0 || *out.DelayStep.TimeoutSeconds > math.MaxInt64/int64(time.Second) {
+							return temporal.NewNonRetryableApplicationError("Delay deadline input invalid", activities.ErrTypeUnknownExternalResult, nil)
+						}
+						deadlineContext, cancel := workflow.WithCancel(ctx)
+						cancelDeadline = cancel
+						deadline = workflow.NewTimerWithOptions(deadlineContext, time.Duration(*out.DelayStep.TimeoutSeconds)*time.Second,
+							workflow.TimerOptions{Summary: "automation-delay-timeout:" + in.InvocationID + ":" + out.DelayStep.ID})
+					}
 					if workflow.GetVersion(loop, "agent-task-native-delay-trace", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
 						// The timer must actually exist before a running step can be
 						// observed. This running observation is not a terminal ACK:
@@ -201,7 +213,24 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 						// terminal projection ACK before returning a business outcome.
 						_ = project(loop, status, reason)
 					}
-					_ = timer.Get(ctx, nil)
+					if deadline == nil {
+						_ = timer.Get(ctx, nil)
+					} else {
+						// Like the original timeout future, completion wins if both
+						// are ready in this Workflow task. Core observes both native
+						// terminal events; this selection is not a business outcome.
+						selector := workflow.NewSelector(ctx)
+						selector.AddFuture(timer, func(workflow.Future) {})
+						selector.AddFuture(deadline, func(workflow.Future) {})
+						selector.Select(ctx)
+						if ctx.Err() == nil && timer.IsReady() {
+							cancelDeadline()
+						} else {
+							cancelTimer()
+						}
+						cancelDeadline()
+					}
+					cancelTimer()
 					// Preserve cancellation before a native continuation; the next
 					// run must drain, not restart the unfinished Delay or its effect.
 					in.CancelPending = in.CancelPending || ctx.Err() != nil

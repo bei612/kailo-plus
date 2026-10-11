@@ -79,6 +79,58 @@ func TestAgentTaskOrderedDelayUsesDurableTimerBeforeNextAdvance(t *testing.T) {
 	}
 }
 
+func TestAgentTaskDelayDeadlineKeepsIndependentTimersAndDrainsCancel(t *testing.T) {
+	for _, scenario := range []struct {
+		name             string
+		seconds, timeout int64
+		cancel           bool
+		elapsed          time.Duration
+	}{
+		{"deadline", 62, 5, false, 5 * time.Second}, {"completion", 5, 62, false, 5 * time.Second},
+		{"same-task", 5, 5, false, 5 * time.Second}, {"cancel", 62, 5, true, time.Second},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+			started := env.Now()
+			advances := 0
+			scheduled := []time.Duration{}
+			canceled := 0
+			env.SetOnTimerScheduledListener(func(_ string, duration time.Duration) { scheduled = append(scheduled, duration) })
+			env.SetOnTimerCanceledListener(func(string) { canceled++ })
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(func(_ context.Context, actual generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+				advances++
+				if advances == 1 {
+					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
+						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: scenario.seconds, TimeoutSeconds: &scenario.timeout}}, nil
+				}
+				if env.Now().Sub(started) != scenario.elapsed || actual.CancelPending != scenario.cancel {
+					t.Fatal("deadline changed timer or cancel outcome", env.Now().Sub(started), actual.CancelPending)
+				}
+				status := generated.TaskStatusCOMPLETED
+				if scenario.cancel {
+					status = generated.TaskStatusCANCELED
+				}
+				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: status, WaitingReason: "NONE", FinishActivity: true}, nil
+			})
+			if scenario.cancel {
+				env.RegisterDelayedCallback(env.CancelWorkflow, time.Second)
+			}
+			raw, _ := json.Marshal(in)
+			env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
+			if advances != 2 || (env.GetWorkflowError() != nil) != scenario.cancel {
+				t.Fatal("deadline did not return to original observation", advances, env.GetWorkflowError())
+			}
+			if len(scheduled) != 2 || scheduled[0] != time.Duration(scenario.seconds)*time.Second || scheduled[1] != time.Duration(scenario.timeout)*time.Second {
+				t.Fatal("deadline replaced the original duration", scheduled)
+			}
+			if scenario.name != "same-task" && canceled == 0 {
+				t.Fatal("losing timer was not canceled")
+			}
+		})
+	}
+}
+
 // Core owns the per-effect durable receipts; the existing Workflow must carry
 // those observations through its normal Activity/Timer loop without a new run.
 func TestAgentTaskOrderedMessageObservationsKeepOneInvocationAndStopOnFailure(t *testing.T) {

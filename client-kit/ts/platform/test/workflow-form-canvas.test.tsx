@@ -6,7 +6,7 @@ import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "../src/react/workflow-form-canvas";
-import { supportedSteps } from "../src/react/workflow-steps";
+import { supportedSteps, workflowStepsContent, type WorkflowStepDraft } from "../src/react/workflow-steps";
 import { click, render, settle, type } from "./render";
 
 beforeEach(() => {
@@ -33,7 +33,7 @@ async function setup(initial: AutomationStep[], options: { disabled?: boolean; p
   </QueryClientProvider>);
   return {host, changes, handle};
 }
-const read = (host: HTMLElement): AutomationStep[] => JSON.parse(host.querySelector("output")!.textContent!);
+const read = (host: HTMLElement): WorkflowStepDraft[] => JSON.parse(host.querySelector("output")!.textContent!);
 async function settledMotion() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); }); }
 async function node(host: HTMLElement, index: number) {
   await click(host.querySelectorAll<HTMLElement>('ol > li > div > button[aria-pressed]')[index]!);
@@ -51,6 +51,28 @@ async function add(host: HTMLElement, position: number, action: string) {
 }
 
 describe("original workflow sequence and actual governed draft consumer", () => {
+  it("preserves the original Delay timeout control through its actual ordered draft", async () => {
+    const {host, handle}=await setup([{id:"wait",action:ActionEnum.Delay,duration:"62s"},first]);
+    await node(host,1);
+    await click([...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.includes("Run controls"))!);
+    await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"5");
+    expect(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!.value).toBe("5");
+    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:ActionEnum.Delay,duration:"62s",timeout_secs:5});
+    expect(supportedSteps(workflowStepsContent(read(host)),3)).toBe(true);
+    await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"not-finished");
+    await act(async () => { handle.current!.closeInspector(); });
+    await settledMotion();
+    await node(host,1);
+    await click([...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.includes("Run controls"))!);
+    expect(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!.value).toBe("not-finished");
+    expect(supportedSteps(workflowStepsContent(read(host)),3)).toBe(false);
+    await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"0s");
+    expect(supportedSteps(workflowStepsContent(read(host)),3)).toBe(false);
+    await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"");
+    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:ActionEnum.Delay,duration:"62s"});
+    await node(host,2);
+    expect([...host.querySelectorAll("button")].some(button=>button.textContent?.includes("Run controls"))).toBe(false);
+  });
   it("uses the original dialog handle to add a first real step and close the inspector without changing that draft", async () => {
     const {host, changes, handle} = await setup([]);
     expect(handle.current!.closeInspector()).toBe(false);

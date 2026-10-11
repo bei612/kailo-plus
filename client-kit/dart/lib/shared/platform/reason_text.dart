@@ -48,6 +48,7 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.SCOPE_GUARD_FAILED => '超出了你所属的组织或工作区范围。',
       ReasonCode.SELF_APPROVAL_DENIED => '不能审批自己发起的请求。',
       ReasonCode.SESSION_NOT_ACTIVE => '你的会话已失效。',
+      ReasonCode.STEP_TIMEOUT => '步骤已超时。',
       ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE => '此处不提供该功能，请在网页端或桌面端继续。',
       ReasonCode.TARGET_NOT_FOUND => '对象已不存在，或你无权查看。',
       ReasonCode.TARGET_STATE_CONFLICT => '对象当前的状态不允许此操作。',
@@ -126,6 +127,7 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       'This is outside the organization or workspace you belong to.',
     ReasonCode.SELF_APPROVAL_DENIED => 'You cannot approve your own request.',
     ReasonCode.SESSION_NOT_ACTIVE => 'Your session is no longer active.',
+    ReasonCode.STEP_TIMEOUT => 'Step timed out.',
     ReasonCode.SURFACE_CAPABILITY_UNAVAILABLE =>
       'This is not available here. Continue in the web or desktop app.',
     ReasonCode.TARGET_NOT_FOUND => 'It no longer exists, or you cannot see it.',

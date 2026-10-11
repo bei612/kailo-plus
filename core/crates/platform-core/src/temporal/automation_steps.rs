@@ -8,10 +8,94 @@ struct DelayHistory<'a> {
     completed: usize,
     started: Option<(i64, String)>,
     records: Vec<serde_json::Value>,
+    timeouts: &'a std::collections::HashMap<String, i64>,
+    deadlines: std::collections::HashMap<String, (String, i64, String, Option<bool>)>,
+    cancel_requested: bool,
 }
 
 impl DelayHistory<'_> {
     fn observe(&mut self, event: &HistoryEvent, run: &str) -> Result<(), TemporalError> {
+        if matches!(
+            &event.attributes,
+            Some(Attributes::WorkflowExecutionCancelRequestedEventAttributes(
+                _
+            ))
+        ) {
+            self.cancel_requested = true;
+        }
+        // The independent deadline is not a shorter Delay. Preserve both native
+        // timer identities and require the losing timer to have a terminal event.
+        match &event.attributes {
+            Some(Attributes::TimerStartedEventAttributes(timer)) => {
+                let summary = event
+                    .user_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.summary.as_ref())
+                    .and_then(|payload| serde_json::from_slice::<String>(&payload.data).ok());
+                if let Some(step) = summary.as_deref().and_then(|summary| {
+                    summary.strip_prefix(&format!("automation-delay-timeout:{}:", self.invocation))
+                }) {
+                    let seconds = self.timeouts.get(step).ok_or_else(|| {
+                        TemporalError::Unknown("Unconfigured Delay deadline".into())
+                    })?;
+                    if self.deadlines.contains_key(step)
+                        || event.event_id <= 0
+                        || timer.timer_id.is_empty()
+                        || timer.start_to_fire_timeout.as_ref().is_none_or(|duration| {
+                            duration.seconds != *seconds || duration.nanos != 0
+                        })
+                    {
+                        return Err(TemporalError::Unknown(
+                            "Delay deadline TimerStarted mismatch".into(),
+                        ));
+                    }
+                    self.deadlines.insert(
+                        step.to_owned(),
+                        (run.to_owned(), event.event_id, timer.timer_id.clone(), None),
+                    );
+                    return Ok(());
+                }
+            }
+            Some(Attributes::TimerFiredEventAttributes(timer)) => {
+                if let Some((_, _, _, terminal)) =
+                    self.deadlines
+                        .values_mut()
+                        .find(|(started_run, id, key, _)| {
+                            started_run == run
+                                && *id == timer.started_event_id
+                                && *key == timer.timer_id
+                        })
+                {
+                    if terminal.is_some() {
+                        return Err(TemporalError::Unknown(
+                            "Conflicting Delay deadline terminal".into(),
+                        ));
+                    }
+                    *terminal = Some(true);
+                    return Ok(());
+                }
+            }
+            Some(Attributes::TimerCanceledEventAttributes(timer)) => {
+                if let Some((_, _, _, terminal)) =
+                    self.deadlines
+                        .values_mut()
+                        .find(|(started_run, id, key, _)| {
+                            started_run == run
+                                && *id == timer.started_event_id
+                                && *key == timer.timer_id
+                        })
+                {
+                    if terminal.is_some() {
+                        return Err(TemporalError::Unknown(
+                            "Conflicting Delay deadline terminal".into(),
+                        ));
+                    }
+                    *terminal = Some(false);
+                    return Ok(());
+                }
+            }
+            _ => (),
+        }
         // A zero-duration original Delay is a no-op, not an invented timer receipt.
         while self
             .steps
@@ -86,6 +170,38 @@ impl DelayHistory<'_> {
         }
         Ok(())
     }
+
+    fn finish(mut self) -> Result<(usize, Vec<serde_json::Value>), TemporalError> {
+        for record in &mut self.records {
+            let step = record["stepId"]
+                .as_str()
+                .ok_or_else(|| TemporalError::Unknown("Delay step missing".into()))?;
+            if !self.timeouts.contains_key(step) {
+                continue;
+            }
+            let Some((_, _, _, terminal)) = self.deadlines.get(step) else {
+                return Err(TemporalError::Unknown(
+                    "Delay deadline timer missing".into(),
+                ));
+            };
+            match (record["status"].as_str(), terminal) {
+                // Worker checks the delay first when both Futures are ready.
+                (Some("completed"), Some(_)) => (),
+                (Some("cancelled"), Some(true)) if !self.cancel_requested => {
+                    record["status"] = "failed".into();
+                    record["error"] = serde_json::json!(contracts::ReasonCode::StepTimeout);
+                }
+                (Some("cancelled"), Some(_)) if self.cancel_requested => (),
+                (Some("running"), None) => (),
+                _ => {
+                    return Err(TemporalError::Unknown(
+                        "Delay losing timer is not reconciled".into(),
+                    ))
+                }
+            }
+        }
+        Ok((self.completed, self.records))
+    }
 }
 
 fn event_timestamp(event: &HistoryEvent) -> Option<String> {
@@ -117,8 +233,8 @@ impl TemporalClient {
         current_run: &str,
         activity: &str,
         invocation: &str,
-        steps: &[(String, i64)],
-    ) -> Result<usize, TemporalError> {
+        delays: crate::automation::steps::DelayTimings<'_>,
+    ) -> Result<(usize, Option<String>), TemporalError> {
         self.automation_step_history(
             &WorkflowExecution {
                 workflow_id: workflow.to_owned(),
@@ -127,11 +243,18 @@ impl TemporalClient {
             first_run,
             activity,
             invocation,
-            steps,
+            delays,
             None,
         )
         .await
-        .map(|(completed, _)| completed)
+        .map(|(completed, records)| {
+            let timed_out = records
+                .iter()
+                .find(|record| record["error"] == "STEP_TIMEOUT")
+                .and_then(|record| record["stepId"].as_str())
+                .map(str::to_owned);
+            (completed, timed_out)
+        })
     }
 
     /// The existing history walker also anchors the read projection at the
@@ -142,7 +265,7 @@ impl TemporalClient {
         first_run: &str,
         activity: &str,
         invocation: &str,
-        steps: &[(String, i64)],
+        delays: crate::automation::steps::DelayTimings<'_>,
         report: Option<&contracts::TaskStateReport>,
     ) -> Result<(usize, Vec<serde_json::Value>), TemporalError> {
         self.refresh_token().await?;
@@ -150,10 +273,13 @@ impl TemporalClient {
         let mut runs = HashSet::new();
         let mut progress = DelayHistory {
             invocation,
-            steps,
+            steps: delays.steps,
             completed: 0,
             started: None,
             records: Vec::new(),
+            timeouts: delays.timeouts,
+            deadlines: Default::default(),
+            cancel_requested: false,
         };
         loop {
             if uuid::Uuid::parse_str(&run).is_err() || !runs.insert(run.clone()) {
@@ -234,7 +360,7 @@ impl TemporalClient {
                                     "Delay Activity 原引用不一致".into(),
                                 ));
                             }
-                            return Ok((progress.completed, progress.records));
+                            return progress.finish();
                         }
                         Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(
                             continued,
@@ -333,6 +459,121 @@ mod tests {
     }
 
     #[test]
+    fn delay_deadline_requires_both_native_terminals_and_cancel_wins() {
+        fn deadline() -> HistoryEvent {
+            let mut event = start(5, "wait", 5);
+            event
+                .user_metadata
+                .as_mut()
+                .unwrap()
+                .summary
+                .as_mut()
+                .unwrap()
+                .data = serde_json::to_vec("automation-delay-timeout:invocation:wait").unwrap();
+            event
+        }
+        fn cancel(id: i64) -> HistoryEvent {
+            HistoryEvent {
+                event_id: id + 10,
+                attributes: Some(Attributes::TimerCanceledEventAttributes(
+                    TimerCanceledEventAttributes {
+                        started_event_id: id,
+                        timer_id: format!("timer-{id}"),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }
+        }
+        let steps = vec![("wait".into(), 62)];
+        let timeouts = std::collections::HashMap::from([("wait".into(), 5)]);
+        for (completion, external_cancel, expected) in [
+            (false, false, "failed"),
+            (true, false, "completed"),
+            (false, true, "cancelled"),
+        ] {
+            let mut progress = DelayHistory {
+                invocation: "invocation",
+                steps: &steps,
+                completed: 0,
+                started: None,
+                records: Vec::new(),
+                timeouts: &timeouts,
+                deadlines: Default::default(),
+                cancel_requested: false,
+            };
+            progress.observe(&start(3, "wait", 62), "run").unwrap();
+            progress.observe(&deadline(), "run").unwrap();
+            if external_cancel {
+                progress
+                    .observe(
+                        &HistoryEvent {
+                            attributes: Some(
+                                Attributes::WorkflowExecutionCancelRequestedEventAttributes(
+                                    Default::default(),
+                                ),
+                            ),
+                            ..Default::default()
+                        },
+                        "run",
+                    )
+                    .unwrap();
+            }
+            progress.observe(&fire(5), "run").unwrap();
+            progress
+                .observe(&if completion { fire(3) } else { cancel(3) }, "run")
+                .unwrap();
+            let (completed, records) = progress.finish().unwrap();
+            assert_eq!(records[0]["status"], expected);
+            assert_eq!(completed, usize::from(completion));
+            assert_eq!(records[0].get("error").is_some(), expected == "failed");
+        }
+        // No terminal for the losing timer cannot be called success/failure,
+        // nor used to start the same Delay a second time.
+        for deadline_started in [false, true] {
+            let mut progress = DelayHistory {
+                invocation: "invocation",
+                steps: &steps,
+                completed: 0,
+                started: None,
+                records: Vec::new(),
+                timeouts: &timeouts,
+                deadlines: Default::default(),
+                cancel_requested: false,
+            };
+            progress.observe(&start(3, "wait", 62), "run").unwrap();
+            if deadline_started {
+                progress.observe(&deadline(), "run").unwrap();
+                progress.observe(&fire(5), "run").unwrap();
+            }
+            assert!(progress.finish().is_err());
+        }
+        // Readback of a partial prefix must converge from the SAME timer IDs
+        // when the next observation sees their terminals; no replacement start.
+        let history = [start(3, "wait", 62), deadline(), fire(5), cancel(3)];
+        for prefix in 1..=history.len() {
+            let mut progress = DelayHistory {
+                invocation: "invocation",
+                steps: &steps,
+                completed: 0,
+                started: None,
+                records: Vec::new(),
+                timeouts: &timeouts,
+                deadlines: Default::default(),
+                cancel_requested: false,
+            };
+            for event in &history[..prefix] {
+                progress.observe(event, "run").unwrap();
+            }
+            match prefix {
+                2 => assert_eq!(progress.finish().unwrap().1[0]["status"], "running"),
+                4 => assert_eq!(progress.finish().unwrap().1[0]["error"], "STEP_TIMEOUT"),
+                _ => assert!(progress.finish().is_err()),
+            }
+        }
+    }
+
+    #[test]
     fn only_matching_native_fired_events_advance_the_ordered_step() {
         let steps = vec![("wait".into(), 62), ("next".into(), 5)];
         let mut progress = DelayHistory {
@@ -341,6 +582,9 @@ mod tests {
             completed: 0,
             started: None,
             records: Vec::new(),
+            timeouts: &Default::default(),
+            deadlines: Default::default(),
+            cancel_requested: false,
         };
         progress.observe(&fire(3), "run").unwrap();
         assert_eq!(progress.completed, 0);
@@ -367,6 +611,9 @@ mod tests {
             completed: 0,
             started: None,
             records: Vec::new(),
+            timeouts: &Default::default(),
+            deadlines: Default::default(),
+            cancel_requested: false,
         };
         assert!(progress.observe(&start(3, "wait", 1), "run").is_err());
         progress.observe(&start(3, "wait", 62), "run").unwrap();
@@ -400,6 +647,9 @@ mod tests {
             completed: 0,
             started: None,
             records: Vec::new(),
+            timeouts: &Default::default(),
+            deadlines: Default::default(),
+            cancel_requested: false,
         };
         let mut started = start(3, "wait", 62);
         started
