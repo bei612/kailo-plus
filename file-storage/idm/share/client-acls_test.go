@@ -23,13 +23,16 @@ package share
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config"
 	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/docstore"
@@ -48,6 +51,91 @@ type shareDocumentFixture struct {
 	cause    error
 	docs     map[string]*docstore.Document
 	calls    []string
+}
+
+type workspaceLookupFixture struct {
+	grpc.ClientConnInterface
+	rows   []*idm.SearchWorkspaceResponse
+	cause  error
+	writes int
+}
+
+func (f *workspaceLookupFixture) Invoke(_ context.Context, method string, request, response interface{}, _ ...grpc.CallOption) error {
+	if method != "/idm.WorkspaceService/CreateWorkspace" {
+		return errors.New("unexpected workspace write")
+	}
+	f.writes++
+	response.(*idm.CreateWorkspaceResponse).Workspace = proto.Clone(request.(*idm.CreateWorkspaceRequest).Workspace).(*idm.Workspace)
+	return nil
+}
+
+func (f *workspaceLookupFixture) NewStream(ctx context.Context, _ *grpc.StreamDesc, method string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
+	if method != "/idm.WorkspaceService/SearchWorkspace" {
+		return nil, errors.New("unexpected workspace lookup")
+	}
+	return &workspaceLookupStream{ctx: ctx, fixture: f}, nil
+}
+
+type workspaceLookupStream struct {
+	ctx      context.Context
+	fixture  *workspaceLookupFixture
+	position int
+}
+
+func (s *workspaceLookupStream) Header() (metadata.MD, error) { return nil, nil }
+func (s *workspaceLookupStream) Trailer() metadata.MD         { return nil }
+func (s *workspaceLookupStream) CloseSend() error             { return nil }
+func (s *workspaceLookupStream) Context() context.Context     { return s.ctx }
+func (s *workspaceLookupStream) SendMsg(interface{}) error    { return nil }
+func (s *workspaceLookupStream) RecvMsg(response interface{}) error {
+	if s.position < len(s.fixture.rows) {
+		proto.Merge(response.(*idm.SearchWorkspaceResponse), s.fixture.rows[s.position])
+		s.position++
+		return nil
+	}
+	if s.fixture.cause != nil {
+		return s.fixture.cause
+	}
+	return io.EOF
+}
+
+func TestWorkspaceLookupRequiresCompleteStream(t *testing.T) {
+	row := &idm.SearchWorkspaceResponse{Workspace: &idm.Workspace{UUID: "lookup-fixture", Label: "Original", Scope: idm.WorkspaceScope_ROOM}}
+	for _, scenario := range []struct {
+		name        string
+		rows        []*idm.SearchWorkspaceResponse
+		cause, want error
+	}{
+		{name: "complete", rows: []*idm.SearchWorkspaceResponse{row}},
+		{name: "empty", want: cellserrors.WorkspaceNotFound},
+		{name: "canceled-before-row", cause: context.Canceled, want: context.Canceled},
+		{name: "canceled-after-row", rows: []*idm.SearchWorkspaceResponse{row}, cause: context.Canceled, want: context.Canceled},
+		{name: "timeout-after-row", rows: []*idm.SearchWorkspaceResponse{row}, cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "denied-after-row", rows: []*idm.SearchWorkspaceResponse{row}, cause: cellserrors.StatusForbidden, want: cellserrors.StatusForbidden},
+		{name: "empty-response", rows: []*idm.SearchWorkspaceResponse{{}}, want: cellserrors.ServiceError},
+		{name: "empty-response-after-row", rows: []*idm.SearchWorkspaceResponse{row, {}}, want: cellserrors.ServiceError},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			for _, update := range []bool{false, true} {
+				f := &workspaceLookupFixture{rows: scenario.rows, cause: scenario.cause}
+				grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, f)
+				workspace, created, err := NewClient(nil).GetOrCreateWorkspace(context.Background(), nil, row.Workspace.UUID, idm.WorkspaceScope_ROOM, "Changed", "", "", update)
+				if scenario.want != nil {
+					if !errors.Is(err, scenario.want) || workspace != nil || created || f.writes != 0 {
+						t.Errorf("update=%v: incomplete lookup returned workspace=%v created=%v error=%v writes=%d", update, workspace, created, err, f.writes)
+					}
+				} else {
+					wantedWrites := 0
+					if update {
+						wantedWrites = 1
+					}
+					if err != nil || workspace.GetUUID() != row.Workspace.UUID || workspace.Label != "Changed" || created || f.writes != wantedWrites {
+						t.Errorf("update=%v: complete lookup workspace=%v created=%v error=%v writes=%d", update, workspace, created, err, f.writes)
+					}
+				}
+			}
+		})
+	}
 }
 
 func (f *shareDocumentFixture) GetDocument(_ context.Context, request *docstore.GetDocumentRequest) (*docstore.GetDocumentResponse, error) {
@@ -227,6 +315,7 @@ func (f *sharePermissionWorkspace) CreateWorkspace(_ context.Context, request *i
 
 func TestNativeShareRequiresPermissionWriteConfirmation(t *testing.T) {
 	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	ctx := config.WithStubStore(context.Background())
 	for _, scenario := range []string{"unchanged", "delete", "create", "expire", "restore", "link-root-create"} {
 		t.Run(scenario, func(t *testing.T) {
 			owner := &idm.User{Uuid: "native-owner"}
@@ -238,7 +327,7 @@ func TestNativeShareRequiresPermissionWriteConfirmation(t *testing.T) {
 			cell := &rest.Cell{Uuid: f.workspace.UUID, Label: f.workspace.Label}
 			if scenario == "link-root-create" {
 				f.fail = "create"
-				link, err := sc.UpsertLink(context.Background(), &rest.ShareLink{Label: "Native link", RootNodes: []*tree.Node{{Uuid: "native-root"}}},
+				link, err := sc.UpsertLink(ctx, &rest.ShareLink{Label: "Native link", RootNodes: []*tree.Node{{Uuid: "native-root"}}},
 					&rest.PutShareLinkRequest{}, owner, "", PluginOptions{})
 				if !errors.Is(err, f.cause) || link != nil || f.saves != 1 || len(f.calls) != 1 || f.calls[0] != "create" {
 					t.Fatalf("root ACL write was ignored or replayed: error=%v link=%v saves=%d calls=%v", err, link, f.saves, f.calls)
@@ -262,7 +351,7 @@ func TestNativeShareRequiresPermissionWriteConfirmation(t *testing.T) {
 					}
 				}
 			}
-			result, err := sc.UpsertCell(context.Background(), cell, owner, false, "")
+			result, err := sc.UpsertCell(ctx, cell, owner, false, "")
 			if scenario == "unchanged" {
 				if err != nil || result == nil || result.Uuid != cell.Uuid || f.saves != 1 || len(f.calls) != 0 {
 					t.Fatalf("unchanged native share no longer renders: error=%v result=%v saves=%d calls=%v", err, result, f.saves, f.calls)

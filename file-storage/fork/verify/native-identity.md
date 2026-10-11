@@ -2101,3 +2101,62 @@ SQLite 一组九场景通过。随后仅在私有生产副本移除新增早返�
 新建；因此没有给该 helper 叠加无效保护。真正的最终 DAO.Add 仍为 upsert，
 读取与最终写入间对象被删除的竞态尚未闭合，本批不能替代原子存在性控制。
 本批仅源码与定向正反验证；未跑全量门禁、未部署、未激活组件 binding。
+
+## 2026-10-11：原 Workspace 流读取必须完整结束
+
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`idm/share/client-acls.go::Client.GetOrCreateWorkspace` 把任何 Recv 错误都当作
+循环结束。已经收到一行后再被拒绝、取消或超时，原方法仍返回该对象；
+updateIfNeeded=true 时还会执行 CreateWorkspace。现仅 EOF 代表完整读取，
+其他错误原样返回且丢弃部分对象；空响应沿原 ServiceError 拒绝，不把未知
+结果改写成 WorkspaceNotFound。没有新 RPC、缓存、权限权威或重试链。
+
+四步影响结论：
+
+1. 权威仍是 DD-87/88 与 fail-closed/原生证据合同，本批修复的是已存在的
+   查询失败转成功，不扩展受管创建或成员权限。
+2. 全部直接调用包括原 UpsertLink 的新建/更新、UpsertCell、GetLinkWorkspace、
+   GetCellWorkspace、DeleteWorkspace，以及本机 ETL api_store 的 Link/Cell
+   创建。两个查询封装继续供原 Link/Cell 读取、删除、REST GetCell 和
+   cellForNativeUpdate 使用。空 UUID 新建分支未改；现有查询失败的写入方
+   现在在修改前停止。协议、数据字段、生成、迁移与三端呈现均无改动。
+3. 只有完整查询才可进入后续权限判断和写入；不把部分对象、空响应当完整
+   证据，也不在失败时返回可供调用方误用的 Workspace。上层已派发后的错误
+   仍沿原 UNKNOWN/同请求核验，不合成失败终态。
+4. 正常一行+EOF、零行+EOF、首行前取消、首行后取消/超时/拒绝、空响应
+   及首行后空响应均有确定行为。原 Permission/Context/Service 错误不新造
+   第七类；并发删除后 upsert、迟到 worker fresh 授权仍未因此闭合。
+
+事后 `TestWorkspaceLookupRequiresCompleteStream` 在原 gRPC 客户端接口注入
+逐条响应与真实错误，运行原查询/更新消费者：八组分别执行只读和更新，
+共十六场景；对所有失败检查零写入。原六组
+`TestNativeShareRequiresPermissionWriteConfirmation` 同批运行，包括独立
+Link 新建和原 ACL create/delete/expire/restore 错误保留，不是完整业务验收。
+该原检查补用已有 config.WithStubStore，使原 nativeCellWrite 能读取未投递
+platform 的独立模式；不关闭鉴权或改变生产配置。
+
+原 4 CPU / 8 GiB SDK 与 Data 独立 Go 缓存顺序执行，GOPROXY=off、
+GOSUMDB=off、GOTOOLCHAIN=local，沿原 CELLS_WORKING_DIR/CELLS_DATA_DIR：
+
+```sh
+go test -mod=readonly -count=1 -v \
+  -run '^(TestWorkspaceLookupRequiresCompleteStream|TestNativeShareRequiresPermissionWriteConfirmation)$' ./idm/share
+```
+
+58843 整体 exit 1：新八组通过，原六组因 fixture 缺 config 上下文 panic，
+未计为通过。补齐原上下文后 60077 exit 0，两组共十四子项通过。私有副本
+恢复上游吞错循环后 4837 exit 1：六个新子项实际失败，其中首行后拒绝/
+取消/超时都返回了对象且 update=true 发生一次写入；原六组仍通过。恢复
+生产修复、两源码与正式文件 cmp 为 0 后，59951 同命令 exit 0，全部通过。
+gofmt 已在该 SDK 执行；正式工作树不包含反证改动。
+
+日志目录 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `workspace-lookup-positive.log` | `d2614700a566f4067d0fcbce75f2be18af816d14f7045b420570176a4ea9de1a` | exit 1，原 fixture 缺配置 |
+| `workspace-lookup-configured.log` | `d652ff2e809473805e66e94b85fb1ea99393cee78f7e7b8a14f354abd8597e1b` | exit 0 |
+| `workspace-lookup-negative.log` | `42e4d8660779ee1d0ab122b3857443811dce025397ee634f7f0381d0fa875ef3` | exit 1，吞错反证 |
+| `workspace-lookup-restored.log` | `fed6d50c654034fe2c153ba98c228b06a0bd8c8f80c0d41ea311338172e6a008` | exit 0 |
+
+没有新镜像、部署、在线 Core 准入、三端业务或全量检查证据；未激活组件。

@@ -22,6 +22,7 @@ package share
 
 import (
 	"context"
+	"io"
 	"path"
 	"strings"
 
@@ -497,8 +498,14 @@ func (sc *Client) GetOrCreateWorkspace(ctx context.Context, ownerUser *idm.User,
 		defer wsStream.CloseSend()
 		for {
 			wsResp, er := wsStream.Recv()
-			if er != nil {
+			if errors.Is(er, io.EOF) {
 				break
+			}
+			if er != nil {
+				return nil, false, er
+			}
+			if wsResp.GetWorkspace() == nil {
+				return nil, false, errors.WithMessage(errors.ServiceError, "workspace lookup returned an empty response")
 			}
 			workspace = wsResp.Workspace
 		}
