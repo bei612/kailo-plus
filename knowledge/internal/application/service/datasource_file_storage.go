@@ -96,6 +96,16 @@ func (write *fileStorageWrite) creationOwnership() (string, string, error) {
 	return write.transport.config.BindingID, strconv.FormatInt(generation, 10), nil
 }
 
+func (write *fileStorageWrite) requireOriginalOwnership(metadata map[string]string) error {
+	binding, _, err := write.creationOwnership()
+	originalGeneration, generationErr := strconv.ParseInt(metadata[fileStorageGenerationMetadataKey], 10, 64)
+	if err != nil || metadata[fileStorageBindingMetadataKey] != binding || generationErr != nil || originalGeneration <= 0 || originalGeneration > write.grants[0].generation ||
+		strconv.FormatInt(originalGeneration, 10) != metadata[fileStorageGenerationMetadataKey] {
+		return fmt.Errorf("native file-storage original binding generation requires reconciliation")
+	}
+	return nil
+}
+
 type fileStorageGroup struct {
 	KnowledgeID string                       `json:"knowledgeId"`
 	Revision    string                       `json:"revision"`
@@ -846,11 +856,8 @@ func (s *DataSourceService) finishFileStorageIngest(ctx context.Context, ds *typ
 	if err := authorizeFileStorageWrite(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID); err != nil {
 		return err
 	}
-	binding, _, err := write.creationOwnership()
-	originalGeneration, generationErr := strconv.ParseInt(metadata[fileStorageGenerationMetadataKey], 10, 64)
-	if err != nil || metadata[fileStorageBindingMetadataKey] != binding || generationErr != nil || originalGeneration <= 0 || originalGeneration > write.grants[0].generation ||
-		strconv.FormatInt(originalGeneration, 10) != metadata[fileStorageGenerationMetadataKey] {
-		return fmt.Errorf("native file-storage original binding generation requires reconciliation")
+	if err := write.requireOriginalOwnership(metadata); err != nil {
+		return err
 	}
 	if err := s.knowledgeService.GetRepository().UpdateKnowledgeForTransfer(ctx, current, &next); err != nil {
 		return err

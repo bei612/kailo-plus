@@ -5140,3 +5140,60 @@ Data 私有 overlay 同时移除 PEP 代次校验、原归属校验、可信覆�
 真实平台授权或跨服务部署。未改 parse worker，未闭合完整 binding 截止栅栏/在途枚举、
 延迟外部副作用 fresh 授权或完整 release conformance；未重新构建镜像、部署后端、
 进行三组件上架或宣称生产就绪。全局门禁仍未通过；本批为可复核的必要接入前置闭包。
+
+### 2026-10-11 原生退休入队消费持久接收归属
+
+本批基于 `1bf3e081d3d751b842425446d774cc3079fefc62`，
+三源文件固定代码树为 `caa678214f1dce1f701fee233482a5426ea4a46f`；
+提交候选重放到 `f894a95a3e8acf06938268349e63bca65da2b521`，三路径无上游冲突。
+权威沿 .design/07 §7.2/§7.3/§8.2：旧原生对象保留原 binding/generation，
+新动作必须 fresh 授权，已保存任务的观察不是再次删除。
+固定官方 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+`internal/application/service/knowledge_delete.go::DeleteKnowledge` 已用 git grep 复核；
+本批只补已授权的原生治理接缝，不新建 API、表、账本、权限或工作流。
+
+实际缺口是 StartKnowledgeDeleteTask 的 file_storage 分支虽已核对 KB/datasource/revision
+和 fresh RECEIVER PEP，却未消费原条目的受控 binding/generation。
+现在复用上批判据为 requireOriginalOwnership（元数据更新与退休两个真实调用者），
+在原 StageKnowledgeDeletion 前拒绝异绑定、缺失/非法历史或未来代次。
+同绑定同代和升代保持原能力，不回填或改写旧归属。
+后续 StageKnowledgeDeletion 仍在原 KB UPDATE 锁、Knowledge SHARE 锁中检查 ExpectedRevision；
+本批没有扩展锁协议。已在 Asynq 的同一任务仍先 Observe，不因缺新写 token 重发。
+没有 fileStorageRun 的独立原生删除保持原授权，不被接收归属条件误封。
+原 parse/index、来源撤权语义与平台六类错误分类没有改变；
+归属缺失/冲突进入原拒绝/对账路径，未知结果不转成功或失败。
+
+验收复用原 Go 1.26.8 SDK `kailo-knowledge-delete-handoff`，4 CPU/8 GiB、
+memory+swap 同值、network none，缓存与临时目录均在 Data；
+启动前核验原 SDK 已退出、available 36 GiB、无 Go/Cargo/build 子进程。
+在 /workspace/knowledge 实际执行：
+
+```sh
+go test ./internal/application/service -run '^(TestFileStorageRetirementAuthorizesAtNativeEnqueue|TestFileStorageMetadataKeepsHashGroupAndReadinessFence|TestFileStorageDedupeUsesCheckpointedReceiverCompletion|TestNativeDeleteDurable|TestKnowledgeDelete)' -count=1 -timeout=10m -v
+go test ./internal/application/service -run '^TestFileStorageRetirementAuthorizesAtNativeEnqueue$/^independent-native$' -count=1 -timeout=10m -v
+go test -overlay /tmp/receiver-retirement-negative/overlay.json ./internal/application/service -run '^TestFileStorageRetirementAuthorizesAtNativeEnqueue$/^wrong-binding$' -count=1 -timeout=10m -v
+go test ./internal/application/service -run '^(TestFileStorageRetirementAuthorizesAtNativeEnqueue|TestFileStorageMetadataKeepsHashGroupAndReadinessFence)$/^(wrong-binding|same-generation)$' -count=1 -timeout=10m -v
+```
+
+首条实际退出 1，601.045 s，`panic: test timed out after 10m0s`；
+栈在最后 independent-native 场景的 prepareDeletionPendingFixture/SQLite AutoMigrate。
+前 11 个退休子场景已依次执行，日志未见产品断言失败，但整组不能记为通过。
+受 Data I/O 等待影响，未重复整组、增大 timeout 或修改原 fixture；
+单补 independent-native 退出 0，包 538.671 s，证实独立入队与已存在任务观察。
+私有 Data overlay 仅删除新退休归属调用，wrong-binding 实际进入原 Asynq，
+队列应不存在的断言失败，172.548 s、退出 1（不是编译失败/超时）。
+还原正式源码后 same-generation、wrong-binding 及共享元数据归属检查通过，
+362.740 s、退出 0；分项结果不外推整组全通过。正式源码未套反证。
+
+日志均在 `/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/`：
+
+| 日志 | SHA-256 |
+| --- | --- |
+| receiver-retirement-ownership-positive.log | `7a1c85f4f9c4a0796a4c84594d1560fe5bb7823449f5f83aca26e93c3417e4f4` |
+| receiver-retirement-ownership-independent.log | `3b14611c8a3d773b7d52fbddc6a06dcfd2ce62fb8d0a8cd57a41eeeb60d4ce27` |
+| receiver-retirement-ownership-negative.log | `bb3f8b2cfd16a0176eab356985803b735cb0a4319ca900211fc0f7ece1f2bfbc` |
+| receiver-retirement-ownership-restored.log | `043d2e499957e7ed8514815ffe5b80fd7667f4eb6dfbd0205bbda07fe475dab4` |
+
+SQLite/Miniredis/fake PEP 不证明真实 PostgreSQL 并发行锁或线上治理；
+完整绑定截止栅栏、在途原生枚举、延迟外部副作用 fresh 授权及 release conformance
+仍未闭合。本批未部署、未上架，不解除全局发布门禁；未重复全局检查或修改其他组件。

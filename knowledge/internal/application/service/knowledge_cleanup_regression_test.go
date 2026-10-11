@@ -484,12 +484,28 @@ func (r *retirementPlanChunkRepository) ListImageInfoByKnowledgeIDs(ctx context.
 }
 
 func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
-	for _, scenario := range []string{"admitted", "revoked-after-checkpoint", "revoked-after-plan", "missing-write", "wrong-native", "wrong-task", "independent-native"} {
+	for _, scenario := range []string{"admitted", "same-generation", "missing-ownership", "wrong-binding", "future-generation", "invalid-generation",
+		"revoked-after-checkpoint", "revoked-after-plan", "missing-write", "wrong-native", "wrong-task", "independent-native"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newDocumentWriteFixture(t)
 			kb, id, source, root, binding := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: kb, tenantID: 7}
-			metadata, err := json.Marshal(map[string]string{"datasource_id": run.dataSourceID, "external_id": "group"})
+			ownership := map[string]string{"datasource_id": run.dataSourceID, "external_id": "group",
+				fileStorageBindingMetadataKey: binding, fileStorageGenerationMetadataKey: "2"}
+			switch scenario {
+			case "same-generation":
+				ownership[fileStorageGenerationMetadataKey] = "3"
+			case "missing-ownership", "independent-native":
+				delete(ownership, fileStorageBindingMetadataKey)
+				delete(ownership, fileStorageGenerationMetadataKey)
+			case "wrong-binding":
+				ownership[fileStorageBindingMetadataKey] = uuid.NewString()
+			case "future-generation":
+				ownership[fileStorageGenerationMetadataKey] = "4"
+			case "invalid-generation":
+				ownership[fileStorageGenerationMetadataKey] = "02"
+			}
+			metadata, err := json.Marshal(ownership)
 			require.NoError(t, err)
 			require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Updates(map[string]any{
 				"id": id, "knowledge_base_id": kb, "channel": fileStorageConnectorType, "metadata": types.JSON(metadata),
@@ -584,7 +600,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 				require.Equal(t, key, state.Retiring["group"].Key)
 			}
 			info, queueErr := asynq.NewInspectorFromRedisClient(client).GetTaskInfo(types.QueueMaintenance, key)
-			if scenario == "admitted" || scenario == "independent-native" {
+			if scenario == "admitted" || scenario == "same-generation" || scenario == "independent-native" {
 				require.NoError(t, queueErr)
 				require.Equal(t, asynq.TaskStatePending, info.State)
 				before := pepCalls
@@ -596,6 +612,9 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				require.True(t, errors.Is(queueErr, asynq.ErrTaskNotFound) || errors.Is(queueErr, asynq.ErrQueueNotFound))
+				var staged int64
+				require.NoError(t, f.db.Model(&types.TaskPendingOp{}).Where("dedup_key = ?", key).Count(&staged).Error)
+				require.Zero(t, staged, "refused retirement must not leave a durable intent")
 			}
 		})
 	}
