@@ -60,7 +60,7 @@ func (s *gormImpl) AddPolicy(ctx context.Context, resourceId string, policy *ser
 // AddPolicies persists a set of policies. If update is true, it replace them by deleting existing ones
 func (s *gormImpl) AddPolicies(ctx context.Context, update bool, resourceId string, rules []*service.ResourcePolicy) ([]*service.ResourcePolicy, error) {
 	var out []*service.ResourcePolicy
-	return out, s.instance(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.instance(ctx).Transaction(func(tx *gorm.DB) error {
 		if update {
 			if err := tx.Where(&service.ResourcePolicy{Resource: resourceId}).Delete(&service.ResourcePolicy{}).Error; err != nil {
 				return err
@@ -80,6 +80,10 @@ func (s *gormImpl) AddPolicies(ctx context.Context, update bool, resourceId stri
 
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // GetPoliciesForResource finds all policies for a given resource

@@ -14,6 +14,7 @@ import (
 	"github.com/pydio/cells/v5/common/auth/protocol"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
+	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
@@ -22,12 +23,25 @@ import (
 	"github.com/pydio/cells/v5/common/proto/tree"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 type nativeCellRoleFixture struct {
 	idm.UnimplementedRoleServiceServer
 	user string
+}
+
+type nativeCellUpdateWorkspaceFixture struct {
+	*sharePermissionWorkspace
+	cause   error
+	updates int
+}
+
+func (f *nativeCellUpdateWorkspaceFixture) UpdateWorkspace(context.Context, *idm.CreateWorkspaceRequest) (*idm.CreateWorkspaceResponse, error) {
+	f.updates++
+	return nil, f.cause
 }
 
 func (f nativeCellRoleFixture) SearchRole(_ *idm.SearchRoleRequest, stream grpc.ServerStreamingServer[idm.SearchRoleResponse]) error {
@@ -137,6 +151,36 @@ func TestNativeCellUpsertConsumesCurrentScopeAndPermission(t *testing.T) {
 			if scenario == "current" {
 				if err != nil || actual != mutation || len(calls) != 2 {
 					t.Fatalf("current scope plus original permission outcome refused: %v %v", err, calls)
+				}
+				for _, failure := range []error{status.Error(codes.Unimplemented, "old workspace service"), cellserrors.WorkspaceNotFound} {
+					const member = "00000000-0000-4000-8000-000000000003"
+					f := &sharePermissionFixture{workspace: &idm.Workspace{UUID: binding, Label: "Existing cell", Scope: idm.WorkspaceScope_ROOM}, current: []*idm.ACL{{NodeID: node, RoleID: binding, WorkspaceID: binding, Action: permissions.AclRead}}}
+					writer := &nativeCellUpdateWorkspaceFixture{sharePermissionWorkspace: &sharePermissionWorkspace{fixture: f}, cause: failure}
+					var workspaceServer idm.WorkspaceServiceServer = writer
+					wantUpdates := 1
+					if status.Code(failure) == codes.Unimplemented {
+						// The old service has only CreateWorkspace; its embedded
+						// generated server supplies the real Unimplemented response.
+						workspaceServer = writer.sharePermissionWorkspace
+						wantUpdates = 0
+					}
+					grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, &idm.WorkspaceServiceStub{WorkspaceServiceServer: workspaceServer})
+					grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: f})
+					cell := &rest.Cell{Uuid: binding, Label: f.workspace.Label, RootNodes: []*tree.Node{{Uuid: node}}, ACLs: map[string]*rest.CellAcl{
+						binding: {RoleId: binding, Actions: []*idm.ACLAction{permissions.AclRead}},
+						member:  {RoleId: member, Actions: []*idm.ACLAction{permissions.AclRead}},
+					}}
+					selection, e := cellSelection(cell)
+					if e != nil {
+						t.Fatal(e)
+					}
+					mutation.intent.Selection = selection
+					mutation.intent.Changes[0].NodeID = node
+					mutation.intent.Changes[0].UserID = member
+					result, e := NewClient(nil).UpsertCell(ctx, cell, &idm.User{Uuid: binding}, true, "")
+					if e == nil || status.Code(e) != status.Code(failure) || result != nil || writer.updates != wantUpdates || f.saves != 0 || len(f.calls) != 1 || f.calls[0] != "create" {
+						t.Fatalf("managed partial ACL mutation fell back to create or became success: result=%v err=%v updates=%d creates=%d acl=%v", result, e, writer.updates, f.saves, f.calls)
+					}
 				}
 			} else if err == nil {
 				t.Fatalf("%s accepted stale/unowned native write", scenario)

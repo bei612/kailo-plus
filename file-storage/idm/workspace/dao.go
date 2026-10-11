@@ -26,6 +26,7 @@ package workspace
 import (
 	"context"
 
+	"github.com/pydio/cells/v5/common/proto/idm"
 	service2 "github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/service"
 	"github.com/pydio/cells/v5/common/storage/sql/resources"
@@ -42,6 +43,10 @@ type DAO interface {
 	// Add creates or updates a workspace in the database.
 	// It returns true in case of an update.
 	Add(context.Context, interface{}) (bool, error)
+	// UpdateExisting atomically updates an existing workspace and replaces all
+	// its policies, including an empty set.
+	// Missing workspaces are never inserted.
+	UpdateExisting(context.Context, *idm.Workspace) (*idm.Workspace, error)
 	Del(context.Context, service2.Enquirer) (numRows int64, e error)
 	Search(context.Context, service2.Enquirer, *[]interface{}) error
 }

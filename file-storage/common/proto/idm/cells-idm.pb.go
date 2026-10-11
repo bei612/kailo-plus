@@ -6408,9 +6408,10 @@ const file_cells_idm_proto_rawDesc = "" +
 	"\n" +
 	"SearchUser\x12\x16.idm.SearchUserRequest\x1a\x17.idm.SearchUserResponse\"\x000\x01\x12C\n" +
 	"\n" +
-	"StreamUser\x12\x16.idm.SearchUserRequest\x1a\x17.idm.SearchUserResponse\"\x00(\x010\x012\xd8\x02\n" +
+	"StreamUser\x12\x16.idm.SearchUserRequest\x1a\x17.idm.SearchUserResponse\"\x00(\x010\x012\xa8\x03\n" +
 	"\x10WorkspaceService\x12N\n" +
 	"\x0fCreateWorkspace\x12\x1b.idm.CreateWorkspaceRequest\x1a\x1c.idm.CreateWorkspaceResponse\"\x00\x12N\n" +
+	"\x0fUpdateWorkspace\x12\x1b.idm.CreateWorkspaceRequest\x1a\x1c.idm.CreateWorkspaceResponse\"\x00\x12N\n" +
 	"\x0fDeleteWorkspace\x12\x1b.idm.DeleteWorkspaceRequest\x1a\x1c.idm.DeleteWorkspaceResponse\"\x00\x12P\n" +
 	"\x0fSearchWorkspace\x12\x1b.idm.SearchWorkspaceRequest\x1a\x1c.idm.SearchWorkspaceResponse\"\x000\x01\x12R\n" +
 	"\x0fStreamWorkspace\x12\x1b.idm.SearchWorkspaceRequest\x1a\x1c.idm.SearchWorkspaceResponse\"\x00(\x010\x012\x89\x03\n" +
@@ -6665,75 +6666,77 @@ var file_cells_idm_proto_depIdxs = []int32{
 	23,  // 92: idm.UserService.SearchUser:input_type -> idm.SearchUserRequest
 	23,  // 93: idm.UserService.StreamUser:input_type -> idm.SearchUserRequest
 	29,  // 94: idm.WorkspaceService.CreateWorkspace:input_type -> idm.CreateWorkspaceRequest
-	31,  // 95: idm.WorkspaceService.DeleteWorkspace:input_type -> idm.DeleteWorkspaceRequest
-	33,  // 96: idm.WorkspaceService.SearchWorkspace:input_type -> idm.SearchWorkspaceRequest
-	33,  // 97: idm.WorkspaceService.StreamWorkspace:input_type -> idm.SearchWorkspaceRequest
-	37,  // 98: idm.ACLService.CreateACL:input_type -> idm.CreateACLRequest
-	39,  // 99: idm.ACLService.ExpireACL:input_type -> idm.ExpireACLRequest
-	41,  // 100: idm.ACLService.DeleteACL:input_type -> idm.DeleteACLRequest
-	43,  // 101: idm.ACLService.SearchACL:input_type -> idm.SearchACLRequest
-	43,  // 102: idm.ACLService.StreamACL:input_type -> idm.SearchACLRequest
-	45,  // 103: idm.ACLService.RestoreACL:input_type -> idm.RestoreACLRequest
-	65,  // 104: idm.UserMetaService.UpdateUserMeta:input_type -> idm.UpdateUserMetaRequest
-	68,  // 105: idm.UserMetaService.SearchUserMeta:input_type -> idm.SearchUserMetaRequest
-	70,  // 106: idm.UserMetaService.UpdateUserMetaNamespace:input_type -> idm.UpdateUserMetaNamespaceRequest
-	72,  // 107: idm.UserMetaService.ListUserMetaNamespace:input_type -> idm.ListUserMetaNamespaceRequest
-	74,  // 108: idm.UserMetaService.GetFieldSchema:input_type -> idm.GetFieldSchemaRequest
-	76,  // 109: idm.UserMetaService.GetNamespaceSchema:input_type -> idm.GetNamespaceSchemaRequest
-	57,  // 110: idm.UserMetaService.GetEntityValues:input_type -> idm.GetMetaEntityValuesRequest
-	57,  // 111: idm.UserMetaService.DeleteEntity:input_type -> idm.GetMetaEntityValuesRequest
-	54,  // 112: idm.UserMetaService.CreateEntity:input_type -> idm.CreateEntityRequest
-	52,  // 113: idm.UserMetaService.CreateEntityValues:input_type -> idm.CreateEntityValueRequest
-	59,  // 114: idm.UserMetaService.LinkMetaToEntityValue:input_type -> idm.MetaToEntityValueRequest
-	59,  // 115: idm.UserMetaService.UnlinkMetaFromEntityValue:input_type -> idm.MetaToEntityValueRequest
-	51,  // 116: idm.UserMetaService.GetMetadata:input_type -> idm.GetMetadataRequest
-	78,  // 117: idm.PolicyEngineService.IsAllowed:input_type -> idm.PolicyEngineRequest
-	90,  // 118: idm.PolicyEngineService.StorePolicyGroup:input_type -> idm.StorePolicyGroupRequest
-	94,  // 119: idm.PolicyEngineService.ListPolicyGroups:input_type -> idm.ListPolicyGroupsRequest
-	94,  // 120: idm.PolicyEngineService.StreamPolicyGroups:input_type -> idm.ListPolicyGroupsRequest
-	92,  // 121: idm.PolicyEngineService.DeletePolicyGroup:input_type -> idm.DeletePolicyGroupRequest
-	9,   // 122: idm.RoleService.CreateRole:output_type -> idm.CreateRoleResponse
-	11,  // 123: idm.RoleService.DeleteRole:output_type -> idm.DeleteRoleResponse
-	13,  // 124: idm.RoleService.SearchRole:output_type -> idm.SearchRoleResponse
-	13,  // 125: idm.RoleService.StreamRole:output_type -> idm.SearchRoleResponse
-	14,  // 126: idm.RoleService.CountRole:output_type -> idm.CountRoleResponse
-	18,  // 127: idm.UserService.CreateUser:output_type -> idm.CreateUserResponse
-	22,  // 128: idm.UserService.DeleteUser:output_type -> idm.DeleteUserResponse
-	20,  // 129: idm.UserService.BindUser:output_type -> idm.BindUserResponse
-	25,  // 130: idm.UserService.CountUser:output_type -> idm.CountUserResponse
-	24,  // 131: idm.UserService.SearchOne:output_type -> idm.SearchUserResponse
-	24,  // 132: idm.UserService.SearchUser:output_type -> idm.SearchUserResponse
-	24,  // 133: idm.UserService.StreamUser:output_type -> idm.SearchUserResponse
-	30,  // 134: idm.WorkspaceService.CreateWorkspace:output_type -> idm.CreateWorkspaceResponse
-	32,  // 135: idm.WorkspaceService.DeleteWorkspace:output_type -> idm.DeleteWorkspaceResponse
-	34,  // 136: idm.WorkspaceService.SearchWorkspace:output_type -> idm.SearchWorkspaceResponse
-	34,  // 137: idm.WorkspaceService.StreamWorkspace:output_type -> idm.SearchWorkspaceResponse
-	38,  // 138: idm.ACLService.CreateACL:output_type -> idm.CreateACLResponse
-	40,  // 139: idm.ACLService.ExpireACL:output_type -> idm.ExpireACLResponse
-	42,  // 140: idm.ACLService.DeleteACL:output_type -> idm.DeleteACLResponse
-	44,  // 141: idm.ACLService.SearchACL:output_type -> idm.SearchACLResponse
-	44,  // 142: idm.ACLService.StreamACL:output_type -> idm.SearchACLResponse
-	46,  // 143: idm.ACLService.RestoreACL:output_type -> idm.RestoreACLResponse
-	66,  // 144: idm.UserMetaService.UpdateUserMeta:output_type -> idm.UpdateUserMetaResponse
-	69,  // 145: idm.UserMetaService.SearchUserMeta:output_type -> idm.SearchUserMetaResponse
-	71,  // 146: idm.UserMetaService.UpdateUserMetaNamespace:output_type -> idm.UpdateUserMetaNamespaceResponse
-	73,  // 147: idm.UserMetaService.ListUserMetaNamespace:output_type -> idm.ListUserMetaNamespaceResponse
-	75,  // 148: idm.UserMetaService.GetFieldSchema:output_type -> idm.JsonSchemaResponse
-	75,  // 149: idm.UserMetaService.GetNamespaceSchema:output_type -> idm.JsonSchemaResponse
-	58,  // 150: idm.UserMetaService.GetEntityValues:output_type -> idm.MetaEntityValueResponse
-	56,  // 151: idm.UserMetaService.DeleteEntity:output_type -> idm.DeleteEntityValuesResponse
-	55,  // 152: idm.UserMetaService.CreateEntity:output_type -> idm.CreateEntityResponse
-	53,  // 153: idm.UserMetaService.CreateEntityValues:output_type -> idm.CreateEntityValueResponse
-	60,  // 154: idm.UserMetaService.LinkMetaToEntityValue:output_type -> idm.MetaToEntityValueResponse
-	60,  // 155: idm.UserMetaService.UnlinkMetaFromEntityValue:output_type -> idm.MetaToEntityValueResponse
-	61,  // 156: idm.UserMetaService.GetMetadata:output_type -> idm.UserMeta
-	79,  // 157: idm.PolicyEngineService.IsAllowed:output_type -> idm.PolicyEngineResponse
-	91,  // 158: idm.PolicyEngineService.StorePolicyGroup:output_type -> idm.StorePolicyGroupResponse
-	95,  // 159: idm.PolicyEngineService.ListPolicyGroups:output_type -> idm.ListPolicyGroupsResponse
-	89,  // 160: idm.PolicyEngineService.StreamPolicyGroups:output_type -> idm.PolicyGroup
-	93,  // 161: idm.PolicyEngineService.DeletePolicyGroup:output_type -> idm.DeletePolicyGroupResponse
-	122, // [122:162] is the sub-list for method output_type
-	82,  // [82:122] is the sub-list for method input_type
+	29,  // 95: idm.WorkspaceService.UpdateWorkspace:input_type -> idm.CreateWorkspaceRequest
+	31,  // 96: idm.WorkspaceService.DeleteWorkspace:input_type -> idm.DeleteWorkspaceRequest
+	33,  // 97: idm.WorkspaceService.SearchWorkspace:input_type -> idm.SearchWorkspaceRequest
+	33,  // 98: idm.WorkspaceService.StreamWorkspace:input_type -> idm.SearchWorkspaceRequest
+	37,  // 99: idm.ACLService.CreateACL:input_type -> idm.CreateACLRequest
+	39,  // 100: idm.ACLService.ExpireACL:input_type -> idm.ExpireACLRequest
+	41,  // 101: idm.ACLService.DeleteACL:input_type -> idm.DeleteACLRequest
+	43,  // 102: idm.ACLService.SearchACL:input_type -> idm.SearchACLRequest
+	43,  // 103: idm.ACLService.StreamACL:input_type -> idm.SearchACLRequest
+	45,  // 104: idm.ACLService.RestoreACL:input_type -> idm.RestoreACLRequest
+	65,  // 105: idm.UserMetaService.UpdateUserMeta:input_type -> idm.UpdateUserMetaRequest
+	68,  // 106: idm.UserMetaService.SearchUserMeta:input_type -> idm.SearchUserMetaRequest
+	70,  // 107: idm.UserMetaService.UpdateUserMetaNamespace:input_type -> idm.UpdateUserMetaNamespaceRequest
+	72,  // 108: idm.UserMetaService.ListUserMetaNamespace:input_type -> idm.ListUserMetaNamespaceRequest
+	74,  // 109: idm.UserMetaService.GetFieldSchema:input_type -> idm.GetFieldSchemaRequest
+	76,  // 110: idm.UserMetaService.GetNamespaceSchema:input_type -> idm.GetNamespaceSchemaRequest
+	57,  // 111: idm.UserMetaService.GetEntityValues:input_type -> idm.GetMetaEntityValuesRequest
+	57,  // 112: idm.UserMetaService.DeleteEntity:input_type -> idm.GetMetaEntityValuesRequest
+	54,  // 113: idm.UserMetaService.CreateEntity:input_type -> idm.CreateEntityRequest
+	52,  // 114: idm.UserMetaService.CreateEntityValues:input_type -> idm.CreateEntityValueRequest
+	59,  // 115: idm.UserMetaService.LinkMetaToEntityValue:input_type -> idm.MetaToEntityValueRequest
+	59,  // 116: idm.UserMetaService.UnlinkMetaFromEntityValue:input_type -> idm.MetaToEntityValueRequest
+	51,  // 117: idm.UserMetaService.GetMetadata:input_type -> idm.GetMetadataRequest
+	78,  // 118: idm.PolicyEngineService.IsAllowed:input_type -> idm.PolicyEngineRequest
+	90,  // 119: idm.PolicyEngineService.StorePolicyGroup:input_type -> idm.StorePolicyGroupRequest
+	94,  // 120: idm.PolicyEngineService.ListPolicyGroups:input_type -> idm.ListPolicyGroupsRequest
+	94,  // 121: idm.PolicyEngineService.StreamPolicyGroups:input_type -> idm.ListPolicyGroupsRequest
+	92,  // 122: idm.PolicyEngineService.DeletePolicyGroup:input_type -> idm.DeletePolicyGroupRequest
+	9,   // 123: idm.RoleService.CreateRole:output_type -> idm.CreateRoleResponse
+	11,  // 124: idm.RoleService.DeleteRole:output_type -> idm.DeleteRoleResponse
+	13,  // 125: idm.RoleService.SearchRole:output_type -> idm.SearchRoleResponse
+	13,  // 126: idm.RoleService.StreamRole:output_type -> idm.SearchRoleResponse
+	14,  // 127: idm.RoleService.CountRole:output_type -> idm.CountRoleResponse
+	18,  // 128: idm.UserService.CreateUser:output_type -> idm.CreateUserResponse
+	22,  // 129: idm.UserService.DeleteUser:output_type -> idm.DeleteUserResponse
+	20,  // 130: idm.UserService.BindUser:output_type -> idm.BindUserResponse
+	25,  // 131: idm.UserService.CountUser:output_type -> idm.CountUserResponse
+	24,  // 132: idm.UserService.SearchOne:output_type -> idm.SearchUserResponse
+	24,  // 133: idm.UserService.SearchUser:output_type -> idm.SearchUserResponse
+	24,  // 134: idm.UserService.StreamUser:output_type -> idm.SearchUserResponse
+	30,  // 135: idm.WorkspaceService.CreateWorkspace:output_type -> idm.CreateWorkspaceResponse
+	30,  // 136: idm.WorkspaceService.UpdateWorkspace:output_type -> idm.CreateWorkspaceResponse
+	32,  // 137: idm.WorkspaceService.DeleteWorkspace:output_type -> idm.DeleteWorkspaceResponse
+	34,  // 138: idm.WorkspaceService.SearchWorkspace:output_type -> idm.SearchWorkspaceResponse
+	34,  // 139: idm.WorkspaceService.StreamWorkspace:output_type -> idm.SearchWorkspaceResponse
+	38,  // 140: idm.ACLService.CreateACL:output_type -> idm.CreateACLResponse
+	40,  // 141: idm.ACLService.ExpireACL:output_type -> idm.ExpireACLResponse
+	42,  // 142: idm.ACLService.DeleteACL:output_type -> idm.DeleteACLResponse
+	44,  // 143: idm.ACLService.SearchACL:output_type -> idm.SearchACLResponse
+	44,  // 144: idm.ACLService.StreamACL:output_type -> idm.SearchACLResponse
+	46,  // 145: idm.ACLService.RestoreACL:output_type -> idm.RestoreACLResponse
+	66,  // 146: idm.UserMetaService.UpdateUserMeta:output_type -> idm.UpdateUserMetaResponse
+	69,  // 147: idm.UserMetaService.SearchUserMeta:output_type -> idm.SearchUserMetaResponse
+	71,  // 148: idm.UserMetaService.UpdateUserMetaNamespace:output_type -> idm.UpdateUserMetaNamespaceResponse
+	73,  // 149: idm.UserMetaService.ListUserMetaNamespace:output_type -> idm.ListUserMetaNamespaceResponse
+	75,  // 150: idm.UserMetaService.GetFieldSchema:output_type -> idm.JsonSchemaResponse
+	75,  // 151: idm.UserMetaService.GetNamespaceSchema:output_type -> idm.JsonSchemaResponse
+	58,  // 152: idm.UserMetaService.GetEntityValues:output_type -> idm.MetaEntityValueResponse
+	56,  // 153: idm.UserMetaService.DeleteEntity:output_type -> idm.DeleteEntityValuesResponse
+	55,  // 154: idm.UserMetaService.CreateEntity:output_type -> idm.CreateEntityResponse
+	53,  // 155: idm.UserMetaService.CreateEntityValues:output_type -> idm.CreateEntityValueResponse
+	60,  // 156: idm.UserMetaService.LinkMetaToEntityValue:output_type -> idm.MetaToEntityValueResponse
+	60,  // 157: idm.UserMetaService.UnlinkMetaFromEntityValue:output_type -> idm.MetaToEntityValueResponse
+	61,  // 158: idm.UserMetaService.GetMetadata:output_type -> idm.UserMeta
+	79,  // 159: idm.PolicyEngineService.IsAllowed:output_type -> idm.PolicyEngineResponse
+	91,  // 160: idm.PolicyEngineService.StorePolicyGroup:output_type -> idm.StorePolicyGroupResponse
+	95,  // 161: idm.PolicyEngineService.ListPolicyGroups:output_type -> idm.ListPolicyGroupsResponse
+	89,  // 162: idm.PolicyEngineService.StreamPolicyGroups:output_type -> idm.PolicyGroup
+	93,  // 163: idm.PolicyEngineService.DeletePolicyGroup:output_type -> idm.DeletePolicyGroupResponse
+	123, // [123:164] is the sub-list for method output_type
+	82,  // [82:123] is the sub-list for method input_type
 	82,  // [82:82] is the sub-list for extension type_name
 	82,  // [82:82] is the sub-list for extension extendee
 	0,   // [0:82] is the sub-list for field type_name

@@ -96,6 +96,43 @@ func (s *sqlimpl) Add(ctx context.Context, in interface{}) (bool, error) {
 	return isUpdate, nil
 }
 
+// UpdateExisting never inserts a workspace and commits its policies in the same transaction.
+func (s *sqlimpl) UpdateExisting(ctx context.Context, workspace *idm.Workspace) (*idm.Workspace, error) {
+	if workspace == nil || workspace.UUID == "" {
+		return nil, errors.WithStack(errors.InvalidParameters)
+	}
+	updated := proto.Clone(workspace).(*idm.Workspace)
+	updated.LastUpdated = int32(time.Now().Unix())
+	err := s.Session(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing idm.Workspace
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("uuid").First(&existing, "uuid = ?", updated.UUID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.WithStack(errors.WorkspaceNotFound)
+			}
+			return err
+		}
+		result := tx.Model(&idm.Workspace{}).Where("uuid = ?", updated.UUID).
+			Select("*").Omit("uuid").Updates(updated)
+		if result.Error != nil {
+			return result.Error
+		}
+		// The row lock, not changed-row count, proves existence. MySQL can
+		// report zero when the metadata is unchanged within the same second.
+		// The outer transaction owns rollback of both writes; the Cells
+		// dialector does not expose savepoints for a nested transaction.
+		policies, err := resources2.NewDAO(tx.Session(&gorm.Session{DisableNestedTransaction: true})).AddPolicies(ctx, true, updated.UUID, updated.Policies)
+		if err != nil {
+			return err
+		}
+		updated.Policies = policies
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 // slugExists check in the DB if the slug already exists.
 func (s *sqlimpl) slugExists(ctx context.Context, slug string) bool {
 	if slug == common.PydioDocstoreBinariesNamespace || slug == common.PydioThumbstoreNamespace || slug == common.PydioVersionsNamespace {

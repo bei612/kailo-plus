@@ -98,6 +98,24 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *idm.CreateWorkspaceR
 	return resp, nil
 }
 
+// UpdateWorkspace rejects missing workspaces before changing their policies.
+func (h *Handler) UpdateWorkspace(ctx context.Context, req *idm.CreateWorkspaceRequest) (*idm.CreateWorkspaceResponse, error) {
+	dao, err := manager.Resolve[workspace.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := dao.UpdateExisting(ctx, req.GetWorkspace())
+	if err != nil {
+		return nil, err
+	}
+	broker.MustPublish(ctx, common.TopicIdmEvent, &idm.ChangeEvent{
+		Type: idm.ChangeEventType_UPDATE, Workspace: updated,
+	})
+	log.Auditer(ctx).Info(fmt.Sprintf("Updated workspace [%s]", updated.Slug),
+		log.GetAuditId(common.AuditWsUpdate), updated.ZapUuid())
+	return &idm.CreateWorkspaceResponse{Workspace: updated}, nil
+}
+
 // DeleteWorkspace from database
 func (h *Handler) DeleteWorkspace(ctx context.Context, req *idm.DeleteWorkspaceRequest) (*idm.DeleteWorkspaceResponse, error) {
 	dao, err := manager.Resolve[workspace.DAO](ctx)

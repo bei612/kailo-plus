@@ -564,7 +564,12 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 	if _, err := nativeCellWrite(ctx); err != nil {
 		return nil, err
 	}
-	updated, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: workspace})
+	var updated *idm.CreateWorkspaceResponse
+	if managed != nil {
+		updated, err = idmc.WorkspaceServiceClient(ctx).UpdateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: workspace})
+	} else {
+		updated, err = idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: workspace})
+	}
 	if err != nil {
 		return nil, err
 	}

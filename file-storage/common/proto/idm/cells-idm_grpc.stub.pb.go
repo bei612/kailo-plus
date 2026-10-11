@@ -220,6 +220,13 @@ func (s *WorkspaceServiceStub) Invoke(ctx context.Context, method string, args i
 		} else {
 			e = er
 		}
+	case "/idm.WorkspaceService/UpdateWorkspace":
+		resp, er := s.WorkspaceServiceServer.UpdateWorkspace(ctx, args.(*CreateWorkspaceRequest))
+		if er == nil {
+			e = stubs.AssignToInterface(resp, reply)
+		} else {
+			e = er
+		}
 	case "/idm.WorkspaceService/DeleteWorkspace":
 		resp, er := s.WorkspaceServiceServer.DeleteWorkspace(ctx, args.(*DeleteWorkspaceRequest))
 		if er == nil {

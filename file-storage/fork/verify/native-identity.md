@@ -2160,3 +2160,95 @@ gofmt 已在该 SDK 执行；正式工作树不包含反证改动。
 | `workspace-lookup-restored.log` | `fed6d50c654034fe2c153ba98c228b06a0bd8c8f80c0d41ea311338172e6a008` | exit 0 |
 
 没有新镜像、部署、在线 Core 准入、三端业务或全量检查证据；未激活组件。
+
+## 2026-10-11：既有 Cell 最终 Workspace 更新不再复活已删除对象
+
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`common/proto/idm/cells-idm.proto::WorkspaceService` 只有 Create/Delete/Search/Stream；
+`idm/workspace/dao/sql/sql.go::sqlimpl.Add` 使用 `OnConflict{UpdateAll:true}.Create`。
+因此调用者此前读取过对象不能防止最终写入将并发删除的 Workspace 重建。
+同版本 `common/storage/sql/resources/gorm.go::gormImpl.AddPolicies` 使用
+`return out, Transaction(...)`，在事务填充 out 之前已求值返回切片，原成功
+响应丢失了持久化策略。本批直接修正这两处原链，不新增平台实体或策略权威。
+
+四步影响结论：
+
+1. 权威为 DD-87/88、工程规则 9/10/15 及原生终态证据合同；仍只处理既有
+   Cell 的受管成员变更，不开放受管 Cell 创建、WRITE 或新执行入口。
+2. 原 WorkspaceService 新增 `UpdateWorkspace`，复用原请求/响应消息，
+   仅 managed `Client.UpsertCell` 最终落库调用它。原独立 Create、Link、
+   其他创建消费者保持原路。DAO 在同事务锁定已有 UUID 后只 UPDATE，并
+   全量替换策略，空集合确实删除旧策略。MySQL 未强制 clientFoundRows，
+   所以不使用 changed-row count 判断存在；缺行由事务内锁定读取拒绝。
+   原资源 DAO 的 AddPolicies 返回值同时供 user/role/meta/namespace 使用，
+   本批修复其真实持久策略返回，不改这些消费者的策略或存储。
+3. Workspace 与策略共用原 SQL 事务。Cells 原 Dialector 不转发保存点接口，
+   故只在传入资源 DAO 的 tx.Session 设置 GORM DisableNestedTransaction，
+   内层仍复用原 ConnPool，错误返回外层统一回滚；没有全局驱动或配置变更。
+   UPDATE 事件只在事务成功后发布。旧服务不认识新 RPC 时拒绝，不回退 Create。
+4. 缺对象、空请求、原生写错误、策略错误均不返回成功 ACK；空策略不再假装
+   已清空。MySQL 同秒相同内容不能被误判为缺对象。NativeCellPut 原有 UNKNOWN
+   及同请求对账语义保留：此前 ACL 多 RPC 可已部分完成，最终 Workspace 拒绝
+   不意味着整个动作无副作用，不能补发、伪造回滚或改写成失败终态。
+   `DENIED/PRECONDITION/CONFLICT/UNKNOWN` 仍沿现有准入与结果映射，未新增
+   reason code；`LIMIT/BLOCKED` 门禁未改变。
+
+原 proto 不增加消息字段、数据库列或平台四语言契约；内部 Go RPC 的三份
+生成物由原 `buf.gen.yaml`、`buf.gen.tag.yaml` 生成，setter 输出未变。
+部署应先具备新原生服务消费者，再更新受管调用方；混合旧服务无降级成功。
+Web/Desktop/Mobile 不新增入口或传输路径，组件 release/binding 未激活。
+
+生成沿原 4 CPU / 8 GiB SDK `kailo-cells-native-check-lftow7`，镜像为
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+用户 1000:1000，memory+swap 与 memory 相等，mod/build/临时输入全部在 Data。
+保留以下真实失败：首次私有源未带 cmd 目录 exit 2；原 stub 子模块的
+protobuf v1.33.0 未缓存，离线安装 exit 1；改用原源文件及工程固定 protobuf
+构建该插件后，tags 的 structtag v1.2.0 未缓存且缺固定正文 hash，exit 1；
+一次 login shell 重置 PATH 导致 go not found，exit 127。随后只在原 SDK
+取得 go.sum 固定的 structtag，并将原 go.mod 已固定的 x/mod v0.35.0、
+x/text v0.37.0、x/tools v0.44.0 三条正文 hash 从工程 go.sum 补入生成器
+自身 go.sum，不升级版本。最终离线生成器构建 50272 exit 0；原 buf 两段
+29720、最终注释版本 10362 均 exit 0：
+
+```sh
+buf generate --output .
+buf generate --template=buf.gen.tag.yaml --output .
+```
+
+原 SDK 执行 gofmt；沿既有 CELLS_WORKING_DIR/CELLS_DATA_DIR，
+GOPROXY=off、GOSUMDB=off、GOTOOLCHAIN=local，集中命令：
+
+```sh
+go test -tags=sql -mod=readonly -count=1 -v \
+  -run '^(TestWorkspaceUpdateExistingIsAtomic|TestUniqueSlug|TestCreateWorkspacePreservesWriteFailure|TestUpdateWorkspaceNeverCreatesMissingWorkspace|TestNativeCellUpsertConsumesCurrentScopeAndPermission|TestNativeShareRequiresPermissionWriteConfirmation)$' \
+  ./idm/workspace/dao/sql ./idm/workspace/grpc ./idm/share
+```
+
+24777 首轮 exit 1：share 通过，SQLite 新路径实际报 unsupported driver。
+修正上述单事务消费后 82760 exit 0，六个顶层检查通过。SQL 真实覆盖既有对象
+更新、不变更新、原策略行 ID、策略失败回滚、空集合清空、先读后删再写拒绝；
+handler 覆盖原成功事件及缺行/空请求无事件；share 使用原生成 stub 验证
+Unimplemented 和缺行没有 Create 回退，原独立创建/ACL 错误行为同批通过。
+这里的 Core/OIDC 回包是原 fixture，不是在线 Core PEP 或完整业务验收。
+
+事后仅破坏私有副本：65599 恢复 upsert 及 managed Create 调用，exit 1，
+实测删除对象被重建、缺行产生 UPDATE 事件、受管最终调用退回 Create；
+93001 移除外层事务并跳过空策略替换，exit 1，实测元数据未回滚且撤销策略
+仍留数据库。还原后 66012 同集中命令 exit 0，gofmt -l 无输出，正式十三份
+源码/生成/锁文件与实际验证输入逐项 cmp 均为 0，正式树无反证改动。
+
+日志目录 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5`：
+
+| 日志 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `workspace-update-buf-final.log` | `77e36453a009e54447c3daec84d0297ac55d8c26d591aa26f60b7a28ac0dd3e5` | 原两段生成 exit 0 |
+| `workspace-update-positive.log` | `1f6e7a11caf73f14a4540eae6fb52957c43475dd7db94871c75cbff0305d88bd` | exit 1，嵌套事务失败 |
+| `workspace-update-transaction.log` | `86a58932bcfdd4c02a4fb3702ea6ea8d966ef67e4a51974462bceb24e57cdc5e` | exit 0 |
+| `workspace-update-upsert-negative.log` | `3ef7949237dde06af0b12b11c2b7268ac6ddbe682e189193a9cd6e6f89c6a618` | exit 1，复活及回退被拒绝 |
+| `workspace-update-atomic-negative.log` | `6f4d6fceb4ab578cc7c7f3921d8e5194101427f63bf332fa3ba0645eeaced2dc` | exit 1，回滚与撤权被拒绝 |
+| `workspace-update-restored.log` | `f57edff1b11319ac1254e6e518d4520a92a80f29605a39a83a1896085c903ba9` | exit 0 |
+
+本批仅原生源码与上述窄验证；真实 PostgreSQL/MySQL 并发压测、全部资源 DAO
+消费者业务、延迟 worker fresh 授权、线上 Core/Cells 连通、三端与全量门禁均
+未在本批验收，没有新镜像、部署或组件上架。SQLite 顺序模拟的读后删除窗口
+不写成所有数据库并发已通过；原 ACL 多 RPC 部分完成仍是 UNKNOWN。

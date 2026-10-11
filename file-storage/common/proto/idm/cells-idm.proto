@@ -239,6 +239,9 @@ message UserSingleQuery {
 // *****************************************************************************
 service WorkspaceService {
     rpc CreateWorkspace (CreateWorkspaceRequest) returns (CreateWorkspaceResponse) {};
+    // Update an existing workspace and replace all policies, including an empty set.
+    // A missing workspace is never created.
+    rpc UpdateWorkspace (CreateWorkspaceRequest) returns (CreateWorkspaceResponse) {};
     rpc DeleteWorkspace (DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse) {};
     rpc SearchWorkspace (SearchWorkspaceRequest) returns (stream SearchWorkspaceResponse) {};
     rpc StreamWorkspace (stream SearchWorkspaceRequest) returns (stream SearchWorkspaceResponse) {};

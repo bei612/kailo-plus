@@ -624,6 +624,7 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	WorkspaceService_CreateWorkspace_FullMethodName = "/idm.WorkspaceService/CreateWorkspace"
+	WorkspaceService_UpdateWorkspace_FullMethodName = "/idm.WorkspaceService/UpdateWorkspace"
 	WorkspaceService_DeleteWorkspace_FullMethodName = "/idm.WorkspaceService/DeleteWorkspace"
 	WorkspaceService_SearchWorkspace_FullMethodName = "/idm.WorkspaceService/SearchWorkspace"
 	WorkspaceService_StreamWorkspace_FullMethodName = "/idm.WorkspaceService/StreamWorkspace"
@@ -640,6 +641,9 @@ const (
 // *****************************************************************************
 type WorkspaceServiceClient interface {
 	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
+	// Update an existing workspace and replace all policies, including an empty set.
+	// A missing workspace is never created.
+	UpdateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
 	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error)
 	SearchWorkspace(ctx context.Context, in *SearchWorkspaceRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SearchWorkspaceResponse], error)
 	StreamWorkspace(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SearchWorkspaceRequest, SearchWorkspaceResponse], error)
@@ -657,6 +661,16 @@ func (c *workspaceServiceClient) CreateWorkspace(ctx context.Context, in *Create
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateWorkspaceResponse)
 	err := c.cc.Invoke(ctx, WorkspaceService_CreateWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspaceServiceClient) UpdateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateWorkspaceResponse)
+	err := c.cc.Invoke(ctx, WorkspaceService_UpdateWorkspace_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -716,6 +730,9 @@ type WorkspaceService_StreamWorkspaceClient = grpc.BidiStreamingClient[SearchWor
 // *****************************************************************************
 type WorkspaceServiceServer interface {
 	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
+	// Update an existing workspace and replace all policies, including an empty set.
+	// A missing workspace is never created.
+	UpdateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
 	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error)
 	SearchWorkspace(*SearchWorkspaceRequest, grpc.ServerStreamingServer[SearchWorkspaceResponse]) error
 	StreamWorkspace(grpc.BidiStreamingServer[SearchWorkspaceRequest, SearchWorkspaceResponse]) error
@@ -731,6 +748,9 @@ type UnimplementedWorkspaceServiceServer struct{}
 
 func (UnimplementedWorkspaceServiceServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateWorkspace not implemented")
+}
+func (UnimplementedWorkspaceServiceServer) UpdateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateWorkspace not implemented")
 }
 func (UnimplementedWorkspaceServiceServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteWorkspace not implemented")
@@ -776,6 +796,24 @@ func _WorkspaceService_CreateWorkspace_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorkspaceServiceServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkspaceService_UpdateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspaceServiceServer).UpdateWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkspaceService_UpdateWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspaceServiceServer).UpdateWorkspace(ctx, req.(*CreateWorkspaceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -826,6 +864,10 @@ var WorkspaceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateWorkspace",
 			Handler:    _WorkspaceService_CreateWorkspace_Handler,
+		},
+		{
+			MethodName: "UpdateWorkspace",
+			Handler:    _WorkspaceService_UpdateWorkspace_Handler,
 		},
 		{
 			MethodName: "DeleteWorkspace",

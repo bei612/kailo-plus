@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/pydio/cells/v5/common/broker"
+	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/service"
 	storagetest "github.com/pydio/cells/v5/common/storage/test"
@@ -100,6 +101,38 @@ func TestCreateWorkspacePreservesWriteFailure(t *testing.T) {
 		response, err := handler.CreateWorkspace(ctx, newRequest())
 		if !errors.Is(err, policyFailure) || response != nil || state.policyCalls != 1 || len(events.events) != 0 {
 			t.Errorf("policy failure: response=%v error=%v policy calls=%d events=%d", response, err, state.policyCalls, len(events.events))
+		}
+	})
+}
+
+func TestUpdateWorkspaceNeverCreatesMissingWorkspace(t *testing.T) {
+	cases := storagetest.TemplateSQL(workspacesql.NewDAO)
+	storagetest.RunStorageTests(cases, t, func(ctx context.Context) {
+		original := broker.Default()
+		events := &workspaceWriteBroker{Broker: original}
+		broker.Register(events)
+		defer broker.Register(original)
+		handler := NewHandler()
+		request := &idm.CreateWorkspaceRequest{Workspace: &idm.Workspace{UUID: "update-only-workspace", Label: "Original", Scope: idm.WorkspaceScope_ROOM,
+			Policies: []*service.ResourcePolicy{{Action: service.ResourcePolicyAction_OWNER, Subject: "native-owner"}},
+		}}
+		response, err := handler.UpdateWorkspace(ctx, request)
+		if !errors.Is(err, cellserrors.WorkspaceNotFound) || response != nil || len(events.events) != 0 {
+			t.Fatalf("missing workspace produced write or event: response=%v error=%v events=%v", response, err, events.events)
+		}
+		if _, err := handler.CreateWorkspace(ctx, request); err != nil {
+			t.Fatal(err)
+		}
+		events.events = nil
+		request.Workspace.Label = "Updated"
+		response, err = handler.UpdateWorkspace(ctx, request)
+		if err != nil || response.GetWorkspace().GetLabel() != "Updated" || len(response.GetWorkspace().GetPolicies()) != 1 || len(events.events) != 1 || events.events[0].Type != idm.ChangeEventType_UPDATE {
+			t.Fatalf("existing update missing original ACK/event: response=%v error=%v events=%v", response, err, events.events)
+		}
+		events.events = nil
+		response, err = handler.UpdateWorkspace(ctx, &idm.CreateWorkspaceRequest{})
+		if !errors.Is(err, cellserrors.InvalidParameters) || response != nil || len(events.events) != 0 {
+			t.Fatalf("empty workspace accepted: response=%v error=%v events=%v", response, err, events.events)
 		}
 	})
 }
