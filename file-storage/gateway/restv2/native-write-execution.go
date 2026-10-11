@@ -233,8 +233,6 @@ func writeNativeTaskResult(resp *restful.Response, task *jobs.Task) error {
 		observation["nativeId"], observation["platformStatus"], observation["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
 		response["contentReference"] = map[string]interface{}{"resourceId": intent.InputReference["resourceId"], "nativeObjectRef": reference.NodeUUID, "nativeRevision": revision.VersionId, "displayName": intent.InputReference["displayName"], "mediaType": intent.InputReference["mediaType"]}
 		response["contentBytes"] = revision.Size
-	} else if task.Status == jobs.TaskStatus_Running && task.StartTime > 0 && task.EndTime == 0 {
-		observation["platformStatus"] = "RUNNING"
 	}
 	return resp.WriteHeaderAndJson(http.StatusOK, response, "application/json")
 }

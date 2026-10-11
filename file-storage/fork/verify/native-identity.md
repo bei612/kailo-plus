@@ -2434,3 +2434,64 @@ NativeReadAuthority、UuidClient 与预置原 AccessList 规则，无 skip/admin
 本批没有运行全量门禁，没有新镜像、部署、组件绑定激活、浏览器下载或
 三端验收。它闭合既有受管读取出口，不代表完整 Cells 治理集成已上架，
 前节延迟删除 fresh 消费者仍未交付；不借本批恢复未治理写入口。
+
+## 2026-10-11 同步版本写入的不明结果与原生观察
+
+基线 `7ec1b88986836d95ee1e3a5f992f2401ff1f2818`，关联 DD-48/90/94、
+`07` §4.6/§5.2 及工程准则 9/10/15。固定上游
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`gateway/restv2/api-versions.go::PromoteVersion` 原路由保留；本批修正已授权
+治理接入中的结果映射，不改变独立原生上传、版本复制或页面。
+
+四步影响结论：
+
+1. 权威：原 Task 的 Running 仅是执行前落盘标记，不是同步 HTTP 请求结束后
+   仍有执行者的证明。`executeNativePromote` 的部分复制、fresh 拒绝、归档或
+   清理失败、同 key 重入，都可携带该标记返回；不得伪造 RUNNING 或 FAILED。
+2. 影响：只修改 `writeNativeTaskResult` 与 `nativeWriteObservation` 两个既有
+   响应消费者；后者同时服务 observe/extract_usage。完整 Finished Task、原
+   ContentRevision 与因果散列仍由 `NativeWriteRevision` 校验，成立才披露
+   SUCCEEDED/contentReference/contentBytes。无 schema、迁移、状态、RPC 或
+   凭据格式变化；不改变 Core/Worker、Web/Desktop/Mobile 调用合同。
+3. 副作用：两处均只读已有 receipt，不重发 CopyObject、归档、删除或新 Task。
+   残留 Running、Error、缺回执、错因果都返回 UNKNOWN；新鲜授权与原生身份
+   校验继续拒绝未授权披露，不把请求本地错误当完整外部动作失败。
+4. 边界：空文件完整回执可成功；重复请求只观察同 key，不能重新执行。崩溃、
+   部分成功、最后 PEP 拒绝或 ACK 丢失不能合成终态。原观察可在持久 Finished
+   receipt 已成立时收敛为成功；若 receipt 从未落盘，此处不能自动补造来源或
+   证明失败，只保留 UNKNOWN 给既有外部副作用对账处置。本批没有解决这类
+   历史不明任务的自动终结，更不把无超时终结证据写成完整生产验收。
+
+完整受管上传仍关闭：原
+`frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::buildPresignedPutUrl`
+及 `postPlainTextContent` 走原 PUT；
+`gateway/data/hooks/auth-handler.go::ServeHTTP` 消费
+`common/auth/native-action.go::AuthorizeNativeDataMutation`，受管 PUT/POST/
+DELETE/PATCH 没有相应执行凭证即拒绝，Draft-Mode 不豁免。未引入影子上传或
+持久 ActionToken，未把同步版本处理冒充完整上传链闭合。
+
+实现后沿原 SDK `kailo-cells-native-check-lftow7`、4 CPU/8 GiB、等额 swap 上限
+运行，独立 Go 缓存与源码位于 Data；执行前只有原 sleep，主机 available
+35 GiB、load 18.59。`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`，沿原
+CELLS_WORKING_DIR/CELLS_DATA_DIR 私有目录。实际命令：
+
+```text
+go test -mod=readonly -count=1 -v -run 'TestPromoteResultRequiresTerminalReceipt|TestNativeWriteObservationDoesNotInventActiveExecution|TestNativeWriteTaskRetainsExactIntentAndVersion' ./gateway/restv2 ./scheduler/jobs/rest ./scheduler/jobs/grpc
+```
+
+同步响应 helper 7 场景、原 HTTP observe/extract_usage 12 场景通过；后者经原
+RouteRegistrar、映射用户、原生策略、精确 ListTasks RPC 及两次 HTTP PEP。
+RPC 和 PEP 为受控夹具，不是在线 Core。原 Bolt 持久 receipt 检查同批通过。
+partial-copy/fresh-refused 是实际失败出口所携 Task 的响应检查，未执行完整
+`executeNativePromote` 的真实存储复制故障注入，不能据此称完整写业务通过。
+
+首次 session 8099 exit 1：HTTP 检查缺原路由上下文，原 policy parser panic；
+改走原注册器后 session 59766 exit 0。私有源恢复旧两处 RUNNING 分支，78664
+exit 1，准确捕获 3 个同步响应与 2 个 HTTP 观察错误；正式源未受破坏。
+恢复后 session 96909 exit 0，三包通过，四文件 gofmt 无输出且与私有源 cmp
+一致。日志位于 `/volumes/data/kailo/tmp/cells-native-merge.Rz8qB5/`，分别为
+`write-observation-positive.log`、`write-observation-native-route.log`、
+`write-observation-negative.log`、`write-observation-restored.log`。
+
+未运行全量门禁、完整组件绑定、真实上传或浏览器业务；没有新镜像、部署、
+菜单激活或安装包。现有全局失败与其他组件未交付状态不因本批窄验证改变。

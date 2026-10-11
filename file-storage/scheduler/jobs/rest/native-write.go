@@ -90,9 +90,6 @@ func nativeWriteObservation(req *restful.Request, resp *restful.Response, proof 
 			resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
 			return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
 		}
-		if task.Status == jobs.TaskStatus_Running && task.StartTime > 0 && task.EndTime == 0 {
-			answer["platformStatus"] = "RUNNING"
-		}
 	}
 	if _, present := args["nativeId"]; present {
 		return errors.WithStack(errors.StatusConflict)
