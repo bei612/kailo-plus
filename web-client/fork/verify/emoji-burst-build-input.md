@@ -38,3 +38,47 @@ src/main.test.tsx(94,30): error TS2307: Cannot find module '../../../collaborati
 
 首轮固定构建保留失败且未产出新 artifact，未部署。修正后的正式构建在本批提交后
 沿同一受限 builder 与 Data 缓存运行；本回执不提前宣称构建、视觉或生产验收通过。
+
+## 固定修正版本构建与限定部署回读
+
+2026-10-11，修正提交 `9d718234b74b688d9b81816f9b67470d4fc80440`
+已普通 push。原 `tools/build-upstream.sh web-client` 使用既有
+`kailo-core-data` builder（8 CPU、16 GiB 内存及同额 memory+swap），
+缓存和固定提交导出树均位于 Data。npm ci 命中缓存；原 tsc 与 Vite 完成，
+Vite 输出 `built in 1m 4s`，没有删双宿主检查或扩大忽略范围。
+
+原构建调用仍退出 1：调用方重复拼接 registry 端口，构建与导入成功后 tag
+报 `invalid reference format`。改用原完整 REGISTRY_HOST，只续 tag/push/record；
+第一次续尾推送成功，但 record 缺 project 参数退出 1。随后仅补原
+`upstream_manifest.py record web-client` 并独立回读 registry，退出 0。
+两次失败均保留，不将整条构建命令改记为一次通过，不重复编译或推送。
+
+- artifact：`sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123`。
+- source/buildId：`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`。
+- registry HEAD 200、原 builder manifest 与本机镜像 manifest 一致；config
+  `a2bfbad2…` 是另一对象，不作为 artifact digest。
+- 固定 9d718 的原 `tools/check-docs.sh`，2 CPU / 4 GiB、network none、Data
+  check-cache，退出 0；不替代完整检查。
+
+实际限定部署命令（在 apps 根目录）：
+
+```sh
+sudo docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml \
+  up -d --no-deps --no-build --pull never --wait buzz-web
+```
+
+命令退出 0，输出 `Container platform-local-buzz-web-1 Healthy`。新容器
+`ebba2f3fd6cb` 的 `/srv/app/platform-build-info.json` 读回上述 buildId，
+reportedAt 为 `2026-10-11T15:40:21.954Z`。24 个 platform-local 容器中仅 Web
+由 `9c15024d9ca5` 替换，其余 23 项 ID 和镜像不变。部署前核对该服务的三项
+环境值、app 网络及无宿主端口/卷的边界不变；未替换 Core、Worker 或两个原生端。
+同批只更新既有 Web 来源、Compose pin 和引用同一 artifact 的追溯项，
+不改变 schema、授权、状态机或数据迁移；旧镜像保留，回退只影响静态 Web。
+
+构建、续尾及文档日志原件位于
+`/volumes/data/kailo/tmp/web-main-9d71823-release.fddJRC/`。
+原 builder 日志 SHA-256 为
+`12c2269d969327b29e77e14a4dda8c54deefc2033db1b41cb05ab80d90d0e54f`。
+当时新版本浏览器操作与截图仍在进行，不能把旧版本截图计入新版本验收。
+最近完整检查仍退出 1（11 个源码/制品摘要差异），数据库演练及部署配置预检
+有跳过项；此处不声明全量门禁通过、完整原版还原、三组件完整接入或生产就绪。

@@ -62,7 +62,7 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:8c3ff048cf965feb88f25582db6a8547dd2db2f177fc8ab5b30964b4589c2783
+      digest: sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123
   # 记录已限定部署的共享管理页开发预览；不能代替后端或业务验收。
   # 2026-10-05 Web 三 HUMAN/两 Agent 的六次回复与用量终态已实测；见上方 evidence。
   # 约 165 秒交互延迟、原生设备与完整接缝尚未闭合，不据此计为 ready/PASS。
