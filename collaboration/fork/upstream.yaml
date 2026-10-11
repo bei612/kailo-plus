@@ -21,6 +21,10 @@ base_divergence: none
 # 不得以本清单将 Agent、Workflow、Huddle、Projects、DM、Terminal 或设置排除出范围。
 # Mobile 的宿主边界仍按设计执行，不通过内嵌业务组件绕过。
 # 与实际一致由 `upstream_manifest.py diff collaboration --check` 核对。
+# 779af8886caae1317b4de962082429867ab61503 的
+# desktop/src/features/messages/useChannelTyping.ts::useChannelTyping 已恢复原位宿主：
+# TTL/线程/完成抑制状态共享迁移到 client-kit/ts/platform/src/react/messages/typingState.ts；
+# 原 hook 保留受治理 Native session、签名/唯一 h 校验与 CLOSED/断流清空，不属 remove_paths。
 remove_paths:
   # 原主题实现迁入 client-kit，由 Web/Desktop 共同消费；不是裁剪页面。
   - desktop/src/app/BuzzThemeSurfaces.tsx
@@ -488,7 +492,6 @@ remove_paths:
   - desktop/src/features/messages/ui/useReactionHandler.test.mjs
   - desktop/src/features/messages/ui/useReactionHandler.ts
   - desktop/src/features/messages/ui/useThreadAgentAudience.ts
-  - desktop/src/features/messages/useChannelTyping.ts
   - desktop/src/features/messages/useLoadMissingAncestors.ts
   - desktop/src/features/messages/useTypingBroadcast.ts
   - desktop/src/features/moderation

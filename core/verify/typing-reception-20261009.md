@@ -153,3 +153,30 @@ node --import ./test-loader.mjs --experimental-strip-types --test src/features/m
 - SDK 累计 OOM 标记为 true，StartedAt 为 2026-10-05T20:43:03.659Z、RestartCount 0；
   2026-10-10 17:42 UTC 读取 memory.events 为 oom/oom_kill 各 2，未有本轮前计数，
   不以该累计标记断言本轮 DOM 超时的原因；没有放宽内存限额。
+
+## 已恢复 Native hook 的来源登记收口（2026-10-11）
+
+完整门禁原件 `/volumes/data/kailo/tmp/tmp.JTUyo9lFQI.check.log` 第 1009 行明确报
+`remove_paths` 仍登记实际存在的 `desktop/src/features/messages/useChannelTyping.ts`。
+该 hook 已由 `590431e4b8a88691350b4b91121622e628067cea` 恢复，并非本批新增能力。
+固定官方 `779af8886caae1317b4de962082429867ab61503` 的同路径
+`useChannelTyping` 与当前宿主、共享 `typingState.ts` 完整对照后分类为共享迁移，
+Native session、签名、唯一频道 tag、CLOSED 与断流清空为已授权治理适配。
+`ChannelScreen.tsx::ChannelScreen` 真实调用 hook，且把 `receiveMessage` 传入
+`useChannelSubscription`；不能为消除来源错误删除它。当前声明仅撤销该错误
+remove 条目，并注明共享状态路径，其他条目、源码和产物摘要均保持不变。
+
+权威仍是上述 REQ-24、DD-75 与原接缝。影响只及来源元数据，不改变任何字段、
+存储、订阅、认证、六类错误或三端行为；不存在新增状态和副作用，迁移无适用对象。
+本批没有恢复发送路径，也不把历史接收检查扩大为完整 typing 验收。
+
+实现后复用原 `tools/upstream_manifest.py::_removed` 算法，对固定官方
+`git ls-tree -r -z --name-only` 与当前完整 collaboration 可见且实际存在的路径集
+核对；只导出路径集和未改动的原检查模块，没有复制、编译上游树或重建镜像。
+原 4 CPU／8 GiB、无网络 SDK 内执行，退出 0：1049 个 remove 路径全部一致。
+恢复旧 manifest 作为反证输入时，原算法差集准确返回且只返回上述 hook；当前与
+旧 manifest 的 artifacts 完全相等。原件为
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/remove-registration/verify.log`。
+这是原删除路径算法的全路径集合核验，不冒称完整 `diff --check` 命令、全量门禁
+或 artifact 验证；原 full 的多项产物来源摘要不一致仍然保留，不手改摘要消除门禁。
+本批无构建、部署、安装包或新截图，文档全量门禁未单独重跑。
