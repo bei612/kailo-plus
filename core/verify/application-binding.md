@@ -1502,3 +1502,92 @@ SHA-256 为 `352d284b17b4928704d05341c7189919cb9be119cc015a36565c82b31260f684`�
 SHA-256 为 `2f10092ea50a1997f43e228cfee455c08d4bc2e0060fb0e295a0175937ac7843`。
 完整准入调用及当前候选 full 均未验收，不能以实际 writer 专项代替全链验收。
 本节只记录源码阶段验证；未部署、未创建现网 binding，不据此声明三组件集成完成。
+
+## 2026-10-10 HUMAN 同步读取未交票 claim 的截止收敛（源码窄验，非事务/业务验收）
+
+1. 权威为 `.design/03` §6 的原 SYNC ActionExecution、短票据与 fresh PEP，
+   `.design/06` §5.1 和 ADR-12 §4 的“不明不重放”。本批不扩展协议，也不处理
+   已交付票据而缺少原生回执的读取。实际缺口是 `application_native_read.rs::admit`
+   先持久 UNKNOWN claim、再签内存票、最后持同一 AE 行锁写 `nativeReadToken`
+   并提交之后才返回 bearer。签名期间崩溃且没有 stamp 时，旧对账永远保留 UNKNOWN；
+   但原冻结 `nativeReadDeadline` 已过、同锁仍无 stamp 且签票入口不再允许提交，
+   可以证明这一次读取从未获得可消费票据。这不是查文件存在性或猜测外部结果。
+2. 范围只有 `application_native_read.rs` 与本节。原 `action_token::issue_native_read`
+   唯一调用方仍为 `admit`；首次 claim 不变，第二次行锁现在通过
+   `may_deliver_ticket` 核对当前 ALLOWED/UNKNOWN、同一冻结 deadline、无 stamp/receipt，
+   明确拒绝已 ABORTED 的 signer。原 `reconcile` 在同锁调用同一
+   `unissued_deadline`，仅过截止的未交票 UNKNOWN 写 ALLOWED/ABORTED 与既有
+   ADMISSION_ABANDONED，并在同事务追加原 `component_action:terminal` FAILED 审计。
+   NOT_DISPATCHED 过期仍沿原 DENIED 分支；不把 UNKNOWN 回退 NOT_DISPATCHED。
+3. `dispatch_requires_allowed` 原约束仍要求非 NOT_DISPATCHED 时 gate=ALLOWED，
+   本批不改约束或迁移。原 native HUMAN 查询仍读取原 audit 的 terminalStatus；
+   原对账筛选与 binding `drained` 不再选 ABORTED，审计仍按 operation+原 stage
+   唯一键幂等。没有 SOURCE 读取、回执补造、用量事件/预留凭空结算、第二执行权威、
+   新秘密或正文。已存在 stamp（包括 null/畸形值）、任意 receipt 均不作为未交付；
+   缺失/非整数/非正 deadline 拒绝，不因数据损坏推断未执行。已出票无回执仍 UNKNOWN，
+   该发布阻断没有解除。三端呈现、入口及凭据边界不变。
+4. 实现后在原模块增加两个生产谓词检查，覆盖截止前/等于截止、两种锁顺序读回
+   （signer 先持久 stamp、reconciler 先 ABORTED）、已终结 gate、已有/畸形 stamp、
+   已有/畸形 receipt、缺失/畸形 deadline、错 actor/动作族。它们验证锁内决策，
+   不是 PostgreSQL 并发锁演练。目标 `git diff --check` 退出 0；
+   下述原模块编译、正向、生产条件反证及原字节还原已执行，数据库锁交错未执行。
+   本节不计业务验收、提交或部署，不纳入前一冻结集成批，也不声明 HUMAN
+   无回执读取已全面收敛。
+
+单文件格式化已实际完成：复用仅有 sleep 的 `kailo-agent-receipt-xvkujx`，
+镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 UID/GID 1000、4 CPU、8 GiB memory/memory+swap；`/evidence` 与 `/cache`
+均挂载 Data 盘且可写。执行前宿主 available 22 GiB、memory PSI avg10=0，
+原 Agent runtime 构建仍活跃，本次没有启动 Cargo。镜像内
+`rustfmt 1.8.0-stable (1159e78c47 2025-09-14)` 对正式单文件的 stdin 执行
+`--edition 2021 --emit stdout`，以 apply_patch 回写格式产物，再执行
+`--edition 2021 --check` 无输出、退出 0。该源 SHA-256 为
+`de0cbee34313a23adb0787466d42fab0cdc9a07b37ac87c96640d4a38ac0beed`。
+
+可复用原模块检查过滤为 `application_action::native_read::tests::`，其中
+新增 `native_read_unissued_claim_is_fenced_at_its_original_deadline` 与
+`native_read_unissued_claim_never_discards_delivery_or_incomplete_evidence`；
+原 completion/ticket 检查一并保留。原
+`native_read_sql_freezes_receipt_and_rejects_missing_evidence` 显式 ignored，
+需要已迁移的隔离 `APPLICATION_EXECUTION_TEST_DATABASE_URL`；上述 SDK 实查
+该变量及 `PLATFORM_INTEGRATION` 均未投递。本轮未运行 SQL 检查，未把已有
+数据库容器存在当成适用连接或并发验证，也未生成新检查脚本。
+
+实际窄验快照来自 HEAD `c442f2bb6e5c9e4db624057fe756272574a807f2` 的
+`core`、`contracts`、原能力 registry、Gateway proto 和实际 Buzz path 依赖，
+只应用上述两文件增量。第一次遗漏 `collab-bridge` 实际消费的 `buzz-core` / `buzz-sdk`
+输入，Cargo 退出 101，原文保留 `missing-path-input.log`；按同 HEAD 补齐原
+workspace 清单及依赖源码后才继续，没有为此改产品实现。主线 Rust 段已结束后，
+回读上述 SDK 只有 sleep、UID/GID 1000、4 CPU/8 GiB、Data 挂载；宿主 available
+22 GiB，memory PSI full avg10=14.30，原 Agent runtime release 仍在独立 target
+执行。本批使用 `CARGO_BUILD_JOBS=16`、`CARGO_TARGET_DIR=/cache/rust-target`、
+`SQLX_OFFLINE=true`，`TMPDIR` 指向同 Data 快照；没有新建 SDK 或清缓存。
+
+在快照 `core` 中执行原命令
+`cargo test --locked --offline -p platform-core --bin platform-core application_action::native_read::tests:: -- --nocapture`：
+正向句柄 26987 退出 0，4 passed / 0 failed / 1 ignored，编译用时 19m44s。
+SQL 项明确 ignored。随后仅在私有生产源码去掉 stamp 存在保护、把截止 `<` 改为 `<=`，
+原检查句柄 60043 退出 101：新增两个检查均 FAILED，原两个检查通过、SQL 仍 ignored，
+错误分别是截止时刻仍允许交票、已有 stamp 被误判为未交付；不是环境失败。
+反证前再次预检 SDK 无 Cargo，available 16 GiB、memory PSI full avg10=0.07。
+恢复两行后正式/私有完整源文件（含检查）`cmp` 退出 0，SHA 均为上述 `de0cbee…`。
+保留的正向 `positive.test` 前后 SHA 相同，句柄 11283 重跑退出 0，4 passed / 1 ignored。
+这是对应完全相同输入的保留二进制复验，**不是恢复后重新编译**；共享 target 中最后
+一次编译为反证产物，不能直接把它当正式源码产物。SDK 最终只剩 sleep，已交接下一队列。
+
+证据目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/native-read-unissued.g0kIIX/`：
+
+```text
+44d410dde0d103bedc5f4ec643bed2031574780709d046258a1519afe36fdee1 missing-path-input.log
+ea13addbe1596a0c211f851d5f46ac6fbca2a19f16d50c377d34c7f5f47a136e positive.log
+ae44f6d91ca3a96a2ca2e9abf13d3c0827e18b82824befb5c6ad3901a94b24c7 negative.log
+3f50a63bb1e89405de2e40010805904382d93784be2dc5ae42d09498374d3e9a restored.log
+66044f70d14375203f9250708ae9ed961b150a70063e2b65a29b7c2457d2522a positive.test
+```
+
+已有隔离 PG `kailo-installation-scope-pg-e4agxd` 的历史库
+`application_execution_yvnkf3` 只读回查句柄 80550 退出 0：79 条成功迁移，最大版本
+`20261005015000`；原 `dispatch_requires_allowed` 约束仍在，而
+`admission.guard_native_human_read()` 尚不存在。该库未更新、未写业务数据；本批没有
+实际 SQL/行锁/完整签票事务验收，不能将两个生产谓词的锁顺序输入模拟称为并发证明。

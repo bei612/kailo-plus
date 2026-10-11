@@ -62,13 +62,7 @@ pub(super) async fn admit(
         json!({"jti":claims["jti"],"iat":claims["iat"],"exp":claims["exp"],"idempotencyKey":key});
     let mut tx = state.pool.begin().await?;
     let current = crate::governance::lock_execution(&mut tx, ae.id).await?;
-    if current.dispatch_state != "UNKNOWN"
-        || Utc::now().timestamp() >= deadline
-        || current
-            .parameters
-            .as_ref()
-            .is_none_or(|p| p.get("nativeReadToken").is_some())
-    {
+    if !may_deliver_ticket(&current, Utc::now())? {
         return Err(denied());
     }
     sqlx::query(
@@ -96,6 +90,32 @@ pub(super) async fn admit(
         json!({"actionToken":token,"argumentsJson":collab_bridge::limits::canonical_json(
         &current.parameters.as_ref().ok_or_else(unavailable)?["inputArguments"]),"expiresAt":claims["exp"]}),
     ))
+}
+
+// The only bearer-returning path first persists its stamp under the AE lock.
+// Absence is useful only before that commit; null/malformed evidence is not
+// absence. The immutable deadline fences a signer that resumes after expiry.
+fn unissued_deadline(ae: &Execution) -> Result<Option<i64>, Refusal> {
+    if !is_read(ae)
+        || ae.gate_state != "ALLOWED"
+        || !matches!(ae.dispatch_state.as_str(), "NOT_DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(None);
+    }
+    let p = ae.parameters.as_ref().ok_or_else(blocked)?;
+    if p.get("nativeReadToken").is_some() || p.get("nativeReadReceipt").is_some() {
+        return Ok(None);
+    }
+    p["nativeReadDeadline"]
+        .as_i64()
+        .filter(|deadline| *deadline > 0)
+        .map(Some)
+        .ok_or_else(blocked)
+}
+
+fn may_deliver_ticket(ae: &Execution, now: DateTime<Utc>) -> Result<bool, Refusal> {
+    Ok(ae.dispatch_state == "UNKNOWN"
+        && unissued_deadline(ae)?.is_some_and(|deadline| now.timestamp() < deadline))
 }
 
 pub(crate) fn dispatched(ae: &Execution, claims: &Value) -> bool {
@@ -323,29 +343,34 @@ pub(crate) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), Re
     for action in &ids {
         let ae = crate::governance::lock_execution(&mut tx, *action).await?;
         let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+        if unissued_deadline(&ae)?.is_some_and(|deadline| deadline <= Utc::now().timestamp()) {
+            // Holding the same lock as the stamp writer proves no ticket was
+            // delivered, and the deadline prevents any later delivery. Keep
+            // the original admission decision for a claimed AE: the global
+            // dispatch_requires_allowed constraint forbids UNKNOWN -> DENIED.
+            let def = receipt::frozen_definition(&mut tx, *action).await?;
+            crate::governance::audit(
+                &mut tx,
+                &ae,
+                &def,
+                "component_action:terminal",
+                "OUTCOME",
+                "DENY",
+                "FAILED",
+                None,
+                vec![],
+            )
+            .await?;
+            sqlx::query("update admission.action_execution set
+                    gate_state=case when dispatch_state='NOT_DISPATCHED' then 'DENIED' else gate_state end,
+                    dispatch_state=case when dispatch_state='UNKNOWN' then 'ABORTED' else dispatch_state end,
+                    reason_code='ADMISSION_ABANDONED',reconcile_last_attempt_at=now(),updated_at=now() where id=$1")
+                .bind(action).execute(&mut *tx).await?;
+            continue;
+        }
         if ae.dispatch_state == "NOT_DISPATCHED" {
-            if p.get("nativeReadToken").is_some() {
+            if p.get("nativeReadToken").is_some() || p.get("nativeReadReceipt").is_some() {
                 return Err(blocked());
-            }
-            if p["nativeReadDeadline"]
-                .as_i64()
-                .is_none_or(|v| v <= Utc::now().timestamp())
-            {
-                let def = receipt::frozen_definition(&mut tx, *action).await?;
-                crate::governance::audit(
-                    &mut tx,
-                    &ae,
-                    &def,
-                    "component_action:terminal",
-                    "OUTCOME",
-                    "DENY",
-                    "FAILED",
-                    None,
-                    vec![],
-                )
-                .await?;
-                sqlx::query("update admission.action_execution set gate_state='DENIED',reason_code='ADMISSION_ABANDONED',reconcile_last_attempt_at=now(),updated_at=now() where id=$1")
-                    .bind(action).execute(&mut *tx).await?;
             }
             sqlx::query(
                 "update admission.action_execution set reconcile_last_attempt_at=now() where id=$1",
@@ -500,7 +525,7 @@ END $$;
             target_id: Uuid::new_v4(),
             parameter_hash: "frozen".into(),
             parameters: Some(json!({"componentActionKind":KIND,
-                "nativeRead":true,"nativeReadToken":stamp,"inputArguments":{"input":input},
+                "nativeRead":true,"nativeReadDeadline":now.timestamp()+60,"nativeReadToken":stamp,"inputArguments":{"input":input},
                 "nativeReadBilling":{"meters":[{"id":"meter","key":"read_count","event_type":"native.read","value_property":null}]}})),
             temporal_workflow_id: None,
             cancel_first_run_id: None,
@@ -517,6 +542,77 @@ END $$;
             receipt,
             json!({"jti":jti,"exp":now.timestamp()+60,"idempotency_key":key}),
         )
+    }
+
+    #[test]
+    fn native_read_unissued_claim_is_fenced_at_its_original_deadline() {
+        let (mut ae, _, _) = fixture();
+        ae.dispatch_state = "UNKNOWN".into();
+        let p = ae.parameters.as_mut().unwrap();
+        p.as_object_mut().unwrap().remove("nativeReadToken");
+        let deadline = p["nativeReadDeadline"].as_i64().unwrap();
+        let before = DateTime::from_timestamp(deadline - 1, 0).unwrap();
+        let at = DateTime::from_timestamp(deadline, 0).unwrap();
+        assert_eq!(unissued_deadline(&ae).unwrap(), Some(deadline));
+        assert!(may_deliver_ticket(&ae, before).unwrap());
+        assert!(!may_deliver_ticket(&ae, at).unwrap());
+        // Reconciler wins the shared AE lock: an old signer must reload and
+        // reject this row rather than return its previously signed bearer.
+        ae.dispatch_state = "ABORTED".into();
+        assert_eq!(unissued_deadline(&ae).unwrap(), None);
+        assert!(!may_deliver_ticket(&ae, before).unwrap());
+        assert!(!may_deliver_ticket(&ae, at).unwrap());
+        ae.dispatch_state = "UNKNOWN".into();
+        ae.gate_state = "DENIED".into();
+        assert_eq!(unissued_deadline(&ae).unwrap(), None);
+        assert!(!may_deliver_ticket(&ae, before).unwrap());
+    }
+
+    #[test]
+    fn native_read_unissued_claim_never_discards_delivery_or_incomplete_evidence() {
+        let (mut ae, receipt, _) = fixture();
+        ae.dispatch_state = "UNKNOWN".into();
+        let stamp = ae.parameters.as_ref().unwrap()["nativeReadToken"].clone();
+        // Signer wins the lock: even after expiry UNKNOWN must retain the
+        // stamp and await its genuine receipt. Malformed is not absent either.
+        for stamp in [stamp, Value::Null, json!({}), json!("invalid")] {
+            ae.parameters.as_mut().unwrap()["nativeReadToken"] = stamp;
+            assert_eq!(unissued_deadline(&ae).unwrap(), None);
+            assert!(!may_deliver_ticket(&ae, Utc::now()).unwrap());
+        }
+        ae.parameters
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeReadToken");
+        for receipt in [receipt, Value::Null, json!({})] {
+            ae.parameters.as_mut().unwrap()["nativeReadReceipt"] = receipt;
+            assert_eq!(unissued_deadline(&ae).unwrap(), None);
+        }
+        ae.parameters
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeReadReceipt");
+        for deadline in [Value::Null, json!("expired"), json!(0), json!(-1)] {
+            ae.parameters.as_mut().unwrap()["nativeReadDeadline"] = deadline;
+            assert!(unissued_deadline(&ae).is_err());
+        }
+        ae.parameters
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeReadDeadline");
+        assert!(unissued_deadline(&ae).is_err());
+        let (mut other, _, _) = fixture();
+        other.parameters.as_mut().unwrap()["componentActionKind"] = json!("SERVICE_READ");
+        assert_eq!(unissued_deadline(&other).unwrap(), None);
+        other.parameters.as_mut().unwrap()["componentActionKind"] = json!(KIND);
+        other.actor_principal_id = Uuid::new_v4();
+        assert_eq!(unissued_deadline(&other).unwrap(), None);
     }
 
     #[test]
