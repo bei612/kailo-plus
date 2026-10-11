@@ -17,6 +17,9 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --prefer-offline --no-audit --no-fund
 
 COPY web-client/web/ ./
+COPY collaboration/desktop/src/shared/ui/EmojiBurstProvider.tsx /src/collaboration/desktop/src/shared/ui/EmojiBurstProvider.tsx
+# The cross-host Context assertion resolves the same installed workspace packages.
+RUN ln -s web-client/web/node_modules /src/node_modules
 ARG VITE_BASE_PATH=/app/
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 ARG PLATFORM_BUILD_ID
