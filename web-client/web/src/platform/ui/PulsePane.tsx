@@ -49,7 +49,7 @@ export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStart
       OriginReference:BffProjectOriginReference,
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
-      renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
+      renderContent:(content,tags,className)=><MessageContent content={content} className={className} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
       renderComposer:(props)=><div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
         containerClassName={props.className} composerHeader={props.header}
         disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}

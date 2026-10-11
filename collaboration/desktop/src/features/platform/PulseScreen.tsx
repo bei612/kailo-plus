@@ -48,7 +48,7 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
         check();await cache.invalidateQueries({queryKey:channelsQueryKey});check();
         await navigate({to:"/channels/$channelId",params:{channelId:conversation.channelId}});
       },
-      renderContent:(content,tags)=><Markdown content={content} imetaByUrl={parseImetaTags(tags??[])} linkPreviewTags={tags}/>,
+      renderContent:(content,tags,className)=><Markdown content={content} className={className} imetaByUrl={parseImetaTags(tags??[])} linkPreviewTags={tags}/>,
       renderComposer:(props)=><div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
         containerClassName={props.className} composerHeader={props.header}
         channelName={t("platform.tab.pulse")} disabled={props.disabled} isSending={props.isSending}

@@ -241,3 +241,53 @@ session 44464 实际 exit 1，62.92s：`Failed to start threads worker` /
 上述日志均在 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/`；最初 worker
 启动失败仍保留，不改记通过；两轮实际正向与两项定向反证不替代全量门禁。
 没有新版部署/截图，不能用前批 7/7 或旧线上图片替代本次两处修正验收。
+
+### 项目正文原样式投递纠偏
+
+2026-10-11，本批基底 `3bb40e0adeac5a9f3d436adbcc87c1c3d28fffde`。
+权威为用户原版一致性要求及固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/projects/ui/ProjectRichContent.tsx::ProjectRichContent` 将默认
+`text-sm` 或调用方 className 直接传入原 Markdown；
+`desktop/src/features/projects/ui/ProjectIssueCommentTimeline.tsx::ProjectIssueCommentTimeline`
+使用 `mt-1 text-sm text-foreground/90`，
+`desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::ProjectPullRequestDetail`
+使用 `text-sm text-muted-foreground` 呈现更新正文。
+原 `desktop/src/shared/ui/markdown.tsx::MarkdownInner` 与
+`desktop/src/shared/lib/cn.ts::cn` 在正文元素合并这些类，消除字号/颜色冲突。
+
+影响面检索确认共享 `ProjectRichContent` 原先只给新增外层 div 设置样式，
+真正 Web `MessageContent` / Desktop `Markdown` 保留自身的 `text-message` /
+`text-foreground`，属于缺失需恢复，不是已授权治理差异。本批去掉这层外壳，
+通过既有 `PulseHost.renderContent` 的第三个可选 className 参数投递两宿主。
+默认字号、评论/更新样式归原样保留；同一组件与参数传递归共享迁移；Web BFF
+媒体解析和 Desktop 原媒体/tag 适配属于已有授权接缝，本批没有改动。
+原 `ProjectCommitDetailPanel` 的 Git 读取及 `hardLineBreaks=false` 消费者仍未接入，
+继续列为缺失需恢复，本批不预建无消费者选项，也不改变全量台账的证明范围。
+
+副作用及异常核对：仅展示参数，无契约、数据库、正文存储、事务或执行状态变更；
+两参数 Pulse 调用保持原行为，undefined 使用原 `text-sm` 默认值，空字符串仍原样传递。
+两宿主的 query/publish/startDm、scope 失效、媒体授权、链接导航均未变更；
+不产生新动作或 UNKNOWN 到成功/失败的转换，06 §4 六类错误沿原消费者处理。
+Mobile 无本次消费路径，没有新增页面或宿主入口。
+
+复用原 `kailo-web-thread-tooltip-sdk`，实际核验仅 sleep、4 CPU/8 GiB、
+memory+swap 同限额和 Data 挂载后，以固定基底加本批六文件私有输入验证。
+没有安装依赖、新建镜像、提高超时或启动 full。证据目录：
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-rich-content.7UYjw7/`。
+
+- 96050：Web `node node_modules/typescript/bin/tsc --noEmit` exit 0；
+  `node node_modules/vitest/vitest.mjs run src/platform/ui/PulsePane.test.tsx --pool=threads --no-file-parallelism`
+  10/10、exit 0；Desktop `node --import ./test-loader.mjs --experimental-strip-types --test src/features/platform/PulseScreen.test.mjs`
+  8/8、exit 0。原 Web act 警告保留，完整输出在 `positive.log`。
+- 检查使用真实 `ProjectRichContent`、两端实际 Host 与原 Markdown，不再 mock Web
+  MessageContent。三种 className 均检查 `.message-markdown` 本体的字号/颜色、
+  没有冲突类、真实粗体和链接；不是只断言外壳存在类名。既有 DM/来源消费者继续执行。
+- 54090：仅私有共享组件退回旧外层 div；上述 Web 命令加
+  `-t "passes original project rich-content"`，3 failed/7 skipped、exit 1；
+  Desktop 原命令加 `--test-name-pattern="Native original project rich-content"`，
+  3 failed、exit 1。均实际捕获正文缺少 `text-sm`，日志 `mutation.log`。
+- 还原后六文件与正式源码逐字 cmp 0；70761 运行原完整两套件，Web 10/10、
+  Desktop 8/8，均 exit 0，日志 `restored.log`。本批定点 `git diff --check` exit 0。
+
+本批没有部署、新版浏览器截图、Windows 安装包验收或 full 门禁通过；
+现网旧 `9d718234b74b688d9b81816f9b67470d4fc80440` 截图不认领本次修复。

@@ -3,5 +3,5 @@
 import { usePulseHost } from "../pulse/host";
 
 export function ProjectRichContent({content,tags,className="text-sm"}:{content:string;tags?:string[][];className?:string}) {
-  return <div className={className}>{usePulseHost().renderContent(content,tags)}</div>;
+  return usePulseHost().renderContent(content,tags,className);
 }

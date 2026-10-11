@@ -38,6 +38,7 @@ const {usePulseHost}=await import("@client-kit/platform/react/pulse");
 const {setLocale}=await import("@client-kit/platform/i18n");
 const {ActiveCommunityProvider}=await import("./activeCommunity.tsx");
 const {PulseScreen}=await import("./PulseScreen.tsx");
+const {ProjectRichContent}=await import("../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent.tsx");
 const {relayClient}=await import("@/shared/api/relayClient");
 const originalFetch=relayClient.fetchEvents;
 relayClient.fetchEvents=async filter=>filter.kinds.includes(0)?(filter.authors??[]).map(pubkey=>({
@@ -67,7 +68,8 @@ async function mount(options={}) {
   const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
   const base=createRootRoute();
   function OriginConsumer(){const {OriginReference}=usePulseHost();assert.ok(OriginReference);return React.createElement(OriginReference,{channelId:originId});}
-  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):PulseScreen});
+  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):
+    options.richContent?()=>React.createElement(PulseScreen,null,React.createElement(ProjectRichContent,{className:options.className,content:"Original **project body** with [a link](https://example.test/page)"})):PulseScreen});
   const channel=createRoute({getParentRoute:()=>base,path:"/channels/$channelId",component:()=>React.createElement("p",null,"Actual governed DM")});
   const compose=createRoute({getParentRoute:()=>base,path:"/messages/new",component:()=>React.createElement("p",null,"Wrong compose route")});
   const router=createRouter({routeTree:base.addChildren([pulse,channel,compose]),history:createMemoryHistory({initialEntries:["/"]})});
@@ -87,6 +89,24 @@ async function openProfile(view){
   await until(()=>[...view.host.querySelectorAll("article button")].some(button=>button.textContent==="Actual author"));
   await act(async()=>[...view.host.querySelectorAll("article button")].find(button=>button.textContent==="Actual author").click());
   await until(()=>view.host.querySelector('[data-testid="user-profile-message"]'));
+}
+
+for(const className of [undefined,"mt-1 text-sm text-foreground/90","text-sm text-muted-foreground"]){
+  test(`Native original project rich-content passes ${className??"default"} to the actual Markdown body`,async()=>{
+    const view=await mount({richContent:true,className});try{
+      await until(()=>view.host.querySelector(".message-markdown strong"));
+      const body=view.host.querySelector(".message-markdown");
+      assert.equal(body.querySelector("strong").textContent,"project body");
+      assert.equal(body.classList.contains("text-sm"),true);
+      assert.equal(body.classList.contains("text-message"),false);
+      assert.equal(body.classList.contains(className?.includes("text-muted-foreground")?"text-muted-foreground":className?"text-foreground/90":"text-foreground"),true);
+      if(className)assert.equal(body.classList.contains("text-foreground"),false);
+      if(className?.includes("mt-1"))assert.equal(body.classList.contains("mt-1"),true);
+      assert.equal(body.querySelector("a").getAttribute("href"),"https://example.test/page");
+      assert.notEqual(body.parentElement.className,className??"text-sm");
+      assert.equal(view.requests.filter(request=>request.method==="POST").length,0);
+    }finally{await view.close();}
+  });
 }
 
 test("Native Pulse original profile Message opens the governed ACTIVE channel, never an empty compose page",async()=>{

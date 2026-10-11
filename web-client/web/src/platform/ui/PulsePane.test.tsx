@@ -11,6 +11,7 @@ import { createBffClient } from "@client-kit/platform/client";
 import { PulsePane } from "./PulsePane";
 import { usePulseHost } from "@client-kit/platform/react/pulse";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
+import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
 
 const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
 vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
@@ -18,7 +19,6 @@ vi.mock("../bff-client",()=>({bff:{profile:api.profile,discoverableWorkspaces:ap
   publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value}));
 // This batch exercises the original Pulse/Profile/Message consumer, not post editing.
 vi.mock("./ChannelPane",()=>({Composer:()=>null}));
-vi.mock("@/features/chat/ui/MessageContent",()=>({MessageContent:({content}:{content:string})=><p>{content}</p>}));
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
 let root:Root,host:HTMLDivElement,cache:QueryClient;
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -39,6 +39,21 @@ beforeEach(()=>{
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 });
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+it.each([undefined,"mt-1 text-sm text-foreground/90","text-sm text-muted-foreground"])("passes original project rich-content classes %s to the actual Web Markdown body",async className=>{
+  const client=createBffClient({send:async()=>({status:200,body:{maxParticipants:9,items:[]}})});
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en"><TooltipProvider>
+    <PulsePane scopeKey="tenant:viewer" onStartDm={vi.fn()}><ProjectRichContent className={className} content="Original **project body** with [a link](https://example.test/page)"/></PulsePane>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+  await vi.waitFor(()=>expect(host.querySelector(".message-markdown strong")?.textContent).toBe("project body"));
+  const body=host.querySelector(".message-markdown")!;
+  expect(body.classList.contains("text-sm")).toBe(true);
+  expect(body.classList.contains("text-message")).toBe(false);
+  expect(body.classList.contains(className?.includes("text-muted-foreground")?"text-muted-foreground":className?"text-foreground/90":"text-foreground")).toBe(true);
+  if(className)expect(body.classList.contains("text-foreground")).toBe(false);
+  if(className?.includes("mt-1"))expect(body.classList.contains("mt-1")).toBe(true);
+  expect(body.querySelector("a")?.getAttribute("href")).toBe("https://example.test/page");
+  expect(body.parentElement?.className).not.toBe(className??"text-sm");
+});
 async function mount(start:(pubkey:string)=>Promise<void>) {
   const client=createBffClient({send:async(request)=>{
     expect(request.path).toMatch(/^\/api\/v1\/conversation-participants/);
