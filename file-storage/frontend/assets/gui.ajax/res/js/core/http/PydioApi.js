@@ -278,6 +278,12 @@ class PydioApi{
     // Freeze the existing published version through the original native API.
     // The boot hint selects transport, never authorizes a resource or action.
     async downloadNativeHead(node) {
+        const {target, versionId} = await this.nativeHeadRevision(node);
+        if (!this.isVersionTargetCurrent(node, target)) throw new Error(this.getPydioObject().MessageHash[391]);
+        return this.openVersion(node, versionId);
+    }
+
+    async nativeHeadRevision(node) {
         const pydio = this.getPydioObject();
         const target = this.getVersionTarget(node);
         const current = () => this.isVersionTargetCurrent(node, target);
@@ -307,7 +313,7 @@ class PydioApi{
         }
         const heads = result.Versions.filter(version => version.IsHead === true);
         if (heads.length !== 1) throw refused();
-        return this.openVersion(node, heads[0].VersionId);
+        return {target, versionId: heads[0].VersionId};
     }
 
     /**
@@ -568,6 +574,28 @@ class PydioApi{
     }
 
     getPlainContent(node, contentCallback) {
+        if (this.getPydioObject().Parameters.get('other')?.nativeReadRequired === true) {
+            const pydio = this.getPydioObject();
+            // Fixed-version read is admitted by the native backend; no upload,
+            // draft creation or automatic retry occurs when this editor opens.
+            const requestKey = uuid4();
+            return this.nativeHeadRevision(node).then(async ({target, versionId}) => {
+                const current = () => this.isVersionTargetCurrent(node, target);
+                if (!current()) throw new Error(pydio.MessageHash[391]);
+                const url = await this.buildPresignedGetUrl(node, null, '', {
+                    Bucket: this.getBucket(), Key: target.slug + target.path, VersionId: versionId,
+                    ResponseContentType: 'text/plain', ResponseCacheControl: 'no-cache'
+                });
+                const endpoint = new URL(url, document.location.href);
+                if (!current() || endpoint.origin !== document.location.origin || endpoint.username || endpoint.password) throw new Error(pydio.MessageHash[391]);
+                const response = await fetch(endpoint.href, {credentials: 'same-origin', redirect: 'error',
+                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.read@v1'}});
+                if (!response.ok || !current()) throw new Error(pydio.MessageHash[391]);
+                const content = await response.text();
+                if (!current()) throw new Error(pydio.MessageHash[391]);
+                contentCallback(content);
+            }).catch(error => pydio.UI.displayMessage('ERROR', error.message || error));
+        }
         return new Promise(resolve => resolve(this.getVersionTarget(node))).then(target => {
             return PydioApi.getRestClient().getOrUpdateJwt().then(jwt => awsLoader().then(({S3}) => new Promise((resolve, reject) => {
                 if (!this.isVersionTargetCurrent(node, target)) {

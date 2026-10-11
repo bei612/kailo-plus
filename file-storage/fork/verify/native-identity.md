@@ -2563,3 +2563,66 @@ ComputeBootConf，两配置场景证明受管提示有消费者且不导出私�
 没有镜像、部署、菜单激活或新安装包。原 iframe 精确 CSP 和独立 OIDC 登录
 代码未修改；Desktop 跨站 iframe 与 Strict Cookie 的安全会话取得仍未验收，
 不通过放宽 Cookie/CSRF、复制平台 Cookie 或共享身份解除这一门禁。
+
+## 2026-10-11 原文本打开消费固定版本 HUMAN read
+
+本批基线 `3b5a589e8b8fba2b4241d485ef1231a9aead45a1`，沿 DD-48/89/90/94、
+`03` §6 与前节既有 HUMAN 同请求读取，不增加首传或延迟写合同。固定上游
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::getPlainContent`
+是 editor.text、editor.codemirror（含 badge）、editor.ckeditor、editor.bnote
+和 editor.browser 已有正文入口；不是无调用方辅助函数。
+
+四步影响结论：
+
+1. 原受管安装 getPlainContent 仍发无固定版本、无 HUMAN read 头的 S3 GET，
+   被现有正文边界拒绝。复用前批普通下载的原 NodeVersions 唯一 published
+   head 选择，固定 VersionId 后向原 S3 路径携带同请求 key 和
+   `file_storage.read@v1`，后端仍负责实际身份、scope、准入、PEP 与 receipt。
+2. `nativeHeadRevision` 由普通下载和文本读取共同消费；上一批普通下载行为
+   与固定版本检查不回退。非敏 boot 提示不变，独立实例原 getObject 保留。
+   原节点文件名、text/plain 与 no-cache 参数保留；只在原 contentCallback
+   前完成同用户、同 UUID/路径/仓库检查，不改编辑器布局或页面。
+3. 查询后 head 变化不改请求 revision；正文未完整取得、服务拒绝、请求异常、
+   取流途中换用户或节点变更均不调用 contentCallback，也不重试、fallback
+   latest、写 draft 或提交新操作。零字节内容保持有效空字符串，不误作无结果。
+4. 正文由已有后端 MaxResponseBytes 有界读取与最终 PEP/ACK 后披露。浏览器
+   接受原返回文本，不以 native JWT 或 boot 提示替代治理。保存仍经原
+   postPlainTextContent/S3 写入边界拒绝，未开放受管首传、覆盖、归档或延迟删除；
+   无新状态、配置、凭据、实体、schema、工作流或迁移。
+
+完整 FILE_STORAGE 上架阻断已沿实际实现核对并交主线：
+`contracts/adapter/file_storage.v1/write_input.schema.json` 要求既有持久输入
+revision，`adapter/src/write-execution.mjs::executeWrite` 仅调用原 Promote，
+`gateway/restv2/native-human-upload.go::platformPromoteVersion` 提交前已要求
+真实 draft/owner/location；首次 PUT 仍由 AuthorizeNativeDataMutation 拒绝。
+不能先独立上传草稿再宣称受管 write。原 NativeHumanActionResult 只有既有
+readAdmission，首传 writer 的通用可信准入和终态闭包另由主线处理。
+当前 adapter MCP 只有 node/write/delete 路径，七必选中的完整 share 及
+已关闭的新延迟 delete 尚未闭合；没有创建 registration 或强行激活绑定。
+
+实现后经与知识队友协调，确认原 `kailo-cells-closure-kxbrvt` 仅 sleep，
+4 CPU/8 GiB、MemorySwap 同额，主机 available 37 GiB、load 7.31，使用原
+Data 私有输入，没有另开容器、编译或占用 Rust 缓存。实际命令：
+
+```text
+node --test --test-name-pattern="governed original (single-file download|plain-text reader)" file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向 28 tests/28 pass、exit 0，含上一批下载 15 子场景和本批文本 11 子场景。
+原 PydioApi 类被实际执行，DOM、网络及 SDK 为 fixture；完整文本/零字节/
+head 变更、两阶段拒绝、网络失败、部分文本、用户/节点变化及独立 S3 均覆盖。
+仅私有源删除 text 完成后的 current 检查，exit 1，准确捕获两个途中切换
+仍披露正文的反例；正式源未破坏。恢复原字节后 28/28、exit 0，实际私有
+PydioApi 与检查输入同正式两源码 cmp 一致，精确候选 diff --check 通过。
+
+原日志在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/native-download.p5qkbC/`：
+
+- `text-positive.log`：`54667267dc705b686c12ecab2dbe60629085486e7da5b60a9baaaef8d061723a`，exit 0。
+- `text-negative.log`：`5d1f645cd3eb00cd9357edcd63ecde2634155f15414a2e8e8055b1342dbe033e`，exit 1。
+- `text-restored.log`：`16dbce86381415ed4e7f11d27dfb2a58d80a998ad745c7f1ac290aaedc6a1d96`，exit 0。
+
+后续同一产物可集中验收原普通单文件下载、固定历史版本下载与文本打开，
+但本批没有生产打包、部署、真实浏览器/Core、全量门禁或完整 conformance；
+不把源码/VM 夹具通过称为这些业务路径已经在线可用或三组件已上架。

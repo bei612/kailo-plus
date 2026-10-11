@@ -2652,6 +2652,47 @@ test('governed original single-file download freezes the published head before n
   });
 });
 
+test('governed original plain-text reader consumes only the frozen admitted revision', async t => {
+  for (const mode of ['complete','zero-bytes','head-changed','metadata-denied','body-denied','network','body-error','user-during-body','moved-during-body','unknown-head']) {
+    await t.test(mode,async()=>{
+      const {api,node,state,sandbox,pydio}=await nativeDownloadFixture();
+      pydio.Parameters.set('other',{nativeReadRequired:true}); pydio.Parameters.set('ENDPOINT_REST_API_V2','/a');
+      sandbox.document={location:{origin:'https://cells.example.invalid',href:'https://cells.example.invalid/'}};
+      sandbox.URL=URL; sandbox.uuid4=()=>ids[5];
+      const disclosed=[]; let reads=0; let metadata=0;
+      sandbox.fetch=async(url,options)=>{
+        assert.equal(options.credentials,'same-origin'); assert.equal(options.redirect,'error');
+        if(options.method==='POST'){
+          metadata++; assert.equal(options.headers.authorization,'Bearer native-current-user');
+          return {ok:mode!=='metadata-denied',json:async()=>({Versions:[{VersionId:'frozen-text-revision',IsHead:mode==='unknown-head'?'new-enum':true,Draft:false}]})};
+        }
+        reads++; assert.equal(new URL(url).searchParams.get('versionId'),'frozen-text-revision');
+        assert.equal(options.headers['Idempotency-Key'],ids[5]); assert.equal(options.headers['X-Kailo-Native-Read'],'file_storage.read@v1');
+        if(mode==='network') throw new Error('native connection lost');
+        return {ok:mode!=='body-denied',async text(){
+          if(mode==='body-error') throw new Error('native body incomplete');
+          if(mode==='user-during-body') pydio.user={...pydio.user};
+          if(mode==='moved-during-body') node.path='/other.txt';
+          if(mode==='head-changed') node.getMetadata().set('etag','newer-head');
+          return mode==='zero-bytes'?'':'真实固定正文';
+        }};
+      };
+      await api.getPlainContent(node,value=>disclosed.push(value));
+      const succeeds=['complete','zero-bytes','head-changed'].includes(mode);
+      assert.deepEqual(disclosed,succeeds?[mode==='zero-bytes'?'':'真实固定正文']:[]);
+      assert.equal(metadata,1); assert.equal(reads,['metadata-denied','unknown-head'].includes(mode)?0:1);
+      assert.equal(state.errors.length,succeeds?0:1); assert.deepEqual(state.reads,[]); assert.deepEqual(state.writes,[]);
+      if(reads){assert.equal(state.signed[0].params.ResponseContentType,'text/plain');assert.equal(state.signed[0].params.ResponseCacheControl,'no-cache');}
+    });
+  }
+  await t.test('independent plain-text reader keeps the native S3 consumer',async()=>{
+    const {api,node,state}=await nativeDownloadFixture(); const disclosed=[];
+    await api.getPlainContent(node,value=>disclosed.push(value));
+    assert.deepEqual(disclosed,['original native text']); assert.equal(state.reads.length,1);
+    assert.equal(state.reads[0].VersionId,undefined); assert.deepEqual(state.errors,[]);
+  });
+});
+
 test('original native download, archive, preview and version consumers use the loaded signer', async t => {
   for (const mode of ['file', 'folder', 'selection', 'mobile', 'preview', 'version', 'cache']) {
     await t.test(mode, async () => {
