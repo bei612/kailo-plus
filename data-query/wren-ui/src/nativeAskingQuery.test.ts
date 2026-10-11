@@ -88,9 +88,13 @@ describe('original Asking SQLite task and SQL receipt ownership', () => {
   });
   test('a different HUMAN, project or changed query ID cannot register or overwrite the original task', async () => {
     const key = randomUUID();
+    await db('project').insert({ id: 8 });
     expect(
       await repository.registerNativeQuery(queryId, 8, scope, key),
     ).toBeNull();
+    await expect(
+      repository.registerNativeQuery(queryId, 9, scope, key),
+    ).rejects.toThrow('NATIVE_BINDING_PROVENANCE_UNAVAILABLE');
     expect(
       await repository.registerNativeQuery(
         queryId,
@@ -171,6 +175,7 @@ describe('original model preview and Asking receipt consumers', () => {
       nativeHumanToken: 'fixture-original-human',
       projectService: { getCurrentProject: jest.fn(async () => ({ id: 7 })) },
       askingTaskRepository: {
+        findOneBy: jest.fn(async () => structuredClone(task)),
         registerNativeQuery: jest.fn(
           async (_task, _project, _scope, registered) => {
             task.detail.nativeQueries = [registered];
@@ -492,5 +497,77 @@ describe('original model preview and Asking receipt consumers', () => {
       await resolver.rerunAskingTask(null, { responseId: 1 }, ctx),
     ).toEqual({ id: taskId });
     expect(ctx.askingService.rerunAskingTask).not.toHaveBeenCalled();
+  });
+  test('the original SQL callback derives adjustment ownership from the persisted task, not another client field', async () => {
+    task.detail.adjustment = true;
+    jest
+      .spyOn(NativeHumanQuery.prototype, 'previewSql')
+      .mockImplementation(async (...input) => {
+        await input[10]();
+        return {
+          submission: { gateState: 'WAITING', dispatchState: 'NOT_DISPATCHED' },
+        };
+      });
+    await new ModelResolver().previewSql(null, args(), ctx);
+    expect(
+      AskingResolver.prototype.authorizeNativeAskingTask,
+    ).toHaveBeenCalledWith(taskId, ctx, true);
+    expect(ctx.askingTaskRepository.registerNativeQuery).toHaveBeenCalledWith(
+      taskId,
+      7,
+      task.detail.nativeScope,
+      key,
+    );
+  });
+  test('adjustment GET only observes; existing rerun cannot replace a task with an unsettled child query', async () => {
+    const resolver = prepareRerun();
+    task.detail.adjustment = true;
+    ctx.askingService.getAdjustmentTask = jest.fn(async () => ({
+      queryId: taskId,
+      status: 'STOPPED',
+    }));
+    ctx.askingService.rerunAdjustThreadResponseAnswer = jest.fn();
+    jest
+      .spyOn(resolver as any, 'authorizeNativeAdjustmentSource')
+      .mockResolvedValue(undefined);
+    (bindingServiceCall as jest.Mock).mockResolvedValue({
+      submission: { gateState: 'WAITING', dispatchState: 'NOT_DISPATCHED' },
+    });
+    expect(
+      await resolver.getAdjustmentTask(null, { taskId }, ctx),
+    ).toMatchObject({
+      status: 'STOPPED',
+      error: { message: 'NATIVE_EXECUTION_UNKNOWN' },
+      sql: null,
+    });
+    expect(
+      await resolver.rerunAdjustThreadResponseAnswer(
+        null,
+        { responseId: 1 },
+        ctx,
+      ),
+    ).toBe(true);
+    expect(
+      ctx.askingService.rerunAdjustThreadResponseAnswer,
+    ).not.toHaveBeenCalled();
+    (bindingServiceCall as jest.Mock).mockResolvedValue({
+      submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+      terminalStatus: 'COMPLETED',
+    });
+    await resolver.rerunAdjustThreadResponseAnswer(
+      null,
+      { responseId: 1 },
+      ctx,
+    );
+    expect(
+      ctx.askingService.rerunAdjustThreadResponseAnswer,
+    ).toHaveBeenCalledWith(
+      1,
+      7,
+      expect.objectContaining({
+        nativeHumanToken: ctx.nativeHumanToken,
+        nativePreviousQueries: [key],
+      }),
+    );
   });
 });

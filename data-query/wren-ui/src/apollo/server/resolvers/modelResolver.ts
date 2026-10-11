@@ -1582,8 +1582,20 @@ export class ModelResolver {
         nativeTaskId === undefined
           ? undefined
           : new (await import('./askingResolver')).AskingResolver();
+      const callbackTask = asking
+        ? await ctx.askingTaskRepository.findOneBy({
+            queryId: nativeTaskId,
+            projectId: project.id,
+          })
+        : undefined;
+      const callbackDetail = callbackTask?.detail;
+      const adjustment = Boolean(
+        callbackDetail &&
+          'adjustment' in callbackDetail &&
+          callbackDetail.adjustment,
+      );
       const task = asking
-        ? await asking.authorizeNativeAskingTask(nativeTaskId, ctx)
+        ? await asking.authorizeNativeAskingTask(nativeTaskId, ctx, adjustment)
         : undefined;
       if (asking && !task)
         throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
@@ -1594,6 +1606,7 @@ export class ModelResolver {
             const current = await asking.authorizeNativeAskingTask(
               nativeTaskId,
               ctx,
+              adjustment,
             );
             if (
               canonical(current.detail.nativeScope) !==
@@ -1648,6 +1661,7 @@ export class ModelResolver {
         const current = await asking.authorizeNativeAskingTask(
           nativeTaskId,
           ctx,
+          adjustment,
         );
         if (!current.detail.nativeQueries?.includes(idempotencyKey))
           throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');

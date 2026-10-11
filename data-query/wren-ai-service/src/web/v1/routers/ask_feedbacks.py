@@ -1,7 +1,9 @@
 import uuid
 from dataclasses import asdict
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+
+from src.providers.engine.native_identity import NativeIdentityUnavailable, native_ask_transport, run_native_ask
 
 from src.globals import (
     ServiceContainer,
@@ -27,8 +29,18 @@ async def ask_feedback(
     background_tasks: BackgroundTasks,
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
+    request: Request = None,
 ) -> AskFeedbackResponse:
     query_id = str(ask_feedback_request.native_task_id or uuid.uuid4())
+    try:
+        native = native_ask_transport(
+            request.headers if request is not None else {},
+            ask_feedback_request.native_task_id,
+            ask_feedback_request.project_id,
+            ask_feedback_request.mdl_hash,
+        )
+    except NativeIdentityUnavailable:
+        raise HTTPException(status_code=401, detail="Native request identity unavailable") from None
     if query_id in service_container.ask_feedback_service._ask_feedback_results:
         raise HTTPException(status_code=409, detail="Native task ID already registered")
     ask_feedback_request.query_id = query_id
@@ -39,6 +51,8 @@ async def ask_feedback(
     )
 
     background_tasks.add_task(
+        run_native_ask,
+        native,
         service_container.ask_feedback_service.ask_feedback,
         ask_feedback_request,
         service_metadata=asdict(service_metadata),

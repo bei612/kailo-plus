@@ -1533,6 +1533,7 @@ export class AskingService implements IAskingService {
         question: originalThreadResponse.question,
         originalThreadResponseId: originalThreadResponse.id,
         nativeScope: configurations.nativeScope,
+        nativeHumanToken: configurations.nativeHumanToken,
         authorizeNative: configurations.authorizeNative,
         authorizeSource: configurations.authorizeSource
           ? async () => {
@@ -1583,6 +1584,8 @@ export class AskingService implements IAskingService {
         projectId,
         configurations: { language: configurations.language },
         nativeScope: configurations.nativeScope,
+        nativeHumanToken: configurations.nativeHumanToken,
+        nativePreviousQueries: configurations.nativePreviousQueries,
         authorizeNative: configurations.authorizeNative,
         authorizeSource: configurations.authorizeSource,
       });

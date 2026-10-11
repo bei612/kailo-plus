@@ -6,9 +6,10 @@ from uuid import UUID
 from cachetools import TTLCache
 from fastapi import HTTPException
 from langfuse.decorators import observe
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from src.core.pipeline import BasicPipeline
+from src.providers.engine.native_identity import NativeQueryPending
 from src.utils import trace_metadata
 from src.web.v1.services import BaseRequest
 from src.web.v1.services.ask import AskError, AskResult
@@ -19,6 +20,7 @@ logger = logging.getLogger("wren-ai-service")
 # POST /v1/ask-feedbacks
 class AskFeedbackRequest(BaseRequest):
     native_task_id: Optional[UUID] = None
+    mdl_hash: Optional[str] = Field(default=None, validation_alias=AliasChoices("mdl_hash", "id"))
     question: str
     tables: List[str]
     sql_generation_reasoning: str
@@ -278,6 +280,18 @@ class AskFeedbackService:
 
             return results
 
+        except NativeQueryPending:
+            # This original AI job has exited, not cancelled its SQL. The
+            # existing UI verifies its child query receipts before rerun.
+            if not self._is_stopped(query_id, self._ask_feedback_results):
+                self._ask_feedback_results[query_id] = AskFeedbackResultResponse(
+                    status="stopped",
+                    error=AskError(code="OTHERS", message="NATIVE_EXECUTION_UNKNOWN"),
+                    trace_id=trace_id,
+                )
+            results["metadata"]["error_type"] = "OTHERS"
+            results["metadata"]["error_message"] = "Native query outcome unavailable"
+            return results
         except Exception as e:
             logger.exception(f"ask feedback pipeline - OTHERS: {e}")
 

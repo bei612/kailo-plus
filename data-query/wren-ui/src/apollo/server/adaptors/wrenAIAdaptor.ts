@@ -157,7 +157,10 @@ export interface IWrenAIAdaptor {
   /**
    * Ask feedback APIs
    */
-  createAskFeedback(input: AskFeedbackInput): Promise<AsyncQueryResponse>;
+  createAskFeedback(
+    input: AskFeedbackInput,
+    native?: NativeAskTransport & { deploymentHash: string },
+  ): Promise<AsyncQueryResponse>;
   getAskFeedbackResult(queryId: string): Promise<AskFeedbackResult>;
   cancelAskFeedback(queryId: string): Promise<void>;
 }
@@ -765,10 +768,12 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
 
   public async createAskFeedback(
     input: AskFeedbackInput,
+    native?: NativeAskTransport & { deploymentHash: string },
   ): Promise<AsyncQueryResponse> {
     try {
       const body = {
         ...(input.queryId ? { native_task_id: input.queryId } : {}),
+        ...(native ? { id: native.deploymentHash } : {}),
         question: input.question,
         tables: input.tables,
         sql_generation_reasoning: input.sqlGenerationReasoning,
@@ -779,9 +784,24 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.post(
         `${this.wrenAIBaseEndpoint}/v1/ask-feedbacks`,
         body,
+        native
+          ? {
+              headers: {
+                'x-wren-native-authorization': `Bearer ${native.humanToken}`,
+                'x-wren-native-poll-interval-ms': String(
+                  native.pollingIntervalMs,
+                ),
+              },
+              maxRedirects: 0,
+            }
+          : undefined,
       );
       return { queryId: res.data.query_id };
     } catch (err: any) {
+      if (native)
+        throw new Error(
+          'Original native adjustment acknowledgement unavailable',
+        );
       logger.debug(
         `Got error when creating ask feedback: ${getAIServiceError(err)}`,
       );

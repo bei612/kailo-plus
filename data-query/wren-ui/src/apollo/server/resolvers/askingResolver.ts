@@ -190,8 +190,9 @@ export class AskingResolver {
     queryId: string,
     ctx: IContext,
     recoverMissing = false,
+    adjustment = false,
   ) {
-    const task = await this.authorizeNativeAskingTask(queryId, ctx);
+    const task = await this.authorizeNativeAskingTask(queryId, ctx, adjustment);
     if (!task) return [];
     if (
       recoverMissing &&
@@ -265,7 +266,11 @@ export class AskingResolver {
           input.cache,
           false,
           async () => {
-            const current = await this.authorizeNativeAskingTask(queryId, ctx);
+            const current = await this.authorizeNativeAskingTask(
+              queryId,
+              ctx,
+              adjustment,
+            );
             if (
               (current.detail.status !== AskResultStatus.STOPPED &&
                 current.detail.status !== AskResultStatus.FAILED) ||
@@ -282,7 +287,11 @@ export class AskingResolver {
       if (!state.valid || (!state.terminal && !state.denied))
         throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
     }
-    const current = await this.authorizeNativeAskingTask(queryId, ctx);
+    const current = await this.authorizeNativeAskingTask(
+      queryId,
+      ctx,
+      adjustment,
+    );
     if (canonical(current.detail.nativeQueries ?? []) !== canonical(keys))
       throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
     return keys;
@@ -942,6 +951,7 @@ export class AskingResolver {
       {
         language: WrenAILanguage[project.language] || WrenAILanguage.EN,
         nativeScope,
+        nativeHumanToken: nativeScope ? ctx.nativeHumanToken : undefined,
         authorizeNative: nativeScope
           ? async (id) => {
               await authorizeSource();
@@ -984,12 +994,42 @@ export class AskingResolver {
         throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
     };
     await authorizeSource();
+    let nativePreviousQueries: string[] | undefined;
+    if (nativeScope) {
+      const response = await askingService.getResponse(responseId, project);
+      const previous =
+        response &&
+        (await ctx.askingTaskRepository.findOneBy({
+          id: response.askingTaskId,
+          projectId: project.id,
+        }));
+      if (!previous)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      try {
+        nativePreviousQueries = await this.settledNativeAskingQueries(
+          previous.queryId,
+          ctx,
+          true,
+          true,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof NativeQueryRefusal) ||
+          error.code !== 'NATIVE_EXECUTION_UNKNOWN'
+        )
+          throw error;
+        await this.authorizeNativeAskingTask(previous.queryId, ctx, true);
+        return true;
+      }
+    }
     await askingService.rerunAdjustThreadResponseAnswer(
       responseId,
       project.id,
       {
         language: WrenAILanguage[project.language] || WrenAILanguage.EN,
         nativeScope,
+        nativeHumanToken: nativeScope ? ctx.nativeHumanToken : undefined,
+        nativePreviousQueries,
         authorizeNative: nativeScope
           ? async (id) => {
               await authorizeSource();
@@ -1012,6 +1052,31 @@ export class AskingResolver {
     await this.authorizeNativeAskingTask(taskId, ctx, true);
     const adjustmentTask = await askingService.getAdjustmentTask(taskId);
     await this.authorizeNativeAskingTask(taskId, ctx, true);
+    if (
+      adjustmentTask &&
+      ['FINISHED', 'FAILED', 'STOPPED'].includes(adjustmentTask.status)
+    ) {
+      try {
+        await this.settledNativeAskingQueries(taskId, ctx, false, true);
+      } catch (error) {
+        if (
+          !(error instanceof NativeQueryRefusal) ||
+          error.code !== 'NATIVE_EXECUTION_UNKNOWN'
+        )
+          throw error;
+        return {
+          queryId: taskId,
+          status: AskFeedbackStatus.STOPPED,
+          error: {
+            code: GeneralErrorCodes.AI_SERVICE_UNDEFINED_ERROR,
+            message: 'NATIVE_EXECUTION_UNKNOWN',
+          },
+          sql: null,
+          traceId: adjustmentTask.traceId,
+          invalidSql: null,
+        };
+      }
+    }
     return {
       queryId: adjustmentTask?.queryId,
       status: adjustmentTask?.status,
@@ -1554,17 +1619,11 @@ export class AskingResolver {
         parent.askingTaskId,
       );
       if (!adjustmentTask) return null;
-      await this.authorizeNativeAskingTask(adjustmentTask.queryId, ctx, true);
-      return {
-        queryId: adjustmentTask?.queryId,
-        status: adjustmentTask?.status,
-        error: adjustmentTask?.error,
-        sql: adjustmentTask?.response?.[0]?.sql,
-        traceId: adjustmentTask?.traceId,
-        invalidSql: adjustmentTask?.invalidSql
-          ? safeFormatSQL(adjustmentTask.invalidSql)
-          : null,
-      };
+      return this.getAdjustmentTask(
+        null,
+        { taskId: adjustmentTask.queryId },
+        ctx,
+      );
     },
   });
 

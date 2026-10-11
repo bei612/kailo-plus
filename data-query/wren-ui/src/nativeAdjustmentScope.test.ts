@@ -3,6 +3,7 @@ import { AskFeedbackStatus } from './apollo/server/models/adaptor';
 import { AskingService } from './apollo/server/services/askingService';
 import { WrenAIAdaptor } from './apollo/server/adaptors/wrenAIAdaptor';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 
 describe('original HUMAN adjustment provenance and dispatch', () => {
   let previous: string | undefined;
@@ -11,7 +12,8 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
   let deps: any;
   let tracker: AdjustmentBackgroundTaskTracker;
   const scope = {
-    bindingId: 'binding',
+    bindingId: randomUUID(),
+    generation: 1,
     identityScope: 'human',
     metadataReference: { hash: 'deploy', digest: 'mdl' },
   };
@@ -41,7 +43,18 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
         cancelAskFeedback: jest.fn(),
       },
       askingTaskRepository: {
-        transaction: jest.fn(async () => ({})),
+        transaction: jest.fn(async () =>
+          jest.fn((table) => {
+            expect(table).toBe('project');
+            return {
+              where: jest.fn(() => ({
+                forUpdate: jest.fn(() => ({
+                  first: jest.fn(async () => ({ id: 7, native_binding_fences: null })),
+                })),
+              })),
+            };
+          }),
+        ),
         commit: jest.fn(),
         rollback: jest.fn(),
         createOne: jest.fn(async (data) => (task = { ...data, id: 3 })),
@@ -76,6 +89,7 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
       sqlGenerationReasoning: 'reason',
       configurations: { language: 'English' },
       nativeScope: scope,
+      nativeHumanToken: 'fixture-adjustment-human',
       authorizeSource: jest.fn(async () => {}),
       authorizeNative: jest.fn(async (queryId) => {
         expect(task.queryId).toBe(queryId);
@@ -98,6 +112,15 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
     expect(input.authorizeNative).toHaveBeenCalledWith(result.queryId);
     expect(deps.askingTaskRepository.commit).toHaveBeenCalledTimes(1);
     expect(deps.wrenAIAdaptor.createAskFeedback).toHaveBeenCalledTimes(1);
+    expect(deps.wrenAIAdaptor.createAskFeedback).toHaveBeenCalledWith(
+      expect.not.objectContaining({ nativeHumanToken: input.nativeHumanToken }),
+      expect.objectContaining({
+        humanToken: input.nativeHumanToken,
+        projectId: input.projectId,
+        deploymentHash: scope.metadataReference.hash,
+      }),
+    );
+    expect(JSON.stringify(task)).not.toContain(input.nativeHumanToken);
   });
 
   it('preserves the original independent adjustment without inventing HUMAN provenance', async () => {
@@ -113,15 +136,17 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
     expect(task.detail.nativeScope).toBeUndefined();
   });
 
-  it.each(['nativeScope', 'authorizeNative', 'authorizeSource'])(
-    'refuses bound create without %s before native dispatch',
-    async (key) => {
-      delete input[key];
-      await expect(tracker.createAdjustmentTask(input)).rejects.toThrow();
-      expect(deps.wrenAIAdaptor.createAskFeedback).not.toHaveBeenCalled();
-      expect(deps.askingTaskRepository.createOne).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'nativeScope',
+    'authorizeNative',
+    'authorizeSource',
+    'nativeHumanToken',
+  ])('refuses bound create without %s before native dispatch', async (key) => {
+    delete input[key];
+    await expect(tracker.createAdjustmentTask(input)).rejects.toThrow();
+    expect(deps.wrenAIAdaptor.createAskFeedback).not.toHaveBeenCalled();
+    expect(deps.askingTaskRepository.createOne).not.toHaveBeenCalled();
+  });
 
   it('lost create acknowledgement retains the actual fixed task for observation', async () => {
     deps.wrenAIAdaptor.createAskFeedback.mockRejectedValue(
@@ -274,6 +299,66 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
     expect((tracker as any).trackedTasks.size).toBe(0);
   });
 
+  it('new child SQL registered after observation prevents adjustment query replacement under the original row lock', async () => {
+    await tracker.createAdjustmentTask(input);
+    task.detail.status = AskFeedbackStatus.STOPPED;
+    const originalId = task.queryId;
+    deps.askingTaskRepository.lockQuery.mockImplementation(async () => ({
+      ...task,
+      detail: { ...task.detail, nativeQueries: ['late-original-query'] },
+    }));
+    await expect(
+      tracker.rerunAdjustmentTask({
+        ...input,
+        threadResponseId: response.id,
+        nativePreviousQueries: [],
+      }),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(task.queryId).toBe(originalId);
+    expect(deps.wrenAIAdaptor.createAskFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it('locked replacement status prevents a second adjustment AI dispatch', async () => {
+    await tracker.createAdjustmentTask(input);
+    task.detail.status = AskFeedbackStatus.STOPPED;
+    deps.askingTaskRepository.lockQuery.mockImplementation(async () => ({
+      ...task,
+      detail: { ...task.detail, status: AskFeedbackStatus.UNDERSTANDING },
+    }));
+    await expect(
+      tracker.rerunAdjustmentTask({ ...input, threadResponseId: response.id }),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(deps.wrenAIAdaptor.createAskFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it('actual feedback adaptor keeps HUMAN bearer only in private headers and sanitizes lost acknowledgements', async () => {
+    const adaptor = new WrenAIAdaptor({ wrenAIBaseEndpoint: 'native-fixture' });
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ data: { query_id: 'original-feedback' } });
+    const native = {
+      humanToken: 'fixture-adjustment-human',
+      projectId: 7,
+      pollingIntervalMs: 23,
+      deploymentHash: 'a'.repeat(40),
+    };
+    await adaptor.createAskFeedback(input, native);
+    const [, body, options] = post.mock.calls[0];
+    expect(body).toMatchObject({ id: native.deploymentHash, project_id: '7' });
+    expect(JSON.stringify(body)).not.toContain(native.humanToken);
+    expect(options).toMatchObject({
+      maxRedirects: 0,
+      headers: {
+        'x-wren-native-authorization': 'Bearer fixture-adjustment-human',
+        'x-wren-native-poll-interval-ms': '23',
+      },
+    });
+    post.mockRejectedValue(new Error(native.humanToken));
+    await expect(adaptor.createAskFeedback(input, native)).rejects.toThrow(
+      'Original native adjustment acknowledgement unavailable',
+    );
+  });
+
   it('cancel rechecks authorization after resolving the actual project task', async () => {
     const service: any = Object.create(AskingService.prototype);
     service.currentTask = jest.fn(async () => task);
@@ -311,6 +396,7 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
         {
           language: 'English',
           nativeScope: scope,
+          nativeHumanToken: input.nativeHumanToken,
           authorizeNative: input.authorizeNative,
           authorizeSource: async () => {
             current = { ...original, sql: 'select changed from model' };

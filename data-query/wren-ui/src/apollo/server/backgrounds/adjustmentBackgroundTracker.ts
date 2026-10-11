@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { isEqual } from 'lodash';
 import { GeneralErrorCodes } from '../utils/error';
 import type { NativeAskingScope } from '../repositories/askingTaskRepository';
+import { lockNativeBinding } from '../repositories/projectRepository';
 import {
   canonical,
   NativeQueryRefusal,
@@ -55,6 +56,7 @@ export type CreateAdjustmentTaskInput = AskFeedbackInput & {
   originalThreadResponseId: number;
   configurations: { language: string };
   nativeScope?: NativeAskingScope;
+  nativeHumanToken?: string;
   authorizeNative?: (queryId: string) => Promise<unknown>;
   authorizeSource?: () => Promise<void>;
 };
@@ -65,6 +67,8 @@ export type RerunAdjustmentTaskInput = {
   projectId: number;
   configurations: { language: string };
   nativeScope?: NativeAskingScope;
+  nativeHumanToken?: string;
+  nativePreviousQueries?: string[];
   authorizeNative?: (queryId: string) => Promise<unknown>;
   authorizeSource?: () => Promise<void>;
 };
@@ -126,7 +130,10 @@ export class AdjustmentBackgroundTaskTracker
       const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
       if (
         bound &&
-        (!input.nativeScope || !input.authorizeNative || !input.authorizeSource)
+        (!input.nativeScope ||
+          !input.authorizeNative ||
+          !input.authorizeSource ||
+          !input.nativeHumanToken)
       )
         throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
       await input.authorizeSource?.();
@@ -199,10 +206,23 @@ export class AdjustmentBackgroundTaskTracker
           },
         );
         try {
-          const response = await this.wrenAIAdaptor.createAskFeedback({
-            ...input,
-            queryId,
-          });
+          const response = await this.wrenAIAdaptor.createAskFeedback(
+            {
+              queryId,
+              question: input.question,
+              sql: input.sql,
+              tables: input.tables,
+              sqlGenerationReasoning: input.sqlGenerationReasoning,
+              projectId: input.projectId,
+              configurations: input.configurations,
+            },
+            {
+              humanToken: input.nativeHumanToken,
+              projectId: input.projectId,
+              pollingIntervalMs: this.pollingInterval,
+              deploymentHash: input.nativeScope.metadataReference.hash,
+            },
+          );
           if (response?.queryId !== queryId)
             logger.warn('Original adjustment acknowledgement unavailable');
         } catch {
@@ -261,7 +281,10 @@ export class AdjustmentBackgroundTaskTracker
     const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
     if (
       bound &&
-      (!input.nativeScope || !input.authorizeNative || !input.authorizeSource)
+      (!input.nativeScope ||
+        !input.authorizeNative ||
+        !input.authorizeSource ||
+        !input.nativeHumanToken)
     )
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     if (
@@ -329,23 +352,69 @@ export class AdjustmentBackgroundTaskTracker
       : (await this.wrenAIAdaptor.createAskFeedback(feedback)).queryId;
 
     // update asking task with new queryId
-    const updated = await this.askingTaskRepository.updateQuery(
-      previous.id,
-      previous.queryId,
-      input.projectId,
-      {
-        queryId,
+    const patch = {
+      queryId,
 
-        // reset detail
-        detail: {
-          adjustment: true,
-          status: AskFeedbackStatus.UNDERSTANDING,
-          response: [],
-          error: null,
-          ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
-        },
+      // reset detail
+      detail: {
+        adjustment: true,
+        status: AskFeedbackStatus.UNDERSTANDING,
+        response: [],
+        error: null,
+        ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
       },
-    );
+    };
+    let updated: AskingTask;
+    if (bound) {
+      const tx = await this.askingTaskRepository.transaction();
+      try {
+        await lockNativeBinding(tx, input.projectId, input.nativeScope);
+        const current = await this.askingTaskRepository.lockQuery(
+          previous.id,
+          previous.queryId,
+          input.projectId,
+          tx,
+        );
+        if (
+          !current ||
+          current.threadId !== input.threadId ||
+          current.threadResponseId !== input.threadResponseId ||
+          !current.detail ||
+          !('adjustment' in current.detail) ||
+          !current.detail.adjustment ||
+          (current.detail.status !== AskFeedbackStatus.STOPPED &&
+            current.detail.status !== AskFeedbackStatus.FAILED) ||
+          canonical(current.detail.nativeQueries ?? []) !==
+            canonical(input.nativePreviousQueries ?? [])
+        )
+          throw new NativeQueryRefusal(409, 'NATIVE_EXECUTION_UNKNOWN');
+        if (
+          canonical(current.detail.nativeScope) !==
+          canonical(previous.detail.nativeScope)
+        )
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        updated = await this.askingTaskRepository.updateQuery(
+          previous.id,
+          previous.queryId,
+          input.projectId,
+          patch,
+          tx,
+        );
+        if (!updated)
+          throw new Error('Adjustment task changed during dispatch');
+        await this.askingTaskRepository.commit(tx);
+      } catch (error) {
+        await this.askingTaskRepository.rollback(tx);
+        throw error;
+      }
+    } else {
+      updated = await this.askingTaskRepository.updateQuery(
+        previous.id,
+        previous.queryId,
+        input.projectId,
+        patch,
+      );
+    }
     if (!updated) throw new Error('Adjustment task changed during dispatch');
     this.trackedTasks.delete(previous.queryId);
     this.trackedTasksById.delete(previous.id);
@@ -358,10 +427,23 @@ export class AdjustmentBackgroundTaskTracker
         },
       );
       try {
-        const response = await this.wrenAIAdaptor.createAskFeedback({
-          ...feedback,
-          queryId,
-        });
+        const response = await this.wrenAIAdaptor.createAskFeedback(
+          {
+            queryId,
+            question: feedback.question,
+            sql: feedback.sql,
+            tables: feedback.tables,
+            sqlGenerationReasoning: feedback.sqlGenerationReasoning,
+            projectId: input.projectId,
+            configurations: input.configurations,
+          },
+          {
+            humanToken: input.nativeHumanToken,
+            projectId: input.projectId,
+            pollingIntervalMs: this.pollingInterval,
+            deploymentHash: input.nativeScope.metadataReference.hash,
+          },
+        );
         if (response?.queryId !== queryId)
           logger.warn('Original adjustment acknowledgement unavailable');
       } catch {
