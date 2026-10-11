@@ -48,6 +48,8 @@ export default function Preparation(props: Props) {
     askingTask?.error,
     askingTask?.queryId,
     adjustmentTask?.status,
+    adjustmentTask?.error,
+    adjustmentTask?.queryId,
     adjustment?.payload,
   ]);
 
