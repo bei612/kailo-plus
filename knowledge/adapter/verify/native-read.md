@@ -4828,3 +4828,82 @@ internal 全目录 checksum 对照仅两文件不同，go.mod/go.sum 与正式�
 以上仅证明原同步消费者的撤权恢复边界；未做真实 Cells→WeKnora 联调、
 release conformance、binding 激活、部署、截图或三端设备验收。
 整批 `check.sh --full` 不在本专项重复启动，由主集成批次统一执行。
+
+### 2026-10-11 条件删除原生持久交接与未知结果边界
+
+1. 权威与原因：`.design/07` §5.2、§8A、`.design/13` §4.2、§4.4、§7
+   以及 `apps/06` §4 要求外部副作用结果不明时对账、禁止盲目重放。本次属于
+   已授权治理改造：原 `StartKnowledgeDeleteTask` 直接向 Redis 发删除任务，
+   SQL 没有保存原交接意图；发送前失败与发送后 ACK 丢失无法由同一原生意图
+   区分。固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整路径
+   `internal/types/task_pending_op.go::TaskPendingOp`、
+   `internal/application/repository/task_queue.go::EnqueueIfKnowledgeBaseActive`、
+   `internal/application/service/knowledge_housekeeping.go::runSweep` 已重新用
+   `git cat-file` / `git grep <commit>` 核验；复用其原表、原服务与原 sweep，
+   不新增删除账本、调度器或平台工作流。
+2. 影响与兼容：原 Start 在 native KB write 与适用的 fresh RECEIVER PEP 通过后，
+   经 `StageKnowledgeDeletion` 锁原 KB、核对目标 revision，将原 payload / TaskID
+   写入 `TaskPendingOp`；原 dispatch 与 housekeeping 的 `VisitKnowledgeDeletions`
+   均按 KB → pending row 顺序锁定。原 `ClaimedAt` 保存真实队列 ACK，
+   `FailCount` 保留无法确认的观察次数；只在原 `ObserveKnowledgeDeleteTask`
+   确认真实 SUCCEEDED 与合法完成时间后删除该 pending 行。没有表结构、任务
+   payload、公共契约或三端 UI 变更；旧版本可以读取原表，但没有这一 task type
+   的恢复消费者，回退须保留未决行并交组件运维处理，不能视作已收敛。历史任务
+   没有归属时不补当前 binding/generation。本批源码七文件，其余原始依赖均在
+   main，包括原 `container.go` 对 `NewKnowledgeService` / `NewHousekeepingService`
+   的注册、原删除消费者、TaskPendingOp 模型与 FileStorage receiver 授权。
+3. 副作用：后台 sweep 只能找回同一 Redis task owner，不具备 fresh 调用者准入，
+   因而禁止补发缺失任务。只有重新经过原 Start 授权、原 key、未超过原
+   `DeleteReceiptRetention` 且从未确认 ACK 的意图才能交接；已 ACK 后 owner
+   丢失、或保留期已到，即使 fresh Start 也不再发送。原 Wiki SQL retract
+   待办本身不证明 RUNNING，必须查到同 tenant/KB 的真实 pending / scheduled /
+   retry / active Wiki trigger；缺少 trigger 保持 UNKNOWN。正文不进 Core，
+   也没有将组件本地意图当成后续权限。
+4. 异常与收敛：非法 scope / 撤权仍为 DENIED；依赖缺失 PRECONDITION、
+   revision / key 冲突 CONFLICT；原 LIMIT / BLOCKED 处理不变。发送结果不明、
+   Redis owner 或 Wiki 终态证据丢失均保持 UNKNOWN，不标成功或失败。原对账入口
+   是 adapter `/reconcile` → 原 MCP `delete_document` 的 `observe_only:true` →
+   `ObserveKnowledgeDeleteTask`，不创建替代任务。现有五分钟 housekeeping
+   观察未决意图并记录 `native deletion handoff backlog remains unresolved`；
+   原 `EnqueuedAt`、`ClaimedAt`、`FailCount` 与 TaskID 供知识组件运维值班者定位。
+   最迟到原 receipt retention 边界禁止任何重发；无法恢复可信原 owner / 终态时，
+   保留原证据交该值班者人工对账，不自动清掉 UNKNOWN，也不把周期观察算作
+   已终结。完整 binding/generation fence、延迟 worker 的 fresh 平台授权和
+   完整在途枚举仍阻断 release / binding 准入，本批未声称解决这些发布门禁。
+
+实际验证复用原 Go 1.26.8 SDK / Data module 与 build cache，容器
+`kailo-knowledge-delete-handoff` 的 cgroup 为 4 CPU、8 GiB memory / memory+swap，
+UID 1000、network none；启动前原 safety preflight 检查 available 42 GiB，
+镜像 `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+所有以下命令均在 `/workspace/knowledge`，Go 使用 `-mod=readonly -count=1`。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| repository `-run TestKnowledgeDeletionPending` | 退出 0；`ok .../repository 0.537s` |
+| 初次 service `-run 'TestConditional|TestFileStorageRetirementAuthorizes|TestHousekeeping' -timeout=180s` | 退出 1；旧 Wiki 夹具期望 UNKNOWN，但实际已有 scheduled trigger 为 RUNNING；已补实际队列证明及 trigger 丢失场景 |
+| 中间 service 重跑，同 180 秒整组上限 | 退出 1；`panic: test timed out after 3m0s`，堆栈在原 SQLite AutoMigrate / DDL；不算通过 |
+| 修正后精确 service 范围，`-timeout=10m` | 退出 0；`ok .../service 138.538s`；仅放宽验收进程总等待，不改产品或原 worker 断言时限 |
+| 隔离 Go `-overlay=/tmp/negative-overlay.json` 移除 revision、owner/retention、fresh Start、真实 Wiki trigger 四处保护 | 退出 1；真实抓住 revision changed、before-send、acknowledged-owner-lost、expired-unacknowledged、wiki_trigger_lost 五场景；末项 UNKNOWN 错变 RUNNING |
+| 去掉 overlay，原源码最终 repository + service 同一批恢复验收 | 退出 0；`ok .../repository 0.480s`、`ok .../service 86.295s` |
+
+最后一行实际选择表达式为
+`^(TestKnowledgeDeletionPending.*|TestConditionalDeleteDurableHandoffRecoversWithoutRepeatingAcknowledgedWork|TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay|TestConditionalWikiDeletionUsesOriginalRetractionAndFinalizeReceipt|TestFileStorageRetirementAuthorizesAtNativeEnqueue|TestHousekeeping.*)$`，
+同时传 `./internal/application/repository ./internal/application/service -timeout=10m`。
+反证仅改 Data 隔离覆盖文件，正式保护源码没有被撤回。前后 SHA-256 均相同：
+`knowledge_delete_task.go` 为 `3a2e5eda0981c3c3d304482497a710e8d48691cc23d86709083aff54ecd374d3`，
+`knowledge_delete_pending.go` 为 `8f4c84ba93cda4e5e4d9a20f7b93a1b580f99776b9f2c65a4d0d7a916ceadfc8`。
+七文件 `gofmt -l`、`git diff --check -- knowledge/internal` 均退出 0，无输出。
+
+日志目录 `/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/`：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `repository.log` | `eb4f9e57cf238de8bae3554e5c860ebe3f8ff739dbe706da8ad63847a4b638de` |
+| `service.log` | `a3acb9c71475e8ca979e961dfa0371237b7fd42a60d5d190262c6aa4a624bd95` |
+| `service-restored.log` | `12407429753af5bbe1a41f47eaa64894d09dcdb088e53a26ba7226adb2298302` |
+| `service-final.log` | `780533854300601c5bf66db953e6a5943dfd547e0441d89d871a1fedb6315209` |
+| `negative.log` | `0eb7f6a14b5eff68947b074564eb7e07b3c9ea481d78285583c888143b8a5719` |
+| `restored.log` | `06090792438ad9c743d2b4a8ca4f19f1185db08d6ff3d050f116fc65ae5ff3c6` |
+
+本批未部署，不新增菜单、不激活 binding、不声称完整治理；未做真实服务联调、
+截图或设备验收。全局 `check.sh --full` 不重复启动，仍由主集成批次收口。

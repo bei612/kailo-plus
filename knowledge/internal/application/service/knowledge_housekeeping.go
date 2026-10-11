@@ -50,6 +50,7 @@ type HousekeepingService struct {
 	inspector    interfaces.TaskInspector
 	syncLogs     interfaces.SyncLogRepository
 	taskEnqueuer interfaces.TaskEnqueuer
+	deletions    interfaces.KnowledgeDeletionRecovery
 
 	mu      sync.Mutex
 	started bool
@@ -61,13 +62,16 @@ type HousekeepingService struct {
 func NewHousekeepingService(
 	db *gorm.DB, cfg *config.Config, inspector interfaces.TaskInspector,
 	syncLogs interfaces.SyncLogRepository, taskEnqueuer interfaces.TaskEnqueuer,
+	knowledge interfaces.KnowledgeService,
 ) *HousekeepingService {
+	deletions, _ := knowledge.(interfaces.KnowledgeDeletionRecovery)
 	return &HousekeepingService{
 		db:           db,
 		cfg:          cfg,
 		inspector:    inspector,
 		syncLogs:     syncLogs,
 		taskEnqueuer: taskEnqueuer,
+		deletions:    deletions,
 		cron: cron.New(cron.WithSeconds(), cron.WithChain(
 			cron.Recover(cron.DefaultLogger),
 		)),
@@ -122,6 +126,11 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 	// retirement; do not reconstruct tasks from mutable source configuration.
 	if err := datasource.DispatchSync(ctx, h.syncLogs, h.taskEnqueuer, ""); err != nil {
 		logger.Warnf(ctx, "[Housekeeping] native sync handoff backlog remains unresolved: %v", err)
+	}
+	if h.deletions != nil {
+		if err := h.deletions.RecoverPendingKnowledgeDeletions(ctx); err != nil {
+			logger.Warnf(ctx, "[Housekeeping] native deletion handoff backlog remains unresolved: %v", err)
+		}
 	}
 	threshold := h.staleThreshold()
 	cutoff := time.Now().Add(-threshold)

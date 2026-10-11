@@ -103,6 +103,20 @@ type TaskPendingOpsKnowledgeBaseGuard interface {
 	EnqueueIfKnowledgeBaseActive(ctx context.Context, op *types.TaskPendingOp) (accepted bool, err error)
 }
 
+// KnowledgeDeletionPendingOps uses the native pending queue for conditional
+// deletion handoff. The callback observes the original queue identity; only
+// positive native completion retires its durable pending operation.
+type KnowledgeDeletionPendingOps interface {
+	StageKnowledgeDeletion(ctx context.Context, payload *types.KnowledgeListDeletePayload) error
+	VisitKnowledgeDeletions(ctx context.Context, taskID string, visit func(*types.TaskPendingOp, *types.KnowledgeListDeletePayload) (acknowledged bool, err error)) error
+}
+
+// KnowledgeDeletionRecovery is implemented by the original knowledge service
+// and consumed by its existing housekeeping sweep, not a second task runner.
+type KnowledgeDeletionRecovery interface {
+	RecoverPendingKnowledgeDeletions(ctx context.Context) error
+}
+
 // TaskPendingOpsFinalizingSeeder atomically hands a processing knowledge row
 // to the asynchronous finalizing pipeline while persisting the durable
 // pending operation that owns one of its subtask slots.

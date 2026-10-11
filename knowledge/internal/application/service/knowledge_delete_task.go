@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
@@ -91,10 +92,6 @@ func (s *knowledgeService) StartKnowledgeDeleteTask(ctx context.Context, kbID, i
 	}
 	row := plan.knowledge[0]
 	payload := types.KnowledgeListDeletePayload{TenantID: row.TenantID, KnowledgeBaseID: kbID, KnowledgeIDs: []string{id}, ExpectedRevision: revision, TaskID: taskID, Initiator: types.TaskInitiatorFromContext(ctx)}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
 	// A prior inspector/plan read is not authorization for this first queue
 	// write. Reapply the native KB grant and the admitted connector's original
 	// RECEIVER grant at the actual dispatch boundary, not on task observation.
@@ -115,11 +112,107 @@ func (s *knowledgeService) StartKnowledgeDeleteTask(ctx context.Context, kbID, i
 			return nil, err
 		}
 	}
-	_, err = s.task.Enqueue(asynq.NewTask(types.TypeKnowledgeListDelete, raw), asynq.Queue(types.QueueMaintenance), asynq.TaskID(taskID), asynq.MaxRetry(0), asynq.Timeout(config.DocumentProcessTimeout(s.config)), asynq.Retention(s.config.KnowledgeBase.DeleteReceiptRetention))
-	if err != nil && !errors.Is(err, asynq.ErrTaskIDConflict) && !errors.Is(err, asynq.ErrDuplicateTask) {
+	pending, ok := s.taskPendingRepo.(interfaces.KnowledgeDeletionPendingOps)
+	if !ok {
+		return nil, fmt.Errorf("native deletion durable handoff is unavailable")
+	}
+	if err := pending.StageKnowledgeDeletion(ctx, &payload); err != nil {
 		return nil, err
 	}
+	if err := s.dispatchPendingKnowledgeDeletions(ctx, pending, taskID); err != nil {
+		return nil, err // Original pending intent remains; no second task is made.
+	}
 	return s.ObserveKnowledgeDeleteTask(ctx, kbID, id, revision, taskID)
+}
+
+func (s *knowledgeService) RecoverPendingKnowledgeDeletions(ctx context.Context) error {
+	pending, ok := s.taskPendingRepo.(interfaces.KnowledgeDeletionPendingOps)
+	if !ok {
+		return fmt.Errorf("native deletion durable handoff is unavailable")
+	}
+	return s.dispatchPendingKnowledgeDeletions(ctx, pending, "")
+}
+
+func (s *knowledgeService) dispatchPendingKnowledgeDeletions(ctx context.Context, pending interfaces.KnowledgeDeletionPendingOps, taskID string) error {
+	type retainedTask struct {
+		op      types.TaskPendingOp
+		payload types.KnowledgeListDeletePayload
+	}
+	var retained []retainedTask
+	deliveryErr := pending.VisitKnowledgeDeletions(ctx, taskID, func(op *types.TaskPendingOp, payload *types.KnowledgeListDeletePayload) (bool, error) {
+		if s.redisClient == nil || s.task == nil || s.config == nil || s.config.KnowledgeBase == nil || s.config.KnowledgeBase.DeleteReceiptRetention <= 0 {
+			return false, fmt.Errorf("native deletion queue or retention is unavailable")
+		}
+		inspector := asynq.NewInspectorFromRedisClient(s.redisClient)
+		info, err := inspector.GetTaskInfo(types.QueueMaintenance, payload.TaskID)
+		if errors.Is(err, asynq.ErrTaskNotFound) || errors.Is(err, asynq.ErrQueueNotFound) {
+			// Redis may have accepted the first send before its ACK was lost.
+			// Never send after its retained identity could have expired, and
+			// never repeat a previously acknowledged task whose record vanished.
+			if op.ClaimedAt != nil || !time.Now().Before(op.EnqueuedAt.Add(s.config.KnowledgeBase.DeleteReceiptRetention)) {
+				return op.ClaimedAt != nil, fmt.Errorf("original native deletion queue ownership is unconfirmed")
+			}
+			// A sweep has no fresh caller/RECEIVER admission. It may recover
+			// an already existing owner after an ACK loss, but cannot turn a
+			// durable intent into a new delayed write. Only the original Start
+			// path supplies this exact task ID after fresh authorization.
+			if taskID != payload.TaskID {
+				return false, fmt.Errorf("native deletion handoff requires fresh admission through its original start")
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return false, err
+			}
+			info, err = s.task.Enqueue(asynq.NewTask(types.TypeKnowledgeListDelete, body), asynq.Queue(types.QueueMaintenance),
+				asynq.TaskID(payload.TaskID), asynq.MaxRetry(0), asynq.Timeout(config.DocumentProcessTimeout(s.config)),
+				asynq.Retention(s.config.KnowledgeBase.DeleteReceiptRetention))
+			if errors.Is(err, asynq.ErrTaskIDConflict) || errors.Is(err, asynq.ErrDuplicateTask) {
+				info, err = inspector.GetTaskInfo(types.QueueMaintenance, payload.TaskID)
+			}
+			if err != nil {
+				return false, err
+			}
+		} else if err != nil {
+			return false, err
+		}
+		var queued types.KnowledgeListDeletePayload
+		if info == nil || info.ID != payload.TaskID || info.Type != types.TypeKnowledgeListDelete ||
+			json.Unmarshal(info.Payload, &queued) != nil || queued.TaskID != payload.TaskID ||
+			queued.TenantID != payload.TenantID || queued.KnowledgeBaseID != payload.KnowledgeBaseID ||
+			len(queued.KnowledgeIDs) != 1 || queued.KnowledgeIDs[0] != payload.KnowledgeIDs[0] || queued.ExpectedRevision != payload.ExpectedRevision {
+			return false, fmt.Errorf("native deletion queue acknowledgement differs from the durable intent")
+		}
+		retained = append(retained, retainedTask{op: *op, payload: *payload})
+		return true, nil
+	})
+	// Native Wiki observation also reads SQL. Do it after the handoff
+	// transaction releases its connection/locks (including single-connection
+	// deployments); a confirmed original terminal cannot become running again.
+	for _, task := range retained {
+		op, payload := task.op, task.payload
+		observation, err := s.ObserveKnowledgeDeleteTask(types.WithExecutionTenant(ctx, payload.TenantID),
+			payload.KnowledgeBaseID, payload.KnowledgeIDs[0], payload.ExpectedRevision, payload.TaskID)
+		if err != nil {
+			deliveryErr = errors.Join(deliveryErr, err)
+			continue
+		}
+		switch observation["state"] {
+		case "SUCCEEDED":
+			completed, ok := observation["completed_at"].(string)
+			at, err := time.Parse(time.RFC3339Nano, completed)
+			if !ok || err != nil || at.Before(op.EnqueuedAt) || at.After(time.Now()) {
+				deliveryErr = errors.Join(deliveryErr, fmt.Errorf("native deletion terminal timestamp is invalid"))
+				continue
+			}
+			if err := s.taskPendingRepo.DeleteByIDs(ctx, []int64{op.ID}); err != nil {
+				deliveryErr = errors.Join(deliveryErr, err)
+			}
+		case "RUNNING":
+		default:
+			deliveryErr = errors.Join(deliveryErr, fmt.Errorf("native deletion still requires reconciliation"))
+		}
+	}
+	return deliveryErr
 }
 
 func (s *knowledgeService) ObserveKnowledgeDeleteTask(ctx context.Context, kbID, id, revision, taskID string) (map[string]any, error) {
@@ -164,7 +257,13 @@ func (s *knowledgeService) ObserveKnowledgeDeleteTask(ctx context.Context, kbID,
 			return result, nil
 		}
 		if pending != 0 {
-			result["state"] = "RUNNING"
+			queued, err := s.hasQueuedWikiCleanup(ctx, tenant, kbID)
+			if err != nil {
+				return nil, err
+			}
+			if queued {
+				result["state"] = "RUNNING"
+			}
 			return result, nil
 		}
 		// Queue absence alone is never terminal. Only the original Wiki worker
@@ -192,4 +291,38 @@ func (s *knowledgeService) ObserveKnowledgeDeleteTask(ctx context.Context, kbID,
 	result["state"] = "SUCCEEDED"
 	result["completed_at"] = receipt.CleanedAt.UTC().Format(time.RFC3339Nano)
 	return result, nil
+}
+
+// A pending SQL retract is an intent, not proof that its native Wiki trigger
+// is still in flight. The existing batch worker consumes every pending op for
+// this exact tenant/KB; only a live original trigger can establish RUNNING.
+func (s *knowledgeService) hasQueuedWikiCleanup(ctx context.Context, tenantID uint64, kbID string) (bool, error) {
+	inspector := asynq.NewInspectorFromRedisClient(s.redisClient)
+	for _, list := range []func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error){
+		inspector.ListPendingTasks, inspector.ListScheduledTasks, inspector.ListRetryTasks, inspector.ListActiveTasks,
+	} {
+		for page := 1; ; page++ {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			tasks, err := list(types.QueueWiki, asynq.Page(page))
+			if errors.Is(err, asynq.ErrQueueNotFound) {
+				break
+			}
+			if err != nil {
+				return false, err
+			}
+			if len(tasks) == 0 {
+				break
+			}
+			for _, task := range tasks {
+				var trigger WikiIngestPayload
+				if task != nil && task.Type == types.TypeWikiIngest && json.Unmarshal(task.Payload, &trigger) == nil &&
+					trigger.TenantID == tenantID && trigger.KnowledgeBaseID == kbID {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }

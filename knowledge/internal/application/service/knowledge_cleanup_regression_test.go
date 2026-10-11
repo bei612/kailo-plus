@@ -85,6 +85,107 @@ type wikiDeletePendingRepository struct {
 	trimErr error
 }
 
+func (r *wikiDeletePendingRepository) StageKnowledgeDeletion(ctx context.Context, payload *types.KnowledgeListDeletePayload) error {
+	return r.TaskPendingOpsRepository.(interfaces.KnowledgeDeletionPendingOps).StageKnowledgeDeletion(ctx, payload)
+}
+
+func (r *wikiDeletePendingRepository) VisitKnowledgeDeletions(ctx context.Context, id string, visit func(*types.TaskPendingOp, *types.KnowledgeListDeletePayload) (bool, error)) error {
+	return r.TaskPendingOpsRepository.(interfaces.KnowledgeDeletionPendingOps).VisitKnowledgeDeletions(ctx, id, visit)
+}
+
+func prepareDeletionPendingFixture(t *testing.T, f *documentWriteFixture, kb *types.KnowledgeBase) {
+	t.Helper()
+	require.NoError(t, f.db.AutoMigrate(&types.KnowledgeBase{}, &types.TaskPendingOp{}, &types.TaskDeadLetter{}))
+	require.NoError(t, f.db.Create(kb).Error)
+	f.svc.taskPendingRepo = repository.NewTaskPendingOpsRepository(f.db)
+}
+
+type deletionHandoffQueue struct {
+	client     *asynq.Client
+	beforeSend bool
+	loseACK    bool
+	calls      int
+}
+
+func (q *deletionHandoffQueue) Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error) {
+	q.calls++
+	if q.beforeSend {
+		return nil, errors.New("native queue unavailable before send")
+	}
+	info, err := q.client.Enqueue(task, opts...)
+	if err == nil && q.loseACK {
+		return nil, errors.New("native queue acknowledgement lost")
+	}
+	return info, err
+}
+
+func TestConditionalDeleteDurableHandoffRecoversWithoutRepeatingAcknowledgedWork(t *testing.T) {
+	for _, scenario := range []string{"before-send", "lost-ack", "acknowledged-owner-lost", "expired-unacknowledged", "scope-deleted"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newDocumentWriteFixture(t)
+			prepareDeletionPendingFixture(t, f, f.kbs.values["kb"])
+			r := miniredis.RunT(t)
+			client := redis.NewClient(&redis.Options{Addr: r.Addr()})
+			queue := asynq.NewClient(asynq.RedisClientOpt{Addr: r.Addr()})
+			t.Cleanup(func() { require.NoError(t, client.Close()); require.NoError(t, queue.Close()) })
+			handoff := &deletionHandoffQueue{client: queue, beforeSend: scenario != "lost-ack" && scenario != "acknowledged-owner-lost", loseACK: scenario == "lost-ack"}
+			f.svc.redisClient, f.svc.task = client, handoff
+			f.svc.config = &config.Config{KnowledgeBase: &config.KnowledgeBaseConfig{DeleteReceiptRetention: time.Hour}}
+			row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+			require.NoError(t, err)
+			key := uuid.NewString()
+			_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", row.UpdatedAt.UTC().Format(time.RFC3339Nano), key)
+			if scenario == "acknowledged-owner-lost" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			var original types.TaskPendingOp
+			require.NoError(t, f.db.Where("dedup_key = ?", key).Take(&original).Error)
+			require.Equal(t, types.TypeKnowledgeListDelete, original.TaskType)
+			require.Equal(t, 1, handoff.calls)
+			handoff.beforeSend, handoff.loseACK = false, false
+			switch scenario {
+			case "acknowledged-owner-lost":
+				r.FlushAll()
+			case "expired-unacknowledged":
+				require.NoError(t, f.db.Model(&original).UpdateColumn("enqueued_at", time.Now().Add(-2*time.Hour)).Error)
+			case "scope-deleted":
+				require.NoError(t, f.db.Model(&types.KnowledgeBase{}).Where("id = ?", "kb").UpdateColumn("deleted_at", time.Now()).Error)
+			}
+			err = f.svc.RecoverPendingKnowledgeDeletions(context.Background())
+			if scenario == "before-send" {
+				require.ErrorContains(t, err, "fresh admission")
+				require.Equal(t, 1, handoff.calls, "the sweep cannot synthesize fresh write authority")
+				_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", row.UpdatedAt.UTC().Format(time.RFC3339Nano), key)
+			}
+			if scenario == "before-send" || scenario == "lost-ack" {
+				require.NoError(t, err)
+				info, err := asynq.NewInspectorFromRedisClient(client).GetTaskInfo(types.QueueMaintenance, key)
+				require.NoError(t, err)
+				require.Equal(t, string(original.Payload), string(info.Payload))
+			} else {
+				require.Error(t, err)
+				if scenario == "acknowledged-owner-lost" || scenario == "expired-unacknowledged" {
+					_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", row.UpdatedAt.UTC().Format(time.RFC3339Nano), key)
+					require.ErrorContains(t, err, "ownership is unconfirmed", "even fresh admission cannot repeat an unknown original deletion")
+				}
+			}
+			wantCalls := 1
+			if scenario == "before-send" {
+				wantCalls = 2
+			}
+			require.Equal(t, wantCalls, handoff.calls)
+			var retained types.TaskPendingOp
+			require.NoError(t, f.db.Where("id = ?", original.ID).Take(&retained).Error)
+			require.Equal(t, string(original.Payload), string(retained.Payload))
+			if scenario == "before-send" || scenario == "lost-ack" || scenario == "acknowledged-owner-lost" {
+				require.NotNil(t, retained.ClaimedAt)
+			}
+		})
+	}
+}
+
 func (r *wikiDeletePendingRepository) DeleteByIDs(ctx context.Context, ids []int64) error {
 	if r.trimErr != nil {
 		return r.trimErr
@@ -275,9 +376,10 @@ func TestConditionalWikiDeletionDoesNotHideLegacySearchChunkFailure(t *testing.T
 }
 
 func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) {
-	for _, scenario := range []string{"completed", "missing row", "cleanup failed", "wiki enabled after enqueue"} {
+	for _, scenario := range []string{"completed", "missing row", "cleanup failed", "wiki enabled after enqueue", "wiki trigger lost"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newDocumentWriteFixture(t)
+			prepareDeletionPendingFixture(t, f, f.kbs.values["kb"])
 			r := miniredis.RunT(t)
 			client := redis.NewClient(&redis.Options{Addr: r.Addr()})
 			t.Cleanup(func() { require.NoError(t, client.Close()) })
@@ -299,7 +401,8 @@ func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) 
 			if scenario == "cleanup failed" {
 				f.tenants.err = errors.New("accounting unavailable")
 			}
-			if scenario == "wiki enabled after enqueue" {
+			wikiAfterEnqueue := scenario == "wiki enabled after enqueue" || scenario == "wiki trigger lost"
+			if wikiAfterEnqueue {
 				f.kbs.values["kb"].IndexingStrategy.WikiEnabled = true
 				f.svc.wikiRepo = &moveWikiPageRepo{}
 			}
@@ -316,15 +419,33 @@ func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) 
 			case <-time.After(5 * time.Second):
 				t.Fatal("original queue did not execute")
 			}
-			if scenario == "completed" || scenario == "wiki enabled after enqueue" {
+			if scenario == "completed" || wikiAfterEnqueue {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, asynq.SkipRetry)
+			}
+			if wikiAfterEnqueue {
+				inspector := asynq.NewInspectorFromRedisClient(client)
+				triggers, err := inspector.ListScheduledTasks(types.QueueWiki)
+				require.NoError(t, err)
+				require.Len(t, triggers, 1, "the original Wiki trigger has an acknowledged native queue owner")
+				require.Equal(t, types.TypeWikiIngest, triggers[0].Type)
+				var trigger WikiIngestPayload
+				require.NoError(t, json.Unmarshal(triggers[0].Payload, &trigger))
+				require.Equal(t, uint64(7), trigger.TenantID)
+				require.Equal(t, "kb", trigger.KnowledgeBaseID)
+				if scenario == "wiki trigger lost" {
+					require.NoError(t, inspector.DeleteTask(types.QueueWiki, triggers[0].ID))
+				}
 			}
 			observed, err := f.svc.ObserveKnowledgeDeleteTask(f.ctx, "kb", "", "", key)
 			require.NoError(t, err)
 			if scenario == "completed" {
 				require.Equal(t, "SUCCEEDED", observed["state"])
+				require.NoError(t, f.svc.RecoverPendingKnowledgeDeletions(context.Background()))
+				var pending int64
+				require.NoError(t, f.db.Model(&types.TaskPendingOp{}).Where("task_type = ? AND dedup_key = ?", types.TypeKnowledgeListDelete, key).Count(&pending).Error)
+				require.Zero(t, pending, "only the original positive terminal retires its handoff intent")
 			} else {
 				require.NotEqual(t, "SUCCEEDED", observed["state"])
 			}
@@ -334,7 +455,10 @@ func TestConditionalDeleteTaskUsesNativeQueueReceiptWithoutReplay(t *testing.T) 
 				var receipt knowledgeDeleteReceipt
 				require.NoError(t, json.Unmarshal(info.Result, &receipt))
 				require.True(t, receipt.WikiEnabled, "receipt must describe the actual execution plan")
-				require.Equal(t, "UNKNOWN", observed["state"], "queued retract is not terminal evidence")
+				require.Equal(t, "RUNNING", observed["state"], "the actual durable retract is in flight, not terminal evidence")
+			}
+			if scenario == "wiki trigger lost" {
+				require.Equal(t, "UNKNOWN", observed["state"], "the durable retract alone cannot prove an active trigger")
 			}
 			before := f.graph.calls
 			_, err = f.svc.StartKnowledgeDeleteTask(f.ctx, "kb", "doc", revision, key)
@@ -371,6 +495,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 				"id": id, "knowledge_base_id": kb, "channel": fileStorageConnectorType, "metadata": types.JSON(metadata),
 			}).Error)
 			base := &types.KnowledgeBase{ID: kb, TenantID: 7}
+			prepareDeletionPendingFixture(t, f, base)
 			f.kbs.values[kb] = base
 			ctx, err := access.WithKBTaskWrite(f.ctx, base, 7)
 			require.NoError(t, err)
