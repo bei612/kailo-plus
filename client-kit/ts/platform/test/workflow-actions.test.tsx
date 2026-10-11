@@ -91,7 +91,7 @@ async function select(select: HTMLSelectElement, value: string) {
   await settle();
 }
 async function canvasNode(host: HTMLElement, index: number) {
-  await click(host.querySelectorAll<HTMLOListElement>('ol[aria-label="Workflow sequence"] > li > div > button[aria-pressed]')[index]!);
+  await click(host.querySelectorAll<HTMLOListElement>('ol > li > div > button[aria-pressed]')[index]!);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
 }
 async function canvasInsert(host: HTMLElement, index: number, action: string) {
@@ -250,12 +250,14 @@ describe("original workflow action menu with governed consumers", () => {
     const edit = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((item) => item.textContent === editLabel)!;
     await click(edit);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 0);
     const input = dialog.querySelector<HTMLInputElement>("#wf-trigger-trigger_text-value")!;
     await type(input, 'deploy "中文"');
     const expression = 'str_contains(trigger_text, "deploy \\"中文\\"")';
     await click(button(dialog, yamlLabel));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toContain("filter:");
     await click(button(dialog, formLabel));
+    await canvasNode(dialog, 0);
     expect(dialog.querySelector<HTMLInputElement>("#wf-trigger-trigger_text-value")!.value).toBe('deploy "中文"');
     await click(button(dialog, reviewLabel));
     expect(dialog.textContent).toContain(expression);
@@ -513,6 +515,7 @@ describe("original workflow action menu with governed consumers", () => {
     const { host, send } = await setup();
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Unsaved draft");
     const unload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(unload);
@@ -533,8 +536,41 @@ describe("original workflow action menu with governed consumers", () => {
     window.dispatchEvent(afterDiscard);
     expect(afterDiscard.defaultPrevented).toBe(false);
     await chooseAction(host, "Edit");
+    await canvasNode(document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!, 1);
     expect(document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-editor-dialog"] textarea')!.value).toBe("Latest instructions");
     expect(writes(send)).toHaveLength(0);
+  });
+
+  it.each(["en", "zh-CN"] as const)("edits the governed Agent turn in original nodes without inventing a step contract (%s)", async locale => {
+    const { host, send } = await setup(undefined, locale);
+    const menu = await openMenu(host, locale === "en" ? "Workflow actions" : "工作流操作");
+    await click([...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find(item => item.textContent === (locale === "en" ? "Edit" : "编辑"))!);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    expect(dialog.querySelectorAll('ol > li')).toHaveLength(2);
+    expect(dialog.querySelector("textarea")).toBeNull();
+    expect(dialog.querySelectorAll('[data-testid="workflow-node-ingress"] button')).toHaveLength(0);
+    await canvasNode(dialog, 1);
+    const input = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(input.value).toBe("Latest instructions");
+    await type(input, "Summarize {{trigger.text}}");
+    expect(dialog.querySelectorAll('ol > li > div > button[aria-pressed]')[1]!.textContent)
+      .toContain("Summarize {{trigger.text}}");
+    await click(dialog.querySelector<HTMLElement>(`button[aria-label="${locale === "en" ? "Close inspector" : "关闭检查器"}"]`)!);
+    await click(button(dialog, locale === "en" ? "Workflow YAML" : "工作流 YAML"));
+    const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
+    expect(yaml).toContain("kind: AGENT_TURN");
+    expect(yaml).toContain("Summarize {{trigger.text}}");
+    expect(yaml).not.toContain("steps:");
+    await click(button(dialog, locale === "en" ? "Form" : "表单"));
+    await click(button(dialog, locale === "en" ? "Review request" : "核对请求"));
+    expect(writes(send)).toHaveLength(0);
+    await click(button(dialog, locale === "en" ? "Submit governed request" : "提交受治理请求"));
+    const [command] = writes(send) as Array<{automationVersionContent: Record<string, unknown>}>;
+    expect(command).toBeDefined();
+    expect(command!.automationVersionContent.action).toEqual({kind:"AGENT_TURN", template:"Summarize {{trigger.text}}"});
+    expect(command!.automationVersionContent.steps).toBeUndefined();
+    expect(command!.automationVersionContent.formatVersion).toBeUndefined();
   });
 
   it("protects invalid raw YAML on Escape and exposes the original confirmation in Chinese", async () => {
@@ -558,6 +594,7 @@ describe("original workflow action menu with governed consumers", () => {
     const { host, send } = await setup();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Discarded create draft");
     await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
@@ -566,6 +603,7 @@ describe("original workflow action menu with governed consumers", () => {
     expect(document.body.style.pointerEvents).toBe(initialPointerEvents);
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const reopened = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(reopened, 1);
     expect(reopened.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
     await click(reopened.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
@@ -576,6 +614,7 @@ describe("original workflow action menu with governed consumers", () => {
     const { host, send } = await setup();
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New confirmed content");
     await click(button(dialog, "Review request"));
     await click(button(dialog, "Submit governed request"));
@@ -642,10 +681,15 @@ describe("original workflow action menu with governed consumers", () => {
       const { host, send } = await setup();
       if (label === "Disable workflow") await click(host.querySelector<HTMLButtonElement>('[role="switch"]')!);
       else await chooseAction(host, label);
-      const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
       expect(writes(send)).toHaveLength(0);
-      await click(button(dialog, "Review request"));
-      await click(button(dialog, "Submit governed request"));
+      if (label === "Delete") {
+        const dialog = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+        await click(button(dialog, "Delete"));
+      } else {
+        const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+        await click(button(dialog, "Review request"));
+        await click(button(dialog, "Submit governed request"));
+      }
       expect(writes(send)[0]).toMatchObject({ actionKey, resourceId: "workflow", resourceVersion: 2 });
       expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
       expect(host.querySelector('[role="switch"]')?.getAttribute("aria-label")).toBe("Disable workflow");

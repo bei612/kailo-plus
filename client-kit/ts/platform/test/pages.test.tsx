@@ -687,6 +687,7 @@ describe("shared Automation schedule consumer", () => {
       return node?.control && !node.contains(node.control) ? node.control.parentElement! : node!;
     };
     const choose = async (label: string, value: string) => {
+      if (label === "Trigger" && !field(label)) await selectCanvasNode(section, 0);
       const select = field(label).querySelector("select")!;
       await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
       await settle();
@@ -941,13 +942,13 @@ describe("shared Automation schedule consumer", () => {
 
   it("uses the original runtime weekday ordinals instead of silently changing execution dates", async () => {
     const { section, choose, fill } = await setup(["CHANNEL"]);
+    await fill("Instruction template", "Calendar report");
     await choose("Trigger", "SCHEDULE");
     await click(section.querySelector<HTMLInputElement>('input[value="custom_cron"]')!);
     for (const [label, value] of [["Minute", "0"], ["Hour", "9"], ["Day", "*"], ["Month", "*"], ["Weekday", "0"]]) {
       await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value!);
     }
     await fill("Catch-up window (seconds)", "60");
-    await fill("Instruction template", "Calendar report");
     expect(button(section, "Review request").disabled).toBe(true);
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "1-7");
     expect(button(section, "Review request").disabled).toBe(false);
@@ -974,6 +975,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
     expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     await click(section.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    await selectCanvasNode(section, 1);
     expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
     expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
   });
@@ -1091,6 +1093,7 @@ describe("shared Automation schedule consumer", () => {
     await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     await click(button(section, "Form"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBeNull();
+    await selectCanvasNode(section, 1);
     expect(field("Instruction template").querySelector("textarea")!.value).toBe("");
     expect(section.textContent).not.toContain("Your text has been kept");
     expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
@@ -1260,6 +1263,7 @@ describe("shared Automation schedule consumer", () => {
       const { section, fill } = await setup(["CHANNEL"], scheduleContent);
       await click(button(section, "View definition"));
       await click(button(section, "Edit"));
+      await selectCanvasNode(section, 0);
       await type(section.querySelector<HTMLInputElement>('#wf-trigger-interval')!, every);
       await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
       await fill("Instruction template", "Report");

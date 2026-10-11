@@ -783,6 +783,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const reasonText = useReasonText();
   const failureText = useFailureText();
   const creating = !edit || edit.action === "copy";
+  const formId = useId();
   const [draftScope, setDraftScope] = useState<{hostWorkspaceId?: string; edit: AutomationEdit | null; id: string} | null>(null);
   const selectedScopeId = creating && draftScope && draftScope.hostWorkspaceId === hostWorkspaceId && draftScope.edit === edit
     ? draftScope.id : hostWorkspaceId;
@@ -1179,7 +1180,6 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
         {editorMode === "yaml" ? <><div className="max-w-md flex-shrink-0">{scopeField}</div><WorkflowYamlEditor value={yamlText} disabled={busy || !!intent || unknown}
           onChange={(value) => { setYamlText(value); setEditorError(false); }} /></> : <>
-        {actionKind === ActionKind.AgentTurn ? <><div className="mx-auto mb-3 w-full max-w-sm">{scopeField}</div>{triggerFields}</> : null}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
@@ -1198,9 +1198,13 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
             <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
           </select>
         </label>
-        {actionKind === ActionKind.AgentTurn ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
-          <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
-        </label> : <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
+        <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
+          action={actionKind === ActionKind.AgentTurn ? {kind: ActionKind.AgentTurn, template} : undefined}
+          actionFields={actionKind === ActionKind.AgentTurn ? <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${formId}-agent-template`}>{t("agents.automation.template")}</label>
+            <AgentTextarea id={`${formId}-agent-template`} required value={template} disabled={busy || !!intent || unknown}
+              onChange={(event) => setTemplate(event.target.value)} className="min-h-[60px] resize-y text-xs" />
+          </div> : undefined}
           disabled={busy || !!intent || unknown} policies={policies}
           steps={steps.length ? steps : template && actionKind === ActionKind.PostMessage
             ? [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}] : []}
@@ -1214,7 +1218,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
               setStepsFormat(terminal.action === ActionEnum.SendMessage ? 3 : 2);
             }
             if (next.some(step => step.action === ActionEnum.RequestApproval)) setPolicyKey("");
-          }} />}
+          }} />
         {!steps.some((step) => step.action === ActionEnum.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
           <select value={policyKey} disabled={!policies} onChange={(event) => {
             if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))

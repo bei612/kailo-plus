@@ -5,7 +5,7 @@ import { ArrowDown, CalendarClock, Check, ChevronDown, MessageSquare, Plus, Tras
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, type ReactNode, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ActionEnum, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
+import { ActionEnum, ActionKind, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import { useT, type Translate } from "./context";
 import { ActionEmoji } from "./workflow-card-actions";
 import { formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
@@ -14,7 +14,7 @@ import { cn } from "./profile/buzz/shared/lib/cn";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { nextStepId, WorkflowStepCard } from "./workflow-steps";
 
-type Pane = { type: "trigger" } | { type: "step"; stepId: string } | null;
+type Pane = { type: "trigger" } | { type: "step"; stepId: string } | { type: "action" } | null;
 type DraftAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
 const actionKeys = {
   [ActionEnum.Delay]: "workflows.steps.delay",
@@ -32,11 +32,11 @@ const inspectorContentVariants = {
 // Original desktop/src/features/workflows/ui/workflowStepDescription.ts::workflowStepDescription.
 // Only existing admitted actions have a consumer; channel/approver identities are not invented.
 const MAX_DETAIL_LENGTH = 42;
+function compact(value: string) {
+  const normalized = value.trim().replaceAll(/\s+/g, " ");
+  return normalized.length > MAX_DETAIL_LENGTH ? `${normalized.slice(0, MAX_DETAIL_LENGTH - 3)}...` : normalized;
+}
 function workflowStepDescription(step: AutomationStep, actionLabel: string, t: Translate): string {
-  const compact = (value: string) => {
-    const normalized = value.trim().replaceAll(/\s+/g, " ");
-    return normalized.length > MAX_DETAIL_LENGTH ? `${normalized.slice(0, MAX_DETAIL_LENGTH - 3)}...` : normalized;
-  };
   const quoted = (value: string | undefined) => value?.trim() ? `“${compact(value)}”` : null;
   let detail: string | null = null;
   switch (step.action) {
@@ -89,14 +89,14 @@ function WorkflowNode({ description, label, disabled, icon, title, number, showT
     </div>
     <div className="group relative flex h-18 items-center justify-center" data-menu-open={addMenuOpen} data-terminal={terminal} data-testid="workflow-node-ingress">
       {!terminal ? <ArrowDown aria-hidden="true" className="h-5 w-5 text-muted-foreground transition-opacity duration-200 ease-out group-hover:opacity-10 group-data-[menu-open=true]:opacity-10 group-has-[:focus-visible]:opacity-10 motion-reduce:transition-none" /> : null}
-      <DropdownMenu onOpenChange={setAddMenuOpen}><DropdownMenuTrigger asChild>
+      {actions.length ? <DropdownMenu onOpenChange={setAddMenuOpen}><DropdownMenuTrigger asChild>
         <Button aria-label={number === undefined ? t("workflows.addStep") : t("workflows.addAfter", {step: title})}
           className={cn("relative z-10 h-7 w-7 rounded-full bg-background shadow-sm", !terminal &&
             "pointer-events-none absolute scale-125 opacity-0 transition-[opacity,transform,background-color,color,border-color,box-shadow] duration-200 ease-out group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100 group-data-[menu-open=true]:pointer-events-auto group-data-[menu-open=true]:scale-100 group-data-[menu-open=true]:opacity-100 focus-visible:pointer-events-auto focus-visible:scale-100 focus-visible:opacity-100 motion-reduce:transition-none")}
           disabled={disabled || actions.length === 0} size="icon" type="button" variant="outline"><Plus className="h-3.5 w-3.5" /></Button>
       </DropdownMenuTrigger><DropdownMenuContent align="center" side="right" sideOffset={8}>
         {actions.map(action => <DropdownMenuItem key={action} onSelect={() => onAddAfter(action)}><span>{t(actionKeys[action])}</span></DropdownMenuItem>)}
-      </DropdownMenuContent></DropdownMenu>
+      </DropdownMenuContent></DropdownMenu> : null}
     </div>
   </li>;
 }
@@ -110,18 +110,19 @@ export type WorkflowFormCanvasHandle = {
 
 export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   steps: AutomationStep[]; onStepsChange: (steps: AutomationStep[]) => void;
+  action?: NonNullable<AutomationVersionContent["action"]>; actionFields?: ReactNode;
   trigger: AutomationTriggerKind; triggerFields: ReactNode; scopeField?: ReactNode;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
-}>(function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerFields, scopeField, policies, disabled }, ref) {
+}>(function WorkflowFormCanvas({ steps, onStepsChange, action, actionFields, trigger, triggerFields, scopeField, policies, disabled }, ref) {
   const t = useT();
   const [pane, setPane] = useState<Pane>(null);
   const [selectionDirection, setSelectionDirection] = useState<1 | -1>(1);
   const [narrowInspector, setNarrowInspector] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldReduceMotion = useReducedMotion();
-  const selectedIndex = pane?.type === "step" ? steps.findIndex(step => step.id === pane.stepId) : -1;
+  const selectedIndex = pane?.type === "action" && action ? 0 : pane?.type === "step" ? steps.findIndex(step => step.id === pane.stepId) : -1;
   const selectedStep = selectedIndex < 0 ? undefined : steps[selectedIndex];
-  const selectedNode = pane?.type === "trigger" || selectedStep ? pane : null;
+  const selectedNode = pane?.type === "trigger" || (pane?.type === "action" && action) || selectedStep ? pane : null;
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;
@@ -132,7 +133,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
     return () => observer.disconnect();
   }, []);
   const selectNode = (next: Exclude<Pane, null>) => {
-    const position = next.type === "trigger" ? -1 : steps.findIndex(step => step.id === next.stepId);
+    const position = next.type === "trigger" ? -1 : next.type === "action" ? 0 : steps.findIndex(step => step.id === next.stepId);
     if (selectedNode) setSelectionDirection(position < selectedIndex ? -1 : 1);
     setPane(next);
   };
@@ -147,6 +148,9 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   // Editing does not expand the runtime's current format 2/3 action support.
   // Incomplete drafts stay editable; publication still uses supportedSteps + fresh admission.
   const actionsAt = (index: number): DraftAction[] => {
+    // Legacy governed actions are not AutomationSteps. No unsupported mixed
+    // sequence is offered or synthesized just to display the original canvas.
+    if (action) return [];
     const messageSequence = !steps.some(step => step.action === ActionEnum.AddReaction || step.action === ActionEnum.SetChannelTopic);
     const actions: DraftAction[] = [ActionEnum.Delay];
     if (policies?.length && !steps.some(step => step.action === ActionEnum.RequestApproval)
@@ -177,6 +181,8 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   const triggerLabel = t(trigger === AutomationTriggerKind.Schedule ? "agents.automation.schedule"
     : trigger === AutomationTriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage");
   const actionLabel = (step: AutomationStep) => t(actionKeys[step.action as DraftAction]);
+  const legacyActionLabel = action ? t(action.kind === ActionKind.AgentTurn ? "agents.automation.agentTurn" : "agents.automation.postMessage") : "";
+  const legacyActionDescription = action?.template.trim() ? `“${compact(action.template)}”` : legacyActionLabel;
   const updateStep = (next: AutomationStep) => {
     if (disabled || !selectedStep) return;
     onStepsChange(steps.map((step, index) => index === selectedIndex ? next : step));
@@ -205,8 +211,14 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
         <ol aria-label={t("workflows.sequence")}>
           <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} label={`${t("agents.automation.trigger")}: ${triggerLabel}`} disabled={disabled}
             icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-            selected={selectedNode?.type === "trigger"} terminal={steps.length === 0} onSelect={() => selectNode({type: "trigger"})}
+            selected={selectedNode?.type === "trigger"} terminal={!action && steps.length === 0} onSelect={() => selectNode({type: "trigger"})}
             actions={actionsAt(0)} onAddAfter={action => insertStep(0, action)} />
+          {action ? <WorkflowNode title={t("workflows.steps.number", {number: 1})}
+            label={`${t("workflows.steps.number", {number: 1})}: ${legacyActionDescription}`}
+            number={1} description={legacyActionDescription} showTitle={false}
+            subtitle={legacyActionDescription !== legacyActionLabel ? legacyActionLabel : undefined}
+            disabled={disabled} selected={selectedNode?.type === "action"} terminal
+            onSelect={() => selectNode({type: "action"})} actions={[]} onAddAfter={next => insertStep(0, next)} /> : null}
           {steps.map((step, index) => {
             const label = actionLabel(step);
             const description = workflowStepDescription(step, label, t);
@@ -254,6 +266,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
                           : action === ActionEnum.AddReaction ? {emoji: ""} : action === ActionEnum.SetChannelTopic ? {topic: ""} : {message: ""})});
                     }}><Check className={cn("h-4 w-4", selectedStep.action === action ? "opacity-100" : "opacity-0")} />{t(actionKeys[action])}</DropdownMenuItem>)}
                   </DropdownMenuContent></DropdownMenu> : null}
+                  {selectedNode.type === "action" ? <p className="py-0.5 text-base font-semibold text-foreground">{legacyActionLabel}</p> : null}
                 </div><div className="flex items-center gap-1">
                   {selectedStep ? <Button aria-label={t("workflows.steps.remove")} className="h-8 w-8" disabled={disabled}
                     onClick={() => removeStep(selectedIndex)} size="icon" type="button" variant="ghost"><Trash2 className="h-4 w-4 text-muted-foreground" /></Button> : null}
@@ -262,9 +275,9 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
               </div>
               <div className="relative z-10 min-h-0 w-96 min-w-96 flex-1 overflow-y-auto px-5 pb-5 pt-2 [@container(max-width:26rem)]:w-full [@container(max-width:26rem)]:min-w-0">
                 <AnimatePresence custom={selectionDirection} initial={false} mode="wait"><motion.div animate="center" className="h-full min-h-0"
-                  custom={selectionDirection} exit="exit" initial="enter" key={selectedNode.type === "trigger" ? "trigger" : `step-${selectedNode.stepId}`}
+                  custom={selectionDirection} exit="exit" initial="enter" key={selectedNode.type === "step" ? `step-${selectedNode.stepId}` : selectedNode.type}
                   transition={shouldReduceMotion ? {duration: 0} : {duration: 0.15, ease: "easeOut"}} variants={inspectorContentVariants}>
-                  {selectedNode.type === "trigger" ? <div className="h-full min-h-0">{triggerFields}</div> : selectedStep ?
+                  {selectedNode.type === "trigger" ? <div className="h-full min-h-0">{triggerFields}</div> : selectedNode.type === "action" ? actionFields : selectedStep ?
                     <WorkflowStepCard bare showHeader={false} disabled={disabled} step={selectedStep} index={selectedIndex} policies={policies} trigger={trigger}
                       previousSteps={steps.slice(0, selectedIndex)} onUpdate={updateStep} /> : null}
                 </motion.div></AnimatePresence>
