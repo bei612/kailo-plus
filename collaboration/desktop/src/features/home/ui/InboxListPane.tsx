@@ -9,8 +9,7 @@ import {
   type InboxFilter,
   type InboxItem,
 } from "@/features/home/lib/inbox";
-import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
-import { getThreadReference } from "@/features/messages/lib/threading";
+import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
 import {
   DraftsPanel,
   type DraftViewItem,
@@ -31,34 +30,6 @@ import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 const INBOX_PANE_RIGHT_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']";
-
-function getInboxVideoReviewCommentRootId(item: InboxItem) {
-  const feedItems = [item.item, ...item.groupItems];
-  const feedItemById = new Map(
-    feedItems.map((feedItem) => [feedItem.id, feedItem]),
-  );
-  const videoMessageIds = new Set(
-    feedItems
-      .filter((feedItem) =>
-        hasRenderedVideoAttachment({
-          body: feedItem.content,
-          tags: feedItem.tags,
-        }),
-      )
-      .map((feedItem) => feedItem.id),
-  );
-  const visited = new Set<string>();
-  let ancestorId = getThreadReference(item.item.tags).parentId;
-
-  while (ancestorId && !visited.has(ancestorId)) {
-    if (videoMessageIds.has(ancestorId)) return ancestorId;
-    visited.add(ancestorId);
-    const ancestor = feedItemById.get(ancestorId);
-    ancestorId = ancestor ? getThreadReference(ancestor.tags).parentId : null;
-  }
-
-  return undefined;
-}
 
 type InboxListPaneProps = {
   agentPubkeys?: ReadonlySet<string>;

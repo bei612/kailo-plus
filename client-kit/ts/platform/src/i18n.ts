@@ -620,6 +620,8 @@ export const platformMessages = {
   "buzz.preparingVoiceShort": { en: "Preparing voice note…", "zh-CN": "正在准备语音…" },
   "buzz.queuedAttachment": { en: "Queued attachment", "zh-CN": "待上传附件" },
   "buzz.attachment": { en: "Attachment", "zh-CN": "附件" },
+  "buzz.imageAttachment": { en: "Image attachment", "zh-CN": "图片附件" },
+  "buzz.videoAttachment": { en: "Video attachment", "zh-CN": "视频附件" },
   "buzz.attachmentHash": { en: "Attachment {hash}", "zh-CN": "附件 {hash}" },
   "buzz.videoAttachmentHash": { en: "Video attachment {hash}", "zh-CN": "视频附件 {hash}" },
   "buzz.fileHash": { en: "file {hash}", "zh-CN": "文件 {hash}" },

@@ -18,6 +18,7 @@ import {
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
 import { ImageOff } from "lucide-react";
+import { cn } from "@client-kit/platform/react/cn";
 import { FileCard } from "@client-kit/platform/react/messages";
 import { resolveFileCard } from "@client-kit/platform/react/messages/resolveFileCard";
 import { ImageBlock, ImageMosaic, ImageZoomOverlay, createLinkPreviewImageLightbox, type ImageActions } from "@client-kit/platform/react/image-lightbox";
@@ -80,6 +81,7 @@ type ImetaMedia = {
 };
 
 type MarkdownRenderContextValue = {
+  interactive: boolean;
   mediaByUrl: ReadonlyMap<string, ImetaMedia>;
   mentionsByName: ReadonlyMap<string, MessageMention>;
   resolveMediaUrl: (sha256: string) => string;
@@ -242,8 +244,11 @@ function BffMedia({
 }
 
 const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
-  const { mediaByUrl, resolveMediaUrl, admittedSources } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl, admittedSources, interactive } = useMarkdownRenderContext();
   const media = src ? mediaByUrl.get(src) : undefined;
+  if (!interactive) {
+    return <span>{alt?.trim() || t(src && isVideoMedia(src, media?.mime) ? "buzz.videoAttachment" : "buzz.imageAttachment")}</span>;
+  }
   // 没有 imeta 背书的图片地址不加载：退回成一条普通链接
   if (!media) {
     return (
@@ -259,7 +264,8 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
 };
 
 function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
-  const { resolveMediaUrl } = useMarkdownRenderContext();
+  const { resolveMediaUrl, interactive } = useMarkdownRenderContext();
+  if (!interactive) return <span>{alt}</span>;
   // A signed NIP-30 URL can identify a content-addressed community blob; it
   // never grants browser access to its origin. The existing BFF media route
   // rechecks this conversation/workspace and signs only /media/<hash>.
@@ -274,7 +280,8 @@ function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
 }
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
-  const { mediaByUrl, resolveMediaUrl } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl, interactive } = useMarkdownRenderContext();
+  if (!interactive) return <span className="font-medium text-current">{children}</span>;
   const messageLink = href ? parseMessageLink(href) : null;
   if (messageLink?.ok) {
     if (getReactNodeText(children) !== href) {
@@ -325,20 +332,21 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
 };
 
 function MarkdownMessageLink({ children }: { children?: ReactNode }) {
+  const { interactive } = useMarkdownRenderContext();
   const href = String(children ?? "");
   const link = parseMessageLink(href);
-  return link.ok ? <BffMessageLinkPill href={href} link={link.value} /> : <span data-message-link="">{href}</span>;
+  return link.ok ? <BffMessageLinkPill href={href} link={link.value} interactive={interactive} /> : <span data-message-link="">{href}</span>;
 }
 
 function MarkdownMention({ children }: { children?: React.ReactNode }) {
-  const { mentionsByName } = useMarkdownRenderContext();
+  const { mentionsByName, interactive } = useMarkdownRenderContext();
   const text = String(children ?? "");
   const label = text.replace(/^@/, "");
   const mention = mentionsByName.get(label.trim().toLocaleLowerCase());
   if (!mention) return <>{children}</>;
   const node = <MarkdownMentionChip label={label} pubkey={mention.pubkey} isAgent={mention.isAgent}
-    interactive={Boolean(mention.renderProfile)} />;
-  return mention.renderProfile ? mention.renderProfile(node) : node;
+    interactive={interactive && Boolean(mention.renderProfile)} />;
+  return interactive && mention.renderProfile ? mention.renderProfile(node) : node;
 }
 
 function ThemedCodeBlock({ code, language, ...props }: {
@@ -416,6 +424,9 @@ function displayContent(content: string): string {
 
 export function MessageContent({
   content,
+  className,
+  interactive = true,
+  videoReviewCommentRootId: suppliedVideoReviewCommentRootId,
   messageId,
   workspaceId,
   conversationId,
@@ -426,6 +437,9 @@ export function MessageContent({
   searchQuery,
 }: {
   content: string;
+  className?: string;
+  interactive?: boolean;
+  videoReviewCommentRootId?: string;
   messageId?: string;
   workspaceId?: string;
   conversationId?: string;
@@ -438,7 +452,8 @@ export function MessageContent({
   const {reviewContext, videoReviewCommentRootId} = useBffVideoReview(messageId);
   const channelRuntime = useBffChannelLinkRuntime();
   const channelNames = channelRuntime.channels.filter(channel => channel.channelType !== "dm").map(channel => channel.name);
-  const reviewComment = useVideoReviewCommentContent({content, videoReviewCommentRootId});
+  const reviewComment = useVideoReviewCommentContent({content, interactive,
+    videoReviewCommentRootId: suppliedVideoReviewCommentRootId ?? videoReviewCommentRootId});
   const mentionsByPubkey = new Map(mentions.map(mention => [mention.pubkey.toLowerCase(), mention]));
   const { mentionNames, mentionPubkeysByName } = resolveMentionProps(
     mediaTags?.map(tag => [...tag]),
@@ -460,11 +475,11 @@ export function MessageContent({
   // Relay validates sender-authored snapshot URL/hash pairs at ingestion. Only
   // the hash reaches our existing BFF media route, which rechecks the current
   // actor/scope and reads this community's sidecar. Never fetch the tag's URL.
-  const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
+  const previews = !interactive || mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
     ? [] : mergeMessageLinkPreviews(extractSupportedLinkPreviews(content),
       parseLinkPreviewSnapshots(mediaTags, content, workspaceId || conversationId || onMediaUrl ? resolveMediaUrl : null));
   const admittedSources = new Set([
-    ...[...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)),
+    ...(interactive ? [...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)) : []),
     ...previews.flatMap(preview => preview.imageDataUrl ? [preview.imageDataUrl] : []),
   ]);
   const rehypePlugins: ComponentProps<typeof ReactMarkdown>["rehypePlugins"] = [];
@@ -472,18 +487,19 @@ export function MessageContent({
   if (searchQuery && searchQuery.trim().length >= 1) rehypePlugins.push([rehypeSearchHighlight, {query: searchQuery}]);
 
   return (
-    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink, reviewContext, leadingInlineContent: reviewComment.leadingInlineContent }}>
-      <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
+    <MarkdownRenderContext.Provider key={`${workspaceId ?? ""}:${conversationId ?? ""}`} value={{ interactive, mediaByUrl, mentionsByName, resolveMediaUrl, admittedSources, onOpenMessageLink, reviewContext, leadingInlineContent: reviewComment.leadingInlineContent }}>
+      <MessageBody className={cn(MESSAGE_BODY_CLASS_NAME, className)}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok || parseChannelLink(url).ok ? url : defaultUrlTransform(url)}
           remarkPlugins={[remarkGfm, remarkBreaks, remarkChannelDeepLinks, remarkMessageLinks, [remarkChannelLinks, { channelNames }], remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
           rehypePlugins={rehypePlugins}
           components={{ ...MARKDOWN_COMPONENTS,
-            "channel-deep-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelDeepLink interactive>{children}</BffMarkdownChannelDeepLink>,
-            "channel-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelReference interactive>{children}</BffMarkdownChannelReference>,
+            ...(!interactive ? {pre: ({children}: {children?: ReactNode}) => <span>{children}</span>} : {}),
+            "channel-deep-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelDeepLink interactive={interactive}>{children}</BffMarkdownChannelDeepLink>,
+            "channel-link": ({ children }: { children?: ReactNode }) => <BffMarkdownChannelReference interactive={interactive}>{children}</BffMarkdownChannelReference>,
             "message-link": MarkdownMessageLink,
             emoji: MarkdownEmoji, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
-            <SpoilerInline block={props["data-block-spoiler"] != null}>{children}</SpoilerInline> } as Components}
+            <SpoilerInline block={props["data-block-spoiler"] != null} interactive={interactive}>{children}</SpoilerInline> } as Components}
         >
           {displayContent(reviewComment.content)}
         </ReactMarkdown>

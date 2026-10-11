@@ -1,6 +1,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 
 import type { TimelineMessage } from "../messages/types";
+import { getThreadReference } from "../messages/threading";
 import { isVoiceNoteAttachment } from "../composer/features/messages/lib/audioAttachment";
 import type { UserProfileLookup } from "../messages/system/identity";
 import type { ChannelType } from "../search/types";
@@ -86,6 +87,39 @@ export function hasRenderedVideoAttachment(
   return markdownImageUrls(message.body).some((src) =>
     isReviewVideo(src, imetaByUrl.get(src)),
   );
+}
+
+// Buzz 779af8886caae1317b4de962082429867ab61503:
+// desktop/src/features/home/ui/InboxListPane.tsx::getInboxVideoReviewCommentRootId.
+export function getInboxVideoReviewCommentRootId(item: {
+  item: { id: string; content: string; tags: string[][] };
+  groupItems: readonly { id: string; content: string; tags: string[][] }[];
+}) {
+  const feedItems = [item.item, ...item.groupItems];
+  const feedItemById = new Map(
+    feedItems.map((feedItem) => [feedItem.id, feedItem]),
+  );
+  const videoMessageIds = new Set(
+    feedItems
+      .filter((feedItem) =>
+        hasRenderedVideoAttachment({
+          body: feedItem.content,
+          tags: feedItem.tags,
+        }),
+      )
+      .map((feedItem) => feedItem.id),
+  );
+  const visited = new Set<string>();
+  let ancestorId = getThreadReference(item.item.tags).parentId;
+
+  while (ancestorId && !visited.has(ancestorId)) {
+    if (videoMessageIds.has(ancestorId)) return ancestorId;
+    visited.add(ancestorId);
+    const ancestor = feedItemById.get(ancestorId);
+    ancestorId = ancestor ? getThreadReference(ancestor.tags).parentId : null;
+  }
+
+  return undefined;
 }
 
 export function hasVideoAttachment(

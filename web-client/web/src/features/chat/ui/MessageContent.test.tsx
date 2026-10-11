@@ -15,6 +15,7 @@ import { BffMessageLinkHost, readMessageLinkMetadata } from "./BffMessageLinkHos
 import { MessageLinkPillPresentation } from "@client-kit/platform/react/messages/message-link";
 import { toast } from "sonner";
 import { getLocale, setLocale } from "@client-kit/platform/i18n";
+import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -27,6 +28,49 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it.each(["en", "zh-CN"] as const)("preserves the original inert Inbox preview in %s without reading media or rendering controls", (locale) => {
+    const previousLocale = getLocale();
+    setLocale(locale);
+    vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+    const renderProfile = vi.fn((children: ReactNode) => <button>{children}</button>);
+    const onMediaUrl = vi.fn(() => { throw new Error("An inert preview must not resolve media"); });
+    const host = document.createElement("div");
+    try {
+      host.innerHTML = renderMarkup(<PlatformProvider client={client} locale={locale}><TooltipProvider><ThemeProvider>
+        <MessageContent interactive={false} className="inbox-preview-markdown text-inherit" onMediaUrl={onMediaUrl}
+          mentions={[{pubkey:PERSON,name:"Alex",isAgent:false,renderProfile}]}
+          mediaTags={[["imeta",`url ${IMAGE_URL}`,`x ${SHA}`,"m image/png"],["emoji","wave",IMAGE_URL]]}
+          content={`[external](https://example.com) @Alex :wave: ||secret||\n\n![](${IMAGE_URL})\n\n![](https://example.com/clip.mp4)\n\n[download](${IMAGE_URL})\n\nhttps://youtu.be/dQw4w9WgXcQ\n\n\`\`\`text\noriginal code\n\`\`\``} />
+      </ThemeProvider></TooltipProvider></PlatformProvider>);
+      expect(host.querySelector(".message-markdown.inbox-preview-markdown.text-inherit")).not.toBeNull();
+      expect(host.querySelector(".message-markdown")?.classList.contains("text-message")).toBe(true);
+      expect(host.querySelector(".message-markdown")?.classList.contains("text-foreground")).toBe(false);
+      expect(host.querySelector("a,button,img,video,audio,[role=button],pre,[data-code-block],[data-link-preview-list]")).toBeNull();
+      expect(host.textContent).toContain(locale === "en" ? "Image attachment" : "图片附件");
+      expect(host.textContent).toContain(locale === "en" ? "Video attachment" : "视频附件");
+      expect(host.textContent).toContain("original code");
+      expect(host.querySelector('[data-spoiler]')?.getAttribute("data-revealed")).toBe("false");
+      expect(renderProfile).not.toHaveBeenCalled();
+      expect(onMediaUrl).not.toHaveBeenCalled();
+    } finally {setLocale(previousLocale);vi.unstubAllGlobals();}
+  });
+
+  it("uses the shared original Inbox ancestor walk for a non-clickable timecode, not orphan imeta or cycles", () => {
+    const video={id:"video",content:"![clip](https://example.com/clip.mp4)",tags:[] as string[][]};
+    const parent={id:"parent",content:"comment",tags:[["e",video.id,"","reply"]]};
+    const reply={id:"reply",content:"[00:12] original review",tags:[["e",parent.id,"","reply"]]};
+    const rootId=getInboxVideoReviewCommentRootId({item:reply,groupItems:[video,parent]});
+    expect(rootId).toBe(video.id);
+    const host=document.createElement("div");
+    host.innerHTML=renderToStaticMarkup(<MessageContent content={reply.content} interactive={false} videoReviewCommentRootId={rootId}/>);
+    expect(host.querySelector('[data-testid="video-review-comment-timecode"]')?.tagName).toBe("SPAN");
+    expect(host.textContent).toContain("00:12");
+    expect(host.textContent).toContain("original review");
+    expect(host.querySelector("button,[role=button]")).toBeNull();
+    expect(getInboxVideoReviewCommentRootId({item:reply,groupItems:[parent,{...video,content:"plain",tags:[["imeta","url https://example.com/clip.mp4","m video/mp4"]]}]})).toBeUndefined();
+    expect(getInboxVideoReviewCommentRootId({item:reply,groupItems:[{...parent,tags:[["e",reply.id,"","reply"]]}]})).toBeUndefined();
+  });
+
   it("uses the complete original Markdown search highlighting while excluding code and clearing an absent query", () => {
     vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
     try {

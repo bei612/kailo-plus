@@ -1,5 +1,70 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-11 Inbox 原只读预览恢复
+
+- 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 原调用明确使用
+  `VideoReviewCommentMarkdown interactive={false}` 及
+  `inbox-preview-markdown text-inherit`。Web 两个实际 Inbox 分支遗漏此语义，
+  不属于治理授权差异；本批恢复原预览，不增筛选项或新界面。
+- 影响面：Web `MessageContent`、`BffMessageLinkPill` 与两处 Inbox 行；
+  原 `getInboxVideoReviewCommentRootId` 函数体迁入共享 videoReviewContext，
+  Desktop/Web 消费同一祖先遍历。现存原 `profile/buzz/shared/lib/cn.ts::cn`
+  通过唯一实际消费的 `./react/cn` 导出复用；保留 text-message 字号组，
+  按原覆盖关系去掉正文 text-foreground。没有复制类合并工具或修改原布局。
+- 副作用：默认完整消息仍 interactive=true；预览不导航、不取媒体、不打开
+  作者、不加载消息链接元数据、不显示链接预览/复制控件，仍由原 Inbox 行
+  点击选择、原读账本标记。BFF 当前身份、目录及消息授权未放宽；没有新增状态、
+  持久数据、接口、凭据或第二执行路径。
+- 边界：空 alt 沿原 Image attachment/Video attachment 文案并使用共源中英词条；
+  时间码只在原渲染视频祖先成立时显示不可点击 chip，孤立 imeta 与循环引用不成立。
+  会话变化、失败/UNKNOWN、撤权及读请求并发仍由既有调用处理，本批不新增重试。
+
+| 固定原模块 | 四类归属与当前消费者 |
+| --- | --- |
+| `desktop/src/shared/ui/markdown.tsx::createMarkdownComponents` 的 interactive=false 分支 | 原样保留语义，补回 Web 宿主；媒体仍沿既有授权 BFF，不能退回原任意来源加载 |
+| `desktop/src/shared/ui/VideoReviewCommentMarkdown.tsx::VideoReviewCommentMarkdown` | 既有共享 hook 原样保留，本批只接入原非交互参数与祖先结果 |
+| `desktop/src/features/home/ui/InboxListPane.tsx::getInboxVideoReviewCommentRootId` | 共享迁移，原函数体不变，仅输入类型收敛为两个真实宿主共同字段 |
+| `desktop/src/shared/lib/cn.ts::cn` | 既有共享原实现原样复用；新 export 有实际 MessageContent 消费 |
+| 媒体准入、消息目录与词条 | 已授权治理/本地化改造；只增两个原附件 fallback 词条，Dart 由原生成器投影 |
+| 原 needs_action/reminders 等其它 Inbox 能力及完整页面视觉矩阵 | 缺失需恢复或未验收，不由本批预览恢复宣称完成 |
+
+实际输入基底 `fc6ff4c3c15a8d1b3343320eb719cf95afe4da8d`。独立 Data 快照
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-preview.uH8FtW`；
+原 `kailo-web-thread-tooltip-sdk` 为 UID 1000、4 CPU/8 GiB/equal swap，
+仅复用现存依赖链接，无安装、新镜像或全局检查。
+
+原命令从快照 Web 目录执行：
+
+```sh
+node node_modules/vitest/vitest.mjs run src/features/chat/ui/MessageContent.test.tsx src/platform/ui/InboxPane.test.tsx --pool=threads --maxWorkers=1 --no-file-parallelism
+node node_modules/typescript/bin/tsc --noEmit
+```
+
+- 99892 正向 exit 0：60 passed；90601 仅私有 Inbox 行改为 interactive=true，
+  单项真实失败（exit 1/1 failed/29 按筛选跳过）：预览出现外部 a，不能把空壳检查算通过。
+  apply_patch 恢复后与正式文件 cmp 0，49969 的两套件还原 60 passed，
+  Web tsc 与共享规范 TypeScript 5.9.3 tsc 均 0。
+- 49969 整批 exit 1：其后 Dart 默认目录 `/.dart-tool` 创建权限拒绝，
+  gen/check 各 1、原 dart format 255；不是词条业务失败。
+- cn 纠偏末版 48822 已执行 60 passed；该顺序调用曾显式投递私有工具 HOME，
+  经主线纠正，精确终止 shell 5457/tsc 5498，外层 exit 143、Dart 未执行。
+  没有改变宿主身份或容器配置，不把被中止类型检查记通过。末版仅补未结束类型，
+  18458 实际 exit 0：Web TypeScript 6.0.3 和共享锁定 5.9.3 均 0。
+- Dart 改回既有配置已成立的原 `kailo-cells-closure-kxbrvt`，未覆盖 HOME；
+  原 `python3 tools/gen-platform-i18n.py` 与 `--check`，74278 exit 0，
+  输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+  独立输入 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/inbox-preview-gen.SVoA5p`；
+  reason_text cmp 0，platform_text 只加两个键及其两条映射。
+- cn 新断言另做私有反证：74688 仅将 cn 恢复成数组 join，exit 1，两个语言用例
+  均准确捕获残留 text-foreground；原样还原 cmp 0，78363 同两项 exit 0。
+  其余 28 项按 -t 筛选未执行，不把该窄还原写成另一次全套通过。
+- 原 React act 警告保留。上述是实际 DOM/类型/共源生成检查，不是完整浏览器、
+  Windows/Mobile 或生产验收。本批没有构建或部署；现有 9d718 的 Inbox 截图
+  只适用于该旧部署，不能认领本批修复后的截图。完整 full 仍沿主线失败记录，
+  不声称原版 100% 还原。
+
+
 ## 2026-10-11 共享模块四分类增量与真实页面边界
 
 固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`，本次 main 基底

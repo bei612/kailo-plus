@@ -122,11 +122,45 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
       await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen} onStartDm={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
       await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${task.id}"]`)).not.toBeNull());
       const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${task.id}"]`)!;
+      expect(row.querySelector(".inbox-preview-markdown.text-inherit")).not.toBeNull();
       await act(async()=>row.querySelector<HTMLButtonElement>(":scope > button")!.click());
       await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-project-inbox-detail"]')?.textContent).toContain("Original complete project task"));
       expect(api.write).toHaveBeenCalledWith([{key:`msg:${task.id}`,seconds:task.created_at}]);
       expect(onOpen).not.toHaveBeenCalled();
       expect(host.querySelector('[data-testid="project-issue-comment-composer"]')).toBeNull();
+    } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+  });
+  it("selects the actual Inbox row when its original inert link preview is clicked without opening another page", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    setLocale("en");localStorage.clear();sessionStorage.clear();
+    vi.stubGlobal("ResizeObserver",class {observe(){}unobserve(){}disconnect(){}});
+    vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+    const self="c".repeat(64);
+    api.profile.mockResolvedValue({pubkey:self});
+    api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});
+    api.readFailed=false;api.readUnknown=false;
+    api.workspaces.mockResolvedValue([{id:"workspace-a",name:"Channel",isMember:true}]);
+    api.agentInstallations.mockResolvedValue({installations:[]});
+    api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"}]);
+    api.workspaceMessages.mockReset().mockResolvedValue({events:[
+      {...event,content:"[original link](https://example.com)",tags:[...event.tags,["p",self]]},
+      {...event,id:"d".repeat(64),kind:39006,tags:[...event.tags,["d","workspace-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})},
+    ]});
+    api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,eventId:"profile",displayName:"Author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+    const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const onOpen=vi.fn();
+    try {
+      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"] .inbox-preview-markdown`)).not.toBeNull());
+      const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"]`)!;
+      const preview=row.querySelector<HTMLElement>(".inbox-preview-markdown")!;
+      expect(preview.querySelector("a,button,[role=button]")).toBeNull();
+      api.write.mockClear();
+      await act(async()=>preview.querySelector<HTMLElement>("span.font-medium")!.click());
+      expect(row.getAttribute("aria-current")).toBe("true");
+      expect(api.write).toHaveBeenCalledTimes(1);
+      expect(onOpen).not.toHaveBeenCalled();
     } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
   });
   it("renders the original empty preview through the shared locale consumer and updates it without refetching identity", async () => {

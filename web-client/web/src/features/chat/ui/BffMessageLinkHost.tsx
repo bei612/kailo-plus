@@ -114,9 +114,10 @@ export async function readMessageLinkMetadata(client: BffClient, target: Target,
   return {kind:"unavailable"};
 }
 
-export function BffMessageLinkPill({href, link}: {href?: string; link: ParsedMessageLink}) {
+export function BffMessageLinkPill({href, link, interactive = true}: {href?: string; link: ParsedMessageLink; interactive?: boolean}) {
   const host = useContext(MessageLinkHost);
-  if (!host) return <MessageLinkPillPresentation href={href} link={link} interactive={false} openable={false}
+  const target = host ? resolveMessageLinkTarget(host, link.channelId) : undefined;
+  if (!host || !interactive) return <MessageLinkPillPresentation href={href} link={link} channel={target?.channel} channelLabel={target?.label} interactive={false} openable={!!target}
     metadata={{state:{kind:"idle"}}} onOpenChannel={() => {}} onOpenMessageLink={() => {}} copyLink={() => {}} />;
   return <ResolvedBffMessageLinkPill href={href} link={link} host={host} />;
 }

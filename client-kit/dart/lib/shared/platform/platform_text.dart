@@ -530,6 +530,8 @@ enum PlatformMessageKey {
   buzzPreparingVoiceShort,
   buzzQueuedAttachment,
   buzzAttachment,
+  buzzImageAttachment,
+  buzzVideoAttachment,
   buzzAttachmentHash,
   buzzVideoAttachmentHash,
   buzzFileHash,
@@ -3548,6 +3550,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.buzzQueuedAttachment: ('Queued attachment', '待上传附件'),
   PlatformMessageKey.buzzAttachment: ('Attachment', '附件'),
+  PlatformMessageKey.buzzImageAttachment: ('Image attachment', '图片附件'),
+  PlatformMessageKey.buzzVideoAttachment: ('Video attachment', '视频附件'),
   PlatformMessageKey.buzzAttachmentHash: ('Attachment {hash}', '附件 {hash}'),
   PlatformMessageKey.buzzVideoAttachmentHash: (
     'Video attachment {hash}',

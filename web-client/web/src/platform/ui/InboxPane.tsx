@@ -21,6 +21,7 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
+import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
 import { VirtualizedList } from "@client-kit/platform/react/VirtualizedList";
 import { HomeLoadingState, InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
@@ -368,7 +369,7 @@ export function InboxPane({
                 unread={row.unreadCount>1?t("inbox.unreadCount",{count:row.unreadCount}):null}
                 label={typeLabel.text} channel={null} openLabel={t("inbox.openItem",{sender})}
                 onSelect={()=>{setProfileTarget(null);setSelected(row.scopeKey);if(!read)reads.write(inboxReadContexts(row.items.map(readItem),true));}}
-                preview={<MessageContent content={feedPreview(item,locale)} mediaTags={item.tags}/>}
+                preview={<MessageContent className="inbox-preview-markdown text-inherit" interactive={false} content={feedPreview(item,locale)} mediaTags={item.tags}/>}
                 actions={<InboxRowActionButton disabled={reads.pending} label={t(read?"inbox.markUnread":"inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4"/></InboxRowActionButton>}/>
             </div></ContextMenuTrigger><ContextMenuContent><ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4"/>{t(read?"inbox.markUnread":"inbox.markRead")}</ContextMenuItem></ContextMenuContent></ContextMenu>;
           }
@@ -391,7 +392,9 @@ export function InboxPane({
               channel={typeLabel.channelLabel}
               openLabel={t("inbox.openItem", { sender })}
               onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
-              preview={<><MessageContent content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
+              preview={<><MessageContent className="inbox-preview-markdown text-inherit" interactive={false}
+                videoReviewCommentRootId={getInboxVideoReviewCommentRootId({item,groupItems:row.items})}
+                content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
                 <InboxRowActionButton disabled={hiddenDm.isReopenPending(item.channelId)} label={t(hiddenDm.isReopenPending(item.channelId) ? "inbox.reopening" : "inbox.open")} onClick={() => openItem(item)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>
