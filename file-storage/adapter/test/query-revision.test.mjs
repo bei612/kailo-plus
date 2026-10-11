@@ -244,10 +244,10 @@ async function setup(t, changes = {}) {
     if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
       state.rootReads=(state.rootReads??0)+1;
       if (changes.rootAfter && state.rootReads >= (changes.rootAfterRead ?? 2)) return reply(response,200,changes.rootAfter);
-      return reply(response,200,changes.root ?? {...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]});
+      return reply(response,changes.rootStatus??200,changes.root ?? {...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]});
     }
     if (changes.serviceList && request.url === `/v2/n/node/${ids[3]}?Flags=WithMetaDefaults`) {
-      return reply(response,200,changes.target ?? {...target,ContentType:'text/plain'});
+      return reply(response,changes.nodeStatus??200,changes.target ?? {...target,ContentType:'text/plain'});
     }
     if (changes.serviceList && request.url === '/v2/n/nodes') {
       let body=''; for await (const chunk of request) body+=chunk;
@@ -980,9 +980,39 @@ test('SERVICE file and directory disclosure recheck platform permission after ac
       assert.equal(fixture.state.receipts.length, 1);
       assert.equal(fixture.state.receipts[0].role, 'SOURCE');
       assert.equal(fixture.state.peps, serviceList ? 3 : 4);
-      assert.equal(serviceList ? fixture.state.listings : fixture.state.downloads, serviceList ? 2 : 1);
+      assert.equal(serviceList ? fixture.state.listings : fixture.state.downloads, serviceList ? 3 : 1);
     });
   }
+});
+
+test('SERVICE directory discovery refuses native changes during receipt I/O without publishing a stale deletion set', async t => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],input:{resourceId:ids[10]}};
+  const request={actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const root={Uuid:ids[2],Type:'COLLECTION',Path:'documents/root',ContextWorkspace:{Uuid:ids[1]},FolderMeta:[{Namespace:'ChildrenCount',Value:1}]};
+  const target={Uuid:ids[3],Type:'LEAF',Path:'documents/root/file.txt',ContentType:'text/plain',ContextWorkspace:{Uuid:ids[1]}};
+  for (const [name, patch, status] of [
+    ['root ACL withdrawn',{rootStatus:403},503],
+    ['member ACL withdrawn',{nodeStatus:403},503],
+    ['root recycled',{root:{...root,IsRecycled:true}},503],
+    ['member moved outside root',{target:{...target,Path:'documents/other/file.txt'}},503],
+    ['published revision replaced',{versions:{Versions:[{VersionId:'new-version',IsHead:true}]}},409],
+    ['complete native set became empty',{root:{...root,FolderMeta:[{Namespace:'ChildrenCount'}]},listResponse:{}},409],
+    ['member renamed',{target:{...target,Path:'documents/root/renamed.txt'}},409],
+    ['native enumeration unavailable',{listStatus:503},503],
+  ]) await t.test(name,async nested=>{
+    const changes={operation:'execute',arguments:argumentsValue,serviceList:true,root,target};
+    const fixture=await setup(nested,changes);
+    fixture.state.onReceipt=()=>Object.assign(changes,patch);
+    const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+    assert.equal(response.status,status);
+    assert.deepEqual(await response.json(),{error:'adapter request refused'});
+    assert.equal(response.headers.get('x-kailo-native-object-ref'),null);
+    // The original SOURCE read was recorded, but neither the old nor newly
+    // changed desired set is disclosed and no replacement receipt is forged.
+    assert.equal(fixture.state.receipts.length,1);
+    assert.equal(fixture.state.receipts[0].role,'SOURCE');
+    assert.equal(fixture.state.peps,2);
+  });
 });
 
 test('SERVICE directory discovery uses counted complete native listings and exact version heads', async (t) => {
@@ -997,7 +1027,7 @@ test('SERVICE directory discovery uses counted complete native listings and exac
   assert.deepEqual(result.items,[{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'}]);
   const encoded=canonical(result.items);
   assert.equal(result.listingDigest,createHash('sha256').update(encoded).digest('hex'));
-  assert.equal(fixture.state.listings,2);
+  assert.equal(fixture.state.listings,3);
   assert.equal(fixture.state.peps,3);
   assert.equal(fixture.state.receipts.length,1);
   assert.equal(fixture.state.receipts[0].nativeObjectRef,ids[2]);
@@ -1038,7 +1068,7 @@ test('SERVICE discovery consumes the native omitted empty collection without inv
       const result=await response.json();
       assert.deepEqual(result.items,[]);
       assert.equal(result.listingDigest,createHash('sha256').update('[]').digest('hex'));
-      assert.equal(fixture.state.listings,2);
+      assert.equal(fixture.state.listings,3);
       assert.equal(fixture.state.peps,3);
       assert.equal(fixture.state.receipts.length,1);
       assert.equal(fixture.state.receipts[0].contentBytes,2);

@@ -1414,3 +1414,62 @@ Rust 101 / Go 1 / TypeScript 1 / Dart 1；`pep-independent-*-negative.log`
 基线为 710 项 647 通过/63 失败（`pep-independent-head-baseline.log`），
 63 个失败名称逐项相同；本批新增 8 项通过，但完整 adapter 套件仍未通过。
 本批未执行全局 `--full`、真实 Core PEP 数据库 HTTP 链或 UI/设备验收，未部署。
+
+## 2026-10-11：SOURCE 目录回执后原生披露复核
+
+权威与影响：按 `.design/13` §4.4/§7 和 `.design/07` §8.2，只有完整且
+授权成立的枚举才能作为接收方 desired set；查询失败、撤权和来源变化都不是
+源文件删除。固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`gateway/restv2/api-lookup.go::Handler.Lookup` /
+`Handler.isListingLookup` 和
+`gateway/restv2/api-versions.go::Handler.NodeVersions` 为已有原生读取路径。
+本批不改上游接口、业务页面、数据库、契约或权限权威。
+
+原缺口在 `file-storage/adapter/src/service-list.mjs::listFiles`：回执前两次
+完整原生遍历及 fresh PEP 成立后，SOURCE 回执 HTTP I/O 仍可能经历原生 ACL
+撤销、节点移动、版本替换或目录变化；回执后仅重查平台 PEP 不能证明该原生
+集合仍可披露。本批在现有最终平台 PEP 前复用 `nativeListing`，要求第三次
+完整集合的 canonical 值与原集合一致。所有遍历共用原 deadline、最大体积
+和枚举限制，不增加默认阈值、缓存 allow、正文复制或第二执行记录。
+
+异常与副作用：原生拒绝/无法枚举继续原 503；完整集合不一致为原 409，
+绝不返回旧集合或将查询失败伪装为空集合。最终平台 PEP 保留，可在新增
+原生复核期间撤权时拒绝。SOURCE 回执已写而最终披露失败，仍只证明源侧
+既有读取，不证明 RECEIVER 完成；调用结果不明保持原操作的对账/重试边界，
+不得合成同步成功/失败终态、替换 operation/idempotencyKey 或签发新 grant。
+本批不改变原重试观察同 creation/task 的路径，不补造历史绑定代次。
+Web/Desktop 的组件宿主和 Mobile 非组件宿主边界不变。
+
+验证输入由已提交 `beacab8ca6585d489037e6951b3fe380ceda654a` 精确导出
+原 adapter 与共享 client-kit/adapter，再加入本批两文件；没有混入尚未合入
+NativeCell/reconcile 测试 fixture。复用原 SDK `kailo-cells-closure-kxbrvt`
+4 CPU/8 GiB（无额外 swap）；开始前确认仅 sleep，无活跃检查，主机可用内存
+约 27.5 GiB。缓存、临时输入与日志均在 Data，不读写 rust-target。
+
+```text
+node --test --test-name-pattern="^SERVICE" file-storage/adapter/test/query-revision.test.mjs
+  positive.log：exit 0，95 passed / 0 failed / 0 skipped
+node --test --test-name-pattern="^SERVICE directory discovery refuses native changes during receipt I/O" file-storage/adapter/test/query-revision.test.mjs
+  negative.log：exit 1，8 个子场景和父测试共 9 failed
+node --test --test-name-pattern="^SERVICE" file-storage/adapter/test/query-revision.test.mjs
+  restored.log：exit 0，95 passed / 0 failed / 0 skipped
+```
+
+事后破坏仅在私有副本准确移除新增的回执后 nativeListing 比较，保留回执前
+两次遍历及所有 PEP。根/成员 ACL 撤销、根回收、成员移出、版本替换、集合
+变空、重命名和枚举不可用 8 例均实际收到错误的 200（预期 409 或 503）。
+恢复该行后，生产文件与正式树 cmp 退出 0，原 SERVICE 检查再次全部通过。
+这些检查调用实际 adapter HTTP 消费者，但原生服务、Core PEP 与回执接收端
+为隔离 fixture；不是在线 Cells/Core/WeKnora 联调或完整组件上架证据。
+
+日志目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/source-list-receipt.z0gr9h`。
+SHA-256：
+
+- `positive.log`：`52f3758d9e38427a4c85937fdf05ef68dcc60921a67b9d76eeb9c5d56de3eed2`
+- `negative.log`：`8511716e89942f4a72c7374b8ec721c51ee61e25db4b33a4dad7c08254e5204d`
+- `restored.log`：`97cd55161befd0f19ab810bced38943e6306679834ba97c3b90b55c8b49de9b1`
+
+本批未运行全局 --full、真实数据库/原生部署、浏览器截图或三端设备验收，
+未产出镜像、未部署或激活组件。知识库延迟接收任务的可信持久关联和 fresh
+执行入口仍由对应消费者闭合，不因本 SOURCE 披露修复而宣称跨服务同步完整。
