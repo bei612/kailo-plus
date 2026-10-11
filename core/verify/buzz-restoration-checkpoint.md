@@ -1,5 +1,122 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-11 固定 562156a 全模块源码分类与实际消费者纠偏
+
+比较范围固定为官方 Buzz `779af8886caae1317b4de962082429867ab61503` 与
+apps `562156ae7f12953e3eea61305fe282ae98b6c416` 的完整 `collaboration/`，
+仍按原 manifest 排除 `fork/`；共享目标同时读取该提交的 client-kit 与 web-client。
+不是工作树差异，也不是只对本轮 Inbox/设置作比较。原始树、逐路径四类及模块汇总在
+`/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF` 的
+`buzz-779af-tree.tsv`、`apps-562156ae7f12-tree.tsv`、
+`collaboration-562156ae7f12.classification.tsv`、`module-source-summary.tsv`。
+
+复用既有 Data `export_main_diff.py` 与原 `tools/upstream_manifest.py::diff`。
+第一次 75367 原脚本先对 dirty 工作树 git add 再 read-tree，导致无消费 I/O；
+仅精确停止自身 python/git，exit 143，两 PID 均退出。随后只修该临时脚本为
+直接原 upstream_tree + 固定提交私有 index，并把遗留根盘缓存投递移至现有 Data。
+未改正式工具、公共 index 或共享缓存配置；第二次 62883 实际 exit 0。
+缓存中两个 /workspace alternate 路径警告保留，不将 stderr 为空作为成功标准。
+完整 `collaboration-562156ae7f12-fixed.patch` 为 1053346 行，原 git apply --numstat
+解析 exit 0、rename 口径 3382 文件 +39414/-754043；与路径 union 是不同口径。
+patch SHA-256 `f0324c52837d6d1d6ec8a6289137500f5f906439295b16a28605e64c44d68468`；
+分类 TSV SHA-256 `a7d016a88c5a0c5063c31c7ad0033ae7a319bd5e70c87b124b182c359bd4277a`。
+
+全路径 union 为 5316：上游 5195、本提交二开 2871；同路径字节/模式/type 相同
+1926，修改 824，原位置删除 2445，新增 121。这是 Git 路径统计，原位置删除包含
+共享迁移，不是 2445 个产品功能缺失。四类记录为原样保留 1921、共享迁移 114、
+整文件已授权治理改造 0、缺失需恢复/尚未逐项证明 3281；最后一类是证明队列，
+不是已证缺失功能总数。整文件授权为 0 也不否认已在各原回执逐 hunk 证明的治理接缝。
+
+旧 dd399 的迁移证据只在原文件及全部已登记目标 mode/type/blob 不变时延续，
+113 项符合；messageLinkLabel 另全文复证仅增可选 threadPrefix 与同源中文消费，
+原 channel/trim/default/sent-from-thread 逻辑仍在，归共享迁移。RightAuxiliaryPane
+已新增 active=false 分支，不沿旧 blob 证据自动宣称原样；当前确有两宿主消费者，
+但该分支逐项授权与完整状态视觉仍留在复核队列。上述计数不代表 114 个完整页面验收。
+
+五个原样 blob 已纠正为“缺失需恢复”：官方
+`web/src/features/repos/ui/ReposPage.tsx::ReposPage`、
+`web/src/features/repos/ui/RepoDetailPage.tsx::RepoDetailPage`、
+`web/src/features/repos/ui/RepoBlobViewer.tsx::RepoBlobPage` 及
+`web/src/app/routes/repos.$repoId.tsx::Route`、
+`web/src/app/routes/repos.$repoId.blob.$.tsx::Route`。
+源码仍在 collaboration/web，不等于用户能用：当前 BUZZ_WEB inputs 来自
+web-client/web 与共享包，实际 `web-client/web/src/app/routes.ts::routes`
+没有两条仓库详情/文件路由。原 `web/src/features/repos/use-git-browse.ts::useGitClone`
+调用 `git-client.ts::ensureClone`，还有原浏览器 signer；不能直接挂回规避现有 BFF。
+
+全模块消费边界续核如下；所有原路径均以本段固定官方提交为前缀，不以同名文件不存在
+直接判功能被删，也不把浅包装、模块注释或 frame 等同整页已经恢复：
+
+| 原模块范围与关键符号 | 当前已证明的实际消费及仍缺项 |
+| --- | --- |
+| `desktop/src/features/agents/ui/AgentsView.tsx::AgentsView` 及 agents/agent-memory | 原框架与身份卡片被共享 AgentDefinitionsPage 消费；InstallationSessions 是 Core 元事实，不是原 Transcript/Working。UnifiedAgentsSection 的网格样式不能证明完整批量操作、Teams、catalog、snapshot、原资料 tabs 与记忆模块已恢复 |
+| `desktop/src/features/workflows/ui/WorkflowsView.tsx::WorkflowsView` | 共享 agents.tsx 真实挂载列表、画布、YAML、历史；WorkflowTriggerConditions→WorkflowAuthorPicker 已有实际消费者，旧“条件/作者全部无消费者”结论撤销。Webhook 原 headers/secret 模块、非 Delay timeout 与未闭合步骤条件仍缺，不把 Delay 双 Timer 或原骨架算全套 Run controls |
+| `desktop/src/features/projects/ui/ProjectCommitDetailPanel.tsx::ProjectCommitDetailPanel` 及 home | Projects/Inbox 原 Issue、PR 只读分支与 ProjectOriginReference 两页消费者已提交；第三 CommitDetailPanel/Git diff、项目写操作、Web 项目作者资料仍不能由只读链认领。原 Projects 目录删除不再整块计为功能不存在 |
+| `desktop/src/features/channels/ui/ChannelManagementSheet.tsx::ChannelManagementSheet` | 频道/DM/线程的共享时间线、系统行、附件、读取/投稿接缝有实际双宿主；不等于原完整频道管理 sheet、permissions/type 与 workflows 管理已恢复。不得把已有菜单或管理摘要当原完整模块 |
+| `desktop/src/features/sidebar/ui/SidebarDnd.tsx::SidebarDndContext`、`CommunityRail.tsx::CommunityRail` | 原 SidebarProjectsSection 现有真实投递，不再标整块缺失；原拖拽/分组与社区轨完整交互仍未恢复。成员、频道可见性与组件 binding 筛选是授权边界，不因此授权重设计原侧栏 |
+| `desktop/src/features/profile/ui/UserProfilePanelTabs.tsx::ProfileTabBar/ProfileRuntimeTabContent`、`UserProfilePanelFocusedViews.tsx::MemoryFocusedView/AgentInfoFocusedView` | 原 UserProfilePanelFrame 已共享且实际消费；框架不能认领原 Agent sections/tabs/focused views。原 settings/Profile、avatar 编辑存在实际消费者，不能把这两种资料页混为同一验收 |
+| messages/chat/search、forum、pulse、notifications、custom-emoji、community-members | 当前已有真实共享正文/编辑器、搜索导航、Forum/Pulse host、通知/表情/邀请消费者；本段不将这些整目录重新标全缺，也不以基础元素迁移认领所有原菜单、弹窗、写操作或撤权状态。逐模块限界沿原专项回执，只有本次六张旧部署状态实拍 |
+| settings | 当前 7/16 类及缺失九模块见本次设置实拍段；原 Theme/SoundPicker/Shortcuts 已实际打开。无原 Voice Tauri 消费者，不复制空表单来消除缺项 |
+| `desktop/src/features/reminders/ui/RemindersPanel.tsx::RemindersPanel`、`hooks.ts::useRemindersQuery/useReminderMutations` | 原提醒列表/详情、snooze、到期通知以及 Inbox needs_action/reminders 仍无完整实际消费；仅保留原 helper 或显示计数不算恢复 |
+| `desktop/src/features/huddle/HuddleContext.tsx::HuddleProvider`、`desktop/src/features/terminal/TerminalSubstrate.tsx::TerminalSubstrate` | Huddle/Terminal 原完整模块未接通；voice-note 录音与消息播放器不能替代 Huddle，运行 Codex 不能替代原 Terminal 页面。不能自动恢复未经治理执行 |
+| channel-templates、communities、identity-archive、local-archive、mesh-compute、moderation、onboarding、presence、user-status、gifs | 均纳入完整树与逐路径证明队列；原 SSO/本机持钥替换只证明其指定接缝，不授权删除其余产品页面。本段未证明这些完整模块治理消费成立，不用“上游路径有源码”标成功 |
+| desktop app/shared/native、mobile、crates、admin-web、web、部署/资源/原检查 | 也在同一完整树 union 内，不从统计中排除。原样代码与资产只证明源码保留；原生执行受 Relay/Temporal/Codex 接缝及 Mobile 非组件宿主边界约束。没有新增 Windows/Mobile 包或设备验收，原 admin-web/web 源存在不证明当前部署入口 |
+
+本段覆盖原 Desktop features 全部 30 个目录的范围核对，加上 app/shared/native、
+Mobile、Relay 与其余 crates/工具/资源；不宣称每个剩余差异已完成语义复核。
+当前产物仍是本次 build-info 实读的 9d718，新增源码模块未部署，原全局检查失败
+与运行发布阻断保持不变。没有新建检查框架、构建、业务对象、空菜单或假消费者。
+
+## 2026-10-11 20:14 UTC 当前设置实拍与差异台账纠偏
+
+本段源码基准是 main `562156ae7f12953e3eea61305fe282ae98b6c416`；官方仍为
+Buzz `779af8886caae1317b4de962082429867ab61503`。仅复核既有台账的本段模块，
+没有重算全仓差异总数。下方旧日期的文件数、设置六类、Inbox 四类是历史快照，
+不能继续作为当前缺项数字；本段也不将接口枚举数量当成功能完成率。
+
+| 固定官方路径与符号 | 当前四类映射与剩余缺项 |
+| --- | --- |
+| `desktop/src/features/settings/ui/KeyboardShortcutsCard.tsx::KeyboardShortcutsCard` | 原分组、行和键帽呈现共享迁入 `client-kit/ts/platform/src/react/settings.tsx::ShortcutSettings`；中英文及宿主快捷键投递为已授权适配。本次只打开页面，没有逐一执行快捷键 |
+| `desktop/src/features/settings/ui/NotificationSettingsCard.tsx::NotificationSettingsCard`、`SoundPicker.tsx::SoundPicker` | 原三种实际通知场景及声音选择模块已共享迁移到 `client-kit/ts/platform/src/react/notifications`；浏览器通知权限为宿主边界。本次实际显示浏览器拒绝权限，不证明通知投递成功。官方 `showComingSoon`/View all 与未来禁用项仍未恢复，不能笼统归为治理差异，也不借本轮新增无消费者控件 |
+| `desktop/src/features/settings/ui/SettingsPanels.tsx::SettingsSection` | 官方 16 类；当前共享 `settings-surface.tsx::SettingsSection` 为 7 类，包括 experimental。仍缺 voice、agents、channel-templates、compute、hosted-communities、moderation、local-archive、mobile、updates 九个原设置模块。缺接缝不等于设计永久禁止 |
+| `desktop/src/features/settings/ui/SettingsPanels.tsx::ThemeSettingsCard` | 原主题预览、分组及展开网格已共享迁移；本次打开默认外观及主题网格，不修改主题、字号或密度。未逐项切换全部主题，不能据此认领完整外观验收 |
+| `desktop/src/features/home/ui/InboxFilterMenu.tsx::INBOX_FILTER_OPTIONS` | 官方八类；当前 `client-kit/ts/platform/src/react/inbox-surface.tsx::InboxFilter` 六类为 all/project/mention/thread/agent_activity/drafts，仍缺 needs_action/reminders 及其完整实际消费者，不再沿用历史“缺四类”表述。Projects 读链与 Inbox 非交互预览已提交但本次线上尚无对应新版本 |
+
+Voice 缺项已定位到完整原模块，不生成缩水替代面板：固定官方
+`desktop/src/features/settings/ui/VoiceSettingsCard.tsx::VoiceSettingsCard` 的
+读取为 `get_tts_settings`/`list_voice_registry`，写入与试听为
+`set_tts_enabled`、`set_pocket_voice`、`import_pocket_voice`、
+`delete_pocket_voice`、`preview_pocket_voice`，失败回读 `get_huddle_state`。
+本次源码检索当前 Desktop/shared/Web/Core 未找到这些原消费链；单独复制 JSX
+不能让其可用。该缺项需要原功能的真实宿主/治理接缝，不擅自接另一个语音服务。
+
+普通用户通过原 SSO 登录，2026-10-11T20:14:06.862Z 在同一页面读取
+`/app/platform-build-info.json` 实际 HTTP 200，buildId 为
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`，
+对应已部署 `9d718234b74b688d9b81816f9b67470d4fc80440`，不是本段源码基底。
+登录前曾遇过期会话，读取返回登录 HTML，不把它算 build-info 成功；登录后才取得上述 JSON。
+
+图片均实际打开视觉复核，保存在
+`/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF`：
+
+- `01-shortcuts.png`：快捷键完整页面的当前可见部分及原分组布局。
+- `02-notifications.png`：通知开关、三场景、浏览器权限拒绝提示。
+- `03-sound-picker.png`：实际点击私聊声音选择器，原选项菜单展开；未播放或选值。
+- `04-appearance.png`：默认中文、系统配色及当前外观设置。
+- `05-theme-picker.png`：实际展开主题网格；未选择主题，Escape 关闭设置。
+- `06-channel-component-entries.png`：现有非空频道及完整侧栏，三组件入口仍未显示。
+
+20:21:39 UTC，同一正常会话只读查询 `/api/v1/application-bindings?offset=0`
+实际 200/11ms、bindings=[]；当前频道 workspaceId
+`96f53670-409d-4f8e-aa49-c32550fdd10d` 同查询实际 200/9ms、bindings=[]，
+均无 nextOffset。共享 `native-application-entries.tsx::NativeApplicationScope`
+只渲染 ACTIVE 且 hasNativePage 的已授权绑定；本次没有拿到合格项却漏渲染的证据。
+当前 actor 可见集合为空不证明全库没有绑定，也不证明权限投递已正确；不激活绑定绕过此边界。
+
+没有新建业务对象、发送消息、切换偏好、激活组件绑定或打开原实验开关。
+这是上述旧部署的六个真实状态证据，不是 562156a 的修复后截图，不是
+Windows/Mobile 验收；原完整页面、全部设置和三组件完整治理仍不能标为通过。
+
 ## 2026-10-11 Inbox 原只读预览恢复
 
 - 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
