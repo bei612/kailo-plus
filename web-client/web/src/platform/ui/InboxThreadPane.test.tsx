@@ -11,6 +11,7 @@ import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
+import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS, KIND_TYPING_INDICATOR, KIND_CHANNEL_THREAD_SUMMARY } from "@client-kit/platform/react/thread/kinds";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
@@ -65,6 +66,53 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it.each(["channel", "conversation"] as const)("refreshes the actual %s thread once at the live boundary, not for stored or typing frames", async (scope) => {
+  state.dmQuery.mockImplementation(async (_id, options) => ({events: options.parentEventId ? [rootEvent, reply] : [rootEvent, reply, bounds()]}));
+  if (scope === "channel") await mount();
+  else await mountDm();
+  const read = scope === "channel" ? state.query : state.dmQuery;
+  // A DM read also resolves the selected reply through its admitted context.
+  const readsPerRefresh = read.mock.calls.length;
+  expect(readsPerRefresh).toBe(scope === "channel" ? 1 : 2);
+  const send = async (frame: StreamFrame) => {
+    await act(async () => state.receive!(frame));
+    await settle();
+  };
+  const stored = [rootEvent, reply];
+  await send({type: "snapshot", events: stored});
+  for (const event of stored) await send({type: "event", event});
+  await send({type: "event", event: {...reply, kind: KIND_TYPING_INDICATOR}});
+  expect(read).toHaveBeenCalledTimes(readsPerRefresh);
+
+  await send({type: "live"});
+  let expected = readsPerRefresh * 2;
+  expect(read).toHaveBeenCalledTimes(expected);
+  await send({type: "live"});
+  for (const kind of [KIND_TYPING_INDICATOR, KIND_CHANNEL_THREAD_SUMMARY]) {
+    await send({type: "event", event: {...reply, kind}});
+  }
+  expect(read).toHaveBeenCalledTimes(expected);
+
+  for (const kind of [...CHANNEL_TIMELINE_CONTENT_KINDS, ...CHANNEL_AUX_EVENT_KINDS]) {
+    await send({type: "event", event: {...reply, kind}});
+    expected += readsPerRefresh;
+    expect(read).toHaveBeenCalledTimes(expected);
+  }
+  for (const frame of [{type: "interrupted"}, {type: "ended"}, {type: "closed", reason: "readmission-unavailable"}] satisfies StreamFrame[]) {
+    await send(frame);
+    await send({type: "event", event: reply});
+    await send({type: "snapshot", events: []});
+    expect(read).toHaveBeenCalledTimes(expected);
+    await send({type: "live"});
+    expected += readsPerRefresh;
+    expect(read).toHaveBeenCalledTimes(expected);
+  }
+  await send({type: "closed", reason: "scope-revoked"});
+  await send({type: "event", event: reply});
+  expect(read).toHaveBeenCalledTimes(expected);
+  expect(host.textContent).not.toContain("selected reply");
+});
 
 it("uses the resolved Inbox row author in the actual selected reply banner and removes it when scope closes",async()=>{
   state.authorProfile.mockResolvedValue({pubkey,eventId:"profile",displayName:"Actual inbox author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});

@@ -6,6 +6,9 @@ import { openStream } from "@/platform/bff-client";
 import { inboxEvents, inboxReactionEvents } from "./inbox-events";
 import { applyMessageEdits } from "@client-kit/platform/react/messages";
 import { parseChannelWindowResponse, type RelayEvent } from "@client-kit/platform/react/forum/channelWindowResponse";
+import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@client-kit/platform/react/thread/kinds";
+
+const threadEventKinds: ReadonlySet<number> = new Set([...CHANNEL_TIMELINE_CONTENT_KINDS, ...CHANNEL_AUX_EVENT_KINDS]);
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
@@ -75,17 +78,30 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
     },
     getNextPageParam: (page) => page.nextCursor,
   });
-  useEffect(() => enabled ? openStream(workspaceId, (frame) => {
-    if (frame.type === "event" || frame.type === "snapshot" || frame.type === "live") void cache.invalidateQueries({queryKey: key});
-    if (frame.type === "live") setInterrupted(false);
-    if (frame.type === "interrupted") setInterrupted(true);
-    if (frame.type === "closed") {
-      setInterrupted(true);
-      if (["scope-revoked", "session-revoked", "identity-revoked", "binding-not-active", "scope-changed"].includes(frame.reason)) {
+  useEffect(() => {
+    if (!enabled) return;
+    let live = false;
+    return openStream(workspaceId, (frame) => {
+      if (frame.type === "snapshot") live = false;
+      if (frame.type === "live" && !live) {
+        live = true;
+        setInterrupted(false);
+        // Close the initial HTTP-read/subscription gap once after EOSE. The
+        // snapshot and stored events are not independent live changes.
+        void cache.invalidateQueries({queryKey: key});
+      }
+      if (frame.type === "event" && live && threadEventKinds.has(frame.event.kind)) {
+        void cache.invalidateQueries({queryKey: key});
+      }
+      if (frame.type === "interrupted" || frame.type === "ended" || frame.type === "closed") {
+        live = false;
+        setInterrupted(true);
+      }
+      if (frame.type === "closed" && ["scope-revoked", "session-revoked", "identity-revoked", "binding-not-active", "scope-changed"].includes(frame.reason)) {
         setDenied(true); void cache.cancelQueries({queryKey: key}); cache.removeQueries({queryKey: key});
       }
-    }
-  }, conversationId) : undefined, [workspaceId, conversationId, cache, key, enabled]);
+    }, conversationId);
+  }, [workspaceId, conversationId, cache, key, enabled]);
   const messages = useMemo(() => {
     const deleted = new Set(thread.data?.pages.flatMap((page) => [...page.deleted]));
     const messages = [...new Map(thread.data?.pages.flatMap((page) => page.events).filter((event) => !deleted.has(event.id)).map((event) => [event.id, event])).values()]
