@@ -275,6 +275,51 @@ func fileStorageDigest(raw []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// Same sorted UTF-8 JSON bytes as Core limits::canonical_digest and the
+// existing Cells humanReadReceiptDigest / Worker conformanceJSONDigest.
+// These are separate application modules; do not import a platform runtime
+// into WeKnora to encode this existing receipt wire contract.
+func fileStorageReceiptDigest(receipt map[string]any) (string, error) {
+	body, err := json.Marshal(receipt)
+	if err != nil {
+		return "", err
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return "", err
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return "", err
+	}
+	// Consume complete escapes: literal backslash-u text is not a Unicode
+	// separator. Go always escapes U+2028/U+2029 while Core's serializer does not.
+	raw := bytes.TrimSuffix(encoded.Bytes(), []byte("\n"))
+	canonical := make([]byte, 0, len(raw))
+	for index := 0; index < len(raw); index++ {
+		if raw[index] == '\\' && index+1 < len(raw) {
+			if index+5 < len(raw) && (string(raw[index:index+6]) == `\u2028` || string(raw[index:index+6]) == `\u2029`) {
+				if raw[index+5] == '8' {
+					canonical = append(canonical, "\u2028"...)
+				} else {
+					canonical = append(canonical, "\u2029"...)
+				}
+				index += 5
+				continue
+			}
+			canonical = append(canonical, raw[index], raw[index+1])
+			index++
+			continue
+		}
+		canonical = append(canonical, raw[index])
+	}
+	return fileStorageDigest(canonical), nil
+}
+
 func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGrant, nativeID, revision, digest string, size int64, completed time.Time) error {
 	if nativeID == "" || revision == "" || len(digest) != sha256.Size*2 || size < 0 || completed.IsZero() {
 		return fmt.Errorf("native receiver completion evidence is unavailable")
@@ -298,16 +343,20 @@ func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGr
 		}
 		meters = append(meters, map[string]any{"meterKey": meter.MeterKey, "quantity": quantity})
 	}
-	result, err := t.coreCall(ctx, "/service/v1/adapter/read_receipt", map[string]any{
+	receipt := map[string]any{
 		"bindingId": t.config.BindingID, "operationId": fileStorageText(grant.value, "operationId"),
 		"role": "RECEIVER", "idempotencyKey": grant.key, "nativeObjectRef": nativeID, "nativeRevision": revision,
 		"contentSha256": digest, "contentBytes": size, "completedAt": completed.UTC().Format(time.RFC3339Nano), "measurements": meters,
-	})
+	}
+	receiptDigest, err := fileStorageReceiptDigest(receipt)
 	if err != nil {
 		return err
 	}
-	digestBytes, decodeErr := hex.DecodeString(fileStorageText(result, "receiptDigest"))
-	if fileStorageText(result, "operationId") != fileStorageText(grant.value, "operationId") || decodeErr != nil || len(digestBytes) != sha256.Size {
+	result, err := t.coreCall(ctx, "/service/v1/adapter/read_receipt", receipt)
+	if err != nil {
+		return err
+	}
+	if fileStorageText(result, "operationId") != fileStorageText(grant.value, "operationId") || fileStorageText(result, "receiptDigest") != receiptDigest {
 		return fmt.Errorf("native receiver receipt acknowledgement is unavailable")
 	}
 	// Receipt acceptance is not committed usage or a terminal Operation. The

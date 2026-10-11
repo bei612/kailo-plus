@@ -536,20 +536,23 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 			return nil, err
 		}
 		listings[source] = listing
-	}
-	// Persist the complete native observation before any file write. Discovery
-	// completion acknowledges only this snapshot, not a new desired baseline.
-	state.Discovery = map[string]fileStorageSavedListing{}
-	for source, listing := range listings {
+		// Preserve the completed SOURCE observation before fresh receiver PEP.
+		// Revocation or a later source failure must not strand its original
+		// snapshot/usage evidence. This native cursor grants no authority and
+		// is not a deletion desired set: PEP still gates the next read, and
+		// all sources must finish before any apply or retirement.
+		if state.Discovery == nil {
+			state.Discovery = map[string]fileStorageSavedListing{}
+		}
 		state.Discovery[source] = fileStorageSavedListing{Key: listing.grant.key, BatchID: run.syncLogID, ItemsJSON: listing.itemsJSON, Digest: listing.digest, Bytes: listing.bytes, ObservedAt: listing.observedAt}
+		if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
+			return nil, err
+		}
 		if fileStorageText(listing.grant.value, "outcome") != "COMPLETED" {
 			if err := c.transport.pep(ctx, listing.grant); err != nil {
 				return nil, err
 			}
 		}
-	}
-	if _, err := fileStorageCheckpoint(ctx, h, state, oldTime); err != nil {
-		return nil, err
 	}
 	for _, listing := range listings {
 		if err := c.transport.receipt(ctx, listing.grant, run.dataSourceID, listing.digest, listing.digest, listing.bytes, listing.observedAt); err != nil {

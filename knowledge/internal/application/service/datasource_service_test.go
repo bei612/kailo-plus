@@ -1464,7 +1464,7 @@ func TestFileStorageRecoveredApplicationSurvivesNextBatchAndSourceRevocation(t *
 					}
 					id := request["idempotencyKey"].(string)
 					receipts[id] = request
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": id, "receiptDigest": fileStorageDigest([]byte("receipt"))}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": id, "receiptDigest": fileStorageTestReceiptDigest(t, request)}))
 				case "/service/v1/adapter/pep_check":
 					receiverPEPs++
 					var args map[string]any

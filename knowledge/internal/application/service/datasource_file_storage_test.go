@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,115 @@ func fileStorageTestWire(t *testing.T, value any) map[string]json.RawMessage {
 	var result map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &result))
 	return result
+}
+
+func fileStorageTestReceiptDigest(t *testing.T, receipt map[string]any) string {
+	t.Helper()
+	digest, err := fileStorageReceiptDigest(receipt)
+	require.NoError(t, err)
+	return digest
+}
+
+func TestFileStorageReceiptDigestMatchesCoreCanonicalBytes(t *testing.T) {
+	receipt := map[string]any{
+		"nativeRevision": "<&>\u2028\u2029\\u2028",
+		"contentBytes":   int64(9007199254740993),
+		"measurements":   []map[string]any{{"quantity": int64(9007199254740993), "meterKey": "bytes"}},
+	}
+	// Fixed Core sorted UTF-8 JSON oracle, independent of the producer helper.
+	canonical := "{\"contentBytes\":9007199254740993,\"measurements\":[{\"meterKey\":\"bytes\",\"quantity\":9007199254740993}],\"nativeRevision\":\"<&>\u2028\u2029\\\\u2028\"}"
+	digest, err := fileStorageReceiptDigest(receipt)
+	require.NoError(t, err)
+	require.Equal(t, fileStorageDigest([]byte(canonical)), digest)
+}
+
+func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
+	for _, scenario := range []string{"exact", "wrong-digest", "wrong-operation", "missing-digest", "uppercase-digest", "other-completion", "other-usage", "usage-pending"} {
+		t.Run(scenario, func(t *testing.T) {
+			operation, binding, native := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			var submitted map[string]any
+			receipts, observations := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/oidc":
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+				case "/service/v1/adapter/read_receipt":
+					receipts++
+					require.Equal(t, "Bearer receiver-service-token", r.Header.Get("Authorization"))
+					decoder := json.NewDecoder(r.Body)
+					decoder.UseNumber()
+					require.NoError(t, decoder.Decode(&submitted))
+					digest := fileStorageTestReceiptDigest(t, submitted)
+					ack := map[string]string{"operationId": operation, "receiptDigest": digest}
+					switch scenario {
+					case "wrong-digest":
+						ack["receiptDigest"] = strings.Repeat("a", 64)
+					case "wrong-operation":
+						ack["operationId"] = uuid.NewString()
+					case "missing-digest":
+						delete(ack, "receiptDigest")
+					case "uppercase-digest":
+						ack["receiptDigest"] = strings.ToUpper(digest)
+					case "other-completion", "other-usage":
+						other := map[string]any{}
+						for key, value := range submitted {
+							other[key] = value
+						}
+						if scenario == "other-completion" {
+							other["completedAt"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+						} else {
+							other["measurements"] = []any{}
+						}
+						ack["receiptDigest"] = fileStorageTestReceiptDigest(t, other)
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(ack))
+				case "/service/v1/adapter/request_read_grant":
+					observations++
+					outcome := "COMPLETED"
+					if scenario == "usage-pending" {
+						outcome = "PENDING"
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": operation, "outcome": outcome, "receiverReceipt": submitted}))
+				default:
+					t.Errorf("receipt validation must not execute SOURCE or another write: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "receiver-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-receiver-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{
+				BindingID: binding, ReceiverResourceID: uuid.NewString(), NativeKnowledgeBaseID: uuid.NewString(), NativeTenantID: 1,
+				CorePepURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1, ApplyActionVersion: 1, RetireActionVersion: 1,
+				ApplyActionKey: "knowledge.sync_apply@v2", RetireActionKey: "knowledge.sync_retire@v2",
+				UsageMeasurements: []struct {
+					MeterKey       string `yaml:"meter_key" json:"meter_key"`
+					QuantitySource string `yaml:"quantity_source" json:"quantity_source"`
+				}{{MeterKey: "bytes", QuantitySource: "CONTENT_BYTES"}},
+			})
+			require.NoError(t, err)
+			grant := &fileStorageGrant{key: operation, value: fileStorageTestWire(t, map[string]any{"operationId": operation}), request: map[string]any{"idempotencyKey": operation}, receiver: map[string]json.RawMessage{}}
+			err = transport.receipt(context.Background(), grant, native, "<&>\u2028\\u2028", fileStorageDigest([]byte("body")), 9007199254740993, time.Now())
+			require.Equal(t, 1, receipts)
+			if scenario == "exact" {
+				require.NoError(t, err)
+				require.Equal(t, 1, observations)
+				require.Equal(t, "COMPLETED", fileStorageText(grant.value, "outcome"))
+				require.Nil(t, grant.receiver)
+			} else {
+				require.Error(t, err)
+				require.Empty(t, fileStorageText(grant.value, "outcome"))
+				require.NotNil(t, grant.receiver)
+				if scenario == "usage-pending" {
+					require.Equal(t, 1, observations)
+				} else {
+					require.Zero(t, observations)
+				}
+			}
+		})
+	}
 }
 
 func TestFileStorageTransportUsesOwnIdentityAndExactNativeReceiver(t *testing.T) {
@@ -453,6 +563,169 @@ func TestFileStorageCursorDoesNotInventMissingTargetEvidence(t *testing.T) {
 	}
 }
 
+type fileStorageDiscoveryCheckpointRepo struct {
+	recordingDSRepo
+	stored     *types.DataSource
+	failBefore bool
+	loseACK    bool
+}
+
+func (r *fileStorageDiscoveryCheckpointRepo) UpdateSyncState(ctx context.Context, ds *types.DataSource) error {
+	if r.failBefore {
+		return fmt.Errorf("checkpoint rejected before commit")
+	}
+	if err := r.recordingDSRepo.UpdateSyncState(ctx, ds); err != nil {
+		return err
+	}
+	copy := *ds
+	r.stored = &copy
+	if r.loseACK {
+		return fmt.Errorf("checkpoint commit acknowledgement lost")
+	}
+	return nil
+}
+
+func TestFileStorageDiscoveryCheckpointsBeforeNextSource(t *testing.T) {
+	for _, stage := range []string{"later-source-refused", "checkpoint-rejected", "checkpoint-ack-lost", "receiver-revoked"} {
+		t.Run(stage, func(t *testing.T) {
+			source, other, receiver, root := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
+			key := fileStorageKey(run.syncLogID, source, "discover")
+			at := time.Now().Add(-time.Hour).UTC()
+			state := fileStorageCursor{Groups: map[string]fileStorageGroup{"retained": {
+				KnowledgeID: uuid.NewString(), Revision: "prior", References: []map[string]json.RawMessage{
+					fileStorageTestWire(t, map[string]string{"resourceId": source, "nativeObjectRef": uuid.NewString(), "nativeRevision": "prior", "displayName": "kept.txt", "mediaType": "text/plain"}),
+				},
+			}}, Retiring: map[string]fileStorageRetirement{}}
+			raw, err := json.Marshal(state)
+			require.NoError(t, err)
+			fields := map[string]interface{}{}
+			require.NoError(t, json.Unmarshal(raw, &fields))
+			previous := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: fields}
+			initial, err := previous.ToJSON()
+			require.NoError(t, err)
+			ds := &types.DataSource{ID: run.dataSourceID, LastSyncCursor: initial}
+			repo := &fileStorageDiscoveryCheckpointRepo{failBefore: stage == "checkpoint-rejected", loseACK: stage == "checkpoint-ack-lost"}
+			var accepted map[string]any
+			var sourceCalls, otherGrants, pepCalls, receipts int
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/oidc" {
+					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
+				var request map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				switch r.URL.Path {
+				case "/service/v1/adapter/request_read_grant":
+					if request["sourceResourceId"] == other {
+						otherGrants++
+						require.NotNil(t, repo.stored, "next create-only read must follow the durable prior snapshot")
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					require.Equal(t, source, request["sourceResourceId"])
+					require.Equal(t, key, request["idempotencyKey"])
+					response := map[string]any{"operationId": key, "actionExecutionId": key, "sourceBindingId": source}
+					if accepted != nil {
+						response["outcome"], response["receiverReceipt"] = "COMPLETED", accepted
+					} else if sourceCalls > 0 {
+						response["outcome"] = "PENDING"
+					} else {
+						args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+							"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root, "input": map[string]string{"resourceId": source}}})
+						receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": root, "authorizationTargetNativeRef": run.knowledgeBaseID,
+							"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": run.syncLogID, "sourceReadActionExecutionId": key}})
+						response["endpoint"], response["argumentsJson"], response["actionToken"], response["expiresAt"] = server.URL+"/execute", string(args), "source-only-token", time.Now().Add(time.Hour).Unix()
+						response["receiverWrite"] = map[string]any{"actionExecutionId": receiver, "argumentsJson": string(receiverArgs), "actionToken": "receiver-only-token", "expiresAt": time.Now().Add(time.Hour).Unix()}
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(response))
+				case "/execute":
+					sourceCalls++
+					require.Equal(t, 1, sourceCalls, "SOURCE must never replay after the native snapshot or its ACK is lost")
+					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))
+					require.Equal(t, key, request["idempotencyKey"])
+					digest := fileStorageDigest([]byte("[]"))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": key,
+						"listingDigest": digest, "nativeRevision": digest, "items": []any{}}))
+				case "/service/v1/adapter/pep_check":
+					pepCalls++
+					require.Equal(t, 1, pepCalls, "receipt recovery must not obtain new execution authority")
+					require.NotNil(t, repo.stored, "an observed SOURCE result must survive receiver revocation")
+					if stage == "receiver-revoked" {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"actionExecutionId": receiver, "operationId": key, "authorizationMinZedToken": "confirmed"}))
+				case "/service/v1/adapter/read_receipt":
+					receipts++
+					require.NotNil(t, repo.stored)
+					require.Equal(t, key, request["idempotencyKey"])
+					accepted = request
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": fileStorageTestReceiptDigest(t, request)}))
+				default:
+					t.Errorf("incomplete discovery must not apply or retire: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "service-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-service-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: receiver, ReceiverResourceID: root,
+				NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID, CorePepURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-service", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1,
+				ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1})
+			require.NoError(t, err)
+			connector := &fileStorageConnector{transport: transport}
+			svc := &DataSourceService{dsRepo: repo, syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}
+			ctx := context.WithValue(context.Background(), fileStorageRunKey{}, run)
+			cfg := &types.DataSourceConfig{ResourceIDs: []string{source, other}}
+			result := &types.SyncResult{}
+			_, err = connector.FetchStream(ctx, cfg, previous, newStreamHandler(svc, ds, result, &types.SyncLog{}))
+			require.Error(t, err)
+			require.Equal(t, types.SyncResult{}, *result, "partial enumeration must not become an empty deletion baseline")
+			require.Equal(t, 1, sourceCalls)
+			require.Zero(t, receipts)
+			if stage != "later-source-refused" {
+				require.Zero(t, otherGrants, "failed checkpoint or PEP stops before the next source")
+			}
+			if stage == "checkpoint-rejected" || stage == "checkpoint-ack-lost" {
+				require.Equal(t, initial, ds.LastSyncCursor)
+			}
+			retained := stage == "later-source-refused" || stage == "checkpoint-ack-lost" || stage == "receiver-revoked"
+			if retained {
+				require.NotNil(t, repo.stored)
+				// A process restart reloads the persisted row, including a commit
+				// whose ACK the original stream handler did not receive.
+				ds = repo.stored
+			}
+			repo.failBefore, repo.loseACK = false, false
+			previous, err = ds.ParseSyncCursor()
+			require.NoError(t, err)
+			_, err = connector.FetchStream(ctx, cfg, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			require.Error(t, err)
+			require.Equal(t, 1, sourceCalls)
+			if retained {
+				require.Equal(t, 1, receipts, "resume must settle exactly the first source's original observation")
+				cursor, err := ds.ParseSyncCursor()
+				require.NoError(t, err)
+				saved, err := fileStorageState(cursor)
+				require.NoError(t, err)
+				require.Equal(t, state.Groups, saved.Groups)
+				require.Equal(t, at, cursor.LastSyncTime)
+				require.Equal(t, key, saved.Discovery[source].Key)
+				require.Equal(t, "[]", saved.Discovery[source].ItemsJSON)
+				require.NotContains(t, saved.Discovery, other)
+			} else {
+				require.Zero(t, receipts, "missing durable observation stays unknown, never fabricated")
+				require.Zero(t, otherGrants)
+			}
+		})
+	}
+}
+
 func TestFileStorageDiscoveryResumesOriginalBatchBeforeNewAdmission(t *testing.T) {
 	for _, outcome := range []string{"usage-settled", "already-completed", "unknown-operation", "receipt-ack-lost", "receipt-refused", "usage-pending", "checkpoint-failed", "source-revoked", "missing-batch", "wrong-batch", "snapshot-corrupt", "future-clock", "no-observation", "legacy-current-batch", "source-config-removed"} {
 		t.Run(outcome, func(t *testing.T) {
@@ -551,7 +824,7 @@ func TestFileStorageDiscoveryResumesOriginalBatchBeforeNewAdmission(t *testing.T
 						w.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": saved.Digest}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": fileStorageTestReceiptDigest(t, request)}))
 				default:
 					t.Errorf("saved discovery must not re-read bytes or obtain receiver write authorization: %s", r.URL.Path)
 					w.WriteHeader(http.StatusForbidden)
@@ -638,7 +911,7 @@ func TestFileStorageExpiredRetirementOnlyObservesOriginalTask(t *testing.T) {
 					require.NoError(t, json.NewDecoder(r.Body).Decode(&saved))
 					require.Equal(t, old.KnowledgeID, saved["nativeObjectRef"])
 					require.Equal(t, old.Revision, saved["nativeRevision"])
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation, "receiptDigest": intent.Digest}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation, "receiptDigest": fileStorageTestReceiptDigest(t, saved)}))
 				default:
 					t.Errorf("observation attempted unauthorized endpoint %s", r.URL.Path)
 					w.WriteHeader(http.StatusForbidden)
@@ -710,7 +983,7 @@ func TestFileStorageFetchResumesRetirementBeforeNewSourceAdmission(t *testing.T)
 					require.NoError(t, json.NewDecoder(r.Body).Decode(&saved))
 					require.Equal(t, intent.Key, saved["idempotencyKey"])
 					require.Equal(t, old.KnowledgeID, saved["nativeObjectRef"])
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation, "receiptDigest": intent.Digest}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": operation, "receiptDigest": fileStorageTestReceiptDigest(t, saved)}))
 				default:
 					t.Errorf("retirement recovery attempted a new side effect: %s", r.URL.Path)
 					w.WriteHeader(http.StatusForbidden)
@@ -1022,7 +1295,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 						w.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": fileStorageDigest([]byte("receipt"))}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": fileStorageTestReceiptDigest(t, request)}))
 				default:
 					t.Errorf("unexpected native receiver endpoint %s", r.URL.Path)
 					w.WriteHeader(http.StatusForbidden)
@@ -1367,7 +1640,7 @@ func TestFileStoragePendingParseDoesNotStrandDispatchedRecovery(t *testing.T) {
 						require.Equal(t, at.Format(time.RFC3339Nano), request["completedAt"])
 					}
 					accepted[key] = request
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": intent.Digest}))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"operationId": key, "receiptDigest": fileStorageTestReceiptDigest(t, request)}))
 				default:
 					newCalls++
 					t.Errorf("recovery must not read SOURCE bytes, invoke PEP or dispatch a write: %s", r.URL.Path)

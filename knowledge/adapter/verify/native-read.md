@@ -4625,3 +4625,206 @@ FILE_STORAGE release 门禁。全工程与文档检查由主线集中执行，�
 
 本增量未部署，不证明三组件 binding 已 ACTIVE 或跨服务业务已验收。
 在途集中 full/docs 使用更早冻结输入，不能当成本增量的全工程收口证据。
+
+## 2026-10-10 多来源列举逐项保留原生观察（正向、反证与还原完成）
+
+1. 权威为 `.design/13` §4.2、§4.4、§7：完整列举失败不得提交删除
+   desired set；逐项状态属于 WeKnora，不能在 Core 新建同步状态。固定上游
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+   已提供原生 cursor 持久化消费者。本次是已授权治理接入的遗漏修正，不改变
+   原版页面或原生独立 connector。
+2. 实际缺口在 `datasource_file_storage.go::FetchStream`：此前读完全部
+   来源才保存 Discovery，第二来源拒绝会丢弃第一来源已完成的 create-only
+   读取证据。现在每个完整验真 listing 经原 RECEIVER PEP 后立即沿原
+   `fileStorageCheckpoint` 保存同一批次/key、itemsJSON、digest、bytes 和
+   observedAt，再获取下一来源。全部来源完成之前仍不 apply/retire；Groups
+   及 LastSyncTime 保持旧值，空目录也不提前变成删除基线。无新状态、schema、
+   Token、迁移、权限权威或平台工作流，三端原呈现不变。
+3. 追踪真实写入/恢复：`streamSyncHandler.Checkpoint` 只在
+   `DataSourceRepository.UpdateSyncState` 确认后继续；后者以 ID、tenant、KB、
+   updated_at 条件执行单条 UPDATE RETURNING。提交丢 ACK 时内存回到旧 cursor，
+   后续旧版本更新无法覆盖已提交记录；重启读取实际 DataSource 行，同批次
+   `listing` 使用原 snapshot 提交 receipt 并观察 committed usage，不再次
+   SOURCE。新批次也先沿原 Discovery 恢复分支结清旧批。不存在跨服务原子事务：
+   若 SOURCE 已执行而 checkpoint 真正未持久化，仍缺原观察证据并保持 UNKNOWN，
+   不重读、不编造零用量；本刀没有消除此崩溃窗口。
+4. 实现后在原 `datasource_file_storage_test.go` 添加四场景：后续来源拒绝、
+   checkpoint 提交前失败、提交 ACK 丢失、读取后 RECEIVER 撤权。沿原 HTTP
+   transport、FetchStream 和 streamSyncHandler，核 next-source 顺序、保留旧
+   Groups/LastSyncTime、零导入/删除计数和重启不再 SOURCE。checkpoint 仓储
+   故障使用检查内记录器，不能称真实 PostgreSQL 丢 ACK 验收。
+   `git diff --check` 退出 0，两个 Go 文件在原 SDK 中 `gofmt -d` 无差异。
+   Cells 原窄作业终态后，按限额和 CPU/内存预检顺序复用知识库原 SDK，
+   `go test -mod=readonly ./internal/application/service -run 'TestProcessSync|TestFileStorage' -count=1 -v`
+   的原句柄 `95033` 已实际退出 0：32 个顶层检查与 237 个子场景通过，
+   0 失败/跳过，包耗时 302.496s。原服务包逐文件对照仅本批两个输入
+   不同，精确同步后 `cmp` 均退出 0，go.mod/go.sum 不变；沿 Data 缓存且
+   GOPROXY/GOSUMDB 均 off。仅 SDK 私有生产副本恢复旧的“全来源枚举之后
+   checkpoint”顺序，再运行
+   `go test -mod=readonly ./internal/application/service -run '^TestFileStorageDiscoveryCheckpointsBeforeNextSource$' -count=1 -v`。
+   原句柄 `4284` 实际退出 1，四个子场景均因下一 SOURCE 提前执行或缺失原
+   snapshot 而失败，包耗时 0.493s，不是编译错误。随后精确还原两个 Go 输入，
+   与正式源码 `cmp` 均退出 0，SHA-256 与正向输入一致。
+
+还原复验复用正向作业实际运行期间从 `/proc/4042455/exe` 留存的
+`positive.test`；保存后与当时运行中的二进制 `cmp` 退出 0，不使用反证构建
+产物。还原后的输入与其已验证输入字节一致。原容器内命令为
+`positive.test -test.run 'TestProcessSync|TestFileStorage' -test.count=1 -test.v -test.timeout=10m`，
+句柄 `39436` 实际退出 0：32 个顶层检查、237 个子场景通过，0 失败/跳过。
+这是同输入已编译二进制的顺序复验，不是还原源码重新编译。原 SDK 为
+`kailo-knowledge-native-check-wkkigg`，保持 4 CPU/8 GiB、Data 缓存和临时目录；
+启动前确认该容器无其它检查任务，未新建 SDK 或启动并行替代作业。
+
+原始日志与上述二进制保存在
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/source-discovery-checkpoint.xjQ2zE/`：
+
+| 文件 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `positive.log` | `28e5929149bae40a465581df992c11ed15160d5f0a29db7eef0707267ae77581` | 退出 0 |
+| `negative.log` | `69d3e92a0b5f70899b21a01aff69d0e489e3f9734c7286ed61f8f02b29497a1f` | 退出 1，预期反证 |
+| `restored.log` | `cdb6ec788868bf00c7146f113e7f5a1983f8c6cf0e3f2b6c3a7be150130a8b34` | 退出 0 |
+| `positive.test` | `8148a51d65ed81548f29d0191fb846381a6f1b4c23b3c9fd583992361ff05c5b` | 正向原二进制 |
+
+正向与还原源码摘要：
+
+| 路径（相对 `knowledge/internal/application/service/`） | SHA-256 |
+| --- | --- |
+| `datasource_file_storage.go` | `82ae515147f09d7e8d51248181188c712f6718f1c1c3b4aaa26c6fce081e5f76` |
+| `datasource_file_storage_test.go` | `75e9727afd921f9ee915a15a631cf880fc36dc4d5df1c1e16406b72271475653` |
+
+本批未执行全量检查、真实 PostgreSQL 丢 ACK 故障或 Cells→WeKnora 联调，
+未部署，也不改变 release/binding 关闭状态；不能据此声明跨服务生产就绪。
+
+## 2026-10-10 RECEIVER 回执 ACK 与本次完整回执绑定
+
+本批修正原 `fileStorageTransport.receipt` 消费者，不新增 SOURCE 读取、
+Operation、回执表或摘要协议。原实现只检查 operationId 与摘要为 32 字节
+十六进制，错误但格式正确的摘要也会进入后续终态观察。
+
+1. 权威与固定来源：`.design/07` §8.2 与 DD-89 要求原 SOURCE/RECEIVER
+   回执和用量关联完整。Core
+   `core/crates/platform-core/src/application_read_receipt.rs::record`
+   返回本次原始回执的 `collab_bridge::limits::canonical_digest`。
+   WeKnora 固定来源
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::processSyncStreaming`
+   与 `streamSyncHandler.Checkpoint` 保留其原生消费/检查点路径；
+   本地 transport 是已授权治理接缝，不声称此处与上游原样一致。
+2. 影响面：同一 receipt map 在提交前计算既有 canonical SHA-256；ACK
+   必须同时匹配原 operationId 和本次完整摘要，再走原 COMPLETED 与
+   committed usage 观察。复用 Cells `humanReadReceiptDigest`、Worker
+   `conformanceJSONDigest` 的整数保真、排序、UTF-8 和完整转义消费规则；
+   它们位于独立应用的非导出模块，不为编码引入平台运行时依赖。
+   不改契约、数据库、源内容或客户端页面，旧终态观察分支保持不变。
+3. 副作用：摘要不符、缺失或 ACK 不明时保留原 grant/cursor，不执行
+   SOURCE、不创建新操作、不 Emit 或退休旧资料；回执已被 Core 接收但
+   返回丢失仍沿原幂等回执/观察链处理，不推断为失败或零用量。
+4. 边界与实现后证据：固定 JSON 字节 oracle 独立于生产 helper，覆盖
+   大于浮点精确范围的整数、HTML 字符、U+2028/U+2029 与字面量反斜线。
+   原 HTTP transport 检查覆盖 exact、错误合法摘要、错误 operation、
+   缺失/大写摘要、其它完成时间/用量摘要和 usage 尚未提交；原退休与
+   同步消费者的 ACK 夹具改为对应其实际收到的回执。
+
+首次编译句柄 `9944` 实际退出 1：原测试中两处退休夹具引用未声明的
+`request`（911、983 行），已修正为该处理器实际 decode 后的 `saved`。
+原输出保存在既有 Data 证据目录的 `positive-build.log`，不覆盖失败。
+修正后的同包检查句柄 `67539` 实际退出 0：34 个顶层检查、245 个子场景
+通过，0 失败。命令沿原 SDK 的 Go1.26.8、4 CPU/8 GiB 与 Data 缓存，
+`GOPROXY=off GOSUMDB=off go test -mod=readonly -c ./internal/application/service`
+生成留存的 `positive.test`，再以
+`-test.run 'TestFileStorage|TestProcessSync' -test.count=1 -test.v -test.timeout=10m`
+运行，不启动新 SDK、镜像或全量检查。
+
+仅在 SDK 私有生产输入恢复原“同 operation 且摘要为合法 32 字节 hex”
+条件，再构建原服务包并运行
+`-test.run '^TestFileStorage(ReceiptDigestMatchesCoreCanonicalBytes|ReceiverAcknowledgementBindsExactReceipt)$'`。
+句柄 `96109` 实际退出 1：错误合法摘要、大写摘要、其它完成时间摘要、
+其它用量摘要四场景均报 `An error is expected but got nil`，证明旧生产
+条件会错误接受 ACK；另 exact 场景在 1.30s 时因回执请求数期望 1、实际
+0 失败，保留该额外失败，不把全部失败都归为本次摘要保护的反证。
+随后三个 Go 输入与正式源码 `cmp` 均退出 0，摘要与正向输入一致；
+复用留存的正向二进制顺序还原复验，句柄 `12602` 实际退出 0：34 个
+顶层检查、245 个子场景通过，0 失败。还原不是重新编译；三个输入与
+正向字节相同，留存二进制摘要前后一致。
+
+原始日志位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/receiver-receipt-digest.52H5ky/`：
+
+| 文件 | SHA-256 | 结果 |
+| --- | --- | --- |
+| `positive-build.log` | `c0e98cea91bcc738e81f6f7086e78f64d35ca040e6906200134d0c87a710d5d5` | 首次编译退出 1 |
+| `positive.log` | `325e7b16e7d0c9dc07e228b41cc9c1ca154bdec939f2d2bb438e69e098dfd094` | 修正后正向退出 0 |
+| `negative.log` | `0fa2a0c7ed41f05fef84b1486b2db47f2c21e8cbed33253652b7cd52cacfd22e` | 反证退出 1，含上述额外 exact 失败 |
+| `restored.log` | `077e6a5ee24d1e6f74d80e9fec806ff71ebd5d34628f82fcd8978fc83f22a668` | 原字节还原复验退出 0 |
+| `positive.test` | `61bbc5414a3bcf1a94995fa7d2487afe58c94d35488d39eafb4f35b05712de10` | 原正向二进制，还原复验前后不变 |
+
+正向与还原源码摘要（相对 `knowledge/internal/application/service/`）：
+
+| 路径 | SHA-256 |
+| --- | --- |
+| `datasource_file_storage_transport.go` | `87001cc596ac8d4c4c2ada2df2ea44c44039611e3498a92fee5a74822146c04d` |
+| `datasource_file_storage_test.go` | `2e95a0cd6b93118c4e0299bfed025f68e9cbf049a168ab70d1ad1f1c58899727` |
+| `datasource_service_test.go` | `385b09707a62e7ded6cc43aa81b414ae8eb37a0ea43cfb9a8ca593f65816dcc4` |
+
+本批不解除 FILE_STORAGE 七必选能力、原生 share 治理与延迟删除 fresh
+PEP 的发布门禁；未验证真实 Cells→WeKnora 联调、未部署或激活 binding。
+
+### 2026-10-11 来源已读后接收端撤权仍保留原观察
+
+1. 权威与原因：`.design/13` §4.2、§4.4、§7 要求撤权停止后续读取和写入，
+   已发生读取则沿原操作保存接收观察，不得重放。此前每源 checkpoint 已在
+   下一源读取前执行，但仍排在 fresh receiver PEP 之后；SOURCE 已返回、
+   PEP 随即拒绝时，已发生的列表读取丢失本地 snapshot，恢复无法提交原 receipt。
+   本次属于已授权治理改造，不是原版页面删改或新同步权威。
+2. 影响面：只调整 `internal/application/service/datasource_file_storage.go::FetchStream`
+   的顺序，复用原 DataSource cursor 与 `streamSyncHandler.Checkpoint`。
+   固定上游 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的完整路径
+   `internal/application/service/datasource_service.go::streamSyncHandler.Checkpoint`
+   已用 `git show` 重新核验。写入的是组件本地已校验的来源引用、摘要、字节数和
+   原操作时间；读取方仍是同一 `FetchStream/listing` 恢复链。无字段、数据库、
+   契约、generation、工作流类型或三端呈现变更，新旧 cursor 格式相同。
+3. 副作用边界：checkpoint 不保存文件正文到 Core，不更新 `Groups`、
+   `LastSyncTime` 或删除 desired set，不授予后续业务权限。保存之后依然 fresh
+   PEP；拒绝时立即停止，下一源 grant、文件导入、retire 均不执行。恢复只补原
+   key 的 receipt/usage 观察，SOURCE 总执行次数保持 1；新读取仍走原 grant。
+4. 异常与分类：撤权仍为 DENIED；本地持久化 ACK 不明、远端 receipt/usage 未
+   确认仍按 UNKNOWN 对账，不伪造终态。原 checkpoint 失败回滚内存 cursor，
+   已提交但 ACK 丢失可重新加载原 DataSource 行；完全未保存的观察不重放。
+   空列表不会成为不完整枚举的删除依据；超限 LIMIT、binding/secret 等
+   PRECONDITION、并发 lease/revision CONFLICT、能力 BLOCKED 的原处理未改变。
+   未增加新状态或另一重试入口，继续使用现有原批次恢复与同步收敛机制。
+
+仅在原受限 SDK `kailo-knowledge-native-check-wkkigg` 验证，回读为 4 CPU、
+8 GiB memory、8 GiB memory+swap、UID 1000；执行前无 Go/Rust 编译进程，
+宿主 available 45 GiB。源码、Go module/build cache、TMPDIR 均在 Data；
+internal 全目录 checksum 对照仅两文件不同，go.mod/go.sum 与正式源码一致。
+首轮 46562 因 `/cache/build/tmp` 尚不存在提前退出 1：
+`go: creating work dir: stat /cache/build/tmp: no such file or directory`。
+创建 Data cache 下该临时目录后，没有重建镜像或重复全局检查。
+
+实际命令均在 `/workspace/knowledge` 内执行，使用 `-count=1 -v`：
+
+| 检查 | 原始退出与输出 |
+| --- | --- |
+| `go test ./internal/application/service -run TestFileStorage` | 28447 退出 0；22 个顶层、193 个子场景，`ok .../service 56.221s` |
+| 隔离输入恢复旧 PEP-before-checkpoint，`-run '^TestFileStorageDiscoveryCheckpointsBeforeNextSource$/receiver-revoked'` | 39933 退出 1；`Expected value not to be nil`，`an observed SOURCE result must survive receiver revocation` |
+| 逐字还原并 cmp 退出 0，`-run '^TestFileStorageDiscovery'` | 74494 退出 0；2 个顶层、19 个子场景，`ok .../service 0.502s` |
+
+反证只修改 Data 隔离输入；正式代码从未撤回保护。`gofmt -d` 与
+`git diff --check -- knowledge` 均退出 0，无输出。原始日志位于
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/`：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `receiver-revoked-discovery-positive.log` | `5b734db2c7ea8da37031e95838f66383df0d5df97da00ba486b08dcac55c1261` |
+| `receiver-revoked-discovery-negative.log` | `43abf480b6237a77d20fdf3509bfdeb3c1b324b5196930855a296699463e5e4c` |
+| `receiver-revoked-discovery-restored.log` | `0edcf4087d1a19970ed365077ca1318998951b7339ade0b44120f9bd876d731d` |
+
+正式输入 `datasource_file_storage.go` SHA-256 为
+`184170cb4f1963bdd189bb8e2fb2da66bf78c7184d456c45380ce8d95e72d57b`，
+`datasource_file_storage_test.go` 为
+`1684b61dc78c24900ccb9675e315e040ed7260bf6f9beacbe1d850b685fa8cdd`。
+以上仅证明原同步消费者的撤权恢复边界；未做真实 Cells→WeKnora 联调、
+release conformance、binding 激活、部署、截图或三端设备验收。
+整批 `check.sh --full` 不在本专项重复启动，由主集成批次统一执行。
