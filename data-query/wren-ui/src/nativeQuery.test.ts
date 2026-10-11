@@ -1031,6 +1031,7 @@ integration('original Wren query handler, SDK and native history', () => {
   let queries = 0;
   let peps = 0;
   let denyAt = 0;
+  let pepErrorBody = '{}';
   let engineFails = false;
   let queryResponse: string | undefined;
   let holdQueryResponse = false;
@@ -1236,7 +1237,7 @@ integration('original Wren query handler, SDK and native history', () => {
             (source) => source.nativeRef === deniedSource,
           )
         )
-          response.writeHead(403).end('{}');
+          response.writeHead(403).end(pepErrorBody);
         else
           response.end(
             JSON.stringify({
@@ -1389,6 +1390,7 @@ integration('original Wren query handler, SDK and native history', () => {
     queries = 0;
     peps = 0;
     denyAt = 0;
+    pepErrorBody = '{}';
     engineFails = false;
     queryResponse = undefined;
     holdQueryResponse = false;
@@ -1619,6 +1621,93 @@ integration('original Wren query handler, SDK and native history', () => {
       await client.close();
     }
   };
+
+  it('reconciles an execution key through the original HTTP history reader without re-executing', async () => {
+    const key = randomUUID(),
+      ae = randomUUID(),
+      operation = randomUUID();
+    const args = { limit: 1 };
+    const execute = await fetch(`${endpoint}/execute`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${await signed('data_query.describe', args, ae, operation)}`,
+        'idempotency-key': key,
+      },
+      body: JSON.stringify({
+        actionKey: 'data_query.describe@v1',
+        idempotencyKey: key,
+        arguments: { target: { resourceId: resource }, input: args },
+      }),
+    });
+    expect(execute.status).toBe(200);
+    const original = await execute.json();
+    expect(original.execution.platformStatus).toBe('SUCCEEDED');
+    const reconcile = async (
+      reference: Record<string, string>,
+      owner = ae,
+      header = reference.idempotencyKey,
+      hashOperation = 'reconcile',
+    ) =>
+      fetch(`${endpoint}/reconcile`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await signed('data_query.describe', reference, owner, operation, false, { normalized_parameter_hash: digest({ operation: hashOperation, arguments: reference }) })}`,
+          'idempotency-key': header,
+        },
+        body: JSON.stringify(reference),
+      });
+    const response = await reconcile({ idempotencyKey: key });
+    expect(response.status).toBe(200);
+    const observed = await response.json();
+    expect(observed.execution).toMatchObject({
+      idempotencyKey: key,
+      nativeId: original.execution.nativeId,
+      platformStatus: 'SUCCEEDED',
+    });
+    expect(Object.keys(observed)).toEqual(['execution']);
+    expect(queries).toBe(0);
+    const absentKey = randomUUID();
+    const absent = await reconcile({ idempotencyKey: absentKey });
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toEqual({
+      execution: {
+        idempotencyKey: absentKey,
+        nativeType: 'wren.api_history',
+        platformStatus: 'UNKNOWN',
+        cancelCapability: 'UNSUPPORTED',
+      },
+    });
+    const wrongOwner = await reconcile({ idempotencyKey: key }, randomUUID());
+    expect(wrongOwner.status).toBe(403);
+    await wrongOwner.body?.cancel();
+    const wrongHeader = await reconcile(
+      { idempotencyKey: key },
+      ae,
+      randomUUID(),
+    );
+    expect(wrongHeader.status).toBe(400);
+    await wrongHeader.body?.cancel();
+    const wrongDomain = await reconcile(
+      { idempotencyKey: key },
+      ae,
+      key,
+      'observe',
+    );
+    expect(wrongDomain.status).toBe(403);
+    await wrongDomain.body?.cancel();
+    denyAt = peps + 1;
+    pepErrorBody = JSON.stringify({
+      class: 'DENIED',
+      reason: 'PERMISSION_DENIED',
+    });
+    const denied = await reconcile({ idempotencyKey: key });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({
+      class: 'DENIED',
+      reason: 'PERMISSION_DENIED',
+    });
+    expect(queries).toBe(0);
+  });
 
   it.each(
     ['data_query.query', 'data_query.dry_run'].flatMap((action) =>

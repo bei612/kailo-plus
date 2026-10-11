@@ -106,32 +106,6 @@ export default async function handler(
       response.status(200).json(result);
       return;
     }
-    if (
-      request.query.operation === 'handshake' ||
-      request.query.operation === 'validate_binding' ||
-      request.query.operation === 'reconcile'
-    ) {
-      const key = request.headers['idempotency-key'];
-      if (typeof key !== 'string')
-        throw new NativeQueryRefusal(400, 'QUERY_IDEMPOTENCY_REQUIRED');
-      const { components } = await import('../../../common');
-      const binding = new NativeBindingService(
-        delivered,
-        components.projectRepository,
-      );
-      response
-        .status(200)
-        .json(
-          await binding.call(
-            bearer(request),
-            request.query.operation,
-            key,
-            await body(request, delivered.requestMaxBytes),
-            components.apiHistoryRepository,
-          ),
-        );
-      return;
-    }
     let service: NativeQueryService;
     const queries = async () => {
       if (!service) {
@@ -149,6 +123,48 @@ export default async function handler(
       }
       return service;
     };
+    if (
+      request.query.operation === 'handshake' ||
+      request.query.operation === 'validate_binding' ||
+      request.query.operation === 'reconcile'
+    ) {
+      const key = request.headers['idempotency-key'];
+      if (typeof key !== 'string')
+        throw new NativeQueryRefusal(400, 'QUERY_IDEMPOTENCY_REQUIRED');
+      const raw = await body(request, delivered.requestMaxBytes);
+      if (
+        request.query.operation === 'reconcile' &&
+        raw &&
+        !Array.isArray(raw) &&
+        Object.keys(raw).join(',') === 'idempotencyKey'
+      ) {
+        if (raw.idempotencyKey !== key)
+          throw new NativeQueryRefusal(400, 'QUERY_INVALID_REQUEST');
+        response
+          .status(200)
+          .json(
+            await (await queries()).observe(bearer(request), raw, 'reconcile'),
+          );
+        return;
+      }
+      const { components } = await import('../../../common');
+      const binding = new NativeBindingService(
+        delivered,
+        components.projectRepository,
+      );
+      response
+        .status(200)
+        .json(
+          await binding.call(
+            bearer(request),
+            request.query.operation,
+            key,
+            raw,
+            components.apiHistoryRepository,
+          ),
+        );
+      return;
+    }
     if (request.query.operation === 'observe') {
       const raw = await body(request, delivered.requestMaxBytes);
       // Original ActionToken + binding service PEP authorizes this exact EE
@@ -288,12 +304,19 @@ export default async function handler(
             ? error.status
             : 503,
         )
-        .json({
-          error:
-            error instanceof NativeQueryRefusal
-              ? error.code
-              : 'QUERY_ADMISSION_UNAVAILABLE',
-        });
+        .json(
+          error instanceof NativeQueryRefusal && error.resourcePermissionDenied
+            ? {
+                class: 'DENIED',
+                reason: 'PERMISSION_DENIED',
+              }
+            : {
+                error:
+                  error instanceof NativeQueryRefusal
+                    ? error.code
+                    : 'QUERY_ADMISSION_UNAVAILABLE',
+              },
+        );
     }
   }
 }

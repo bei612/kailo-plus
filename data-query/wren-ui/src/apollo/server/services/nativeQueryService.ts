@@ -1412,25 +1412,34 @@ export class NativeQueryService {
     };
   }
 
-  async observe(token: string, raw: unknown) {
+  async observe(
+    token: string,
+    raw: unknown,
+    operation: 'observe' | 'reconcile' = 'observe',
+  ) {
     const reference = raw as Record<string, unknown>;
     if (
       !reference ||
       Array.isArray(reference) ||
       Object.keys(reference).some(
         (key) =>
-          ![
-            'externalExecutionId',
-            'idempotencyKey',
-            'nativeType',
-            'nativeId',
-          ].includes(key),
+          !(
+            operation === 'reconcile'
+              ? ['idempotencyKey']
+              : [
+                  'externalExecutionId',
+                  'idempotencyKey',
+                  'nativeType',
+                  'nativeId',
+                ]
+          ).includes(key),
       ) ||
-      typeof reference.externalExecutionId !== 'string' ||
-      !uuid.test(reference.externalExecutionId) ||
       typeof reference.idempotencyKey !== 'string' ||
       !uuid.test(reference.idempotencyKey) ||
-      reference.nativeType !== nativeType ||
+      (operation === 'observe' &&
+        (typeof reference.externalExecutionId !== 'string' ||
+          !uuid.test(reference.externalExecutionId) ||
+          reference.nativeType !== nativeType)) ||
       (reference.nativeId !== undefined &&
         (typeof reference.nativeId !== 'string' ||
           !uuid.test(reference.nativeId)))
@@ -1439,7 +1448,7 @@ export class NativeQueryService {
     const claims = await authorizeQuery(
       this.config,
       token,
-      'observe',
+      operation,
       reference,
     );
     const record = await this.history.findOneBy({
