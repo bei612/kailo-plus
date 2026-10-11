@@ -1416,6 +1416,29 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
         }
         let expected: Value =
             serde_json::from_str(text(step, "expectedResponseJson")?).map_err(|_| bad())?;
+        if actual_operation == "validate_binding"
+            && observation["httpStatus"]
+                .as_i64()
+                .is_some_and(|status| (200..300).contains(&status))
+        {
+            if plan["connectorKind"] == "PROTOCOL_PEER"
+                || observation["bindingDigest"]
+                    != collab_bridge::limits::canonical_digest(&expected)
+                || observation.get("nativeObservation").is_some()
+                || observation.get("nativeScopeObservation").is_some()
+                || observation.get("contentReference").is_some()
+                || observation.get("resultDigest").is_some()
+                || step.get("contractKey").is_some()
+                || source_reference.is_some()
+                || step.get("referenceResourceId").is_some()
+            {
+                return Err(bad());
+            }
+            continue;
+        }
+        if observation.get("bindingDigest").is_some() {
+            return Err(bad());
+        }
         if plan["connectorKind"] == "PROTOCOL_PEER" {
             if observation["httpStatus"] != 0
                 || observation["mcpResultKind"] != "RESULT"
@@ -1906,6 +1929,69 @@ pub(crate) async fn authorize_probe(
     }
 }
 
+// OpenBao creates a new request ID for each real read. Preserve the complete
+// response digest for evidence, but compare only the fixed binding metadata.
+// This is the one closed protocol case, not a configurable JSON matcher.
+fn binding_comparison(request: &Value, response: &Value) -> Result<Value, Refusal> {
+    let typed: contracts::AdapterBindingObservation =
+        serde_json::from_value(response.clone()).map_err(|_| bad())?;
+    if serde_json::to_value(typed).map_err(|_| bad())? != *response {
+        return Err(bad());
+    }
+    for field in [
+        "bindingId",
+        "tenantId",
+        "workspaceId",
+        "nativeInstanceRef",
+        "isolationMode",
+        "configDigest",
+    ] {
+        if request.get(field) != response.get(field) {
+            return Err(bad());
+        }
+    }
+    if request
+        .get("nativeScopeRef")
+        .is_some_and(|scope| scope != &response["nativeScopeRef"])
+        || text(response, "nativeScopeRef").is_err()
+        || response["secretRefDigest"]
+            != collab_bridge::limits::canonical_digest(&request["secretRefs"])
+    {
+        return Err(bad());
+    }
+    let refs = request["secretRefs"].as_array().ok_or_else(bad)?;
+    let reads = response["secretReads"].as_array().ok_or_else(bad)?;
+    if refs.len() != reads.len() {
+        return Err(bad());
+    }
+    let mut keys = BTreeSet::new();
+    for read in reads {
+        let key = text(read, "secretKey")?;
+        let id = Uuid::parse_str(text(read, "requestId")?).map_err(|_| bad())?;
+        let matching: Vec<_> = refs
+            .iter()
+            .filter(|reference| reference["secretKey"] == key)
+            .collect();
+        if !keys.insert(key)
+            || id.is_nil()
+            || matching.len() != 1
+            || read["version"].as_u64().is_none_or(|version| version == 0)
+            || text(read, "audience").is_err()
+        {
+            return Err(bad());
+        }
+        if read["version"] != matching[0]["version"] || read["audience"] != matching[0]["audience"]
+        {
+            return Err(bad());
+        }
+    }
+    let mut fixed = response.clone();
+    for read in fixed["secretReads"].as_array_mut().ok_or_else(bad)? {
+        read.as_object_mut().ok_or_else(bad)?.remove("requestId");
+    }
+    Ok(fixed)
+}
+
 fn wire_digests(
     request: &Value,
     operation: &str,
@@ -1918,6 +2004,11 @@ fn wire_digests(
     let response: Value = serde_json::from_str(raw).map_err(|_| bad())?;
     let mut out = json!({"requestDigest":collab_bridge::limits::canonical_digest(request),
         "responseDigest":collab_bridge::limits::canonical_digest(&response)});
+    if (200..300).contains(&status) && operation == "validate_binding" {
+        out["bindingDigest"] = json!(collab_bridge::limits::canonical_digest(
+            &binding_comparison(request, &response)?,
+        ));
+    }
     if (200..300).contains(&status)
         && matches!(operation, "execute" | "observe" | "cancel" | "reconcile")
     {
@@ -2350,6 +2441,68 @@ async fn read_releases(
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    #[test]
+    fn binding_wire_compares_fixed_metadata_without_predicting_read_ids() {
+        let reference =
+            json!({"secretKey":"connection", "version":1, "audience":"isolated-adapter"});
+        let request = json!({"bindingId":Uuid::new_v4(), "tenantId":Uuid::new_v4(),
+            "nativeInstanceRef":"isolated-instance", "nativeScopeRef":"isolated-scope",
+            "isolationMode":"DEDICATED_INSTANCE", "configDigest":"a".repeat(64),
+            "secretRefs":[reference.clone()]});
+        let mut response = request.clone();
+        response.as_object_mut().unwrap().remove("secretRefs");
+        response["artifactDigest"] = json!("b".repeat(64));
+        response["secretRefDigest"] = json!(collab_bridge::limits::canonical_digest(
+            &request["secretRefs"]
+        ));
+        response["executionMappings"] = json!([]);
+        let mut read = reference;
+        read["requestId"] = json!(Uuid::new_v4());
+        response["secretReads"] = json!([read]);
+        let first = wire_digests(&request, "validate_binding", 200, &response.to_string()).unwrap();
+        response["secretReads"][0]["requestId"] = json!(Uuid::new_v4());
+        let second =
+            wire_digests(&request, "validate_binding", 200, &response.to_string()).unwrap();
+        assert_eq!(first.binding_digest, second.binding_digest);
+        assert_ne!(first.response_digest, second.response_digest);
+        for (field, value) in [
+            ("requestId", json!(Uuid::nil())),
+            ("requestId", json!("invalid")),
+            ("version", json!(2)),
+            ("audience", json!("other")),
+        ] {
+            let mut changed = response.clone();
+            changed["secretReads"][0][field] = value;
+            assert!(wire_digests(&request, "validate_binding", 200, &changed.to_string()).is_err());
+        }
+        let mut missing = response.clone();
+        missing["secretReads"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("requestId");
+        assert!(wire_digests(&request, "validate_binding", 200, &missing.to_string()).is_err());
+        let mut wrong_scope = response.clone();
+        wrong_scope["nativeScopeRef"] = json!("other");
+        assert!(wire_digests(&request, "validate_binding", 200, &wrong_scope.to_string()).is_err());
+        let mut changed = response.clone();
+        changed["artifactDigest"] = json!("c".repeat(64));
+        assert_ne!(
+            first.binding_digest,
+            wire_digests(&request, "validate_binding", 200, &changed.to_string())
+                .unwrap()
+                .binding_digest
+        );
+        assert!(wire_digests(
+            &request,
+            "validate_binding",
+            403,
+            &json!({"class":"DENIED"}).to_string()
+        )
+        .unwrap()
+        .binding_digest
+        .is_none());
+    }
 
     fn existing_reference_fixture(cancel: bool) -> (Registration, Value) {
         let artifact = collab_bridge::limits::canonical_digest(&json!({}));
@@ -2876,6 +3029,38 @@ mod report_tests {
         report["runId"] = json!(Uuid::new_v4());
         report["observations"] = json!(observations);
         (plan, report)
+    }
+
+    #[test]
+    fn binding_report_requires_core_comparison_and_keeps_raw_digest() {
+        let (mut plan, mut report) = evidence();
+        let expected = json!({"nativeInstanceRef":"isolated-instance"});
+        plan["steps"][0]["caseKey"] = json!("protocol_binding");
+        plan["steps"][0]["operation"] = json!("validate_binding");
+        plan["steps"][0]["expectedResponseJson"] = json!(expected.to_string());
+        report["observations"][0]["caseKey"] = json!("protocol_binding");
+        report["observations"][0]["operation"] = json!("validate_binding");
+        report["observations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeObservation");
+        report["observations"][0]["bindingDigest"] =
+            json!(collab_bridge::limits::canonical_digest(&expected));
+        assert!(verify_report(&plan, &report).is_ok());
+        let mut missing = report.clone();
+        missing["observations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("bindingDigest");
+        missing["observations"][0]["responseDigest"] =
+            json!(collab_bridge::limits::canonical_digest(&expected));
+        assert!(verify_report(&plan, &missing).is_err());
+        let mut misplaced = report.clone();
+        misplaced["observations"][1]["bindingDigest"] =
+            report["observations"][0]["bindingDigest"].clone();
+        assert!(verify_report(&plan, &misplaced).is_err());
+        report["observations"][0]["bindingDigest"] = json!("0".repeat(64));
+        assert!(verify_report(&plan, &report).is_err());
     }
 
     #[test]

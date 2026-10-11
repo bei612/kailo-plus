@@ -1,5 +1,12 @@
 [
   {
+    "caseKey": "protocol_binding", "stepKey": "validate_binding", "operation": "validate_binding",
+    "requestDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "responseDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "bindingDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "httpStatus": 200
+  },
+  {
     "caseKey": "reference_roundtrip", "stepKey": "execute", "operation": "execute",
     "requestDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "responseDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

@@ -4484,6 +4484,11 @@ pub enum ComponentConformanceOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformanceWireDigests {
+    /// 仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
+    /// secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_digest: Option<String>,
+
     pub request_digest: String,
 
     pub response_digest: String,
@@ -8542,6 +8547,10 @@ pub struct ComponentConformanceObservation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservationElement {
+    /// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_digest: Option<String>,
+
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8678,6 +8687,10 @@ pub struct ComponentConformanceProbe {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformanceStepObservation {
+    /// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_digest: Option<String>,
+
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]

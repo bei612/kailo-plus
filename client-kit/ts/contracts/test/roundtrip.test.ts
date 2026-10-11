@@ -592,6 +592,7 @@ test("component observations preserve references, UNKNOWN and absent evidence", 
   const reconstructed: ComponentConformanceStepObservation[] = typed.map(step => ({
     caseKey: step.caseKey, stepKey: step.stepKey, operation: step.operation,
     requestDigest: step.requestDigest, responseDigest: step.responseDigest,
+    bindingDigest: step.bindingDigest,
     resultDigest: step.resultDigest, httpStatus: step.httpStatus, errorClass: step.errorClass,
     contentReference: step.contentReference && {
       resourceId: step.contentReference.resourceId, assetId: step.contentReference.assetId,

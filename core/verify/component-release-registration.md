@@ -382,3 +382,77 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 411 filtered out
 这只证明该四项检查，不替代最新 main 全量验证。原冻结 full 后续还出现
 TypeScript 26 failed/1070 passed，涉及 pages 和 workflow-definition 两个文件；
 截至此记录仍未终态，不能报告 full 退出 0。本批未构建镜像、部署或激活组件。
+
+### 2026-10-11 绑定读取回执的固定字段比较
+
+权威为 `.design/07` §5、§6.2、§8A，沿原 ComponentTaskWorkflow、
+AdapterBindingObservation 和 OpenBao 读取审计；不新增套件执行权威。
+原比较将每次 OpenBao 读取新生成的 requestId 一并与冻结响应作全文摘要比较，
+真实新读取无法满足这种预测。修正保留完整实际 `responseDigest`，Core 严格解析
+既有绑定观察、核对请求的 scope/config/SecretRef 与非零 UUID 读取回执后，
+仅移除 `secretReads[].requestId` 计算 `bindingDigest`。固定期望使用同一元数据
+形状而不填写预测 requestId；其余字段全部仍参与比较，不允许自定义忽略路径。
+
+影响面为原 Core wire observation、原 Worker Activity、Core 最终 report 校验及
+两个既有观察契约的可选字段。四侧由原生成入口派生，原样本同时覆盖新字段与
+缺省。没有数据库迁移、业务正文保存、新前端入口或三端传输变化。
+正式 ApplicationBinding 激活仍独立执行原 `verify_secret_reads`，比对真实
+OpenBao requestId、路径、版本、role 和时间；本次协议字段比较不替代该审计。
+
+副作用与异常边界：该步骤不发业务执行、不重放 UNKNOWN；缺回执、非法或零 UUID、
+重复 secretKey、SecretRef 数量/版本/audience 不符及 scope 漂移拒绝。
+非绑定步骤、拒绝响应或 MCP 回执不得携带 bindingDigest；缺少新摘要不能回退为
+全文比较后报通过。已有完整响应摘要没有去掉动态字段，不把同一秘密记录的一次
+读取被多个字段引用误判为必须有多个 requestId。未知枚举、额外线字段按原严格
+反序列化拒绝；上限、超时、并发、撤权仍由原已授权 probe 和 Activity 合同控制。
+
+兼容边界：JSON 字段可选，新版可读取旧历史的缺省，但这不意味着任意滚动顺序
+兼容：新 Worker 不接受旧 Core 缺少摘要的成功绑定回执，旧严格消费者也可能拒绝
+新字段。新版成功绑定比较必须具有新摘要。旧冻结期望若包含预测 requestId，
+不会静默迁移为通过；不得重放其业务
+步骤。Core/Worker 与隔离候选固定期望须同批投递，在途旧套件保持原版本或按原
+结果不明流程收敛。本记录仅为源码变更说明，生成、窄验证、完整门禁与部署结果
+分别以实际回执追加，不据源码写入宣布套件或三个组件通过。
+
+同日实际验证：复用既有 SDK，Core 为 4 CPU/8 GiB，Go/TypeScript/Dart
+为 4 CPU/4 GiB，依赖、临时输入和日志均在 Data。原 `tools/gen.sh` 联合生成
+退出 0；该输入同时含 Cells 的原生写入准入和 Projects 查询增量，不将联合生成
+称为仅本补丁的独立验收。实际命令及终态为：
+
+```text
+docker exec -w /evidence/first-byte-core.09N6oV/core kailo-cells-closure-kxbrvt cargo test --locked --offline -p platform-core report_tests::binding_ -- --nocapture
+2 passed; 0 failed（其他集成文件零命中不计入）
+docker exec -w /evidence/first-byte-core.09N6oV/core kailo-cells-closure-kxbrvt cargo test --locked --offline -p contracts --test roundtrip
+51 passed; 0 failed; 0 ignored
+go test ./activities ./internal/contracts -run 'Test(ComponentConformance|ComponentObservationsRoundtrip)' -count=1
+ok apps/worker/activities; ok apps/worker/internal/contracts
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+exit 0
+node --test --experimental-strip-types test/roundtrip.test.ts
+57 passed; 0 failed; 0 skipped
+dart pub get --offline
+dart test test/roundtrip_test.dart --name 'component observations'
+1 passed; exit 0
+```
+
+Core 日志位于
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/first-byte-core.09N6oV/`：
+`cargo-binding-tests.log` SHA-256
+`f89c1d02e0e13cc40146cc13e4091e28b68a8e939316be458b64e785fa916113`；
+`cargo-roundtrip.log`
+`4dfc9c76d5b182c25723dfaf251f993e2857ef1abcefc2ca6ef5c3fe28e1c35c`。
+其他日志位于
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/binding-wire.vt6Tu2/`。
+私有副本移除 Worker 固定比较，原用例实际失败：
+`full wire digest must not bypass missing binding metadata`，退出 1；
+还原与正式源码相同后，两包退出 0。负例 `go-binding-negative.log` SHA-256
+`d54d6590eeab31cadc2a44f33737e1bb87ae15243adb9d29b8158113ce5fa9a5`；
+还原 `go-binding-restored.log`
+`c5aaa45abf3b196d7c4e6d8bbef9d49d8b450b03a656914d69b2135837efeb70`。
+
+最初在没有 package-lock 的子包误用 `npm ci --offline`，实际退出 1/EUSAGE；
+随后复用原 workspace 已安装锁定的 TypeScript/Node 类型依赖完成类型检查，
+未添加锁文件、安装新版本或在宿主运行工具链。首次最小 Core 格式快照缺少子模块
+文件也失败；原 rustfmt 的 skip_children 仅用于该单文件格式化，联合 Core 编译
+与上述实际用例仍包含真实模块。本批没有完整一致性套件、正式镜像或组件激活；
+上述窄验证不能代替完整门禁、真实 OpenBao Agent 读取审计和三个组件业务验收。

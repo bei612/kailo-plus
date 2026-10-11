@@ -8,6 +8,7 @@
   "properties": {
     "requestDigest": {"type": "string"},
     "responseDigest": {"type": "string"},
+    "bindingDigest": {"type": "string", "description": "仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际 secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。"},
     "resultDigest": {"type": "string"}
   }
 }

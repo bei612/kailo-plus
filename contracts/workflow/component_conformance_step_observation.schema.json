@@ -15,6 +15,7 @@
     "stepKey": {"type": "string"},
     "requestDigest": {"type": "string"},
     "responseDigest": {"type": "string"},
+    "bindingDigest": {"type": "string", "description": "成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。"},
     "httpStatus": {"type": "integer"},
     "errorClass": {"$ref": "../enums/error_class.schema.json"},
     "nativeObservation": {"$ref": "../adapter/protocol.v1/execution_observation.schema.json"}

@@ -139,6 +139,31 @@ func fixtureExpectedDigest(t *testing.T, step generated.PlanStep) string {
 	return digest
 }
 
+func TestComponentConformanceBindingComparisonKeepsWireEvidence(t *testing.T) {
+	expected := strings.Repeat("a", sha256.Size*2)
+	wire := strings.Repeat("b", sha256.Size*2)
+	step := generated.PlanStep{Operation: "validate_binding", ExpectedHTTPStatus: http.StatusOK}
+	observation := generated.ComponentConformanceStepObservation{
+		Operation: "validate_binding", HTTPStatus: http.StatusOK, ResponseDigest: wire, BindingDigest: &expected,
+	}
+	if err := verifyConformanceStep(step, observation, expected); err != nil {
+		t.Fatal(err)
+	}
+	observation.BindingDigest = nil
+	if err := verifyConformanceStep(step, observation, wire); err == nil {
+		t.Fatal("full wire digest must not bypass missing binding metadata")
+	}
+	observation.BindingDigest = &wire
+	if err := verifyConformanceStep(step, observation, expected); err == nil {
+		t.Fatal("changed binding metadata was accepted")
+	}
+	observation.BindingDigest = &expected
+	step.Operation = "handshake"
+	if err := verifyConformanceStep(step, observation, expected); err == nil {
+		t.Fatal("binding digest accepted on unrelated operation")
+	}
+}
+
 func TestComponentConformanceCoreCanonicalBytes(t *testing.T) {
 	path := os.Getenv("COMPONENT_CONFORMANCE_CANONICAL_EVIDENCE")
 	if path == "" {

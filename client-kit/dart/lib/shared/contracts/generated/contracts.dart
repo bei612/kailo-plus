@@ -9355,11 +9355,15 @@ final componentConformanceOperationValues = EnumValues({
 
 ///Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
 class ComponentConformanceWireDigests {
+  ///仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
+  ///secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
+  final String? bindingDigest;
   final String requestDigest;
   final String responseDigest;
   final String? resultDigest;
 
   ComponentConformanceWireDigests({
+    this.bindingDigest,
     required this.requestDigest,
     required this.responseDigest,
     this.resultDigest,
@@ -9367,12 +9371,14 @@ class ComponentConformanceWireDigests {
 
   factory ComponentConformanceWireDigests.fromJson(Map<String, dynamic> json) =>
       ComponentConformanceWireDigests(
+        bindingDigest: json["bindingDigest"],
         requestDigest: json["requestDigest"],
         responseDigest: json["responseDigest"],
         resultDigest: json["resultDigest"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindingDigest": bindingDigest,
     "requestDigest": requestDigest,
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
@@ -17428,6 +17434,8 @@ class ComponentConformanceObservation {
 }
 
 class ObservationElement {
+  ///成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
+  final String? bindingDigest;
   final String caseKey;
   final ReferenceElement? contentReference;
   final ErrorClass? errorClass;
@@ -17444,6 +17452,7 @@ class ObservationElement {
   final String stepKey;
 
   ObservationElement({
+    this.bindingDigest,
     required this.caseKey,
     this.contentReference,
     this.errorClass,
@@ -17460,6 +17469,7 @@ class ObservationElement {
 
   factory ObservationElement.fromJson(Map<String, dynamic> json) =>
       ObservationElement(
+        bindingDigest: json["bindingDigest"],
         caseKey: json["caseKey"],
         contentReference: json["contentReference"] == null
             ? null
@@ -17487,6 +17497,7 @@ class ObservationElement {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindingDigest": bindingDigest,
     "caseKey": caseKey,
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],
@@ -17709,6 +17720,8 @@ class ComponentConformanceProbe {
 }
 
 class ComponentConformanceStepObservation {
+  ///成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
+  final String? bindingDigest;
   final String caseKey;
   final ReferenceElement? contentReference;
   final ErrorClass? errorClass;
@@ -17725,6 +17738,7 @@ class ComponentConformanceStepObservation {
   final String stepKey;
 
   ComponentConformanceStepObservation({
+    this.bindingDigest,
     required this.caseKey,
     this.contentReference,
     this.errorClass,
@@ -17742,6 +17756,7 @@ class ComponentConformanceStepObservation {
   factory ComponentConformanceStepObservation.fromJson(
     Map<String, dynamic> json,
   ) => ComponentConformanceStepObservation(
+    bindingDigest: json["bindingDigest"],
     caseKey: json["caseKey"],
     contentReference: json["contentReference"] == null
         ? null
@@ -17767,6 +17782,7 @@ class ComponentConformanceStepObservation {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindingDigest": bindingDigest,
     "caseKey": caseKey,
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],

@@ -258,6 +258,13 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 		return uncertain()
 	}
 	observation.ResponseDigest = digests.ResponseDigest
+	if digests.BindingDigest != nil {
+		if string(step.Operation) != "validate_binding" || response.StatusCode < http.StatusOK ||
+			response.StatusCode >= http.StatusMultipleChoices || !validConformanceDigest(*digests.BindingDigest) {
+			return uncertain()
+		}
+		observation.BindingDigest = digests.BindingDigest
+	}
 	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 		switch string(step.Operation) {
 		case "resolve_native_scope":
@@ -376,6 +383,18 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 	if observation.ErrorClass != nil || observation.HTTPStatus != step.ExpectedHTTPStatus {
 		return errors.New("wire result did not satisfy the frozen probe")
 	}
+	if string(step.Operation) == "validate_binding" && observation.HTTPStatus >= http.StatusOK && observation.HTTPStatus < http.StatusMultipleChoices {
+		if observation.BindingDigest == nil || *observation.BindingDigest != expectedDigest ||
+			observation.NativeObservation != nil || observation.NativeScopeObservation != nil ||
+			observation.ContentReference != nil || observation.ResultDigest != nil || step.ContractKey != nil ||
+			step.ReferenceResourceID != nil || step.ReferenceFromStepKey != nil {
+			return errors.New("binding observation differs from the frozen protocol expectation")
+		}
+		return nil
+	}
+	if observation.BindingDigest != nil {
+		return errors.New("binding observation on a non-binding probe")
+	}
 	if step.ReferenceResourceID != nil && observation.NativeObservation != nil &&
 		string(observation.NativeObservation.PlatformStatus) == "SUCCEEDED" && observation.ContentReference == nil {
 		return errors.New("native success did not supply its typed content reference")
@@ -491,7 +510,7 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 		}
 		if observed.CaseKey != step.CaseKey || observed.StepKey != step.StepKey || observed.Operation != step.Operation ||
 			observed.HTTPStatus != 0 || observed.MCPResultKind == nil || string(*observed.MCPResultKind) != "RESULT" ||
-			observed.ErrorClass != nil || observed.NativeObservation != nil || observed.NativeScopeObservation != nil ||
+			observed.ErrorClass != nil || observed.NativeObservation != nil || observed.NativeScopeObservation != nil || observed.BindingDigest != nil ||
 			observed.ContentReference != nil || !validConformanceDigest(observed.ResponseDigest) {
 			return observed, temporal.NewNonRetryableApplicationError("原生 MCP 回执不匹配冻结探针", ErrTypeRejected, nil)
 		}
