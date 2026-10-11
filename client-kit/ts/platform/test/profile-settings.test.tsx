@@ -19,6 +19,18 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it.each(["en", "zh-CN"] as const)("preserves the original profile description label and editor placeholder (%s)", async (locale) => {
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => profile);
+    const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={clipboard} onSave={onSave} />);
+    const label = locale === "en" ? "Profile description" : "简介";
+    expect(host.querySelector('label[for="profile-about"]')?.textContent).toBe(label);
+    const control = host.querySelector<HTMLButtonElement>('[data-testid="profile-metadata-edit"]')!;
+    await click(control);
+    expect(host.querySelector<HTMLTextAreaElement>("#profile-about")?.placeholder).toBe(label);
+    await click(control);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it.each(["en", "zh-CN"] as const)("consumes the original unnamed profile and metadata accessibility sentences (%s)", async (locale) => {
     const unnamed = { ...profile, displayName: "" };
     const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => unnamed);

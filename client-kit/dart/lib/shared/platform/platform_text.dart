@@ -6409,7 +6409,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '请选择 PNG、JPG、GIF 或 WebP 图片。',
   ),
   PlatformMessageKey.platformProfileDisplayName: ('Display name', '显示名称'),
-  PlatformMessageKey.platformProfileAbout: ('About', '简介'),
+  PlatformMessageKey.platformProfileAbout: ('Profile description', '简介'),
   PlatformMessageKey.platformProfileEdit: ('Edit', '编辑'),
   PlatformMessageKey.platformProfileDone: ('Done', '完成'),
   PlatformMessageKey.platformProfileIdentity: ('Identity', '身份'),

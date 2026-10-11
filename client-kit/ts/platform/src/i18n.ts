@@ -2057,7 +2057,7 @@ export const platformMessages = {
   "platform.profile.uploadFailed": { en: "Could not upload that avatar.", "zh-CN": "头像上传未成功。" },
   "platform.profile.imageTypes": { en: "Choose a PNG, JPG, GIF, or WebP image.", "zh-CN": "请选择 PNG、JPG、GIF 或 WebP 图片。" },
   "platform.profile.displayName": { en: "Display name", "zh-CN": "显示名称" },
-  "platform.profile.about": { en: "About", "zh-CN": "简介" },
+  "platform.profile.about": { en: "Profile description", "zh-CN": "简介" },
   "platform.profile.edit": { en: "Edit", "zh-CN": "编辑" },
   "platform.profile.done": { en: "Done", "zh-CN": "完成" },
   "platform.profile.identity": { en: "Identity", "zh-CN": "身份" },
