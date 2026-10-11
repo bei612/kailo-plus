@@ -5625,3 +5625,181 @@ receiver PEP 的真实回归，已移动至实际 PEP 成功点；原直接退�
 行锁并发、真实 Redis Cluster、组件生产部署或 binding 激活；未重跑全局检查。
 knowledge.v2 sync_apply/sync_retire 的完整 release conformance 接缝仍未闭合，
 不声明菜单上架、完整治理接入或 Cells→WeKnora 端到端通过。
+
+### 原生 receiver conformance：首次派发身份与双侧回执保留
+
+权威为独立设计提交 `6e5dba8284e5076440724bd23570a10180c74339` 的
+07 §8A 与 13 §4.4。只在隔离验证中驱动原 ManualSync/SyncLog；不把
+sync_apply/sync_retire 放回普通 execute，不修改生产 ACTIVE 准入，也不建立
+第二个同步 Workflow 或任务账本。原 SyncLog 与原 TaskPendingOp 同事务关联
+冻结请求身份；同键同请求只观察原批次，异 scope/datasource/operation 拒绝。
+首派期限届满沿原 TaskDeadLetter 隔离原 handoff，不把 SyncLog 改为 FAILED；
+已有批次仍可观察，丢失 ACK 不重新创建批次。原保留策略失证保持 UNKNOWN。
+
+兼容边界：原 SyncLog 新归属列可空，不以当前代次回填旧任务；已有调用未携带
+只观察字段时仍走原准入。新隔离方向必须协调 Core、Worker、adapter 与 native
+消费者发布，不能因字段可缺省就先启用路由，也不能据此登记生产绑定已可用。
+
+原 receiver 仅在现有 Core 完成回复中提取同批 SOURCE AE、receiver child AE、
+冻结 generation、Operation 与双侧 receipt，保存在原 SyncLog checkpoint 的
+元事实中；不保存正文或 token，不把多次读取合成单个 SOURCE AE。独立原生
+同步路径不因隔离验证字段而取得平台身份，也不被改为平台编排。
+
+原生 Go 检查使用的 Data 目录及四份原始日志在
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/receiver-final.SFoYxg`。
+原 4 CPU / 8 GiB SDK 使用 Data 输入和既有缓存，GOPROXY/GOSUMDB=off，未安装
+依赖或生成镜像。实际命令：
+
+```text
+go test ./internal/application/repository ./internal/application/service ./internal/mcpserver -run 'Test(NativeSyncRequest|DataSourceServiceManualSync|NativeReceiverConformance|FileStorageReceiverRetainsOriginalBilateralObservation)' -count=1 -timeout=5m -v
+```
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| positive.log | 0；repository 0.567s、service 117.162s、MCP 0.499s | `bf09fa1c58142a97a8936cad460903e49808c0648e1ad9bc16e579cfc1797136` |
+| negative-generation.log | 1；去掉冻结代次匹配后 wrong-generation 原断言失败 | `ab1a9c3c0290541ba42428b410dfededb445a641f2e7cc96bf5134172783903c` |
+| negative-replay.log | 1；去掉原请求重入观察分支后 repeat dispatch 原断言失败 | `84d65e4112144f437abba744b769a3b7ae501caea9d22235468fc20e564fc4c7` |
+| restored.log | 0；同字节恢复后两项目标及全部子项，service 83.305s | `b65fd102a54464db5aab9ab58cbb713d30bb878617ad6253eca687fc4ede1787` |
+
+前版 `receiver-conformance.zkfuGx/positive.log` 的 service 累计五分钟 SQLite
+超时仍是失败，不以后续结果覆盖原件、也未放宽原超时。上述证明限于原生
+SQLite/队列与 MCP 消费者；Core 原库只观察、Worker 权威回读、四侧往返、完整
+隔离 suite、真实生产绑定和组件发布分别验收，不能由本表推断通过。
+
+实现后交叉复核另发现：原 listing 为 grant→source→checkpoint→receiver PEP，
+不能把回执时的代次匹配视为源端读取前的约束。受冻结请求约束的新 grant 现于
+返回前调用原 fresh PEP，原 PEP 同时核对该批次、datasource、resource 与冻结
+generation；不匹配时不能进入源端。COMPLETED/PENDING/UNKNOWN 的原观察
+仍提前返回，不重新获得执行授权；没有冻结请求的独立原生路径保持不变。
+本表正验早于这次纠正，不作为新增前置判据或完整 receiver suite 的通过证据。
+该 Data 目录的两份 service 输入随后更新为纠正后的字节；四份旧日志保持不变，
+目录内当前源码不能被当作已由旧日志验收的冻结输入。
+
+纠正后的源端前置检查已沿同 SDK 独立验收：
+
+```text
+go test ./internal/application/service -run '^TestFileStorage(FrozenBatchChecksGenerationBeforeSource|DiscoveryCheckpointsBeforeNextSource|CompletedReceiptCannotAuthorizeAnotherWrite|ReceiverRetainsOriginalBilateralObservation)$' -count=1 -timeout=5m -v
+```
+
+| 同目录日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| generation-positive.log | 0；四项及全部子项，0.531s | `ee19fc9f9c0c259ff92659ba430b8d7fb79d8bb6d40b024b868a2c4168e85ddf` |
+| generation-negative.log | 1；私有副本去掉前置冻结代次约束，错代次不再拒绝，原断言失败 | `1b5b1fcd66ad9a6bdd3998bfbda597239495155a4e14b0513d0f704b3eaefbed` |
+| generation-restored.log | 0；恢复并 cmp 公共源码同字节，四项及全部子项，0.507s | `c119486b200acfee437df165cef890eb2699e79615b1d94e4117aaa774abb2e7` |
+
+其中 listing 真实 HTTP 消费者断言同代次先 PEP 后 SOURCE，错代次 SOURCE 调用为
+零；原已完成观察、checkpoint 丢 ACK 与独立原生路径同时复验。这里的 HTTP
+服务是定向夹具，不是生产 Cells 或已部署 Core；完整组件绑定仍未验收。
+
+Worker 的同批 Data 输入与日志在
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/receiver-worker.W4qug0`。
+原 4 CPU / 4 GiB SDK 复用 `/cache/go-build`、`/cache/go-mod`，离线运行：
+
+```text
+go test ./activities ./workflows -run 'Test(NativeReceiverConformanceReadsIsolatedCoreAuthority|ComponentReleaseNativeReceiverPendingOnlyObservesOriginalBatch)$' -count=1 -timeout=5m -v
+```
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| worker-receiver-current.log | 0；权威回读八子项及原 Workflow pending→只观察 | `5027bf04a00b01728d2588ad40adc8fefec3bf3057aa86d5f2c331e8c9a4775d` |
+| worker-authority-negative.log | 1；删实际 Core 元事实比较，错回执/错代次两断言失败 | `7b028e33a0bf81fe9bd1d66cb7ff7d82ef65a0edd700ade6a51ce2895caf7d2d` |
+| worker-pending-bounded-negative.log | 1；删 pending 分流，提前 report 的原断言失败 | `c336308260cc951c1054ae63822ee7094d4a1a17edbadcc304c90bf66cb89f2d` |
+| worker-receiver-restored.log | 0；生产两文件 cmp 同字节，activities 0.031s / workflows 0.037s | `18f91d7d9ecbf21ceb8c1428fee68906e60f6b5d73340b52f2ca077ed9eeee7e` |
+
+初版 `worker-positive.log` 的 HTTP 夹具漏必填 receipt 字段而失败；随后
+`worker-receiver-fixed.log` 新 Workflow 检查引用错误生成类型、编译失败。两者
+均保留。首次 `worker-pending-negative.log` 已触发提前 report 断言，但检查在
+Activity 中调用 Fatal 导致原模拟器反复重试；47.339s 后精确停止该测试子进程，
+退出 1。检查改为 Error 保留同一断言、让模拟 Workflow 正常返回，再得到上表
+有限反证与还原终态；没有更改产品重试策略或放宽超时。
+
+本组 HTTP 是模拟隔离 Core，用于证明 Worker 真正发送只观察的原请求、使用
+独立受控身份并拒绝伪回执；不是已部署 Core HTTP 鉴权验收。原 Temporal 测试
+环境证明 pending 时只观察同一冻结批次，不等于真实 Server 全套运行通过。
+
+临时目录纠偏：以上 Worker 初次 exec 已显式投递两项 Data Go 缓存，但未显式
+投递 GOTMPDIR/TMPDIR，负向栈实际出现 `/tmp/go-build`，不能把这部分临时输入
+说成 Data。末版同字节恢复以
+`TMPDIR=GOTMPDIR=/work/receiver-worker.W4qug0/tmp` 再执行同一两包命令，
+`worker-data-restored.log` 退出 0（activities 0.012s / workflows 0.037s），SHA-256
+`de01979fdd90cd830f3d832725b9112beabe25a5dc1f4db0b802d5cbcdf73d2e`。
+没有重跑全量，也未改变主机目录或其他工程缓存。
+
+Core 与 Adapter 的隔离输入和日志在
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-worker.W4qug0`。
+原 4 CPU / 8 GiB SDK 的 Cargo registry/git 与 target 均沿已有 Data 挂载。
+新只读 PG runner 使用同一固定 SDK 镜像及原隔离 PG 的 network namespace，
+仅连接专属 `receiver_observe_w4qug0` 库；原迁移先退出 0，再执行原事务回滚
+夹具。没有读取或修改生产数据库、身份、审批、release 或 binding。
+
+```text
+cargo test --locked --offline -j16 -p platform-core --bin platform-core --no-run
+platform_core-0989771a3e5405dc service_directory_reads_real_scoped_rows_and_fresh_service_permissions --ignored --nocapture
+platform_core-0989771a3e5405dc execute_ticket_requires_exact_frozen_nonterminal_intent --ignored --nocapture
+```
+
+| 同目录日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| core-pep-compile.log | 0；原二进制测试编译，45.97s | `ac2c748056a8b08d2eb5ceb3b5fc2dfadd4a63eca9b6b481e17a3194e5a29cb7` |
+| pg-observe-execution.log | 0；原 retained 观察消费者，0.35s | `7edb35be3e464b7ea24444a542fb7e81c9eaaf676629c842391dfccd3a18f23e` |
+| pg-observe-negative.log | 101；私有副本去掉明确观察 AE 匹配，missing-ae 原断言失败 | `5e77ff5a359ab171d468ef5839a64d6f97be1dcce6cfcfed4d9582df7ad1e6e0` |
+| pg-observe-restored.log | 0；cmp 同字节还原后 0.32s | `bb1ffe55b87c5f0c0505589290d8a58da9a2b05a05363ae69ee81b34d6b8a00a` |
+| pep-execute-ticket.log | 0；原本 ignored 的真实 PG 执行票据消费者，7.83s | `15deb58feed54d36fafe47b7dda2a1ebd50854b812e6860db5807cce8509ad59` |
+
+原观察检查在真实 PG 中覆盖未完成、查无 AE、错键、错批次、空 UUID，并逐次
+核对 AE/audit/usage outbox 数量不增；这是 retained 段的真实 DB 验证，不是
+整个 HTTP 身份入口。另原 PEP 两项分类检查与 receiver wire 一项通过；其中
+执行票据最初 ignored，已由上表在同库补跑，不再将 ignored 当通过。
+第一次 PG SDK 缺原 registry 挂载导致 offline 依赖解析失败；随后快照漏原
+capabilities.yaml 编译输入，以及生成后原 PEP 枚举引用失效，均保留失败日志。
+前者补固定 HEAD 输入；后者改用实际生成的 conformance 枚举，原五操作 match
+和默认拒绝不变，receiver_start/receiver_observe 明确不得进入业务 PEP。
+
+Adapter 复用原锁定 MCP SDK 1.26.0 的 Data 依赖树，只读借用，不安装包：
+
+```text
+node --test test/query-revision.test.mjs
+node --test --test-name-pattern='native receiver conformance calls' test/query-revision.test.mjs
+```
+
+| 同目录日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| adapter-receiver-full.log | 0；原文件 328 项通过 | `ed7823a90ba12c7bb93e735eb9241b075d92a49864b0e31b9ffe512f71b4496a` |
+| adapter-receiver-negative.log | 1；删回传前 fresh PEP，start/observe 两撤权断言失败 | `f8450bb7b9a2b60d76604c82a9d8fcc56862f03ec0585654520121ec65f13e64` |
+| adapter-receiver-restored.log | 0；cmp 同字节恢复后 13 项通过 | `1ca44709e03c18f5dba46cf89a214993360bc1993713386b674e412584f18d81` |
+
+首次新增检查错误期待上游 PEP 拒绝映射 403，而原 shared jsonFetch 一直以 503
+隐藏上游响应；原其他撤权检查也要求 503。只纠正该新增期望，保留拒绝前 native
+调用为零和撤权不暴露结果的原断言，产品错误映射未改。原首轮失败日志保留。
+上述为隔离 HTTP/MCP 夹具，不是实际原生完整批次、生产菜单或上架验收。
+
+四侧合同仍由原 `tools/gen.sh` 生成。固定生成目录
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-conformance-gen.eI2c1u`
+的 `generate-cache.log` 退出 0，SHA-256
+`52b398e382b2959e01fb16033b4e4b80dde009698f1f262ed6881c8f1db4f1f2`；显式使用
+原 `/cache/npm` 离线缓存。首次默认 npm 缓存缺失的失败单独保留。
+四側只复验本批 `component-native-receiver.sample.json` 的 request、observation
+和 observe-only lookup，未借并行 Reminder 生成或测试背书：
+
+```text
+cargo test --locked --offline -j16 -p contracts --test roundtrip native_receiver_preserves_original_batch_and_observe_only_lookup -- --nocapture
+go test ./internal/contracts -run '^TestNativeReceiverPreservesOriginalBatchAndObserveOnlyLookup$' -count=1 -timeout=5m -v
+node --test --experimental-strip-types --test-name-pattern='Native receiver' test/roundtrip.test.ts
+dart test test/roundtrip_test.dart --name 'Native receiver'
+```
+
+Rust、Go、TypeScript、Dart 各 1 项实际退出 0。Rust/TS/Dart 的 `roundtrip-*.log`
+在上述 Core/Adapter 目录，Go 日志在上述 Worker 目录。Rust SHA-256 为
+`b9984d08a12d67b28d10f4161ad28fb6c2fd8546f7f694aec93e71850f3539e8`；TS 为
+`b7272ad3bd25091b7cb8b116449936b510746a4b23055c9b06b49d3c65723e8e`；Dart 为
+`a1d594fbb1e2b98cf2093dd85677a0514c843707ad0406d42fbc30689f76fee3`。
+Dart 首次导出缺原忽略的 pubspec.lock，强制锁校验拒绝；随后精确复制原锁，
+沿原 `/cache/pub` 执行 `dart pub get --offline --enforce-lockfile` 退出 0，未联网
+下载或改变依赖版本。Go 最后复验显式使用上述 Data 临时目录。TS 为原往返
+运行，不把它写成全包 tsc 或平台全量通过。
+
+本批源码候选以 `fd08e58da928df3052e9a5932e73f24b07593726` 为底，CI 仅把
+DESIGN_COMMIT 精确更新到已独立发布的 `6e5dba8284e5076440724bd23570a10180c74339`。
+候选剔除原排版残留、并行 Reminder 测试和旧发布记录。最终固定候选文档门禁由
+集成批统一执行；本回执不以旧 docs、编译或这些定向检查代替完整隔离 suite、
+真实 HTTP 身份入口、Knowledge PostgreSQL 新迁移演练、生产组件部署或激活。

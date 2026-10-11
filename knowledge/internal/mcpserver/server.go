@@ -42,19 +42,20 @@ var errNoEndpoint = errors.New("mcp endpoint missing from request context")
 // Server wires the tool catalog onto an mcp-go server and exposes it as an
 // http.Handler.
 type Server struct {
-	kbService        interfaces.KnowledgeBaseService
-	knowledgeService interfaces.KnowledgeService
-	chunkService     interfaces.ChunkService
-	wikiService      interfaces.WikiPageService
-	sessionService   interfaces.SessionService
-	messageService   interfaces.MessageService
-	agentService     interfaces.CustomAgentService
-	kbShareService   interfaces.KBShareService
-	tenantService    interfaces.TenantService
-	endpointRepo     interfaces.MCPEndpointRepository
-	db               *gorm.DB
-	cfg              *config.Config
-	redisClient      *redis.Client
+	kbService         interfaces.KnowledgeBaseService
+	knowledgeService  interfaces.KnowledgeService
+	chunkService      interfaces.ChunkService
+	wikiService       interfaces.WikiPageService
+	sessionService    interfaces.SessionService
+	messageService    interfaces.MessageService
+	agentService      interfaces.CustomAgentService
+	kbShareService    interfaces.KBShareService
+	tenantService     interfaces.TenantService
+	endpointRepo      interfaces.MCPEndpointRepository
+	dataSourceService interfaces.DataSourceService
+	db                *gorm.DB
+	cfg               *config.Config
+	redisClient       *redis.Client
 
 	limiter   *ratelimit.Limiter
 	lastTouch sync.Map // endpoint id -> time.Time of the last last_used_at write
@@ -75,25 +76,27 @@ func NewServer(
 	kbShareService interfaces.KBShareService,
 	tenantService interfaces.TenantService,
 	endpointRepo interfaces.MCPEndpointRepository,
+	dataSourceService interfaces.DataSourceService,
 	db *gorm.DB,
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) (*Server, error) {
 	s := &Server{
-		kbService:        kbService,
-		knowledgeService: knowledgeService,
-		chunkService:     chunkService,
-		wikiService:      wikiService,
-		sessionService:   sessionService,
-		messageService:   messageService,
-		agentService:     agentService,
-		kbShareService:   kbShareService,
-		tenantService:    tenantService,
-		endpointRepo:     endpointRepo,
-		db:               db,
-		cfg:              cfg,
-		redisClient:      redisClient,
-		limiter:          ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
+		kbService:         kbService,
+		knowledgeService:  knowledgeService,
+		chunkService:      chunkService,
+		wikiService:       wikiService,
+		sessionService:    sessionService,
+		messageService:    messageService,
+		agentService:      agentService,
+		kbShareService:    kbShareService,
+		tenantService:     tenantService,
+		endpointRepo:      endpointRepo,
+		dataSourceService: dataSourceService,
+		db:                db,
+		cfg:               cfg,
+		redisClient:       redisClient,
+		limiter:           ratelimit.New(redisClient, rateLimitKeyPrefix, time.Minute, ""),
 	}
 	if err := s.initializeNativeBindings(context.Background()); err != nil {
 		return nil, err
@@ -151,7 +154,7 @@ func (s *Server) filterTools(ctx context.Context, all []mcp.Tool) []mcp.Tool {
 		return nil
 	}
 	for _, t := range all {
-		if t.Name == nativeBindingReconcileTool {
+		if t.Name == nativeBindingReconcileTool || t.Name == nativeReceiverConformanceTool {
 			continue
 		}
 		if delivery.values != nil && (t.Name == types.MCPEndpointToolAddDocument || t.Name == types.MCPEndpointToolDeleteDocument || t.Name == types.MCPEndpointToolUpdateDocument) {
@@ -172,13 +175,13 @@ func (s *Server) guardTool(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("unauthorized"), nil
 		}
-		if req.Params.Name != nativeBindingReconcileTool && !ep.HasTool(req.Params.Name) {
+		if req.Params.Name != nativeBindingReconcileTool && req.Params.Name != nativeReceiverConformanceTool && !ep.HasTool(req.Params.Name) {
 			return mcp.NewToolResultErrorf("tool %q is not enabled on this endpoint", req.Params.Name), nil
 		}
 		if !s.limiter.Allow(ctx, ep.ID, ep.RateLimitPerMinute) {
 			return mcp.NewToolResultError("rate limit exceeded for this endpoint, retry shortly"), nil
 		}
-		if req.Params.Name == nativeBindingReconcileTool {
+		if req.Params.Name == nativeBindingReconcileTool || req.Params.Name == nativeReceiverConformanceTool {
 			return next(ctx, req)
 		}
 		ctx, err = s.authorizeNativePlatformTool(ctx, ep, req)
@@ -221,6 +224,7 @@ func (s *Server) touchLastUsed(ctx context.Context, endpointID string) {
 func (s *Server) toolCatalog() []server.ServerTool {
 	return []server.ServerTool{
 		{Tool: mcp.NewTool(nativeBindingReconcileTool, mcp.WithReadOnlyHintAnnotation(false)), Handler: s.handleNativeBindingReconcile},
+		{Tool: mcp.NewTool(nativeReceiverConformanceTool, mcp.WithReadOnlyHintAnnotation(false)), Handler: s.handleNativeReceiverConformance},
 		{Tool: listKnowledgeBasesTool(), Handler: s.handleListKnowledgeBases},
 		{Tool: searchKnowledgeTool(), Handler: s.handleSearchKnowledge},
 		{Tool: grepChunksTool(), Handler: s.handleGrepChunks},

@@ -82,6 +82,10 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 			// Transport timeout, Worker crash and unknown native evidence all
 			// keep the same attempt pending and select only protocol lookup.
 			in.ReleaseReconcile = true
+		} else if observed.NativeReceiverObservation != nil && !observed.NativeReceiverObservation.Completed {
+			// The native batch already exists. Keep its frozen key/deadline
+			// through ContinueAsNew and only observe; never run ManualSync again.
+			in.ReleaseReconcile = true
 		} else if observed.NativeObservation != nil &&
 			(observed.NativeObservation.PlatformStatus == generated.ExternalExecutionStatus("UNKNOWN") ||
 				((in.CancelPending || plan.Steps[index].ContractKey != nil) && observed.NativeObservation.PlatformStatus != generated.ExternalExecutionStatus("SUCCEEDED"))) {

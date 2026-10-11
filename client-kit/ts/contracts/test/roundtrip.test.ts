@@ -8,6 +8,18 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Native receiver preserves original batch and observe-only lookup", () => {
+  type Request = import("../src/generated/contracts.js").ComponentNativeReceiverRequest;
+  type Observation = import("../src/generated/contracts.js").ComponentNativeReceiverObservation;
+  type Lookup = import("../src/generated/contracts.js").AdapterReadGrantRequest;
+  const sample: {request: Request; observation: Observation; lookup: Lookup} = JSON.parse(readFileSync(new URL("../../../../contracts/samples/component-native-receiver.sample.json", import.meta.url), "utf8"));
+  const request = (row: Request): Request => ({ bindingId: row.bindingId, generation: row.generation, idempotencyKey: row.idempotencyKey, importConfigRef: row.importConfigRef, expiresAt: row.expiresAt });
+  const observation: Observation = { request: request(sample.observation.request), nativeBatchId: sample.observation.nativeBatchId, nativeStatus: sample.observation.nativeStatus, startedAt: sample.observation.startedAt, finishedAt: sample.observation.finishedAt, completed: sample.observation.completed, readOperations: sample.observation.readOperations };
+  const row = sample.lookup;
+  const lookup: Lookup = { receiverBindingId: row.receiverBindingId, sourceResourceId: row.sourceResourceId, actionKey: row.actionKey, actionVersion: row.actionVersion, inputJson: row.inputJson, idempotencyKey: row.idempotencyKey, observeActionExecutionId: row.observeActionExecutionId, nativeBatch: row.nativeBatch && {batchId: row.nativeBatch.batchId, importConfigRef: row.nativeBatch.importConfigRef, receiverResourceId: row.nativeBatch.receiverResourceId, actionKey: row.nativeBatch.actionKey, actionVersion: row.nativeBatch.actionVersion} };
+  deepStrictEqual(JSON.parse(JSON.stringify({request: request(sample.request), observation, lookup})), sample);
+});
+
 test("Delay deadline preserves independent duration and legacy absence", () => {
   type Wire = import("../src/generated/contracts.js").AgentTaskAdvanceResult;
   const sample: Wire[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-task-delay.sample.json", import.meta.url), "utf8"));

@@ -162,6 +162,8 @@
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
 //     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
+//     final componentNativeReceiverObservation = componentNativeReceiverObservationFromJson(jsonString);
+//     final componentNativeReceiverRequest = componentNativeReceiverRequestFromJson(jsonString);
 //     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
@@ -1220,6 +1222,22 @@ ComponentConformanceIdentity componentConformanceIdentityFromJson(String str) =>
 
 String componentConformanceIdentityToJson(ComponentConformanceIdentity data) =>
     json.encode(data.toJson());
+
+ComponentNativeReceiverObservation componentNativeReceiverObservationFromJson(
+  String str,
+) => ComponentNativeReceiverObservation.fromJson(json.decode(str));
+
+String componentNativeReceiverObservationToJson(
+  ComponentNativeReceiverObservation data,
+) => json.encode(data.toJson());
+
+ComponentNativeReceiverRequest componentNativeReceiverRequestFromJson(
+  String str,
+) => ComponentNativeReceiverRequest.fromJson(json.decode(str));
+
+String componentNativeReceiverRequestToJson(
+  ComponentNativeReceiverRequest data,
+) => json.encode(data.toJson());
 
 ComponentProtocolPeerEnvironment componentProtocolPeerEnvironmentFromJson(
   String str,
@@ -3574,6 +3592,9 @@ class AdapterReadGrantRequest {
   ///exactly one mode, freezes these references, and resolves the receiver from its
   ///authenticated binding.
   final NativeBatch? nativeBatch;
+
+  ///只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+  final String? observeActionExecutionId;
   final String? receiverActionExecutionId;
   final String? receiverArgumentsJson;
   final String receiverBindingId;
@@ -3585,6 +3606,7 @@ class AdapterReadGrantRequest {
     required this.idempotencyKey,
     required this.inputJson,
     this.nativeBatch,
+    this.observeActionExecutionId,
     this.receiverActionExecutionId,
     this.receiverArgumentsJson,
     required this.receiverBindingId,
@@ -3600,6 +3622,7 @@ class AdapterReadGrantRequest {
         nativeBatch: json["nativeBatch"] == null
             ? null
             : NativeBatch.fromJson(json["nativeBatch"]),
+        observeActionExecutionId: json["observeActionExecutionId"],
         receiverActionExecutionId: json["receiverActionExecutionId"],
         receiverArgumentsJson: json["receiverArgumentsJson"],
         receiverBindingId: json["receiverBindingId"],
@@ -3612,6 +3635,7 @@ class AdapterReadGrantRequest {
     "idempotencyKey": idempotencyKey,
     "inputJson": inputJson,
     "nativeBatch": nativeBatch?.toJson(),
+    "observeActionExecutionId": observeActionExecutionId,
     "receiverActionExecutionId": receiverActionExecutionId,
     "receiverArgumentsJson": receiverArgumentsJson,
     "receiverBindingId": receiverBindingId,
@@ -3667,6 +3691,12 @@ class AdapterReadGrantResponse {
   ///Native retry observation. COMPLETED requires both immutable receipts and committed usage;
   ///UNKNOWN/PENDING carry no renewed authorization.
   final Outcome? outcome;
+
+  ///仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
+  final String? receiverActionExecutionId;
+
+  ///仅 COMPLETED 观察返回原子执行冻结的 receiver generation，不是当前绑定代次。
+  final int? receiverGeneration;
   final AdapterReadReceipt? receiverReceipt;
 
   ///Separate governed receiver action in the same read Operation. The native importer must
@@ -3674,6 +3704,9 @@ class AdapterReadGrantResponse {
   ///write; issuance is not completion.
   final ReceiverWrite? receiverWrite;
   final String sourceBindingId;
+
+  ///仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
+  final AdapterReadReceipt? sourceReceipt;
 
   AdapterReadGrantResponse({
     required this.actionExecutionId,
@@ -3683,9 +3716,12 @@ class AdapterReadGrantResponse {
     this.expiresAt,
     required this.operationId,
     this.outcome,
+    this.receiverActionExecutionId,
+    this.receiverGeneration,
     this.receiverReceipt,
     this.receiverWrite,
     required this.sourceBindingId,
+    this.sourceReceipt,
   });
 
   factory AdapterReadGrantResponse.fromJson(Map<String, dynamic> json) =>
@@ -3699,6 +3735,8 @@ class AdapterReadGrantResponse {
         outcome: json["outcome"] == null
             ? null
             : outcomeValues.map[json["outcome"]]!,
+        receiverActionExecutionId: json["receiverActionExecutionId"],
+        receiverGeneration: json["receiverGeneration"],
         receiverReceipt: json["receiverReceipt"] == null
             ? null
             : AdapterReadReceipt.fromJson(json["receiverReceipt"]),
@@ -3706,6 +3744,9 @@ class AdapterReadGrantResponse {
             ? null
             : ReceiverWrite.fromJson(json["receiverWrite"]),
         sourceBindingId: json["sourceBindingId"],
+        sourceReceipt: json["sourceReceipt"] == null
+            ? null
+            : AdapterReadReceipt.fromJson(json["sourceReceipt"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -3716,9 +3757,12 @@ class AdapterReadGrantResponse {
     "expiresAt": expiresAt,
     "operationId": operationId,
     "outcome": outcomeValues.reverse[outcome],
+    "receiverActionExecutionId": receiverActionExecutionId,
+    "receiverGeneration": receiverGeneration,
     "receiverReceipt": receiverReceipt?.toJson(),
     "receiverWrite": receiverWrite?.toJson(),
     "sourceBindingId": sourceBindingId,
+    "sourceReceipt": sourceReceipt?.toJson(),
   });
 }
 
@@ -3734,6 +3778,8 @@ final outcomeValues = EnumValues({
 
 ///DD-89: authenticated native source-read or completed receiver-import metadata for one
 ///original SERVICE Operation; never file bodies or credentials.
+///
+///仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
 class AdapterReadReceipt {
   final String bindingId;
 
@@ -9413,6 +9459,8 @@ enum ComponentConformanceOperation {
   MCP_LIST,
   OBSERVE,
   QUERY_REVISION,
+  RECEIVER_OBSERVE,
+  RECEIVER_START,
   RECONCILE,
   RESOLVE_NATIVE_SCOPE,
   VALIDATE_BINDING,
@@ -9430,6 +9478,8 @@ final componentConformanceOperationValues = EnumValues({
   "mcp_list": ComponentConformanceOperation.MCP_LIST,
   "observe": ComponentConformanceOperation.OBSERVE,
   "query_revision": ComponentConformanceOperation.QUERY_REVISION,
+  "receiver_observe": ComponentConformanceOperation.RECEIVER_OBSERVE,
+  "receiver_start": ComponentConformanceOperation.RECEIVER_START,
   "reconcile": ComponentConformanceOperation.RECONCILE,
   "resolve_native_scope": ComponentConformanceOperation.RESOLVE_NATIVE_SCOPE,
   "validate_binding": ComponentConformanceOperation.VALIDATE_BINDING,
@@ -9440,12 +9490,14 @@ class ComponentConformanceWireDigests {
   ///仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
   ///secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
   final String? bindingDigest;
+  final NativeReceiverObservationClass? nativeReceiverObservation;
   final String requestDigest;
   final String responseDigest;
   final String? resultDigest;
 
   ComponentConformanceWireDigests({
     this.bindingDigest,
+    this.nativeReceiverObservation,
     required this.requestDigest,
     required this.responseDigest,
     this.resultDigest,
@@ -9454,6 +9506,11 @@ class ComponentConformanceWireDigests {
   factory ComponentConformanceWireDigests.fromJson(Map<String, dynamic> json) =>
       ComponentConformanceWireDigests(
         bindingDigest: json["bindingDigest"],
+        nativeReceiverObservation: json["nativeReceiverObservation"] == null
+            ? null
+            : NativeReceiverObservationClass.fromJson(
+                json["nativeReceiverObservation"],
+              ),
         requestDigest: json["requestDigest"],
         responseDigest: json["responseDigest"],
         resultDigest: json["resultDigest"],
@@ -9461,9 +9518,246 @@ class ComponentConformanceWireDigests {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingDigest": bindingDigest,
+    "nativeReceiverObservation": nativeReceiverObservation?.toJson(),
     "requestDigest": requestDigest,
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
+  });
+}
+
+///原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+///SOURCE/RECEIVER 回执及冻结请求。
+class NativeReceiverObservationClass {
+  final bool completed;
+  final String? finishedAt;
+  final String nativeBatchId;
+  final String nativeStatus;
+  final List<NativeReceiverObservationReadOperation> readOperations;
+  final RequestClass request;
+  final String startedAt;
+
+  NativeReceiverObservationClass({
+    required this.completed,
+    this.finishedAt,
+    required this.nativeBatchId,
+    required this.nativeStatus,
+    required this.readOperations,
+    required this.request,
+    required this.startedAt,
+  });
+
+  factory NativeReceiverObservationClass.fromJson(Map<String, dynamic> json) =>
+      NativeReceiverObservationClass(
+        completed: json["completed"],
+        finishedAt: json["finishedAt"],
+        nativeBatchId: json["nativeBatchId"],
+        nativeStatus: json["nativeStatus"],
+        readOperations: List<NativeReceiverObservationReadOperation>.from(
+          json["readOperations"].map(
+            (x) => NativeReceiverObservationReadOperation.fromJson(x),
+          ),
+        ),
+        request: RequestClass.fromJson(json["request"]),
+        startedAt: json["startedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completed": completed,
+    "finishedAt": finishedAt,
+    "nativeBatchId": nativeBatchId,
+    "nativeStatus": nativeStatus,
+    "readOperations": List<dynamic>.from(readOperations.map((x) => x.toJson())),
+    "request": request.toJson(),
+    "startedAt": startedAt,
+  });
+}
+
+class NativeReceiverObservationReadOperation {
+  final String actionExecutionId;
+  final ReadOperationNativeBatch nativeBatch;
+  final String operationId;
+  final ReadRequestClass readRequest;
+  final String receiverActionExecutionId;
+  final int receiverGeneration;
+  final AdapterReadReceipt receiverReceipt;
+  final String sourceBindingId;
+  final AdapterReadReceipt sourceReceipt;
+  final String sourceResourceId;
+
+  NativeReceiverObservationReadOperation({
+    required this.actionExecutionId,
+    required this.nativeBatch,
+    required this.operationId,
+    required this.readRequest,
+    required this.receiverActionExecutionId,
+    required this.receiverGeneration,
+    required this.receiverReceipt,
+    required this.sourceBindingId,
+    required this.sourceReceipt,
+    required this.sourceResourceId,
+  });
+
+  factory NativeReceiverObservationReadOperation.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeReceiverObservationReadOperation(
+    actionExecutionId: json["actionExecutionId"],
+    nativeBatch: ReadOperationNativeBatch.fromJson(json["nativeBatch"]),
+    operationId: json["operationId"],
+    readRequest: ReadRequestClass.fromJson(json["readRequest"]),
+    receiverActionExecutionId: json["receiverActionExecutionId"],
+    receiverGeneration: json["receiverGeneration"],
+    receiverReceipt: AdapterReadReceipt.fromJson(json["receiverReceipt"]),
+    sourceBindingId: json["sourceBindingId"],
+    sourceReceipt: AdapterReadReceipt.fromJson(json["sourceReceipt"]),
+    sourceResourceId: json["sourceResourceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "nativeBatch": nativeBatch.toJson(),
+    "operationId": operationId,
+    "readRequest": readRequest.toJson(),
+    "receiverActionExecutionId": receiverActionExecutionId,
+    "receiverGeneration": receiverGeneration,
+    "receiverReceipt": receiverReceipt.toJson(),
+    "sourceBindingId": sourceBindingId,
+    "sourceReceipt": sourceReceipt.toJson(),
+    "sourceResourceId": sourceResourceId,
+  });
+}
+
+///Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+///exactly one mode, freezes these references, and resolves the receiver from its
+///authenticated binding.
+class ReadOperationNativeBatch {
+  final String actionKey;
+  final int actionVersion;
+  final String batchId;
+  final String importConfigRef;
+  final String receiverResourceId;
+
+  ReadOperationNativeBatch({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.batchId,
+    required this.importConfigRef,
+    required this.receiverResourceId,
+  });
+
+  factory ReadOperationNativeBatch.fromJson(Map<String, dynamic> json) =>
+      ReadOperationNativeBatch(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        batchId: json["batchId"],
+        importConfigRef: json["importConfigRef"],
+        receiverResourceId: json["receiverResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "batchId": batchId,
+    "importConfigRef": importConfigRef,
+    "receiverResourceId": receiverResourceId,
+  });
+}
+
+///DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+///read batch. Input is checked against the approved source action schema; Core retains its
+///digest, not the returned business content.
+class ReadRequestClass {
+  final String actionKey;
+  final int actionVersion;
+  final String idempotencyKey;
+  final String inputJson;
+
+  ///Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+  ///exactly one mode, freezes these references, and resolves the receiver from its
+  ///authenticated binding.
+  final ReadOperationNativeBatch? nativeBatch;
+
+  ///只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+  final String? observeActionExecutionId;
+  final String? receiverActionExecutionId;
+  final String? receiverArgumentsJson;
+  final String receiverBindingId;
+  final String sourceResourceId;
+
+  ReadRequestClass({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.idempotencyKey,
+    required this.inputJson,
+    this.nativeBatch,
+    this.observeActionExecutionId,
+    this.receiverActionExecutionId,
+    this.receiverArgumentsJson,
+    required this.receiverBindingId,
+    required this.sourceResourceId,
+  });
+
+  factory ReadRequestClass.fromJson(Map<String, dynamic> json) =>
+      ReadRequestClass(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        idempotencyKey: json["idempotencyKey"],
+        inputJson: json["inputJson"],
+        nativeBatch: json["nativeBatch"] == null
+            ? null
+            : ReadOperationNativeBatch.fromJson(json["nativeBatch"]),
+        observeActionExecutionId: json["observeActionExecutionId"],
+        receiverActionExecutionId: json["receiverActionExecutionId"],
+        receiverArgumentsJson: json["receiverArgumentsJson"],
+        receiverBindingId: json["receiverBindingId"],
+        sourceResourceId: json["sourceResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "idempotencyKey": idempotencyKey,
+    "inputJson": inputJson,
+    "nativeBatch": nativeBatch?.toJson(),
+    "observeActionExecutionId": observeActionExecutionId,
+    "receiverActionExecutionId": receiverActionExecutionId,
+    "receiverArgumentsJson": receiverArgumentsJson,
+    "receiverBindingId": receiverBindingId,
+    "sourceResourceId": sourceResourceId,
+  });
+}
+
+///07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+class RequestClass {
+  final String bindingId;
+
+  ///受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+  final String expiresAt;
+  final int generation;
+  final String idempotencyKey;
+  final String importConfigRef;
+
+  RequestClass({
+    required this.bindingId,
+    required this.expiresAt,
+    required this.generation,
+    required this.idempotencyKey,
+    required this.importConfigRef,
+  });
+
+  factory RequestClass.fromJson(Map<String, dynamic> json) => RequestClass(
+    bindingId: json["bindingId"],
+    expiresAt: json["expiresAt"],
+    generation: json["generation"],
+    idempotencyKey: json["idempotencyKey"],
+    importConfigRef: json["importConfigRef"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "expiresAt": expiresAt,
+    "generation": generation,
+    "idempotencyKey": idempotencyKey,
+    "importConfigRef": importConfigRef,
   });
 }
 
@@ -9615,6 +9909,9 @@ class PlanStep {
   final McpResultKind? expectedMcpResultKind;
   final String expectedResponseJson;
   final String idempotencyKey;
+
+  ///仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+  final String? nativeReceiverInputJson;
   final ComponentConformanceOperation operation;
   final String? referenceAssetId;
   final String? referenceFromStepKey;
@@ -9629,6 +9926,7 @@ class PlanStep {
     this.expectedMcpResultKind,
     required this.expectedResponseJson,
     required this.idempotencyKey,
+    this.nativeReceiverInputJson,
     required this.operation,
     this.referenceAssetId,
     this.referenceFromStepKey,
@@ -9646,6 +9944,7 @@ class PlanStep {
         : mcpResultKindValues.map[json["expectedMcpResultKind"]]!,
     expectedResponseJson: json["expectedResponseJson"],
     idempotencyKey: json["idempotencyKey"],
+    nativeReceiverInputJson: json["nativeReceiverInputJson"],
     operation: componentConformanceOperationValues.map[json["operation"]]!,
     referenceAssetId: json["referenceAssetId"],
     referenceFromStepKey: json["referenceFromStepKey"],
@@ -9661,6 +9960,7 @@ class PlanStep {
     "expectedMcpResultKind": mcpResultKindValues.reverse[expectedMcpResultKind],
     "expectedResponseJson": expectedResponseJson,
     "idempotencyKey": idempotencyKey,
+    "nativeReceiverInputJson": nativeReceiverInputJson,
     "operation": componentConformanceOperationValues.reverse[operation],
     "referenceAssetId": referenceAssetId,
     "referenceFromStepKey": referenceFromStepKey,
@@ -15168,11 +15468,16 @@ class ComponentConformanceEnvironment {
   final int maxResponseBytes;
   final int maxSteps;
 
+  ///仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发
+  ///Worker 的平台 bearer。
+  final List<ComponentNativeReadAuthority>? nativeReadAuthorities;
+
   ComponentConformanceEnvironment({
     required this.adapterBaseUrl,
     required this.artifactDigest,
     required this.maxResponseBytes,
     required this.maxSteps,
+    this.nativeReadAuthorities,
   });
 
   factory ComponentConformanceEnvironment.fromJson(Map<String, dynamic> json) =>
@@ -15181,6 +15486,13 @@ class ComponentConformanceEnvironment {
         artifactDigest: json["artifactDigest"],
         maxResponseBytes: json["maxResponseBytes"],
         maxSteps: json["maxSteps"],
+        nativeReadAuthorities: json["nativeReadAuthorities"] == null
+            ? null
+            : List<ComponentNativeReadAuthority>.from(
+                json["nativeReadAuthorities"]!.map(
+                  (x) => ComponentNativeReadAuthority.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -15188,22 +15500,71 @@ class ComponentConformanceEnvironment {
     "artifactDigest": artifactDigest,
     "maxResponseBytes": maxResponseBytes,
     "maxSteps": maxSteps,
+    "nativeReadAuthorities": nativeReadAuthorities == null
+        ? null
+        : List<dynamic>.from(nativeReadAuthorities!.map((x) => x.toJson())),
+  });
+}
+
+class ComponentNativeReadAuthority {
+  final String bindingId;
+  final String coreBaseUrl;
+  final int generation;
+  final String oidcClientId;
+  final String oidcClientSecretFile;
+  final String oidcTokenUrl;
+
+  ComponentNativeReadAuthority({
+    required this.bindingId,
+    required this.coreBaseUrl,
+    required this.generation,
+    required this.oidcClientId,
+    required this.oidcClientSecretFile,
+    required this.oidcTokenUrl,
+  });
+
+  factory ComponentNativeReadAuthority.fromJson(Map<String, dynamic> json) =>
+      ComponentNativeReadAuthority(
+        bindingId: json["bindingId"],
+        coreBaseUrl: json["coreBaseUrl"],
+        generation: json["generation"],
+        oidcClientId: json["oidcClientId"],
+        oidcClientSecretFile: json["oidcClientSecretFile"],
+        oidcTokenUrl: json["oidcTokenUrl"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "coreBaseUrl": coreBaseUrl,
+    "generation": generation,
+    "oidcClientId": oidcClientId,
+    "oidcClientSecretFile": oidcClientSecretFile,
+    "oidcTokenUrl": oidcTokenUrl,
   });
 }
 
 ///隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
 class ComponentConformanceFixture {
   final String artifactDigest;
+  final List<ComponentNativeReceiverFixture>? nativeReceivers;
   final List<PlanStep> steps;
 
   ComponentConformanceFixture({
     required this.artifactDigest,
+    this.nativeReceivers,
     required this.steps,
   });
 
   factory ComponentConformanceFixture.fromJson(Map<String, dynamic> json) =>
       ComponentConformanceFixture(
         artifactDigest: json["artifactDigest"],
+        nativeReceivers: json["nativeReceivers"] == null
+            ? null
+            : List<ComponentNativeReceiverFixture>.from(
+                json["nativeReceivers"]!.map(
+                  (x) => ComponentNativeReceiverFixture.fromJson(x),
+                ),
+              ),
         steps: List<PlanStep>.from(
           json["steps"].map((x) => PlanStep.fromJson(x)),
         ),
@@ -15211,7 +15572,39 @@ class ComponentConformanceFixture {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "artifactDigest": artifactDigest,
+    "nativeReceivers": nativeReceivers == null
+        ? null
+        : List<dynamic>.from(nativeReceivers!.map((x) => x.toJson())),
     "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
+  });
+}
+
+class ComponentNativeReceiverFixture {
+  final String caseKey;
+  final String contractKey;
+  final RequestClass request;
+  final String stepKey;
+
+  ComponentNativeReceiverFixture({
+    required this.caseKey,
+    required this.contractKey,
+    required this.request,
+    required this.stepKey,
+  });
+
+  factory ComponentNativeReceiverFixture.fromJson(Map<String, dynamic> json) =>
+      ComponentNativeReceiverFixture(
+        caseKey: json["caseKey"],
+        contractKey: json["contractKey"],
+        request: RequestClass.fromJson(json["request"]),
+        stepKey: json["stepKey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "caseKey": caseKey,
+    "contractKey": contractKey,
+    "request": request.toJson(),
+    "stepKey": stepKey,
   });
 }
 
@@ -15285,7 +15678,7 @@ class ComponentConformanceIdentityContext {
 
   ///execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
   final String? externalExecutionId;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
 
   ///业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
   ///管理上下文必须省略两字段，不授业务内容访问。
@@ -15325,7 +15718,7 @@ class ComponentConformanceIdentityContext {
     authorizationMinZedToken: json["authorizationMinZedToken"],
     caseKey: json["caseKey"],
     externalExecutionId: json["externalExecutionId"],
-    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    operation: componentConformanceOperationValues.map[json["operation"]]!,
     resultExposurePolicyId: json["resultExposurePolicyId"],
     resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
     stepKey: json["stepKey"],
@@ -15342,7 +15735,7 @@ class ComponentConformanceIdentityContext {
     "authorizationMinZedToken": authorizationMinZedToken,
     "caseKey": caseKey,
     "externalExecutionId": externalExecutionId,
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "resultExposurePolicyId": resultExposurePolicyId,
     "resultExposurePolicyVersion": resultExposurePolicyVersion,
     "stepKey": stepKey,
@@ -15353,32 +15746,143 @@ class ComponentConformanceIdentityContext {
   });
 }
 
-///ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
-enum AdapterProtocolOperation {
-  CANCEL,
-  EXECUTE,
-  EXTRACT_USAGE,
-  HANDSHAKE,
-  MAP_NATIVE_STATUS_ERROR,
-  OBSERVE,
-  QUERY_REVISION,
-  RECONCILE,
-  RESOLVE_NATIVE_SCOPE,
-  VALIDATE_BINDING,
+///原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+///SOURCE/RECEIVER 回执及冻结请求。
+class ComponentNativeReceiverObservation {
+  final bool completed;
+  final String? finishedAt;
+  final String nativeBatchId;
+  final String nativeStatus;
+  final List<ComponentNativeReceiverObservationReadOperation> readOperations;
+  final RequestClass request;
+  final String startedAt;
+
+  ComponentNativeReceiverObservation({
+    required this.completed,
+    this.finishedAt,
+    required this.nativeBatchId,
+    required this.nativeStatus,
+    required this.readOperations,
+    required this.request,
+    required this.startedAt,
+  });
+
+  factory ComponentNativeReceiverObservation.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentNativeReceiverObservation(
+    completed: json["completed"],
+    finishedAt: json["finishedAt"],
+    nativeBatchId: json["nativeBatchId"],
+    nativeStatus: json["nativeStatus"],
+    readOperations: List<ComponentNativeReceiverObservationReadOperation>.from(
+      json["readOperations"].map(
+        (x) => ComponentNativeReceiverObservationReadOperation.fromJson(x),
+      ),
+    ),
+    request: RequestClass.fromJson(json["request"]),
+    startedAt: json["startedAt"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "completed": completed,
+    "finishedAt": finishedAt,
+    "nativeBatchId": nativeBatchId,
+    "nativeStatus": nativeStatus,
+    "readOperations": List<dynamic>.from(readOperations.map((x) => x.toJson())),
+    "request": request.toJson(),
+    "startedAt": startedAt,
+  });
 }
 
-final adapterProtocolOperationValues = EnumValues({
-  "cancel": AdapterProtocolOperation.CANCEL,
-  "execute": AdapterProtocolOperation.EXECUTE,
-  "extract_usage": AdapterProtocolOperation.EXTRACT_USAGE,
-  "handshake": AdapterProtocolOperation.HANDSHAKE,
-  "map_native_status_error": AdapterProtocolOperation.MAP_NATIVE_STATUS_ERROR,
-  "observe": AdapterProtocolOperation.OBSERVE,
-  "query_revision": AdapterProtocolOperation.QUERY_REVISION,
-  "reconcile": AdapterProtocolOperation.RECONCILE,
-  "resolve_native_scope": AdapterProtocolOperation.RESOLVE_NATIVE_SCOPE,
-  "validate_binding": AdapterProtocolOperation.VALIDATE_BINDING,
-});
+class ComponentNativeReceiverObservationReadOperation {
+  final String actionExecutionId;
+  final ReadOperationNativeBatch nativeBatch;
+  final String operationId;
+  final ReadRequestClass readRequest;
+  final String receiverActionExecutionId;
+  final int receiverGeneration;
+  final AdapterReadReceipt receiverReceipt;
+  final String sourceBindingId;
+  final AdapterReadReceipt sourceReceipt;
+  final String sourceResourceId;
+
+  ComponentNativeReceiverObservationReadOperation({
+    required this.actionExecutionId,
+    required this.nativeBatch,
+    required this.operationId,
+    required this.readRequest,
+    required this.receiverActionExecutionId,
+    required this.receiverGeneration,
+    required this.receiverReceipt,
+    required this.sourceBindingId,
+    required this.sourceReceipt,
+    required this.sourceResourceId,
+  });
+
+  factory ComponentNativeReceiverObservationReadOperation.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentNativeReceiverObservationReadOperation(
+    actionExecutionId: json["actionExecutionId"],
+    nativeBatch: ReadOperationNativeBatch.fromJson(json["nativeBatch"]),
+    operationId: json["operationId"],
+    readRequest: ReadRequestClass.fromJson(json["readRequest"]),
+    receiverActionExecutionId: json["receiverActionExecutionId"],
+    receiverGeneration: json["receiverGeneration"],
+    receiverReceipt: AdapterReadReceipt.fromJson(json["receiverReceipt"]),
+    sourceBindingId: json["sourceBindingId"],
+    sourceReceipt: AdapterReadReceipt.fromJson(json["sourceReceipt"]),
+    sourceResourceId: json["sourceResourceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "nativeBatch": nativeBatch.toJson(),
+    "operationId": operationId,
+    "readRequest": readRequest.toJson(),
+    "receiverActionExecutionId": receiverActionExecutionId,
+    "receiverGeneration": receiverGeneration,
+    "receiverReceipt": receiverReceipt.toJson(),
+    "sourceBindingId": sourceBindingId,
+    "sourceReceipt": sourceReceipt.toJson(),
+    "sourceResourceId": sourceResourceId,
+  });
+}
+
+///07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+class ComponentNativeReceiverRequest {
+  final String bindingId;
+
+  ///受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+  final String expiresAt;
+  final int generation;
+  final String idempotencyKey;
+  final String importConfigRef;
+
+  ComponentNativeReceiverRequest({
+    required this.bindingId,
+    required this.expiresAt,
+    required this.generation,
+    required this.idempotencyKey,
+    required this.importConfigRef,
+  });
+
+  factory ComponentNativeReceiverRequest.fromJson(Map<String, dynamic> json) =>
+      ComponentNativeReceiverRequest(
+        bindingId: json["bindingId"],
+        expiresAt: json["expiresAt"],
+        generation: json["generation"],
+        idempotencyKey: json["idempotencyKey"],
+        importConfigRef: json["importConfigRef"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "expiresAt": expiresAt,
+    "generation": generation,
+    "idempotencyKey": idempotencyKey,
+    "importConfigRef": importConfigRef,
+  });
+}
 
 ///原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
 ///固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
@@ -17657,6 +18161,7 @@ class ObservationElement {
   final int httpStatus;
   final McpResultKind? mcpResultKind;
   final ExecutionElement? nativeObservation;
+  final NativeReceiverObservationClass? nativeReceiverObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
   final ComponentConformanceOperation operation;
   final String requestDigest;
@@ -17674,6 +18179,7 @@ class ObservationElement {
     required this.httpStatus,
     this.mcpResultKind,
     this.nativeObservation,
+    this.nativeReceiverObservation,
     this.nativeScopeObservation,
     required this.operation,
     required this.requestDigest,
@@ -17699,6 +18205,11 @@ class ObservationElement {
         nativeObservation: json["nativeObservation"] == null
             ? null
             : ExecutionElement.fromJson(json["nativeObservation"]),
+        nativeReceiverObservation: json["nativeReceiverObservation"] == null
+            ? null
+            : NativeReceiverObservationClass.fromJson(
+                json["nativeReceiverObservation"],
+              ),
         nativeScopeObservation: json["nativeScopeObservation"] == null
             ? null
             : NativeScopeObservationClass.fromJson(
@@ -17719,6 +18230,7 @@ class ObservationElement {
     "httpStatus": httpStatus,
     "mcpResultKind": mcpResultKindValues.reverse[mcpResultKind],
     "nativeObservation": nativeObservation?.toJson(),
+    "nativeReceiverObservation": nativeReceiverObservation?.toJson(),
     "nativeScopeObservation": nativeScopeObservation?.toJson(),
     "operation": componentConformanceOperationValues.reverse[operation],
     "requestDigest": requestDigest,
@@ -17843,6 +18355,9 @@ class ComponentConformancePlanStep {
   final McpResultKind? expectedMcpResultKind;
   final String expectedResponseJson;
   final String idempotencyKey;
+
+  ///仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+  final String? nativeReceiverInputJson;
   final ComponentConformanceOperation operation;
   final String? referenceAssetId;
   final String? referenceFromStepKey;
@@ -17857,6 +18372,7 @@ class ComponentConformancePlanStep {
     this.expectedMcpResultKind,
     required this.expectedResponseJson,
     required this.idempotencyKey,
+    this.nativeReceiverInputJson,
     required this.operation,
     this.referenceAssetId,
     this.referenceFromStepKey,
@@ -17875,6 +18391,7 @@ class ComponentConformancePlanStep {
             : mcpResultKindValues.map[json["expectedMcpResultKind"]]!,
         expectedResponseJson: json["expectedResponseJson"],
         idempotencyKey: json["idempotencyKey"],
+        nativeReceiverInputJson: json["nativeReceiverInputJson"],
         operation: componentConformanceOperationValues.map[json["operation"]]!,
         referenceAssetId: json["referenceAssetId"],
         referenceFromStepKey: json["referenceFromStepKey"],
@@ -17890,6 +18407,7 @@ class ComponentConformancePlanStep {
     "expectedMcpResultKind": mcpResultKindValues.reverse[expectedMcpResultKind],
     "expectedResponseJson": expectedResponseJson,
     "idempotencyKey": idempotencyKey,
+    "nativeReceiverInputJson": nativeReceiverInputJson,
     "operation": componentConformanceOperationValues.reverse[operation],
     "referenceAssetId": referenceAssetId,
     "referenceFromStepKey": referenceFromStepKey,
@@ -17943,6 +18461,7 @@ class ComponentConformanceStepObservation {
   final int httpStatus;
   final McpResultKind? mcpResultKind;
   final ExecutionElement? nativeObservation;
+  final NativeReceiverObservationClass? nativeReceiverObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
   final ComponentConformanceOperation operation;
   final String requestDigest;
@@ -17960,6 +18479,7 @@ class ComponentConformanceStepObservation {
     required this.httpStatus,
     this.mcpResultKind,
     this.nativeObservation,
+    this.nativeReceiverObservation,
     this.nativeScopeObservation,
     required this.operation,
     required this.requestDigest,
@@ -17986,6 +18506,11 @@ class ComponentConformanceStepObservation {
     nativeObservation: json["nativeObservation"] == null
         ? null
         : ExecutionElement.fromJson(json["nativeObservation"]),
+    nativeReceiverObservation: json["nativeReceiverObservation"] == null
+        ? null
+        : NativeReceiverObservationClass.fromJson(
+            json["nativeReceiverObservation"],
+          ),
     nativeScopeObservation: json["nativeScopeObservation"] == null
         ? null
         : NativeScopeObservationClass.fromJson(json["nativeScopeObservation"]),
@@ -18004,6 +18529,7 @@ class ComponentConformanceStepObservation {
     "httpStatus": httpStatus,
     "mcpResultKind": mcpResultKindValues.reverse[mcpResultKind],
     "nativeObservation": nativeObservation?.toJson(),
+    "nativeReceiverObservation": nativeReceiverObservation?.toJson(),
     "nativeScopeObservation": nativeScopeObservation?.toJson(),
     "operation": componentConformanceOperationValues.reverse[operation],
     "requestDigest": requestDigest,

@@ -526,6 +526,11 @@ func (s *DataSourceService) ManualSync(ctx context.Context, dsID string) (*types
 	if err != nil {
 		return nil, err
 	}
+	if syncLog.RequestReplayed {
+		// The first request already owns dispatch. Repeated calls observe the
+		// same original SyncLog even when the queue acknowledgement was lost.
+		return syncLog, nil
+	}
 	if err := datasource.DispatchSync(ctx, s.syncLogRepo, s.taskEnqueuer, syncLog.ID); err != nil {
 		logger.Warnf(ctx, "sync handoff remains pending: ds=%s syncLog=%s: %v", dsID, syncLog.ID, err)
 	}
@@ -629,6 +634,16 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	if payload.DataSourceID == "" || payload.SyncLogID == "" || payload.TenantID == 0 || syncLog == nil ||
 		syncLog.ID != payload.SyncLogID || syncLog.DataSourceID != payload.DataSourceID || syncLog.TenantID != payload.TenantID {
 		return fmt.Errorf("%w: original sync identity is unavailable", asynq.SkipRetry)
+	}
+	if syncLog.RequestKey != nil {
+		var request types.NativeSyncRequest
+		if json.Unmarshal(syncLog.RequestIdentity, &request) != nil || request.Key != *syncLog.RequestKey ||
+			request.DataSourceID != syncLog.DataSourceID {
+			return fmt.Errorf("%w: frozen native sync request is unavailable", asynq.SkipRetry)
+		}
+		// This is retained ownership for receipt collection, never a renewed
+		// source grant or permission to repeat an expired external write.
+		ctx = types.WithNativeSyncRequest(ctx, request)
 	}
 	// Queue ACK loss can redeliver an already-finished native run. Observe its
 	// own persisted terminal evidence, without fetching under changed source

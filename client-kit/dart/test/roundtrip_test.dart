@@ -9,6 +9,26 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Native receiver preserves original batch and observe-only lookup', () {
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/component-native-receiver.sample.json',
+      ).readAsStringSync(),
+    );
+    expect(
+      ComponentNativeReceiverRequest.fromJson(sample['request']).toJson(),
+      sample['request'],
+    );
+    expect(
+      ComponentNativeReceiverObservation.fromJson(sample['observation']).toJson(),
+      sample['observation'],
+    );
+    expect(
+      AdapterReadGrantRequest.fromJson(sample['lookup']).toJson(),
+      sample['lookup'],
+    );
+  });
+
   test('Delay deadline preserves independent duration and legacy absence', () {
     final sample =
         jsonDecode(

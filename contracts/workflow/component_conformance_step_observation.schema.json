@@ -8,6 +8,7 @@
   "properties": {
     "contentReference": {"$ref": "../domain/content_reference.schema.json"},
     "nativeScopeObservation": {"$ref": "../adapter/protocol.v1/scope_observation.schema.json"},
+    "nativeReceiverObservation": {"$ref": "../domain/component_native_receiver_observation.schema.json"},
     "operation": {"$ref": "../enums/component_conformance_operation.schema.json"},
     "mcpResultKind": {"type":"string","enum":["RESULT","ERROR"]},
     "resultDigest": {"type": "string", "description": "实际返回的能力结果摘要；原结果正文不进入报告或 Core。"},

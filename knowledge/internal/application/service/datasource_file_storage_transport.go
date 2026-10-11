@@ -37,6 +37,76 @@ type fileStorageTransport struct {
 	core   *url.URL
 }
 
+type fileStorageReadObservationsKey struct{}
+type fileStorageReadObservations struct {
+	batchID, dataSourceID string
+	generation            int64
+	values                map[string]json.RawMessage
+}
+
+// Retain only the response to the original authenticated Core observation.
+// The same read Operation may be retried, but cannot change its receipts.
+func (t *fileStorageTransport) retainReadObservation(ctx context.Context, grant *fileStorageGrant) error {
+	retained, constrained := ctx.Value(fileStorageReadObservationsKey{}).(*fileStorageReadObservations)
+	if !constrained {
+		return nil
+	}
+	batch, ok := grant.request["nativeBatch"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("original read batch reference is unavailable")
+	}
+	if batch["batchId"] != retained.batchID {
+		return nil
+	} // prior native run's recovery
+	if batch["importConfigRef"] != retained.dataSourceID || batch["receiverResourceId"] != t.config.ReceiverResourceID ||
+		fileStorageText(grant.value, "outcome") != "COMPLETED" || retained.generation <= 0 ||
+		fileStorageNumber(grant.value, "receiverGeneration") != retained.generation {
+		return fmt.Errorf("read observation differs from the original receiver batch")
+	}
+	for _, field := range []string{"actionExecutionId", "receiverActionExecutionId", "operationId", "sourceBindingId"} {
+		if !fileStorageUUID(fileStorageText(grant.value, field)) {
+			return fmt.Errorf("completed read execution reference unavailable")
+		}
+	}
+	var source, receiver map[string]json.RawMessage
+	if json.Unmarshal(grant.value["sourceReceipt"], &source) != nil || json.Unmarshal(grant.value["receiverReceipt"], &receiver) != nil ||
+		fileStorageText(source, "role") != "SOURCE" || fileStorageText(receiver, "role") != "RECEIVER" ||
+		fileStorageText(source, "bindingId") != fileStorageText(grant.value, "sourceBindingId") ||
+		fileStorageText(receiver, "bindingId") != t.config.BindingID {
+		return fmt.Errorf("completed read bilateral receipt ownership unavailable")
+	}
+	for _, receipt := range []map[string]json.RawMessage{source, receiver} {
+		if fileStorageText(receipt, "operationId") != fileStorageText(grant.value, "operationId") ||
+			fileStorageText(receipt, "idempotencyKey") != grant.key {
+			return fmt.Errorf("completed read receipt identity changed")
+		}
+	}
+	value := map[string]any{"readRequest": grant.request, "nativeBatch": batch, "sourceResourceId": grant.request["sourceResourceId"]}
+	for _, field := range []string{"actionExecutionId", "receiverActionExecutionId", "receiverGeneration", "operationId", "sourceBindingId", "sourceReceipt", "receiverReceipt"} {
+		value[field] = grant.value[field]
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if old, exists := retained.values[grant.key]; exists && !bytes.Equal(old, raw) {
+		return fmt.Errorf("original read observation changed")
+	}
+	// Use the existing delivered metadata bound. Never silently truncate the
+	// evidence set or leave a partially updated native checkpoint on overflow.
+	copy := make(map[string]json.RawMessage, len(retained.values)+1)
+	for key, item := range retained.values {
+		copy[key] = item
+	}
+	copy[grant.key] = raw
+	encoded, err := json.Marshal(copy)
+	if err != nil || int64(len(encoded)) > t.config.MaxBodyBytes {
+		return fmt.Errorf("native read evidence exceeds its delivered bound")
+	}
+	retained.values[grant.key] = raw
+	return nil
+}
+
 func newFileStorageTransport(cfg *config.FileStorageSyncConfig) (*fileStorageTransport, error) {
 	if cfg == nil || !fileStorageUUID(cfg.BindingID) || !fileStorageUUID(cfg.ReceiverResourceID) ||
 		!fileStorageUUID(cfg.NativeKnowledgeBaseID) || cfg.NativeTenantID == 0 || cfg.TimeoutMS <= 0 ||
@@ -232,7 +302,16 @@ func (t *fileStorageTransport) grant(ctx context.Context, run fileStorageRun, so
 	if !bytes.Equal(a, b) {
 		return nil, fmt.Errorf("source grant input mismatch")
 	}
-	return &fileStorageGrant{key: key, value: result, receiver: receiver, request: request}, nil
+	grant := &fileStorageGrant{key: key, value: result, receiver: receiver, request: request}
+	if _, constrained := ctx.Value(fileStorageReadObservationsKey{}).(*fileStorageReadObservations); constrained {
+		// Discovery reads the source before its later receiver write PEP. A
+		// frozen native batch must prove the admitted generation before either
+		// source access or receiver side effects, not only when saving receipts.
+		if err := t.pep(ctx, grant); err != nil {
+			return nil, err
+		}
+	}
+	return grant, nil
 }
 
 func (t *fileStorageTransport) pep(ctx context.Context, grant *fileStorageGrant) error {
@@ -241,6 +320,16 @@ func (t *fileStorageTransport) pep(ctx context.Context, grant *fileStorageGrant)
 	}
 	if fileStorageNumber(grant.receiver, "expiresAt") <= time.Now().Unix() {
 		return fmt.Errorf("receiver grant expired")
+	}
+	expectedGeneration := grant.generation
+	if retained, constrained := ctx.Value(fileStorageReadObservationsKey{}).(*fileStorageReadObservations); constrained {
+		batch, ok := grant.request["nativeBatch"].(map[string]any)
+		if !ok || retained.generation <= 0 || batch["batchId"] != retained.batchID ||
+			batch["importConfigRef"] != retained.dataSourceID || batch["receiverResourceId"] != t.config.ReceiverResourceID ||
+			(expectedGeneration != 0 && expectedGeneration != retained.generation) {
+			return fmt.Errorf("receiver grant differs from its frozen native batch")
+		}
+		expectedGeneration = retained.generation
 	}
 	result, err := t.coreCall(ctx, "/service/v1/adapter/pep_check", map[string]any{
 		"bindingId": t.config.BindingID, "actionToken": fileStorageText(grant.receiver, "actionToken"),
@@ -255,7 +344,7 @@ func (t *fileStorageTransport) pep(ctx context.Context, grant *fileStorageGrant)
 		return fmt.Errorf("receiver PEP evidence mismatch")
 	}
 	generation := fileStorageNumber(result, "bindingGeneration")
-	if generation <= 0 || (grant.generation != 0 && grant.generation != generation) {
+	if generation <= 0 || (expectedGeneration != 0 && expectedGeneration != generation) {
 		return fmt.Errorf("receiver PEP frozen generation is missing or changed")
 	}
 	grant.generation = generation
@@ -339,7 +428,7 @@ func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGr
 			fileStorageText(receipt, "contentSha256") != digest || fileStorageNumber(receipt, "contentBytes") != size {
 			return fmt.Errorf("completed receiver receipt differs from its native evidence")
 		}
-		return nil
+		return t.retainReadObservation(ctx, grant)
 	}
 	meters := []map[string]any{}
 	for _, meter := range t.config.UsageMeasurements {
@@ -376,7 +465,7 @@ func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGr
 		fileStorageText(observation, "operationId") != fileStorageText(grant.value, "operationId") {
 		return fmt.Errorf("native read operation has not confirmed both receipts and committed usage")
 	}
-	completedGrant := &fileStorageGrant{key: grant.key, value: observation}
+	completedGrant := &fileStorageGrant{key: grant.key, value: observation, request: grant.request}
 	if err := t.receipt(ctx, completedGrant, nativeID, revision, digest, size, completed); err != nil {
 		return err
 	}

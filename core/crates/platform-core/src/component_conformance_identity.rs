@@ -96,6 +96,19 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
         if context["operation"] == "execute" {
             nonempty(context, "externalExecutionId")?;
         }
+        if matches!(
+            nonempty(context, "operation")?,
+            "receiver_start" | "receiver_observe"
+        ) && (context["targetType"] != "RESOURCE"
+            || context.get("externalExecutionId").is_some())
+        {
+            return Err(refused());
+        }
+        // MCP has its own native peer identity. Expanding the shared suite
+        // operation enum must not turn this Adapter issuer into a peer issuer.
+        if nonempty(context, "operation")?.starts_with("mcp_") {
+            return Err(refused());
+        }
         if !matches!(
             nonempty(context, "targetType")?,
             "TENANT" | "WORKSPACE" | "RESOURCE" | "ASSET" | "APPLICATION_BINDING"
@@ -206,6 +219,24 @@ pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusa
         if matches!(operation, "execute" | "cancel" | "observe" | "reconcile") {
             context(identity, step, "reconcile")?;
         }
+        if matches!(operation, "receiver_start" | "receiver_observe") {
+            let observer = context(identity, step, "receiver_observe")?;
+            for field in [
+                "tenantId",
+                "workspaceId",
+                "actorPrincipalId",
+                "actionKey",
+                "actionDefinitionVersion",
+                "targetType",
+                "targetId",
+                "resultExposurePolicyId",
+                "resultExposurePolicyVersion",
+            ] {
+                if observer.get(field) != principal.get(field) {
+                    return Err(refused());
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -213,6 +244,29 @@ pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusa
 // Same parameter binding as production APPLICATION execute. Non-execution
 // protocol operations retain ADR-12's operation+arguments domain separation.
 fn parameter_hash(context: &Value, operation: &str, parameters: &Value) -> Result<String, Refusal> {
+    if matches!(operation, "receiver_start" | "receiver_observe") {
+        let typed: contracts::ComponentNativeReceiverRequest =
+            serde_json::from_value(parameters.clone()).map_err(|_| refused())?;
+        if serde_json::to_value(typed).map_err(|_| refused())? != *parameters
+            || parameters["generation"]
+                .as_i64()
+                .is_none_or(|value| value <= 0)
+            || context["targetType"] != "RESOURCE"
+            || context.get("externalExecutionId").is_some()
+        {
+            return Err(refused());
+        }
+        for field in ["idempotencyKey", "importConfigRef", "bindingId"] {
+            if Uuid::parse_str(nonempty(parameters, field)?)
+                .map_err(|_| refused())?
+                .is_nil()
+            {
+                return Err(refused());
+            }
+        }
+        chrono::DateTime::parse_from_rfc3339(nonempty(parameters, "expiresAt")?)
+            .map_err(|_| refused())?;
+    }
     if operation != "execute" {
         return Ok(collab_bridge::limits::canonical_digest(
             &json!({"operation":operation,"arguments":parameters}),

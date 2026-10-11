@@ -275,7 +275,8 @@ export async function freshPep(config, deadline, token, args, claims, operation 
     keys.push('targetResource');
     const resource = answer.targetResource;
     if (!exactKeys(resource, ['resourceId', 'nativeType', 'nativeRef', 'nativeInstanceRef', 'nativeScopeRef'])
-      || operation !== 'execute' || claims.target_type !== 'RESOURCE' || resource.resourceId !== claims.target_id
+      || !['execute', 'receiver_start', 'receiver_observe'].includes(operation)
+      || claims.target_type !== 'RESOURCE' || resource.resourceId !== claims.target_id
       || typeof resource.resourceId !== 'string'
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(resource.resourceId)
       || ['nativeType', 'nativeRef', 'nativeInstanceRef', 'nativeScopeRef'].some(key => !nonempty(resource[key]))) {

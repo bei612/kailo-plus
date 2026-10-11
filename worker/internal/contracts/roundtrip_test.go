@@ -14,6 +14,30 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestNativeReceiverPreservesOriginalBatchAndObserveOnlyLookup(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-native-receiver.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		t.Fatal(err)
+	}
+	for key, target := range map[string]any{"request": &generated.ComponentNativeReceiverRequest{}, "observation": &generated.ComponentNativeReceiverObservation{}, "lookup": &generated.AdapterReadGrantRequest{}} {
+		if err := json.Unmarshal(sample[key], target); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual, expected any
+		if json.Unmarshal(back, &actual) != nil || json.Unmarshal(sample[key], &expected) != nil || !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("native receiver %s changed wire: %s", key, back)
+		}
+	}
+}
+
 func TestDelayDeadlinePreservesIndependentDurationAndLegacyAbsence(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-task-delay.sample.json"))
 	if err != nil {

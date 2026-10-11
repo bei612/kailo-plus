@@ -38,6 +38,129 @@ func fileStorageTestReceiptDigest(t *testing.T, receipt map[string]any) string {
 	return digest
 }
 
+func TestFileStorageFrozenBatchChecksGenerationBeforeSource(t *testing.T) {
+	for _, currentGeneration := range []int64{3, 4} {
+		t.Run(fmt.Sprint(currentGeneration), func(t *testing.T) {
+			binding, source, resource, receiver, key := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			run := fileStorageRun{dataSourceID: uuid.NewString(), syncLogID: uuid.NewString(), knowledgeBaseID: uuid.NewString(), tenantID: 1}
+			pepCalls, sourceCalls := 0, 0
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/oidc":
+					_, _ = w.Write([]byte(`{"access_token":"receiver-test-token","token_type":"Bearer","expires_in":3600}`))
+				case "/service/v1/adapter/request_read_grant":
+					args, err := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+						"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": source, "input": map[string]string{"resourceId": source}}})
+					require.NoError(t, err)
+					receiverArgs, err := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": resource, "authorizationTargetNativeRef": run.knowledgeBaseID,
+						"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": run.syncLogID, "sourceReadActionExecutionId": key}})
+					require.NoError(t, err)
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": key, "actionExecutionId": key, "sourceBindingId": source,
+						"endpoint": server.URL + "/source", "argumentsJson": string(args), "actionToken": "source-test-token", "expiresAt": time.Now().Add(time.Hour).Unix(),
+						"receiverWrite": map[string]any{"actionExecutionId": receiver, "argumentsJson": string(receiverArgs), "actionToken": "receiver-test-token", "expiresAt": time.Now().Add(time.Hour).Unix()}}))
+				case "/service/v1/adapter/pep_check":
+					pepCalls++
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"actionExecutionId": receiver, "operationId": key, "authorizationMinZedToken": "confirmed", "bindingGeneration": currentGeneration}))
+				case "/source":
+					sourceCalls++
+					require.Equal(t, 1, pepCalls, "the original SOURCE call must follow the frozen generation PEP")
+					digest := fileStorageDigest([]byte("[]"))
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": source, "operationId": key,
+						"listingDigest": digest, "nativeRevision": digest, "items": []any{}}))
+				default:
+					t.Errorf("unexpected native request: %s", r.URL.Path)
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			defer server.Close()
+			secret := filepath.Join(t.TempDir(), "receiver-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-credential"), 0600))
+			transport, err := newFileStorageTransport(&config.FileStorageSyncConfig{BindingID: binding, ReceiverResourceID: resource,
+				NativeKnowledgeBaseID: run.knowledgeBaseID, NativeTenantID: run.tenantID, CorePepURL: server.URL + "/service/v1/adapter/pep_check",
+				OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-test", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1,
+				ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 2, RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 2})
+			require.NoError(t, err)
+			ctx := context.WithValue(context.Background(), fileStorageReadObservationsKey{}, &fileStorageReadObservations{
+				batchID: run.syncLogID, dataSourceID: run.dataSourceID, generation: 3, values: map[string]json.RawMessage{},
+			})
+			_, err = (&fileStorageConnector{transport: transport}).listing(ctx, run, source, key, transport.config.ApplyActionKey, 2, fileStorageSavedListing{})
+			if currentGeneration == 3 {
+				require.NoError(t, err)
+				require.Equal(t, 1, sourceCalls)
+			} else {
+				require.Error(t, err)
+				require.Zero(t, sourceCalls, "a newer binding generation cannot read bytes for an older frozen native batch")
+			}
+			require.Equal(t, 1, pepCalls)
+		})
+	}
+}
+
+func TestFileStorageReceiverRetainsOriginalBilateralObservation(t *testing.T) {
+	for _, scenario := range []string{"exact", "repeated", "changed-receipt", "wrong-generation", "wrong-child", "prior-batch", "over-limit", "independent"} {
+		t.Run(scenario, func(t *testing.T) {
+			binding, source, batch, dataSource, resource, operation, key := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			completed := time.Now().UTC()
+			digest := strings.Repeat("a", 64)
+			receiver := map[string]any{"bindingId": binding, "role": "RECEIVER", "operationId": operation, "idempotencyKey": key, "nativeObjectRef": "original-object", "nativeRevision": "original-revision", "contentSha256": digest, "contentBytes": 0, "completedAt": completed.Format(time.RFC3339Nano), "measurements": []any{}}
+			sourceReceipt := map[string]any{}
+			for field, value := range receiver {
+				sourceReceipt[field] = value
+			}
+			sourceReceipt["bindingId"], sourceReceipt["role"] = source, "SOURCE"
+			grant := &fileStorageGrant{key: key, request: map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(), "actionKey": "file_storage.read@v1", "actionVersion": 1, "inputJson": "{}", "idempotencyKey": key, "nativeBatch": map[string]any{"batchId": batch, "importConfigRef": dataSource, "receiverResourceId": resource, "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}},
+				value: fileStorageTestWire(t, map[string]any{"outcome": "COMPLETED", "actionExecutionId": uuid.NewString(), "receiverActionExecutionId": uuid.NewString(), "receiverGeneration": 3, "operationId": operation, "sourceBindingId": source, "sourceReceipt": sourceReceipt, "receiverReceipt": receiver})}
+			transport := &fileStorageTransport{config: &config.FileStorageSyncConfig{BindingID: binding, ReceiverResourceID: resource, MaxBodyBytes: 65536}}
+			retained := &fileStorageReadObservations{batchID: batch, dataSourceID: dataSource, generation: 3, values: map[string]json.RawMessage{}}
+			ctx := context.WithValue(context.Background(), fileStorageReadObservationsKey{}, retained)
+			if scenario == "independent" {
+				ctx = context.Background()
+			}
+			if scenario == "wrong-generation" {
+				grant.value["receiverGeneration"] = json.RawMessage(`4`)
+			}
+			if scenario == "wrong-child" {
+				grant.value["receiverActionExecutionId"] = json.RawMessage(`""`)
+			}
+			if scenario == "prior-batch" {
+				retained.batchID = uuid.NewString()
+			}
+			if scenario == "over-limit" {
+				transport.config.MaxBodyBytes = 1
+			}
+			if scenario == "repeated" || scenario == "changed-receipt" {
+				require.NoError(t, transport.receipt(ctx, grant, "original-object", "original-revision", digest, 0, completed))
+				if scenario == "changed-receipt" {
+					sourceReceipt["nativeRevision"] = "changed"
+					raw, err := json.Marshal(sourceReceipt)
+					require.NoError(t, err)
+					grant.value["sourceReceipt"] = raw
+				}
+			}
+			err := transport.receipt(ctx, grant, "original-object", "original-revision", digest, 0, completed)
+			if scenario == "wrong-generation" || scenario == "wrong-child" || scenario == "over-limit" || scenario == "changed-receipt" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if scenario == "exact" || scenario == "repeated" || scenario == "changed-receipt" {
+				require.Len(t, retained.values, 1)
+				var evidence map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(retained.values[key], &evidence))
+				require.JSONEq(t, string(evidence["nativeBatch"]), string(fileStorageTestWire(t, grant.request)["nativeBatch"]))
+				if scenario == "changed-receipt" {
+					require.NotContains(t, string(evidence["sourceReceipt"]), "changed")
+				}
+			} else {
+				require.Empty(t, retained.values)
+			}
+		})
+	}
+}
+
 func TestFileStorageReceiptDigestMatchesCoreCanonicalBytes(t *testing.T) {
 	receipt := map[string]any{
 		"nativeRevision": "<&>\u2028\u2029\\u2028",

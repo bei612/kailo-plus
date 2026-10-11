@@ -205,6 +205,22 @@ func (r *SyncLogRepository) CreatePending(ctx context.Context, source *types.Dat
 		return nil, datasource.ErrDataSourceInvalid
 	}
 	var log types.SyncLog
+	request, keyed := types.NativeSyncRequestFromContext(ctx)
+	var requestIdentity []byte
+	if keyed {
+		if request.DataSourceID != source.ID || request.BindingID != source.PlatformBindingID ||
+			request.KnowledgeBaseID != source.KnowledgeBaseID || request.ResourceID == "" || request.ActionKey == "" ||
+			request.Generation <= 0 || !request.ExpiresAt.After(time.Now()) || payload.Trigger != "manual" ||
+			source.SyncLogRetentionDays <= 0 || request.ExpiresAt.After(time.Now().AddDate(0, 0, source.SyncLogRetentionDays)) ||
+			request.Key == "" || request.PrincipalID == "" || request.OperationID == "" || request.ParameterHash == "" {
+			return nil, datasource.ErrDataSourceInvalid
+		}
+		var err error
+		requestIdentity, err = json.Marshal(request)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockNativeReceiverSchedule(tx, source); err != nil {
 			return err
@@ -216,6 +232,21 @@ func (r *SyncLogRepository) CreatePending(ctx context.Context, source *types.Dat
 		if current.TenantID != source.TenantID || current.KnowledgeBaseID != source.KnowledgeBaseID || current.PlatformBindingID != source.PlatformBindingID || current.Type != source.Type ||
 			!current.UpdatedAt.Equal(source.UpdatedAt) {
 			return datasource.ErrDataSourceInvalid
+		}
+		if keyed {
+			found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_key = ?", request.Key).First(&log).Error
+			if found == nil {
+				var original types.NativeSyncRequest
+				if log.TenantID != source.TenantID || log.DataSourceID != source.ID ||
+					json.Unmarshal(log.RequestIdentity, &original) != nil || !original.Equal(request) {
+					return datasource.ErrDataSourceInvalid
+				}
+				log.RequestReplayed = true
+				return nil
+			}
+			if !errors.Is(found, gorm.ErrRecordNotFound) {
+				return found
+			}
 		}
 		if current.Status != types.DataSourceStatusActive &&
 			(payload.Trigger != "manual" || (current.Status != types.DataSourceStatusPaused && current.Status != types.DataSourceStatusError)) {
@@ -229,6 +260,10 @@ func (r *SyncLogRepository) CreatePending(ctx context.Context, source *types.Dat
 			return datasource.ErrSyncRunning
 		}
 		log = types.SyncLog{DataSourceID: source.ID, TenantID: source.TenantID, Status: types.SyncLogStatusRunning, StartedAt: time.Now().UTC()}
+		if keyed {
+			log.RequestKey = &request.Key
+			log.RequestIdentity = requestIdentity
+		}
 		if err := tx.Create(&log).Error; err != nil {
 			return err
 		}
@@ -352,6 +387,26 @@ func (r *SyncLogRepository) DispatchPending(ctx context.Context, logID string, d
 			}
 			if schedulingErr != nil {
 				return schedulingErr // Observation/cancellation above remain available.
+			}
+			if log.RequestKey != nil {
+				var request types.NativeSyncRequest
+				if json.Unmarshal(log.RequestIdentity, &request) != nil || request.Key != *log.RequestKey ||
+					request.DataSourceID != source.ID || request.KnowledgeBaseID != source.KnowledgeBaseID ||
+					request.BindingID != source.PlatformBindingID || request.ExpiresAt.IsZero() {
+					return errors.New("native sync request ownership changed; observation required")
+				}
+				if !request.ExpiresAt.After(time.Now()) {
+					// Stop automatic delivery at the frozen deadline using the
+					// original native dead-letter archive. This settles only the
+					// handoff, not the uncertain batch: SyncLog remains observable.
+					deliveryErr = errors.New("UNKNOWN: native sync request expired; observe original batch before resolving")
+					if err := tx.Create(&types.TaskDeadLetter{TenantID: op.TenantID, TaskType: op.TaskType,
+						Scope: op.Scope, ScopeID: op.ScopeID, RelatedID: log.ID, Payload: op.Payload,
+						LastError: deliveryErr.Error(), FailCount: op.FailCount, FailedAt: time.Now().UTC()}).Error; err != nil {
+						return err
+					}
+					return tx.Delete(&op).Error
+				}
 			}
 			if deliveryErr = dispatch(&payload); deliveryErr != nil {
 				return tx.Model(&op).UpdateColumn("fail_count", gorm.Expr("fail_count + 1")).Error

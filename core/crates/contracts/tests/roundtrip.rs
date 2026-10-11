@@ -388,6 +388,25 @@ fn receiver_read_grant_preserves_distinct_source_and_receiver_provenance() {
 }
 
 #[test]
+fn native_receiver_preserves_original_batch_and_observe_only_lookup() {
+    let raw = fs::read_to_string(sample_path().with_file_name("component-native-receiver.sample.json"))
+        .unwrap();
+    let sample: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let request: contracts::ComponentNativeReceiverRequest =
+        serde_json::from_value(sample["request"].clone()).unwrap();
+    let observation: contracts::ComponentNativeReceiverObservation =
+        serde_json::from_value(sample["observation"].clone()).unwrap();
+    let lookup: contracts::AdapterReadGrantRequest =
+        serde_json::from_value(sample["lookup"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
+    assert_eq!(
+        serde_json::to_value(observation).unwrap(),
+        sample["observation"]
+    );
+    assert_eq!(serde_json::to_value(lookup).unwrap(), sample["lookup"]);
+}
+
+#[test]
 fn conformance_identity_preserves_isolated_authorization_and_execution() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("component-conformance-identity.sample.json"),

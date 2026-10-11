@@ -520,6 +520,9 @@ pub(super) async fn observation(
         "sourceBindingId":uuid(&p["readBilling"]["SOURCE"],"bindingId")?,"outcome":outcome});
     if terminal {
         response["receiverReceipt"] = p["readReceipts"]["RECEIVER"].clone();
+        response["sourceReceipt"] = p["readReceipts"]["SOURCE"].clone();
+        response["receiverActionExecutionId"] = p["receiverActionExecutionId"].clone();
+        response["receiverGeneration"] = p["readBilling"]["RECEIVER"]["generation"].clone();
     }
     Ok(Some(response))
 }

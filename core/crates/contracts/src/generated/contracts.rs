@@ -1084,6 +1084,10 @@ pub struct AdapterReadGrantRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_batch: Option<NativeBatch>,
 
+    /// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observe_action_execution_id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receiver_action_execution_id: Option<String>,
 
@@ -1138,6 +1142,14 @@ pub struct AdapterReadGrantResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
 
+    /// 仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_action_execution_id: Option<String>,
+
+    /// 仅 COMPLETED 观察返回原子执行冻结的 receiver generation，不是当前绑定代次。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_generation: Option<i64>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receiver_receipt: Option<AdapterReadReceipt>,
 
@@ -1148,6 +1160,10 @@ pub struct AdapterReadGrantResponse {
     pub receiver_write: Option<ReceiverWrite>,
 
     pub source_binding_id: String,
+
+    /// 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_receipt: Option<AdapterReadReceipt>,
 }
 
 /// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
@@ -1166,6 +1182,8 @@ pub enum Outcome {
 
 /// DD-89: authenticated native source-read or completed receiver-import metadata for one
 /// original SERVICE Operation; never file bodies or credentials.
+///
+/// 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterReadReceipt {
@@ -4517,6 +4535,12 @@ pub enum ComponentConformanceOperation {
     #[serde(rename = "query_revision")]
     QueryRevision,
 
+    #[serde(rename = "receiver_observe")]
+    ReceiverObserve,
+
+    #[serde(rename = "receiver_start")]
+    ReceiverStart,
+
     Reconcile,
 
     #[serde(rename = "resolve_native_scope")]
@@ -4535,12 +4559,128 @@ pub struct ComponentConformanceWireDigests {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_digest: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
+
     pub request_digest: String,
 
     pub response_digest: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_digest: Option<String>,
+}
+
+/// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+/// SOURCE/RECEIVER 回执及冻结请求。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeReceiverObservationClass {
+    pub completed: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+
+    pub native_batch_id: String,
+
+    pub native_status: String,
+
+    pub read_operations: Vec<NativeReceiverObservationReadOperation>,
+
+    pub request: RequestClass,
+
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeReceiverObservationReadOperation {
+    pub action_execution_id: String,
+
+    pub native_batch: ReadOperationNativeBatch,
+
+    pub operation_id: String,
+
+    pub read_request: ReadRequestClass,
+
+    pub receiver_action_execution_id: String,
+
+    pub receiver_generation: i64,
+
+    pub receiver_receipt: AdapterReadReceipt,
+
+    pub source_binding_id: String,
+
+    pub source_receipt: AdapterReadReceipt,
+
+    pub source_resource_id: String,
+}
+
+/// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+/// exactly one mode, freezes these references, and resolves the receiver from its
+/// authenticated binding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadOperationNativeBatch {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub batch_id: String,
+
+    pub import_config_ref: String,
+
+    pub receiver_resource_id: String,
+}
+
+/// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+/// read batch. Input is checked against the approved source action schema; Core retains its
+/// digest, not the returned business content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadRequestClass {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub idempotency_key: String,
+
+    pub input_json: String,
+
+    /// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+    /// exactly one mode, freezes these references, and resolves the receiver from its
+    /// authenticated binding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_batch: Option<ReadOperationNativeBatch>,
+
+    /// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observe_action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_arguments_json: Option<String>,
+
+    pub receiver_binding_id: String,
+
+    pub source_resource_id: String,
+}
+
+/// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestClass {
+    pub binding_id: String,
+
+    /// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+    pub expires_at: String,
+
+    pub generation: i64,
+
+    pub idempotency_key: String,
+
+    pub import_config_ref: String,
 }
 
 /// 受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
@@ -4633,6 +4773,10 @@ pub struct PlanStep {
     pub expected_response_json: String,
 
     pub idempotency_key: String,
+
+    /// 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receiver_input_json: Option<String>,
 
     pub operation: ComponentConformanceOperation,
 
@@ -7502,6 +7646,27 @@ pub struct ComponentConformanceEnvironment {
     pub max_response_bytes: i64,
 
     pub max_steps: i64,
+
+    /// 仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发
+    /// Worker 的平台 bearer。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_read_authorities: Option<Vec<ComponentNativeReadAuthority>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNativeReadAuthority {
+    pub binding_id: String,
+
+    pub core_base_url: String,
+
+    pub generation: i64,
+
+    pub oidc_client_id: String,
+
+    pub oidc_client_secret_file: String,
+
+    pub oidc_token_url: String,
 }
 
 /// 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
@@ -7510,7 +7675,22 @@ pub struct ComponentConformanceEnvironment {
 pub struct ComponentConformanceFixture {
     pub artifact_digest: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receivers: Option<Vec<ComponentNativeReceiverFixture>>,
+
     pub steps: Vec<PlanStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNativeReceiverFixture {
+    pub case_key: String,
+
+    pub contract_key: String,
+
+    pub request: RequestClass,
+
+    pub step_key: String,
 }
 
 /// 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
@@ -7557,7 +7737,7 @@ pub struct ComponentConformanceIdentityContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_execution_id: Option<String>,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     /// 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
     /// 管理上下文必须省略两字段，不授业务内容访问。
@@ -7581,34 +7761,65 @@ pub struct ComponentConformanceIdentityContext {
     pub workspace_id: Option<String>,
 }
 
-/// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+/// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+/// SOURCE/RECEIVER 回执及冻结请求。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AdapterProtocolOperation {
-    Cancel,
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNativeReceiverObservation {
+    pub completed: bool,
 
-    Execute,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
 
-    #[serde(rename = "extract_usage")]
-    ExtractUsage,
+    pub native_batch_id: String,
 
-    Handshake,
+    pub native_status: String,
 
-    #[serde(rename = "map_native_status_error")]
-    MapNativeStatusError,
+    pub read_operations: Vec<ComponentNativeReceiverObservationReadOperation>,
 
-    Observe,
+    pub request: RequestClass,
 
-    #[serde(rename = "query_revision")]
-    QueryRevision,
+    pub started_at: String,
+}
 
-    Reconcile,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNativeReceiverObservationReadOperation {
+    pub action_execution_id: String,
 
-    #[serde(rename = "resolve_native_scope")]
-    ResolveNativeScope,
+    pub native_batch: ReadOperationNativeBatch,
 
-    #[serde(rename = "validate_binding")]
-    ValidateBinding,
+    pub operation_id: String,
+
+    pub read_request: ReadRequestClass,
+
+    pub receiver_action_execution_id: String,
+
+    pub receiver_generation: i64,
+
+    pub receiver_receipt: AdapterReadReceipt,
+
+    pub source_binding_id: String,
+
+    pub source_receipt: AdapterReadReceipt,
+
+    pub source_resource_id: String,
+}
+
+/// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentNativeReceiverRequest {
+    pub binding_id: String,
+
+    /// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+    pub expires_at: String,
+
+    pub generation: i64,
+
+    pub idempotency_key: String,
+
+    pub import_config_ref: String,
 }
 
 /// 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
@@ -8675,6 +8886,9 @@ pub struct ObservationElement {
     pub native_observation: Option<ExecutionElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,
 
     pub operation: ComponentConformanceOperation,
@@ -8758,6 +8972,10 @@ pub struct ComponentConformancePlanStep {
 
     pub idempotency_key: String,
 
+    /// 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receiver_input_json: Option<String>,
+
     pub operation: ComponentConformanceOperation,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8813,6 +9031,9 @@ pub struct ComponentConformanceStepObservation {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_observation: Option<ExecutionElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,

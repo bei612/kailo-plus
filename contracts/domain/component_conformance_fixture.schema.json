@@ -8,6 +8,20 @@
   "required": ["artifactDigest", "steps"],
   "properties": {
     "artifactDigest": {"type": "string"},
-    "steps": {"$ref": "../workflow/component_conformance_plan.schema.json#/properties/steps"}
+    "steps": {"$ref": "../workflow/component_conformance_plan.schema.json#/properties/steps"},
+    "nativeReceivers": {
+      "type": "array",
+      "items": {
+        "title": "ComponentNativeReceiverFixture",
+        "type": "object", "additionalProperties": false,
+        "required": ["caseKey", "stepKey", "contractKey", "request"],
+        "properties": {
+          "caseKey": {"type": "string"},
+          "stepKey": {"type": "string"},
+          "contractKey": {"type": "string"},
+          "request": {"$ref": "component_native_receiver_request.schema.json"}
+        }
+      }
+    }
   }
 }

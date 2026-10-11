@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,106 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 )
+
+func TestNativeReceiverConformanceReadsIsolatedCoreAuthority(t *testing.T) {
+	for _, scenario := range []string{"committed", "missing-ae", "changed-receipt", "changed-generation", "unexpected-token", "wrong-binding", "duplicate-delivery", "missing-delivery"} {
+		t.Run(scenario, func(t *testing.T) {
+			binding, batch, source, execution, child, operation, key := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			request := generated.ComponentNativeReceiverRequest{BindingID: binding, Generation: 3, ImportConfigRef: uuid.NewString(), IdempotencyKey: key, ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
+			rawRequest, _ := json.Marshal(request)
+			completedAt := time.Now().UTC().Format(time.RFC3339)
+			receipt := func(owner, role string) map[string]any {
+				return map[string]any{"bindingId": owner, "role": role, "operationId": operation, "idempotencyKey": key,
+					"nativeObjectRef": "original-object", "nativeRevision": "original-revision", "contentSha256": strings.Repeat("a", 64),
+					"contentBytes": 0, "completedAt": completedAt, "measurements": []any{}}
+			}
+			proof := map[string]any{"actionExecutionId": execution, "receiverActionExecutionId": child, "receiverGeneration": 3, "operationId": operation, "sourceBindingId": source,
+				"sourceReceipt": receipt(source, "SOURCE"), "receiverReceipt": receipt(binding, "RECEIVER")}
+			readRequest := map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(), "actionKey": "file_storage.read@v1", "actionVersion": 1, "inputJson": "{}", "idempotencyKey": key,
+				"nativeBatch": map[string]any{"batchId": batch, "importConfigRef": request.ImportConfigRef, "receiverResourceId": uuid.NewString(), "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}}
+			if scenario == "wrong-binding" {
+				readRequest["receiverBindingId"] = uuid.NewString()
+			}
+			read := map[string]any{}
+			for field, value := range proof {
+				read[field] = value
+			}
+			read["readRequest"], read["nativeBatch"], read["sourceResourceId"] = readRequest, readRequest["nativeBatch"], readRequest["sourceResourceId"]
+			body, _ := json.Marshal(map[string]any{"request": request, "nativeBatchId": batch, "nativeStatus": "success", "startedAt": time.Now().Add(-time.Second).UTC().Format(time.RFC3339), "finishedAt": completedAt, "completed": true, "readOperations": []any{read}})
+			lookups := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/token" {
+					if r.ParseForm() != nil || r.Form.Get("client_id") != "isolated-receiver" || r.Form.Get("client_secret") != "receiver-only-fixture" {
+						t.Error("receiver service identity was not used")
+					}
+					_, _ = io.WriteString(w, `{"access_token":"isolated-receiver-token","expires_in":300}`)
+					return
+				}
+				lookups++
+				if r.URL.Path != "/service/v1/adapter/request_read_grant" || r.Header.Get("Authorization") != "Bearer isolated-receiver-token" {
+					t.Error("not the original isolated receiver Core consumer")
+				}
+				var actual map[string]any
+				if json.NewDecoder(r.Body).Decode(&actual) != nil || actual["observeActionExecutionId"] != execution {
+					t.Error("lookup could re-enter admission instead of only observing the retained AE")
+				}
+				delete(actual, "observeActionExecutionId")
+				expected, _ := json.Marshal(readRequest)
+				observed, _ := json.Marshal(actual)
+				if string(expected) != string(observed) {
+					t.Error("lookup changed the original frozen request")
+				}
+				if scenario == "missing-ae" {
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = io.WriteString(w, `{}`)
+					return
+				}
+				response := map[string]any{"outcome": "COMPLETED"}
+				for field, value := range proof {
+					response[field] = value
+				}
+				if scenario == "changed-receipt" {
+					changed := receipt(source, "SOURCE")
+					changed["operationId"] = uuid.NewString()
+					response["sourceReceipt"] = changed
+				}
+				if scenario == "changed-generation" {
+					response["receiverGeneration"] = 4
+				}
+				if scenario == "unexpected-token" {
+					response["actionToken"] = "must-not-be-issued"
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+			secretFile := filepath.Join(t.TempDir(), "receiver-credential")
+			if err := os.WriteFile(secretFile, []byte("receiver-only-fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			authority := generated.ComponentNativeReadAuthority{BindingID: binding, Generation: 3, CoreBaseURL: server.URL, OidcTokenURL: server.URL + "/token", OidcClientID: "isolated-receiver", OidcClientSecretFile: secretFile}
+			configuration := generated.ComponentConformanceEnvironment{NativeReadAuthorities: []generated.ComponentNativeReadAuthority{authority}, MaxResponseBytes: 65536}
+			if scenario == "missing-delivery" {
+				configuration.NativeReadAuthorities = nil
+			}
+			if scenario == "duplicate-delivery" {
+				configuration.NativeReadAuthorities = append(configuration.NativeReadAuthorities, authority)
+			}
+			candidate := componentCandidate{configuration: configuration, http: server.Client()}
+			err := candidate.verifyReceiverReadAuthority(context.Background(), generated.PlanStep{RequestJSON: string(rawRequest)}, body)
+			if (err == nil) != (scenario == "committed") {
+				t.Fatalf("scenario=%s err=%v", scenario, err)
+			}
+			want := 1
+			if scenario == "missing-delivery" || scenario == "duplicate-delivery" || scenario == "wrong-binding" {
+				want = 0
+			}
+			if lookups != want {
+				t.Fatalf("lookups=%d want=%d", lookups, want)
+			}
+		})
+	}
+}
 
 func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *testing.T) {
 	for _, scenario := range []string{"success", "lost-reply", "invented-job", "missing-protocol-result", "reconcile", "wrong-workflow"} {

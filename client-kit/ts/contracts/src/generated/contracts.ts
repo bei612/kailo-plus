@@ -768,7 +768,11 @@ export interface AdapterReadGrantRequest {
      * exactly one mode, freezes these references, and resolves the receiver from its
      * authenticated binding.
      */
-    nativeBatch?:               NativeBatch;
+    nativeBatch?: NativeBatch;
+    /**
+     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+     */
+    observeActionExecutionId?:  string;
     receiverActionExecutionId?: string;
     receiverArgumentsJson?:     string;
     receiverBindingId:          string;
@@ -803,8 +807,16 @@ export interface AdapterReadGrantResponse {
      * Native retry observation. COMPLETED requires both immutable receipts and committed usage;
      * UNKNOWN/PENDING carry no renewed authorization.
      */
-    outcome?:         Outcome;
-    receiverReceipt?: AdapterReadReceipt;
+    outcome?: Outcome;
+    /**
+     * 仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
+     */
+    receiverActionExecutionId?: string;
+    /**
+     * 仅 COMPLETED 观察返回原子执行冻结的 receiver generation，不是当前绑定代次。
+     */
+    receiverGeneration?: number;
+    receiverReceipt?:    AdapterReadReceipt;
     /**
      * Separate governed receiver action in the same read Operation. The native importer must
      * perform the existing authenticated PEP check with this token immediately before its
@@ -812,6 +824,10 @@ export interface AdapterReadGrantResponse {
      */
     receiverWrite?:  ReceiverWrite;
     sourceBindingId: string;
+    /**
+     * 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
+     */
+    sourceReceipt?: AdapterReadReceipt;
 }
 
 /**
@@ -827,6 +843,8 @@ export enum Outcome {
 /**
  * DD-89: authenticated native source-read or completed receiver-import metadata for one
  * original SERVICE Operation; never file bodies or credentials.
+ *
+ * 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
  */
 export interface AdapterReadReceipt {
     bindingId: string;
@@ -3063,6 +3081,8 @@ export enum ComponentConformanceOperation {
     MapNativeStatusError = "map_native_status_error",
     Observe = "observe",
     QueryRevision = "query_revision",
+    ReceiverObserve = "receiver_observe",
+    ReceiverStart = "receiver_start",
     Reconcile = "reconcile",
     ResolveNativeScope = "resolve_native_scope",
     ValidateBinding = "validate_binding",
@@ -3076,10 +3096,91 @@ export interface ComponentConformanceWireDigests {
      * 仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
      * secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
      */
-    bindingDigest?: string;
-    requestDigest:  string;
-    responseDigest: string;
-    resultDigest?:  string;
+    bindingDigest?:             string;
+    nativeReceiverObservation?: NativeReceiverObservationClass;
+    requestDigest:              string;
+    responseDigest:             string;
+    resultDigest?:              string;
+}
+
+/**
+ * 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+ * SOURCE/RECEIVER 回执及冻结请求。
+ */
+export interface NativeReceiverObservationClass {
+    completed:      boolean;
+    finishedAt?:    string;
+    nativeBatchId:  string;
+    nativeStatus:   string;
+    readOperations: NativeReceiverObservationReadOperation[];
+    request:        RequestClass;
+    startedAt:      string;
+}
+
+export interface NativeReceiverObservationReadOperation {
+    actionExecutionId:         string;
+    nativeBatch:               ReadOperationNativeBatch;
+    operationId:               string;
+    readRequest:               ReadRequestClass;
+    receiverActionExecutionId: string;
+    receiverGeneration:        number;
+    receiverReceipt:           AdapterReadReceipt;
+    sourceBindingId:           string;
+    sourceReceipt:             AdapterReadReceipt;
+    sourceResourceId:          string;
+}
+
+/**
+ * Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+ * exactly one mode, freezes these references, and resolves the receiver from its
+ * authenticated binding.
+ */
+export interface ReadOperationNativeBatch {
+    actionKey:          string;
+    actionVersion:      number;
+    batchId:            string;
+    importConfigRef:    string;
+    receiverResourceId: string;
+}
+
+/**
+ * DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+ * read batch. Input is checked against the approved source action schema; Core retains its
+ * digest, not the returned business content.
+ */
+export interface ReadRequestClass {
+    actionKey:      string;
+    actionVersion:  number;
+    idempotencyKey: string;
+    inputJson:      string;
+    /**
+     * Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+     * exactly one mode, freezes these references, and resolves the receiver from its
+     * authenticated binding.
+     */
+    nativeBatch?: ReadOperationNativeBatch;
+    /**
+     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+     */
+    observeActionExecutionId?:  string;
+    receiverActionExecutionId?: string;
+    receiverArgumentsJson?:     string;
+    receiverBindingId:          string;
+    sourceResourceId:           string;
+}
+
+/**
+ * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+ */
+export interface RequestClass {
+    bindingId: string;
+    /**
+     * 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+     */
+    expiresAt:       string;
+    generation:      number;
+    idempotencyKey:  string;
+    importConfigRef: string;
 }
 
 /**
@@ -3149,12 +3250,16 @@ export interface PlanStep {
     expectedMcpResultKind?: MCPResultKind;
     expectedResponseJson:   string;
     idempotencyKey:         string;
-    operation:              ComponentConformanceOperation;
-    referenceAssetId?:      string;
-    referenceFromStepKey?:  string;
-    referenceResourceId?:   string;
-    requestJson:            string;
-    stepKey:                string;
+    /**
+     * 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+     */
+    nativeReceiverInputJson?: string;
+    operation:                ComponentConformanceOperation;
+    referenceAssetId?:        string;
+    referenceFromStepKey?:    string;
+    referenceResourceId?:     string;
+    requestJson:              string;
+    stepKey:                  string;
 }
 
 export enum MCPResultKind {
@@ -5204,14 +5309,36 @@ export interface ComponentConformanceEnvironment {
     artifactDigest:   string;
     maxResponseBytes: number;
     maxSteps:         number;
+    /**
+     * 仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发
+     * Worker 的平台 bearer。
+     */
+    nativeReadAuthorities?: ComponentNativeReadAuthority[];
+}
+
+export interface ComponentNativeReadAuthority {
+    bindingId:            string;
+    coreBaseUrl:          string;
+    generation:           number;
+    oidcClientId:         string;
+    oidcClientSecretFile: string;
+    oidcTokenUrl:         string;
 }
 
 /**
  * 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
  */
 export interface ComponentConformanceFixture {
-    artifactDigest: string;
-    steps:          PlanStep[];
+    artifactDigest:   string;
+    nativeReceivers?: ComponentNativeReceiverFixture[];
+    steps:            PlanStep[];
+}
+
+export interface ComponentNativeReceiverFixture {
+    caseKey:     string;
+    contractKey: string;
+    request:     RequestClass;
+    stepKey:     string;
 }
 
 /**
@@ -5244,7 +5371,7 @@ export interface ComponentConformanceIdentityContext {
      * execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
      */
     externalExecutionId?: string;
-    operation:            AdapterProtocolOperation;
+    operation:            ComponentConformanceOperation;
     /**
      * 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
      * 管理上下文必须省略两字段，不授业务内容访问。
@@ -5262,19 +5389,44 @@ export interface ComponentConformanceIdentityContext {
 }
 
 /**
- * ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+ * 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+ * SOURCE/RECEIVER 回执及冻结请求。
  */
-export enum AdapterProtocolOperation {
-    Cancel = "cancel",
-    Execute = "execute",
-    ExtractUsage = "extract_usage",
-    Handshake = "handshake",
-    MapNativeStatusError = "map_native_status_error",
-    Observe = "observe",
-    QueryRevision = "query_revision",
-    Reconcile = "reconcile",
-    ResolveNativeScope = "resolve_native_scope",
-    ValidateBinding = "validate_binding",
+export interface ComponentNativeReceiverObservation {
+    completed:      boolean;
+    finishedAt?:    string;
+    nativeBatchId:  string;
+    nativeStatus:   string;
+    readOperations: ComponentNativeReceiverObservationReadOperation[];
+    request:        RequestClass;
+    startedAt:      string;
+}
+
+export interface ComponentNativeReceiverObservationReadOperation {
+    actionExecutionId:         string;
+    nativeBatch:               ReadOperationNativeBatch;
+    operationId:               string;
+    readRequest:               ReadRequestClass;
+    receiverActionExecutionId: string;
+    receiverGeneration:        number;
+    receiverReceipt:           AdapterReadReceipt;
+    sourceBindingId:           string;
+    sourceReceipt:             AdapterReadReceipt;
+    sourceResourceId:          string;
+}
+
+/**
+ * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+ */
+export interface ComponentNativeReceiverRequest {
+    bindingId: string;
+    /**
+     * 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+     */
+    expiresAt:       string;
+    generation:      number;
+    idempotencyKey:  string;
+    importConfigRef: string;
 }
 
 /**
@@ -6069,17 +6221,18 @@ export interface ObservationElement {
     /**
      * 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
      */
-    bindingDigest?:          string;
-    caseKey:                 string;
-    contentReference?:       ContentReferenceElement;
-    errorClass?:             ErrorClass;
-    httpStatus:              number;
-    mcpResultKind?:          MCPResultKind;
-    nativeObservation?:      ExecutionElement;
-    nativeScopeObservation?: NativeScopeObservationClass;
-    operation:               ComponentConformanceOperation;
-    requestDigest:           string;
-    responseDigest:          string;
+    bindingDigest?:             string;
+    caseKey:                    string;
+    contentReference?:          ContentReferenceElement;
+    errorClass?:                ErrorClass;
+    httpStatus:                 number;
+    mcpResultKind?:             MCPResultKind;
+    nativeObservation?:         ExecutionElement;
+    nativeReceiverObservation?: NativeReceiverObservationClass;
+    nativeScopeObservation?:    NativeScopeObservationClass;
+    operation:                  ComponentConformanceOperation;
+    requestDigest:              string;
+    responseDigest:             string;
     /**
      * 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
      */
@@ -6136,12 +6289,16 @@ export interface ComponentConformancePlanStep {
     expectedMcpResultKind?: MCPResultKind;
     expectedResponseJson:   string;
     idempotencyKey:         string;
-    operation:              ComponentConformanceOperation;
-    referenceAssetId?:      string;
-    referenceFromStepKey?:  string;
-    referenceResourceId?:   string;
-    requestJson:            string;
-    stepKey:                string;
+    /**
+     * 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+     */
+    nativeReceiverInputJson?: string;
+    operation:                ComponentConformanceOperation;
+    referenceAssetId?:        string;
+    referenceFromStepKey?:    string;
+    referenceResourceId?:     string;
+    requestJson:              string;
+    stepKey:                  string;
 }
 
 /**
@@ -6162,17 +6319,18 @@ export interface ComponentConformanceStepObservation {
     /**
      * 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
      */
-    bindingDigest?:          string;
-    caseKey:                 string;
-    contentReference?:       ContentReferenceElement;
-    errorClass?:             ErrorClass;
-    httpStatus:              number;
-    mcpResultKind?:          MCPResultKind;
-    nativeObservation?:      ExecutionElement;
-    nativeScopeObservation?: NativeScopeObservationClass;
-    operation:               ComponentConformanceOperation;
-    requestDigest:           string;
-    responseDigest:          string;
+    bindingDigest?:             string;
+    caseKey:                    string;
+    contentReference?:          ContentReferenceElement;
+    errorClass?:                ErrorClass;
+    httpStatus:                 number;
+    mcpResultKind?:             MCPResultKind;
+    nativeObservation?:         ExecutionElement;
+    nativeReceiverObservation?: NativeReceiverObservationClass;
+    nativeScopeObservation?:    NativeScopeObservationClass;
+    operation:                  ComponentConformanceOperation;
+    requestDigest:              string;
+    responseDigest:             string;
     /**
      * 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
      */

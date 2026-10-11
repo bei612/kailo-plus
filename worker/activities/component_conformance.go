@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"apps/worker/internal/contracts/generated"
+	"apps/worker/internal/oidc"
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
@@ -105,7 +107,7 @@ func uniqueConformanceKeys(body []byte) error {
 
 func validAdapterOperation(operation generated.ComponentConformanceOperation) bool {
 	switch string(operation) {
-	case "handshake", "validate_binding", "resolve_native_scope", "execute", "observe", "cancel", "reconcile", "query_revision", "extract_usage", "map_native_status_error":
+	case "handshake", "validate_binding", "resolve_native_scope", "execute", "observe", "cancel", "reconcile", "query_revision", "extract_usage", "map_native_status_error", "receiver_start", "receiver_observe":
 		return true
 	default:
 		return false
@@ -214,8 +216,19 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 		observation.ErrorClass = &class
 		return observation
 	}
+	path := "/platform-adapter/v1/"
+	if string(step.Operation) == "receiver_start" || string(step.Operation) == "receiver_observe" {
+		_, identity, err := candidate.receiverReadAuthority(step)
+		if err != nil {
+			return uncertain()
+		}
+		if _, err := identity.Token(ctx); err != nil {
+			return uncertain()
+		}
+		path = "/component-conformance/v1/"
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		candidate.configuration.AdapterBaseURL+"/platform-adapter/v1/"+string(step.Operation),
+		candidate.configuration.AdapterBaseURL+path+string(step.Operation),
 		strings.NewReader(step.RequestJSON))
 	if err != nil {
 		return uncertain()
@@ -253,11 +266,24 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 	if decodeConformanceJSON(body, &actual) != nil {
 		return uncertain()
 	}
+	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices &&
+		(string(step.Operation) == "receiver_start" || string(step.Operation) == "receiver_observe") {
+		if err := candidate.verifyReceiverReadAuthority(ctx, step, body); err != nil {
+			return uncertain()
+		}
+	}
 	digests, err := candidate.digestResponse(ctx, step, body, observation.HTTPStatus)
 	if err != nil || digests.RequestDigest != requestDigest || !validConformanceDigest(digests.ResponseDigest) {
 		return uncertain()
 	}
 	observation.ResponseDigest = digests.ResponseDigest
+	if digests.NativeReceiverObservation != nil {
+		if (string(step.Operation) != "receiver_start" && string(step.Operation) != "receiver_observe") ||
+			response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return uncertain()
+		}
+		observation.NativeReceiverObservation = digests.NativeReceiverObservation
+	}
 	if digests.BindingDigest != nil {
 		if string(step.Operation) != "validate_binding" || response.StatusCode < http.StatusOK ||
 			response.StatusCode >= http.StatusMultipleChoices || !validConformanceDigest(*digests.BindingDigest) {
@@ -317,6 +343,116 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 		}
 	}
 	return observation
+}
+
+// The candidate's self-consistent JSON is not read authority. Each claimed
+// completed operation is looked up at the separately delivered isolated Core,
+// using the receiver's service identity and its explicit observe-only branch.
+// Neither endpoint nor credentials are accepted from an Adapter response.
+func (candidate *componentCandidate) receiverReadAuthority(step generated.PlanStep) (*generated.ComponentNativeReadAuthority, *oidc.Source, error) {
+	var request generated.ComponentNativeReceiverRequest
+	if decodeConformanceJSON([]byte(step.RequestJSON), &request) != nil {
+		return nil, nil, errors.New("invalid frozen receiver request")
+	}
+	var found *generated.ComponentNativeReadAuthority
+	for index := range candidate.configuration.NativeReadAuthorities {
+		authority := &candidate.configuration.NativeReadAuthorities[index]
+		if authority.BindingID == request.BindingID && authority.Generation == request.Generation {
+			if found != nil {
+				return nil, nil, errors.New("duplicate receiver read authority")
+			}
+			found = authority
+		}
+	}
+	if found == nil || found.Generation <= 0 || !filepath.IsAbs(found.OidcClientSecretFile) {
+		return nil, nil, errors.New("receiver read authority unavailable")
+	}
+	endpoint, err := url.Parse(found.CoreBaseURL)
+	if err != nil || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" ||
+		(endpoint.Path != "" && endpoint.Path != "/") || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+		return nil, nil, errors.New("invalid receiver Core delivery")
+	}
+	credential, err := os.ReadFile(found.OidcClientSecretFile)
+	if err != nil || len(bytes.TrimSpace(credential)) == 0 {
+		return nil, nil, errors.New("receiver service credential unavailable")
+	}
+	identity, err := oidc.NewSource(found.OidcTokenURL, found.OidcClientID, strings.TrimSpace(string(credential)), candidate.http)
+	if err != nil {
+		return nil, nil, errors.New("receiver service identity unavailable")
+	}
+	return found, identity, nil
+}
+
+func (candidate *componentCandidate) verifyReceiverReadAuthority(ctx context.Context, step generated.PlanStep, body []byte) error {
+	found, identity, err := candidate.receiverReadAuthority(step)
+	if err != nil {
+		return err
+	}
+	var wire generated.ComponentNativeReceiverObservation
+	if decodeConformanceJSON(body, &wire) != nil {
+		return errors.New("invalid receiver observation")
+	}
+	for _, read := range wire.ReadOperations {
+		original, err := json.Marshal(read.ReadRequest)
+		if err != nil {
+			return err
+		}
+		var lookup map[string]any
+		if decodeConformanceJSON(original, &lookup) != nil || lookup["receiverBindingId"] != found.BindingID ||
+			lookup["observeActionExecutionId"] != nil {
+			return errors.New("receiver observation request changed")
+		}
+		lookup["observeActionExecutionId"] = read.ActionExecutionID
+		encoded, err := json.Marshal(lookup)
+		if err != nil {
+			return err
+		}
+		token, err := identity.Token(ctx)
+		if err != nil {
+			return errors.New("receiver service authentication unavailable")
+		}
+		query, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			strings.TrimRight(found.CoreBaseURL, "/")+"/service/v1/adapter/request_read_grant", bytes.NewReader(encoded))
+		if err != nil {
+			return err
+		}
+		query.Header.Set("Authorization", "Bearer "+token)
+		query.Header.Set("Content-Type", "application/json")
+		response, err := candidate.http.Do(query)
+		if err != nil {
+			return errors.New("receiver Core observation unavailable")
+		}
+		observed, readErr := io.ReadAll(io.LimitReader(response.Body, candidate.configuration.MaxResponseBytes+1))
+		response.Body.Close()
+		if readErr != nil || int64(len(observed)) > candidate.configuration.MaxResponseBytes || response.StatusCode != http.StatusOK ||
+			!strings.HasPrefix(response.Header.Get("Content-Type"), "application/json") {
+			return errors.New("receiver Core observation remains unconfirmed")
+		}
+		var actual map[string]json.RawMessage
+		if decodeConformanceJSON(observed, &actual) != nil {
+			return errors.New("receiver Core observation invalid")
+		}
+		var outcome string
+		if json.Unmarshal(actual["outcome"], &outcome) != nil || outcome != "COMPLETED" || len(actual) != 8 {
+			return errors.New("receiver Core has not committed both receipts and usage")
+		}
+		proof, err := json.Marshal(read)
+		if err != nil {
+			return err
+		}
+		var expected map[string]json.RawMessage
+		if decodeConformanceJSON(proof, &expected) != nil {
+			return errors.New("receiver proof unavailable")
+		}
+		for _, field := range []string{"actionExecutionId", "receiverActionExecutionId", "receiverGeneration", "operationId", "sourceBindingId", "sourceReceipt", "receiverReceipt"} {
+			a, aErr := conformanceJSONDigest(actual[field])
+			b, bErr := conformanceJSONDigest(expected[field])
+			if aErr != nil || bErr != nil || a != b {
+				return errors.New("receiver proof differs from actual Core facts")
+			}
+		}
+	}
+	return nil
 }
 
 func validContentReference(reference generated.ContentReference, resource string, asset *string) bool {
@@ -382,6 +518,22 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 	}
 	if observation.ErrorClass != nil || observation.HTTPStatus != step.ExpectedHTTPStatus {
 		return errors.New("wire result did not satisfy the frozen probe")
+	}
+	if string(step.Operation) == "receiver_start" || string(step.Operation) == "receiver_observe" {
+		if observation.HTTPStatus >= http.StatusOK && observation.HTTPStatus < http.StatusMultipleChoices {
+			if observation.NativeReceiverObservation == nil || observation.NativeObservation != nil ||
+				observation.BindingDigest != nil || observation.NativeScopeObservation != nil || observation.ContentReference != nil {
+				return errors.New("native receiver observation is unavailable")
+			}
+			// Actual receipt ownership/usage is verified by the isolated Core
+			// consumer, not inferred from native status or HTTP acceptance.
+			return nil
+		}
+		if observation.NativeReceiverObservation != nil {
+			return errors.New("receiver evidence on a rejected request")
+		}
+	} else if observation.NativeReceiverObservation != nil {
+		return errors.New("receiver evidence on another protocol direction")
 	}
 	if string(step.Operation) == "validate_binding" && observation.HTTPStatus >= http.StatusOK && observation.HTTPStatus < http.StatusMultipleChoices {
 		if observation.BindingDigest == nil || *observation.BindingDigest != expectedDigest ||
@@ -557,6 +709,9 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 		case "execute", "cancel", "observe", "reconcile":
 			step.Operation = "reconcile"
 			request, err = json.Marshal(map[string]string{"idempotencyKey": step.IdempotencyKey})
+		case "receiver_start", "receiver_observe":
+			step.Operation = "receiver_observe"
+			request = []byte(step.RequestJSON)
 		default:
 			// The remaining protocol probes only inspect configuration or
 			// map supplied status; their original request has no side effect.

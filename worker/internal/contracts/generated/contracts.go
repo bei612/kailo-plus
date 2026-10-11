@@ -487,6 +487,12 @@
 //    componentConformanceIdentity, err := UnmarshalComponentConformanceIdentity(bytes)
 //    bytes, err = componentConformanceIdentity.Marshal()
 //
+//    componentNativeReceiverObservation, err := UnmarshalComponentNativeReceiverObservation(bytes)
+//    bytes, err = componentNativeReceiverObservation.Marshal()
+//
+//    componentNativeReceiverRequest, err := UnmarshalComponentNativeReceiverRequest(bytes)
+//    bytes, err = componentNativeReceiverRequest.Marshal()
+//
 //    componentProtocolPeerEnvironment, err := UnmarshalComponentProtocolPeerEnvironment(bytes)
 //    bytes, err = componentProtocolPeerEnvironment.Marshal()
 //
@@ -2302,6 +2308,26 @@ func (r *ComponentConformanceIdentity) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentNativeReceiverObservation(data []byte) (ComponentNativeReceiverObservation, error) {
+	var r ComponentNativeReceiverObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNativeReceiverObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentNativeReceiverRequest(data []byte) (ComponentNativeReceiverRequest, error) {
+	var r ComponentNativeReceiverRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNativeReceiverRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentProtocolPeerEnvironment(data []byte) (ComponentProtocolPeerEnvironment, error) {
 	var r ComponentProtocolPeerEnvironment
 	err := json.Unmarshal(data, &r)
@@ -3450,11 +3476,13 @@ type AdapterReadGrantRequest struct {
 	// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
 	// exactly one mode, freezes these references, and resolves the receiver from its
 	// authenticated binding.
-	NativeBatch               *NativeBatch `json:"nativeBatch,omitempty"`
-	ReceiverActionExecutionID *string      `json:"receiverActionExecutionId,omitempty"`
-	ReceiverArgumentsJSON     *string      `json:"receiverArgumentsJson,omitempty"`
-	ReceiverBindingID         string       `json:"receiverBindingId"`
-	SourceResourceID          string       `json:"sourceResourceId"`
+	NativeBatch *NativeBatch `json:"nativeBatch,omitempty"`
+	// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+	ObserveActionExecutionID  *string `json:"observeActionExecutionId,omitempty"`
+	ReceiverActionExecutionID *string `json:"receiverActionExecutionId,omitempty"`
+	ReceiverArgumentsJSON     *string `json:"receiverArgumentsJson,omitempty"`
+	ReceiverBindingID         string  `json:"receiverBindingId"`
+	SourceResourceID          string  `json:"sourceResourceId"`
 }
 
 // Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
@@ -3479,17 +3507,25 @@ type AdapterReadGrantResponse struct {
 	OperationID       string  `json:"operationId"`
 	// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
 	// UNKNOWN/PENDING carry no renewed authorization.
-	Outcome         *OutcomeEnum        `json:"outcome,omitempty"`
-	ReceiverReceipt *AdapterReadReceipt `json:"receiverReceipt,omitempty"`
+	Outcome *OutcomeEnum `json:"outcome,omitempty"`
+	// 仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
+	ReceiverActionExecutionID *string `json:"receiverActionExecutionId,omitempty"`
+	// 仅 COMPLETED 观察返回原子执行冻结的 receiver generation，不是当前绑定代次。
+	ReceiverGeneration *int64              `json:"receiverGeneration,omitempty"`
+	ReceiverReceipt    *AdapterReadReceipt `json:"receiverReceipt,omitempty"`
 	// Separate governed receiver action in the same read Operation. The native importer must
 	// perform the existing authenticated PEP check with this token immediately before its
 	// write; issuance is not completion.
 	ReceiverWrite   *ReceiverWrite `json:"receiverWrite,omitempty"`
 	SourceBindingID string         `json:"sourceBindingId"`
+	// 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
+	SourceReceipt *AdapterReadReceipt `json:"sourceReceipt,omitempty"`
 }
 
 // DD-89: authenticated native source-read or completed receiver-import metadata for one
 // original SERVICE Operation; never file bodies or credentials.
+//
+// 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
 type AdapterReadReceipt struct {
 	BindingID string `json:"bindingId"`
 	// Original native RFC3339 timestamp; Core validates it without rewriting the native
@@ -4815,10 +4851,77 @@ type ComponentConformanceAuthorization struct {
 type ComponentConformanceWireDigests struct {
 	// 仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
 	// secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
-	BindingDigest  *string `json:"bindingDigest,omitempty"`
-	RequestDigest  string  `json:"requestDigest"`
-	ResponseDigest string  `json:"responseDigest"`
-	ResultDigest   *string `json:"resultDigest,omitempty"`
+	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
+	RequestDigest             string                          `json:"requestDigest"`
+	ResponseDigest            string                          `json:"responseDigest"`
+	ResultDigest              *string                         `json:"resultDigest,omitempty"`
+}
+
+// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+// SOURCE/RECEIVER 回执及冻结请求。
+type NativeReceiverObservationClass struct {
+	Completed      bool                                     `json:"completed"`
+	FinishedAt     *string                                  `json:"finishedAt,omitempty"`
+	NativeBatchID  string                                   `json:"nativeBatchId"`
+	NativeStatus   string                                   `json:"nativeStatus"`
+	ReadOperations []NativeReceiverObservationReadOperation `json:"readOperations"`
+	Request        RequestClass                             `json:"request"`
+	StartedAt      string                                   `json:"startedAt"`
+}
+
+type NativeReceiverObservationReadOperation struct {
+	ActionExecutionID         string                   `json:"actionExecutionId"`
+	NativeBatch               ReadOperationNativeBatch `json:"nativeBatch"`
+	OperationID               string                   `json:"operationId"`
+	ReadRequest               ReadRequestClass         `json:"readRequest"`
+	ReceiverActionExecutionID string                   `json:"receiverActionExecutionId"`
+	ReceiverGeneration        int64                    `json:"receiverGeneration"`
+	ReceiverReceipt           AdapterReadReceipt       `json:"receiverReceipt"`
+	SourceBindingID           string                   `json:"sourceBindingId"`
+	SourceReceipt             AdapterReadReceipt       `json:"sourceReceipt"`
+	SourceResourceID          string                   `json:"sourceResourceId"`
+}
+
+// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+// exactly one mode, freezes these references, and resolves the receiver from its
+// authenticated binding.
+type ReadOperationNativeBatch struct {
+	ActionKey          string `json:"actionKey"`
+	ActionVersion      int64  `json:"actionVersion"`
+	BatchID            string `json:"batchId"`
+	ImportConfigRef    string `json:"importConfigRef"`
+	ReceiverResourceID string `json:"receiverResourceId"`
+}
+
+// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+// read batch. Input is checked against the approved source action schema; Core retains its
+// digest, not the returned business content.
+type ReadRequestClass struct {
+	ActionKey      string `json:"actionKey"`
+	ActionVersion  int64  `json:"actionVersion"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	InputJSON      string `json:"inputJson"`
+	// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+	// exactly one mode, freezes these references, and resolves the receiver from its
+	// authenticated binding.
+	NativeBatch *ReadOperationNativeBatch `json:"nativeBatch,omitempty"`
+	// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+	ObserveActionExecutionID  *string `json:"observeActionExecutionId,omitempty"`
+	ReceiverActionExecutionID *string `json:"receiverActionExecutionId,omitempty"`
+	ReceiverArgumentsJSON     *string `json:"receiverArgumentsJson,omitempty"`
+	ReceiverBindingID         string  `json:"receiverBindingId"`
+	SourceResourceID          string  `json:"sourceResourceId"`
+}
+
+// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+type RequestClass struct {
+	BindingID string `json:"bindingId"`
+	// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+	ExpiresAt       string `json:"expiresAt"`
+	Generation      int64  `json:"generation"`
+	IdempotencyKey  string `json:"idempotencyKey"`
+	ImportConfigRef string `json:"importConfigRef"`
 }
 
 // 受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
@@ -4863,16 +4966,18 @@ type PlanStep struct {
 	// native 任务元数据。
 	ContractKey *string `json:"contractKey,omitempty"`
 	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
-	ExpectedHTTPStatus    int64                         `json:"expectedHttpStatus"`
-	ExpectedMCPResultKind *MCPResultKind                `json:"expectedMcpResultKind,omitempty"`
-	ExpectedResponseJSON  string                        `json:"expectedResponseJson"`
-	IdempotencyKey        string                        `json:"idempotencyKey"`
-	Operation             ComponentConformanceOperation `json:"operation"`
-	ReferenceAssetID      *string                       `json:"referenceAssetId,omitempty"`
-	ReferenceFromStepKey  *string                       `json:"referenceFromStepKey,omitempty"`
-	ReferenceResourceID   *string                       `json:"referenceResourceId,omitempty"`
-	RequestJSON           string                        `json:"requestJson"`
-	StepKey               string                        `json:"stepKey"`
+	ExpectedHTTPStatus    int64          `json:"expectedHttpStatus"`
+	ExpectedMCPResultKind *MCPResultKind `json:"expectedMcpResultKind,omitempty"`
+	ExpectedResponseJSON  string         `json:"expectedResponseJson"`
+	IdempotencyKey        string         `json:"idempotencyKey"`
+	// 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+	NativeReceiverInputJSON *string                       `json:"nativeReceiverInputJson,omitempty"`
+	Operation               ComponentConformanceOperation `json:"operation"`
+	ReferenceAssetID        *string                       `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey    *string                       `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID     *string                       `json:"referenceResourceId,omitempty"`
+	RequestJSON             string                        `json:"requestJson"`
+	StepKey                 string                        `json:"stepKey"`
 }
 
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -6267,12 +6372,32 @@ type ComponentConformanceEnvironment struct {
 	ArtifactDigest   string `json:"artifactDigest"`
 	MaxResponseBytes int64  `json:"maxResponseBytes"`
 	MaxSteps         int64  `json:"maxSteps"`
+	// 仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发
+	// Worker 的平台 bearer。
+	NativeReadAuthorities []ComponentNativeReadAuthority `json:"nativeReadAuthorities,omitempty"`
+}
+
+type ComponentNativeReadAuthority struct {
+	BindingID            string `json:"bindingId"`
+	CoreBaseURL          string `json:"coreBaseUrl"`
+	Generation           int64  `json:"generation"`
+	OidcClientID         string `json:"oidcClientId"`
+	OidcClientSecretFile string `json:"oidcClientSecretFile"`
+	OidcTokenURL         string `json:"oidcTokenUrl"`
 }
 
 // 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
 type ComponentConformanceFixture struct {
-	ArtifactDigest string     `json:"artifactDigest"`
-	Steps          []PlanStep `json:"steps"`
+	ArtifactDigest  string                           `json:"artifactDigest"`
+	NativeReceivers []ComponentNativeReceiverFixture `json:"nativeReceivers,omitempty"`
+	Steps           []PlanStep                       `json:"steps"`
+}
+
+type ComponentNativeReceiverFixture struct {
+	CaseKey     string       `json:"caseKey"`
+	ContractKey string       `json:"contractKey"`
+	Request     RequestClass `json:"request"`
+	StepKey     string       `json:"stepKey"`
 }
 
 // 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
@@ -6298,8 +6423,8 @@ type ComponentConformanceIdentityContext struct {
 	AuthorizationMinZedToken string `json:"authorizationMinZedToken"`
 	CaseKey                  string `json:"caseKey"`
 	// execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
-	ExternalExecutionID *string                  `json:"externalExecutionId,omitempty"`
-	Operation           AdapterProtocolOperation `json:"operation"`
+	ExternalExecutionID *string                       `json:"externalExecutionId,omitempty"`
+	Operation           ComponentConformanceOperation `json:"operation"`
 	// 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
 	// 管理上下文必须省略两字段，不授业务内容访问。
 	ResultExposurePolicyID *string `json:"resultExposurePolicyId,omitempty"`
@@ -6310,6 +6435,41 @@ type ComponentConformanceIdentityContext struct {
 	TargetType                  string  `json:"targetType"`
 	TenantID                    string  `json:"tenantId"`
 	WorkspaceID                 *string `json:"workspaceId,omitempty"`
+}
+
+// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
+// SOURCE/RECEIVER 回执及冻结请求。
+type ComponentNativeReceiverObservation struct {
+	Completed      bool                                              `json:"completed"`
+	FinishedAt     *string                                           `json:"finishedAt,omitempty"`
+	NativeBatchID  string                                            `json:"nativeBatchId"`
+	NativeStatus   string                                            `json:"nativeStatus"`
+	ReadOperations []ComponentNativeReceiverObservationReadOperation `json:"readOperations"`
+	Request        RequestClass                                      `json:"request"`
+	StartedAt      string                                            `json:"startedAt"`
+}
+
+type ComponentNativeReceiverObservationReadOperation struct {
+	ActionExecutionID         string                   `json:"actionExecutionId"`
+	NativeBatch               ReadOperationNativeBatch `json:"nativeBatch"`
+	OperationID               string                   `json:"operationId"`
+	ReadRequest               ReadRequestClass         `json:"readRequest"`
+	ReceiverActionExecutionID string                   `json:"receiverActionExecutionId"`
+	ReceiverGeneration        int64                    `json:"receiverGeneration"`
+	ReceiverReceipt           AdapterReadReceipt       `json:"receiverReceipt"`
+	SourceBindingID           string                   `json:"sourceBindingId"`
+	SourceReceipt             AdapterReadReceipt       `json:"sourceReceipt"`
+	SourceResourceID          string                   `json:"sourceResourceId"`
+}
+
+// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+type ComponentNativeReceiverRequest struct {
+	BindingID string `json:"bindingId"`
+	// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
+	ExpiresAt       string `json:"expiresAt"`
+	Generation      int64  `json:"generation"`
+	IdempotencyKey  string `json:"idempotencyKey"`
+	ImportConfigRef string `json:"importConfigRef"`
 }
 
 // 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
@@ -6910,17 +7070,18 @@ type ComponentConformanceObservation struct {
 
 type ObservationElement struct {
 	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-	BindingDigest          *string                       `json:"bindingDigest,omitempty"`
-	CaseKey                string                        `json:"caseKey"`
-	ContentReference       *ContentReferenceElement      `json:"contentReference,omitempty"`
-	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
-	HTTPStatus             int64                         `json:"httpStatus"`
-	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
-	NativeObservation      *ExecutionElement             `json:"nativeObservation,omitempty"`
-	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
-	Operation              ComponentConformanceOperation `json:"operation"`
-	RequestDigest          string                        `json:"requestDigest"`
-	ResponseDigest         string                        `json:"responseDigest"`
+	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	CaseKey                   string                          `json:"caseKey"`
+	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
+	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
+	HTTPStatus                int64                           `json:"httpStatus"`
+	MCPResultKind             *MCPResultKind                  `json:"mcpResultKind,omitempty"`
+	NativeObservation         *ExecutionElement               `json:"nativeObservation,omitempty"`
+	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
+	NativeScopeObservation    *NativeScopeObservationClass    `json:"nativeScopeObservation,omitempty"`
+	Operation                 ComponentConformanceOperation   `json:"operation"`
+	RequestDigest             string                          `json:"requestDigest"`
+	ResponseDigest            string                          `json:"responseDigest"`
 	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
 	ResultDigest *string `json:"resultDigest,omitempty"`
 	StepKey      string  `json:"stepKey"`
@@ -6959,16 +7120,18 @@ type ComponentConformancePlanStep struct {
 	// native 任务元数据。
 	ContractKey *string `json:"contractKey,omitempty"`
 	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
-	ExpectedHTTPStatus    int64                         `json:"expectedHttpStatus"`
-	ExpectedMCPResultKind *MCPResultKind                `json:"expectedMcpResultKind,omitempty"`
-	ExpectedResponseJSON  string                        `json:"expectedResponseJson"`
-	IdempotencyKey        string                        `json:"idempotencyKey"`
-	Operation             ComponentConformanceOperation `json:"operation"`
-	ReferenceAssetID      *string                       `json:"referenceAssetId,omitempty"`
-	ReferenceFromStepKey  *string                       `json:"referenceFromStepKey,omitempty"`
-	ReferenceResourceID   *string                       `json:"referenceResourceId,omitempty"`
-	RequestJSON           string                        `json:"requestJson"`
-	StepKey               string                        `json:"stepKey"`
+	ExpectedHTTPStatus    int64          `json:"expectedHttpStatus"`
+	ExpectedMCPResultKind *MCPResultKind `json:"expectedMcpResultKind,omitempty"`
+	ExpectedResponseJSON  string         `json:"expectedResponseJson"`
+	IdempotencyKey        string         `json:"idempotencyKey"`
+	// 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+	NativeReceiverInputJSON *string                       `json:"nativeReceiverInputJson,omitempty"`
+	Operation               ComponentConformanceOperation `json:"operation"`
+	ReferenceAssetID        *string                       `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey    *string                       `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID     *string                       `json:"referenceResourceId,omitempty"`
+	RequestJSON             string                        `json:"requestJson"`
+	StepKey                 string                        `json:"stepKey"`
 }
 
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
@@ -6983,17 +7146,18 @@ type ComponentConformanceProbe struct {
 
 type ComponentConformanceStepObservation struct {
 	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-	BindingDigest          *string                       `json:"bindingDigest,omitempty"`
-	CaseKey                string                        `json:"caseKey"`
-	ContentReference       *ContentReferenceElement      `json:"contentReference,omitempty"`
-	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
-	HTTPStatus             int64                         `json:"httpStatus"`
-	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
-	NativeObservation      *ExecutionElement             `json:"nativeObservation,omitempty"`
-	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
-	Operation              ComponentConformanceOperation `json:"operation"`
-	RequestDigest          string                        `json:"requestDigest"`
-	ResponseDigest         string                        `json:"responseDigest"`
+	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	CaseKey                   string                          `json:"caseKey"`
+	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
+	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
+	HTTPStatus                int64                           `json:"httpStatus"`
+	MCPResultKind             *MCPResultKind                  `json:"mcpResultKind,omitempty"`
+	NativeObservation         *ExecutionElement               `json:"nativeObservation,omitempty"`
+	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
+	NativeScopeObservation    *NativeScopeObservationClass    `json:"nativeScopeObservation,omitempty"`
+	Operation                 ComponentConformanceOperation   `json:"operation"`
+	RequestDigest             string                          `json:"requestDigest"`
+	ResponseDigest            string                          `json:"responseDigest"`
 	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
 	ResultDigest *string `json:"resultDigest,omitempty"`
 	StepKey      string  `json:"stepKey"`
@@ -7884,19 +8048,21 @@ const (
 type ComponentConformanceOperation string
 
 const (
-	ComponentConformanceOperationCancel               ComponentConformanceOperation = "cancel"
-	ComponentConformanceOperationExecute              ComponentConformanceOperation = "execute"
-	ComponentConformanceOperationExtractUsage         ComponentConformanceOperation = "extract_usage"
-	ComponentConformanceOperationHandshake            ComponentConformanceOperation = "handshake"
-	ComponentConformanceOperationMapNativeStatusError ComponentConformanceOperation = "map_native_status_error"
-	ComponentConformanceOperationObserve              ComponentConformanceOperation = "observe"
-	ComponentConformanceOperationQueryRevision        ComponentConformanceOperation = "query_revision"
-	ComponentConformanceOperationReconcile            ComponentConformanceOperation = "reconcile"
-	ComponentConformanceOperationResolveNativeScope   ComponentConformanceOperation = "resolve_native_scope"
-	ComponentConformanceOperationValidateBinding      ComponentConformanceOperation = "validate_binding"
-	MCPCall                                           ComponentConformanceOperation = "mcp_call"
-	MCPInitialize                                     ComponentConformanceOperation = "mcp_initialize"
-	MCPList                                           ComponentConformanceOperation = "mcp_list"
+	ComponentConformanceOperationCancel  ComponentConformanceOperation = "cancel"
+	ComponentConformanceOperationExecute ComponentConformanceOperation = "execute"
+	ExtractUsage                         ComponentConformanceOperation = "extract_usage"
+	Handshake                            ComponentConformanceOperation = "handshake"
+	MCPCall                              ComponentConformanceOperation = "mcp_call"
+	MCPInitialize                        ComponentConformanceOperation = "mcp_initialize"
+	MCPList                              ComponentConformanceOperation = "mcp_list"
+	MapNativeStatusError                 ComponentConformanceOperation = "map_native_status_error"
+	Observe                              ComponentConformanceOperation = "observe"
+	QueryRevision                        ComponentConformanceOperation = "query_revision"
+	ReceiverObserve                      ComponentConformanceOperation = "receiver_observe"
+	ReceiverStart                        ComponentConformanceOperation = "receiver_start"
+	Reconcile                            ComponentConformanceOperation = "reconcile"
+	ResolveNativeScope                   ComponentConformanceOperation = "resolve_native_scope"
+	ValidateBinding                      ComponentConformanceOperation = "validate_binding"
 )
 
 type ConnectorKind string
@@ -8175,22 +8341,6 @@ type CapabilityVectorFormat string
 
 const (
 	V1 CapabilityVectorFormat = "V1"
-)
-
-// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
-type AdapterProtocolOperation string
-
-const (
-	AdapterProtocolOperationCancel               AdapterProtocolOperation = "cancel"
-	AdapterProtocolOperationExecute              AdapterProtocolOperation = "execute"
-	AdapterProtocolOperationExtractUsage         AdapterProtocolOperation = "extract_usage"
-	AdapterProtocolOperationHandshake            AdapterProtocolOperation = "handshake"
-	AdapterProtocolOperationMapNativeStatusError AdapterProtocolOperation = "map_native_status_error"
-	AdapterProtocolOperationObserve              AdapterProtocolOperation = "observe"
-	AdapterProtocolOperationQueryRevision        AdapterProtocolOperation = "query_revision"
-	AdapterProtocolOperationReconcile            AdapterProtocolOperation = "reconcile"
-	AdapterProtocolOperationResolveNativeScope   AdapterProtocolOperation = "resolve_native_scope"
-	AdapterProtocolOperationValidateBinding      AdapterProtocolOperation = "validate_binding"
 )
 
 type NativeDocumentSelectionActionKey string

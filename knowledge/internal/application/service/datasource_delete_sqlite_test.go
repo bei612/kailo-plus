@@ -2,13 +2,19 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -125,6 +131,135 @@ func TestDataSourceServiceManualSyncRetainsRunWhenQueueIsUnavailable(t *testing.
 			require.EqualValues(t, 1, count, "a second click must not create a second business run")
 		})
 	}
+}
+
+type nativeSyncLostAckQueue struct {
+	calls  int
+	client *asynq.Client
+}
+
+func (q *nativeSyncLostAckQueue) Enqueue(task *asynq.Task, options ...asynq.Option) (*asynq.TaskInfo, error) {
+	q.calls++
+	if q.client != nil {
+		if _, err := q.client.Enqueue(task, options...); err != nil {
+			return nil, err
+		}
+	}
+	return nil, errors.New("native queue acknowledgement unavailable")
+}
+
+func TestDataSourceServiceManualSyncFrozenRequestObservesOriginalRun(t *testing.T) {
+	fixture := newSQLiteDataSourceDeleteFixture(t)
+	require.NoError(t, fixture.db.AutoMigrate(&types.TaskPendingOp{}, &types.MCPEndpoint{}))
+	binding, kb := uuid.NewString(), uuid.NewString()
+	require.NoError(t, fixture.db.Create(&types.MCPEndpoint{ID: uuid.NewString(), TenantID: 1, Enabled: true,
+		PlatformBindingID: binding, KnowledgeBaseIDs: types.StringArray{kb}}).Error)
+	source := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: kb,
+		PlatformBindingID: binding, Type: "file_storage", Status: types.DataSourceStatusActive}
+	require.NoError(t, fixture.dsRepo.Create(context.Background(), source))
+	request := types.NativeSyncRequest{Key: uuid.NewString(), DataSourceID: source.ID, KnowledgeBaseID: kb,
+		ResourceID: uuid.NewString(), ActionKey: "knowledge.sync_apply@v2", BindingID: binding, Generation: 9,
+		PrincipalID: uuid.NewString(), OperationID: uuid.NewString(), ParameterHash: "frozen-request",
+		ExpiresAt: time.Now().Add(time.Hour).UTC()}
+	ctx := types.WithNativeSyncRequest(context.Background(), request)
+	queue := &nativeSyncLostAckQueue{}
+	svc := &DataSourceService{dsRepo: fixture.dsRepo, syncLogRepo: fixture.syncLogRepo, taskEnqueuer: queue}
+	first, err := svc.ManualSync(ctx, source.ID)
+	require.NoError(t, err)
+	require.False(t, first.RequestReplayed)
+	var pending types.TaskPendingOp
+	require.NoError(t, fixture.db.First(&pending, "dedup_key = ?", first.ID).Error)
+	// Queue ownership is unresolved. Re-entry after a service restart must not
+	// dispatch again or manufacture a second original native batch.
+	restarted := &DataSourceService{dsRepo: repository.NewDataSourceRepository(fixture.db), syncLogRepo: repository.NewSyncLogRepository(fixture.db), taskEnqueuer: queue}
+	second, err := restarted.ManualSync(ctx, source.ID)
+	require.NoError(t, err)
+	require.True(t, second.RequestReplayed)
+	require.Equal(t, first.ID, second.ID)
+	var after types.TaskPendingOp
+	require.NoError(t, fixture.db.First(&after, pending.ID).Error)
+	require.Equal(t, pending.FailCount, after.FailCount, "repeat must not attempt original dispatch")
+	require.Equal(t, pending.Payload, after.Payload)
+	require.Equal(t, 1, queue.calls)
+	for _, field := range []string{"actor", "operation", "action", "scope", "generation", "expiry"} {
+		t.Run(field, func(t *testing.T) {
+			changed := request
+			switch field {
+			case "actor":
+				changed.PrincipalID = uuid.NewString()
+			case "operation":
+				changed.OperationID = uuid.NewString()
+			case "action":
+				changed.ActionKey = "knowledge.sync_retire@v2"
+			case "scope":
+				changed.ResourceID = uuid.NewString()
+			case "generation":
+				changed.Generation++
+			case "expiry":
+				changed.ExpiresAt = changed.ExpiresAt.Add(time.Minute)
+			}
+			_, err := restarted.ManualSync(types.WithNativeSyncRequest(context.Background(), changed), source.ID)
+			require.Error(t, err)
+		})
+	}
+	finished := time.Now().UTC()
+	first.Status, first.FinishedAt = types.SyncLogStatusSuccess, &finished
+	require.NoError(t, fixture.syncLogRepo.UpdateResult(ctx, first))
+	terminal, err := restarted.ManualSync(ctx, source.ID)
+	require.NoError(t, err)
+	require.True(t, terminal.RequestReplayed)
+	require.Equal(t, first.ID, terminal.ID)
+	require.Equal(t, types.SyncLogStatusSuccess, terminal.Status)
+	var count int64
+	require.NoError(t, fixture.db.Model(&types.SyncLog{}).Where("data_source_id = ?", source.ID).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}
+
+func TestDataSourceServiceManualSyncExpiredHandoffUsesOriginalDeadLetter(t *testing.T) {
+	fixture := newSQLiteDataSourceDeleteFixture(t)
+	require.NoError(t, fixture.db.AutoMigrate(&types.TaskPendingOp{}, &types.TaskDeadLetter{}, &types.MCPEndpoint{}))
+	binding, kb := uuid.NewString(), uuid.NewString()
+	require.NoError(t, fixture.db.Create(&types.MCPEndpoint{ID: uuid.NewString(), TenantID: 1, Enabled: true,
+		PlatformBindingID: binding, KnowledgeBaseIDs: types.StringArray{kb}}).Error)
+	source := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: kb,
+		PlatformBindingID: binding, Type: "file_storage", Status: types.DataSourceStatusActive}
+	require.NoError(t, fixture.dsRepo.Create(context.Background(), source))
+	request := types.NativeSyncRequest{Key: uuid.NewString(), DataSourceID: source.ID, KnowledgeBaseID: kb,
+		ResourceID: uuid.NewString(), ActionKey: "knowledge.sync_apply@v2", BindingID: binding, Generation: 9,
+		PrincipalID: uuid.NewString(), OperationID: uuid.NewString(), ParameterHash: "frozen-request",
+		ExpiresAt: time.Now().Add(time.Hour).UTC()}
+	redis := miniredis.RunT(t)
+	options := asynq.RedisClientOpt{Addr: redis.Addr()}
+	client, inspector := asynq.NewClient(options), asynq.NewInspector(options)
+	t.Cleanup(func() { _ = client.Close(); _ = inspector.Close() })
+	queue := &nativeSyncLostAckQueue{client: client}
+	svc := &DataSourceService{dsRepo: fixture.dsRepo, syncLogRepo: fixture.syncLogRepo, taskEnqueuer: queue}
+	log, err := svc.ManualSync(types.WithNativeSyncRequest(context.Background(), request), source.ID)
+	require.NoError(t, err)
+	original, err := inspector.GetTaskInfo(types.QueueSync, "dssync:"+log.ID)
+	require.NoError(t, err, "the original queue accepted execution before its ACK was lost")
+	request.ExpiresAt = time.Now().Add(-time.Second).UTC()
+	identity, err := json.Marshal(request)
+	require.NoError(t, err)
+	require.NoError(t, fixture.db.Model(log).UpdateColumn("request_identity", types.JSON(identity)).Error)
+	require.ErrorContains(t, datasource.DispatchSync(context.Background(), fixture.syncLogRepo, queue, log.ID), "UNKNOWN")
+	require.Equal(t, 1, queue.calls, "expired original handoff must never call the queue again")
+	var archived types.TaskDeadLetter
+	require.NoError(t, fixture.db.First(&archived, "related_id = ?", log.ID).Error)
+	require.Equal(t, kb, archived.ScopeID)
+	require.Contains(t, archived.LastError, "UNKNOWN")
+	current, err := fixture.syncLogRepo.FindByID(context.Background(), log.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.SyncLogStatusRunning, current.Status)
+	require.Nil(t, current.FinishedAt, "archive is not native terminal evidence")
+	require.NoError(t, datasource.DispatchSync(context.Background(), fixture.syncLogRepo, queue, log.ID))
+	require.Equal(t, 1, queue.calls)
+	after, err := inspector.GetTaskInfo(types.QueueSync, original.ID)
+	require.NoError(t, err)
+	require.Equal(t, original.Payload, after.Payload, "handoff archive does not cancel or replace the actual task")
+	var count int64
+	require.NoError(t, fixture.db.Model(&types.TaskDeadLetter{}).Where("related_id = ?", log.ID).Count(&count).Error)
+	require.EqualValues(t, 1, count)
 }
 
 func TestSyncAttemptKeepsNativeRunOpenUntilRetriesExhausted(t *testing.T) {

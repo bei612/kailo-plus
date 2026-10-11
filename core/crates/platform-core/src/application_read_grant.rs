@@ -533,6 +533,59 @@ pub(crate) async fn reconcile_expired(state: &ServiceState, batch: i64) -> Resul
     receipt::reconcile(state, batch).await
 }
 
+// The authenticated request is the only business caller. This phase can only
+// read retained execution metadata; explicit observation cannot fall through
+// into the separate grant-admission phase when an AE or terminal fact is absent.
+async fn observe_retained(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    caller: &ReadCaller,
+    raw: &Value,
+    input: &Value,
+) -> Result<Option<Value>, Refusal> {
+    let binding = uuid(raw, "receiverBindingId")?;
+    let key = uuid(raw, "idempotencyKey")?;
+    let batch = native_batch(raw)?;
+    let observe = raw
+        .get("observeActionExecutionId")
+        .map(|_| uuid(raw, "observeActionExecutionId"))
+        .transpose()?;
+    if observe.is_some() && batch.is_none() {
+        return Err(invalid());
+    }
+    let previous: Option<Uuid> = sqlx::query_scalar(
+        "select id from admission.action_execution
+        where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
+    )
+    .bind(caller.tenant)
+    .bind(caller.principal)
+    .bind(key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let previous = match previous {
+        Some(id) => Some(crate::governance::lock_execution(tx, id).await?),
+        None => None,
+    };
+    if observe.is_some_and(|id| previous.as_ref().is_none_or(|ae| ae.id != id)) {
+        return Err(denied());
+    }
+    if let (Some(ae), Some(_)) = (&previous, batch) {
+        if read_caller(tx, binding).await? != *caller {
+            return Err(denied());
+        }
+        validate_observation_request(caller, ae, raw, input)?;
+        if let Some(observed) = native_receiver::observation(tx, ae).await? {
+            return Ok(Some(observed));
+        }
+        if observe.is_some() {
+            return Ok(Some(
+                json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
+                "sourceBindingId":uuid(&ae.parameters.as_ref().ok_or_else(invalid)?["readBilling"]["SOURCE"],"bindingId")?,"outcome":"UNKNOWN"}),
+            ));
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) async fn request(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -563,20 +616,9 @@ pub(crate) async fn request(
         })?;
         tx.rollback().await?;
         let mut tx=state.pool.begin().await?;
-        let previous: Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution
-            where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
-            .bind(caller.tenant).bind(caller.principal).bind(key).fetch_optional(&mut *tx).await?;
-        let previous=match previous {
-            Some(id)=>Some(crate::governance::lock_execution(&mut tx,id).await?),
-            None=>None,
-        };
-        if let (Some(ae),Some(_))=(&previous,native_batch) {
-            if read_caller(&mut tx,binding).await?!=caller {return Err(denied());}
-            validate_observation_request(&caller,ae,&raw,&input)?;
-            if let Some(observed)=native_receiver::observation(&mut tx,ae).await? {
-                tx.commit().await?;
-                return serde_json::from_value::<contracts::AdapterReadGrantResponse>(observed).map_err(|_|invalid());
-            }
+        if let Some(observed)=observe_retained(&mut tx,&caller,&raw,&input).await? {
+            tx.commit().await?;
+            return serde_json::from_value::<contracts::AdapterReadGrantResponse>(observed).map_err(|_|invalid());
         }
         // Drop historical AE/binding locks before resuming the original new
         // admission order: parent/AE -> Tenant -> active receiver. Otherwise
@@ -924,7 +966,8 @@ mod tests {
             include_str!("../../../verify/application-execution-dispatch.sql")
                 .split_once("DO $$\nDECLARE provider text; release uuid; binding uuid;")
                 .unwrap();
-        let registration = registration.replace(
+        let registration = registration.replace("'executionMode','PROTOCOL'", "'executionMode','SYNC'")
+            .replace("'PROTOCOL','NONE'", "'SYNC','NONE'").replace(
             "'resourceTypeDefinitions',jsonb_build_array(resource_type));",
             "'resourceTypeDefinitions',jsonb_build_array(resource_type),\n\
              'executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER','adapterProtocolRange','1','actionTokenAudience','isolated-reader'),\n\
@@ -957,6 +1000,99 @@ mod tests {
         let binding: Uuid = sqlx::query_scalar("select id from catalog.application_binding where component_type_key='catalog_fixture_one'")
             .fetch_one(&mut *tx).await.unwrap();
         let caller = read_caller(&mut tx, binding).await.unwrap();
+        // Exercise the same retained-observation phase used by request after
+        // service authentication, against real original AE/receipt tables.
+        // This does not claim to exercise the HTTP authentication boundary.
+        let template: Uuid = sqlx::query_scalar(
+            "select child from application_dispatch_fixture where binding=$1 limit 1",
+        )
+        .bind(binding)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let template_execution = crate::governance::lock_execution(&mut tx, template)
+            .await
+            .unwrap();
+        let (_, mut retained, mut raw, mut input) = retained_observation();
+        retained.tenant_id = caller.tenant;
+        retained.workspace_id = caller.workspace;
+        retained.actor_principal_id = caller.principal;
+        retained.initiator_principal_id = caller.principal;
+        retained.action_key = template_execution.action_key;
+        retained.action_version = template_execution.action_version;
+        retained.target_id = template_execution.target_id;
+        input["resourceId"] = json!(retained.target_id);
+        retained.dispatch_state = "DISPATCHED".into();
+        raw["receiverBindingId"] = json!(binding);
+        raw["actionKey"] = json!(retained.action_key);
+        raw["actionVersion"] = json!(retained.action_version);
+        raw["sourceResourceId"] = json!(retained.target_id);
+        raw["inputJson"] = json!(collab_bridge::limits::canonical_json(&input));
+        raw["observeActionExecutionId"] = json!(retained.id);
+        let p = retained.parameters.as_mut().unwrap();
+        p["receiverBindingId"] = json!(binding);
+        p["receiverGeneration"] = json!(caller.generation.unwrap());
+        p["readReference"] = input.clone();
+        p["toolParameterHash"] = json!(collab_bridge::limits::canonical_digest(&json!({
+            "targetType":"RESOURCE","targetId":retained.target_id,"input":input,
+            "authorizationTargetNativeRef":p["readNativeRoot"]})));
+        p["readBilling"] =
+            json!({"RECEIVER":{"bindingId":binding},"SOURCE":{"bindingId":Uuid::new_v4()}});
+        p["readToken"]["exp"] =
+            json!((chrono::Utc::now() + chrono::Duration::hours(1)).timestamp());
+        let command = collab_bridge::limits::canonical_digest(&json!({"receiverBindingId":binding,
+            "sourceResourceId":retained.target_id,"actionKey":retained.action_key,"actionVersion":retained.action_version,
+            "argumentHash":p["toolParameterHash"],"nativeBatch":raw["nativeBatch"]}));
+        p["commandDigest"] = json!(command);
+        retained.parameter_hash = command;
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,parameters,gate_state,dispatch_state,correlation_id,
+            action_definition_id,component_binding_kind,component_binding_id,component_release_id,component_projection_generation,idempotency_key)
+            select $1,$2,$3,$4,action_key,action_version,$5,$5,$6,$7,$8,'ALLOWED','DISPATCHED',$2,
+                action_definition_id,component_binding_kind,component_binding_id,component_release_id,component_projection_generation,$9
+            from admission.action_execution where id=$10")
+            .bind(retained.id).bind(retained.operation_id).bind(caller.tenant).bind(caller.workspace)
+            .bind(caller.principal).bind(retained.target_id).bind(&retained.parameter_hash).bind(&retained.parameters)
+            .bind(uuid(&raw,"idempotencyKey").unwrap()).bind(template).execute(&mut *tx).await.unwrap();
+        let counts = sqlx::query_scalar::<_, Value>("select jsonb_build_array(
+            (select count(*) from admission.action_execution),(select count(*) from audit.audit_event),
+            (select count(*) from outbox.usage_event))")
+            .fetch_one(&mut *tx).await.unwrap();
+        for scenario in [
+            "uncompleted",
+            "missing-ae",
+            "wrong-key",
+            "wrong-batch",
+            "zero-ae",
+        ] {
+            let mut request = raw.clone();
+            match scenario {
+                "missing-ae" => request["observeActionExecutionId"] = json!(Uuid::new_v4()),
+                "wrong-key" => request["idempotencyKey"] = json!(Uuid::new_v4()),
+                "wrong-batch" => request["nativeBatch"]["batchId"] = json!(Uuid::new_v4()),
+                "zero-ae" => request["observeActionExecutionId"] = json!(Uuid::nil()),
+                _ => (),
+            }
+            let result = observe_retained(&mut tx, &caller, &request, &input).await;
+            if scenario == "uncompleted" {
+                let response = result
+                    .unwrap()
+                    .expect("explicit lookup cannot enter admission");
+                assert_eq!(response["outcome"], "UNKNOWN");
+                assert_eq!(response.as_object().unwrap().len(), 4);
+                assert!(response.get("actionToken").is_none());
+            } else {
+                assert!(result.is_err(), "{scenario}");
+            }
+            let after = sqlx::query_scalar::<_, Value>("select jsonb_build_array(
+                (select count(*) from admission.action_execution),(select count(*) from audit.audit_event),
+                (select count(*) from outbox.usage_event))")
+                .fetch_one(&mut *tx).await.unwrap();
+            assert_eq!(
+                after, counts,
+                "observation must not admit, meter or audit a new action: {scenario}"
+            );
+        }
         let admitted = receiver(&mut tx, binding).await.unwrap();
         validate_current_receiver(&caller, &admitted).unwrap();
         let mut query = super::super::read::ReadResourceQuery {

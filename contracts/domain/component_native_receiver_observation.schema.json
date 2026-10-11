@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_native_receiver_observation.schema.json",
+  "title": "ComponentNativeReceiverObservation",
+  "description": "原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个 SOURCE/RECEIVER 回执及冻结请求。",
+  "type": "object", "additionalProperties": false,
+  "required": ["request", "nativeBatchId", "nativeStatus", "startedAt", "completed", "readOperations"],
+  "properties": {
+    "request": {"$ref": "component_native_receiver_request.schema.json"},
+    "nativeBatchId": {"type": "string", "format": "uuid"},
+    "nativeStatus": {"type": "string"},
+    "startedAt": {"type": "string"},
+    "finishedAt": {"type": "string"},
+    "completed": {"type": "boolean"},
+    "readOperations": {
+      "type": "array",
+      "items": {
+        "title": "ComponentNativeReadObservation",
+        "type": "object", "additionalProperties": false,
+        "required": ["readRequest", "nativeBatch", "sourceResourceId", "actionExecutionId", "receiverActionExecutionId", "receiverGeneration", "operationId", "sourceBindingId", "sourceReceipt", "receiverReceipt"],
+        "properties": {
+          "readRequest": {"$ref": "../adapter/protocol.v1/read_grant_request.schema.json"},
+          "nativeBatch": {"$ref": "../adapter/protocol.v1/read_grant_request.schema.json#/properties/nativeBatch"},
+          "sourceResourceId": {"type": "string", "format": "uuid"},
+          "actionExecutionId": {"type": "string", "format": "uuid"},
+          "receiverActionExecutionId": {"type": "string", "format": "uuid"},
+          "receiverGeneration": {"type": "integer"},
+          "operationId": {"type": "string", "format": "uuid"},
+          "sourceBindingId": {"type": "string", "format": "uuid"},
+          "sourceReceipt": {"$ref": "../adapter/protocol.v1/read_receipt.schema.json"},
+          "receiverReceipt": {"$ref": "../adapter/protocol.v1/read_receipt.schema.json"}
+        }
+      }
+    }
+  }
+}

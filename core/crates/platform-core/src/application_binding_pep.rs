@@ -34,8 +34,8 @@ async fn frozen_binding_generation(
 fn business_operation(
     operation: &str,
     status: &str,
-) -> Result<contracts::AdapterProtocolOperation, Refusal> {
-    use contracts::AdapterProtocolOperation::*;
+) -> Result<contracts::ComponentConformanceOperation, Refusal> {
+    use contracts::ComponentConformanceOperation::*;
     match (operation, status) {
         ("observe", "ACTIVE" | "DISABLING") => Ok(Observe),
         ("extract_usage", "ACTIVE" | "DISABLING") => Ok(ExtractUsage),
@@ -271,7 +271,7 @@ pub(crate) async fn check(
                 .fetch_one(&mut *tx).await?;
             let expected_workspace=ae.workspace_id.map(|id|json!(id));
             let operation_kind=business_operation(operation,&status)?;
-            let executing=operation_kind==contracts::AdapterProtocolOperation::Execute;
+            let executing=operation_kind==contracts::ComponentConformanceOperation::Execute;
             // Pure status/error mapping is not execution or native revision
             // lookup. Bind its own operation+arguments and retain the exact
             // business AE, policy and fresh authorization below.
@@ -313,9 +313,9 @@ pub(crate) async fn check(
             }
             let binding_generation=frozen_binding_generation(&mut tx,ae.id,binding).await?;
             tx.commit().await?;
-            let revision=if matches!(operation_kind,contracts::AdapterProtocolOperation::Observe|contracts::AdapterProtocolOperation::ExtractUsage) {
+            let revision=if matches!(operation_kind,contracts::ComponentConformanceOperation::Observe|contracts::ComponentConformanceOperation::ExtractUsage) {
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
-            } else if operation_kind==contracts::AdapterProtocolOperation::QueryRevision {
+            } else if operation_kind==contracts::ComponentConformanceOperation::QueryRevision {
                 let (_,revision)=crate::application_tool::fresh_revision_read(&state,&ae,&arguments).await?;
                 revision
             } else if executing && crate::application_action::native_execution::is_native_writer(&ae) {
@@ -387,17 +387,17 @@ mod revision_pep_tests {
     fn revision_read_requires_active_business_binding_not_observation_exception() {
         assert_eq!(
             business_operation("query_revision", "ACTIVE").unwrap(),
-            contracts::AdapterProtocolOperation::QueryRevision
+            contracts::ComponentConformanceOperation::QueryRevision
         );
         assert_eq!(
             business_operation("execute", "ACTIVE").unwrap(),
-            contracts::AdapterProtocolOperation::Execute
+            contracts::ComponentConformanceOperation::Execute
         );
         for (operation, kind) in [
-            ("observe", contracts::AdapterProtocolOperation::Observe),
+            ("observe", contracts::ComponentConformanceOperation::Observe),
             (
                 "extract_usage",
-                contracts::AdapterProtocolOperation::ExtractUsage,
+                contracts::ComponentConformanceOperation::ExtractUsage,
             ),
         ] {
             assert_eq!(business_operation(operation, "DISABLING").unwrap(), kind);
@@ -412,7 +412,7 @@ mod revision_pep_tests {
     fn pure_native_error_mapping_retains_active_business_scope() {
         assert_eq!(
             business_operation("map_native_status_error", "ACTIVE").unwrap(),
-            contracts::AdapterProtocolOperation::MapNativeStatusError
+            contracts::ComponentConformanceOperation::MapNativeStatusError
         );
         for status in ["PROVISIONING", "DISABLING", "DISABLED", "UNKNOWN"] {
             assert!(business_operation("map_native_status_error", status).is_err());
@@ -421,6 +421,8 @@ mod revision_pep_tests {
             "map_native_status_error_other",
             "handshake",
             "validate_binding",
+            "receiver_start",
+            "receiver_observe",
         ] {
             assert!(business_operation(operation, "ACTIVE").is_err());
         }

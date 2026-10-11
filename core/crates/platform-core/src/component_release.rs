@@ -876,7 +876,7 @@ fn validate_protocol_fixture(
     registration: &Registration,
     fixture: Value,
 ) -> Result<Value, Refusal> {
-    exact_fields(&fixture, &["artifactDigest", "steps"], &[])?;
+    exact_fields(&fixture, &["artifactDigest", "steps"], &["nativeReceivers"])?;
     let typed: contracts::ComponentConformanceFixture =
         serde_json::from_value(fixture.clone()).map_err(|_| bad())?;
     if serde_json::to_value(typed).map_err(|_| bad())? != fixture
@@ -1203,6 +1203,7 @@ pub(crate) async fn prewrite(
     }
     let fixture = protocol_fixture(&registration)?;
     let mut steps = fixture["steps"].as_array().ok_or_else(bad)?.clone();
+    let mut native_cases = BTreeSet::new();
     let mut contract_digests = Vec::new();
     for contract in &contracts {
         contract_digests.push(collab_bridge::limits::canonical_digest(contract));
@@ -1230,6 +1231,52 @@ pub(crate) async fn prewrite(
                     "contractKey":contract_key,"idempotencyKey":key,
                     "requestJson":serde_json::to_string(&request).map_err(|_|bad())?,
                     "expectedResponseJson":text(step,"expectedOutputJson")?,"expectedHttpStatus":200});
+                let native = registration.manifest["resourceTypeDefinitions"]
+                    .as_array()
+                    .ok_or_else(bad)?
+                    .iter()
+                    .flat_map(|resource| {
+                        resource["incrementalContracts"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                    })
+                    .any(|incremental| {
+                        incremental["contractKey"] == contract_key
+                            && incremental["role"] == "NATIVE_INTERNAL"
+                            && incremental["engine"] == "NATIVE"
+                    });
+                if native {
+                    let mappings: Vec<_> = fixture["nativeReceivers"]
+                        .as_array()
+                        .ok_or_else(bad)?
+                        .iter()
+                        .filter(|entry| {
+                            entry["caseKey"] == case_key
+                                && entry["stepKey"] == step_key
+                                && entry["contractKey"] == contract_key
+                        })
+                        .collect();
+                    if mappings.len() != 1
+                        || !native_cases.insert((case_key.clone(), step_key.to_owned()))
+                    {
+                        return Err(bad());
+                    }
+                    let mut original = mappings[0]["request"].clone();
+                    original["idempotencyKey"] = json!(key);
+                    let input: Value =
+                        serde_json::from_str(text(step, "inputJson")?).map_err(|_| bad())?;
+                    if input["importConfigRef"] != original["importConfigRef"]
+                        || chrono::DateTime::parse_from_rfc3339(text(&original, "expiresAt")?)
+                            .map_err(|_| bad())?
+                            <= chrono::Utc::now()
+                    {
+                        return Err(bad());
+                    }
+                    probe["operation"] = json!("receiver_start");
+                    probe["requestJson"] = json!(collab_bridge::limits::canonical_json(&original));
+                    probe["nativeReceiverInputJson"] = step["inputJson"].clone();
+                }
                 for field in [
                     "referenceResourceId",
                     "referenceAssetId",
@@ -1245,12 +1292,23 @@ pub(crate) async fn prewrite(
                 // only an actual wire DENIED, with no native result, passes.
                 probe["stepKey"] = json!(format!("permission-denied:{step_key}"));
                 probe.as_object_mut().ok_or_else(bad)?.remove("contractKey");
+                probe
+                    .as_object_mut()
+                    .ok_or_else(bad)?
+                    .remove("nativeReceiverInputJson");
                 probe["expectedHttpStatus"] = json!(403);
                 probe["expectedResponseJson"] =
                     json!(json!({"class":"DENIED","reason":"PERMISSION_DENIED"}).to_string());
                 steps.push(probe);
             }
         }
+    }
+    if fixture.get("nativeReceivers").is_some_and(|entries| {
+        entries
+            .as_array()
+            .is_none_or(|entries| entries.len() != native_cases.len())
+    }) {
+        return Err(bad());
     }
     let identity = crate::component_conformance_identity::load(
         &registration.adapter_digest,
@@ -1399,6 +1457,9 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
             )
         {
             request = json!({"idempotencyKey":step["idempotencyKey"]});
+        } else if actual_operation == "receiver_observe" && step["operation"] == "receiver_start" {
+            // Exact same frozen request: observing never selects another
+            // native batch or extends the original first-dispatch deadline.
         } else if actual_operation != text(step, "operation")? {
             return Err(bad());
         }
@@ -1416,6 +1477,42 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
         }
         let expected: Value =
             serde_json::from_str(text(step, "expectedResponseJson")?).map_err(|_| bad())?;
+        if matches!(actual_operation, "receiver_start" | "receiver_observe")
+            && observation["httpStatus"] == 200
+        {
+            let native = observation
+                .get("nativeReceiverObservation")
+                .ok_or_else(bad)?;
+            validate_receiver_observation(&request, native)?;
+            let input: Value =
+                serde_json::from_str(text(step, "nativeReceiverInputJson")?).map_err(|_| bad())?;
+            if native["completed"] != true
+                || expected != json!({})
+                || observation.get("nativeObservation").is_some()
+                || observation.get("nativeScopeObservation").is_some()
+                || observation.get("bindingDigest").is_some()
+                || observation.get("contentReference").is_some()
+                || observation.get("resultDigest").is_some()
+                || source_reference.is_some()
+                || !native["readOperations"]
+                    .as_array()
+                    .ok_or_else(bad)?
+                    .iter()
+                    .any(|read| {
+                        read["nativeBatch"]["actionKey"] == step["contractKey"]
+                            && read["nativeBatch"]["receiverResourceId"]
+                                == step["referenceResourceId"]
+                            && read["sourceResourceId"] == input["sourceResourceId"]
+                            && read["nativeBatch"]["importConfigRef"] == input["importConfigRef"]
+                    })
+            {
+                return Err(bad());
+            }
+            continue;
+        }
+        if observation.get("nativeReceiverObservation").is_some() {
+            return Err(bad());
+        }
         if actual_operation == "validate_binding"
             && observation["httpStatus"]
                 .as_i64()
@@ -1751,6 +1848,7 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), 
                 operation = "reconcile".into();
                 request = json!({"idempotencyKey":step["idempotencyKey"]});
             }
+            "receiver_start" | "receiver_observe" => operation = "receiver_observe".into(),
             _ => (),
         }
     }
@@ -1892,7 +1990,7 @@ pub(crate) async fn authorize_probe(
         let contracts=active_contracts(&mut tx,ae.tenant_id,&release).await?;
         let digests:Vec<_>=contracts.iter().map(collab_bridge::limits::canonical_digest).collect();
         if plan["contractDigests"] != json!(digests) { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
-        if step.get("contractKey").is_some() {
+        if step.get("contractKey").is_some() && !matches!(operation.as_str(), "receiver_start" | "receiver_observe") {
             validate_probe_input(&contracts,&operation,&request)?;
         }
         let identity=crate::component_conformance_identity::load(&release.adapter_digest,text(&release.manifest["executionConnector"],"actionTokenAudience")?)?;
@@ -2004,6 +2102,10 @@ fn wire_digests(
     let response: Value = serde_json::from_str(raw).map_err(|_| bad())?;
     let mut out = json!({"requestDigest":collab_bridge::limits::canonical_digest(request),
         "responseDigest":collab_bridge::limits::canonical_digest(&response)});
+    if (200..300).contains(&status) && matches!(operation, "receiver_start" | "receiver_observe") {
+        validate_receiver_observation(request, &response)?;
+        out["nativeReceiverObservation"] = response.clone();
+    }
     if (200..300).contains(&status) && operation == "validate_binding" {
         out["bindingDigest"] = json!(collab_bridge::limits::canonical_digest(
             &binding_comparison(request, &response)?,
@@ -2030,6 +2132,109 @@ fn wire_digests(
         }
     }
     serde_json::from_value(out).map_err(|_| bad())
+}
+
+fn validate_receiver_observation(request: &Value, observation: &Value) -> Result<(), Refusal> {
+    let typed: contracts::ComponentNativeReceiverObservation =
+        serde_json::from_value(observation.clone()).map_err(|_| bad())?;
+    if serde_json::to_value(typed).map_err(|_| bad())? != *observation
+        || observation["request"] != *request
+    {
+        return Err(bad());
+    }
+    let batch = Uuid::parse_str(text(observation, "nativeBatchId")?).map_err(|_| bad())?;
+    let started =
+        chrono::DateTime::parse_from_rfc3339(text(observation, "startedAt")?).map_err(|_| bad())?;
+    let finished = observation
+        .get("finishedAt")
+        .map(|value| {
+            chrono::DateTime::parse_from_rfc3339(value.as_str().ok_or_else(bad)?).map_err(|_| bad())
+        })
+        .transpose()?;
+    let reads = observation["readOperations"].as_array().ok_or_else(bad)?;
+    if batch.is_nil()
+        || started > chrono::Utc::now()
+        || finished.is_some_and(|at| at < started || at > chrono::Utc::now())
+        || (observation["completed"] == true && (finished.is_none() || reads.is_empty()))
+    {
+        return Err(bad());
+    }
+    text(observation, "nativeStatus")?;
+    let mut operations = BTreeSet::new();
+    let mut executions = BTreeSet::new();
+    let mut keys = BTreeSet::new();
+    for read in reads {
+        for field in [
+            "actionExecutionId",
+            "receiverActionExecutionId",
+            "operationId",
+            "sourceBindingId",
+        ] {
+            if Uuid::parse_str(text(read, field)?)
+                .map_err(|_| bad())?
+                .is_nil()
+            {
+                return Err(bad());
+            }
+        }
+        if !operations.insert(text(read, "operationId")?)
+            || !executions.insert(text(read, "actionExecutionId")?)
+            || !executions.insert(text(read, "receiverActionExecutionId")?)
+            || read["nativeBatch"]["batchId"] != observation["nativeBatchId"]
+            || read["nativeBatch"]["importConfigRef"] != request["importConfigRef"]
+        {
+            return Err(bad());
+        }
+        if read["readRequest"]["nativeBatch"] != read["nativeBatch"]
+            || read["receiverGeneration"] != request["generation"]
+            || read["readRequest"]["sourceResourceId"] != read["sourceResourceId"]
+            || read["readRequest"]["receiverBindingId"] != request["bindingId"]
+            || read["readRequest"]
+                .get("observeActionExecutionId")
+                .is_some()
+            || Uuid::parse_str(text(read, "sourceResourceId")?)
+                .map_err(|_| bad())?
+                .is_nil()
+        {
+            return Err(bad());
+        }
+        let source = &read["sourceReceipt"];
+        let receiver = &read["receiverReceipt"];
+        if source["role"] != "SOURCE"
+            || receiver["role"] != "RECEIVER"
+            || source["bindingId"] != read["sourceBindingId"]
+            || receiver["bindingId"] != request["bindingId"]
+            || source["operationId"] != read["operationId"]
+            || receiver["operationId"] != read["operationId"]
+            || read["readRequest"]["idempotencyKey"] != source["idempotencyKey"]
+            || !keys.insert(text(source, "idempotencyKey")?)
+        {
+            return Err(bad());
+        }
+        for field in ["idempotencyKey", "contentSha256", "contentBytes"] {
+            if source[field] != receiver[field] {
+                return Err(bad());
+            }
+        }
+        for receipt in [source, receiver] {
+            if Uuid::parse_str(text(receipt, "idempotencyKey")?)
+                .map_err(|_| bad())?
+                .is_nil()
+                || !digest(text(receipt, "contentSha256")?)
+                || receipt["contentBytes"].as_u64().is_none()
+            {
+                return Err(bad());
+            }
+            text(receipt, "nativeObjectRef")?;
+            text(receipt, "nativeRevision")?;
+            let completed = chrono::DateTime::parse_from_rfc3339(text(receipt, "completedAt")?)
+                .map_err(|_| bad())?;
+            if completed > chrono::Utc::now() || finished.is_some_and(|at| completed > at) {
+                return Err(bad());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The response body exists only for this original suite request. It is never
@@ -2441,6 +2646,65 @@ async fn read_releases(
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    #[test]
+    fn receiver_wire_keeps_real_batch_and_bilateral_read_identity() {
+        let binding = Uuid::new_v4();
+        let source = Uuid::new_v4();
+        let operation = Uuid::new_v4();
+        let key = Uuid::new_v4();
+        let resource = Uuid::new_v4();
+        let request = json!({"bindingId":binding,"generation":3,"idempotencyKey":Uuid::new_v4(),
+            "importConfigRef":Uuid::new_v4(),"expiresAt":"2026-10-11T01:00:00.000Z"});
+        let batch = json!({"batchId":Uuid::new_v4(),"importConfigRef":request["importConfigRef"],
+            "receiverResourceId":Uuid::new_v4(),"actionKey":"knowledge.sync_apply@v2","actionVersion":2});
+        let receipt = json!({"bindingId":source,"operationId":operation,"idempotencyKey":key,"role":"SOURCE",
+            "nativeObjectRef":"source-reference","nativeRevision":"retained-revision","contentSha256":"a".repeat(64),
+            "contentBytes":0,"completedAt":"2026-01-01T00:00:01Z","measurements":[]});
+        let mut receiver = receipt.clone();
+        receiver["bindingId"] = json!(binding);
+        receiver["role"] = json!("RECEIVER");
+        let read = json!({"actionExecutionId":Uuid::new_v4(),"receiverActionExecutionId":Uuid::new_v4(),
+            "receiverGeneration":3,"operationId":operation,"sourceBindingId":source,"sourceResourceId":resource,
+            "nativeBatch":batch,"sourceReceipt":receipt,"receiverReceipt":receiver,
+            "readRequest":{"receiverBindingId":binding,"sourceResourceId":resource,"actionKey":"file_storage.read@v1",
+            "actionVersion":1,"inputJson":"{}","idempotencyKey":key,"nativeBatch":batch}});
+        let observation = json!({"request":request,"nativeBatchId":batch["batchId"],"nativeStatus":"success",
+            "startedAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:00:02Z","completed":true,"readOperations":[read]});
+        assert!(validate_receiver_observation(&request, &observation).is_ok());
+        for scenario in [
+            "foreign-batch",
+            "wrong-generation",
+            "duplicate-operation",
+            "missing-reads",
+            "changed-receipt",
+            "lookup-in-proof",
+        ] {
+            let mut changed = observation.clone();
+            match scenario {
+                "foreign-batch" => changed["nativeBatchId"] = json!(Uuid::new_v4()),
+                "wrong-generation" => changed["readOperations"][0]["receiverGeneration"] = json!(4),
+                "duplicate-operation" => changed["readOperations"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(read.clone()),
+                "missing-reads" => changed["readOperations"] = json!([]),
+                "changed-receipt" => {
+                    changed["readOperations"][0]["receiverReceipt"]["contentBytes"] = json!(1)
+                }
+                _ => {
+                    changed["readOperations"][0]["readRequest"]["observeActionExecutionId"] =
+                        json!(Uuid::new_v4())
+                }
+            }
+            assert!(
+                validate_receiver_observation(&request, &changed).is_err(),
+                "{scenario}"
+            );
+        }
+        // This validates only wire identity. Worker must separately query the
+        // isolated Core's original authenticated receipt/usage authority.
+    }
 
     #[test]
     fn binding_wire_compares_fixed_metadata_without_predicting_read_ids() {

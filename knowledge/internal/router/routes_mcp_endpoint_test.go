@@ -49,7 +49,7 @@ type stubMCPEndpointServiceForRoutes struct {
 func TestMCPServerRoutesAreMountedAndReported(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	srv, err := mcpserver.NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	srv, err := mcpserver.NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

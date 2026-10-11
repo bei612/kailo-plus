@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"strings"
@@ -149,6 +150,12 @@ type SyncLog struct {
 	// Unique identifier
 	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
 
+	// A verified caller request names this original native run, never a second
+	// job ledger. Nil preserves ordinary native/manual and scheduled runs.
+	RequestKey      *string `json:"-" gorm:"type:varchar(36);uniqueIndex"`
+	RequestIdentity JSON    `json:"-" gorm:"type:jsonb"`
+	RequestReplayed bool    `json:"-" gorm:"-"`
+
 	// Reference to the data source
 	DataSourceID string `json:"data_source_id" gorm:"index"`
 
@@ -193,6 +200,43 @@ type SyncLog struct {
 
 	// Last update timestamp
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// NativeSyncRequest is delivered only after the native ingress has verified
+// the frozen request against its trusted admission consumer. It is not read
+// from a user-supplied deadline or restored from a background task token.
+type NativeSyncRequest struct {
+	Key             string    `json:"key"`
+	DataSourceID    string    `json:"dataSourceId"`
+	KnowledgeBaseID string    `json:"knowledgeBaseId"`
+	ResourceID      string    `json:"resourceId"`
+	ActionKey       string    `json:"actionKey"`
+	BindingID       string    `json:"bindingId"`
+	Generation      int64     `json:"generation"`
+	PrincipalID     string    `json:"principalId"`
+	OperationID     string    `json:"operationId"`
+	ParameterHash   string    `json:"parameterHash"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+}
+
+func (request NativeSyncRequest) Equal(other NativeSyncRequest) bool {
+	return request.Key == other.Key && request.DataSourceID == other.DataSourceID &&
+		request.KnowledgeBaseID == other.KnowledgeBaseID && request.ResourceID == other.ResourceID &&
+		request.ActionKey == other.ActionKey &&
+		request.BindingID == other.BindingID && request.Generation == other.Generation &&
+		request.PrincipalID == other.PrincipalID && request.OperationID == other.OperationID &&
+		request.ParameterHash == other.ParameterHash && request.ExpiresAt.Equal(other.ExpiresAt)
+}
+
+type nativeSyncRequestContextKey struct{}
+
+func WithNativeSyncRequest(ctx context.Context, request NativeSyncRequest) context.Context {
+	return context.WithValue(ctx, nativeSyncRequestContextKey{}, request)
+}
+
+func NativeSyncRequestFromContext(ctx context.Context) (NativeSyncRequest, bool) {
+	request, ok := ctx.Value(nativeSyncRequestContextKey{}).(NativeSyncRequest)
+	return request, ok
 }
 
 // TableName specifies the table name for SyncLog

@@ -37,6 +37,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const validating = protocolOperation === 'validate_binding';
   const mapping = protocolOperation === 'map_native_status_error';
   const bindingReconcile = protocolOperation === 'reconcile' && action === 'application_binding.disable';
+  const receiving = ['receiver_start', 'receiver_observe'].includes(protocolOperation);
   const managing = handshake || validating || bindingReconcile;
   const management = { componentTypeKey: 'knowledge-native', componentReleaseId: ids[9],
     artifactDigest: 'a'.repeat(64), protocolRange: '1' };
@@ -74,7 +75,9 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   }
   const refs = validation.secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience }));
   if (bindingReconcile) management.validation = validation;
-  const args = bindingReconcile ? { bindingId: ids[0], generation: 4,
+  const args = receiving ? { idempotencyKey: ids[3], importConfigRef: ids[2], bindingId: ids[0], generation: 9,
+    expiresAt: new Date(Date.now() + 60000).toISOString() }
+    : bindingReconcile ? { bindingId: ids[0], generation: 4,
     configDigest: createHash('sha256').update(canonical(validation.normalizedConfig)).digest('hex'),
     nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: ids[1], idempotencyKey: ids[5] }
     : mapping ? { idempotencyKey: ids[3], ...mappingInput }
@@ -105,14 +108,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const sourceBytes = mode === 'empty-source' ? Buffer.alloc(0) : Buffer.from([0,255,1,254]);
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = managing || mapping ? args : operation === 'reconcile' ? {idempotencyKey:args.idempotencyKey}
+  const intent = managing || mapping || receiving ? args : operation === 'reconcile' ? {idempotencyKey:args.idempotencyKey}
     : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: searchQueries[mode]?.[0] ?? 'search fixture' } : reference } : args;
   if (['known-native-id','mismatched-native-id'].includes(mode)) {
     intent.nativeId = mode === 'known-native-id' ? ingest ? ids[2] : ids[9] : ingest ? ids[9] : ids[2];
   }
-  const bodyValue = managing || mapping || ['observe','reconcile','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = managing || mapping || receiving || ['observe','reconcile','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -155,7 +158,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       assert.equal(body.operation, operation);
       assert.deepEqual(JSON.parse(body.argumentsJson), intent);
       return reply(response, 200, { actionExecutionId: ids[5], operationId: ids[6], authorizationMinZedToken: 'current',
-        ...(operation === 'execute' && mode !== 'missing-target' ? { targetResource: { resourceId: ids[8], nativeType: 'knowledge_base',
+        ...(receiving ? { bindingGeneration: mode === 'wrong-generation' ? 10 : 9 } : {}),
+        ...((operation === 'execute' || receiving) && mode !== 'missing-target' ? { targetResource: { resourceId: ids[8], nativeType: 'knowledge_base',
           nativeRef: mode === 'wrong-target' || (mode === 'target-changed' && state.peps > 1) ? ids[9] : ids[1],
           nativeInstanceRef: mode === 'instance-changed' && state.peps > 1 ? 'foreign-instance' : 'fixture-native',
           nativeScopeRef: mode === 'wrong-native-scope' ? ids[9] : ids[1] } } : {}) });
@@ -172,6 +176,15 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     assert.equal(JSON.parse(Buffer.from(nativeProof.actionToken.split('.')[1], 'base64url')).action_execution_id, ids[5]);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name === 'kailo_receiver_conformance') {
+      assert.equal(receiving, true);
+      assert.deepEqual(body.params.arguments, {});
+      const value = { request: { ...args }, completed: false, readOperations: [],
+        nativeBatchId: ids[9], nativeStatus: 'running', startedAt: completedAt };
+      if (mode === 'foreign-batch-request') value.request.idempotencyKey = randomUUID();
+      return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: {
+        content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value } });
+    }
     if (body.params.name === 'kailo_binding_reconcile') {
       assert.equal(bindingReconcile, true);
       assert.deepEqual(body.params.arguments, {});
@@ -323,12 +336,36 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   const token = `${header}.${payload}.${signature}`;
-  return { state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
+  return { state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/${receiving ? 'component-conformance' : 'platform-adapter'}/v1/${route}`, {
     method: 'POST', headers: { authorization: `Bearer ${options.token ?? token}`, 'content-type': 'application/json',
       'idempotency-key': options.key ?? args.idempotencyKey },
     body: options.raw ?? canonical(bodyValue),
   }) };
 }
+
+test('native receiver conformance calls only its original scoped driver', async t => {
+  for (const operation of ['receiver_start', 'receiver_observe']) {
+    for (const mode of ['ok', 'deny', 'revoke', 'wrong-generation', 'wrong-target', 'foreign-batch-request']) {
+      await t.test(`${operation}/${mode}`, async nested => {
+        const f = await fixture(nested, mode, 'knowledge.sync_apply@v2', operation);
+        const response = await f.invoke();
+        // Existing shared jsonFetch does not disclose the upstream PEP error;
+        // refusal or revocation is UNAVAILABLE, while a local scope mismatch
+        // is DENIED. Neither path may expose the native result.
+        assert.equal(response.status, mode === 'ok' ? 200 : ['deny', 'revoke', 'foreign-batch-request'].includes(mode) ? 503 : 403);
+        if (mode === 'ok') {
+          const value = await response.json();
+          assert.equal(value.nativeBatchId, f.taskId);
+          assert.equal(value.nativeStatus, 'running');
+          assert.equal(value.platformStatus, undefined, 'native status is not a platform receipt');
+          assert.deepEqual(f.state.methods, ['kailo_receiver_conformance']);
+        }
+        if (['deny', 'wrong-generation', 'wrong-target'].includes(mode)) assert.equal(f.state.native, 0);
+        assert.equal(f.state.grants, 0, 'the adapter must not replace the original importer');
+      });
+    }
+  }
+});
 
 test('concurrent native calls retain their own binding admission proof', async t => {
   const first = await fixture(t, 'ok', 'knowledge.read@v2');

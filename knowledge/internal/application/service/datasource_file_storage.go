@@ -148,6 +148,10 @@ type fileStorageCursor struct {
 	// prematurely replaced desired set. Groups retains previous materializations
 	// and fully confirmed applications until their native retirement completes.
 	Discovery map[string]fileStorageSavedListing `json:"discovery,omitempty"`
+	// Only keyed isolated receiver runs collect the original Core-confirmed
+	// read observations. They stay in this native SyncLog snapshot, not a new
+	// per-item task ledger, and never contain credentials or source bodies.
+	ReadOperations map[string]json.RawMessage `json:"readOperations,omitempty"`
 }
 
 // The native cursor retains the original write identity before Emit. This is
@@ -494,6 +498,18 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	state, err := fileStorageState(previous)
 	if err != nil {
 		return nil, err
+	}
+	if request, constrained := types.NativeSyncRequestFromContext(ctx); constrained {
+		if request.DataSourceID != run.dataSourceID || request.BindingID != c.transport.config.BindingID ||
+			request.KnowledgeBaseID != run.knowledgeBaseID || request.ResourceID != c.transport.config.ReceiverResourceID {
+			return nil, fmt.Errorf("frozen native receiver does not match its importer")
+		}
+		if state.BatchID != run.syncLogID || state.ReadOperations == nil {
+			state.ReadOperations = make(map[string]json.RawMessage)
+		}
+		ctx = context.WithValue(ctx, fileStorageReadObservationsKey{}, &fileStorageReadObservations{
+			batchID: run.syncLogID, dataSourceID: run.dataSourceID, generation: request.Generation, values: state.ReadOperations,
+		})
 	}
 	oldTime := time.Time{}
 	if previous != nil {

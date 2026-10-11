@@ -134,3 +134,39 @@ func TestNativeReceiverMigrationDoesNotInferLegacyOwnershipOrDiscardCutoff(t *te
 		})
 	}
 }
+
+func TestNativeSyncRequestMigrationPreservesIndependentRunsAndRetainedOwnership(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		t.Run(map[bool]string{false: "independent", true: "retained-request"}[retained], func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			require.NoError(t, err)
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+			require.NoError(t, db.Exec("CREATE TABLE sync_logs (id TEXT PRIMARY KEY); INSERT INTO sync_logs VALUES ('legacy')").Error)
+			up, err := os.ReadFile("../../../migrations/sqlite/000027_sync_request_identity.up.sql")
+			require.NoError(t, err)
+			require.NoError(t, db.Exec(string(up)).Error)
+			var existing struct {
+				RequestKey      *string
+				RequestIdentity *string
+			}
+			require.NoError(t, db.Raw("SELECT request_key, request_identity FROM sync_logs WHERE id='legacy'").Scan(&existing).Error)
+			require.Nil(t, existing.RequestKey)
+			require.Nil(t, existing.RequestIdentity)
+			require.Error(t, db.Exec("UPDATE sync_logs SET request_key='key'").Error, "half an identity cannot become admission")
+			if retained {
+				require.NoError(t, db.Exec("UPDATE sync_logs SET request_key='key', request_identity='{}'").Error)
+				require.Error(t, db.Exec("INSERT INTO sync_logs VALUES ('duplicate','key','{}')").Error)
+			}
+			down, err := os.ReadFile("../../../migrations/sqlite/000027_sync_request_identity.down.sql")
+			require.NoError(t, err)
+			err = db.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(down)).Error })
+			if retained {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

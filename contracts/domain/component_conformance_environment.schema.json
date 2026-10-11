@@ -10,6 +10,23 @@
     "artifactDigest": {"type": "string"},
     "adapterBaseUrl": {"type": "string"},
     "maxResponseBytes": {"type": "integer"},
-    "maxSteps": {"type": "integer"}
+    "maxSteps": {"type": "integer"},
+    "nativeReadAuthorities": {
+      "type": "array",
+      "description": "仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发 Worker 的平台 bearer。",
+      "items": {
+        "title": "ComponentNativeReadAuthority",
+        "type": "object", "additionalProperties": false,
+        "required": ["bindingId", "generation", "coreBaseUrl", "oidcTokenUrl", "oidcClientId", "oidcClientSecretFile"],
+        "properties": {
+          "bindingId": {"type": "string", "format": "uuid"},
+          "generation": {"type": "integer"},
+          "coreBaseUrl": {"type": "string"},
+          "oidcTokenUrl": {"type": "string"},
+          "oidcClientId": {"type": "string"},
+          "oidcClientSecretFile": {"type": "string"}
+        }
+      }
+    }
   }
 }

@@ -100,6 +100,39 @@ func TestComponentReleaseLostACKOnlyReconcilesOriginalAttempt(t *testing.T) {
 	}
 }
 
+func TestComponentReleaseNativeReceiverPendingOnlyObservesOriginalBatch(t *testing.T) {
+	env, in := releaseWorkflowTest(t)
+	in.Release.Steps[0].Operation = generated.ComponentConformanceOperation("receiver_start")
+	in.Release.Steps[0].RequestJSON = `{"idempotencyKey":"original-key","generation":3}`
+	attempts := 0
+	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
+			attempts++
+			if probe.Plan.Steps[0].RequestJSON != in.Release.Steps[0].RequestJSON || probe.Plan.Steps[0].IdempotencyKey != "original-key" {
+				t.Fatal("receiver observation replaced the frozen batch request")
+			}
+			if (probe.Reconcile != nil && *probe.Reconcile) != (attempts > 1) {
+				t.Fatal("pending receiver batch was dispatched again instead of observed")
+			}
+			return generated.ComponentConformanceStepObservation{NativeReceiverObservation: &generated.NativeReceiverObservationClass{
+				NativeBatchID: "original-native-batch", Completed: attempts > 1,
+			}}, nil
+		})
+	env.OnActivity("RecordComponentConformance", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, report generated.ComponentConformanceObservation) (generated.ComponentReleaseReceipt, error) {
+			if attempts != 2 || len(report.Observations) != 1 || !report.Observations[0].NativeReceiverObservation.Completed {
+				t.Error("suite recorded success before the original receiver batch completed")
+			}
+			return generated.ComponentReleaseReceipt{ActionExecutionID: report.ActionExecutionID,
+				ComponentReleaseID: report.ComponentReleaseID, PlanDigest: report.PlanDigest,
+				Status: generated.ComponentReleaseStatus("REGISTERED")}, nil
+		})
+	env.ExecuteWorkflow(ComponentTaskKind, in)
+	if err := env.GetWorkflowError(); err != nil || attempts != 2 {
+		t.Fatalf("attempts=%d error=%v", attempts, err)
+	}
+}
+
 func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T) {
 	for _, rejection := range []string{activities.ErrTypeAdmissionDenied, activities.ErrTypeRejected} {
 		t.Run(rejection, func(t *testing.T) {

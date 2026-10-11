@@ -127,7 +127,9 @@ export async function verifyKnowledgeToken(token, config, args, operation = 'que
     || (config.workspaceId !== undefined && claims.workspace_id !== config.workspaceId)
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || claims.target_type !== 'RESOURCE'
-    || nativeKnowledgeAction(claims.action_key) === undefined
+    || (['receiver_start', 'receiver_observe'].includes(operation)
+      ? !['knowledge.sync_apply@v2', 'knowledge.sync_retire@v2'].includes(claims.action_key)
+      : nativeKnowledgeAction(claims.action_key) === undefined)
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
     || !Number.isSafeInteger(claims.result_exposure_policy_version) || claims.result_exposure_policy_version <= 0
     || !nonempty(claims.authorization_min_zed_token)
@@ -140,6 +142,34 @@ export async function verifyKnowledgeToken(token, config, args, operation = 'que
   } else if (claims.actor_principal_id !== claims.initiating_human_principal_id
     || Object.hasOwn(claims, 'delegation_id') || Object.hasOwn(claims, 'delegation_version')) throw new Refused(401);
   return claims;
+}
+
+async function nativeReceiverConformance(config, deadline, token, args, operation) {
+  if (!exactKeys(args, ['idempotencyKey', 'importConfigRef', 'bindingId', 'generation', 'expiresAt'])
+    || !UUID.test(args.idempotencyKey) || !UUID.test(args.importConfigRef)
+    || args.bindingId !== config.bindingId || !Number.isSafeInteger(args.generation) || args.generation <= 0
+    || !Number.isFinite(Date.parse(args.expiresAt))) throw new Refused(400);
+  const claims = await verifyKnowledgeToken(token, config, args, operation);
+  const admitted = await freshPep(config, deadline, token, args, claims, operation);
+  if (admitted.bindingGeneration !== args.generation || admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId
+    || admitted.targetResource?.nativeScopeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
+  const value = await nativeTool(config, deadline, 'kailo_receiver_conformance', {});
+  if (!exactKeys(value, ['request', 'nativeBatchId', 'nativeStatus', 'startedAt', 'completed', 'readOperations',
+    ...(Object.hasOwn(value ?? {}, 'finishedAt') ? ['finishedAt'] : [])])
+    || canonical(value.request) !== canonical(args)
+    || !UUID.test(value.nativeBatchId) || !nonempty(value.nativeStatus)
+    || typeof value.completed !== 'boolean' || !Array.isArray(value.readOperations)
+    || (value.completed && (!value.finishedAt || value.readOperations.length === 0))
+    || !Number.isFinite(Date.parse(value.startedAt)) || Date.parse(value.startedAt) > Date.now()
+    || (value.finishedAt !== undefined && (!Number.isFinite(Date.parse(value.finishedAt))
+      || Date.parse(value.finishedAt) < Date.parse(value.startedAt) || Date.parse(value.finishedAt) > Date.now()))) throw new Refused(503);
+  const current = await verifyKnowledgeToken(token, config, args, operation);
+  const fresh = await freshPep(config, deadline, token, args, current, operation);
+  if (fresh.bindingGeneration !== args.generation || fresh.targetResource?.nativeRef !== config.nativeKnowledgeBaseId
+    || fresh.targetResource?.nativeScopeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
+  // Native status is evidence, not a platform terminal claim. The conformance
+  // consumer must still verify the real source/receiver read receipts.
+  return value;
 }
 
 // A client of the original stateless MCP endpoint, not another MCP server.
@@ -423,6 +453,8 @@ export function createAdapter(rawConfig) {
   const server = createServer((request, response) => nativeAdmission.run({}, async () => {
     try {
       const operation = request.url === QUERY_PATH ? 'query_revision'
+        : request.url === '/component-conformance/v1/receiver_start' ? 'receiver_start'
+        : request.url === '/component-conformance/v1/receiver_observe' ? 'receiver_observe'
         : request.url === '/platform-adapter/v1/handshake' ? 'handshake'
         : request.url === '/platform-adapter/v1/validate_binding' ? 'validate_binding'
         : request.url === '/platform-adapter/v1/execute' ? 'execute'
@@ -442,6 +474,13 @@ export function createAdapter(rawConfig) {
         actionToken: request.headers.authorization.slice('Bearer '.length),
         argumentsJson: canonical(operation === 'execute' ? args.arguments : args), operation,
       })).toString('base64url');
+      if (['receiver_start', 'receiver_observe'].includes(operation)) {
+        if (!object(args) || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args)) throw new Refused(400);
+        const value = await nativeReceiverConformance(config, deadline, request.headers.authorization.slice('Bearer '.length), args, operation);
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
       if (['handshake', 'validate_binding'].includes(operation)) {
         if (!object(args) || !UUID.test(args.idempotencyKey)
           || args.idempotencyKey !== request.headers['idempotency-key'] || raw !== canonical(args)) throw new Refused(400);

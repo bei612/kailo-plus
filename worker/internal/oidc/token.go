@@ -59,6 +59,20 @@ func FromEnv() (*Source, error) {
 	return &s, nil
 }
 
+// NewSource consumes one explicitly delivered service identity. A native
+// conformance receiver uses its own isolated client, never Worker credentials
+// or a process-global environment switch. Its caller owns endpoint policy and
+// the bounded, non-redirecting HTTP transport.
+func NewSource(tokenURL, clientID, secret string, client *http.Client) (*Source, error) {
+	endpoint, err := url.Parse(tokenURL)
+	if err != nil || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.Fragment != "" ||
+		(endpoint.Scheme != "https" && endpoint.Scheme != "http") ||
+		strings.TrimSpace(clientID) == "" || strings.TrimSpace(secret) == "" || client == nil {
+		return nil, fmt.Errorf("service identity delivery is incomplete")
+	}
+	return &Source{tokenURL: tokenURL, clientID: clientID, secret: secret, http: client}, nil
+}
+
 // Invalidate 丢弃缓存的令牌。对端以认证失败拒绝它时调用：IdP 轮换了签名密钥，
 // 或令牌在到期临界被判过期，此后同一张令牌永远不会再被接受。
 func (s *Source) Invalidate() {
