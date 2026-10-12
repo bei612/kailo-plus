@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/ratelimit"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/alicebob/miniredis/v2"
@@ -123,7 +124,7 @@ func TestNativeBindingReconcileConsumesManagementProofAndOriginalRows(t *testing
 }
 
 func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
-	for _, scenario := range []string{"complete", "foreign-queue", "redelivered-parse", "active-parent", "completed-native-task", "missing-generation", "wrong-binding", "running-batch", "pending-document", "unconfirmed-application"} {
+	for _, scenario := range []string{"complete", "foreign-queue", "redelivered-parse", "active-parent", "completed-native-task", "active-sync", "completed-sync", "wrong-sync-task", "wrong-sync-type", "missing-generation", "wrong-binding", "running-batch", "pending-document", "unconfirmed-application"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newNativeBindingFixture(t)
 			r := newNativeBindingRedis(t)
@@ -172,9 +173,25 @@ func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
 				_, err = asynq.NewClientFromRedisClient(f.server.redisClient).Enqueue(asynq.NewTask(types.TypeDocumentProcess, raw))
 				require.NoError(t, err)
 			}
-			if scenario == "active-parent" || scenario == "completed-native-task" {
+			syncTask := scenario == "active-sync" || scenario == "completed-sync" || scenario == "wrong-sync-task" || scenario == "wrong-sync-type"
+			if scenario == "active-parent" || scenario == "completed-native-task" || syncTask {
 				payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: f.ep.TenantID, KnowledgeBaseID: kb, KnowledgeID: document})
 				require.NoError(t, err)
+				taskType := types.TypeDocumentProcess
+				options := []asynq.Option{asynq.Retention(time.Hour)}
+				if syncTask {
+					taskType = types.TypeDataSourceSync
+					if scenario == "wrong-sync-type" {
+						taskType = types.TypeDocumentProcess
+					}
+					payload, err = json.Marshal(types.DataSourceSyncPayload{TenantID: f.ep.TenantID, DataSourceID: source, SyncLogID: batch, Trigger: "manual"})
+					require.NoError(t, err)
+					id := datasource.SyncTaskID(batch)
+					if scenario == "wrong-sync-task" {
+						id = datasource.SyncTaskID(uuid.NewString())
+					}
+					options = append(options, asynq.TaskID(id))
+				}
 				client := asynq.NewClient(asynq.RedisClientOpt{Addr: r.Addr()})
 				t.Cleanup(func() { _ = client.Close() })
 				entered, release := make(chan struct{}), make(chan struct{})
@@ -190,7 +207,7 @@ func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
 					return nil
 				})))
 				t.Cleanup(func() { releaseOnce.Do(func() { close(release) }); worker.Shutdown() })
-				info, err := client.Enqueue(asynq.NewTask(types.TypeDocumentProcess, payload), asynq.Retention(time.Hour))
+				info, err := client.Enqueue(asynq.NewTask(taskType, payload), options...)
 				require.NoError(t, err)
 				select {
 				case <-entered:
@@ -206,7 +223,7 @@ func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
 						return err == nil && current.State == asynq.TaskStateCompleted
 					}, 10*time.Second, 10*time.Millisecond)
 				}
-				if scenario == "active-parent" {
+				if scenario == "active-parent" || scenario == "active-sync" {
 					require.NoError(t, nativeBindingTaskSnapshot.Load(context.Background(), f.server.redisClient).Err())
 					f.server.redisClient.AddHook(&nativeSnapshotHook{after: finish})
 				} else {
@@ -217,12 +234,18 @@ func TestNativeBindingReconcileConsumesFinishedBatchSnapshot(t *testing.T) {
 			require.NoError(t, err)
 			value, err := f.server.observeNativeBinding(context.Background(), delivery, fileStorageReferenceForTest(t, binding, kb))
 			require.NoError(t, err)
-			require.Equal(t, scenario == "complete" || scenario == "foreign-queue" || scenario == "completed-native-task", value["complete"])
+			require.Equal(t, scenario == "complete" || scenario == "foreign-queue" || scenario == "completed-native-task" || scenario == "completed-sync", value["complete"])
 			observations := value["observations"].([]map[string]any)
 			if scenario == "redelivered-parse" || scenario == "active-parent" {
 				require.Len(t, observations, 2, "pending redelivery is not a completed native task")
 			} else {
 				require.Len(t, observations, 1)
+			}
+			if scenario == "active-sync" {
+				require.Equal(t, batch, observations[0]["idempotencyKey"])
+				require.Equal(t, "UNKNOWN", observations[0]["platformStatus"], "a live same-batch task overrides its earlier success snapshot")
+				require.NotContains(t, observations[0], "nativeStatus")
+				require.NotContains(t, observations[0], "terminalAt")
 			}
 			if scenario == "complete" || scenario == "foreign-queue" || scenario == "redelivered-parse" {
 				require.Equal(t, "SUCCEEDED", observations[0]["platformStatus"])

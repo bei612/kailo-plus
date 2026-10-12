@@ -538,7 +538,7 @@ func (s *DataSourceService) ManualSync(ctx context.Context, dsID string) (*types
 		"data_source", ds.ID, types.AuditOutcomeAccepted,
 		map[string]any{
 			"name": ds.Name, "type": ds.Type, "sync_log_id": syncLog.ID,
-			"task_id": "dssync:" + syncLog.ID, "trigger": "manual", "processing_status": "pending",
+			"task_id": datasource.SyncTaskID(syncLog.ID), "trigger": "manual", "processing_status": "pending",
 		})
 	return syncLog, nil
 }

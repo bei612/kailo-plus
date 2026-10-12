@@ -5932,3 +5932,54 @@ conformance、生产绑定激活、页面、部署或全局门禁。
 日志 `/volumes/data/kailo/tmp/batch-closure-docs.o8zaH0/check-docs.log`，
 SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
 这是当前工作树原文档脚本，不是 full、真实部署或逐行回执验收；本批未部署。
+
+### 2026-10-12 原 Asynq 同步任务与批次终态关联
+
+1. 权威：`.design/07` §6.2 与 `.design/13` §4.4 要求停用排空和原生同步
+   以实际在途/终态证据为准。固定官方 WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::ManualSync/ProcessSync`
+   已重新核验；Kailo 授权的 `datasource.DispatchSync` 仍向原 Asynq 交接，
+   本批不增加执行器、接口或任务账本。
+2. 影响：原生产队列 ID 是 `dssync:<SyncLogID>`，对账却把它当作裸 SyncLog
+   UUID 比较，并用队列 ID 查询以批次 UUID 为键的终态集合。现在由原
+   `sync_dispatch.go::SyncTaskID` 为入队、ManualSync 活动元信息、原
+   `observeNativeBinding` 提供同一构造；格式不变，不迁移或改写已有任务。
+3. 副作用：同任务 type、队列 ID、tenant、DataSource 与原完成批次精确关联后，
+   只有原子快照和实时 Inspector 都是 completed 才合并终态。快照时仍活跃的
+   同批任务使原观察降为 UNKNOWN，并移除 nativeStatus/terminalAt；不再呈现
+   SUCCEEDED 加 complete=false 的矛盾观察，不因稍后完成而改写快照事实。
+4. 异常：错 key、错 type、缺归属、任务消失或依赖不可核仍保持 complete=false；
+   不从任意前缀剥离并猜测 UUID，不以 ACK 或当前配置补终态。原超限、聚合
+   in-flight、跨快照消失、未知 Redis 拓扑及旧行规则不变，无新状态或期限。
+   既有 UNKNOWN 仍沿原 binding reconcile 对账，不重新派发同步批次。
+
+固定输入为 `53f10b4e1e8da3202d23cf91f6031a6ea747a8d7` 加本批四源路径，
+使用既有 `receiver-final.SFoYxg` 私有源码，补齐同 HEAD 精确变更，未重新导出
+大树。原 SDK `kailo-knowledge-delete-handoff` 实核 4 CPU / 8 GiB / equal swap，
+启动时仅 sleep，Data build/mod 缓存与显式 TMPDIR/GOTMPDIR 保留；没有新镜像、
+下载或第二冷编译。实际命令：
+
+```text
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off GOSUMDB=off TMPDIR=/tmp/receiver-final.SFoYxg GOTMPDIR=/tmp/receiver-final.SFoYxg go test ./internal/mcpserver -run '^TestNativeBinding(Reconcile|Atomic|Snapshot)' -count=1 -timeout=5m -v
+```
+
+原 Asynq client/server、Inspector 真实处理任务，Redis 为原 miniredis，原生
+存储夹具为 SQLite；不得外推为真实 Redis 服务、HTTP 鉴权、跨服务完整同步、
+生产绑定或部署验收。完整 HTTP 接收仍须同源码 artifact 和真实隔离 Core
+配置投递，本批不加载镜像、不激活绑定。没有重复上一批 PG 迁移/并发检查。
+
+日志目录：
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/receiver-final.SFoYxg`。
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| binding-sync-identity-positive.log | 32268 exit1，3 个新增观察数断言暴露前缀 ID 未合并；失败保留 | `829b8be720356bfbb1e0d661c4a7529dabfbcada222678f21c3f1b64963f78d0` |
+| binding-sync-identity-fixed.log | 2249 exit0，6 顶层/32 子场景，21.894s | `d1d5cfe1d3a76e17f6545d1a4a8c0ef525d35d147b298bde30efa70c657a41de` |
+| binding-sync-identity-negative.log | 44727 exit1，单处 ID 关系反证捕获 active/completed-sync 两断言 | `71edaf8e4fdfb6e8c8427124a64f69f7a1b9e0ea5321d232ac0054a2a4a60b69` |
+| binding-sync-identity-restored.log | 78211 exit0，末版6顶层/32子场景，36.469s | `c593fc8779580836740a770bb6db45b2d44050088d55057916067736ffd56f2d` |
+
+反证仅在私有生产副本使 ID 关系退回裸 ID 比较，执行原 finished-batch 全场景，
+没有删改断言。恢复后两文件与工作树 cmp 0；最终还原另实际验证 UNKNOWN 不含
+nativeStatus/terminalAt（这两条断言不计入较早 2249 的范围）。本批未重跑 full、
+未改变契约/四侧生成、未部署；文档门禁由主线合批，不借旧回执称固定发布通过。

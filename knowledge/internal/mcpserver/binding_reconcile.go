@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -368,10 +369,12 @@ func (s *Server) observeNativeBinding(ctx context.Context, delivery *nativeAdapt
 			// A parent may persist SUCCESS before spawning a child and returning.
 			// Only a task already completed at the atomic snapshot can be ruled
 			// out by matching native terminal evidence; live/replayed work cannot.
+			var batch types.DataSourceSyncPayload
+			matchingBatch := task.Type == types.TypeDataSourceSync && json.Unmarshal(task.Payload, &batch) == nil &&
+				task.ID == datasource.SyncTaskID(batch.SyncLogID) && batch.TenantID == ep.TenantID &&
+				finishedBatches[batch.SyncLogID] != "" && finishedBatches[batch.SyncLogID] == batch.DataSourceID
 			if state == "completed" && task.State == asynq.TaskStateCompleted {
-				var batch types.DataSourceSyncPayload
-				if task.Type == types.TypeDataSourceSync && json.Unmarshal(task.Payload, &batch) == nil && batch.SyncLogID == task.ID &&
-					batch.TenantID == ep.TenantID && finishedBatches[task.ID] != "" && finishedBatches[task.ID] == batch.DataSourceID {
+				if matchingBatch {
 					continue
 				}
 				var payload types.DocumentProcessPayload
@@ -380,7 +383,11 @@ func (s *Server) observeNativeBinding(ctx context.Context, delivery *nativeAdapt
 					continue
 				}
 			}
-			unknown(task.Type, task.ID, task.ID)
+			if matchingBatch {
+				unknown(task.Type, batch.SyncLogID, task.ID)
+			} else {
+				unknown(task.Type, task.ID, task.ID)
+			}
 		}
 	}
 	return map[string]any{"reference": reference, "complete": complete, "observations": observations}, nil

@@ -26,7 +26,7 @@ func DispatchSync(ctx context.Context, logs interfaces.SyncLogRepository, enqueu
 		if err != nil {
 			return err
 		}
-		taskID := "dssync:" + payload.SyncLogID
+		taskID := SyncTaskID(payload.SyncLogID)
 		info, err := enqueuer.Enqueue(asynq.NewTask(types.TypeDataSourceSync, body),
 			asynq.Queue(types.QueueSync), asynq.MaxRetry(5), asynq.Timeout(2*time.Hour), asynq.TaskID(taskID))
 		if errors.Is(err, asynq.ErrTaskIDConflict) {
@@ -41,3 +41,6 @@ func DispatchSync(ctx context.Context, logs interfaces.SyncLogRepository, enqueu
 		return nil
 	})
 }
+
+// SyncTaskID is the original queue identity shared by dispatch and observation.
+func SyncTaskID(syncLogID string) string { return "dssync:" + syncLogID }
