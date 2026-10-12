@@ -5711,9 +5711,13 @@ type ProjectPreferenceRequest struct {
 // signed current announcement; it does not delete its channel or repositories.
 type ProjectsPublishRequest struct {
 	// Original transient display label, trimmed and limited to 128 Unicode characters by the
-	// consumer. Assignee is always the authenticated signer, never this label.
-	AssigneeLabel *string             `json:"assigneeLabel,omitempty"`
-	Attachments   []AttachmentElement `json:"attachments,omitempty"`
+	// consumer. Never an identity or authorization claim.
+	AssigneeLabel *string `json:"assigneeLabel,omitempty"`
+	// Other HUMAN recipient of an original issue-author/repository-owner assignment. Resolved
+	// against the admitted Tenant's existing HUMAN identity directory; never a signing
+	// identity. Self operations do not accept this field.
+	AssigneePubkey *string             `json:"assigneePubkey,omitempty"`
+	Attachments    []AttachmentElement `json:"attachments,omitempty"`
 	// Original complete markdown including attachment markdown. Issues may be empty; comments
 	// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
 	// before signing.
@@ -8470,6 +8474,7 @@ const (
 type ProjectPublicationOperation string
 
 const (
+	AssignIssue                       ProjectPublicationOperation = "ASSIGN_ISSUE"
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
@@ -8478,6 +8483,7 @@ const (
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
 	SelfAssignIssue                   ProjectPublicationOperation = "SELF_ASSIGN_ISSUE"
 	SelfUnassignIssue                 ProjectPublicationOperation = "SELF_UNASSIGN_ISSUE"
+	UnassignIssue                     ProjectPublicationOperation = "UNASSIGN_ISSUE"
 )
 
 type ProjectListingVisibility string

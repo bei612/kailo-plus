@@ -6101,9 +6101,15 @@ pub struct ProjectPreferenceRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
     /// Original transient display label, trimmed and limited to 128 Unicode characters by the
-    /// consumer. Assignee is always the authenticated signer, never this label.
+    /// consumer. Never an identity or authorization claim.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignee_label: Option<String>,
+
+    /// Other HUMAN recipient of an original issue-author/repository-owner assignment. Resolved
+    /// against the admitted Tenant's existing HUMAN identity directory; never a signing
+    /// identity. Self operations do not accept this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee_pubkey: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentElement>>,
@@ -6207,6 +6213,9 @@ pub enum ProjectIssueCategory {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectPublicationOperation {
+    #[serde(rename = "ASSIGN_ISSUE")]
+    AssignIssue,
+
     #[serde(rename = "CREATE_ISSUE")]
     CreateIssue,
 
@@ -6229,6 +6238,9 @@ pub enum ProjectPublicationOperation {
 
     #[serde(rename = "SELF_UNASSIGN_ISSUE")]
     SelfUnassignIssue,
+
+    #[serde(rename = "UNASSIGN_ISSUE")]
+    UnassignIssue,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

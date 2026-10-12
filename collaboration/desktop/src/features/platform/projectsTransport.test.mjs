@@ -12,16 +12,16 @@ const key=new Uint8Array(32).fill(7),ownerKey=new Uint8Array(32).fill(8),viewer=
 const repo=finalizeEvent({kind:30617,created_at:1,content:"",tags:[["d","repo"]]},ownerKey);
 const task=finalizeEvent({kind:1621,created_at:2,content:"Original task",tags:[["a",`30617:${repo.pubkey}:repo`],["p",viewer]]},ownerKey);
 const relay="wss://projects.test";
-let signed=0,published=0,reads=0,admissions=0,prepared,delivered,active=true,loseAck=false,repositoryEvent=repo,headEvent=repo;
+let signed=0,published=0,reads=0,admissions=0,prepared,delivered,active=true,loseAck=false,repositoryEvent=repo,headEvent=repo,signingKey=key;
 window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
   if(command!=="sign_event")throw new Error(command);
-  signed++;return JSON.stringify(finalizeEvent({kind:args.kind,content:args.content,tags:args.tags,created_at:args.createdAt??2},key));
+  signed++;return JSON.stringify(finalizeEvent({kind:args.kind,content:args.content,tags:args.tags,created_at:args.createdAt??2},signingKey));
 }};
 const {relayClient}=await import("@/shared/api/relayClient");
 const {createProjectsPublisher,createProjectsQuery}=await import("./projectsTransport.ts");
 const {RelayPublishUnknownError}=await import("@/shared/api/relayPublishOutcome");
 beforeEach(()=>{
-  signed=0;published=0;reads=0;admissions=0;prepared=undefined;delivered=undefined;active=true;loseAck=false;repositoryEvent=repo;headEvent=repo;
+  signed=0;published=0;reads=0;admissions=0;prepared=undefined;delivered=undefined;active=true;loseAck=false;repositoryEvent=repo;headEvent=repo;signingKey=key;
   relayClient.unconfirmedEvents.clear();
   relayClient.ensureConnected=async()=>{relayClient.relayUrl=relay;};
   relayClient.fetchEvents=async filter=>{reads++;return filter.kinds.length===1&&filter.kinds[0]===30617
@@ -30,13 +30,14 @@ beforeEach(()=>{
 });
 after(()=>dom.window.close());
 const request=()=>({operation:"CREATE_ISSUE",targetEventId:repo.id,title:"Original task",body:"Original body",category:"issue"});
-const publisher=()=>createProjectsPublisher("tenant:viewer",relay,viewer,()=>active,{workspaces:async()=>{admissions++;assert.fail("Issue must not borrow a workspace scope");}},2);
+const people=async()=>({items:[{principalId:"human",displayName:"Original Human",pubkeys:[viewer]}],maxParticipants:50});
+const publisher=(identity=viewer,directory=people)=>createProjectsPublisher("tenant:viewer",relay,identity,()=>active,{conversationParticipants:directory,workspaces:async()=>{admissions++;assert.fail("Issue must not borrow a workspace scope");}},2);
 const observation=()=>({eventId:prepared,onPrepared:id=>{prepared=id;}});
 
 test("Native existing project operations reject all issue-only fields before reads, admission or publication",async()=>{
   for(const operation of ["CREATE_PROJECT","CREATE_REPOSITORY","DELETE"]){
     const original=operation==="DELETE"?{operation,targetEventId:repo.id}:{operation,workspaceId:"workspace",name:"Project",...(operation==="CREATE_PROJECT"?{visibility:"listed"}:{})};
-    for(const field of ["title","body","category","mentions","attachments","assigneeLabel","priorEventId"]){
+    for(const field of ["title","body","category","mentions","attachments","assigneeLabel","assigneePubkey","priorEventId"]){
       await assert.rejects(publisher()({...original,[field]:field==="category"?"issue":"content"},`${operation}:${field}`,false,observation()));
       assert.equal(reads,0);assert.equal(admissions,0);assert.equal(signed,0);assert.equal(published,0);
     }
@@ -91,6 +92,40 @@ test("Native self assignment refuses stale prior, invalid signed target, mixed f
   relayClient.fetchEvents=async filter=>{const rows=await read(filter);if(filter.kinds[0]===1)active=false;return rows;};
   await assert.rejects(publisher()(assignmentRequest(),"revoked-assign",false,observation()));
   assert.equal(signed,0);assert.equal(published,0);
+});
+test("Native author assigns and removes another HUMAN with original target p tags and no self prior",async()=>{
+  signingKey=ownerKey;assignmentReads();
+  const send=publisher(repo.pubkey);
+  const request={...assignmentRequest("ASSIGN_ISSUE"),assigneePubkey:viewer};
+  await send(request,"other-assign",false,observation());
+  assert.equal(delivered.pubkey,repo.pubkey);assert.equal(delivered.kind,1);
+  assert.deepEqual(delivered.tags,[["e",task.id,"","root"],["a",`30617:${repo.pubkey}:repo`],["p",viewer],["t","assignment"]]);
+  assignmentReads([delivered]);
+  await send({...request,operation:"UNASSIGN_ISSUE"},"other-unassign",false,observation());
+  assert.equal(delivered.tags.at(-1)[1],"unassignment");assert.equal(delivered.tags.some(tag=>tag[0]==="prior"),false);
+  assert.equal(signed,2);assert.equal(published,2);assert.equal(admissions,0);
+});
+test("Native other HUMAN rejects ordinary signers, unknown targets, prior and directory revocation before signing",async()=>{
+  assignmentReads();
+  const request={...assignmentRequest("ASSIGN_ISSUE"),assigneePubkey:"f".repeat(64)};
+  await assert.rejects(publisher(viewer,async()=>({items:[{principalId:"owner",displayName:"Owner",pubkeys:[repo.pubkey]}],maxParticipants:50}))(
+    {...request,assigneePubkey:repo.pubkey},"not-owner",false,observation()));
+  signingKey=ownerKey;
+  await assert.rejects(publisher(repo.pubkey)(request,"not-human",false,observation()));
+  await assert.rejects(publisher(repo.pubkey)({...request,assigneePubkey:viewer,priorEventId:"f".repeat(64)},"other-prior",false,observation()));
+  let calls=0;
+  const directory=async()=>{if(++calls>1)throw new Error("revoked");return people();};
+  await assert.rejects(publisher(repo.pubkey,directory)({...request,assigneePubkey:viewer},"revoked-human",false,observation()));
+  assert.equal(signed,0);assert.equal(published,0);
+});
+test("Native other assignment lost ACK observes same event without resigning or changing target",async()=>{
+  signingKey=ownerKey;assignmentReads();loseAck=true;
+  const request={...assignmentRequest("ASSIGN_ISSUE"),assigneePubkey:viewer};
+  await assert.rejects(publisher(repo.pubkey)(request,"other-unknown",false,observation()),/unknown/i);
+  const first=delivered;relayClient.unconfirmedEvents.clear();loseAck=false;assignmentReads([first]);
+  assert.equal((await publisher(repo.pubkey)(request,"other-unknown",true,observation())).eventId,first.id);
+  await assert.rejects(publisher(repo.pubkey)({...request,operation:"UNASSIGN_ISSUE"},"other-unknown",true,observation()),/unknown|mismatch/i);
+  assert.equal(signed,1);assert.equal(published,1);
 });
 const review=finalizeEvent({kind:1618,created_at:2,content:"Original PR",tags:[["a",`30617:${repo.pubkey}:repo`],["p",viewer]]},ownerKey);
 const reviewCommentRequest=()=>({...commentRequest(),operation:"CREATE_PULL_REQUEST_COMMENT",targetEventId:review.id});

@@ -1810,3 +1810,104 @@ SHA256 为 `9ed2ed4bdf8e56809846a45eb3fdbc0e2c7d45373fa5da92eb6c80168fba4ef6`。
 
 本批 full、真实 BFF-DB-Relay 幂等故障演练未运行；未部署或验证真实三人操作。
 编译、HTTP stub、四侧往返和私有反证不替代这些边界。
+
+## 2026-10-12 原 Tasks 给其他 HUMAN 分派与取消
+
+源码比较基底 `66afa4f8b26fa51076dbcd06ea9ea73aee3e9a28`。本次只恢复现有
+Tasks 详情的 HUMAN 选择器与真实分派／取消链；Agent、managed-owner 签名、
+其他项目操作不包含在本批。源码和定向验证不等于部署或原生设备验收。
+
+### 四步影响及固定原版分类
+
+1. 权威：沿 `DD-39/72/75`、`SS-BUZ-GOVERNANCE`、`SS-WEB-RELAY` 和
+   `V-REQ-24`。既有 `collab.projects` S1 的 blockers 为空，不增加平台实体、
+   角色、权限、审批或 Workspace 权威。Community-global Task 不借 ReposWrite。
+2. 原消费者：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`
+   → `desktop/src/features/projects/ui/IssueAssigneesRow.tsx::IssueAssigneesRow`
+   → `desktop/src/features/projects/issueAssignments.ts::writeProjectIssueAssignment`。
+   只有原 issue 作者或 repository owner 本人显示此 picker；其他读者保留本人认领。
+   picker 使用原 Dialog、搜索输入、候选行、头像、成功关闭与清空搜索交互及 class。
+3. 读写方：两端共用共享详情和 `issueAssignments.ts`，现存
+   `BffClient::conversationParticipants` 完整 cursor 读取当前 Tenant ACTIVE HUMAN，
+   不靠 profile.isAgent 判断身份。Profile 批读仅用于头像和名称。原本人候选仍保留，
+   选择本人走已有 self operation；他人走新增 typed operation，不伪装评论或自身。
+   Native 原 `createProjectsPublisher` 在 fresh 已验签 kind 1621／30617 后核作者／
+   owner 及实际 HUMAN 目录，签名前重复核验；事件保留原 kind 1、e/a/p/t 顺序，
+   p 是目标 HUMAN，他人不带 self prior。原同作者时间归约仍取完整真实历史。
+4. 状态与异常：沿原单意图槽先持久 key、摘要、operation、目标、label 后投递。
+   保留旧 self slot 和摘要格式，旧未决不失效；不新增执行账本。UNKNOWN 保持
+   同 key／event／target／label，fresh 数据先改变 assignees 或页面重挂载也只能
+   操作原待核验控件，确证前禁止相反操作。精确回读作者、内容、全部 tags 后才
+   清槽／成功提示。签名前撤权拒绝；目录读取失败清正文，晚返回不跨身份生效。
+
+四类差异：原样保留为 picker 布局、头像移除、原事件内容／tags 和 reducer；
+共享迁移为原 HUMAN picker 的两端单实现与原模板扩为实际目标参数；授权治理适配
+为 typed HUMAN 目标、可信目录与 fresh 准入、持久 UNKNOWN、同源中英文六词条。
+没有开放原 Agent 搜索与 managed-owner 签名；本批不宣称完整原组件、完整 Projects、
+Windows 或 Mobile 可操作。没有新的浏览器截图，旧部署不能计作本批验收。
+
+### UI／Native 真实定向结果
+
+复用缓存镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+的 `kailo-inbox-forum-r5kqbx`，实读 2 CPU、4 GiB memory、memory+swap 总限额
+4 GiB（无额外 swap）、UID 1000、network none、只读根。Data 挂载
+`/candidate`、`/cache`、`/tmp`、`/.dart-tool`；显式 TMPDIR、Node compile cache、
+npm 与 PUB_CACHE，没有改 HOME、安装依赖、启动 builder 或 GTK 构建。
+预检仅该 SDK sleep，宿主 MemAvailable 约 36 GiB、memory PSI 0。
+
+私有输入复用 `reminder-consumers.RcN79Y`，新日志独立目录
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-other-assignment-ui.1jIU2C/`。
+旧 index／日志未改；合同仅投递后端 HEAD + 本批 schema 原生成完整 TS。
+正式 TS／Dart 保留历史暂存与未暂存，候选只有六 key／Dart 18 行原投影。
+
+- 首轮 `99725` exit 1：误指不存在的 profile Dialog／Input 路径，使导入与类型
+  失败、DOM 零用例；测试新增自引用 mock 推断缺返回类型。改为现存 composer
+  shared primitive 与显式返回类型，不改产品布局、超时或断言。sample 首次投递
+  路径写错，原错保留，纠正为实际 `contracts/samples/projects-publication.sample.json`。
+- `67093` exit 0：原 TS 5.9.3 共享源码／测试、Native、Web 类型均 0；
+  `vitest run test/project-inbox.test.tsx` 76/76；原 Native
+  `node --import ./test-loader.mjs --test src/features/platform/projectsTransport.test.mjs`
+  21/21；原 TS Projects publication 往返 1/1。React act 警告保留。
+- `3413` exit 0：补足双向 UNKNOWN／普通读者后，仅新增六个真实 DOM 消费者
+  6/6、原测试类型 0；包括中英文实际 picker、分页目录、分派／取消、丢 ACK 后
+  assignees 改变再重挂载、同 key 原 operation、普通读者无 picker／零目录查询。
+  原 `tools/gen-platform-i18n.py` 和 `--check` 均 0；私有 Dart 与生成逐字 cmp 0。
+- `10235` exit 1：私有只去掉 pending target 保留，两项 UNKNOWN DOM 断言失败；
+  同轮只移除 Native 作者／owner guard，真实合法 HUMAN 目标下普通成员
+  `assert.rejects` 失败。没有修改正式源、没有使用生产数据。
+- 两个私有生产文件 apply_patch 恢复后与正式 cmp 0；`83813` exit 0，仅对应
+  两个原 DOM 和一个 Native 拒绝消费者还原通过，不重复全部已过层。
+
+`positive.log`、`corrected.log`、`final.log`、`mutation.log`、`restored.log`
+保留实际首次失败和终态。文档／兼容检查日志留同 Data 目录，不以它代替未运行的
+真实 HTTP／Relay 副作用链；本批没有 full、部署或多 HUMAN 分派业务实拍。
+
+### Tasks 给其他 HUMAN 分派／取消：Core／Bridge 本批证据
+
+基准 `66afa4f8b26fa51076dbcd06ea9ea73aee3e9a28`，私有候选 10 路径 `+298/-23`，tree `e2da5aa5cd8278be4bddcf86c47c7d0da3c27cf9`；生产源码六路径与四侧原生成，公共历史生成脏改未纳入。patch SHA-256 `6cf2877a66ed9adcad2c0bb685288101045c704132110d0e97b77cfe2c61a01d`。未提交、未部署。
+
+1. 权威：`collab.projects` 为 S1、blockers 为空，关联 V-REQ-24／DD-39／DD-75。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/projects/ui/IssueAssigneesRow.tsx::IssueAssigneesRow`、`desktop/src/features/projects/issueAssignments.ts::writeProjectIssueAssignment`、`desktop/src/features/projects/projectIssues.mjs::assignmentStateForIssue`：issue 作者或仓库 owner 本人可分派他人，原 kind 1 + e/a/p/t；他人分派不带 prior，自身继续已有 self causal 操作。Relay 原 `collaboration/crates/buzz-relay/src/handlers/ingest.rs` kind 1 仍要求 MessagesWrite，不变成 ReposWrite，也不靠客户端按钮证明权限。本批仅 HUMAN；managed-Agent 代签未启用。
+2. 读写影响：原 typed `ProjectsPublishRequest` 新增 `ASSIGN_ISSUE`／`UNASSIGN_ISSUE`、单一 `assigneePubkey`，沿原 UI 一次选一个目标，`assigneeLabel` 仅显示文字。schema、原 sample、TS 显式往返映射及四生成同步。`collab-bridge::projects::assignment_tags` 从已验签 issue 和 repository 坐标校验可信 signer 是 issue 作者或 repo owner，拒绝普通成员、把本人冒作他人、other 携 prior 或 self 携 assigneePubkey。原 Core `publish_project` 的 Tasks scope 是 Community-global；`projects::resolve_human_assignee` 查询与原 `conversations::participants` 相同的 Tenant/HUMAN identity 来源，明确要求 ACTIVE principal/membership/human/binding，不捏造 Workspace 权限或新身份目录。
+3. 副作用：原 `web_transport::publish` fresh scope/key 回读后、签名和 DISPATCH 前核真实 HUMAN 目标；拒绝时没有新签名／Relay 发布。签名者仍由可信 actor 获取。原完整同作者历史保证时间单调，self 的完整 causal head 不变。UNKNOWN 原分支仍先返回原 Operation，不重新选 prior/time 或派发；ACCEPTED 仍比较原事件 author、body 与精确有序 e/a/p/t/prior。没有新 ledger、状态、角色、审批或 Workflow；未更改 Relay、生产数据库或运行服务。
+4. 异常与原消费者：Bridge 新用例真实签名了 issue-author 与不同 repo-owner 的原赋值／撤销事件，核 p 与 actor 不混用、单调时间、精确回读、错误 p／操作拒绝；普通成员、other=self、other prior、self 携 other 字段拒绝。原 `member_profile_requires_exact_active_member_identity` 隔离事务消费者补充并实际执行同 Tenant 正例、错 Tenant／key、Agent principal、DISABLED principal/HUMAN、撤销 membership/binding、无需 Workspace membership 的断言。后续经明确授权恢复原专属 PG，无新库或清理；下面逐项记录实际结果，不将该事务检查冒称真实 HTTP handler／Relay 端到端。
+
+原缓存执行：Rust `kailo-receiver-binding-check` 4 CPU／8 GiB、memory+swap 总限额等于内存，UID 1000／network none／只读根；轻 SDK `kailo-inbox-forum-r5kqbx` 2 CPU／4 GiB 同边界。输入、target、Cargo registry/git、Go／Dart 缓存与 tmp 全在 Data。原 `tools/container-safety.sh` preflight／实际限额回读，host available 约 37 GiB、memory PSI 0；保留 Cargo `-j16`，不 pull/load／构建新镜像／host 编译。首次私有 archive 误列不存在的 `client-kit/ts/platform/src/platform/i18n.ts` 退出 2，未进入生成；纠正为原实际入口 i18n.ts，不新增文件迁就工具。
+
+- 18701 exit 0：`npm_config_cache=/cache/npm npm_config_offline=true bash tools/gen.sh`，精确 HEAD + 本 schema/sample，四侧生成成功；`generation.log` SHA-256 `e5cb3d413e39697ba1e47ed7c27486aa907d9c64361fc27e5b1f85f1c6477b7c`。
+- 96037 exit 0：`cargo test --locked --offline -j16 -p collab-bridge --lib projects::tests -- --nocapture` 11/11；`-p platform-core --bin platform-core projects::tests` 8/8；`-p contracts --test roundtrip projects_publication` 1/1；`cargo clippy --locked --offline -j16 -p collab-bridge --lib -p platform-core --bin platform-core -- -D warnings` 0。`positive.log` SHA-256 `4b56d01547a290b9805077d0c2bdb92272c8516f5abdd7c9ecd19c1a779315be`。
+- 私有生产反证实际 exit 101：仅删除 `assignment_tags` 的 author/repository-owner guard，保留 self 拒绝；原 `other_human_assignment_requires_original_authority_and_exact_recipient` 的普通成员 `is_err()` 断言失败。`negative-owner.log` SHA-256 `dbb8a610de85dff573cb0377566ee17e049b763fd17a091d473b1a3d56ef60e3`。未改正式源。随后 apply_patch 原字节还原、与正式源 cmp 0。
+- 9249 还原 exit 0：Bridge 原 Projects 11/11 + 同窄 clippy 0；`restored.log` SHA-256 `6407d76deb1569dea63a4bb0b77fa9b3f21e166854569ddca0bed2550b211d16`。三处 Rust 原 `rustfmt --edition 2021 --config skip_children=true --check` 0。
+- 81346 exit 0：原 Go `go test ./internal/contracts -run '^TestProjectsPublicationRoundtrip$' -count=1 -v` 1/1；原 Dart `dart pub get --offline` 后 `dart test test/roundtrip_test.dart --name 'Projects publication preserves native metadata and exact head reference'` 1/1。Go env 为 GOCACHE=/cache/go-build、GOMODCACHE=/cache/go-mod、GOTMPDIR/TMPDIR=/tmp、GOPROXY=off、GOTOOLCHAIN=local；Dart PUB_CACHE=/cache/pub。`go-dart.log` SHA-256 `ba324010c25165caec3d985c3167a08ba0106b8d7b6df20e16124454ee34b0c7`。
+
+#### 原隔离 PG 消费者正反与还原
+
+先核 `kailo-installation-scope-pg-e4agxd` 原 ID `1ac30ea5e2af17fdbf0115d45965944ab1dc01e5613fd72436473372b24c39ee`、原 PG 镜像 `sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea`，2 CPU／1 GiB／无额外 swap、network none，唯一 Data bind 为 `codex-installation-runtime-rootcause-20261003.e4agxD/pgdata`。七个原关联 SDK 都 exited，未发现业务消费者；启动后 `pg_stat_activity` 无其他客户端。仅 `docker start` 原 PG；首次立即 `pg_isready` exit 2 尚未就绪保留 `pg-start.log`，没有重启，原日志最终 server ready 后 `pg_isready` 0。原 `project_issue_oj3nac` owner=postgres、117 条迁移全 success、Tenant/publish_attempt 均 0；没有执行迁移、清数据或 force 版本。
+
+只恢复原已存在 sleep SDK `kailo-receiver-observe-sdk-w4qug0`，同固定镜像、UID1000、4 CPU／8 GiB／无额外 swap、Data /workspace /cache /tmp，network 是该原 PG 的容器 namespace。不改它的旧源码；直接运行本批原 target 已编译 binary `/cache/rust-target/debug/deps/platform_core-ec466c37894ee700`，参数为 `web_transport::tests::member_profile_requires_exact_active_member_identity --exact --ignored --nocapture`；显式测试 DSN 指向上述专属数据库，无生产凭据。首轮实际 exit 0、1/1，`pg-positive.log` SHA-256 `dd81aad5fe95d122ddd3be6c1b60a907784bf8038de54de0db31dfb884feeff2`。
+
+32809 反证：只在原私有 `projects::resolve_human_assignee` SQL 去掉 Tenant 等值 fence（保留参数类型与其他 guard），原 Core `--bin platform-core --no-run` 增量编译后执行同一数据库消费者，真实 exit 101，错 Tenant 分支 `unwrap_err()` 得到 `Ok(())`。`pg-negative-tenant.log` SHA-256 `923378abf8430682c5ee43895173628d3bab3537336eb9f2e59c4d0389fe70ad`。生产字节 apply_patch 还原并 cmp 0 后，95275 同路径实际 exit 0，日志 `pg-restored.log` SHA-256 `bd10382d4bd97915710e85da8b079d3347e1a436cd3744a5c021f346e7065d1a`。
+
+末版在原事务夹具内另明确核 AGENT principal／DISABLED principal／DISABLED HUMAN 均拒绝（非只写 SQL 条件），23628 同 binary 入口实际 exit 0、1/1；日志 `pg-final.log` SHA-256 `59c960a33b14a18fc59b8ccab47374ea0ab165e9af0806c96794a0f17182e90d`。测试正常 rollback，末尾实际读回 `tenant|0`、`publish_attempt|0`，未留下业务对象。末版原 rustfmt --check 与同窄 clippy 78306 exit 0，`final-clippy.log` SHA-256 `7abb74afeb60ffe8592bc4f390be5a4d8b20c0752c35fc01361cbac7063cf760`。原 DB 与 SDK 保持运行，未停止其他项目。
+
+目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-other-assignment.6k2ZK6/` 内保留所有日志、`candidate.index`、`source.patch`、`paths.txt`。私有 diff --check 0；公共三项 staged 没有写入，本基底摘要 `93fa733a04c994683cac61f3a1139aa8535b9dda2b600f08febbcc694ca6f04a`。TS 原往返由 UI 席 67093 1/1 exit 0，合批历史契约兼容及 docs 由同席沿原入口另记实际终态。未 full、未部署，真实多 HUMAN UI→BFF→Relay 操作及 UNKNOWN 故障端到端尚未验收。

@@ -17,6 +17,30 @@ use serde_json::{json, Value};
 
 pub(crate) const PUBLISH_ACTION: &str = "projects.publish";
 
+/// Same existing HUMAN identity directory consumed by conversations::participants.
+/// Tasks are Community-global: repository metadata never invents a Workspace
+/// membership requirement. The recipient is not a signing authority.
+pub(crate) async fn resolve_human_assignee<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    tenant: uuid::Uuid,
+    pubkey: &str,
+) -> Result<(), Response> {
+    let valid: bool = sqlx::query_scalar(
+        "select exists(select 1 from identity.buzz_identity_binding b
+         join identity.principal p on p.id=b.principal_id and p.tenant_id=b.tenant_id
+           and p.kind='HUMAN' and p.status='ACTIVE'
+         join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=p.tenant_id
+           and tm.state='ACTIVE'
+         join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+         where b.tenant_id=$1 and b.pubkey=$2 and b.kind='HUMAN' and b.state='ACTIVE')",
+    ).bind(tenant).bind(pubkey).fetch_one(executor).await
+        .map_err(crate::service_api::unavailable)?;
+    if !valid {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    Ok(())
+}
+
 // Native ReposWrite for announcements and MessagesWrite for issues are
 // enforced by the same Relay ingest as CLIENT publications. Tenant discovery
 // is only this BFF entrance; a repository reference grants no Git/tool access.

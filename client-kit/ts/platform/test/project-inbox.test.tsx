@@ -11,7 +11,7 @@ import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click,type} from "./render";
 import {publishProjectIssue,publishProjectIssueComment,publishProjectPullRequestComment,buildProjectCommentTags} from "../src/react/projects/issueMutations";
-import {buildProjectIssueSelfAssignment,publishProjectIssueSelfAssignment} from "../src/react/projects/issueAssignments";
+import {buildProjectIssueAssignment,publishProjectIssueAssignment} from "../src/react/projects/issueAssignments";
 import {ProjectIssueDetail} from "../src/react/projects/ProjectIssueDetail";
 import {buildGitIssueTags} from "../src/react/projects/projectIssues.mjs";
 import {BffError,TransportError} from "../src/transport";
@@ -153,15 +153,120 @@ describe("original Inbox project read closure",()=>{
     if(item.type!=="issue")throw new Error("Issue fixture missing");
     return {...f,item};
   }
-  async function assignmentView(f:Awaited<ReturnType<typeof commentFixture>>,locale:"en"|"zh-CN"="en"){
+  async function assignmentView(f:Awaited<ReturnType<typeof commentFixture>>,locale:"en"|"zh-CN"="en",client=createBffClient({send:vi.fn()})){
     const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
       renderComposer:props=><button disabled={props.disabled} data-testid="actual-task-composer">Composer</button>,renderContent:content=><p>{content}</p>};
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-    return render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+    return render(<PlatformProvider client={client} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
       <ProjectIssueDetail issue={f.item.issue} publication={{host:f.host,projectId:f.item.project.id,repository:f.item.repository}}
         profiles={{[viewer]:{displayName:"Original Human",avatarUrl:null,nip05Handle:null,ownerPubkey:null}}}/>
     </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
   }
+  async function otherAssignmentFixture(){
+    const f=fixture();f.issue.pubkey=viewer;
+    const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const item=snapshot.items.find(item=>item.type==="issue")!;
+    if(item.type!=="issue")throw new Error("Expected task");
+    const client=createBffClient({send:vi.fn()});
+    const people=vi.spyOn(client,"conversationParticipants").mockImplementation(async cursor=>cursor?{
+      items:[{principalId:"other-human",displayName:"Second Human",pubkeys:[author]}],maxParticipants:50,
+    }:{items:[{principalId:"viewer",displayName:"Original Human",pubkeys:[viewer]}],maxParticipants:50,nextCursor:"next"});
+    return {...f,item,client,people};
+  }
+  it.each(["en","zh-CN"] as const)("original HUMAN picker searches the actual directory, assigns and removes another person (%s)",async locale=>{
+    const f=await otherAssignmentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"assigned");
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,observe,observation):Promise<{eventId:string}>=>{
+      expect(observe).toBe(false);expect(localStorage.length).toBe(1);
+      const assigning=publish.mock.calls.length===1;
+      expect(request).toEqual({operation:assigning?"ASSIGN_ISSUE":"UNASSIGN_ISSUE",targetEventId:f.issue.id,assigneePubkey:author,assigneeLabel:assigning?"Second Human":expect.any(String)});
+      const template=buildProjectIssueAssignment(assigning?"assign":"unassign",f.issue.id,repository,author,request.assigneeLabel!);
+      const created={...event(assigning?"c":"d",1,template.tags,template.content,50+publish.mock.calls.length),pubkey:viewer};
+      observation?.onPrepared(created.id);f.rows.push(created);return {eventId:created.id};
+    });f.host.publish=publish;
+    const ui=await assignmentView(f,locale,f.client);
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-issue-assign"]')!);
+    await vi.waitFor(()=>expect(document.querySelector(`[data-testid="project-assignee-result-${author}"]`)).not.toBeNull());
+    expect(document.querySelector('[role="dialog"]')?.className).toContain("max-w-md gap-0 overflow-hidden p-0");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(locale==="en"?"Assign task":"分配任务");
+    await type(document.querySelector<HTMLInputElement>('[data-testid="project-assignee-search"]')!,"Second");
+    await click(document.querySelector<HTMLElement>(`[data-testid="project-assignee-result-${author}"]`)!);
+    await vi.waitFor(()=>expect(document.querySelector('[role="dialog"]')).toBeNull());
+    await vi.waitFor(()=>expect(ui.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).not.toBeNull());
+    expect(f.people.mock.calls.some(([cursor])=>cursor==="next")).toBe(true);expect(success).toHaveBeenCalledOnce();
+    await click(ui.querySelector<HTMLElement>(`[data-testid="project-issue-unassign-${author}"]`)!);
+    await vi.waitFor(()=>expect(ui.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).toBeNull());
+    expect(publish).toHaveBeenCalledTimes(2);expect(localStorage.length).toBe(0);expect(success).toHaveBeenCalledTimes(2);
+  });
+  it("restores the exact other-HUMAN UNKNOWN action after changed assignees and remount without dispatching its opposite",async()=>{
+    const f=await otherAssignmentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"assigned");
+    vi.spyOn(toast,"message").mockImplementation(()=>"unknown");
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      const template=buildProjectIssueAssignment("assign",f.issue.id,repository,author,request.assigneeLabel!);
+      observation?.onPrepared("c".repeat(64));f.rows.push({...event("c",1,template.tags,template.content,50),pubkey:viewer});
+      throw new TransportError("lost ACK");
+    });f.host.publish=publish;
+    const ui=await assignmentView(f,"en",f.client);
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-issue-assign"]')!);
+    await vi.waitFor(()=>expect(document.querySelector(`[data-testid="project-assignee-result-${author}"]`)).not.toBeNull());
+    await click(document.querySelector<HTMLElement>(`[data-testid="project-assignee-result-${author}"]`)!);
+    await vi.waitFor(()=>expect(document.querySelector<HTMLButtonElement>(`[data-testid="project-assignee-result-${author}"]`)?.disabled).toBe(false));
+    // Close original portal before mounting the refreshed actual detail.
+    await act(async()=>document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
+    const fresh=(await loadProjectWorkItems(f.host,new AbortController().signal)).items.find(item=>item.type==="issue")!;
+    if(fresh.type!=="issue")throw new Error("Expected task");expect(fresh.issue.assignees).toContain(author);
+    const restarted=await assignmentView({...f,item:fresh},"en",f.client);
+    expect(restarted.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).toBeNull();
+    expect(restarted.querySelector<HTMLButtonElement>('[data-testid="project-issue-self-assign"]')?.disabled).toBe(true);
+    publish.mockResolvedValue({eventId:"c".repeat(64)});
+    await click(restarted.querySelector<HTMLElement>('[data-testid="project-issue-assign"]')!);
+    await vi.waitFor(()=>expect(document.querySelector(`[data-testid="project-assignee-result-${author}"]`)).not.toBeNull());
+    await click(document.querySelector<HTMLElement>(`[data-testid="project-assignee-result-${author}"]`)!);
+    await vi.waitFor(()=>expect(restarted.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).not.toBeNull());
+    expect(publish.mock.calls[1]?.[0]).toEqual(publish.mock.calls[0]?.[0]);expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);
+    expect(publish.mock.calls[1]?.[2]).toBe(true);expect(localStorage.length).toBe(0);expect(success).toHaveBeenCalledOnce();
+  });
+  it("refuses other-person assignment for a non-owner, a removed HUMAN and a revoked directory before publication",async()=>{
+    const f=await otherAssignmentFixture();f.host.publish=vi.fn();
+    const send=()=>publishProjectIssueAssignment(f.host,f.item.project.id,f.item.repository,f.item.issue,viewer,"assign","Second Human",new AbortController().signal,vi.fn(),author,f.client);
+    f.issue.pubkey="f".repeat(64);await expect(send()).rejects.toThrow();expect(f.host.publish).not.toHaveBeenCalled();f.issue.pubkey=viewer;
+    f.people.mockResolvedValue({items:[],maxParticipants:50});await expect(send()).rejects.toThrow();expect(f.host.publish).not.toHaveBeenCalled();
+    f.people.mockRejectedValue(new BffError(403,"revoked",{class:ErrorClass.Denied}));await expect(send()).rejects.toThrow();expect(f.host.publish).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0);
+  });
+  it("keeps the other-HUMAN unassign avatar after a lost response removed it from the fresh task",async()=>{
+    const f=await otherAssignmentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"unassigned");
+    vi.spyOn(toast,"message").mockImplementation(()=>"unknown");
+    const assigned=buildProjectIssueAssignment("assign",f.issue.id,repository,author,"Second Human");
+    f.rows.push({...event("c",1,assigned.tags,assigned.content,50),pubkey:viewer});
+    const current=(await loadProjectWorkItems(f.host,new AbortController().signal)).items.find(item=>item.type==="issue")!;
+    if(current.type!=="issue")throw new Error("Expected task");
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      const template=buildProjectIssueAssignment("unassign",f.issue.id,repository,author,request.assigneeLabel!);
+      observation?.onPrepared("d".repeat(64));f.rows.push({...event("d",1,template.tags,template.content,51),pubkey:viewer});
+      throw new TransportError("lost ACK");
+    });f.host.publish=publish;
+    const ui=await assignmentView({...f,item:current},"en",f.client);
+    await vi.waitFor(()=>expect(ui.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).not.toBeNull());
+    await click(ui.querySelector<HTMLElement>(`[data-testid="project-issue-unassign-${author}"]`)!);
+    await vi.waitFor(()=>expect(ui.querySelector<HTMLButtonElement>(`[data-testid="project-issue-unassign-${author}"]`)?.disabled).toBe(false));
+    const fresh=(await loadProjectWorkItems(f.host,new AbortController().signal)).items.find(item=>item.type==="issue")!;
+    if(fresh.type!=="issue")throw new Error("Expected task");expect(fresh.issue.assignees).not.toContain(author);
+    const restarted=await assignmentView({...f,item:fresh},"en",f.client);
+    await vi.waitFor(()=>expect(restarted.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).not.toBeNull());
+    expect(restarted.querySelector<HTMLButtonElement>('[data-testid="project-issue-assign"]')?.disabled).toBe(true);
+    publish.mockResolvedValue({eventId:"d".repeat(64)});
+    await click(restarted.querySelector<HTMLElement>(`[data-testid="project-issue-unassign-${author}"]`)!);
+    await vi.waitFor(()=>expect(restarted.querySelector(`[data-testid="project-issue-unassign-${author}"]`)).toBeNull());
+    expect(publish.mock.calls[1]?.[0]).toEqual(publish.mock.calls[0]?.[0]);expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);
+    expect(publish.mock.calls[1]?.[2]).toBe(true);expect(success).toHaveBeenCalledOnce();expect(localStorage.length).toBe(0);
+  });
+  it("shows no other-person picker to an ordinary reader and does not query the directory",async()=>{
+    const f=await commentFixture();f.host.publish=vi.fn();
+    const client=createBffClient({send:vi.fn()});const people=vi.spyOn(client,"conversationParticipants");
+    const ui=await assignmentView(f,"en",client);
+    expect(ui.querySelector('[data-testid="project-issue-assign"]')).toBeNull();
+    expect(ui.querySelector('[data-testid="project-issue-self-assign"]')).not.toBeNull();expect(people).not.toHaveBeenCalled();
+  });
   it.each(["en","zh-CN"] as const)("original task self-assignment click publishes, fresh reads the avatar and unassigns with the causal head (%s)",async locale=>{
     const f=await commentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"assigned");
     const completed=vi.fn();f.host.completePublication=completed;
@@ -171,7 +276,7 @@ describe("original Inbox project read closure",()=>{
       expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Complete task body");
       expect(request).toEqual({operation:publish.mock.calls.length===1?"SELF_ASSIGN_ISSUE":"SELF_UNASSIGN_ISSUE",targetEventId:f.issue.id,assigneeLabel:"Original Human",
         ...(publish.mock.calls.length===1?{}:{priorEventId:"c".repeat(64)})});
-      const template=buildProjectIssueSelfAssignment(request.operation==="SELF_ASSIGN_ISSUE"?"assign":"unassign",f.issue.id,repository,viewer,request.assigneeLabel!,request.priorEventId);
+      const template=buildProjectIssueAssignment(request.operation==="SELF_ASSIGN_ISSUE"?"assign":"unassign",f.issue.id,repository,viewer,request.assigneeLabel!,request.priorEventId);
       const created={...event(publish.mock.calls.length===1?"c":"d",1,template.tags,template.content,50+publish.mock.calls.length),pubkey:viewer};
       observation?.onPrepared(created.id);f.rows.push(created);
       return new Promise(resolve=>{finish=resolve;});
@@ -195,7 +300,7 @@ describe("original Inbox project read closure",()=>{
   it("keeps self-assignment UNKNOWN through detail remount and observes the original key without false success",async()=>{
     const f=await commentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"assigned");
     vi.spyOn(toast,"message").mockImplementation(()=>"unknown");
-    const template=buildProjectIssueSelfAssignment("assign",f.issue.id,repository,viewer,"Original Human");
+    const template=buildProjectIssueAssignment("assign",f.issue.id,repository,viewer,"Original Human");
     const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(_request,_key,_observe,observation)=>{
       observation?.onPrepared("c".repeat(64));throw new TransportError("lost ACK");
     });f.host.publish=publish;
@@ -226,11 +331,11 @@ describe("original Inbox project read closure",()=>{
   it("keeps the original unassign control after a lost response and a fresh snapshot already removed the self avatar",async()=>{
     const f=await commentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"unassigned");
     vi.spyOn(toast,"message").mockImplementation(()=>"unknown");
-    const assignment=buildProjectIssueSelfAssignment("assign",f.issue.id,repository,viewer,"Original Human");
+    const assignment=buildProjectIssueAssignment("assign",f.issue.id,repository,viewer,"Original Human");
     f.rows.push({...event("c",1,assignment.tags,assignment.content,50),pubkey:viewer});
     const current=(await loadProjectWorkItems(f.host,new AbortController().signal)).items.find(item=>item.type==="issue")!;
     if(current.type!=="issue")throw new Error("Expected task");
-    const removal=buildProjectIssueSelfAssignment("unassign",f.issue.id,repository,viewer,"Original Human","c".repeat(64));
+    const removal=buildProjectIssueAssignment("unassign",f.issue.id,repository,viewer,"Original Human","c".repeat(64));
     const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(_request,_key,_observe,observation)=>{
       observation?.onPrepared("d".repeat(64));f.rows.push({...event("d",1,removal.tags,removal.content,51),pubkey:viewer});throw new TransportError("lost ACK");
     });f.host.publish=publish;
@@ -251,18 +356,18 @@ describe("original Inbox project read closure",()=>{
   it("self-assignment rejects corrupt storage, changed recovery intent and unproved accepted readback",async()=>{
     const f=await commentFixture();const unavailable=vi.fn();
     const slot=JSON.stringify(["project-issue-self-assignment",f.host.scopeKey,f.item.project.id,repository,f.issue.id]);
-    const send=(operation:"assign"|"unassign"="assign",signal=new AbortController().signal)=>publishProjectIssueSelfAssignment(f.host,f.item.project.id,f.item.repository,f.item.issue,viewer,operation,"Human",signal,unavailable);
+    const send=(operation:"assign"|"unassign"="assign",signal=new AbortController().signal)=>publishProjectIssueAssignment(f.host,f.item.project.id,f.item.repository,f.item.issue,viewer,operation,"Human",signal,unavailable);
     f.host.publish=vi.fn();localStorage.setItem(slot,"broken");await expect(send()).rejects.toBeInstanceOf(TransportError);expect(f.host.publish).not.toHaveBeenCalled();
     localStorage.clear();f.host.publish=vi.fn(async()=>({eventId:"c".repeat(64)}));
     await expect(send()).rejects.toBeInstanceOf(TransportError);expect(localStorage.length).toBe(1);
     await expect(send("unassign")).rejects.toBeInstanceOf(TransportError);expect(f.host.publish).toHaveBeenCalledOnce();
-    const wrong=buildProjectIssueSelfAssignment("unassign",f.issue.id,repository,viewer,"Human");
+    const wrong=buildProjectIssueAssignment("unassign",f.issue.id,repository,viewer,"Human");
     f.rows.push({...event("c",1,wrong.tags,wrong.content,50),pubkey:viewer});
     await expect(send()).rejects.toBeInstanceOf(TransportError);expect(f.host.publish).toHaveBeenCalledOnce();expect(localStorage.length).toBe(1);
   });
   it("does not publish across identity loss and preserves accepted assignment for later observation after cancellation",async()=>{
     const f=await commentFixture();const unavailable=vi.fn();
-    const controller=new AbortController();const send=()=>publishProjectIssueSelfAssignment(f.host,f.item.project.id,f.item.repository,f.item.issue,viewer,"assign","Human",controller.signal,unavailable);
+    const controller=new AbortController();const send=()=>publishProjectIssueAssignment(f.host,f.item.project.id,f.item.repository,f.item.issue,viewer,"assign","Human",controller.signal,unavailable);
     const query=f.query.getMockImplementation()!;
     f.query.mockImplementation(async request=>({...await query(request),pubkey:author}));f.host.publish=vi.fn();
     await expect(send()).rejects.toThrow();expect(f.host.publish).not.toHaveBeenCalled();expect(unavailable).toHaveBeenCalledOnce();

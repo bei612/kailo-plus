@@ -1,4 +1,6 @@
 [
+  {"operation":"ASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"同事 🪴","assigneePubkey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+  {"operation":"UNASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"同事 🪴","assigneePubkey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
   {"operation":"SELF_ASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"自己 🪴"},
   {"operation":"SELF_UNASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"自己 🪴","priorEventId":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
   {"operation":"DELETE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},

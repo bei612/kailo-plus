@@ -23,8 +23,18 @@ pub fn is_self_assignment(request: &ProjectsPublishRequest) -> bool {
     })
 }
 
-/// Fixed issueAssignments.ts uses a display label only; the p tag is always
-/// derived from the authenticated signing key, never from client input.
+pub fn is_other_assignment(request: &ProjectsPublishRequest) -> bool {
+    serde_json::to_value(&request.operation)
+        .is_ok_and(|value| matches!(value.as_str(), Some("ASSIGN_ISSUE" | "UNASSIGN_ISSUE")))
+}
+
+pub fn is_assignment(request: &ProjectsPublishRequest) -> bool {
+    is_self_assignment(request) || is_other_assignment(request)
+}
+
+/// Fixed issueAssignments.ts uses a display label only. Self p tags come from
+/// the authenticated signer; other p tags identify the admitted HUMAN recipient,
+/// never a client-selected signing identity.
 pub fn assignment_content(request: &ProjectsPublishRequest) -> Result<String, OperatorError> {
     publication_kind(request)?;
     let label = request.assignee_label.as_deref().unwrap_or_default().trim();
@@ -33,8 +43,10 @@ pub fn assignment_content(request: &ProjectsPublishRequest) -> Result<String, Op
         .and_then(|v| v.as_str().map(str::to_owned))
         .as_deref()
     {
-        Some("SELF_ASSIGN_ISSUE") => Ok(format!("Assigned this task to {label}")),
-        Some("SELF_UNASSIGN_ISSUE") => Ok(format!("Unassigned {label} from this task")),
+        Some("SELF_ASSIGN_ISSUE" | "ASSIGN_ISSUE") => Ok(format!("Assigned this task to {label}")),
+        Some("SELF_UNASSIGN_ISSUE" | "UNASSIGN_ISSUE") => {
+            Ok(format!("Unassigned {label} from this task"))
+        }
         _ => Err(invalid("not a self assignment")),
     }
 }
@@ -51,9 +63,30 @@ fn assignment_tags(
         return Err(invalid("assignment issue mismatch"));
     }
     let repository = comment_repository(issue)?;
+    let assignee = if is_other_assignment(request) {
+        let recipient = request
+            .assignee_pubkey
+            .as_deref()
+            .ok_or_else(|| invalid("assignee missing"))?;
+        // Original authoritative operations are signed by the issue author or
+        // repository owner themselves. No client-provided signing identity.
+        if recipient == owner
+            || (owner != issue.pubkey.to_hex() && Some(owner) != repository.split(':').nth(1))
+        {
+            return Err(invalid(
+                "other assignment requires original author or repository owner",
+            ));
+        }
+        recipient
+    } else {
+        owner
+    };
     let operation =
         serde_json::to_value(&request.operation).map_err(|_| invalid("invalid assignment"))?;
-    let label = if operation.as_str() == Some("SELF_ASSIGN_ISSUE") {
+    let label = if matches!(
+        operation.as_str(),
+        Some("SELF_ASSIGN_ISSUE" | "ASSIGN_ISSUE")
+    ) {
         "assignment"
     } else {
         "unassignment"
@@ -61,7 +94,7 @@ fn assignment_tags(
     let mut tags = vec![
         vec!["e".into(), issue.id.to_hex(), String::new(), "root".into()],
         vec!["a".into(), repository.into()],
-        vec!["p".into(), owner.into()],
+        vec!["p".into(), assignee.into()],
         vec!["t".into(), label.into()],
     ];
     if let Some(prior) = &request.prior_event_id {
@@ -191,10 +224,13 @@ pub fn project_dtag(name: &str) -> String {
 pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
     let operation = serde_json::to_value(&request.operation)
         .map_err(|_| invalid("invalid project operation"))?;
-    if !is_self_assignment(request)
+    if !is_assignment(request)
         && (request.assignee_label.is_some() || request.prior_event_id.is_some())
     {
         return Err(invalid("assignment fields on another project operation"));
+    }
+    if !is_other_assignment(request) && request.assignee_pubkey.is_some() {
+        return Err(invalid("other assignee on another project operation"));
     }
     if operation.as_str() != Some("CREATE_ISSUE")
         && (request.title.is_some() || request.category.is_some())
@@ -210,8 +246,16 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
         return Err(invalid("issue fields on another project operation"));
     }
     match operation.as_str() {
-        Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE") => {
+        Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE" | "ASSIGN_ISSUE" | "UNASSIGN_ISSUE") => {
             let label = request.assignee_label.as_deref().unwrap_or_default().trim();
+            if is_other_assignment(request)
+                && (request.prior_event_id.is_some()
+                    || !request.assignee_pubkey.as_deref().is_some_and(|key| {
+                        nostr::PublicKey::from_hex(key).is_ok_and(|parsed| parsed.to_hex() == key)
+                    }))
+            {
+                return Err(invalid("invalid other HUMAN assignment"));
+            }
             if label.is_empty()
                 || label.chars().count() > 128
                 || !request
@@ -494,7 +538,13 @@ pub fn comment_target_kind(request: &ProjectsPublishRequest) -> Result<u16, Oper
         .and_then(|value| value.as_str().map(str::to_owned))
         .as_deref()
     {
-        Some("CREATE_ISSUE_COMMENT" | "SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE") => Ok(1621),
+        Some(
+            "CREATE_ISSUE_COMMENT"
+            | "SELF_ASSIGN_ISSUE"
+            | "SELF_UNASSIGN_ISSUE"
+            | "ASSIGN_ISSUE"
+            | "UNASSIGN_ISSUE",
+        ) => Ok(1621),
         Some("CREATE_PULL_REQUEST_COMMENT") => Ok(1618),
         _ => Err(invalid("invalid comment operation")),
     }
@@ -611,7 +661,7 @@ pub fn comment_publication_builder(
     if nostr::PublicKey::from_hex(owner).map_or(true, |key| key.to_hex() != owner) {
         return Err(invalid("invalid comment author"));
     }
-    let assignment = is_self_assignment(request);
+    let assignment = is_assignment(request);
     let tags = if assignment {
         if !media_tags.is_empty() {
             return Err(invalid("assignment media is not supported"));
@@ -666,7 +716,7 @@ pub fn comment_publication_matches(
     if event.kind.as_u16() != 1 || event.verify().is_err() {
         return Err(invalid("invalid retained comment"));
     }
-    let assignment = is_self_assignment(request);
+    let assignment = is_assignment(request);
     if assignment && !media_tags.is_empty() {
         return Err(invalid("assignment media is not supported"));
     }
@@ -745,6 +795,101 @@ pub fn issue_publication_matches(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn other_human_assignment_requires_original_authority_and_exact_recipient() {
+        use super::*;
+        let author = nostr::Keys::generate();
+        let repo_owner = nostr::Keys::generate();
+        let member = nostr::Keys::generate();
+        let assignee = nostr::Keys::generate().public_key().to_hex();
+        let issue = EventBuilder::new(nostr::Kind::from(1621), "task")
+            .tags([Tag::parse(["a", &format!("30617:{}:repo", repo_owner.public_key())]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        let mut request: ProjectsPublishRequest = serde_json::from_value(serde_json::json!({
+            "operation":"ASSIGN_ISSUE", "targetEventId":issue.id.to_hex(),
+            "assigneePubkey":assignee, "assigneeLabel":" Colleague 🪴 "
+        }))
+        .unwrap();
+        for signer in [&author, &repo_owner] {
+            let event = comment_publication_builder(
+                &request,
+                &issue,
+                None,
+                &signer.public_key().to_hex(),
+                &[],
+            )
+            .unwrap()
+            .sign_with_keys(signer)
+            .unwrap();
+            assert_eq!(event.content, "Assigned this task to Colleague 🪴");
+            assert_eq!(event.pubkey, signer.public_key());
+            assert_eq!(
+                event
+                    .tags
+                    .iter()
+                    .map(|tag| tag.as_slice().to_vec())
+                    .collect::<Vec<_>>(),
+                vec![
+                    vec![
+                        "e".to_owned(),
+                        issue.id.to_hex(),
+                        String::new(),
+                        "root".into()
+                    ],
+                    vec![
+                        "a".into(),
+                        format!("30617:{}:repo", repo_owner.public_key())
+                    ],
+                    vec!["p".into(), assignee.clone()],
+                    vec!["t".into(), "assignment".into()],
+                ]
+            );
+            assert!(comment_publication_matches(&request, &issue, &event, &[]).unwrap());
+            let mut changed = request.clone();
+            changed.assignee_pubkey = Some(member.public_key().to_hex());
+            assert!(!comment_publication_matches(&changed, &issue, &event, &[]).unwrap());
+            changed = request.clone();
+            changed.operation =
+                serde_json::from_value(serde_json::json!("UNASSIGN_ISSUE")).unwrap();
+            assert!(!comment_publication_matches(&changed, &issue, &event, &[]).unwrap());
+            let unassign = comment_publication_builder(
+                &changed,
+                &issue,
+                Some(&event),
+                &signer.public_key().to_hex(),
+                &[],
+            )
+            .unwrap()
+            .sign_with_keys(signer)
+            .unwrap();
+            assert!(unassign.created_at > event.created_at);
+            assert!(comment_publication_matches(&changed, &issue, &unassign, &[]).unwrap());
+        }
+        assert!(comment_publication_builder(
+            &request,
+            &issue,
+            None,
+            &member.public_key().to_hex(),
+            &[]
+        )
+        .is_err());
+        request.assignee_pubkey = Some(author.public_key().to_hex());
+        assert!(comment_publication_builder(
+            &request,
+            &issue,
+            None,
+            &author.public_key().to_hex(),
+            &[]
+        )
+        .is_err());
+        request.assignee_pubkey = Some(assignee);
+        request.prior_event_id = Some(issue.id.to_hex());
+        assert!(publication_kind(&request).is_err());
+        request.prior_event_id = None;
+        request.operation = serde_json::from_value(serde_json::json!("SELF_ASSIGN_ISSUE")).unwrap();
+        assert!(publication_kind(&request).is_err());
+    }
     use super::*;
     use nostr::{Keys, Tag};
     use serde_json::json;

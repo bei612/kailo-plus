@@ -2028,7 +2028,7 @@ async fn publish(
     if let Publication::Project(request) = &publication {
         // Issue content is transient input to the original signed Relay event.
         // Include it in the existing byte-limit check, never in audit/storage.
-        if collab_bridge::projects::is_self_assignment(request) {
+        if collab_bridge::projects::is_assignment(request) {
             match collab_bridge::projects::assignment_content(request) {
                 Ok(value) => content.push_str(&value),
                 Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -2209,6 +2209,15 @@ async fn publish(
     }
 
     // 预算在落 DISPATCH 之前取：取不到就既不落账也不发送，请求不打到 Relay
+    if let Publication::Project(request) = &publication {
+        if let Some(assignee) = &request.assignee_pubkey {
+            if let Err(response) =
+                crate::projects::resolve_human_assignee(&state.pool, ctx.tenant_id, assignee).await
+            {
+                return response;
+            }
+        }
+    }
     if let Err(response) =
         resolve_human_mentions(&state.pool, ctx.tenant_id, target, &human_mentions).await
     {
@@ -3927,6 +3936,54 @@ mod tests {
         let before = member_profile_identity(&mut *tx, workspace, principal, &pubkey)
             .await
             .unwrap();
+        crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
+            .await
+            .unwrap();
+        for (requested_tenant, requested_key) in [
+            (Uuid::new_v4(), pubkey.clone()),
+            (tenant, nostr::Keys::generate().public_key().to_hex()),
+        ] {
+            assert_eq!(
+                crate::projects::resolve_human_assignee(&mut *tx, requested_tenant, &requested_key)
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        // Community-global assignments do not require a made-up Workspace grant.
+        sqlx::query(
+            "update identity.workspace_membership set state='REVOKED' where tenant_principal_id=$1",
+        )
+        .bind(principal)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
+            .await
+            .unwrap();
+        sqlx::query(
+            "update identity.workspace_membership set state='ACTIVE' where tenant_principal_id=$1",
+        )
+        .bind(principal)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        for (revoke, restore) in [
+            ("update identity.buzz_identity_binding set state='REVOKED' where principal_id=$1",
+             "update identity.buzz_identity_binding set state='ACTIVE' where principal_id=$1"),
+            ("update identity.tenant_membership set state='REVOKED' where tenant_principal_id=$1",
+             "update identity.tenant_membership set state='ACTIVE' where tenant_principal_id=$1"),
+            ("update identity.principal set kind='AGENT' where id=$1",
+             "update identity.principal set kind='HUMAN' where id=$1"),
+            ("update identity.principal set status='DISABLED' where id=$1",
+             "update identity.principal set status='ACTIVE' where id=$1"),
+        ] {
+            sqlx::query(revoke).bind(principal).execute(&mut *tx).await.unwrap();
+            assert_eq!(crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
+                .await.unwrap_err().status(), StatusCode::FORBIDDEN);
+            sqlx::query(restore).bind(principal).execute(&mut *tx).await.unwrap();
+        }
         resolve_human_mentions(
             &mut *tx,
             tenant,
@@ -4067,6 +4124,13 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
+        assert_eq!(
+            crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
         assert_eq!(
             member_profile_identity(&mut *tx, workspace, principal, &pubkey)
                 .await

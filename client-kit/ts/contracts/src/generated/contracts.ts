@@ -4218,10 +4218,16 @@ export interface ProjectPreferenceRequest {
 export interface ProjectsPublishRequest {
     /**
      * Original transient display label, trimmed and limited to 128 Unicode characters by the
-     * consumer. Assignee is always the authenticated signer, never this label.
+     * consumer. Never an identity or authorization claim.
      */
     assigneeLabel?: string;
-    attachments?:   AttachmentElement[];
+    /**
+     * Other HUMAN recipient of an original issue-author/repository-owner assignment. Resolved
+     * against the admitted Tenant's existing HUMAN identity directory; never a signing
+     * identity. Self operations do not accept this field.
+     */
+    assigneePubkey?: string;
+    attachments?:    AttachmentElement[];
     /**
      * Original complete markdown including attachment markdown. Issues may be empty; comments
      * must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
@@ -4294,6 +4300,7 @@ export enum ProjectIssueCategory {
 }
 
 export enum ProjectPublicationOperation {
+    AssignIssue = "ASSIGN_ISSUE",
     CreateIssue = "CREATE_ISSUE",
     CreateIssueComment = "CREATE_ISSUE_COMMENT",
     CreateProject = "CREATE_PROJECT",
@@ -4302,6 +4309,7 @@ export enum ProjectPublicationOperation {
     Delete = "DELETE",
     SelfAssignIssue = "SELF_ASSIGN_ISSUE",
     SelfUnassignIssue = "SELF_UNASSIGN_ISSUE",
+    UnassignIssue = "UNASSIGN_ISSUE",
 }
 
 export enum ProjectListingVisibility {

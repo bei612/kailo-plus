@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueSelfAssignment,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -42,16 +42,20 @@ export function createProjectsQuery(viewer:string,active:()=>boolean,limit:numbe
 }
 
 // Original projectCreation/projectDeletion; CLIENT signs and Relay decides ownership.
-export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:string,active:()=>boolean,client:Pick<BffClient,"workspaces">,relayQueryLimit:number){
+export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:string,active:()=>boolean,client:Pick<BffClient,"workspaces"|"conversationParticipants">,relayQueryLimit:number){
   const check=()=>{if(!active())throw new TransportError("Project identity changed");};
   return async(request:ProjectsPublishRequest,key:string,observeOnly=false,observation?:{eventId?:string;onPrepared:(eventId:string)=>void})=>{
     let enteredPublication=false;
     try {
       check();
-      if(request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE"){
+      if(request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE"||request.operation==="ASSIGN_ISSUE"||request.operation==="UNASSIGN_ISSUE"){
+        const self=request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE";
+        const assignee=self?viewer:request.assigneePubkey;
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
           ||request.visibility!==undefined||request.title!==undefined||request.body!==undefined||request.category!==undefined
           ||request.mentions!==undefined||request.attachments!==undefined||typeof request.assigneeLabel!=="string"
+          ||!assignee||!/^[0-9a-f]{64}$/.test(assignee)||self&&request.assigneePubkey!==undefined
+          ||!self&&(assignee===viewer||request.priorEventId!==undefined)
           ||request.priorEventId!==undefined&&!/^[0-9a-f]{64}$/.test(request.priorEventId)
           ||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid task assignment");
         const readTarget=async()=>{
@@ -63,11 +67,16 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
           if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository coordinate unavailable");
           const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
           if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          if(!self){
+            if(root.pubkey!==viewer&&owner!==viewer)throw new Error("Task assignment denied");
+            const people=await loadProjectAssignmentHumans(client,new AbortController().signal);check();
+            if(!people.has(assignee))throw new Error("Task assignee unavailable");
+          }
           return {root,address:address!};
         };
         const target=await readTarget();
-        const template=buildProjectIssueSelfAssignment(request.operation==="SELF_ASSIGN_ISSUE"?"assign":"unassign",
-          target.root.id,target.address,viewer,request.assigneeLabel,request.priorEventId);
+        const template=buildProjectIssueAssignment(request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="ASSIGN_ISSUE"?"assign":"unassign",
+          target.root.id,target.address,assignee,request.assigneeLabel,request.priorEventId);
         enteredPublication=true;
         const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
           try{
@@ -81,7 +90,7 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
               return events;
             },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
             const current=eventToProjectIssue(fresh.root,[],history.filter(event=>event.tags.find(tag=>tag[0]==="a")?.[1]===fresh.address));
-            if(current.assigneeOperationHeads[viewer]!==request.priorEventId)throw new Error("Task assignment changed");
+            if(self&&current.assigneeOperationHeads[viewer]!==request.priorEventId)throw new Error("Task assignment changed");
             const signed=await signRelayEvent({kind:1,...template,createdAt:nextProjectIssueCommentCreatedAt(current,Math.floor(Date.now()/1_000),viewer)});check();
             if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Task assignment signing identity changed");
             return signed;
@@ -92,7 +101,7 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
           ||JSON.stringify(event.tags)!==JSON.stringify(template.tags))throw new TransportError("Task assignment receipt mismatch");
         return {eventId:event.id};
       }
-      if(request.assigneeLabel!==undefined||request.priorEventId!==undefined)throw new Error("Unexpected task assignment fields");
+      if(request.assigneeLabel!==undefined||request.assigneePubkey!==undefined||request.priorEventId!==undefined)throw new Error("Unexpected task assignment fields");
       if(request.operation==="CREATE_ISSUE_COMMENT"||request.operation==="CREATE_PULL_REQUEST_COMMENT"){
         const targetKind=request.operation==="CREATE_ISSUE_COMMENT"?1621:1618;
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined

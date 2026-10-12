@@ -12442,8 +12442,13 @@ class ProjectPreferenceRequest {
 ///signed current announcement; it does not delete its channel or repositories.
 class ProjectsPublishRequest {
   ///Original transient display label, trimmed and limited to 128 Unicode characters by the
-  ///consumer. Assignee is always the authenticated signer, never this label.
+  ///consumer. Never an identity or authorization claim.
   final String? assigneeLabel;
+
+  ///Other HUMAN recipient of an original issue-author/repository-owner assignment. Resolved
+  ///against the admitted Tenant's existing HUMAN identity directory; never a signing
+  ///identity. Self operations do not accept this field.
+  final String? assigneePubkey;
   final List<AttachmentElement>? attachments;
 
   ///Original complete markdown including attachment markdown. Issues may be empty; comments
@@ -12469,6 +12474,7 @@ class ProjectsPublishRequest {
 
   ProjectsPublishRequest({
     this.assigneeLabel,
+    this.assigneePubkey,
     this.attachments,
     this.body,
     this.category,
@@ -12486,6 +12492,7 @@ class ProjectsPublishRequest {
   factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
       ProjectsPublishRequest(
         assigneeLabel: json["assigneeLabel"],
+        assigneePubkey: json["assigneePubkey"],
         attachments: json["attachments"] == null
             ? null
             : List<AttachmentElement>.from(
@@ -12512,6 +12519,7 @@ class ProjectsPublishRequest {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "assigneeLabel": assigneeLabel,
+    "assigneePubkey": assigneePubkey,
     "attachments": attachments == null
         ? null
         : List<dynamic>.from(attachments!.map((x) => x.toJson())),
@@ -12616,6 +12624,7 @@ final projectIssueCategoryValues = EnumValues({
 });
 
 enum ProjectPublicationOperation {
+  ASSIGN_ISSUE,
   CREATE_ISSUE,
   CREATE_ISSUE_COMMENT,
   CREATE_PROJECT,
@@ -12624,9 +12633,11 @@ enum ProjectPublicationOperation {
   DELETE,
   SELF_ASSIGN_ISSUE,
   SELF_UNASSIGN_ISSUE,
+  UNASSIGN_ISSUE,
 }
 
 final projectPublicationOperationValues = EnumValues({
+  "ASSIGN_ISSUE": ProjectPublicationOperation.ASSIGN_ISSUE,
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
@@ -12636,6 +12647,7 @@ final projectPublicationOperationValues = EnumValues({
   "DELETE": ProjectPublicationOperation.DELETE,
   "SELF_ASSIGN_ISSUE": ProjectPublicationOperation.SELF_ASSIGN_ISSUE,
   "SELF_UNASSIGN_ISSUE": ProjectPublicationOperation.SELF_UNASSIGN_ISSUE,
+  "UNASSIGN_ISSUE": ProjectPublicationOperation.UNASSIGN_ISSUE,
 });
 
 enum ProjectListingVisibility { LISTED, UNLISTED }
