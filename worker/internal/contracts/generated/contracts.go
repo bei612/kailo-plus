@@ -6051,11 +6051,14 @@ type WebMessageCursor struct {
 type WebMessageQuery struct {
 	// 原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
 	// author。不得与线程读取或其他消息类型组合。
-	AgentInstallationID *string         `json:"agentInstallationId,omitempty"`
-	Before              *int64          `json:"before,omitempty"`
-	BeforeID            *string         `json:"beforeId,omitempty"`
-	MessageType         *WebMessageType `json:"messageType,omitempty"`
-	ParentEventID       *string         `json:"parentEventId,omitempty"`
+	AgentInstallationID *string `json:"agentInstallationId,omitempty"`
+	// 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
+	// STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+	AnchorEventID *string         `json:"anchorEventId,omitempty"`
+	Before        *int64          `json:"before,omitempty"`
+	BeforeID      *string         `json:"beforeId,omitempty"`
+	MessageType   *WebMessageType `json:"messageType,omitempty"`
+	ParentEventID *string         `json:"parentEventId,omitempty"`
 }
 
 // Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw

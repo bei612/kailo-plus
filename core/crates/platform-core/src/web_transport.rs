@@ -1398,6 +1398,108 @@ async fn resolve_message_parent(
     Ok((root_id, parent_id.to_owned()))
 }
 
+fn valid_anchor_query(query: &contracts::WebMessageQuery) -> bool {
+    query.anchor_event_id.as_deref().is_none_or(|id| {
+        valid_message_intent(&contracts::WebMessageType::Stream, Some(id))
+            && query
+                .message_type
+                .as_ref()
+                .is_none_or(|kind| *kind == contracts::WebMessageType::Stream)
+            && query.parent_event_id.is_none()
+            && query.agent_installation_id.is_none()
+            && query.before.is_none()
+            && query.before_id.is_none()
+    })
+}
+
+// Same scoped signed-event reader as publication/thread reads. An Inbox URL is
+// only a navigation reference: it cannot supply an author, channel or ancestry.
+async fn read_inbox_anchor(
+    state: &BffState,
+    client: &IdentityClient,
+    channel: &str,
+    id: &str,
+) -> Result<Vec<nostr::Event>, Response> {
+    let anchor = read_message_event(state, client, channel, id).await?;
+    let mut events = Vec::new();
+    if let Some((root_id, parent_id)) = parse_thread_markers(&anchor.tags).resolve() {
+        let root = read_message_event(state, client, channel, &root_id)
+            .await
+            .map_err(incomplete_anchor_ancestry)?;
+        let parent = if parent_id != root_id {
+            Some(
+                read_message_event(state, client, channel, &parent_id)
+                    .await
+                    .map_err(incomplete_anchor_ancestry)?,
+            )
+        } else {
+            None
+        };
+        validate_inbox_anchor_ancestry(&anchor, Some(&root), parent.as_ref())
+            .map_err(|()| invalid_message_evidence())?;
+        if let Some(parent) = parent {
+            events.push(parent);
+        }
+        events.push(root);
+    } else {
+        validate_inbox_anchor_ancestry(&anchor, None, None)
+            .map_err(|()| invalid_message_evidence())?;
+    }
+    events.insert(0, anchor);
+    Ok(events)
+}
+
+fn validate_inbox_anchor_ancestry(
+    anchor: &nostr::Event,
+    root: Option<&nostr::Event>,
+    parent: Option<&nostr::Event>,
+) -> Result<(), ()> {
+    let stream =
+        |event: &nostr::Event| [9, KIND_STREAM_MESSAGE_V2 as u16].contains(&event.kind.as_u16());
+    if !stream(anchor) {
+        return Err(());
+    }
+    let Some((root_id, parent_id)) = parse_thread_markers(&anchor.tags).resolve() else {
+        return if root.is_none() && parent.is_none() {
+            Ok(())
+        } else {
+            Err(())
+        };
+    };
+    let Some(root) = root else {
+        return Err(());
+    };
+    if root_id == anchor.id.to_hex()
+        || parent_id == anchor.id.to_hex()
+        || root.id.to_hex() != root_id
+        || !stream(root)
+        || parse_thread_markers(&root.tags).resolve().is_some()
+    {
+        return Err(());
+    }
+    if parent_id != root_id
+        && !parent.is_some_and(|parent| {
+            parent.id.to_hex() == parent_id
+                && stream(parent)
+                && parse_thread_markers(&parent.tags)
+                    .resolve()
+                    .is_some_and(|(id, _)| id == root_id)
+        })
+    {
+        return Err(());
+    }
+    Ok(())
+}
+
+fn incomplete_anchor_ancestry(response: Response) -> Response {
+    // A present anchor with missing proof is not "absent in this scope".
+    if response.status() == StatusCode::NOT_FOUND {
+        invalid_message_evidence()
+    } else {
+        response
+    }
+}
+
 async fn publish(
     state: BffState,
     target: MessageTarget,
@@ -2711,8 +2813,10 @@ async fn query_messages_for(
     };
     let message_type = query
         .message_type
+        .clone()
         .unwrap_or(contracts::WebMessageType::Stream);
-    if !valid_message_intent(&message_type, query.parent_event_id.as_deref())
+    if !valid_anchor_query(&query)
+        || !valid_message_intent(&message_type, query.parent_event_id.as_deref())
         || matches!(target, MessageTarget::Conversation(_))
             && message_type != contracts::WebMessageType::Stream
     {
@@ -2763,6 +2867,32 @@ async fn query_messages_for(
         Ok(l) => l,
         Err(c) => return c.into_response(),
     };
+
+    if let Some(id) = query.anchor_event_id.as_deref() {
+        let events = match read_inbox_anchor(&state, &client, &channel_id, id).await {
+            Ok(events) => events,
+            Err(response) => return response,
+        };
+        let current = match read_target.admit(&state, &ctx).await {
+            Ok(scope) => scope,
+            Err(response) => return response,
+        };
+        let current_keys = match actor_keys(&state, &ctx).await {
+            Ok(keys) => keys,
+            Err(response) => return response,
+        };
+        if !admitted.same_admission(&current) || current_keys.public_key() != keys.public_key() {
+            return AdmissionFailure::BindingNotActive.into_response();
+        }
+        return (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(QueryResponse {
+                events: serde_json::json!(events),
+                next_cursor: None,
+            }),
+        )
+            .into_response();
+    }
 
     // Original Forum posts and NIP-10 threads use the same admitted native
     // event page; no second Forum projection or body store is created.
@@ -3757,6 +3887,86 @@ mod tests {
             assert!(!valid_message_intent(&Stream, Some(&bad)));
             assert!(!valid_message_intent(&ForumComment, Some(&bad)));
         }
+    }
+
+    #[test]
+    fn inbox_anchor_query_preserves_legacy_and_rejects_conflicting_read_modes() {
+        let old: contracts::WebMessageQuery =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(valid_anchor_query(&old));
+        assert!(old.anchor_event_id.is_none());
+        let id = "a".repeat(64);
+        let base = serde_json::json!({"anchorEventId":id});
+        assert!(valid_anchor_query(
+            &serde_json::from_value(base.clone()).unwrap()
+        ));
+        for conflict in [
+            serde_json::json!({"parentEventId":id}),
+            serde_json::json!({"agentInstallationId":Uuid::nil().to_string()}),
+            serde_json::json!({"before":1}),
+            serde_json::json!({"beforeId":id}),
+            serde_json::json!({"messageType":"FORUM_POST"}),
+            serde_json::json!({"messageType":"FORUM_COMMENT"}),
+            serde_json::json!({"anchorEventId":"invalid"}),
+        ] {
+            let mut query = base.clone();
+            query
+                .as_object_mut()
+                .unwrap()
+                .extend(conflict.as_object().unwrap().clone());
+            assert!(!valid_anchor_query(&serde_json::from_value(query).unwrap()));
+        }
+        assert_ne!(
+            incomplete_anchor_ancestry(StatusCode::NOT_FOUND.into_response()).status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            incomplete_anchor_ancestry(StatusCode::FORBIDDEN.into_response()).status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn inbox_anchor_requires_exact_stream_root_and_parent_evidence() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::new_v4().to_string();
+        let sign = |kind, root: Option<&nostr::Event>, parent: Option<&nostr::Event>| {
+            let mut tags = vec![nostr::Tag::parse(["h", channel.as_str()]).unwrap()];
+            if let Some(root) = root {
+                tags.push(nostr::Tag::parse(["e", &root.id.to_hex(), "", "root"]).unwrap());
+            }
+            if let Some(parent) = parent {
+                tags.push(nostr::Tag::parse(["e", &parent.id.to_hex(), "", "reply"]).unwrap());
+            }
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), "anchor")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let root = sign(9, None, None);
+        let parent = sign(9, Some(&root), Some(&root));
+        let anchor = sign(40002, Some(&root), Some(&parent));
+        for event in [&root, &parent, &anchor] {
+            assert!(channel_message_event(serde_json::to_value(event).unwrap(), &channel).is_ok());
+            assert!(
+                channel_message_event(serde_json::to_value(event).unwrap(), "other-channel")
+                    .is_err()
+            );
+        }
+        assert!(validate_inbox_anchor_ancestry(&root, None, None).is_ok());
+        assert!(validate_inbox_anchor_ancestry(&parent, Some(&root), None).is_ok());
+        assert!(validate_inbox_anchor_ancestry(&anchor, Some(&root), Some(&parent)).is_ok());
+        assert!(validate_inbox_anchor_ancestry(&anchor, None, Some(&parent)).is_err());
+        assert!(validate_inbox_anchor_ancestry(&anchor, Some(&root), None).is_err());
+        assert!(validate_inbox_anchor_ancestry(&anchor, Some(&parent), Some(&parent)).is_err());
+        let wrong_parent = sign(40002, Some(&root), Some(&root));
+        assert!(validate_inbox_anchor_ancestry(&anchor, Some(&root), Some(&wrong_parent)).is_err());
+        let wrong_root = sign(45001, None, None);
+        let wrong_anchor = sign(9, Some(&wrong_root), Some(&wrong_root));
+        assert!(validate_inbox_anchor_ancestry(&wrong_anchor, Some(&wrong_root), None).is_err());
+        let mut tampered = anchor;
+        tampered.content.push_str("tampered");
+        assert!(channel_message_event(serde_json::to_value(tampered).unwrap(), &channel).is_err());
     }
 
     #[test]

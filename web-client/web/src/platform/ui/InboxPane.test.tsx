@@ -6,6 +6,7 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
+import { BffError, TransportError } from "@client-kit/platform/transport";
 import type { ConversationView } from "@client-kit/contracts";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
@@ -17,6 +18,7 @@ import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 const api=vi.hoisted(()=>({projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
 const authorBatches=vi.hoisted(()=>vi.fn());
+const publicationFixture=vi.hoisted(()=>({enabled:false,publish:vi.fn()}));
 // Existing message-only cases run with no admitted reminder identity. Dedicated
 // reminder consumers below the shared host are exercised in reminders.test.tsx.
 const reminderHost:ReminderHost={scopeKey:"inbox-message-fixture",pubkey:"",query:async()=>[],
@@ -27,8 +29,8 @@ vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({..
 vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:{...api,
   messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>{authorBatches(scope,{eventIds});return {profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.messageAuthorProfile(scope,id)])))};},
   conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.conversationMessageAuthorProfile(scope,id)])))}),
-},queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
-vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));
+},publishMessage:(...args:unknown[])=>publicationFixture.publish(...args),queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
+vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:({onPublish,disabled}:{onPublish?:(body:string,attachments:[],key:string,installations:[])=>Promise<unknown>;disabled?:boolean})=>publicationFixture.enabled?<button data-testid="fixture-inbox-send" disabled={disabled} onClick={()=>{void onPublish?.("reply",[],"original-inbox-intent",[]).catch(()=>{});}}>send</button>:null,ChannelPane:()=>null}));
 
 const event = {
   id: "a".repeat(64),
@@ -40,6 +42,113 @@ const event = {
 };
 
 const calendarNow = new Date(2026, 9, 11, 15, 30).getTime();
+
+describe("original Inbox URL item consumes only admitted cold context", () => {
+  it.each(["found", "dm", "missing", "revoked", "unknown", "malformed", "cancelled", "pending-selection", "feed-window"] as const)("handles %s without injecting an unread row or fanning out requests", async outcome => {
+    Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT: true});
+    setLocale("en"); localStorage.clear(); sessionStorage.clear();
+    vi.stubGlobal("ResizeObserver", class {observe() {} unobserve() {} disconnect() {}});
+    vi.stubGlobal("matchMedia", () => ({matches: false, addEventListener() {}, removeEventListener() {}}));
+    Object.defineProperty(Element.prototype, "scrollIntoView", {configurable: true, value: vi.fn()});
+    api.privateChannels = []; api.conversations.mockResolvedValue({items: []}); api.readFailed = false; api.readUnknown = false;
+    const conversation = {id: "existing-dm", channelId: "native-dm", participantPrincipalIds: ["human", "peer"], state: "ACTIVE", version: 1, operationId: "op"} as ConversationView;
+    if (outcome === "dm") {
+      api.privateChannels = [conversation]; api.conversations.mockResolvedValue({items: [conversation]});
+      api.conversationParticipants.mockResolvedValue({items: [{principalId: "human", displayName: "Me", pubkeys: ["c".repeat(64)]}, {principalId: "peer", displayName: "Peer", pubkeys: [event.pubkey]}]});
+      api.conversationMessageAuthorProfile.mockResolvedValue({pubkey: event.pubkey, avatarMediaPaths: {}});
+    }
+    api.workspaces.mockResolvedValue([{id: "workspace-a", name: "Channel", isMember: true}, {id: "workspace-b", name: "Other", isMember: true}]);
+    api.workspaceChannel.mockImplementation(async (id: string) => ({channelId: `native-${id}`}));
+    api.members.mockResolvedValue([{principalId: "human", displayName: "Me", pubkeys: ["c".repeat(64)], state: "ACTIVE"}]);
+    api.agentInstallations.mockResolvedValue({installations: []});
+    api.messageAuthorProfile.mockResolvedValue({pubkey: event.pubkey, avatarMediaPaths: {}});
+    let finish!: (value: {events: typeof event[]}) => void;
+    const calls: string[] = [];
+    const anchor = {...event, content: "cold exact original message", tags: [["h", outcome === "dm" ? "native-dm" : "native-workspace-a"]]};
+    const nextAnchor = {...anchor,id:"e".repeat(64),content:"latest explicit selection"};
+    let feedWindowExpired = false;
+    publicationFixture.enabled=outcome==="pending-selection";
+    publicationFixture.publish.mockReset().mockRejectedValueOnce(new TransportError("receipt missing")).mockResolvedValue({eventId:"f".repeat(64),operationId:"confirmed"});
+    api.workspaceMessages.mockReset().mockImplementation(async (id: string, query?: {anchorEventId?: string; parentEventId?: string}) => {
+      if (query?.anchorEventId) {
+        calls.push(id);
+        if (outcome === "cancelled") return new Promise(resolve => {finish = resolve;});
+        if (outcome === "missing" || outcome === "dm") throw new BffError(404, "Missing in admitted scope");
+        if (outcome === "revoked") throw new BffError(403, "Revoked");
+        if (outcome === "unknown") throw new BffError(503, "Read unavailable");
+        return {events: [query.anchorEventId===nextAnchor.id?nextAnchor:outcome === "malformed" ? {...anchor, tags: [["h", "foreign"]]} : anchor]};
+      }
+      if (query?.parentEventId) return {events: [query.parentEventId===nextAnchor.id?nextAnchor:anchor]};
+      if (outcome === "feed-window" && !feedWindowExpired && id === "workspace-a") return {events: [
+        {...anchor, tags: [...anchor.tags, ["p", "c".repeat(64)]]},
+        {...event, id: "d".repeat(64), kind: 39006, tags: [["h", `native-${id}`], ["d", `native-${id}:head`]], content: JSON.stringify({has_more: false, next_cursor: null})},
+      ]};
+      return {events: [{...event, id: "d".repeat(64), kind: 39006, tags: [["h", `native-${id}`], ["d", `native-${id}:head`]], content: JSON.stringify({has_more: false, next_cursor: null})}]};
+    });
+    api.conversationMessages.mockImplementation(async (_id: string, query?: {anchorEventId?: string; parentEventId?: string}) => {
+      if (query?.anchorEventId) {calls.push("existing-dm"); return {events: [anchor]};}
+      if (query?.parentEventId) return {events: [anchor]};
+      return {events: [{...event, id: "d".repeat(64), kind: 39006, tags: [["h", "native-dm"], ["d", "native-dm:head"]], content: JSON.stringify({has_more: false, next_cursor: null})}]};
+    });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    const cache = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
+    const onSelect = vi.fn();
+    const visibility = {read: async () => new Set<string>(), prepare: async () => async () => {}};
+    const render = (id: string | null) => act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><ConversationVisibilityProvider value={visibility}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" selectedItemId={id} onSelectedItemIdChange={onSelect} onOpen={vi.fn()} /></TooltipProvider></QueryClientProvider></ConversationVisibilityProvider></PlatformProvider>));
+    try {
+      await render(event.id);
+      if (outcome !== "feed-window") await vi.waitFor(() => expect(calls.length).toBeGreaterThan(0));
+      if (outcome === "feed-window") {
+        await vi.waitFor(() => expect(host.querySelector('[data-testid="home-inbox-detail"]')?.textContent).toContain(anchor.content));
+        expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).not.toBeNull();
+        feedWindowExpired = true;
+        await act(async () => window.dispatchEvent(new Event("focus")));
+        await vi.waitFor(() => {
+          expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).toBeNull();
+          expect(host.querySelector('[data-testid="home-inbox-detail"]')?.textContent).toContain(anchor.content);
+        });
+        expect(calls).toEqual([]);
+        expect(api.workspaceMessages).toHaveBeenCalledWith("workspace-a", expect.objectContaining({parentEventId: event.id}));
+        api.workspaces.mockResolvedValue([]);
+        await act(async () => window.dispatchEvent(new Event("focus")));
+        await vi.waitFor(() => expect(host.querySelector('[data-testid="home-inbox-detail-empty"]')).not.toBeNull());
+        expect(host.textContent).not.toContain(anchor.content);
+        expect(calls).toEqual([]);
+      } else if (outcome === "cancelled") {
+        await render(null);
+        await act(async () => finish({events: [anchor]}));
+        expect(calls).toEqual(["workspace-a"]);
+        expect(host.textContent).not.toContain(anchor.content);
+      } else if (outcome === "found" || outcome === "dm" || outcome === "pending-selection") {
+        await vi.waitFor(() => expect(host.querySelector('[data-testid="home-inbox-detail"]')?.textContent).toContain(anchor.content));
+        expect(calls).toEqual(outcome === "dm" ? ["workspace-a", "workspace-b", "existing-dm"] : ["workspace-a"]);
+        if (outcome === "dm") expect(api.conversationMessages).toHaveBeenCalledWith("existing-dm", expect.objectContaining({parentEventId: event.id}));
+        else expect(api.workspaceMessages).toHaveBeenCalledWith("workspace-a", expect.objectContaining({parentEventId: event.id}));
+        if(outcome==="pending-selection"){
+          await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="fixture-inbox-send"]')!.click());
+          await vi.waitFor(()=>expect(publicationFixture.publish).toHaveBeenCalledTimes(1));
+          await render(nextAnchor.id);
+          expect(calls).toEqual(["workspace-a"]);
+          expect(host.querySelector('[data-testid="home-inbox-detail"]')?.textContent).toContain(anchor.content);
+          await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="fixture-inbox-send"]')!.click());
+          await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-inbox-detail"]')?.textContent).toContain(nextAnchor.content));
+          expect(calls).toEqual(["workspace-a","workspace-a"]);
+          expect(publicationFixture.publish.mock.calls).toHaveLength(2);
+          expect(publicationFixture.publish.mock.calls.every(call=>call[3]==="original-inbox-intent"&&call[5].parentEventId===anchor.id)).toBe(true);
+        }
+      } else if (outcome === "missing") {
+        await vi.waitFor(() => expect(calls).toEqual(["workspace-a", "workspace-b"]));
+        expect(host.querySelector('[data-testid="home-inbox-detail"]')).toBeNull();
+      } else {
+        await vi.waitFor(() => expect(host.querySelector('[role="status"]')).not.toBeNull());
+        expect(calls).toEqual(["workspace-a"]);
+        expect(host.textContent).not.toContain(anchor.content);
+      }
+      expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).toBeNull();
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {publicationFixture.enabled=false;await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals();}
+  });
+});
 const timestampCases = (["en", "zh-CN"] as const).flatMap(locale => [
   {locale, band:"today", date:new Date(2026,9,11,14,5), expected:new Intl.DateTimeFormat(locale,{hour:"numeric",minute:"2-digit"}).format(new Date(2026,9,11,14,5))},
   {locale, band:"yesterday", date:new Date(2026,9,10,23,59), expected:locale==="en"?"Yesterday":"昨天"},
@@ -150,7 +259,7 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
       await vi.waitFor(()=>expect(host.querySelector('[data-testid="home-project-inbox-detail"]')?.textContent).toContain("Original complete project task"));
       expect(api.write).toHaveBeenCalledWith([{key:`msg:${task.id}`,seconds:task.created_at}]);
       expect(onOpen).not.toHaveBeenCalled();
-      expect(host.querySelector('[data-testid="project-issue-comment-composer"]')).toBeNull();
+      expect(host.querySelector('[data-testid="project-issue-comment-composer"]')).not.toBeNull();
     } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
   });
   it.each(timestampCases)("selects the actual Inbox row with its $band calendar timestamp in $locale when its original inert link preview is clicked", async ({locale,date,expected}) => {
@@ -176,8 +285,9 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
     const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const onOpen=vi.fn();
+    const onSelectedItemIdChange=vi.fn();
     try {
-      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={onOpen} onSelectedItemIdChange={onSelectedItemIdChange}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
       await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"] .inbox-preview-markdown`)).not.toBeNull());
       const row=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"]`)!;
       const preview=row.querySelector<HTMLElement>(".inbox-preview-markdown")!;
@@ -186,6 +296,7 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
       api.write.mockClear();
       await act(async()=>preview.querySelector<HTMLElement>("span.font-medium")!.click());
       expect(row.getAttribute("aria-current")).toBe("true");
+      expect(onSelectedItemIdChange).toHaveBeenCalledExactlyOnceWith(event.id);
       expect(api.write).toHaveBeenCalledTimes(1);
       expect(onOpen).not.toHaveBeenCalled();
     } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();if(scrollDescriptor)Object.defineProperty(Element.prototype,"scrollIntoView",scrollDescriptor);else Reflect.deleteProperty(Element.prototype,"scrollIntoView");}

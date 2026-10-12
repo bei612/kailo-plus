@@ -1040,6 +1040,7 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"web-forum-comment.sample.json", new(generated.WebPublishMessageRequest)},
 		{"web-forum-query.sample.json", new(generated.WebMessageQuery)},
 		{"web-message-query-legacy.sample.json", new(generated.WebMessageQuery)},
+		{"web-inbox-anchor-query.sample.json", new(generated.WebMessageQuery)},
 		{"web-message-cursor.sample.json", new(generated.WebMessageCursor)},
 		{"web-forum-channel.sample.json", new(generated.WebChannelView)},
 	} {

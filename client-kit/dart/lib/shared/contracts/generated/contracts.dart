@@ -13859,6 +13859,10 @@ class WebMessageQuery {
   ///原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
   ///author。不得与线程读取或其他消息类型组合。
   final String? agentInstallationId;
+
+  ///原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
+  ///STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+  final String? anchorEventId;
   final int? before;
   final String? beforeId;
   final WebMessageType? messageType;
@@ -13866,6 +13870,7 @@ class WebMessageQuery {
 
   WebMessageQuery({
     this.agentInstallationId,
+    this.anchorEventId,
     this.before,
     this.beforeId,
     this.messageType,
@@ -13875,6 +13880,7 @@ class WebMessageQuery {
   factory WebMessageQuery.fromJson(Map<String, dynamic> json) =>
       WebMessageQuery(
         agentInstallationId: json["agentInstallationId"],
+        anchorEventId: json["anchorEventId"],
         before: json["before"],
         beforeId: json["beforeId"],
         messageType: json["messageType"] == null
@@ -13885,6 +13891,7 @@ class WebMessageQuery {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "agentInstallationId": agentInstallationId,
+    "anchorEventId": anchorEventId,
     "before": before,
     "beforeId": beforeId,
     "messageType": webMessageTypeValues.reverse[messageType],

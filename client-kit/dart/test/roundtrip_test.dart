@@ -728,6 +728,8 @@ void main() {
             WebMessageQuery.fromJson(value).toJson(),
         'web-message-query-legacy.sample.json': (value) =>
             WebMessageQuery.fromJson(value).toJson(),
+        'web-inbox-anchor-query.sample.json': (value) =>
+            WebMessageQuery.fromJson(value).toJson(),
         'web-message-cursor.sample.json': (value) =>
             WebMessageCursor.fromJson(value).toJson(),
         'web-forum-channel.sample.json': (value) =>

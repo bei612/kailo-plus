@@ -1135,3 +1135,138 @@ stored updated 跨分区/目录刷新不被覆盖、切回恢复、存储拒绝�
 本次不改已修读取链或提高预算，失败交主线发布收口。部署后最小复验仍为同一
 Inbox 线程→完整线程→一次刷新，先读新 build-info，再核正文、侧栏及实际请求；
 Tasks 创建/评论、Projects 排序等尚未部署功能继续分别保留未验收，不借此三图认领。
+
+## 2026-10-12 原 Inbox URL 选择与受权冷定位
+
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/home/ui/HomeView.tsx::HomeView` 的 `INBOX_SEARCH_KEYS`、
+`useHistorySearchState`、`urlSelectedItemId` / `applyInboxSearchPatch`；
+`desktop/src/features/home/useInboxSelectionAnchor.ts::useInboxSelectionAnchor`；
+`desktop/src/features/home/useHomeInboxAutoSelection.ts::useHomeInboxAutoSelection`；
+`desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane`。
+
+四步结论：
+
+1. 权威为 REQ-24 原版恢复和 DD-75 的 Browser BFF 边界。`?item=` 只是原事件导航
+   引用，不携带 scope、身份、正文或权限。正文及签名仍在 Relay，不另建 Inbox 存储。
+2. 原共享 history hook 和自动选择 hook 已存在；本批接 Web 原 navigation 与
+   InboxPane。手选进入历史，自动选择只留本地，前后退/刷新保留原 item 语义。
+   未在 feed 的引用只作详情上下文，不制造 feed 行或未读数。
+3. Web 冷定位沿已有目录与 messages 查询串行遍历本次准入 scope，新增可选
+   `WebMessageQuery.anchorEventId`。Core 复用 `read_message_event`，逐个验证本人
+   当前 scope、频道、签名、kind、root/parent；返回前再 admit 与 actor-key 核对。
+   原消息及父级权限边界未放宽，回应 `no-store`。旧请求缺字段语义不变；anchor
+   与 parent、Agent、分页、Forum 模式冲突拒绝。原生端既有原 Inbox 链未改。
+4. 查无目标才尝试下一已准入 scope；403、503、UNKNOWN、畸形及祖先缺证不当 404。
+   选择取消停止后续请求并忽略晚回应，不新增扇出或放宽请求预算。URL 变化不清除
+   原发送意图：沿原 scope 实例保留 key/parent/draft，发送在途或 UNKNOWN 时保留
+   原详情；仅明确终态后应用最新选择。持有引用仍受 principal、fresh 目录、可见
+   scope 和原 thread read/撤权门禁限制，不是权限缓存或新增执行账本。
+
+四类原版差异：
+
+- 原样保留：既有 Inbox 行/详情布局、按钮与文案；原 `?item=`、手动 history 与
+  自动选择不写 URL 的行为。未新增菜单、时间 formatter 或空态产品文案。
+- 共享消费：Web 直接调用已迁移的 `useHistorySearchState` 与
+  `useHomeInboxAutoSelection`，没有第二实现；原 Desktop 页面保持现有调用。
+- 授权宿主差异：官方 `getEventById` 冷读取改为受权 scope 内的既有 BFF reader；
+  管理 workspace ID 与签名事件 native channel ID 分别传递。未知发送保留原目标，
+  不依靠按 item 重挂载清掉 UNKNOWN；显式选择与后台 feed 代表项更新分别处理。
+- 仍缺/未验收：needs_action 无可用原 producer，Mobile、部署后的真实 SSO cold
+  URL、HTTP/SpiceDB/Relay 联调未由本批 fixture 证明。当前线上旧版本不含这批；
+  本批无构建/部署/新截图，不将旧截图、类型检查或本次窄验记作完整恢复/full 通过。
+
+私有输入及日志根：
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-item-cold.0C8wTo`。
+固定生成使用 a48632b6379b22aab78a60afa348523c309855ca 的 HEAD contracts 加本批
+唯一 schema；公共四侧生成文件原有 dirty 没有覆盖。复核候选已重放至
+`3306a3d5826c7cebb13c5caadc32f0b52715e4ab`，保留已提交的 Knowledge、发布记录
+及全量固定源码分类纠偏；Core 冻结验证输入未因这些无关提交重跑。
+Rust/Dart 既有往返文件的非本批格式改动不进入候选，公共三项旧暂存不改。
+
+实际检查（均沿已有 SDK image `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`）：
+
+- Web `kailo-web-thread-tooltip-sdk`：2 CPU、4 GiB，memory+swap 总限额等于内存，
+  UID 1000、network none；TMPDIR、npm 缓存和私有源码均在 Data。已有 TS 5.9.3 /
+  Vitest 4.1.11，不下载依赖。原命令 `node node_modules/typescript/bin/tsc --noEmit
+  -p tsconfig.json`；`node node_modules/vitest/vitest.mjs run
+  src/platform/ui/InboxPane.test.tsx src/platform/ui/InboxThreadPane.test.tsx
+  src/app/platform-navigation.test.tsx --no-file-parallelism`。
+- 首轮 38991 exit 1，类型 0、98 pass/13 fail：旧 fixture 的新增导航按钮打乱
+  数字索引，及已恢复 Tasks 评论后原十项仍期望无 composer；修 fixture 位置与
+  真实现有呈现断言，不改产品/超时。60682 exit 0，112/112。
+- 私有 21572 将 403 当查无目标继续下一 scope：exit 1，原撤权断言失败；
+  精确恢复 cmp 0。34107 的 DOM 112/112、合同类型 0，但聚合 exit 1：私有输入
+  漏四份旧 sample。只投递原 fixture 后，68559 的 TS 过滤往返 1/1、exit 0。
+- 68559 聚合 exit 1：新 explicit selection 修正使旧 live DM 代表项不移动
+  断言失败（112 pass/1 fail）。区分显式选择与 live 更新，保留该原断言。
+- 15536 exit 0：末版 Web 类型及 114/114（Inbox 56、thread 25、navigation 33）。
+  包含 cold 精确命中/DM/不存在/撤权/UNKNOWN/畸形/取消、原导航历史/刷新、未决
+  选择不卸载详情，以及 UNKNOWN→403→同 key+parent 查证→确认后切最新选择。
+- 私有 58427 断开父层未决选择保持并移除 Pane UNKNOWN 锁：exit 1，两项新增
+  真实父/详情消费者均失败（提前发下一 anchor 查询、草稿目标被切换）。
+  apply_patch 还原并与正式源码 cmp 0；80025 exit 0，114/114。
+  `selection-held-final.log`、`selection-mutation.log`、`selection-restored.log`
+  保留全部原始输出及 React act 警告。
+- 原 `bash tools/gen.sh`：46809 exit 1 为私有输入缺末尾原 i18n 生成脚本；补同
+  HEAD 原脚本/catalog 后 81854 exit 0，四侧同步生成。没有手写类型，也没有
+  将该私有 i18n 投影覆盖公共 i18n/Dart 内容。
+- Go 原 `go test ./internal/contracts -run '^TestApplicationBindingProtocolRoundtrip$'
+  -count=1 -v`：母用例及 28 子样例通过，含新增 anchor 与旧无字段请求。
+  Dart 原 `dart pub get --offline` 仅现存缓存；`dart test test/roundtrip_test.dart
+  --name 'conversation references roundtrip'`：1/1。原轻容器 2 CPU/4 GiB、UID1000、
+  network none、只读 root，Data `/tmp`、`/.dart-tool`、Go/Pub 缓存，不改 HOME。
+  72098 聚合 exit 1：两往返均 exit 0，但原兼容 Python 片段的 shell 引号拆开，
+  片段 exit 127；该失败保留在 `go-dart-compat.log`，不重复已过往返。
+- 只将 `tools/check.sh` 原 49 行兼容 Python 改为文件参数投递，61557 实际
+  exit 0：316 个 schema、3 个历史 schema 匹配，`contracts-v0.1.0` 无破坏性
+  变更；不把未在该旧 tag 的 schema 计作历史比较通过。日志为
+  `compatibility-corrected.log`，容器 2 CPU/2 GiB、network none、UID1000、
+  只读 Git/固定私有 schema 与 Data 临时目录，不新建兼容算法。
+- `rustfmt --edition 2021` 94721 exit 0，只整理本批 Core 源；不代替 Rust 编译。
+- Core 原聚合 94761：`cargo test --locked --offline -p platform-core --bin
+  platform-core inbox_anchor_ -- --nocapture` 已 exit 0，2 passed/445 filtered，
+  覆盖旧查询与冲突模式、精确 stream/root/parent 证据。随后 `cargo test --locked
+  --offline -p contracts --test roundtrip
+  forum_channel_and_composite_cursor_roundtrip_preserve_native_fields -- --nocapture`
+  已 exit 0，1 passed/55 filtered。末段原 `cargo clippy --locked --offline -p
+  platform-core --bin platform-core -- -D warnings` exit 101，聚合实际 exit 1：
+  新纯证据 helper 的 `Result<(), Response>` 触发 `result_large_err`。
+  最小改为 `Result<(), ()>`，仅两个实际调用点将该无载荷拒绝映射回原
+  `invalid_message_evidence()`；不改 status/body、kind、祖先或授权条件，
+  不添加 lint allow。原单元断言保持；同 SDK 5595 增量实际 exit 0：原格式完成，
+  anchor 2/2（445 filtered）与窄 clippy 均 exit 0，正式/私有源码 cmp 0。
+  原始 `core-positive.log` 与修正 `core-corrected.log` 分开保留；未重复已通过
+  Web/四侧往返，不把首轮聚合失败覆盖成通过。
+  独立 Data 输入 `core-check`，原 SDK 4 CPU/8 GiB、memory+swap 总限额等于内存、
+  UID1000、network none、只读 root；`/tmp`、Cargo registry/git/target 均在 Data。
+  原生成/源字节 cmp 0，仅刷新私有输入 mtime 防止跨快照错误复用；不降 Cargo
+  并行度、不清缓存、不改 HOME。日志 `core-positive.log`；这些签名事件单元
+  消费者不替代真实 HTTP、SpiceDB 或 Relay 联调。
+
+原 Layer 2 交叉复核收尾：`useInboxSelectionAnchor` 的 committed same-anchor
+latch 现已接入 Web；同身份/同 item 的直接命中在 feed 代表项推进或窗口移出后
+保留，不重新执行 cold 查找。原 fresh scope 可见性与最新目录仍决定能否展示，
+不把该引用当权限缓存；principal/item 改变即不消费旧 latch。Project 全历史读
+的既有命中语义不变，没有扩大 Core anchor kind。
+
+- 67980 exit 1：Web 类型通过、114 pass/1 fail；新增 feed-window fixture 缺
+  原 39006 window bounds，初始聚合即拒绝。补原必要 metadata，不改生产拒绝或超时。
+- 11910 exit 0：末版类型及原三套 115/115（Inbox 57、thread 25、navigation 33）。
+  新实际 Inbox 消费者验证窗口移出后原正文/parent 保持、anchor 请求为零，再
+  撤销目录 membership 后正文清空且不查询旧 scope。原 UNKNOWN/身份/冷定位
+  断言全部保留，React act 警告未消音。
+  原件 `committed-latch-final.log` / `committed-latch-corrected.log`。
+- 12446 私有仅从 resolvedAnchor 删除 latchedAnchor：只运行新增 feed-window，
+  exit 1、1 failed/56 skipped，确实抓到额外 anchor 查询（期望空请求，实际出现
+  workspace-a）。apply_patch 原字节还原并 cmp 0；14712 同一单例 exit 0，
+  1 passed/56 skipped。没有再跑整三套；正式生产未变异。
+  原件 `committed-latch-mutation.log` / `committed-latch-restored.log`。
+
+最终原文档入口 `bash tools/check-docs.sh /workspace/.design`，87917 实际 exit 0，
+七节全部通过，原件同目录 `check-docs.log`。使用同一已有 SDK 镜像，2 CPU/2 GiB、
+memory+swap 总限额等于内存、UID1000、network none、只读 apps/design，原 npm
+离线缓存与 `/tmp` 均在 Data；不导出整树、不安装依赖、不改 HOME。输入为当时
+实际只读工作树而非发布树；该脚本检查顶层/docs/design，不直接扫描本 verify
+正文。当前只完成源码与定向检查，未构建/部署，本批无新版截图，原 full 失败
+门禁保持，不以本次文档或窄检查代替整批发布验收。

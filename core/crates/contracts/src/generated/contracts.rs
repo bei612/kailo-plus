@@ -6947,6 +6947,11 @@ pub struct WebMessageQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_installation_id: Option<String>,
 
+    /// 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
+    /// STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_event_id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<i64>,
 

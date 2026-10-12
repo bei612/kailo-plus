@@ -859,9 +859,9 @@ for (const sample of ["web-publish-mention.sample.json", "web-publish-content-on
 
 test("forum query, cursor and native channel preserve each generated field and legacy absence", () => {
   const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
-  for (const name of ["web-forum-query.sample.json", "web-message-query-legacy.sample.json"]) {
+  for (const name of ["web-forum-query.sample.json", "web-message-query-legacy.sample.json", "web-inbox-anchor-query.sample.json"]) {
     const query: WebMessageQuery = load(name);
-    const back: WebMessageQuery = { messageType: query.messageType, parentEventId: query.parentEventId, before: query.before, beforeId: query.beforeId };
+    const back: WebMessageQuery = { messageType: query.messageType, parentEventId: query.parentEventId, before: query.before, beforeId: query.beforeId, anchorEventId: query.anchorEventId };
     deepStrictEqual(JSON.parse(JSON.stringify(back)), query);
   }
   const cursor: WebMessageCursor = load("web-message-cursor.sample.json");

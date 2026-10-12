@@ -424,7 +424,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       null
     ) : tab === "inbox" ? (
       <InboxPane
+        key={searchScopeKey}
         principalId={session.tenantPrincipalId}
+        selectedItemId={navigation.inboxItemId}
+        onSelectedItemIdChange={navigation.setInboxItemId}
         onOpenProject={(id,target)=>{void navigation.openProject(id,target);}}
         onStartDm={openDirectMessage}
         onUnreadCount={setInboxUnreadCount}

@@ -18,7 +18,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
   const [denied, setDenied] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
   const fullChannel = Boolean(conversationId && selectedEventId);
-  const eventChannelId = conversationId ? conversationChannelId : workspaceId;
+  const eventChannelId = conversationId ? conversationChannelId : conversationChannelId ?? workspaceId;
   const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null, eventChannelId], [principalId, workspaceId, rootId, conversationId, selectedEventId, eventChannelId]);
   const thread = useInfiniteQuery({
     queryKey: key, enabled: enabled && !denied, initialPageParam: null as WebMessageCursor | null,

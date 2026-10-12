@@ -842,6 +842,7 @@ fn forum_channel_and_composite_cursor_roundtrip_preserve_native_fields() {
     }
     roundtrip::<contracts::WebMessageQuery>("web-forum-query.sample.json");
     roundtrip::<contracts::WebMessageQuery>("web-message-query-legacy.sample.json");
+    roundtrip::<contracts::WebMessageQuery>("web-inbox-anchor-query.sample.json");
     roundtrip::<contracts::WebMessageCursor>("web-message-cursor.sample.json");
     roundtrip::<contracts::WebChannelView>("web-forum-channel.sample.json");
 }

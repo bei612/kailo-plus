@@ -26,7 +26,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
     data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
-    data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send}
+    data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send} data-inbox-item={navigation.inboxItemId}
     data-repository={navigation.projectWorkItemTarget?.repositoryId} data-issue={navigation.projectWorkItemTarget?.issueId} data-review={navigation.projectWorkItemTarget?.pullRequestId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
@@ -48,6 +48,8 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     <button onClick={edit.handleCancelEdit}>finish thread edit</button>
     <button onClick={() => {void navigation.openConversation("conversation-a", {messageId:"reply-a",threadRootId:"root-a"}, undefined, {key:"thread:native-dm:root-a:reply-a",send:true});}}>send draft</button>
     <button onClick={() => {void navigation.consumeDraftSend();}}>consume draft send</button>
+    <button onClick={() => navigation.setInboxItemId("a".repeat(64))}>select inbox item</button>
+    <button onClick={() => navigation.setInboxItemId(null)}>clear inbox item</button>
   </div>;
 } }));
 
@@ -65,6 +67,31 @@ async function mount(url: string, browser = false) {
   await act(async () => { await router.load(); root!.render(<RouterProvider router={router} />); });
   return router;
 }
+
+it("preserves original Inbox item references through selection, Back/Forward and cold reload without adding a scope URL", async () => {
+  let router = await mount("/app/inbox");
+  const click = (label: string) => act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();});
+  const initial = router.history.length;
+  await click("select inbox item");
+  expect(router.history.length).toBe(initial + 1);
+  expect(router.history.location.search).toBe(`?item=${"a".repeat(64)}`);
+  expect(node!.querySelector("[data-inbox-item]")?.getAttribute("data-inbox-item")).toBe("a".repeat(64));
+  await click("select inbox item");
+  expect(router.history.length).toBe(initial + 1);
+  const coldUrl = router.history.location.href;
+  await click("clear inbox item");
+  expect(node!.querySelector("[data-inbox-item]")).toBeNull();
+  await act(async () => {router.history.back(); await router.load();});
+  expect(node!.querySelector("[data-inbox-item]")?.getAttribute("data-inbox-item")).toBe("a".repeat(64));
+  await act(async () => {router.history.forward(); await router.load();});
+  expect(node!.querySelector("[data-inbox-item]")).toBeNull();
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  router = await mount(coldUrl);
+  expect(node!.querySelector("[data-inbox-item]")?.getAttribute("data-inbox-item")).toBe("a".repeat(64));
+  await click("audit");
+  expect(node!.querySelector("[data-inbox-item]")).toBeNull();
+  expect(router.history.location.search).not.toContain("item=");
+});
 
 it("pins an admitted index channel with replace before thread navigation and restores its thread on reload", async () => {
   let router = await mount("/app/?thread=root-a&messageId=reply-a&threadRootId=root-a&body=never-copy");

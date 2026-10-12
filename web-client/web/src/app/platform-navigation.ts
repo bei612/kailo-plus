@@ -10,6 +10,7 @@ export type PlatformSection = PlatformNavigationSection | "inbox" | "settings";
 export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message" | "application";
 export type PlatformDraftNavigation = { key: string; send: boolean; editEventId?: string };
 const THREAD_SEARCH_KEYS = ["thread", "messageId", "threadRootId"] as const;
+const INBOX_SEARCH_KEYS = ["item"] as const;
 
 export function isPlatformSection(value: string): value is PlatformSection {
   return value === "inbox" || value === "settings" || platformNavigationSections.some((section) => section === value);
@@ -18,7 +19,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // URL contains only navigation references. It never stores sessions, identities,
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
-  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;thread?: string;
+  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;thread?: string; item?: string;
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -31,6 +32,7 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     issueId: reference("issueId"),
     pullRequestId: reference("pullRequestId"),
     thread: reference("thread"),
+    item: reference("item"),
   };
 }
 
@@ -51,6 +53,10 @@ export function usePlatformNavigation(scopeKey?: string) {
   const search = useSearch({ from: "/_platform" });
   const navigateSearch = useCallback((options: HistorySearchNavigation) => { void navigate(options as never); }, [navigate]);
   const threadHistory = useHistorySearchState(THREAD_SEARCH_KEYS, search, navigateSearch);
+  const inboxHistory = useHistorySearchState(INBOX_SEARCH_KEYS, search, navigateSearch);
+  const setInboxItemId = useCallback((item: string | null) => {
+    inboxHistory.applyPatch({ item });
+  }, [inboxHistory.applyPatch]);
   const setThreadHeadId = useCallback((thread: string | null, options?: HistorySearchSetterOptions) => {
     threadHistory.applyPatch({ thread }, options);
   }, [threadHistory.applyPatch]);
@@ -94,6 +100,8 @@ export function usePlatformNavigation(scopeKey?: string) {
     goBack: () => { if (canGoBack) router.history.back(); },
     goForward: () => router.history.forward(),
     tab,
+    inboxItemId: tab === "inbox" ? inboxHistory.values.item : null,
+    setInboxItemId,
     replaceDefaultChannel,
     searchHighlight,
     draftTarget,

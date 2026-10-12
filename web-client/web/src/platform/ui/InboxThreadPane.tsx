@@ -18,20 +18,23 @@ import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, typ
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function InboxThreadPane({ principalId, workspaceId, conversation, canInteract = true, rootId, selectedEventId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
+export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
+  channelId?: string;
+  selectionItemId?: string | null;
   canInteract?: boolean;
   autoSendDraftKey?: string;
   restoreDraftKey?: string;
   replyTargetEventId?: string;
   onOpenAuthor?: (target: MessageAuthor) => void;
   onAuthorScopeUnavailable?: (workspaceId: string) => void;
+  onPublicationPendingChange?: (pending: boolean) => void;
 }) {
   const t = useT(); const locale = useLocale();
-  const [anchor] = useState(selectedEventId);
-  const [anchorRoot] = useState(rootId);
+  const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
+  const { anchor, root: anchorRoot } = selection;
   const isFocusHighlightVisible = useInboxFocusHighlight(anchorRoot);
   const replyParent = useRef<string | null>(null);
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
@@ -39,15 +42,25 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
   const [unresolved, setUnresolved] = useState(false);
   const publication = useRef<{ key: string; parent: string | null; unknown: boolean } | null>(null);
   const composerContainer = useRef<HTMLDivElement>(null);
-  const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId);
+  const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:canInteract && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const scroller = useRef<HTMLDivElement>(null);
   const reached = useRef(false);
+  // Selection is not publication ownership. Keep the original composer and
+  // parent while a send is in flight or UNKNOWN; a URL/history change must not
+  // discard that intent. Once confirmed/rejected, apply the latest selection.
+  const changingSelection = selectionItemId === selectedEventId && (anchor !== selectedEventId || anchorRoot !== rootId) && !sending && !unresolved && !publication.current;
+  if (changingSelection) {
+    setSelection({ anchor: selectedEventId, root: rootId });
+    setReplyId(replyTargetEventId ?? null);
+    replyParent.current = null;
+    reached.current = false;
+  }
   const anchoredMessage = messages.find((message) => message.id === anchor);
   // Original Inbox replies beside the selected event unless an explicit row
   // reply target is chosen. Latch once; live feed updates cannot retarget it.
-  if (replyParent.current === null && anchoredMessage) replyParent.current = inboxThread(anchoredMessage.tags).parentId ?? anchor;
+  if (!changingSelection && replyParent.current === null && anchoredMessage) replyParent.current = inboxThread(anchoredMessage.tags).parentId ?? anchor;
   useEffect(() => {
     if (reached.current) return;
     const target = scroller.current?.querySelector(`[data-message-id="${anchor}"]`);
@@ -142,12 +155,14 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
         const prior = publication.current;
         if (prior && (prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};
+        onPublicationPendingChange?.(true);
         try {
           const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId ?? undefined, mentionPubkeys)
             : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
             { messageType: WebMessageType.Stream, parentEventId: parentId ?? undefined, mentionPubkeys }));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Inbox reply has no confirmed receipt.");
           publication.current = null; setUnresolved(false);
+          onPublicationPendingChange?.(false);
           void refresh();
           return receipt;
         } catch (error) {
@@ -155,6 +170,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
           const unknown = isOutcomeUnknown(error) || (prior?.unknown === true && !(error instanceof BffError && error.reason === ReasonCode.PublishRejected));
           publication.current = unknown ? {key:idempotencyKey, parent:parentId, unknown:true} : null;
           setUnresolved(unknown);
+          onPublicationPendingChange?.(unknown);
           if (unknown && !isOutcomeUnknown(error)) throw new TransportError("Inbox reply still has an unresolved intent.");
           throw error;
         }

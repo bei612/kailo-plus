@@ -39,9 +39,9 @@ const bounds = (next: { createdAt:number; eventId:string } | null = null, start 
 const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
-async function mount(replyTargetEventId?: string) {
-  await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={replyId}
-    replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
+async function mount(replyTargetEventId?: string, selected = replyId, selectedRoot = rootId, explicitSelection = false) {
+  await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" rootId={selectedRoot} selectedEventId={selected}
+    selectionItemId={explicitSelection ? selected : undefined} replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
   await settle();
 }
 async function mountDm(selected = replyId, rootEventId = rootId, members: {principalId:string;displayName:string;pubkeys:string[]}[] = [],draft?:{key:string;parent:string}) {
@@ -375,6 +375,34 @@ it("keeps the same target and draft after UNKNOWN and a later forbidden observat
   state.publish.mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"operation"});
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(host.querySelector('[data-testid="cancel-reply"]')).not.toBeNull();
+});
+
+it("applies explicit item selection without remounting, but preserves an UNKNOWN key and parent until confirmation", async () => {
+  const nextRoot = event("e".repeat(64), "another thread", [["h", "workspace"]]);
+  state.query.mockImplementation(async (_scope, options) => ({events: options.parentEventId === nextRoot.id ? [nextRoot] : [rootEvent, reply]}));
+  await mount();
+  await act(async () => host.querySelector<HTMLButtonElement>(`[data-testid="reply-message-${replyId}"]`)!.click());
+  state.publish.mockRejectedValueOnce(new TransportError("receipt missing"));
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  const draft = host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-draft-key");
+  await mount(undefined, nextRoot.id, nextRoot.id, true);
+  expect(host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-draft-key")).toBe(draft);
+  expect(host.querySelector('[data-testid="cancel-reply"]')).toBeNull();
+  expect(state.query.mock.calls.some(call => call[1].parentEventId === nextRoot.id)).toBe(false);
+  state.publish.mockRejectedValueOnce(new BffError(403,"forbidden",{class:ErrorClass.Denied,reason:ReasonCode.PermissionDenied}));
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(state.error).toBeInstanceOf(TransportError);
+  expect(host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-draft-key")).toBe(draft);
+  state.publish.mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"operation"});
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  await settle();
+  expect(state.publish.mock.calls.every(call => call[3] === "same-intent" && call[5].parentEventId === replyId)).toBe(true);
+  expect(host.textContent).toContain("another thread");
+  expect(host.textContent).not.toContain("selected reply");
+  expect(host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-draft-key")).toBe(`thread:workspace:${nextRoot.id}`);
+  await mount(undefined, replyId, rootId, true);
+  expect(host.textContent).toContain("selected reply");
+  expect(host.textContent).not.toContain("another thread");
 });
 it("opens the selected Inbox message author and withdraws that scope on revoked admission", async () => {
   await mount();
