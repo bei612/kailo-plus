@@ -11529,3 +11529,81 @@ Logs: `/volumes/data/kailo/check-cache/wren-feedback-final.hKphVW/`.
 `negative.log` SHA-256 `e15add54cda63c496b8df580d90e2d83913cd9ffc38cdaf89e1bca2d74d718e5`;
 `restored.log` SHA-256 `c7c0863a70c399a3cf72141b024d10bc7ff694eecaf805c3bb91ed2dbfb4b116`.
 Earlier uncommitted artifact and receipt changes are not validated by this run.
+
+### Native recommendation answer follow-up ownership (2026-10-12)
+
+Authority and cause: the fixed official Wren source
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/resolvers.ts::Mutation.createThread` and
+`wren-ui/src/apollo/server/services/askingService.ts::createThread/getAskingHistory`,
+preserves recommendation/manual SQL answers without an Asking task. The Kailo
+`AskingResolver.createAskingTask` ownership loop incorrectly required a task
+for these genuinely nullable references, refusing the original follow-up.
+This is restoration under design 08 section 6, not an added management permission.
+
+Impact: the existing `AskingService.getResponsesWithThread/currentThread`
+first resolves the thread in the trusted current project. The resolver now
+skips only null/undefined task references; a non-positive/non-integer reference
+or a missing referenced task still refuses. Real task references still consume
+the original exact HUMAN ownership and metadata checks. No schema, migration,
+current-project selection, SQL executor, credential or Action contract changed.
+The original saved question/SQL remain native data. No new Core authority or
+body copy is introduced.
+
+Side effects and boundaries: ordinary result saving is not SQL execution.
+The original bound middleware performs fresh discover and preview SQL keeps
+its separate NativeHumanQuery admission. This change does not require manage
+for a query-only HUMAN. The new check consumes the actual original
+createThread -> createAskingTask -> getAskingHistory path with an in-memory
+repository and a substituted final AI tracker, including both nullable forms,
+mixed same-owner history, another HUMAN's task, changed project, malformed
+references and absent referenced rows. Foreign identity/project remain DENIED;
+unavailable task provenance remains the existing PRECONDITION refusal before
+AI dispatch. Existing pending/UNKNOWN child execution and replay behavior were
+not changed or converted to success.
+
+The fixed input was commit `1e4157c061c6df6972c0efe8783dd581dc797715`
+plus the two selected source/check files. Original SDK
+`kailo-wren-query-sdk-itgs2n` was idle before execution and retains
+4 CPU / 4 GiB / equal memory-swap limits. Its /work and /cache mounts are Data.
+Commands ran in `/work/recommended-followup.us3JLq/data-query/wren-ui`
+with `TMPDIR=/work/recommended-followup.us3JLq/tmp`:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --cacheDirectory=/work/recommended-followup.us3JLq/jest-cache \
+  --runTestsByPath src/nativeAskingQuery.test.ts
+```
+
+Session 30309 exited 1: 28 passed, three existing SQLite cases failed because
+the original better-sqlite3 native binary was absent; 1070.988 seconds is
+observed runtime, not a performance acceptance. The ten new follow-up cases
+all passed. Private removal of the eight production lines, selecting
+`original recommended answer follow-up preserves native task ownership`,
+made session 10006 exit 1 with the two nullable-history assertions failing,
+eight passing and 21 skipped. After exact byte restoration, session 41207
+selected `original (model preview and Asking receipt consumers|recommended answer follow-up preserves native task ownership)`
+and exited 0: 28 passed, three SQLite cases explicitly skipped.
+Restored resolver SHA-256:
+`adb0ff425d5fec58fdb5f01133c89245de0293b91656f2473e9d3cc6d9dacbe6`.
+
+The SQLite dependency failure was not concealed by deleting cases. The same
+SDK had g++, make, node-gyp and cached Node 24.21.0 headers, so its original
+`node-gyp rebuild --release --nodedir=/cache/home/.cache/node-gyp/24.21.0 --jobs=16`
+was attempted once with Data TMPDIR and offline npm cache. Session 45784
+exited 1: the locked better-sqlite3 9.4.3 build first failed with
+`v8config.h:13: C++20 or later required`. No dependency version, source,
+compiler flags or lockfile was changed. The product Dockerfile uses fixed
+Node 18; the SDK's Node 24 ABI 137 is not proof of that runtime's SQLite behavior.
+These three original database cases remain unverified in this batch.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/recommended-followup.us3JLq`.
+Log SHA-256:
+`positive.log` `f47e56a28d4c90bde1ac90ea41277e7c2e3e39a15165279810590b7fb5e95b27`;
+`negative.log` `f3b936cd0ddb3a96ca9683b4e6304189b694c1a8acfdfb74329f22ca5a864d84`;
+`restored.log` `b723a4079c8814af5a29ad3782f34cdf9c96465a49e54f1f1f5d0a089e79d3a9`;
+`sqlite-rebuild.log` `ecc0d466e4b835a7e42e7ebd1f2ba9ba0b74daad03e10e1c73c643538645de3a`.
+This is resolver/service consumer evidence, not live HTTP, source SQL, browser,
+production binding, full conformance or deployment acceptance. No image was
+built or loaded. Earlier dirty artifact/receipt changes are excluded.

@@ -509,6 +509,14 @@ export class AskingResolver {
       for (const response of await askingService.getResponsesWithThread(
         threadId,
       )) {
+        // Original recommendation answers have SQL but no Asking task. They
+        // remain project-scoped history, not an absent task ownership proof.
+        if (response.askingTaskId == null) continue;
+        if (
+          !Number.isSafeInteger(response.askingTaskId) ||
+          response.askingTaskId <= 0
+        )
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
         const previous = await ctx.askingTaskRepository.findOneBy({
           id: response.askingTaskId,
           projectId: project.id,

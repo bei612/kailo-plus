@@ -4,6 +4,7 @@ import { AskingTaskRepository } from './apollo/server/repositories/askingTaskRep
 import { AskResultStatus, AskResultType } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { AskingService } from './apollo/server/services/askingService';
 import { components } from './common';
 import { ApiType } from './apollo/server/repositories/apiHistoryRepository';
 import {
@@ -13,6 +14,7 @@ import {
 import {
   bindingServiceCall,
   loadQueryDelivery,
+  digest,
 } from './apollo/server/services/nativeQueryAdmission';
 
 jest.mock('./common', () => ({
@@ -569,5 +571,190 @@ describe('original model preview and Asking receipt consumers', () => {
         nativePreviousQueries: [key],
       }),
     );
+  });
+});
+
+describe('original recommended answer follow-up preserves native task ownership', () => {
+  const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const config: any = {
+    bindingId: randomUUID(),
+    tenantId: randomUUID(),
+    workspaceId: randomUUID(),
+    projectId: 7,
+    nativeInstanceRef: 'fixture-instance',
+    nativeScopeRef: '7',
+  };
+  const mdl = { models: [] };
+  const hash = 'b'.repeat(40);
+  let responses: any[];
+  let ctx: any;
+  let service: any;
+  beforeEach(async () => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
+    responses = [];
+    const projectService = {
+      getCurrentProject: jest.fn(async () => ({ id: 7, language: 'EN' })),
+    };
+    service = Object.create(AskingService.prototype);
+    Object.assign(service, {
+      projectService,
+      threadRepository: {
+        transaction: jest.fn(async () => ({})),
+        commit: jest.fn(),
+        rollback: jest.fn(),
+        createOne: jest.fn(async (row) => ({ ...row, id: 11 })),
+        findOneBy: jest.fn(async ({ id, projectId }) =>
+          id === 11 && projectId === 7 ? { id, projectId } : undefined,
+        ),
+      },
+      threadResponseRepository: {
+        createOne: jest.fn(async (row) => {
+          const saved = { ...row, id: responses.length + 1 };
+          responses.push(saved);
+          return saved;
+        }),
+        getResponsesWithThread: jest.fn(async () => responses),
+      },
+      askingTaskTracker: {
+        createAskingTask: jest.fn(async () => ({
+          queryId: 'next-native-task',
+        })),
+      },
+    });
+    ctx = {
+      projectService,
+      askingService: service,
+      nativeIdentityScope: 'a'.repeat(64),
+      nativeHumanToken: 'fixture-original-human',
+      deployRepository: {
+        findLastProjectDeployLog: jest.fn(async () => ({
+          status: 'SUCCESS',
+          hash,
+        })),
+      },
+      askingTaskRepository: { findOneBy: jest.fn(async () => undefined) },
+      telemetry: { sendEvent: jest.fn() },
+    };
+    (loadQueryDelivery as jest.Mock).mockResolvedValue(config);
+    (bindingServiceCall as jest.Mock).mockResolvedValue({
+      scope: {
+        ...config,
+        generation: 1,
+        permission: 'discover',
+        checkedRevision: 'fixture-revision',
+      },
+    });
+    jest.spyOn(ModelResolver.prototype, 'getMDL').mockResolvedValue(mdl as any);
+    // Consume the actual original recommendation/manual SQL save path, not a
+    // prebuilt empty history. Native repositories are in-memory test doubles.
+    await new AskingResolver().createThread(
+      null,
+      {
+        data: {
+          question: 'Original recommendation',
+          sql: 'SELECT id FROM orders',
+        },
+      },
+      ctx,
+    );
+  });
+  afterEach(() => {
+    if (original === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    jest.restoreAllMocks();
+    jest.clearAllMocks();
+  });
+  const follow = () =>
+    new AskingResolver().createAskingTask(
+      null,
+      { data: { question: 'Follow up', threadId: 11 } },
+      ctx,
+    );
+  test.each([null, undefined])(
+    'saved answer with %s native task keeps original SQL history',
+    async (reference) => {
+      expect(responses[0].askingTaskId).toBeUndefined();
+      responses[0].askingTaskId = reference;
+      await expect(follow()).resolves.toEqual({ id: 'next-native-task' });
+      expect(ctx.askingTaskRepository.findOneBy).not.toHaveBeenCalled();
+      expect(service.askingTaskTracker.createAskingTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 7,
+          histories: [responses[0]],
+          nativeScope: expect.objectContaining({
+            bindingId: config.bindingId,
+            identityScope: ctx.nativeIdentityScope,
+          }),
+          nativeHumanToken: ctx.nativeHumanToken,
+          authorizeNative: expect.any(Function),
+        }),
+      );
+      expect(bindingServiceCall).toHaveBeenCalledWith(
+        config,
+        'human-action',
+        {
+          bindingId: config.bindingId,
+          authorizeScope: { permission: 'discover' },
+        },
+        ctx.nativeHumanToken,
+      );
+    },
+  );
+  test.each([0, -1, '1', 1.5, 9])(
+    'invalid or missing referenced task %s never enters the original AI dispatch',
+    async (reference) => {
+      responses[0].askingTaskId = reference;
+      await expect(follow()).rejects.toMatchObject({
+        message: 'QUERY_EVIDENCE_UNAVAILABLE',
+      });
+      expect(service.askingTaskTracker.createAskingTask).not.toHaveBeenCalled();
+    },
+  );
+  test.each(['a', 'd'])(
+    'mixed recommendation and native task retains exact HUMAN %s ownership',
+    async (identity) => {
+      const task = {
+        id: 21,
+        queryId: randomUUID(),
+        projectId: 7,
+        question: 'Tracked',
+        detail: {
+          nativeScope: {
+            bindingId: config.bindingId,
+            generation: 1,
+            identityScope: identity.repeat(64),
+            metadataReference: { hash, digest: digest(mdl) },
+          },
+        },
+      };
+      responses.push({
+        id: 2,
+        threadId: 11,
+        askingTaskId: task.id,
+        question: task.question,
+        sql: 'SELECT id FROM orders',
+      });
+      ctx.askingTaskRepository.findOneBy.mockResolvedValue(task);
+      if (identity === 'a') {
+        await expect(follow()).resolves.toEqual({ id: 'next-native-task' });
+        expect(service.askingTaskTracker.createAskingTask).toHaveBeenCalledWith(
+          expect.objectContaining({ histories: responses }),
+        );
+      } else {
+        await expect(follow()).rejects.toMatchObject({ status: 403 });
+        expect(
+          service.askingTaskTracker.createAskingTask,
+        ).not.toHaveBeenCalled();
+      }
+    },
+  );
+  test('changed current project cannot turn the original recommendation into foreign history', async () => {
+    ctx.projectService.getCurrentProject.mockResolvedValue({
+      id: 8,
+      language: 'EN',
+    });
+    await expect(follow()).rejects.toMatchObject({ status: 403 });
+    expect(service.askingTaskTracker.createAskingTask).not.toHaveBeenCalled();
   });
 });
