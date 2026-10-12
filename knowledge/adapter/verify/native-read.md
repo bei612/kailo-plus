@@ -5803,3 +5803,62 @@ DESIGN_COMMIT 精确更新到已独立发布的 `6e5dba8284e5076440724bd23570a10
 候选剔除原排版残留、并行 Reminder 测试和旧发布记录。最终固定候选文档门禁由
 集成批统一执行；本回执不以旧 docs、编译或这些定向检查代替完整隔离 suite、
 真实 HTTP 身份入口、Knowledge PostgreSQL 新迁移演练、生产组件部署或激活。
+
+### 2026-10-12 原 RECEIVER 回执确认只观察既有 SOURCE 执行
+
+1. 权威：`.design/13` §4.4、§7 要求原批次重复/失证只对账、不再次制造
+   SOURCE 副作用。固定官方 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`
+   的 `internal/application/service/datasource_service.go::ManualSync/ProcessSync`
+   仍是原生调度消费者；本批只修 Kailo 已授权 receiver transport 接缝。
+2. 影响：原 `fileStorageTransport.receipt` 收到 `read_receipt` ACK 后，过去把
+   原请求直接发回 `request_read_grant`，没有消费主线已有
+   `AdapterReadGrantRequest.observeActionExecutionId`。Core 的
+   `application_read_grant::observe_retained` 只有明确只观察才保证查无原 AE
+   或未就绪时不落入后续准入。现在复制本次顶层请求、固定原 SOURCE AE，
+   并核返回 AE 与 Operation；发现、导入完成及退休均经这个原消费者。
+3. 副作用：首次 grant 路径、原批次的 `readRequest`、输入摘要和持久 cursor
+   不变；不增加模型、接口或配置，不保存 token，不复制正文到 Core。这里只
+   使用既有只观察合同，不扩大权限，也不把收到回执 ACK 当作用量提交完成。
+4. 异常：原 AE 缺失、错 AE、PENDING/UNKNOWN、拒绝或依赖不可用均不更新为
+   COMPLETED，不重读来源、不重新准入。缺失 AE 不发送后续观察请求；读取
+   回执仍沿既有原 Operation 对账。普通与历史原路径不回填新身份或代次。
+
+固定输入为 `0e8055cfd03d4149fc536b00e393499b6c47e98c` 加本批两源文件。
+沿原 `kailo-knowledge-delete-handoff` SDK（4 CPU / 8 GiB、equal swap、UID 1000），
+Data 原 build/mod 缓存、独立 Data 源码及显式 TMPDIR/GOTMPDIR；没有新镜像、
+依赖下载或宿主工具链。原 SDK 镜像为
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`。
+
+本批 HTTP 检查是原消费者的隔离服务夹具，不代表 Core HTTP 鉴权、真实双服务
+联调、生产绑定/部署或全局门禁通过。既有 Core retained 段真实 PG 的查无 AE、
+错 key/batch 与不增加 AE/audit/usage 证据见上一节，不据此声称本批重新执行 PG。
+
+原命令（容器工作目录 `/tmp/receipt-observe.c7NEEb/knowledge`）：
+
+```text
+GOCACHE=/cache/build GOMODCACHE=/cache/mod TMPDIR=/tmp/receipt-observe.c7NEEb/tmp GOTMPDIR=/tmp/receipt-observe.c7NEEb/tmp GOPROXY=off GOSUMDB=off go test ./internal/application/service -run '^TestFileStorage(ReceiverAcknowledgementBindsExactReceipt|ReceiverRetainsOriginalBilateralObservation|ExpiredRetirementOnlyObservesOriginalTask|CompletedReceiptCannotAuthorizeAnotherWrite)$' -count=1 -timeout=5m -v
+```
+
+日志目录为
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/receipt-observe.c7NEEb`。
+正验 81745 与还原 32733 各 4 个顶层、24 个子场景通过，退出 0。
+第一轮 41849 因漏导出原 `docreader/client`、`docreader/proto` 而 setup failed，
+没有产品断言结果；补同固定 HEAD 的原依赖后才得到正验，不改依赖或业务代码。
+私有反证 24190 去掉只观察字段与 AE 比对，实际 HTTP 缺字段使 6 子场景失败；
+随后恢复字段、仅保留 AE 比对破坏，98802 的 wrong-AE 原断言报 expected error
+got nil，退出 1。两生产判据完整还原、两源与工作树 cmp 0 后运行最终四项目标。
+
+| 原日志 | 退出码 | SHA-256 |
+| --- | --- | --- |
+| positive.log | 1（输入缺项） | `4aac63ef1be60e6af6c46b9aa13ff751c4fb0cdfefe5d4015422dde64c2c3993` |
+| positive-complete-input.log | 0 | `574b03cdb7dea3bd874014b786bf09c93ee55f3cd98b3e199c32c314a04ba684` |
+| negative.log | 1 | `a5775181e691c5b234a67c94baa20c49b572a4654c1588e047526b35e6a15886` |
+| negative-execution.log | 1 | `4da246e83e3891896ce6f2192d0aed59cd1cccd61eb72c8ce33d8bebfc2aaf14` |
+| restored.log | 0 | `d2da659f302a401134dee79f7648a9bf2f006369b81f2c7e223e804d07d6fc3d` |
+
+主线共享文档检查 73586 退出 0、七项通过；原只读 2 CPU / 2 GiB SDK、Data
+临时目录与缓存，未导出大树。日志
+`/volumes/data/kailo/tmp/share-observe-docs.gvKsJg/check-docs.log`，SHA-256
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+该门禁检查 top/docs 实际范围，不逐行验收本回执正文，也不是固定发布树 full；
+本回执由主线人工复核。本批未构建/部署、未上架、未重跑全局门禁或四侧生成。

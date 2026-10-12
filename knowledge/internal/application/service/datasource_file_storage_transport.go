@@ -454,14 +454,25 @@ func (t *fileStorageTransport) receipt(ctx context.Context, grant *fileStorageGr
 	if fileStorageText(result, "operationId") != fileStorageText(grant.value, "operationId") || fileStorageText(result, "receiptDigest") != receiptDigest {
 		return fmt.Errorf("native receiver receipt acknowledgement is unavailable")
 	}
-	// Receipt acceptance is not committed usage or a terminal Operation. The
-	// same grant request is also the existing read-only reconciliation path;
-	// PENDING/UNKNOWN leaves the native cursor unchanged and issues no write.
-	observation, err := t.coreCall(ctx, "/service/v1/adapter/request_read_grant", grant.request)
+	// Receipt acceptance is not committed usage or a terminal Operation. Pin
+	// this follow-up to the already admitted SOURCE AE so missing/unfinished
+	// evidence cannot fall through to new admission. Keep the original command
+	// unchanged: it is retained in the batch's read evidence and compared by Core.
+	actionExecutionID := fileStorageText(grant.value, "actionExecutionId")
+	if !fileStorageUUID(actionExecutionID) {
+		return fmt.Errorf("original source execution is unavailable for observation")
+	}
+	observeRequest := make(map[string]any, len(grant.request)+1)
+	for key, value := range grant.request {
+		observeRequest[key] = value
+	}
+	observeRequest["observeActionExecutionId"] = actionExecutionID
+	observation, err := t.coreCall(ctx, "/service/v1/adapter/request_read_grant", observeRequest)
 	if err != nil {
 		return err
 	}
 	if fileStorageText(observation, "outcome") != "COMPLETED" ||
+		fileStorageText(observation, "actionExecutionId") != actionExecutionID ||
 		fileStorageText(observation, "operationId") != fileStorageText(grant.value, "operationId") {
 		return fmt.Errorf("native read operation has not confirmed both receipts and committed usage")
 	}

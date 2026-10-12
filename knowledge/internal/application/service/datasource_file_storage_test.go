@@ -175,9 +175,16 @@ func TestFileStorageReceiptDigestMatchesCoreCanonicalBytes(t *testing.T) {
 }
 
 func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
-	for _, scenario := range []string{"exact", "wrong-digest", "wrong-operation", "missing-digest", "uppercase-digest", "other-completion", "other-usage", "usage-pending"} {
+	for _, scenario := range []string{"exact", "wrong-digest", "wrong-operation", "missing-digest", "uppercase-digest", "other-completion", "other-usage", "usage-pending", "usage-unknown", "missing-source-execution", "different-source-execution", "source-execution-gone", "observation-unavailable"} {
 		t.Run(scenario, func(t *testing.T) {
 			operation, binding, native := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			sourceExecution := uuid.NewString()
+			originalRequest := map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(),
+				"actionKey": "file_storage.read@v1", "actionVersion": 1, "idempotencyKey": operation, "inputJson": `{}`,
+				"nativeBatch": map[string]any{"receiverResourceId": uuid.NewString(), "importConfigRef": uuid.NewString(),
+					"batchId": uuid.NewString(), "actionKey": "knowledge.sync_apply@v2", "actionVersion": 1}}
+			originalBytes, err := json.Marshal(originalRequest)
+			require.NoError(t, err)
 			var submitted map[string]any
 			receipts, observations := 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -217,11 +224,33 @@ func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
 					require.NoError(t, json.NewEncoder(w).Encode(ack))
 				case "/service/v1/adapter/request_read_grant":
 					observations++
+					var request map[string]json.RawMessage
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					require.Equal(t, sourceExecution, fileStorageText(request, "observeActionExecutionId"), "settlement must only observe its original SOURCE execution")
+					delete(request, "observeActionExecutionId")
+					requestBytes, err := json.Marshal(request)
+					require.NoError(t, err)
+					require.JSONEq(t, string(originalBytes), string(requestBytes))
+					if scenario == "source-execution-gone" {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					if scenario == "observation-unavailable" {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
 					outcome := "COMPLETED"
 					if scenario == "usage-pending" {
 						outcome = "PENDING"
 					}
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": operation, "outcome": outcome, "receiverReceipt": submitted}))
+					if scenario == "usage-unknown" {
+						outcome = "UNKNOWN"
+					}
+					observedExecution := sourceExecution
+					if scenario == "different-source-execution" {
+						observedExecution = uuid.NewString()
+					}
+					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": operation, "actionExecutionId": observedExecution, "outcome": outcome, "receiverReceipt": submitted}))
 				default:
 					t.Errorf("receipt validation must not execute SOURCE or another write: %s", r.URL.Path)
 					w.WriteHeader(http.StatusForbidden)
@@ -241,9 +270,15 @@ func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
 				}{{MeterKey: "bytes", QuantitySource: "CONTENT_BYTES"}},
 			})
 			require.NoError(t, err)
-			grant := &fileStorageGrant{key: operation, value: fileStorageTestWire(t, map[string]any{"operationId": operation}), request: map[string]any{"idempotencyKey": operation}, receiver: map[string]json.RawMessage{}}
+			grant := &fileStorageGrant{key: operation, value: fileStorageTestWire(t, map[string]any{"operationId": operation, "actionExecutionId": sourceExecution}), request: originalRequest, receiver: map[string]json.RawMessage{}}
+			if scenario == "missing-source-execution" {
+				delete(grant.value, "actionExecutionId")
+			}
 			err = transport.receipt(context.Background(), grant, native, "<&>\u2028\\u2028", fileStorageDigest([]byte("body")), 9007199254740993, time.Now())
 			require.Equal(t, 1, receipts)
+			retainedBytes, marshalErr := json.Marshal(grant.request)
+			require.NoError(t, marshalErr)
+			require.Equal(t, originalBytes, retainedBytes, "observation must not mutate the retained read command")
 			if scenario == "exact" {
 				require.NoError(t, err)
 				require.Equal(t, 1, observations)
@@ -253,7 +288,7 @@ func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
 				require.Error(t, err)
 				require.Empty(t, fileStorageText(grant.value, "outcome"))
 				require.NotNil(t, grant.receiver)
-				if scenario == "usage-pending" {
+				if scenario == "usage-pending" || scenario == "usage-unknown" || scenario == "different-source-execution" || scenario == "source-execution-gone" || scenario == "observation-unavailable" {
 					require.Equal(t, 1, observations)
 				} else {
 					require.Zero(t, observations)
