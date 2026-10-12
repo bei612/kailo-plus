@@ -44,10 +44,10 @@ fn content(plaintext: &str) -> Option<ReminderContent> {
         {
             return None;
         }
-    } else if !object
+    } else if object
         .get("note")
         .and_then(Value::as_str)
-        .is_some_and(|v| !v.is_empty())
+        .is_none_or(|v| v.is_empty())
     {
         return None;
     }

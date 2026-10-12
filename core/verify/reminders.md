@@ -330,3 +330,44 @@ SHA-256 `cec099424600c2232e713ae539c1a24dc1eb5e496c077316ebcbc0863a70ca85`。
 “全部通过。”；`check-docs-corrected.log` 的 SHA-256 为
 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
 该入口不直接扫描本回执，主线另行逐项复核；不将文档通过算作 full 通过。
+
+## 2026-10-12 Core 提醒解析的等价 lint 收口
+
+1. 权威：沿上述 DD-72/75/77 与固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/reminders/lib/reminderService.ts::parseReminderContent`；
+   无 target 时必须有非空字符串 note，原语义不变。
+2. 影响：仅 `core/crates/platform-core/src/reminders.rs::content` 将
+   `!is_some_and(|v| !v.is_empty())` 等价改为 `is_none_or(|v| v.is_empty())`。
+   原 view、query、head、confirm_accepted 继续消费同一解析结果，
+   没有改 BFF/契约、三端、持久化、权限或旧数据格式。
+3. 副作用与异常：缺 note 或空字符串仍拒绝；非字符串、非法 target、未知
+   status 的先行守卫不变。没有新增 I/O、状态、重试或默认值。
+4. 证据：原 Inbox 作者批的 42366 在两项作者检查通过后因该表达式触发
+   `clippy::nonminimal_bool`，实际 exit101；不是授权或业务断言失败。
+   原日志 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/message-author-batch.uNkzAC/core-final-restored.log`，
+   SHA-256 `1dd77e20a94d14a4cd0db4fe58042e296c8841b0cd71d0cf0555ea8ed6d6f7b6` 保留。
+
+经原输入负责人授权，仅在已结束的 `message-author-batch.aE7Y6M` 修改此两行，
+保留 Inbox 作者代码。联合输入为当前主干
+`dd65fb74a53ebb6aaac7ba1c3ecb766b2accb3b0` 的树
+`9c4a3f2930033889bddad02bc36f236e9999530e` 加本改动，
+联合树 `bc1ba5835c39e982eaead78743ab11b714259d19`。
+没有用另导出的旧 Core 输入编译；原 39 路径和原日志未改。
+
+原 SDK `kailo-cells-closure-kxbrvt` 实核只有 sleep、4 CPU/8 GiB/equal swap、
+UID1000，MemAvailable 约29.9 GiB；target/registry/tmp 均在 Data。
+原 Cargo 保持 `-j16`，无新镜像、下载或全局构建。40118 实际 exit0：
+
+```text
+TMPDIR=/evidence/message-author-batch.aE7Y6M/tmp SQLX_OFFLINE=true
+cargo test --locked --offline -j16 -p platform-core --bin platform-core reminders:: -- --nocapture
+cargo clippy --locked --offline -j16 -p platform-core --bin platform-core -- -D warnings
+```
+
+原提醒两项通过、440 项筛选未运行；随后窄 clippy 通过（40.24s）。
+同 SDK 单文件 `rustfmt --check --edition 2021` 退出0。原件
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/reminder-content-clippy.xTyjiE/positive.log`，
+SHA-256 `63971d9e1b5b6ef873d1841b3cd2320525b4932584401f6c6cf095f6f9210b66`。
+本批没有新增检查或删除断言，没有重复旧式 lint 失败编译；不是全量检查、
+真实 BFF/Relay HTTP 验收或部署。文档由主线合批，候选仅本源码与此回执。
