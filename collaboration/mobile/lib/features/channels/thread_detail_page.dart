@@ -287,6 +287,7 @@ class ThreadDetailPage extends HookConsumerWidget {
 
     void updateStickyDateHeader(Iterable<ItemPosition> positions) {
       final update = stickyDateIndex.resolve(
+        locale: Localizations.localeOf(context).toLanguageTag(),
         positions: positions,
         viewportHeight: viewportHeight,
         stickyTop: frostedAppBarHeight(context) + Grid.twelve,

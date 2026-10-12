@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' show max, min;
+import 'dart:math' show max, min, pi;
+import 'dart:ui';
 
+import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -11,6 +16,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/auth.dart';
 import '../../shared/community/community_icon_provider.dart';
+import '../../shared/platform/platform_api.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -18,9 +24,11 @@ import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/skeleton.dart';
+import '../../shared/widgets/modal_presentation.dart';
 import '../profile/profile_avatar.dart';
 import 'channel.dart';
 import 'channel_actions_sheet.dart';
+import 'channel_management_actions.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
 import 'relay_sync_banner.dart';
@@ -36,6 +44,21 @@ part 'channels_page/sections.dart';
 part 'channels_page/channel_tile.dart';
 part 'channels_page/skeleton.dart';
 part 'channels_page/community.dart';
+part 'channels_page/quick_actions.dart';
+part 'channels_page/quick_actions_launcher.dart';
+part 'channels_page/sheets.dart';
+
+enum _QuickAction { createChannel }
+
+String _channelText(
+  BuildContext context,
+  PlatformMessageKey key, {
+  Map<String, Object> variables = const {},
+}) => platformText(
+  key,
+  locale: Localizations.localeOf(context).toLanguageTag(),
+  variables: variables,
+);
 
 const double _kChannelSectionInset = Grid.gutter;
 const double _kChannelLeadingWidth = 22.0;
@@ -323,7 +346,10 @@ class ChannelsPage extends HookConsumerWidget {
               topSectionHeight: topSectionHeight,
               usesPinnedGradient: usesPinnedGradient,
               scrollController: channelsScrollController,
-              onRefresh: () => ref.read(channelsProvider.notifier).refresh(),
+              onRefresh: () {
+                ref.invalidate(channelCreateRoleProvider);
+                return ref.read(channelsProvider.notifier).refresh();
+              },
               onSelectChannel: openChannel,
             ),
           ),

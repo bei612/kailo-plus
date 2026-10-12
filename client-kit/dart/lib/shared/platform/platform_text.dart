@@ -4,6 +4,9 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  nativeQuickActionsOpen,
+  nativeQuickActionsClose,
+  nativeChannelCreateType,
   inboxReminders,
   remindersRemindLater,
   remindersTitle,
@@ -2492,6 +2495,12 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.nativeQuickActionsOpen: (
+    'Create or start conversation',
+    '创建或发起会话',
+  ),
+  PlatformMessageKey.nativeQuickActionsClose: ('Close quick actions', '关闭快捷操作'),
+  PlatformMessageKey.nativeChannelCreateType: ('Channel type', '频道类型'),
   PlatformMessageKey.inboxReminders: ('Reminders', '提醒'),
   PlatformMessageKey.remindersRemindLater: ('Remind me later', '稍后提醒我'),
   PlatformMessageKey.remindersTitle: ('Reminder', '提醒'),

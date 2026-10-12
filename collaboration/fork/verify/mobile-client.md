@@ -20,6 +20,49 @@ URI scheme 回调，IdP 登记见 `core/verify/native-identity.md`）、刷新�
 重试一次、只代发 `/api/v1/`、NIP-98 持钥证明登记设备、结果不明显示为待确认。BFF 回应的类型来自
 `contracts/` 的 Dart 生成物与共享平台文案生成物，构建时经 `vendor_files` 放入。
 
+## 受治理频道创建恢复（2026-10-12）
+
+上节的删项及 2026-09-25「自建 Channel 被拒」记录是历史裁剪和设备直接发布 CONTROL 的证据，不是当前完整恢复目标。本批恢复普通用户经管理面 BFF 发起的原版频道创建；设备仍不能直接发布 CONTROL。New DM、Browse Channels 及其他删项没有在本批恢复，不称完整 launcher、频道管理或原版全量一致。固定原 Mobile 没有 Projects Task 指派页面，本批该项为「无适用对象」，不制造新页面。
+
+### 编辑前四项核对结论
+
+1. 权威为 DD-75、DD-80 与 `.design/09-统一身份与Buzz协议投影.md` §4。Workspace 与 Relay Channel 使用同一 ID，Core 才能发布 CONTROL；Mobile 管理面经 NativeSession/BFF，协作内容与 roster 仍以本机密钥直连 Relay。
+2. 影响面为 Home 原入口、Create Channel 原 sheet、原 ActionCommand/ActionSubmission、TaskView、受权 WorkspaceView 和原 channelsProvider。没有改平台契约、数据库、工作流类型、Mobile 非组件宿主边界或共享页面权威；三条缺失文案仅加在 TS 单一目录并由原生成器生成 Dart。
+3. fresh session 必须与可信 actor/tenant 一致，fresh RoleWorkspacePage.createActionKey 允许时才创建原意图。原 POST 之前持久保存参数和 key；已知执行引用只 GET，未收到引用时仅由用户以同 key、原字节 command 回查。权限错误、查询失败、UNKNOWN、投影落后不清意图，不放行换 key 创建，也不渲染成功或确定失败。
+4. 并发重入不替换原意图；关闭 sheet、重挂载和进程重启恢复原参数；身份切换按 actor+tenant+运行时平台地址隔离。本机仅保存原 command 与响应引用，没有 token、Cookie、密码或独立终态。Task 必须精确匹配 AE/operation/action/workflow，且本次 target 的 Workspace/slug/member 与原生频道 roster 一致，才清本机意图并进入频道；确定结束也须先成功移除本机记录才能放行新意图。未决时没有后台重复 POST 或自造过期成功，终态继续以原 Core Task 为权威、用户显式重查。
+
+### 固定源码差异与当前消费者
+
+固定 Buzz commit `779af8886caae1317b4de962082429867ab61503`：`mobile/lib/features/channels/channels_page/quick_actions_launcher.dart::ChannelQuickActionsLauncher`、`mobile/lib/features/channels/channels_page/quick_actions.dart::_MorphingQuickActionsButton`、`mobile/lib/features/channels/channels_page/sheets.dart::_CreateChannelSheet`、`mobile/lib/features/home/home_page.dart::HomePage.build` 是本批实际恢复来源；`mobile/lib/features/channels/channel_management_actions.dart::ChannelActions.createChannel` 的设备直接写 CONTROL 不恢复。
+
+- 原样保留：原 launcher 动画、表单、名称/说明、公开/私密、持续/临时及九项 TTL、键盘 Done 提交和底部导航几何。只恢复原 Create 行；没有用空 DM/Browse 行冒充原能力。
+- 共享迁移：新缺的三条 Mobile 文案继续 TS→Dart 原同源路径；Mobile 页面主体仍为原 Flutter，没有搬成 WebView。
+- 已授权治理改造：`collaboration/mobile/lib/features/channels/channel_management_actions.dart::ChannelActions` 复用 `workspace.create`；可信准入、原意图恢复、明确重查、精确结果回读和 UNKNOWN 中性文案取代原设备直接创建。
+- 缺失需恢复：New DM、Browse Channels 与其他既有缺项仍保留；本批没有安装包、设备截图或完整视觉对照，不声明 100% 还原。
+
+Core 依据为 apps commit `c661236d5d85dcb29fca4b7d1f8727ec4d46df7d` 的 `core/crates/platform-core/src/governance.rs::Governance::submit_with_native_origin`、`Governance::by_idempotency`、`Governance::replay`：去重作用域是 tenant/initiator/key，action 与参数不一致拒绝复用；同键回查能继续原 AE 的 decide/dispatch，不能据此宣称绝不再调用准入/派发方法。既有 Web 消费者为 `client-kit/ts/platform/src/react/roles.tsx::useWorkspaceCreate`。本批 Mobile 模拟消费者证据只证明同 key/字节、已知 AE GET-only 和结果关联，不替代 Core 在线不产生第二 AE/operation/业务执行的验收。
+
+同批最小修复原消费者编译：`platform_views.dart` 对已有可选 interval 字段和 action 显式拒绝 null，不默认零值或空模板；没有新增 cron/多步骤 Mobile 产品支持。`_ThreadStickyDateIndex.resolve` 仅从唯一原调用方传入实际 locale，避免无 context 的索引读 Localizations；原 Channels 测试导入排除同名 SessionStatus/Theme，不改既有断言。
+
+### 实际验证与交付界限
+
+源码候选基于上述 apps commit，私有 index 仅 12 个 Mobile 路径，2125+/10-；独立 TS/Dart 三 key 增量另有 12 行。公共 index 和继承 theme 修改未纳入。完整 patch 位于 `/volumes/data/kailo/tmp/mobile-channel-create.tph0BR/mobile-12paths.patch`，SHA256 `62b10c70e08169de04b54ee82549ac92bb540fd78a202bd7012b70c7bdc1195c`；三 key patch 为同目录 `mobile-i18n-3keys.patch`，SHA256 `3b17cad8908d0c982fbde716a0a2a32a50a0223e5022c571c6756d782d4ddafb`。
+
+复用本地不可变 Flutter 镜像 `sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`。执行前核对原构建进程、CPU/内存压力；Docker 实际 2 CPU、4294967296 字节 memory=memory+swap、UID 1000、network none，输入、SDK/pub 缓存、HOME、tmp 与日志均在 Data。未在宿主编译，未 pull/load 镜像。以下日志均在上述同一 Data 目录。
+
+| 实际命令/证据 | 结果 |
+|---|---|
+| 原 `python3 tools/gen-platform-i18n.py` 及 `--check` | 生成成功；`PASS: Mobile platform and reason catalogs match the shared TypeScript source`，exit 0，见 `generator-check.log` |
+| 本批生产文件原 `flutter analyze --no-pub` | `No issues found!`，见 `analyze-tests-consumer-fix.log`；后续八项分析只有新测试两条大括号 info，见失败原件 |
+| 修正后新测试 `flutter analyze --no-pub test/features/channels/channel_creation_test.dart` | `No issues found! (ran in 68.6s)`，见 `final-consumers-braces-corrected.log`，exit 0 |
+| 原 `flutter test --no-pub --reporter expanded`：channel_creation、channels_page、home_page 三文件 | `00:40 +34: All tests passed!`，同一最终日志、容器 exit 0；含七项治理/恢复用例及原表单打开、提交、重挂载、实际滚动点击重查和 GET 计数 |
+| 私有 HEAD 三 key `git apply --cached --check`；本批 `git diff --cached --check` | 均 exit 0，公共 index 未改 |
+| 只在私有输入暂删 operation 精确关联 | `mutation-operation-mismatch.log` 实际 exit 1：应抛 FormatException 却返回 Channel；恢复后 Actions SHA256 与破坏前同为 `742e6ac7d653ef797da5ee75614ee1a302b205b5831828dabc27b2ddf3c0e6a0`，最终 34 项重新通过 |
+
+失败原件保留：`analyze-initial.log` 为首次 pub 缓存错误挂载后主动停止本人容器（137，不称 OOM）；`analyze-corrected-cache.log` 为 SessionStatus 导入冲突；`analyze-tests.log` 为新测试括号解析失败（65）；`analyze-tests-corrected.log` 为上述既有可选字段/locale/同名测试导入编译阻断；`analyze-tests-consumer-fix.log` 为原表单输入帧未泵导致一项失败；`channel-consumers.log` 为重挂载时 Hook init 读 Localizations 的真实运行断言，已改为 build 计算文案、effect 只恢复；`channel-consumers-remount-fix.log` 虽为 +8/exit 0，但屏外点击警告不能证明重查操作，最终已加入屏内滚动及 GET 计数断言；`final-analyze-consumers.log` 为新测试两条 curly_braces info、exit 1，后续加括号并在最终命令复验。没有把以上失败或未操作到的旧通过当最终验收。
+
+交付分层：源码已写入并形成上述私有候选；仅定向模拟消费者验收通过；本批没有独立 commit/push；没有部署、APK/iOS 构建、安装包、真机或正常 SSO 在线创建验收；未运行 Flutter 全套或 `check.sh --full`，交由主线合批门禁，不能据这 34 项提高生产交付完成率。
+
 ## 清单可复现
 
 上一轮清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `463d59637c265052e99ea7f1d7a4559eab9121cf`）。

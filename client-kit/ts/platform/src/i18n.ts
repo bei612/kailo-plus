@@ -94,6 +94,9 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "native.quickActions.open": { en: "Create or start conversation", "zh-CN": "创建或发起会话" },
+  "native.quickActions.close": { en: "Close quick actions", "zh-CN": "关闭快捷操作" },
+  "native.channelCreate.type": { en: "Channel type", "zh-CN": "频道类型" },
   "inbox.reminders": { en: "Reminders", "zh-CN": "提醒" },
   "reminders.remindLater": { en: "Remind me later", "zh-CN": "稍后提醒我" },
   "reminders.title": { en: "Reminder", "zh-CN": "提醒" },

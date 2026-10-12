@@ -609,8 +609,11 @@ final platformAutomationProvider = FutureProvider.autoDispose
       final versions = <String>{};
       for (final version in detail.versions) {
         final content = version.content;
+        final action = content.action;
         final trigger = content.trigger;
         final spec = trigger.scheduleSpec;
+        final everySeconds = spec?.everySeconds;
+        final offsetSeconds = spec?.offsetSeconds;
         final validTrigger = switch (trigger.kind) {
           AutomationTriggerKind.MENTION =>
             content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
@@ -625,9 +628,11 @@ final platformAutomationProvider = FutureProvider.autoDispose
                 trigger.mentionPrincipalId == null &&
                 trigger.textPrefix == null &&
                 spec != null &&
-                spec.everySeconds > 0 &&
-                spec.offsetSeconds >= 0 &&
-                spec.offsetSeconds < spec.everySeconds &&
+                everySeconds != null &&
+                offsetSeconds != null &&
+                everySeconds > 0 &&
+                offsetSeconds >= 0 &&
+                offsetSeconds < everySeconds &&
                 spec.catchupWindowSeconds >= 10,
         };
         if (!versions.add(version.assetId) ||
@@ -637,7 +642,8 @@ final platformAutomationProvider = FutureProvider.autoDispose
             version.ordinal <= 0 ||
             version.ownerPrincipalId.isEmpty ||
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(version.configHash) ||
-            content.action.template.trim().isEmpty ||
+            action == null ||
+            action.template.trim().isEmpty ||
             !validTrigger ||
             trigger.textPrefix?.isEmpty == true) {
           throw const FormatException('Automation version');

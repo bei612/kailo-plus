@@ -44,6 +44,7 @@ class _ThreadStickyDateIndex {
   }
 
   _ThreadStickyDateUpdate resolve({
+    required String locale,
     required Iterable<ItemPosition> positions,
     required double viewportHeight,
     required double stickyTop,
@@ -117,7 +118,7 @@ class _ThreadStickyDateIndex {
       state: StickyDateHeaderState(
         label: formatDayHeading(
           activeDayTimestamp,
-          locale: Localizations.localeOf(context).toLanguageTag(),
+          locale: locale,
         ),
         translateY: (translateY * 2).round() / 2,
       ),
