@@ -13,6 +13,7 @@ export type AppSidebarProps = {
   currentPrincipalId?: string;
   fallbackDisplayName?: string;
   homeBadgeCount: number;
+  homeBadgeEnabled: boolean;
   isLoading: boolean;
   profile?: Profile;
   relayConnectionCard: ReturnType<typeof useSidebarRelayConnectionCard>;

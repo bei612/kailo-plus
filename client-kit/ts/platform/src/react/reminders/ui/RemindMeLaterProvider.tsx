@@ -1,7 +1,6 @@
 import * as React from "react";
 
-import { useRemindersQuery } from "../hooks";
-import { countDue } from "../lib/reminderFilters";
+import { useDueReminderBadgeCount, useRemindersQuery } from "../hooks";
 import type { ReminderTarget } from "../lib/reminderTypes";
 import { RemindMeLaterDialog } from "./RemindMeLaterDialog";
 
@@ -42,7 +41,8 @@ export function RemindMeLaterProvider({
   }, []);
 
   const remindersQuery = useRemindersQuery(pubkey);
-  const reminders = remindersQuery.data;
+  const reminders = remindersQuery.isSuccess ? remindersQuery.data : undefined;
+  const dueReminderCount = useDueReminderBadgeCount(pubkey, Boolean(pubkey));
   const activeReminderEventIds = React.useMemo(() => {
     const ids = new Set<string>();
     for (const reminder of reminders ?? []) {
@@ -57,8 +57,8 @@ export function RemindMeLaterProvider({
   }, [reminders]);
 
   const contextValue = React.useMemo(
-    () => ({ openReminder, activeReminderEventIds, available: Boolean(pubkey), reminderCount: reminders?.length ?? 0, dueReminderCount: countDue(reminders ?? []) }),
-    [openReminder, activeReminderEventIds, pubkey, reminders],
+    () => ({ openReminder, activeReminderEventIds, available: Boolean(pubkey), reminderCount: reminders?.length ?? 0, dueReminderCount }),
+    [openReminder, activeReminderEventIds, pubkey, reminders, dueReminderCount],
   );
 
   return (

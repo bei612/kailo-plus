@@ -59,8 +59,9 @@
   不读取已被替换的父 head、不向审计增加正文或正文摘要。原 event 不可核时
   UNKNOWN、请求语义不符时 CONFLICT，均不重新派发。
 - 已授权语言适配：沿唯一 TS 词条与原 Dart 生成路径提供中文／英文。
-- 缺失需恢复：原系统通知、通知轮询、应用侧栏徽标以及 Mobile 的原提醒
-  消费者不在本批已完成范围；不能将已恢复列表称为整个原提醒模块完成。
+- 缺失需恢复：原系统通知的水印、通知发送、音效以及 Mobile 的原提醒
+  消费者仍未恢复；原侧栏徽标与共享查询刷新见下文后续批次，不能将列表
+  和计数恢复称为整个原提醒模块完成。
   Native 资料沿原 getUsersBatch 保留真实 isAgent 头像形状；Web 原
   WebProfileView 不提供该字段，Agent 头像形状不计已恢复，不能凭公钥猜身份。
 
@@ -169,3 +170,79 @@ up/down、真实 Relay 成员 kind 投递、真实 BFF 授权与发布对账、�
 新版浏览器操作和截图均未在本批完成。当前在线 Web 仍是
 `9d718234b74b688d9b81816f9b67470d4fc80440`，不能用其旧图认领这些源码。
 本批未运行新的 `check.sh --full`，未部署；已知全量失败与生产发布阻断继续保留。
+
+## 2026-10-12 原侧栏到期提醒徽标
+
+本节是独立后续源码检查点，不改变以上各次检查的输入和失败记录。
+
+1. 权威与四类差异：固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+   的 `desktop/src/features/reminders/hooks.ts::useDueReminderBadgeCount`、
+   `desktop/src/app/AppShell.tsx::AppShell` 在原 feed 计数上相加到期提醒；
+   `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPinnedHeader`
+   保留 Inbox 激活时的提醒计数及 99 显示上限。原样保留现有徽标 JSX、样式、
+   原 `countDue` 的 pending／notBefore 判据；共享迁移原
+   `desktop/src/features/reminders/lib/reminderNotificationPoll.ts::startReminderNotificationPoll`
+   到共同提醒模块，文件与固定源逐字节相同。原 30 秒间隔不是本批新增产品配置。
+   原 `desktop/src/features/reminders/useReminderNotifications.ts::useReminderNotifications`
+   中的共享查询失效刷新迁入唯一共同 Provider 消费的徽标 hook；只迁移刷新，
+   不伪装已经接通通知发送、水印或音效。没有复制第二份提醒状态权威。
+2. 影响：共同 `AppSidebarPrimaryMenu` 消费现有 RemindMeLaterProvider，
+   Web PlatformApp 和 Desktop AppShell／AppSidebar 只投递现有 homeBadgeEnabled。
+   同一 scope/pubkey 查询负责列表、消息底色及徽标，没有新增数据接口、契约、
+   持久状态或三端迁移。和原版一样，关闭徽标只隐藏该计数，不停止其他消费者
+   正在使用的提醒查询；Inbox 激活不抑制到期提醒数。
+3. 副作用：授权治理接缝不变，刷新仍调用当前 SERVER／CLIENT 宿主的既有
+   query。查询拒绝后不继续暴露旧计数／pending 底色，不把隐藏数字视作成功读取。
+   dataUpdatedAt 使内容不变的成功回读也重算到期时间，避免 React Query 的
+   结构共享使数字停在加载时。没有新增发布、副作用重试、审计正文或凭据路径。
+4. 异常：空集合为零；done／cancelled 不计数；未来提醒跨 notBefore 后在原
+   调度下一次成功回读时增加；原查询失败继续使用既有错误路径，不生成成功终态。
+   scope／pubkey 变化清理旧 interval，旧请求完成只写其原 query key，不进入
+   新身份徽标；卸载沿原返回清理函数取消 interval。未新增六类错误或状态枚举。
+
+实际检查使用原 `kailo-web-thread-tooltip-sdk`：4 CPU、8 GiB，memory+swap
+总限额等于内存（无额外 swap）。开始时只有 sleep，MemAvailable 约 33.7 GiB。
+源码／依赖挂载、TMPDIR 和 npm cache 都指向既有 Data 路径，没有新增镜像、
+安装依赖、全局构建或整树导出。源码输入沿原 `reminder-consumers.RcN79Y` 复用；
+本批日志独立保存于
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/reminder-badge.qntxlD`。
+
+- 首轮 46460 exit 1：共享类型通过；两套件 21 passed／2 failed，新增侧栏
+  场景因 jsdom 缺少 matchMedia 在挂载失败。补入既有 sidebar-shell 相同的
+  浏览器 fixture，不改正式响应式逻辑或检查超时。`positive.log` 原件保留。
+- 22012 exit 0：`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json`，
+  `node node_modules/vitest/vitest.mjs run test/reminders.test.tsx test/sidebar-shell.test.tsx --no-file-parallelism`
+  共 23/23，随后 Web／Desktop 原 `./node_modules/.bin/tsc --noEmit -p tsconfig.json`
+  都通过。日志 `positive-fixture-corrected.log`。后续没有重复两宿主类型检查。
+- 将取消证据改成真实 `useReminderMutations.cancel` → publish → invalidate →
+  query 消费，并加入切身份前在途旧查询晚返回检查。21890 exit 2：fixture 的
+  字符串不符合生成的 ReminderStatus；改用既有 parseReminderContent 构造后，
+  93848 共享类型与同两套件 23/23、exit 0。分别保留 `positive-final.log` 和
+  `positive-final-typed.log`，没有放宽生成类型或断言。
+- 实际 React 消费者使用原 interval，推进 30 秒虚拟时钟验证同一未变 head
+  到期后 2 → 3；关闭为无徽标，重新开启恢复；真实取消回读后 3 → 2；
+  100 个到期提醒显示 99；切身份清计数且旧 timer／晚返回不串入；拒绝读取
+  后清除已有徽标。这是 DOM／查询边界证据，不是 HTTP 或真实用户提醒投递验收。
+- 私有输入同时移除 poll 的 invalidate 及计数 isSuccess 守卫，61633 exit 1：
+  原两断言分别捕获查询未刷新（预期两次、实为一次）及拒绝后旧数字仍存在；
+  21 passed／2 failed，日志 `mutation.log`。恢复所有九路径与正式源码 cmp 0，
+  18479 同两套件 23/23、exit 0，日志 `restored.log`。React act 警告保留。
+
+全量缺项保持：固定原 `desktop/src/features/home/lib/inbox.ts::buildInboxItems`
+消费的 needs_action 来自 46010／40007。当前
+`collaboration/crates/buzz-db/src/store/feed.rs::build_needs_action_query` 保留读方，
+但 Core／Worker 没有该审批／流提醒事件生产接缝；固定原
+`crates/buzz-workflow/src/executor.rs` 的 approval 分支本身也未完成该生产逻辑。
+这属于仍需适配的原功能，不等于永久禁止；不以 30300 或 Core 审批列表冒充它，
+不新增空筛选菜单。原系统通知完整流水线、Mobile 原提醒消费者依旧缺失。
+本批未部署、未取新版浏览器截图、未验收 Windows／Mobile；现网仍是上述
+9d718 固定版本，旧图不作为本批徽标证据。主线统一文档门禁；本批未新运行 full，
+此前 full 失败与发布阻断不由这些定向通过解除。
+
+主线集中运行原 `bash tools/check-docs.sh /workspace/.design`，90068 exit 0，
+七部分全部通过；镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 2 CPU／2 GiB、无额外 swap、UID 1000、network none，源码只读，缓存与
+临时文件位于 Data。原件 `/volumes/data/kailo/tmp/reminder-badge-docs.JnHGfR/check-docs.log`，
+SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+该入口覆盖顶层实施文档、docs 与设计语料，不直接扫描本回执；本回执由主线
+对照命令输出与完整 diff 复核。没有把文档通过计为 full 或线上提醒验收。

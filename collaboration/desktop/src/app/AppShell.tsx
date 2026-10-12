@@ -484,6 +484,7 @@ export function AppShell() {
                       errorMessage={channelsErrorMessage}
                       fallbackDisplayName={identityQuery.data?.displayName}
                       homeBadgeCount={homeBadgeCount}
+                      homeBadgeEnabled={notificationSettings.settings.homeBadgeEnabled}
                       relayConnectionCard={relayConnectionCard}
                       isLoading={channelsQuery.isLoading}
                       onBackgroundClick={requestFocusedThreadClose}

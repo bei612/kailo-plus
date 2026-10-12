@@ -1,6 +1,6 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { TransportError } from "../src/transport";
 import { ReminderHostProvider, RemindMeLaterProvider, useRemindLater, useReminderMutations, RemindersPanel, buildInboxListRows, parseReminderContent, parseNotBefore, type ReminderHost, type Reminder } from "../src/react/reminders";
@@ -9,15 +9,91 @@ import { parseCustomDateTime } from "../src/react/reminders/lib/timePresets";
 import { render, click, button } from "./render";
 import { MessageRowSurface, type TimelineMessage } from "../src/react/messages";
 import { remindersQueryKey } from "../src/react/reminders/hooks";
+import { AppSidebarPrimaryMenu } from "../src/react/sidebar/app-sidebar-primary-menu";
+import { SidebarProvider } from "../src/react/sidebar/sidebar";
 
 const pubkey="a".repeat(64),eventId="b".repeat(64),resultId="c".repeat(64);
 const target={eventId,channelId:"12345678-1234-4234-8234-123456789012",preview:"original message",authorPubkey:pubkey};
 const reminder=(id="one",time=1):Reminder=>({id,eventId,createdAt:0,notBefore:time,content:parseReminderContent(JSON.stringify({status:"pending",target}))!});
 function host():ReminderHost {return {scopeKey:"tenant:server",pubkey,query:vi.fn().mockResolvedValue([]),publish:vi.fn().mockResolvedValue({eventId:resultId}),source:vi.fn().mockResolvedValue({authorLabel:"Author",avatarUrl:null,channel:{channelType:"public"},channelLabel:"original"}),navigate:vi.fn().mockResolvedValue(undefined)};}
 function Cache({children}:{children:React.ReactNode}) {return <QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})}>{children}</QueryClientProvider>;}
+beforeAll(()=>{
+  Object.defineProperty(window,"matchMedia",{configurable:true,value:vi.fn(()=>({
+    matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn(),
+    addListener:vi.fn(),removeListener:vi.fn(),
+  }))});
+});
 beforeEach(()=>{localStorage.clear();setLocale("en");});
 
 describe("original author-encrypted reminder consumers",()=>{
+  it("updates the original Inbox badge when idle, cancelled, disabled or switched to another identity",async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-12T00:00:00Z"));
+    const h=host(),other={...host(),scopeKey:"other:client",pubkey:"d".repeat(64)};
+    const pending=reminder("due-later",Math.floor(Date.now()/1000)+1);
+    vi.mocked(h.query).mockResolvedValue([pending]);
+    vi.mocked(h.publish).mockImplementationOnce(async()=>{
+      vi.mocked(h.query).mockResolvedValue([{...pending,content:parseReminderContent(JSON.stringify({status:"cancelled",target}))!}]);
+      return {eventId:resultId};
+    });
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    function Cancel(){const actions=useReminderMutations(pubkey);return <button onClick={()=>actions.cancel.mutate(pending)}>Cancel due reminder</button>;}
+    function Consumer(){
+      const [enabled,setEnabled]=useState(true);
+      const [current,setCurrent]=useState(h);
+      return <ReminderHostProvider host={current}><RemindMeLaterProvider pubkey={current.pubkey}><SidebarProvider>
+        <button onClick={()=>setEnabled(!enabled)}>Toggle badge</button>
+        <button onClick={()=>setCurrent(other)}>Switch identity</button>
+        {current===h?<Cancel/>:null}
+        <AppSidebarPrimaryMenu homeBadgeEnabled={enabled} homeBadgeCount={enabled?2:0}
+          onSelectHome={()=>{}} onSelectPlatformSection={()=>{}} selectedPlatformSection={null} selectedView="home"/>
+      </SidebarProvider></RemindMeLaterProvider></ReminderHostProvider>;
+    }
+    try {
+      const root=await render(<QueryClientProvider client={cache}><Consumer/></QueryClientProvider>);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+      const badge=()=>root.querySelector('[data-testid="sidebar-home-count"]')?.textContent;
+      expect(badge()).toBe("2");
+      // The original background poll must re-evaluate unchanged query data.
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      expect(h.query).toHaveBeenCalledTimes(2);
+      expect(badge()).toBe("3");
+      await click(button(root,"Toggle badge"));expect(badge()).toBeUndefined();
+      await click(button(root,"Toggle badge"));expect(badge()).toBe("3");
+      await click(button(root,"Cancel due reminder"));
+      await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+      expect(h.publish).toHaveBeenCalledWith({operation:"CANCEL",eventId},expect.any(String),false,expect.any(Object));
+      expect(badge()).toBe("2");
+      await act(async()=>{cache.setQueryData(remindersQueryKey(h.scopeKey,pubkey),Array.from({length:100},(_,i)=>reminder(String(i))));await vi.advanceTimersByTimeAsync(1);});
+      expect(badge()).toBe("99");
+      let finishOldRead!:(rows:Reminder[])=>void;
+      vi.mocked(h.query).mockImplementationOnce(()=>new Promise(resolve=>{finishOldRead=resolve;}));
+      await act(async()=>{void cache.invalidateQueries({queryKey:remindersQueryKey(h.scopeKey,pubkey)});});
+      await click(button(root,"Switch identity"));
+      await act(async()=>{finishOldRead([pending]);});
+      await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+      expect(badge()).toBe("2");
+      const oldCalls=vi.mocked(h.query).mock.calls.length;
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      expect(h.query).toHaveBeenCalledTimes(oldCalls);
+      expect(other.query).toHaveBeenCalledTimes(2);
+      expect(badge()).toBe("2");
+      expect(h.publish).toHaveBeenCalledTimes(1);expect(other.publish).not.toHaveBeenCalled();
+    } finally {vi.clearAllTimers();vi.useRealTimers();}
+  });
+  it("clears due counts when the existing authorized query is revoked",async()=>{
+    const h=host();vi.mocked(h.query).mockResolvedValueOnce([reminder()]).mockRejectedValue(new Error("revoked"));
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const root=await render(<QueryClientProvider client={cache}><ReminderHostProvider host={h}><RemindMeLaterProvider pubkey={pubkey}>
+      <SidebarProvider><AppSidebarPrimaryMenu homeBadgeEnabled homeBadgeCount={0} onSelectHome={()=>{}}
+        onSelectPlatformSection={()=>{}} selectedPlatformSection={null} selectedView="home"/></SidebarProvider>
+    </RemindMeLaterProvider></ReminderHostProvider></QueryClientProvider>);
+    await vi.waitFor(()=>expect(root.querySelector('[data-testid="sidebar-home-count"]')?.textContent).toBe("1"));
+    await act(async()=>{await cache.invalidateQueries({queryKey:remindersQueryKey(h.scopeKey,pubkey)});});
+    await vi.waitFor(()=>expect(root.querySelector('[data-testid="sidebar-home-count"]')).toBeNull());
+    expect(cache.getQueryState(remindersQueryKey(h.scopeKey,pubkey))?.status).toBe("error");
+    expect(h.publish).not.toHaveBeenCalled();
+  });
   it("keeps original channel reminder tint reactive to pending, completed and cancelled heads",async()=>{
     const h=host();
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});

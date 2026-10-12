@@ -7,6 +7,7 @@ import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } f
 import { SidebarMenuLabel } from "./sidebar-menu-label";
 import type { ReactNode } from "react";
 import { FeatureGate } from "../features";
+import { useRemindLater } from "../reminders/ui/RemindMeLaterProvider";
 type SidebarSelectedView = "home" | "channel" | "platform" | "new-message";
 
 const PLATFORM_SECTION_ICON = {
@@ -24,6 +25,7 @@ const PLATFORM_SECTION_ICON = {
 
 type AppSidebarPrimaryMenuProps = {
   homeBadgeCount?: number;
+  homeBadgeEnabled?: boolean;
   onSelectHome: () => void;
   onSelectPlatformSection: (section: PlatformSection) => void;
   selectedPlatformSection: PlatformSection | null;
@@ -35,6 +37,7 @@ type AppSidebarPrimaryMenuProps = {
 
 export function AppSidebarPrimaryMenu({
   homeBadgeCount,
+  homeBadgeEnabled = false,
   onSelectHome,
   onSelectPlatformSection,
   selectedPlatformSection,
@@ -43,6 +46,8 @@ export function AppSidebarPrimaryMenu({
   projectsOverviewActive = true,
 }: AppSidebarPrimaryMenuProps) {
   const locale = useUiLocale();
+  const { dueReminderCount } = useRemindLater();
+  const inboxBadgeCount = (homeBadgeCount ?? 0) + (homeBadgeEnabled ? dueReminderCount : 0);
   return (
     <><SidebarHeader
       className="relative z-40 cursor-default select-none px-2 pb-0 pt-0"
@@ -69,12 +74,12 @@ export function AppSidebarPrimaryMenu({
               <Inbox className="h-4 w-4" />
               <SidebarMenuLabel>{translate(locale, "inbox.title")}</SidebarMenuLabel>
             </SidebarMenuButton>
-            {homeBadgeCount !== undefined && homeBadgeCount > 0 ? (
+            {inboxBadgeCount > 0 ? (
               <SidebarMenuBadge
                 className="right-2 rounded-full bg-primary/15 px-1.5 text-2xs text-primary peer-data-[active=true]/menu-button:bg-sidebar-active-foreground/20 peer-data-[active=true]/menu-button:text-sidebar-active-foreground"
                 data-testid="sidebar-home-count"
               >
-                {Math.min(homeBadgeCount, 99)}
+                {Math.min(inboxBadgeCount, 99)}
               </SidebarMenuBadge>
             ) : null}
           </SidebarMenuItem>

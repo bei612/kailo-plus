@@ -512,6 +512,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 lastMessageAtByChannelId={channelActivity}
                 onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
               <AppSidebarPrimaryMenu onSelectHome={() => setTab("inbox")}
+                homeBadgeEnabled={notificationSettings?.settings.homeBadgeEnabled === true}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
                 projectsOverviewActive={!navigation.projectId}

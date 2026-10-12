@@ -61,6 +61,7 @@ export function AppSidebar({
   currentPrincipalId,
   fallbackDisplayName,
   homeBadgeCount,
+  homeBadgeEnabled,
   onBackgroundClick,
   isLoading,
   profile,
@@ -302,6 +303,7 @@ export function AppSidebar({
         onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} /></>}>
               <AppSidebarPrimaryMenu
                 homeBadgeCount={homeBadgeCount}
+                homeBadgeEnabled={homeBadgeEnabled}
                 onSelectHome={onSelectHome}
                 onSelectPlatformSection={onSelectPlatformSection}
                 selectedPlatformSection={selectedPlatformSection}
