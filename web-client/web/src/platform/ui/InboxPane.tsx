@@ -37,6 +37,7 @@ import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import type { PlatformDraftNavigation } from "@/app/platform-navigation";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useHomeInboxAutoSelection } from "@client-kit/platform/react/use-inbox-auto-selection";
+import { useInboxSelectionAnchor } from "@client-kit/platform/react/use-inbox-selection-anchor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hex, inboxEvents, inboxReactionEvents, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
@@ -53,6 +54,7 @@ type ProjectEvent=ReturnType<typeof projectInboxMentions>[number];
 type InboxEvent=Event|ProjectEvent;
 
 type Snapshot = {
+  scope: object;
   mentions: InboxEvent[];
   activity: InboxEvent[];
   projectItems: ProjectInboxWorkItem[];
@@ -84,6 +86,7 @@ export function InboxPane({
   onSelectedItemIdChange?: (id: string | null) => void;
 }) {
   const client = useBffClient();
+  const selectionScope = useMemo(() => ({}), [client, principalId]);
   const projectsHost=useProjectsHost(principalId);
   const t = useT();
   const reminderHost=useReminderHost();
@@ -112,7 +115,6 @@ export function InboxPane({
     onSelectedItemIdChange?.(id);
   };
   const selectedEventId = effectiveSelectedItemId ?? autoSelectedEventId;
-  const [cold, setCold] = useState<{snapshot: Snapshot; id: string; event?: Event; failed: boolean} | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
   const [profileTarget, setProfileTarget] = useState<MessageAuthor | null>(null);
   const [profileWidth, setProfileWidth] = useState(AUXILIARY_PANEL_DEFAULT_WIDTH_PX);
@@ -165,7 +167,7 @@ export function InboxPane({
       }
       if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
       const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
-      const next: Snapshot = { mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), forumChannels: new Set(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
+      const next: Snapshot = { scope: selectionScope, mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), forumChannels: new Set(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -294,7 +296,7 @@ export function InboxPane({
     } catch {
       if (epoch === generation.current) setFailed(true);
     }
-  }, [client, principalId, visibility,projectsHost]);
+  }, [client, principalId, visibility,projectsHost,selectionScope]);
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -315,7 +317,7 @@ export function InboxPane({
   }, [snapshot]);
   const rows = useMemo(
     () =>
-      snapshot
+      snapshot?.scope === selectionScope
         ? aggregateInbox(
             {
               mentions: snapshot.mentions.filter((event) =>
@@ -330,87 +332,62 @@ export function InboxPane({
             reads.readAt,
           )
         : [],
-    [snapshot, reads.readAt, reads.visibleChannels],
+    [snapshot, selectionScope, reads.readAt, reads.visibleChannels],
   );
   const refresh = () => {
     void load();
     void reads.refresh();
   };
   const messagesMode = filter !== "drafts" && filter !== "reminders" && selectedReminder === null;
-  const feedAnchor = selectedEventId === null ? undefined : rows.flatMap(row => row.items).find(item => item.id === selectedEventId);
-  const [committedSelection, setCommittedSelection] = useState<{principalId: string; event: InboxEvent} | null>(null);
-  // Original Layer 2: commit once per anchor, so a newer representative or an
-  // expired feed window cannot change the selected thread/composer context.
-  useEffect(() => {
-    if (selectedEventId === null) { setCommittedSelection(null); return; }
-    if (feedAnchor) {
-      setCommittedSelection(previous => previous?.principalId === principalId && previous.event.id === selectedEventId
-        ? previous : {principalId, event: feedAnchor});
-    } else {
-      setCommittedSelection(previous => previous?.principalId === principalId && previous.event.id === selectedEventId ? previous : null);
-    }
-  }, [principalId, selectedEventId, feedAnchor]);
+  const anchorFeedItems = useMemo(() => rows.flatMap(row => row.items), [rows]);
   const visibleAnchor = (event: InboxEvent | undefined) => event?.channelId != null && reads.visibleChannels.has(event.channelId) &&
     (snapshot?.workspaces.some(workspace => workspace.id === event.channelId) || snapshot?.conversations.some(conversation => conversation.channelId === event.channelId && conversation.participantPrincipalIds.includes(principalId)))
     ? event : undefined;
-  const latchedAnchor = visibleAnchor(committedSelection?.principalId === principalId && committedSelection.event.id === selectedEventId
-    ? committedSelection.event : undefined);
-  // Buzz useInboxSelectionAnchor: a cold item is detail context only. It must
-  // never manufacture a live feed row, unread count or membership proof.
-  const coldResult = cold?.snapshot === snapshot && cold.id === selectedEventId ? cold : null;
-  const coldAnchor = coldResult?.event && reads.visibleChannels.has(coldResult.event.channelId) ? coldResult.event : undefined;
   const heldAnchor = visibleAnchor(publicationAnchor);
-  const resolvedAnchor = heldAnchor ?? feedAnchor ?? latchedAnchor ?? coldAnchor;
+  // Host adapter: only freshly enumerated admitted scopes, never a browser
+  // Relay query. The shared hook owns attempts, latch and late-result rejection.
+  const recoverAnchor = async (id: string, signal: AbortSignal): Promise<InboxEvent | null> => {
+    signal.throwIfAborted();
+    if (!snapshot || snapshot.scope !== selectionScope || !hex.test(id)) throw new Error("Invalid Inbox anchor scope");
+    const scopes = [
+      ...snapshot.workspaces.map(workspace => ({workspaceId: workspace.id, channelId: snapshot.channelIds.get(workspace.id), conversationId: undefined as string | undefined})),
+      ...snapshot.conversations.map(conversation => ({workspaceId: conversation.channelId, channelId: conversation.channelId, conversationId: conversation.id})),
+    ];
+    for (const scope of scopes) {
+      signal.throwIfAborted();
+      if (!scope.channelId) throw new Error("Unverifiable Inbox channel binding");
+      try {
+        const page = scope.conversationId
+          ? await client.conversationMessages(scope.conversationId, {anchorEventId: id})
+          : await client.workspaceMessages(scope.workspaceId, {anchorEventId: id});
+        signal.throwIfAborted();
+        if (!Array.isArray(page.events)) throw new Error("Invalid admitted Inbox anchor page");
+        const events = page.events.flatMap(value => {
+          if (!value || ![9, 40002, 45001, 45003].includes(value.kind)) throw new Error("Invalid Inbox anchor kind");
+          return inboxEvents([value], scope.channelId!, value.kind).map(event => ({...event,
+            ...([45001,45003].includes(event.kind) ? {channelType: "forum"} : {})}));
+        });
+        const found = events.find(event => event.id === id);
+        if (!found) throw new Error("Missing admitted Inbox anchor");
+        return {...found, channelId: scope.workspaceId, ...(scope.conversationId ? {channelType: "dm"} : snapshot.forumChannels.has(scope.workspaceId) ? {channelType: "forum"} : {})};
+      } catch (error) {
+        // Only a plain scope-local 404 permits the next admitted scope.
+        if (!(error instanceof BffError) || error.status !== 404 || error.errorClass) throw error;
+      }
+    }
+    return null;
+  };
+  const {activeLatchedItem, coldResolutionPending, coldResolutionFailed} = useInboxSelectionAnchor({
+    feedItems: anchorFeedItems, selectedEventId, scopeKey: selectionScope, recoveryKey: snapshot,
+    membershipKey: [...reads.visibleChannels].sort().join(","),
+    ready: Boolean(snapshot && snapshot.scope === selectionScope) && !failed && !reads.failed && !reads.unknown,
+    coldEnabled: messagesMode && effectiveSelectedItemId !== null && !heldAnchor,
+    isRetainedVisible: event => Boolean(visibleAnchor(event)), recover: recoverAnchor,
+  });
+  const resolvedAnchor = heldAnchor ?? activeLatchedItem;
   const anchor = messagesMode ? resolvedAnchor : undefined;
   const selected = anchor ? inboxScopeKey(anchor) : null;
-  const coldPending = messagesMode && effectiveSelectedItemId !== null && !resolvedAnchor && !coldResult && Boolean(snapshot);
-  useEffect(() => {
-    if (!snapshot || !messagesMode || !effectiveSelectedItemId || resolvedAnchor || failed || reads.failed || reads.unknown) return;
-    let cancelled = false;
-    const id = effectiveSelectedItemId;
-    const finish = (event?: Event, failure = false) => {
-      if (!cancelled) setCold({snapshot, id, event, failed: failure});
-    };
-    const resolve = async () => {
-      if (!hex.test(id)) { finish(undefined, true); return; }
-      try {
-        // Serial, freshly enumerated admitted scopes only. Cancelling this
-        // attempt prevents every subsequent request and ignores its late reply.
-        const scopes = [
-          ...snapshot.workspaces.map(workspace => ({workspaceId: workspace.id, channelId: snapshot.channelIds.get(workspace.id), conversationId: undefined as string | undefined})),
-          ...snapshot.conversations.map(conversation => ({workspaceId: conversation.channelId, channelId: conversation.channelId, conversationId: conversation.id})),
-        ];
-        for (const scope of scopes) {
-          if (cancelled) return;
-          if (!scope.channelId) throw new Error("Unverifiable Inbox channel binding");
-          try {
-            const page = scope.conversationId
-              ? await client.conversationMessages(scope.conversationId, {anchorEventId: id})
-              : await client.workspaceMessages(scope.workspaceId, {anchorEventId: id});
-            if (cancelled) return;
-            if (!Array.isArray(page.events)) throw new Error("Invalid admitted Inbox anchor page");
-            const events = page.events.flatMap(value => {
-              if (!value || ![9, 40002, 45001, 45003].includes(value.kind)) throw new Error("Invalid Inbox anchor kind");
-              return inboxEvents([value], scope.channelId!, value.kind).map(event => ({...event,
-                ...([45001,45003].includes(event.kind) ? {channelType: "forum"} : {})}));
-            });
-            const found = events.find(event => event.id === id);
-            if (!found) throw new Error("Missing admitted Inbox anchor");
-            finish({...found, channelId: scope.workspaceId, ...(scope.conversationId ? {channelType: "dm"} : snapshot.forumChannels.has(scope.workspaceId) ? {channelType: "forum"} : {})});
-            return;
-          } catch (error) {
-            // Missing in this admitted scope is not an authorization failure.
-            // UNKNOWN, revoked permission, malformed proof and network errors
-            // stop the traversal rather than pretending the item was absent.
-            if (!(error instanceof BffError) || error.status !== 404 || error.errorClass) throw error;
-          }
-        }
-        finish();
-      } catch { finish(undefined, true); }
-    };
-    void resolve();
-    return () => { cancelled = true; };
-  }, [client, snapshot, messagesMode, effectiveSelectedItemId, Boolean(resolvedAnchor), failed, reads.failed, reads.unknown]);
+  const coldPending = messagesMode && !resolvedAnchor && coldResolutionPending;
   useEffect(() => {
     onUnreadCount?.(failed || reads.failed || reads.unknown || !snapshot || !reads.state ? null : rows.filter((row) =>
       row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(readItem(event))!) ?? 0))).length);
@@ -460,7 +437,7 @@ export function InboxPane({
         <Button onClick={refresh}>{t("platform.refresh")}</Button>
       </section>
     );
-  if (!snapshot || !reads.state) return <HomeLoadingState />;
+  if (!snapshot || snapshot.scope !== selectionScope || !reads.state) return <HomeLoadingState />;
   const chosen = anchor ? {scopeKey: inboxScopeKey(anchor), item: anchor} : undefined;
   const chosenProject=chosen&&chosen.item.channelId===null?resolveProjectInboxWorkItem(snapshot.projectItems,chosen.item):undefined;
   const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
@@ -574,7 +551,7 @@ export function InboxPane({
       senderLabel={(snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))).find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || truncatePubkey(chosen.item.pubkey)}
       channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
       members={snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))} onBack={narrow ? () => selectItem(null) : undefined}
-      onOpen={hiddenDm.isReopenPending(chosen.item.channelId) ? undefined : () => openItem(chosen.item)} /></div> : showDetail ? coldPending ? <HomeLoadingState /> : coldResult?.failed ? <section role="status">{t("platform.loadFailed")}</section> : <InboxEmptyDetail /> : null}
+      onOpen={hiddenDm.isReopenPending(chosen.item.channelId) ? undefined : () => openItem(chosen.item)} /></div> : showDetail ? coldPending ? <HomeLoadingState /> : coldResolutionFailed ? <section role="status">{t("platform.loadFailed")}</section> : <InboxEmptyDetail /> : null}
     {authorTarget ? <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
       target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary} layout="split" transparentChrome
       onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} /> : null}

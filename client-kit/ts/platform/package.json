@@ -176,6 +176,7 @@
     "./react/VirtualizedList": "./src/react/forum/VirtualizedList.tsx",
     "./react/use-inbox-state": "./src/react/use-inbox-state.ts",
     "./react/use-inbox-auto-selection": "./src/react/use-inbox-auto-selection.ts",
+    "./react/use-inbox-selection-anchor": "./src/react/use-inbox-selection-anchor.ts",
     "./react/image-lightbox": "./src/react/image-lightbox/index.ts",
     "./react/message-body": "./src/react/message-body.tsx",
     "./react/navigation": "./src/react/navigation.tsx",

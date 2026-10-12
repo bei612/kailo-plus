@@ -2040,3 +2040,23 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 - 75208 私有仅移除 Web `projectWorkItemTarget` 的 tab 消费，原 `-t "preserves repository Tasks/Reviews references"` 实际 exit 1，首个 Tasks 页选择断言失败。apply_patch 还原后正式/私有导航字节 cmp 0；52229 同一原用例实际 exit 0、1/1，其余 33 项未选。正式生产未承受变异。
 
 日志 SHA-256：`positive.log`=`5bfcc91c3e5a3cb60788d2053f71477a0404863fe6a54f6c9dccb9bf52e7b346`；`corrected.log`=`b84121c233e4b87577c5f8badfa6745b40d2e5a28ac9db596116a164c52044a3`；`mutation.log`=`abd079cfba11b85368a7bd41b3a1f4a849995ec1e506b8510e884ae77cdfd5c5`；`restored.log`=`40d68fd2e6590ee20638cc1a198730edac3e39688c68dfe357dfa2d33b085834`。最终原 docs 与本文 selected markdownlint 结果只留 Data，不追加自引用回执；交叉复核由主线在最终冻结输入安排，不将首版消息送达计作已审。
+
+## 2026-10-12 Inbox selection-anchor 两宿主同一 TS 主体
+
+- 权威与定位：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/useInboxSelectionAnchor.ts::useInboxSelectionAnchor`，实际由 `desktop/src/features/home/ui/HomeView.tsx` 消费。按 apps 工程 06 的同源主体规则及 `.design/05` DD-75 跨端边界，将当前 Native 原 hook 与 Web `web-client/web/src/platform/ui/InboxPane.tsx` 重复的 direct/latch/cold 状态迁入 `client-kit/ts/platform/src/react/use-inbox-selection-anchor.ts`；不是仅共用类型或另造状态缓存。
+- 引用与读写：`client-kit/ts/platform/package.json` 导出真实 hook；Native 原 hook 只保留 feed 适配和 `getEventById`，`HomeView` 投递真实 `nativeSession`/当前读取可用性。Web 保留原 BFF 串行 scope 遍历、频道映射、原事件校验、当前 principal/client 及 snapshot。共享主体拥有同 anchor latch、cold attempt/candidate、同步 pending 与晚返回丢弃。所有状态仅组件内存，不写平台数据、不增加执行权威。
+- 副作用：仍仅原宿主授权读。Web 只有无 errorClass 的原 scope-local 404 才尝试下一已准入 scope；UNKNOWN/403/网络错误/非法事件停止。Native 仍走原 `get_event`，不把频道目录变化变成重复在途调用。事件必须回读同 ID；cold 结果不注入 feed/unread。不存在自动发送、新 mutation、合同或 i18n 改动。
+- 异常：换 selection/session/principal/snapshot、读取失败或撤权时不展示旧正文；同 key 终态失败不自动重试，会员拒绝仅在目录集合变化时重试，成功候选仍受当前可见性约束。Web 原 publication UNKNOWN 持有 anchor/同意图重试优先级保留。URL `item`、新 representative 不挪动当前 thread、冷启动、原布局及自动选择条件保持。
+- 路径四分类：原样保留的是两宿主正文/布局/Composer 与治理 API；同源迁移是共享 selection hook + package export + Native 薄适配 + Web 调用；宿主必要差异是 Native session/get_event/频道准入与 Web principal/snapshot/BFF fresh scope；本轮缺项仍为真实双设备/线上 BFF 与 Relay 运行验收、完整 full 检查和发布，不由 JS/DOM 结果替代。
+
+### 实际检查与失败边界
+
+基底 `c661236d5d85dcb29fca4b7d1f8727ec4d46df7d`，精确 7 路径（5 生产、2 原消费者测试）。资源门禁复用原 `tools/container-safety.sh`：2026-10-12 22:20:34 UTC 实读 MemAvailable 37875012 kB、memory PSI 为 0；SDK `kailo-inbox-forum-r5kqbx` 启动检查前只有 sleep。固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，2 CPU / 4 GiB，memory+swap 总上限同为 4 GiB，无额外 swap；UID 1000:1000、network none、只读 root。`/candidate`、`/cache`、`/tmp`、`/.dart-tool` 均 Data 挂载，未 pull/load/build 或新增依赖。仅复用 `reminder-consumers.RcN79Y` 原依赖及 TypeScript 5.9.3 入口，未改 HOME。
+
+1. `13561` 首轮真实 exit 1：共享 hook 空值类型收窄不完整及 Native mutable feed 数组兼容错误；日志保留 `positive.log`。此轮共享 14/14、Web 原 URL 冷恢复 9/9 已过，但不据此称类型通过。
+2. `42633` 修正后 exit 0：原 shared `tsc -p tsconfig.json`、`tsc -p tsconfig.test.json`，Web 与 Native 原 `tsc --noEmit` 全 0；Native 原 `node --import ./test-loader.mjs --experimental-strip-types --test src/features/home/useInboxSelectionAnchor.test.mjs` 2/2。日志 `corrected.log`。
+3. `73871` 末版 exit 0：共享 test types 0；原 `vitest run test/inbox-auto-selection.test.tsx` 14/14（含原 8 个 auto-selection 条件）；Web 原 `vitest run src/platform/ui/InboxPane.test.tsx -t "original Inbox URL item"` 9/9、其余 51 明确跳过；Native 原 hook 2/2，含目录变化不重复在途读取、撤权、session 晚返回与错误 ID。日志 `final-positive.log`。Web 原 React act 警告保留，未屏蔽。
+4. `89634` 私有单处生产反证 exit 1：仅去掉共享 cold 结果的当前可见性判断，原共享与 Native 两消费者均真实失败（SHARED=1/NATIVE=1，撤权后仍残留正文）；不是放宽断言或伪造输入。日志 `negative.log`。正式源码未破坏。
+5. 原生产字节精确恢复且 `cmp` 为 0；还原句柄 `38289` 实际 exit 0，同一共享 6 个新增用例及 Native 2 个消费者全部通过。日志 `restored.log`。
+
+全部日志/冻结输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-selection-anchor.KknsMJ`。没有 Rust/GTK、模型调用或线上业务授权验收；没有新 schema，四侧生成/兼容检查本轮无适用对象。公共暂存未写；历史 i18n/verify/MM 不纳入源码候选。

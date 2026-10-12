@@ -226,6 +226,8 @@ export function HomeView({
     feed: admittedFeed,
     selectedEventId,
     availableChannelIds: admittedChannelIds,
+    scopeKey: nativeSession,
+    ready: Boolean(admittedFeed) && !coreReads.failed && !coreReads.unknown,
   });
   // Native's same-anchor latch is useful for paging, but it is not an access
   // grant. Revalidate it synchronously before deriving context/detail queries.
