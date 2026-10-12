@@ -16,6 +16,7 @@ import { MessageLinkPillPresentation } from "@client-kit/platform/react/messages
 import { toast } from "sonner";
 import { getLocale, setLocale } from "@client-kit/platform/i18n";
 import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
+import * as projectApi from "@/platform/bff-client";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
 const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
@@ -28,6 +29,41 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("opens original Issue links through the actual BFF Markdown host and rechecks access on every click", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const author="b".repeat(64), id="1".repeat(64), repository=`30617:${author}:repo`;
+    const href=`buzz://issue?id=${id}&owner=${author}&d=repo`;
+    const rows=[
+      {id:"8".repeat(64),kind:30617,pubkey:author,created_at:20,tags:[["d","repo"],["name","Original repo"],["clone","https://example.test/repo.git"]],content:""},
+      {id:"9".repeat(64),kind:30621,pubkey:author,created_at:20,tags:[["d","project"],["name","Original project"],["a",repository]],content:""},
+      {id,kind:1621,pubkey:author,created_at:20,tags:[["a",repository],["subject","Original task"]],content:"Complete task"},
+    ];
+    const kinds:Record<string,number[]>={PROJECTS:[30621],REPOSITORIES:[30617],DELETIONS:[5],WORK_ITEMS:[1618,1621],WORK_ITEM_ACTIVITY:[1,1619,1630,1631,1632,1633]};
+    const query=vi.spyOn(projectApi,"queryProjects").mockImplementation(async request=>({pubkey:PERSON,limit:20,bindingVersion:3,
+      events:rows.filter(row=>kinds[request.view]?.includes(row.kind)&&(!request.coordinates||request.coordinates.includes(row.tags.find(tag=>tag[0]==="a")?.[1]??"")))}));
+    const open=vi.fn(async()=>{}),error=vi.spyOn(toast,"error");
+    const element=document.createElement("div");document.body.append(element);const root=createRoot(element);
+    const show=(interactive:boolean)=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><TooltipProvider>
+      <BffMessageLinkHost scopeKey="tenant:viewer" principalId="viewer" conversations={[]} onOpenChannel={vi.fn()} onOpenMessageLink={vi.fn()} onOpenProject={open}>
+        <MessageContent content={href} interactive={interactive}/>
+      </BffMessageLinkHost>
+    </TooltipProvider></PlatformProvider>));
+    try {
+      await show(false);expect(query).not.toHaveBeenCalled();expect(element.querySelector('[role="button"]')).toBeNull();
+      expect(element.textContent).toBe("repo");
+      await show(true);
+      await vi.waitFor(()=>expect(element.querySelector('[data-buzz-link-kind="issue"]')?.getAttribute("aria-label")).toContain("Original task"));
+      query.mockClear();
+      await act(async()=>element.querySelector<HTMLElement>('[data-buzz-link-kind="issue"]')!.click());
+      await vi.waitFor(()=>expect(open).toHaveBeenCalledExactlyOnceWith(`30621:${author}:project`,{repositoryId:`${author}:repo`,issueId:id}));
+      expect(query.mock.calls.some(([request])=>request.view==="WORK_ITEMS")).toBe(true);
+      open.mockClear();query.mockReset().mockRejectedValue(new Error("Revoked"));
+      await act(async()=>element.querySelector<HTMLElement>('[data-buzz-link-kind="issue"]')!.click());
+      await vi.waitFor(()=>expect(error).toHaveBeenCalledTimes(1));
+      expect(query).toHaveBeenCalledTimes(1);expect(open).not.toHaveBeenCalled();
+    } finally {await act(async()=>root.unmount());element.remove();query.mockRestore();error.mockRestore();}
+  });
+
   it.each(["en", "zh-CN"] as const)("preserves the original inert Inbox preview in %s without reading media or rendering controls", (locale) => {
     const previousLocale = getLocale();
     setLocale(locale);
@@ -142,6 +178,7 @@ describe("MessageContent", () => {
     const show = (admitted: boolean, ambiguous = false, locale: "en" | "zh-CN" = "en") => act(async () => root.render(
       <PlatformProvider client={client} locale={locale}><BffMessageLinkHost scopeKey={admitted ? "session-a" : "session-b"}
         principalId="human-a" conversations={[]} onOpenChannel={openChannel} onOpenMessageLink={openMessage}
+        onOpenProject={async()=>{throw new Error("No project navigation in channel fixture");}}
         directory={admitted ? {...directory, workspaces: ambiguous ? [...directory.workspaces,...directory.workspaces] : directory.workspaces} : undefined}>
         <MessageContent content={content} />
       </BffMessageLinkHost></PlatformProvider>,

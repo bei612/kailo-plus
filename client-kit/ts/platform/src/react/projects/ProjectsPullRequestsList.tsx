@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsPullRequestsList.tsx.
-// Atomic governed loading replaces upstream partial-section fallback; selection/share-link consumers remain missing.
+// Atomic governed loading replaces upstream partial-section fallback; selection remains missing.
 import { useUiT } from "../context";
 import { translateCurrent } from "../../i18n";
 import { FolderKanban, GitPullRequest } from "lucide-react";
@@ -26,6 +26,8 @@ import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { ProjectSelectableGroup } from "./ProjectSelectableGroup";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
+import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
+import { pullRequestShareLink } from "./projectShareLinks";
 
 const statusKey = {
   Open: "projects.status.open",
@@ -172,6 +174,8 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
             <GitPullRequest className="h-4 w-4" />
             {nextStepLabel(pullRequest.status)}
           </DropdownMenuItem>
+          <CopyShareLinkMenuItem link={pullRequestShareLink(pullRequest)} label={t("projects.share.copyReview")}
+            testId={`projects-pull-request-copy-link-${pullRequest.id}`}/>
         </ProjectListRowMenu>
       }
     />

@@ -1,4 +1,6 @@
 import * as React from "react";
+import { parseEntityLink } from "@client-kit/platform/react/projects";
+import { EntityLinkAnchor } from "./markdown/entityLinks";
 import {
   ImageBlock as SharedImageBlock,
   ImageZoomOverlay as SharedImageZoomOverlay,
@@ -150,6 +152,9 @@ export function createMarkdownComponents(
 
     // Keep Buzz channel/message navigation in-app.
     if (href) {
+      if (parseEntityLink(href).ok) {
+        return <EntityLinkAnchor href={href} interactive={interactive} asChip={label === href}>{children}</EntityLinkAnchor>;
+      }
       if (parseChannelLink(href).ok) {
         return (
           <ChannelDeepLinkAnchor
@@ -339,6 +344,7 @@ export function createMarkdownComponents(
       if (!resolvedSrc || !interactive) return <span>{alt}</span>;
       return <InlineEmojiPopover alt={alt} resolvedSrc={resolvedSrc} />;
     },
+    "entity-link": ({children}: {children?:React.ReactNode}) => <EntityLinkAnchor href={String(children ?? "")} interactive={interactive}>{children}</EntityLinkAnchor>,
     "channel-deep-link": ({ children }: { children?: React.ReactNode }) => (
       <MarkdownChannelDeepLink interactive={interactive}>
         {children}

@@ -467,6 +467,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   return (
     <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>
     <BffMessageLinkHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId}
+      onOpenProject={(id,target)=>navigation.openProject(id,target)}
       directory={searchDirectory.isError || conversations.error ? undefined : searchDirectory.data}
       conversations={conversations.items}
       onOpenMessageLink={openMessageLink}

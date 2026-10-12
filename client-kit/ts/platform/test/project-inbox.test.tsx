@@ -10,6 +10,9 @@ import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,pr
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click} from "./render";
+import {EntityLinkAnchor,openProjectEntity,parseEntityLink} from "../src/react/projects";
+import {issueShareLink} from "../src/react/projects/projectShareLinks";
+import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib/composerMessageLinkNode";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -37,6 +40,62 @@ beforeEach(()=>{setLocale("en");localStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  it.each(["issue","review"] as const)("copies the original %s share menu and opens its exact authorized detail",async kind=>{
+    const f=fixture();localStorage.setItem("buzz.projects.filter",kind==="issue"?"issues":"prs");localStorage.setItem("buzz.projects.viewMode","list");
+    const copied=vi.fn(async(_value:string)=>{}),opened=vi.fn(),failed=vi.fn();
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:copied,startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>{throw new Error("No project writer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    let showSharedLink=(_href:string)=>{};
+    function Page(){const[href,setHref]=useState<string>();const[target,setTarget]=useState<{id:string;target:ReturnType<typeof projectWorkItemTarget>}>();showSharedLink=setHref;
+      if(href&&!target)return <EntityLinkAnchor href={href} runtime={{host:f.host,copyLink:copied,onError:failed,onOpen:async(id,target)=>{opened(id,target);setTarget({id,target});}}}/>;
+      return <ProjectsView host={f.host} selectedProjectId={target?.id} workItemTarget={target?.target}
+        onSelectedProjectChange={async(id,target)=>{if(id&&target)setTarget({id,target});}}/>;}
+    const view=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><Page/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    const title=kind==="issue"?"Original task":"Original review";
+    await vi.waitFor(()=>expect(view.querySelector(`button[aria-label="More options for ${title}"]`)).not.toBeNull());
+    const menu=view.querySelector<HTMLButtonElement>(`button[aria-label="More options for ${title}"]`)!;
+    await act(async()=>{menu.focus();menu.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    const selector=`[data-testid="projects-${kind==="issue"?"issue":"pull-request"}-copy-link-${f[kind].id}"]`;
+    await vi.waitFor(()=>expect(document.querySelector(selector)).not.toBeNull());
+    await click(document.querySelector<HTMLElement>(selector)!);
+    const href=`buzz://${kind==="issue"?"issue":"pr"}?id=${f[kind].id}&owner=${author}&d=repo`;
+    expect(copied).toHaveBeenCalledExactlyOnceWith(href);
+    expect(resolveExactLinkPaste(href,()=>undefined)).toEqual({href});
+    await act(async()=>showSharedLink(href));
+    await vi.waitFor(()=>expect(view.querySelector('[data-buzz-link-kind]')?.getAttribute("aria-label")).toContain(title));
+    f.query.mockClear();
+    await click(view.querySelector<HTMLElement>('[data-buzz-link-kind]')!);
+    await vi.waitFor(()=>expect(view.querySelector(kind==="issue"?'[data-testid="project-issue-detail"]':'[data-testid="project-pull-request-detail"]')).not.toBeNull());
+    expect(opened).toHaveBeenCalledExactlyOnceWith(`30621:${author}:project`,{repositoryId:`${author}:repo`,...(kind==="issue"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
+    expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEMS")).toBe(true);expect(failed).not.toHaveBeenCalled();expect(host.publish).not.toHaveBeenCalled();cache.clear();
+  });
+  it("does not authorize from warm metadata, wrong kind, missing event or a different repository",async()=>{
+    const f=fixture(),snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const item=snapshot.items.find(item=>item.type==="issue")!;
+    const href=issueShareLink(item.issue)!;
+    const parsed=parseEntityLink(href);expect(parsed.ok).toBe(true);if(!parsed.ok)throw new Error("fixture");
+    const opened=vi.fn(async()=>{});
+    for(const link of [{...parsed.value,dtag:"unrelated"},{...parsed.value,type:"pr",id:f.issue.id} as const,{...parsed.value,id:"f".repeat(64)}]){
+      await expect(openProjectEntity(f.host,link,new AbortController().signal,opened)).rejects.toThrow("unavailable");
+    }
+    f.host.query=async()=>{throw new Error("revoked");};
+    await expect(openProjectEntity(f.host,parsed.value,new AbortController().signal,opened)).rejects.toThrow("revoked");
+    expect(opened).not.toHaveBeenCalled();
+  });
+  it("reports actual chip navigation refusal after metadata access is revoked without retrying",async()=>{
+    const f=fixture(),opened=vi.fn(async()=>{}),failed=vi.fn();
+    const href=`buzz://issue?id=${f.issue.id}&owner=${author}&d=repo`;
+    const view=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale="en">
+      <EntityLinkAnchor href={href} runtime={{host:f.host,onOpen:opened,copyLink:vi.fn(),onError:failed}}/>
+    </PlatformProvider>);
+    await vi.waitFor(()=>expect(view.querySelector('[data-buzz-link-kind]')?.getAttribute("aria-label")).toContain("Original task"));
+    const rejected=vi.fn(async()=>{throw new Error("Revoked current scope");});f.host.query=rejected;
+    await click(view.querySelector<HTMLElement>('[data-buzz-link-kind]')!);
+    await vi.waitFor(()=>expect(failed).toHaveBeenCalledTimes(1));
+    expect(rejected).toHaveBeenCalledTimes(1);expect(opened).not.toHaveBeenCalled();
+    expect(view.querySelector('[data-buzz-link-kind]')?.getAttribute("aria-label")).not.toContain("Original task");
+  });
   it.each([["issues","issue","en"],["prs","review","en"],["issues","issue","zh-CN"],["prs","review","zh-CN"]] as const)("opens original %s list and exact detail, restoring the stored section in %s/%s",async(section,kind,locale)=>{
     setLocale(locale);localStorage.setItem("buzz.projects.viewMode","list");
     const f=fixture(),opened=vi.fn(),openProfile=vi.fn();

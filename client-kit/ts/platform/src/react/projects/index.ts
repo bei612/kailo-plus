@@ -1,4 +1,8 @@
 export { ProjectsView } from "./ProjectsView";
+export { parseEntityLink, isEntityLink, type ParsedEntityLink } from "./entityLink";
+export { readProjectEntity, openProjectEntity } from "./projectEntityNavigation";
+export { EntityLinkAnchor, type EntityLinkRuntime } from "./EntityLinkAnchor";
+export { default as remarkEntityLinks } from "../messages/remarkEntityLinks";
 export { ProjectInboxDetail } from "./ProjectInboxDetail";
 export { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "./ProjectOriginReference";
 export { loadProjectWorkItems, projectInboxMentions, resolveProjectInboxWorkItem, type ProjectInboxWorkItem } from "./projectWorkItems";

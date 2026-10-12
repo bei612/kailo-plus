@@ -509,3 +509,112 @@ Windows/Mobile 安装验收及完整原版一致性未完成；原 full 失败�
 apps/design 挂载；tmp/npm/node 缓存位于 Data。设计实际 HEAD 为
 `87625ff0e45ae1d89567105591f60da04b98e8d8`。该入口覆盖当前工作树 top/docs 与
 设计资料，不逐行检查 receipt 子目录，不冒称同一固定候选 full 或发布门禁通过。
+
+## 原 Tasks/Reviews 分享链接与精确打开消费者
+
+本批基于 `f29fc77d4f444ba0d11600ad2cb9e56bc4e983de`，固定官方仍为
+`779af8886caae1317b4de962082429867ab61503`。只恢复原 Issue/PR 行菜单复制、
+编辑器链接识别、正文打开及 Native OS 入站队列；不扩展项目写操作或 Git 读取。
+
+四步变更核对：
+
+1. REQ-24 原版恢复与 DD-72/75 双宿主边界：原
+   `desktop/src/shared/lib/entityLink.ts::parseEntityLink`、
+   `desktop/src/features/projects/lib/projectShareLinks.ts::issueShareLink` /
+   `pullRequestShareLink` 与
+   `desktop/src/features/projects/ui/CopyShareLinkMenuItem.tsx::CopyShareLinkMenuItem`
+   决定链接格式和菜单，不另立 URL。原
+   `desktop/src/shared/ui/markdown/entityLinks.tsx::EntityLinkAnchor` 决定原 chip、
+   authored label 与 Tooltip 呈现；两端消费同一共享主体。
+2. 完整调用影响为 Tasks/Reviews 原菜单 → 剪贴板 → 原 composer entity 识别 /
+   Markdown remark 转换 → 双宿主 → `readProjectEntity` → 既有
+   `loadProjectWorkItems` → 原 `goProject` / Web `navigation.openProject` →
+   已交付的精确工作项详情。Native 同时恢复原
+   `desktop/src-tauri/src/deep_link.rs::canonical_entity_deep_link`、
+   `PendingEntityDeepLinks`、真实 Tauri command 注册及
+   `desktop/src/shared/useEntityDeepLinks.ts::useEntityDeepLinks` 消费。
+   无新契约、数据库或第二权限/执行权威。
+3. URL 和 warm metadata 不授权。每次点击重新有界读取当前主体的项目、仓库和
+   工作项，并核 exact repositoryAddress、Issue/PR 类型及 event ID；失败不转到
+   公告或别的项目。Web 仍经 BFF，Native 仍用当前本机会话 Relay 读链。
+   Promise 返回保留原导航失败；metadata 失败不展示旧标题，点击拒绝只报原错误。
+   `interactive=false` 只渲染原 inert chip，不挂实际读宿主或触发查询。
+4. 空、未知类型、畸形链接及不匹配目标不开假入口；重复 OS 投递沿原 FIFO href
+   去重和逐头 ACK。身份切换清除旧队列；清除失败保持准入关闭，不读取/重调度，
+   在途旧 scope 不 ACK。未登录时没有 AppShell 消费者，登录身份切换沿原清队列
+   边界，不能宣称跨登录自动恢复导航。卸载中止读取；明确拒绝可移除已处理头，
+   不等于导航成功。没有新持久状态、外部写入或 UNKNOWN 转成功，06 §4 分类不变。
+
+本批四类差异：
+
+- 原样保留：完整 `entityLink.ts` parser/builders、原
+  `desktop/src/features/messages/lib/remarkEntityLinks.ts::remarkEntityLinks` 的正文
+  转换、原行菜单图标/事件阻止规则、Issue/PR chip 的稳定 repo dtag 文本和原
+  Tooltip 类；metadata 只影响原提示和可访问名称，不替换 chip 标题。
+- 共享迁移：上述原模块进入 `client-kit/ts/platform/src/react/projects/` 与
+  `react/messages/`；原 composer 节点真实消费同一 parser，原 Native Markdown
+  仅保留宿主适配。原 Rust parser/queue 进入当前原 Tauri 注册路径，不是孤儿文件。
+- 已授权接入：原查询改接既有 fresh scope 读链，Web BFF / Native 本机传输，
+  当前身份队列屏障及中文默认/英文词条；不按链接 owner 推导当前用户。
+- 缺失需恢复：repository/project/Git/commit 链接仍无完整执行消费者，正文保持
+  inert，OS handler 不启用这些分支。完整 ProjectDetailChrome、WorkspaceTabs、
+  ProjectChannelHome、selection→Agent、Activity/Repositories 分类、updated 排序、
+  工作项写操作和 Mobile entity 导航依旧未闭合。前节“share link 缺失”只在本节
+  Issue/PR 已实际验证的消费者范围内更新，不声明全项目分享或完整原版恢复。
+
+检查仍用原 `kailo-web-thread-tooltip-sdk`，4 CPU/8 GiB，memory+swap 总限额
+等于内存（无额外 swap）；输入、依赖、TMPDIR 和 npm cache 均在 Data。没有新
+镜像、依赖安装、全仓导出或冷 Rust 编译。日志目录为
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-share.Qrh78R/`。
+
+- 95894 实际 exit 1，`positive.log`：共享生产类型 0、测试类型 2（issue 已收窄
+  后的冗余 PR 分支）、共享 25/27（夹具未传原 `onSelectedProjectChange`，真实
+  页面因而不开放 Tasks/Reviews）；Web 类型 2（原 Pulse Origin 夹具缺新增
+  必需导航回调），原 MessageContent 30/30；Native 类型 0，原 deep-link /
+  composer 两套件 61/61。只纠正真实夹具和死分支，不改生产门禁或超时。
+- 73770 原 closure 独立 HEAD 加 8 个同源词条执行
+  `python3 tools/gen-platform-i18n.py`，实际 exit 0。输入输出位于
+  `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/project-share-i18n.l9vfvT/`。
+  Dart 仅提取本批生成增量，保留原公共三项暂存及工作树历史词条；不改 HOME 或
+  四侧合同生成。
+
+Rust 原 parser/队列金样本已恢复到原测试模块，但本批未编译/执行 Rust，不以
+Native TypeScript 或金样本文件存在替代。没有新部署、Windows 安装或对应新版
+浏览器截图；现网 9d718 不能认领本批，完整 full 失败门禁仍保留。
+
+末版集中结果：
+
+- 79181、4948 正式/私有 27 个源码路径逐个 `cmp` 实际 exit 0；后者包括反证还原
+  和最后 Rust 机械格式整理。i18n 私有输入是上述 HEAD 加本批 8 词条，不包含
+  原公开暂存删词。受限 SDK 运行前实际仅 sleep，4 CPU/8 GiB、Data 挂载，
+  MemAvailable 约 34 GiB；I/O full avg60 约 50%，没有新增冷编译。
+- 95626 实际 exit 0，`final-positive.log`：共享生产/测试、Web、Native 四项
+  `tsc --noEmit` 全为 0。共享原 `test/project-inbox.test.tsx` 28/28；Web 原
+  `MessageContent.test.tsx` 31/31 与 `PulsePane.test.tsx` 12/12；Native 原
+  `deep-link.test.mjs` / `composerMessageLinkNode.test.mjs` 62/62。Vitest 使用
+  `--no-file-parallelism`，Native 仍为
+  `node --import ./test-loader.mjs --experimental-strip-types --test`；没有改超时。
+  新增实际消费者证明原行菜单复制精确 URL，原 composer 接受该链接，shared
+  exact-detail 导航成立；Web 真实 Markdown/BFF host 重新调用 queryProjects，
+  撤权后只拒绝一次且不导航，inert preview 零读取。BFF 响应为隔离夹具，不能
+  写成真实 Core/Relay 请求、OS shell 或浏览器历史验收。
+- 47009 私有副本仅断开 `EntityLinkAnchor` 向真实 `onOpen` 的委托：共享两个
+  分享用例均失败、Web BFF 消费者失败，均捕获 0 次导航，实际 exit 1。
+  原日志 `navigation-mutation.log` 中 `SHARED_MUTATION=1 WEB_MUTATION=1`。
+  正式字节还原后 18075 实际 exit 0，共享 28/28、Web 43/43，见 `restored.log`。
+- 原 `rustfmt --edition 2021 --config skip_children=true --check` 对三处实际 Rust
+  文件首次 exit 1，`rustfmt.log` 保留长行/import 及 HEAD 模块顺序差异。只作机械
+  整理（含 lib.rs 既有 initial_window/key_backup 两行排序），18075 同一命令
+  `RUSTFMT=0`。这是解析格式，不是 Cargo 编译或原金样本执行。
+
+原 React act 与 jsdom Canvas 警告完整保留；本批不据局部成功改变部署、整端或
+完整 full 的未验收边界。候选重基 `0e8055cfd03d4149fc536b00e393499b6c47e98c`，
+仅主线两个不重叠的 Core 文件已推进，本批已验证源码字节不变。
+
+主线合批文档检查 73586 实际 exit 0，七节全部通过；原始日志为
+`/volumes/data/kailo/tmp/share-observe-docs.gvKsJg/check-docs.log`。复用固定 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU/2 GiB、无额外 swap、UID 1000、network none、只读 apps/design，
+缓存和临时目录均为 Data。实际命令为 `bash tools/check-docs.sh /workspace/.design`。
+该脚本检查当前 top/docs 与设计资料，不逐行检查本回执，也不是固定发布树的
+`check.sh --full`；本段补记不触发另一轮相同全局检查。

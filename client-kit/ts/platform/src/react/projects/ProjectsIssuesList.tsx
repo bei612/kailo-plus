@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsIssuesList.tsx.
-// Atomic governed loading replaces upstream partial-section fallback; selection/share-link consumers remain missing.
+// Atomic governed loading replaces upstream partial-section fallback; selection remains missing.
 import { useUiT } from "../context";
 import { translateCurrent } from "../../i18n";
 import { Eye, FolderKanban } from "lucide-react";
@@ -26,6 +26,8 @@ import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { ProjectSelectableGroup } from "./ProjectSelectableGroup";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
+import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
+import { issueShareLink } from "./projectShareLinks";
 
 const statusKey = {
   Triage: "projects.status.triage",
@@ -167,6 +169,8 @@ const IssueListRow = React.memo(function IssueListRow({
             <Eye className="h-4 w-4" />
             {nextStepLabel(issue.status)}
           </DropdownMenuItem>
+          <CopyShareLinkMenuItem link={issueShareLink(issue)} label={t("projects.share.copyTask")}
+            testId={`projects-issue-copy-link-${issue.id}`}/>
         </ProjectListRowMenu>
       }
     />

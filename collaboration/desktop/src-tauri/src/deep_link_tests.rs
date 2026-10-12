@@ -1,9 +1,128 @@
 use url::Url;
 
 use super::{
-    parse_channel_deep_link, parse_message_deep_link, PendingNavigationDeepLink,
-    PendingNavigationDeepLinks,
+    canonical_entity_deep_link, parse_channel_deep_link, parse_entity_deep_link,
+    parse_message_deep_link, PendingEntityDeepLinks, PendingNavigationDeepLink,
+    PendingNavigationDeepLinks, ENTITY_LINK_TABS,
 };
+
+fn entity_link_golden() -> serde_json::Value {
+    serde_json::from_str(include_str!("../../../test-fixtures/entity-links.json"))
+        .expect("valid entity-links golden fixture")
+}
+
+#[test]
+fn demo_entity_transport_produces_the_frontend_golden_contract() {
+    let golden = entity_link_golden();
+    let scheme = "buzz-demo-board-1234567812345678";
+    for canonical in golden["links"].as_object().unwrap().values() {
+        let canonical = canonical.as_str().unwrap();
+        let transport = Url::parse(&canonical.replacen("buzz:", &format!("{scheme}:"), 1)).unwrap();
+        let href = canonical_entity_deep_link(&transport, scheme).unwrap();
+        // This same fixture is parsed and routed by the frontend entity tests.
+        assert_eq!(href, canonical);
+        let queue = PendingEntityDeepLinks::default();
+        let pending = queue.enqueue(href);
+        assert_eq!(queue.first().unwrap().href, canonical);
+        assert!(queue.acknowledge(&pending.id));
+        assert!(queue.first().is_none());
+        assert!(canonical_entity_deep_link(&transport, "buzz").is_none());
+        assert!(
+            canonical_entity_deep_link(&transport, "buzz-demo-other-8765432187654321").is_none()
+        );
+        assert!(canonical_entity_deep_link(&Url::parse(canonical).unwrap(), scheme).is_none());
+        assert_eq!(
+            canonical_entity_deep_link(&Url::parse(canonical).unwrap(), "buzz").as_deref(),
+            Some(canonical)
+        );
+    }
+    let invalid = Url::parse(&format!("{scheme}://repo?owner=bad&d=repo")).unwrap();
+    assert!(canonical_entity_deep_link(&invalid, scheme).is_none());
+}
+
+#[test]
+fn parse_entity_deep_link_accepts_every_share_link_shape() {
+    let golden = entity_link_golden();
+    let owner = golden["owner"].as_str().unwrap();
+    let dtag = golden["dtag"].as_str().unwrap();
+    for raw in golden["links"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .chain(golden["tabs"].as_array().unwrap().iter().map(|tab| {
+            format!(
+                "buzz://repo?owner={owner}&d={dtag}&tab={}",
+                tab.as_str().unwrap()
+            )
+        }))
+    {
+        assert!(
+            parse_entity_deep_link(&Url::parse(&raw).unwrap()).is_some(),
+            "{raw}"
+        );
+    }
+    let commit_link = format!(
+        "buzz://repo?owner={owner}&d={dtag}&tab=commits&commit={}",
+        golden["eventId"].as_str().unwrap()
+    );
+    assert!(parse_entity_deep_link(&Url::parse(&commit_link).unwrap()).is_some());
+    let expected_tabs = golden["tabs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tab| tab.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ENTITY_LINK_TABS.as_slice(), expected_tabs);
+}
+
+#[test]
+fn parse_entity_deep_link_rejects_malformed_and_non_canonical_links() {
+    let golden = entity_link_golden();
+    let owner = golden["owner"].as_str().unwrap();
+    let event_id = golden["eventId"].as_str().unwrap();
+    for raw in [
+        // Missing or malformed identifiers.
+        format!("buzz://repo?owner={owner}"),
+        "buzz://repo?owner=nope&d=buzz-world".to_owned(),
+        format!("buzz://repo?owner={owner}&d=.hidden"),
+        format!("buzz://repo?owner={owner}&d=has%20space"),
+        format!("buzz://pr?owner={owner}&d=buzz-world"),
+        format!("buzz://pr?id=short&owner={owner}&d=buzz-world"),
+        // Coordinate links take no event id.
+        format!("buzz://repo?id={event_id}&owner={owner}&d=buzz-world"),
+        // Non-canonical: unknown param, duplicate param, path, fragment.
+        format!("buzz://repo?owner={owner}&d=buzz-world&relay=wss%3A%2F%2Fx.example"),
+        format!("buzz://repo?owner={owner}&owner={owner}&d=buzz-world"),
+        // Unknown tab value, duplicate tab, and tab on an event link.
+        format!("buzz://repo?owner={owner}&d=buzz-world&tab=overview"),
+        format!("buzz://repo?owner={owner}&d=buzz-world&tab=prs&tab=prs"),
+        format!("buzz://repo?owner={owner}&d=buzz-world&tab=files&commit={event_id}"),
+        format!("buzz://repo?owner={owner}&d=buzz-world&tab=commits&commit=short"),
+        format!("buzz://pr?id={event_id}&owner={owner}&d=buzz-world&tab=prs"),
+        format!("buzz://repo/extra?owner={owner}&d=buzz-world"),
+        format!("buzz://repo?owner={owner}&d=buzz-world#top"),
+        // Not an entity host.
+        format!("buzz://message?owner={owner}&d=buzz-world"),
+    ] {
+        assert!(
+            parse_entity_deep_link(&Url::parse(&raw).unwrap()).is_none(),
+            "{raw}"
+        );
+    }
+}
+
+#[test]
+fn pending_entity_links_dedupe_and_clear_at_identity_change() {
+    let queue = PendingEntityDeepLinks::default();
+    let href = "buzz://issue?owner=aa&d=first".to_owned();
+    let first = queue.enqueue(href.clone());
+    assert_eq!(queue.enqueue(href), first);
+    assert!(!queue.acknowledge("wrong-head"));
+    assert_eq!(queue.first(), Some(first));
+    queue.clear();
+    assert!(queue.first().is_none());
+}
 
 fn pending_navigation(
     id: &str,

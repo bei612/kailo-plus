@@ -8,8 +8,8 @@ mod deep_link;
 mod egress_guard;
 mod events;
 mod identity_storage;
-mod key_backup;
 mod initial_window;
+mod key_backup;
 mod link_preview_tags;
 mod linux_media;
 #[cfg(target_os = "macos")]
@@ -39,8 +39,10 @@ pub mod webkit_rendering;
 use app_state::{build_app_state, resolve_persisted_identity, AppState};
 use commands::*;
 use deep_link::{
-    acknowledge_pending_navigation_deep_link, clear_pending_navigation_deep_links,
-    handle_deep_link_url, take_pending_navigation_deep_link, PendingNavigationDeepLinks,
+    acknowledge_pending_entity_deep_link, acknowledge_pending_navigation_deep_link,
+    clear_pending_entity_deep_links, clear_pending_navigation_deep_links, handle_deep_link_url,
+    take_pending_entity_deep_link, take_pending_navigation_deep_link, PendingEntityDeepLinks,
+    PendingNavigationDeepLinks,
 };
 use initial_window::*;
 #[cfg(target_os = "macos")]
@@ -148,6 +150,7 @@ pub fn run() {
         .manage(platform::api::NativeSession::default())
         .manage(ClipboardState::new())
         .manage(PendingNavigationDeepLinks::default())
+        .manage(PendingEntityDeepLinks::default())
         .manage(observed_unread::ObservedUnreadStore::default())
         .manage(channel_head_cache::ChannelHeadCacheStore::default())
         .setup(move |app| {
@@ -197,6 +200,9 @@ pub fn run() {
             platform::commands::platform_api,
             platform::commands::platform_register_device,
             acknowledge_pending_navigation_deep_link,
+            acknowledge_pending_entity_deep_link,
+            clear_pending_entity_deep_links,
+            take_pending_entity_deep_link,
             apply_workspace,
             cancel_link_preview_metadata,
             cancel_media_fetch,

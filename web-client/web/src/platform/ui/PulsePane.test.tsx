@@ -118,7 +118,8 @@ function OriginConsumer(){const {OriginReference}=usePulseHost();if(!OriginRefer
 async function mountOrigin(open:(id:string)=>void,scopeKey="tenant:viewer") {
   const client=createBffClient({send:async()=>({status:200,body:{maxParticipants:9,items:[]}})});
   await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en"><TooltipProvider>
-    <BffMessageLinkHost scopeKey={scopeKey} principalId="viewer" conversations={[]} onOpenChannel={open} onOpenMessageLink={vi.fn()}>
+    <BffMessageLinkHost scopeKey={scopeKey} principalId="viewer" conversations={[]} onOpenChannel={open} onOpenMessageLink={vi.fn()}
+      onOpenProject={async()=>{throw new Error("No project navigation in origin fixture");}}>
       <PulsePane scopeKey={scopeKey} onStartDm={vi.fn()}><OriginConsumer/></PulsePane>
     </BffMessageLinkHost>
   </TooltipProvider></PlatformProvider></QueryClientProvider>));

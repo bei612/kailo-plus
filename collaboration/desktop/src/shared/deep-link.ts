@@ -1,6 +1,40 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
+type PendingEntityDeepLink = {id: string; href: string};
+
+/** Original entity queue shares the existing identity-change drain barrier. */
+export async function listenForEntityDeepLinks(onOpen: (href:string)=>Promise<boolean>): Promise<UnlistenFn> {
+  let cancelled = false;
+  let running = false;
+  let requested = false;
+  const drain = () => {
+    requested = true;
+    if (running || cancelled) return;
+    running = true;
+    void serializeNavigationDrain(async () => {
+      const generation = navigationDrainGeneration;
+      const active = () => !cancelled && navigationDrainEnabled && generation === navigationDrainGeneration;
+      while (requested) {
+        requested = false;
+        if (!active()) return;
+        while (active()) {
+          const pending = await invoke<PendingEntityDeepLink|null>("take_pending_entity_deep_link");
+          if (!pending || !active()) break;
+          if (!await onOpen(pending.href) || !active()) break;
+          if (!await invoke<boolean>("acknowledge_pending_entity_deep_link", {id:pending.id})) break;
+        }
+      }
+    }).catch(error=>console.warn("Failed to drain pending entity deep links",error)).finally(()=>{
+      running = false;
+      if (requested && !cancelled) drain();
+    });
+  };
+  const unlisten = await listen<PendingEntityDeepLink>("deep-link-entity",drain);
+  drain();
+  return () => {cancelled=true;unlisten();};
+}
+
 export type ChannelDeepLinkPayload = { channelId: string };
 
 /**
@@ -32,6 +66,7 @@ export async function resetNavigationDeepLinkDrain(): Promise<void> {
   // may route it against a different community.
   navigationDrainEnabled = false;
   await invoke("clear_pending_navigation_deep_links");
+  await invoke("clear_pending_entity_deep_links");
   if (generation === navigationDrainGeneration) {
     navigationDrainEnabled = true;
   }

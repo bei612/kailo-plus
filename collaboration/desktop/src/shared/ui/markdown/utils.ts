@@ -4,6 +4,7 @@ import { defaultUrlTransform } from "react-markdown";
 
 import { isChannelLink } from "@/features/messages/lib/channelLink";
 import { isMessageLink } from "@/features/messages/lib/messageLink";
+import { parseEntityLink } from "@client-kit/platform/react/projects";
 
 export { dimensionsFromDim };
 
@@ -41,7 +42,7 @@ export { getDecodedImageDimensions, imageReserveStyle, isInsideHiddenSpoiler, re
  */
 export function buzzDeepLinkUrlTransform(value: string, key: string): string {
   if (key !== "href") return defaultUrlTransform(value);
-  if (isMessageLink(value) || isChannelLink(value)) return value;
+  if (isMessageLink(value) || isChannelLink(value) || parseEntityLink(value).ok) return value;
   return defaultUrlTransform(value);
 }
 

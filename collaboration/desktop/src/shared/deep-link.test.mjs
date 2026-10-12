@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 const ipcHandlers = new Map();
 let nextCallbackId = 1;
@@ -23,7 +23,7 @@ globalThis.window = {
 };
 globalThis.__TAURI_INTERNALS__ = tauriInternals;
 
-const { listenForNavigationDeepLinks, resetNavigationDeepLinkDrain } =
+const { listenForNavigationDeepLinks, listenForEntityDeepLinks, resetNavigationDeepLinkDrain } =
   await import("@/shared/deep-link.ts");
 
 function deferred() {
@@ -41,6 +41,43 @@ async function settle() {
 afterEach(() => {
   ipcHandlers.clear();
   callbacks.clear();
+});
+beforeEach(()=>{ipcHandlers.set("clear_pending_entity_deep_links",()=>{});});
+
+test("entity FIFO serializes duplicate listeners and only acknowledges accepted current-scope navigation",async()=>{
+  const href=`buzz://issue?id=${"1".repeat(64)}&owner=${"a".repeat(64)}&d=repo`;
+  const queue=[{id:"entity-one",href}],opened=[],acked=[],gate=deferred();
+  ipcHandlers.set("plugin:event|listen",()=>nextCallbackId);
+  ipcHandlers.set("plugin:event|unlisten",()=>{});
+  ipcHandlers.set("take_pending_entity_deep_link",()=>queue[0]??null);
+  ipcHandlers.set("acknowledge_pending_entity_deep_link",({id})=>{acked.push(id);queue.shift();return true;});
+  const first=await listenForEntityDeepLinks(async value=>{opened.push(value);await gate.promise;return true;});
+  const second=await listenForEntityDeepLinks(async value=>{opened.push(value);return true;});
+  await settle();assert.deepEqual(opened,[href]);assert.deepEqual(acked,[]);
+  gate.resolve();await settle();assert.deepEqual(acked,["entity-one"]);assert.deepEqual(opened,[href]);first();second();
+});
+
+test("identity switch clears entity queue and does not acknowledge an outgoing in-flight target",async()=>{
+  const queue=[{id:"old-identity",href:"buzz://issue"}],gate=deferred(),acked=[];
+  ipcHandlers.set("plugin:event|listen",()=>nextCallbackId);ipcHandlers.set("plugin:event|unlisten",()=>{});
+  ipcHandlers.set("take_pending_entity_deep_link",()=>queue[0]??null);
+  ipcHandlers.set("acknowledge_pending_entity_deep_link",({id})=>{acked.push(id);return true;});
+  ipcHandlers.set("clear_pending_navigation_deep_links",()=>{});
+  ipcHandlers.set("clear_pending_entity_deep_links",()=>{queue.length=0;});
+  const stop=await listenForEntityDeepLinks(async()=>{await gate.promise;return true;});await settle();
+  await resetNavigationDeepLinkDrain();gate.resolve();await settle();assert.equal(queue.length,0);assert.deepEqual(acked,[]);stop();
+});
+
+test("an entity listener mounted during a refused identity reset stays idle without draining or spinning",async()=>{
+  ipcHandlers.set("clear_pending_navigation_deep_links",()=>{});
+  ipcHandlers.set("clear_pending_entity_deep_links",()=>{throw new Error("Clear failed");});
+  await assert.rejects(resetNavigationDeepLinkDrain(),/Clear failed/);
+  ipcHandlers.set("plugin:event|listen",()=>nextCallbackId);ipcHandlers.set("plugin:event|unlisten",()=>{});
+  let reads=0,opens=0;
+  ipcHandlers.set("take_pending_entity_deep_link",()=>{reads++;return null;});
+  const stop=await listenForEntityDeepLinks(async()=>{opens++;return true;});
+  await settle();assert.equal(reads,0);assert.equal(opens,0);stop();
+  ipcHandlers.set("clear_pending_entity_deep_links",()=>{});await resetNavigationDeepLinkDrain();
 });
 
 test("listener teardown leaves an unaccepted FIFO item for the next mount", async () => {

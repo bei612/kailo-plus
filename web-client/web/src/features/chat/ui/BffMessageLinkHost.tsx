@@ -16,6 +16,8 @@ import type { loadWebSearchDirectory } from "@/platform/ui/search";
 import { createChannelDeepLinks, type ChannelLinkRuntime } from "@client-kit/platform/react/messages/channel-link";
 import type { SearchChannel } from "@client-kit/platform/react/search/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { EntityLinkAnchor, type ProjectWorkItemTarget } from "@client-kit/platform/react/projects";
+import { useProjectsHost } from "@/platform/ui/ProjectsPane";
 
 type Directory = Awaited<ReturnType<typeof loadWebSearchDirectory>>;
 type Host = {
@@ -25,8 +27,19 @@ type Host = {
   conversations: readonly ConversationView[];
   onOpenChannel: (channelId: string) => void;
   onOpenMessageLink: (link: ParsedMessageLink) => void;
+  onOpenProject: (projectId: string, target: ProjectWorkItemTarget) => Promise<unknown>;
 };
 const MessageLinkHost = createContext<Host | null>(null);
+export function BffEntityLinkAnchor(props: {href: string; children?: ReactNode; interactive?: boolean; asChip?: boolean}) {
+  const host = useContext(MessageLinkHost);
+  if (!host || props.interactive === false) return <EntityLinkAnchor {...props}/>;
+  return <ResolvedBffEntityLinkAnchor {...props} host={host}/>;
+}
+function ResolvedBffEntityLinkAnchor({host,...props}: {host:Host;href:string;children?:ReactNode;interactive?:boolean;asChip?:boolean}) {
+  const projects = useProjectsHost(host.scopeKey);
+  return <EntityLinkAnchor {...props} runtime={{host:projects,onOpen:host.onOpenProject,copyLink,
+    onError:()=>toast.error(t("platform.loadFailed"))}}/>;
+}
 function copyLink(url: string) {
   void writeTextToClipboard(url).then(() => toast.success(t("video.linkCopied")), () => toast.error(t("platform.profile.copyFailed")));
 }

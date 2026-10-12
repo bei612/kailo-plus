@@ -4,6 +4,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import remarkChannelDeepLinks from "@/features/messages/lib/remarkChannelDeepLinks";
+import { remarkEntityLinks } from "@client-kit/platform/react/projects";
 import remarkMessageLinks from "@/features/messages/lib/remarkMessageLinks";
 import rehypeImageGallery from "@/shared/lib/rehypeImageGallery";
 import rehypeLeadingInlineContent from "@/shared/lib/rehypeLeadingInlineContent";
@@ -106,6 +107,7 @@ function buildMarkdownElement(input: MarkdownParseInputs): React.ReactElement {
       ...(input.hardLineBreaks === false ? [] : [remarkBreaks]),
       remarkSpoilers,
       remarkChannelDeepLinks,
+      remarkEntityLinks,
       remarkMessageLinks,
       [remarkMentions, { mentionNames: input.mentionNames }],
       [remarkCustomEmoji, { customEmoji: input.customEmoji }],

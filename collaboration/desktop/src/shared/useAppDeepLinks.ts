@@ -1,4 +1,5 @@
 import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
+import { useEntityDeepLinks } from "@/shared/useEntityDeepLinks";
 
 /**
  * Subscribe to every deep link that routes inside the app shell —
@@ -7,4 +8,5 @@ import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
  */
 export function useAppDeepLinks() {
   useMessageDeepLinks();
+  useEntityDeepLinks();
 }

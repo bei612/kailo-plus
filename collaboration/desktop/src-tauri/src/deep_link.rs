@@ -91,6 +91,182 @@ fn queue_navigation_deep_link(app: &tauri::AppHandle, kind: &str, payload: &serd
         });
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingEntityDeepLink {
+    id: String,
+    href: String,
+}
+
+#[derive(Default)]
+pub(crate) struct PendingEntityDeepLinks(Mutex<VecDeque<PendingEntityDeepLink>>);
+
+impl PendingEntityDeepLinks {
+    fn clear(&self) {
+        self.0
+            .lock()
+            .expect("pending deep-link queue poisoned")
+            .clear();
+    }
+
+    fn enqueue(&self, href: String) -> PendingEntityDeepLink {
+        let mut queue = self.0.lock().expect("pending deep-link queue poisoned");
+        if let Some(existing) = queue.iter().find(|item| item.href == href) {
+            return existing.clone();
+        }
+        let pending = PendingEntityDeepLink {
+            id: uuid::Uuid::new_v4().to_string(),
+            href,
+        };
+        queue.push_back(pending.clone());
+        pending
+    }
+
+    fn first(&self) -> Option<PendingEntityDeepLink> {
+        self.0
+            .lock()
+            .expect("pending deep-link queue poisoned")
+            .front()
+            .cloned()
+    }
+
+    fn acknowledge(&self, id: &str) -> bool {
+        let mut queue = self.0.lock().expect("pending deep-link queue poisoned");
+        if queue.front().is_some_and(|item| item.id == id) {
+            queue.pop_front();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn take_pending_entity_deep_link(
+    pending: State<'_, PendingEntityDeepLinks>,
+) -> Option<PendingEntityDeepLink> {
+    pending.first()
+}
+
+#[tauri::command]
+pub(crate) fn acknowledge_pending_entity_deep_link(
+    id: String,
+    pending: State<'_, PendingEntityDeepLinks>,
+) -> bool {
+    pending.acknowledge(&id)
+}
+
+#[tauri::command]
+pub(crate) fn clear_pending_entity_deep_links(pending: State<'_, PendingEntityDeepLinks>) {
+    pending.clear();
+}
+
+/// Hosts of the `buzz://` git-entity links built by
+/// `desktop/src/shared/lib/entityLink.ts` and `crates/buzz-cli/src/links.rs`.
+const ENTITY_LINK_HOSTS: [&str; 4] = ["repo", "project", "pr", "issue"];
+
+fn is_hex64(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_git_object_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Mirrors `isValidDtag` in `entityLink.ts` — the link format addresses a
+/// narrower d-tag charset than Nostr allows.
+fn is_linkable_dtag(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && !value.starts_with('.')
+        && !value.contains("..")
+}
+
+/// Validate a `buzz://repo|project|pr|issue?…` link and return it verbatim
+/// for the frontend, which re-parses it with `parseEntityLink` before
+/// navigating. Validating here too keeps a malformed link from raising and
+/// focusing the window for a navigation that would then be declined.
+///
+/// Workspace tabs addressable by `buzz://repo|project` links — mirrors
+/// `ENTITY_LINK_TABS` in `entityLink.ts`.
+const ENTITY_LINK_TABS: [&str; 6] = [
+    "files",
+    "commits",
+    "issues",
+    "prs",
+    "contributors",
+    "channels",
+];
+
+/// Validate the build-specific transport URL, then hand the frontend its
+/// canonical entity-link representation. Never broaden frontend scheme trust.
+fn canonical_entity_deep_link(url: &Url, build_scheme: &str) -> Option<String> {
+    if url.scheme() != build_scheme {
+        return None;
+    }
+    parse_entity_deep_link(url)?;
+    let mut canonical = url.clone();
+    canonical.set_scheme("buzz").ok()?;
+    Some(canonical.into())
+}
+
+/// The canonical-form rules match `parseEntityLink`: no path segments, no
+/// fragment, and no parameters beyond `owner`/`d` (plus `id` for event
+/// links and the optional `tab` for coordinate links), so a future
+/// extension of the format is declined by old builds rather than silently
+/// misread.
+fn parse_entity_deep_link(url: &Url) -> Option<()> {
+    let host = url.host_str()?;
+    if !ENTITY_LINK_HOSTS.contains(&host) {
+        return None;
+    }
+    if !matches!(url.path(), "" | "/") || url.fragment().is_some() {
+        return None;
+    }
+
+    let needs_event_id = host == "pr" || host == "issue";
+    let allows_tab = host == "repo" || host == "project";
+    let (mut owner, mut dtag, mut id, mut tab, mut commit) = (None, None, None, None, None);
+    for (key, value) in url.query_pairs() {
+        let slot = match key.as_ref() {
+            "owner" => &mut owner,
+            "d" => &mut dtag,
+            "id" if needs_event_id => &mut id,
+            "tab" if allows_tab => &mut tab,
+            "commit" if host == "repo" => &mut commit,
+            _ => return None,
+        };
+        if slot.is_some() {
+            return None;
+        }
+        *slot = Some(value.into_owned());
+    }
+
+    if !owner.is_some_and(|owner| is_hex64(&owner)) {
+        return None;
+    }
+    if !dtag.is_some_and(|dtag| is_linkable_dtag(&dtag)) {
+        return None;
+    }
+    if needs_event_id && !id.is_some_and(|id| is_hex64(&id)) {
+        return None;
+    }
+    if let Some(tab) = tab.as_deref() {
+        if !ENTITY_LINK_TABS.contains(&tab) {
+            return None;
+        }
+    }
+    if let Some(commit) = commit {
+        if tab.as_deref() != Some("commits") || !is_git_object_id(&commit) {
+            return None;
+        }
+    }
+    Some(())
+}
+
 fn activate_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
@@ -239,6 +415,18 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
             activate_main_window(app);
             queue_navigation_deep_link(app, "message", &payload);
             let _ = app.emit("deep-link-message", payload);
+        }
+        Some("pr" | "issue") => {
+            let Some(href) = canonical_entity_deep_link(
+                &url,
+                crate::build_identity::deep_link_scheme().as_ref(),
+            ) else {
+                eprintln!("buzz-desktop: malformed entity deep link");
+                return;
+            };
+            activate_main_window(app);
+            let pending = app.state::<PendingEntityDeepLinks>().enqueue(href);
+            let _ = app.emit("deep-link-entity", pending);
         }
         Some(action) => {
             eprintln!("buzz-desktop: unknown deep link action: {action}");
