@@ -685,3 +685,45 @@ node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-pa
 消费者明确断言无 toast/无成功勾。14503 末版实际 exit 0，测试类型检查通过、
 原完整套件 29/29；`no-toast-final.log` 保留原输出。首版三份正反日志未覆盖或
 删去，不将首版呈现称为正确。末版只改此拒绝呈现，精确链接调用和反证点不变。
+
+## 2026-10-12 原 Projects 目录多词搜索接线
+
+基底 `1e4157c061c6df6972c0efe8783dd581dc797715`；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` 中
+`visibleProjects` 消费
+`desktop/src/features/projects/lib/projectsSearch.ts::matchesProjectsSearch`。
+当前共享目录却使用整串 `.some(includes)`，跨项目/仓库字段或换序关键词会漏项；
+本批只将该实际目录读消费者接回已共享的原 helper，不新增搜索算法或控件。
+
+四步结论：REQ-24 要求原搜索行为；影响为原 `ProjectsSectionSearch` 输入和
+deferred query → 同 scope 受权目录 → 共享 `ProjectDirectory` 筛选 → 原卡片
+打开回调，Web/Desktop 共源。字段仍为项目名/描述及仓库名/描述，没有扩大数据
+查询、缓存或授权。原 fresh 失败清空列表/详情不变，无新契约、状态、写操作或
+错误分类。空词返回已有受权目录；多个 token 必须全部命中，顺序和大小写按原
+helper 处理；任一缺失为原筛选空态，关闭搜索清除关键词，不重发读取请求。
+
+四类记录：原样保留匹配算法、搜索 UI 和原字段；共享迁移补齐这一漏接调用；
+既有 BFF/Native scope 治理没有本批增量；updated 排序仍依赖原 activity summary，
+完整项目 Chrome/Git/写操作等前述缺项不因此恢复。
+
+原 Web SDK 启动前仅 sleep，4 CPU/8 GiB、无额外 swap、Data 挂载；可用内存约
+35.7 GiB，CPU pressure full 为 0，I/O full avg60 约 27.9%。仅更新原私有输入
+的 `ProjectsView.tsx` 与 `test/projects.test.tsx` 并 cmp，TMPDIR/npm cache 沿
+原 Data 路径。原命令为 `node node_modules/typescript/bin/tsc --noEmit -p
+tsconfig.test.json` 后接 `node node_modules/vitest/vitest.mjs run
+test/projects.test.tsx --no-file-parallelism`；未改原超时或执行池。
+
+27489 实际 exit 0：TypeScript 5.9.3 测试类型通过、58/58 原消费者通过；新增
+一项真实搜索链证明跨字段/换序/多空白/大小写、缺词空态、空词和关闭清除、
+打开正确项目一次、查询不增加，以及 fresh 拒绝后正文清空。私有副本恢复原错
+整串筛选，87557 实际 exit 1，新增项因目标卡片为 null 失败，57 项明确跳过；
+还原 cmp 0 后 32629 原完整套件 exit 0、58/58。React act 警告保留。
+日志目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/projects-search.LWqaSR`：
+
+- `positive.log`：`858061ad9ee2d614411ec45ebd9975fd1b7f0b6d967731f34efa11e7f11d98a6`。
+- `mutation.log`：`63f77c87e619b8ef0ecf26c01a8a2dd65a7e55e4d6f2ddbc2bc2be261f0b1295`。
+- `restored.log`：`9f7962cadb84c670560350d3a950e21e7e18d487d36925058239cecbdb2514ee`。
+
+本批未执行 docs/full、未构建部署、未截图或 Windows 验收；旧线上图不能认领
+本批搜索。没有修改 i18n、Dart、公开暂存或其他治理模块。

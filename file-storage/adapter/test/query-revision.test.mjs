@@ -91,7 +91,8 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function setup(t, changes = {}) {
+async function setup(t, changes = {}, identities = ids) {
+  const ids = identities;
   let requestArguments = changes.arguments ?? args;
   const business = changes.businessList || changes.businessRead || changes.businessAction !== undefined;
   const businessAction = changes.businessAction ?? (changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1');
@@ -246,7 +247,7 @@ async function setup(t, changes = {}) {
         execution:{idempotencyKey:ids[7], nativeType:'node', platformStatus:'UNKNOWN', cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z'}};
       return reply(response, changes.readTaskStatus ?? 200, value);
     }
-    if (changes.write && (request.url === `/v2/n/node/${ids[3]}/versions/opaque-draft-v1/promote` || request.url === '/v2/jobs/user')) {
+    if (changes.write && (request.url === `/v2/n/node/${ids[3]}/versions/${changes.writeRevision ?? 'opaque-draft-v1'}/promote` || request.url === '/v2/jobs/user')) {
       let raw = ''; for await (const chunk of request) raw += chunk;
       if (operation === 'execute') {
         assert.equal(request.headers['idempotency-key'],ids[7]);
@@ -544,6 +545,46 @@ test('native write executes the frozen opaque draft and only discloses a durable
   assert.equal(result.execution.nativeId,'published-native-version');assert.equal(result.resultJson,'{}');
   assert.deepEqual(result.contentReference,{...input,nativeObjectRef:ids[3],nativeRevision:'published-native-version'});
   assert.equal(fixture.state.promotions,1);assert.equal(fixture.state.nativeReads.length,1);assert.equal(fixture.state.peps,2);
+ });
+});
+
+test('registered write vector reaches the original governed draft consumer and returns the downstream reference',async t=>{
+ const registration=JSON.parse(await readFile(new URL('../../../contracts/adapter/file_storage.v1/registration.json',import.meta.url),'utf8'));
+ const steps=JSON.parse(registration.testVectorsJson).cases.find(entry=>entry.caseKey==='native_file').steps;
+ const step=steps.find(entry=>entry.stepKey==='write');
+ const input=JSON.parse(step.inputJson);
+ // Native fixture identity comes from the registered list operation, not a
+ // rewrite of the write input that would hide an invalid registered wire value.
+ const node=JSON.parse(steps.find(entry=>entry.stepKey==='list_revisions').inputJson).nativeObjectRef;
+ const identities=[...ids]; identities[3]=node; identities[10]=input.resourceId;
+ const contentReference={...input,nativeObjectRef:node,nativeRevision:'published-native-version'};
+ for (const businessHuman of [false,true]) for (const mcp of [false,true]) await t.test(`${businessHuman?'HUMAN':'AGENT'} ${mcp?'SDK MCP':'HTTP'}`,async nested=>{
+  const fixture=await setup(nested,{write:true,mcp,operation:'execute',validation:true,businessHuman,
+   businessAction:step.contractKey,arguments:{target:{resourceId:step.referenceResourceId},input},writeRevision:input.nativeRevision,
+   writeResult:{execution:{idempotencyKey:ids[7],nativeType:'version',nativeId:contentReference.nativeRevision,
+    platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'},contentReference,contentBytes:0}},identities);
+  let result;
+  if(mcp){
+   const {client,outgoing}=await mcpWireClient(nested,fixture);
+   const listed=await client.listTools(); assert.equal(listed.tools.length,1);
+   outgoing.authorization=`Bearer ${fixture.token()}`; outgoing['idempotency-key']=ids[7];
+   const called=await client.callTool({name:listed.tools[0].name,arguments:input});
+   assert.equal(called.isError,false); assert.deepEqual(called.content,[]); result=called.structuredContent;
+  }else{
+   const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({actionKey:step.contractKey,idempotencyKey:ids[7],arguments:fixture.requestArguments})});
+   assert.equal(response.status,200); result=await response.json();
+  }
+  assert.equal(result.resultJson,step.expectedOutputJson);
+  assert.deepEqual(result.contentReference,contentReference);
+  assert.equal(result.execution.nativeId,contentReference.nativeRevision);
+  assert.equal(fixture.state.promotions,1); assert.equal(fixture.state.peps,2);
+  assert.deepEqual(fixture.state.nativeReads,[`/v2/n/node/${node}/versions/${input.nativeRevision}/promote`]);
+  for(const name of ['read','export']){
+   const consumer=steps.find(entry=>entry.stepKey===name);
+   assert.equal(consumer.referenceFromStepKey,step.stepKey);
+   assert.equal(consumer.referenceResourceId,result.contentReference.resourceId);
+   assert.deepEqual(JSON.parse(consumer.inputJson),{});
+  }
  });
 });
 

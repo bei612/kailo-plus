@@ -3442,3 +3442,58 @@ exit 0、47/47、257 ms。末版断言已实际执行，不用早期通过覆盖
 S3 传输使用夹具，不是浏览器或真实 Core/S3 部署验收。本批未构建/部署、未执行
 full、未激活或核验完整 binding；真实页面上传与整类 release conformance 门禁
 不因该修复通过而解除。未更改 `upstream.yaml` 或其他前端依赖脏改。
+
+## 2026-10-12 登记写入向量接回原生 draft 消费者
+
+本批四步结论：
+
+1. 权威：`.design/07` FILE_STORAGE 七组能力及 §5.2 要求真实原生执行和不可变
+   版本证据，登记向量不是成功凭证。固定官方 Cells 来源仍为
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf`；本批不改上游版本或原 Promote。
+2. 影响：原 `adapter/src/write-execution.mjs::writeInput` 的既有 revision 分支
+   只接受 canonical `{nodeUuid,publish:false}` 字符串，登记 write step 却给裸
+   UUID，实际 HTTP/MCP 在 Promote 前拒绝。仅纠正
+   `contracts/adapter/file_storage.v1/registration.json::testVectorsJson` 的该字段；
+   原 node UUID、版本和其他六步不变。read/export 仍从 write 终态取得裸 UUID
+   ContentReference，不把输入引用当结果，不用既有 draft 证明首次字节上传。
+3. 副作用：适配器、权限、schema、Core bootstrap 及数据库不变。原检查直接读取
+   登记 write 输入；夹具对象身份取独立 list_revisions 向量，不在测试里修正坏输入。
+   原两次 PEP、实际原 adapter 路由及 SDK MCP 均消费该输入，只有确定版本引用返回。
+4. 边界：未知状态、缺 AE/EE/签名键、错误引用、未确认终态、原生不可用和写后撤权
+   沿既有拒绝/UNKNOWN；原 observe/extract_usage 不重写。没有放宽原 `publish:false`
+   限制，不增加动作、存储或身份。本批不解除完整 release/binding 门禁。
+
+兼容边界：tools/gen.sh 输入仅 canary 与 `*.schema.json`；原 check.sh
+`step_contract` 历史谓词同样比较 schema。本批没有 schema、样本、四侧生成或
+序列化消费者差异，四侧生成物保持基底字节；未重跑生成/四语言往返/历史兼容，
+不能写成这些入口本轮通过。改变的是 conformance suite 内容及其 digest，
+不是 schema digest。`capability_contract.rs::bootstrap_contract` 仍严格拒绝
+同版本 test_vectors/suite digest 不同。主线程本轮只读 SQL exit 0 核实当前目录
+仅 knowledge v1 ACTIVE PLATFORM_SEED，尚未登记 file_storage；本环境仍是零到一。
+不能据此覆盖其他环境已经登记的 v1，存在冲突必须沿原新版本注册流程处理，
+不得修改 bootstrap 放行、直接迁移覆盖或强设 ACTIVE。
+
+基底 `1e4157c061c6df6972c0efe8783dd581dc797715`；原 SDK
+`kailo-cells-closure-kxbrvt` 实核 4 CPU / 8 GiB、等额 memory+swap、UID 1000，
+Data 挂载与原依赖树不变，执行前仅 sleep，宿主 available 35 GiB。未安装依赖、
+新建容器或编译。独立输入/日志目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/write-registration.gSPFCk`。
+
+```sh
+docker exec -w /evidence/write-registration.gSPFCk -e TMPDIR=/evidence/write-registration.gSPFCk kailo-cells-closure-kxbrvt node --test --test-name-pattern="^(registered write vector|native write )" file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向 `73322` exit 0，41/41；含登记向量 HUMAN/AGENT × HTTP/原 SDK MCP 四分支。
+私有反证仅恢复登记旧裸 UUID，过滤 `^registered write vector`，自然 exit 1：
+四分支全部失败（含父项五失败），HTTP `400 !== 200`、MCP `-32600`，未改准入。
+apply_patch 还原并与正式两文件 cmp 0 后，同原过滤命令 exit 0，41/41、698 ms。
+
+- `positive.log` SHA-256 `b4302cade9118b275fb5f319df0baca5a105d7369ccfdcda388229ed0afccf12`。
+- `mutation.log` SHA-256 `29304abf1480e6cab350033f81f73a927b5ad36a404dd8da364380ab39f720fa`。
+- `restored.log` SHA-256 `d0bb707b65c39439f4c103e5707b9ce92de3380397b2f8810b2e830dfd468f06`。
+
+这是原 adapter/SDK 消费者加隔离 Core/native HTTP 夹具验证，不是生产注册、
+完整七步 conformance 或真实上传验收。实时只读 Cells 镜像仍为
+`sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4`，
+revision `afc462d836c770b6f402372b53cd05b3c203786a`，仅原四个挂载，无
+native-actions 目录。本批未构建/部署、未跑 full/docs，未更改线上配置。

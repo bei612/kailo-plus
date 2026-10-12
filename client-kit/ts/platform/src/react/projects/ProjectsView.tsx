@@ -130,8 +130,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const projects=query.isSuccess&&!query.isFetching?query.data.projects:[];
   const active=projects.find(project=>project.id===selected);
   const searchText=search.trim().toLowerCase();
-  const visible=projects.filter(project=>[project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description])]
-    .some(value=>value.toLowerCase().includes(searchText)))
+  const visible=projects.filter(project=>matchesProjectsSearch(search,[
+    project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description]),
+  ]))
     .sort((a,b)=>sort==="name"?a.name.localeCompare(b.name):b.createdAt-a.createdAt);
   const canCreate=Boolean(host.publish&&query.isSuccess&&!query.isFetching&&(
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));

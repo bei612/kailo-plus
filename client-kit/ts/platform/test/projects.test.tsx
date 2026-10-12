@@ -344,6 +344,46 @@ describe("original Projects directory management consumers",()=>{
     expect(ui.textContent).toContain("No matching projects");expect(ui.textContent).toContain("Try another owner filter or sort mode.");
     expect(ui.textContent).not.toContain("Projects published to this relay");
   });
+  it("matches original project search tokens across fields and restores the directory on clear without bypassing fresh access",async()=>{
+    const matched=project("Alpha project","alpha");
+    matched.tags=matched.tags.filter(tag=>tag[0]!=="a");
+    matched.tags.push(["a",`30617:${owner}:engine`]);
+    const unmatched=project("Other project","other");
+    const repository:PulseEvent={id:"repository",pubkey:owner,kind:30617,created_at:9,content:"",
+      tags:[["d","engine"],["name","Rendering engine"],["description","Realtime previews"]]};
+    const query=vi.fn<ProjectsHost["query"]>(async request=>({pubkey:owner,limit:20,
+      events:request.view==="PROJECTS"?[matched,unmatched]:request.view==="REPOSITORIES"?[repository]:[]}));
+    const h:ProjectsHost={scopeKey:"project-search",query},selected=vi.fn(),clientCache=cache();
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={clientCache}><ProjectsView host={h} onSelectedProjectChange={selected}/></QueryClientProvider></PlatformProvider>);
+    const card=(id:string)=>ui.querySelector(`[data-testid="project-card-${id}"]`);
+    await vi.waitFor(()=>expect(card("alpha")).not.toBeNull());
+    expect(card("other")).not.toBeNull();
+    query.mockClear();
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-search-input"]')).not.toBeNull());
+    const input=ui.querySelector<HTMLInputElement>('[data-testid="projects-section-search-input"]')!;
+    for(const text of ["ALPHA engine", "previews  alpha", "  engine\tALPHA signed  "]){
+      await type(input,text);
+      expect(card("alpha")).not.toBeNull();
+      expect(card("other")).toBeNull();
+    }
+    await click(card("alpha")!.querySelector<HTMLButtonElement>("button")!);
+    expect(selected).toHaveBeenCalledExactlyOnceWith(`30621:${owner}:alpha`);
+    await type(input,"alpha absent-token");
+    expect(card("alpha")).toBeNull();expect(card("other")).toBeNull();
+    expect(ui.textContent).toContain("No matching projects");
+    await type(input,"   ");
+    expect(card("alpha")).not.toBeNull();expect(card("other")).not.toBeNull();
+    await type(input,"engine alpha");
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-search-close"]')!);
+    expect(card("alpha")).not.toBeNull();expect(card("other")).not.toBeNull();
+    expect(query).not.toHaveBeenCalled();
+    query.mockRejectedValue(new Error("Current project scope revoked"));
+    await act(async()=>{await clientCache.invalidateQueries({queryKey:["projects",h.scopeKey]});});
+    await vi.waitFor(()=>expect(card("alpha")).toBeNull());
+    expect(card("other")).toBeNull();expect(ui.querySelector("aside")).toBeNull();
+    expect(ui.querySelector('[role="alert"]')).not.toBeNull();clientCache.clear();
+  });
 });
 
 describe("original SidebarProjectsSection governed hosts",()=>{
