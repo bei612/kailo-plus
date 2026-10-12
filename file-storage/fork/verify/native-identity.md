@@ -3682,3 +3682,72 @@ network none、apps/design只读、Data tmp/npm），实际执行
 此原脚本检查顶层实施合同/docs及design，不冒称单独lint全部fork回执。
 Node SDK确认仅sleep后原docker stop25332退出0；容器最终137、OOM=false，
 没有在途webpack被停止。仅停止本次恢复的该SDK，不删除容器/缓存/证据。
+
+## 2026-10-12 Authfront 同源 service 实际构建与 registry 回读
+
+本批沿上节既定发布后续，不增加业务功能。固定已推源码
+`4f2ac2885a9a27395814e2efa5e00ea7da654f97`，官方基准仍为
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`。四步影响结论：
+
+1. 原 tracked Authfront 同步改变 service 声明输入，沿原 source digest
+   规则重建，不能继续将旧 `0444e566…` 认作新 source 的匹配产物。
+2. 原 `build-upstream.sh file-storage-service`、完整 GUI、Go embed 与版本
+   自检、顶层 exporter metadata、原 record 为实际消费者；adapter source
+   未变，按原规则复用，不另编译。
+3. 仅向已有 Data registry 直推；不 `--load`、不替换运行实例、不改数据库、
+   凭据或平台绑定。原独立 SSO、Resource/ToolBinding 与完整 conformance
+   门禁保持，构建通过不等于普通用户上传通过。
+4. 原 pipefail 与 metadata 校验保留，失败不写成功摘要；真实 registry
+   字节和 SBOM 单独回读。依赖漏洞告警保留，不自动升级依赖或伪称安全通过。
+
+固定最小导出与私有 index 位于
+`/volumes/data/kailo/tmp/cells-service-release-4f2ac.NWyt9K`。
+原选定输入对 commit 的完整 Git 比较退出 0；公共脏树和公共 index 不入构建。
+原执行为 `sudo -n -H` 读取该目录 `build.env` 后调用
+`bash "$GIT_WORK_TREE/tools/build-upstream.sh" file-storage-service`，
+`BUILDX_BUILDER=kailo-core-data`、registry 取现有 `REGISTRY_HOST`。
+实际 Docker 身份 UID0、配置路径 `/root/.docker`，未读回或输出认证内容。
+原 builder 回读为 8 CPU、16 GiB 内存及等额 memory+swap，cgroup swap0；
+实际数据卷 bind `/volumes/data/kailo/buildkit-core-state`。
+原 helper 两次并发/压力预检通过，宿主可用约 36 GiB，内存 PSI 为 0。
+
+原构建会话 **45796 exit0**，完整 GUI、Go 编译/原 binary version、镜像
+export/push 与原 record 均完成。原 Go 层用时 2654.8 秒；版本自检实报
+`5.0.3-dev.20261012200952`、Git `4f2ac288…`、Go `1.26.8`、linux/amd64。
+service source 为
+`sha256:2507bb31b94568e49c293ea7b5e0586eaf33a3f845e57f858182fc4867600540`；
+实际顶层 artifact 为
+`sha256:2f8f4cf66269506691e1cb93cfb83d885cd4f3a0f88b0eee7dbc92fb74f8a255`。
+registry HTTP 200、Docker-Content-Digest 与下载 index 字节 SHA256 三者相同。
+原 config 的 revision/version 标签也与 binary 输出一致。
+adapter source 仍为 `6ccd12a8…`，复用此前真实 `bab90859…` 产物与独立回执。
+
+原日志 `service-release.log` SHA256
+`66dee434feffcb2912c670ab55921516b209ee4512e56322dc6640c3934991e6`；
+原 `tmp/build-file-storage-service.jNuRRv.metadata.json` SHA256
+`29aa9fb286d0f4c9cfe674977d9d03f63977660699c10f5ae9322ac7b64d836f`。
+BuildKit ref 为 `kailo-core-data/kailo-core-data0/mf9ien2qawjk3ec3r2qjgh2l6`。
+实际 registry `service-provenance.json` SHA256
+`5d1a5c998d7bc59ad0e8cc97bff2dce79a6d6de458d3a1f302fea89e51f50523`，
+SLSA v1 subject 为实际 amd64 manifest `2f122b00…`，时间为
+20:10:18.652850363 至 21:03:35.926646167 UTC。
+这是 BuildKit 默认最小证明：builder ID 为空，request/resolvedDependencies
+completeness 为 false，不冒称完整签名源码证明；固定导出、原 planner、
+原版本自检和 config 回读共同保留精确来源链。
+
+原 Syft registry 消费者 **19978 exit0**，使用 Syft 1.52.0 与精确新 digest，
+`--source-name file-storage-service -o spdx-json`，临时输出仅成功才改名。
+实际 scope `kailo-cells-service-sbom-4f2ac.service` 回读 2 CPU、2 GiB、
+swap0、User ubuntu、Data TMPDIR；运行 7.137 秒，peak 24.6M、swap0。
+`service.spdx.json` 为 SPDX-2.3、539 packages，SHA256
+`15be9bf71f1c9d5caf3efc9b2e83dcce12598fb895623a3f2924ee2733550f02`。
+`sbom.log` SHA256 `ba3d4133a484d356408fce750a2dc655adb136172213a791b50090ba015cc3f3`。
+原依赖 prepare 报 8 项漏洞（1 moderate、6 high、1 critical），pnpm ignored
+scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
+
+同原 Data 全量台账已按固定官方至 `4f2ac` 续记：242 路径、
++40797/-3409、116A/126M/0D，全部逐路径分类为 241G/1O/0S/0R/0U；
+完整 patch SHA256 `e0c8813b1441e17c8be2cadd38d2202e677a22ef1efc68d58364201ab7c437be`。
+仅两项既有 G 生成物改变产品字节；历史台账/来源回执不覆盖。
+分类是原版来源与授权用途证据，不是 242 文件全语义或全业务验收。
+本批没有部署、binding ACTIVE、普通 SSO 上传回读或新的 full-gate 通过结果。

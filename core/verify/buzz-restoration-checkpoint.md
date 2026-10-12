@@ -38,7 +38,6 @@ Task 创建是主线正在合并的独立候选，不能提前归为已提交/�
 部署，保留 429 失败边界；不是上述 Projects 首页/sheet 或批量作者的新版本截图。
 本轮未新构建、部署、浏览器操作、四侧生成或 full；公共 checkpoint 原 23 行暂存未纳入本段。
 
-
 ## 2026-10-12 批量作者源码与待部署实拍交接
 
 固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`，本段只核已有
@@ -318,7 +317,6 @@ node node_modules/typescript/bin/tsc --noEmit
   Windows/Mobile 或生产验收。本批没有构建或部署；现有 9d718 的 Inbox 截图
   只适用于该旧部署，不能认领本批修复后的截图。完整 full 仍沿主线失败记录，
   不声称原版 100% 还原。
-
 
 ## 2026-10-11 共享模块四分类增量与真实页面边界
 
@@ -1763,7 +1761,6 @@ Data 剩余空间不足时没有强行启动该大包链接，也没有清理共
 真实注册 binding、完整跨组件终态/计量、自动同步、三人双 Agent 稳定协作与
 Win11/Mobile、全页面中英文仍未验收，最近一次完整检查退出 1 的记录不变。
 
-
 ### 2026-10-07 固定 Buzz 全树差异清点（非逐项功能验收）
 
 本轮固定上游为 `779af8886caae1317b4de962082429867ab61503`，
@@ -2429,6 +2426,7 @@ playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png`
 业务截图仍为零。服务仍是 live `sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
 不是本批新源码；本批未部署、未更新安装包或运行完整门禁。
 全树分类、完整 bot profile 和三个原 Inbox 筛选业务链仍未全部闭合，不称 100% 还原。
+
 - 真实 Inbox 接线后 `tsc --noEmit` 与资料 9／Inbox 19 项整条命令退出 0，
   `inbox-author-consumer-first.log`（session 1367）。覆盖原静态头像、Conversation
   动态 poster/hover、错误作者、身份/scope 变更及迟到读取边界。
@@ -2445,6 +2443,7 @@ playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png`
 仍未关闭。本批没有新增页面截图；既有登录失效截图不证明新 Inbox 呈现。
 **本批未部署，原版一致性的视觉验收未完成。** 全仓检查、Windows/Mobile 包与
 实机验收本批未执行，由主线集中收口；不能宣称 100% 还原或生产就绪。
+
 ### 2026-10-08：原 Forum 卡片、详情与回复真实作者头像消费者
 
 固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
@@ -3134,7 +3133,7 @@ shortcode 的实际浏览器视觉、Windows/Mobile 仍未验收。3307 全树�
 - `projects-channels-final.log`：shared production/test 两次 tsc 退出 0；原 Projects／
   Channels／快捷键集中 **80 passed**。旧 ChannelBrowser 专项 **3 passed／265 skipped**，
   无关页面未全跑。`projects-channels-hosts-final.log` Web tsc 通过，Native 实际发现
-  data 可空与 goChannel 的 Promise<boolean> 类型；修正真实宿主空态及导航 false
+  data 可空与 goChannel 的 `Promise<boolean>` 类型；修正真实宿主空态及导航 false
   不报成功后 `projects-channels-native-final.log` Native tsc 退出 0。早期
   `projects-channels-hosts.log` 中 ../node_modules/.bin/tsc 路径不存在，已用真实 desktop
   安装目录执行，不将退出 127 当通过。
@@ -5311,8 +5310,8 @@ IO full avg10 4.46，cgroup oom_kill 原基线 2 未增长。没有新 SDK、下
 
 原件目录：
 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/image-viewer.SYEpEQ/`。
-包含 i18n-{generate,check}.log、web-positive.log、native-positive.log、四侧 *-types.log、
-web-final-positive.log、native-final-positive.log、三侧 *-final-types.log、
+包含 i18n-{generate,check}.log、web-positive.log、native-positive.log、四侧 `*-types.log`、
+web-final-positive.log、native-final-positive.log、三侧 `*-final-types.log`、
 web-hidden-guard-mutation.log、web-consumer-mutation.log、web-error-consumer-mutation.log、
 native-consumer-mutation.log、web-restored.log、native-restored.log、
 shared-format.log、shared-format-restored.log、i18n-final-check.log。
@@ -5328,7 +5327,6 @@ SHA-256 `89e5882f52c6f121837cf60ee6e57e551c4f0af61c8bc817750b37d2ee37ef9f`。
 旧线上 7e1b 的 25 张已复核截图只证明旧版已记录状态，不能验本批灯箱／网格新代码。
 真实浏览器缩放、拖拽、复制／下载与当前业务图片的布局、Windows 实包、Mobile 均未验；
 Mobile 不因本批 Web/Desktop 共享而增加组件宿主或绕过持钥边界。
-
 
 ### 2026-10-09 原 Workflows 首步骤／Inspector Escape／YAML 消费者恢复：7 路径
 
@@ -7230,3 +7228,66 @@ artifact `sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e12
 旧 429/线程图仍在 dPGaZF 与 `inbox-thread-online-read.BqzhP3` 原目录；本段不新拍旧版。
 当前 Inbox URL 19 路径候选、上述后续 Projects/提醒源码均不能用这些图认领部署验收。
 本段仅源码对照，没有新增编译、发布或组件绑定操作；公共原 23 行暂存及其他历史 dirty 不纳入。
+
+## 2026-10-12 已提交 a095 的固定官方全树差异刷新
+
+比较输入固定为 Buzz `779af8886caae1317b4de962082429867ab61503` 与 apps
+`a0951e4f784c8a9541d9f7cd88b07adc64e8ce1e`，不是 dirty 工作树或只对 Discuss 一批。
+`collaboration/fork/upstream.yaml` 与该 commit 的原 blob cmp 0；原 status 读回官方
+HEAD 即固定基准，没有新上游提交。没有执行或修改只读上游，也没有启动 SDK、构建或图谱。
+
+复用既有 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/export_main_diff.py`
+（脚本未修改），传入上述 apps 完整 commit。它调用原
+`tools/upstream_manifest.py::diff`，私有 index 直接 read-tree 固定 collaboration tree，
+仍排除 fork，使用原 `git diff --cached -M --binary`；不复制整份源码树、不读脏文件作为源输入。
+原 status/export/`git apply --numstat`/双方 `git ls-tree -r` 的同轮 44530 实际 exit 0。
+命令以 nice 15、ionice idle 执行；缓存仍为既有 Data XDG cache。
+两个旧缓存 alternate `/workspace/.references/buzz/.git/objects` 与 `/workspace/apps/.git/objects`
+不可归一化警告保留，未改共享缓存配置；实际 diff 与原解析均成功。
+
+全量证据在 `/volumes/data/kailo/tmp/buzz-main-a095.gbsHba/`：
+
+- `collaboration-a0951e4f784c.patch`：1055903 行；SHA-256
+  `7b229f15ef8f9d8d52a11396ea3b7d0c2f2e9b5b938e773a6c3f90b7869f2210`。
+- 原 numstat 的 rename 口径为 3392 文件、+40975/-754835；
+  `collaboration-a0951e4f784c.numstat` SHA-256
+  `e0fe4d312eb7a611d601062ecaef69d993edb5eee8a36e6f04096666abecc33d`。
+- `buzz-779af-tree.tsv` SHA-256
+  `201ef75a3fbe595fe058eaa370a7a0da81988a4ea38c51bff52cdb4f7b0ab8d6`；
+  `apps-a095-tree.tsv` SHA-256
+  `3b19a16f730f0557c6298842353a27ac76625aa5f5f52160e415eb352d471e3d`。
+  apps 树同时保存 collaboration、client-kit、web-client 的实际 mode/type/blob/path。
+- 路径 union 为 5319：官方 5195、本提交 collaboration（排除 fork）2875；同路径
+  mode/type/blob 相同 1919、修改 832、原位置删除 2444、新增 124。原位置删除包含共享迁移，
+  不等于功能删除；同字节也不证明该文件有实际消费者或页面验收。
+- `562156-to-a095-name-status.tsv` 保留两个固定 apps 提交间上述三棵源码树的实际增量，
+  不将它与完整官方 patch 的 rename 计数混用。
+
+原 `dPGaZF/collaboration-562156ae7f12.classification.tsv` 的全部 5316 行及历史四类
+原样 1921／共享 114／整文件授权 0／缺失或尚待逐项证明 3281 保留、不覆盖。
+按原 14 列账本做一次机械更新：只在官方与原位置实现的 mode/type/blob 都未变，且全部
+已登记共享消费者目标在两固定 apps 树的 mode/type/blob 都相同时延续旧证明；新增、
+任一指纹变化或目标无证据均归“缺失需恢复／未证明”。没有新增分类脚本或据 S/M/D/A 自动判功能完成。
+
+本次 `collaboration-a0951e4f784c.classification.tsv` 为 5319 数据行，无重复路径、每行 14 列，
+SHA-256 `9324f2d2f33c41b3665fcb4550c77ef45f2c8ef34db7c8741fa75c2d79b48dca`。
+四类为原样保留 1914、共享迁移 113、整文件已授权治理改造 0、缺失需恢复／未证明 3292。
+这是完整路径证明队列，不是 3292 个已证业务缺失或当前功能完成比例；新提交的局部消费者
+若尚无整文件证明，仍在该队列。原同字节的五个无实际路由文件也未恢复成“原样可用”。
+以下仅是有既有源码与验证回执的映射纠偏，不用局部成功覆盖整文件剩余分支。
+
+| 固定官方原路径／符号 | a095 的实际消费与四类边界 |
+| --- | --- |
+| `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::ProjectPullRequestDetail`、`desktop/src/features/projects/hooks.ts::useCreateProjectPullRequestCommentMutation` | 共享 `client-kit/ts/platform/src/react/projects/ProjectPullRequestDetail.tsx::handleCommentSubmit` 已实际消费普通 PR 评论，与现有 typed PR 发布相连；原 ForumComposer 为共享迁移，签名/准入/UNKNOWN 是逐 hunk 治理适配，不再称“只有读取”。request-changes/inline review 等原分支继续缺失。 |
+| `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail` | 共享同名详情的 `handleAssignment` 与实际 `IssueAssigneesRow` 已接本人及其他 HUMAN 的原持久意图操作；原选择器和右栏为共享迁移，tenant HUMAN/fresh signer 为治理适配。managed-owner/Agent 分派没有据此恢复。 |
+| `desktop/src/features/projects/ui/ProjectWorkItemCommunicationActions.tsx::ProjectWorkItemCommunicationActions`、`desktop/src/features/projects/ui/ProjectSelectionDiscussAction.tsx::ProjectSelectionDiscussAction` | a095 的共享同名组件由真实 Task 详情右栏调用，原展开/图标/class 与草稿合并保留；Web `ProjectsPane::useProjectDiscussInChannel`、Native `ProjectsScreen::useProjectDiscussInChannel` 接受权频道、原草稿 store 与导航，不自动发送。这里只恢复 Task 分支，不能将整个原文件及 Agent/其他选择分支改记完成。 |
+| `desktop/src/features/home/useInboxSelectionAnchor.ts::useInboxSelectionAnchor` | Web `web-client/web/src/platform/ui/InboxPane.tsx::InboxPane` 已接同 anchor latch、冷 URL 定位与未决发送所有权；原选择语义共享复用，fresh scope/ancestry 为治理适配。旧表该行“尚待证明”不等于当前无消费者，仍须区别源码、定向检查与部署。 |
+| `desktop/src/features/home/lib/homeMessageCapabilities.ts::getHomeMessageCapabilities` | 原 Forum 45001/45003 不支持 Inbox 行内回复，属于原样保留而非待恢复功能；本人管理动作已接原编辑/删除消费者，保留精确 kind 与 UNKNOWN。owner-agent、实际 HTTP/设备边界仍未验收。 |
+
+这些映射对应既有 `core/verify/inbox-project-read.md` 与 `core/verify/projects-creation.md`
+的实际正反验证和提交记录；没有新增功能、重跑既有检查或删除缺项。完整 repository
+Chrome/WorkspaceTabs、Git/Commit/Files、PR 审阅/inline、managed-Agent 与 Mobile 原完整
+Projects 仍缺独立完整消费者证明。整文件授权为 0 的历史分类不否认已有局部治理适配。
+旧 dPGaZF／Inbox 429 实拍仍归其原线上版本；本轮无新部署或截图，不把 a095 源码/差异导出当页面通过。
+公共三项 staged patch SHA-256 前后仍为 `13c1f3a09faa41876a05f9ce0a4df33d3328f3732bdd8378d3b9c3c65c01f000`；
+正式 checkpoint 的旧 staged 23 行及未暂存 476/-605 未改写，本段只作为独立候选追加。

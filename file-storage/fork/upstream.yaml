@@ -23,9 +23,9 @@ artifacts:
     build_dockerfile: file-storage/tools/docker/images/cells/buildx-dockerfile
     inputs: [file-storage/]
     build_args: [CELLS_VERSION, GIT_REV, BUILD_STAMP, DOCKER_ENTRYPOINT_SRC_DIR]
-    source_digest: sha256:1c61d165e105aff1131eda543fe9a3fc17140307f65906240fd9ef2896e628f9
-    artifact_digest: sha256:0444e56621b68628018c5c91a4e7a328682c6e9e3aee92c7e71380ee9a99a320
-    blocked: This clean-source candidate at a48632b6379b22aab78a60afa348523c309855ca is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
+    source_digest: sha256:2507bb31b94568e49c293ea7b5e0586eaf33a3f845e57f858182fc4867600540
+    artifact_digest: sha256:2f8f4cf66269506691e1cb93cfb83d885cd4f3a0f88b0eee7dbc92fb74f8a255
+    blocked: This clean-source candidate at 4f2ac2885a9a27395814e2efa5e00ea7da654f97 is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
 source_seams: []
