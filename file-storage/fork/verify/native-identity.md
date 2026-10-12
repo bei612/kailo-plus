@@ -3540,3 +3540,67 @@ GIT_REV、BUILD_STAMP、DOCKER_ENTRYPOINT_SRC_DIR，二者使用受限 BUILDX_BU
 Data TMPDIR 和现有 REGISTRY。入口当前执行 `--load`，所以存储切换前不运行。
 本批未重建、未启动 SDK、未部署、未激活 binding；重用的是上述两处相同构建
 输入的历史验证，不是当前完整源码通过或生产就绪。全量检查仍由主线程集中执行。
+
+## 2026-10-12 固定上传源码双制品发布回执
+
+本批从干净提交 `a48632b6379b22aab78a60afa348523c309855ca` 导出原构建输入，
+固定 Cells 上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`。后续主干
+`bca0e2819e9e298cf97d77076a74b8420c8c23db` 的 file-storage 与
+client-kit/adapter 对上述提交逐路径 diff 为零；未复制公共工作树旧脏摘要。
+本节更新上一节当时的发布阻断：原 tools/build-upstream.sh 已经在独立提交
+移除 --load，现直接推入原 Data registry，未加载根盘 daemon。
+
+四步影响结论：
+
+1. 权威为 DD-87/88/89、原生上传 Task/Version 合同及既有发布来源规则；
+   本批只交付已提交源码的真实制品，不新增动作、权限或组件状态。
+2. 原 service inputs 完整涵盖 file-storage/；adapter 涵盖原 src、锁与
+   client-kit/adapter。原 helper 对实际输入计算 source_digest，再以成功
+   BuildKit exporter 的顶层 index digest 登记；没有另算产物摘要或改 schema。
+3. 镜像推送、SPDX 与来源登记不创建 binding、用户或 Resource，不修改原数据库；
+   配置不齐和完整 conformance 未通过仍不激活。三端没有业务行为变更。
+4. 构建失败不得登记，已存在历史记录不代替新结果；本次两个原进程均真实退出 0。
+   超时、撤权与 UNKNOWN 仍由原运行消费者承担，本次未做线上故障或上传验收。
+
+实际命令为原 `tools/build-upstream.sh file-storage-service`，随后
+`tools/build-upstream.sh file-storage-adapter`。非密原构建参数、私有 index、
+source 与完整日志位于 `/volumes/data/kailo/tmp/cells-upload-release.Yv8qvC`。
+实际 builder 为 kailo-core-data，8 CPU/16 GiB、memory+swap 同为 16 GiB，
+`/var/lib/buildkit` 实际落 `/volumes/data/kailo/buildkit-core-state`。
+原 service 会话 22843 exit 0，adapter 会话 1397 exit 0；未重复构建或重启。
+service 二进制 version 真实报告该 a486 提交、Go 1.26.8、Linux amd64。
+
+| 产物 | source_digest | registry 顶层 artifact_digest |
+|---|---|---|
+| file-storage-service | `sha256:1c61d165e105aff1131eda543fe9a3fc17140307f65906240fd9ef2896e628f9` | `sha256:0444e56621b68628018c5c91a4e7a328682c6e9e3aee92c7e71380ee9a99a320` |
+| file-storage-adapter | `sha256:6ccd12a879286b4ea7f7eb53d7700d64c59e78b93c2128aa301a2562a46aae10` | `sha256:bab90859da59913f42d5deba2f025006f06c61f8c2c8b9c5bc33683e0fd3f0a6` |
+
+原 registry 位于 `127.0.0.1:55000`。两 index、attestation manifest、SLSA v1
+blob 均经 registry HTTP 实读并逐字 SHA-256 比对成功，原件为同目录
+`service-{index,attestation-manifest,provenance}.json` 和 adapter 同名组。
+这是 BuildKit 默认 minimal provenance：builder ID 为空，request 与依赖完整性
+标志为 false；不把它表述为完整源码证明，源码关联另由冻结输入、原 manifest
+摘要及 service version 输出成立。未手写另一份成功证明。
+
+复用原 release.sh 的 `syft registry:<repo>@<digest> --source-name <artifact>
+-o spdx-json` 实际消费，两份 SPDX-2.3 均成功。原会话 2533 exit 0，已有
+Syft 1.52.0；独立 scope 实测 2 CPU/2 GiB、swap 0，Data TMPDIR，峰值 1.0 GiB。
+`service.spdx.json` 含 539 个 package，SHA-256
+`e07301ebe86a925ec437ff4854c6f446346fdf096e2e53c97d18da6b0e1ce7dc`；
+`adapter.spdx.json` 含 335 个 package，SHA-256
+`77c8dcf3c4d6895539fef7b03a2f523fd9a25c79ea6122414f3a984199f36039`。
+SBOM 不是漏洞扫描通过；原前端 git 依赖 prepare 实际报告 8 个漏洞
+（1 moderate、6 high、1 critical），未运行自动升级，原 webpack 警告保留。
+
+完整 `service-release.log` SHA-256 为
+`41dd4a33d9343c1d6cae9b98143d4a069243fec888be183f1d0dce7b0682b09c`；
+`adapter-release.log` 为
+`b88e62826e810846ebdf93b944e421246abb85ac49ab57e0fc18f62e7bd80bf2`。
+两个制品构建/推送完成不等于部署或业务验收。当前未替换旧 Cells 服务、
+未激活平台绑定、未运行新镜像的普通 SSO 上传/回读、七动作 conformance、
+跨服务同步或全量门禁。后续仍经原 start.sh 的配置校验、create 后限额核验、
+up 顺序投递，保留现有独立数据库、Data 卷及已创建的专属测试 Workspace。
+
+提交前复用原只读文档容器执行 `bash tools/check-docs.sh /.design`，实际
+2 CPU/2 GiB、UID 1000、Data tmp/npm，无新镜像。会话 91696 exit 0，
+七项全部 PASS；日志为 `/volumes/data/kailo/tmp/cells-release-receipt.LPJshr/docs.log`。

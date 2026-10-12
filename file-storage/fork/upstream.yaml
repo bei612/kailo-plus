@@ -14,8 +14,8 @@ artifacts:
     build_context: .
     build_dockerfile: file-storage/adapter/Dockerfile
     inputs: [file-storage/adapter/Dockerfile, file-storage/adapter/Dockerfile.dockerignore, file-storage/adapter/package.json, file-storage/adapter/package-lock.json, file-storage/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:c7c16cf2953fdbce87d4bf193a38eef9ee9218ff0298072b52bda079649bebc4
-    artifact_digest: sha256:705480fd0013e45912757ea38a39d113ee665b918f8198f3dbf1e888f7d26c01
+    source_digest: sha256:6ccd12a879286b4ea7f7eb53d7700d64c59e78b93c2128aa301a2562a46aae10
+    artifact_digest: sha256:bab90859da59913f42d5deba2f025006f06c61f8c2c8b9c5bc33683e0fd3f0a6
     blocked: This frozen candidate adapter is built, pushed and independently read back by digest, but not deployed. Live SecretRef delivery, approved release/binding and full tool/resource acceptance remain unverified.
   - name: file-storage-service
     kind: image
@@ -23,9 +23,9 @@ artifacts:
     build_dockerfile: file-storage/tools/docker/images/cells/buildx-dockerfile
     inputs: [file-storage/]
     build_args: [CELLS_VERSION, GIT_REV, BUILD_STAMP, DOCKER_ENTRYPOINT_SRC_DIR]
-    source_digest: sha256:852312050fd17e6549faaaac1b0c2268cceb515179abd00b7e46832962af9892
-    artifact_digest: sha256:391b870038c2616ebc8c28ec38d841574838672245196727e61be6336722d20a
-    blocked: This dirty-source candidate artifact is built and recorded but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
+    source_digest: sha256:1c61d165e105aff1131eda543fe9a3fc17140307f65906240fd9ef2896e628f9
+    artifact_digest: sha256:0444e56621b68628018c5c91a4e7a328682c6e9e3aee92c7e71380ee9a99a320
+    blocked: This clean-source candidate at a48632b6379b22aab78a60afa348523c309855ca is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
 source_seams: []
