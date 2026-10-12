@@ -4900,3 +4900,75 @@ native turn 为 interrupted，cancel_pending=true，reply 为空；updated_at �
 exec_command chunk `9c8a83`、exit 0；没有新日志文件或改写上述原件。
 Gateway 同流收尾修复不自动补回本条历史 NULL usage，本条仍待真实终态证据，
 不得重发模型请求、借相邻 outbox 用量结算或伪造回复。
+
+## 2026-10-12 三个独立 HUMAN 原频道与话题回复复核
+
+本轮补足上一节未认领的第三名 HUMAN 当前登录证据，不修改上一轮失败结论。
+复核对象是当前在线 Web/Core，不是仍在构建的 bdc6397/fd1997 新产物；
+不认领 Windows、Mobile、原版全量一致或多人多 Agent 稳定协作。
+关联 DD-39、DD-72、DD-75、DD-81；只追加实测回执，未改产品代码、契约、
+Workflow、数据库或权限。三个独立 playwright-cli persistent profile、临时目录
+和本次浏览器缓存均在 `/volumes/data`；没有共享 Cookie、改写账号、重置密码、
+新建身份或直连 Relay。凭据沿原受控文件与匿名内存 FD 进入正常 OIDC 登录。
+
+三个原 `/api/v1/session` 均为 200/FULL、同一 Tenant
+`6179e160-6055-4e9a-ae63-1793509c230c`；不是同一用户的不同会话：
+
+| 原账号 | tenantPrincipalId | humanIdentityId |
+|---|---|---|
+| kailo-bootstrap-admin | 16b6337a-e4a6-4c19-aa61-11db7df17be3 | 63bec98b-9d3c-40c7-bf99-c620e6e58d15 |
+| seam-verifier | 91b92140-cc3f-404b-8f4c-ce93782bfe9e | 0b500ec6-5cd7-442d-aedd-361cde65e403 |
+| collab-third-20261005 | 9004ad11-ed9f-43a7-a783-4523010697f5 | 11d6fd70-6030-43be-9b47-88817a36f0ed |
+
+三人通过原侧栏进入频道 `ad9a6443-f0a2-47d2-895d-f11b8fef9e38`，
+17:52:58 UTC 各从原编辑器发送一次普通消息；另两人再点原消息的“回复”，
+于 17:55:55、17:56:34 在管理员消息的同一话题回复。没有 Agent 提及，
+五个实际请求的 `mentionInstallationIds` 与 `mentionPubkeys` 均为空。
+标记内 `1756` 是本轮固定辨识串，不代替实际服务时间。
+
+| 原操作 | eventId | operationId |
+|---|---|---|
+| 管理员频道消息／话题根 | 2d7e406d2e434f8ebc170b161f8a01c6dae34714ca745a79f44061d612f354d4 | a5beed59-b310-49d8-b2e3-c07cabc8d0c8 |
+| verifier 频道消息 | a7493727a00096ef57e0d9300b676327a64dce346796a58b9ddf63e094ee5696 | 9ba64e80-cdf8-40bd-a751-4df5aba2b2ea |
+| 第三人频道消息 | e3cb9c8a5a41fb84409100200d71aece22142ed6947b21a637cd42fa68873330 | 38868c84-67b7-4fb5-ae14-df86a2b2b289 |
+| verifier 原话题回复 | 09b6af2780a92e7088d86f745299bfe55e75e1f1e2b051320ddb6cd3993c7302 | 39a94949-ae37-486f-9481-cf6358479994 |
+| 第三人原话题回复 | 94e443e0fb54ebe8e1456e082e224c761ce430266e25f1e0f97209f0060de2a0 | af2270bd-3bcc-4f68-b9df-d64c1c7e6d5d |
+
+三会话分别经原 BFF fresh GET 交叉读取三条 kind 9 频道消息，作者是三个不同
+公钥；页面显示对应三个账号。随后三个浏览器正常刷新，原话题 GET 与原页面
+都仍显示根消息及两条回复，reply tag 精确指向同一根。六张截图均已打开视觉
+复核，包含侧栏当前账号、频道、消息作者及回复面板，不以 DOM 或 HTTP 200
+单独代替结果。17:59:02 原 psql `BEGIN READ ONLY` 回读五条 publish_attempt
+与十条 AuditEvent：每次均具有对应 HUMAN、actor/initiator、同一 CHANNEL
+scope、`DISPATCH/DISPATCHED` 与 `OUTCOME/ACCEPTED`，没有正文入 Core。
+
+原始输出根目录 `/volumes/data/kailo/tmp/core-collaboration-current.XR7ZQK`。
+`*-submit.log`、`*-crossread.log`、`*-refresh.log`、
+`*-thread-refresh-crossread.log` 保留实际 CLI 结果。原命令均实际完成；初次
+三个导航各出现默认 60000ms 超时，随后在原浏览器正常完成 SSO，未延长期限。
+初次空编辑器 guard 把换行误判为草稿，三个 `*-publish.log` 保留该错误；
+当时未点击发送，改为 trim 后只发上述五次，没有结果不明重发。
+
+`humans-five-publish-authority.log` SHA-256
+`46ba31164fd8fc5f284906565a0b16d25a258c3baff2a3392ea8781f6a08c828`；
+已打开的 `bootstrap-thread-after-refresh.png`、`verifier-thread-after-refresh.png`、
+`third-thread-after-refresh.png` SHA-256 依次为
+`9f8efeba0bf67b846d3b708e71b709ef11cbdcaa867d0dc84fde83f569091782`、
+`ee6f2d18e835a0faa0a3cfe40e9993647c7bee04f8a67a0380203af63bfe43ba`、
+`31ad72497c9046d2cbb70085a348173919d68f12e5990d657b82c176956e4024`。
+
+17:39:15 原权威回读 `current-authority.log` SHA-256
+`87f88638cbd02f5ef57d717930f60c7f1577ae7b17dfba1b4d9b75ed87a04c13`：
+历史 Invocation `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 的 Session/Lease
+仍 UNKNOWN、没有 native release；`fa1c959b-5908-4031-9ae4-7d1ec9a35e3d`
+仍 RUNNING/native interrupted/无 reply，其 lease 已有原生释放证据但用量
+未闭合。没有强制释放、扩大容量、换身份或补零用量。故只认领本节三人频道
+发送、跨用户读取、原话题回复及刷新持久性；双 Agent 与完整一期门禁保持未通过。
+
+文档快路径复用已有 SDK `10ad51a2…`、2 CPU/2 GiB 等值 memory+swap、
+UID 1000、只读源码、无网络和 Data npm/tmp。首次选错旧 npm 缓存，原
+`check-docs.log` 实际退出 1（EAI_AGAIN）；第二份旧缓存的
+`check-docs-cached.log` 实际退出 1（ENOTCACHED），均未改规则或安装工具。
+随后使用原 `/volumes/data/kailo/check-cache/npm`，
+`check-docs-original-cache.log` 的七项原检查及本文件 markdownlint 实际退出 0；
+原容器 exited/exit 0/OOM false。三个本轮浏览器均已沿原 CLI 正常关闭。
