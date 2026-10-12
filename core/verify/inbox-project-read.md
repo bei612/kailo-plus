@@ -1546,3 +1546,135 @@ Native 28415 原 `cargo test --locked --offline --lib` 定向命令实际 exit 1
 仅本批新增语句的机械格式回填，bff.rs/search.rs 没有格式差异；原 Rust 合同新增
 用例采用上述已执行往返输入的格式，不混入该文件已有无关改动。没有因此重跑
 Cargo 或修改独立 Native 在途输入；格式通过不替代其编译或设备验收。
+
+## 2026-10-12 Inbox 原 Forum 本人编辑与删除
+
+### 四步影响与固定原版差异
+
+1. 权威：DD-39/72/75 与 SS-WEB-RELAY、SS-BUZ-GOVERNANCE。原事件和结构事件
+   仍由 Relay 持有；Web 经既有 Core BFF，Native 使用当前本人本机签名。
+   不新增合同、权限、状态、路由或正文副本，不把前端菜单作为授权。
+2. 原调用：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane` 调用
+   `desktop/src/features/messages/lib/canManageMessage.ts::canManageMessageForCurrentUser`，
+   仅排除不可变 Huddle，不排除 Forum 45001/45003；编辑通过
+   `desktop/src/features/home/useInboxEditMessage.ts::useInboxEditMessage` →
+   `desktop/src/features/messages/hooks.ts::useEditMessageMutation` →
+   `desktop/src-tauri/src/commands/messages.rs::edit_message` 生成 kind 40003，
+   删除使用同文件 `delete_message` 的 kind 5。
+3. 实现：原共享 MessageActionBarSurface、Composer、删除确认与未决意图逻辑不改；
+   Web InboxThreadPane 按已读取原事件 kind 投递既有 FORUM_POST/FORUM_COMMENT，
+   编辑仅带 editEventId、不添加 parentEventId，删除沿专用原路由。Native
+   HomeView/InboxDetailPane 放开对应本人原事件管理，不再错误依赖“不支持行内
+   回复”的 canReply；仍核 fresh 可见频道、成员、归档、设备身份和签名作者。
+   kind 9 的原参数、行为及消息展示不变。
+4. 异常与兼容：未确认保持 UNKNOWN，不换目标或幂等键；撤权、读取未知和身份
+   切换继续禁用并清空不可用上下文。沿旧明确终态才退出编辑、刷新结构投影，
+   不因刷新失败重发。无迁移和新词条，不改公共三项历史暂存。
+
+四类归属：原菜单、编辑器、确认框布局与空编辑转删除为原样保留；两端复用已有
+共享呈现，无第二份新 UI；Web typed messageType 与 Native fresh scope 门控为
+既有治理接缝的必要适配。固定原
+`desktop/src/features/home/lib/homeMessageCapabilities.ts::getHomeMessageCapabilities`
+明确禁止 45001/45003 行内回复；本批原样保留，该项没有适用的恢复对象。
+原 owner-agent 管理、Native 设备和完整 HTTP 授权场景仍未恢复或未验收，
+不据本批宣称完整 Forum。原
+`desktop/src/features/forum/ui/ForumView.tsx::ForumView` 只提供帖子/回复删除，
+本批不在该页新增原版没有的编辑按钮。
+
+### 原消费者验证
+
+比较基底为 `3a739440565fcf25ed4740e8f295655a59cc6f0d`。原缓存 SDK
+`kailo-inbox-forum-r5kqbx` 实际 2 CPU/4 GiB、memory+swap 总限额等于内存，
+UID 1000；源码输入、TMPDIR 与 npm cache 均在 Data。启动前无本容器检查进程，
+MemAvailable 约 36 GiB、memory PSI 为 0；没有新镜像、依赖安装或 GTK 编译。
+私有输入五文件修改前与 HEAD blob 完全一致，只投递本批精确文件。
+
+61087 原串行命令实际 exit 0，各层独立记录退出码：
+
+- Web：`./node_modules/.bin/tsc --noEmit -p tsconfig.json` 退出 0；
+  `./node_modules/.bin/vitest run src/platform/ui/InboxThreadPane.test.tsx`
+  36/36 通过。
+- Native：原 `tsc --noEmit -p tsconfig.json` 退出 0；
+  `node --import ./test-loader.mjs --test src/features/home/lib/inbox.test.mjs`
+  21/21 通过；这是原 TS 消费者，不是 Tauri Rust、Windows 或设备验收。
+- 新增消费者实际点击 Forum 编辑/删除、检查按目标 kind 投递、kind 40003
+  覆盖正文而不另显示结构行、UNKNOWN 删除同目标重试及撤权后正文消失；
+  Native 直接消费原宿主的管理门控/签名 API 调用/详情条件，保留拒绝和刷新断言。
+- 65690 私有反证 exit 1：移除 Web Forum messageType 后两 Forum 场景断言失败，
+  原 kind 9 仍通过；Native 恢复 kind9-only 后新增条件消费断言 false !== true。
+  正式源码未变；apply_patch 还原并 cmp 0 后，36846 仅复验对应 Web 3/3、
+  Native 1/1，实际 exit 0，未重复整套或提高超时。
+
+原日志目录：
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-forum-management.bQmcNR`。
+
+| 日志 | SHA256 |
+| --- | --- |
+| positive.log | `b2857e8c0a79478dfbbf43d5b2b1ea9eb215d50a29cdda524e7ff20e6af638b8` |
+| mutation.log | `ed62b99fffcae683d258ae4b344b32ce50a6babf8e471cfaadd2091455be5a01` |
+| restored.log | `54f59bced8ada800e9a79eab124996aca9f64c66a29bbd102e6f638ce9e24a0d` |
+
+本批未部署，没有新浏览器截图、full 或真实 Relay 副作用验收；已构建的 bdc
+三产物不含本批，旧版本截图不能计为本批通过。
+
+### 既有后端补验与边界
+
+后端生产、schema 与四侧生成无新增改动；仅扩两个原 Rust 测试块。
+`core/crates/platform-core/src/web_transport.rs::publish_message_for/delete_message_for`
+原入口与 `mutation_target_matches` 已支持三种 kind，Forum mutation 不套用
+新建评论必须带 parent 的条件；`core/crates/collab-bridge/src/bridge.rs::sign_message_edit`
+保留原 40003 的 h/e 和仅新增 mention 的 p 标签。Core 同 key UNKNOWN 分支、
+Native 原本人签名和 Relay 准入只有源码复核，不计新增 HTTP 副作用实测。
+
+既有 `kailo-receiver-binding-check` 为 4 CPU/8 GiB、memory+swap 总限额等于内存、
+UID 1000，源/cache/Cargo/tmp 均 Data；保持原 `--locked --offline -j16`。
+原命令为 `cargo test -p collab-bridge --lib edits_keep_original_scope_identity_and_notify_only_new_mentions -- --nocapture`
+及 `cargo test -p platform-core --bin platform-core web_transport::tests::deletion_ -- --nocapture`，
+均附上述锁、离线和并行参数；单文件原 rustfmt --check 也执行。
+
+- 77040 exit 101：Bridge 1/1；Core 广过滤 2 pass/1 fail，新增 ForumComment
+  夹具只带 root 而非原 builder 的 reply 标签，生产 validator 正确拒绝。
+- 修正夹具、未改生产或放宽断言，99667 exit 0：精确 Core 两项通过。
+- 97644 私有 `mutation_target_matches` 强加 kind9-only，实际 exit 101，
+  Forum 正向断言失败；不是编译失败。
+- 原生产字节恢复并 cmp 0 后，9378 实际 exit 0：Bridge 1/1、Core 2/2，
+  无 ignored，原 rustfmt check 通过。未运行 clippy 或重试已知缺 GTK 的原生编译。
+
+后端原日志目录：
+`/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/input/forum-rust.Ubkjuz/forum-mutation-evidence`。
+
+| 日志 | SHA256 |
+| --- | --- |
+| positive.log | `516dc5e52a663eebbb7c37947f7d7cd61e16c8cf1f8463d327b163d511bfbfff` |
+| core-corrected.log | `7551889ca64dec7ffd7adcb08dbbf63fe2890d0572d37fb399e72413477e4c7f` |
+| core-negative.log | `627cdc7b7aa5d90826af6f84077b1d5e8ff7ca1b6794e22f1a6a8b85c5448482` |
+| restored.log | `3c1e80c1a73257924518ad5cbdd08d0d9fb71efb02d3b17bbf96565678bff06c` |
+
+### Native 实际编辑器呈现链补正
+
+首轮 61087 的门控与签名消费者未覆盖编辑器 JSX；交叉复核发现编辑器仍依赖
+canReply，Forum 选择 Edit 后未渲染。现以 canEdit(editTarget) 的同一实际管理
+谓词控制编辑器，保留 loading、scope、本人作者与 UNKNOWN 门禁，不开放行内回复。
+同固定上游 InboxDetailPane 的 composerChannelType 声明逐字复用
+原 dm/stream/forum/否则 null，编辑和回复均消费同一值，避免 Forum 编辑伪装 Stream。
+布局、原回调和确认后结构刷新不变，没有新增组件或执行路径。
+
+84589 原 Native 类型与 22 项通过；随后补 channelType 消费后，12460 同一
+Native tsc 与原 inbox.test.mjs 再次 exit 0、22/22。新增用例执行真实 JSX
+onEdit → 编辑器条件 → onSend/saveEdit，覆盖两 Forum kind、UNKNOWN 保留目标、
+同参数重试、确认后退出与撤权/loading 拒绝；原宿主用例另覆盖实际刷新。
+两次私有单点反证均 exit 1：恢复旧 canReply 条件导致编辑器不存在；恢复假 stream
+投递导致 stream !== forum。apply_patch 还原、正式字节 cmp 0 后，仅新增 JSX
+用例复验 1/1、exit 0；未重复 Web/后端，也没有用 TS 代替设备或 HTTP 验收。
+
+下列日志仍在上述前端 Data 目录，1937 的 docs.log 是补正前快照 exit 0，不能
+当作末版输入检查；末版文档检查单独保留 Data 日志，不回写自引用结果。
+
+| 日志 | SHA256 |
+| --- | --- |
+| native-editor-positive.log | `fff56e38939d38d244982ea416f339a4511da4ff125ad67b7b2df813074e5752` |
+| native-channel-type-positive.log | `0d4db868db5e46c2e0c7907fd096b70094a01a00cd006dc7b31ab6c65cc17fd9` |
+| native-editor-guard-negative.log | `abecd6b3762f39bd8530cab153920c15ba97c74ea1102b0d2d8bd8253d13c98f` |
+| native-editor-type-negative.log | `087e1d2a618b566309f30560114ff9913c5c7032388b494bdf12e58cd9bc2879` |
+| native-editor-restored.log | `7f76bb639f73ead891b11dcdec6e0ff9875b630ada77915ed5e766155ccabf13` |

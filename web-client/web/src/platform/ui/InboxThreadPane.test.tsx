@@ -116,28 +116,45 @@ it.each([45001,45003])("reads original Forum kind %s context without pretending 
   expect(state.videoPresentation.mock.lastCall?.[0].onToggleReaction).toBeUndefined();
 });
 
-it("keeps original legacy Forum comment management independent of the unsupported inline reply",async()=>{
+it.each([9,45001,45003])("keeps original Forum kind %s management independent of the unsupported inline reply",async kind=>{
   const post={...rootEvent,kind:45001};
-  state.query.mockResolvedValue({events:[post,reply]});
+  const target=kind===45001?post:{...reply,kind};
+  const targetId=target.id;
+  const messageType=kind===45001?"FORUM_POST":kind===45003?"FORUM_COMMENT":"STREAM";
+  const events=kind===45001?[post,reply]:[post,target];
+  state.query.mockResolvedValue({events});
+  state.publish.mockImplementation(async()=>{
+    state.query.mockResolvedValue({events:[...events,{...target,id:"d".repeat(64),kind:40003,created_at:10,content:"updated body",tags:[["h","workspace"],["e",targetId]]}]});
+    return {eventId:"d".repeat(64),operationId:"edit-op"};
+  });
   await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane
     principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={rootId} forum
     channelName="Original Forum" members={[{principalId:"human",displayName:"Member",pubkeys:[pubkey],state:WorkspaceMembershipState.Active}]}
     onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
   await settle();
   expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
-  await editMessage(replyId);
+  await editMessage(targetId);
   expect(host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')?.disabled).toBe(false);
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')!.click());
   await settle();
-  expect(state.publish).toHaveBeenCalledExactlyOnceWith("workspace","updated body",[],"same-intent",[],{editEventId:replyId,mentionPubkeys:[]});
-  await openMessageMenu(replyId);
-  const remove=document.querySelector<HTMLButtonElement>(`[data-testid="delete-message-${replyId}"]`);
+  expect(state.publish).toHaveBeenCalledExactlyOnceWith("workspace","updated body",[],"same-intent",[],{editEventId:targetId,mentionPubkeys:[],...(kind===9?{}:{messageType})});
+  expect(host.querySelector(`[data-message-id="${targetId}"]`)?.textContent).toContain("updated body");
+  expect(host.querySelector('[data-message-id="'+"d".repeat(64)+'"]')).toBeNull();
+  await openMessageMenu(targetId);
+  const remove=document.querySelector<HTMLButtonElement>(`[data-testid="delete-message-${targetId}"]`);
   expect(remove).not.toBeNull();
   await act(async()=>remove!.click());await settle();
   expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
   expect(state.delete).not.toHaveBeenCalled();
+  state.delete.mockRejectedValueOnce(new TransportError("lost delete receipt")).mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"delete-op"});
+  const confirm=()=>[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent===translate("en","buzz.delete")||button.textContent===translate("en","forum.deleteCheck"))!;
+  await act(async()=>confirm().click());await settle();
+  expect(state.delete).toHaveBeenCalledExactlyOnceWith("workspace",targetId,messageType,undefined);
+  expect(document.querySelector('[role="status"]')?.textContent).toContain(translate("en","forum.deleteUnknown"));
+  await act(async()=>confirm().click());await settle();
+  expect(state.delete.mock.calls).toEqual([["workspace",targetId,messageType,undefined],["workspace",targetId,messageType,undefined]]);
   await act(async()=>state.receive?.({type:"closed",reason:"scope-revoked"}));await settle();
-  expect(host.querySelector(`[data-message-id="${replyId}"]`)).toBeNull();
+  expect(host.querySelector(`[data-message-id="${targetId}"]`)).toBeNull();
 });
 
 it.each(["channel","conversation"] as const)("restores Inbox %s edit through the original action, captured target and actual edit projection",async scope=>{

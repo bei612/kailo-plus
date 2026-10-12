@@ -96,11 +96,12 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
   const canReply = supportsInlineReply && canUseContext;
   const canManage = Boolean(canUseContext && ownProfile.isSuccess && !ownProfile.isFetching && ownProfile.data?.pubkey);
-  const canEdit = (message: TimelineMessage) => canManage && message.kind === 9 && !message.pending && message.signerPubkey === ownProfile.data?.pubkey;
+  const canEdit = (message: TimelineMessage) => canManage && (message.kind === 9 || (forum && (message.kind === 45001 || message.kind === 45003))) && !message.pending && message.signerPubkey === ownProfile.data?.pubkey;
   const deleteDialog = useMessageDeleteDialog(JSON.stringify([principalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]),
     canManage && !sending && !unresolved, async message => {
       if (!canEdit(message)) throw new Error(t("inbox.replyUnavailable"));
-      const receipt = await deleteMessage(workspaceId, message.id, WebMessageType.Stream, conversation?.id);
+      const receipt = await deleteMessage(workspaceId, message.id,
+        message.kind === 45001 ? WebMessageType.ForumPost : message.kind === 45003 ? WebMessageType.ForumComment : WebMessageType.Stream, conversation?.id);
       if (!receipt?.eventId || !receipt.operationId) throw new TransportError(t("platform.sendUnknown", {operation:""}));
     }, message => {
       setEditTarget(current=>current?.id === message.id ? null : current);
@@ -186,7 +187,8 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
         onPublicationPendingChange?.(true);
         try {
           const receipt=await(conversation ? publishConversationMessage(conversation.id,content,attachments,key,editTarget.id,undefined,mentionPubkeys)
-            : publishMessage(workspaceId,content,attachments,key,installations,{editEventId:editTarget.id,mentionPubkeys}));
+            : publishMessage(workspaceId,content,attachments,key,installations,{editEventId:editTarget.id,mentionPubkeys,
+              ...(editTarget.kind === 45001 ? {messageType:WebMessageType.ForumPost} : editTarget.kind === 45003 ? {messageType:WebMessageType.ForumComment} : {})}));
           if(!receipt?.eventId||!receipt.operationId) throw new TransportError(t("platform.sendUnknown",{operation:""}));
           if(!editOwner.active||editOwnerRef.current!==editOwner)return receipt;
           publication.current=null;setUnresolved(false);onPublicationPendingChange?.(false);

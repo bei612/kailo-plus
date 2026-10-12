@@ -4,7 +4,8 @@ import * as React from "react";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { translate } from "@client-kit/platform/i18n";
-import { TransportError } from "@client-kit/platform/transport";
+import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
+import { classifyRelayPublishFailure } from "../../../shared/api/relayPublishOutcome.ts";
 
 import {
   buildInboxItems,
@@ -17,7 +18,7 @@ import { hasInboxThreadContext } from "./inboxViewHelpers.ts";
 
 test("Native Inbox's actual detail header and composer restore original DM context, draft and send target", async () => {
   const file = ts.createSourceFile("InboxDetailPane.tsx", readFileSync(new URL("../ui/InboxDetailPane.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const bindings = new Set(["isDirectMessage", "replyTarget", "composerParentEventId", "composerReplyTarget", "channelContextName", "isThreadContext", "contextLabel", "contextThreadRootId", "openContextLabel"]);
+  const bindings = new Set(["isDirectMessage", "composerChannelType", "replyTarget", "composerParentEventId", "composerReplyTarget", "channelContextName", "isThreadContext", "contextLabel", "contextThreadRootId", "openContextLabel"]);
   const declarations = [];
   let composer;
   function visit(node) {
@@ -41,6 +42,7 @@ test("Native Inbox's actual detail header and composer restore original DM conte
     assert.equal(dm.openContextLabel, locale === "en" ? "Open conversation" : "打开会话");
     assert.equal(dm.contextThreadRootId,null);
     assert.equal(dm.composer.props.draftKey,DM_CHANNEL_ID);
+    assert.equal(dm.composer.props.channelType,"dm");
     assert.equal(dm.composer.props.placeholder,locale === "en" ? "Message Original sender" : "给 Original sender 发消息");
     await dm.composer.props.onSend("actual content",[],[]);
     assert.equal(sends.at(-1).parentEventId,null);
@@ -52,6 +54,9 @@ test("Native Inbox's actual detail header and composer restore original DM conte
     const stream = render({...row,item:{...row.item,channelType:"stream"}});
     assert.equal(stream.contextLabel,locale === "en" ? "Thread in #internal channel name" : "#internal channel name 中的线程");
     assert.equal(stream.composer.props.draftKey,`thread:${row.conversationId}`);
+    assert.equal(stream.composer.props.channelType,"stream");
+    assert.equal(render({...row,item:{...row.item,channelType:"forum"}},null,false).composer.props.channelType,"forum");
+    assert.equal(render({...row,item:{...row.item,channelType:"unknown"}},null,false).composer.props.channelType,null);
     await stream.composer.props.onSend("stream reply",[],[]);
     assert.equal(sends.at(-1).parentEventId,"captured-parent");
   }
@@ -76,6 +81,13 @@ test("Native Inbox edit/delete consumes the signed target, scope, original publi
   assert.deepEqual(calls[0],["edit","admitted-channel",target,"updated with media",[["imeta","url https://media.example.invalid/a"]],["d".repeat(64)],"https://relay.example.invalid",pubkey]);
   assert.deepEqual(refreshes,["structural","feed"]);
   await make()(row);assert.deepEqual(calls[1],["delete","admitted-channel",target,"https://relay.example.invalid",pubkey]);
+  for(const kind of [45001,45003]){
+    const forum={...row,kind};
+    await make(true,[forum])(forum,{content:"forum edit",mentions:[],media:[]});
+    assert.deepEqual(calls.at(-1),["edit","admitted-channel",target,"forum edit",[],[],"https://relay.example.invalid",pubkey]);
+    await make(true,[forum])(forum);
+    assert.deepEqual(calls.at(-1),["delete","admitted-channel",target,"https://relay.example.invalid",pubkey]);
+  }
   const before=calls.length;
   await assert.rejects(make(false)(row,{content:"no",mentions:[],media:[]}));
   await assert.rejects(make(true,[{...row,pubkey:"e".repeat(64)}])(row,{content:"no",mentions:[],media:[]}));
@@ -86,6 +98,68 @@ test("Native Inbox edit/delete consumes the signed target, scope, original publi
   assert.deepEqual(refreshes,[]);
   ownerRef.current={active:true};
   await make()(row,{content:"late confirmed",mentions:[],media:[]});assert.deepEqual(refreshes,[]);
+});
+
+test("Native Inbox Forum management keeps fresh scope and author guards without requiring inline replies",()=>{
+  const readDeclaration=(path,name)=>{
+    const file=ts.createSourceFile(path,readFileSync(new URL(path,import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    let value;function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(file)===name)value=node.initializer.getText(file);ts.forEachChild(node,visit);}visit(file);assert.ok(value);return value;
+  };
+  const admission=new Function("selectedItem","availableChannelIds","coreReads","channelsQuery","threadContext","currentPubkey","nativeSession","selectedChannel","directChannel",
+    ts.transpile(`return ${readDeclaration("../ui/HomeView.tsx","canManageMessages")};`,{target:ts.ScriptTarget.ES2022}));
+  const eligible=new Function("canManageMessages","hasThreadContextLoadError","isThreadContextLoading","currentPubkey",
+    ts.transpile(`return ${readDeclaration("../ui/InboxDetailPane.tsx","canEdit")};`,{target:ts.ScriptTarget.ES2022}));
+  const pubkey="a".repeat(64),channelId="forum";
+  const admit=(visible=true,archived=false,device=pubkey)=>admission({item:{channelId}},new Set([channelId]),{visibleChannels:new Set(visible?[channelId]:[])},{isFetching:false,isError:false},{hasLoadError:false,isLoading:false},pubkey,{devicePubkey:device},{isMember:true,archivedAt:archived?1:null},null);
+  assert.equal(admit(),true);
+  for(const kind of [9,45001,45003]){
+    const row={kind,signerPubkey:pubkey};
+    assert.equal(eligible(admit(),false,false,pubkey)(row),true);
+    assert.equal(eligible(admit(false),false,false,pubkey)(row),false);
+    assert.equal(eligible(admit(),false,false,pubkey)({...row,signerPubkey:"b".repeat(64)}),false);
+    assert.equal(eligible(admit(),false,false,pubkey)({...row,pending:true}),false);
+  }
+  assert.equal(admit(true,true),false);assert.equal(admit(true,false,"other"),false);
+  assert.equal(eligible(admit(),false,false,pubkey)({kind:40099,signerPubkey:pubkey}),false);
+});
+
+test("Native Inbox Forum row Edit renders the actual editor with replies disabled, submits and preserves UNKNOWN",async()=>{
+  const file=ts.createSourceFile("InboxDetailPane.tsx",readFileSync(new URL("../ui/InboxDetailPane.tsx",import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const declarations=new Map();let editAction,editor;
+  function visit(node){
+    if(ts.isVariableDeclaration(node)&&["canEdit","saveEdit","composerChannelType"].includes(node.name.getText(file)))declarations.set(node.name.getText(file),node.initializer.getText(file));
+    if(ts.isJsxAttribute(node)&&node.name.getText(file)==="onEdit")editAction=node.initializer.expression.getText(file);
+    if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==="MessageComposer"&&node.attributes.properties.some(attr=>ts.isJsxAttribute(attr)&&attr.name.getText(file)==="editTarget"))editor=node.parent.getText(file);
+    ts.forEachChild(node,visit);
+  }
+  visit(file);assert.equal(declarations.size,3);assert.ok(editAction);assert.ok(editor);
+  const source=ts.transpile(`
+    let editTarget=null,editing=false,unresolved=false,canManageMessages=true,hasThreadContextLoadError=false,isThreadContextLoading=false;
+    const canReply=false,isSendingReply=false,owner={active:true},profiles={},item={item:{channelId:"forum",channelType:"forum"},channelLabel:"Forum"};
+    const composerChannelType=${declarations.get("composerChannelType")};
+    const deleteDialog={pending:false,unresolvedMessageId:null,requestDelete(){}},focusComposer=()=>{},setReplyTargetId=()=>{},toTimelineMessage=value=>value;
+    const setEditTarget=value=>{editTarget=typeof value==="function"?value(editTarget):value;};
+    const setEditState=value=>{editing=value?.pending??false;unresolved=value?.unknown??false;};
+    const handleCancelEdit=()=>{editTarget=null;};
+    const canEdit=${declarations.get("canEdit")};
+    const saveEdit=${declarations.get("saveEdit")};
+    return {select:()=>{const action=${editAction};if(action)action(message);},render:()=>(${editor}),target:()=>editTarget,
+      revoke:()=>{canManageMessages=false;},load:()=>{isThreadContextLoading=true;},state:()=>({editing,unresolved})};
+  `,{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
+  const consume=new Function("React","MessageComposer","message","currentPubkey","onEditSave","t","isOutcomeUnknown","TransportError","classifyRelayPublishFailure",source);
+  for(const kind of [45001,45003]){
+    const message={id:"b".repeat(64),kind,signerPubkey:"a".repeat(64),body:"original"};
+    const calls=[];let fail=false;
+    const make=()=>consume(React,()=>null,message,message.signerPubkey,async(...args)=>{calls.push(args);if(fail)throw new TransportError("unknown");},key=>translate("en",key),isOutcomeUnknown,TransportError,classifyRelayPublishFailure);
+    const view=make();view.select();
+    const editor=view.render();assert.ok(React.isValidElement(editor));assert.equal(editor.props.editTarget,message);assert.equal(editor.props.disabled,false);assert.equal(editor.props.channelType,"forum");
+    fail=true;await assert.rejects(editor.props.onSend("updated",["c".repeat(64)],[]),TransportError);
+    assert.equal(view.state().unresolved,true);assert.equal(view.target(),message);assert.equal(view.render().props.onCancelEdit,undefined);
+    fail=false;await view.render().props.onSend("updated",["c".repeat(64)],[]);
+    assert.deepEqual(calls,[ [message,"updated",["c".repeat(64)],[]], [message,"updated",["c".repeat(64)],[]] ]);
+    assert.equal(view.target(),null);assert.equal(view.render(),null);
+    for(const guard of ["revoke","load"]){const denied=make();denied.select();denied[guard]();assert.equal(denied.render(),null);}
+  }
 });
 
 const CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";

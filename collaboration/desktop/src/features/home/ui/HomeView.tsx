@@ -542,13 +542,14 @@ export function HomeView({
     new Set([...availableChannelIds].filter(id => coreReads.visibleChannels.has(id))),
     locale,
   );
-  const canManageMessages=Boolean(canReply&&!channelsQuery.isFetching&&!channelsQuery.isError&&!threadContext.hasLoadError&&!threadContext.isLoading&&
+  const canManageMessages=Boolean(selectedItem?.item.channelId&&availableChannelIds.has(selectedItem.item.channelId)&&coreReads.visibleChannels.has(selectedItem.item.channelId)&&
+    !channelsQuery.isFetching&&!channelsQuery.isError&&!threadContext.hasLoadError&&!threadContext.isLoading&&
     currentPubkey&&currentPubkey===nativeSession.devicePubkey&&
     (selectedChannel ? selectedChannel.isMember&&selectedChannel.archivedAt===null : directChannel?.state==="ACTIVE"));
   const mutateMessage=async(message:TimelineMessage,edit?:{content:string;mentions:string[];media:string[][]})=>{
     const channelId=selectedItem?.item.channelId;
     const source=threadContext.events.find(event=>event.id===message.id);
-    if(!canManageMessages||!channelId||!currentPubkey||source?.kind!==9||source.pubkey!==currentPubkey||message.pending)throw new Error(t("inbox.replyUnavailable"));
+    if(!canManageMessages||!channelId||!currentPubkey||!source||![9,45001,45003].includes(source.kind)||source.pubkey!==currentPubkey||message.pending)throw new Error(t("inbox.replyUnavailable"));
     const receipt=await(edit ? editMessage(channelId,source.id,edit.content,edit.media.filter(tag=>tag[0]==="imeta"),edit.mentions,nativeSession.facts.relayUrl,currentPubkey)
       : deleteMessage(channelId,source.id,nativeSession.facts.relayUrl,currentPubkey));
     if(!receipt.id||receipt.kind!==(edit?40003:5)||receipt.pubkey!==currentPubkey||!receipt.tags.some(tag=>tag[0]==="e"&&tag[1]===source.id))throw new TransportError(t("platform.sendUnknown",{operation:""}));

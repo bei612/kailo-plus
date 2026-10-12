@@ -5392,23 +5392,53 @@ mod tests {
     #[test]
     fn deletion_target_requires_the_actual_signer_and_original_kind() {
         let keys = nostr::Keys::generate();
-        let event = nostr::EventBuilder::new(nostr::Kind::Custom(45001), "post")
-            .sign_with_keys(&keys)
-            .unwrap();
-        assert!(super::mutation_target_matches(
-            &event,
-            keys.public_key(),
-            &contracts::WebMessageType::ForumPost
-        ));
-        assert!(!super::mutation_target_matches(
-            &event,
-            nostr::Keys::generate().public_key(),
-            &contracts::WebMessageType::ForumPost
-        ));
-        assert!(!super::mutation_target_matches(
-            &event,
-            keys.public_key(),
-            &contracts::WebMessageType::ForumComment
-        ));
+        let root = "a".repeat(64);
+        for message_type in [
+            contracts::WebMessageType::Stream,
+            contracts::WebMessageType::ForumPost,
+            contracts::WebMessageType::ForumComment,
+        ] {
+            let mut tags = vec![nostr::Tag::parse(["h", "channel"]).unwrap()];
+            if message_type == contracts::WebMessageType::ForumComment {
+                tags.push(nostr::Tag::parse(["e", root.as_str(), "", "reply"]).unwrap());
+            }
+            let event =
+                nostr::EventBuilder::new(nostr::Kind::Custom(message_kind(&message_type)), "post")
+                    .tags(tags)
+                    .sign_with_keys(&keys)
+                    .unwrap();
+            let value = serde_json::to_value(&event).unwrap();
+            assert!(channel_message_event(value.clone(), "channel").is_ok());
+            assert!(channel_message_event(value, "foreign-channel").is_err());
+            let mut tampered = event.clone();
+            tampered.content.push_str("tampered");
+            assert!(
+                channel_message_event(serde_json::to_value(tampered).unwrap(), "channel").is_err()
+            );
+            assert!(super::mutation_target_matches(
+                &event,
+                keys.public_key(),
+                &message_type
+            ));
+            assert!(!super::mutation_target_matches(
+                &event,
+                nostr::Keys::generate().public_key(),
+                &message_type
+            ));
+            for wrong_type in [
+                contracts::WebMessageType::Stream,
+                contracts::WebMessageType::ForumPost,
+                contracts::WebMessageType::ForumComment,
+            ]
+            .into_iter()
+            .filter(|kind| kind != &message_type)
+            {
+                assert!(!super::mutation_target_matches(
+                    &event,
+                    keys.public_key(),
+                    &wrong_type
+                ));
+            }
+        }
     }
 }

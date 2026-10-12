@@ -139,7 +139,7 @@ function InboxMessageDetailPane({
   const [editState,setEditState]=React.useState<{owner:object;pending:boolean;unknown:boolean}|null>(null);
   const editing=editState?.owner===owner&&editState.pending;
   const unresolved=editState?.owner===owner&&editState.unknown;
-  const canEdit=(message:TimelineMessage)=>canManageMessages&&!hasThreadContextLoadError&&!isThreadContextLoading&&message.kind===9&&!message.pending&&message.signerPubkey===currentPubkey;
+  const canEdit=(message:TimelineMessage)=>canManageMessages&&!hasThreadContextLoadError&&!isThreadContextLoading&&[9,45001,45003].includes(message.kind??0)&&!message.pending&&message.signerPubkey===currentPubkey;
   const deleteDialog=useMessageDeleteDialog(editScopeKey,canManageMessages&&!editing&&!unresolved&&!isSendingReply,
     async message=>{
       if(!canEdit(message))throw new Error(t("inbox.replyUnavailable"));
@@ -367,6 +367,12 @@ function InboxMessageDetailPane({
   if (!item) return <InboxEmptyDetail />;
 
   const isDirectMessage = item.item.channelType === "dm";
+  const composerChannelType =
+    item.item.channelType === "dm" ||
+    item.item.channelType === "stream" ||
+    item.item.channelType === "forum"
+      ? item.item.channelType
+      : null;
   const replyTarget =
     displayMessages.find((message) => message.id === replyTargetId) ?? null;
   // Explicit sub-message reply wins. Otherwise use the captured default parent
@@ -523,8 +529,8 @@ function InboxMessageDetailPane({
             }}
           />
           <div className="pointer-events-auto">
-            {editTarget&&canReply&&!hasThreadContextLoadError ? <MessageComposer key={`edit:${editTarget.id}`}
-              channelId={item.item.channelId} channelType={item.item.channelType === "dm" ? "dm" : "stream"}
+            {editTarget&&canEdit(editTarget) ? <MessageComposer key={`edit:${editTarget.id}`}
+              channelId={item.item.channelId} channelType={composerChannelType}
               channelName={item.channelLabel ?? t("inbox.channelFallback")} containerClassName="px-4 pb-4 sm:px-4"
               editTarget={editTarget} profiles={profiles} disabled={!canEdit(editTarget)||deleteDialog.pending||Boolean(deleteDialog.unresolvedMessageId)}
               isSending={Boolean(editing)} onCancelEdit={!editing&&!unresolved?handleCancelEdit:undefined}
@@ -532,7 +538,7 @@ function InboxMessageDetailPane({
             <div hidden={Boolean(editTarget)}>
             <MessageComposer
               channelId={item.item.channelId}
-              channelType={item.item.channelType === "stream" || item.item.channelType === "forum" || item.item.channelType === "dm" ? item.item.channelType : null}
+              channelType={composerChannelType}
               audienceContext={isDirectMessage ? null : {type: "thread", rootTags: messages.find(message => message.id === item.conversationId)?.tags ?? item.groupItems.find(message => message.id === item.conversationId)?.tags ?? []}}
               channelName={item.channelLabel ?? t("inbox.channelFallback")}
               containerClassName="px-4 pb-4 sm:px-4"

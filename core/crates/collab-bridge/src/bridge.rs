@@ -1988,49 +1988,64 @@ mod mention_tests {
         .unwrap();
         let old_mention = Keys::generate().public_key().to_hex();
         let new_mention = Keys::generate().public_key().to_hex();
-        let original = client
-            .sign_channel_message_mentions(
-                "channel",
-                "before",
-                &[],
-                std::slice::from_ref(&old_mention),
+        let root = "a".repeat(64);
+        for message_type in [
+            contracts::WebMessageType::Stream,
+            contracts::WebMessageType::ForumPost,
+            contracts::WebMessageType::ForumComment,
+        ] {
+            let original = client
+                .sign_channel_message_kind(
+                    "channel",
+                    "before",
+                    &[],
+                    std::slice::from_ref(&old_mention),
+                    &message_type,
+                    (message_type == contracts::WebMessageType::ForumComment)
+                        .then_some((root.as_str(), root.as_str())),
+                )
+                .unwrap();
+            let edited = client
+                .sign_message_edit(
+                    &original,
+                    "after",
+                    &[],
+                    &[old_mention.clone(), new_mention.clone()],
+                )
+                .unwrap();
+            edited.verify().unwrap();
+            assert_eq!(edited.kind.as_u16(), 40003);
+            assert_eq!(edited.pubkey, original.pubkey);
+            let tags: Vec<_> = edited
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice().to_vec())
+                .collect();
+            assert_eq!(
+                tags,
+                vec![
+                    vec!["h".into(), "channel".into()],
+                    vec!["e".into(), original.id.to_hex()],
+                    vec!["p".into(), new_mention.clone()]
+                ]
+            );
+            let outsider = Keys::generate();
+            let other = IdentityClient::new(
+                Custody::Server,
+                &outsider.secret_key().to_secret_hex(),
+                "http://relay.example",
+                "relay.example",
             )
             .unwrap();
-        let edited = client
-            .sign_message_edit(&original, "after", &[], &[old_mention, new_mention.clone()])
-            .unwrap();
-        edited.verify().unwrap();
-        assert_eq!(edited.kind.as_u16(), 40003);
-        assert_eq!(edited.pubkey, original.pubkey);
-        let tags: Vec<_> = edited
-            .tags
-            .iter()
-            .map(|tag| tag.as_slice().to_vec())
-            .collect();
-        assert_eq!(
-            tags,
-            vec![
-                vec!["h".into(), "channel".into()],
-                vec!["e".into(), original.id.to_hex()],
-                vec!["p".into(), new_mention]
-            ]
-        );
-        let outsider = Keys::generate();
-        let other = IdentityClient::new(
-            Custody::Server,
-            &outsider.secret_key().to_secret_hex(),
-            "http://relay.example",
-            "relay.example",
-        )
-        .unwrap();
-        assert!(other
-            .sign_message_edit(&original, "forged", &[], &[])
-            .is_err());
-        assert!(client.sign_message_edit(&original, "", &[], &[]).is_err());
-        let unscoped = client.sign(9, "unscoped", &[]).unwrap();
-        assert!(client
-            .sign_message_edit(&unscoped, "changed", &[], &[])
-            .is_err());
+            assert!(other
+                .sign_message_edit(&original, "forged", &[], &[])
+                .is_err());
+            assert!(client.sign_message_edit(&original, "", &[], &[]).is_err());
+            let unscoped = client.sign(9, "unscoped", &[]).unwrap();
+            assert!(client
+                .sign_message_edit(&unscoped, "changed", &[], &[])
+                .is_err());
+        }
     }
 
     #[test]
