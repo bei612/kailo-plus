@@ -14,13 +14,14 @@ export const SOUND_NAMES = [
 ] as const;
 export type SoundName = (typeof SOUND_NAMES)[number];
 
-export const SOUND_SLOTS = ["dm", "mention", "thread_reply"] as const;
+export const SOUND_SLOTS = ["dm", "mention", "thread_reply", "needs_action"] as const;
 export type SoundSlot = (typeof SOUND_SLOTS)[number];
 
 export const RECOMMENDED_SOUND_BY_SLOT: Record<SoundSlot, SoundName> = {
   dm: "unison",
   mention: "ping",
   thread_reply: "doop",
+  needs_action: "doodone",
 };
 
 export type SlotSounds = Record<SoundSlot, SoundName>;
@@ -29,6 +30,7 @@ export const DEFAULT_SLOT_SOUNDS: SlotSounds = {
   dm: "flutter",
   mention: "flutter",
   thread_reply: "flutter",
+  needs_action: "flutter",
 };
 
 /** Per-event alerts (notification + sound) on/off. */
@@ -36,6 +38,7 @@ export const DEFAULT_SLOT_ALERTS_ENABLED: Record<SoundSlot, boolean> = {
   dm: true,
   mention: true,
   thread_reply: true,
+  needs_action: true,
 };
 
 export type SoundPreferences = {

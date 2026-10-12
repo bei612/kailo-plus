@@ -50,3 +50,15 @@ test("constructor failure is a delivery miss and does not prevent a later notifi
     },
   ]);
 });
+
+test("does not send a reminder when identity changes during permission lookup", async () => {
+  window.Notification = WorkingNotification;
+  const count = notifications.length;
+  let active = true;
+  const result = sendDesktopNotification({ title: "Private reminder", body: "Private preview" }, () => active);
+  active = false;
+  assert.equal(await result, false);
+  assert.equal(notifications.length, count);
+  assert.equal(await sendDesktopNotification({ title: "Current reminder" }, () => true), true);
+  assert.equal(notifications.length, count + 1);
+});

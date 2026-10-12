@@ -11,6 +11,8 @@ const browserHost: NotificationHost = {
   requestPermission: async () => typeof Notification === "undefined" ? "unsupported" : Notification.requestPermission(),
 };
 type BrowserNotificationsState = ReturnType<typeof useNotificationSettings> & {
+  pubkey: string | undefined;
+  sendReminder: (message: { title: string; body: string }) => Promise<boolean>;
   notify: (message: { eventId: string; title: string; body: string; slot: SoundSlot; onOpen: () => void }) => void;
 };
 const BrowserNotifications = createContext<BrowserNotificationsState | null>(null);
@@ -20,13 +22,26 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
   const profile = useQuery({ queryKey: ["platform", "notification-profile", principalId], queryFn: () => bff.profile() });
   const controller = useNotificationSettings(profile.isSuccess ? profile.data.pubkey : undefined, browserHost);
   const active = useRef(true);
-  const displayed = useRef(new Map<string, Notification>());
+  const displayed = useRef(new Map<string | Notification, Notification>());
   useEffect(() => {
     active.current = true;
     return () => { active.current = false; for (const notification of displayed.current.values()) notification.close(); displayed.current.clear(); };
   }, [principalId]);
   const value = useMemo<BrowserNotificationsState>(() => ({
     ...controller,
+    pubkey: profile.isSuccess ? profile.data.pubkey : undefined,
+    async sendReminder(message) {
+      if (!active.current || !profile.isSuccess || !controller.settings.desktopEnabled ||
+        !controller.settings.slotAlertsEnabled.needs_action || typeof Notification === "undefined" || Notification.permission !== "granted") return false;
+      try {
+        // Original reminders are time-triggered, not suppressed by the message
+        // viewing preference. The shared detector owns sound after success.
+        const notification = new Notification(message.title, { body: message.body, silent: true });
+        displayed.current.set(notification, notification);
+        notification.onclose = () => displayed.current.delete(notification);
+        return true;
+      } catch { return false; }
+    },
     notify(message) {
       if (!active.current || !profile.isSuccess || !controller.settings.desktopEnabled ||
         !controller.settings.slotAlertsEnabled[message.slot] || typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -42,7 +57,7 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
         playNotificationSound(controller.settings.sounds[message.slot]);
       } catch { /* Original delivery miss: no success receipt and no sound. */ }
     },
-  }), [controller, profile.isSuccess]);
+  }), [controller, profile.isSuccess, profile.data?.pubkey]);
   return <BrowserNotifications.Provider value={value}>{children}</BrowserNotifications.Provider>;
 }
 

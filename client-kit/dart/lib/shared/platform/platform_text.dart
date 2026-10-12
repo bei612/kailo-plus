@@ -54,6 +54,11 @@ enum PlatformMessageKey {
   remindersInDm,
   remindersDueStatus,
   remindersDueStatusPlural,
+  remindersNotificationTitle,
+  remindersNotificationFallback,
+  remindersNotificationPlural,
+  platformNotificationsNeedsAction,
+  platformNotificationsNeedsActionDescription,
   remindersIn30,
   remindersIn1,
   remindersIn3,
@@ -2493,6 +2498,20 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.remindersDueStatusPlural: (
     '{count} due reminders',
     '{count} 条已到期提醒',
+  ),
+  PlatformMessageKey.remindersNotificationTitle: ('Reminder due', '提醒已到期'),
+  PlatformMessageKey.remindersNotificationFallback: (
+    'A reminder is waiting',
+    '有一条提醒等待处理',
+  ),
+  PlatformMessageKey.remindersNotificationPlural: (
+    '{count} reminders are due',
+    '{count} 条提醒已到期',
+  ),
+  PlatformMessageKey.platformNotificationsNeedsAction: ('Needs action', '需要处理'),
+  PlatformMessageKey.platformNotificationsNeedsActionDescription: (
+    'When an approval or reminder is waiting on you.',
+    '有审批或提醒等待你处理时。',
   ),
   PlatformMessageKey.remindersIn30: ('In 30 minutes', '30 分钟后'),
   PlatformMessageKey.remindersIn1: ('In 1 hour', '1 小时后'),

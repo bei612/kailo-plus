@@ -417,10 +417,12 @@ export async function revealDesktopAppWindow(): Promise<void> {
 
 export async function sendDesktopNotification(
   payload: DesktopNotificationPayload,
+  isCurrent?: () => boolean,
 ): Promise<boolean> {
   if ((await getDesktopNotificationPermissionState()) !== "granted") {
     return false;
   }
+  if (isCurrent && !isCurrent()) return false;
 
   // Linux needs a retained D-Bus connection. macOS needs a native notification
   // center delegate because the Tauri plugin does not deliver desktop clicks.
@@ -449,6 +451,7 @@ export async function sendDesktopNotification(
   // un-guarded throw becomes an unhandled rejection. Treat constructor failure
   // as a delivery miss (return false) and log the failed delivery.
   try {
+    if (isCurrent && !isCurrent()) return false;
     const notification = new window.Notification(payload.title, {
       body: payload.body,
       silent: true,

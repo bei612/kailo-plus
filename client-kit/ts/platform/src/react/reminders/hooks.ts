@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { hashPayload } from "nostr-tools/nip98";
 import type { ReminderPublishRequest } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../../governance";
@@ -7,7 +7,6 @@ import { isOutcomeUnknown, TransportError } from "../../transport";
 import { useReminderHost } from "./host";
 import type { Reminder, ReminderTarget } from "./lib/reminderTypes";
 import { countDue } from "./lib/reminderFilters";
-import { startReminderNotificationPoll } from "./lib/reminderNotificationPoll";
 export { countDue as countDueReminders } from "./lib/reminderFilters";
 
 export const remindersQueryKey=(scope:string,pubkey:string)=>["reminders",scope,pubkey] as const;
@@ -22,16 +21,7 @@ export function useDueReminderBadgeCount(
   enabled: boolean,
 ): number {
   const host = useReminderHost();
-  const queryClient = useQueryClient();
   const { data, dataUpdatedAt, isSuccess } = useRemindersQuery(pubkey);
-  useEffect(() => {
-    if (!pubkey || pubkey !== host.pubkey) return;
-    const queryKey = remindersQueryKey(host.scopeKey, pubkey);
-    return startReminderNotificationPoll(() => {
-      if (queryClient.getQueryState(queryKey)?.data === undefined) return;
-      void queryClient.invalidateQueries({ queryKey });
-    });
-  }, [host.scopeKey, host.pubkey, pubkey, queryClient]);
   // A successful refetch advances dataUpdatedAt even when the encrypted heads
   // have not changed: crossing notBefore must still update the original badge.
   return useMemo(

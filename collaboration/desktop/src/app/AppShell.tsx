@@ -380,7 +380,7 @@ export function AppShell() {
     selectedView,
   });
   return (
-    <NativeReminderHost>
+    <NativeReminderHost notificationSettings={notificationSettings.settings}>
     <EncryptedBackupProvider key={`${nativeSession.devicePubkey}:${activeCommunity.relayUrl}:${platformSession.data?.platformSessionId ?? ""}`}
       onOpenSettings={() => handleOpenSettings("profile")}>
     <ChannelNavigationProvider channels={channels}>

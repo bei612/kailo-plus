@@ -9,8 +9,10 @@ import { useNativeSession } from "./activeCommunity";
 import { createReminderTransport } from "./remindersTransport";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
+import type { NotificationSettings } from "@client-kit/platform/react/notifications";
+import { sendDesktopNotification, requestDockBounce } from "@/features/notifications/lib/desktop";
 
-export function NativeReminderHost({children}:{children:ReactNode}) {
+export function NativeReminderHost({children,notificationSettings}:{children:ReactNode;notificationSettings:NotificationSettings}) {
   const session=useNativeSession();const {goChannel}=useAppNavigation();
   const lifetime=useMemo(()=>({active:true}),[session]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
@@ -21,6 +23,7 @@ export function NativeReminderHost({children}:{children:ReactNode}) {
     const available=limit!==undefined&&Number.isSafeInteger(limit)&&limit>0;
     const transport=createReminderTransport(scopeKey,session.facts.relayUrl,session.devicePubkey,limit,()=>lifetime.active&&available);
     return {scopeKey,pubkey:available?session.devicePubkey:"",...transport,
+      notifications:{settings:notificationSettings,send:payload=>sendDesktopNotification(payload,()=>lifetime.active),requestAttention:requestDockBounce},
       source:async(target)=>{
         const event=await transport.readSource(target.channelId,target.eventId);
         const channel=await getChannelDetails(target.channelId);check();
@@ -33,6 +36,6 @@ export function NativeReminderHost({children}:{children:ReactNode}) {
       navigate:async(target)=>{const event=await transport.readSource(target.channelId,target.eventId);check();
         await goChannel(target.channelId,{messageId:event.id,threadRootId:getThreadReference(event.tags).rootId});check();},
     };
-  },[session,lifetime,goChannel]);
+  },[session,lifetime,goChannel,notificationSettings]);
   return <ReminderHostProvider host={host}><RemindMeLaterProvider pubkey={host.pubkey}>{children}</RemindMeLaterProvider></ReminderHostProvider>;
 }

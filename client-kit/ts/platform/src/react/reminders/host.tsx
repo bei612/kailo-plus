@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ReminderPublishRequest } from "@client-kit/contracts";
 import type { Reminder, ReminderTarget } from "./lib/reminderTypes";
+import type { NotificationSettings } from "../notifications/settings";
 
 export type ReminderSource = {
   authorLabel: string;
@@ -20,6 +21,11 @@ export type ReminderHost = {
   completePublication?: (idempotencyKey:string,eventId:string)=>void;
   source: (target: ReminderTarget) => Promise<ReminderSource>;
   navigate: (target: ReminderTarget) => Promise<void>;
+  notifications?: {
+    settings: NotificationSettings;
+    send: (payload: { title: string; body: string }) => Promise<boolean>;
+    requestAttention?: () => Promise<void>;
+  };
 };
 const Context = React.createContext<ReminderHost | null>(null);
 export function ReminderHostProvider({host,children}:{host:ReminderHost;children:React.ReactNode}) {

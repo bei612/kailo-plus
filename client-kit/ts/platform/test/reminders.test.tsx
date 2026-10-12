@@ -11,6 +11,12 @@ import { MessageRowSurface, type TimelineMessage } from "../src/react/messages";
 import { remindersQueryKey } from "../src/react/reminders/hooks";
 import { AppSidebarPrimaryMenu } from "../src/react/sidebar/app-sidebar-primary-menu";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
+import { DEFAULT_SLOT_ALERTS_ENABLED, DEFAULT_SLOT_SOUNDS } from "../src/react/notifications/sound";
+
+const notificationEffects=vi.hoisted(()=>({sound:vi.fn()}));
+vi.mock("../src/react/notifications/sound",async original=>({
+  ...await original<typeof import("../src/react/notifications/sound")>(),playNotificationSound:notificationEffects.sound,
+}));
 
 const pubkey="a".repeat(64),eventId="b".repeat(64),resultId="c".repeat(64);
 const target={eventId,channelId:"12345678-1234-4234-8234-123456789012",preview:"original message",authorPubkey:pubkey};
@@ -23,9 +29,72 @@ beforeAll(()=>{
     addListener:vi.fn(),removeListener:vi.fn(),
   }))});
 });
-beforeEach(()=>{localStorage.clear();setLocale("en");});
+beforeEach(()=>{localStorage.clear();setLocale("en");notificationEffects.sound.mockReset();});
+
+function notifyingHost():ReminderHost {
+  return {...host(),notifications:{
+    settings:{desktopEnabled:true,homeBadgeEnabled:true,notifyWhileViewing:false,sounds:{...DEFAULT_SLOT_SOUNDS},
+      slotAlertsEnabled:{...DEFAULT_SLOT_ALERTS_ENABLED},slotAlertsSnapshot:null},
+    send:vi.fn().mockResolvedValue(true),requestAttention:vi.fn().mockResolvedValue(undefined),
+  }};
+}
 
 describe("original author-encrypted reminder consumers",()=>{
+  it.each(["en","zh-CN"] as const)("keeps original watermark, coalescing, muted no-backlog and success-only sound (%s)",async locale=>{
+    setLocale(locale);vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-12T00:00:00Z"));
+    const now=Math.floor(Date.now()/1000),h=notifyingHost();
+    let rows=[reminder("past",now-1),reminder("next",now+45),reminder("second",now+50)];
+    vi.mocked(h.query).mockImplementation(async()=>rows);
+    try {
+      await render(<Cache><ReminderHostProvider host={h}><RemindMeLaterProvider pubkey={pubkey}>{null}</RemindMeLaterProvider></ReminderHostProvider></Cache>);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_001);});
+      expect(h.notifications!.send).not.toHaveBeenCalled();
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      expect(h.source).toHaveBeenCalledTimes(2);
+      expect(h.notifications!.send).toHaveBeenCalledWith({title:locale==="en"?"Reminder due":"提醒已到期",body:locale==="en"?"2 reminders are due":"2 条提醒已到期"});
+      expect(notificationEffects.sound).toHaveBeenCalledWith("flutter");
+      expect(h.notifications!.requestAttention).toHaveBeenCalledTimes(1);
+      h.notifications!.settings.slotAlertsEnabled.needs_action=false;
+      rows=[...rows,reminder("muted",now+70)];
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      h.notifications!.settings.slotAlertsEnabled.needs_action=true;
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      expect(h.notifications!.send).toHaveBeenCalledTimes(1);
+      rows=[...rows,reminder("denied",now+130)];
+      vi.mocked(h.notifications!.send).mockResolvedValueOnce(false);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      expect(h.notifications!.send).toHaveBeenLastCalledWith({title:locale==="en"?"Reminder due in #original":"提醒已到期 · #original",body:target.preview});
+      expect(notificationEffects.sound).toHaveBeenCalledTimes(1);
+      expect(h.notifications!.requestAttention).toHaveBeenCalledTimes(1);
+      rows=[...rows,reminder("unknown",now+160)];
+      vi.mocked(h.notifications!.send).mockRejectedValueOnce(new TransportError("delivery unknown"));
+      await act(async()=>{await vi.advanceTimersByTimeAsync(60_000);});
+      expect(h.notifications!.send).toHaveBeenCalledTimes(3);
+      expect(notificationEffects.sound).toHaveBeenCalledTimes(1);
+      expect(h.publish).not.toHaveBeenCalled();
+      const cursor=localStorage.getItem(`buzz:lastReminderCheck:${JSON.stringify([h.scopeKey,pubkey])}`)!;
+      expect(Number(cursor)).toBe(now+210);expect(cursor).not.toContain(target.preview);
+    } finally {vi.clearAllTimers();vi.useRealTimers();}
+  });
+  it.each(["query","source","identity"] as const)("never exposes a preview after %s loses current authority",async failure=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-12T00:00:00Z"));
+    const now=Math.floor(Date.now()/1000),h=notifyingHost(),other={...notifyingHost(),scopeKey:"other:server",pubkey:"e".repeat(64)};
+    vi.mocked(h.query).mockResolvedValue([reminder("due",now+1)]);
+    localStorage.setItem(`buzz:lastReminderCheck:${JSON.stringify([h.scopeKey,pubkey])}`,String(now));
+    let release!:()=>void;
+    function Consumer(){const [current,setCurrent]=useState(h);return <ReminderHostProvider host={current}><RemindMeLaterProvider pubkey={current.pubkey}><button onClick={()=>setCurrent(other)}>Switch</button></RemindMeLaterProvider></ReminderHostProvider>;}
+    try {
+      const root=await render(<Cache><Consumer/></Cache>);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+      if(failure==="query")vi.mocked(h.query).mockRejectedValue(new Error("revoked"));
+      else if(failure==="source")vi.mocked(h.source).mockRejectedValue(new Error("revoked"));
+      else vi.mocked(h.source).mockImplementation(()=>new Promise(resolve=>{release=()=>resolve({authorLabel:"Author",avatarUrl:null,channel:null,channelLabel:"original"});}));
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+      if(failure==="identity"){await click(button(root,"Switch"));await act(async()=>{release();});}
+      expect(h.notifications!.send).not.toHaveBeenCalled();expect(other.notifications!.send).not.toHaveBeenCalled();
+      expect(notificationEffects.sound).not.toHaveBeenCalled();expect(h.notifications!.requestAttention).not.toHaveBeenCalled();
+    } finally {vi.clearAllTimers();vi.useRealTimers();}
+  });
   it("updates the original Inbox badge when idle, cancelled, disabled or switched to another identity",async()=>{
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-12T00:00:00Z"));

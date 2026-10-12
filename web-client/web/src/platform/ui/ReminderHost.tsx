@@ -8,15 +8,18 @@ import { getThreadReference } from "@client-kit/platform/react/messages/threadin
 import { truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { bff, queryReminders, publishReminder, reminderSource } from "../bff-client";
+import { useBrowserNotifications } from "./BrowserNotifications";
 
 export function BffReminderHost({scopeKey,principalId,onOpen,children}:{scopeKey:string;principalId:string;
   onOpen:(channelId:string,target:{eventId:string;threadRootId:string|null})=>Promise<void>;children:ReactNode}) {
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false});
+  const notifications=useBrowserNotifications();
   const lifetime=useMemo(()=>({active:true}),[scopeKey,profile.data?.pubkey]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
   const host=useMemo<ReminderHost>(()=>{
     const check=()=>{if(!lifetime.active||!profile.data?.pubkey)throw new TransportError("Reminder identity unavailable");};
     return {scopeKey,pubkey:profile.data?.pubkey??"",
+      ...(notifications?.pubkey===profile.data?.pubkey&&notifications?.pubkey?{notifications:{settings:notifications.settings,send:notifications.sendReminder}}:{}),
       query:async()=>{check();const page=await queryReminders();check();if(page.pubkey!==profile.data!.pubkey||!Array.isArray(page.reminders))throw new TransportError("Reminder identity changed");return page.reminders;},
       publish:async(request,key)=>{check();const receipt=await publishReminder(request,key);check();return receipt;},
       source:async(target)=>{
@@ -34,6 +37,6 @@ export function BffReminderHost({scopeKey,principalId,onOpen,children}:{scopeKey
       navigate:async(target)=>{check();const {event}=await reminderSource({channelId:target.channelId,eventId:target.eventId});check();
         await onOpen(target.channelId,{eventId:event.id,threadRootId:getThreadReference(event.tags).rootId});check();},
     };
-  },[scopeKey,principalId,profile.data,lifetime,onOpen]);
+  },[scopeKey,principalId,profile.data,lifetime,onOpen,notifications]);
   return <ReminderHostProvider host={host}><RemindMeLaterProvider pubkey={host.pubkey}>{children}</RemindMeLaterProvider></ReminderHostProvider>;
 }

@@ -40,7 +40,7 @@ describe("shared original notification settings", () => {
     await act(async () => { actual.setSlotAlertsEnabled("thread_reply", false); });
     await act(async () => { actual.setAllSlotAlertsEnabled(false); });
     await act(async () => { actual.setAllSlotAlertsEnabled(true); });
-    expect(actual.settings.slotAlertsEnabled).toEqual({ dm: false, mention: true, thread_reply: false });
+    expect(actual.settings.slotAlertsEnabled).toEqual({ dm: false, mention: true, thread_reply: false, needs_action: true });
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.dm).toBe(false);
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.thread_reply).toBe(false);
   });

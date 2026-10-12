@@ -234,7 +234,8 @@ up/down、真实 Relay 成员 kind 投递、真实 BFF 授权与发布对账、�
 但 Core／Worker 没有该审批／流提醒事件生产接缝；固定原
 `crates/buzz-workflow/src/executor.rs` 的 approval 分支本身也未完成该生产逻辑。
 这属于仍需适配的原功能，不等于永久禁止；不以 30300 或 Core 审批列表冒充它，
-不新增空筛选菜单。原系统通知完整流水线、Mobile 原提醒消费者依旧缺失。
+不新增空筛选菜单。此徽标检查点尚未恢复系统通知完整流水线；后续源码增量见下节。
+Mobile 原提醒消费者依旧缺失。
 本批未部署、未取新版浏览器截图、未验收 Windows／Mobile；现网仍是上述
 9d718 固定版本，旧图不作为本批徽标证据。主线统一文档门禁；本批未新运行 full，
 此前 full 失败与发布阻断不由这些定向通过解除。
@@ -246,3 +247,86 @@ up/down、真实 Relay 成员 kind 投递、真实 BFF 授权与发布对账、�
 SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
 该入口覆盖顶层实施文档、docs 与设计语料，不直接扫描本回执；本回执由主线
 对照命令输出与完整 diff 复核。没有把文档通过计为 full 或线上提醒验收。
+
+## 2026-10-12 原提醒系统通知消费者
+
+1. 权威与分类：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/reminders/useReminderNotifications.ts::useReminderNotifications`
+   是本批恢复基准；原首次水印种子、严格到期窗口、多条合并、静音也推进水印、
+   发送成功才音效及 Dock attention 的行为迁入共同提醒 Provider。
+   继续原样复用 `desktop/src/features/reminders/lib/reminderNotificationPoll.ts::startReminderNotificationPoll`
+   的调度、原 dueSince、标题及正文截断 helper；从徽标 hook 移走调度，确保只有
+   一个原 poll，而不是额外增加第二轮提醒查询。Web/Desktop 两端共享检测主体，
+   原系统发送、权限及 Dock 差异留在现有宿主。需要处理音效槽沿原
+   `desktop/src/features/notifications/lib/sound.ts::DEFAULT_SLOT_SOUNDS`
+   恢复，既有设置组件消费该槽；没有恢复四个尚无生产者的原 agent-job 槽。
+2. 影响与兼容：两宿主现有 ReminderHost 投递通知能力及可信本人 pubkey。
+   原 localStorage 水印仍只保存时间，不保存提醒正文、密文、执行账本或 Core
+   状态；授权接缝将其 key 限定为 scope 与本人 pubkey，旧无 scope 水印不被
+   复用，首次初始化遵守原不重放历史通知语义。既有通知设置解析补入
+   needs_action 默认值，不改变其他槽的用户设置。五句文案沿单一 TS 词条及
+   原 Dart 生成器生成；没有修改契约、数据库或提醒写入／对账权威。
+3. 副作用与异常：同一原查询必须 fresh 成功，带来源的提醒还要经现有 source
+   读取授权，才允许把预览交给 OS；空值、拒绝、未知、撤权均不发声或声称送达。
+   水印依原行为先推进，关闭通知、槽静音、权限拒绝或发送失败不积压后补发。
+   在途任务防重入；scope／身份变化清理原 timer，晚返回不发送给新身份。
+   原 Native `desktop/src/features/notifications/lib/desktop.ts::sendDesktopNotification`
+   在权限 await 后及实际浏览器 fallback 前检查可选身份 guard，其他三个原
+   调用不传 guard 时语义不变。OS 已接受后身份变化不能声称撤回，只抑制后续
+   sound／Dock；Web 沿原 displayed 集合关闭身份失效的通知。没有新错误枚举，
+   未确认的发送不渲染成业务成功。
+4. 三端与剩余差异：Web 不因当前页可见而抑制原到时提醒，不主动弹权限请求，
+   Notification 仍 silent，音效仅共同消费者播放一次；Desktop 保留原权限、
+   原生 API 与 Dock 行为。Mobile 没有本批新消费者，仍缺原提醒恢复；Inbox
+   needs_action 的 46010／40007 生产接缝仍未恢复，不能将本通知槽冒充该 feed。
+   原系统 OS 实际投递、声音、Dock、Windows 安装包与新版浏览器截图尚未验收。
+
+本批复用 `kailo-web-thread-tooltip-sdk`：4 CPU／8 GiB，memory+swap 总限额
+等于内存（无额外 swap），开始时只有 sleep，MemAvailable 约 32.6 GiB。
+原依赖与私有源码位于 Data；每次执行显式投递
+`TMPDIR=/candidate/reminder-consumers.RcN79Y/tmp`、
+`npm_config_cache=/candidate/reminder-consumers.RcN79Y/npm-cache` 和离线 npm。
+不改 HOME，不安装依赖、不新建镜像、不运行 full。
+本批原件位于
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/reminder-notifications.U6jpz9`。
+
+- 92242 因 60266 输入复制尚未终态而作废，精确停止自己的 shell／Node，
+  exit 143，未执行断言；保留 `positive.log`，没有把混合输入作为证据。
+- 复制完成并校验后，23646 exit 2：新增 fixture 漏 Provider 必需 children；
+  保留 `positive-frozen.log`，仅补 fixture 的 null child，不弱化生产类型。
+- 95812 exit 0，`positive-fixture-corrected.log`：共享 TS 5.9.3 原
+  `tsc --noEmit -p tsconfig.test.json` 通过；原 Vitest reminders／notifications／
+  sidebar-shell 三套件 34/34；Web 原 tsc 通过，BrowserNotifications 4/4。
+  同轮 Native 类型通过，但当时还没有随后权限等待身份 guard，不混称末版。
+- 79460 exit 0，`native-final.log`：末版 Native 原
+  `./node_modules/.bin/tsc --noEmit -p tsconfig.json`，随后
+  `node --import ./test-loader.mjs --experimental-strip-types --test src/features/notifications/lib/desktop.test.mjs`
+  2/2；实际原发送函数捕获权限等待期间身份失效，未用伪造 Tauri 实现替代。
+- 原消费者推进真实 poll 的虚拟时钟，验证中英文合并／首次历史不重放／静音
+  不补发／false 与 UNKNOWN 不发声；query、source 拒绝及身份晚返回不发通知。
+  Web 原 controller 验证可见页面提醒、silent、拒绝权限不强制请求、构造失败
+  false、清理通知；这些是 DOM／模块消费者证据，不是实际 OS 验收。
+- 21085 原 `python3 tools/gen-platform-i18n.py` exit 0，`i18n.log`：独立输入
+  `cells-native-closure.KxbRvt/reminder-notification-i18n.PvU0Y1` 为 HEAD 加本批
+  五词条，生成 Dart 仅 +19 行，reason_text 不变。正式 Dart 现有未暂存删块
+  保留，候选只取私有生成增量；公共 TS／Dart／checkpoint 三个旧暂存均不动。
+- 私有反证 83361 exit 1，`mutation.log`：只移除发送 false 后音效门禁，
+  共享 14 passed／2 failed，中英文均捕获错误第二次发声；同次移除 Native
+  权限后身份门禁，原 1 passed／1 failed，捕获错误 true。正式源未改，两处
+  私有源恢复到正式字节 cmp 0。React act 警告和原失败日志全部保留。
+- 83884 还原运行实际 exit 0，`restored.log`：同一共享提醒套件 16/16，
+  同一 Native 原消费者 2/2；未因反证改变正式代码、断言、超时或权限行为。
+
+本批尚未部署。当前在线仍是上述 9d718，不用旧图认领新通知链；原 full
+失败与发布阻断继续保留，本定向检查不替代最终整批门禁、真实授权联调或三端验收。
+
+主线完成固定候选的完整 diff 及两轴交叉复核，未发现本批新增阻断问题。
+文档门禁首次容器在启动前因只读父目录下的设计挂载点不存在而 exit 1，
+未执行检查；保留 `reminder-notification-docs.Q7anVx/check-docs.log`，
+SHA-256 `cec099424600c2232e713ae539c1a24dc1eb5e496c077316ebcbc0863a70ca85`。
+按 apps／.design 兄弟目录纠正挂载后，同一本地 SDK 在 2 CPU／2 GiB、
+无额外 swap、离线网络与 Data 缓存下运行原
+`bash tools/check-docs.sh /workspace/.design`，20884 实际 exit 0，输出
+“全部通过。”；`check-docs-corrected.log` 的 SHA-256 为
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+该入口不直接扫描本回执，主线另行逐项复核；不将文档通过算作 full 通过。

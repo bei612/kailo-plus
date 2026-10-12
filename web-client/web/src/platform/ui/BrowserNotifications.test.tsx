@@ -16,17 +16,19 @@ let host: HTMLDivElement;
 let current: ReturnType<typeof useBrowserNotifications>;
 const deliveries: FakeNotification[] = [];
 class FakeNotification {
+  static fail=false;
   static permission: NotificationPermission = "granted";
   static requestPermission = vi.fn(async () => FakeNotification.permission);
   onclick: (() => void) | null = null;
   onclose: (() => void) | null = null;
   close = vi.fn(() => this.onclose?.());
-  constructor(readonly title: string, readonly options: NotificationOptions) { deliveries.push(this); }
+  constructor(readonly title: string, readonly options: NotificationOptions) { if(FakeNotification.fail)throw new Error("backend unavailable");deliveries.push(this); }
 }
 beforeEach(() => {
   localStorage.clear(); deliveries.length = 0; state.sound.mockReset();
   state.profile.mockResolvedValue({ pubkey: "own-key" });
   FakeNotification.permission = "granted";
+  FakeNotification.fail=false;
   vi.stubGlobal("Notification", FakeNotification);
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -38,6 +40,18 @@ async function mount() {
   await act(async () => { root.render(<QueryClientProvider client={query}><BrowserNotificationsProvider principalId="principal"><Consumer /></BrowserNotificationsProvider></QueryClientProvider>); });
   for (let i = 0; i < 4; i++) await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
 }
+it("returns the original reminder delivery outcome without prompting, suppressing visible reminders or playing sound twice",async()=>{
+  await mount();Object.defineProperty(document,"visibilityState",{configurable:true,value:"visible"});
+  expect(await current!.sendReminder({title:"Reminder due",body:"private preview"})).toBe(true);
+  expect(deliveries[0]?.options).toEqual({body:"private preview",silent:true});
+  expect(state.sound).not.toHaveBeenCalled();
+  FakeNotification.permission="denied";
+  expect(await current!.sendReminder({title:"Denied",body:"hidden"})).toBe(false);
+  FakeNotification.permission="granted";FakeNotification.fail=true;
+  expect(await current!.sendReminder({title:"Failed",body:"hidden"})).toBe(false);
+  expect(FakeNotification.requestPermission).not.toHaveBeenCalled();expect(deliveries).toHaveLength(1);
+  await act(async()=>{root.unmount();});expect(deliveries[0]!.close).toHaveBeenCalledOnce();
+});
 it("uses actual permission, original slot settings, silent notification and selected sound; closes on identity host teardown", async () => {
   await mount();
   const open = vi.fn();
