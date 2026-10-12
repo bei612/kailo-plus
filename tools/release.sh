@@ -26,6 +26,7 @@ die()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 # 实际构建输入另从固定 commit 导出，避免被 ignored 文件或构建期间的工作树变化污染。
 [ -z "$(git status --porcelain --untracked-files=all)" ] || die "工作树有未提交改动，构建产物无法追溯到 commit"
 COMMIT=$(git rev-parse HEAD)
+registry="${REGISTRY:?release 需要已使用的 REGISTRY}"
 container_resource_preflight
 container_require_limited_builder
 BUILD_CONTEXT=$(mktemp -d)
@@ -62,9 +63,11 @@ find "$OUT" -type f -empty -delete
 for unit in "${UNITS[@]}"; do
   say "== $unit =="
   tag="platform/$unit:$COMMIT"
+  remote="$registry/$unit:$COMMIT"
   container_resource_preflight
   container_require_limited_builder
   build_log=$(mktemp "$TMPDIR/release-$unit.XXXXXX.log")
+  metadata=$(mktemp "$TMPDIR/release-$unit.XXXXXX.metadata.json")
   say "构建日志：$build_log"
   runtime_image=""
   build_args=()
@@ -89,16 +92,20 @@ PY
     build_args+=(--build-arg "AGENT_RUNTIME_IMAGE=$runtime_image")
   fi
   # 校验与执行使用同一 Docker 身份；服务端限额约束真正的编译进程。
-  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
-    "${build_args[@]}" --build-arg "PLATFORM_BUILD_ID=$COMMIT" -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$tag" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
+  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --push --progress=plain \
+    --metadata-file "$metadata" \
+    "${build_args[@]}" --build-arg "PLATFORM_BUILD_ID=$COMMIT" -f "$BUILD_CONTEXT/$unit/Dockerfile" -t "$remote" "$BUILD_CONTEXT" 2>&1 | tee "$build_log" \
     || die "$unit 构建失败"
-  digest=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' "$tag")
-  pass "镜像 $digest"
+  digest=$(container_pushed_image_digest "$metadata") || die "$unit 已推送镜像摘要缺失"
+  pass "镜像 $remote@$digest"
 
   sbom="$OUT/$unit.${digest#sha256:}.spdx.json"
   # 先写临时文件，成功才落位：失败时不留下 0 字节产物冒充 SBOM
   tmp_sbom=$(mktemp)
-  if "${CONTAINER_PRIVILEGE[@]}" env "PATH=$PATH" syft "docker:$tag" -o spdx-json > "$tmp_sbom"; then
+  # 原供应链检查使用逻辑名称 platform/<unit>；扫描源则固定为已推送的
+  # registry digest，不回退 daemon 同名镜像。层解包临时数据仍写 Data。
+  if "${CONTAINER_PRIVILEGE[@]}" env "PATH=$PATH" "TMPDIR=$TMPDIR" \
+    syft "registry:${remote%:*}@$digest" --source-name "${tag%:*}" -o spdx-json > "$tmp_sbom"; then
     mv "$tmp_sbom" "$sbom"
   else
     rm -f "$tmp_sbom"; die "$unit SBOM 生成失败"

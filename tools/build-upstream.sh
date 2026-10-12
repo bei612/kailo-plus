@@ -67,25 +67,25 @@ echo "构建日志：$build_log"
 # build_dockerfile 指向本仓库维护的构建文件，其最后一个阶段只含安装包；以
 # --output 取出，摘要是安装包字节的 SHA-256。
 if [ "$kind" = image ]; then
-  tag="local/$artifact:$base"
-  echo "== 构建 $tag =="
+  registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
+  remote="$registry/$artifact:${base:0:12}"
+  metadata=$(mktemp "$TMPDIR/build-$artifact.XXXXXX.metadata.json")
+  echo "== 构建 $remote =="
   # 上游普遍把版本与 revision 作为构建参数注入二进制，并在构建末尾自检——
   # 例如 agentgateway 在 version 为 "unknown" 时直接让构建失败。
   # 取值用基准 commit，产物因此可追溯到它；本仓库改动由写回的 source_digest 追溯。
-  # --load 将 builder 产物交给同一 daemon 的本地 image store。
-  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --load --progress=plain \
+  # 直接推送原 registry，不经 daemon image store；metadata 与日志留在 Data。
+  # 未成功推送时 pipefail 在此退出，不登记任何候选摘要。
+  "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --push --progress=plain \
+    --metadata-file "$metadata" \
     "${dockerfile_args[@]}" "${secret_args[@]}" "${arg_args[@]}" \
     --build-arg "VERSION=${base:0:12}" \
     --build-arg "GIT_REVISION=$base" \
     --build-arg "PLATFORM_BUILD_ID=$source_build_id" \
-    -t "$tag" "$src/$ctx" 2>&1 | tee "$build_log"
-  # 推入本地 registry：自建产物只有 image ID，必须先入 registry 才能按 digest
-  # 引用（ADR-06）。REGISTRY 由调用方给出，接入托管 registry 后只改这一个值。
-  registry="${REGISTRY:?需要 REGISTRY，例如 127.0.0.1:55000}"
-  remote="$registry/$artifact:${base:0:12}"
-  "${CONTAINER_DOCKER[@]}" tag "$tag" "$remote"
-  "${CONTAINER_DOCKER[@]}" push -q "$remote" >/dev/null
-  digest=$("${CONTAINER_DOCKER[@]}" inspect --format '{{index .RepoDigests 0}}' "$remote" | sed 's/.*@//')
+    -t "$remote" "$src/$ctx" 2>&1 | tee "$build_log"
+  # exporter 的顶层 digest：单平台为 manifest，多平台/证明包为 image index；
+  # 不取 config digest 或某个平台子 manifest，不依赖本机同名历史镜像。
+  digest=$(container_pushed_image_digest "$metadata")
   echo "  $remote@$digest"
 else
   echo "== 构建 $artifact 安装包 =="

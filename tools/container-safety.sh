@@ -6,6 +6,20 @@ container_safety_error() {
   return 2
 }
 
+# 只在 buildx --push 成功后消费 exporter 回执；包含 provenance 时保留顶层
+# image index，不把 config digest 或平台子 manifest 当作可部署镜像摘要。
+container_pushed_image_digest() {
+  python3 - "$1" <<'PY'
+import json, re, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    metadata = json.load(stream)
+digest = metadata.get("containerimage.digest") if isinstance(metadata, dict) else None
+if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+    sys.exit("拒绝登记：BuildKit 未返回有效的已推送镜像摘要")
+print(digest)
+PY
+}
+
 container_require_data_path() {
   local path
   path=$(realpath -e -- "$1") || {
