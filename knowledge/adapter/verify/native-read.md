@@ -6104,3 +6104,74 @@ Data 挂载的独立输入与 `TMPDIR=/tmp`，`PYTHONDONTWRITEBYTECODE=1`，
 不代替真实 Compose 配置通过或 HTTP 业务验收。真实配置预检仍失败；
 未激活 binding、轮换账号、重启服务、加载镜像或重跑 full。
 文档检查交主线合批；没有用旧检查结果覆盖本批新增段。
+
+## 2026-10-12 原生同步动作的真实绑定映射
+
+基准 `f022696008fc73b6dbab8673e5eb6d5ae05913ee`，本批仅 Knowledge
+adapter、其原 HTTP 检查和本段回执；不修改 Core、合同、共享 UI 或运行配置。
+
+四步影响结论：
+
+1. 权威为 `.design/07` §5.2、§8.2、§8A 与 `.design/13` §4.4。
+   原生 receiver 的 ManualSync/SyncLog 执行与隔离 conformance 驱动已存在；
+   绑定观测必须报告真实任务类型，不能把同步动作加进普通 execute。
+   固定官方 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/types/task.go::TypeDataSourceSync`（252 行）及
+   `internal/application/service/datasource_service.go::ManualSync`（456、
+   493 行）经只读 git grep 核实为原 `datasource:sync` 生产者。
+2. 原配置链 `query-revision.mjs::configuration` →
+   `binding-validation.mjs::executionMapping` 对 actionVersions 逐项验证；
+   原 mapper 仅五动作，即使已提供合法完整 v2 配置也拒绝其两项 sync。
+   Core `application_binding_native.rs::validate` 要求返回映射覆盖 manifest
+   全部 actionDefinitions，不能删掉 sync 声明避开这个断点。
+3. 仅在原绑定 mapper 将 `knowledge.sync_apply@v2`、
+   `knowledge.sync_retire@v2` 关联原 `datasource:sync`，取消能力仍为
+   UNSUPPORTED。普通执行鉴权 `nativeKnowledgeAction` 未改；
+   receiver_start/receiver_observe 仍走原私有 MCP → ManualSync/SyncLog，
+   不生成新业务调度器、SOURCE AE 或正文副本。映射不是执行准入证据。
+4. actionVersion 的正整数与精确字段检查仍先执行，未知名称/v1 sync/
+   未支持版本均拒绝；普通 execute 携带两 sync 名称仍 401，零 native
+   调用、零 grant。原 cutoff、重复投递、UNKNOWN、双侧回执与保留策略不变，
+   不因配置能够加载而宣布任务已完成或 binding 已激活。
+
+实际验收复用空闲 `kailo-wren-query-sdk-itgs2n`，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+UID 1000:1000，实际 cgroup CPU `400000 100000`、memory
+`4294967296`、swap `0`；输入、锁定 MCP SDK 1.26.0、tmp 均在
+Data，未安装/下载依赖、构建镜像或占用 Rust 缓存。原命令：
+
+```sh
+TMPDIR=/work/knowledge-binding.VlIXO7/tmp node --test \
+  --test-name-pattern="native receiver|binding|validation" \
+  knowledge/adapter/test/query-revision.test.mjs
+```
+
+首次 62606：新反例在 fixture 的 adapter 创建前抛出，原后段 upstream
+清理未登记，14 项通过后进程不能自然结束。精确终止该作业，
+exit 1/cancelled 1 保留，不记通过。原检查改为创建 upstream 后立即登记清理；
+未知动作通过成功 fixture 的原 configuration 消费者验证，不删断言。
+57635 末版正向 52/52、exit 0；私有移除两 sync 映射后新用例真实 exit 1，
+错误来自 createAdapter → configuration → executionMapping 的 503；
+按生产字节还原且两源 cmp 0，12112 同命令 52/52、exit 0（2.129s）。
+
+日志目录：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-binding.VlIXO7`。
+
+| 文件 | SHA-256 |
+| --- | --- |
+| positive.log（取消） | `f501d383153c6f0bb49340caa6270eb8000be5fbbebd2d3e21cfcda689261f02` |
+| fixed-positive.log | `5b2916a5715f47f0ed47612a671e1c95640f5adfd284089c3bc64c7ecd107989` |
+| negative.log | `b567c84c60729e02884127572bcffc7578d0938a3265cc19d203b9e2343b16b4` |
+| restored.log | `1a77ace29f5345f830f03a0fa755bac3393ae86f845e488425ecb2711652d15c` |
+
+覆盖原 adapter HTTP 与本地模拟 PEP/MCP/Agent 端点，不是实际 Core/OpenBao
+批准、原生整批同步或完整 release suite。运行时只读核验另确认：
+Catalog 只有 knowledge@v1 ACTIVE；v2 的 registration.json 是能力合同
+输入，应走原 capability_contract.register/approve，不能当 Release manifest。
+ComponentReleasesPanel 的三份原始 JSON 直接进入原 component_release.register；
+其 target 在 prewrite 前要求 active_contracts、匹配 artifact 的 protocol_fixture
+和 identity。在线 Core 的 COMPONENT_CONFORMANCE_ENVIRONMENT/IDENTITY/FIXTURE_FILE
+均未投递，当前还没有匹配本批源码的完整部署/隔离材料，不能捏造三份 Release
+文档或使用旧 artifact 代表本批。此修复只解除 Knowledge 自身的映射加载断点。
+未写运行库、注册/批准/激活组件、修改秘密、重启或加载镜像；full 未重跑，
+文档检查交主线集中执行。

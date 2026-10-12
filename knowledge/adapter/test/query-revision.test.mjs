@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { canonical } from '../../../client-kit/adapter/protocol.mjs';
-import { createAdapter } from '../src/query-revision.mjs';
+import { createAdapter, configuration } from '../src/query-revision.mjs';
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput, actor = 'HUMAN') {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput, actor = 'HUMAN', boundActions) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -43,7 +43,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     artifactDigest: 'a'.repeat(64), protocolRange: '1' };
   const validation = { bindingVersion: 1, servicePrincipalId: ids[4], adapterServiceRef: 'fixture-adapter',
     nativeInstanceRef: 'fixture-instance', nativeScopeRef: ids[1], isolationMode: 'RESOURCE_FILTER',
-    normalizedConfig: { knowledgeBaseId: ids[1] }, actionVersions: [{ actionKey: 'knowledge.search@v2', actionVersion: 1 }],
+    normalizedConfig: { knowledgeBaseId: ids[1] }, actionVersions: boundActions ?? [{ actionKey: 'knowledge.search@v2', actionVersion: 1 }],
     secretDeliveries: [] };
   const baoReads = [];
   if (validating || bindingReconcile) {
@@ -277,6 +277,11 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     } } });
   });
   const origin = await listen(upstream);
+  t.after(async () => {
+    upstream.closeAllConnections();
+    await new Promise(resolve => upstream.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  });
   const config = { bindingId: ids[0], tenantId: ids[7], nativeKnowledgeBaseId: ids[1],
     nativeMcpUrl: `${origin}/mcp/native`, nativeMcpBearerFile: nativeSecretFile,
     actionTokenIssuer: origin, actionTokenAudience: 'knowledge-test', actionTokenJwksFile: jwks,
@@ -291,9 +296,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
-    adapter.closeAllConnections(); upstream.closeAllConnections();
-    await Promise.all([new Promise(resolve => adapter.close(resolve)), new Promise(resolve => upstream.close(resolve))]);
-    await rm(directory, { recursive: true, force: true });
+    adapter.closeAllConnections();
+    await new Promise(resolve => adapter.close(resolve));
   });
   const now = Math.floor(Date.now() / 1000);
   const claims = { iss: origin, aud: config.actionTokenAudience, iat: now, exp: now + 60,
@@ -336,12 +340,36 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   const token = `${header}.${payload}.${signature}`;
-  return { state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/${receiving ? 'component-conformance' : 'platform-adapter'}/v1/${route}`, {
+  return { config, state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/${receiving ? 'component-conformance' : 'platform-adapter'}/v1/${route}`, {
     method: 'POST', headers: { authorization: `Bearer ${options.token ?? token}`, 'content-type': 'application/json',
       'idempotency-key': options.key ?? args.idempotencyKey },
     body: options.raw ?? canonical(bodyValue),
   }) };
 }
+
+test('native receiver binding maps the registered actions without enabling ordinary execute', async t => {
+  const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url)));
+  const actions = registration.operationContracts.map(({ contractKey }) => ({ actionKey: contractKey, actionVersion: 1 }));
+  const run = await fixture(t, 'ok', 'application_binding.create', 'validate_binding', undefined, undefined, undefined, 'HUMAN', actions);
+  const response = await run.invoke();
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.executionMappings.length, actions.length);
+  for (const actionKey of ['knowledge.sync_apply@v2', 'knowledge.sync_retire@v2']) {
+    assert.deepEqual(body.executionMappings.find(value => value.actionKey === actionKey), {
+      actionKey, actionVersion: 1, nativeType: 'datasource:sync', cancelCapability: 'UNSUPPORTED',
+    });
+    const ordinary = await fixture(t, 'ok', actionKey, 'execute');
+    assert.equal((await ordinary.invoke()).status, 401);
+    assert.equal(ordinary.state.native, 0);
+    assert.equal(ordinary.state.grants, 0);
+  }
+  for (const actionKey of ['knowledge.sync_apply@v1', 'knowledge.sync_retire@v3', 'knowledge.sync_unknown@v2']) {
+    assert.throws(() => configuration({ ...run.config, management: { ...run.config.management,
+      validation: { ...run.config.management.validation, actionVersions: [{ actionKey, actionVersion: 1 }] },
+    } }), error => error.status === 503);
+  }
+});
 
 test('native receiver conformance calls only its original scoped driver', async t => {
   for (const operation of ['receiver_start', 'receiver_observe']) {
