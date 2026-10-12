@@ -34,9 +34,10 @@ runtime:
   workflow_kinds: []
 
 release:
+  # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:1d7316086734e513792968ee40e9868807a378f47a1e66bf34bf07093ff049a4
+      digest: sha256:804bcdef8ab27b13e8ea1012b5427cf7a6d690823ed01b22a8778f3ee2e9ae2a
     - name: web-client
-      digest: sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123
+      digest: sha256:20ec770ae4463e7876829274a8b37105b5d9e032b24bddaace766bfa88f59ed2
   gate: blocked_until_seams_closed

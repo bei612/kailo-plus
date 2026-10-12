@@ -1676,7 +1676,7 @@ chain was compared; this is not a claim of a complete Wren repository diff.
    adapter/NativeQueryService → original QueryService and api_history.
    The model operation now accepts the already-existing PreviewViewDataInput
    (id, optional limit, identity scope and retry key). Original local GraphQL
-   codegen regenerated model.generated.ts and __types__.ts; other generated
+   codegen regenerated model.generated.ts and `__types__.ts`; other generated
    files did not change. Old model clients without admission fields fail closed;
    there is no old direct-query compatibility fallback. No database migration
    is needed. No platform contract is owned by this slice: the parent change
@@ -11342,7 +11342,6 @@ it was not replaced. Source-built Ibis artifact registration and deployment,
 the real project reader switch, Agent/binding validation and complete suite
 remain separate unfinished delivery steps.
 
-
 Correction before source submission: the RAM-backed input above did not satisfy
 apps/07 §2.1's Data-only validation-input requirement. It remains recorded as
 historical evidence, not Data evidence. The running Ibis had no bind mounts and
@@ -11372,7 +11371,6 @@ exit 0. These three Data-only rerun logs are in
 `b18387c45e3af3458a2bab4c316aaa1f6dd31837391ec8e0007b3d930cbc4a83`.
 Only that one-off check container was stopped and removed; online Ibis remained
 untouched. These are source-consumer checks, not a successful HTTP deployment.
-
 
 ## 2026-10-11 — Native Ibis source artifact input closure
 
@@ -11716,3 +11714,85 @@ not evidence that the BuildKit request or image build succeeded. It downloaded
 no package, installed nothing and did not trigger another build. Ibis
 `source_digest` and `artifact_digest` remain `none`; existing unrelated
 dirty artifact records are excluded from this source-only change.
+
+## 2026-10-12 — Wren UI fixed-source image push
+
+Authority and impact: ADR-06, 07 §2.1 and SS-WRN-IDENTITY /
+SS-WRN-GOVERNANCE retain the original limited build and source record
+consumers. This phase records one successful UI artifact; it changes no
+runtime authorization, API, schema, binding state or deployment configuration.
+Only the UI source/artifact fields are selected from the original build
+helper's record. Existing Ibis and other artifact records are preserved.
+
+Actual Kailo source commit:
+`fd1997361479de10b7add38424810f94a00825b3`.
+It contains the one-file formatting correction required by the original
+Prettier rule, with no test or rule removed. Both declared UI inputs,
+`data-query/wren-ui/` and `client-kit/adapter/protocol.mjs`, and the original
+build tools were clean against that commit before launch. Their effective
+inputs also compare unchanged against the handoff base
+`5561a2fc5de52dfa1dc0ac996e8d95cc9ff62b7a`.
+The historical build directory name still includes `236b`; its actual Git
+HEAD for this run was fd199736. The tag's c5f02a0391c8 identifies the fixed
+upstream baseline, not the Kailo source commit.
+
+Original command, run from that fixed worktree with REGISTRY_HOST read from
+the existing controlled deployment environment:
+
+```sh
+sudo -n env TMPDIR=/volumes/data/kailo/tmp/wren-ui-release-fd199.BGLtAV \
+  BUILDX_BUILDER=kailo-core-data REGISTRY="$REGISTRY_HOST" \
+  bash tools/build-upstream.sh data-query-ui
+```
+
+Original session **1005 exited 0** (terminal output chunk `6e0a13`).
+Actual existing BuildKit limits were 8 CPU / 16 GiB / equal memory-swap;
+its cache was read back as the Data XFS bind
+`/volumes/data/kailo/buildkit-core-state`. Startup memory.current was
+2,790,752,256 bytes, OOM counters zero, and host MemAvailable 33,379,956 KiB.
+The platform pipeline's Worker stage shared that same total builder limit.
+No new builder, SDK, dependency installation or daemon image load was used.
+
+The immutable Yarn layer and dependency COPY were cached. Original Next
+lint/typecheck completed, production compilation succeeded, 39/39 static
+pages were generated, and build traces completed. Step 22 `yarn build`
+finished in 2916.7 seconds. Original runtime standalone, static files,
+migrations and dependency copies completed, followed by image export,
+registry push, provenance generation and the original manifest write-back.
+Browserslist age and three legacy Docker ENV-format warnings were retained.
+
+The actual record is:
+
+- Source digest:
+  `sha256:334e8df25567d4668efca9099f75f6abb23b5114b438d147f4c2d0931f2e03c4`.
+- Registry image:
+  `127.0.0.1:55000/data-query-ui@sha256:035397647df002821509b869ad9020f1280c11a74907615a3f2306e5351c35d3`.
+- BuildKit ref:
+  `kailo-core-data/kailo-core-data0/el1nlegbcm0feqkgxegaoz2y7`.
+
+The original metadata digest parser returned that top-level OCI index.
+Metadata's descriptor and provenance PLATFORM_BUILD_ID matched the record;
+the original main/build manifest plans compared equal. Registry HEAD at
+18:49:19 UTC returned HTTP 200, OCI index media type and the exact
+Docker-Content-Digest above, not a platform child or config digest.
+
+Evidence directory:
+`/volumes/data/kailo/tmp/wren-ui-release-fd199.BGLtAV`.
+
+- `wrapper.log` SHA-256:
+  `feb6b6564e3ef2d41a4be256ad2d6a4e301b3696e38aad2d2528ad761560078c`.
+- `build-data-query-ui.1zsQ5U.log` SHA-256:
+  `9c24a9ddf0ab248e89bd72e843ab7cf041ac76caf9da69541977a3519540a439`.
+- `build-data-query-ui.7R1h5t.metadata.json` SHA-256:
+  `e1ee2e032e1d039613cbae13ee71cebe62a7660baeb0884b22dc5b8d7ba0fbcf`.
+- `registry-head.log` retains the exact HTTP headers.
+
+Failure and deployment boundary: original session 99208 exited 1 on the
+test formatting diagnostic; its logs remain in
+`/volumes/data/kailo/tmp/wren-ui-resume-236b.i2Rky0`. The corrected single-file
+Prettier 3.2.5 and original Next lint passed in session 59207, after preserving
+the first check's missing-pages snapshot error. Those results do not erase
+the old build failure. This phase did not deploy the image, restart shared
+runtime or activate a binding. Native readonly query, complete conformance,
+SSO and embedded-page business acceptance have no new results from this
+build; the complete release gate remains separately unverified.

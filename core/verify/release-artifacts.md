@@ -1466,3 +1466,94 @@ network none、UID 1000，七项全部通过；启动器原导出目录清理也
 本次只重新验证一个 HUMAN 的新回合，不把历史三 HUMAN 消息冒充新一轮三账号验收。
 实际运行版本仍是 Web `9edf456a172200fae22adc9ab15e975109ab26b8`、Core/Worker
 `d619b0b06adea393ac21102ac9fe0ff4767981e5`；没有部署此后的 main 或 Windows/Mobile。
+
+## 2026-10-12 bdc 同源 Core/Worker 发布终态与 Web 接续
+
+固定源码为 `bdc639765dc7ba480743d6dad18ab6c393822e72`，独立原生 sparse
+工作树在 `/volumes/data/kailo/tmp/web-inbox-release.F3Iz8Z/platform-apps`。
+原 `tools/release.sh` 保留 Core、Worker、agent-runtime provenance 与 clean
+输入门禁，72946 于 18:02 UTC 实际 exit 0；没有重启流水或修改原并行参数。
+两项原 release 产物已直接推送 registry，没有 daemon load 或替换运行中服务。
+
+| 原产物 | OCI index digest |
+| --- | --- |
+| Core | `sha256:804bcdef8ab27b13e8ea1012b5427cf7a6d690823ed01b22a8778f3ee2e9ae2a` |
+| Worker | `sha256:486c4d3f6a654cabf97d41bce2416f101d61dbc73bdaa52924cb534fcb397d9f` |
+
+Core 17:06:29、Worker 18:02:46 的 registry 独立 HEAD 均为 200，返回摘要一致。
+原 provenance 的 gitCommit 与 PLATFORM_BUILD_ID 均为上述 bdc，锁摘要均为
+`0fa106de22e891a176a10fc9da4b3f38dc608800fd3d17e0ddf65d7077f6b2f7`。
+Core 实际嵌入固定 manifest 的 agent-runtime
+`sha256:0a37f9edf7f4004c73e41bba7bf7dfa5cdcd8d04b51dbc22066a2a3094282725`；
+没有使用主工作树继承脏 pin。首次 registry Accept 不完整返回 404，补齐原
+OCI/Docker manifest 接受类型后 200；该 404 不是镜像缺失或重构建理由。
+
+原 SBOM/provenance 位于该工作树 `dist/`，按上表摘要命名。实际 SHA256：
+
+| 原文件 | SHA256 |
+| --- | --- |
+| Core provenance | `b9992a095b089b53d3df8460b129ecbc026109bb5a877ea4cc78209a16f0f20e` |
+| Core SPDX | `4cf917c0db2db1898abebf5e3cc281acfbad10a319ededbed364ccc9e99fa6af` |
+| Worker provenance | `4e572cf9bf49f370b0b3f1273d758bc75acbfebdeeafb6fc44946ae298f2984a` |
+| Worker SPDX | `e7ab5a2eab091fe0a48cac6436ecf8473e6c5c09a923e884226746dae4ae2518` |
+
+Worker SPDX 的 apps/worker 包 versionInfo 为 UNKNOWN；源码关联来自 provenance，
+不把包版本字段改写为 commit。原日志为工作树父目录的 platform-release.log，
+以及 platform-tmp/release-core.5IH6mX.log、release-worker.O5bgKh.log。
+
+本批继续在同一原 BuildKit 中串行执行 `tools/build-upstream.sh web-client`，
+句柄 8689、独立精确输入 input/ 与 source.index；源码仍为 bdc，不随主线前移重建。
+Web source/buildId 为
+`sha256:9f84d9cffdb1be18122aa6ac8020b220ff6bca9734aa4672dd6c9bbd77a07f3b`。
+18:03 预检 BuildKit 限额 8 CPU/16 GiB、memory+swap 总限额等于内存，
+缓存实际 Data XFS；宿主可用内存约 35.6 GB。原日志 web-release.log /
+tmp/build-web-client.Qgls5K.log 保留。
+
+18:35 UTC 原 Web 8689 实际 exit 0，原 tsc、Vite 与 export/push 完成，最终 OCI
+index 为 `sha256:20ec770ae4463e7876829274a8b37105b5d9e032b24bddaace766bfa88f59ed2`。
+18:35:29 独立 registry HEAD 200，Docker-Content-Digest 完全一致。原 helper 只在
+冻结输入 web-client/fork/upstream.yaml 写回上述 source/artifact 两字段；
+未覆盖公共脏来源。web-release.log SHA256 为
+`8e38b83f31f9532b30cd800806f9e42c5c403e8cd2912ea5aa8eed080d2ca026`。
+
+这不是实际部署、普通 SSO 业务或 Windows/Mobile 验收。新 Forum mentions 批次不在
+bdc 内；后续源码不能据本批镜像认领上线。Gateway 同流尾帧用量仍需匹配实际
+Gateway artifact 与有效 timeout 配置及真实终态证据，不能只换 Core 就宣布完成。
+既有 full 失败、原生设备及全量原版差异仍保留。
+
+按 06 §1，受本批摘要更新影响的 release.gate 中，原 6 条 shipped 与 7 条 ready
+收为既有 blocked_until_seams_closed，其余 8 条保持原阻断值。各记录均明确本批
+只是已构建候选；Agent 页原“已限定部署”注释已原位纠正。上述发布门禁纠偏不改变
+能力自身 status、exposure 或执行权限，不继承旧产物的部署或发布门禁结论。
+
+原检查首次未启动：只读 /apps/dist 不能创建新增 SPDX 文件挂载点，
+docker start exit 1；pins-check.log 保留。改用只读目录指向现有历史与本批真实
+dist 后，72919 原 step_trace 实际 exit 1：docs 通过，但原提醒追溯的 DD-75
+Stage 归属与空 artifact 不符，且注册表与追溯不一致。原选定 release-artifacts
+markdownlint 明确 Linting 1 file、exit 0；没有伪造 dist、安装依赖或隐去失败。
+pins-check-corrected.log SHA256 为
+`ddf1ee69706821bb4d0ab042a72981e08d08a99969a2a22ab2c5dc11724a0ad4`。
+
+随后仅补已提交 Forum 消费者的登记遗漏：collab.channel.message 原 routes 加入
+/api/v1/inbox/mentions，schemas 加入真实 web_inbox_query.schema.json，并将原
+inbox-project-read.md 归入故障与恢复证据。该回执已明确 HTTP 动态授权与撤权
+尚未验收；登记路由不表示 bdc 镜像包含后续 Forum 代码，也不宣称新业务已通过。
+
+原提醒追溯按覆盖矩阵只将 DD-72/DD-77 留在 S1 decisions，DD-75 仍以原安全
+边界证据说明其跨端托管权威；补记本批实际 Core/Web 摘要，gate 保持 blocked。
+未完成 full、部署、真实提醒业务与 Native 包验收，不修改设计或能力开放范围。
+同次归档纳入 Wren UI 独立固定 fd199 源的成功产物，具体来源、原失败及未部署
+边界见 data-query/fork/verify/native-integration.md；不把它记成 bdc 源产物。
+
+合并以上精确记录后，74429 原 step_trace 退出 0：原文档门禁、25 条追溯七条
+硬规则和能力注册表四项拒绝检查均通过。额外选定两份回执 markdownlint 退出 1，
+使聚合命令退出 1：Wren 原 HEAD 正文两处多余空行及文件名下划线的两条 MD050
+报错，均不在新增 82 行内。原输出 pins-check-final.log 的 SHA256 为
+`fcbcbe0e9f52d9677ce0441715d1a3b828a2c12a0543b278f25eef8d5546bc2a`。
+
+原负责席位仅修正上述三处历史格式 hunk，未改正文含义或规则。复用原 SDK
+2 CPU/4 GiB、memory+swap 总限额等于内存、UID 1000 与 Data 缓存，75942 对
+更新后的 Wren 全文执行原 `npx --yes markdownlint-cli2`，明确 Linting 1 file、
+实际 exit 0。pins-wren-lint-restored.log 的 SHA256 为
+`51e2e0f3e77a8f83ac2232f053739c72a2c5674ec6e315c9f35a08fa074a3fc5`。
+没有重跑已通过的 docs/trace、构建或业务验证；前述失败原件均保留。

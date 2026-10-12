@@ -516,7 +516,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:e78afc59681c653cffd353f72807a2651091f5ae8cdafdb6a9ba5603a259ff65
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:804bcdef8ab27b13e8ea1012b5427cf7a6d690823ed01b22a8778f3ee2e9ae2a
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -727,7 +727,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:db4375fc135555a98551ffe638278aa74aafa0380e35f4d9e6edccd7d483c9c7
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:486c4d3f6a654cabf97d41bce2416f101d61dbc73bdaa52924cb534fcb397d9f
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -778,7 +778,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:20ec770ae4463e7876829274a8b37105b5d9e032b24bddaace766bfa88f59ed2
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}

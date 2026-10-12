@@ -111,8 +111,9 @@ runtime:
   workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION, COMPONENT_ACTION]
 
 release:
+  # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: web-client
-      digest: sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123
+      digest: sha256:20ec770ae4463e7876829274a8b37105b5d9e032b24bddaace766bfa88f59ed2
   # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed
