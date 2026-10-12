@@ -5862,3 +5862,73 @@ got nil，退出 1。两生产判据完整还原、两源与工作树 cmp 0 后�
 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
 该门禁检查 top/docs 实际范围，不逐行验收本回执正文，也不是固定发布树 full；
 本回执由主线人工复核。本批未构建/部署、未上架、未重跑全局门禁或四侧生成。
+
+### 2026-10-12 原生 PostgreSQL 迁移与同键交付验收补齐
+
+本批只补齐既有 receiver 实现的真实 PostgreSQL 验收，不增加业务功能。权威仍为
+`.design/07` §8A 与 `.design/13` §4.4；固定官方 WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+`internal/application/repository/datasource_repo.go` 是原存储接缝。本批调用 Kailo
+已有 `SyncLogRepository.CreatePending/DispatchPending`，不造任务账本或调度器。
+
+影响仅限原 `native_receiver_test.go` 的可选隔离 PG 消费者：准入前逐表要求
+所有非版本表零行，允许 clean 的原迁移中断点续行；清理只删除本次 UUID 关联
+的 SyncLog、TaskPendingOp、DataSource 与 endpoint。没有更改生产 schema、
+业务期限、HTTP 权限或旧数据归属，没有给历史行补当前 binding/generation。
+原迁移 107 的旧行空归属、半份身份拒绝、存在归属时回退拒绝均由真实 PG 执行。
+
+隔离库为原容器 `kailo-installation-scope-pg-e4agxd` 的
+`knowledge_receiver_32271`（owner postgres），不是业务库。开始前核对无其他
+连接及逐表零行。此前漏投原服务非 postgres 检索 DSN option，迁移 8 试图更新
+不存在的 pg_search 后留下 dirty8；该故障日志保留。经明确授权并重新核验上述
+条件，只删除重建这一个本批空测试库，未 force 版本、未改其他库或重启服务。
+被删除的空测试库旧内容不能原位恢复，失败日志保留；随后使用原 container
+消费者同样的 `options=-c%20app.skip_embedding=true`，未新增生产开关。
+
+原受限 Go SDK `kailo-knowledge-delete-handoff` 为 4 CPU / 8 GiB / equal swap；
+原 build/mod 缓存及 TMPDIR/GOTMPDIR 均在 Data。最终原 binary 由同缓存
+`go test -c ./internal/application/repository` 编译退出 0，再在同限额、加入
+原 PG 网络的 `kailo-receiver-observe-sdk-w4qug0` 执行。测试工作目录为
+`/workspace/knowledge/internal/application/repository`，实际命令：
+
+```text
+KNOWLEDGE_TEST_DATABASE_URL='postgres://postgres@127.0.0.1/knowledge_receiver_32271?sslmode=disable&options=-c%20app.skip_embedding=true' JIEBA_DICT_DIR=/workspace/jieba-dict TMPDIR=/tmp GOTMPDIR=/tmp /workspace/native-receiver-final.test -test.run '^TestNativeSyncRequestPostgresMigrationAndConcurrentHandoff$' -test.count=1 -test.timeout=30m -test.v
+```
+
+两次原 5m 运行分别在 SetVersion 持久化等待超时，真实 clean 版本前进到
+52、74。5m 是测试进程预算，不是业务合同或迁移性能标准；本轮经授权以同一
+binary、正确 DSN、同一断言从 clean74 单次继续，进程预算改为 30m，没有重算
+业务 deadline、放宽 SQL 或跳过迁移。24310 实际退出 0，单项 PASS 719.08s；
+不宣称满足 5m 性能。末态 clean107、其他连接数 0、全部非版本表零行均读回。
+
+正验实际覆盖：原迁移前进与 107 down/up；两独立 repository 同键并发只创建
+一个 SyncLog/TaskPendingOp；相同 key 的变代次请求拒绝；两个 dispatcher 只
+调用一次原 handoff 回调，ACK 后 replay 仍读原 RUNNING，不伪装完成。该回调
+不等于真实 Redis/Asynq 投递，不覆盖 HTTP 鉴权、跨服务正文读取、完整隔离
+conformance、生产绑定激活、页面、部署或全局门禁。
+
+日志目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-worker.W4qug0`。
+
+| 日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| native-pg-resumed-positive.log | 1，漏 DSN option，dirty8 | `79719c6908f5839b63527f4f0559313e61ce9cae27f376eeffa3872c3ce07620` |
+| native-pg-controlled-ready-positive.log | 2，5m 超时，随后 clean52 | `193ca3c56470922941869035b17b7244b5effe1c0492bccf7187c2453fc46b8c` |
+| native-pg-resume52-positive.log | 2，5m 超时，随后 clean74 | `fcf10411c36696a28aecfbe4a88483762549423b46e522e1bbb82b88eb299324` |
+| native-pg-resume74-positive.log | 0，真实 PG 单项通过 | `8a4230e99bcd13626b388fefb0394c81f36d57f28763d7de0aa10daadf7120dd` |
+| native-pg-negative.log | 1，原变代次断言捕获失效判据 | `d563606e97e2b08ddd59478daa5dbe68e328eb243212af3a92ae8a6b50c28e9d` |
+| native-pg-restored.log | 0，还原后真实 PG 单项通过 | `5dcf98cdba91d8e8eb2752ce55641cfa40b67a07a8d8ca9a6be91de33fac162e` |
+
+早期字典缺失/SetVersion(6) 超时以及重建尚未返回即连接得到 database missing
+的失败亦保留，不合并为通过。私有反证仅移除原 CreatePending 的
+`!original.Equal(request)`，99255 退出 1（9.55s），原第 130 行拒绝变代次
+断言报 expected error got nil。生产字节与主干消费者 cmp 0 后，复用保留的
+原正验 binary（SHA-256 `005a841a0fef89332d252f8f7eac68b6c4c91e7481a5944ff7a61e04e531fd6d`）
+还原运行 93596 退出 0（31.95s），没有重编译/冷迁移。之后再次读回 clean107、
+其他连接 0、非版本表全部零行。原业务断言未改；正式生产源码未被反证修改。
+主线集中原 check-docs 33309 退出 0、七项通过；固定 SDK 镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU / 2 GiB / equal swap、UID 1000，apps/design 只读，cache/tmp 在 Data。
+日志 `/volumes/data/kailo/tmp/batch-closure-docs.o8zaH0/check-docs.log`，
+SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+这是当前工作树原文档脚本，不是 full、真实部署或逐行回执验收；本批未部署。

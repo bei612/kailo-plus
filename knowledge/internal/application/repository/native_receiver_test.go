@@ -4,14 +4,159 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/Tencent/WeKnora/internal/database"
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+// Explicitly opt in with an empty, isolated native database. An interrupted
+// clean migration may resume only while every non-version table is empty.
+// Unlike the SQLite checks below, this consumes the real PostgreSQL migrations and row
+// locks; it does not AutoMigrate a substitute schema.
+func TestNativeSyncRequestPostgresMigrationAndConcurrentHandoff(t *testing.T) {
+	dsn := os.Getenv("KNOWLEDGE_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("requires an empty isolated KNOWLEDGE_TEST_DATABASE_URL")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	var tables []string
+	require.NoError(t, db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename <> 'schema_migrations'").Scan(&tables).Error)
+	for _, table := range tables {
+		var rows int64
+		require.NoError(t, db.Table(table).Count(&rows).Error)
+		require.Zero(t, rows, "refuse an existing native or business database: %s", table)
+	}
+	t.Chdir("../../..")
+	require.NoError(t, database.RunMigrations(dsn))
+	version, dirty, known := database.CachedMigrationVersion()
+	require.True(t, known)
+	require.False(t, dirty)
+	require.EqualValues(t, 107, version)
+	up, err := os.ReadFile("migrations/versioned/000107_sync_request_identity.up.sql")
+	require.NoError(t, err)
+	down, err := os.ReadFile("migrations/versioned/000107_sync_request_identity.down.sql")
+	require.NoError(t, err)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(down)).Error }))
+
+	ctx := context.Background()
+	sources, logs := NewDataSourceRepository(db), NewSyncLogRepository(db)
+	binding, kb := uuid.NewString(), uuid.NewString()
+	endpoint := &types.MCPEndpoint{ID: uuid.NewString(), TenantID: 31, Enabled: true,
+		PlatformBindingID: binding, TokenHash: uuid.NewString(), KnowledgeBaseIDs: types.StringArray{kb}}
+	require.NoError(t, db.Create(endpoint).Error)
+	t.Cleanup(func() { require.NoError(t, db.Unscoped().Where("id = ?", endpoint.ID).Delete(&types.MCPEndpoint{}).Error) })
+	source := &types.DataSource{ID: uuid.NewString(), TenantID: 31, Name: "isolated-receiver",
+		KnowledgeBaseID: kb, Type: "file_storage", PlatformBindingID: binding,
+		Status: types.DataSourceStatusActive, SyncLogRetentionDays: 1}
+	require.NoError(t, sources.Create(ctx, source))
+	t.Cleanup(func() {
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			ownedLogs := tx.Model(&types.SyncLog{}).Select("id").Where("data_source_id = ?", source.ID)
+			if err := tx.Where("dedup_key IN (?)", ownedLogs).Delete(&types.TaskPendingOp{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("data_source_id = ?", source.ID).Delete(&types.SyncLog{}).Error; err != nil {
+				return err
+			}
+			return tx.Unscoped().Where("id = ?", source.ID).Delete(&types.DataSource{}).Error
+		}))
+	})
+	// Retained pre-migration rows are independent facts, never assigned the
+	// current binding, generation or request key by the migration.
+	legacy := uuid.NewString()
+	require.NoError(t, db.Exec("INSERT INTO sync_logs(id,data_source_id,tenant_id,status) VALUES (?,?,?,?)",
+		legacy, source.ID, source.TenantID, types.SyncLogStatusSuccess).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(up)).Error }))
+	var retained struct {
+		RequestKey      *string
+		RequestIdentity *string
+	}
+	require.NoError(t, db.Raw("SELECT request_key, request_identity FROM sync_logs WHERE id=?", legacy).Scan(&retained).Error)
+	require.Nil(t, retained.RequestKey)
+	require.Nil(t, retained.RequestIdentity)
+	require.Error(t, db.Exec("UPDATE sync_logs SET request_key=? WHERE id=?", uuid.NewString(), legacy).Error)
+	// ManualSync obtains its source from the repository, not an unrounded
+	// in-memory CreatedAt/UpdatedAt value from a PostgreSQL INSERT.
+	source, err = sources.FindByID(ctx, source.ID)
+	require.NoError(t, err)
+	request := types.NativeSyncRequest{Key: uuid.NewString(), DataSourceID: source.ID, KnowledgeBaseID: kb,
+		ResourceID: uuid.NewString(), ActionKey: "knowledge.sync_apply@v2", BindingID: binding, Generation: 9,
+		PrincipalID: uuid.NewString(), OperationID: uuid.NewString(), ParameterHash: "frozen-request",
+		ExpiresAt: time.Now().Add(time.Hour).UTC()}
+	ctx = types.WithNativeSyncRequest(ctx, request)
+	type admitted struct {
+		log *types.SyncLog
+		err error
+	}
+	start, results := make(chan struct{}), make(chan admitted, 2)
+	for range 2 {
+		go func() {
+			<-start
+			// Separate repository consumers share only the native PostgreSQL
+			// transaction/endpoint lock, never a process-local admission lock.
+			log, err := NewSyncLogRepository(db).CreatePending(ctx, source,
+				&types.DataSourceSyncPayload{DataSourceID: source.ID, TenantID: source.TenantID, Trigger: "manual"})
+			results <- admitted{log, err}
+		}()
+	}
+	close(start)
+	first, second := <-results, <-results
+	require.NoError(t, first.err)
+	require.NoError(t, second.err)
+	require.Equal(t, first.log.ID, second.log.ID)
+	require.NotEqual(t, first.log.RequestReplayed, second.log.RequestReplayed)
+	var count int64
+	require.NoError(t, db.Model(&types.SyncLog{}).Where("request_key=?", request.Key).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+	require.NoError(t, db.Model(&types.TaskPendingOp{}).Where("dedup_key=?", first.log.ID).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+	changed := request
+	changed.Generation++
+	_, err = logs.CreatePending(types.WithNativeSyncRequest(ctx, changed), source,
+		&types.DataSourceSyncPayload{DataSourceID: source.ID, TenantID: source.TenantID, Trigger: "manual"})
+	require.Error(t, err)
+	require.Error(t, db.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(down)).Error }),
+		"rollback must not remove retained request ownership")
+	var calls atomic.Int32
+	start, dispatched := make(chan struct{}), make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			dispatched <- NewSyncLogRepository(db).DispatchPending(ctx, first.log.ID, func(payload *types.DataSourceSyncPayload) error {
+				calls.Add(1)
+				if payload.SyncLogID != first.log.ID || payload.DataSourceID != source.ID {
+					return datasource.ErrDataSourceInvalid
+				}
+				return nil
+			})
+		}()
+	}
+	close(start)
+	require.NoError(t, <-dispatched)
+	require.NoError(t, <-dispatched)
+	require.EqualValues(t, 1, calls.Load(), "concurrent dispatchers must acknowledge only the original handoff")
+	require.NoError(t, db.Model(&types.TaskPendingOp{}).Where("dedup_key=?", first.log.ID).Count(&count).Error)
+	require.Zero(t, count)
+	observed, err := NewSyncLogRepository(db).CreatePending(ctx, source,
+		&types.DataSourceSyncPayload{DataSourceID: source.ID, TenantID: source.TenantID, Trigger: "manual"})
+	require.NoError(t, err)
+	require.True(t, observed.RequestReplayed)
+	require.Equal(t, first.log.ID, observed.ID)
+	require.Equal(t, types.SyncLogStatusRunning, observed.Status, "queue ACK is not batch completion")
+}
 
 func TestNativeReceiverCreateConsumesEndpointCutoffInWriteTransaction(t *testing.T) {
 	for _, scenario := range []string{"open", "closed", "new-generation", "invalid-admission", "independent", "projection-missing", "native-clone"} {
