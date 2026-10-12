@@ -11649,3 +11649,70 @@ Earlier Node 24 failure/rebuild evidence remains unchanged. The 28 earlier
 passes and these three passes are separate runs on different Node runtimes,
 not a single 31-case all-pass run. This closes the SQLite prerequisite evidence,
 not HTTP, source SQL, browser, production binding or deployment acceptance.
+
+### 2026-10-12 Ibis repository keyring: source correction, build not delivered
+
+Authority and upstream: ADR-06 and 07 §2.1 retain signature verification and
+the original limited builder. Fixed Wren Engine
+`47ca29ebba291100ba5d70ce1790f9887eaed7a0:ibis-server/Dockerfile`
+installs the Microsoft key under `trusted.gpg.d`. Kailo's existing Bookworm
+runtime consumes the official Debian 12 `prod.list`, which explicitly selects
+`/usr/share/keyrings/microsoft-prod.gpg` through `signed-by`. Its original
+global key installation therefore does not supply the selected keyring.
+
+Impact: only the original Dockerfile download/key conversion block changes.
+The same official `https://packages.microsoft.com/keys/microsoft.asc` is
+downloaded with `curl -fsSL`, converted by `gpg --batch --dearmor` to the
+selected keyring, then the exact temporary key file is removed. The original
+repository list also uses `curl -fsSL -o`. Base image digests, driver packages,
+application source and deployment identities are unchanged.
+
+Side effects and failure boundary: no global trust, unsigned repository,
+`trusted=yes`, TLS bypass, substitute source or retry loop is introduced.
+Download, key parsing or APT verification failure aborts the image build.
+There is no new runtime switch. No artifact digest is recorded on failure;
+this source correction does not prove a successful build or component release.
+
+The official repository setup reference is
+[Microsoft's Linux ODBC installation documentation](https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server).
+The actual `signed-by` line is also present in the first build failure below.
+
+Execution used the original `tools/build-upstream.sh data-query-ibis`, with
+`sudo -n -H` Docker identity, `BUILDX_BUILDER=kailo-core-data`,
+`REGISTRY` read from the existing `REGISTRY_HOST`, and Data TMPDIR
+`/volumes/data/kailo/tmp/upstream-direct-registry.IiP5j2`.
+The actual builder had 8 CPU / 16 GiB / equal memory-swap and a Data bind
+at `/volumes/data/kailo/buildkit-core-state`; preflight showed more than
+37 GiB available memory and no other compiler. The registry had been moved
+to Data and independently read back by the main operator before the build.
+The ordinary Docker identity initially rejected the missing builder (exit 2);
+the original sudo identity then passed the same resource check. No new builder,
+SDK, daemon image load or deployment was performed.
+
+- Original source digest
+  `sha256:65e1798910658c7089f31519ec4ef3ccfb0f0b2f2ba264436629cbaaf9728ad4`:
+  session 81730 exited 1; runtime APT exited 100 with
+  `NO_PUBKEY EB3E94ADBE1229CF`.
+- Corrected source digest
+  `sha256:6d71cc61000fe37c8fbc57235a7b2d43acc9dbb2d1b73d07c70c7f61d7f3f164`:
+  session 21878 exited 1; runtime curl exited 35 with
+  `SSL_ERROR_SYSCALL` connecting to `packages.microsoft.com:443`.
+  This happened before successful APT verification of the corrected keyring.
+  Neither run reached registry push or the original manifest record step.
+
+Both logs remain under the Data TMPDIR above:
+`ibis-build-push.log` SHA-256
+`e02d14491881a6f4c23ffb23dba7fac55fdde201948fb453a6e48679d1e0ddb2`;
+`ibis-build-keyring-restored.log` SHA-256
+`33fef35321ee886a03641c67bfb1f7cc18ebe2269bfbcbaa17bb1572a1a92406`.
+Dockerfile `git diff --check` exited 0. No new full check was run.
+
+After both build failures, one host-only HTTPS HEAD request to the same
+official key URL used `curl --head --fail --silent --show-error`,
+`--connect-timeout 15 --max-time 30 --output /dev/null`.
+Session 39241 exited 0 and returned HTTP 200, TLS verification result 0
+(tool output chunk `f9a06e`). This is a current read-only network observation,
+not evidence that the BuildKit request or image build succeeded. It downloaded
+no package, installed nothing and did not trigger another build. Ibis
+`source_digest` and `artifact_digest` remain `none`; existing unrelated
+dirty artifact records are excluded from this source-only change.

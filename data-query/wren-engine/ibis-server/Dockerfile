@@ -48,8 +48,10 @@ FROM python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903c
 # Add microsoft package list
 RUN apt-get update \
     && apt-get install -y curl gnupg \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list | tee /etc/apt/sources.list.d/mssql-release.list \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o /tmp/microsoft.asc \
+    && gpg --batch --dearmor -o /usr/share/keyrings/microsoft-prod.gpg /tmp/microsoft.asc \
+    && rm /tmp/microsoft.asc \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list -o /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update
 
 # Install msodbcsql 18 driver for mssql
