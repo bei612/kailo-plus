@@ -1557,3 +1557,83 @@ inbox-project-read.md 归入故障与恢复证据。该回执已明确 HTTP 动�
 实际 exit 0。pins-wren-lint-restored.log 的 SHA256 为
 `51e2e0f3e77a8f83ac2232f053739c72a2c5674ec6e315c9f35a08fa074a3fc5`。
 没有重跑已通过的 docs/trace、构建或业务验证；前述失败原件均保留。
+
+## 2026-10-12 a095 Core/Worker 与 4cdf Web 串行发布
+
+关联 ADR-06、DD-100 和原发布来源消费者；仅产物发布，不是部署或业务验收。
+Data 原件目录为 `/volumes/data/kailo/tmp/task-batch-release.zThtjJ`。
+Core/Worker 使用原生 clean detached `platform-apps`，固定
+`a0951e4f784c8a9541d9f7cd88b07adc64e8ce1e`；Web 使用独立 clean detached
+`web-apps`，固定已推送的 `4cdf8b57568821097461e6f3cac21d43c4dedfa0`。
+两者不是同一个 source commit，不把旧 bdc 产物重新标为本批。
+
+四步影响：先核原 `release.sh` 的 clean commit、归档与锁输入；复用原
+`build-upstream.sh` 的声明输入、planner、registry exporter 和成功后 record；
+确认 a095→4cdf 的后端归档差异仅两份 core/verify 文档，均被原 `.dockerignore`
+排除，实际 Core/Worker 编译输入、锁、契约及发布工具未变；失败不登记摘要，
+顶层 OCI index 与平台子 manifest 分开，产物存在不等于 ACTIVE 或已部署。
+本批没有修改 API、权限、Workflow、数据库或运行期身份。
+
+原 Docker 身份为 sudo/root，现有 builder `kailo-core-data` 实际 8 CPU/16 GiB、
+memory+swap 总限额等于内存，缓存挂载 `/volumes/data/kailo/buildkit-core-state`。
+执行前已有进程、CPU/内存压力及 cgroup 已核；不降 Cargo 并行度、不另建 builder。
+仅原 registry 直推，没有向根盘 Docker/containerd pull/load 或重启业务服务。
+原两命令分别使用 Data 下 `platform-tmp`、`web-tmp`：
+
+```sh
+sudo -n -H env TMPDIR="$release_data/platform-tmp" REGISTRY=127.0.0.1:55000 \
+  BUILDX_BUILDER=kailo-core-data bash "$release_data/platform-apps/tools/release.sh"
+sudo -n -H env TMPDIR="$release_data/web-tmp" REGISTRY=127.0.0.1:55000 \
+  BUILDX_BUILDER=kailo-core-data bash "$release_data/web-apps/tools/build-upstream.sh" web-client
+```
+
+`release_data` 表示上述原件目录。52650 的 Core→Worker 原流水实际 exit 0；
+Core release 编译 8m44s，Worker 原 Go 编译 105.4s；15681 的 Web 原 tsc/Vite、
+export/push/record 实际 exit 0。Web 新 planner 的 source/buildId 为
+`sha256:0949215a27a55eb66518c6f236b01a532adf6187360dacc0393bf4dc2f662add`，
+固定官方基准仍为 `a6766c482533d028582d0efcfd3740769f86217c`。
+
+| 产物及真实源码 | 顶层 OCI index digest | 独立 registry HEAD |
+| --- | --- | --- |
+| Core / a095 | `sha256:29ea050ccc06cbfe6920c2be6c089923c3a86f02e466823f0c8e3032d01b3945` | 21:36:56 UTC，200、摘要相等 |
+| Worker / a095 | `sha256:02e7f095aad97ba3ac348a9ccea5c45bbac03fe4e48d1ee8e36ef1866897e2bb` | 21:54:10 UTC，200、摘要相等 |
+| Web / 4cdf | `sha256:0b90e975c8ad2935b5cdfbd0dc56cb3fb9a946461e871aefc95def6b59908b1a` | 21:58:54 UTC，200、摘要相等 |
+
+Core/Worker 原 SPDX 与 provenance 在 `platform-apps/dist/`，文件名按上表摘要。
+两份 provenance 的 gitCommit/PLATFORM_BUILD_ID 均为 a095，锁摘要为
+`0fa106de22e891a176a10fc9da4b3f38dc608800fd3d17e0ddf65d7077f6b2f7`；
+Core 嵌入 `agent-runtime@sha256:0a37f9edf7f4004c73e41bba7bf7dfa5cdcd8d04b51dbc22066a2a3094282725`。
+Web 原 BuildKit metadata 位于 `web-tmp/build-web-client.BALI5v.metadata.json`，
+ref 为 `kailo-core-data/kailo-core-data0/40qrz64128r0geeep3irr6sqn`。
+registry 原 `web-index.json` 字节 SHA 与顶层 digest 相等；attestation 指向实际
+amd64 manifest `babc7478cf8a69c9661feeb0e888544ad82d048ccbb1ff6372a8aa2e182dadf3`。
+原 `web-provenance.json` 为 BuildKit 最小 SLSA v1，builder.id 为空、completeness
+为 false，不冒充签名的完整源码证明。首次读取 attestation 未传 OCI Accept 得到
+404/exit 22；补齐原类型后 200/exit 0，没有重新构建或改 registry。
+
+原 Syft registry 消费者扫描 Web，99026 实际 exit 0；systemd-run 投递
+2 CPU/2 GiB/swap 0、UID/GID 1000、Data TMPDIR，3.560s、峰值 6.2M。
+结束后的 unit 已被 collect，因此事后 show 的 infinity/空用户不是运行时限额
+读回，不能据此声称取得了 live cgroup 快照。三个 SPDX-2.3 分别包含 92/53/163
+个包，这是清单生成结果，不是漏洞清零或供应链全部通过。
+
+| 原件 | SHA-256 |
+| --- | --- |
+| platform-release.log | `2cc23536c02969f7e695a74e7ba4e0c348e44e2ef0c55dc131515aae538d8328` |
+| Core provenance / SPDX | `b7c51e3d9bb3ebe91d3a48dcd5f38976550c839ae641085e77c0664a4cb5b90d` / `e0a7849c60702405de048912088e30cf8dab540fef60fff47ce05a06000344c9` |
+| Worker provenance / SPDX | `c2b75a07f657912684f5ed328d74a0a2a3d7e343fa54096c89f4d19ca0c022cc` / `4fd386e4be437b8c2474bd42ce0bda2641582457498ab4c05a2ed33511e42dc7` |
+| web-release.log | `d8eef923698fe1ceb65a325c466d7ba38ed347c65f8d8eb9c1d08683d3853f61` |
+| web.spdx.json / web-sbom.log | `eb574f6ce7361461282ed1995a2721e1fcbff0187f4a7e0dcc6b5303e4849149` / `399c2f75a9d139604c61e8155f44c8466017f031d49377ebdc1795848d826791` |
+| web-provenance.json | `e0f24cdcb6446fc1056f67ea53e64ec2723d7d5723b3747dc844cbcab4827887` |
+
+原 Core Dockerfile 的 InvalidDefaultArgInFrom 和 Web 构建警告保留；本批不运行
+full 或补发业务请求。实际部署仍未执行，普通 SSO、三组件完整 binding/conformance、
+真实上传/问数、三人多 Agent 与原生端验收未因此完成。原预复制暂停命令 exit 1
+但实际 frozen1 的历史保留；全部产物/扫描终态后，22:00 原 scope thaw 真实 0，
+同三 PID/frozen0 已回读，只是恢复预复制，不是镜像存储迁移或服务切换完成。
+
+按原 `3a739440565fcf25ed4740e8f295655a59cc6f0d` 的已构建候选语义，
+同步原 Compose 三个镜像字段、22 份 traceability 的 release.artifacts 和 Web
+原来源两字段；只替换三项精确候选摘要，不改旧验收/日志中的历史摘要及其他产品。
+全部原 gate 保持 blocked_until_seams_closed，不改 ready/shipped，不执行部署。
+私有候选来自本批固定 HEAD，主工作树继承 dirty 与公共暂存均不纳入或覆盖。
