@@ -4216,15 +4216,33 @@ export interface ProjectPreferenceRequest {
  * signed current announcement; it does not delete its channel or repositories.
  */
 export interface ProjectsPublishRequest {
+    /**
+     * Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
+     * enforced before signing.
+     */
+    body?:          string;
+    category?:      ProjectIssueCategory;
     description?:   string;
     name?:          string;
     operation:      ProjectPublicationOperation;
     targetEventId?: string;
-    visibility?:    ProjectListingVisibility;
-    workspaceId?:   string;
+    /**
+     * Original trimmed issue subject; the consumer additionally enforces the original
+     * JavaScript 256 UTF-16 code-unit limit.
+     */
+    title?:       string;
+    visibility?:  ProjectListingVisibility;
+    workspaceId?: string;
+}
+
+export enum ProjectIssueCategory {
+    ChangeRequest = "change-request",
+    Improvement = "improvement",
+    Issue = "issue",
 }
 
 export enum ProjectPublicationOperation {
+    CreateIssue = "CREATE_ISSUE",
     CreateProject = "CREATE_PROJECT",
     CreateRepository = "CREATE_REPOSITORY",
     Delete = "DELETE",

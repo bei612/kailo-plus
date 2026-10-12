@@ -17,8 +17,9 @@ use serde_json::{json, Value};
 
 pub(crate) const PUBLISH_ACTION: &str = "projects.publish";
 
-// Native ReposWrite and coordinate ownership are enforced by the same Relay
-// ingest as CLIENT publications. Tenant discovery is only this BFF entrance.
+// Native ReposWrite for announcements and MessagesWrite for issues are
+// enforced by the same Relay ingest as CLIENT publications. Tenant discovery
+// is only this BFF entrance; a repository reference grants no Git/tool access.
 #[allow(clippy::result_large_err)]
 pub(crate) fn publication_kind(
     request: &contracts::ProjectsPublishRequest,
@@ -35,7 +36,7 @@ pub(crate) async fn publication_target(
     request: &contracts::ProjectsPublishRequest,
 ) -> Result<Option<nostr::Event>, Response> {
     let kind = publication_kind(request)?;
-    if kind != 5 {
+    if matches!(kind, 30617 | 30621) {
         let slug = collab_bridge::projects::project_dtag(
             request.name.as_deref().unwrap_or_default().trim(),
         );
@@ -62,8 +63,13 @@ pub(crate) async fn publication_target(
     if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
+    let target_kinds = if kind == 1621 {
+        vec![30617]
+    } else {
+        vec![30621, 30617]
+    };
     let value = client
-        .query(&state.http, &[json!({"ids":[id],"kinds":[30621,30617]})])
+        .query(&state.http, &[json!({"ids":[id],"kinds":target_kinds})])
         .await
         .map_err(|error| relay_error_response(&error, None))?;
     let events: Vec<nostr::Event> =
@@ -72,7 +78,7 @@ pub(crate) async fn publication_target(
         return Err(StatusCode::NOT_FOUND.into_response());
     };
     if event.id.to_hex() != id
-        || !matches!(event.kind.as_u16(), 30621 | 30617)
+        || !target_kinds.contains(&event.kind.as_u16())
         || event.verify().is_err()
     {
         return Err(StatusCode::BAD_GATEWAY.into_response());
@@ -89,6 +95,54 @@ pub(crate) async fn publication_target(
         return Err(StatusCode::CONFLICT.into_response());
     }
     Ok(Some(event.clone()))
+}
+
+/// An accepted idempotency key names the original issue, not any later body
+/// submitted under that key. Compare transient input to Relay's signed source;
+/// never retain the body or a guessable body digest in Core.
+pub(crate) async fn confirm_accepted_issue(
+    state: &BffState,
+    ctx: &crate::bff::ExecutionContext,
+    request: &contracts::ProjectsPublishRequest,
+    event_id: &str,
+    operation_id: uuid::Uuid,
+) -> Result<(), Response> {
+    let unknown = || {
+        crate::web_transport::error_body(
+            StatusCode::SERVICE_UNAVAILABLE,
+            contracts::ErrorClass::Unknown,
+            contracts::ReasonCode::PublishResultUnknown,
+            Some(operation_id),
+        )
+    };
+    let before = pulse::admit(state, ctx).await?;
+    let keys = actor_keys(state, ctx).await?;
+    let client = community_client(state, &keys, &before.community_host)?;
+    let page = client
+        .query(
+            &state.http,
+            &[json!({"ids":[event_id],"authors":[client.pubkey_hex()],"kinds":[1621],"limit":1})],
+        )
+        .await
+        .map_err(|_| unknown())?;
+    let events: Vec<nostr::Event> = serde_json::from_value(page).map_err(|_| unknown())?;
+    let [event] = events.as_slice() else {
+        return Err(unknown());
+    };
+    if event.id.to_hex() != event_id || event.pubkey != keys.public_key() {
+        return Err(unknown());
+    }
+    let matches = collab_bridge::projects::issue_publication_matches(request, event)
+        .map_err(|_| unknown())?;
+    if pulse::admit(state, ctx).await? != before
+        || actor_keys(state, ctx).await?.public_key() != keys.public_key()
+    {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    if !matches {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    Ok(())
 }
 
 // Keep the existing BFF HTTP refusal type; no second error wrapper.

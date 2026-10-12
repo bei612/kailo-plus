@@ -12435,28 +12435,44 @@ class ProjectPreferenceRequest {
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
 class ProjectsPublishRequest {
+  ///Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
+  ///enforced before signing.
+  final String? body;
+  final ProjectIssueCategory? category;
   final String? description;
   final String? name;
   final ProjectPublicationOperation operation;
   final String? targetEventId;
+
+  ///Original trimmed issue subject; the consumer additionally enforces the original
+  ///JavaScript 256 UTF-16 code-unit limit.
+  final String? title;
   final ProjectListingVisibility? visibility;
   final String? workspaceId;
 
   ProjectsPublishRequest({
+    this.body,
+    this.category,
     this.description,
     this.name,
     required this.operation,
     this.targetEventId,
+    this.title,
     this.visibility,
     this.workspaceId,
   });
 
   factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
       ProjectsPublishRequest(
+        body: json["body"],
+        category: json["category"] == null
+            ? null
+            : projectIssueCategoryValues.map[json["category"]]!,
         description: json["description"],
         name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
         targetEventId: json["targetEventId"],
+        title: json["title"],
         visibility: json["visibility"] == null
             ? null
             : projectListingVisibilityValues.map[json["visibility"]]!,
@@ -12464,18 +12480,35 @@ class ProjectsPublishRequest {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "body": body,
+    "category": projectIssueCategoryValues.reverse[category],
     "description": description,
     "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
     "targetEventId": targetEventId,
+    "title": title,
     "visibility": projectListingVisibilityValues.reverse[visibility],
     "workspaceId": workspaceId,
   });
 }
 
-enum ProjectPublicationOperation { CREATE_PROJECT, CREATE_REPOSITORY, DELETE }
+enum ProjectIssueCategory { CHANGE_REQUEST, IMPROVEMENT, ISSUE }
+
+final projectIssueCategoryValues = EnumValues({
+  "change-request": ProjectIssueCategory.CHANGE_REQUEST,
+  "improvement": ProjectIssueCategory.IMPROVEMENT,
+  "issue": ProjectIssueCategory.ISSUE,
+});
+
+enum ProjectPublicationOperation {
+  CREATE_ISSUE,
+  CREATE_PROJECT,
+  CREATE_REPOSITORY,
+  DELETE,
+}
 
 final projectPublicationOperationValues = EnumValues({
+  "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
   "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
   "DELETE": ProjectPublicationOperation.DELETE,

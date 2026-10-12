@@ -1,10 +1,11 @@
 import type {ProjectsPublishRequest} from "@client-kit/contracts";
+import {verifyEvent} from "nostr-tools/pure";
 import {TransportError} from "@client-kit/platform/transport";
 import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags} from "@client-kit/platform/react/projects";
 
 // Original projectCreation/projectDeletion; CLIENT signs and Relay decides ownership.
 export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:string,active:()=>boolean,client:Pick<BffClient,"workspaces">){
@@ -13,12 +14,39 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
     let enteredPublication=false;
     try {
       check();
+      if(request.operation==="CREATE_ISSUE"){
+        if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
+          ||request.visibility!==undefined||typeof request.title!=="string"||typeof request.body!=="string"
+          ||!["issue","change-request","improvement"].includes(request.category??""))throw new Error("Invalid task creation");
+        const [repo]=await relayClient.fetchEvents({ids:[request.targetEventId],kinds:[30617],limit:1});check();
+        if(!repo||repo.id!==request.targetEventId||repo.kind!==30617||!verifyEvent(repo))throw new Error("Repository head unavailable");
+        const slug=repo.tags.find(tag=>tag[0]==="d")?.[1];
+        if(!slug)throw new Error("Repository coordinate unavailable");
+        const tags=buildGitIssueTags({repoAddress:`30617:${repo.pubkey}:${slug}`,repoOwner:repo.pubkey,title:request.title,labels:[request.category!]});
+        const content=request.body.trim();
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try {
+            const [head]=await relayClient.fetchEvents({kinds:[30617],authors:[repo.pubkey],"#d":[slug],limit:1});check();
+            if(!head||head.id!==repo.id||!verifyEvent(head))throw new Error("Repository head changed");
+            const signed=await signRelayEvent({kind:1621,content,tags});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Task signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==1621||event.pubkey!==viewer||!verifyEvent(event)||event.content!==content||JSON.stringify(event.tags)!==JSON.stringify(tags))
+          throw new TransportError("Task publication receipt mismatch");
+        return {eventId:event.id};
+      }
       const creating=request.operation!=="DELETE";
       if(creating){
         if((request.operation!=="CREATE_PROJECT"&&request.operation!=="CREATE_REPOSITORY")||!request.workspaceId||!request.name||request.targetEventId
+          ||request.title!==undefined||request.body!==undefined||request.category!==undefined
           ||request.operation==="CREATE_PROJECT"&&!['listed','unlisted'].includes(request.visibility??'')
           ||request.operation==="CREATE_REPOSITORY"&&request.visibility!==undefined)throw new Error("Invalid project creation");
-      }else if(!request.targetEventId||request.workspaceId||request.name!==undefined||request.description!==undefined||request.visibility!==undefined)throw new Error("Invalid project deletion");
+      }else if(!request.targetEventId||request.workspaceId||request.name!==undefined||request.description!==undefined||request.visibility!==undefined
+        ||request.title!==undefined||request.body!==undefined||request.category!==undefined)throw new Error("Invalid project deletion");
       const admitHome=async()=>{
         const workspace=(await client.workspaces()).find(row=>row.id===request.workspaceId&&row.isMember===true);check();
         if(!workspace)throw new Error("Project home channel unavailable");

@@ -5697,12 +5697,19 @@ type ProjectPreferenceRequest struct {
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
 type ProjectsPublishRequest struct {
+	// Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
+	// enforced before signing.
+	Body          *string                     `json:"body,omitempty"`
+	Category      *ProjectIssueCategory       `json:"category,omitempty"`
 	Description   *string                     `json:"description,omitempty"`
 	Name          *string                     `json:"name,omitempty"`
 	Operation     ProjectPublicationOperation `json:"operation"`
 	TargetEventID *string                     `json:"targetEventId,omitempty"`
-	Visibility    *ProjectListingVisibility   `json:"visibility,omitempty"`
-	WorkspaceID   *string                     `json:"workspaceId,omitempty"`
+	// Original trimmed issue subject; the consumer additionally enforces the original
+	// JavaScript 256 UTF-16 code-unit limit.
+	Title       *string                   `json:"title,omitempty"`
+	Visibility  *ProjectListingVisibility `json:"visibility,omitempty"`
+	WorkspaceID *string                   `json:"workspaceId,omitempty"`
 }
 
 // Original Buzz Community project/repository announcements, coordinate-scoped work-item
@@ -8419,9 +8426,18 @@ const (
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
 )
 
+type ProjectIssueCategory string
+
+const (
+	ChangeRequest ProjectIssueCategory = "change-request"
+	Improvement   ProjectIssueCategory = "improvement"
+	Issue         ProjectIssueCategory = "issue"
+)
+
 type ProjectPublicationOperation string
 
 const (
+	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
 	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"

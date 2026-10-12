@@ -713,7 +713,9 @@ pub(crate) async fn publish_project(
         Err(response) => return response,
     };
     let target = match crate::projects::publication_kind(&request) {
-        Ok(5) => MessageTarget::Pulse(ctx.tenant_id),
+        // NIP-34 issues, like deletion, are Community-global. A repository's
+        // buzz-channel metadata must not silently become a Workspace grant.
+        Ok(5 | 1621) => MessageTarget::Pulse(ctx.tenant_id),
         Ok(_) => match request
             .workspace_id
             .as_deref()
@@ -1567,6 +1569,21 @@ async fn publish(
         }
         match p.result.as_deref() {
             Some("ACCEPTED") => {
+                if let Publication::Project(request) = &publication {
+                    if requested_kind == 1621 {
+                        if let Err(response) = crate::projects::confirm_accepted_issue(
+                            &state,
+                            &ctx,
+                            request,
+                            &p.event_id,
+                            p.operation_id,
+                        )
+                        .await
+                        {
+                            return response;
+                        }
+                    }
+                }
                 if let Publication::Reminder(request) = &publication {
                     if let Err(response) = crate::reminders::confirm_accepted(
                         &state,
@@ -1660,6 +1677,11 @@ async fn publish(
             content.push_str(&line);
             media_tags.push(tag);
         }
+    }
+    if let Publication::Project(request) = &publication {
+        // Issue content is transient input to the original signed Relay event.
+        // Include it in the existing byte-limit check, never in audit/storage.
+        content.push_str(request.body.as_deref().unwrap_or_default().trim());
     }
 
     if message.is_some() && delete_event_id.is_none() {

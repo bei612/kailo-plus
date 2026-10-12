@@ -47,6 +47,19 @@ export type Project = {
   legacy: boolean;
 };
 
+export function selectProjectRepository(
+  project: Project | null | undefined,
+  requestedRepositoryId: string | null | undefined,
+): Repository | null {
+  if (!project) return null;
+  const requested = requestedRepositoryId
+    ? project.repositories.find(repository => repository.id === requestedRepositoryId)
+    : null;
+  if (requested) return requested;
+  return project.repositories.find(repository => repository.repoAddress === project.primaryRepositoryAddress)
+    ?? project.repositories[0] ?? null;
+}
+
 type BuildProjectReadModelsInput = {
   projectEvents: RelayEvent[];
   repositoryEvents: RelayEvent[];

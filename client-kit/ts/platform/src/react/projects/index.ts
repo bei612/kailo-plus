@@ -1,4 +1,5 @@
 export { ProjectsView } from "./ProjectsView";
+export {buildGitIssueTags} from "./projectIssues.mjs";
 export type { ProjectChannelRenderer } from "./ProjectChannelHome";
 export { parseEntityLink, isEntityLink, type ParsedEntityLink } from "./entityLink";
 export { readProjectEntity, openProjectEntity } from "./projectEntityNavigation";

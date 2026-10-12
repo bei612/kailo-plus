@@ -6100,6 +6100,14 @@ pub struct ProjectPreferenceRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
+    /// Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
+    /// enforced before signing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<ProjectIssueCategory>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
@@ -6111,6 +6119,11 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_event_id: Option<String>,
 
+    /// Original trimmed issue subject; the consumer additionally enforces the original
+    /// JavaScript 256 UTF-16 code-unit limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<ProjectListingVisibility>,
 
@@ -6119,8 +6132,22 @@ pub struct ProjectsPublishRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectIssueCategory {
+    #[serde(rename = "change-request")]
+    ChangeRequest,
+
+    Improvement,
+
+    Issue,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectPublicationOperation {
+    #[serde(rename = "CREATE_ISSUE")]
+    CreateIssue,
+
     #[serde(rename = "CREATE_PROJECT")]
     CreateProject,
 

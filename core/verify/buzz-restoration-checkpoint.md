@@ -1,5 +1,44 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-12 完整清单覆盖复核与 Projects 现有消费者纠偏
+
+固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。
+复用原 `/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF/`
+的 `buzz-779af-tree.tsv` 与 `collaboration-562156ae7f12.classification.tsv`：
+本轮只读 `git ls-tree -r` 与原树文件 cmp 为 0；官方全部 5195 tracked 路径
+对分类表 path 列作集合差得到 0 遗漏，表内重复路径 0。
+原表 5316 数据行（另有标题），SHA256 仍为
+`a7d016a88c5a0c5063c31c7ad0033ae7a319bd5e70c87b124b182c359bd4277a`。
+它覆盖完整固定上游，不只本批 Dialog；无须重导大树或再建分类脚本。
+原样保留 1921、共享迁移 114、整文件授权 0、缺失需恢复/待证明 3281
+仍只描述 apps `562156ae7f12953e3eea61305fe282ae98b6c416` 历史输入，
+不是当前 HEAD 完整重新分类或 3281 个已确认故障；0 不否认局部治理改造。
+
+本轮已提交源码读回 `f022696008fc73b6dbab8673e5eb6d5ae05913ee`。
+下方历史段落的“ProjectChannelHome 全缺/没有 Tasks/Reviews sheet”不能继续作为
+当前状态：`33cb0421e5b9e2f231d2793def39e52cda31bfa2` 已迁移官方
+`desktop/src/features/projects/ui/ProjectChannelHome.tsx::ProjectChannelHome`
+频道、Overview 和原导航，实际消费共享 ProjectDetailChrome；
+`13273932c77164d8498d9f5e8341230d286e3ee3` 已接官方
+`desktop/src/features/projects/ui/ProjectHomeWorkspaceSheet.tsx::ProjectHomeWorkspaceSheet`
+Tasks/Reviews 原列表→只读详情→返回。这是共享迁移加已授权 fresh scope/宿主适配，
+不是完整 repository ProjectDetailScreen/WorkspaceTabs、Git/Files 或全写操作恢复。
+Task 创建是主线正在合并的独立候选，不能提前归为已提交/已部署。
+
+下一个影响实际操作的缺项仍是任务详情“发表评论”：
+固定官方 `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`
+的 `handleCommentSubmit` 使用原 ForumComposer，再调用
+`desktop/src/features/projects/hooks.ts::useCreateProjectIssueCommentMutation/createProjectIssueComment`。
+当前共享 `client-kit/ts/platform/src/react/projects/ProjectIssueDetail.tsx::ProjectIssueDetail`
+只有原评论读取/timeline；Tasks 创建不会自动补齐评论写链。
+既有 projects.publish typed 操作尚无评论发布语义，不加空 Composer 或借其他写操作绕行。
+
+现有图片 `19-inbox-selected-real-message.png`、`20-inbox-full-selected-thread.png`
+仍位于上述 dPGaZF 目录，属于旧 `9d718234b74b688d9b81816f9b67470d4fc80440`
+部署，保留 429 失败边界；不是上述 Projects 首页/sheet 或批量作者的新版本截图。
+本轮未新构建、部署、浏览器操作、四侧生成或 full；公共 checkpoint 原 23 行暂存未纳入本段。
+
+
 ## 2026-10-12 批量作者源码与待部署实拍交接
 
 固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`，本段只核已有

@@ -3,6 +3,7 @@
 // The original channel host, overview rail, toggle and chrome are shared.
 // Repository healing/management and write/Git sheets still need their original governed consumers.
 import * as React from "react";
+import {Plus} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { useBffClient, useUiT } from "../context";
@@ -21,7 +22,7 @@ import { ProjectHomeContextPanel } from "./ProjectHomeContextPanel";
 import type { Project } from "./projectModels";
 import type { IdleAuxiliaryProps } from "../messages/thread/IdleAuxiliarySurface";
 import type { ProjectsHost } from "./projectEnumeration";
-import { ProjectHomeWorkspaceSheet, type ProjectHomeWorkspaceDetail, type ProjectHomeWorkspaceSheetTab, type ProjectWorkItemsRenderer } from "./ProjectHomeWorkspaceSheet";
+import { ProjectHomeWorkspaceSheet, type ProjectHomeWorkspaceCreateAction, type ProjectHomeWorkspaceDetail, type ProjectHomeWorkspaceSheetTab, type ProjectWorkItemsRenderer } from "./ProjectHomeWorkspaceSheet";
 
 const PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY = "buzz.desktop.project-home-summary-width";
 
@@ -44,6 +45,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   const [workspaceTab, setWorkspaceTab] = React.useState<ProjectHomeWorkspaceSheetTab | null>(null);
   const [repositoryId, setRepositoryId] = React.useState<string | null>(null);
   const [workspaceDetail, setWorkspaceDetail] = React.useState<ProjectHomeWorkspaceDetail | null>(null);
+  const [workspaceCreateAction,setWorkspaceCreateAction]=React.useState<ProjectHomeWorkspaceCreateAction|null>(null);
   const repository = project.repositories.find(item => item.id === repositoryId) ?? project.repositories[0];
   const workspaceOpen = Boolean(workspaceTab && repository && host && renderWorkItems);
   const previousWorkspaceOpenRef = React.useRef(workspaceOpen);
@@ -91,7 +93,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   const workspaceSheet = workspaceOpen && host && renderWorkItems && repository && workspaceTab
     ? <ProjectHomeWorkspaceSheet key={`${scopeKey}:${project.id}:${repository.id}:${workspaceTab}`}
         host={host} project={project} repositoryId={repository.id} tab={workspaceTab}
-        renderWorkItems={renderWorkItems} onDetailChange={setWorkspaceDetail}/> : undefined;
+        renderWorkItems={renderWorkItems} onDetailChange={setWorkspaceDetail} onCreateActionChange={setWorkspaceCreateAction}/> : undefined;
   return <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
     summaryVisible && "bg-sidebar", summaryVisible && sidebar?.open === false && "pl-2")}
     data-project-context-detached={summaryVisible ? "true" : undefined}
@@ -113,7 +115,14 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
         : channelsQuery.isError ? <p role="alert">{t("platform.loadFailed")}</p>
         : homeChannel ? renderChannel(homeChannel, {
             idleAuxiliaryPanel: workspaceSheet,
-            idleAuxiliaryHeaderActions: workspaceDetail ?? undefined,
+            idleAuxiliaryHeaderActions: {...workspaceDetail,actions:workspaceCreateAction?<Tooltip disableHoverableContent>
+              <TooltipTrigger asChild><Button aria-label={workspaceCreateAction.label}
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                data-testid="project-home-workspace-sheet-create" disabled={workspaceCreateAction.disabled}
+                onClick={workspaceCreateAction.onClick} size="icon" title={workspaceCreateAction.label} type="button" variant="ghost">
+                <Plus className="h-4 w-4"/>
+              </Button></TooltipTrigger><TooltipContent>{workspaceCreateAction.label}</TooltipContent>
+            </Tooltip>:null},
             idleAuxiliaryOverridesThread: workspaceOpen,
             idleAuxiliaryTitle: t(workspaceTab === "prs" ? "projects.list.reviews" : "projects.list.tasks"),
             onCloseIdleAuxiliaryPanel: closeWorkspace,

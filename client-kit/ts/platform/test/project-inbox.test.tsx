@@ -9,7 +9,10 @@ import {TooltipProvider} from "../src/react/sidebar/tooltip";
 import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,ProjectOriginReferenceContent,ProjectsView,type ProjectsHost} from "../src/react/projects";
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
-import {render,click} from "./render";
+import {render,click,type} from "./render";
+import {publishProjectIssue} from "../src/react/projects/issueMutations";
+import {buildGitIssueTags} from "../src/react/projects/projectIssues.mjs";
+import {BffError,TransportError} from "../src/transport";
 import {EntityLinkAnchor,openProjectEntity,parseEntityLink} from "../src/react/projects";
 import {issueShareLink} from "../src/react/projects/projectShareLinks";
 import {ShareLinkButton} from "../src/react/projects/ShareLinkButton";
@@ -17,7 +20,7 @@ import {toast} from "sonner";
 import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib/composerMessageLinkNode";
 import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {IdleAuxiliarySurface,type IdleAuxiliaryProps} from "../src/react/messages/thread";
-import {ChannelType,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
+import {ChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -45,9 +48,10 @@ beforeEach(()=>{setLocale("en");localStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
-  async function homeSheetFixture(){
+  async function homeSheetFixture(writer?: (f:ReturnType<typeof fixture>)=>void){
     vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
     const f=fixture();const channelId="12345678-1234-4234-8234-123456789001";
+    writer?.(f);
     f.rows.find(row=>row.kind===30621)!.tags.push(["buzz-channel",channelId]);
     const initial=await loadProjectWorkItems(f.host,new AbortController().signal);
     const workspace={id:"home-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
@@ -69,6 +73,104 @@ describe("original Inbox project read closure",()=>{
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="home-channel-consumer"]')).not.toBeNull());
     return {...f,ui,cache,renderWorkItems};
   }
+  const attachWriter=(f:ReturnType<typeof fixture>)=>{
+    f.host.publish=vi.fn(async(request,_key,_observe,observation)=>{
+      const created={...event("c",1621,buildGitIssueTags({repoAddress:repository,repoOwner:author,title:request.title!,labels:[request.category!]}),request.body!),pubkey:viewer};
+      observation?.onPrepared(created.id);f.rows.push(created);return {eventId:created.id};
+    });
+  };
+  it("creates a task through the original home dialog, reads the exact publication and opens its shared detail",async()=>{
+    const success=vi.spyOn(toast,"success").mockImplementation(()=>"test");
+    const f=await homeSheetFixture(attachWriter);
+    await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="project-home-context-tasks"]')!);
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-home-workspace-sheet-create"]')).not.toBeNull());
+    await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="project-home-workspace-sheet-create"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-dialog"]')).not.toBeNull());
+    await type(document.querySelector<HTMLInputElement>('[data-testid="create-issue-title"]')!,"  New real task  ");
+    await type(document.querySelector<HTMLTextAreaElement>('[data-testid="create-issue-body"]')!,"  Full task description  ");
+    const category=document.querySelector<HTMLSelectElement>('[data-testid="create-issue-category"]')!;
+    await act(async()=>{category.value="improvement";category.dispatchEvent(new Event("change",{bubbles:true}));});
+    const submit=document.querySelector<HTMLButtonElement>('[data-testid="create-issue-submit"]')!;
+    await act(async()=>{submit.click();submit.click();});
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain("Full task description"));
+    expect(f.host.publish).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(f.host.publish!).mock.calls[0]?.[0]).toEqual({operation:"CREATE_ISSUE",targetEventId:"8".repeat(64),title:"New real task",body:"Full task description",category:"improvement"});
+    expect(success).toHaveBeenCalledWith("Task created.");
+    expect(document.querySelector('[data-testid="create-issue-dialog"]')).toBeNull();
+    expect(localStorage.length).toBe(0);success.mockRestore();
+  });
+  it.each(["bff-unknown","transport-unknown","admission-refused","recovered-unknown"] as const)("preserves original task dialog outcome classification for %s",async mode=>{
+    const success=vi.spyOn(toast,"success").mockImplementation(()=>"test");
+    try {
+      const f=await homeSheetFixture(f=>{f.host.publish=vi.fn(async()=>{
+        if(mode==="transport-unknown")throw new TransportError("lost response");
+        throw new BffError(503,"publication response",{class:mode==="admission-refused"?ErrorClass.Denied:ErrorClass.Unknown});
+      });});
+      await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="project-home-context-tasks"]')!);
+      await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-home-workspace-sheet-create"]')).not.toBeNull());
+      await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="project-home-workspace-sheet-create"]')!);
+      await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-dialog"]')).not.toBeNull());
+      await type(document.querySelector<HTMLInputElement>('[data-testid="create-issue-title"]')!,"Pending task");
+      const submit=document.querySelector<HTMLButtonElement>('[data-testid="create-issue-submit"]')!;
+      await click(submit);
+      const unknown="Task creation outcome unknown. Retry checks the same publication.";
+      await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-dialog"]')?.textContent).toContain(mode==="admission-refused"?"Failed to create task.":unknown));
+      expect(success).not.toHaveBeenCalled();
+      expect(localStorage.length).toBe(mode==="admission-refused"?0:1);
+      expect(document.querySelector('[data-testid="create-issue-dialog"]')).not.toBeNull();
+      expect(f.host.publish).toHaveBeenCalledTimes(1);
+      if(mode==="recovered-unknown"){
+        const originalKey=vi.mocked(f.host.publish!).mock.calls[0]?.[1];
+        vi.mocked(f.host.publish!).mockRejectedValue(new BffError(403,"recovery refused",{class:ErrorClass.Denied}));
+        await click(submit);
+        await vi.waitFor(()=>expect(f.host.publish).toHaveBeenCalledTimes(2));
+        await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-dialog"]')?.textContent).toContain(unknown));
+        expect(vi.mocked(f.host.publish!).mock.calls[1]?.[1]).toBe(originalKey);
+        expect(vi.mocked(f.host.publish!).mock.calls[1]?.[2]).toBe(true);
+        expect(localStorage.length).toBe(1);expect(success).not.toHaveBeenCalled();
+      }
+    } finally {success.mockRestore();}
+  });
+  it("holds UNKNOWN task intent across retry, rejects changed input, and observes rather than signs another event",async()=>{
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const p=snapshot.projects[0]!,repo=p.repositories[0]!,input={title:"Pending task",body:"Secret body",category:"issue" as const};
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(_request,_key,_observe,observation)=>{observation?.onPrepared("c".repeat(64));throw new TransportError("lost ACK");});f.host.publish=publish;
+    await expect(publishProjectIssue(f.host,p.id,repo,input,new AbortController().signal)).rejects.toThrow();
+    expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Secret body");
+    await expect(publishProjectIssue(f.host,p.id,repo,{...input,title:"Different task"},new AbortController().signal)).rejects.toThrow("outcome unknown");
+    expect(publish).toHaveBeenCalledTimes(1);
+    f.rows.push({...event("c",1621,buildGitIssueTags({repoAddress:repository,repoOwner:author,title:input.title,labels:["issue"]}),input.body),pubkey:viewer});
+    publish.mockResolvedValue({eventId:"c".repeat(64)});
+    const result=await publishProjectIssue(f.host,p.id,repo,input,new AbortController().signal);
+    expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);expect(publish.mock.calls[1]?.[2]).toBe(true);
+    expect(publish.mock.calls[1]?.[3]?.eventId).toBe("c".repeat(64));result.complete();expect(localStorage.length).toBe(0);
+  });
+  it.each(["absent","wrong-author","wrong-body"])("does not complete task creation with %s readback",async mode=>{
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);const p=snapshot.projects[0]!,repo=p.repositories[0]!;
+    attachWriter(f);const original=f.host.publish!;f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(...args)=>{const result=await original(...args);const created=f.rows.at(-1)!;
+      if(mode==="absent")f.rows.pop();else if(mode==="wrong-author")created.pubkey=author;else created.content="different";return result;});
+    await expect(publishProjectIssue(f.host,p.id,repo,{title:"new",body:"body"},new AbortController().signal)).rejects.toThrow("outcome unknown");
+    expect(localStorage.length).toBe(1);
+  });
+  it("denies changed repository before publishing and keeps late scope results from opening a task",async()=>{
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);const p=snapshot.projects[0]!,repo=p.repositories[0]!;
+    attachWriter(f);const originalRepo=f.rows.shift()!;
+    await expect(publishProjectIssue(f.host,p.id,repo,{title:"new",body:"body"},new AbortController().signal)).rejects.toThrow("repository changed");
+    expect(f.host.publish).not.toHaveBeenCalled();f.rows.unshift(originalRepo);
+    const controller=new AbortController(),original=f.host.publish!;
+    f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(...args)=>{const receipt=await original(...args);controller.abort();return receipt;});
+    await expect(publishProjectIssue(f.host,p.id,repo,{title:"new",body:"body"},controller.signal)).rejects.toThrow();
+    expect(localStorage.length).toBe(1);
+  });
+  it("refuses corrupt or inaccessible task intent storage without dispatching a new event",async()=>{
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);const p=snapshot.projects[0]!,repo=p.repositories[0]!;attachWriter(f);
+    const slot=JSON.stringify(["project-issue-publication",f.host.scopeKey,p.id,repo.repoAddress]);
+    localStorage.setItem(slot,"broken JSON");
+    await expect(publishProjectIssue(f.host,p.id,repo,{title:"new",body:"body"},new AbortController().signal)).rejects.toThrow("outcome unknown");
+    localStorage.removeItem(slot);const read=vi.spyOn(Storage.prototype,"getItem").mockImplementationOnce(()=>{throw new Error("storage refused");});
+    await expect(publishProjectIssue(f.host,p.id,repo,{title:"new",body:"body"},new AbortController().signal)).rejects.toThrow("outcome unknown");
+    read.mockRestore();expect(f.host.publish).not.toHaveBeenCalled();
+  });
   it.each(["tasks","reviews"] as const)("opens original project-home %s sheet, its real detail, back and close without global navigation",async kind=>{
     const f=await homeSheetFixture();
     await click(f.ui.querySelector<HTMLButtonElement>(`[data-testid="project-home-context-${kind}"]`)!);

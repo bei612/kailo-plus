@@ -139,3 +139,242 @@ projection 一致，并有 ACTIVE Channel binding。Channel ID 是查询的投�
 安装验收。本批未运行全量构建/部署；提交与发布由主线统一收口。原 Team 和 Template
 仍依赖上游本机配置消费者，尚未接入平台既有治理，未以假选项冒充恢复；Coding agent
 这一个真实链完成不能证明整个 Projects 已 100% 还原。
+
+## 2026-10-12 原 Tasks 创建：Core 与发布对账接入
+
+本批尚在验证，不是部署验收或完整 Projects 恢复声明。基底为
+`f022696008fc73b6dbab8673e5eb6d5ae05913ee`；原 UI、契约和 Bridge 与本节
+Core 变更合批收口，不另造任务数据库或执行引擎。
+
+动手前的四步结论：
+
+1. 权威：沿 `.design/09`、REQ-24、DD-39、DD-75、DD-81。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/projects/issueMutations.ts::publishProjectIssue` 和
+   `desktop/src/features/projects/projectIssues.mjs::buildGitIssueTags`
+   定义 kind 1621 的正文与原 a/p/subject/t 标签。Community 原准入决定消息权限；
+   仓库的 buzz-channel 元数据不是 Workspace 授权，也不要求发起人等于仓库 owner。
+2. 影响：既有 ProjectsPublishRequest 增加 CREATE_ISSUE 与 title/body/category；
+   targetEventId 指已验签的 kind 30617 仓库 head，不是原 Repository.id 坐标。
+   Web 继续经 BFF 代签，Native 继续本机签名直连 Relay。Core 原
+   publish_attempt、同键恢复、外部发布对账复用；新迁移仅扩展原 message_kind
+   约束。旧操作字段组合仍拒绝混用；线上旧版本不支持新操作，不能提前开放入口。
+3. 副作用：Core 只保存原发布意图和事件引用，不保存任务正文或正文摘要。
+   已 ACCEPTED 的同键请求仍向 Relay 读原作者、原事件并核对瞬时输入，
+   不把换正文请求返回成旧成功。读取前后重验当前准入和密钥主体；缺少签名终态
+   返回 UNKNOWN/PUBLISH_RESULT_UNKNOWN，不补发，不将 HTTP ACK 当业务成功。
+4. 边界：空/多条仓库事件、坏签名、非当前 head 在发送前拒绝；title 沿原
+   JavaScript UTF-16 长度，body 沿原 trim 和现有实例消息字节上限。
+   重复投递、进程重启与结果不明复用原意图/对账，不增加第二套重试状态机。
+   迁移回滚遇到任一 1621 发布记录即停止，不能丢弃在途终态证据。
+
+异常继续按 `06` §4 分类：认证/scope/成员撤销为 DENIED；未开放准入为 BLOCKED；
+binding、secret、projection 与 readiness 缺失为 PRECONDITION；大小/既有额度或
+背压为 LIMIT；head/同键内容冲突为 CONFLICT；发出后无可信终态为 UNKNOWN。
+本批不新增审批、额度预留或租户暂停状态机，也不声称对这些原链路做了新增在线验收。
+共享 UI 必须消费原 isOutcomeUnknown（含 BFF ErrorClass.Unknown），不能只识别网络
+TransportError；该项在实现后交叉复核中发现，已改用原统一分类函数。
+Native 三个旧操作同时在原校验处拒绝混入 title/body/category，不增加第二校验链。
+原共享消费者 45/45、Native 18/18，以及两侧类型检查均退出 0；原件为
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-issue-create.hfLmuC/outcome-restored.log`，
+尾行 `TYPES=0 DOM=0 NATIVE_TYPES=0 NATIVE=0`。新增分类及混用字段的私有破坏验证
+14598 退出 1；精确还原后的 32361 退出 0，分类 4/4、Native 5/5，详情见本节末尾。
+
+当前实际验证：
+
+- 原 SDK `kailo-receiver-observe-sdk-w4qug0`，4 CPU / 8 GiB、无额外 swap，
+  workspace、Cargo registry/git/target 与临时目录均在 Data；未构建或加载新镜像。
+- Core 三个源文件 `rustfmt --check` 退出 0；选定路径 `git diff --check` 退出 0。
+  公共工作区其他旧差异不混入本批。
+- 会话 59697：Bridge 与 Core 本批四源 `rustfmt --check --edition 2021`，以及
+  `cargo clippy --locked --offline -p collab-bridge --no-deps -- -D warnings`
+  均退出 0；没有降低 Cargo 并行度或取消检查规则。
+- 原 `cargo test --locked --offline -p collab-bridge projects::`：
+  `test result: ok. 6 passed; 0 failed`。SDK 与正式 Bridge 源码 `cmp` 退出 0。
+  同一会话 80488 后续 Core 定向检查退出 0：`5 passed; 0 failed; 437 filtered out`。
+  这五项是原 Projects 读取/过滤边界检查，编译包含本批写链，但不冒称已执行
+  新增 `confirm_accepted_issue` 的真实 Relay/数据库路径。
+  收口检查发现该私有快照另含旧 custom_emoji、main 和 schedule_calendar 差异，
+  因此 80488 不能证明精确提交树已通过。主线只把这些私有无关输入还原为本批
+  HEAD，并保留正式公共工作区原修改；对齐后的检查须单独记录实际终态。
+- 对齐后会话 24621 实际退出 0：原 Core Projects 检查仍为 5/5、437 filtered，
+  随后的 `cargo clippy --locked --offline -p platform-core --bin platform-core
+  --no-deps -- -D warnings` 退出 0。正式三个 Core 文件和 Bridge 与私有已验
+  输入一致；该范围之外的 Core 源码已对齐原 HEAD，不再借旧脏改证明本批。
+- 原 `cargo test --locked --offline -p contracts --test roundtrip
+  projects_publication_preserves_native_metadata_and_exact_head_reference`
+  会话 15172 退出 0，`1 passed; 0 failed; 55 filtered out`。
+  四语言原 Projects 往返至此均通过；不是线上跨端发布验收。
+- 首次 Cargo 指向旧缓存时 offline 缺 png，在线重试遭 DNS 失败；改为已有 Data
+  cargo-registry/git 的私有 CARGO_HOME 后完成上述 Bridge 检查，未下载新依赖。
+- 隔离数据库 `project_issue_oj3nac` 原 `sqlx migrate run` → `revert` → `run`
+  会话 22561 退出 0：117 条迁移完成，末条 `20261012050000` 的 migrate、
+  revert、再 migrate 均输出 Applied。未改业务数据库，不代表在线发布验收。
+- 同一隔离库用事务内的 PROVISIONING Tenant、DISABLED HUMAN 两行最小 FK
+  夹具验证：1621 实际插入退出 0；有该记录时原 down 退出 3，明确报
+  `Issue publication attempts exist; retain their reconciliation schema`。
+  事务内移除 CHECK 的 1621 项后同样插入退出 3，命中
+  `publish_attempt_message_kind_check`；回滚后恢复正向退出 0。
+  tenant/principal/publish_attempt 最后均为 0 行，正式约束仍含 1621。
+  四份原件在 `/volumes/data/kailo/tmp/project-issue-migration-boundary.ebkadn/`
+  的 `positive.log`、`down-refusal.log`、`mutation-check-rejects.log`、`restored.log`。
+- 原生成输入 `create-issue-gen.KgHorL` 的 `tools/gen.sh --check` 会话 25023
+  退出 0，四侧生成与 Mobile 词条同步通过。原 `step_contract` 的历史比较代码
+  在 2 CPU/2 GiB、只读、无网络的短命 SDK 内原样执行，真实 Git/tag 与候选输入
+  均只读；退出 0：316 个 schema、匹配 3 个历史 schema，相对
+  `contracts-v0.1.0`（`0ecbdc17984f0cfed36b7c7b8605c3f0532db3c0`）
+  无破坏性变更。日志为
+  `/volumes/data/kailo/tmp/create-issue-compatibility.dDGF6o/historical-compatibility.log`。
+  该有限历史比较不证明旧 Core 能消费 CREATE_ISSUE，也不替代 full。
+- 原 `tools/check-docs.sh /workspace/.design` 会话 88323 退出 0，七段全部通过；
+  沿用已缓存镜像的 2 CPU/2 GiB 检查容器，源码只读，缓存和临时目录在 Data。
+
+发布边界：运行配置的成员事件准入尚未开放 1621，未修改该配置；必须与对应
+Core/Native/Relay 发布验收一起投递。本批没有真实浏览器任务创建截图、Windows
+或 Mobile 安装验证，未执行最终 `check.sh --full`，未声明在线任务创建可用。
+
+## 2026-10-12 原 Task 创建：契约与 Bridge 实现回执片段
+
+四步结论：
+
+1. 权威：`.design/03` 的 Buzz Community/event 权威与原 Projects 完整恢复要求。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+   `desktop/src/features/projects/issueMutations.ts::publishProjectIssue` 以 1621、
+   `body.trim()` 和 `projectIssues.mjs::buildGitIssueTags` 发布；后者生成
+   `a=30617:<repo owner>:<d>`、`p=repo owner`、trim subject 和 category 的 t tag，
+   标题按 JavaScript UTF-16 长度限制 256。该版本
+   `crates/buzz-sdk/src/builders.rs::build_git_issue` 使用 UTF-8 字节标题限制及固定
+   64 KiB 正文限制，不等同原页面消费者，因此复用原 EventBuilder 生成同一原事件，
+   不更改 SDK，不增加另一协议。
+2. 影响：原 ProjectsPublishRequest 增加 CREATE_ISSUE、title/body/category；
+   targetEventId 为既有仓库 head id，三个新字段对旧 operation 禁止，旧字段对
+   CREATE_ISSUE 禁止。body 必填且可空，标题非空且 trim 后不超过 256 UTF-16 单元。
+   category 仅 issue/change-request/improvement。四侧由原 tools/gen.sh 生成；
+   原 projects-publication.sample.json 保留全部旧请求并追加三类 Issue。
+   TS 原往返投影增加三字段，Go/Dart/Rust 原往返直接消费同一扩展样本。
+3. 副作用：Bridge 只构造/核对原 Relay 事件，不保存正文/hash、不派发外部请求。
+   publication_builder 对原 repo 事件核对 id、30617、签名和非空 d；当前签名 actor
+   可以不同于 repo owner，必须 channel_id=None，不能借 repo 的 buzz-channel 获得
+   Workspace 权限。Core 另查当前 head、执行 fresh 准入、正文/NIP-11 限制和原发布账本。
+   issue_publication_matches 核对已接受原 1621 签名、原 a/p 坐标与四 tag、trim
+   title/body/category；Core 另比对持久 parent_event_id，避免同 key 换正文假成功，
+   不依赖已被替换的旧 repo head 再次可读。publication_observed 对 1621 仍要求精确
+   id/actor/kind/签名；结果不明只观察，不从此函数重发。
+4. 边界：缺字段、混用字段、未知类别、空标题、UTF-16 超限、坏签名、错误目标/id/kind、
+   缺 d 和非空 channel 拒绝；合法空正文、非空正文、中文/代理对标题、非 repo owner
+   的当前 actor 保持原行为。缺发布证据仍 UNKNOWN；实际 runtime member_event_kinds
+   未投递 1621/30617/30621，此源码检查不等于线上准入或浏览器创建验收。
+
+精确实现候选原基底 `13273932c77164d8498d9f5e8341230d286e3ee3`，
+tree `230b82c564d405b9b785e726cda5d8ac69b7d2b9`，8 路径 +450/-14。
+公开生成文件原已有其他 dirty，仅机械选入本批实际生成的 Issue hunks，不覆盖旧内容；
+私有候选四生成采用 HEAD 全部 schema 加本批唯一 schema 的原完整生成输出，
+不含原公共 Rust roundtrip 的其他 dirty。生产 bridge 与此候选逐字相同。
+
+资源与生成：原 schema SDK 为 2 CPU/4 GiB/equal swap、UID 1000，开始仅 sleep；
+宿主 available 约 34 GiB。首次21046离线 ENOTCACHED，继而63963 exit255 无输出，
+都保留为环境失败，不能推断 schema 不成立。按主线指定换用已存在的
+`kailo-wren-query-sdk-itgs2n`，实核 4 CPU/4 GiB/equal swap、UID 1000、开始仅 sleep，
+其原 HOME=/cache/home 未修改。/cache 与 /work 均来自 Data，不安装依赖或新建镜像。
+已缓存 quicktype 23.0.171 仅通过私有 node_modules 链接复用。
+
+准确私有生成根：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/create-issue-gen.KgHorL`。
+容器路径 `/work/create-issue-gen.KgHorL`。
+
+```sh
+docker exec -w /work/create-issue-gen.KgHorL -e npm_config_offline=true -e npm_config_cache=/cache/npm kailo-wren-query-sdk-itgs2n bash tools/gen.sh
+```
+
+原82284真实 exit0，Dart/Rust/TypeScript/Go 四侧均 OK；i18n 原后续消费者也完成。
+本批没有手工编写生成类型，也没有把生成成功当作四语言往返成功。
+
+实际往返与原消费者边界：
+
+- TypeScript：原 `test/roundtrip.test.ts`，过滤 `^Projects publication`，
+  `node --test --experimental-strip-types --test-name-pattern="^Projects publication" test/roundtrip.test.ts`。
+  正向 1/1。私有最小破坏只从原投影去掉 body，fc0842 exit1，确实捕获三个新增
+  Issue 的空/非空 body 丢失；原样恢复并与正式测试 cmp0，431e3f exit0、1/1。
+- Go：原 Worker `go test ./internal/contracts -run '^TestProjectsPublicationRoundtrip$' -count=1`，
+  GOCACHE=/cache/go-build、GOMODCACHE=/cache/go-mod、GOPROXY=off。
+  原25564中 Go 子命令实际输出 `ok apps/worker/internal/contracts 0.001s`，退出0。
+  外层25564最后因随后 Dart 输入缺失退出1，不能称整条25564成功。
+- Dart：同 SDK `dart pub get --offline` 成功；首次原test因小快照漏现有
+  `lib/shared/contracts/contracts.dart` 导出入口而失败，未改产品。复制同 HEAD 原出口后，
+  `dart test test/roundtrip_test.dart --plain-name "Projects publication preserves native metadata and exact head reference"`
+  原78267真实 exit0、1/1。
+- Rust：四侧生成已经成功；主线原80488前半运行 Bridge `projects::`，主线确认
+  当前源码与SDK cmp0、6/6通过。该会话后续 Core 5/5、退出 0，未另开重复 Cargo。
+  Rust contracts 原 `projects_publication_preserves_native_metadata_and_exact_head_reference`
+  随后由主线会话 15172 实际执行，退出 0、1/1，55 filtered；不是以生成或
+  Bridge 用例冒充该往返通过。
+- 新 Bridge 两个原消费者用例覆盖真实构造/签名/验签、三类别、空/非空正文、不同
+  repo owner/actor、幂等内容差异和原 UTF-16 标题边界；原 receipt 用例增加1621。
+  未执行在线 Relay/BFF 真实发布，未修改 runtime allowlist。
+
+私有日志（均在上述生成根）及 SHA-256：
+
+- `ts-mutation.log`：`b9060f10538d11171d58660b066b37f193486911a4c4eeff7b7bbeba71ad6673`。
+- `ts-restored.log`：`71552a186c7b642b43b9defb9b760b807c359eee0e98092ff25ae4001366577f`。
+- `dart-restored.log`：`d4cb0b30e893fdf5b5f4f49fc6cae1e9e5ccf2398778629f62d1d777bfde7637`。
+
+生成和首轮 Go/TS 输出原件为本席工具会话82284/25564，不另编造不存在的日志文件。
+本片段是实现后证据，不是新规格；未提交/部署，不替代主线合批 Core、迁移与文档门禁。
+
+该八文件候选已按原相同 blob 重定位到
+`f022696008fc73b6dbab8673e5eb6d5ae05913ee`，私有 `rebased.index` 树为
+`5cd5748e593f4353fdcacdee35e99472eb63b5ed`，原句柄 11720 退出 0。
+主线初次整合候选在 `/volumes/data/kailo/tmp/project-issue-integration.Aj97eH/index`，
+原句柄 66924 退出 0、28 路径 +1429/-33、diff 检查通过；这是后续回执更新前的
+候选统计，不是已提交或已部署产物。公共索引原三项 +32/-135 保持不变。
+
+### 2026-10-12 原 Tasks 创建共享 UI 与 Native 消费者
+
+前端候选基底 6b905437a884d74057d5af31e30e099ecfd81566，14 路径 +741/-12；不含主线 Rust/schema/四侧生成。本段供主线追加原 projects-creation.md，不并发改该回执。
+
+#### 四步影响与异常
+
+1. 权威：固定 Buzz 779af8886caae1317b4de962082429867ab61503 的 desktop/src/features/projects/ui/CreateProjectIssueDialog.tsx::CreateProjectIssueDialog、desktop/src/features/projects/ui/CreateProjectWorkItemDialog.tsx::CreateProjectWorkItemDialog、desktop/src/features/projects/issueMutations.ts::publishProjectIssue/useCreateProjectIssueMutation 决定原表单及 kind 1621 载荷。Web SERVER 经 BFF，Desktop CLIENT 本机签名/Community Relay 准入不变。
+2. 影响：ProjectChannelHome Tasks 创建动作进入 ProjectHomeWorkspaceSheet 原 Dialog，经既有 ProjectsHost.publish，再由 loadProjectWorkItems fresh 精确回读进入共享 Issue 详情。Repository.id 是 owner:dtag，不是事件 ID；targetEventId 取 fresh 目录中已验证的 kind 30617 原始 head.id。Native 再验证签名与当前 coordinate head，沿既有 publishProjectIntent 持有/恢复同事件；不借 workspace 或 ReposWrite 权限。
+3. 副作用：原 success toast 延至作者/body/tags/repo/current viewer 回读一致且选中详情之后。浏览器只保存 scope/project/repo 下意图键、请求摘要及事件引用，不保存正文/签名事件；不是 Core 审计正文摘要。坏 JSON、存储异常、变更输入、回读缺失或不符保持 UNKNOWN，不换意图重发。
+4. 边界：空/无权目录无创建动作；原双击锁只提交一次；scope abort 后不选详情、不成功反馈。ACK 丢失/重启仅观察原 event ID；恢复需用户重输相同原输入，因为不保存正文。确认详情后才释放意图。Mobile 仅生成同源词条，没有创建入口/设备验收。
+
+#### 原版四类映射
+
+- 原样保留：两原 Dialog 的结构/class、类别/仓库/标题/正文、焦点、submitInFlightRef；desktop/src/features/projects/projectIssues.mjs::buildGitIssueTags 原 a/p/subject/t 标签顺序。
+- 共享迁移：上述两个 Dialog 与实际 Sheet/header 消费；desktop/src/features/projects/projectModels.ts::selectProjectRepository。Web/Desktop 共用 React 主体，Native 仅签名/Relay 适配。
+- 已授权治理改造：原 mutation 接既有 typed CREATE_ISSUE；fresh scope/head、意图引用、同事件 UNKNOWN 恢复、回读与成功反馈顺序；原英语经 TS 唯一词条生成 Dart，本批只 15 key 增量。公开 TS/Dart 旧暂存和未暂存修改未覆盖。
+- 缺失需恢复：PR 创建、任务更新/指派/关闭、Git/Files 相邻功能仍未接；本批未部署、未真实浏览器创建、未 Windows/Mobile 验收，不称完整 Projects。
+
+#### 实际检查与失败保留
+
+证据目录 /volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-issue-create.hfLmuC。既有 kailo-web-thread-tooltip-sdk 为 4 CPU/8 GiB、memory+swap 总限额等于内存（无额外 swap）、UID1000；检查前只有 sleep，可用内存约33GiB。TMPDIR/npm cache 均在 Data 的 /candidate/reminder-consumers.RcN79Y 子目录，无新镜像/安装/全量。原脚本 positive.sh 串行分别记录：
+
+```text
+platform: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+platform: node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-parallelism
+web: ./node_modules/.bin/tsc --noEmit
+desktop: ./node_modules/.bin/tsc --noEmit -p tsconfig.json
+desktop: node --import ./test-loader.mjs --experimental-strip-types --test src/features/platform/projectsTransport.test.mjs src/shared/api/relayClientUnconfirmedResend.test.mjs
+```
+
+- 64542 exit1，positive.log：误使用公共旧 generated 脏内容导致类型错误；遗漏 selectProjectRepository、测试类型及 repository.id/head.id 混淆导致6个 DOM 失败。修正真实源/调用，私有输入采用主线 HEAD+新schema 原完整生成，未覆盖公共 generated。
+- 52613 exit1，restored.log：共享/Web/Native类型分别0，共享41/41；Native16/17。坏签名 fixture spread 带入 nostr-tools 内部 verified Symbol，改真实 wire JSON 序列化后排除该标记，未改生产验签。37992 exit0，native-final.log 17/17。
+- 89740 私有删除回读正文相等校验，exit1，40pass/1fail（wrong-body被接受）；还原cmp0，80921 exit0，restored-final.log 41/41。
+- 94670 私有删除签名前 current head.id 比对，exit1，3pass/1fail（替换head未拒绝）；还原cmp0，15992 exit0，native-restored.log 17/17。
+- i18n.log 首次 login shell 重置 PATH，exit1/Dart formatter unavailable；改沿同 Wren SDK 原非login sh、原 HOME/PATH，47877 exit0，i18n-restored.log。原 python3 tools/gen-platform-i18n.py 及 --check 全通过；独立 HEAD+15词条输入，TS15/Dart48行精确增量，无工具变更。
+- React act 警告保留。DOM/Native签名测试使用隔离fixture，不等于真实 Relay/Core HTTP 跨端验收。Core结果由主线另列，本检查未运行最终full，未更新部署/截图状态。
+
+源码私有候选 final.index，tree e395212e1f1220a70bba85f1d2b2a73590ea25f9；source.patch SHA256 ac0a38de5ec9d8c800c574f9e3c59bdff59d4eea6f7ae605b4cca90c9970ad06。原公共index不变。
+
+#### 同批交叉复核纠偏
+
+原 CreateProjectIssueDialog.handleCreate 只判断 TransportError，遗漏 BffError(ErrorClass.Unknown)；本批改复用原 isOutcomeUnknown，不造第二错误体系。BFF UNKNOWN、网络 UNKNOWN 与已有本地 UNKNOWN 后恢复被拒均保持结果不明；首次发布前明确 DENIED 可清理未发意图并显示原创建失败文案。原 UI 使用 inline errorMessage，不新增 toast 或布局。
+
+Native 原 CREATE_PROJECT/CREATE_REPOSITORY/DELETE 校验同步拒绝 title/body/category 混用，保持既有合同一致。直接修改原两个校验分支，不新增包装层；实际消费者覆盖三个操作的三个专属字段均在读取/准入/签名/发布之前被拒。
+
+- 88590 exit2/outcome-final.log：新增检查误写不存在的 ErrorClass.Permission，按原生成枚举纠正为 Denied，保留原失败。
+- 70650 exit1/outcome-positive.log：类型0、41通过/4失败，检查误查 toast.error；固定原组件实际消费为 inline errorMessage，改断言真实 DOM 文案，不改生产呈现。
+- 7522 exit0/outcome-restored.log：共享类型0、原45/45、Native类型0、原18/18；末行 TYPES=0 DOM=0 NATIVE_TYPES=0 NATIVE=0。
+- 14598 exit1/outcome-mutation.log：私有恢复旧 instanceof catch 后原分类4项2通过/2失败（BFF UNKNOWN被误报失败）；私有删除Native字段拒绝后原5项4通过/1失败（准入调用1而非0）。未降低超时/断言。
+- 正式源码精确还原两处私有变异且 cmp0，32361 exit0/outcome-restored-final.log：原分类4/4（其余41项本次过滤，已由7522通过），Native原5/5；DOM_RESTORED=0 NATIVE_RESTORED=0。所有本批非词条源与私有已验输入再次逐路径cmp0，类型及其它同字节证据沿用7522/52613，不重复全量。

@@ -2,5 +2,8 @@
   {"operation":"DELETE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
   {"operation":"CREATE_PROJECT","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Garden","description":"Shared project","visibility":"listed"},
   {"operation":"CREATE_PROJECT","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Private garden","visibility":"unlisted"},
-  {"operation":"CREATE_REPOSITORY","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Garden","description":"Shared project"}
+  {"operation":"CREATE_REPOSITORY","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Garden","description":"Shared project"},
+  {"operation":"CREATE_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"任务 🪴","body":"","category":"issue"},
+  {"operation":"CREATE_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"Change","body":"Markdown body","category":"change-request"},
+  {"operation":"CREATE_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"Improve","body":"More detail","category":"improvement"}
 ]

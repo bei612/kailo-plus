@@ -20,7 +20,7 @@ pub fn publication_observed(
 ) -> Result<bool, OperatorError> {
     let unverified =
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
-    if !matches!(expected_kind, 5 | 30617 | 30621) {
+    if !matches!(expected_kind, 5 | 1621 | 30617 | 30621) {
         return Err(unverified());
     }
     let events: Vec<Event> = serde_json::from_value(page).map_err(|_| unverified())?;
@@ -52,7 +52,48 @@ pub fn project_dtag(name: &str) -> String {
 pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
     let operation = serde_json::to_value(&request.operation)
         .map_err(|_| invalid("invalid project operation"))?;
+    if operation.as_str() != Some("CREATE_ISSUE")
+        && (request.title.is_some() || request.body.is_some() || request.category.is_some())
+    {
+        return Err(invalid("issue fields on another project operation"));
+    }
     match operation.as_str() {
+        Some("CREATE_ISSUE") => {
+            let schema: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../contracts/api/projects_publish_request.schema.json"
+            ))
+            .map_err(|_| invalid("issue limits unavailable"))?;
+            let limit = schema["properties"]["title"]["maxLength"]
+                .as_u64()
+                .ok_or_else(|| invalid("issue limits unavailable"))?;
+            let title = request
+                .title
+                .as_deref()
+                .ok_or_else(|| invalid("issue title missing"))?
+                .trim();
+            if title.is_empty()
+                || title.encode_utf16().count() as u64 > limit
+                || request.body.is_none()
+                || !request.target_event_id.as_deref().is_some_and(|id| {
+                    nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
+                })
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+                || !request.category.as_ref().is_some_and(|category| {
+                    serde_json::to_value(category).is_ok_and(|value| {
+                        matches!(
+                            value.as_str(),
+                            Some("issue" | "change-request" | "improvement")
+                        )
+                    })
+                })
+            {
+                return Err(invalid("invalid issue creation"));
+            }
+            Ok(1621)
+        }
         Some("DELETE")
             if request.target_event_id.as_deref().is_some_and(|id| {
                 nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
@@ -127,6 +168,58 @@ pub fn publication_builder(
     owner: &str,
 ) -> Result<EventBuilder, OperatorError> {
     let kind = publication_kind(request)?;
+    if kind == 1621 {
+        let event = target.ok_or_else(|| invalid("issue repository missing"))?;
+        if channel_id.is_some()
+            || nostr::PublicKey::from_hex(owner).map_or(true, |key| key.to_hex() != owner)
+            || request.target_event_id.as_deref() != Some(event.id.to_hex().as_str())
+            || event.kind.as_u16() != 30617
+            || event.verify().is_err()
+        {
+            return Err(invalid("invalid issue repository evidence"));
+        }
+        let slug = event
+            .tags
+            .identifier()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| invalid("issue repository coordinate missing"))?;
+        let category = serde_json::to_value(&request.category)
+            .map_err(|_| invalid("invalid issue category"))?;
+        let tags = vec![
+            vec![
+                "a".to_owned(),
+                format!("30617:{}:{slug}", event.pubkey.to_hex()),
+            ],
+            vec!["p".to_owned(), event.pubkey.to_hex()],
+            vec![
+                "subject".to_owned(),
+                request
+                    .title
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned(),
+            ],
+            vec![
+                "t".to_owned(),
+                category
+                    .as_str()
+                    .ok_or_else(|| invalid("issue category missing"))?
+                    .to_owned(),
+            ],
+        ]
+        .into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid issue tags"))?;
+        // Fixed desktop buildGitIssueTags counts UTF-16, unlike SDK's byte limit.
+        // Body bounds come from current Relay admission, not SDK's static limit.
+        return Ok(EventBuilder::new(
+            nostr::Kind::from(kind),
+            request.body.as_deref().unwrap_or_default().trim(),
+        )
+        .tags(tags));
+    }
     if kind != 5 {
         let channel = channel_id
             .filter(|value| uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == *value))
@@ -191,6 +284,61 @@ pub fn publication_builder(
         .map_err(|error| invalid(&error.to_string()))
 }
 
+/// Compare the original accepted issue, without requiring its replaceable repo
+/// head to remain current. Core separately checks the persisted parent event id.
+pub fn issue_publication_matches(
+    request: &ProjectsPublishRequest,
+    event: &Event,
+) -> Result<bool, OperatorError> {
+    if publication_kind(request)? != 1621 || event.kind.as_u16() != 1621 || event.verify().is_err()
+    {
+        return Err(invalid("invalid issue publication evidence"));
+    }
+    let tags = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice())
+        .collect::<Vec<_>>();
+    let [address, recipient, subject, category] = tags.as_slice() else {
+        return Ok(false);
+    };
+    if address.len() != 2
+        || recipient.len() != 2
+        || subject.len() != 2
+        || category.len() != 2
+        || address[0] != "a"
+        || recipient[0] != "p"
+        || subject[0] != "subject"
+        || category[0] != "t"
+    {
+        return Ok(false);
+    }
+    let mut coordinate = address[1].splitn(3, ':');
+    let Some(kind) = coordinate.next() else {
+        return Ok(false);
+    };
+    let Some(owner) = coordinate.next() else {
+        return Ok(false);
+    };
+    let Some(slug) = coordinate.next() else {
+        return Ok(false);
+    };
+    if kind != "30617"
+        || slug.is_empty()
+        || recipient[1] != owner
+        || nostr::PublicKey::from_hex(owner).map_or(true, |key| key.to_hex() != owner)
+    {
+        return Ok(false);
+    }
+    let requested_category =
+        serde_json::to_value(&request.category).map_err(|_| invalid("invalid issue category"))?;
+    Ok(
+        event.content == request.body.as_deref().unwrap_or_default().trim()
+            && subject[1] == request.title.as_deref().unwrap_or_default().trim()
+            && Some(category[1].as_str()) == requested_category.as_str(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +348,7 @@ mod tests {
     #[test]
     fn publication_receipt_verifies_frozen_actor_kind_hash_and_signature() {
         let keys = Keys::generate();
-        for kind in [5, 30617, 30621] {
+        for kind in [5, 1621, 30617, 30621] {
             let event = EventBuilder::new(nostr::Kind::from(kind as u16), "original")
                 .sign_with_keys(&keys)
                 .unwrap();
@@ -236,6 +384,193 @@ mod tests {
                 .sig;
             assert!(publication_observed(json!([forged_signature]), &id, &actor, kind).is_err());
         }
+    }
+
+    #[test]
+    fn original_issue_creation_uses_verified_repository_and_distinct_signer() {
+        let repo_owner = Keys::generate();
+        let actor = Keys::generate();
+        let repo = EventBuilder::new(nostr::Kind::from(30617), "repository")
+            .tags([Tag::parse(["d", "garden"]).unwrap()])
+            .sign_with_keys(&repo_owner)
+            .unwrap();
+        for category in ["issue", "change-request", "improvement"] {
+            for body in ["", "  Markdown body  "] {
+                let request: ProjectsPublishRequest = serde_json::from_value(json!({
+                    "operation":"CREATE_ISSUE", "targetEventId":repo.id.to_hex(),
+                    "title":"  任务 🪴  ", "body":body, "category":category
+                }))
+                .unwrap();
+                let event =
+                    publication_builder(&request, Some(&repo), None, &actor.public_key().to_hex())
+                        .unwrap()
+                        .sign_with_keys(&actor)
+                        .unwrap();
+                assert_eq!(event.kind.as_u16(), 1621);
+                assert_eq!(event.pubkey, actor.public_key());
+                assert_eq!(event.content, body.trim());
+                assert_eq!(
+                    event
+                        .tags
+                        .iter()
+                        .map(|tag| tag.as_slice().to_vec())
+                        .collect::<Vec<_>>(),
+                    vec![
+                        vec![
+                            "a".to_owned(),
+                            format!("30617:{}:garden", repo_owner.public_key())
+                        ],
+                        vec!["p".to_owned(), repo_owner.public_key().to_hex()],
+                        vec!["subject".to_owned(), "任务 🪴".to_owned()],
+                        vec!["t".to_owned(), category.to_owned()],
+                    ]
+                );
+                assert!(publication_observed(
+                    json!([event]),
+                    &event.id.to_hex(),
+                    &actor.public_key().to_hex(),
+                    1621
+                )
+                .unwrap());
+                assert!(issue_publication_matches(&request, &event).unwrap());
+                for (field, value) in [
+                    ("title", json!("Different")),
+                    ("body", json!("Different body")),
+                    (
+                        "category",
+                        json!(if category == "issue" {
+                            "improvement"
+                        } else {
+                            "issue"
+                        }),
+                    ),
+                ] {
+                    let mut changed = serde_json::to_value(&request).unwrap();
+                    changed[field] = value;
+                    assert!(!issue_publication_matches(
+                        &serde_json::from_value(changed).unwrap(),
+                        &event
+                    )
+                    .unwrap());
+                }
+                let mut tampered = event.clone();
+                tampered.content = "tampered".into();
+                assert!(issue_publication_matches(&request, &tampered).is_err());
+                assert!(publication_builder(
+                    &request,
+                    Some(&repo),
+                    Some(&uuid::Uuid::new_v4().to_string()),
+                    &actor.public_key().to_hex()
+                )
+                .is_err());
+                assert!(
+                    publication_builder(&request, None, None, &actor.public_key().to_hex())
+                        .is_err()
+                );
+                let mut forged = repo.clone();
+                forged.content = "forged".into();
+                assert!(publication_builder(
+                    &request,
+                    Some(&forged),
+                    None,
+                    &actor.public_key().to_hex()
+                )
+                .is_err());
+                let mut wrong_id = request.clone();
+                wrong_id.target_event_id = Some("a".repeat(64));
+                assert!(publication_builder(
+                    &wrong_id,
+                    Some(&repo),
+                    None,
+                    &actor.public_key().to_hex()
+                )
+                .is_err());
+                let wrong_kind = EventBuilder::new(nostr::Kind::from(30621), "")
+                    .tags([Tag::parse(["d", "garden"]).unwrap()])
+                    .sign_with_keys(&repo_owner)
+                    .unwrap();
+                wrong_id.target_event_id = Some(wrong_kind.id.to_hex());
+                assert!(publication_builder(
+                    &wrong_id,
+                    Some(&wrong_kind),
+                    None,
+                    &actor.public_key().to_hex()
+                )
+                .is_err());
+            }
+        }
+        for tags in [vec![], vec![Tag::parse(["d", ""]).unwrap()]] {
+            let missing = EventBuilder::new(nostr::Kind::from(30617), "")
+                .tags(tags)
+                .sign_with_keys(&repo_owner)
+                .unwrap();
+            let request = serde_json::from_value(json!({"operation":"CREATE_ISSUE","targetEventId":missing.id.to_hex(),"title":"Title","body":"","category":"issue"})).unwrap();
+            assert!(publication_builder(
+                &request,
+                Some(&missing),
+                None,
+                &actor.public_key().to_hex()
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn issue_creation_rejects_mixed_intents_and_counts_original_utf16_subject() {
+        let valid = json!({"operation":"CREATE_ISSUE","targetEventId":"a".repeat(64),"title":"Title","body":"","category":"issue"});
+        for field in ["title", "body", "category", "targetEventId"] {
+            let mut raw = valid.clone();
+            raw.as_object_mut().unwrap().remove(field);
+            assert!(
+                publication_kind(&serde_json::from_value(raw).unwrap()).is_err(),
+                "missing {field}"
+            );
+        }
+        for (field, value) in [
+            ("title", json!("  ")),
+            ("title", json!("🪴".repeat(129))),
+            ("workspaceId", json!(uuid::Uuid::new_v4().to_string())),
+            ("name", json!("name")),
+            ("description", json!("description")),
+            ("visibility", json!("listed")),
+            ("targetEventId", json!("A".repeat(64))),
+        ] {
+            let mut raw = valid.clone();
+            raw[field] = value;
+            assert!(
+                publication_kind(&serde_json::from_value(raw).unwrap()).is_err(),
+                "invalid {field}"
+            );
+        }
+        for title in ["界".repeat(256), "🪴".repeat(128)] {
+            let mut raw = valid.clone();
+            raw["title"] = json!(title);
+            assert_eq!(
+                publication_kind(&serde_json::from_value(raw).unwrap()).unwrap(),
+                1621
+            );
+        }
+        for operation in ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY"] {
+            for (field, value) in [
+                ("title", json!("Title")),
+                ("body", json!("")),
+                ("category", json!("issue")),
+            ] {
+                let mut raw = if operation == "DELETE" {
+                    json!({"operation":operation,"targetEventId":"a".repeat(64)})
+                } else {
+                    json!({"operation":operation,"workspaceId":uuid::Uuid::new_v4().to_string(),"name":"Garden"})
+                };
+                if operation == "CREATE_PROJECT" {
+                    raw["visibility"] = json!("listed");
+                }
+                raw[field] = value;
+                assert!(publication_kind(&serde_json::from_value(raw).unwrap()).is_err());
+            }
+        }
+        let mut raw = valid;
+        raw["category"] = json!("other");
+        assert!(serde_json::from_value::<ProjectsPublishRequest>(raw).is_err());
     }
 
     #[test]

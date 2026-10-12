@@ -12,9 +12,11 @@ import {ProjectIssuesPanel} from "./ProjectIssuesPanel";
 import {PullRequestsPanel} from "./ProjectPullRequestsPanel";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {BuzzLoadingState} from "./BuzzLoadingState";
+import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
 
 export type ProjectHomeWorkspaceSheetTab="issues"|"prs";
 export type ProjectHomeWorkspaceDetail={backLabel:string;onBack:()=>void};
+export type ProjectHomeWorkspaceCreateAction={label:string;disabled:boolean;onClick:()=>void};
 export type ProjectWorkItemsRenderer=(children:React.ReactNode,viewerPubkey:string)=>React.ReactNode;
 
 function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setSelectedIssueId,selectedPullRequestId,setSelectedPullRequestId}:{items:ProjectInboxWorkItem[];repository:Project["repositories"][number];tab:ProjectHomeWorkspaceSheetTab;onDetailChange:(detail:ProjectHomeWorkspaceDetail|null)=>void;selectedIssueId:string|null;setSelectedIssueId:(id:string|null)=>void;selectedPullRequestId:string|null;setSelectedPullRequestId:(id:string|null)=>void}) {
@@ -38,18 +40,25 @@ function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setS
   return body;
 }
 
-export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderWorkItems,onDetailChange}:{
+export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderWorkItems,onDetailChange,onCreateActionChange}:{
   host:ProjectsHost;project:Project;repositoryId:string;tab:ProjectHomeWorkspaceSheetTab;renderWorkItems:ProjectWorkItemsRenderer;
   onDetailChange:(detail:ProjectHomeWorkspaceDetail|null)=>void;
+  onCreateActionChange?:(action:ProjectHomeWorkspaceCreateAction|null)=>void;
 }) {
   const t=useUiT();const cache=useQueryClient();
   const [selectedIssueId,setSelectedIssueId]=React.useState<string|null>(null);
   const [selectedPullRequestId,setSelectedPullRequestId]=React.useState<string|null>(null);
+  const [createIssueOpen,setCreateIssueOpen]=React.useState(false);
   const key=React.useMemo(()=>["project-home-work-items",host.scopeKey,project.id],[host.scopeKey,project.id]);
   const query=useQuery({queryKey:key,queryFn:({signal})=>loadProjectWorkItems(host,signal,project.id),retry:false,refetchOnMount:"always",refetchOnWindowFocus:"always"});
   React.useEffect(()=>()=>{void cache.cancelQueries({queryKey:key});cache.removeQueries({queryKey:key});},[cache,key]);
   const snapshot=query.isSuccess&&!query.isFetching?query.data:undefined;
   const repository=snapshot?.projects[0]?.repositories.find(item=>item.id===repositoryId);
+  React.useEffect(()=>{
+    onCreateActionChange?.(tab==="issues"&&!selectedIssueId&&snapshot&&repository&&host.publish
+      ?{label:t("projects.issue.create"),disabled:false,onClick:()=>setCreateIssueOpen(true)}:null);
+    return()=>onCreateActionChange?.(null);
+  },[onCreateActionChange,tab,selectedIssueId,snapshot,repository,host.publish,t]);
   const body=query.isPending||query.isFetching?<BuzzLoadingState label={t(tab==="issues"?"projects.sheet.loadingTasks":"projects.sheet.loadingReviews")}/>:
     !snapshot||!repository?<ProjectPanelState error title={t("platform.loadFailed")}/>:
     renderWorkItems(<WorkspaceBody key={`${host.scopeKey}:${project.id}:${repository.id}:${tab}`} items={snapshot.items}
@@ -59,5 +68,8 @@ export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderW
   const listPanel=tab==="issues"?!selectedIssueId:!selectedPullRequestId;
   return <div className="-mx-4 [&_[data-project-detail-panel]]:rounded-none [&_[data-project-detail-panel]]:border-0" data-tab={tab} data-testid="project-home-workspace-sheet">
     {listPanel?<div className="overflow-hidden rounded-xl border border-border/60 bg-transparent" data-project-detail-panel>{body}</div>:body}
+    {snapshot&&repository&&host.publish?<CreateProjectIssueDialog host={host} initialProjectId={project.id}
+      onCreated={(_project,_repository,id)=>{setSelectedIssueId(id);setSelectedPullRequestId(null);}}
+      onOpenChange={setCreateIssueOpen} open={createIssueOpen} projects={snapshot.projects}/>:null}
   </div>;
 }
