@@ -9,7 +9,9 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { TransportError } from "@client-kit/platform/transport";
 import { createBffClient } from "@client-kit/platform/client";
 import { PulsePane } from "./PulsePane";
-import {ProjectsPane} from "./ProjectsPane";
+import {ProjectsPane,useProjectDiscussInChannel} from "./ProjectsPane";
+import {initDraftStore,loadDraftEntry,saveDraftEntry,clearAllDrafts} from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import type {DiscoverableWorkspace} from "@client-kit/contracts";
 import { usePulseHost } from "@client-kit/platform/react/pulse";
 import { ForumComposer } from "../../../../../client-kit/ts/platform/src/react/pulse/host";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
@@ -47,6 +49,37 @@ beforeEach(()=>{
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 });
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+it("Web Task discuss prepares the current workspace draft, preserves metadata and never publishes or changes UNKNOWN intent",async()=>{
+  clearAllDrafts();
+  const row={id:"workspace",channel:{channelId:"native",channelType:"stream",name:"Stream",archived:false},isMember:true,membershipState:"ACTIVE",visibility:"open",memberCount:1} as DiscoverableWorkspace;
+  const session={tenantId:"tenant",tenantPrincipalId:"viewer",platformSessionId:"session",accessMode:"FULL"};
+  let finish:((value:unknown)=>void)|undefined;let delay=false;let active=true;
+  const send=vi.fn(async(request:Parameters<BffTransport["send"]>[0])=>{
+    if(request.path.startsWith("/api/v1/discoverable-workspaces"))return {status:200,body:{items:[{...row,isMember:active}]}};
+    if(request.path==="/api/v1/workspaces/workspace/channel")return {status:200,body:row.channel};
+    if(request.path==="/api/v1/session")return delay?new Promise(resolve=>{finish=resolve;}):{status:200,body:session};
+    throw new Error(request.path);
+  });
+  const client=createBffClient({send:send as BffTransport["send"]});const open=vi.fn();
+  let discuss:ReturnType<typeof useProjectDiscussInChannel>;
+  function Consumer({scope}:{scope:string}){discuss=useProjectDiscussInChannel(scope,open);return null;}
+  const mount=async(scope="tenant:viewer:session")=>act(async()=>root.render(<PlatformProvider client={client} currentPrincipalId="viewer" locale="en"><Consumer scope={scope}/></PlatformProvider>));
+  await mount();initDraftStore("viewer",window.location.origin);
+  const original={channelId:"workspace",content:"Existing draft",createdAt:"2026-10-01T00:00:00Z",updatedAt:"2026-10-01T00:00:00Z",selectionStart:1,selectionEnd:1,pendingImeta:[],mentionRefs:[{pubkey:peer,displayName:"Peer"}],mentionInstallationIds:["installation"],spoileredAttachmentUrls:["https://example.test/a"],status:"active" as const};
+  saveDraftEntry("workspace",original);
+  await discuss!(row,"Task link");const merged=loadDraftEntry("workspace")!;
+  expect(merged.content).toBe("Existing draft\n\nTask link");expect(merged.createdAt).toBe(original.createdAt);
+  expect(merged.mentionRefs).toEqual(original.mentionRefs);expect(merged.mentionInstallationIds).toEqual(["installation"]);
+  expect(merged.spoileredAttachmentUrls).toEqual(original.spoileredAttachmentUrls);expect(merged.selectionEnd).toBe(merged.content.length);
+  expect(loadDraftEntry("native")).toBeUndefined();expect(open).toHaveBeenCalledExactlyOnceWith(row);
+  expect(send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+  saveDraftEntry("workspace",{...merged,sendIntent:{key:"unknown",signature:"frozen"}});open.mockClear();
+  await expect(discuss!(row,"Another task")).rejects.toThrow();expect(loadDraftEntry("workspace")?.content).toBe(merged.content);expect(open).not.toHaveBeenCalled();
+  saveDraftEntry("workspace",merged);active=false;await expect(discuss!(row,"Revoked")).rejects.toThrow();expect(open).not.toHaveBeenCalled();active=true;
+  delay=true;const late=discuss!(row,"Late old scope");const rejected=expect(late).rejects.toThrow();
+  await vi.waitFor(()=>expect(finish).toBeDefined());await mount("tenant:viewer:new-session");finish!({status:200,body:session});await rejected;
+  expect(loadDraftEntry("workspace")?.content).toBe(merged.content);expect(open).not.toHaveBeenCalled();
+});
 it("passes original supplied task members without extra directory authority and identifies raw Web composer media exactly once",async()=>{
   const send=vi.fn(async()=>{throw new Error("Task members do not query unrelated people");});
   const submit=vi.fn(async()=>undefined);

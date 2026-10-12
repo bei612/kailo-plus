@@ -16,13 +16,13 @@ Object.defineProperties(HTMLElement.prototype,{offsetHeight:{configurable:true,g
 HTMLElement.prototype.getBoundingClientRect=()=>new dom.window.DOMRect(0,0,800,420);
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
 const originId="12345678-1234-4234-8234-123456789012";
-let nativeOrigin,originReads=[],nativeSearch,searchReads=[],detailFailure;
+let nativeOrigin,originReads=[],nativeSearch,searchReads=[],detailFailure,discussChannels=[],currentPubkey=own;
 window.__TAURI_INTERNALS__=globalThis.__TAURI_INTERNALS__={invoke:async (command,args)=>{
-  if(command==="get_identity")return {pubkey:own,displayName:"Viewer"};
+  if(command==="get_identity")return {pubkey:currentPubkey,display_name:"Viewer"};
   if(command==="get_custom_emoji")return {items:[]};
   if(command==="plugin:event|listen")return 1;
   if(command==="plugin:event|unlisten")return;
-  if(command==="get_channels")return {hash:"original-member-snapshot",channels:[],last_messages:{}};
+  if(command==="get_channels")return {hash:"original-member-snapshot",channels:discussChannels,last_messages:{}};
   if(command==="get_channel_details"){originReads.push(args.channelId);if(detailFailure)throw detailFailure;return nativeOrigin;}
   if(command==="search_messages"){searchReads.push(args);return typeof nativeSearch==="function"?nativeSearch():nativeSearch;}
   throw new Error(`Unexpected native command ${command}`);
@@ -39,6 +39,8 @@ const {usePulseHost}=await import("@client-kit/platform/react/pulse");
 const {setLocale}=await import("@client-kit/platform/i18n");
 const {ActiveCommunityProvider}=await import("./activeCommunity.tsx");
 const {PulseScreen}=await import("./PulseScreen.tsx");
+const {useProjectDiscussInChannel}=await import("./ProjectsScreen.tsx");
+const {initDraftStore,saveDraftEntry,loadDraftEntry,clearAllDrafts}=await import("@/features/messages/lib/useDrafts");
 const {ProjectRichContent}=await import("../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent.tsx");
 const {relayClient}=await import("@/shared/api/relayClient");
 const originalFetch=relayClient.fetchEvents;
@@ -56,6 +58,7 @@ async function mount(options={}) {
   const requests=[];
   const client=createBffClient({send:async request=>{
     requests.push(request);
+    if(request.path.startsWith("/api/v1/discoverable-workspaces"))return options.directory();
     if(request.path==="/api/v1/session")return {status:200,body:{accessMode:"FULL",tenantPrincipalId:"viewer"}};
     if(request.path.startsWith("/api/v1/conversation-participants"))return {status:200,body:{maxParticipants:9,
       items:[{principalId:"peer",displayName:"Actual author",pubkeys:[peer]}]}};
@@ -70,7 +73,8 @@ async function mount(options={}) {
   const base=createRootRoute();
   function OriginConsumer(){const {OriginReference}=usePulseHost();assert.ok(OriginReference);return React.createElement(OriginReference,{channelId:originId});}
   function DiscussionConsumer(){const {discussions}=usePulseHost();options.discussions(discussions);return discussions.renderPreview("Original **preview** [link](https://example.test/page)");}
-  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.discussions?()=>React.createElement(PulseScreen,null,React.createElement(DiscussionConsumer)):options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):
+  function TaskDiscussConsumer(){options.taskDiscuss(useProjectDiscussInChannel());return null;}
+  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.taskDiscuss?TaskDiscussConsumer:options.discussions?()=>React.createElement(PulseScreen,null,React.createElement(DiscussionConsumer)):options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):
     options.richContent?()=>React.createElement(PulseScreen,null,React.createElement(ProjectRichContent,{className:options.className,content:"Original **project body** with [a link](https://example.test/page)"})):PulseScreen});
   const channel=createRoute({getParentRoute:()=>base,path:"/channels/$channelId",component:()=>React.createElement("p",null,"Actual governed DM")});
   const compose=createRoute({getParentRoute:()=>base,path:"/messages/new",component:()=>React.createElement("p",null,"Wrong compose route")});
@@ -92,6 +96,31 @@ async function openProfile(view){
   await act(async()=>[...view.host.querySelectorAll("article button")].find(button=>button.textContent==="Actual author").click());
   await until(()=>view.host.querySelector('[data-testid="user-profile-message"]'));
 }
+
+test("Native Task discuss uses actual current channel drafts without sending, fences identity/scope and preserves UNKNOWN",async()=>{
+  clearAllDrafts();currentPubkey=own;localStorage.clear();
+  const row={id:"workspace",channel:{channelId:originId,channelType:"stream",name:"Actual stream",archived:false},isMember:true,membershipState:"ACTIVE",visibility:"open",memberCount:1};
+  discussChannels=[{id:originId,name:"Actual stream",channel_type:"stream",visibility:"open",description:"",member_count:1,member_pubkeys:[own],participant_pubkeys:[],participants:[],is_member:true,archived_at:null}];
+  let discuss;let delay;let active=true;
+  const view=await mount({taskDiscuss:value=>{discuss=value;},directory:()=>delay?delay():({status:200,body:{items:[{...row,isMember:active}]}})});
+  try{
+    await until(()=>discuss);initDraftStore(own,"wss://one.test");
+    const original={channelId:originId,content:"Existing",createdAt:"2026-10-01T00:00:00Z",updatedAt:"2026-10-01T00:00:00Z",selectionStart:0,selectionEnd:0,pendingImeta:[],mentionRefs:[{pubkey:peer,displayName:"Peer"}],spoileredAttachmentUrls:["https://example.test/a"],status:"active"};
+    saveDraftEntry(originId,{...original,sendIntent:{key:"unknown",signature:"frozen"}});
+    await assert.rejects(discuss(row,"Task link"));assert.equal(loadDraftEntry(originId).content,"Existing");assert.equal(view.router.state.location.pathname,"/");
+    saveDraftEntry(originId,original);active=false;await assert.rejects(discuss(row,"Task link"));active=true;
+    currentPubkey=peer;await assert.rejects(discuss(row,"Task link"));currentPubkey=own;
+    let finish;delay=()=>new Promise(resolve=>{finish=resolve;});const late=discuss(row,"Late old scope");const rejected=assert.rejects(late);
+    await until(()=>finish);await view.render("two.test");finish({status:200,body:{items:[row]}});await rejected;
+    assert.equal(loadDraftEntry(originId).content,"Existing");assert.equal(view.router.state.location.pathname,"/");
+    delay=null;await view.render("one.test");
+    await act(async()=>discuss(row,"Task link"));await until(()=>view.router.state.location.pathname===`/channels/${originId}`);
+    const draft=loadDraftEntry(originId);assert.equal(draft.content,"Existing\n\nTask link");assert.equal(draft.createdAt,original.createdAt);
+    assert.deepEqual(draft.mentionRefs,original.mentionRefs);assert.deepEqual(draft.spoileredAttachmentUrls,original.spoileredAttachmentUrls);
+    assert.equal(draft.selectionEnd,draft.content.length);assert.equal(loadDraftEntry("workspace"),undefined);
+    assert.equal(view.router.state.location.search.autoSend,undefined);assert.equal(view.requests.some(request=>request.method!=="GET"),false);
+  }finally{currentPubkey=own;discussChannels=[];await view.close();}
+});
 
 test("Native discussion host consumes original search, exact missing metadata, noninteractive preview and scope cancellation",async()=>{
   searchReads=[];detailFailure="channel not found";

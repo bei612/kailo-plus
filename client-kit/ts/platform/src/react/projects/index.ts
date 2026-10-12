@@ -1,4 +1,6 @@
 export { ProjectsView } from "./ProjectsView";
+export { mergeSelectionDiscussDraft } from "./lib/projectSelection";
+export type { ProjectDiscussInChannel } from "./useProjectDiscussInChannel";
 export {buildGitIssueTags,eventToProjectIssue,nextProjectIssueCommentCreatedAt} from "./projectIssues.mjs";
 export {eventToProjectPullRequest} from "./projectPullRequests.mjs";
 export {buildProjectCommentTags} from "./issueMutations";

@@ -1,5 +1,5 @@
-import {lazy,Suspense,useEffect,useMemo} from "react";
-import {ProjectsView,type ProjectsHost,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
+import {lazy,Suspense,useCallback,useEffect,useMemo} from "react";
+import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
 import {PulseScreen} from "./PulseScreen";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
@@ -7,7 +7,11 @@ import {useNativeSession} from "./activeCommunity";
 import {createProjectsPublisher,createProjectsQuery} from "./projectsTransport";
 import {useChannelsQuery} from "@/features/channels/hooks";
 import {useAppNavigation} from "@/app/navigation/useAppNavigation";
-import type {WorkspaceMemberView,DiscoverableWorkspace} from "@client-kit/contracts";
+import {ChannelType,WorkspaceMembershipState,type WorkspaceMemberView,type DiscoverableWorkspace} from "@client-kit/contracts";
+import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
+import {getIdentity} from "@/shared/api/tauriIdentity";
+import {getChannels} from "@/shared/api/tauriChannels";
+import {initDraftStore,loadDraftEntry,saveDraftEntry} from "@/features/messages/lib/useDrafts";
 import {UserAvatar} from "@client-kit/platform/react/messages";
 import {useUserProfileQuery} from "@/features/profile/hooks";
 import {UserProfilePopover} from "@/features/profile/ui/UserProfilePopover";
@@ -62,15 +66,44 @@ export function useProjectsHost(){
   },[session,scope,limit]);
   return host;
 }
+/** Prepare the original channel draft; publication remains an explicit Composer action. */
+export function useProjectDiscussInChannel(){
+  const session=useNativeSession();const {goChannel}=useAppNavigation();const t=useUiT();
+  const scope=useMemo(()=>({active:true}),[session]);
+  useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
+  return useCallback(async(workspace:DiscoverableWorkspace,content:string)=>{
+    const check=()=>{if(!scope.active)throw new Error(t("platform.loadFailed"));};check();
+    const identity=await getIdentity();check();
+    if(identity.pubkey!==session.devicePubkey||identity.locked||identity.lost)throw new Error(t("platform.loadFailed"));
+    const rows=await loadChannelDirectory(session.client,()=>scope.active,workspace.channel.channelId);check();
+    const current=rows.find(row=>row.id===workspace.id&&row.isMember&&row.membershipState===WorkspaceMembershipState.Active
+      &&row.channel.channelType===ChannelType.Stream&&!row.channel.archived);
+    if(!current)throw new Error(t("projects.home.channelMissing"));
+    const channels=await getChannels(null);check();
+    if(!channels.channels?.some(channel=>channel.id===current.channel.channelId&&channel.channelType==="stream"&&channel.isMember&&!channel.archivedAt))
+      throw new Error(t("projects.home.channelMissing"));
+    const freshIdentity=await getIdentity();check();
+    if(freshIdentity.pubkey!==session.devicePubkey||freshIdentity.locked||freshIdentity.lost)throw new Error(t("platform.loadFailed"));
+    initDraftStore(session.devicePubkey,session.facts.relayUrl);
+    const key=current.channel.channelId;const existing=loadDraftEntry(key);
+    if(existing?.sendIntent)throw new Error(t("platform.loadFailed"));
+    const merged=mergeSelectionDiscussDraft(existing?.content,content);const now=new Date().toISOString();
+    saveDraftEntry(key,{...existing,channelId:key,content:merged,createdAt:existing?.createdAt??now,updatedAt:now,
+      selectionStart:merged.length,selectionEnd:merged.length,pendingImeta:existing?.pendingImeta??[],
+      mentionRefs:existing?.mentionRefs??[],spoileredAttachmentUrls:existing?.spoileredAttachmentUrls??[],status:"active"});
+    if(!await goChannel(key))throw new Error(t("platform.loadFailed"));
+  },[session,scope,goChannel,t]);
+}
+
 export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workItemTarget}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget}={}){
   const host=useProjectsHost();const t=useUiT();
-  const channels=useChannelsQuery();const {goChannel}=useAppNavigation();
+  const channels=useChannelsQuery();const {goChannel}=useAppNavigation();const discuss=useProjectDiscussInChannel();
   const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
     .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
   const view=host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${host.scopeKey}:${workspace.id}`} workspace={workspace} auxiliary={auxiliary}/>}
     renderWorkItems={children=><PulseScreen>{children}</PulseScreen>}
-    lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
+    lastMessageAtByChannelId={lastMessageAtByChannelId} onDiscussInChannel={discuss} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
     renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;
   return view;
 }

@@ -458,7 +458,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           targetSearchActivationId={navigation.searchHighlight?.activationId}/>}
         workItemTarget={navigation.projectWorkItemTarget} onStartDm={openDirectMessage}
         selectedProjectId={navigation.projectId} onSelectedProjectChange={(id,target)=>navigation.openProject(id,target)}
-        lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{await workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
+        lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{void workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />

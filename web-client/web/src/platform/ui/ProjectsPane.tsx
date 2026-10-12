@@ -1,10 +1,12 @@
-import {useEffect,useMemo} from "react";
+import {useCallback,useEffect,useMemo} from "react";
 import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
-import {ProjectsView,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
+import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
 import {PulsePane} from "./PulsePane";
 import {queryProjects,publishProject} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
-import type {DiscoverableWorkspace} from "@client-kit/contracts";
+import {ChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
+import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
+import {initDraftStore,loadDraftEntry,saveDraftEntry} from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {useBffClient,useCurrentPrincipalId,useUiT} from "@client-kit/platform/react/context";
 import type {IdleAuxiliaryProps} from "@client-kit/platform/react/thread";
@@ -43,11 +45,40 @@ export function useProjectsHost(scopeKey:string){
   return host;
 }
 
+/** Use the ordinary Web Composer's principal/origin/workspace draft namespace. */
+export function useProjectDiscussInChannel(scopeKey:string,onOpenChannel?: (workspace:DiscoverableWorkspace)=>void|Promise<void>){
+  const client=useBffClient();const principalId=useCurrentPrincipalId();const t=useUiT();
+  const scope=useMemo(()=>({active:true}),[scopeKey,client,principalId]);
+  useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
+  return useCallback(async(workspace:DiscoverableWorkspace,content:string)=>{
+    const check=()=>{if(!scope.active||!principalId||!onOpenChannel)throw new Error(t("platform.loadFailed"));};check();
+    const rows=await loadChannelDirectory(client,()=>scope.active,workspace.channel.channelId);check();
+    const current=rows.find(row=>row.id===workspace.id&&row.isMember&&row.membershipState===WorkspaceMembershipState.Active
+      &&row.channel.channelType===ChannelType.Stream&&!row.channel.archived);
+    if(!current)throw new Error(t("projects.home.channelMissing"));
+    const descriptor=await client.workspaceChannel(current.id);check();
+    if(descriptor.channelId!==current.channel.channelId||descriptor.channelType!==ChannelType.Stream||descriptor.archived!==false)
+      throw new Error(t("projects.home.channelMissing"));
+    const session=await client.session();check();
+    if(session.accessMode!==PlatformSessionAccessMode.Full||session.tenantPrincipalId!==principalId
+      ||`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`!==scopeKey)throw new Error(t("platform.loadFailed"));
+    initDraftStore(principalId!,window.location.origin);
+    const existing=loadDraftEntry(current.id);
+    if(existing?.sendIntent)throw new Error(t("platform.loadFailed"));
+    const merged=mergeSelectionDiscussDraft(existing?.content,content);const now=new Date().toISOString();
+    saveDraftEntry(current.id,{...existing,channelId:current.id,content:merged,createdAt:existing?.createdAt??now,updatedAt:now,
+      selectionStart:merged.length,selectionEnd:merged.length,pendingImeta:existing?.pendingImeta??[],
+      mentionRefs:existing?.mentionRefs??[],spoileredAttachmentUrls:existing?.spoileredAttachmentUrls??[],status:"active"});
+    await onOpenChannel!({...current,channel:descriptor});
+  },[client,principalId,scope,scopeKey,onOpenChannel,t]);
+}
+
 export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm,renderChannel}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;renderChannel:ProjectChannelRenderer;
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
+  const discuss=useProjectDiscussInChannel(scopeKey,onOpenChannel);
   const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
     renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${scopeKey}:${workspace.id}`} scopeKey={scopeKey} workspace={workspace} renderChannel={renderChannel} auxiliary={auxiliary}/>}
-    onOpenChannel={onOpenChannel} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
+    onOpenChannel={onOpenChannel} onDiscussInChannel={onOpenChannel?discuss:undefined} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
   return view;
 }

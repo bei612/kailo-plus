@@ -436,6 +436,9 @@ enum PlatformMessageKey {
   projectsContextHide,
   projectsContextDetails,
   projectsContextComments,
+  projectsDiscussChannel,
+  projectsDiscussSearch,
+  projectsDiscussTaskDraft,
   projectsAssignmentChoose,
   projectsAssignmentTitle,
   projectsAssignmentDescription,
@@ -3416,6 +3419,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsContextHide: ('Hide project context', '隐藏项目上下文'),
   PlatformMessageKey.projectsContextDetails: ('Details', '详情'),
   PlatformMessageKey.projectsContextComments: ('Comments', '评论'),
+  PlatformMessageKey.projectsDiscussChannel: ('Discuss in a channel', '在频道中讨论'),
+  PlatformMessageKey.projectsDiscussSearch: ('Search channels…', '搜索频道…'),
+  PlatformMessageKey.projectsDiscussTaskDraft: (
+    'Let\'s talk about this task:',
+    '我们来讨论这项任务：',
+  ),
   PlatformMessageKey.projectsAssignmentChoose: ('Assign', '分配'),
   PlatformMessageKey.projectsAssignmentTitle: ('Assign task', '分配任务'),
   PlatformMessageKey.projectsAssignmentDescription: (

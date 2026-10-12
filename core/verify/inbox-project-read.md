@@ -1941,3 +1941,43 @@ npm 与 PUB_CACHE，没有改 HOME、安装依赖、启动 builder 或 GTK 构�
 - apply_patch 还原两私有生产文件，与正式末版 cmp 0；84797 同原新增四项实际 exit 0、4/4（其余 78 项本次未选，不另记通过）。`restored.log` SHA-256 `ca3903987b1f0095f6fbf60f237e97e0d129fc3b57829f32440c49053d43d153`。既有 React act 警告保留；未重跑全局、Rust/设备编译或部署。
 
 公共 index 未写入，本批开工 staged patch SHA-256 为 `60fa04bbb153c4e535a877cfbfd22ebca63631ad3f329cd36fff1db33cb7531b`。原文档快路径只扫描顶层实施文档与 docs，本文需单列原 selected markdownlint 结果；这两项日志另留 Data，不在正文递归追加自引用回执。本批不称 full 0、完整 Buzz 恢复或已上线。
+
+## 2026-10-12 Task 原 Discuss in a channel 闭包
+
+基底 `5a5f46e1f3351fc9bcac49a7a443b3d0b6832090`；权威为 REQ-24、DD-39、DD-74/75/77 与既有 `collab.projects`／频道管理边界。固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`。本批不新增平台实体、业务合同、Core/Relay 写接口或另一套草稿；动作只准备已有草稿并导航，不自动发送消息。
+
+### 四步影响与固定原源码
+
+1. 根因：前批已恢复 Task 右侧 Actions 父层，但原 `desktop/src/features/projects/ui/ProjectWorkItemCommunicationActions.tsx::ProjectWorkItemCommunicationActions` 的 Discuss 分支没有消费者。原 `ProjectSelectionDiscussAction.tsx::ProjectSelectionDiscussAction` 是展开关联频道与 Search channels，随后复用 ChannelBrowserDialog，不是新摘要页或即时发消息按钮。
+2. 来源：同 commit 的 `desktop/src/features/projects/ui/useProjectDiscussInChannel.ts::useProjectDiscussInChannel` 与 `desktop/src/features/projects/lib/projectSelection.ts::{projectSelectionChannelCandidates,projectSelectionDiscussContent,mergeSelectionDiscussDraft}`：保序去重链接、原标题回退、已有草稿 trim 后用两个换行追加、已含同段则保持、不自动发送。仅 Task 单选是本批真实入口；其他实体多选与 Agent chat 分支不迁入无调用代码。
+3. 影响：共享 `ProjectsView→ProjectIssueDetail→ProjectWorkItemCommunicationActions→ProjectSelectionDiscussAction` 复用现有 Task 右栏与 `ChannelBrowser`。目录与加入仍由现有 BFF management 消费；公开可发现不等于 ACTIVE membership。关联频道只显示 fresh 可用的 stream，选择后宿主再次核验。Web 用可信 tenantPrincipalId＋origin 的 workspaceId 草稿键，Native 用当前设备 pubkey＋Relay 的 native channelId 草稿键；不把两端键混用。附件、提及与创建时间保持，已有 `sendIntent` 拒绝修改正文，不能把未决发送改成另一个请求。
+4. 异常：目录错误、撤权、频道不匹配/归档、会话或设备切换均拒绝草稿写入和导航；迟到回应不进入新 scope。导航失败保留已准备草稿并给既有错误反馈；重试沿原合并规则不重复追加。真正发送仍由频道 Composer 的现有持久意图、准入、签名和回读承担。无新 schema/API/权限/状态迁移；不声称真实 HTTP 或设备端到端通过。
+
+### 四类差异与全量清单边界
+
+- 原样保留：Discuss/关联频道/Search 原 class、图标、展开与按钮顺序；原单 Task 链接正文和草稿合并规则，没有三点菜单或自动发送。
+- 共享迁移：上述原三个 UI/hook 模块及实际使用的纯 helper 片段进入同一 client-kit，Web/Desktop 通过同一 callback 消费。原 ChannelBrowserDialog、Task 详情和 canonical issueShareLink 直接复用，不另造实现。
+- 授权适配：管理面发现/加入经现有 BFF；fresh scope/member/channel 与可信 session/identity 重验；未决 sendIntent 不变；异步拒绝显示原通用错误反馈。三个实际使用词条在 TypeScript 单一权威中维护，经原生成投递 Dart；只选本批三个 key，不覆盖历史 dirty/staged。
+- 缺失需恢复／未验收：原 Agent chat、其他实体多选讨论、PR reviewers/request-changes/inline review、managed-owner/Agent、Git/source/terminal、完整 repository Chrome/WorkspaceTabs 与 Mobile 原完整 Projects 仍各自保留缺项。Inbox Forum 行内回复原本不支持，属于原样保留，不冒称遗漏。已有普通 PR 评论、本人和其他 HUMAN 分派、Task 右栏/创建已存在真实共源消费者，旧 checkpoint 的“PR 只有读取”不能用作当前结论。
+
+继续复用 `core/verify/buzz-restoration-checkpoint.md` 已有完整四类清单：5195 官方 tracked、5316 union、3281 待证明仅对应历史 `562156ae7f12953e3eea61305fe282ae98b6c416`，不是当前 HEAD 完成数或当前功能缺失总数。本批只更新上述调用映射；没有重导全树、重新计算覆盖率或把其他未证明项改为完成。源码、定向测试、实际部署和页面截图分别记账，旧在线截图不能算本批验收。
+
+### 实际执行记录
+
+原 Data 输入 `reminder-consumers.RcN79Y`，日志目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-discuss-channel.299FDC/`。固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82` 的现有 `kailo-inbox-forum-r5kqbx`：2 CPU／4 GiB，memory+swap 总限额等于内存，UID1000，network none、只读 root；cache、TMPDIR、Node compile cache 与 Dart `/.dart-tool` 均在 Data。预检 MemAvailable 35.6 GiB、memory PSI 0、SDK 仅 sleep；已与 Cells 唯一 builder 协调，无新 builder、安装依赖或全量编译。
+
+- 84989 首轮实际 exit 1：共享原 `node node_modules/typescript/bin/tsc --noEmit` 为 0；测试类型 2（新增 callback fixture 将 optional membershipState 错收为 required），原 DOM 82/85。另两个新增实际详情 fixture 缺 OriginReference，第三个原浏览器需要 document.fonts。失败输出保留 `positive.log`，未改产品/超时迁就检查。
+- 60782 实际 exit 1：纠正上述夹具后 test tsc 0、DOM 仍 82/85。新增断言错误地要求所有 BFF 查询为零，但原右侧辅助面已有 `/api/v1/tasks` 读取；浏览器选择点击了带 testid 的外 div 而非其真实 button。按实际消费者精确修正，不删目标断言。该轮原 `python3 tools/gen-platform-i18n.py` 与 `--check` 均 0，独立 HEAD＋三个 key 输入，Dart 九行精确增量；`corrected.log` 保留。
+- 26494 末版实际 exit 0：共享原 `node node_modules/typescript/bin/tsc --noEmit`、`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 与 `node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx` 均 0，原 DOM 85/85。干净 catalog 为 HEAD＋三个实际 key，React act 告警保留；`final.log` SHA-256 `7b4f745e2c231317b1f48507a63a921b3a308448845aed544fcafc6dfe9aa87a`。
+- 70409 私有反证实际 exit 1：只将真实 `ProjectWorkItemCommunicationActions` 的 `shareLink: issueShareLink(issue)` 改为 null，原 `-t "opens the original Task discuss action"` 两语言实际详情消费者均失败，抓到草稿从 canonical 链接退为标题；其余 83 项明确未选。`mutation.log` SHA-256 `ace2d8577981d2bc590ba68aa390bfd56465c4facfa2eb6912cef5abfeaf44b8`。
+- apply_patch 还原原字节，与正式生产文件 cmp 0；9848 同两项实际 exit 0、2/2，其余 83 项未选，不重复全套。`restored.log` SHA-256 `6cd0405a45793979680485f1765933acbc3e8174f019889f3efda3c644c701b5`。原 84989/60782 失败日志分别为 SHA-256 `6ecb89bfe29bb70a7f94d1a22f540d38883e0857d617f5e18f369a0028842922`／`e6a4dace26173c66b34ced93a0aa1959c70efba8beabf92c1e8cef3e531cf070`。
+
+### 两宿主原消费者与交叉复核
+
+宿主日志位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-discuss-host.EbmucZ/`。58265 实际 exit 0：Web 原 `node node_modules/typescript/bin/tsc --noEmit` 与 `node node_modules/vitest/vitest.mjs run src/platform/ui/PulsePane.test.tsx` 为 0、16/16；Native 同一 TypeScript 命令及 `node --import ./test-loader.mjs --experimental-strip-types --test src/features/platform/PulseScreen.test.mjs` 为 0、10/10。69901 私有移除两个 sendIntent 拒绝守卫，原 Web `-t "Web Task discuss"`／Native `--test-name-pattern="Native Task discuss"` 均抓到 Missing expected rejection，实际 exit 1。精确还原两生产文件 cmp 0 后，13748 末版两端类型均 0、各新增一项通过（Web 另 15 项明确未选）；不重复原 26 项。
+
+三个宿主日志 SHA-256：positive=`6bbcf9238dbc5de429828b1b1fcbfff9663d84d8e6ad78ce760c0f77be5887c6`，mutation=`4c09e7c3e457dcafa5dbd67c893ab3ce240b9301effe67c70a745a9b545ead77`，restored=`cea39dbbcfc0144fccabc9b2b2b3e39dc6ffdd2633bcd49e305e1dcd15a93728`。测试使用原 hook、共享草稿 store、原 Native router，HTTP/IPC 为受控 stub；不等同真实线上 join、发布/Relay 终态或设备验收。
+
+实现后交叉复核完整共享与宿主调用：scopeKey／PlatformProvider generation 销毁旧 Task 选择，目录 lifetime/signal 拒绝迟到结果，running ref 在 await 前拒绝重入；原 ChannelBrowser 加入失败不调用宿主，fresh ACTIVE/member/stream 最终仍由宿主核验。Web 目录→descriptor→完整 session scope 后同步合并 workspace 草稿再原导航；Native 目录→getChannels→前后 identity 后同步合并 native channel 草稿再原导航，原 initDraftStore wrapper 的附件清理回调保留。未发现新增确定缺陷，此结论是源码交叉复核，不是线上操作通过。
+
+公共 index 不写入，原三项 staged patch SHA-256 `b73e9041c5dafbc57107317c8715cc620576fb9fca801569f7f0ff7830e19155`；TS/Dart 只取本批三个 key 的独立生成增量，旧 dirty 保留。原 docs 快路径只覆盖顶层实施文档、docs 与设计，本文另跑同配置 selected markdownlint，结果日志单独留 Data，不追加自引用正文。本批未运行 full、Rust/GTK、构建或部署，未取得新浏览器或 Windows/Mobile 验收。

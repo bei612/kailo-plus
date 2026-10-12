@@ -24,6 +24,8 @@ import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {IdleAuxiliarySurface,type IdleAuxiliaryProps} from "../src/react/messages/thread";
 import {ChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
 import type {SearchHit,SearchChannel} from "../src/react/search/types";
+import {mergeSelectionDiscussDraft} from "../src/react/projects/lib/projectSelection";
+import type {ProjectDiscussInChannel} from "../src/react/projects/useProjectDiscussInChannel";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -48,10 +50,69 @@ function fixture(){
 }
 afterEach(()=>vi.restoreAllMocks());
 beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
+  Object.defineProperty(document,"fonts",{configurable:true,value:{ready:Promise.resolve()}});
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  it.each(["en","zh-CN"] as const)("opens the original Task discuss action, selects a channel and prepares the canonical draft without publishing (%s)",async locale=>{
+    const f=fixture();const channelId="12345678-1234-4234-8234-123456789012";f.issue.tags.push(["h",channelId]);
+    const data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,f.issue)!;
+    const workspace={id:"scope-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
+      channel:{channelId,name:"Original stream",channelType:ChannelType.Stream,archived:false}};
+    let revoked=false;const transport=vi.fn(async(_request:{path:string})=>({status:200,body:{items:revoked?[]:[workspace]}}));
+    const failed=vi.spyOn(toast,"error").mockImplementation(()=>"failed");
+    const discuss=vi.fn<ProjectDiscussInChannel>(async()=>{});
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      OriginReference:()=>null,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:transport})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectsView host={f.host} selectedProjectId={item.project.id} workItemTarget={projectWorkItemTarget(item)} onDiscussInChannel={discuss}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-discuss"]')).not.toBeNull());
+    const toggle=ui.querySelector<HTMLButtonElement>('[data-testid="project-context-discuss"]')!;
+    expect(toggle.textContent).toBe(locale==="en"?"Discuss in a channel":"在频道中讨论");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");expect(transport.mock.calls.some(([request])=>request.path.includes("discoverable-workspaces"))).toBe(false);
+    await click(toggle);await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-related-channel"]')).not.toBeNull());
+    expect(ui.querySelector('[data-testid="project-context-channel-choices"]')?.className).toBe("ml-5 space-y-0.5 border-border/50 border-l pl-2");
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-related-channel"]')!);
+    const content=`${locale==="en"?"Let's talk about this task:":"我们来讨论这项任务："}\n\nbuzz://issue?id=${f.issue.id}&owner=${author}&d=repo`;
+    expect(discuss).toHaveBeenCalledExactlyOnceWith(workspace,content);
+    expect(mergeSelectionDiscussDraft(" existing draft \n",content)).toBe(`existing draft\n\n${content}`);
+    expect(mergeSelectionDiscussDraft(`existing draft\n\n${content}`,content)).toBe(`existing draft\n\n${content}`);
+    expect(mergeSelectionDiscussDraft(undefined,content)).toBe(content);
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-search-channels"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="browse-channel-Original stream"]')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="browse-channel-Original stream"] > button')!);
+    await vi.waitFor(()=>expect(discuss).toHaveBeenCalledTimes(2));
+    expect(discuss.mock.calls[1]).toEqual([workspace,content]);
+    discuss.mockRejectedValueOnce(new BffError(403,"revoked",{class:ErrorClass.Denied}));revoked=true;
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-related-channel"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-related-channel"]')).toBeNull());
+    expect(failed).toHaveBeenCalledTimes(1);expect(pulse.publish).not.toHaveBeenCalled();expect(f.host.publish).toBeUndefined();
+    expect(ui.querySelector('[data-testid="project-context-chat-agent"]')).toBeNull();
+    cache.clear();
+  });
+  it("uses the existing governed channel browser and does not draft or navigate after a rejected public-channel join",async()=>{
+    const f=fixture(),data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,f.issue)!;
+    const workspace={id:"public-workspace",createdAt:new Date(0),isMember:false,visibility:WorkspaceVisibility.Open,memberCount:1,joinActionKey:"workspace.join",
+      channel:{channelId:"public-channel",name:"Public stream",channelType:ChannelType.Stream,archived:false}};
+    const send=vi.fn(async(request:{method?:string;path:string})=>request.method==="POST"?{status:403,body:{class:ErrorClass.Denied,message:"refused"}}:{status:200,body:{items:[workspace]}});
+    const discuss=vi.fn(async()=>{});
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectsView host={f.host} selectedProjectId={item.project.id} workItemTarget={projectWorkItemTarget(item)} onDiscussInChannel={discuss}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-discuss"]')).not.toBeNull());
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-discuss"]')!);
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-search-channels"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="browse-channel-Public stream"]')).not.toBeNull());
+    await click(document.querySelector<HTMLElement>('[data-testid="browse-channel-Public stream"] > button')!);
+    await vi.waitFor(()=>expect(send.mock.calls.some(([request])=>request.method==="POST")).toBe(true));
+    expect(discuss).not.toHaveBeenCalled();expect(pulse.publish).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="browse-channel-Public stream"]')).not.toBeNull();cache.clear();
+  });
   it.each(["en","zh-CN"] as const)("restores actual task and review Related Conversations, exact navigation and revoked reads (%s)",async locale=>{
     setLocale(locale);
     const failure=vi.spyOn(toast,"error").mockImplementation(()=>"discussion-failed");
