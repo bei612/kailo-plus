@@ -2,21 +2,30 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
+	"github.com/Tencent/WeKnora/internal/config"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // ---------------------------------------------------------------------------
@@ -311,7 +320,8 @@ func TestValidateSameEmbeddingModel_SameIdentity_OK(t *testing.T) {
 		"m-2": buildModel("m-2", "bge-m3", "http://embed-a"), // same identity key
 	}
 	svc := newKBSvcForValidate(&fakeModelSvcForKeys{byID: models})
-	err := svc.validateSameEmbeddingModel(context.Background(), []*types.KnowledgeBase{
+	svc.kbShareService = &fakeKBShareForAuth{allowed: map[string]map[uint64]bool{"kb-2": {1: true}}}
+	err := svc.validateSameEmbeddingModel(ctxWithTenantForAuth(1), []*types.KnowledgeBase{
 		{ID: "kb-1", EmbeddingModelID: "m-1", TenantID: 1},
 		{ID: "kb-2", EmbeddingModelID: "m-2", TenantID: 2}, // cross-tenant
 	})
@@ -325,7 +335,7 @@ func TestValidateSameEmbeddingModel_DifferentIdentity_400(t *testing.T) {
 		"m-2": buildModel("m-2", "openai-3", "http://embed-b"), // different
 	}
 	svc := newKBSvcForValidate(&fakeModelSvcForKeys{byID: models})
-	err := svc.validateSameEmbeddingModel(context.Background(), []*types.KnowledgeBase{
+	err := svc.validateSameEmbeddingModel(ctxWithTenantForAuth(1), []*types.KnowledgeBase{
 		{ID: "kb-1", EmbeddingModelID: "m-1", TenantID: 1},
 		{ID: "kb-2", EmbeddingModelID: "m-2", TenantID: 1},
 	})
@@ -341,7 +351,7 @@ func TestValidateSameEmbeddingModel_WikiOnly_Tolerated(t *testing.T) {
 	}
 	svc := newKBSvcForValidate(&fakeModelSvcForKeys{byID: models})
 	// One vector KB + one wiki-only (empty EmbeddingModelID) → tolerated.
-	err := svc.validateSameEmbeddingModel(context.Background(), []*types.KnowledgeBase{
+	err := svc.validateSameEmbeddingModel(ctxWithTenantForAuth(1), []*types.KnowledgeBase{
 		{ID: "kb-vec", EmbeddingModelID: "m-1", TenantID: 1},
 		{ID: "kb-wiki", EmbeddingModelID: "", TenantID: 1},
 	})
@@ -356,7 +366,7 @@ func TestValidateSameEmbeddingModel_LogInjection_Sanitized(t *testing.T) {
 		"m-2": buildModel("m-2", "openai", "http://b\r\nbar"),
 	}
 	svc := newKBSvcForValidate(&fakeModelSvcForKeys{byID: models})
-	err := svc.validateSameEmbeddingModel(context.Background(), []*types.KnowledgeBase{
+	err := svc.validateSameEmbeddingModel(ctxWithTenantForAuth(1), []*types.KnowledgeBase{
 		{ID: "kb-1", EmbeddingModelID: "m-1", TenantID: 1},
 		{ID: "kb-2", EmbeddingModelID: "m-2", TenantID: 1},
 	})
@@ -803,6 +813,126 @@ func (f *fakeKBShareForAuth) CheckTenantKBPermission(
 
 func ctxWithTenantForAuth(tenantID uint64) context.Context {
 	return context.WithValue(context.Background(), types.TenantIDContextKey, tenantID)
+}
+
+// Count entry to the real model constructor, while retaining the original
+// repository, mapping validation and HTTP embedding client below it.
+type queryScopeModels struct {
+	interfaces.ModelService
+	constructs int
+}
+
+func (s *queryScopeModels) GetEmbeddingModel(ctx context.Context, id string) (embedding.Embedder, error) {
+	s.constructs++
+	return s.ModelService.GetEmbeddingModel(ctx, id)
+}
+
+func (s *queryScopeModels) GetEmbeddingModelForTenant(ctx context.Context, id string, tenant uint64) (embedding.Embedder, error) {
+	s.constructs++
+	return s.ModelService.GetEmbeddingModelForTenant(ctx, id, tenant)
+}
+
+func TestQueryEmbeddingConsumesManagedKBScope(t *testing.T) {
+	t.Setenv("SSRF_WHITELIST", "127.0.0.1")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		assert.Equal(t, "/v1/embeddings", r.URL.Path)
+		assert.Equal(t, "Bearer query-scope-fixture", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2],"index":0}]}`))
+	}))
+	defer server.Close()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	require.NoError(t, db.AutoMigrate(&types.Model{}, &types.KnowledgeBase{}))
+	newModel := func(tenant uint64) *types.Model {
+		m := &types.Model{ID: uuid.NewString(), TenantID: tenant, Name: "scope-fixture",
+			Type: types.ModelTypeEmbedding, Source: types.ModelSourceRemote, Status: types.ModelStatusActive,
+			Parameters: types.ModelParameters{BaseURL: server.URL + "/v1", APIKey: "query-scope-fixture", Provider: "openai"}}
+		m.Parameters.EmbeddingParameters.Dimension = 2
+		require.NoError(t, db.Create(m).Error)
+		return m
+	}
+	managed, independent, foreign := newModel(42), newModel(42), newModel(43)
+	newKB := func(m *types.Model) *types.KnowledgeBase {
+		kb := &types.KnowledgeBase{ID: uuid.NewString(), TenantID: m.TenantID, Name: "query fixture", EmbeddingModelID: m.ID}
+		require.NoError(t, db.Create(kb).Error)
+		return kb
+	}
+	owner, borrower, native, shared := newKB(managed), newKB(managed), newKB(independent), newKB(foreign)
+	route := uuid.NewString()
+	input := map[string]any{
+		"projection": map[string]any{"bindingId": uuid.NewString(), "gatewayPrincipalId": uuid.NewString(),
+			"generation": 1, "configDigest": strings.Repeat("ab", 32), "nativeScopeRef": owner.ID,
+			"routeResourceIds": []string{route}, "routes": []map[string]any{{"resourceId": route, "nativeId": managed.Name}}},
+		"models": []map[string]any{{"routeResourceId": route, "nativeModelRef": managed.ID, "baseUrl": managed.Parameters.BaseURL}},
+	}
+	path := filepath.Join(t.TempDir(), "model-delivery.json")
+	raw, err := json.Marshal(input)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, raw, 0600))
+	models, err := repository.NewModelRepository(db, &config.Config{ModelDeliveryInputFile: path})
+	require.NoError(t, err)
+	kbRepo := repository.NewKnowledgeBaseRepository(db)
+	modelService := &queryScopeModels{ModelService: NewModelService(models, kbRepo, nil, nil, nil, nil)}
+	shares := &fakeKBShareForAuth{allowed: map[string]map[uint64]bool{shared.ID: {42: true}, owner.ID: {43: true}}}
+	s := &knowledgeBaseService{repo: kbRepo, modelService: modelService, kbShareService: shares}
+	ctx := ctxWithTenantForAuth(42)
+
+	vector, err := s.GetQueryEmbedding(ctx, owner.ID, "synthetic query")
+	require.NoError(t, err)
+	require.Len(t, vector, 2)
+	require.EqualValues(t, 1, requests.Load())
+	_, err = s.GetQueryEmbedding(ctx, borrower.ID, "same tenant must not borrow credentials")
+	require.Error(t, err)
+	require.EqualValues(t, 1, requests.Load())
+	_, err = s.resolveQueryEmbedding(ctx, borrower, types.SearchParams{QueryText: "fallback"}, 42)
+	require.Error(t, err, "the store-group fallback is also a real model constructor")
+	require.EqualValues(t, 1, requests.Load())
+	_, err = s.resolveQueryEmbedding(ctx, owner, types.SearchParams{QueryText: "fallback"}, 42)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, requests.Load())
+
+	for _, denied := range []context.Context{context.Background(), ctxWithTenantForAuth(44)} {
+		before := modelService.constructs
+		_, err = s.GetQueryEmbedding(denied, owner.ID, "denied before model construction")
+		require.Error(t, err)
+		require.Equal(t, before, modelService.constructs)
+		require.EqualValues(t, 2, requests.Load())
+	}
+	_, err = s.GetQueryEmbedding(ctxWithTenantForAuth(43), owner.ID, "original shared KB access")
+	require.NoError(t, err, "authorized cross-tenant read uses the source model without replacing the caller")
+	require.EqualValues(t, 3, requests.Load())
+	delete(shares.allowed[owner.ID], 43)
+	before := modelService.constructs
+	_, err = s.GetQueryEmbedding(ctxWithTenantForAuth(43), owner.ID, "share revoked")
+	require.Error(t, err)
+	require.Equal(t, before, modelService.constructs)
+	require.EqualValues(t, 3, requests.Load())
+
+	keys := s.ResolveEmbeddingModelKeys(ctx, []*types.KnowledgeBase{owner, borrower, native, shared})
+	require.NotEqual(t, keys[owner.ID], keys[borrower.ID], "same model ID cannot hide a refused KB")
+	require.NotEqual(t, keys[owner.ID], keys[native.ID], "same endpoint cannot merge managed and native calls")
+	require.Equal(t, keys[native.ID], keys[shared.ID], "authorized independent models retain native cross-tenant grouping")
+	require.NoError(t, s.validateSameEmbeddingModel(ctx, []*types.KnowledgeBase{native, shared}))
+	require.Error(t, s.validateSameEmbeddingModel(ctx, []*types.KnowledgeBase{owner, borrower}))
+	delete(shares.allowed[shared.ID], 42)
+	keys = s.ResolveEmbeddingModelKeys(ctx, []*types.KnowledgeBase{native, shared})
+	require.NotEqual(t, keys[native.ID], keys[shared.ID], "every KB must be authorized before sharing a query vector")
+	_, err = s.GetQueryEmbedding(ctx, native.ID, "independent native still works")
+	require.NoError(t, err)
+	require.EqualValues(t, 4, requests.Load())
+	require.NoError(t, os.Remove(path))
+	keys = s.ResolveEmbeddingModelKeys(ctx, []*types.KnowledgeBase{owner, borrower})
+	require.NotEqual(t, keys[owner.ID], keys[borrower.ID], "missing mapping must not share a fallback model-ID cache key")
+	_, err = s.GetQueryEmbedding(ctx, owner.ID, "mapping removed")
+	require.Error(t, err)
+	require.EqualValues(t, 4, requests.Load())
 }
 
 func TestAuthorizeKBAccess_SameTenantAllPass(t *testing.T) {

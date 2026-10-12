@@ -86,7 +86,8 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	BackgroundTaskContextKey: true,
 	// Keep the document restriction across native parser/indexer goroutines;
 	// the model repository reloads its original row before constructing clients.
-	KnowledgeModelOwnerContextKey: true,
+	KnowledgeModelOwnerContextKey:     true,
+	KnowledgeBaseModelOwnerContextKey: true,
 	// Marks a channel that cannot resolve an in-conversation MCP OAuth prompt
 	// (an IM bot has no live client to click "Authorize"). Dropping it makes
 	// the agent block on the OAuth wait for every unauthorized service instead

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -48,6 +49,31 @@ func writeModelDelivery(t *testing.T, path string, input map[string]any) {
 	raw, err := json.Marshal(input)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, raw, 0600))
+}
+
+func TestPlatformModelDeliveryQueryScopeSurvivesDetach(t *testing.T) {
+	db, cfg, model, input := modelDeliveryFixture(t)
+	repo, err := NewModelRepository(db, cfg)
+	require.NoError(t, err)
+	owner := input["projection"].(map[string]any)["nativeScopeRef"].(string)
+	for _, tc := range []struct {
+		name    string
+		scope   any
+		allowed bool
+	}{
+		{"same-kb", owner, true}, {"other-kb", uuid.NewString(), false},
+		{"missing-kb", "", false}, {"malformed", 42, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.WithValue(context.Background(), types.KnowledgeBaseModelOwnerContextKey, tc.scope)
+			_, err := repo.GetByID(logger.CloneContext(ctx), model.TenantID, model.ID)
+			if tc.allowed {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, errPlatformModelDelivery)
+			}
+		})
+	}
 }
 
 func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {

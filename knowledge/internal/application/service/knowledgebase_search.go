@@ -21,14 +21,18 @@ const maxRetrievalPoolSize = 500
 
 // GetQueryEmbedding computes the query embedding using the embedding model
 // associated with the given knowledge base. Callers can pre-compute and reuse
-// the result across multiple KBs that share the same embedding model to avoid
-// redundant embedding API calls.
+// the result across KBs with the same ResolveEmbeddingModelKeys value to avoid
+// redundant calls without borrowing another KB's managed credentials.
 func (s *knowledgeBaseService) GetQueryEmbedding(ctx context.Context, kbID string, queryText string) ([]float32, error) {
 	kb, err := s.repo.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.authorizeKBAccess(ctx, []*types.KnowledgeBase{kb}); err != nil {
+		return nil, err
+	}
 
+	ctx = context.WithValue(ctx, types.KnowledgeBaseModelOwnerContextKey, kb.ID)
 	currentTenantID := types.MustTenantIDFromContext(ctx)
 	var embeddingModel embedding.Embedder
 
@@ -76,40 +80,41 @@ func validateQueryEmbeddingDimension(model embedding.Embedder, actual int) error
 	})
 }
 
-// ResolveEmbeddingModelKeys resolves embedding model IDs to their actual model
-// identity key (name + endpoint). KBs using the same underlying model across
-// different tenants will share the same key, enabling optimal grouping.
+// ResolveEmbeddingModelKeys keeps the native name/endpoint grouping for
+// independent models. Managed credentials and unresolved mappings never share
+// a precomputed query vector with another KB, even at the same endpoint.
 func (s *knowledgeBaseService) ResolveEmbeddingModelKeys(ctx context.Context, kbs []*types.KnowledgeBase) map[string]string {
-	type modelRef struct {
-		ModelID  string
-		TenantID uint64
-	}
-
-	// Deduplicate model references
-	uniqueRefs := make(map[modelRef]struct{})
-	kbRefs := make(map[string]modelRef, len(kbs))
-	for _, kb := range kbs {
-		ref := modelRef{ModelID: kb.EmbeddingModelID, TenantID: kb.TenantID}
-		uniqueRefs[ref] = struct{}{}
-		kbRefs[kb.ID] = ref
-	}
-
-	// Resolve each unique (modelID, tenantID) to a model identity key
-	resolvedKeys := make(map[modelRef]string, len(uniqueRefs))
-	for ref := range uniqueRefs {
-		tenantCtx := types.WithExecutionTenant(ctx, ref.TenantID)
-		model, err := s.modelService.GetModelByID(tenantCtx, ref.ModelID)
-		if err != nil || model == nil {
-			logger.Warnf(ctx, "ResolveEmbeddingModelKeys: cannot resolve model %s for tenant %d: %v", ref.ModelID, ref.TenantID, err)
-			resolvedKeys[ref] = ref.ModelID
-			continue
-		}
-		resolvedKeys[ref] = model.Name + "|" + model.Parameters.BaseURL
-	}
-
 	result := make(map[string]string, len(kbs))
 	for _, kb := range kbs {
-		result[kb.ID] = resolvedKeys[kbRefs[kb.ID]]
+		if kb == nil {
+			continue
+		}
+		if _, seen := result[kb.ID]; seen {
+			continue
+		}
+		if err := s.authorizeKBAccess(ctx, []*types.KnowledgeBase{kb}); err != nil {
+			result[kb.ID] = fmt.Sprintf("unresolved:%d:%s", kb.TenantID, kb.ID)
+			continue
+		}
+		if kb.EmbeddingModelID == "" {
+			result[kb.ID] = "" // Original wiki/graph-only carve-out.
+			continue
+		}
+		// Resolve separately for every KB; a model-ID cache would skip the
+		// repository's current KB restriction for later users of that model.
+		tenantCtx := types.WithExecutionTenant(ctx, kb.TenantID)
+		tenantCtx = context.WithValue(tenantCtx, types.KnowledgeBaseModelOwnerContextKey, kb.ID)
+		model, err := s.modelService.GetModelByID(tenantCtx, kb.EmbeddingModelID)
+		if err != nil || model == nil {
+			logger.Warnf(ctx, "ResolveEmbeddingModelKeys: cannot resolve model %s for tenant %d: %v", kb.EmbeddingModelID, kb.TenantID, err)
+			result[kb.ID] = fmt.Sprintf("unresolved:%d:%s", kb.TenantID, kb.ID)
+			continue
+		}
+		if model.ManagedBy == "kailo-model-route" {
+			result[kb.ID] = fmt.Sprintf("managed:%d:%s:%s", kb.TenantID, kb.ID, model.ID)
+		} else {
+			result[kb.ID] = model.Name + "|" + model.Parameters.BaseURL
+		}
 	}
 	return result
 }
@@ -489,6 +494,7 @@ func (s *knowledgeBaseService) resolveQueryEmbedding(
 	}
 
 	logger.Infof(ctx, "Getting embedding model, model ID: %s", kb.EmbeddingModelID)
+	ctx = context.WithValue(ctx, types.KnowledgeBaseModelOwnerContextKey, kb.ID)
 
 	var embeddingModel embedding.Embedder
 	var err error

@@ -6242,3 +6242,84 @@ go test ./internal/application/repository -run '^TestKnowledgeModelConstructionC
 `ResolveEmbeddingModelKeys` 的跨 KB 分组/缓存也仍待同链闭合。本批只关闭
 投递/HMAC 与已有文档 owner 消费者，不能据此声称所有 KB query/chat 模型
 请求已隔离，受管 binding 的完整生产激活继续阻断。隔离 bootstrap 源码不在本批。
+
+## 2026-10-12 — Query embedding KB ownership and authorized vector reuse
+
+### Authority and original consumers
+
+1. Fixed upstream WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/application/service/knowledgebase_search.go::{GetQueryEmbedding,ResolveEmbeddingModelKeys}`,
+   supplies the original embedding and per-request grouping path. Design 07 §8.3
+   retains Gateway route admission; native KB restrictions do not replace it.
+2. Original `knowledge/internal/application/service/chat_pipeline/search.go`
+   and `knowledge/internal/agent/tools/search_knowledge.go`
+   precompute vectors before `HybridSearch`. The original KB repository lookup
+   is tenant-agnostic; therefore the existing `authorizeKBAccess` must run before
+   precomputation constructs or calls a model, not just during retrieval.
+3. The original model repository now consumes the actual query KB UUID through
+   the existing context mechanism after validating the persisted delivery and
+   KB/model association. Both precomputation and store-group fallback provide
+   it. Context cloning retains the immutable restriction; no task, credential,
+   mapping registry, or new permission is introduced.
+4. `ResolveEmbeddingModelKeys` authorizes and resolves every KB separately.
+   Managed models and unresolved mappings get distinct KB keys. Independent
+   models retain native name/endpoint reuse only for authorized KBs. This is
+   the existing per-request vector reuse, not a new persistent cache. Unknown
+   keys are not admission: the subsequent constructor still rejects absent or
+   removed mappings before an external request.
+
+### Verification input and boundary
+
+Base: `fa80da8720064cd2401c25e7ac297b0e90531bf4`, plus only seven selected source/test
+paths. Evidence directory:
+`/volumes/data/kailo/tmp/knowledge-query-model-scope.mGZSe0`.
+Original local SDK image:
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`.
+One container, UID 1000, read-only root, network none, 4 CPU / 8 GiB / equal
+memory-swap; cgroup readback `400000 100000`, `8589934592`, swap `0`.
+Source, GOCACHE, GOMODCACHE, GOTMPDIR and TMPDIR are explicit Data mounts;
+`GOPROXY=off`, `GOTOOLCHAIN=local`, no dependency download or image build/load.
+
+Original command:
+
+```sh
+go test ./internal/application/repository ./internal/application/service ./internal/types \
+  -run '^(TestPlatformModelDelivery|TestKnowledgeModelConstructionConsumesPersistedBinding|TestQueryEmbeddingConsumesManagedKBScope|TestValidateSameEmbeddingModel|TestAuthorizeKBAccess|TestValidateQueryEmbeddingDimension|TestEveryContextKey|TestTheCloneTable|TestClonedKeys)' \
+  -count=1 -timeout=10m -v
+```
+
+The new consumer test uses the real SQLite repositories, original model service
+and original OpenAI embedding HTTP client against a local synthetic endpoint.
+It measures actual HTTP requests and constructor entry counts: missing trusted
+Tenant context (not a separate HUMAN/Principal identity proof),
+foreign scope and revoked sharing must not construct a model; a same-tenant KB
+borrowing another KB's managed model must not send an HTTP request. Original
+independent models and authorized cross-tenant access remain exercised.
+This is not PostgreSQL locking, live Gateway/SSO scope or quota admission, deployed HTTP API,
+SOURCE/RECEIVER conformance or component activation evidence.
+
+Results:
+
+- Positive `21604`: exit 0; repository 7 top-level tests, 10.372s;
+  service 13, 4.520s; context clone coverage 3, 4.743s.
+- Private negative `50131`: removed only the repository KB-context restriction;
+  exit 1. The original repository rejected-scope assertions failed for another
+  KB, empty KB and malformed KB. The original service/HTTP test also failed:
+  the borrower reached the embedding client and returned success instead of the
+  required error. No official source was mutated.
+- Restored `98485`: original production bytes restored and `cmp` exit 0;
+  the same two affected consumers both passed (repository 0.441s, service
+  0.460s), command exit 0. The negative/restored command uses the same original
+  `go test` entry, two packages and exact pattern
+  `^(TestPlatformModelDeliveryQueryScopeSurvivesDetach|TestQueryEmbeddingConsumesManagedKBScope)$`,
+  `-count=1 -timeout=10m -v`; no broader checks were repeated.
+
+| Original log | SHA-256 |
+| --- | --- |
+| positive.log | `a53de8215e2afc7722aa25a8a21e1c58d4cb3a47800e6ce8c475a71c337b9074` |
+| negative.log | `d77bd08759a880762ffc359963e33767abb081420374bffcefd911973d284d78` |
+| restored.log | `53690c22577b38ba68eb61dc90ab7d72d9001b93e307a5988a8065b9914943ad` |
+
+This closes the specific query-embedding construction/grouping gap recorded in
+the preceding batch. It does not claim that all native model call types are
+covered or remove the independent production activation/conformance gate.

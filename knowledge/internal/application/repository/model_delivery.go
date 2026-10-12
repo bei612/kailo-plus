@@ -178,6 +178,12 @@ func (r *modelRepository) validateModelDelivery(db *gorm.DB, m *types.Model) err
 // Gateway still authorizes each real model request; this check is a restriction,
 // not a replacement for its current route/binding/quota admission.
 func (r *modelRepository) validateKnowledgeModel(ctx context.Context, m *types.Model) error {
+	if value := ctx.Value(types.KnowledgeBaseModelOwnerContextKey); value != nil {
+		kbID, ok := value.(string)
+		if !ok || kbID == "" || (m.ManagedBy == platformModelManagedBy && m.PlatformScopeRef != kbID) {
+			return errPlatformModelDelivery
+		}
+	}
 	value := ctx.Value(types.KnowledgeModelOwnerContextKey)
 	if value == nil {
 		return nil

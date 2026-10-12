@@ -7153,3 +7153,80 @@ taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::task
 - 续接结果：此前文档作业 38905 固定树 `741bbaceffc43476e8266cc1ca49cb8ee68126f3` 最终 exit 0，不包含本节新改动。27190 独立库完整迁移链含 `20261010030000` exit 0；同库原 `sqlx migrate revert` 后 `run` 均 exit 0，日志 `description-empty-rollback.log`，只证明无描述数据时可逆。23554 后来 exit 101，真实输出 `ext_mcp.proto is not in any include path`；核对原 `platform-core/build.rs` 后补入固定候选 `model-gateway/crates/protos/proto`，89915 串行运行原 Core 用例和真实 writer，日志 `core-description-protocol-input.log`、`description-real-writer.log`。正在执行不计通过。
 - Core/DB 最终与反证：89915 原 Core 管理范围 15 passed/4 ignored，随后显式运行原实际 writer 用例 1 passed，整作业 exit 0。只在私有生产 Schedule CREATE SQL 去掉 description 重建项，34193 同一真实 writer 用例 exit 101：`left: Null`、`right: String("  原版 YAML description\n")`；未修改断言或正式源码。apply_patch 原样还原且 cmp 正式文件为 0，74204 同一 writer 1 passed、exit 0。43593 原 `tools/gen.sh --check` 四侧及共源词条同步，Rust roundtrip 47/47、Go 原 contracts 包、TS 类型与 roundtrip 55/55、Dart 原 roundtrip 47/47，整批 exit 0；Dart 依赖从已挂载 cache 离线解析。日志 `description-schedule-production-negative.log`、`description-schedule-restored.log`、`description-four-side-roundtrip.log`。此前尚未完成的 Core/DB/四侧往返边界由这些实测收窄；完整兼容门禁、新 UI 截图、Windows/Mobile、full、提交/push、部署仍无本批通过证据。
 - 格式与隔离数据清理：原 cargo fmt 首次因私有导出缺 `collaboration/examples/countdown-bot/Cargo.toml` exit 1，补投递固定候选原模块后 70944 原 `cargo fmt --manifest-path core/Cargo.toml --all --check` exit 0；未修改格式检查或生产代码。日志 `description-format-check.log`、`description-format-complete-input.log`。本轮隔离库最终查得 AutomationVersion/ActionExecution 为 `0|0`，随后仅删除本轮创建的 `automation_dates_verify_description_20261010`，DROP DATABASE exit 0；生产库、其他验证库、迁移与日志均保留，可重新建立同一验证库。
+
+## 2026-10-12 固定全量清单的执行消费者续核
+
+官方固定 Buzz `779af8886caae1317b4de962082429867ab61503`；源码读取基准
+`fa80da8720064cd2401c25e7ac297b0e90531bf4`。复用上文 dPGaZF 完整清单，
+没有重导树、重建图谱或新增检查框架。全部 5195 官方 tracked 文件已纳入的证明
+及 5316 union/3281 待证明统计仍仅对应 `562156ae7f12953e3eea61305fe282ae98b6c416`，
+不是当前 HEAD 的逐项语义验收。本段纠正已有模块状态，不把未审条目批量改为完成。
+
+四类对应仍分开：原行、详情和设置弹层已有的原结构属于原样呈现；双宿主实际
+调用同一 client-kit 模块属于共享迁移；BFF/本机 signer、fresh scope、持久意图与
+Temporal 执行属于已授权局部治理适配；下列未接执行或未实拍状态继续保留缺项。
+这些局部证明不能把整个文件、模块或页面统一标成原样/完整恢复。
+
+### Workflows：七种定义不等于七种完整执行
+
+固定官方 `desktop/src/features/workflows/ui/workflowFormTypes.ts::ACTION_TYPES`
+包含 delay/send_message/send_dm/call_webhook/request_approval/add_reaction/set_channel_topic；
+但同文件 `SELECTABLE_ACTION_TYPES` 原本只有 send_message/delay/call_webhook。
+`crates/buzz-workflow/src/executor.rs::dispatch_action` 的 SendDm、SetChannelTopic
+原本返回 NotImplemented；RequestApproval 返回 Suspended，原 WS approval 广播分支没有实现；
+CallWebhook 仅在 reqwest feature 下真正执行。不能用枚举数或复制原占位终态证明完成。
+
+当前 `client-kit/ts/platform/src/react/workflow-form-canvas.tsx::WorkflowFormCanvas`
+与 `client-kit/ts/platform/src/react/workflow-steps.tsx::supportedSteps` 实际消费五种受治理 step；
+`contracts/domain/automation_step.schema.json`、`core/crates/platform-core/src/automation/steps.rs`、
+`worker/workflows/agent_task.go::AgentTask` 接入真实准入/延时执行。
+AGENT_TURN 是既有 action 分支，不是第六个原 step；审批策略和 topic 的真实治理
+执行不能称原占位逻辑原样迁移。send_dm/call_webhook、步骤条件、非 Delay timeout
+及完整原 webhook 设置仍未闭合；已恢复触发条件/作者选择不应继续标为全无消费者。
+
+### Settings：现存弹层与缺失分区分别计证
+
+官方 `desktop/src/features/settings/ui/SettingsPanels.tsx::SettingsSection` 为 16 类，
+当前 `client-kit/ts/platform/src/react/settings-surface.tsx::SettingsSection` 为 7 类。
+Web `web-client/web/src/platform/ui/SettingsPane.tsx::SettingsPane` 与 Native
+`collaboration/desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`
+真正挂载共享 profile/appearance/
+notifications/shortcuts/community-members/custom-emoji/experimental；原头像编辑、
+主题网格及 `client-kit/ts/platform/src/react/notifications/SoundPicker.tsx::SoundPicker` 不是孤儿文件。
+voice、agents、channel-templates、compute、hosted-communities、moderation、
+local-archive、mobile、updates 九区仍缺完整宿主消费，不能以共享设置壳覆盖。
+原 dPGaZF 的 01–06 设置截图只证明旧 9d718 当时实际打开状态，不证明所有保存/权限动作。
+
+### Projects 与组件侧栏：纠正“全缺”和“已有文件即完成”
+
+官方 `desktop/src/features/projects/ui/ProjectChannelHome.tsx::ProjectChannelHome`、
+`desktop/src/features/projects/ui/ProjectHomeWorkspaceSheet.tsx::ProjectHomeWorkspaceSheet` 的首页/Tasks/Reviews
+已共享接入真实频道与 work-item 读链。任务创建已提交
+`3fce993b6de6748d7e41c1f01f7deec850d915bc`，任务评论已提交
+`efe6003bef69686ca2f5ecaeb9587a822c09504e`；旧“只有 timeline/无评论合同”不再成立。
+当前 `contracts/api/projects_publish_request.schema.json` 仅开放项目/仓库创建、删除、Issue 创建
+和 Issue 评论；不能因此认领 PR 评论/审阅、Git/CommitDetail、完整 repository
+WorkspaceTabs、selection→Agent 或 Mobile 执行。
+
+下一明确恢复目标是固定官方 `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::ProjectPullRequestDetail`
+的 ForumComposer→`handleCommentSubmit`，以及 `desktop/src/features/projects/hooks.ts::useCreateProjectPullRequestCommentMutation`
+和 `desktop/src/features/projects/hooks.ts::createProjectPullRequestComment`。
+当前共享 `client-kit/ts/platform/src/react/projects/ProjectPullRequestDetail.tsx::ProjectPullRequestDetail` 只有读取。
+原普通评论为 kind 1 的 root/repo/recipients/media 链，可沿已存在 Issue 评论治理接缝
+继续补；但现 typed publish 不接受 PR，必须先闭合真实目标验证，不能直接借 Issue
+操作。原 request-changes、commit/inline anchor 语义分别保留，不造空按钮或摘要替代。
+
+现有 `client-kit/ts/platform/src/react/native-application-entries.tsx::NativeApplicationEntries`
+在 `web-client/web/src/platform/ui/PlatformApp.tsx::PlatformApp` 与
+`collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar` 均真实调用；
+仅当前 scope 的 ACTIVE/hasNativePage binding 进入菜单。点击经
+`client-kit/ts/platform/src/react/native-application-page.tsx::NativeApplicationPage`
+fresh page 准入/来源校验后挂原服务 iframe，
+不是缺菜单 JSX 或三条写死链接，也不是 Buzz 原生页恢复的证明。原 SSO 全局及
+workspace binding 返回空数组，只证明该 actor 当时可见集合为空，不能推出全库无绑定。
+
+当前 Web 最后确认仍为源码 `9d718234b74b688d9b81816f9b67470d4fc80440`，
+artifact `sha256:964d3a6ae8535138b2f0cc736f9622e10ba03a7d047365b88a5f04ca5396e123`。
+旧 429/线程图仍在 dPGaZF 与 `inbox-thread-online-read.BqzhP3` 原目录；本段不新拍旧版。
+当前 Inbox URL 19 路径候选、上述后续 Projects/提醒源码均不能用这些图认领部署验收。
+本段仅源码对照，没有新增编译、发布或组件绑定操作；公共原 23 行暂存及其他历史 dirty 不纳入。
