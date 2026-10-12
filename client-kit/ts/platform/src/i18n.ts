@@ -1464,6 +1464,8 @@ export const platformMessages = {
   "projects.sheet.viewReview": { en: "View review", "zh-CN": "查看审阅" },
   "projects.sheet.reviewsHint": { en: "Reviews opened for this repository will appear here.", "zh-CN": "为此仓库发起的审阅会显示在这里。" },
   "projects.sheet.backTasks": { en: "Back to Tasks", "zh-CN": "返回任务" },
+  "projects.sheet.expand": { en: "Open {section} in repository", "zh-CN": "在仓库中打开{section}" },
+  "projects.workspace.reviewTab": { en: "Review", "zh-CN": "审阅" },
   "projects.sheet.backReviews": { en: "Back to Reviews", "zh-CN": "返回审阅" },
   "projects.sheet.loadingTasks": { en: "Loading tasks", "zh-CN": "正在加载任务" },
   "projects.sheet.loadingReviews": { en: "Loading reviews", "zh-CN": "正在加载审阅" },

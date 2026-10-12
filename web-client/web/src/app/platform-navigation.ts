@@ -19,7 +19,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // URL contains only navigation references. It never stores sessions, identities,
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
-  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;thread?: string; item?: string;
+  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;thread?: string; item?: string;
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -31,6 +31,7 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     repositoryId: reference("repositoryId"),
     issueId: reference("issueId"),
     pullRequestId: reference("pullRequestId"),
+    tab: reference("tab"),
     thread: reference("thread"),
     item: reference("item"),
   };
@@ -86,7 +87,7 @@ export function usePlatformNavigation(scopeKey?: string) {
   // The original project home embeds a channel; its thread uses the same URL
   // history. Repository/work-item routes do not mount that channel consumer.
   const projectChannelRoute = tab === "projects" && Boolean(search.projectId) &&
-    !search.repositoryId && !search.issueId && !search.pullRequestId;
+    !search.repositoryId && !search.issueId && !search.pullRequestId && !search.tab;
   const replaceDefaultChannel = useCallback((channelId: string) => {
     // The host supplies a freshly admitted default. An explicit route is never
     // rewritten to a directory fallback, including after access is revoked.
@@ -118,7 +119,7 @@ export function usePlatformNavigation(scopeKey?: string) {
     conversationId: params.conversationId ?? null,
     applicationBindingId: params.bindingId ?? null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
-    projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId} : undefined,
+    projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab} : undefined,
     openProject: (projectId: string | null,target?:import("@client-kit/platform/react/projects").ProjectWorkItemTarget) => navigate({to:"/$section",params:{section:"projects"},search:{projectId:projectId??undefined,...target},state:navigationState()}),
     messageTarget: (params.channelId || params.conversationId) && search.messageId ? {
       channelId: (params.channelId ?? params.conversationId)!, messageId: search.messageId, threadRootId: search.threadRootId ?? null,

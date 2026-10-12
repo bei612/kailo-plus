@@ -26,6 +26,7 @@ import {ChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} fro
 import type {SearchHit,SearchChannel} from "../src/react/search/types";
 import {mergeSelectionDiscussDraft} from "../src/react/projects/lib/projectSelection";
 import type {ProjectDiscussInChannel} from "../src/react/projects/useProjectDiscussInChannel";
+import type {ProjectWorkItemTarget} from "../src/react/projects/projectWorkItems";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -55,6 +56,81 @@ beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  async function repositoryPageFixture(tab="issues") {
+    vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+    const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const project=data.projects[0]!,repo=project.repositories[0]!;
+    f.host.publish=vi.fn(async(request,_key,_observe,observation)=>{
+      const created={...event("c",1621,buildGitIssueTags({repoAddress:repository,repoOwner:author,title:request.title!,labels:[request.category!]}),request.body!),pubkey:viewer};
+      observation?.onPrepared(created.id);f.rows.push(created);return {eventId:created.id};
+    });
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    let changeScope!:()=>void;let refreshRoute!:()=>void;
+    const opened=vi.fn();
+    function Page(){
+      const [current,setCurrent]=useState(f.host);const [route,setRoute]=useState<{id:string|null;target?:ProjectWorkItemTarget}>({id:project.id,target:{repositoryId:repo.id,tab}});
+      changeScope=()=>setCurrent({...f.host,scopeKey:"other-identity",query:async()=>{throw new Error("revoked");}});
+      refreshRoute=()=>setRoute(value=>({...value,target:{...value.target}}));
+      return <ProjectsView host={current} selectedProjectId={route.id} workItemTarget={route.target}
+        onSelectedProjectChange={async(id,target)=>{opened(id,target);setRoute({id,target});}}
+        renderWorkItems={(children,pubkey)=>{expect(pubkey).toBe(viewer);return <PulseHostProvider host={pulse}>{children}</PulseHostProvider>;}}/>;
+    }
+    const ui=await render(<><div id="app-top-chrome-content"/><PlatformProvider client={createBffClient({send:async()=>({status:200,body:{items:[]}})})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><Page/></TooltipProvider></QueryClientProvider></PlatformProvider></>);
+    return {...f,ui,cache,project,repo,opened,changeScope:()=>act(async()=>changeScope()),refreshRoute:()=>act(async()=>refreshRoute())};
+  }
+  it.each(["issues","prs"] as const)("opens original repository %s list, precise detail, category return and project breadcrumb",async tab=>{
+    const f=await repositoryPageFixture(tab);
+    const row=tab==="issues"?"project-issue-row":"project-pull-request-row";
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${row}"]`)).not.toBeNull());
+    expect(f.ui.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(f.ui.querySelector('[data-testid="project-workspace-panel"]')?.classList.contains("-mx-4")).toBe(true);
+    expect(f.ui.querySelector('[data-testid="project-breadcrumb-repository"]')?.textContent).toBe("Original repo");
+    await click([...f.ui.querySelectorAll<HTMLButtonElement>(`[data-testid="${row}"] button`)].find(button=>button.textContent===`Original ${tab==="issues"?"task":"review"}`)!);
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain(`Complete ${tab==="issues"?"task":"review"} body`));
+    expect(f.opened).toHaveBeenLastCalledWith(f.project.id,{repositoryId:f.repo.id,tab,...(tab==="issues"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
+    expect(f.ui.querySelector('[data-testid="project-workspace-tab-menu"]')).toBeNull();
+    await click([...f.ui.querySelectorAll<HTMLButtonElement>('[data-testid="project-detail-chrome"] button')].find(button=>button.textContent===(tab==="issues"?"Tasks":"Reviews"))!);
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${row}"]`)).not.toBeNull());
+    await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="project-breadcrumb-project"]')!);
+    expect(f.opened).toHaveBeenLastCalledWith(f.project.id,undefined);
+  });
+  it("switches repository tabs through the actual callback and refuses unknown tabs without querying",async()=>{
+    const f=await repositoryPageFixture();
+    await vi.waitFor(()=>expect(f.ui.querySelector('[role="tab"][data-state="inactive"]')).not.toBeNull());
+    await act(async()=>f.ui.querySelector<HTMLElement>('[role="tab"][data-state="inactive"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-pull-request-row"]')).not.toBeNull());
+    expect(f.opened).toHaveBeenLastCalledWith(f.project.id,{repositoryId:f.repo.id,tab:"prs"});
+    const invalid=await repositoryPageFixture("files");const previous=invalid.query.mock.calls.length;
+    expect(invalid.ui.querySelector('[data-testid="project-workspace-tab-menu"]')).toBeNull();
+    expect(invalid.ui.textContent).toContain("unavailable");expect(invalid.query).toHaveBeenCalledTimes(previous);
+  });
+  it("creates through the original fixed-repository dialog and navigates only after exact readback",async()=>{
+    const f=await repositoryPageFixture();
+    await vi.waitFor(()=>expect(f.ui.querySelector('button[aria-label="Create task"]')).not.toBeNull());
+    await click(f.ui.querySelector<HTMLElement>('button[aria-label="Create task"]')!);
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-title"]')).not.toBeNull());
+    expect(document.querySelector('[data-testid="create-issue-repository"]')).toBeNull();
+    await type(document.querySelector<HTMLInputElement>('[data-testid="create-issue-title"]')!,"Repository task");
+    await type(document.querySelector<HTMLTextAreaElement>('[data-testid="create-issue-body"]')!,"Repository task body");
+    await click(document.querySelector<HTMLElement>('[data-testid="create-issue-submit"]')!);
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain("Repository task body"));
+    expect(f.host.publish).toHaveBeenCalledOnce();
+    expect(f.host.publish).toHaveBeenCalledWith(expect.objectContaining({operation:"CREATE_ISSUE",targetEventId:"8".repeat(64),title:"Repository task"}),expect.any(String),false,expect.any(Object));
+    expect(f.opened).toHaveBeenLastCalledWith(f.project.id,{repositoryId:f.repo.id,tab:"issues",issueId:"c".repeat(64)});
+    expect([...Array(localStorage.length)].map((_,index)=>localStorage.key(index))).not.toContain(JSON.stringify(["project-issue-publication",f.host.scopeKey,f.project.id,repository]));
+  });
+  it("removes repository content while refreshing or changing identity and does not turn rejection into an empty list",async()=>{
+    const f=await repositoryPageFixture();await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-issue-row"]')).not.toBeNull());
+    const calls=f.query.mock.calls.length;await f.refreshRoute();expect(f.query).toHaveBeenCalledTimes(calls);
+    expect(f.ui.querySelector('[data-testid="project-issue-row"]')).not.toBeNull();
+    let reject!:(error:Error)=>void;f.query.mockImplementation(()=>new Promise((_resolve,deny)=>{reject=deny;}));
+    let pending!:Promise<void>;await act(async()=>{pending=f.cache.invalidateQueries({queryKey:["project-work-item-target"]});});
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-issue-row"]')).toBeNull());
+    expect(f.ui.querySelector('[data-testid="project-detail-chrome"]')).toBeNull();
+    await f.changeScope();await act(async()=>{reject(new Error("revoked"));await pending;});
+    expect(f.ui.textContent).not.toContain("Original task");expect(f.ui.textContent).not.toContain("No tasks yet");
+  });
   it.each([{locale:"en",kind:"task"},{locale:"zh-CN",kind:"task"},{locale:"en",kind:"review"},{locale:"zh-CN",kind:"review"}] as const)("opens the original $kind discuss action, selects a channel and prepares the canonical draft without publishing ($locale)",async({locale,kind})=>{
     const f=fixture();const channelId="12345678-1234-4234-8234-123456789012",source=kind==="task"?f.issue:f.review;
     source.tags.push(["h","event-origin-is-not-the-project-context"]);
@@ -621,12 +697,13 @@ describe("original Inbox project read closure",()=>{
       {auxiliary?.idleAuxiliaryPanel?<IdleAuxiliarySurface {...auxiliary} channelName="Home channel" isFocusDrawer={false} isSinglePanelView={false}
         useSplitAuxiliaryPane widthPx={400} canResetWidth={false} onResizeStart={vi.fn()} onResetWidth={vi.fn()} restoreFocusTarget={()=>null}/>:null}
     </div>;
+    const onOpenProject=vi.fn();
     const ui=await render(<><div id="app-top-chrome-content"/><PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
       <ProjectChannelHome project={initial.projects[0]!} scopeKey={f.host.scopeKey} host={f.host} renderChannel={renderChannel}
-        renderWorkItems={renderWorkItems} onOpenChannel={vi.fn()} onGoProjects={vi.fn()}/>
+        renderWorkItems={renderWorkItems} onOpenProject={onOpenProject} onOpenChannel={vi.fn()} onGoProjects={vi.fn()}/>
     </TooltipProvider></QueryClientProvider></PlatformProvider></>);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="home-channel-consumer"]')).not.toBeNull());
-    return {...f,ui,cache,renderWorkItems};
+    return {...f,ui,cache,renderWorkItems,onOpenProject,project:initial.projects[0]!};
   }
   const attachWriter=(f:ReturnType<typeof fixture>)=>{
     f.host.publish=vi.fn(async(request,_key,_observe,observation)=>{
@@ -742,6 +819,18 @@ describe("original Inbox project read closure",()=>{
     expect(f.ui.querySelector('[data-testid="project-home-context-tasks"]')).not.toBeNull();
     expect(f.ui.querySelector('[data-testid="project-home-context-commits"]')).toBeNull();
     expect(f.ui.querySelector('[data-testid="project-home-workspace-sheet-create"]')).toBeNull();
+  });
+  it.each(["tasks","reviews"] as const)("maximizes original home %s list and selected detail into the exact repository route",async kind=>{
+    const f=await homeSheetFixture();const tab=kind==="tasks"?"issues":"prs";
+    await click(f.ui.querySelector<HTMLElement>(`[data-testid="project-home-context-${kind}"]`)!);
+    const rowId=kind==="tasks"?"project-issue-row":"project-pull-request-row";
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${rowId}"]`)).not.toBeNull());
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-workspace-sheet-expand"]')!);
+    expect(f.onOpenProject).toHaveBeenLastCalledWith(f.project.id,{repositoryId:f.project.repositories[0]!.id,tab});
+    await click([...f.ui.querySelectorAll<HTMLButtonElement>(`[data-testid="${rowId}"] button`)].find(button=>button.textContent===`Original ${kind==="tasks"?"task":"review"}`)!);
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain(`Complete ${kind==="tasks"?"task":"review"} body`));
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-workspace-sheet-expand"]')!);
+    expect(f.onOpenProject).toHaveBeenLastCalledWith(f.project.id,{repositoryId:f.project.repositories[0]!.id,tab,...(kind==="tasks"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
   });
   it.each(["tasks","reviews"] as const)("hides project-home %s content during fresh authorization and keeps denied content absent",async kind=>{
     const f=await homeSheetFixture();await click(f.ui.querySelector<HTMLButtonElement>(`[data-testid="project-home-context-${kind}"]`)!);

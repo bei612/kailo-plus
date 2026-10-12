@@ -1,8 +1,8 @@
 // REQ-24. Original Buzz 779af8886caae1317b4de962082429867ab61503
 // ProjectsView / ProjectCards / ProjectEntityListRow presentation. This host
-// reads announcements/work-item targets and uses the governed creation/deletion
-// hosts; Git, work-item writes and terminals retain separate missing consumers.
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+// reads announcements/work-item targets and uses the governed publication hosts;
+// Git, terminal and unsupported work-item operations retain missing consumers.
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { Folders, Hash, Trash2, CircleDot, GitPullRequest } from "lucide-react";
@@ -35,6 +35,14 @@ import {ProjectPanelState} from "./ProjectPanelState";
 import {BuzzLoadingState} from "./BuzzLoadingState";
 import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
 import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
+import {ProjectDetailChrome} from "./ProjectDetailChrome";
+import {WorkspaceTabs} from "./ProjectWorkspaceTabs";
+import {ProjectIssuesPanel} from "./ProjectIssuesPanel";
+import {PullRequestsPanel} from "./ProjectPullRequestsPanel";
+import {CreateIssueDialog} from "./CreateIssueDialog";
+import {publishProjectIssue} from "./issueMutations";
+import {isOutcomeUnknown,TransportError} from "../../transport";
+import {toast} from "sonner";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
   onDiscussInChannel?:ProjectDiscussInChannel;
@@ -42,8 +50,93 @@ type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelec
   renderWorkItems?:(children:ReactNode,viewerPubkey:string)=>ReactNode;
   workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
 export function ProjectsView(props:ProjectsViewProps) {
+  if(props.workItemTarget?.tab)return <ProjectRepositoryPage key={props.host.scopeKey} {...props}/>;
   if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget} renderWorkItems={props.renderWorkItems} onOpen={props.onSelectedProjectChange} onDiscussInChannel={props.onDiscussInChannel}/>;
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
+}
+
+function ProjectRepositoryPage(props:ProjectsViewProps) {
+  const {host,selectedProjectId}=props;
+  const target=props.workItemTarget!;
+  const onOpen=props.onSelectedProjectChange;
+  const t=useUiT();const cache=useQueryClient();
+  const lifetime=useMemo(()=>({controller:new AbortController()}),[host]);
+  useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
+  const key=useMemo(()=>["project-work-item-target",host.scopeKey,selectedProjectId,{repositoryId:target.repositoryId,tab:target.tab,issueId:target.issueId,pullRequestId:target.pullRequestId}],
+    [host.scopeKey,selectedProjectId,target.repositoryId,target.tab,target.issueId,target.pullRequestId]);
+  const valid=Boolean(onOpen&&selectedProjectId&&target.repositoryId&&(target.tab==="issues"||target.tab==="prs")
+    &&!(target.issueId&&target.pullRequestId)&&!(target.tab==="issues"&&target.pullRequestId)&&!(target.tab==="prs"&&target.issueId));
+  const query=useQuery({queryKey:key,enabled:valid,queryFn:({signal})=>loadProjectWorkItems(host,signal,selectedProjectId!),retry:false,refetchOnWindowFocus:"always"});
+  useEffect(()=>()=>{void cache.cancelQueries({queryKey:key});cache.removeQueries({queryKey:key});},[cache,key]);
+  const snapshot=query.isSuccess&&!query.isFetching?query.data:undefined;
+  const project=snapshot?.projects.find(value=>value.id===selectedProjectId);
+  const repository=project?.repositories.find(value=>value.id===target.repositoryId);
+  const items=snapshot?.items.filter(item=>item.project.id===selectedProjectId&&item.repository.id===target.repositoryId)??[];
+  const selected=target.issueId||target.pullRequestId?resolveProjectWorkItemTarget(items,selectedProjectId,target):undefined;
+  const [navigationFailed,setNavigationFailed]=useState(false);
+  const navigate=(id:string|null,next?:ProjectWorkItemTarget)=>{
+    if(lifetime.controller.signal.aborted||!onOpen)return;
+    void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(id,next);})
+      .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});
+  };
+  if(!valid||query.isError||snapshot&&(!project||!repository||(target.issueId||target.pullRequestId)&&!selected))return <ProjectPanelState error title={t("projects.unavailable")}/>;
+  if(!snapshot||!project||!repository)return <BuzzLoadingState label={t(target.tab==="prs"?"projects.sheet.loadingReviews":"projects.sheet.loadingTasks")}/>;
+  const tab=target.tab==="prs"?"prs":"issues";
+  const clear=()=>navigate(project.id,{repositoryId:repository.id,tab});
+  const detail=selected?<ProjectWorkItemDetail workItem={selected} host={host} onOpen={(id,next)=>onOpen?.(id,{...next,tab:"issues"})} onDiscussInChannel={props.onDiscussInChannel}/>:null;
+  const content=selected?detail:<RepositoryWorkspace host={host} snapshot={snapshot} project={project} repository={repository}
+    tab={tab} onBack={()=>navigate(project.id)} onTabChange={next=>navigate(project.id,{repositoryId:repository.id,tab:next})}
+    onOpen={next=>onOpen?.(project.id,{repositoryId:repository.id,tab,...next})}/>;
+  return <>
+    <ProjectDetailChrome project={project} repository={repository} actions={undefined}
+      activeTabCrumb={selected?null:t(tab==="issues"?"projects.list.tasks":"projects.list.reviews")}
+      activeWorkItemCrumb={selected?{category:t(tab==="issues"?"projects.list.tasks":"projects.list.reviews"),title:selected.type==="issue"?selected.issue.title:selected.pullRequest.title,clear}:null}
+      onGoProjects={()=>navigate(null)} onGoProjectHome={()=>navigate(project.id)}/>
+    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
+    {selected?(props.renderWorkItems?props.renderWorkItems(content,snapshot.viewerPubkey):content):
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-none px-4 pb-4" data-testid="project-detail-scroll">
+          <div className="flex min-h-full w-full flex-col space-y-3">{props.renderWorkItems?props.renderWorkItems(content,snapshot.viewerPubkey):content}</div>
+        </div>
+      </div>}
+  </>;
+}
+
+function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabChange,onOpen}:{
+  host:ProjectsHost;snapshot:Awaited<ReturnType<typeof loadProjectWorkItems>>;project:Project;repository:Project["repositories"][number];tab:"issues"|"prs";
+  onBack:()=>void;onTabChange:(tab:"issues"|"prs")=>void;onOpen:(target:ProjectWorkItemTarget)=>void|Promise<void>;
+}) {
+  const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
+  const [navigationFailed,setNavigationFailed]=useState(false);const sending=useRef(false);
+  const lifetime=useMemo(()=>({controller:new AbortController()}),[host,repository.id]);
+  useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
+  const items=snapshot.items.filter(item=>item.repository.id===repository.id);
+  const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
+  const open=(next:ProjectWorkItemTarget)=>{void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(next);})
+    .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
+  return <>
+    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
+    <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} onCreateTask={host.publish?()=>setCreateOpen(true):undefined}>
+      {tab==="issues"?<ProjectIssuesPanel issueItems={items.filter(item=>item.type==="issue").map(item=>({issue:item.issue,project:item.repository}))}
+        selectedIssueId={null} onSelectedIssueIdChange={id=>{if(id)open({issueId:id});}} profiles={profiles}/>:
+        <PullRequestsPanel project={repository} pullRequests={items.filter(item=>item.type==="pull-request").map(item=>item.pullRequest)}
+          selectedPullRequest={null} onSelectedPullRequestIdChange={id=>{if(id)open({pullRequestId:id});}} profiles={profiles}/>}
+    </WorkspaceTabs>
+    <CreateIssueDialog open={createOpen} onOpenChange={setCreateOpen} isCreating={creating} projectName={repository.name}
+      onCreate={async input=>{
+        if(sending.current)throw new TransportError(t("projects.issue.unknown"));
+        sending.current=true;setCreating(true);
+        try{
+          const result=await publishProjectIssue(host,project.id,repository,input,lifetime.controller.signal);
+          lifetime.controller.signal.throwIfAborted();
+          cache.setQueryData(["project-home-work-items",host.scopeKey,project.id],result.snapshot);
+          result.complete();setCreateOpen(false);toast.success(t("projects.issue.created"));
+          // A confirmed write is not reissued if navigation fails afterwards.
+          open({issueId:result.eventId});
+        }catch(error){throw new Error(t(isOutcomeUnknown(error)?"projects.issue.unknown":"projects.issue.createFailed"));}
+        finally{sending.current=false;if(!lifetime.controller.signal.aborted)setCreating(false);}
+      }}/>
+  </>;
 }
 
 function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDiscussInChannel}:{host:ProjectsHost;projectId?:string|null;target:ProjectWorkItemTarget;renderWorkItems:ProjectsViewProps["renderWorkItems"];onOpen:ProjectsViewProps["onSelectedProjectChange"];onDiscussInChannel?:ProjectDiscussInChannel}) {
@@ -183,7 +276,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   };
   if (selected) return active && renderChannel && onOpenChannel
     ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} scopeKey={host.scopeKey}
-        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onGoProjects={()=>setSelected(null)} host={host} renderWorkItems={renderWorkItems}/>
+        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onOpenProject={onSelectedProjectChange} onGoProjects={()=>setSelected(null)} host={host} renderWorkItems={renderWorkItems}/>
     : <ProjectPanelState error={!query.isPending&&!query.isFetching}
         title={t(query.isPending||query.isFetching?"platform.loading":query.isError?"platform.loadFailed":"projects.home.channelMissing")}/>;
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">

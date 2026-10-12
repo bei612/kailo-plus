@@ -3,7 +3,7 @@
 // The original channel host, overview rail, toggle and chrome are shared.
 // Repository healing/management and write/Git sheets still need their original governed consumers.
 import * as React from "react";
-import {Plus} from "lucide-react";
+import {Maximize2,Plus} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { useBffClient, useUiT } from "../context";
@@ -22,13 +22,14 @@ import { ProjectHomeContextPanel } from "./ProjectHomeContextPanel";
 import type { Project } from "./projectModels";
 import type { IdleAuxiliaryProps } from "../messages/thread/IdleAuxiliarySurface";
 import type { ProjectsHost } from "./projectEnumeration";
+import type { ProjectWorkItemTarget } from "./projectWorkItems";
 import { ProjectHomeWorkspaceSheet, type ProjectHomeWorkspaceCreateAction, type ProjectHomeWorkspaceDetail, type ProjectHomeWorkspaceSheetTab, type ProjectWorkItemsRenderer } from "./ProjectHomeWorkspaceSheet";
 
 const PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY = "buzz.desktop.project-home-summary-width";
 
 export type ProjectChannelRenderer = (workspace: DiscoverableWorkspace, auxiliary?: IdleAuxiliaryProps) => React.ReactNode;
 
-export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProjects, onOpenChannel, host, renderWorkItems }: {
+export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProjects, onOpenChannel, onOpenProject, host, renderWorkItems }: {
   project: Project;
   scopeKey: string;
   renderChannel: ProjectChannelRenderer;
@@ -36,6 +37,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   onOpenChannel: (workspace: DiscoverableWorkspace) => void | Promise<void>;
   host?: ProjectsHost;
   renderWorkItems?: ProjectWorkItemsRenderer;
+  onOpenProject?: (id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
 }) {
   const t = useUiT();
   const client = useBffClient();
@@ -90,6 +92,11 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
     if (lifetime.active) await onOpenChannel(current);
   });
   const toggleLabel = t(summaryVisible ? "projects.home.hideOverview" : "projects.home.showOverview");
+  const expandLabel = t("projects.sheet.expand", {section:t(workspaceTab === "prs" ? "projects.list.reviews" : "projects.list.tasks")});
+  const expandWorkspace = () => {
+    if (!repository || !workspaceTab || !onOpenProject) return;
+    navigate(() => onOpenProject(project.id, {repositoryId:repository.id,...workspaceDetail?.navigation,tab:workspaceTab}));
+  };
   const workspaceSheet = workspaceOpen && host && renderWorkItems && repository && workspaceTab
     ? <ProjectHomeWorkspaceSheet key={`${scopeKey}:${project.id}:${repository.id}:${workspaceTab}`}
         host={host} project={project} repositoryId={repository.id} tab={workspaceTab}
@@ -115,14 +122,17 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
         : channelsQuery.isError ? <p role="alert">{t("platform.loadFailed")}</p>
         : homeChannel ? renderChannel(homeChannel, {
             idleAuxiliaryPanel: workspaceSheet,
-            idleAuxiliaryHeaderActions: {...workspaceDetail,actions:workspaceCreateAction?<Tooltip disableHoverableContent>
+            idleAuxiliaryHeaderActions: {...workspaceDetail,actions:<>{workspaceCreateAction?<Tooltip disableHoverableContent>
               <TooltipTrigger asChild><Button aria-label={workspaceCreateAction.label}
                 className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
                 data-testid="project-home-workspace-sheet-create" disabled={workspaceCreateAction.disabled}
                 onClick={workspaceCreateAction.onClick} size="icon" title={workspaceCreateAction.label} type="button" variant="ghost">
                 <Plus className="h-4 w-4"/>
               </Button></TooltipTrigger><TooltipContent>{workspaceCreateAction.label}</TooltipContent>
-            </Tooltip>:null},
+            </Tooltip>:null}{onOpenProject&&workspaceOpen?<Tooltip disableHoverableContent><TooltipTrigger asChild>
+              <Button aria-label={expandLabel} className="shrink-0" data-testid="project-home-workspace-sheet-expand"
+                onClick={expandWorkspace} size="icon" title={expandLabel} type="button" variant="ghost"><Maximize2/></Button>
+            </TooltipTrigger><TooltipContent>{expandLabel}</TooltipContent></Tooltip>:null}</>},
             idleAuxiliaryOverridesThread: workspaceOpen,
             idleAuxiliaryTitle: t(workspaceTab === "prs" ? "projects.list.reviews" : "projects.list.tasks"),
             onCloseIdleAuxiliaryPanel: closeWorkspace,

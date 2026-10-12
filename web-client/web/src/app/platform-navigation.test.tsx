@@ -27,7 +27,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
     data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
     data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send} data-inbox-item={navigation.inboxItemId}
-    data-repository={navigation.projectWorkItemTarget?.repositoryId} data-issue={navigation.projectWorkItemTarget?.issueId} data-review={navigation.projectWorkItemTarget?.pullRequestId}>
+    data-repository={navigation.projectWorkItemTarget?.repositoryId} data-issue={navigation.projectWorkItemTarget?.issueId} data-review={navigation.projectWorkItemTarget?.pullRequestId} data-repository-tab={navigation.projectWorkItemTarget?.tab}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
@@ -36,6 +36,8 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     <button onClick={() => { void navigation.openProject("signed-project"); }}>project</button>
     <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",issueId:"task-event"}); }}>task</button>
     <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",pullRequestId:"review-event"}); }}>review</button>
+    <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",tab:"issues"}); }}>repository tasks</button>
+    <button onClick={() => { void navigation.openProject("signed-project",{repositoryId:"signed-repository",tab:"prs"}); }}>repository reviews</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}, "  exact needle  "); }}>search result</button>
     <button onClick={() => { void navigation.openConversation("conversation-a", {messageId:"diff-reply",threadRootId:"diff-root"}, "reply needle"); }}>DM search result</button>
     <button onClick={() => { void navigation.openChannel("workspace-a", {channelId:"workspace-a",messageId:"diff-result",threadRootId:null}); }}>ordinary link</button>
@@ -67,6 +69,21 @@ async function mount(url: string, browser = false) {
   await act(async () => { await router.load(); root!.render(<RouterProvider router={router} />); });
   return router;
 }
+
+it("preserves repository Tasks/Reviews references through navigation, Back/Forward and reload without treating them as channel threads",async()=>{
+  let router=await mount("/app/projects?projectId=signed-project");
+  const click=(label:string)=>act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent===label)!.click();});
+  await click("repository tasks");expect(node!.querySelector('[data-repository-tab="issues"]')).not.toBeNull();
+  await click("repository reviews");expect(node!.querySelector('[data-repository-tab="prs"]')).not.toBeNull();
+  const url=router.history.location.href;
+  await act(async()=>{router.history.back();await router.load();});expect(node!.querySelector('[data-repository-tab="issues"]')).not.toBeNull();
+  await act(async()=>{router.history.forward();await router.load();});expect(node!.querySelector('[data-repository-tab="prs"]')).not.toBeNull();
+  await act(async()=>root!.unmount());root=undefined;node!.remove();router=await mount(url);
+  expect(node!.querySelector('[data-repository-tab="prs"]')).not.toBeNull();
+  await click("open thread");expect(node!.querySelector("[data-thread]")).toBeNull();
+  expect(platformLocationSearch({projectId:"signed-project",repositoryId:"signed-repository",tab:"files",secret:"discard"})).toMatchObject({tab:"files"});
+  expect(platformLocationSearch({secret:"discard"})).not.toHaveProperty("secret");
+});
 
 it("preserves original Inbox item references through selection, Back/Forward and cold reload without adding a scope URL", async () => {
   let router = await mount("/app/inbox");

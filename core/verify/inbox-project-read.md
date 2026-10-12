@@ -2014,3 +2014,29 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 日志 SHA-256：`positive.log`=`8b929556bdcdad1d8d6b412c7e2c61293f4e79505bac70e423b41f54cb70cd2d`，`corrected.log`=`19f5b874e35cbbba825579179f1ee8b41efb95381cf7de1cdccaa5dca5deb9a3`，`mutation.log`=`431ffeacdfb04d795cc3700c275398f97ae48e501179a7fc62775c3317467ee0`，`final.log`（失败）=`bd7caf20e283d685e67c064c925d0a797ba5a667ad2762be1b4d3c139d228030`；末版 `channel-corrected.log`=`e0f9beb4814cfa4a42b3c83db5abd9ee76083de4ec9b0d2ad30b63a240a9c6c9`，`channel-mutation.log`=`0e4af685fe09ec13b4fd616b16ba6eb7ed72d5d2b274b257734d412235f9ae01`，`restored.log`=`8a71139dddb11c8201f32033c8ca1206af22c40ac2c4b998e1686e887ae9830c`。
 
 实现后独立交叉复核确认原父频道、Task/Review 联合分支、canonical link、scope-keyed selector 与既有双宿主 fresh identity/member/sendIntent 拒绝相符；只是源码复核。DOM 回调与 HTTP 为原受控夹具，不是在线加入频道或真实草稿发送。旧部署截图不能记本批通过；未构建、未部署、未运行 full、Rust/GTK 或 Windows/Mobile 设备验收。原 docs 快路径与本文 selected markdownlint 的实际结果只留 Data 日志，不追加检查自引用正文；不写公共 index。
+
+## 2026-10-12 原 Project Home Maximize 与 repository Tasks/Reviews 父页面
+
+基底 `4cdf8b57568821097461e6f3cac21d43c4dedfa0`；固定官方 `779af8886caae1317b4de962082429867ab61503`。本段只登记此页面闭包，5195/5316/5319 全树清单及四类覆盖仍为各自历史输入，不将原文件存在或本批测试计为产品完整恢复。
+
+四步影响结论：
+
+1. 权威与根因：原 `desktop/src/features/projects/ui/ProjectChannelHome.tsx::handleExpandWorkspace` 跳转 repository、tab 和当前详情导航；`ProjectHomeWorkspaceSheet.tsx` 的详情持有所选工作项实际 repository。共享主页此前缺该动作，现有精确工作项读取页也没有对应 repository 列表父页。读取仍沿 DD-39/DD-72/DD-75 的原宿主准入，无新实体、接口、合同或正文库。
+2. 影响与复用：直接共享原 `desktop/src/features/projects/ui/ProjectWorkspaceTabs.tsx::WorkspaceTabs`、`ProjectWorkspaceTabList.tsx::ProjectTabsList` 的 Tasks/Review 列表分支，以及 `CreateIssueDialog.tsx::CreateIssueDialog` 固定仓库表单 wrapper；原 `ProjectDetailScreen.tsx` 的 Chrome 与滚动层级沿既有共享模块组合。真正读取仍为 `loadProjectWorkItems`，创建为 `publishProjectIssue`，详情复用原共享 Task/Review 操作，不复制第二详情或表单主体。
+3. 异常与授权：Web/Native 原路由透传 tab；未知 tab、冲突类型、错 repository/event 不回退成项目公告。列表与 Chrome 只在 fresh query 成功且不 fetching 时渲染；原 scope 切换销毁旧实例，晚返回拒绝。稳定 query key 保留 host.scopeKey 和完整 project/repository/tab/issue/PR 值，不以临时目标对象引用触发重复读取。Web scope 含 tenant/principal/platformSessionId，客户端身份变化仍沿原 PlatformProvider generation；Native 仍使用原 session-bound host，未另造权限缓存。创建只在精确 Relay 回读后清意图，之后导航失败显示原错误，不重新签发已确认写入。
+4. 迁移与验证：Home Maximize 支持列表与已选详情；父页可切 Tasks/Review、选详情、category 返回、project breadcrumb、刷新及历史前后退，Tasks 原加号通过固定 repository 创建并打开新详情。两词条通过原 TS→Dart 生成，正式 TS/Dart 仅精确新增 hunk，保留历史 MM 与公共暂存。
+
+四类原源码差异：
+
+- 原样保留：Maximize 图标/Tooltip/位置、原 tab class/Back 按钮、列表边框/section header/滚动壳、固定仓库创建表单结构；既有 Task/Review 详情与操作继续共源。
+- 共享迁移：上述三个原模块与 `ProjectDetailScreen` 父层组合移到 `client-kit/ts/platform/src/react/projects`；Web `src/app/platform-navigation.ts`、Native `src/app/routes/platform.$section.tsx` 只接原 tab 引用。两端不各造页面。
+- 授权治理适配：fresh 目录和签名工作项必须同时证明 project/repository/event；加载及拒绝清正文，URL 保持历史引用但不能据此取得权限。原文两句通过同源中英词条投影；未知导航呈现既有错误态，无新提示体系。
+- 缺失需恢复／未证明：原其余 repository tabs、Git/source/terminal、Review 创建与 inline/request-changes、managed-Agent 分支仍无本批完整消费者，不显示假可用入口。这里只恢复 Tasks/Reviews 父页，不称完整 repository。未运行本批真实 BFF/Relay 在线操作、浏览器新版截图或 Native/Mobile 设备验收；在途 release 固定旧输入，不包含本批。
+
+定向证据目录：`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/repository-workspace.YJ7snb`。复用原 `kailo-inbox-forum-r5kqbx`，镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，UID1000、network none、只读 root、2 CPU/4 GiB，memory+swap 总限额等于内存（无额外 swap），依赖、`/tmp`、`/.dart-tool`、npm cache 均 Data。执行前 MemAvailable 36485 MiB、memory PSI 0；Cells 唯一 8 CPU/16 GiB builder 无此 Node 输入占用，未另开 builder/安装依赖。
+
+- 42438 实际 exit 1：私有 i18n 输入遗漏原 TS contracts generated 文件，原 generator/check 都失败；原共享双类型为 0、`node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx` 为 94/94；Web 类型为 0、原 `src/app/platform-navigation.test.tsx` 34/34；Native 类型为 0。类型命令为各原目录 `node node_modules/typescript/bin/tsc --noEmit`（共享显式 `-p tsconfig.json` 与 `-p tsconfig.test.json`）。不以其余成功覆盖该聚合失败。
+- 补入精确 HEAD 原 generated 文件后，15773 实际 exit 0：`python3 tools/gen-platform-i18n.py` 及 `--check` 均 0；共享双类型 0；同原 DOM `-t "repository|fixed-repository|maximizes original home"` 为 12/12，82 项明确未选。末版包含稳定 key 的相同值路由重渲染无额外查询、fresh 失效清 Chrome/列表、身份切换拒绝旧正文；未调整超时。React act 警告保留。
+- 75208 私有仅移除 Web `projectWorkItemTarget` 的 tab 消费，原 `-t "preserves repository Tasks/Reviews references"` 实际 exit 1，首个 Tasks 页选择断言失败。apply_patch 还原后正式/私有导航字节 cmp 0；52229 同一原用例实际 exit 0、1/1，其余 33 项未选。正式生产未承受变异。
+
+日志 SHA-256：`positive.log`=`5bfcc91c3e5a3cb60788d2053f71477a0404863fe6a54f6c9dccb9bf52e7b346`；`corrected.log`=`b84121c233e4b87577c5f8badfa6745b40d2e5a28ac9db596116a164c52044a3`；`mutation.log`=`abd079cfba11b85368a7bd41b3a1f4a849995ec1e506b8510e884ae77cdfd5c5`；`restored.log`=`40d68fd2e6590ee20638cc1a198730edac3e39688c68dfe357dfa2d33b085834`。最终原 docs 与本文 selected markdownlint 结果只留 Data，不追加自引用回执；交叉复核由主线在最终冻结输入安排，不将首版消息送达计作已审。

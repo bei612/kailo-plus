@@ -15,7 +15,7 @@ import {BuzzLoadingState} from "./BuzzLoadingState";
 import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
 
 export type ProjectHomeWorkspaceSheetTab="issues"|"prs";
-export type ProjectHomeWorkspaceDetail={backLabel:string;onBack:()=>void};
+export type ProjectHomeWorkspaceDetail={backLabel:string;onBack:()=>void;navigation:{repositoryId:string;issueId?:string;pullRequestId?:string}};
 export type ProjectHomeWorkspaceCreateAction={label:string;disabled:boolean;onClick:()=>void};
 export type ProjectWorkItemsRenderer=(children:React.ReactNode,viewerPubkey:string)=>React.ReactNode;
 
@@ -29,7 +29,7 @@ function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setS
   const profilesQuery=useUsersBatchQuery(authorKeys);
   const profiles=profilesQuery.isSuccess&&!profilesQuery.isFetching?profilesQuery.data.profiles:undefined;
   React.useEffect(()=>{
-    onDetailChange(selected?{backLabel:t(tab==="issues"?"projects.sheet.backTasks":"projects.sheet.backReviews"),onBack:()=>{setSelectedIssueId(null);setSelectedPullRequestId(null);}}:null);
+    onDetailChange(selected?{backLabel:t(tab==="issues"?"projects.sheet.backTasks":"projects.sheet.backReviews"),navigation:{repositoryId:selected.repository.id,...(selected.type==="issue"?{issueId:selected.issue.id}:{pullRequestId:selected.pullRequest.id})},onBack:()=>{setSelectedIssueId(null);setSelectedPullRequestId(null);}}:null);
     return ()=>onDetailChange(null);
   },[selected,tab,t,onDetailChange]);
   // Selected references do not authorize a detail absent from the fresh read.
