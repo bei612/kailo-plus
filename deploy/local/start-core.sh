@@ -95,8 +95,9 @@ PYRUNTIME
 fi
 # DD-94/98: the original Core consumer reads a controlled adapter directory.
 # No directory means no business-component delivery, not an empty credential or
-# a platform startup dependency. Mount only the supplied facts and public JWKS
-# files; never create missing paths or generate native identities here.
+# a platform startup dependency. Core receives only supplied facts/public JWKS;
+# receiver credentials are exact private file mounts for Worker alone. Never
+# create missing paths or generate native identities here.
 adapter_compose=()
 if [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
   adapter_config=$(mktemp)
@@ -109,6 +110,8 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import sys
+from urllib.parse import urlsplit
+from uuid import UUID
 
 def reject():
     raise SystemExit("Application adapter / conformance 投递必须完整、使用同一 artifact 与真实规范文件及 public-only JWKS；不生成绑定或通过证据")
@@ -197,7 +200,40 @@ try:
             files.add(source)
             if name == names[2]:
                 files.add(public_file(document["jwksFile"]))
-        services["worker"] = delivery({names[0]: str(candidate)}, {candidate})
+        worker_files, identities = {candidate}, set()
+        authorities = configuration.get("nativeReadAuthorities", [])
+        if not isinstance(authorities, list) or (peer and authorities):
+            reject()
+        for authority in authorities:
+            if not isinstance(authority, dict) or set(authority) != {
+                "bindingId", "generation", "coreBaseUrl", "oidcTokenUrl", "oidcClientId", "oidcClientSecretFile"
+            }:
+                reject()
+            binding, generation = authority["bindingId"], authority["generation"]
+            if not isinstance(binding, str) or UUID(binding).int == 0 or type(generation) is not int or generation <= 0:
+                reject()
+            key = (UUID(binding), generation)
+            if key in identities:
+                reject()
+            identities.add(key)
+            for name in ("coreBaseUrl", "oidcTokenUrl"):
+                if not isinstance(authority[name], str):
+                    reject()
+                endpoint = urlsplit(authority[name])
+                if endpoint.scheme not in ("http", "https") or not endpoint.hostname or endpoint.username is not None or endpoint.fragment:
+                    reject()
+                if name == "coreBaseUrl" and (endpoint.query or endpoint.path not in ("", "/")):
+                    reject()
+            if not isinstance(authority["oidcClientId"], str) or not authority["oidcClientId"].strip():
+                reject()
+            credential = source_file(authority["oidcClientSecretFile"])
+            if credential in files or credential.stat().st_mode & 0o077 or not credential.read_text(encoding="utf-8").strip():
+                reject()
+            # Only the original Worker reads this receiver credential. Several
+            # frozen authorities may use one file; never mount its directory
+            # or leak it through Core's public/configuration file set.
+            worker_files.add(credential)
+        services["worker"] = delivery({names[0]: str(candidate)}, worker_files)
     services["core-bff"] = delivery(environment, files)
     with open(sys.argv[1], "w", encoding="utf-8") as stream:
         json.dump({"services": services}, stream)

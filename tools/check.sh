@@ -926,6 +926,48 @@ with tempfile.TemporaryDirectory() as temporary:
         "target": str(candidate), "read_only": True, "bind": {"create_host_path": False}}]
     combined = adapter_produce(directory, supplied)
     assert combined.returncode == 0 and len(json.loads(combined.stdout)["services"]["core-bff"]["volumes"]) == 5
+    receiver_secret = location / "receiver-secret"
+    receiver_secret.write_text("isolated-receiver-credential", encoding="utf-8")
+    receiver_secret.chmod(0o600)
+    receiver = {"bindingId": "c1a3a3ee-ffaf-4929-919c-20be3f0e8c11", "generation": 1,
+        "coreBaseUrl": "http://isolated-core", "oidcTokenUrl": "http://isolated-idp/token",
+        "oidcClientId": "isolated-receiver", "oidcClientSecretFile": str(receiver_secret)}
+    def receiver_produce(authorities):
+        candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture",
+            "nativeReadAuthorities": authorities}), encoding="utf-8")
+        result = adapter_produce(supplied=supplied)
+        assert "isolated-receiver-credential" not in result.stdout + result.stderr
+        return result
+    # Sharing the same explicitly delivered credential file is valid; only
+    # ambiguous binding/generation authority is refused, not file reuse.
+    receivers = receiver_produce([receiver, receiver | {"generation": 2}])
+    assert receivers.returncode == 0, receivers.stderr
+    receiver_services = json.loads(receivers.stdout)["services"]
+    assert {m["source"] for m in receiver_services["worker"]["volumes"]} == {str(candidate), str(receiver_secret)}
+    assert all(m["source"] == m["target"] and m["read_only"] and not m["bind"]["create_host_path"]
+        for m in receiver_services["worker"]["volumes"])
+    assert str(receiver_secret) not in {m["source"] for m in receiver_services["core-bff"]["volumes"]}
+    assert receiver_produce([receiver, receiver]).returncode != 0
+    for authorities in (None, {}, [None], [receiver | {"unexpected": True}]):
+        assert receiver_produce(authorities).returncode != 0
+    for key, value in (("bindingId", "not-uuid"), ("bindingId", "00000000-0000-0000-0000-000000000000"),
+                       ("generation", 0), ("generation", True), ("generation", "1"), ("generation", 1.5),
+                       ("coreBaseUrl", "http://isolated-core/path"), ("coreBaseUrl", "http://isolated-core?query"),
+                       ("oidcTokenUrl", "http://user@isolated-idp/token"), ("oidcTokenUrl", "relative"),
+                       ("oidcClientId", " "), ("oidcClientSecretFile", str(location / "absent-secret")),
+                       ("oidcClientSecretFile", str(location)), ("oidcClientSecretFile", str(linked)),
+                       ("oidcClientSecretFile", str(candidate))):
+        assert receiver_produce([receiver | {key: value}]).returncode != 0, key
+    for key in receiver:
+        assert receiver_produce([{k: v for k, v in receiver.items() if k != key}]).returncode != 0
+    receiver_secret.chmod(0o644)
+    assert receiver_produce([receiver]).returncode != 0
+    receiver_secret.chmod(0o600)
+    receiver_secret.write_text(" \n", encoding="utf-8")
+    assert receiver_produce([receiver]).returncode != 0
+    receiver_secret.write_text("isolated-receiver-credential", encoding="utf-8")
+    assert receiver_produce([receiver]).returncode == 0
+    candidate.write_text(json.dumps({"artifactDigest": "fixture-artifact", "adapterBaseUrl": "fixture"}), encoding="utf-8")
     for missing in conformance_names:
         assert adapter_produce(supplied={k: v for k, v in supplied.items() if k != missing}).returncode != 0
     fixture.write_text(json.dumps({"artifactDigest": "different", "steps": []}), encoding="utf-8")
@@ -941,7 +983,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert 'compose up -d --no-deps --force-recreate --no-build worker' in starter
     assert '"${adapter_compose[@]}"' in starter[starter.index("compose() {"):]
     assert "adapter_config" in starter[starter.index("cleanup_start_core()"):starter.index("trap cleanup_start_core EXIT")]
-print("  \033[32mPASS\033[0m Application/conformance 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥/混合 artifact/半份配置拒绝、Core 与 Worker 消费者")
+print("  \033[32mPASS\033[0m Application/conformance 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥/混合 artifact/半份配置拒绝、Core 与 Worker 分离及 receiver 私有凭据精确投递")
 gateway_start = starter.index("gateway_names=(")
 gateway_end = starter.index("\nproject=", gateway_start)
 gateway_program = "set -eu\n" + starter[gateway_start:gateway_end]

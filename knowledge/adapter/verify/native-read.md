@@ -5983,3 +5983,58 @@ GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off GOSUMDB=off TMPDIR=/tmp/r
 没有删改断言。恢复后两文件与工作树 cmp 0；最终还原另实际验证 UNKNOWN 不含
 nativeStatus/terminalAt（这两条断言不计入较早 2249 的范围）。本批未重跑 full、
 未改变契约/四侧生成、未部署；文档门禁由主线合批，不借旧回执称固定发布通过。
+
+### 2026-10-12 原生 receiver 一致性验证身份投递
+
+1. 权威：`.design/07` §8A 的隔离 receiver 验证复用真实 Core 入站消费者，
+   `contracts/domain/component_conformance_environment.schema.json::nativeReadAuthorities`
+   已定义逐 binding/generation 的受控身份；本批不新增字段、身份或绑定。
+2. 影响：`deploy/local/start-core.sh::PYADAPTER` 原来只向 Worker 挂载
+   environment 文件，遗漏其 `oidcClientSecretFile`。真实读取者是
+   `worker/activities/component_conformance.go::receiverReadAuthority`，
+   后续 `verifyReceiverReadAuthority` 经原 OIDC Source 回读隔离 Core。
+   现在仅向 Worker 精确只读挂载该文件，Core 仍只接收配置与 public JWKS。
+3. 副作用：复用原 `source_file` 的规范绝对路径、真实文件、可读及非符号链接
+   约束；另拒绝非私有权限、空凭据及与 Core 文件集合重叠。输出只有路径，
+   不输出凭据，不挂父目录，不为缺失输入创建文件或默认配置。
+4. 异常：同文件供不同 authority 使用时按集合去重；同 binding/generation
+   重复、坏 UUID/代次/URL、缺字段、未知字段、缺文件或身份均在启动投递前拒绝。
+   无 conformance/业务组件配置时沿原可缺席路径；无新状态、计时器或重试。
+   真实 token 获取、fresh 授权及结果不明仍由原 Worker/Core 消费者处理。
+
+固定检查输入为 `184a5bf592594195855b4d1925e7f13a7d370b9c` 加本批两个
+源码路径；start-core 仅取本批 PYADAPTER/注释，不含同文件另一个 Gateway
+在制差异。仅复用原 `tools/check.sh` 的 adapter_program 验证块，没有新脚本、
+检查框架、schema 生成或组件专名分支。本批是 Kailo 投递接缝；没有修改
+WeKnora 固定官方 `2be7bd40631dda1dd485306038f07a62e9ee287e` 的业务源码。
+
+私有输入和日志目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-delivery.VB9IA0`。
+原 SDK `kailo-cells-closure-kxbrvt` 实核 4 CPU / 8 GiB / equal swap、
+UID 1000，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+输入、TMPDIR 及 cache 均在 Data。与同容器负责人协调后仅执行原 Python
+投递检查，不使用其 Cargo target 或私有输入，不安装依赖、不创建新容器。
+
+实际命令（工作目录为上述目录在容器内的同名 `/evidence` 路径）：
+
+```text
+docker exec -e TMPDIR=/evidence/receiver-delivery.VB9IA0 -e PYTHONDONTWRITEBYTECODE=1 -w /evidence/receiver-delivery.VB9IA0 kailo-cells-closure-kxbrvt python3 -c 'import json, os, pathlib, subprocess, tempfile; code=pathlib.Path("tools/check.sh").read_text(); begin=code.index("# Exercise the actual existing deployment producer"); end=code.index("gateway_start =",begin); exec(compile(code[begin:end],"tools/check.sh::adapter_program","exec"))'
+```
+
+| 原日志 | 实际结果 | SHA-256 |
+| --- | --- | --- |
+| positive.log | 18889 exit0，原生产投递正/拒绝场景 | `2d08d4b0b67b2fc3590f7de591335942873b703739ff363e04882f1700eeaecd` |
+| negative.log | 94178 exit1，私有移除凭据挂载，原 Worker 文件集合断言失败 | `e14f18b95e184ac22082d0ad67001000e1970fb242d5352364d473455f0efd74` |
+| restored.log | 38975 exit0，还原生产逻辑及最终说明注释 | `2d08d4b0b67b2fc3590f7de591335942873b703739ff363e04882f1700eeaecd` |
+
+同 SDK 原 `bash -n deploy/local/start-core.sh tools/check.sh` 退出 0。
+固定末版 start-core SHA-256
+`d0956a0a834bc439d8a9c6433286b169e5e1b4e2a1a5a1ed6318c2a961315511`，
+check.sh 为
+`af1c6b0fd3a66ddf128e22d3b3841e46e4e039d3880b822fc80ff1ac72d95dd3`。
+反证没有修改正式源码或断言。覆盖的是实际 Compose 投递生成程序，
+不是 Docker 实际挂载、OIDC 成功、HTTP 跨服务同步或完整 suite 通过；
+真实部署仍须匹配本批源码的 artifact 和合法隔离身份材料。
+本批未注册/激活 binding、未构建/加载镜像、未重跑 full；原生服务与 adapter
+既有 artifact 不能代替新源码验收。文档门禁由主线合批，未借旧结果声明通过。
