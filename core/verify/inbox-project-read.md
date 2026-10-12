@@ -1099,3 +1099,39 @@ stored updated 跨分区/目录刷新不被覆盖、切回恢复、存储拒绝�
 `restored.log` SHA256 `97e4e0910e7f9b555c8e4c4c59fcb62fd6a56116846864242ce417010d29b546`。
 本批未构建、部署、新截图、Windows/Mobile、docs 或 full；仅源码定向证据，
 不能借旧版线上图认领本批偏好恢复，现有发布门禁不变。
+
+## 2026-10-12 旧部署 Inbox 完整线程与单次刷新实拍
+
+本次只读操作时源码 HEAD 为 `ab07c6c9d395fad604712b10086fec211892e64b`；
+固定原版仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。
+沿原 Playwright CLI 会话 `kailo-official-views` 正常 SSO 登录，未创建业务对象、
+发送消息、轮换凭据或保存认证快照。初始过期会话读取 build-info 被登录跳转/CSP
+拒绝，正常登录后 08:51:44.887 UTC 实际 HTTP 200：buildId 为
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`。
+它对应既有发布记录的 `9d718234b74b688d9b81816f9b67470d4fc80440` 输入，
+不是当前 Tasks、评论、排序或作者批读源码部署；未重新检查容器镜像。
+
+从 `/app/inbox` 已有线程点击原“打开完整线程”，实际进入频道
+`ad9a6443-f0a2-47d2-895d-f11b8fef9e38`，URL 保留 thread/threadRootId/messageId，
+原根消息与既有“结果：367”回复可见。随后仅做一次正常 `page.reload()`：
+08:52:46.901–08:52:48.544 UTC 捕获窗口内文档 200、路由及该回复仍在，
+但新增 30 个 429（作者资料 26，profile/custom-emoji/messages/channel 各 1）。
+这是本次 response 监听所得，不是累计旧 console；未重复刷新或通过重试覆盖失败。
+作者资料同窗口另有 28 个 200，user-state 4 个 200、主频道 stream 3 个 200，
+因此不能把部分读取成功记为完整刷新通过。日志 responseStartMs 仅表示响应开始，
+不是完整请求耗时；没有记录请求头、令牌或认证值。
+
+证据目录 `/volumes/data/kailo/tmp/inbox-thread-online-read.BqzhP3/`：
+`01-inbox-thread.png`、`02-channel-thread.png`、`03-thread-reload.png` 均已逐张打开。
+前两张证明原 Inbox/完整线程跳转；第三张线程正文仍可见，但左栏停在“载入中…”、
+频道目录为空，不记刷新验收 PASS。三个图片 SHA256 依次为
+`ecf4a4961cb6f1fa46b3b5db7499ce2448d54ecf75ba2423dc9a4b9e328c5984`、
+`630a426f88e857717d58f14f6c5b1bcfa4de178fdcba73c6be45ad9ed34649fe`、
+`0ea59c1fdf184f6338b2cecb915a4c895fb8175700dd87855d3efd816498b053`。
+`reload.log` SHA256 `d3ab068ff00ba84f65e10c074a2322795ff739b9d04e17df0c3ea0a18ed9a83f`，
+含精确脱敏路径、时间、计数及原操作；98175 实际 exit 0 仅为浏览器脚本正常结束。
+
+作者批读源码 `dd65fb74a53ebb6aaac7ba1c3ecb766b2accb3b0` 已提交但不在此旧 Web；
+本次不改已修读取链或提高预算，失败交主线发布收口。部署后最小复验仍为同一
+Inbox 线程→完整线程→一次刷新，先读新 build-info，再核正文、侧栏及实际请求；
+Tasks 创建/评论、Projects 排序等尚未部署功能继续分别保留未验收，不借此三图认领。
