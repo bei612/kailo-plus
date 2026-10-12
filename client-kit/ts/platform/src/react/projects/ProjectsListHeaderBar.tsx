@@ -2,7 +2,7 @@
 import type { ProjectsViewMode } from "./lib/projectsViewHelpers";
 import { ProjectsViewModeToggle } from "./ProjectsToolbar";
 import { useUiT } from "../context";
-export type ProjectsSort = "created" | "name";
+export type ProjectsSort = "updated" | "created" | "name";
 
 type ProjectsListHeaderBarProps = {
   onViewModeChange: (viewMode: ProjectsViewMode) => void;
@@ -13,9 +13,11 @@ type ProjectsListHeaderBarProps = {
 export function ProjectsSortSelect({
   onChange,
   sort,
+  activityAvailable,
 }: {
   onChange: (sort: ProjectsSort) => void;
   sort: ProjectsSort;
+  activityAvailable: boolean;
 }) {
   const t=useUiT();
   return (
@@ -26,6 +28,7 @@ export function ProjectsSortSelect({
         onChange={(event) => onChange(event.target.value as ProjectsSort)}
         value={sort}
       >
+        {activityAvailable ? <option value="updated">{t("search.recentActivity")}</option> : null}
         <option value="created">{t("projects.created")}</option>
         <option value="name">{t("projects.name")}</option>
       </select>

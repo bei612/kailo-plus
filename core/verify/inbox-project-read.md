@@ -1002,3 +1002,55 @@ node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-pa
 本批没有部署、新版截图、真实 OS 剪贴板或 Windows/Mobile 验收；现网旧 Web
 截图不证明此源码。needs_action 仍缺原 46010/40007 生产及受权读链，不能以本批
 小修复或现有 30300 提醒冒充已恢复；未运行 full，已有发布门禁不变。
+
+## 2026-10-12 Tasks / Reviews 原最近活动排序消费者
+
+基底 `9a4340dcd811dbd42718c47770534e7cd3a5621c`；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` 内
+`visibleIssues` / `visiblePullRequests` 使用 `right.updatedAt - left.updatedAt`，
+`desktop/src/features/projects/ui/ProjectsListHeaderBar.tsx::ProjectsSortSelect`
+提供 `updated` / `created` / `name` 三选项。当前共享 canonical reducer 已有
+该活动值，列表却只允许后两种排序；本批接回原实际排序，不添加数据查询或新控件。
+
+四步结论：
+
+1. 权威为 REQ-24 原版恢复；作用于既有 Tasks / Reviews 的受权列表，不影响
+   Project / Repository 事实、写入准入、契约或任何新 Workflow。
+2. 读链仍为 `loadProjectWorkItems` → 原 `projectIssues.mjs::eventToProjectIssue`
+   与 `projectPullRequests.mjs::eventToProjectPullRequest` → 共源列表。
+   Issue 的评论/状态、PR 的更新/评论/状态归约为原 `updatedAt`；没有活动时由原
+   reducer 回落创建时间。排序保留原减法和相等返回 0，不补本地时间或新 tie-breaker。
+3. 共享 `ProjectsSortSelect` 原位置/样式增加原选项，复用已有中英
+   `search.recentActivity`；已有 Tasks / Reviews 恢复入口初值为 `updated`。
+   项目目录缺少原 activity summary，切回目录只回到已支持的 `created`，不显示
+   无数据支撑的选项，不新增提示文案。其它原可支持排序仍保留。
+4. fresh 获取中或拒绝仍清空列表；排序不新发 Relay/BFF 请求、不调用发布或修改
+   读账本。scope 生命周期保持既有实现；本批不新增持久格式或错误分类。
+
+四类映射：原样保留比较顺序、原 select 呈现和 canonical 活动归约；共享迁移为
+这三个 TS 呈现消费者接回缺失选项；已授权适配仅为双端既有 Host / fresh 读门禁与
+同源中英词条。目录活动选项未恢复属于缺失，不归为用户授权删除；缺失需恢复仍含项目目录活动汇总、
+原 `projectsViewHelpers.ts::readStoredSort/writeStoredSort` 持久偏好、Git/审阅写操作、
+selection→Agent、needs_action 原生产链和 Mobile 实际入口；不称全部排序恢复。
+
+原 `kailo-web-thread-tooltip-sdk` 启动前仅 sleep；固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU/4 GiB，memory+swap 总限额等于内存（无额外 swap），UID 1000、network none；
+实际可用内存 37 GiB、I/O full avg60 24.78%。私有源码、TMPDIR/npm cache 均在
+Data 原挂载，四文件投递后 cmp 0；没有新镜像、依赖安装或复制依赖树。
+
+82168 实际 exit 0：原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
+及 `-p tsconfig.test.json` 均 0；原
+`node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-parallelism`
+54/54。新增四项中英真实列表验证评论/更新对创建顺序的覆盖、无活动回落、三种
+排序、刷新状态后重排、正确详情回调、撤权清空及目录切换，不以纯 formatter 检查替代。
+20950 仅私有比较器恢复旧 created：exit 1，四项逆序断言失败、50 跳过。
+apply_patch 还原、cmp 0 后 92149 原完整套件 exit 0、54/54；React act 警告保留。
+
+日志 `/volumes/data/kailo/tmp/projects-recent-sort.8m551m/`：
+`positive.log` SHA256 `686b65482c99e8a4e6a8df978c3605c51b65c6fc575e3cafabf6cb12fe3547ca`；
+`mutation.log` SHA256 `3fbf05614012b3d5215729f63c673657334533df02e90f16f0006c39766718b2`；
+`restored.log` SHA256 `fd232a3834e3424f843faabd76358473d825f1e1aeeb80287a64d80989724701`。
+仅定向源码证据：本批未构建、部署、截图、执行 Windows/Mobile、docs 或 full；
+线上旧 Web 不能认领新排序，已有发布门禁保持。

@@ -22,7 +22,7 @@ import type { Project } from "./projectModels";
 import { ProjectsChannelsList } from "./ProjectsChannelsList";
 import type { ProjectsFilter } from "./ProjectsToolbar";
 import { ProjectsSectionSearch } from "./ProjectsSectionSearch";
-import { ProjectsListHeaderBar } from "./ProjectsListHeaderBar";
+import { ProjectsListHeaderBar, type ProjectsSort } from "./ProjectsListHeaderBar";
 import type { ProjectMemberRenderer } from "./ProjectChannelMembers";
 import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTarget,type ProjectInboxWorkItem} from "./projectWorkItems";
 import {ProjectsIssuesList} from "./ProjectsIssuesList";
@@ -68,7 +68,7 @@ function ProjectWorkItemDetail({workItem,host}:{workItem:ProjectInboxWorkItem;ho
   return workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>;
 }
 
-function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:"created"|"name";view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
+function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
   const t=useUiT();const cache=useQueryClient();
   const [navigationFailed,setNavigationFailed]=useState(false);
   const lifetime=useMemo(()=>({active:true}),[host]);
@@ -82,7 +82,9 @@ function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkIte
     return (filter==="issues"?item.type==="issue":item.type==="pull-request")&&matchesProjectsSearch(search,[value.title,value.content,value.status,item.project.name,item.repository.name]);
   }).sort((a,b)=>{
     const left=a.type==="issue"?a.issue:a.pullRequest;const right=b.type==="issue"?b.issue:b.pullRequest;
-    return sort==="name"?left.title.localeCompare(right.title):right.createdAt-left.createdAt;
+    if(sort==="name")return left.title.localeCompare(right.title);
+    if(sort==="created")return right.createdAt-left.createdAt;
+    return right.updatedAt-left.updatedAt;
   });
   const open=(project:Project,repository:Project["repositories"][number],target:{id:string})=>{
     void Promise.resolve().then(()=>{if(lifetime.active)return onOpen(project.id,{repositoryId:repository.id,...(filter==="issues"?{issueId:target.id}:{pullRequestId:target.id})});})
@@ -114,7 +116,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     return stored==="channels"&&!onOpenChannel||(stored==="issues"||stored==="prs")&&!onSelectedProjectChange?"projects":stored;
   });
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
-  const [sort,setSort]=useState<"created"|"name">("created");
+  const [sort,setSort]=useState<ProjectsSort>(filter==="issues"||filter==="prs"?"updated":"created");
   const [createOpen,setCreateOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
   const creation=useCreateProject(host);
@@ -139,7 +141,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
   const changeView=(next:ProjectsViewMode)=>{setView(next);writeStoredViewMode(next);};
-  const changeFilter=(next:ProjectsFilter)=>{setFilter(next);writeStoredFilter(next);};
+  const changeFilter=(next:ProjectsFilter)=>{if(next!=="issues"&&next!=="prs"&&sort==="updated")setSort("created");setFilter(next);writeStoredFilter(next);};
   const invalidateProjects=()=>Promise.all([
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
     cache.invalidateQueries({queryKey:["sidebar-projects",host.scopeKey]}),

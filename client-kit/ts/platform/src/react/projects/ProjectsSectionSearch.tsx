@@ -120,7 +120,7 @@ export function ProjectsSectionSearch({
               />
               {filter !== "channels" ? (
                 <div className="absolute inset-y-0 right-0 flex w-32 items-center justify-end">
-                  <ProjectsSortSelect onChange={onSortChange} sort={sort} />
+                  <ProjectsSortSelect onChange={onSortChange} sort={sort} activityAvailable={filter === "issues" || filter === "prs"} />
                 </div>
               ) : null}
             </motion.div>

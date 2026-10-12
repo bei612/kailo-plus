@@ -431,6 +431,48 @@ describe("original Inbox project read closure",()=>{
     await vi.waitFor(()=>expect(view.querySelector(rowSelector)).toBeNull());
     expect(view.textContent).not.toContain(f[kind].content);expect(host.publish).not.toHaveBeenCalled();cache.clear();
   });
+  it.each([["issues","issue","en"],["prs","review","en"],["issues","issue","zh-CN"],["prs","review","zh-CN"]] as const)("restores original recent activity sorting for %s/%s in %s without fabricating directory activity",async(section,kind,locale)=>{
+    setLocale(locale);localStorage.setItem("buzz.projects.viewMode","list");localStorage.setItem("buzz.projects.filter",section);
+    const f=fixture(),opened=vi.fn();
+    const newer=event("d",kind==="issue"?1621:1618,[["a",repository],["subject","A newer work item"]],"No activity yet",25);
+    f.rows.push(newer);
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectsView host={f.host} onSelectedProjectChange={opened}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    const prefix=`projects-${kind==="issue"?"issue":"pr"}-row-`;
+    const order=()=>Array.from(ui.querySelectorAll(`[data-testid^="${prefix}"]`)).map(row=>row.getAttribute("data-testid"));
+    const originalId=prefix+f[kind].id,newerId=prefix+newer.id;
+    await vi.waitFor(()=>expect(order()).toEqual([originalId,newerId]));
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('option[value="updated"]')).not.toBeNull());
+    const select=ui.querySelector<HTMLSelectElement>("select")!;
+    expect(select.value).toBe("updated");
+    expect(select.querySelector('option[value="updated"]')?.textContent).toBe(locale==="en"?"Recent activity":"最近活动");
+    const queryCount=f.query.mock.calls.length;
+    const sort=async(value:string)=>act(async()=>{select.value=value;select.dispatchEvent(new Event("change",{bubbles:true}));});
+    await sort("created");expect(order()).toEqual([newerId,originalId]);
+    await sort("name");expect(order()).toEqual([newerId,originalId]);
+    await sort("updated");expect(order()).toEqual([originalId,newerId]);expect(f.query).toHaveBeenCalledTimes(queryCount);
+    f.rows.push(event("f",1631,[["a",repository],["e",newer.id]],"",45));
+    await act(async()=>{await cache.invalidateQueries({queryKey:["projects-work-items",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(order()).toEqual([newerId,originalId]));
+    const first=ui.querySelector(`[data-testid="${newerId}"]`)!;
+    await click(first.querySelector<HTMLButtonElement>("button[title]")!);
+    expect(opened).toHaveBeenCalledExactlyOnceWith("30621:"+author+":project",{repositoryId:author+":repo",...(kind==="issue"?{issueId:newer.id}:{pullRequestId:newer.id})});
+    f.host.query=async()=>{throw new Error("Revoked work item access");};
+    await act(async()=>{await cache.invalidateQueries({queryKey:["projects-work-items",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(order()).toEqual([]));
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-search-close"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-projects"]')).not.toBeNull());
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-projects"]')!);
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector("select")).not.toBeNull());
+    expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");expect(ui.querySelector('option[value="updated"]')).toBeNull();
+    expect(pulse.publish).not.toHaveBeenCalled();cache.clear();
+  });
   it("keeps an asynchronous rejected list navigation on the same read-only list without retrying",async()=>{
     const f=fixture(),opened=vi.fn(async()=>{throw new Error("Navigation refused");});
     localStorage.setItem("buzz.projects.filter","issues");
