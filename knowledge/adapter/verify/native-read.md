@@ -6323,3 +6323,95 @@ Results:
 This closes the specific query-embedding construction/grouping gap recorded in
 the preceding batch. It does not claim that all native model call types are
 covered or remove the independent production activation/conformance gate.
+
+## 2026-10-12 SERVICE read-edge permission correction (DD-89)
+
+Four-step authority and impact check:
+
+1. Design `07` §8.2 requires Core admission and the SOURCE PEP to fresh-check
+   the RECEIVER SERVICE's `read` permission. Design `05` §2 grants the original
+   `reader` relationship through `resource.grant_read`, including its existing
+   owner approval. Ordinary HUMAN/AGENT `file_storage.list` still requires
+   `discover`; this correction does not change that capability mapping.
+2. `core/crates/platform-core/src/application_read_grant.rs::evaluate` was
+   combining `read` with the ordinary action's permission. For list that also
+   required `discover`, which the legitimate SERVICE reader grant does not
+   provide. Both original `request` and `authorize` consume this function;
+   `application_binding_pep.rs` dispatches SERVICE checks to the latter.
+   SOURCE `file-storage/adapter/src/service-list.mjs` already calls the original
+   fresh PEP three times without adding a separate discover permission.
+3. The existing permission phase now asks SpiceDB for fully consistent `read`
+   on the exact SERVICE/resource. Original scope, token/parameter checks and
+   quota remain in their existing consumers. `readMode=DISCOVER` stays unchanged:
+   it describes listing evidence, not an additional grant. Original SOURCE
+   root/digest and RECEIVER receipt validation are not weakened.
+4. Revoked `read` denies; unavailable authorization or a missing ZedToken fails
+   closed. No relationship, schema, permission, actor, registration or Workflow
+   is added. Independent native access and ordinary HUMAN/AGENT list semantics
+   are unchanged. The separate, uncommitted environment bootstrap is excluded
+   from this production candidate and is not conformance evidence.
+
+Verification input: base `236bdbf3e688424e1ede3a2e556e71e0236187fa`, with only the
+read-edge production/test change; Data evidence directory
+`/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/read-edge`.
+The original `SpiceDb` HTTP consumer test checks exact scope and consistency,
+reader-without-discover success, read revocation, empty revision and HTTP 503.
+It is a local permission-service response stub, not live SpiceDB relationships,
+Core HTTP authentication, real quota admission or SOURCE/RECEIVER business
+conformance. The original listing-receipt cases remain part of the narrow run.
+
+The existing SDK uses immutable image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+UID 1000, read-only root and network none. Before execution, Docker/cgroup
+readback confirmed 4 CPU, 8 GiB RAM, equal memory-swap (swap allowance zero),
+Data source/tmp/registry/git/target mounts and writable cache/tmp. No Cargo or
+rustc process was active; the separately bounded Cells Go image build remained
+active. Available memory was 35 GiB and memory PSI full avg60 was 0.03;
+Data I/O full avg60 was 58.42, retained as an execution-pressure boundary.
+
+The original entry uses `TMPDIR=/tmp`, `SQLX_OFFLINE=true` and
+`CARGO_TARGET_DIR=/cache/rust-target`:
+
+```sh
+cargo test --locked --offline -j16 -p platform-core --bin platform-core read_grant:: -- --nocapture
+```
+
+Original positive session `49523` exited 0: 12 passed, 0 failed, 3 ignored,
+433 filtered out. The three ignored cases require an actual migrated isolated
+database; they are not service authorization or database acceptance evidence.
+Private negative session `42026` changed only the production permission from
+`read` to `discover`, then ran the same original command restricted to
+`service_read_edge_checks_reader_without_granting_discover`. It exited 101:
+0 passed, 1 failed, at `assertion failed: allowed.allowed`. Official source was
+not mutated. Original production bytes were restored and `cmp` exited 0.
+Restored session `84773` exited 0 using the original complete `read_grant::`
+filter (12 passed, 3 ignored). First clippy `9749` exited 101 with E0761:
+the verification command had mistakenly touched the old `generated.rs` path,
+creating an empty private file alongside the actual `generated/mod.rs`.
+That self-created empty file was moved to evidence, not fixed by changing
+product code or dependencies. Every actual generated-directory blob matched
+HEAD. Corrected session `79687` recompiled contracts, identity, collab-bridge
+and Core, then exited 0: the same 12 tests passed, 3 remained ignored, and the
+original narrow clippy finished successfully (6m 09s). Its command was the
+same test invocation above followed by:
+
+```sh
+cargo clippy --locked --offline -j16 -p platform-core --bin platform-core -- -D warnings
+```
+
+Final production source SHA-256:
+`928eae170ee918d4d8886f36085a7203dc36bd9f8758d1ab7ddbe7fd032b95c2`.
+The final private input matches these restored production bytes (`cmp` exit 0).
+Earlier failures are not relabeled as success; the corrected run is the final
+fixed-input result. No dependency download, generated-type edit or test removal
+was used to correct the verification entry.
+
+| Original log | SHA-256 |
+| --- | --- |
+| positive.log | `d4af5b6e293d97bdeb68a0586a2788f7c792bd04ba49ca1e7b8fef85e9823de2` |
+| negative.log | `58d6fc8e480d237fec4696d66acac6e64348a06636ed4cedb7d45c5a64ae8668` |
+| restored.log | `a7541f77418e55f94acfa015b7c3ead7e3c3de30b407fcee4b4533c0242631c6` |
+| clippy.log (first failure) | `779b41f3513070bd02b692f6800981dace3a0ebd6a6a4a7016bdc07ef2f34dcc` |
+| corrected.log (final test/clippy) | `5f2e76a2a737b9f4a579727ac995510ebca6aeb6bed925a6e78999c18af30d96` |
+
+No deployment or binding activation is claimed.

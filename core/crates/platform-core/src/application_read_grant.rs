@@ -415,43 +415,8 @@ async fn evaluate(
     source: &Source,
     resource: Uuid,
 ) -> Result<Evaluation, Refusal> {
-    let mut evaluation = Evaluation {
-        allowed: true,
-        scope: "ALLOW",
-        authorization: "ALLOW",
-        quota: "NOT_APPLICABLE",
-        zed_token: None,
-        reason: None,
-    };
-    // Every batch needs read, including a list action whose public permission
-    // mapping additionally requires discover. No reader relation is invented.
-    for permission in ["read", source.application.definition.permission.as_str()]
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-    {
-        let check = state
-            .governance
-            .spicedb
-            .check(
-                "resource",
-                &resource.to_string(),
-                permission,
-                &receiver.principal.to_string(),
-                crate::spicedb::Consistency::FullyConsistent,
-            )
-            .await
-            .map_err(|_| Refusal::Unavailable("service read authorization unavailable".into()))?;
-        if check.zed_token.is_empty() {
-            return Err(blocked());
-        }
-        evaluation.zed_token = Some(check.zed_token);
-        if !check.allowed {
-            evaluation.allowed = false;
-            evaluation.authorization = "DENY";
-            evaluation.reason = Some(ReasonCode::PermissionDenied);
-            break;
-        }
-    }
+    let mut evaluation =
+        evaluate_read(&state.governance.spicedb, receiver.principal, resource).await?;
     state
         .governance
         .check_quota(
@@ -461,6 +426,37 @@ async fn evaluate(
         )
         .await?;
     Ok(evaluation)
+}
+
+async fn evaluate_read(
+    spicedb: &crate::spicedb::SpiceDb,
+    principal: Uuid,
+    resource: Uuid,
+) -> Result<Evaluation, Refusal> {
+    // DD-89 / design 07 §8.2: the SERVICE read edge consumes the granted
+    // reader relation. The ordinary list action's discover permission remains
+    // a HUMAN/AGENT capability mapping, not an additional SERVICE grant.
+    let check = spicedb
+        .check(
+            "resource",
+            &resource.to_string(),
+            "read",
+            &principal.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("service read authorization unavailable".into()))?;
+    if check.zed_token.is_empty() {
+        return Err(blocked());
+    }
+    Ok(Evaluation {
+        allowed: check.allowed,
+        scope: "ALLOW",
+        authorization: if check.allowed { "ALLOW" } else { "DENY" },
+        quota: "NOT_APPLICABLE",
+        zed_token: Some(check.zed_token),
+        reason: (!check.allowed).then_some(ReasonCode::PermissionDenied),
+    })
 }
 
 pub(crate) fn is_service(ae: &Execution) -> bool {
@@ -888,6 +884,84 @@ fn validate_claims(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn service_read_edge_checks_reader_without_granting_discover() {
+        use std::sync::{
+            atomic::{AtomicU8, AtomicUsize, Ordering},
+            Arc,
+        };
+        let principal = Uuid::new_v4();
+        let resource = Uuid::new_v4();
+        let mode = Arc::new(AtomicU8::new(0));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let checks = {
+            let mode = mode.clone();
+            let calls = calls.clone();
+            move |Json(request): Json<Value>| {
+                let mode = mode.clone();
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    assert_eq!(request["consistency"], json!({"fullyConsistent":true}));
+                    assert_eq!(
+                        request["resource"],
+                        json!({"objectType":"resource","objectId":resource})
+                    );
+                    assert_eq!(
+                        request["subject"]["object"],
+                        json!({"objectType":"principal","objectId":principal})
+                    );
+                    let mode = mode.load(Ordering::SeqCst);
+                    if mode == 3 {
+                        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                    // This SERVICE has only reader. Ordinary discover stays denied.
+                    let allowed = request["permission"] == "read" && mode != 1;
+                    Json(json!({
+                        "checkedAt":{"token":if mode == 2 { "" } else { "fresh-service-read" }},
+                        "permissionship":if allowed { "PERMISSIONSHIP_HAS_PERMISSION" } else { "PERMISSIONSHIP_NO_PERMISSION" }
+                    })).into_response()
+                }
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let spicedb =
+            crate::spicedb::SpiceDb::for_test(format!("http://{}", listener.local_addr().unwrap()));
+        let router =
+            axum::Router::new().route("/v1/permissions/check", axum::routing::post(checks));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let allowed = evaluate_read(&spicedb, principal, resource).await.unwrap();
+        assert!(allowed.allowed);
+        assert_eq!(allowed.authorization, "ALLOW");
+        assert_eq!(allowed.zed_token.as_deref(), Some("fresh-service-read"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(
+            !spicedb
+                .check(
+                    "resource",
+                    &resource.to_string(),
+                    "discover",
+                    &principal.to_string(),
+                    crate::spicedb::Consistency::FullyConsistent
+                )
+                .await
+                .unwrap()
+                .allowed
+        );
+
+        mode.store(1, Ordering::SeqCst);
+        let revoked = evaluate_read(&spicedb, principal, resource).await.unwrap();
+        assert!(!revoked.allowed);
+        assert_eq!(revoked.authorization, "DENY");
+        assert_eq!(revoked.reason, Some(ReasonCode::PermissionDenied));
+        for failure in [2, 3] {
+            mode.store(failure, Ordering::SeqCst);
+            assert!(evaluate_read(&spicedb, principal, resource).await.is_err());
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 5);
+        server.abort();
+    }
 
     #[test]
     fn service_directory_rejects_receiver_direction_and_invalid_pages() {
