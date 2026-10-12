@@ -190,3 +190,27 @@ Web 原本初始选择为 null，宽屏没有首条详情；筛选后仍从所�
 这些只能证明修复前缺口及已部署范围；本候选新增 Project 筛选、Issue/PR 详情、
 项目作者操作和刷新/撤权均没有部署后截图。全量台账的历史 5314 路径统计不能
 直接减去这 43 路径当“完成率”，没有逐页面/关键状态矩阵也不报虚假的未验收总数。
+
+## 2026-10-12 回复完成的当前身份与详情归属
+
+本批属于 `DD-75` 的既有 Web 发布接缝修复，不改变固定官方 Inbox 回复产品行为。
+实际问题在 `InboxPane::onPublicationStateChange`：旧详情卸载后，晚到的回复成功
+仍会清掉新详情的父级发布锁，晚到 UNKNOWN 也会回写选择并刷新。编辑已有归属
+保护，回复却没有；现在两者复用同一个当前 principal/会话/workspace 的 owner。
+退役 owner 不能发起发布，完成或异常只向原调用方返回，不改新详情或父级锁。
+同 owner 的键盘/父级选择锁、UNKNOWN 中性状态和明确 `PublishRejected` 规则不变。
+无新状态、契约、存储、迁移或第二权威；Desktop/Mobile 传输与原 UI 均未改动。
+
+证据目录为 `/volumes/data/kailo/tmp/inbox-publication-owner.eDZq8v`。沿既有
+Data SDK `kailo-inbox-forum-r5kqbx`（2 CPU/4 GiB、用户 1000:1000、无网络）
+核对并发及压力后，原 Web `tsc --noEmit` 和 Inbox 40 项退出 0（`positive.log`）。
+初次破坏验证中频道两个用例准确失败，私聊两个夹具依赖前序 mock，不能算有效
+反证（`mutation.log`）；仅修正新用例自有夹具后，四个隔离用例退出 0
+（`isolated-positive.log`）。私有副本只去掉回复完成的 owner 保护，四个均在父级
+回写断言准确失败、退出 1（`mutation-isolated.log`）；精确还原并 `cmp` 正式源码
+退出 0，原 40 项再次全部通过、退出 0（`final-restored.log`）。实现后独立复核
+实际父级调用链和固定官方回复行为，未发现本批新增阻断。
+
+这是源码与原消费者证据，不是浏览器、三人多 Agent、Windows 或发布验收。
+已构建的 `54306bc7d4af23495a4c318427e025df6850df1c` Web 产物不含本修复，
+本批未部署，未据此提高可用完成率，也不改变上面的完整原版缺项。

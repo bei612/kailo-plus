@@ -83,3 +83,48 @@ Vite 构建成功（3943 modules）、OCI 导出及实际 registry 产物。
 `/volumes/data/kailo/tmp/tmp.1FOvLFPjbi.check.log`：
 `Got socket error trying to find package test at https://pub.dev.`
 依赖准备阶段失败，产品门禁没有执行，不能声明全量检查通过或生产就绪。
+
+## 2026-10-12 54306 Web 匹配产物：已构建、未部署
+
+本批唯一构建固定已提交并推送的源码
+`54306bc7d4af23495a4c318427e025df6850df1c`，tree
+`4ea6c577e73e36a1fe1d7e25e18819989b4f0e0a`。原生 Git 在 Data
+建立干净稀疏输入，旧 4cdf 构建证据保留；没有纳入正式工作树历史 dirty。
+固定上游为 `a6766c482533d028582d0efcfd3740769f86217c`，原
+`upstream_manifest.py plan web-client` 实际 exit 0，无 build secret 或额外参数。
+原 source/buildId：
+`sha256:8e15cb9a315fc99e9911122c58a57d6892ce758cb6f2c76fed7ef186448fb73e`。
+
+原入口在 23:32 UTC 启动，句柄 `75030` 真实 exit 0：
+
+```sh
+sudo -n -H env \
+  TMPDIR=/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-54306.JCwvlt/tmp \
+  REGISTRY=127.0.0.1:55000 BUILDX_BUILDER=kailo-core-data \
+  bash /volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-54306.JCwvlt/apps/tools/build-upstream.sh web-client
+```
+
+既有 Data BuildKit 实际 8 CPU / 16 GiB、memory+swap 总限额 16 GiB，
+parent cgroup 读回一致；启动前只有永久 init/buildkitd，memory PSI 为 0。
+源码、缓存、临时目录及 registry 均在 Data。原 tsc/Vite 通过，4101 modules；
+原大分块警告保留，没有放宽断言或升级依赖。原入口仅 `--push`，没有
+`--load`、根盘镜像导入或新 SDK；运行服务与已有迁移复制未被本批修改。
+
+产物为 `127.0.0.1:55000/web-client` 的顶层 OCI index：
+`sha256:3df0d5bb0017d447be6edcebdbb3119c3a1a8f5fc7ab9b884436f2878910cde1`。
+23:37:57 UTC 原 registry HEAD HTTP 200 返回相同 Docker-Content-Digest，
+GET 索引字节 SHA256 也精确一致；不是平台子 manifest 或 image config 摘要。
+原 exporter metadata 与成功后 record 的 source/artifact 两字段一致。
+
+证据目录 `/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-54306.JCwvlt`：
+`web-release.log` SHA256
+`8d96870e6f86771fc1585a71d48b2bccd801f6429b00f48119396f35b4aea549`；
+`registry-head.log`、`web-index.json`、`source-plan.env` 与原
+`tmp/build-web-client.u4s8Ku.metadata.json` 保留；命令、资源及完整哈希见该目录
+`receipt.md`。本批文档检查结果另留同目录，不在本文追加自引用。
+
+该产物包含固定树的 Tasks/Reviews、共享 Inbox 列表和详情主体；
+**不包含主线随后验证的晚到回复 owner 小修**。此处只有已构建并推送产物，
+没有部署、浏览器/设备验收、新 SBOM 扫描或 `--full`，不重写历史失败，
+不宣称整个 Inbox/Composer、三组件绑定或生产门禁已经完成。Core/Worker、
+Windows/Mobile 产物及其部署未随本次 Web 构建改变。

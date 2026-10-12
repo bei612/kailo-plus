@@ -45,9 +45,9 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const publication = useRef<{ key: string; parent: string | null; unknown: boolean; edit?: boolean } | null>(null);
   const { editTarget, setEditTarget, handleCancelEdit } = useChannelMessageEdit<TimelineMessage>(JSON.stringify([principalId, conversation?.id ?? workspaceId]));
   const ownProfile = useQuery({queryKey:["platform", "edit-author", principalId], queryFn:()=>bff.profile()});
-  const editOwner=useMemo(()=>({active:true}),[principalId,conversation?.id,workspaceId]);
-  const editOwnerRef=useRef(editOwner);editOwnerRef.current=editOwner;
-  useEffect(()=>{editOwner.active=true;return()=>{editOwner.active=false;};},[editOwner]);
+  const publicationOwner=useMemo(()=>({active:true}),[principalId,conversation?.id,workspaceId]);
+  const publicationOwnerRef=useRef(publicationOwner);publicationOwnerRef.current=publicationOwner;
+  useEffect(()=>{publicationOwner.active=true;return()=>{publicationOwner.active=false;};},[publicationOwner]);
   const composerContainer = useRef<HTMLDivElement>(null);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId, forum);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
@@ -169,6 +169,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onPublish={async(content, attachments, key, installations, mentionPubkeys)=>{
+        if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw new Error(t("inbox.replyUnavailable"));
         if (!canEdit(editTarget) || deleteDialog.pending || deleteDialog.unresolvedMessageId) throw new Error(t("inbox.replyUnavailable"));
         const prior=publication.current;
         if(prior && (!prior.edit || prior.key!==key || prior.parent!==editTarget.id)) throw new TransportError(t("platform.sendUnknown",{operation:""}));
@@ -179,11 +180,11 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
             : publishMessage(workspaceId,content,attachments,key,installations,{editEventId:editTarget.id,mentionPubkeys,
               ...(editTarget.kind === 45001 ? {messageType:WebMessageType.ForumPost} : editTarget.kind === 45003 ? {messageType:WebMessageType.ForumComment} : {})}));
           if(!receipt?.eventId||!receipt.operationId) throw new TransportError(t("platform.sendUnknown",{operation:""}));
-          if(!editOwner.active||editOwnerRef.current!==editOwner)return receipt;
+          if(!publicationOwner.active||publicationOwnerRef.current!==publicationOwner)return receipt;
           publication.current=null;setUnresolved(false);onPublicationPendingChange?.(false);
           void refresh();return receipt;
         } catch(error) {
-          if(!editOwner.active||editOwnerRef.current!==editOwner)throw error;
+          if(!publicationOwner.active||publicationOwnerRef.current!==publicationOwner)throw error;
           const unknown=isOutcomeUnknown(error)||(prior?.unknown===true&&!(error instanceof BffError&&error.reason===ReasonCode.PublishRejected));
           publication.current=unknown?{key,parent:editTarget.id,unknown:true,edit:true}:null;
           setUnresolved(unknown);onPublicationPendingChange?.(unknown);
@@ -201,6 +202,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       replyTarget={replyTarget ?? null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
       placeholder={!supportsInlineReply ? t("inbox.replyUnsupported") : conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
+        if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw new Error(t("inbox.replyUnavailable"));
         if (!canReply || deleteDialog.pending || deleteDialog.unresolvedMessageId || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
         if (prior && (prior.edit || prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
@@ -211,11 +213,13 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
             : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
             { messageType: WebMessageType.Stream, parentEventId: parentId ?? undefined, mentionPubkeys }));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Inbox reply has no confirmed receipt.");
+          if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) return receipt;
           publication.current = null; setUnresolved(false);
           onPublicationPendingChange?.(false);
           void refresh();
           return receipt;
         } catch (error) {
+          if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw error;
           // A later admission refusal cannot disprove the earlier publication.
           const unknown = isOutcomeUnknown(error) || (prior?.unknown === true && !(error instanceof BffError && error.reason === ReasonCode.PublishRejected));
           publication.current = unknown ? {key:idempotencyKey, parent:parentId, unknown:true} : null;

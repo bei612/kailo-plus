@@ -563,6 +563,48 @@ it("applies explicit item selection without remounting, but preserves an UNKNOWN
   expect(host.textContent).toContain("selected reply");
   expect(host.textContent).not.toContain("another thread");
 });
+
+it.each([
+  ["channel", "confirmed"], ["channel", "unknown"],
+  ["conversation", "confirmed"], ["conversation", "unknown"],
+] as const)("does not let a retired %s reply's late %s result clear or replace the current publication owner", async (scope, outcome) => {
+  const pending = vi.fn();
+  let finishOld!: (receipt: {eventId: string; operationId: string}) => void;
+  let rejectOld!: (error: Error) => void;
+  let finishCurrent!: (receipt: {eventId: string; operationId: string}) => void;
+  const publisher = scope === "channel" ? state.publish : state.dmPublish;
+  state.dmQuery.mockImplementation(async (_id, options) => ({events:options.parentEventId ? [rootEvent,reply] : [rootEvent,bounds()]}));
+  publisher.mockReset().mockImplementationOnce(() => new Promise((resolve, reject) => { finishOld = resolve; rejectOld = reject; }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishCurrent = resolve; }));
+  const render = async (owner: string) => {
+    await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
+      <InboxThreadPane key={owner} principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={replyId}
+        conversation={scope === "conversation" ? conversation : undefined} channelName="Admitted channel"
+        members={[{principalId:"human",displayName:"Member",pubkeys:[pubkey],state:WorkspaceMembershipState.Active}]}
+        onPublicationPendingChange={pending} />
+    </TooltipProvider></QueryClientProvider>));
+    await settle();
+  };
+  const send = () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click();
+  await render("retired");
+  await act(async () => send());
+  await render("current");
+  await act(async () => send());
+  expect(pending.mock.calls).toEqual([[true], [true]]);
+  const reads = (scope === "channel" ? state.query : state.dmQuery).mock.calls.length;
+  await act(async () => {
+    if (outcome === "confirmed") finishOld({eventId:"d".repeat(64),operationId:"old-operation"});
+    else rejectOld(new TransportError("old receipt missing"));
+  });
+  await settle();
+  expect(pending.mock.calls).toEqual([[true], [true]]);
+  expect((scope === "channel" ? state.query : state.dmQuery).mock.calls.length).toBe(reads);
+  await act(async () => finishCurrent({eventId:"e".repeat(64),operationId:"current-operation"}));
+  await settle();
+  expect(pending.mock.calls).toEqual([[true], [true], [false]]);
+  expect(publisher).toHaveBeenCalledTimes(2);
+});
+
 it("opens the selected Inbox message author and withdraws that scope on revoked admission", async () => {
   await mount();
   const row=host.querySelector(`[data-message-id="${replyId}"]`)!;
