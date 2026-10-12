@@ -1089,6 +1089,7 @@ export const platformMessages = {
   "inbox.replyToThread": { en: "Send reply to channel thread", "zh-CN": "回复频道线程" },
   "inbox.replyUnavailable": { en: "Replies are not available for this item.", "zh-CN": "无法回复此条目。" },
   "inbox.replyOpenChannel": { en: "Open the linked channel to reply.", "zh-CN": "打开关联频道以回复。" },
+  "inbox.replyUnsupported": { en: "This item does not support inline replies yet.", "zh-CN": "此条目尚不支持行内回复。" },
   "inbox.replyNoTarget": { en: "This inbox item does not have a reply target.", "zh-CN": "此收件箱条目没有可回复的目标。" },
   "inbox.noChannelLink": { en: "No channel link", "zh-CN": "没有频道链接" },
   "inbox.channelActivity": { en: "Channel activity", "zh-CN": "频道动态" },

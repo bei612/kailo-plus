@@ -1,6 +1,7 @@
 // Web transport adapter only: aggregation and rows are the same TS used by Buzz Desktop Home.
 import {
   WorkspaceMembershipState,
+  WebMessageType,
   type WorkspaceMemberView,
   type WorkspaceView,
   type ConversationView, type ConversationParticipant,
@@ -57,6 +58,7 @@ type Snapshot = {
   projectItems: ProjectInboxWorkItem[];
   workspaces: WorkspaceView[];
   channelIds: Map<string, string>;
+  forumChannels: Set<string>;
   members: Map<string, WorkspaceMemberView[]>;
   agentPubkeys: Set<string>;
   conversations: ConversationView[];
@@ -163,7 +165,7 @@ export function InboxPane({
       }
       if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
       const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
-      const next: Snapshot = { mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
+      const next: Snapshot = { mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), forumChannels: new Set(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -196,11 +198,13 @@ export function InboxPane({
         const channel = await client.workspaceChannel(workspace.id);
         if (epoch !== generation.current) return;
         if (!channel?.channelId) throw new Error("Unverifiable Workspace channel binding");
-        const page = await client.workspaceMessages(workspace.id);
+        const forum = channel.channelType === "forum";
+        if (forum) next.forumChannels.add(workspace.id);
+        const page = await client.workspaceMessages(workspace.id, forum ? {messageType: WebMessageType.ForumPost} : undefined);
         if (epoch !== generation.current) return;
         // Relay h/bounds use the native Channel ID. Management/profile/navigation
         // keep the existing Workspace key; neither identity is inferred from the other.
-        const events = inboxWindowEvents(page.events, channel.channelId)
+        const events = inboxWindowEvents(page.events, channel.channelId, forum)
           .map((event) => ({ ...event, channelId: workspace.id }));
         next.channelIds.set(workspace.id, channel.channelId);
         const mentioned = (event: Event) =>
@@ -249,6 +253,28 @@ export function InboxPane({
         const mentioned = (event: Event) => event.tags.some(tag => tag[0] === "p" && own.has(tag[1]));
         next.mentions.push(...events.filter(event => !own.has(event.pubkey) && mentioned(event)).map(event => ({...event,category:"mention" as const})));
         next.activity.push(...events.filter(event => !own.has(event.pubkey)));
+      }
+      // Original Relay mentions includes Forum comments outside the post
+      // timeline. One feed read, not one thread read per post or mention.
+      if (joined.length || conversations.length) {
+        const page = await client.inboxMentions();
+        if (epoch !== generation.current) return;
+        if (!Array.isArray(page.events)) throw new Error("Invalid Inbox mention feed");
+        const scopes = new Map([...next.channelIds].map(([workspaceId, channelId]) => [channelId, {workspaceId, dm: false}]));
+        for (const conversation of conversations) scopes.set(conversation.channelId, {workspaceId: conversation.channelId, dm: true});
+        for (const value of page.events) {
+          if (!value || ![9, 40002, 45001, 45003].includes(value.kind) || !Array.isArray(value.tags)) throw new Error("Invalid Inbox mention kind");
+          const channelId = value.tags.find((tag: string[]) => tag[0] === "h")?.[1];
+          const scope = scopes.get(channelId);
+          if (!scope) continue; // Fresh directory no longer exposes this resource.
+          const event = inboxEvents([value], channelId, value.kind)[0];
+          const identities = scope.dm ? people : next.members.get(scope.workspaceId) ?? [];
+          const own = new Set(identities.filter(member => member.principalId === principalId).flatMap(member => member.pubkeys));
+          if (!event.tags.some(tag => tag[0] === "p" && own.has(tag[1]))) throw new Error("Unverifiable Inbox mention recipient");
+          if (own.has(event.pubkey)) continue;
+          next.mentions.push({...event, channelId: scope.workspaceId, category: "mention",
+            ...(next.forumChannels.has(scope.workspaceId) ? {channelType: "forum"} : scope.dm ? {channelType: "dm"} : {})});
+        }
       }
       // A scope removed during aggregation cannot survive as a cached row.
       if (epoch !== generation.current) return;
@@ -364,12 +390,13 @@ export function InboxPane({
             if (cancelled) return;
             if (!Array.isArray(page.events)) throw new Error("Invalid admitted Inbox anchor page");
             const events = page.events.flatMap(value => {
-              if (!value || (value.kind !== 9 && value.kind !== 40002)) throw new Error("Invalid Inbox anchor kind");
-              return inboxEvents([value], scope.channelId!, value.kind);
+              if (!value || ![9, 40002, 45001, 45003].includes(value.kind)) throw new Error("Invalid Inbox anchor kind");
+              return inboxEvents([value], scope.channelId!, value.kind).map(event => ({...event,
+                ...([45001,45003].includes(event.kind) ? {channelType: "forum"} : {})}));
             });
             const found = events.find(event => event.id === id);
             if (!found) throw new Error("Missing admitted Inbox anchor");
-            finish({...found, channelId: scope.workspaceId, ...(scope.conversationId ? {channelType: "dm"} : {})});
+            finish({...found, channelId: scope.workspaceId, ...(scope.conversationId ? {channelType: "dm"} : snapshot.forumChannels.has(scope.workspaceId) ? {channelType: "forum"} : {})});
             return;
           } catch (error) {
             // Missing in this admitted scope is not an authorization failure.
@@ -540,6 +567,7 @@ export function InboxPane({
       selectionItemId={effectiveSelectedItemId}
       onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}
       channelId={snapshot.channelIds.get(chosen.item.channelId)}
+      forum={chosen.item.channelType === "forum"}
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}

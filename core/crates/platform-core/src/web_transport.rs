@@ -1398,6 +1398,212 @@ async fn resolve_message_parent(
     Ok((root_id, parent_id.to_owned()))
 }
 
+/// Original Relay feed_types:["mentions"], with the same fresh native-channel
+/// binding/admission used by search. This is not a second Inbox body store.
+pub(crate) async fn query_inbox_mentions(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::WebInboxQuery>,
+) -> Response {
+    async fn read(
+        state: &BffState,
+        headers: &HeaderMap,
+        request: contracts::WebInboxQuery,
+    ) -> Result<QueryResponse, Response> {
+        if request.limit.is_some_and(|value| value < 1)
+            || request.since.is_some_and(|value| value < 0)
+        {
+            return Err(StatusCode::BAD_REQUEST.into_response());
+        }
+        let ctx = resolve_execution_context(state, headers).await?;
+        let before = crate::pulse::admit(state, &ctx).await?;
+        let keys = actor_keys(state, &ctx).await?;
+        let client = community_client(state, &keys, &before.community_host)?;
+        let limits = community_limits(state, &before.community_host)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        let admitted = crate::search::scopes(state, &ctx, None).await?;
+        if admitted
+            .values()
+            .any(|(_, scope)| scope.community_host() != before.community_host)
+        {
+            return Err(AdmissionFailure::BindingNotActive.into_response());
+        }
+        let cap = request
+            .limit
+            .unwrap_or_else(|| page_limit(state, &limits))
+            .min(page_limit(state, &limits));
+        let mut filter = serde_json::json!({"feed_types":["mentions"],
+            "kinds":[1,9,40002,45001,45003,1618,1619,1621,1630,1631,1632,1633],"limit":cap});
+        if let Some(since) = request.since {
+            filter["since"] = serde_json::json!(since);
+        }
+        let value = client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let rows = value.as_array().ok_or_else(invalid_message_evidence)?;
+        if rows.len() as i64 > cap {
+            return Err(invalid_message_evidence());
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut events = Vec::new();
+        for value in rows {
+            let event: nostr::Event =
+                serde_json::from_value(value.clone()).map_err(|_| invalid_message_evidence())?;
+            // The original feed also includes Pulse/project mentions. Those
+            // keep their existing typed readers, not fabricated channel scope.
+            if event.verify().is_err()
+                || !seen.insert(event.id)
+                || !event.tags.iter().any(|tag| {
+                    let parts = tag.as_slice();
+                    parts.first().is_some_and(|key| key == "p")
+                        && parts
+                            .get(1)
+                            .is_some_and(|key| key == &keys.public_key().to_hex())
+                })
+                || request
+                    .since
+                    .is_some_and(|since| event.created_at.as_secs() < since as u64)
+                || ![
+                    1, 9, 40002, 45001, 45003, 1618, 1619, 1621, 1630, 1631, 1632, 1633,
+                ]
+                .contains(&event.kind.as_u16())
+            {
+                return Err(invalid_message_evidence());
+            }
+            if ![9, 40002, 45001, 45003].contains(&event.kind.as_u16()) {
+                continue;
+            }
+            let channel = single_event_tag(&event, "h").ok_or_else(invalid_message_evidence)?;
+            let channel_id = Uuid::parse_str(&channel).map_err(|_| invalid_message_evidence())?;
+            // Relay may know channels without an active Kailo binding. Never
+            // return their content or treat Relay discovery as BFF admission.
+            if !admitted.contains_key(&channel_id) {
+                continue;
+            }
+            events.push(channel_message_event(value.clone(), &channel)?);
+        }
+        verify_inbox_ancestors(state, &client, &events, &limits).await?;
+        let after_ctx = resolve_execution_context(state, headers).await?;
+        if after_ctx.human_identity_id != ctx.human_identity_id
+            || after_ctx.tenant_id != ctx.tenant_id
+            || after_ctx.tenant_principal_id != ctx.tenant_principal_id
+            || after_ctx.session_id != ctx.session_id
+            || after_ctx.access_mode != ctx.access_mode
+        {
+            return Err(AdmissionFailure::Denied.into_response());
+        }
+        let mut checked = std::collections::HashSet::new();
+        for event in &events {
+            let channel = single_event_tag(event, "h").ok_or_else(invalid_message_evidence)?;
+            let channel_id = Uuid::parse_str(&channel).map_err(|_| invalid_message_evidence())?;
+            if !checked.insert(channel_id) {
+                continue;
+            }
+            let (target, scope) = admitted
+                .get(&channel_id)
+                .ok_or_else(invalid_message_evidence)?;
+            if !scope.same_admission(&target.admit(state, &after_ctx).await?) {
+                return Err(AdmissionFailure::BindingNotActive.into_response());
+            }
+        }
+        if crate::pulse::admit(state, &after_ctx).await? != before
+            || actor_keys(state, &after_ctx).await?.public_key() != keys.public_key()
+        {
+            return Err(AdmissionFailure::BindingNotActive.into_response());
+        }
+        Ok(QueryResponse {
+            events: serde_json::json!(events),
+            next_cursor: None,
+        })
+    }
+    match read(&state, &headers, request).await {
+        Ok(page) => (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(page),
+        )
+            .into_response(),
+        Err(error) => error,
+    }
+}
+
+// One bounded ID batch per Relay page, not one root/parent request per row.
+// IDs originate only in signed events in already admitted resources.
+async fn verify_inbox_ancestors(
+    state: &BffState,
+    client: &IdentityClient,
+    events: &[nostr::Event],
+    limits: &RelayLimits,
+) -> Result<(), Response> {
+    let mut expected = HashMap::new();
+    for event in events {
+        let channel = single_event_tag(event, "h").ok_or_else(invalid_message_evidence)?;
+        if let Some((root, parent)) = parse_thread_markers(&event.tags).resolve() {
+            for id in [root, parent] {
+                if expected
+                    .insert(id, channel)
+                    .is_some_and(|prior| prior != channel)
+                {
+                    return Err(invalid_message_evidence());
+                }
+            }
+        }
+    }
+    let mut ancestors: HashMap<String, nostr::Event> = events
+        .iter()
+        .filter(|event| expected.contains_key(&event.id.to_hex()))
+        .map(|event| (event.id.to_hex(), event.clone()))
+        .collect();
+    let mut missing: Vec<_> = expected
+        .keys()
+        .filter(|id| !ancestors.contains_key(*id))
+        .cloned()
+        .collect();
+    missing.sort_unstable();
+    for ids in missing.chunks(page_limit(state, limits) as usize) {
+        let filter = serde_json::json!({"ids":ids,"limit":ids.len()});
+        if serde_json::to_vec(&[&filter])
+            .map_err(|_| invalid_message_evidence())?
+            .len()
+            > limits.max_message_length
+        {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
+        }
+        let page = client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let rows = page.as_array().ok_or_else(invalid_message_evidence)?;
+        if rows.len() != ids.len() {
+            return Err(invalid_message_evidence());
+        }
+        for value in rows {
+            let id = value
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(invalid_message_evidence)?;
+            if !ids.iter().any(|expected| expected == id) {
+                return Err(invalid_message_evidence());
+            }
+            let channel = expected.get(id).ok_or_else(invalid_message_evidence)?;
+            let event = channel_message_event(value.clone(), channel)?;
+            if ancestors.insert(id.to_owned(), event).is_some() {
+                return Err(invalid_message_evidence());
+            }
+        }
+    }
+    for event in events {
+        let (root, parent) = parse_thread_markers(&event.tags)
+            .resolve()
+            .map(|(root, parent)| (ancestors.get(&root), ancestors.get(&parent)))
+            .unwrap_or((None, None));
+        validate_inbox_anchor_ancestry(event, root, parent)
+            .map_err(|()| invalid_message_evidence())?;
+    }
+    Ok(())
+}
+
 fn valid_anchor_query(query: &contracts::WebMessageQuery) -> bool {
     query.anchor_event_id.as_deref().is_none_or(|id| {
         valid_message_intent(&contracts::WebMessageType::Stream, Some(id))
@@ -1454,13 +1660,23 @@ fn validate_inbox_anchor_ancestry(
     root: Option<&nostr::Event>,
     parent: Option<&nostr::Event>,
 ) -> Result<(), ()> {
-    let stream =
-        |event: &nostr::Event| [9, KIND_STREAM_MESSAGE_V2 as u16].contains(&event.kind.as_u16());
-    if !stream(anchor) {
+    let forum = [45001, 45003].contains(&anchor.kind.as_u16())
+        || root.is_some_and(|event| event.kind.as_u16() == 45001);
+    let same_channel =
+        |event: &nostr::Event| single_event_tag(event, "h") == single_event_tag(anchor, "h");
+    let reply = |event: &nostr::Event| {
+        same_channel(event)
+            && if forum {
+                [9, 45003].contains(&event.kind.as_u16())
+            } else {
+                [9, KIND_STREAM_MESSAGE_V2 as u16].contains(&event.kind.as_u16())
+            }
+    };
+    if (forum && ![9, 45001, 45003].contains(&anchor.kind.as_u16())) || (!forum && !reply(anchor)) {
         return Err(());
     }
     let Some((root_id, parent_id)) = parse_thread_markers(&anchor.tags).resolve() else {
-        return if root.is_none() && parent.is_none() {
+        return if root.is_none() && parent.is_none() && anchor.kind.as_u16() != 45003 {
             Ok(())
         } else {
             Err(())
@@ -1472,7 +1688,12 @@ fn validate_inbox_anchor_ancestry(
     if root_id == anchor.id.to_hex()
         || parent_id == anchor.id.to_hex()
         || root.id.to_hex() != root_id
-        || !stream(root)
+        || !same_channel(root)
+        || (if forum {
+            root.kind.as_u16() != 45001
+        } else {
+            !reply(root)
+        })
         || parse_thread_markers(&root.tags).resolve().is_some()
     {
         return Err(());
@@ -1480,7 +1701,7 @@ fn validate_inbox_anchor_ancestry(
     if parent_id != root_id
         && !parent.is_some_and(|parent| {
             parent.id.to_hex() == parent_id
-                && stream(parent)
+                && reply(parent)
                 && parse_thread_markers(&parent.tags)
                     .resolve()
                     .is_some_and(|(id, _)| id == root_id)
@@ -3966,11 +4187,51 @@ mod tests {
         let wrong_parent = sign(40002, Some(&root), Some(&root));
         assert!(validate_inbox_anchor_ancestry(&anchor, Some(&root), Some(&wrong_parent)).is_err());
         let wrong_root = sign(45001, None, None);
-        let wrong_anchor = sign(9, Some(&wrong_root), Some(&wrong_root));
+        let legacy_forum_reply = sign(9, Some(&wrong_root), Some(&wrong_root));
+        assert!(
+            validate_inbox_anchor_ancestry(&legacy_forum_reply, Some(&wrong_root), None).is_ok()
+        );
+        let wrong_anchor = sign(40002, Some(&wrong_root), Some(&wrong_root));
         assert!(validate_inbox_anchor_ancestry(&wrong_anchor, Some(&wrong_root), None).is_err());
         let mut tampered = anchor;
         tampered.content.push_str("tampered");
         assert!(channel_message_event(serde_json::to_value(tampered).unwrap(), &channel).is_err());
+    }
+
+    #[test]
+    fn inbox_forum_anchor_requires_the_signed_post_and_exact_parent() {
+        let keys = nostr::Keys::generate();
+        let sign =
+            |kind, channel: &str, root: Option<&nostr::Event>, parent: Option<&nostr::Event>| {
+                let mut tags = vec![nostr::Tag::parse(["h", channel]).unwrap()];
+                if let Some(root) = root {
+                    tags.push(nostr::Tag::parse(["e", &root.id.to_hex(), "", "root"]).unwrap());
+                }
+                if let Some(parent) = parent {
+                    tags.push(nostr::Tag::parse(["e", &parent.id.to_hex(), "", "reply"]).unwrap());
+                }
+                nostr::EventBuilder::new(nostr::Kind::Custom(kind), "Forum context")
+                    .tags(tags)
+                    .sign_with_keys(&keys)
+                    .unwrap()
+            };
+        let post = sign(45001, "channel", None, None);
+        let parent = sign(45003, "channel", Some(&post), Some(&post));
+        let comment = sign(45003, "channel", Some(&post), Some(&parent));
+        for event in [&post, &parent, &comment] {
+            assert!(channel_message_event(serde_json::to_value(event).unwrap(), "channel").is_ok());
+        }
+        assert!(validate_inbox_anchor_ancestry(&post, None, None).is_ok());
+        assert!(validate_inbox_anchor_ancestry(&comment, Some(&post), Some(&parent)).is_ok());
+        assert!(validate_inbox_anchor_ancestry(&comment, Some(&post), None).is_err());
+        let foreign = sign(45003, "foreign", Some(&post), Some(&parent));
+        assert!(validate_inbox_anchor_ancestry(&foreign, Some(&post), Some(&parent)).is_err());
+        let orphan = sign(45003, "channel", None, None);
+        assert!(channel_message_event(serde_json::to_value(&orphan).unwrap(), "channel").is_err());
+        assert!(validate_inbox_anchor_ancestry(&orphan, None, None).is_err());
+        let mut tampered = comment;
+        tampered.content.push_str("changed");
+        assert!(channel_message_event(serde_json::to_value(tampered).unwrap(), "channel").is_err());
     }
 
     #[test]

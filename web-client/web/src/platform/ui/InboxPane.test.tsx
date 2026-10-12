@@ -15,7 +15,7 @@ import { InboxPane as OriginalInboxPane, inboxEvents } from "./InboxPane";
 import { ReminderHostProvider, RemindMeLaterProvider, type ReminderHost } from "@client-kit/platform/react/reminders";
 import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
+const api=vi.hoisted(()=>({inboxMentions:vi.fn().mockResolvedValue({events:[]}),projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
 const authorBatches=vi.hoisted(()=>vi.fn());
 const publicationFixture=vi.hoisted(()=>({enabled:false,publish:vi.fn()}));
@@ -158,6 +158,7 @@ const timestampCases = (["en", "zh-CN"] as const).flatMap(locale => [
 ]);
 
 beforeEach(() => {
+  api.inboxMentions.mockReset().mockResolvedValue({events:[]});
   authorBatches.mockClear();
   api.projectQuery.mockReset().mockResolvedValue({events:[],pubkey:"c".repeat(64),limit:20,bindingVersion:1});
   api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
@@ -173,6 +174,49 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.restoreAllMocks());
+
+it.each(["available","unknown","recipient-mismatch"] as const)("consumes the original Forum mention feed and exact channel navigation: %s",async outcome=>{
+  Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});setLocale("en");
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  Object.defineProperty(Element.prototype,"scrollIntoView",{configurable:true,value:vi.fn()});
+  api.readFailed=false;api.readUnknown=false;api.privateChannels=[];
+  api.conversations.mockResolvedValue({items:[]});
+  api.workspaces.mockResolvedValue([{id:"workspace-a",name:"Original Forum",isMember:true}]);
+  api.workspaceChannel.mockResolvedValue({channelId:"forum-channel",channelType:"forum"});
+  const self="c".repeat(64);
+  api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"}]);
+  api.agentInstallations.mockResolvedValue({installations:[]});
+  api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,displayName:"Author",avatarMediaPaths:{}});
+  const post={...event,kind:45001,content:"Original Forum post",tags:[["h","forum-channel"]]};
+  const comment={...event,id:"d".repeat(64),kind:45003,content:"Actual mention outside the post window",tags:[["h","forum-channel"],["p",outcome==="recipient-mismatch"?"f".repeat(64):self],["e",post.id,"","root"],["e",post.id,"","reply"]]};
+  const bounds={...event,id:"1".repeat(64),kind:39006,tags:[["h","forum-channel"],["d","forum-channel:head"]],content:JSON.stringify({has_more:false,next_cursor:null})};
+  api.workspaceMessages.mockImplementation(async(_id,options)=>({events:options?.parentEventId?[post,comment]:[post,bounds]}));
+  if(outcome==="unknown")api.inboxMentions.mockRejectedValue(new TransportError("unavailable"));
+  else api.inboxMentions.mockResolvedValue({events:[comment]});
+  const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});const open=vi.fn();
+  try {
+    await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={open}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+    await vi.waitFor(()=>expect(host.querySelector(".t-skel-bar")).toBeNull());
+    expect(api.inboxMentions).toHaveBeenCalledTimes(1);
+    expect(api.workspaceMessages).toHaveBeenCalledWith("workspace-a",{messageType:"FORUM_POST"});
+    if(outcome!=="available") {
+      expect(host.querySelector('[role="status"]')).not.toBeNull();
+      expect(host.textContent).not.toContain(comment.content);
+      expect(open).not.toHaveBeenCalled();
+      return;
+    }
+    await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${comment.id}"]`)).not.toBeNull());
+    await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]')!.click());
+    expect(open).toHaveBeenCalledWith("workspace-a",{channelId:"workspace-a",messageId:comment.id,threadRootId:post.id});
+    api.workspaces.mockResolvedValue([]);
+    await act(async()=>window.dispatchEvent(new Event("focus")));
+    await vi.waitFor(()=>expect(host.textContent).not.toContain(comment.content));
+  } finally {
+    await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();
+  }
+});
 
 describe("Inbox uses the original shared HomeLoadingState at the real read boundary", () => {
   it.each(["empty", "message", "failure", "read-failure", "unknown"] as const)(

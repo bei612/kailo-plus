@@ -29,26 +29,36 @@ pub async fn get_feed(
     limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<FeedResponse, String> {
-    let cap = limit.unwrap_or(50).min(100);
-
-    let my_pubkey = {
-        let keys = state.keys.lock().map_err(|e| e.to_string())?;
-        keys.public_key().to_hex()
-    };
-
-    // Mentions: channel messages that reference me via #p.
-    let mut mention_filter = serde_json::json!({
-        "kinds": [9],
-        "#p": [my_pubkey],
-        "limit": cap,
-    });
-    if let Some(s) = since {
-        mention_filter["since"] = serde_json::json!(s);
+    let cap = limit.unwrap_or(50).clamp(1, 100);
+    if since.is_some_and(|value| value < 0) {
+        return Err("invalid feed timestamp".to_string());
     }
+    let keys = state.keys.lock().map_err(|e| e.to_string())?.clone();
+    let my_pubkey = keys.public_key().to_hex();
+    let relay = crate::relay::relay_api_base_url_with_override(&state);
+    // Fixed Buzz feed_types consumer: Relay applies mention + accessible
+    // channel filtering before LIMIT, including original Forum kinds.
+    let mention_filter = build_mentions_filter(cap, since);
 
-    let mentions: Vec<FeedItemInfo> = query_relay(&state, &[mention_filter])
-        .await
-        .unwrap_or_default()
+    let events =
+        crate::relay::query_relay_at_with_keys(&state, &relay, &[mention_filter], &keys, None)
+            .await?;
+    validate_mention_feed(&events, &my_pubkey, cap, since)?;
+    verify_forum_feed_ancestry(&state, &relay, &keys, &events, cap).await?;
+    assert_expected_relay_scope(
+        Some(&relay),
+        &crate::relay::relay_api_base_url_with_override(&state),
+    )?;
+    assert_expected_signer(
+        Some(&my_pubkey),
+        &state
+            .keys
+            .lock()
+            .map_err(|e| e.to_string())?
+            .public_key()
+            .to_hex(),
+    )?;
+    let mentions: Vec<FeedItemInfo> = events
         .iter()
         .map(|ev| feed_item_from_event(ev, FeedItemCategory::Mention))
         .collect();
@@ -62,6 +72,140 @@ pub async fn get_feed(
             generated_at: chrono::Utc::now().timestamp(),
         },
     })
+}
+
+fn build_mentions_filter(cap: u32, since: Option<i64>) -> serde_json::Value {
+    let mut filter = serde_json::json!({
+        "feed_types": ["mentions"],
+        "kinds": [1,9,40002,45001,45003,1618,1619,1621,1630,1631,1632,1633],
+        "limit": cap,
+    });
+    if let Some(s) = since {
+        filter["since"] = serde_json::json!(s);
+    }
+
+    filter
+}
+
+fn validate_mention_feed(
+    events: &[nostr::Event],
+    pubkey: &str,
+    cap: u32,
+    since: Option<i64>,
+) -> Result<(), String> {
+    let mut ids = std::collections::HashSet::new();
+    if events.len() > cap as usize {
+        return Err("invalid mention feed page".to_string());
+    }
+    for event in events {
+        let channel_kind = [9, 40002, 45001, 45003].contains(&event.kind.as_u16());
+        if event.verify().is_err()
+            || !ids.insert(event.id)
+            || ![
+                1, 9, 40002, 45001, 45003, 1618, 1619, 1621, 1630, 1631, 1632, 1633,
+            ]
+            .contains(&event.kind.as_u16())
+            || !event.tags.iter().any(|tag| {
+                tag.as_slice().first().is_some_and(|key| key == "p")
+                    && tag.as_slice().get(1).is_some_and(|key| key == pubkey)
+            })
+            || since.is_some_and(|time| event.created_at.as_secs() < time as u64)
+            || channel_kind
+                && (event
+                    .tags
+                    .iter()
+                    .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "h"))
+                    .count()
+                    != 1
+                    || channel_id_from_tags(event).is_none())
+        {
+            return Err("unverifiable mention feed event".to_string());
+        }
+    }
+    Ok(())
+}
+
+async fn verify_forum_feed_ancestry(
+    state: &AppState,
+    relay: &str,
+    keys: &nostr::Keys,
+    events: &[nostr::Event],
+    cap: u32,
+) -> Result<(), String> {
+    use buzz_core_pkg::nip10::parse_thread_markers;
+    let mut expected = std::collections::HashMap::new();
+    for event in events
+        .iter()
+        .filter(|event| [45001, 45003].contains(&event.kind.as_u16()))
+    {
+        let ancestry = parse_thread_markers(&event.tags).resolve();
+        if (event.kind.as_u16() == 45003) != ancestry.is_some() {
+            return Err("unverifiable Forum ancestry".to_string());
+        }
+        if let Some((root, parent)) = ancestry {
+            let channel = channel_id_from_tags(event).ok_or("missing Forum channel")?;
+            for id in [root, parent] {
+                if expected
+                    .insert(id, channel.clone())
+                    .is_some_and(|prior| prior != channel)
+                {
+                    return Err("conflicting Forum ancestry".to_string());
+                }
+            }
+        }
+    }
+    let mut ancestors = std::collections::HashMap::new();
+    let mut ids: Vec<_> = expected.keys().cloned().collect();
+    ids.sort_unstable();
+    for chunk in ids.chunks(cap as usize) {
+        let page = crate::relay::query_relay_at_with_keys(
+            state,
+            relay,
+            &[serde_json::json!({"ids":chunk,"limit":chunk.len()})],
+            keys,
+            None,
+        )
+        .await?;
+        if page.len() != chunk.len() {
+            return Err("incomplete Forum ancestry".to_string());
+        }
+        for event in page {
+            let id = event.id.to_hex();
+            if !chunk.contains(&id)
+                || event.verify().is_err()
+                || channel_id_from_tags(&event).as_ref() != expected.get(&id)
+                || event
+                    .tags
+                    .iter()
+                    .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "h"))
+                    .count()
+                    != 1
+                || ancestors.insert(id, event).is_some()
+            {
+                return Err("unverifiable Forum ancestry".to_string());
+            }
+        }
+    }
+    for event in events.iter().filter(|event| event.kind.as_u16() == 45003) {
+        let (root_id, parent_id) = parse_thread_markers(&event.tags)
+            .resolve()
+            .ok_or("missing Forum ancestry")?;
+        let root = ancestors.get(&root_id).ok_or("missing Forum root")?;
+        let parent = ancestors.get(&parent_id).ok_or("missing Forum parent")?;
+        if root.id == event.id
+            || parent.id == event.id
+            || root.kind.as_u16() != 45001
+            || parse_thread_markers(&root.tags).resolve().is_some()
+            || parent_id != root_id
+                && (![9, 45003].contains(&parent.kind.as_u16())
+                    || !parse_thread_markers(&parent.tags)
+                        .resolve()
+                        .is_some_and(|(id, _)| id == root_id))
+        {
+            return Err("unverifiable Forum ancestry".to_string());
+        }
+    }
+    Ok(())
 }
 
 fn build_search_messages_filter(
@@ -760,7 +904,9 @@ fn feed_item_from_event(ev: &nostr::Event, category: FeedItemCategory) -> FeedIt
         created_at: ev.created_at.as_secs(),
         channel_id,
         channel_name: String::new(),
-        channel_type: None,
+        channel_type: [45001, 45003]
+            .contains(&ev.kind.as_u16())
+            .then(|| "forum".to_string()),
         tags: tags_to_vec(ev),
         category,
     }

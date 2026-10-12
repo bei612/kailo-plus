@@ -286,6 +286,31 @@ func TestWebSearchQueryRoundtrip(t *testing.T) {
 	}
 }
 
+func TestInboxMentionsFeedBoundsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-inbox-query.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.WebInboxQuery
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("Inbox feed bounds or optional absence changed")
+	}
+}
+
 func TestNativeSourceResourcesRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-source-resources.sample.json"))
 	if err != nil {

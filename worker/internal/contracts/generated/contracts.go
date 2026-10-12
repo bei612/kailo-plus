@@ -409,6 +409,9 @@
 //    webCustomEmojiView, err := UnmarshalWebCustomEmojiView(bytes)
 //    bytes, err = webCustomEmojiView.Marshal()
 //
+//    webInboxQuery, err := UnmarshalWebInboxQuery(bytes)
+//    bytes, err = webInboxQuery.Marshal()
+//
 //    webMessageAttachment, err := UnmarshalWebMessageAttachment(bytes)
 //    bytes, err = webMessageAttachment.Marshal()
 //
@@ -2066,6 +2069,16 @@ func UnmarshalWebCustomEmojiView(data []byte) (WebCustomEmojiView, error) {
 }
 
 func (r *WebCustomEmojiView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebInboxQuery(data []byte) (WebInboxQuery, error) {
+	var r WebInboxQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebInboxQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5988,6 +6001,13 @@ type WebCustomEmojiView struct {
 	Pubkey     string                   `json:"pubkey"`
 }
 
+// DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay
+// filter。
+type WebInboxQuery struct {
+	Limit *int64 `json:"limit,omitempty"`
+	Since *int64 `json:"since,omitempty"`
+}
+
 type WebMessageAttachment struct {
 	// 原 Buzz imeta 模糊预览编码。
 	Blurhash *string `json:"blurhash,omitempty"`
@@ -6052,8 +6072,9 @@ type WebMessageQuery struct {
 	// 原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
 	// author。不得与线程读取或其他消息类型组合。
 	AgentInstallationID *string `json:"agentInstallationId,omitempty"`
-	// 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
-	// STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+	// 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确 Stream/Forum
+	// 消息及线程祖先。不能与其他 messageType、parentEventId、agentInstallationId 或分页游标组合；不是全局 event
+	// 读取或权限证明。缺省保持原窗口/线程语义。
 	AnchorEventID *string         `json:"anchorEventId,omitempty"`
 	Before        *int64          `json:"before,omitempty"`
 	BeforeID      *string         `json:"beforeId,omitempty"`

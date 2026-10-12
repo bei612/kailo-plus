@@ -109,6 +109,16 @@ fn web_search_query_preserves_original_operators_and_optional_absence() {
 }
 
 #[test]
+fn inbox_mentions_preserve_original_feed_bounds_and_optional_absence() {
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("web-inbox-query.sample.json")).unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::WebInboxQuery> = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), value);
+}
+
+#[test]
 fn native_source_resources_preserve_all_metadata_and_legacy_absence() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("adapter-source-resources.sample.json"))

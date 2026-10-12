@@ -40,7 +40,7 @@ export function inboxWindowEvents(raw: unknown, workspace: string, forumPosts = 
 }
 
 /** The query is already scope-filtered by Core; mismatched/unverifiable data is never shown. */
-export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40002 | 40003 | 45001 = 9): Event[] {
+export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40002 | 40003 | 45001 | 45003 = 9): Event[] {
   if (!Array.isArray(raw)) throw new Error("Invalid message page");
   return raw.map((value: unknown) => {
     const event = value as BuzzEvent;

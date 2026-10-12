@@ -990,6 +990,7 @@ enum PlatformMessageKey {
   inboxReplyToThread,
   inboxReplyUnavailable,
   inboxReplyOpenChannel,
+  inboxReplyUnsupported,
   inboxReplyNoTarget,
   inboxNoChannelLink,
   inboxChannelActivity,
@@ -4550,6 +4551,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.inboxReplyOpenChannel: (
     'Open the linked channel to reply.',
     '打开关联频道以回复。',
+  ),
+  PlatformMessageKey.inboxReplyUnsupported: (
+    'This item does not support inline replies yet.',
+    '此条目尚不支持行内回复。',
   ),
   PlatformMessageKey.inboxReplyNoTarget: (
     'This inbox item does not have a reply target.',

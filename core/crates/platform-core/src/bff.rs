@@ -312,6 +312,10 @@ pub fn router(state: BffState) -> Router {
             axum::routing::post(crate::search::query),
         )
         .exposed_route(
+            "/api/v1/inbox/mentions",
+            axum::routing::post(crate::web_transport::query_inbox_mentions),
+        )
+        .exposed_route(
             "/api/v1/pulse/query",
             axum::routing::post(crate::pulse::query),
         )

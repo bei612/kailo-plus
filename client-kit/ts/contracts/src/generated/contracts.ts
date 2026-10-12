@@ -4717,6 +4717,15 @@ export interface WebCustomEmojiView {
     pubkey:     string;
 }
 
+/**
+ * DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay
+ * filter。
+ */
+export interface WebInboxQuery {
+    limit?: number;
+    since?: number;
+}
+
 export interface WebMessageAttachment {
     /**
      * 原 Buzz imeta 模糊预览编码。
@@ -4812,8 +4821,9 @@ export interface WebMessageQuery {
      */
     agentInstallationId?: string;
     /**
-     * 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
-     * STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+     * 原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确 Stream/Forum
+     * 消息及线程祖先。不能与其他 messageType、parentEventId、agentInstallationId 或分页游标组合；不是全局 event
+     * 读取或权限证明。缺省保持原窗口/线程语义。
      */
     anchorEventId?: string;
     before?:        number;

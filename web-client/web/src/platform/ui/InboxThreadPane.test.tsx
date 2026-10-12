@@ -14,7 +14,14 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS, KIND_TYPING_INDICATOR, KIND_CHANNEL_THREAD_SUMMARY } from "@client-kit/platform/react/thread/kinds";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), delete:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), delete:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), videoPresentation:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+vi.mock("@client-kit/platform/react/video-review", async original => {
+  const actual=await original<typeof import("@client-kit/platform/react/video-review")>();
+  return {...actual,buildVideoReviewPresentationByMessageId:(...args:Parameters<typeof actual.buildVideoReviewPresentationByMessageId>)=>{
+    state.videoPresentation(...args);
+    return actual.buildVideoReviewPresentationByMessageId(...args);
+  }};
+});
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string,variables?:Record<string,string|number>) => translate("en",key as Parameters<typeof translate>[1],variables) }));
 vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
   ...await original<typeof import("@client-kit/platform/react/inbox-surface")>(),
@@ -84,6 +91,54 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it.each([45001,45003])("reads original Forum kind %s context without pretending inline replies are supported",async kind=>{
+  const post={...rootEvent,kind:45001};
+  const comment={...reply,kind:45003};
+  state.query.mockResolvedValue({events:[post,comment]});
+  const selected=kind===45001?rootId:replyId;
+  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane
+    principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={selected} forum
+    channelName="Original Forum" members={[{principalId:"human",displayName:"Member",pubkeys:[pubkey],state:WorkspaceMembershipState.Active}]}
+    onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
+  await settle();
+  expect(state.query).toHaveBeenCalledWith("workspace",{messageType:"FORUM_COMMENT",parentEventId:rootId});
+  expect(host.querySelector(`[data-message-id="${selected}"]`)).not.toBeNull();
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-placeholder")).toBe("This item does not support inline replies yet.");
+  expect(state.publish).not.toHaveBeenCalled();
+  const video=state.videoPresentation.mock.lastCall?.[0];
+  expect(video?.onSendVideoReviewComment).toBeUndefined();
+  expect(video?.onToggleReaction).toBeTypeOf("function");
+  await act(async()=>state.receive?.({type:"closed",reason:"scope-revoked"}));
+  await settle();
+  expect(host.querySelector(`[data-message-id="${selected}"]`)).toBeNull();
+  expect(state.videoPresentation.mock.lastCall?.[0].onToggleReaction).toBeUndefined();
+});
+
+it("keeps original legacy Forum comment management independent of the unsupported inline reply",async()=>{
+  const post={...rootEvent,kind:45001};
+  state.query.mockResolvedValue({events:[post,reply]});
+  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane
+    principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={rootId} forum
+    channelName="Original Forum" members={[{principalId:"human",displayName:"Member",pubkeys:[pubkey],state:WorkspaceMembershipState.Active}]}
+    onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
+  await settle();
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
+  await editMessage(replyId);
+  expect(host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')?.disabled).toBe(false);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')!.click());
+  await settle();
+  expect(state.publish).toHaveBeenCalledExactlyOnceWith("workspace","updated body",[],"same-intent",[],{editEventId:replyId,mentionPubkeys:[]});
+  await openMessageMenu(replyId);
+  const remove=document.querySelector<HTMLButtonElement>(`[data-testid="delete-message-${replyId}"]`);
+  expect(remove).not.toBeNull();
+  await act(async()=>remove!.click());await settle();
+  expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+  expect(state.delete).not.toHaveBeenCalled();
+  await act(async()=>state.receive?.({type:"closed",reason:"scope-revoked"}));await settle();
+  expect(host.querySelector(`[data-message-id="${replyId}"]`)).toBeNull();
+});
 
 it.each(["channel","conversation"] as const)("restores Inbox %s edit through the original action, captured target and actual edit projection",async scope=>{
   state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,reply,bounds()]}));

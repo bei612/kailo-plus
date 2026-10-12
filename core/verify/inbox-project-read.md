@@ -1437,3 +1437,112 @@ apply_patch 原字节还原且全部 10 文件 cmp 0；13895 同两项各 exit 0
 Web Composer/transport 为隔离宿主夹具，Native 执行实际 TS 函数配 fixture；这些不是
 原生设备、真实 Relay/BFF 写入或浏览器上线验收。未跑 full、未构建/部署、未拍新版图；
 旧在线与已构建 236b 均不能认领本批。schema/契约/生成物/词条/公共暂存均未改。
+
+## Inbox 原 Forum mentions 读取与详情跳转
+
+关联 V-REQ-24、DD-39、DD-72/75、SS-BUZ-GOVERNANCE、SS-WEB-RELAY。
+源码比较基准为 `fd1997361479de10b7add38424810f94a00825b3`；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src-tauri/src/commands/messages.rs::get_feed` 原 mentions 包含
+45001/45003，原 `desktop/src/features/home/lib/homeMessageCapabilities.ts::getHomeMessageCapabilities`
+仅禁止这两类条目的 Inbox 行内回复，不禁止原上下文读取和频道跳转。
+
+### 四步变更结论
+
+1. 原功能与权威：恢复本人 mentions 到原 Forum 详情、再打开原频道目标；正文与
+   身份仍来自签名 Relay event。Web 使用当前 HUMAN 的 ACTIVE SERVER key，经
+   BFF fresh scope/resource 准入；Native 使用本人本机 key 和原 Relay 准入。
+   不建立第二正文库、全局裸 event 读取接口或新增审批生产语义。
+2. 影响：`WebInboxQuery` 只有可选 since/limit；新增 BFF client.inboxMentions
+   与真实 POST `/api/v1/inbox/mentions`。原消息 query 的 anchor 合同仅补 Forum
+   说明，字段不变。Web 原 Inbox 宿主合并一次有界 mentions 结果，按当前可见
+   workspace/conversation 映射回原条目；Forum 窗口与详情消费原 FORUM_POST /
+   FORUM_COMMENT，原原生目录 channelType 不再被清空。
+3. 授权与兼容：每条检查签名、本人 recipient、封闭 kind、当前 scope 归属；祖先
+   批量读取并检查同频道 root/parent，缺失或无法证明不是空成功。末尾重验 scope、
+   actor 与 key；撤权不显示旧正文。Core 只复用已有 page_limit，即配置页限与
+   Relay NIP-11 max_limit 的交集，未给 limit 采用它；Native 50/100 保留固定
+   上游原值。旧调用无新增必填字段，没有改变原写入或持久执行状态。
+4. 异常：Native 不再把 Relay 错误转为空 feed。Web UNKNOWN/依赖错误沿原失败态，
+   不把未知当不存在；Forum 行内回复显示同源中英原提示。现有本人 kind 9 的
+   编辑/删除不受 Forum 条目 canReply 限制；视频反应独立，视频评论仍按原 canReply。
+   原 BffVideoReviewProvider 的其他三个宿主保持默认语义，没有新布局或强制提示。
+
+### 原版四类差异与剩余边界
+
+- 原样：原 Inbox 分组、行与详情布局、打开频道目标、Forum 行内回复禁止条件。
+  `desktop/src/features/home/ui/InboxDetailPane.tsx::videoReviewPresentation` 的
+  评论/反应分离语义保留，未设计另一个 Forum 摘要页。
+- 共享迁移：沿已有 Inbox surface、线程 parser、消息行、Composer 与原同源 i18n；
+  仅新增 `inbox.replyUnsupported` 一条词条及原生成的 Dart 投影。原公共 TS/Dart
+  脏改与暂存均保留，候选来自 HEAD 加本批词条的独立完整生成。
+- 授权治理适配：Web BFF 替代浏览器直连；原 Relay mentions 以 feed_types 查询，
+  保留原 kinds，显式签名、资源归属与 ancestry。一次 feed 加分批祖先，不按作者
+  或每条消息查询资料；Core 查询范围与原 Native Relay 准入仍各自真实执行。
+- 缺失需恢复：needs_action 的原真实审批广播生产链仍未闭合；本批不新增空菜单。
+  原 `desktop/src/features/messages/lib/canManageMessage.ts::canManageMessageForCurrentUser`
+  的非 kind 9 管理及 owner-of-agent 分支未借本批开放。45001/45003 Inbox 编辑/删除、
+  原提醒 Mobile 消费及此前 Projects/Git/审阅决定缺项仍在原全量台账。
+  不称完整 Inbox、完整 Forum 写入或全部原版恢复。
+
+### 原定向证据
+
+证据目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-forum.r5KQbX`。
+复用 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU、4 GiB，memory+swap 总限额等于内存（无额外 swap），UID 1000、network none；
+源输入、npm/pub/Go cache、TMPDIR、Node compile cache 和 Dart 工具落点均在 Data，
+未改 HOME、安装新依赖、启动第二发布或改 bdc 冻结输入。
+
+- 31796：原 `bash tools/gen.sh` 四侧完整生成 exit 0；原
+  `python3 tools/gen-platform-i18n.py` 与其 `--check` 均 0，未覆盖公共四侧继承脏改。
+  14111 原 `bash tools/gen.sh --check` 实际 exit 0，四侧生成及同源词条同步。
+- 15022：Web/Native 原 tsc 均 0；原 InboxPane + InboxThreadPane 93/93；Native
+  原 `node --import ./test-loader.mjs --test src/features/home/lib/inbox.test.mjs`
+  20/20。BFF/Relay 返回为隔离 fixture，不是线上业务或 Native Rust 编译证据。
+- 30379：私有撤两端 Forum 行内回复门禁，Web 两项与 Native 一项实际失败，exit 1；
+  apply_patch 还原、cmp 0，61369 同三项 exit 0。
+- 69159：管理/视频门禁拆分后原 Web tsc 0、InboxThreadPane 34/34，exit 0。
+  24835：补原视频 presentation 实际消费断言后 Web tsc 0、三个 Forum 场景通过。
+- 24785：仅私有恢复错误 canManage 耦合并撤 canSendComment 投递，三个真实消费者
+  全部失败、exit 1；原字节还原 cmp 0，22045 同三个场景通过、exit 0。
+- 88790：TS 原 `tsc --noEmit -p tsconfig.test.json` 与原 roundtrip 单项均 0；
+  Dart/Go 的相对 cwd 投递错误使聚合 exit 1，未把未运行测试记通过。
+  31836 改绝对 cwd 后 Go 原 `go test ./internal/contracts -run
+  '^TestInboxMentionsFeedBoundsRoundtrip$' -count=1` 为 0；Dart 因私有输入漏原
+  contracts.dart 再导出文件加载失败，聚合仍 1。补原 HEAD 入口后 24835 的原
+  `dart test test/roundtrip_test.dart --name 'Inbox mentions preserve'` 为 0，
+  四种可选/零值样例往返成立；缓存 `dart pub get --offline` 为 0。
+- 55548：只读 2 CPU/2 GiB 容器执行原 tools/check.sh 的合同兼容 Python 段，
+  exit 0；317 个 schema 对 contracts-v0.1.0 的 3 个历史匹配无破坏性变更。
+  该有限历史比较不替代原生运行验收。
+
+- 独立 Rust 席位沿现有 4 CPU/8 GiB SDK、原 Data Cargo target，保留 Cargo 原
+  `-j16`。首次原登录 shell 重置 PATH，exit 127；纠正为原 `bash -c` 后 86571
+  Core `cargo test --locked --offline -j16 -p platform-core --bin platform-core
+  inbox_ -- --nocapture` 实际 4/4、exit 0。末版 cap 精确同步后 47246 同 4/4
+  与 Rust `inbox_mentions_preserve_original_feed_bounds_and_optional_absence`
+  单项往返 1/1，实际 exit 0。日志在
+  `/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/input/forum-rust.Ubkjuz/`
+  的 `core-inbox.log`、`core-inbox-corrected.log`、`core-contract-final.log`。
+- Core 私有单点把原 `validate_inbox_anchor_ancestry` 的 same_channel 谓词改为
+  true，47319 原 Forum 用例实际 exit 101，跨频道祖先必须拒绝的断言失败。
+  apply_patch 精确还原至已验证 blob `3ea61ad7ca38460969758df652aba1326520cc47`，
+  56301 原 inbox_ 四项实际 exit 0；`core-forum-negative.log` /
+  `core-forum-restored.log` SHA256 分别为
+  `74cea768ca0be3feeba89ee9004f6529b0ffb5850f881e97eb874e2246d4fd89` /
+  `ca0330f81f8c33261036fa5371ac41d60110e9eaa9ba855662a0f3cbc83a7f89`。
+
+Native 28415 原 `cargo test --locked --offline --lib` 定向命令实际 exit 101，
+`native-messages.log` 记录 gdk-pixbuf/atk/pango/gobject/glib/cairo 的 pkg-config
+系统开发库缺失，尚未编译到 messages 测试；未安装依赖，不计原生通过。Core 四项是原 helper
+与查询模式消费者，不是新增 mentions HTTP handler 的真实授权、撤权、缺祖先、
+超 cap 或依赖失效端到端验收，这些动态边界仍待实际部署后验证。
+保留原 React act 警告；没有本批 full、Windows/Mobile 设备或实际浏览器验收。
+正在发布的 `bdc639765dc7ba480743d6dad18ab6c393822e72` 不含本批 Forum 代码，
+旧部署截图与 bdc 产物均不能作为本批新功能已上线的证据。
+
+39627 在同一受限 SDK 对本批 Core 三文件及 Native 两文件执行原
+`rustfmt --edition 2021 --config skip_children=true` 与对应 `--check`，实际 exit 0。
+仅本批新增语句的机械格式回填，bff.rs/search.rs 没有格式差异；原 Rust 合同新增
+用例采用上述已执行往返输入的格式，不混入该文件已有无关改动。没有因此重跑
+Cargo 或修改独立 Native 在途输入；格式通过不替代其编译或设备验收。

@@ -23,6 +23,7 @@ type Host = {
   channelType: "stream" | "forum" | "dm";
   messages: TimelineMessage[];
   available: boolean;
+  canSendComment?: boolean;
   refresh?: () => unknown;
   onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   resolveMediaUrl?: (url: string) => string | undefined;
@@ -65,8 +66,8 @@ export function BffVideoReviewProvider({children, ...host}: Host & {children: Re
     messages: host.messages.map(message => ({...message, reactions: message.reactions?.map(reaction => ({...reaction,
       emojiUrl: reaction.emojiUrl ? host.resolveMediaUrl?.(reaction.emojiUrl) : undefined}))})),
     onToggleReaction: host.available ? host.onToggleReaction : undefined,
-    onSendVideoReviewComment: host.available ? async (root, content, mentionPubkeys, mediaTags, parentEventId) => {
-      const admitted = () => current.current.active && current.current.scope === scope && current.current.host.available &&
+    onSendVideoReviewComment: host.available && host.canSendComment !== false ? async (root, content, mentionPubkeys, mediaTags, parentEventId) => {
+      const admitted = () => current.current.active && current.current.scope === scope && current.current.host.available && current.current.host.canSendComment !== false &&
         current.current.host.messages.some(message => message.id === root.id);
       if (!admitted() || !eventId.test(root.id)) throw new BffError(403, t("platform.loadFailed"));
       const storageKey = `kailo:video-review:${scope}:${root.id}`;
@@ -114,7 +115,7 @@ export function BffVideoReviewProvider({children, ...host}: Host & {children: Re
         throw error;
       } finally { pending.current.delete(storageKey); }
     } : undefined,
-  }), [scope, host.workspaceId, host.channelName, host.channelType, host.conversationId, host.messages, host.available, host.onToggleReaction, host.resolveMediaUrl, t]);
+  }), [scope, host.workspaceId, host.channelName, host.channelType, host.conversationId, host.messages, host.available, host.canSendComment, host.onToggleReaction, host.resolveMediaUrl, t]);
   return <VideoHost.Provider value={{...host, submission, presentation}}><VideoReviewNavigationProvider key={scope}>{children}</VideoReviewNavigationProvider></VideoHost.Provider>;
 }
 
@@ -131,13 +132,13 @@ function VideoComposer(props: VideoReviewComposerProps) {
   const Composer = host.Composer;
   return <Composer workspaceId={host.conversationId ? undefined : host.workspaceId} draftChannelId={host.workspaceId}
     draftIdentity={host.principalId} draftKey={props.draftKey} channelType={host.channelType}
-    mentionPeople={host.mentionPeople} disabled={props.disabled || !host.available}
+    mentionPeople={host.mentionPeople} disabled={props.disabled || !host.available || host.canSendComment === false}
     containerClassName={props.containerClassName} placeholder={props.placeholder}
     replyTarget={props.replyTarget} onCancelReply={props.onCancelReply}
     onUpload={host.conversationId ? file => uploadConversationMedia(host.conversationId!, file) : undefined}
     onMediaUrl={hash => mediaUrl(host.workspaceId, hash, host.conversationId)}
     onPublish={async (content, attachments, key, installations, mentionPubkeys) => {
-      if (!host.available || host.submission.current) throw new TransportError(t("platform.sendUnknown", {operation: ""}));
+      if (!host.available || host.canSendComment === false || host.submission.current) throw new TransportError(t("platform.sendUnknown", {operation: ""}));
       host.submission.current = {key, attachments, installations};
       try { await props.onSend(content, mentionPubkeys ?? []); }
       finally { host.submission.current = null; }

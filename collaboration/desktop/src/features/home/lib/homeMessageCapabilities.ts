@@ -6,13 +6,16 @@ export function getHomeMessageCapabilities(
   availableChannelIds: ReadonlySet<string>,
   locale: PlatformLocale = "en",
 ) {
-  const canReply = Boolean(
+  const hasChannel = Boolean(
     item?.item.channelId && availableChannelIds.has(item.item.channelId),
   );
+  const canReply = hasChannel && item?.item.kind !== 45001 && item?.item.kind !== 45003;
   const disabledReplyReason =
     canReply || !item
       ? null
-      : item.item.channelId
+      : hasChannel
+        ? translate(locale, "inbox.replyUnsupported")
+        : item.item.channelId
         ? translate(locale, "inbox.replyOpenChannel")
         : translate(locale, "inbox.replyNoTarget");
 

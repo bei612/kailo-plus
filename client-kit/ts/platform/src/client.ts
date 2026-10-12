@@ -5,6 +5,7 @@
 
 import type {
   WebMessageQuery,
+  WebInboxQuery,
   WebMessageCursor,
   WebChannelView,
   ActionCommand,
@@ -155,6 +156,8 @@ export function createBffClient(transport: BffTransport) {
     setConversationPreference: (id: string, body: ConversationPreferenceRequest) =>
       call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/conversations/${encodeURIComponent(id)}`, body }),
     workspaceChannel: (workspaceId: string) => get<WebChannelView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/channel`),
+    inboxMentions: (body: WebInboxQuery = {}) =>
+      call<{ events: unknown }>({method: "POST", path: "/api/v1/inbox/mentions", body}),
     workspaceMessages: (workspaceId: string, options?: WebMessageQuery) => {
       const query = new URLSearchParams();
       for (const [name, value] of Object.entries(options ?? {})) {

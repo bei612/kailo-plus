@@ -8,24 +8,24 @@ import { applyMessageEdits } from "@client-kit/platform/react/messages";
 import { parseChannelWindowResponse, type RelayEvent } from "@client-kit/platform/react/forum/channelWindowResponse";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@client-kit/platform/react/thread/kinds";
 
-const threadEventKinds: ReadonlySet<number> = new Set([...CHANNEL_TIMELINE_CONTENT_KINDS, ...CHANNEL_AUX_EVENT_KINDS]);
+const threadEventKinds: ReadonlySet<number> = new Set([...CHANNEL_TIMELINE_CONTENT_KINDS, ...CHANNEL_AUX_EVENT_KINDS, 45001, 45003]);
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
-export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string, enabled = true, conversationChannelId?: string) {
+export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string, selectedEventId?: string, enabled = true, conversationChannelId?: string, forum = false) {
   const client = useBffClient();
   const cache = useQueryClient();
   const [denied, setDenied] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
   const fullChannel = Boolean(conversationId && selectedEventId);
   const eventChannelId = conversationId ? conversationChannelId : conversationChannelId ?? workspaceId;
-  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null, eventChannelId], [principalId, workspaceId, rootId, conversationId, selectedEventId, eventChannelId]);
+  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null, selectedEventId ?? null, eventChannelId, forum], [principalId, workspaceId, rootId, conversationId, selectedEventId, eventChannelId, forum]);
   const thread = useInfiniteQuery({
     queryKey: key, enabled: enabled && !denied, initialPageParam: null as WebMessageCursor | null,
     queryFn: async ({ pageParam, signal }) => {
       if (!eventChannelId) throw new Error("Missing admitted message channel");
       const query = {
-        messageType: WebMessageType.Stream, ...(!fullChannel ? { parentEventId: rootId } : {}),
+        messageType: forum ? WebMessageType.ForumComment : WebMessageType.Stream, ...(!fullChannel ? { parentEventId: rootId } : {}),
         ...(pageParam ? { before: pageParam.createdAt, beforeId: pageParam.eventId } : {}),
       };
       const page = await (conversationId ? client.conversationMessages(conversationId, query) : client.workspaceMessages(workspaceId, query));
@@ -70,7 +70,8 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
         if (!found) throw new Error("Selected message is unavailable");
       }
       signal.throwIfAborted();
-      const events = raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 9 || event.kind === 40002) ? inboxEvents([event], eventChannelId, event.kind) : []);
+      const events = raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 9 || event.kind === 40002 || (forum && (event.kind === 45001 || event.kind === 45003)))
+        ? inboxEvents([event], eventChannelId, event.kind as 9 | 40002 | 45001 | 45003) : []);
       const edits = inboxEvents(raw.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), eventChannelId, 40003);
       const deleted = new Set(raw.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 5 || event.kind === 9005) && "tags" in event && Array.isArray(event.tags)
         ? event.tags.filter((tag: string[]) => tag[0] === "e").map((tag: string[]) => tag[1]) : []));

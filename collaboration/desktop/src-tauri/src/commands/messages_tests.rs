@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn original_mentions_feed_includes_forum_without_a_p_gate_or_empty_success_fallback() {
+    let filter = build_mentions_filter(50, Some(7));
+    assert_eq!(filter["feed_types"], serde_json::json!(["mentions"]));
+    assert_eq!(filter["since"], 7);
+    assert_eq!(filter["limit"], 50);
+    assert!(filter["kinds"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!(45003)));
+    let keys = nostr::Keys::generate();
+    let recipient = nostr::Keys::generate().public_key().to_hex();
+    let event = nostr::EventBuilder::new(nostr::Kind::Custom(45001), "original post")
+        .tags([
+            nostr::Tag::parse(["h", "channel"]).unwrap(),
+            nostr::Tag::parse(["p", recipient.as_str()]).unwrap(),
+        ])
+        .sign_with_keys(&keys)
+        .unwrap();
+    assert!(validate_mention_feed(std::slice::from_ref(&event), &recipient, 50, None).is_ok());
+    assert_eq!(
+        feed_item_from_event(&event, FeedItemCategory::Mention)
+            .channel_type
+            .as_deref(),
+        Some("forum")
+    );
+    assert!(validate_mention_feed(&[event.clone(), event.clone()], &recipient, 50, None).is_err());
+    assert!(validate_mention_feed(
+        std::slice::from_ref(&event),
+        &keys.public_key().to_hex(),
+        50,
+        None
+    )
+    .is_err());
+    let mut tampered = event;
+    tampered.content.push_str("changed");
+    assert!(validate_mention_feed(&[tampered], &recipient, 50, None).is_err());
+}
+
+#[test]
 fn search_messages_limit_allows_discussion_discovery_page() {
     assert_eq!(search_messages_limit(None), 20);
     assert_eq!(search_messages_limit(Some(500)), 500);

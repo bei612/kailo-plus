@@ -32,7 +32,7 @@ struct SearchChannel {
 
 /// Resolve native IDs only from existing bindings. A directory label is never
 /// permission; every candidate must pass the original read admission as well.
-async fn scopes(
+pub(crate) async fn scopes(
     state: &BffState,
     ctx: &ExecutionContext,
     channel: Option<Uuid>,

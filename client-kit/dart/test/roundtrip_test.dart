@@ -238,6 +238,19 @@ void main() {
       sample,
     );
   });
+  test('Inbox mentions preserve original feed bounds and optional absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/web-inbox-query.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      sample.map((row) => WebInboxQuery.fromJson(row).toJson()).toList(),
+      sample,
+    );
+  });
   test(
     'native source resources preserve complete metadata and legacy absence',
     () {

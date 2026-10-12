@@ -191,6 +191,8 @@ export function HomeView({
     [availableChannelIds, coreReads.visibleChannels, coreReads.conversations],
   );
   const ownedAgents = useOwnedAgentActivity(coreReads.workspaceChannels, Boolean(coreReads.state) && !coreReads.failed && !coreReads.unknown);
+  const channelsQuery = useChannelsQuery();
+  const channels = channelsQuery.data;
   const admittedFeed = React.useMemo(
     () =>
       feed && coreReads.state
@@ -198,14 +200,14 @@ export function HomeView({
             mentions: [...feed.mentions.filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
-            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),...(projectQuery.isSuccess?projectInboxMentions(projectQuery.data):[])],
+            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : channels?.find(channel=>channel.id===item.channelId)?.channelType ?? item.channelType})),...(projectQuery.isSuccess?projectInboxMentions(projectQuery.data):[])],
             activity: [...feed.activity, ...(ownedAgents.data?.activity ?? [])].filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
-            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),
+            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : channels?.find(channel=>channel.id===item.channelId)?.channelType ?? item.channelType})),
           }
         : undefined,
-    [feed, coreReads.state, coreReads.visibleChannels, coreReads.conversations, ownedAgents.data,projectQuery.data,projectQuery.isSuccess],
+    [feed, coreReads.state, coreReads.visibleChannels, coreReads.conversations, ownedAgents.data,projectQuery.data,projectQuery.isSuccess,channels],
   );
   const getMessageReadAt = React.useCallback(
     (id: string) => coreReads.readAt(`msg:${id}`),
@@ -244,8 +246,6 @@ export function HomeView({
       ? (getThreadReference(activeLatchedItem.tags).parentId ??
         activeLatchedItem.id)
       : null;
-  const channelsQuery = useChannelsQuery();
-  const channels = channelsQuery.data;
   const selectedChannelIdCandidate = threadContextFeedItem?.channelId ?? null;
   const selectedChannel = React.useMemo(() => {
     if (!selectedChannelIdCandidate || !channels) return null;
@@ -648,7 +648,7 @@ export function HomeView({
               onDeleteMessage={message=>mutateMessage(message)}
               canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}
               currentPubkey={currentPubkey}
-              onToggleReaction={canReply && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
+              onToggleReaction={selectedItem?.item.channelId && admittedChannelIds.has(selectedItem.item.channelId) && !channelsQuery.isFetching && !channelsQuery.isError && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
               contextChannelName={selectedChannel?.name ?? null}
               disabledReplyReason={disabledReplyReason}
               isSendingReply={isSendingReply}

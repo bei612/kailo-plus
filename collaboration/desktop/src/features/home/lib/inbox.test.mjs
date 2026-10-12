@@ -163,6 +163,16 @@ test("localized disabled-reply reasons preserve the actual admitted-channel guar
   });
   assert.deepEqual(getHomeMessageCapabilities(row, new Set([CHANNEL_ID]), "zh-CN"), { canReply: true, disabledReplyReason: null });
   assert.deepEqual(getHomeMessageCapabilities(null, new Set(), "zh-CN"), { canReply: false, disabledReplyReason: null });
+  for (const kind of [45001,45003]) {
+    const forum = {...row,item:{...row.item,kind,channelType:"forum"}};
+    assert.deepEqual(getHomeMessageCapabilities(forum,new Set([CHANNEL_ID]),"en"), {
+      canReply:false,disabledReplyReason:"This item does not support inline replies yet.",
+    });
+    assert.deepEqual(getHomeMessageCapabilities(forum,new Set([CHANNEL_ID]),"zh-CN"), {
+      canReply:false,disabledReplyReason:"此条目尚不支持行内回复。",
+    });
+    assert.equal(getHomeMessageCapabilities(forum,new Set(),"en").disabledReplyReason,"Open the linked channel to reply.");
+  }
 });
 
 test("mention rows use the channel list when feed channelName is blank", () => {

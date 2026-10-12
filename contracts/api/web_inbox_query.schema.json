@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_inbox_query.schema.json",
+  "title": "WebInboxQuery",
+  "description": "DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay filter。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "since": {"type": "integer", "minimum": 0},
+    "limit": {"type": "integer", "minimum": 1}
+  }
+}

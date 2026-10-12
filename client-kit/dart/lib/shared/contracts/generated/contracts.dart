@@ -136,6 +136,7 @@
 //     final webChannelView = webChannelViewFromJson(jsonString);
 //     final webCustomEmojiMutation = webCustomEmojiMutationFromJson(jsonString);
 //     final webCustomEmojiView = webCustomEmojiViewFromJson(jsonString);
+//     final webInboxQuery = webInboxQueryFromJson(jsonString);
 //     final webMessageAttachment = webMessageAttachmentFromJson(jsonString);
 //     final webMessageAuthorQuery = webMessageAuthorQueryFromJson(jsonString);
 //     final webMessageAuthorView = webMessageAuthorViewFromJson(jsonString);
@@ -1074,6 +1075,11 @@ WebCustomEmojiView webCustomEmojiViewFromJson(String str) =>
 
 String webCustomEmojiViewToJson(WebCustomEmojiView data) =>
     json.encode(data.toJson());
+
+WebInboxQuery webInboxQueryFromJson(String str) =>
+    WebInboxQuery.fromJson(json.decode(str));
+
+String webInboxQueryToJson(WebInboxQuery data) => json.encode(data.toJson());
 
 WebMessageAttachment webMessageAttachmentFromJson(String str) =>
     WebMessageAttachment.fromJson(json.decode(str));
@@ -13677,6 +13683,21 @@ class WebCustomEmojiView {
   });
 }
 
+///DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay
+///filter。
+class WebInboxQuery {
+  final int? limit;
+  final int? since;
+
+  WebInboxQuery({this.limit, this.since});
+
+  factory WebInboxQuery.fromJson(Map<String, dynamic> json) =>
+      WebInboxQuery(limit: json["limit"], since: json["since"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"limit": limit, "since": since});
+}
+
 class WebMessageAttachment {
   ///原 Buzz imeta 模糊预览编码。
   final String? blurhash;
@@ -13863,8 +13884,9 @@ class WebMessageQuery {
   ///author。不得与线程读取或其他消息类型组合。
   final String? agentInstallationId;
 
-  ///原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确消息及线程祖先。仅
-  ///STREAM，不能与 parentEventId、agentInstallationId 或分页游标组合；不是全局 event 读取或权限证明。缺省保持原窗口/线程语义。
+  ///原 Inbox item 冷定位：仅在路径指定并 freshly admitted 的 Workspace/Conversation 内验证精确 Stream/Forum
+  ///消息及线程祖先。不能与其他 messageType、parentEventId、agentInstallationId 或分页游标组合；不是全局 event
+  ///读取或权限证明。缺省保持原窗口/线程语义。
   final String? anchorEventId;
   final int? before;
   final String? beforeId;

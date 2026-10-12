@@ -101,6 +101,12 @@ test("Web search preserves original operators and optional absence", () => {
   deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
 });
 
+test("Inbox mentions preserve original feed bounds and optional absence", () => {
+  const sample: import("../src/generated/contracts.js").WebInboxQuery[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-inbox-query.sample.json",import.meta.url),"utf8"));
+  const actual: typeof sample = sample.map(row=>({since:row.since,limit:row.limit}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
+
 test("native source resources preserve complete metadata and legacy absence", () => {
   const sample: {
     pep: import("../src/generated/contracts.js").AdapterPepCheckRequest;
