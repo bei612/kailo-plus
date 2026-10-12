@@ -11607,3 +11607,45 @@ Log SHA-256:
 This is resolver/service consumer evidence, not live HTTP, source SQL, browser,
 production binding, full conformance or deployment acceptance. No image was
 built or loaded. Earlier dirty artifact/receipt changes are excluded.
+
+#### Original SQLite cases on the existing Wren Node 18 image
+
+The three dependency-blocked cases above were completed without changing
+product code, the dependency version, compiler flags or the original assertions.
+Read-only inspection of the existing `kailo-wren-conformance-ui-pawcoz`
+container found Node 18.20.8 / ABI 108 and better-sqlite3 9.4.3 with its compiled
+native module. Its fixed local image is
+`sha256:608f7fabd0ac30ffbd0176d41caa2a535197b908da7ad5f2f2dcb34a48a9d1d3`.
+The module copied from its read-only rootfs to the same Data evidence directory,
+`native-release/better_sqlite3.node`, has SHA-256
+`f7ca79555140023fa358eef75500b9d3c9fcc140481811ccfb343474b1bf19db`.
+
+One disposable runner used that exact existing image with `--pull never`,
+2 CPU / 2 GiB / equal memory-swap, UID 1000, network none, read-only rootfs,
+and no log driver. The frozen input and original Data dependencies were mounted
+read-only; only that package's Release directory was overlaid with the matching
+module. TMPDIR and Jest cache were separate writable Data mounts. No production
+database or service credentials were mounted. The original test uses
+`better-sqlite3` with `:memory:`, not the source database or live metadata DB.
+The resolver and test bytes matched committed
+`ab7c601970500bfd0f8cc5b6c05c1101d20ea2fa`.
+
+From the same frozen wren-ui directory, with `NODE_ENV=test` and `TMPDIR=/tmp`:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --cacheDirectory=/jest-cache --runTestsByPath src/nativeAskingQuery.test.ts \
+  --testNamePattern="original Asking SQLite task and SQL receipt ownership"
+```
+
+Session 47686 exited 0: three passed, 28 explicitly skipped, 81.434 seconds.
+The original repository consumers verified same-task registration/replay,
+HUMAN/project/query ownership, and stopped-task observation without admitting
+a new query. The runner `kailo-wren-sqlite-followup-us3jlq` was automatically
+removed; an exact subsequent container lookup returned no row.
+`sqlite-node18.log` in the same evidence directory has SHA-256
+`210506c611a53771366249c42a29b84aef3f53c965e2b2af189a2635d9fac1e3`.
+Earlier Node 24 failure/rebuild evidence remains unchanged. The 28 earlier
+passes and these three passes are separate runs on different Node runtimes,
+not a single 31-case all-pass run. This closes the SQLite prerequisite evidence,
+not HTTP, source SQL, browser, production binding or deployment acceptance.
