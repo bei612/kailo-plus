@@ -1,5 +1,59 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-12 00:44 UTC 现网频道搜索快捷键与源码边界
+
+本段对应固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`；源码回读
+main `0e8055cfd03d4149fc536b00e393499b6c47e98c`。下方 562156a 的 5316 路径 / 3281
+证明队列仅是其固定快照统计，本轮未重算，不作为当前已确认缺失功能数。
+
+普通 SSO 会话 `kailo-official-views` 最初已过期，build-info fetch 失败；真实频道
+点击跳回 IdP 后复用原受控匿名 FD 登录，未共享会话/注入 Cookie。00:44:24.852Z
+再次读取 `/app/platform-build-info.json` 为 200/JSON，buildId 仍是
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`，对应
+已部署 `9d718234b74b688d9b81816f9b67470d4fc80440`。新共享源码均未因此获得截图验收。
+
+这次补原快捷键的实际操作证据，不重复空 Projects 图：官方
+`desktop/src/app/useAppShellKeyboardShortcuts.ts::useAppShellKeyboardShortcuts`
+内部 `handleKeyDown` 的 primary-modifier+F 调用 `onSearchCurrentChannel`；
+`desktop/src/shared/lib/keyboard-shortcuts.ts::KEYBOARD_SHORTCUTS` 的
+`find-in-channel` 对非 macOS 为 Ctrl+F。当前原规则共享迁入
+`client-kit/ts/platform/src/react/use-search-shortcuts.ts::useSearchShortcuts`，
+Web `PlatformApp` 投递当前实际频道，其 BFF scope 准入属于已授权适配。
+
+Linux x86_64 浏览器实际在既有非空频道按 Ctrl+F，打开当前频道范围 pill 和
+搜索输入。输入 `image` 后 `/api/v1/search/messages` 实际 200、42ms，出现一个
+既有双图消息。Enter 打开 `messageId=thread=310e1df1d786508f9f848b28254b946fc8ac288d5875ff2e683893b9a3ec64d0`
+的原线程，未跳其他频道；再次 Ctrl+F/Escape 后 dialogCount=0，原线程及 URL
+引用保留。没有发送消息、创建对象、改偏好或操作业务组件。
+
+原证据目录 `/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF` 的四图
+均实际打开复核：`12-shortcut-channel-search.png`、`13-shortcut-search-results.png`、
+`14-shortcut-open-result.png`、`15-shortcut-escape-preserves-thread.png`；12/13/14
+同名 YAML 保留原状态。图中原搜索范围、查询命中、线程双图及关闭后的线程保留
+均可见；不是全部快捷键、撤权、Windows 或 Mobile 验收。
+
+同一账号再次只读请求全局与当前 workspace 的 application-bindings，均 200、
+983ms、bindings=[]、nextOffset=null；左侧仍无云盘/知识库/问数。此证据仅证明
+该 actor 当前可见集合为空，没有“合格绑定已返回却漏渲染”的证据，不证明全库
+无绑定或完整授权/上架链正确，也未激活绑定以补菜单。
+
+本轮全量台账的源码/部署边界纠偏：
+
+- 原提醒 `RemindersPanel/useRemindersQuery/useReminderMutations`、Inbox reminders
+  消费和消息底色已随 a3923f3/c4ea095 进入源码，不能继续泛称“全无消费者”；当前
+  `InboxFilter` 七类，needs_action 仍缺。原到期原生通知、idle/侧栏 badge 与
+  Mobile 消费仍未完整恢复；9d718 未包含本批提醒，不记现网可用。
+- Tasks/Reviews 列表、项目作者和精确详情导航已随 c4ea095/b5aaf075 进入源码，
+  不能继续把整条只读链标缺失。分享链 30 路径仍是尚未提交/部署的独立冻结候选，
+  本次截图不认领它。完整 ProjectDetailChrome/WorkspaceTabs/ProjectChannelHome、
+  Git/CommitDetail、selection 与工作项写操作仍缺，保留原模块目标。
+- Agents 原框架与元事实不等于 Transcript/Working、Teams/记忆完整产品；Workflows
+  原页面与 Delay timeout 不等于全部条件/Run controls。频道完整管理 Sheet、
+  社区轨/拖拽、九个原设置模块以及原 Huddle/Terminal 等仍沿下方固定完整映射
+  保留缺项/证明队列，不能用此次搜索通过覆盖这些未验证页面。
+
+本段没有修改产品源码、构建或部署；原全量失败和新版本实际验收门禁不变。
+
 ## 2026-10-11 固定 562156a 全模块源码分类与实际消费者纠偏
 
 比较范围固定为官方 Buzz `779af8886caae1317b4de962082429867ab61503` 与
