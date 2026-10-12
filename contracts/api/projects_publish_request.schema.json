@@ -7,8 +7,10 @@
   "additionalProperties": false,
   "required": ["operation"],
   "properties": {
-    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE", "CREATE_ISSUE_COMMENT", "CREATE_PULL_REQUEST_COMMENT"]},
+    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE", "CREATE_ISSUE_COMMENT", "CREATE_PULL_REQUEST_COMMENT", "SELF_ASSIGN_ISSUE", "SELF_UNASSIGN_ISSUE"]},
     "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "assigneeLabel": {"type": "string", "description": "Original transient display label, trimmed and limited to 128 Unicode characters by the consumer. Assignee is always the authenticated signer, never this label."},
+    "priorEventId": {"type": "string", "description": "Optional immutable original per-self assignment operation head. Same publication intent retains it across UNKNOWN observation; never an authorization grant."},
     "workspaceId": {"type": "string", "format": "uuid"},
     "name": {"type": "string", "minLength": 1, "maxLength": 256},
     "description": {"type": "string", "maxLength": 2048},
@@ -25,6 +27,7 @@
     {"properties": {"operation": {"const": "CREATE_REPOSITORY"}}, "required": ["workspaceId", "name"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
     {"properties": {"operation": {"const": "CREATE_ISSUE"}}, "required": ["targetEventId", "title", "body", "category"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
     {"properties": {"operation": {"const": "CREATE_ISSUE_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}},
-    {"properties": {"operation": {"const": "CREATE_PULL_REQUEST_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}}
+    {"properties": {"operation": {"const": "CREATE_PULL_REQUEST_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}},
+    {"properties": {"operation": {"enum": ["SELF_ASSIGN_ISSUE", "SELF_UNASSIGN_ISSUE"]}}, "required": ["targetEventId", "assigneeLabel"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}, {"required": ["body"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}}
   ]
 }

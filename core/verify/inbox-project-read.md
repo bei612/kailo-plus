@@ -1678,3 +1678,135 @@ onEdit → 编辑器条件 → onSend/saveEdit，覆盖两 Forum kind、UNKNOWN 
 | native-editor-guard-negative.log | `abecd6b3762f39bd8530cab153920c15ba97c74ea1102b0d2d8bd8253d13c98f` |
 | native-editor-type-negative.log | `087e1d2a618b566309f30560114ff9913c5c7032388b494bdf12e58cd9bc2879` |
 | native-editor-restored.log | `7f76bb639f73ead891b11dcdec6e0ff9875b630ada77915ed5e766155ccabf13` |
+
+## 2026-10-12 原 Tasks 本人认领与取消本人认领
+
+比较基底为 `a54278909381aac22249c43cc691be29bc91fe8d`。本节仅记录
+现有任务详情本人操作，不包含给他人分配、代 Agent 签名或新的项目管理权限。
+源码和定向消费者通过不等于部署、原生设备或真实业务通过。
+
+### 四步影响与原版分类
+
+1. 权威与归属：沿 `REQ-24`、`DD-39/72/75`、`SS-BUZ-GOVERNANCE`、
+   `SS-WEB-RELAY` 的既有 Projects publication；`collab.projects` 的 S1
+   归属没有 `BLOCKED` 权威项。本次不新增平台实体、权限或正文数据库。
+2. 原调用：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`
+   → `desktop/src/features/projects/ui/IssueAssigneesRow.tsx::IssueAssigneesRow`
+   → `desktop/src/features/projects/issueAssignments.ts::writeProjectIssueAssignment`。
+   本人操作仍产生原 kind 1，正文与 `e/a/p/t/prior` 顺序保持；`prior` 由
+   原 `desktop/src/features/projects/projectIssues.mjs::assignmentStateForIssue`
+   归约得到，同作者时间沿 `nextProjectIssueCommentCreatedAt`，不伪装普通评论。
+3. 实际影响：共享详情在原 Assignees 位置复用原头像移除与 Assign to me 控件，
+   Web/Native 共用。UI 身份取原可信 Pulse host，派发前和回读后再核 Projects
+   viewer、项目与 repository。Native 通过既有本机签名与持久 publication intent；
+   不借 Workspace/ReposWrite，不引入另一签名接口。完整 kind 1 历史先验签、
+   分页穷尽再归约，不能由 SQL limit 后的标签过滤漏掉 owner 因果头。
+4. 异常与状态：首次先持久原 key、摘要、本人目标、operation、label、prior；
+   不存 Task 正文。UNKNOWN 保持同 key/event/prior，不因刷新改签或自动补发。
+   成功必须 fresh 读回同一事件的作者、kind、正文及全部 tags 后才清理意图和 toast。
+   撤权或身份读回不一致隐藏详情；Storage 损坏或不可写拒绝派发，不删旧槽恢复成功。
+   已派发后取消不声称撤回，原待核验引用保留。
+
+四类差异：原样保留的是本人分配事件正文/tag 次序、原 self 控件 class 与头像
+交互、既有任务归约器；共享迁移是 `IssueAssigneesRow` 的本人分支与原事件模板；
+授权治理适配是 typed operation、受准入发布、fresh 回读、持久 UNKNOWN 及同源中英
+词条。缺失需恢复仍包含给他人分配/选择器、managed-owner 签名及其完整治理接缝，
+本批不以本人操作覆盖整个原组件或全 Projects。
+
+交叉复核发现的真实缺口已同批修复：原初版只保存摘要而不保留 operation，若
+派发成功但响应丢失，fresh 列表先更新头像会让原按钮消失。末版仅将原未决本人控件
+保持在待确认前态；其他人的头像仍取 fresh 归约。挂载后可以从该原控件观察原
+operation/label/key，精确确证后才开放相反操作，不新增页面、操作菜单或执行账本。
+
+### 实际 UI 与 Native transport 验证
+
+使用既有 `kailo-inbox-forum-r5kqbx`，固定缓存镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+实读 2 CPU、4 GiB memory、memory+swap 总限额 4 GiB（无额外 swap）、
+UID 1000、network none、只读根。`/candidate`、`/cache`、`/tmp`、
+`/.dart-tool` 都挂实际 Data。预检仅该 SDK sleep；宿主可用内存约 37 GiB，
+CPU PSI avg10 约 26%，另一个唯一受限 Cargo 由后端席执行；没有新增 builder。
+执行显式 `TMPDIR=/tmp`、`NODE_COMPILE_CACHE=/tmp/node-compile` 和原 npm Data
+缓存，未改 HOME、未装依赖、未启动浏览器或原生 GTK 构建。
+
+私有输入复用 `reminder-consumers.RcN79Y`，仅同步本批路径、上批已合并的三个
+Native 消费者和本次原生成的完整 TS 合同；旧 final.index/日志未改写。正式与私有
+变异还原的两个生产文件 `cmp` 均为 0。词条候选单独按 HEAD + 六个实际 key 合成；
+原 `tools/gen-platform-i18n.py` 与 `--check` 均为 0，Dart 私有投影逐字相等。
+正式 TS/Dart 只应用六 key 增量，旧暂存及未暂存内容没有覆盖。
+
+首轮 `27457` 实际退出 1，保留 `positive.log`：误用 `.bin/tsc` 解析到
+TS 6.0.3，共享 CSS 副作用声明报错；新增 DOM 夹具把 profiles 传给不接该参数的
+Inbox 外层，导致实际 label 与断言不符；Native 夹具让两个事件恰好占满同秒桶，
+触发原完整性拒绝。修正为原详情接收 props、固定 TS 5.9.3 原入口与不同时间的
+真实分页夹具，没有修改产品响应式/分页规则、超时或降低断言。
+
+末版 `50860` 实际退出 0。原命令均在同 SDK 串行执行：
+
+```sh
+# client-kit/ts/platform
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx
+# collaboration/desktop
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+node --import ./test-loader.mjs --test src/features/platform/projectsTransport.test.mjs
+# web-client/web
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+# client-kit/ts/contracts
+node --experimental-strip-types --test --test-name-pattern='Projects publication' test/roundtrip.test.ts
+```
+
+共享生产/测试、Native、Web 类型均为 0；详情 72/72、Native 18/18、TS 合同
+1/1。实际覆盖中英点击、双点不重发、原头像取消及 prior、失回执后 fresh snapshot
+已改变时重挂载仍可同意图核验、撤权清正文、身份丢失、空/错回读、损坏存储与
+取消后保留 accepted 引用。React act 警告保留，不计作原生设备验收。
+
+私有反证 `12951` 实际退出 1：仅去掉未决控件前态，两个真实重挂载 DOM 消费者
+均失败；仅去掉 Native 当前 prior 拒绝，原拒绝断言失败。`61245` 原字节还原后
+只复验这两项 DOM 与一项 Native，实际退出 0，并完成原 i18n 生成/check 0，
+没有重复整套或扩覆盖范围。
+
+日志目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-self-assignment-ui.M21ToD`：
+
+| 原日志 | SHA256 |
+| --- | --- |
+| positive.log | `ee437213f5ce016b53194c12fdffdcdda55a0f3fd4ade3448ce4647fc70a2a4a` |
+| corrected.log | `c6a77f2e5fa8bfb80cb523f85898323034302fd5d07ed189f0094e2911e2b652` |
+| mutation.log | `08a0e35901adbda492a53f37c75eb99ba7d2e6ad7c0505c1ac5ba6bc801090b6` |
+| restored.log | `94938e2c06b2ec8abc1ddd2608036e16363f8ea789b650fe296383f3547bfde2` |
+
+本批没有部署、普通 SSO 新版实拍、Windows/Mobile 安装包或 HTTP/真实 Relay
+本人认领业务验收；原 full 失败门禁未解除。既有旧版图片不得作为本批交付证据。
+
+### Tasks 本人认领：typed Core／Bridge 消费者（2026-10-12）
+
+比较基准 `a54278909381aac22249c43cc691be29bc91fe8d`。后端／合同私有候选 10 路径 `+595/-34`，tree `f71db159d59f9465db3a0e438990e6302ce312f6`；不含公共四生成历史脏改，也不含 UI 的六个 i18n 词条。未提交、未部署。
+
+1. **权威**：`.design/03` 原动作准入与 `DD-75` 跨端持钥边界，`collab.projects` 为 S1 且 blockers 为空。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/projects/issueAssignments.ts::writeProjectIssueAssignment`、`desktop/src/features/projects/projectIssues.mjs::assignmentStateForIssue` 是行为来源：kind 1，原 `e/a/p/t/prior` 与英文操作正文，self 从可信签名 actor 获取。未开放他人／Agent 分派。
+2. **读写影响**：仅扩展原 `ProjectsPublishRequest` 的两枚举 `SELF_ASSIGN_ISSUE`／`SELF_UNASSIGN_ISSUE`、显示标签 `assigneeLabel` 与可缺省、非 nullable 的 `priorEventId`；原 sample、TS 显式映射及四侧生成同步。`collab-bridge::projects` 复用原签名／精确事件回读；Core `projects::assignment_activity` 读取原 Relay 完整 kind-1 keyset 页并验签，按原 causal reducer 得出当前 self head，同一快照取同作者时间。过滤发生在完整页读取后，不把无关页当历史结束。旧操作混入新字段拒绝。
+3. **副作用边界**：`web_transport::publish` 首次操作检查当前 prior，沿原 fresh scope、签名、大小限制、`publish_attempt` 与审计执行；不存正文、不增分派账本。既有 UNKNOWN 分支在重新读 head／选择 createdAt 之前返回原 Operation，不重发；ACCEPTED 沿原 signed-event 回读精确核对 body 与有序 `t/p/e/a/prior`。本轮没有运行真实 BFF+DB UNKNOWN 故障演练；这部分是完整调用顺序复核、Bridge 精确事件检查以及另列 UI／Native 意图消费者证据，不是线上验收。
+4. **异常与验证**：缺失／陈旧 prior、伪造签名、错目标／仓库／self／正文／prior 均不能成功；原 authoritative owner/issue-author 和 self causal 规则保留。原生产 guard 被私下削弱为允许缺 prior 后，实际 Core HTTP 查询消费者断言失败；原字节恢复后通过。额外仅机械修正已存在 Forum 三处 `needless_borrow`，无权限或事件行为变化。
+
+实际验证全部复用缓存 SDK，Data 输入／registry／git／target／tmp；无 pull、load、镜像构建或 host 编译。Rust SDK `kailo-receiver-binding-check` 为 4 CPU／8 GiB、memory+swap 总限额 8 GiB（无额外 swap）、UID 1000、network none／只读根；轻 SDK `kailo-inbox-forum-r5kqbx` 为 2 CPU／4 GiB、memory+swap 总限额 4 GiB（无额外 swap），Dart 工具目录也在 Data。原 `tools/container-safety.sh` preflight／limits 已回读，执行前两 SDK 仅 sleep，host available 约 37 GiB。
+
+- 原生成 `bash tools/gen.sh`：83135 首次 exit 255（旧 SDK 缺可写 `/.dart-tool`）；改用已有正确挂载的轻 SDK 后 16349 exit 0。没有改 HOME、锁版本或安装工具。生成日志 `generation-corrected.log` SHA-256 `52b398e382b2959e01fb16033b4e4b80dde009698f1f262ed6881c8f1db4f1f2`，位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-self-assignment.nzpNmt/`。
+- 41042 exit 0：原 `cargo test --locked --offline -j16 -p collab-bridge --lib projects::tests -- --nocapture` 10/10；当时 Core 7/7；原 `-p contracts --test roundtrip projects_publication` 1/1。`positive.log` SHA-256 `7d43fedd8bc4fdbe091a940b30fccab3f2ee6d45d12fe2827de9cec5b7b83069`。
+- 57205 exit 101：末版 Core 8/8 已通过，窄 clippy 被原 Forum 三处多余借用阻断；`final-positive.log` SHA-256 `420ed73806723995950acabe778af815dba4cefacdbdee2e4c6cccad41d2b265`。失败未改记通过。
+- 41684 exit 101：只在冻结私有 Core 的 `assignment_activity_page` 弱化 prior guard，原 `assignment_prior_requires_current_head_from_complete_signed_pages` 失败（预期拒绝却得到 `Ok(None)`）。`negative-stale-prior.log` SHA-256 `9860aa314247cbd7042262a20ef54b6b79cae409d8aed3e1a571f6a2a6aeba0c`。随后 apply_patch 原字节恢复、与正式源 cmp 0。
+- 12805 exit 0：`cargo test --locked --offline -j16 -p platform-core --bin platform-core projects::tests -- --nocapture` 8/8；`cargo clippy --locked --offline -j16 -p collab-bridge --lib -p platform-core --bin platform-core -- -D warnings` exit 0。`restored-clippy.log` SHA-256 `a9c9466ddb2d6377c7480b25472185e0c1c270887aa59de8b724f2830973c4e7`。三处 Rust 文件原 `rustfmt --edition 2021 --config skip_children=true --check` exit 0。
+- Go：`GOCACHE=/cache/go-build GOMODCACHE=/cache/go-mod GOTMPDIR=/tmp TMPDIR=/tmp GOPROXY=off GOTOOLCHAIN=local go test ./internal/contracts -run '^TestProjectsPublicationRoundtrip$' -count=1 -v` 1/1。组合命令随后 `bash -lc` 重置 PATH 导致 Dart 未找到，整体 exit 127；保留 `go-dart-positive.log` SHA-256 `bbc40cb8009e370822cb31d24596202de6dd30ee0283fb72878e1b8ff66fecd9`，不把整体记为成功。
+- Dart：原 SDK 改为 `bash -c` 保留原 PATH，`PUB_CACHE=/cache/pub TMPDIR=/tmp dart pub get --offline` 与原 `dart test test/roundtrip_test.dart --name 'Projects publication preserves native metadata and exact head reference'`，20631 exit 0、1/1；`dart-positive-corrected.log` SHA-256 `26b0c9cc0040d246d48a602194898897345c26316ba49070319fd7c5d3fb8209`。TS 原 Projects publication 往返由前端席 50860 实际 1/1 exit 0，另列其原日志。
+
+上述未另注明目录的日志、候选 `candidate.index`、`source.patch` 与 `paths.txt` 均在 `/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/input/task-self-assignment.nzpNmt/`。patch SHA-256 `d91299438cce64f96d71b818a973f9af5363fd5ea2e98e998fdc2a79e4aa8a6e`；私有 index diff --check exit 0。正式全 dirty 树检查另有五个非本批 EOF 空行失败，不混入本批候选。公共原三项 staged 保持 `+32/-135`，本轮 hash `2c9c5cd8276505e846056797f5ce46dbaacaa3fd73cc9641c963d27775be5749`。
+
+原 `tools/check.sh` 的历史兼容 Python 段在同一原文档 SDK 中实际退出 0：
+以原 Git `contracts-v0.1.0` 为历史权威，317 个 schema 中匹配 3 个旧 schema，
+无该检查所定义的破坏性变化。读取本批私有完整 contracts，只读挂载实际 apps Git；
+没有手写替代检查。日志 `task-self-assignment-ui.M21ToD/compatibility.log` 的
+SHA256 为 `9ed2ed4bdf8e56809846a45eb3fdbc0e2c7d45373fa5da92eb6c80168fba4ef6`。
+这个历史比较不覆盖所有语义兼容或真实在线请求。
+
+本批 full、真实 BFF-DB-Relay 幂等故障演练未运行；未部署或验证真实三人操作。
+编译、HTTP stub、四侧往返和私有反证不替代这些边界。

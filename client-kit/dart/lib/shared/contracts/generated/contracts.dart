@@ -12441,6 +12441,9 @@ class ProjectPreferenceRequest {
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
 class ProjectsPublishRequest {
+  ///Original transient display label, trimmed and limited to 128 Unicode characters by the
+  ///consumer. Assignee is always the authenticated signer, never this label.
+  final String? assigneeLabel;
   final List<AttachmentElement>? attachments;
 
   ///Original complete markdown including attachment markdown. Issues may be empty; comments
@@ -12452,6 +12455,10 @@ class ProjectsPublishRequest {
   final List<String>? mentions;
   final String? name;
   final ProjectPublicationOperation operation;
+
+  ///Optional immutable original per-self assignment operation head. Same publication intent
+  ///retains it across UNKNOWN observation; never an authorization grant.
+  final String? priorEventId;
   final String? targetEventId;
 
   ///Original trimmed issue subject; the consumer additionally enforces the original
@@ -12461,6 +12468,7 @@ class ProjectsPublishRequest {
   final String? workspaceId;
 
   ProjectsPublishRequest({
+    this.assigneeLabel,
     this.attachments,
     this.body,
     this.category,
@@ -12468,6 +12476,7 @@ class ProjectsPublishRequest {
     this.mentions,
     this.name,
     required this.operation,
+    this.priorEventId,
     this.targetEventId,
     this.title,
     this.visibility,
@@ -12476,6 +12485,7 @@ class ProjectsPublishRequest {
 
   factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
       ProjectsPublishRequest(
+        assigneeLabel: json["assigneeLabel"],
         attachments: json["attachments"] == null
             ? null
             : List<AttachmentElement>.from(
@@ -12491,6 +12501,7 @@ class ProjectsPublishRequest {
             : List<String>.from(json["mentions"]!.map((x) => x)),
         name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
+        priorEventId: json["priorEventId"],
         targetEventId: json["targetEventId"],
         title: json["title"],
         visibility: json["visibility"] == null
@@ -12500,6 +12511,7 @@ class ProjectsPublishRequest {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "assigneeLabel": assigneeLabel,
     "attachments": attachments == null
         ? null
         : List<dynamic>.from(attachments!.map((x) => x.toJson())),
@@ -12511,6 +12523,7 @@ class ProjectsPublishRequest {
         : List<dynamic>.from(mentions!.map((x) => x)),
     "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
+    "priorEventId": priorEventId,
     "targetEventId": targetEventId,
     "title": title,
     "visibility": projectListingVisibilityValues.reverse[visibility],
@@ -12609,6 +12622,8 @@ enum ProjectPublicationOperation {
   CREATE_PULL_REQUEST_COMMENT,
   CREATE_REPOSITORY,
   DELETE,
+  SELF_ASSIGN_ISSUE,
+  SELF_UNASSIGN_ISSUE,
 }
 
 final projectPublicationOperationValues = EnumValues({
@@ -12619,6 +12634,8 @@ final projectPublicationOperationValues = EnumValues({
       ProjectPublicationOperation.CREATE_PULL_REQUEST_COMMENT,
   "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
   "DELETE": ProjectPublicationOperation.DELETE,
+  "SELF_ASSIGN_ISSUE": ProjectPublicationOperation.SELF_ASSIGN_ISSUE,
+  "SELF_UNASSIGN_ISSUE": ProjectPublicationOperation.SELF_UNASSIGN_ISSUE,
 });
 
 enum ProjectListingVisibility { LISTED, UNLISTED }

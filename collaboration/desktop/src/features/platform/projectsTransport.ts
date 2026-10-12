@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueSelfAssignment,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -48,6 +48,51 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
     let enteredPublication=false;
     try {
       check();
+      if(request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE"){
+        if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
+          ||request.visibility!==undefined||request.title!==undefined||request.body!==undefined||request.category!==undefined
+          ||request.mentions!==undefined||request.attachments!==undefined||typeof request.assigneeLabel!=="string"
+          ||request.priorEventId!==undefined&&!/^[0-9a-f]{64}$/.test(request.priorEventId)
+          ||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid task assignment");
+        const readTarget=async()=>{
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1621],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==1621||!verifyEvent(root))throw new Error("Task unavailable");
+          const address=root.tags.find(tag=>tag[0]==="a")?.[1];
+          const [kind,owner,...identifier]=address?.split(":")??[];
+          const slug=identifier.join(":");
+          if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository coordinate unavailable");
+          const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
+          if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          return {root,address:address!};
+        };
+        const target=await readTarget();
+        const template=buildProjectIssueSelfAssignment(request.operation==="SELF_ASSIGN_ISSUE"?"assign":"unassign",
+          target.root.id,target.address,viewer,request.assigneeLabel,request.priorEventId);
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            const fresh=await readTarget();
+            if(fresh.root.id!==target.root.id||fresh.address!==target.address)throw new Error("Task changed");
+            // Assignment heads include owner operations, not just this signer.
+            // Drain unfiltered history because Relay filters tags after SQL cap.
+            const history=await enumerateProjectEvents(async page=>{
+              const events=await relayClient.fetchEvents({kinds:[1],limit:relayQueryLimit,since:page.since,until:page.until});check();
+              if(events.some(event=>event.kind!==1||!verifyEvent(event)))throw new Error("Task assignment history unavailable");
+              return events;
+            },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
+            const current=eventToProjectIssue(fresh.root,[],history.filter(event=>event.tags.find(tag=>tag[0]==="a")?.[1]===fresh.address));
+            if(current.assigneeOperationHeads[viewer]!==request.priorEventId)throw new Error("Task assignment changed");
+            const signed=await signRelayEvent({kind:1,...template,createdAt:nextProjectIssueCommentCreatedAt(current,Math.floor(Date.now()/1_000),viewer)});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Task assignment signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==1||event.pubkey!==viewer||!verifyEvent(event)||event.content!==template.content
+          ||JSON.stringify(event.tags)!==JSON.stringify(template.tags))throw new TransportError("Task assignment receipt mismatch");
+        return {eventId:event.id};
+      }
+      if(request.assigneeLabel!==undefined||request.priorEventId!==undefined)throw new Error("Unexpected task assignment fields");
       if(request.operation==="CREATE_ISSUE_COMMENT"||request.operation==="CREATE_PULL_REQUEST_COMMENT"){
         const targetKind=request.operation==="CREATE_ISSUE_COMMENT"?1621:1618;
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined

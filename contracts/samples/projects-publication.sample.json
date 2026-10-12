@@ -1,4 +1,6 @@
 [
+  {"operation":"SELF_ASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"自己 🪴"},
+  {"operation":"SELF_UNASSIGN_ISSUE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assigneeLabel":"自己 🪴","priorEventId":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
   {"operation":"DELETE","targetEventId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
   {"operation":"CREATE_PROJECT","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Garden","description":"Shared project","visibility":"listed"},
   {"operation":"CREATE_PROJECT","workspaceId":"11111111-1111-4111-8111-111111111111","name":"Private garden","visibility":"unlisted"},

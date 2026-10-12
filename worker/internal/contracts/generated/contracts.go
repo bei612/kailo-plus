@@ -5710,17 +5710,23 @@ type ProjectPreferenceRequest struct {
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
 type ProjectsPublishRequest struct {
-	Attachments []AttachmentElement `json:"attachments,omitempty"`
+	// Original transient display label, trimmed and limited to 128 Unicode characters by the
+	// consumer. Assignee is always the authenticated signer, never this label.
+	AssigneeLabel *string             `json:"assigneeLabel,omitempty"`
+	Attachments   []AttachmentElement `json:"attachments,omitempty"`
 	// Original complete markdown including attachment markdown. Issues may be empty; comments
 	// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
 	// before signing.
-	Body          *string                     `json:"body,omitempty"`
-	Category      *ProjectIssueCategory       `json:"category,omitempty"`
-	Description   *string                     `json:"description,omitempty"`
-	Mentions      []string                    `json:"mentions,omitempty"`
-	Name          *string                     `json:"name,omitempty"`
-	Operation     ProjectPublicationOperation `json:"operation"`
-	TargetEventID *string                     `json:"targetEventId,omitempty"`
+	Body        *string                     `json:"body,omitempty"`
+	Category    *ProjectIssueCategory       `json:"category,omitempty"`
+	Description *string                     `json:"description,omitempty"`
+	Mentions    []string                    `json:"mentions,omitempty"`
+	Name        *string                     `json:"name,omitempty"`
+	Operation   ProjectPublicationOperation `json:"operation"`
+	// Optional immutable original per-self assignment operation head. Same publication intent
+	// retains it across UNKNOWN observation; never an authorization grant.
+	PriorEventID  *string `json:"priorEventId,omitempty"`
+	TargetEventID *string `json:"targetEventId,omitempty"`
 	// Original trimmed issue subject; the consumer additionally enforces the original
 	// JavaScript 256 UTF-16 code-unit limit.
 	Title       *string                   `json:"title,omitempty"`
@@ -8470,6 +8476,8 @@ const (
 	CreatePullRequestComment          ProjectPublicationOperation = "CREATE_PULL_REQUEST_COMMENT"
 	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
+	SelfAssignIssue                   ProjectPublicationOperation = "SELF_ASSIGN_ISSUE"
+	SelfUnassignIssue                 ProjectPublicationOperation = "SELF_UNASSIGN_ISSUE"
 )
 
 type ProjectListingVisibility string

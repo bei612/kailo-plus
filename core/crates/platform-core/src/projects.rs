@@ -212,6 +212,75 @@ fn validate_project_page(
     Ok(())
 }
 
+/// Assignment heads include authoritative owner/author operations, not just
+/// this signer's comments. Read complete original keyset pages before reducing;
+/// Relay's post-LIMIT #a/#e filters cannot prove that a head is current.
+pub(crate) async fn assignment_activity(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    request: &contracts::ProjectsPublishRequest,
+    issue: &nostr::Event,
+    community_host: &str,
+) -> Result<Option<nostr::Event>, Response> {
+    let cap = community_limits(state, community_host)
+        .await
+        .map_err(IntoResponse::into_response)?
+        .max_limit;
+    let cap = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    assignment_activity_page(&state.http, client, request, issue, cap).await
+}
+
+async fn assignment_activity_page(
+    http: &reqwest::Client,
+    client: &collab_bridge::bridge::IdentityClient,
+    request: &contracts::ProjectsPublishRequest,
+    issue: &nostr::Event,
+    cap: usize,
+) -> Result<Option<nostr::Event>, Response> {
+    let mut cursor = None;
+    let mut activity = Vec::new();
+    loop {
+        let mut filter = json!({"kinds":[1],"limit":cap});
+        if let Some((until, before_id)) = &cursor {
+            filter["until"] = json!(until);
+            filter["before_id"] = json!(before_id);
+        }
+        let rows = client
+            .query(http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        validate_project_page(&events, &[1], None, cap, cursor.as_ref())?;
+        let complete = events.len() < cap;
+        cursor = events
+            .last()
+            .map(|last| (last.created_at.as_secs(), last.id.to_hex()));
+        activity.extend(events.into_iter().filter(|event| {
+            collab_bridge::projects::comment_activity_matches(issue, event, &event.pubkey.to_hex())
+        }));
+        if complete {
+            break;
+        }
+    }
+    let head = collab_bridge::projects::assignment_head(issue, &activity, &client.pubkey_hex())
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    if head != request.prior_event_id {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    Ok(activity
+        .into_iter()
+        .filter(|event| event.pubkey.to_hex() == client.pubkey_hex())
+        .max_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then(right.id.cmp(&left.id))
+        }))
+}
+
 /// Fill a requested activity page from unfiltered SQL pages. A short filtered
 /// page is not evidence of exhaustion: advance the original native keyset until
 /// the output is full or the underlying global-kind history really ends.
@@ -578,6 +647,94 @@ async fn query_inner(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn assignment_prior_requires_current_head_from_complete_signed_pages() {
+        use std::sync::{Arc, Mutex};
+        let member = nostr::Keys::generate();
+        let owner = nostr::Keys::generate();
+        let address = format!("30617:{}:target", owner.public_key());
+        let issue = nostr::EventBuilder::new(nostr::Kind::from(1621), "task")
+            .tags([nostr::Tag::parse(["a", &address]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let decision = nostr::EventBuilder::new(nostr::Kind::from(1), "owner assignment")
+            .tags([
+                nostr::Tag::parse(["a", &address]).unwrap(),
+                nostr::Tag::parse(["e", &issue.id.to_hex(), "", "root"]).unwrap(),
+                nostr::Tag::parse(["p", &member.public_key().to_hex()]).unwrap(),
+                nostr::Tag::parse(["t", "assignment"]).unwrap(),
+            ])
+            .custom_created_at(nostr::Timestamp::from_secs(41))
+            .sign_with_keys(&owner)
+            .unwrap();
+        let unrelated = nostr::EventBuilder::new(nostr::Kind::from(1), "other task")
+            .custom_created_at(nostr::Timestamp::from_secs(42))
+            .sign_with_keys(&member)
+            .unwrap();
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let pages = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let app = axum::Router::new().route(
+            "/query",
+            axum::routing::post({
+                let calls = calls.clone();
+                let pages = pages.clone();
+                move |Json(filters): Json<Value>| {
+                    let calls = calls.clone();
+                    let pages = pages.clone();
+                    async move {
+                        calls.lock().unwrap().push(filters);
+                        Json(pages.lock().unwrap().remove(0))
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = collab_bridge::bridge::IdentityClient::new(
+            collab_bridge::bridge::Custody::Server,
+            &member.secret_key().to_secret_hex(),
+            &endpoint,
+            "community.test",
+        )
+        .unwrap();
+        let mut request:contracts::ProjectsPublishRequest=serde_json::from_value(json!({"operation":"SELF_UNASSIGN_ISSUE","targetEventId":issue.id.to_hex(),"assigneeLabel":"Me"})).unwrap();
+        // The first unrelated full SQL page is not an empty activity history.
+        *pages.lock().unwrap() = vec![json!([unrelated]), json!([decision]), json!([])];
+        let error = assignment_activity_page(&reqwest::Client::new(), &client, &request, &issue, 1)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), StatusCode::CONFLICT);
+        request.prior_event_id = Some(decision.id.to_hex());
+        *pages.lock().unwrap() = vec![json!([unrelated]), json!([decision]), json!([])];
+        assert!(
+            assignment_activity_page(&reqwest::Client::new(), &client, &request, &issue, 1)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let mut forged = decision.clone();
+        forged.content = "not signed".into();
+        *pages.lock().unwrap() = vec![json!([forged])];
+        assert_eq!(
+            assignment_activity_page(&reqwest::Client::new(), &client, &request, &issue, 1)
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::BAD_GATEWAY
+        );
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 7);
+        assert!(calls.iter().all(|call| ["#a", "#e", "authors"]
+            .iter()
+            .all(|key| call[0].get(key).is_none())));
+        assert_eq!(calls[1][0]["before_id"], unrelated.id.to_hex());
+        assert_eq!(calls[2][0]["before_id"], decision.id.to_hex());
+        server.abort();
+    }
+
     #[tokio::test]
     async fn work_item_activity_reads_past_unrelated_sql_page_before_returning() {
         use std::sync::{Arc, Mutex};

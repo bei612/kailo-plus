@@ -429,6 +429,12 @@ enum PlatformMessageKey {
   projectsIssueUnknown,
   projectsCommentPosted,
   projectsCommentPlaceholder,
+  projectsAssignmentSelf,
+  projectsAssignmentUnassignPerson,
+  projectsAssignmentAssigned,
+  projectsAssignmentUnassigned,
+  projectsAssignmentFailed,
+  projectsAssignmentUnknown,
   projectsCommentUnknown,
   projectsIssueChooseRepository,
   projectsIssueInRepository,
@@ -3388,6 +3394,24 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.projectsCommentPosted: ('Comment posted.', '评论已发布。'),
   PlatformMessageKey.projectsCommentPlaceholder: ('Add a comment…', '添加评论…'),
+  PlatformMessageKey.projectsAssignmentSelf: ('Assign to me', '分配给我'),
+  PlatformMessageKey.projectsAssignmentUnassignPerson: (
+    'Unassign {name}',
+    '取消分配给{name}',
+  ),
+  PlatformMessageKey.projectsAssignmentAssigned: ('Task assigned.', '任务已分配。'),
+  PlatformMessageKey.projectsAssignmentUnassigned: (
+    'Task unassigned.',
+    '任务已取消分配。',
+  ),
+  PlatformMessageKey.projectsAssignmentFailed: (
+    'Failed to update task assignment.',
+    '更新任务分配失败。',
+  ),
+  PlatformMessageKey.projectsAssignmentUnknown: (
+    'Task assignment outcome unknown. Retry checks the same publication.',
+    '任务分配结果不明。重试将核验同一次发布。',
+  ),
   PlatformMessageKey.projectsCommentUnknown: (
     'Comment publication outcome unknown. Retry checks the same publication.',
     '评论发布结果不明。重试将核验同一次发布。',

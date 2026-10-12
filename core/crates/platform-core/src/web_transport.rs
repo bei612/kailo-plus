@@ -1476,13 +1476,13 @@ pub(crate) async fn query_inbox_mentions(
                 continue;
             }
             let channel = single_event_tag(&event, "h").ok_or_else(invalid_message_evidence)?;
-            let channel_id = Uuid::parse_str(&channel).map_err(|_| invalid_message_evidence())?;
+            let channel_id = Uuid::parse_str(channel).map_err(|_| invalid_message_evidence())?;
             // Relay may know channels without an active Kailo binding. Never
             // return their content or treat Relay discovery as BFF admission.
             if !admitted.contains_key(&channel_id) {
                 continue;
             }
-            events.push(channel_message_event(value.clone(), &channel)?);
+            events.push(channel_message_event(value.clone(), channel)?);
         }
         verify_inbox_ancestors(state, &client, &events, &limits).await?;
         let after_ctx = resolve_execution_context(state, headers).await?;
@@ -1497,7 +1497,7 @@ pub(crate) async fn query_inbox_mentions(
         let mut checked = std::collections::HashSet::new();
         for event in &events {
             let channel = single_event_tag(event, "h").ok_or_else(invalid_message_evidence)?;
-            let channel_id = Uuid::parse_str(&channel).map_err(|_| invalid_message_evidence())?;
+            let channel_id = Uuid::parse_str(channel).map_err(|_| invalid_message_evidence())?;
             if !checked.insert(channel_id) {
                 continue;
             }
@@ -2028,7 +2028,14 @@ async fn publish(
     if let Publication::Project(request) = &publication {
         // Issue content is transient input to the original signed Relay event.
         // Include it in the existing byte-limit check, never in audit/storage.
-        content.push_str(request.body.as_deref().unwrap_or_default().trim());
+        if collab_bridge::projects::is_self_assignment(request) {
+            match collab_bridge::projects::assignment_content(request) {
+                Ok(value) => content.push_str(&value),
+                Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+            }
+        } else {
+            content.push_str(request.body.as_deref().unwrap_or_default().trim());
+        }
         match project_comment_media(request, &community_host) {
             Ok(tags) => media_tags.extend(tags),
             Err(response) => return response,
@@ -2095,7 +2102,7 @@ async fn publish(
     } else {
         None
     };
-    let latest_project_comment = if matches!(&publication, Publication::Project(_)) {
+    let latest_project_comment = if let Publication::Project(request) = &publication {
         if requested_kind == 1
             && project_target
                 .as_ref()
@@ -2104,7 +2111,19 @@ async fn publish(
             let Some(issue) = project_target.as_ref() else {
                 return StatusCode::BAD_REQUEST.into_response();
             };
-            match crate::projects::latest_comment(&state, &client, issue, &community_host).await {
+            let activity = if collab_bridge::projects::is_self_assignment(request) {
+                crate::projects::assignment_activity(
+                    &state,
+                    &client,
+                    request,
+                    issue,
+                    &community_host,
+                )
+                .await
+            } else {
+                crate::projects::latest_comment(&state, &client, issue, &community_host).await
+            };
+            match activity {
                 Ok(latest) => latest,
                 Err(response) => return response,
             }

@@ -1,7 +1,6 @@
 // Read JSX from Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail.
-// Assignment writes and absent Git/discussion consumers are
-// not exposed; the original read layout and canonical event reducer remain.
+// Self assignment uses the governed host; assignment to others remains absent.
 import { Circle, CircleCheck, CircleDashed, CircleDot, CircleX, Tag, User, type LucideIcon } from "lucide-react";
 import type { ProjectIssue } from "./projectIssues.mjs";
 import { projectTaskUserLabels } from "./projectTaskCategories";
@@ -10,8 +9,6 @@ import { resolveUserLabel, type UserProfileLookup } from "../messages/system/ide
 import { ProjectDetailMetaList, ProjectDetailMetaPills, ProjectDetailMetaRow } from "./ProjectDetailMeta";
 import { ProjectDetailSection } from "./ProjectDetailSection";
 import { ProjectIssueCommentTimeline } from "./ProjectIssueCommentTimeline";
-import {UserAvatar} from "../messages/UserAvatar";
-import {Tooltip,TooltipContent,TooltipTrigger} from "../sidebar/tooltip";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ShareLinkButton } from "./ShareLinkButton";
@@ -21,7 +18,7 @@ import type { ProjectStatusProgressState } from "./ProjectStatusProgressIcon";
 import * as React from "react";
 import {useQueryClient} from "@tanstack/react-query";
 import {toast} from "sonner";
-import {ForumComposer} from "../pulse/host";
+import {ForumComposer,usePulseHost} from "../pulse/host";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import type {ProjectsHost} from "./projectEnumeration";
 import type {Repository} from "./projectModels";
@@ -31,6 +28,8 @@ import {ProjectPanelState} from "./ProjectPanelState";
 import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
 import {DiscussedInChannels} from "./DiscussionChannels";
 import {entityDiscussionQuery} from "./discussionChannels";
+import {IssueAssigneesRow} from "./IssueAssigneesRow";
+import {publishProjectIssueSelfAssignment,readProjectIssueSelfAssignmentIntent,type IssueSelfAssignmentOperation} from "./issueAssignments";
 type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository}};
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
@@ -89,17 +88,44 @@ export function ProjectIssueDetail(props:IssueDetailProps) {
 function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
   const t=useT();
   const cache=useQueryClient();
+  const viewer=usePulseHost().pubkey;
   const [confirmed,setConfirmed]=React.useState<{source:ProjectIssue;issue:ProjectIssue}|null>(null);
   const issue=confirmed?.source===source?confirmed.issue:source;
   const [isSending,setIsSending]=React.useState(false);
   const [readUnavailable,setReadUnavailable]=React.useState(false);
   const sending=React.useRef(false);
+  let assignmentIntent:ReturnType<typeof readProjectIssueSelfAssignmentIntent>=null;
+  try{if(publication)assignmentIntent=readProjectIssueSelfAssignmentIntent(publication.host,publication.projectId,publication.repository,issue,viewer);}
+  catch{/* The click consumer reports unknown; a corrupt slot is never removed. */}
   const lifetime=React.useMemo(()=>({controller:new AbortController()}),[publication?.host]);
   React.useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
   const members=React.useMemo(()=>publication?[...new Set([publication.repository.owner,issue.author,...publication.repository.contributors,...issue.recipients])].map(pubkey=>{
     const profile=profiles?.[pubkey.toLowerCase()];
     return {pubkey,role:"member",isAgent:profile?.isAgent===true,joinedAt:new Date(0).toISOString(),displayName:profile?.displayName?.trim()||profile?.nip05Handle?.trim()||null};
   }):[],[publication?.repository,issue,profiles]);
+  async function handleSelfAssignment(operation:IssueSelfAssignmentOperation){
+    if(!publication||sending.current)return;
+    sending.current=true;setIsSending(true);
+    try{
+      const {host,projectId,repository}=publication;
+      const result=await publishProjectIssueSelfAssignment(host,projectId,repository,issue,viewer,assignmentIntent?.operation??operation,
+        assignmentIntent?.assigneeLabel??resolveUserLabel({pubkey:viewer,profiles}),lifetime.controller.signal,
+        ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+      lifetime.controller.signal.throwIfAborted();
+      result.complete();
+      setConfirmed({source,issue:result.issue});
+      cache.setQueryData(["project-home-work-items",host.scopeKey,projectId],result.snapshot);
+      cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===host.scopeKey&&query.queryKey[2]===projectId},result.snapshot);
+      void cache.invalidateQueries({queryKey:["projects-work-items",host.scopeKey]});
+      void cache.invalidateQueries({queryKey:["projects",host.scopeKey,"inbox-work-items"]});
+      toast.success(t(operation==="assign"?"projects.assignment.assigned":"projects.assignment.unassigned"));
+    }catch(error){
+      if(!lifetime.controller.signal.aborted){
+        if(isOutcomeUnknown(error))toast.message(t("projects.assignment.unknown"));
+        else toast.error(t("projects.assignment.failed"));
+      }
+    }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
+  }
   async function handleCommentSubmit(content:string,mentions:string[],attachments:WebMessageAttachment[]=[],contentIncludesAttachments=false){
     if(!publication||sending.current)throw new TransportError(t("projects.comment.unknown"));
     sending.current=true;setIsSending(true);
@@ -166,11 +192,11 @@ function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
         <ProjectDetailMetaRow icon={CircleDot} label={t("projects.workItem.category")}>
           {t(taskCategoryKey[issue.category])}
         </ProjectDetailMetaRow>
-        {issue.assignees.length > 0 ? (
+        {issue.assignees.length > 0 || publication?.host.publish && viewer ? (
           <ProjectDetailMetaRow icon={User} label={t("projects.workItem.assignees")}>
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              {issue.assignees.map(pubkey => {const profile=profiles?.[pubkey];const label=resolveUserLabel({pubkey,profiles});return <Tooltip key={pubkey}><TooltipTrigger asChild><span className="inline-flex"><UserAvatar accent={profile?.isAgent===true} avatarUrl={profile?.avatarUrl??null} displayName={label} shape={profile?.isAgent?"squircle":"circle"} size="xs"/></span></TooltipTrigger><TooltipContent>{t("projects.task.assigned",{name:label})}</TooltipContent></Tooltip>;})}
-            </div>
+            <IssueAssigneesRow issue={issue} profiles={profiles} viewerPubkey={publication?.host.publish?viewer:null}
+              pending={isSending} recoveryOperation={assignmentIntent?.operation} onAssign={()=>void handleSelfAssignment("assign")}
+              onUnassign={()=>void handleSelfAssignment("unassign")}/>
           </ProjectDetailMetaRow>
         ) : null}
         {labels.length > 0 ? (

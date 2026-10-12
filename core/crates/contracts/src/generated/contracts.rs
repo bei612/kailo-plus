@@ -6100,6 +6100,11 @@ pub struct ProjectPreferenceRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
+    /// Original transient display label, trimmed and limited to 128 Unicode characters by the
+    /// consumer. Assignee is always the authenticated signer, never this label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee_label: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentElement>>,
 
@@ -6122,6 +6127,11 @@ pub struct ProjectsPublishRequest {
     pub name: Option<String>,
 
     pub operation: ProjectPublicationOperation,
+
+    /// Optional immutable original per-self assignment operation head. Same publication intent
+    /// retains it across UNKNOWN observation; never an authorization grant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prior_event_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_event_id: Option<String>,
@@ -6213,6 +6223,12 @@ pub enum ProjectPublicationOperation {
     CreateRepository,
 
     Delete,
+
+    #[serde(rename = "SELF_ASSIGN_ISSUE")]
+    SelfAssignIssue,
+
+    #[serde(rename = "SELF_UNASSIGN_ISSUE")]
+    SelfUnassignIssue,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

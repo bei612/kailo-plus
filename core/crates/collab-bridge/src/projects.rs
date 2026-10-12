@@ -10,6 +10,145 @@ fn invalid(message: &str) -> OperatorError {
     OperatorError::Sign(message.to_owned())
 }
 
+fn canonical_event_id(id: &str) -> bool {
+    nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
+}
+
+pub fn is_self_assignment(request: &ProjectsPublishRequest) -> bool {
+    serde_json::to_value(&request.operation).is_ok_and(|value| {
+        matches!(
+            value.as_str(),
+            Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE")
+        )
+    })
+}
+
+/// Fixed issueAssignments.ts uses a display label only; the p tag is always
+/// derived from the authenticated signing key, never from client input.
+pub fn assignment_content(request: &ProjectsPublishRequest) -> Result<String, OperatorError> {
+    publication_kind(request)?;
+    let label = request.assignee_label.as_deref().unwrap_or_default().trim();
+    match serde_json::to_value(&request.operation)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .as_deref()
+    {
+        Some("SELF_ASSIGN_ISSUE") => Ok(format!("Assigned this task to {label}")),
+        Some("SELF_UNASSIGN_ISSUE") => Ok(format!("Unassigned {label} from this task")),
+        _ => Err(invalid("not a self assignment")),
+    }
+}
+
+fn assignment_tags(
+    request: &ProjectsPublishRequest,
+    issue: &Event,
+    owner: &str,
+) -> Result<Vec<Tag>, OperatorError> {
+    assignment_content(request)?;
+    if issue.kind.as_u16() != 1621
+        || request.target_event_id.as_deref() != Some(issue.id.to_hex().as_str())
+    {
+        return Err(invalid("assignment issue mismatch"));
+    }
+    let repository = comment_repository(issue)?;
+    let operation =
+        serde_json::to_value(&request.operation).map_err(|_| invalid("invalid assignment"))?;
+    let label = if operation.as_str() == Some("SELF_ASSIGN_ISSUE") {
+        "assignment"
+    } else {
+        "unassignment"
+    };
+    let mut tags = vec![
+        vec!["e".into(), issue.id.to_hex(), String::new(), "root".into()],
+        vec!["a".into(), repository.into()],
+        vec!["p".into(), owner.into()],
+        vec!["t".into(), label.into()],
+    ];
+    if let Some(prior) = &request.prior_event_id {
+        tags.push(vec!["prior".into(), prior.clone()]);
+    }
+    tags.into_iter()
+        .map(Tag::parse)
+        .collect::<Result<_, _>>()
+        .map_err(|_| invalid("invalid assignment tags"))
+}
+
+/// Original projectIssues.mjs::assignmentStateForIssue, reduced only for the
+/// authenticated assignee. Caller supplies complete, signed same-repository
+/// activity, not a filtered short page. No platform assignment state is stored.
+pub fn assignment_head(
+    issue: &Event,
+    events: &[Event],
+    owner: &str,
+) -> Result<Option<String>, OperatorError> {
+    let repository = comment_repository(issue)?;
+    let repo_owner = repository.split(':').nth(1).unwrap_or_default();
+    let mut events: Vec<_> = events.iter().collect();
+    events.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+    let mut groups: [Vec<(&Event, Option<String>)>; 3] = Default::default();
+    for event in events {
+        if !comment_activity_matches(issue, event, &event.pubkey.to_hex())
+            || !event.tags.iter().any(|tag| {
+                tag.as_slice().first().is_some_and(|v| v == "e")
+                    && tag.as_slice().get(1) == Some(&issue.id.to_hex())
+            })
+        {
+            continue;
+        }
+        let values = |name: &str| {
+            event
+                .tags
+                .iter()
+                .filter_map(move |tag| {
+                    let fields = tag.as_slice();
+                    (fields.first().is_some_and(|v| v == name))
+                        .then(|| fields.get(1))
+                        .flatten()
+                        .filter(|v| !v.is_empty())
+                        .cloned()
+                })
+                .collect::<Vec<_>>()
+        };
+        let labels = values("t");
+        if labels.iter().any(|v| v == "assignment") == labels.iter().any(|v| v == "unassignment") {
+            continue;
+        }
+        let recipients: Vec<_> = values("p").into_iter().map(|v| v.to_lowercase()).collect();
+        if !recipients.iter().any(|v| v == owner) {
+            continue;
+        }
+        let signer = event.pubkey.to_hex();
+        if signer == issue.pubkey.to_hex() || signer == repo_owner {
+            groups[1].push((event, None));
+        } else if recipients.len() == 1 && recipients[0] == signer {
+            let prior: Vec<_> = event
+                .tags
+                .iter()
+                .filter(|tag| tag.as_slice().first().is_some_and(|v| v == "prior"))
+                .collect();
+            if prior.is_empty() {
+                groups[0].push((event, None));
+            } else if prior.len() == 1 {
+                if let Some(id) = prior[0]
+                    .as_slice()
+                    .get(1)
+                    .filter(|id| canonical_event_id(&id.to_lowercase()))
+                {
+                    groups[2].push((event, Some(id.to_lowercase())));
+                }
+            }
+        }
+    }
+    let mut head = None;
+    for (event, prior) in groups.into_iter().flatten() {
+        if prior.is_some() && prior != head {
+            continue;
+        }
+        head = Some(event.id.to_hex());
+    }
+    Ok(head)
+}
+
 /// Read-only receipt for the exact persisted publication, not merely a JSON id.
 /// Missing replaceable events remain unobservable; they never prove rejection.
 pub fn publication_observed(
@@ -52,6 +191,11 @@ pub fn project_dtag(name: &str) -> String {
 pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
     let operation = serde_json::to_value(&request.operation)
         .map_err(|_| invalid("invalid project operation"))?;
+    if !is_self_assignment(request)
+        && (request.assignee_label.is_some() || request.prior_event_id.is_some())
+    {
+        return Err(invalid("assignment fields on another project operation"));
+    }
     if operation.as_str() != Some("CREATE_ISSUE")
         && (request.title.is_some() || request.category.is_some())
         || !matches!(
@@ -66,6 +210,27 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
         return Err(invalid("issue fields on another project operation"));
     }
     match operation.as_str() {
+        Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE") => {
+            let label = request.assignee_label.as_deref().unwrap_or_default().trim();
+            if label.is_empty()
+                || label.chars().count() > 128
+                || !request
+                    .target_event_id
+                    .as_deref()
+                    .is_some_and(canonical_event_id)
+                || request
+                    .prior_event_id
+                    .as_deref()
+                    .is_some_and(|id| !canonical_event_id(id))
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+            {
+                return Err(invalid("invalid self assignment"));
+            }
+            Ok(1)
+        }
         Some("CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT") => {
             if request
                 .body
@@ -329,7 +494,7 @@ pub fn comment_target_kind(request: &ProjectsPublishRequest) -> Result<u16, Oper
         .and_then(|value| value.as_str().map(str::to_owned))
         .as_deref()
     {
-        Some("CREATE_ISSUE_COMMENT") => Ok(1621),
+        Some("CREATE_ISSUE_COMMENT" | "SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE") => Ok(1621),
         Some("CREATE_PULL_REQUEST_COMMENT") => Ok(1618),
         _ => Err(invalid("invalid comment operation")),
     }
@@ -446,7 +611,15 @@ pub fn comment_publication_builder(
     if nostr::PublicKey::from_hex(owner).map_or(true, |key| key.to_hex() != owner) {
         return Err(invalid("invalid comment author"));
     }
-    let tags = comment_tags(request, issue, media_tags)?;
+    let assignment = is_self_assignment(request);
+    let tags = if assignment {
+        if !media_tags.is_empty() {
+            return Err(invalid("assignment media is not supported"));
+        }
+        assignment_tags(request, issue, owner)?
+    } else {
+        comment_tags(request, issue, media_tags)?
+    };
     // Original ordinary PR comments use signing time; only Tasks and review
     // decisions have an activity-based monotonic timestamp. No decision here.
     if issue.kind.as_u16() == 1618 && latest.is_some() {
@@ -468,7 +641,16 @@ pub fn comment_publication_builder(
     };
     Ok(EventBuilder::new(
         nostr::Kind::from(1),
-        request.body.as_deref().unwrap_or_default().trim(),
+        if assignment {
+            assignment_content(request)?
+        } else {
+            request
+                .body
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        },
     )
     .tags(tags)
     .allow_self_tagging()
@@ -484,13 +666,26 @@ pub fn comment_publication_matches(
     if event.kind.as_u16() != 1 || event.verify().is_err() {
         return Err(invalid("invalid retained comment"));
     }
-    Ok(
-        event.content == request.body.as_deref().unwrap_or_default().trim()
-            && event
-                .tags
-                .iter()
-                .eq(comment_tags(request, issue, media_tags)?.iter()),
-    )
+    let assignment = is_self_assignment(request);
+    if assignment && !media_tags.is_empty() {
+        return Err(invalid("assignment media is not supported"));
+    }
+    let content = if assignment {
+        assignment_content(request)?
+    } else {
+        request
+            .body
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+    };
+    let tags = if assignment {
+        assignment_tags(request, issue, &event.pubkey.to_hex())?
+    } else {
+        comment_tags(request, issue, media_tags)?
+    };
+    Ok(event.content == content && event.tags.iter().eq(tags.iter()))
 }
 
 /// Compare the original accepted issue, without requiring its replaceable repo
@@ -553,6 +748,138 @@ mod tests {
     use super::*;
     use nostr::{Keys, Tag};
     use serde_json::json;
+
+    #[test]
+    fn self_assignment_uses_original_causal_heads_and_exact_retained_event() {
+        let repo_owner = Keys::generate();
+        let member = Keys::generate();
+        let stranger = Keys::generate();
+        let self_key = member.public_key().to_hex();
+        let address = format!("30617:{}:garden", repo_owner.public_key());
+        let issue = EventBuilder::new(nostr::Kind::from(1621), "issue")
+            .tags([Tag::parse(["a", &address]).unwrap()])
+            .sign_with_keys(&repo_owner)
+            .unwrap();
+        let request = |operation: &str, prior: Option<String>| {
+            let mut value = json!({"operation":operation,"targetEventId":issue.id.to_hex(),"assigneeLabel":"  Me 🪴  "});
+            if let Some(prior) = prior {
+                value["priorEventId"] = json!(prior);
+            }
+            serde_json::from_value::<ProjectsPublishRequest>(value).unwrap()
+        };
+        let assign = request("SELF_ASSIGN_ISSUE", None);
+        let first = comment_publication_builder(&assign, &issue, None, &self_key, &[])
+            .unwrap()
+            .sign_with_keys(&member)
+            .unwrap();
+        assert_eq!(first.content, "Assigned this task to Me 🪴");
+        let tags: Vec<_> = first
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags,
+            vec![
+                vec!["e".into(), issue.id.to_hex(), "".into(), "root".into()],
+                vec!["a".into(), address.clone()],
+                vec!["p".into(), self_key.clone()],
+                vec!["t".into(), "assignment".into()]
+            ]
+        );
+        assert_eq!(
+            assignment_head(&issue, std::slice::from_ref(&first), &self_key).unwrap(),
+            Some(first.id.to_hex())
+        );
+        let unassign = request("SELF_UNASSIGN_ISSUE", Some(first.id.to_hex()));
+        let second = comment_publication_builder(&unassign, &issue, Some(&first), &self_key, &[])
+            .unwrap()
+            .sign_with_keys(&member)
+            .unwrap();
+        assert!(second.created_at > first.created_at);
+        assert_eq!(second.content, "Unassigned Me 🪴 from this task");
+        assert!(comment_publication_matches(&unassign, &issue, &second, &[]).unwrap());
+        assert!(!comment_publication_matches(&assign, &issue, &second, &[]).unwrap());
+        // Owner decisions precede causal self operations even if a self signer
+        // selected a future timestamp. The old head cannot supersede them.
+        let owner_decision = EventBuilder::new(nostr::Kind::from(1), "owner")
+            .tags([
+                Tag::parse(["e", &issue.id.to_hex(), "", "root"]).unwrap(),
+                Tag::parse(["a", &address]).unwrap(),
+                Tag::parse(["p", &self_key]).unwrap(),
+                Tag::parse(["t", "assignment"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from_secs(1))
+            .sign_with_keys(&repo_owner)
+            .unwrap();
+        let activity = vec![first.clone(), second.clone(), owner_decision.clone()];
+        assert_eq!(
+            assignment_head(&issue, &activity, &self_key).unwrap(),
+            Some(owner_decision.id.to_hex())
+        );
+        assert_ne!(
+            unassign.prior_event_id,
+            assignment_head(&issue, &activity, &self_key).unwrap()
+        );
+        let current = request("SELF_UNASSIGN_ISSUE", Some(owner_decision.id.to_hex()));
+        let last = comment_publication_builder(&current, &issue, Some(&second), &self_key, &[])
+            .unwrap()
+            .sign_with_keys(&member)
+            .unwrap();
+        let mut activity = activity;
+        activity.push(last.clone());
+        assert_eq!(
+            assignment_head(&issue, &activity, &self_key).unwrap(),
+            Some(last.id.to_hex())
+        );
+        // Retained equality is against the original event, not today's head.
+        assert!(comment_publication_matches(&unassign, &issue, &second, &[]).unwrap());
+        for field in ["t", "p", "e", "a", "prior"] {
+            let tags = last
+                .tags
+                .iter()
+                .map(|tag| {
+                    let mut values = tag.as_slice().to_vec();
+                    if values[0] == field {
+                        values[1] = "f".repeat(64);
+                    }
+                    Tag::parse(values).unwrap()
+                })
+                .collect::<Vec<_>>();
+            let changed = EventBuilder::new(nostr::Kind::from(1), &last.content)
+                .tags(tags)
+                .allow_self_tagging()
+                .sign_with_keys(&member)
+                .unwrap();
+            assert!(
+                !comment_publication_matches(&current, &issue, &changed, &[]).unwrap(),
+                "{field}"
+            );
+        }
+        let changed = EventBuilder::new(nostr::Kind::from(1), "changed body")
+            .tags(last.tags.iter().cloned())
+            .allow_self_tagging()
+            .sign_with_keys(&member)
+            .unwrap();
+        assert!(!comment_publication_matches(&current, &issue, &changed, &[]).unwrap());
+        let foreign = EventBuilder::new(nostr::Kind::from(1), "foreign assignment")
+            .tags(owner_decision.tags.iter().cloned())
+            .allow_self_tagging()
+            .sign_with_keys(&stranger)
+            .unwrap();
+        assert_eq!(
+            assignment_head(&issue, &[foreign], &self_key).unwrap(),
+            None
+        );
+        let mut invalid = serde_json::to_value(&assign).unwrap();
+        invalid["body"] = json!("cannot disguise a comment");
+        assert!(publication_kind(&serde_json::from_value(invalid).unwrap()).is_err());
+        let mut invalid = assign.clone();
+        invalid.assignee_label = Some("🪴".repeat(129));
+        assert!(publication_kind(&invalid).is_err());
+        invalid.assignee_label = Some("🪴".repeat(128));
+        assert_eq!(publication_kind(&invalid).unwrap(), 1);
+    }
 
     #[test]
     fn publication_receipt_verifies_frozen_actor_kind_hash_and_signature() {

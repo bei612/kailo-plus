@@ -36,7 +36,7 @@ const observation=()=>({eventId:prepared,onPrepared:id=>{prepared=id;}});
 test("Native existing project operations reject all issue-only fields before reads, admission or publication",async()=>{
   for(const operation of ["CREATE_PROJECT","CREATE_REPOSITORY","DELETE"]){
     const original=operation==="DELETE"?{operation,targetEventId:repo.id}:{operation,workspaceId:"workspace",name:"Project",...(operation==="CREATE_PROJECT"?{visibility:"listed"}:{})};
-    for(const field of ["title","body","category","mentions","attachments"]){
+    for(const field of ["title","body","category","mentions","attachments","assigneeLabel","priorEventId"]){
       await assert.rejects(publisher()({...original,[field]:field==="category"?"issue":"content"},`${operation}:${field}`,false,observation()));
       assert.equal(reads,0);assert.equal(admissions,0);assert.equal(signed,0);assert.equal(published,0);
     }
@@ -44,6 +44,54 @@ test("Native existing project operations reject all issue-only fields before rea
 });
 
 const commentRequest=()=>({operation:"CREATE_ISSUE_COMMENT",targetEventId:task.id,body:"Original comment",mentions:[viewer],attachments:[]});
+const assignmentRequest=(operation="SELF_ASSIGN_ISSUE",priorEventId)=>({operation,targetEventId:task.id,assigneeLabel:"Original Human",...(priorEventId?{priorEventId}:{})});
+function assignmentReads(history=[]){
+  relayClient.fetchEvents=async filter=>{
+    reads++;
+    if(filter.ids&&filter.kinds[0]===1621)return [task];
+    if(filter.kinds[0]===30617)return [headEvent];
+    if(filter.ids)return delivered?[delivered]:[];
+    assert.equal(filter.authors,undefined);assert.equal(filter["#a"],undefined);assert.equal(filter["#e"],undefined);
+    return [...history].sort((left,right)=>right.created_at-left.created_at||right.id.localeCompare(left.id))
+      .filter(event=>(filter.since===undefined||event.created_at>=filter.since)&&(filter.until===undefined||event.created_at<=filter.until)).slice(0,filter.limit);
+  };
+}
+test("Native self assignment uses the original kind1 self p/t tags, complete owner history and exact causal prior",async()=>{
+  const address=`30617:${repo.pubkey}:repo`,now=Math.floor(Date.now()/1_000);
+  const prior=finalizeEvent({kind:1,created_at:now+10,content:"Owner unassigned",tags:[["e",task.id,"","root"],["a",address],["p",viewer],["t","unassignment"]]},ownerKey);
+  const comment=finalizeEvent({kind:1,created_at:now+11,content:"Own activity",tags:[["E",task.id],["a",address]]},key);
+  const other=finalizeEvent({kind:1,created_at:now+13,content:"Other task",tags:[["e","f".repeat(64)],["a",address]]},ownerKey);
+  assignmentReads([prior,comment,other]);
+  const result=await publisher()(assignmentRequest("SELF_ASSIGN_ISSUE",prior.id),"assign",false,observation());
+  assert.equal(result.eventId,delivered.id);assert.equal(delivered.created_at,comment.created_at+1);assert.equal(delivered.kind,1);
+  assert.equal(delivered.content,"Assigned this task to Original Human");
+  assert.deepEqual(delivered.tags,[["e",task.id,"","root"],["a",address],["p",viewer],["t","assignment"],["prior",prior.id]]);
+  assert.equal(admissions,0);assert.equal(published,1);assert.equal(signed,1);
+  const assigned=delivered;assignmentReads([prior,comment,other,assigned]);
+  await publisher()(assignmentRequest("SELF_UNASSIGN_ISSUE",assigned.id),"unassign",false,observation());
+  assert.equal(delivered.content,"Unassigned Original Human from this task");
+  assert.deepEqual(delivered.tags,[["e",task.id,"","root"],["a",address],["p",viewer],["t","unassignment"],["prior",assigned.id]]);
+});
+test("Native self assignment UNKNOWN restart observes the original event and never refreshes prior or resigns",async()=>{
+  assignmentReads();loseAck=true;
+  await assert.rejects(publisher()(assignmentRequest(),"assign-unknown",false,observation()),/unknown/i);
+  const first=delivered;relayClient.unconfirmedEvents.clear();loseAck=false;assignmentReads([first]);
+  assert.equal((await publisher()(assignmentRequest(),"assign-unknown",true,observation())).eventId,first.id);
+  await assert.rejects(publisher()(assignmentRequest("SELF_UNASSIGN_ISSUE"),"assign-unknown",true,observation()),/unknown|mismatch/i);
+  assert.equal(signed,1);assert.equal(published,1);
+});
+test("Native self assignment refuses stale prior, invalid signed target, mixed fields and identity loss before publication",async()=>{
+  assignmentReads();await assert.rejects(publisher()(assignmentRequest("SELF_ASSIGN_ISSUE","f".repeat(64)),"stale-prior",false,observation()));
+  for(const field of ["workspaceId","name","description","visibility","title","body","category","mentions","attachments"])
+    await assert.rejects(publisher()({...assignmentRequest(),[field]:"mixed"},`mixed-${field}`,false,observation()));
+  assignmentReads();const original=relayClient.fetchEvents;
+  relayClient.fetchEvents=async filter=>filter.kinds[0]===1621?[{...JSON.parse(JSON.stringify(task)),content:"forged"}]:original(filter);
+  await assert.rejects(publisher()(assignmentRequest(),"forged-assign",false,observation()));
+  assignmentReads();const read=relayClient.fetchEvents;
+  relayClient.fetchEvents=async filter=>{const rows=await read(filter);if(filter.kinds[0]===1)active=false;return rows;};
+  await assert.rejects(publisher()(assignmentRequest(),"revoked-assign",false,observation()));
+  assert.equal(signed,0);assert.equal(published,0);
+});
 const review=finalizeEvent({kind:1618,created_at:2,content:"Original PR",tags:[["a",`30617:${repo.pubkey}:repo`],["p",viewer]]},ownerKey);
 const reviewCommentRequest=()=>({...commentRequest(),operation:"CREATE_PULL_REQUEST_COMMENT",targetEventId:review.id});
 function reviewCommentReads(root=review){

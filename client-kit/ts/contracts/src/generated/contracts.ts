@@ -4216,18 +4216,28 @@ export interface ProjectPreferenceRequest {
  * signed current announcement; it does not delete its channel or repositories.
  */
 export interface ProjectsPublishRequest {
-    attachments?: AttachmentElement[];
+    /**
+     * Original transient display label, trimmed and limited to 128 Unicode characters by the
+     * consumer. Assignee is always the authenticated signer, never this label.
+     */
+    assigneeLabel?: string;
+    attachments?:   AttachmentElement[];
     /**
      * Original complete markdown including attachment markdown. Issues may be empty; comments
      * must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
      * before signing.
      */
-    body?:          string;
-    category?:      ProjectIssueCategory;
-    description?:   string;
-    mentions?:      string[];
-    name?:          string;
-    operation:      ProjectPublicationOperation;
+    body?:        string;
+    category?:    ProjectIssueCategory;
+    description?: string;
+    mentions?:    string[];
+    name?:        string;
+    operation:    ProjectPublicationOperation;
+    /**
+     * Optional immutable original per-self assignment operation head. Same publication intent
+     * retains it across UNKNOWN observation; never an authorization grant.
+     */
+    priorEventId?:  string;
     targetEventId?: string;
     /**
      * Original trimmed issue subject; the consumer additionally enforces the original
@@ -4290,6 +4300,8 @@ export enum ProjectPublicationOperation {
     CreatePullRequestComment = "CREATE_PULL_REQUEST_COMMENT",
     CreateRepository = "CREATE_REPOSITORY",
     Delete = "DELETE",
+    SelfAssignIssue = "SELF_ASSIGN_ISSUE",
+    SelfUnassignIssue = "SELF_UNASSIGN_ISSUE",
 }
 
 export enum ProjectListingVisibility {
