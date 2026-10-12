@@ -1270,3 +1270,43 @@ memory+swap 总限额等于内存、UID1000、network none、只读 apps/design�
 实际只读工作树而非发布树；该脚本检查顶层/docs/design，不直接扫描本 verify
 正文。当前只完成源码与定向检查，未构建/部署，本批无新版截图，原 full 失败
 门禁保持，不以本次文档或窄检查代替整批发布验收。
+
+## 2026-10-12 原 Tasks / Reviews 列表加载消费者
+
+基准 `bca0e2819e9e298cf97d77076a74b8420c8c23db`；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/ui/ProjectsIssuesList.tsx::ProjectsIssuesList` 与
+`desktop/src/features/projects/ui/ProjectsPullRequestsList.tsx::ProjectsPullRequestsList`
+在初次读取时使用 `BuzzLoadingState`，不是普通单行文字。
+
+1. 权威为 REQ-24 的原呈现恢复；直接消费已经共享的原 `BuzzLoadingState`、
+   SVG/CSS 和已有中英文 `projects.sheet.loadingTasks/loadingReviews`，不新建图形或词条。
+2. 影响仅共享 `ProjectsView.tsx::ProjectWorkItemsList`，Web/Desktop 的已有
+   Tasks/Reviews 入口同源；原目录、详情和项目首页加载分支不改。
+3. 无合同、存储、授权或查询变化；沿现有 `isPending || isFetching` 同时隐藏旧行。
+   原上游允许部分分区加载，当前已有原子读取门禁保持，不借加载呈现放宽该边界。
+4. 失败仍显示原错误区/Retry；实际重试重新消费同一 Host，不发送发布命令，
+   不在撤权或读取未知时显示旧内容，不把加载状态当空列表或成功。
+
+四类对应：原布局/动画/无背景及无纹理 SVG 为原样保留；两个列表入口复用
+现有模块为共享迁移；既有 fresh 原子读取与同源中文属于授权适配，本批不新增；
+selection→Agent、Git/CommitDetail、审阅决定/inline、目录活动汇总和 Mobile
+实际页面仍缺失。此处不把历史 5195 文件覆盖清单更新为当前全语义验收。
+
+证据目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-list-loading.XI1Gjx`。
+原 `kailo-web-thread-tooltip-sdk` 开跑前仅 sleep；2 CPU/4 GiB、memory+swap
+总限额等于内存、UID1000、network none，源码/依赖/tmp/npm 缓存均在 Data；
+MemAvailable 约 36 GiB、load 6.16。未新建 SDK、镜像或安装依赖。
+原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json`（TS 5.9.3）
+及 `vitest run test/project-inbox.test.tsx --no-file-parallelism`：71011 聚合 exit 1，
+DOM 63/63，但新增夹具错误地给单参数 mock 传 signal，类型 exit 2。只修夹具调用，
+不改产品/断言；5169 类型 exit 0，原套件筛选 `-t "original work-item loading consumer"`
+4/4 exit 0，59 项未重复。保留原 React act 警告与 `positive.log` 首次失败。
+4 项覆盖中英 Tasks/Reviews 初读原 SVG、成功后正确详情回调、fresh 等待隐藏旧行、
+拒绝后仍无正文，以及原 Retry 重新加载成功；不是只检查孤立组件存在。
+私有仅恢复旧文字加载分支，73499 同 4 项全部失败/exit 1；apply_patch 还原且
+两个投递文件逐字 cmp 0，12925 同 4 项通过/exit 0。原件 `corrected.log`、
+`mutation.log`、`restored.log` 保留；还原日志 SHA256
+`d38e9ffc436293f763913089fba56e074f60273dfb20d543a58bbf75d851f44e`。
+未运行新 full、构建、部署或浏览器；旧在线图及新 236b 构建均不包含本增量，
+不宣称新版本视觉或 Native 设备验收。公共三路径暂存未改。

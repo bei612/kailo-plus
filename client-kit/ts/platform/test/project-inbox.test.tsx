@@ -491,6 +491,51 @@ describe("original Inbox project read closure",()=>{
     await vi.waitFor(()=>expect(view.querySelector(rowSelector)).toBeNull());
     expect(view.textContent).not.toContain(f[kind].content);expect(host.publish).not.toHaveBeenCalled();cache.clear();
   });
+  it.each([["issues","issue","en"],["prs","review","en"],["issues","issue","zh-CN"],["prs","review","zh-CN"]] as const)("uses the original work-item loading consumer for %s/%s in %s across initial read, fresh refusal and retry",async(section,kind,locale)=>{
+    setLocale(locale);localStorage.setItem("buzz.projects.viewMode","list");localStorage.setItem("buzz.projects.filter",section);
+    const f=fixture(),opened=vi.fn(),read=f.query.getMockImplementation()!;
+    let release!:()=>void,denied=false;
+    let gate=new Promise<void>(resolve=>{release=resolve;});
+    f.query.mockImplementation(async request=>{
+      if(request.view==="WORK_ITEMS"){await gate;if(denied)throw new Error("Current scope refused");}
+      return read(request);
+    });
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectsView host={f.host} onSelectedProjectChange={opened}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    const row=()=>ui.querySelector(`[data-testid="projects-${kind==="issue"?"issue":"pr"}-row-${f[kind].id}"]`);
+    const assertLoading=()=>{
+      const loading=ui.querySelector('[data-testid="buzz-loading-state"]');
+      expect(loading?.getAttribute("role")).toBe("status");
+      expect(loading?.classList.contains("min-h-[calc(100dvh-7rem)]")).toBe(true);
+      expect(loading?.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(locale==="en"?(kind==="issue"?"Loading tasks":"Loading reviews"):(kind==="issue"?"正在加载任务":"正在加载审阅"));
+      expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 466 309");
+      expect(loading?.querySelector(".buzz-logo--background, filter")).toBeNull();
+      expect(row()).toBeNull();
+    };
+    await vi.waitFor(()=>expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEMS")).toBe(true));
+    assertLoading();
+    await act(async()=>release());await vi.waitFor(()=>expect(row()).not.toBeNull());
+    expect(ui.querySelector('[data-testid="buzz-loading-state"]')).toBeNull();
+    await click(row()!.querySelector<HTMLButtonElement>("button[title]")!);
+    expect(opened).toHaveBeenCalledExactlyOnceWith(`30621:${author}:project`,{repositoryId:`${author}:repo`,...(kind==="issue"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
+    denied=true;gate=new Promise<void>(resolve=>{release=resolve;});
+    let pending!:Promise<void>;
+    await act(async()=>{pending=cache.invalidateQueries({queryKey:["projects-work-items",f.host.scopeKey]});});
+    await vi.waitFor(assertLoading);
+    await act(async()=>{release();await pending;});
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="buzz-loading-state"]')).toBeNull());
+    expect(row()).toBeNull();
+    const retry=[...ui.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent===(locale==="en"?"Retry":"重试"));
+    expect(retry).toBeDefined();
+    denied=false;gate=new Promise<void>(resolve=>{release=resolve;});
+    await click(retry!);await vi.waitFor(assertLoading);
+    await act(async()=>release());await vi.waitFor(()=>expect(row()).not.toBeNull());
+    expect(opened).toHaveBeenCalledTimes(1);expect(pulse.publish).not.toHaveBeenCalled();cache.clear();
+  });
   it.each([["issues","issue","en"],["prs","review","en"],["issues","issue","zh-CN"],["prs","review","zh-CN"]] as const)("restores original recent activity sorting for %s/%s in %s without fabricating directory activity",async(section,kind,locale)=>{
     setLocale(locale);localStorage.setItem("buzz.projects.viewMode","list");localStorage.setItem("buzz.projects.filter",section);
     const f=fixture(),opened=vi.fn();

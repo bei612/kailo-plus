@@ -32,6 +32,7 @@ import {useUsersBatchQuery} from "../pulse/host";
 import {ProjectIssueDetail} from "./ProjectIssueDetail";
 import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
+import {BuzzLoadingState} from "./BuzzLoadingState";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
   renderChannel?:ProjectChannelRenderer;
@@ -94,7 +95,7 @@ function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkIte
   const retry=<Button onClick={()=>{void query.refetch();}} size="sm" variant="outline">{t("projects.list.retry")}</Button>;
   return <>
     {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
-    {query.isPending||query.isFetching?<p role="status">{t("platform.loading")}</p>:query.isError?
+    {query.isPending||query.isFetching?<BuzzLoadingState label={t(filter==="issues"?"projects.sheet.loadingTasks":"projects.sheet.loadingReviews")}/>:query.isError?
       <ProjectPanelState error panel={false} title={t(filter==="issues"?"projects.list.tasksFailed":"projects.list.reviewsFailed")} description={t("projects.list.relayFailed")} action={retry}/>:
       renderWorkItems?renderWorkItems(content,query.data.viewerPubkey):content}
   </>;
