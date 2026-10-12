@@ -55,9 +55,12 @@ beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
-  it.each(["en","zh-CN"] as const)("opens the original Task discuss action, selects a channel and prepares the canonical draft without publishing (%s)",async locale=>{
-    const f=fixture();const channelId="12345678-1234-4234-8234-123456789012";f.issue.tags.push(["h",channelId]);
-    const data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,f.issue)!;
+  it.each([{locale:"en",kind:"task"},{locale:"zh-CN",kind:"task"},{locale:"en",kind:"review"},{locale:"zh-CN",kind:"review"}] as const)("opens the original $kind discuss action, selects a channel and prepares the canonical draft without publishing ($locale)",async({locale,kind})=>{
+    const f=fixture();const channelId="12345678-1234-4234-8234-123456789012",source=kind==="task"?f.issue:f.review;
+    source.tags.push(["h","event-origin-is-not-the-project-context"]);
+    f.rows.find(row=>row.kind===(locale==="en"?30617:30621))!.tags.push(["buzz-channel",channelId]);
+    if(locale==="en")f.rows.find(row=>row.kind===30621)!.tags.push(["buzz-channel","12345678-1234-4234-8234-123456789099"]);
+    const data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,source)!;
     const workspace={id:"scope-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
       channel:{channelId,name:"Original stream",channelType:ChannelType.Stream,archived:false}};
     let revoked=false;const transport=vi.fn(async(_request:{path:string})=>({status:200,body:{items:revoked?[]:[workspace]}}));
@@ -76,8 +79,16 @@ describe("original Inbox project read closure",()=>{
     await click(toggle);await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-related-channel"]')).not.toBeNull());
     expect(ui.querySelector('[data-testid="project-context-channel-choices"]')?.className).toBe("ml-5 space-y-0.5 border-border/50 border-l pl-2");
     await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-related-channel"]')!);
-    const content=`${locale==="en"?"Let's talk about this task:":"我们来讨论这项任务："}\n\nbuzz://issue?id=${f.issue.id}&owner=${author}&d=repo`;
+    const content=`${locale==="en"?`Let's talk about this ${kind}:`:kind==="task"?"我们来讨论这项任务：":"我们来讨论这项审阅："}\n\nbuzz://${kind==="task"?"issue":"pr"}?id=${source.id}&owner=${author}&d=repo`;
     expect(discuss).toHaveBeenCalledExactlyOnceWith(workspace,content);
+    if(kind==="review"){
+      expect(ui.querySelector('[data-testid="project-context-card"] h2')?.textContent).toBe("Original review");
+      expect(ui.querySelector('[data-testid="project-context-branch"]')?.getAttribute("title")).toBe("feature → main");
+      expect(ui.querySelector('[data-testid="project-context-details"]')?.textContent).toContain(locale==="en"?"Approvals0":"批准0");
+      expect(ui.querySelectorAll('[data-testid="project-detail-scroll"]')).toHaveLength(1);
+      expect(ui.querySelector('[data-testid="project-pull-request-detail"]')).not.toBeNull();
+      expect(ui.querySelector('[data-testid="project-context-actions"]')?.textContent).not.toContain(locale==="en"?"Create task":"创建任务");
+    }
     expect(mergeSelectionDiscussDraft(" existing draft \n",content)).toBe(`existing draft\n\n${content}`);
     expect(mergeSelectionDiscussDraft(`existing draft\n\n${content}`,content)).toBe(`existing draft\n\n${content}`);
     expect(mergeSelectionDiscussDraft(undefined,content)).toBe(content);

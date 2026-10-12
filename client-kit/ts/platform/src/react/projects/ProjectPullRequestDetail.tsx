@@ -30,6 +30,9 @@ import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMedia
 import {useUiT} from "../context";
 import {DiscussedInChannels} from "./DiscussionChannels";
 import {entityDiscussionQuery} from "./discussionChannels";
+import {ProjectDetailRightPanel} from "./ProjectDetailRightPanel";
+import {ProjectWorkItemCommunicationActions} from "./ProjectWorkItemCommunicationActions";
+import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -211,11 +214,11 @@ export function PullRequestDetailHeader({
   );
 }
 
-type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string}};
+type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel:ProjectDiscussInChannel}};
 export function ProjectPullRequestDetail(props:PullRequestDetailProps) {
  return <PullRequestDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.pullRequest.id}`} {...props}/>;
 }
-function PullRequestDetailBody({profiles,project,pullRequest:source,publication}:PullRequestDetailProps) {
+function PullRequestDetailBody({profiles,project,pullRequest:source,publication,contextPanel}:PullRequestDetailProps) {
  const t=useUiT();
  const cache=useQueryClient();
  const [confirmed,setConfirmed]=React.useState<{source:ProjectPullRequest;pullRequest:ProjectPullRequest}|null>(null);
@@ -280,7 +283,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication}
     ? []
     : visibleReviewHistory;
   if(readUnavailable)return <ProjectPanelState error title={t("platform.loadFailed")}/>;
-  return (
+  const detail = (
     <div
       className="mx-auto w-full max-w-3xl overflow-hidden"
       data-project-detail-panel
@@ -539,4 +542,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication}
       </div>:null}
     </div>
   );
+  return contextPanel&&publication?<ProjectDetailRightPanel pullRequest={pullRequest} repository={project}
+    actions={<ProjectWorkItemCommunicationActions pullRequest={pullRequest} channelId={contextPanel.channelId} scopeKey={publication.host.scopeKey} onDiscuss={contextPanel.onDiscussInChannel}/>}
+  >{detail}</ProjectDetailRightPanel>:detail;
 }

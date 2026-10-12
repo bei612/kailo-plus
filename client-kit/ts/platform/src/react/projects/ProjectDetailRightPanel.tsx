@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // ProjectDetailRightPanel / ProjectConversationPanelContext (detached fallback),
 // useProjectPanelWidths, useProjectRepositoryPanel and ProjectRightPanelControls.
-// Only the repository Task branch has an executable governed host here.
+// Only repository Task/Review branches with existing governed consumers.
 import * as React from "react";
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -11,7 +11,8 @@ import { cn } from "../profile/buzz/shared/lib/cn";
 import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
 import { AppTopChromePortal } from "./AppTopChromePortal";
 import { ProjectContextRail } from "./ProjectContextRail";
-import { ProjectRepositoryActionsPanel } from "./ProjectRepositoryActionsPanel";
+import { ProjectRepositoryActionsPanel, type ProjectRepositoryActionsPanelProps } from "./ProjectRepositoryActionsPanel";
+import type { ProjectWorkItemContext } from "./ProjectWorkItemContextDetails";
 
 const REPOSITORY_PANEL_COLLAPSED_KEY = "buzz.desktop.project-repository-panel-collapsed";
 function initialCollapsed() {
@@ -19,7 +20,7 @@ function initialCollapsed() {
   catch { return false; }
 }
 
-export function ProjectDetailRightPanel({children,...panel}:Omit<React.ComponentProps<typeof ProjectRepositoryActionsPanel>,"widthPx"|"onResizeStart"|"canResetWidth"|"onResetWidth">&{children:React.ReactNode}) {
+export function ProjectDetailRightPanel({children,...panel}:ProjectWorkItemContext&Pick<ProjectRepositoryActionsPanelProps,"actions"|"onCreateTask">&{children:React.ReactNode}) {
   const t=useUiT();
   const sidebar=useOptionalSidebar();
   const [collapsed,setCollapsedState]=React.useState(initialCollapsed);

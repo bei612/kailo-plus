@@ -53,7 +53,7 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDis
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["project-work-item-target",host.scopeKey]});cache.removeQueries({queryKey:["project-work-item-target",host.scopeKey]});},[cache,host.scopeKey]);
   const workItem=query.isSuccess&&!query.isFetching?resolveProjectWorkItemTarget(query.data.items,projectId,target):undefined;
   const detail=workItem?<ProjectWorkItemDetail key={workItem.type==="issue"?workItem.issue.id:workItem.pullRequest.id} workItem={workItem} host={host} onOpen={onOpen} onDiscussInChannel={onDiscussInChannel}/>:null;
-  if(workItem?.type==="issue")return <>{renderWorkItems?renderWorkItems(detail,query.data!.viewerPubkey):detail}</>;
+  if(workItem&&(workItem.type==="issue"||onDiscussInChannel))return <>{renderWorkItems?renderWorkItems(detail,query.data!.viewerPubkey):detail}</>;
   // Original ProjectDetailScreen scroll chain and selected WorkspaceTabs detail
   // branch. Git, other tabs, and writes remain separately un-restored.
   return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
@@ -70,13 +70,15 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDis
 function ProjectWorkItemDetail({workItem,host,onOpen,onDiscussInChannel}:{workItem:ProjectInboxWorkItem;host:ProjectsHost;onOpen:ProjectsViewProps["onSelectedProjectChange"];onDiscussInChannel?:ProjectDiscussInChannel}) {
   const [createOpen,setCreateOpen]=useState(false);
   const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
+  const channelId=workItem.repository.channelId??workItem.project.projectChannelId;
   const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
   return workItem.type==="issue"?<>
     <ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}
-      contextPanel={{onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel}}/>
+      contextPanel={{channelId,onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel}}/>
     {host.publish&&onOpen?<CreateProjectIssueDialog host={host} initialProjectId={workItem.project.id} initialRepositoryId={workItem.repository.id} projects={[workItem.project]}
       open={createOpen} onOpenChange={setCreateOpen} onCreated={(project,repo,issueId)=>onOpen(project.id,{repositoryId:repo.id,issueId})}/>:null}
-  </>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles} publication={{host,projectId:workItem.project.id}}/>;
+  </>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles} publication={{host,projectId:workItem.project.id}}
+    contextPanel={onDiscussInChannel?{channelId,onDiscussInChannel}:undefined}/>;
 }
 
 function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {

@@ -1981,3 +1981,36 @@ npm 与 PUB_CACHE，没有改 HOME、安装依赖、启动 builder 或 GTK 构�
 实现后交叉复核完整共享与宿主调用：scopeKey／PlatformProvider generation 销毁旧 Task 选择，目录 lifetime/signal 拒绝迟到结果，running ref 在 await 前拒绝重入；原 ChannelBrowser 加入失败不调用宿主，fresh ACTIVE/member/stream 最终仍由宿主核验。Web 目录→descriptor→完整 session scope 后同步合并 workspace 草稿再原导航；Native 目录→getChannels→前后 identity 后同步合并 native channel 草稿再原导航，原 initDraftStore wrapper 的附件清理回调保留。未发现新增确定缺陷，此结论是源码交叉复核，不是线上操作通过。
 
 公共 index 不写入，原三项 staged patch SHA-256 `b73e9041c5dafbc57107317c8715cc620576fb9fca801569f7f0ff7830e19155`；TS/Dart 只取本批三个 key 的独立生成增量，旧 dirty 保留。原 docs 快路径只覆盖顶层实施文档、docs 与设计，本文另跑同配置 selected markdownlint，结果日志单独留 Data，不追加自引用正文。本批未运行 full、Rust/GTK、构建或部署，未取得新浏览器或 Windows/Mobile 验收。
+
+## 2026-10-12 Review 原 Discuss 与父关联频道恢复
+
+基底 `876b95f678d441627091215937f45eb43b1450c0`；固定 Buzz `779af8886caae1317b4de962082429867ab61503`，关联 REQ-24、DD-39/74/75/77 与原 `collab.projects`。本批只闭合 Review 详情右栏选择频道、合并既有草稿、原导航，不自动发送；不修改合同、后端或双端宿主。
+
+### 四步影响与原源码
+
+1. 根因：`a0951e4f784c8a9541d9f7cd88b07adc64e8ce1e` 只接 Task Discuss；Review 详情未消费已存在的两宿主回调。固定官方 `desktop/src/features/projects/ui/ProjectDetailScreen.tsx::ProjectDetailScreen` 的 contextItem 经 `desktop/src/features/projects/ui/ProjectRepositoryActionsPanel.tsx::ProjectRepositoryActionsPanel` 同时承接 Task 与 Review，并调用 `desktop/src/features/projects/ui/ProjectWorkItemCommunicationActions.tsx::ProjectWorkItemCommunicationActions`。
+2. 原依赖：`desktop/src/features/projects/lib/projectDetailSelectionItem.ts::projectDetailSelectionItem` 使用 `repository.channelId ?? projectChannelId`，不是 Issue/PR 事件的 h 来源；本批纠正前批 Task 的该错误并把同一真实父字段传至 Review。`desktop/src/features/projects/lib/projectSelection.ts::projectSelectionDiscussContent` 的 review 单选原文为 “Let's talk about this review:”，canonical 链接取原 `desktop/src/features/projects/lib/projectShareLinks.ts::pullRequestShareLink`；没有第二套链接或草稿。
+3. 影响：共享 `ProjectsView→ProjectPullRequestDetail→ProjectDetailRightPanel→ProjectRepositoryActionsPanel` 复用原布局、宽度与收起控制；原 `desktop/src/features/projects/ui/ProjectWorkItemContextDetails.tsx::ProjectWorkItemContextDetails` 的 Review 分支恢复分支名、状态、审阅人数和批准数。已有 Task 分支保持，同一 communication/helper/hook 服务两类实际消费者。原详情正文、普通评论、历史与分享不重排。
+4. 异常：目录仍来自原 fresh scope 查询，公开发现不代表可写；选择后双宿主现有目录/身份/成员重验、草稿 sendIntent 拒绝与原导航不变。旧 scope 失效不投递草稿，UNKNOWN 不覆盖或自动发送；请求失败仍用原错误反馈。无新实体、权限、API、状态迁移或错误分类。只有真实宿主存在时才消费入口，不为 Agent、Git 或缺失审阅写操作造控件。
+
+### 四类差异及未覆盖范围
+
+- 原样保留：Review 右栏 Actions/Details 层级、class、四行元数据、Discuss 展开与频道选择；原父关联频道优先级、canonical PR 链接、合并而非发送语义。
+- 共享迁移：复用前批右栏与讨论模块，仅补原 Review 分支和两个详情的真实父频道透传，不为 Web/Desktop 各写一份。
+- 授权适配：沿已合治理目录与双宿主草稿/身份边界；四个实际词条经 TypeScript 单一源和原 `tools/gen-platform-i18n.py` 投影 Dart。联合类型显式分支窄化，不用断言掩盖未定义分支。候选仅本批词条，不覆盖历史 TS/Dart dirty 或 public staged。
+- 缺失需恢复／未验收：PR reviewers/request-changes/inline review、原 Agent chat/managed-owner、Git/source/terminal、其他实体及多选讨论、完整 repository Chrome/WorkspaceTabs、Mobile Projects 仍保留。Inbox Forum 行内回复原本不支持，不列作遗漏。本批不是完整 Reviews、完整 Projects 或新版页面验收。
+
+完整分类继续以 `876b95f678d441627091215937f45eb43b1450c0` 已收录的 a095 固定全树为来源：官方 5195 路径、union 5319、原样 1914／共享 113／整文件授权 0／缺失或未证明 3292 是该快照的逐路径证明分类，不是功能完成计数。本批只补上述真实映射，不重新导树，不把 blob 存在或两个新增用例折算成功能覆盖率。
+
+### 实际定向验证与失败保留
+
+Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8AZuis`，复用 `reminder-consumers.RcN79Y` 输入。原缓存 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`、`kailo-inbox-forum-r5kqbx`，2 CPU／4 GiB，memory+swap 总限额等于内存、UID1000、network none、只读 root，cache、TMPDIR、Node compile cache、Dart `/.dart-tool` 全在 Data。与 Cells 唯一 release builder 协调后执行；预检 SDK 仅 sleep、MemAvailable 36757 MiB、memory PSI avg10 为 0，无新依赖或 builder。
+
+- 49016 实际 exit 1：原 `python3 tools/gen-platform-i18n.py` 及 `--check` 均 0；原 `node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx` 为 87/87。两配置类型检查因标题的联合类型未窄化报 TS18048，不能用 DOM 通过抵消；改成显式 issue 分支后，62732 两类型与 Task/Review 中英文四项为 0。
+- 33149 私有只把 Review canonical shareLink 改成 null，原 `-t "opens the original.*review.*discuss action"` 两项均失败、实际 exit 1，断言抓到链接退成标题；随后原行已恢复。23840 新父字段首轮误用 `project.channelId` 和夹具 h 标签，实际 exit 1、两类型错误及四 DOM 失败；正式与私有均修为已有 `projectChannelId`／`buzz-channel`，未改生产解析、超时或断言标准。
+- 28986 末版实际 exit 0：`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`、`-p tsconfig.test.json` 均 0；同原四详情消费者 4/4，其余 83 项明确未选。英文实际验证仓库频道优先，中文实际验证项目频道回退，事件来源刻意不同；同时验证 canonical Issue/PR 草稿、原搜索选择、目录拒绝清空、无 publish，以及 PR 单滚动外壳与原详情元数据。React act 告警保留。
+- 20033 私有仅把父频道改回 `item.channelId`，四项实际失败、exit 1；apply_patch 恢复后正式/私有 `ProjectsView.tsx` cmp 0，78515 同四项真实 exit 0、4/4，其余 83 项未选。不重跑已过整套或后端。
+
+日志 SHA-256：`positive.log`=`8b929556bdcdad1d8d6b412c7e2c61293f4e79505bac70e423b41f54cb70cd2d`，`corrected.log`=`19f5b874e35cbbba825579179f1ee8b41efb95381cf7de1cdccaa5dca5deb9a3`，`mutation.log`=`431ffeacdfb04d795cc3700c275398f97ae48e501179a7fc62775c3317467ee0`，`final.log`（失败）=`bd7caf20e283d685e67c064c925d0a797ba5a667ad2762be1b4d3c139d228030`；末版 `channel-corrected.log`=`e0f9beb4814cfa4a42b3c83db5abd9ee76083de4ec9b0d2ad30b63a240a9c6c9`，`channel-mutation.log`=`0e4af685fe09ec13b4fd616b16ba6eb7ed72d5d2b274b257734d412235f9ae01`，`restored.log`=`8a71139dddb11c8201f32033c8ca1206af22c40ac2c4b998e1686e887ae9830c`。
+
+实现后独立交叉复核确认原父频道、Task/Review 联合分支、canonical link、scope-keyed selector 与既有双宿主 fresh identity/member/sendIntent 拒绝相符；只是源码复核。DOM 回调与 HTTP 为原受控夹具，不是在线加入频道或真实草稿发送。旧部署截图不能记本批通过；未构建、未部署、未运行 full、Rust/GTK 或 Windows/Mobile 设备验收。原 docs 快路径与本文 selected markdownlint 的实际结果只留 Data 日志，不追加检查自引用正文；不写公共 index。

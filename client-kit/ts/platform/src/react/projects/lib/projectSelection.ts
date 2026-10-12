@@ -1,10 +1,10 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/features/projects/lib/projectSelection.ts. Only the consumed Task
+// desktop/src/features/projects/lib/projectSelection.ts. Only the consumed Task/Review
 // discussion projection; Agent/chat and other selection actions remain absent.
 export type ProjectSelectionItem = {
   channelId?: string | null;
   id: string;
-  kind: "task";
+  kind: "task" | "review";
   shareLink?: string | null;
   title: string;
 };

@@ -34,7 +34,7 @@ import {ProjectDetailRightPanel} from "./ProjectDetailRightPanel";
 import {ProjectWorkItemContextActions} from "./ProjectWorkItemContextActions";
 import {ProjectWorkItemCommunicationActions} from "./ProjectWorkItemCommunicationActions";
 import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
-type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository};contextPanel?:{onCreateTask?:()=>void;onDiscussInChannel?:ProjectDiscussInChannel}};
+type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository};contextPanel?:{channelId?:string|null;onCreateTask?:()=>void;onDiscussInChannel?:ProjectDiscussInChannel}};
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
 export function issueStatusClassName(status: ProjectIssue["status"]) {
@@ -242,7 +242,7 @@ function IssueDetailBody({issue:source,profiles,publication,contextPanel}:IssueD
   );
   return contextPanel?<ProjectDetailRightPanel issue={issue} onCreateTask={contextPanel.onCreateTask}
     actions={<><ProjectWorkItemContextActions {...assignmentProps}/>
-      {contextPanel.onDiscussInChannel&&publication?<ProjectWorkItemCommunicationActions issue={issue}
+      {contextPanel.onDiscussInChannel&&publication?<ProjectWorkItemCommunicationActions issue={issue} channelId={contextPanel.channelId}
         scopeKey={publication.host.scopeKey} onDiscuss={contextPanel.onDiscussInChannel}/>:null}
     </>}>{detail}</ProjectDetailRightPanel>:detail;
 }

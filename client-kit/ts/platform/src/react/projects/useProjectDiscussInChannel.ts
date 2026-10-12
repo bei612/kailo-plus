@@ -10,5 +10,5 @@ export type ProjectDiscussInChannel = (workspace: DiscoverableWorkspace, content
 export function useProjectDiscussInChannel(items: ProjectSelectionItem[], onDiscuss: ProjectDiscussInChannel) {
   const t = useT();
   return useCallback((workspace: DiscoverableWorkspace) =>
-    onDiscuss(workspace, projectSelectionDiscussContent(items, t("projects.discuss.taskDraft"))), [items, onDiscuss, t]);
+    onDiscuss(workspace, projectSelectionDiscussContent(items, t(items[0]?.kind === "review" ? "projects.discuss.reviewDraft" : "projects.discuss.taskDraft"))), [items, onDiscuss, t]);
 }
