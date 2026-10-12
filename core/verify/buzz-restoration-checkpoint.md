@@ -1,5 +1,50 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-12 批量作者源码与待部署实拍交接
+
+固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`，本段只核已有
+全量清单中 Inbox/Projects 的实际增量，不重算 `562156ae7f12953e3eea61305fe282ae98b6c416` 的 5316/3281 历史证明队列。
+源码基准为已提交 `dd65fb74a53ebb6aaac7ba1c3ecb766b2accb3b0`，不等于部署版本。
+此前段落中的历史分类以各自固定提交为准，当前消费状态纠正如下：
+
+| 原模块及固定符号 | 当前分类与证据边界 |
+| --- | --- |
+| `desktop/src/features/messages/lib/formatTimelineMessages.ts::collectMessageAuthorPubkeys`、`desktop/src/features/profile/hooks.ts::useUsersBatchQuery`、`desktop/src-tauri/src/commands/profile.rs::get_users_batch` | 原作者聚合由 Web 同 scope 批读接回；`dd65fb74a53ebb6aaac7ba1c3ecb766b2accb3b0` 保留逐消息证据、本人身份、签名、fresh scope 和返回 pubkey 核验，属已授权治理适配。原行/头像/资料布局未重排，不将原 Native 缓存变成 Web 授权权威；末版 DOM 77/77 不是上线证据 |
+| `desktop/src/features/reminders/hooks.ts::useDueReminderBadgeCount`、`desktop/src/features/reminders/useReminderNotifications.ts::useReminderNotifications` | `af8b6195c82813c32521b759786b038ff527359b` 与 `00a11e8f118334bcfc7ef5a3d4c6d3bbc4426aab` 已提交原到期徽标、唯一轮询、通知水印/发送/音效的共享消费者，不能继续泛称“只有计数、没有通知源码”；仍无新版浏览器/OS 通知验收。Mobile 提醒及 Inbox needs_action 的 46010/40007 原生产接缝仍缺 |
+| `desktop/src/features/projects/ui/ProjectsIssuesList.tsx::ProjectsIssuesList`、`desktop/src/features/projects/ui/ProjectsPullRequestsList.tsx::ProjectsPullRequestsList`、`desktop/src/features/projects/lib/projectShareLinks.ts::issueShareLink`、`desktop/src/features/projects/lib/projectShareLinks.ts::pullRequestShareLink` | 原列表、精确只读详情及 Issue/PR 分享复制→解析→fresh 授权→详情已分别进入 `b5aaf075fc4b8af868f23ebbe8598417333477a8`、`00f02b9cce00ccc0584d897235336bd12869b3d2`，不再称分享链尚未提交。正文渲染仍复用原共享组件；原 ProjectDetailChrome/WorkspaceTabs/ProjectChannelHome、Git/CommitDetail、repository/project/commit 分享、selection→Agent、工作项写操作和 Mobile entity 导航仍缺，不能用只读链认领完整项目页面 |
+
+39 路径逐项呈现复核：ChannelPane、ChannelThreadPane、InboxThreadPane、ForumPane
+仍使用同一原头像、作者文字和容器；InboxPane 只增加同 scope 聚合并把结果传给
+既有头像。没有更改这些行的 class、菜单或排列。五个共享 Profile 展示消费者仅
+改为生成字段类型及原 `?? null` 缺省；未新增字段、标签或布局。schema、四侧生成、
+BFF/Relay、检查与原回执不冒作视觉模块。原样呈现/共享迁移和局部治理适配分别
+成立，不据此将全文件或完整页面统一归为“100% 原样”。
+
+既有普通 SSO 会话 `kailo-official-views` 仍 open，当前保留旧完整频道线程页面。
+本轮只读 `/app/platform-build-info.json` 返回 `TypeError: Failed to fetch`；CLI 包装
+退出 0 不能当请求成功。新增 console 仅原日志 L37；没有再次点击、循环重试或
+压测。当前运行版本因此未重新确认，最后一次成功 build-info 仍对应 `9d718234b74b688d9b81816f9b67470d4fc80440`；
+不得把该旧版本当本批已部署。
+
+发布后可直接接续的原操作顺序（不新增测试框架或业务对象）：
+
+1. 正常 SSO 后先读实际 build-info，与新发布清单对齐；未对齐即停止新版验收。
+2. Inbox 原“全部”列表选择已有 `KAILO-46-20261007-0154` 消息，检查原作者/头像、
+   选中行、右侧预览与范围；以新 snapshot 的原按钮打开完整线程，不复用旧 ref。
+3. 在同一实际频道/根线程核对原主时间线、回复、作者 hover/资料面板及关闭操作，
+   分别记录新请求路径/状态/耗时：自动姓名/头像应走 scope 批读；显式 hover 的
+   单事件 fresh POST 不误算 N+1。一次普通刷新保留消息/线程定位与失败原件。
+4. 后续正常已授权 DM 重复同一只读打开链，确认 workspace/conversation 不混批；
+   不用别人的会话、缓存身份或人工模拟成功来证明跨用户隔离。撤权实测另按受控
+   验收执行，不能以本轮 DOM fixture 代替。
+
+旧图 `19-inbox-selected-real-message.png`、`20-inbox-full-selected-thread.png`
+本轮已再次打开：前者为原 Inbox 选中与右预览，后者为原频道/右线程两栏，根文与
+一条回复可见。均在 `/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF`，
+只对应旧 `9d718234b74b688d9b81816f9b67470d4fc80440`。该次点击新增 33 条 429 的原证据、对应作用域和完整路径见
+`core/verify/message-author-label.md`；旧失败必须保留，新版截图要另存并逐张打开。
+本段未构建、部署、发送消息、改权限或更新三端安装包，未改变完整 full 门禁。
+
 ## 2026-10-12 00:44 UTC 现网频道搜索快捷键与源码边界
 
 本段对应固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`；源码回读
