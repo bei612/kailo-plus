@@ -2,15 +2,17 @@
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxDetailHeader, InboxMessageRowSurface, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
-import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
+import { useQuery } from "@tanstack/react-query";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { relativeTime } from "@client-kit/platform/format";
 import { inboxReply, inboxThread } from "@client-kit/platform/inbox";
 import { BffError, isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { toast } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
-import { publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { bff, deleteMessage, publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Button } from "@/shared/ui/button";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
@@ -40,7 +42,12 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
   const [sending, setSending] = useState(false);
   const [unresolved, setUnresolved] = useState(false);
-  const publication = useRef<{ key: string; parent: string | null; unknown: boolean } | null>(null);
+  const publication = useRef<{ key: string; parent: string | null; unknown: boolean; edit?: boolean } | null>(null);
+  const { editTarget, setEditTarget, handleCancelEdit } = useChannelMessageEdit<TimelineMessage>(JSON.stringify([principalId, conversation?.id ?? workspaceId]));
+  const ownProfile = useQuery({queryKey:["platform", "edit-author", principalId], queryFn:()=>bff.profile()});
+  const editOwner=useMemo(()=>({active:true}),[principalId,conversation?.id,workspaceId]);
+  const editOwnerRef=useRef(editOwner);editOwnerRef.current=editOwner;
+  useEffect(()=>{editOwner.active=true;return()=>{editOwner.active=false;};},[editOwner]);
   const composerContainer = useRef<HTMLDivElement>(null);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
@@ -54,6 +61,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   if (changingSelection) {
     setSelection({ anchor: selectedEventId, root: rootId });
     setReplyId(replyTargetEventId ?? null);
+    setEditTarget(null);
     replyParent.current = null;
     reached.current = false;
   }
@@ -70,7 +78,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === (conversation ? anchor : anchorRoot)));
   const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
     !unavailable && !interrupted && thread.isSuccess);
-  const rows: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, kind: event.kind,
+  const rows: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, signerPubkey:event.pubkey, kind: event.kind,
     body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0,
     author: authorLabel(event, members.find(member => member.pubkeys.includes(event.pubkey))?.displayName),
     time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()),
@@ -84,6 +92,17 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && (conversation && parentId === null || hasReplyParent) && (conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === workspaceId && conversation.participantPrincipalIds.includes(principalId)
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
+  const canManage = Boolean(canReply && ownProfile.isSuccess && !ownProfile.isFetching && ownProfile.data?.pubkey);
+  const canEdit = (message: TimelineMessage) => canManage && message.kind === 9 && !message.pending && message.signerPubkey === ownProfile.data?.pubkey;
+  const deleteDialog = useMessageDeleteDialog(JSON.stringify([principalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]),
+    canManage && !sending && !unresolved, async message => {
+      if (!canEdit(message)) throw new Error(t("inbox.replyUnavailable"));
+      const receipt = await deleteMessage(workspaceId, message.id, WebMessageType.Stream, conversation?.id);
+      if (!receipt?.eventId || !receipt.operationId) throw new TransportError(t("platform.sendUnknown", {operation:""}));
+    }, message => {
+      setEditTarget(current=>current?.id === message.id ? null : current);
+      void refresh();
+    });
   const isThreadContext = !conversation && messages.some(message => inboxReply(message.tags));
   const directMessageSender = senderLabel ?? (anchoredMessage ? authorLabel(anchoredMessage,
     members.find(member => member.pubkeys.includes(anchoredMessage.pubkey))?.displayName) : "");
@@ -93,7 +112,8 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       : channelName ? t("inbox.detailMessageIn", {channel:channelName}) : channelName;
   const openContextLabel = isThreadContext ? t("inbox.openFullThread") : conversation ? t("inbox.openConversation") : t("inbox.open");
   const selectReply = (id: string | null) => {
-    if (!canReply || sending || publication.current) return;
+    if (!canReply || sending || publication.current || deleteDialog.pending || deleteDialog.unresolvedMessageId) return;
+    handleCancelEdit();
     setReplyId((current) => current === id ? null : id);
     // Same original Inbox focus transfer; wait for the restored draft editor.
     requestAnimationFrame(() => composerContainer.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus());
@@ -136,12 +156,48 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
             } : undefined}
             message={message}
             renderActions={!interrupted ? reactions => <MessageActionBarSurface {...reactions} message={message} onCopyMessage={copyMessage}
-              onReply={canReply && !sending && !unresolved ? (target) => selectReply(target.id) : undefined} /> : undefined}
+              onEdit={canEdit(message) && !sending && !unresolved && !deleteDialog.pending && !deleteDialog.unresolvedMessageId ? target=>{
+                setEditTarget(current=>current?.id===target.id?null:target);setReplyId(null);
+                requestAnimationFrame(()=>composerContainer.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus());
+              } : undefined}
+              onDelete={canEdit(message) && !sending && !unresolved && !deleteDialog.pending && (!deleteDialog.unresolvedMessageId || deleteDialog.unresolvedMessageId===message.id) ? deleteDialog.requestDelete : undefined}
+              onReply={canReply && !sending && !unresolved && !deleteDialog.pending && !deleteDialog.unresolvedMessageId ? (target) => selectReply(target.id) : undefined} /> : undefined}
             renderBody={(className) => <div className={className}><MessageContent messageId={event.id} workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
-    <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
+    <div className="shrink-0" ref={composerContainer}>
+    {editTarget && canInteract && !unavailable && !interrupted ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+      channelType={conversation ? "dm" : undefined} draftIdentity={principalId} draftChannelId={workspaceId}
+      draftKey={`edit:${workspaceId}:${editTarget.id}`} editTarget={editTarget}
+      onCancelEdit={!sending && !unresolved ? handleCancelEdit : undefined} onConfirmed={handleCancelEdit}
+      onRequestEmptyEditDelete={deleteDialog.requestDelete} disabled={!canEdit(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
+      mentionPeople={mentionPeopleFromMembers(members)} onSendingChange={setSending}
+      onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
+      onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
+      onPublish={async(content, attachments, key, installations, mentionPubkeys)=>{
+        if (!canEdit(editTarget) || deleteDialog.pending || deleteDialog.unresolvedMessageId) throw new Error(t("inbox.replyUnavailable"));
+        const prior=publication.current;
+        if(prior && (!prior.edit || prior.key!==key || prior.parent!==editTarget.id)) throw new TransportError(t("platform.sendUnknown",{operation:""}));
+        publication.current={key,parent:editTarget.id,unknown:prior?.unknown??false,edit:true};
+        onPublicationPendingChange?.(true);
+        try {
+          const receipt=await(conversation ? publishConversationMessage(conversation.id,content,attachments,key,editTarget.id,undefined,mentionPubkeys)
+            : publishMessage(workspaceId,content,attachments,key,installations,{editEventId:editTarget.id,mentionPubkeys}));
+          if(!receipt?.eventId||!receipt.operationId) throw new TransportError(t("platform.sendUnknown",{operation:""}));
+          if(!editOwner.active||editOwnerRef.current!==editOwner)return receipt;
+          publication.current=null;setUnresolved(false);onPublicationPendingChange?.(false);
+          void refresh();return receipt;
+        } catch(error) {
+          if(!editOwner.active||editOwnerRef.current!==editOwner)throw error;
+          const unknown=isOutcomeUnknown(error)||(prior?.unknown===true&&!(error instanceof BffError&&error.reason===ReasonCode.PublishRejected));
+          publication.current=unknown?{key,parent:editTarget.id,unknown:true,edit:true}:null;
+          setUnresolved(unknown);onPublicationPendingChange?.(unknown);
+          if(unknown&&!isOutcomeUnknown(error))throw new TransportError(t("platform.sendUnknown",{operation:""}));
+          throw error;
+        }
+      }} /> : null}
+    <div hidden={Boolean(editTarget)}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
       channelType={conversation ? "dm" : undefined}
       audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
@@ -151,9 +207,9 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       replyTarget={replyTarget ?? null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
       placeholder={conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
-        if (!canReply || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
+        if (!canReply || deleteDialog.pending || deleteDialog.unresolvedMessageId || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
-        if (prior && (prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
+        if (prior && (prior.edit || prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};
         onPublicationPendingChange?.(true);
         try {
@@ -174,6 +230,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           if (unknown && !isOutcomeUnknown(error)) throw new TransportError("Inbox reply still has an unresolved intent.");
           throw error;
         }
-      }} /></div>
+      }} /></div></div>
+    {deleteDialog.dialog}
   </section></BffVideoReviewProvider>;
 }

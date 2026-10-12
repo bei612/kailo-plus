@@ -67,7 +67,7 @@ it("restores the original destructive menu, confirmation and UNKNOWN retry witho
   const deleted=vi.fn();
   function DeleteHost() {
     const deletion=useMessageDeleteDialog("actor/channel",true,remove,deleted);
-    return <TooltipProvider><MessageActionBarSurface message={target} onCopyMessage={()=>{}} onDelete={deletion.requestDelete}/>{deletion.dialog}</TooltipProvider>;
+    return <TooltipProvider><span data-testid="unresolved-deletion" data-message-id={deletion.unresolvedMessageId ?? ""}/><MessageActionBarSurface message={target} onCopyMessage={()=>{}} onDelete={deletion.requestDelete}/>{deletion.dialog}</TooltipProvider>;
   }
   const host=await render(<DeleteHost/>);
   await act(async()=>{host.querySelector<HTMLButtonElement>('[data-testid="more-actions-delete-target"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));});
@@ -80,11 +80,13 @@ it("restores the original destructive menu, confirmation and UNKNOWN retry witho
   await click([...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Delete")!);
   expect(remove).toHaveBeenCalledExactlyOnceWith(target);
   expect(deleted).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="unresolved-deletion"]')?.getAttribute("data-message-id")).toBe(target.id);
   expect(document.querySelector('[role="status"]')?.textContent).toContain("Deletion outcome unknown");
   await click([...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Check deletion")!);
   expect(remove.mock.calls).toEqual([[target],[target]]);
   expect(deleted).toHaveBeenCalledExactlyOnceWith(target);
   expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(host.querySelector('[data-testid="unresolved-deletion"]')?.getAttribute("data-message-id")).toBe("");
 });
 
 it("fences an in-flight deletion from a different identity/channel and prevents double confirmation", async () => {

@@ -20,6 +20,8 @@ type InboxMessageRowProps = {
   canReply: boolean;
   currentPubkey?: string;
   onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
+  onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   channelId?: string | null;
   isContinuation?: boolean;
   isFirst?: boolean;
@@ -33,7 +35,7 @@ type InboxMessageRowProps = {
 };
 
 export function InboxMessageRow({
-  canReply, currentPubkey, onToggleReaction, channelId = null,
+  canReply, currentPubkey, onToggleReaction, onEdit, onDelete, channelId = null,
   isContinuation = false, isFirst = false, isFocusHighlightVisible,
   message, onSelectReplyTarget, profiles, showUnreadBoundary = false,
   videoReviewCommentRootId, videoReviewContext,
@@ -49,8 +51,9 @@ export function InboxMessageRow({
     onToggleReaction={onToggleReaction} customEmoji={customEmoji} reactionScope={reactionScope} resolveMediaUrl={rewriteRelayUrl}
     renderIdentity={(node, kind) => <UserProfilePopover pubkey={message.authorPubkey} triggerElement="span"
       triggerClassName={kind === "avatar" ? "shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" : undefined}>{node}</UserProfilePopover>}
-    renderActions={canReply || (onToggleReaction && !timelineMessage.pending) ? reactions => <MessageActionBar
+    renderActions={canReply || onEdit || onDelete || (onToggleReaction && !timelineMessage.pending) ? reactions => <MessageActionBar
       {...reactions} channelId={channelId} message={timelineMessage}
+      onEdit={onEdit} onDelete={onDelete}
       onReply={canReply ? () => onSelectReplyTarget(message) : undefined} profiles={profiles} /> : undefined}
     renderBody={className => <VideoReviewCommentMarkdown className={className}
       content={message.content} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(timelineMessage.tags)}

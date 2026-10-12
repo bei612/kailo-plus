@@ -143,6 +143,8 @@ export function toInboxContextMessage(
   return {
     id: message.id,
     authorLabel: message.author,
+    kind: event?.kind,
+    signerPubkey: event?.pubkey,
     authorPubkey,
     avatarUrl: message.avatarUrl ?? null,
     content: message.body,
@@ -172,6 +174,8 @@ export function toTimelineMessage(
   return {
     id: message.id,
     author: message.authorLabel,
+    kind: message.kind,
+    signerPubkey: message.signerPubkey,
     avatarUrl: message.avatarUrl,
     body: message.content,
     createdAt: message.createdAt,

@@ -4,6 +4,7 @@ import * as React from "react";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { translate } from "@client-kit/platform/i18n";
+import { TransportError } from "@client-kit/platform/transport";
 
 import {
   buildInboxItems,
@@ -27,7 +28,7 @@ test("Native Inbox's actual detail header and composer restore original DM conte
   visit(file);
   assert.equal(declarations.length, bindings.size);
   assert.ok(composer);
-  const source = ts.transpile(`${declarations.join("\n")}return {contextLabel,contextThreadRootId,openContextLabel,composer:${composer}};`, {target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
+  const source = ts.transpile(`const editTarget=null; const deleteDialog={pending:false};${declarations.join("\n")}return {contextLabel,contextThreadRootId,openContextLabel,composer:${composer}};`, {target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
   const project = new Function("React", "item", "displayMessages", "messages", "replyTargetId", "capturedDefaultParentId", "contextChannelName", "hasInboxThreadContext", "formatInboxTypeLabel", "locale", "t", "MessageComposer", "canReply", "isSendingReply", "disabledReplyReason", "setReplyTargetId", "onSendReply", source);
   const root = {id:"root",content:"root",authorLabel:"Original sender",tags:[["h",DM_CHANNEL_ID]]};
   const reply = {id:"reply",content:"reply",authorLabel:"Original sender",tags:[["h",DM_CHANNEL_ID],["e","root","","root"],["e","root","","reply"]]};
@@ -54,6 +55,37 @@ test("Native Inbox's actual detail header and composer restore original DM conte
     await stream.composer.props.onSend("stream reply",[],[]);
     assert.equal(sends.at(-1).parentEventId,"captured-parent");
   }
+});
+
+test("Native Inbox edit/delete consumes the signed target, scope, original publisher and structural refresh",async()=>{
+  const file=ts.createSourceFile("HomeView.tsx",readFileSync(new URL("../ui/HomeView.tsx",import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let mutation;
+  function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(file)==="mutateMessage")mutation=node.initializer.getText(file);ts.forEachChild(node,visit);}
+  visit(file);assert.ok(mutation);
+  const source=ts.transpile(`return (${mutation});`,{target:ts.ScriptTarget.ES2022});
+  const factory=new Function("selectedItem","threadContext","canManageMessages","currentPubkey","nativeSession","editMessage","deleteMessage","TransportError","t","mutationOwner","mutationOwnerRef","onRefresh",source);
+  const pubkey="a".repeat(64),target="b".repeat(64);
+  const row={id:target,pubkey,kind:9};
+  const calls=[],refreshes=[];
+  const owner={active:true},ownerRef={current:owner};
+  const make=(allowed=true,events=[row],receipt={id:"c".repeat(64),kind:40003,pubkey,tags:[["e",target]]})=>factory({item:{channelId:"admitted-channel"}},
+    {events,refreshReactions:async()=>{refreshes.push("structural");}},allowed,pubkey,{devicePubkey:pubkey,facts:{relayUrl:"https://relay.example.invalid"}},
+    async(...args)=>{calls.push(["edit",...args]);return receipt;},async(...args)=>{calls.push(["delete",...args]);return {...receipt,kind:5};},TransportError,
+    key=>translate("en",key),owner,ownerRef,()=>refreshes.push("feed"));
+  await make()(row,{content:"updated with media",mentions:["d".repeat(64)],media:[["imeta","url https://media.example.invalid/a"],["untrusted","ignored"]]});
+  assert.deepEqual(calls[0],["edit","admitted-channel",target,"updated with media",[["imeta","url https://media.example.invalid/a"]],["d".repeat(64)],"https://relay.example.invalid",pubkey]);
+  assert.deepEqual(refreshes,["structural","feed"]);
+  await make()(row);assert.deepEqual(calls[1],["delete","admitted-channel",target,"https://relay.example.invalid",pubkey]);
+  const before=calls.length;
+  await assert.rejects(make(false)(row,{content:"no",mentions:[],media:[]}));
+  await assert.rejects(make(true,[{...row,pubkey:"e".repeat(64)}])(row,{content:"no",mentions:[],media:[]}));
+  await assert.rejects(make(true,[{...row,kind:40003}])(row,{content:"no",mentions:[],media:[]}));
+  assert.equal(calls.length,before);
+  refreshes.length=0;
+  await assert.rejects(make(true,[row],{id:"c".repeat(64),kind:40003,pubkey,tags:[["e","wrong-target"]]})(row,{content:"actual",mentions:[],media:[]}),TransportError);
+  assert.deepEqual(refreshes,[]);
+  ownerRef.current={active:true};
+  await make()(row,{content:"late confirmed",mentions:[],media:[]});assert.deepEqual(refreshes,[]);
 });
 
 const CHANNEL_ID = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";

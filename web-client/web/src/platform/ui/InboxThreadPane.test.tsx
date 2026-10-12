@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorkspaceMembershipState, ItemState } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale, translate } from "@client-kit/platform/i18n";
-import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
+import { ComposerReplyBanner, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS, KIND_TYPING_INDICATOR, KIND_CHANNEL_THREAD_SUMMARY } from "@client-kit/platform/react/thread/kinds";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), delete:vi.fn(), authorProfile:vi.fn(),dmAuthorProfile:vi.fn(),stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string,variables?:Record<string,string|number>) => translate("en",key as Parameters<typeof translate>[1],variables) }));
 vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
   ...await original<typeof import("@client-kit/platform/react/inbox-surface")>(),
@@ -24,11 +24,13 @@ vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}
 vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}}),
   messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.authorProfile(scope,id)])))}),
   conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.dmAuthorProfile(scope,id)])))}),
-},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
-vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople,placeholder }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string;author:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[];placeholder?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)} data-placeholder={placeholder}>
+},deleteMessage:(...args:unknown[])=>state.delete(...args),publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
+vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople,placeholder, editTarget,onConfirmed,onCancelEdit,onRequestEmptyEditDelete }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string;author:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[];placeholder?:string;editTarget?:TimelineMessage;onConfirmed?:()=>void;onCancelEdit?:()=>void;onRequestEmptyEditDelete?:(message:TimelineMessage)=>void}) => <div data-testid="inbox-composer" data-edit-id={editTarget?.id} data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)} data-placeholder={placeholder}>
   <ComposerReplyBanner replyTarget={replyTarget}/>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
-  <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", [], state.mentionPubkeys); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
+  {editTarget&&onCancelEdit?<button data-testid="cancel-edit" onClick={onCancelEdit}>cancel edit</button>:null}
+  {editTarget&&onRequestEmptyEditDelete?<button data-testid="empty-edit" disabled={disabled} onClick={()=>onRequestEmptyEditDelete(editTarget)}>empty edit</button>:null}
+  <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish(editTarget?"updated body":"actual reply", [], "same-intent", [], state.mentionPubkeys); state.outcome = "confirmed";onConfirmed?.(); } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
 </div> }));
 
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const pubkey = "c".repeat(64);
@@ -36,6 +38,19 @@ const event = (id: string, content: string, tags: string[][]) => ({ id, content,
 const rootEvent = event(rootId, "thread root", [["h", "workspace"]]);
 const reply = event(replyId, "selected reply", [["h", "workspace"], ["e", rootId, "", "root"], ["e", rootId, "", "reply"]]);
 const bounds = (next: { createdAt:number; eventId:string } | null = null, start = "head") => ({...rootEvent,id:"0".repeat(64),kind:39006,tags:[["h","workspace"],["d",`workspace:${start}`]],content:JSON.stringify({has_more:next!==null,next_cursor:next ? {created_at:next.createdAt,id:next.eventId} : null})});
+async function openMessageMenu(id:string) {
+  const trigger=host.querySelector<HTMLElement>(`[data-testid="more-actions-${id}"]`);
+  expect(trigger).not.toBeNull();
+  await act(async()=>{trigger!.focus();trigger!.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true}));});
+  await settle();
+}
+async function editMessage(id:string) {
+  await openMessageMenu(id);
+  const action=document.querySelector<HTMLElement>(`[data-testid="edit-message-${id}"]`);
+  expect(action).not.toBeNull();
+  await act(async()=>action!.click());await settle();
+  expect(host.querySelector(`[data-edit-id="${id}"]`)).not.toBeNull();
+}
 const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
@@ -69,6 +84,76 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it.each(["channel","conversation"] as const)("restores Inbox %s edit through the original action, captured target and actual edit projection",async scope=>{
+  state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,reply,bounds()]}));
+  if(scope==="channel")await mount();else await mountDm(replyId,rootId,[{principalId:"human",displayName:"Member",pubkeys:[pubkey]}]);
+  await editMessage(replyId);
+  const edited={...reply,id:"d".repeat(64),kind:40003,created_at:10,content:"updated body",tags:[["h","workspace"],["e",replyId]]};
+  const publish=scope==="channel"?state.publish:state.dmPublish;
+  publish.mockImplementation(async()=>{
+    if(scope==="channel")state.query.mockResolvedValue({events:[rootEvent,reply,edited]});
+    else state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply,edited]:[rootEvent,reply,edited,bounds()]}));
+    return {eventId:edited.id,operationId:"edit-op"};
+  });
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')!.click());await settle();
+  expect(publish).toHaveBeenCalledTimes(1);
+  if(scope==="channel")expect(publish.mock.calls[0]).toEqual(["workspace","updated body",[],"same-intent",[],{editEventId:replyId,mentionPubkeys:[]}]);
+  else expect(publish.mock.calls[0]).toEqual([conversation.id,"updated body",[],"same-intent",replyId,undefined,[]]);
+  expect(host.querySelector('[data-edit-id]')).toBeNull();
+  expect(host.querySelector(`[data-message-id="${replyId}"]`)?.textContent).toContain("updated body");
+  expect(host.querySelector(`[data-message-id="${edited.id}"]`)).toBeNull();
+});
+
+it("keeps an UNKNOWN edit on the same target/key during another Inbox selection and revokes its controls",async()=>{
+  await mount();await editMessage(replyId);
+  state.publish.mockRejectedValue(new TransportError("unknown"));
+  const send=()=>host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')!.click();
+  await act(async()=>send());await settle();
+  await mount(undefined,rootId,rootId,true);
+  expect(host.querySelector('[data-edit-id]')?.getAttribute("data-edit-id")).toBe(replyId);
+  expect(host.querySelector('[data-testid="cancel-edit"]')).toBeNull();
+  await act(async()=>send());await settle();
+  expect(state.publish.mock.calls).toHaveLength(2);
+  expect(state.publish.mock.calls[1]).toEqual(state.publish.mock.calls[0]);
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));await settle();
+  expect(host.querySelector('[data-edit-id]')).toBeNull();
+  expect(state.outcome).toBe("unknown");
+});
+
+it("does not offer Inbox editing for another signed author",async()=>{
+  state.query.mockResolvedValue({events:[rootEvent,{...reply,pubkey:"e".repeat(64)}]});
+  await mount();await openMessageMenu(replyId);
+  expect(document.querySelector(`[data-testid="edit-message-${replyId}"]`)).toBeNull();
+  expect(document.querySelector(`[data-testid="delete-message-${replyId}"]`)).toBeNull();
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("uses the original empty-edit delete confirmation and keeps the editor on cancel",async()=>{
+  await mount();await editMessage(replyId);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="empty-edit"]')!.click());await settle();
+  const dialog=document.querySelector('[role="alertdialog"]');expect(dialog).not.toBeNull();
+  expect(state.delete).not.toHaveBeenCalled();
+  await act(async()=>[...dialog!.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent===translate("en","forum.cancel"))!.click());await settle();
+  expect(host.querySelector('[data-edit-id]')?.getAttribute("data-edit-id")).toBe(replyId);
+  expect(state.publish).not.toHaveBeenCalled();expect(state.delete).not.toHaveBeenCalled();
+});
+
+it("keeps UNKNOWN deletion on its original Inbox target, refuses new edit/reply, and reconciles the same deletion",async()=>{
+  await mount();await editMessage(replyId);
+  state.delete.mockRejectedValueOnce(new TransportError("lost delete receipt")).mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"delete-op"});
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="empty-edit"]')!.click());await settle();
+  const confirm=()=>[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent===translate("en","buzz.delete")||button.textContent===translate("en","forum.deleteCheck"))!;
+  await act(async()=>confirm().click());await settle();
+  expect(state.delete).toHaveBeenCalledExactlyOnceWith("workspace",replyId,"STREAM",undefined);
+  expect(host.querySelector<HTMLButtonElement>('[data-edit-id] [data-testid="inbox-send"]')?.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-composer"]:not([data-edit-id]) [data-testid="inbox-send"]')?.disabled).toBe(true);
+  expect(document.querySelector('[role="status"]')?.textContent).toContain(translate("en","forum.deleteUnknown"));
+  await act(async()=>confirm().click());await settle();
+  expect(state.delete.mock.calls).toEqual([["workspace",replyId,"STREAM",undefined],["workspace",replyId,"STREAM",undefined]]);
+  expect(host.querySelector('[data-edit-id]')).toBeNull();
+  expect(state.publish).not.toHaveBeenCalled();
+});
 
 it.each(["channel", "conversation"] as const)("refreshes the actual %s thread once at the live boundary, not for stored or typing frames", async (scope) => {
   state.dmQuery.mockImplementation(async (_id, options) => ({events: options.parentEventId ? [rootEvent, reply] : [rootEvent, reply, bounds()]}));

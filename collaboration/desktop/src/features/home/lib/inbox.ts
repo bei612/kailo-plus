@@ -63,6 +63,8 @@ export type InboxReply = {
 };
 
 export type InboxContextMessage = InboxReply & {
+  kind?: number;
+  signerPubkey?: string;
   depth: number;
   isSelected: boolean;
   mentionNames: string[];

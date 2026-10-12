@@ -1,5 +1,9 @@
 import { InboxEmptyDetail, InboxDetailHeader, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
 import { useLocale, useT } from "@client-kit/platform/react/context";
+import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
+import { useMessageDeleteDialog } from "@client-kit/platform/react/messages";
+import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
+import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import {
   AlertCircle,
   LoaderCircle,
@@ -44,6 +48,10 @@ const EMPTY_REPLIES: InboxReply[] = [];
 
 type InboxDetailPaneProps = {
   canReply: boolean;
+  editScopeKey: string;
+  canManageMessages: boolean;
+  onEditSave: (message: TimelineMessage, content: string, mentions: string[], media: string[][]) => Promise<void>;
+  onDeleteMessage: (message: TimelineMessage) => Promise<void>;
   currentPubkey?: string;
   onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   disabledReplyReason?: string | null;
@@ -97,6 +105,7 @@ export function InboxDetailPane(props: InboxDetailPaneProps) {
 
 function InboxMessageDetailPane({
   canReply,
+  editScopeKey, canManageMessages, onEditSave, onDeleteMessage,
   currentPubkey,
   onToggleReaction,
   disabledReplyReason,
@@ -124,6 +133,36 @@ function InboxMessageDetailPane({
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const [replyTargetId, setReplyTargetId] = React.useState<string | null>(null);
+  const {editTarget, setEditTarget, handleCancelEdit}=useChannelMessageEdit<TimelineMessage>(editScopeKey);
+  const owner=React.useMemo(()=>({active:true}),[editScopeKey]);
+  React.useEffect(()=>{owner.active=true;return()=>{owner.active=false;};},[owner]);
+  const [editState,setEditState]=React.useState<{owner:object;pending:boolean;unknown:boolean}|null>(null);
+  const editing=editState?.owner===owner&&editState.pending;
+  const unresolved=editState?.owner===owner&&editState.unknown;
+  const canEdit=(message:TimelineMessage)=>canManageMessages&&!hasThreadContextLoadError&&!isThreadContextLoading&&message.kind===9&&!message.pending&&message.signerPubkey===currentPubkey;
+  const deleteDialog=useMessageDeleteDialog(editScopeKey,canManageMessages&&!editing&&!unresolved&&!isSendingReply,
+    async message=>{
+      if(!canEdit(message))throw new Error(t("inbox.replyUnavailable"));
+      try {await onDeleteMessage(message);} catch(error) {
+        if(classifyRelayPublishFailure(error)?.kind==="outcomeUnknown")throw new TransportError(t("platform.sendUnknown",{operation:""}));
+        throw error;
+      }
+    },message=>setEditTarget(current=>current?.id===message.id?null:current));
+  const saveEdit=async(content:string,mentions:string[],media:string[][]=[])=>{
+    if(!editTarget||!canEdit(editTarget)||editing||deleteDialog.pending||deleteDialog.unresolvedMessageId)throw new Error(t("inbox.replyUnavailable"));
+    const captured=editTarget;
+    setEditState({owner,pending:true,unknown:Boolean(unresolved)});
+    try {
+      await onEditSave(captured,content,mentions,media);
+      if(owner.active){setEditState(null);setEditTarget(current=>current?.id===captured.id?null:current);}
+    } catch(error) {
+      const outcome=classifyRelayPublishFailure(error);
+      const unknown=isOutcomeUnknown(error)||outcome?.kind==="outcomeUnknown"||(unresolved&&outcome?.kind!=="rejected");
+      if(owner.active)setEditState({owner,pending:false,unknown:Boolean(unknown)});
+      if(unknown&&!isOutcomeUnknown(error))throw new TransportError(t("platform.sendUnknown",{operation:""}));
+      throw error;
+    }
+  };
   // The stable conversation ID: does not change when the representative latest
   // event advances. All lifecycle effects (reply target reset, focus highlight,
   // scroll centering) key on this.
@@ -242,6 +281,10 @@ function InboxMessageDetailPane({
     void conversationId;
     setReplyTargetId(null);
   }, [conversationId]);
+  const editConversation=React.useRef(conversationId);
+  React.useEffect(()=>{
+    if(editConversation.current!==conversationId&&!editing&&!unresolved){editConversation.current=conversationId;handleCancelEdit();}
+  },[conversationId,editing,unresolved,handleCancelEdit]);
 
   // Capture the default composer reply parent from the selected-event anchor
   // when the conversation first opens (or when the user explicitly navigates
@@ -358,6 +401,8 @@ function InboxMessageDetailPane({
     : isDirectMessage ? t("inbox.openConversation") : t("inbox.open");
 
   const handleSelectReplyTarget = (message: InboxDisplayMessage) => {
+    if(editing||unresolved||deleteDialog.pending||deleteDialog.unresolvedMessageId)return;
+    handleCancelEdit();
     setReplyTargetId((currentReplyTargetId) =>
       currentReplyTargetId === message.id ? null : message.id,
     );
@@ -424,9 +469,13 @@ function InboxMessageDetailPane({
 
               return (
                 <InboxMessageRow
-                  canReply={canReply}
+                  canReply={canReply&&!editing&&!unresolved&&!deleteDialog.pending&&!deleteDialog.unresolvedMessageId}
                   currentPubkey={currentPubkey}
                   onToggleReaction={onToggleReaction}
+                  onEdit={canEdit(toTimelineMessage(message))&&!editing&&!unresolved&&!isSendingReply&&!deleteDialog.pending&&!deleteDialog.unresolvedMessageId?target=>{
+                    setEditTarget(current=>current?.id===target.id?null:target);setReplyTargetId(null);focusComposer();
+                  }:undefined}
+                  onDelete={canEdit(toTimelineMessage(message))&&!editing&&!unresolved&&!isSendingReply&&!deleteDialog.pending&&(!deleteDialog.unresolvedMessageId||deleteDialog.unresolvedMessageId===message.id)?deleteDialog.requestDelete:undefined}
                   channelId={item.item.channelId}
                   isContinuation={isContinuation}
                   isFirst={index === 0}
@@ -474,13 +523,20 @@ function InboxMessageDetailPane({
             }}
           />
           <div className="pointer-events-auto">
+            {editTarget&&canReply&&!hasThreadContextLoadError ? <MessageComposer key={`edit:${editTarget.id}`}
+              channelId={item.item.channelId} channelType={item.item.channelType === "dm" ? "dm" : "stream"}
+              channelName={item.channelLabel ?? t("inbox.channelFallback")} containerClassName="px-4 pb-4 sm:px-4"
+              editTarget={editTarget} profiles={profiles} disabled={!canEdit(editTarget)||deleteDialog.pending||Boolean(deleteDialog.unresolvedMessageId)}
+              isSending={Boolean(editing)} onCancelEdit={!editing&&!unresolved?handleCancelEdit:undefined}
+              onRequestEmptyEditDelete={deleteDialog.requestDelete} onSend={saveEdit} showBackgroundUploadProgress={false}/> : null}
+            <div hidden={Boolean(editTarget)}>
             <MessageComposer
               channelId={item.item.channelId}
               channelType={item.item.channelType === "stream" || item.item.channelType === "forum" || item.item.channelType === "dm" ? item.item.channelType : null}
               audienceContext={isDirectMessage ? null : {type: "thread", rootTags: messages.find(message => message.id === item.conversationId)?.tags ?? item.groupItems.find(message => message.id === item.conversationId)?.tags ?? []}}
               channelName={item.channelLabel ?? t("inbox.channelFallback")}
               containerClassName="px-4 pb-4 sm:px-4"
-              disabled={!canReply}
+              disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
               draftKey={isDirectMessage ? item.item.channelId ?? item.conversationId : `thread:${item.conversationId}`}
               isSending={isSendingReply}
               onCancelReply={
@@ -506,9 +562,11 @@ function InboxMessageDetailPane({
               }
               replyTarget={composerReplyTarget}
             />
+            </div>
           </div>
         </div>
       </div>
+      {deleteDialog.dialog}
     </section>
   );
 }

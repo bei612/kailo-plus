@@ -1375,3 +1375,65 @@ exit 0，临时容器已删除；只把 70 行新增 Dart 投回正式文件，�
 `9a67c7044797bdbebafd706982d2845b68d2fa121a2ca10d2959f5b695b320fb`。
 本批未新跑 full、未构建/部署/浏览器；现在线旧版和已构建 236b 均不含本恢复，
 不认领旧截图，不解除现有发布门禁。
+
+## Inbox 原本人消息编辑与删除消费者恢复
+
+关联 V-REQ-24、DD-39、DD-75、SS-BUZ-GOVERNANCE、SS-WEB-RELAY。
+比较基准 `c1011eb611c448648094cea8d234dc11f7fe5c64`；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/HomeView.tsx::HomeView`、
+`desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane` 与
+`desktop/src/features/home/useInboxEditMessage.ts::useInboxEditMessage`
+已有 Inbox 编辑选择、原 Composer 保存、清空正文删除确认及原消息行动作消费。
+本批恢复现有 kind 9 本人消息链，不把原论坛类型尚未进入当前 Inbox 的缺项称为恢复。
+
+四步结论：
+
+1. 原功能已有完整执行语义；当前 Inbox 两宿主缺少回调，频道已有共享菜单、Composer、
+   删除确认与受治理写消费者，因此复用它们，不创建第二表单或新后端协议。
+2. 影响范围为原 Inbox 行、详情、Native 原事件映射和两宿主。新增 signerPubkey/kind
+   来自本次已读取原事件而非展示作者；共享删除 hook 只暴露已有 UNKNOWN 对应消息 ID，
+   原 Web/Native Channel 两调用者不变，没有新增状态或执行路径。
+3. Web 沿原 BFF publishMessage/publishConversationMessage 的 editEventId 与 deleteMessage；
+   Native 沿原 tauriMessages editMessage/deleteMessage。实际宿主再验当前 scope、本人
+   signer、原 kind、目标及回执。Native 原 commands/messages.rs 的 claim_mutation
+   持久键包含 relay/signer/target，删除另含 channel；本批不新增账本或改 Rust 权威。
+4. 编辑 UNKNOWN 保留同一 target/key，不能以另一 Inbox 选择转发；删除 UNKNOWN 阻止新
+   编辑/回复，但仍允许原确认框对同一删除对账。scope/身份失效隐藏编辑与旧操作入口，
+   迟到回执不更新新宿主。确认后的读投影失败不转成再次发布。刷新后的未决恢复仍由原
+   宿主持久意图负责，本批未执行真实进程重启/Relay 对账，不能据 DOM 测试宣称其已验收。
+
+四类原版差异：原样保留原消息动作、编辑/回复互斥切换、取消与空正文删除确认，以及
+原 Composer/行样式；共享迁移复用现有 MessageActionBar、useChannelMessageEdit 的
+scope 状态、useMessageDeleteDialog 和两端原 Composer，不复制另版编辑器。
+已授权治理适配是 fresh scope/本人原 signer 门控、拒绝 pending/未知目标、现有
+UNKNOWN 所有权及晚返回隔离；不把 display author 当签名身份。缺失需恢复仍包括
+原完整论坛 Inbox 类型、needs_action 真实生产链、项目状态/分派写与审阅决定/inline、
+Git/Files/Commit 等原模块；本批不改变既有完整差异台账的这些边界。
+
+实际证据位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-message-edit.SZhWfz`。
+复用 kailo-web-thread-tooltip-sdk，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU/4 GiB，memory+swap 总限额等于内存，UID1000、network none。
+原私有输入为 `/candidate/reminder-consumers.RcN79Y`，TMPDIR/node/npm 缓存另置
+本批 Data 目录；未改 HOME、未安装依赖、未启动 builder。preflight 的 docker top
+客户端等待后仅终止该客户端；另读实际 cgroup.procs 只有原 sleep，未停止 SDK。
+
+71125 首版 8 路径实际 exit 0：Web/Native 类型各 0、Web Inbox 30/30、Native 20/20。
+补原编辑/回复切换及删除 UNKNOWN 消费后，39800 末版实际 exit 0：两端原
+`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` 各 0；Web
+`node node_modules/vitest/vitest.mjs run src/platform/ui/InboxThreadPane.test.tsx --pool=threads --maxWorkers=1`
+31/31；Native `node --import ./test-loader.mjs --test src/features/home/lib/inbox.test.mjs`
+20/20；共享同原 Vitest 入口 `test/timeline-scope.test.tsx` 11/11。
+`final.log` SHA256 `da5aba45130bdd97314ad24c5167b780332e2d66f5f26aaf382273ba4d4f0855`。
+
+74911 私有反证实际 exit 1：Web 仅撤 editEventId 后原频道编辑真实参数断言失败；
+Native 仅撤原签名作者比较后实际 HomeView mutateMessage 的拒绝断言失败，两项各 exit 1。
+apply_patch 原字节还原且全部 10 文件 cmp 0；13895 同两项各 exit 0，未重复全套。
+`mutation.log` SHA256 `1dc24cc439ed4d832c12f176a0047f8217b32a37b07b989e4c7b2d050df03534`；
+`restored.log` SHA256 `36b57dd74c77bab1324fa17557fbe1fdffcc933bd197268b45c20fd3d1f8f201`。
+定向还覆盖 DM edit 精确目标与原 40003 投影、撤权清控、空编辑取消、UNKNOWN 删除
+禁止新操作并对账原目标、错误回执与 Native 迟到刷新隔离。保留原 React act 警告。
+Web Composer/transport 为隔离宿主夹具，Native 执行实际 TS 函数配 fixture；这些不是
+原生设备、真实 Relay/BFF 写入或浏览器上线验收。未跑 full、未构建/部署、未拍新版图；
+旧在线与已构建 236b 均不能认领本批。schema/契约/生成物/词条/公共暂存均未改。

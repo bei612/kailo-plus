@@ -163,6 +163,7 @@ export function useMessageDeleteDialog(
   return {
     requestDelete,
     pending: current?.pending ?? false,
+    unresolvedMessageId: current?.problem === "unknown" ? current.message.id : null,
     dialog: (
       <DeleteMessageConfirmDialog
         open={Boolean(available && current?.open)}

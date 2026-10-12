@@ -32,6 +32,9 @@ import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContext
 import { useInboxThreadContext } from "@/features/home/useInboxThreadContext";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import type { RelayEvent } from "@/shared/api/types";
+import type { TimelineMessage } from "@/features/messages/types";
+import { editMessage, deleteMessage } from "@/shared/api/tauriMessages";
+import { TransportError } from "@client-kit/platform/transport";
 import { UserProfilePanel } from "@/features/profile/ui/UserProfilePanel";
 import {
   INBOX_SINGLE_COLUMN_BREAKPOINT_PX,
@@ -251,6 +254,9 @@ export function HomeView({
       null
     );
   }, [channels, selectedChannelIdCandidate]);
+  const mutationOwner=React.useMemo(()=>({active:true}),[nativeSession.facts.relayUrl,nativeSession.devicePubkey,selectedChannelIdCandidate]);
+  const mutationOwnerRef=React.useRef(mutationOwner);mutationOwnerRef.current=mutationOwner;
+  React.useEffect(()=>{mutationOwner.active=true;return()=>{mutationOwner.active=false;};},[mutationOwner]);
   const hasAuxiliaryPane = profilePanelPubkey !== null;
   const isSinglePanelAuxiliaryView =
     hasAuxiliaryPane &&
@@ -536,6 +542,22 @@ export function HomeView({
     new Set([...availableChannelIds].filter(id => coreReads.visibleChannels.has(id))),
     locale,
   );
+  const canManageMessages=Boolean(canReply&&!channelsQuery.isFetching&&!channelsQuery.isError&&!threadContext.hasLoadError&&!threadContext.isLoading&&
+    currentPubkey&&currentPubkey===nativeSession.devicePubkey&&
+    (selectedChannel ? selectedChannel.isMember&&selectedChannel.archivedAt===null : directChannel?.state==="ACTIVE"));
+  const mutateMessage=async(message:TimelineMessage,edit?:{content:string;mentions:string[];media:string[][]})=>{
+    const channelId=selectedItem?.item.channelId;
+    const source=threadContext.events.find(event=>event.id===message.id);
+    if(!canManageMessages||!channelId||!currentPubkey||source?.kind!==9||source.pubkey!==currentPubkey||message.pending)throw new Error(t("inbox.replyUnavailable"));
+    const receipt=await(edit ? editMessage(channelId,source.id,edit.content,edit.media.filter(tag=>tag[0]==="imeta"),edit.mentions,nativeSession.facts.relayUrl,currentPubkey)
+      : deleteMessage(channelId,source.id,nativeSession.facts.relayUrl,currentPubkey));
+    if(!receipt.id||receipt.kind!==(edit?40003:5)||receipt.pubkey!==currentPubkey||!receipt.tags.some(tag=>tag[0]==="e"&&tag[1]===source.id))throw new TransportError(t("platform.sendUnknown",{operation:""}));
+    if(!mutationOwner.active||mutationOwnerRef.current!==mutationOwner)return;
+    // The signed mutation is confirmed; a projection refresh is not a second
+    // publication and must never turn it into a fresh retry after a read error.
+    void threadContext.refreshReactions().catch(()=>{});
+    onRefresh();
+  };
   const detailMode = filter === "reminders" || selectedReminderId !== null ? "reminders" : isDrafts || selectedDraftItem ? "drafts" : "messages";
   const {
     auxiliaryPaneWidthPx,
@@ -620,6 +642,10 @@ export function HomeView({
           {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail host={projectsHost??undefined} key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined} onOpenProject={()=>{void goProject(selectedProject.project.id,projectWorkItemTarget(selectedProject));}}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
+              editScopeKey={JSON.stringify([nativeSession.facts.relayUrl,nativeSession.devicePubkey,selectedItem?.item.channelId])}
+              canManageMessages={canManageMessages}
+              onEditSave={(message,content,mentions,media)=>mutateMessage(message,{content,mentions,media})}
+              onDeleteMessage={message=>mutateMessage(message)}
               canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}
               currentPubkey={currentPubkey}
               onToggleReaction={canReply && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
