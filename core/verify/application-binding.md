@@ -1591,3 +1591,57 @@ ae44f6d91ca3a96a2ca2e9abf13d3c0827e18b82824befb5c6ad3901a94b24c7 negative.log
 `20261005015000`；原 `dispatch_requires_allowed` 约束仍在，而
 `admission.guard_native_human_read()` 尚不存在。该库未更新、未写业务数据；本批没有
 实际 SQL/行锁/完整签票事务验收，不能将两个生产谓词的锁顺序输入模拟称为并发证明。
+
+
+## 2026-10-12 原绑定准入接受已实现 native task
+
+基于 `f29fc77d4f444ba0d11600ad2cb9e56bc4e983de`。四步影响：设计 07 §5.2
+要求带原生任务的 HUMAN 动作使用原 ComponentTaskWorkflow；旧
+`application_binding::enabled_operations` 却把所选能力一律限为 SYNC。
+本批在该原判据接受 SYNC/NONE 或 TEMPORAL/ComponentTaskWorkflow，仍要求唯一
+动作和 NONE/APPROVAL 确认模式，再走原 Connector 校验；PROTOCOL_PEER 的
+TEMPORAL、PROTOCOL、未知模式、workflow 错配、缺失或重复动作继续拒绝。
+未选择的类别不影响本 binding。没有新权限、实体、schema、默认期限或迁移，
+原失败仍为 CapabilityBlocked，不改 UNKNOWN、重入或执行中撤权语义。
+
+真实后续消费者是 `application_action::facts/submit/start/advance_inner` 与
+`worker/workflows/component_action.go::componentAction`；原工具调用
+`application_tool` 也已支持 SYNC/TEMPORAL，不是只扩大目录却无执行者。
+APPROVED release、binding config schema、fresh 授权、审批、quota、唯一 EE/
+DISPATCH 与原生终态证据仍独立校验。本批不注册或激活任何 binding。
+
+字段生产方核对：共享 `ComponentReleasesPanel` 原样提交 manifestJson，
+`component_release` 校验明确的 nativeTaskExecutionTimeoutSeconds，
+`application_catalog` 将整份声明冻结到 implementation_declaration；不另加
+产品表单或 Core 产品分支。Cells admissionPollInterval 来自既有 owner-only
+native 配置目录，经原 start.sh、只读 overlay、entrypoint 的
+`config set --value-file`、原 config store 到 jobs 安装和实际 fresh 轮询。
+这是受控部署投递链，不是自动从 Catalog 导出本机 JSON 的实现，也不是静态
+目录替代运行期授权。Web/Desktop 原治理页面无需更改，Mobile 无组件宿主入口。
+
+
+实现后复用原 `kailo-cells-closure-kxbrvt`（4 CPU / 8 GiB、等额 swap），
+Data 原 Cargo registry/target、显式 Data TMPDIR，未新增镜像/数据库或下载依赖。
+输入为上述固定 HEAD 加本文件生产增量；日志目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/binding-native-task.b7iniB`。
+原命令 `cargo test --locked --offline -j16 -p platform-core --bin platform-core
+selected_category_cannot_publish_an_unimplemented_execution_mode -- --nocapture`：
+`64877` 正向 1/1 exit 0；私有删除 TEMPORAL 生产匹配分支后 `90384`
+exit 101，正确配置在原断言处返回 CapabilityBlocked；恢复正式源 cmp 0 且按
+workspace edition 2021 原 rustfmt 检查 0 后，`12476` 同命令 1/1 exit 0。
+首次私有格式化误用 edition 2024 的两处无关排版差异没有进入正式候选，最终
+恢复检查输入与正式字节一致。没有删断言或放宽 Connector。
+
+- `positive.log`：`dc0ab2cbe6b918afba1c755c2fc890186d4b033bb2ca0a75efda8c9f8264e52c`。
+- `negative.log`：`495d2e45cf5178db8c3f53ed49c5e11c68b9f980e3a84f5d393a7056551efd4f`。
+- `restored.log`：`6648748f3bf3a3d8fc6b0c124a55b82954fe393afa5178f8e6073af572ef34c9`。
+
+上述为原准入函数与 Connector 的真实源码消费者检查，不等于 release 完整
+conformance、Binding HTTP/PG/投影、浏览器操作或正式业务执行验收。
+没有部署、注册、批准或激活组件；全量门禁未重跑。
+
+原只读文档门禁 `6826` 最终 exit 0，七段全部通过；2 CPU / 2 GiB、network none、
+Data tmp/cache、无导出或下载。输入为当前实施文档与设计，两个候选文件精确只读
+覆盖，不冒充固定发布树 full。期间 markdownlint 发生 Data 读等待，未重启。
+同目录 `check-docs.log` SHA-256：
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。

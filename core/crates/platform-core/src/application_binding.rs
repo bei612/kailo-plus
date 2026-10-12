@@ -338,7 +338,13 @@ fn enabled_operations(manifest: &Value, contract: &Value) -> Result<(), Refusal>
             .filter(|action| action["actionKey"] == operation["contractKey"])
             .collect();
         if matching.len() != 1
-            || matching[0]["executionMode"] != "SYNC"
+            || !matches!(
+                (
+                    matching[0]["executionMode"].as_str(),
+                    matching[0]["workflowType"].as_str(),
+                ),
+                (Some("SYNC"), Some("NONE")) | (Some("TEMPORAL"), Some("ComponentTaskWorkflow"))
+            )
             || !matches!(
                 matching[0]["confirmationMode"].as_str(),
                 Some("NONE" | "APPROVAL")
@@ -1279,7 +1285,7 @@ mod binding_admission_tests {
     #[test]
     fn selected_category_cannot_publish_an_unimplemented_execution_mode() {
         let contract = json!({"operationContracts":[{"contractKey":"files.read@v1"}]});
-        let manifest = json!({"executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1","actionTokenAudience":"isolated-adapter"},"actionDefinitions":[{"actionKey":"files.read@v1","executionMode":"SYNC","confirmationMode":"NONE"},
+        let manifest = json!({"executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1","actionTokenAudience":"isolated-adapter"},"actionDefinitions":[{"actionKey":"files.read@v1","executionMode":"SYNC","workflowType":"NONE","confirmationMode":"NONE"},
             {"actionKey":"optional.edit@v1","executionMode":"TEMPORAL","confirmationMode":"EXPLICIT"}]});
         enabled_operations(&manifest, &contract).unwrap();
         for (field, value) in [
@@ -1296,6 +1302,32 @@ mod binding_admission_tests {
         let mut approval = manifest.clone();
         approval["actionDefinitions"][0]["confirmationMode"] = json!("APPROVAL");
         enabled_operations(&approval, &contract).unwrap();
+        for confirmation in ["NONE", "APPROVAL"] {
+            let mut native_task = manifest.clone();
+            native_task["actionDefinitions"][0]["executionMode"] = json!("TEMPORAL");
+            native_task["actionDefinitions"][0]["workflowType"] = json!("ComponentTaskWorkflow");
+            native_task["actionDefinitions"][0]["confirmationMode"] = json!(confirmation);
+            enabled_operations(&native_task, &contract).unwrap();
+            for workflow in [json!("NONE"), json!("OTHER"), Value::Null] {
+                let mut invalid = native_task.clone();
+                invalid["actionDefinitions"][0]["workflowType"] = workflow;
+                assert!(enabled_operations(&invalid, &contract).is_err());
+            }
+            native_task["executionConnector"] = json!({"mode":"PROTOCOL_PEER",
+                "adapterProtocolRange":"NONE","actionTokenAudience":"NONE"});
+            assert!(enabled_operations(&native_task, &contract).is_err());
+        }
+        for workflow in [json!("ComponentTaskWorkflow"), json!("OTHER"), Value::Null] {
+            let mut invalid = manifest.clone();
+            invalid["actionDefinitions"][0]["workflowType"] = workflow;
+            assert!(enabled_operations(&invalid, &contract).is_err());
+        }
+        let mut duplicate = manifest.clone();
+        duplicate["actionDefinitions"] = json!([
+            manifest["actionDefinitions"][0],
+            manifest["actionDefinitions"][0]
+        ]);
+        assert!(enabled_operations(&duplicate, &contract).is_err());
         let mut missing = manifest;
         missing["actionDefinitions"] = json!([]);
         assert!(enabled_operations(&missing, &contract).is_err());
