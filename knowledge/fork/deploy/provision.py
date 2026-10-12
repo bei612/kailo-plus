@@ -269,11 +269,14 @@ def model_input(env):
         or reference["audience"] != reader["audience"]
         or reader["servicePrincipalId"] != projection["gatewayPrincipalId"]
         or type(projection["generation"]) is not int or projection["generation"] < 1
-        or not re.fullmatch(r"[0-9a-f]{64}", projection["configDigest"])
-        or not re.fullmatch(r"[1-9][0-9]*", projection["nativeScopeRef"])):
+        or not re.fullmatch(r"[0-9a-f]{64}", projection["configDigest"])):
         raise ConfigurationError("model delivery: frozen service scope differs")
-    for field in ("bindingId", "gatewayPrincipalId"):
-        if str(uuid.UUID(projection[field])) != projection[field]:
+    for field in ("bindingId", "gatewayPrincipalId", "nativeScopeRef"):
+        try:
+            canonical_id = uuid.UUID(projection[field])
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ConfigurationError("model delivery: canonical identity required") from exc
+        if str(canonical_id) != projection[field] or canonical_id.int == 0:
             raise ConfigurationError("model delivery: canonical identity required")
     challenges = projection["deliveryChallenges"]
     routes = projection["routes"]
@@ -403,11 +406,28 @@ def model_delivery(env):
         challenge = next(c for c in projection["deliveryChallenges"] if c["routeResourceId"] == model["routeResourceId"])
 
         def verify_model():
+            response = api.request("GET", "/knowledge-bases/" + projection["nativeScopeRef"])
+            if response.get("success") is not True:
+                raise ConfigurationError("model delivery: native KB lookup failed")
+            kb = response["data"]
+            exact(kb, {"id": projection["nativeScopeRef"]}, "native KB")
+            tenant = kb.get("tenant_id")
+            # Same model-reference fields as the original native KB consumer.
+            selected = [kb.get("embedding_model_id"), kb.get("summary_model_id")]
+            for field, key in (("image_processing_config", "model_id"), ("vlm_config", "model_id"),
+                               ("asr_config", "model_id"), ("wiki_config", "synthesis_model_id"),
+                               ("auto_tag_config", "model_id")):
+                config = kb.get(field) or {}
+                if not isinstance(config, dict):
+                    raise ConfigurationError("model delivery: malformed native KB model references")
+                selected.append(config.get(key))
+            if type(tenant) is not int or tenant <= 0 or model["nativeModelRef"] not in selected:
+                raise ConfigurationError("model delivery: model is not associated with the frozen native KB")
             response = api.request("GET", path)
             if response.get("success") is not True:
                 raise ConfigurationError("model delivery: native model lookup failed")
             current = response["data"]
-            exact(current, {"id": model["nativeModelRef"], "tenant_id": int(projection["nativeScopeRef"]),
+            exact(current, {"id": model["nativeModelRef"], "tenant_id": tenant,
                             "name": route["nativeId"], "is_builtin": False}, "native model")
             exact(current["parameters"], {"base_url": model["baseUrl"]}, "native model endpoint")
 

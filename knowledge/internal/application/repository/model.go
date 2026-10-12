@@ -46,7 +46,7 @@ func (r *modelRepository) GetByID(ctx context.Context, tenantID uint64, id strin
 		}
 		return nil, err
 	}
-	if err := r.validateModelDelivery(&m); err != nil {
+	if err := r.validateModelDelivery(r.db.WithContext(ctx), &m); err != nil {
 		return nil, err
 	}
 	if err := r.validateKnowledgeModel(ctx, &m); err != nil {
@@ -88,7 +88,7 @@ func (r *modelRepository) Update(ctx context.Context, m *types.Model) error {
 		).Take(&current).Error; err != nil {
 			return err
 		}
-		if err := r.validateModelDelivery(&current); err != nil {
+		if err := r.validateModelDelivery(tx, &current); err != nil {
 			return err
 		}
 		// Ordinary settings never own credentials. Preserve the values read
@@ -99,7 +99,7 @@ func (r *modelRepository) Update(ctx context.Context, m *types.Model) error {
 			if m.ManagedBy != platformModelManagedBy {
 				return errPlatformModelDelivery
 			}
-			if err := r.validateModelDelivery(m); err != nil {
+			if err := r.validateModelDelivery(tx, m); err != nil {
 				return err
 			}
 			// A normal settings save may not change the delivered execution
@@ -131,7 +131,7 @@ func (r *modelRepository) UpdateCredentials(
 		}
 		// Validate the current destination before any platform key is written;
 		// independent native models remain managed by their original API.
-		if err := r.validateModelDelivery(&current); err != nil {
+		if err := r.validateModelDelivery(tx, &current); err != nil {
 			return err
 		}
 		changed := false
@@ -143,7 +143,7 @@ func (r *modelRepository) UpdateCredentials(
 			current.Parameters.AppSecret = *appSecret
 			changed = true
 		}
-		if err := r.validateModelDelivery(&current); err != nil {
+		if err := r.validateModelDelivery(tx, &current); err != nil {
 			return err
 		}
 		if !changed {

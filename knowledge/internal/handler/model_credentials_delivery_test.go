@@ -55,6 +55,7 @@ func TestModelCredentialsDeliveryUsesStoredTenantModelNonce(t *testing.T) {
 	s := &deliveryModelService{model: &types.Model{ID: "native-model", TenantID: 42}}
 	s.model.Parameters.APIKey = "isolated-fixture-value"
 	s.model.ManagedBy = "kailo-model-route"
+	s.model.PlatformScopeRef = "77777777-7777-4777-8777-777777777777"
 	c, w := credentialPut(s, `{"verification_nonce":"`+nonce+`"}`)
 	if len(c.Errors) > 0 || s.reads != 1 || s.writes != 0 {
 		t.Fatal("challenge must read once without writing", c.Errors)
@@ -79,11 +80,12 @@ func TestModelCredentialsDeliveryUsesStoredTenantModelNonce(t *testing.T) {
 		key, tenant, model, nonce string
 		valid                     bool
 	}{
-		{"isolated-fixture-value", "42", "native-model", nonce, true},
-		{"wrong-fixture-value", "42", "native-model", nonce, false},
+		{"isolated-fixture-value", s.model.PlatformScopeRef, "native-model", nonce, true},
+		{"wrong-fixture-value", s.model.PlatformScopeRef, "native-model", nonce, false},
+		{"isolated-fixture-value", "42", "native-model", nonce, false},
 		{"isolated-fixture-value", "43", "native-model", nonce, false},
-		{"isolated-fixture-value", "42", "another-model", nonce, false},
-		{"isolated-fixture-value", "42", "native-model", strings.Repeat("b2", 32), false},
+		{"isolated-fixture-value", s.model.PlatformScopeRef, "another-model", nonce, false},
+		{"isolated-fixture-value", s.model.PlatformScopeRef, "native-model", strings.Repeat("b2", 32), false},
 	} {
 		mac := hmac.New(sha256.New, []byte(scope.key))
 		_, _ = mac.Write([]byte("application-model-key:v1\x00" + scope.tenant + "\x00" + scope.model + "\x00" + scope.nonce))
@@ -107,7 +109,9 @@ func TestModelCredentialsDeliveryRejectsUnknownMixedOrForeign(t *testing.T) {
 			t.Fatal("invalid request reached native service", body)
 		}
 	}
-	for _, m := range []*types.Model{{ID: "native-model", TenantID: 43}, {ID: "other", TenantID: 42}, {ID: "native-model", TenantID: 42, IsBuiltin: true}} {
+	for _, m := range []*types.Model{{ID: "native-model", TenantID: 43}, {ID: "other", TenantID: 42}, {ID: "native-model", TenantID: 42, IsBuiltin: true},
+		{ID: "native-model", TenantID: 42, ManagedBy: "kailo-model-route"},
+		{ID: "native-model", TenantID: 42, ManagedBy: "kailo-model-route", PlatformScopeRef: "42"}} {
 		s := &deliveryModelService{model: m}
 		c, w := credentialPut(s, `{"verification_nonce":"`+strings.Repeat("aa", 32)+`"}`)
 		if len(c.Errors) == 0 || s.writes != 0 || strings.Contains(w.Body.String(), "api_key_proof") {
@@ -125,5 +129,21 @@ func TestModelCredentialsDeliveryPreservesLegacyEmptyAndWrite(t *testing.T) {
 	c, w = credentialPut(s, `{"api_key":"fixture-updated"}`)
 	if len(c.Errors) > 0 || s.writes != 1 || s.model.Parameters.APIKey != "fixture-updated" || strings.Contains(w.Body.String(), "fixture-updated") {
 		t.Fatal("legacy credential update failed or disclosed its value")
+	}
+	nonce := strings.Repeat("a1", 32)
+	c, w = credentialPut(s, `{"verification_nonce":"`+nonce+`"}`)
+	if len(c.Errors) > 0 {
+		t.Fatal(c.Errors)
+	}
+	var response struct {
+		Data modelCredentialsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, []byte("fixture-updated"))
+	_, _ = mac.Write([]byte("application-model-key:v1\x0042\x00native-model\x00" + nonce))
+	if response.Data.APIKeyProof != hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatal("independent native tenant proof changed")
 	}
 }

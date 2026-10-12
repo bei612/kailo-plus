@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // ModelCredentialsHandler handles secret credentials for models via the
@@ -59,10 +60,15 @@ func modelCredentialResponse(model *types.Model, nonce *string) modelCredentials
 	}
 	if nonce != nil && model.Parameters.APIKey != "" {
 		// A fresh challenge proves the value loaded from this native row, without
-		// returning the value or a reusable credential fingerprint. The caller
-		// must verify its own nonce and this exact tenant/model, not configured=true.
+		// returning the value or a reusable credential fingerprint.
+		// Managed models use the KB scope verified by the original repository.
+		// Independent native models keep their original tenant-scoped proof.
+		scope := strconv.FormatUint(model.TenantID, 10)
+		if model.ManagedBy == "kailo-model-route" {
+			scope = model.PlatformScopeRef
+		}
 		mac := hmac.New(sha256.New, []byte(model.Parameters.APIKey))
-		_, _ = mac.Write([]byte("application-model-key:v1\x00" + strconv.FormatUint(model.TenantID, 10) +
+		_, _ = mac.Write([]byte("application-model-key:v1\x00" + scope +
 			"\x00" + model.ID + "\x00" + *nonce))
 		response.APIKeyProof = hex.EncodeToString(mac.Sum(nil))
 	}
@@ -106,6 +112,13 @@ func (h *ModelCredentialsHandler) Put(c *gin.Context) {
 		if req.VerificationNonce != nil && (m.ID != id || m.TenantID != tenantID || m.IsBuiltin) {
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
+		}
+		if req.VerificationNonce != nil && m.ManagedBy == "kailo-model-route" {
+			scope, err := uuid.Parse(m.PlatformScopeRef)
+			if err != nil || scope == uuid.Nil || scope.String() != m.PlatformScopeRef {
+				c.Error(errors.NewNotFoundError("Model scope unavailable"))
+				return
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": modelCredentialResponse(m, req.VerificationNonce)})
 		return

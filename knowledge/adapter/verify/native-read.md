@@ -6175,3 +6175,70 @@ ComponentReleasesPanel 的三份原始 JSON 直接进入原 component_release.re
 文档或使用旧 artifact 代表本批。此修复只解除 Knowledge 自身的映射加载断点。
 未写运行库、注册/批准/激活组件、修改秘密、重启或加载镜像；full 未重跑，
 文档检查交主线集中执行。
+
+## 2026-10-12 原模型投递的 KB scope 与凭据证明纠正
+
+1. 权威与来源：DD-70/71/93、设计 07 的 binding/model-route 投递保留
+   Core 的冻结 scope 与 Gateway 的 fresh 权限/额度权威。固定 WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的原 Model、KnowledgeBase
+   和原模型构造消费者仍保留；没有第二模型注册表或新数据库权威。
+2. 真实断点：adapter `binding-validation.mjs` 已冻结 KB UUID 为
+   `nativeScopeRef`，Core `application_model_route.rs::verify_model_delivery`
+   同样以该 scope 验 HMAC；原 `model_delivery.go` 和 `provision.py`
+   却将其当数字 tenant，handler 也以 tenant 生成证明。本批沿原 KB 查询其
+   tenant 与七类模型引用，再校验同 tenant 的原模型，证明使用这个实际 KB。
+3. 实际消费者：原 `GetByID` 及锁内 Update/UpdateCredentials 共用投递校验；
+   `PlatformScopeRef` 仅是数据库查询验证后的瞬时值，不持久化、不经 JSON/YAML
+   输入。凭据 nonce 请求仍不写凭据。文档模型构造重新读取原 Knowledge，
+   受管模型必须属于该实际 KB；普通无平台 metadata 的文档也不得跨 KB 借用
+   受管凭据。独立模型/原生文档保持原行为；file_storage 缺归属仍拒绝。
+4. 副作用与兼容：配置文件缺失、KB 不存在/跨租户、未选中模型、映射被撤销、
+   旧 tenant HMAC 或未知证明均拒绝。旧数字 scope 文件不自动回填为某个 KB，
+   必须由原受控投递链以冻结的 binding/generation 和正确 KB UUID 重新投递，
+   不修改已批准参数、不自行升代。本批没有投递真实服务凭据、修改生产模型、
+   激活 binding 或部署镜像。SDK 验证不调用远端模型；先前独立的免认证
+   模型连通性/维度探测另记 native fixture 回执，不算治理链验收。
+
+验证输入基于 `a48632b6379b22aab78a60afa348523c309855ca` 加本批八路径，
+Data 证据目录 `/volumes/data/kailo/tmp/knowledge-model-kb-scope.3r3q97`。
+镜像 `sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+Go 1.26.8；实际 4 CPU/8 GiB、swap 0、UID 1000、只读 root、network none；
+源码、GOCACHE/GOMODCACHE/GOTMPDIR/TMPDIR 全在 Data。没有下载或新镜像。
+实际原命令（SDK 工作目录 `/evidence/knowledge`）：
+
+```sh
+go test ./internal/application/repository ./internal/handler -run '^(TestPlatformModelDelivery|TestKnowledgeModelConstructionConsumesPersistedBinding|TestModelCredentialsDelivery)' -count=1 -timeout=10m -v
+python3 -B -m unittest discover -s fork/deploy -p test_native_entrypoint.py
+go test ./internal/application/repository -run '^(TestPlatformModelDelivery|TestKnowledgeModelConstructionConsumesPersistedBinding)' -count=1 -timeout=10m -v
+go test ./internal/application/repository -run '^TestKnowledgeModelConstructionConsumesPersistedBinding$' -count=1 -timeout=10m -v
+```
+
+- 原首轮 session `59077` exit 0：repository 六项顶层检查通过
+  （26.177s），handler 三项通过（0.463s），部署 unittest 33 项通过
+  （5.323s）。此前长等待在原 Go 读取/链接阶段，没有重启检查。
+- 首轮仍是交叉复核发现普通文档早退缺口之前的快照，不把它说成末版。
+  仅将两个 repository 文件投递并格式化后，session `53624` 沿第三条
+  命令通过六项顶层检查（1.920s），exit 0；包含普通文档同 KB 允许、
+  同 tenant 跨 KB 拒绝、独立 provider 保留，以及绑定文档原冻结代次检查。
+- 仅在私有副本删掉 metadata 分流前的 managed KB 判断，session `24511`
+  沿第四条命令 exit 1；`other-kb-cannot-borrow-same-tenant-model` 明确捕获
+  普通文档返回 nil error，未删断言。正式源码未被破坏。
+- 原字节还原且 `cmp` 为 0 后，session `32301` 沿第三条命令 exit 0，
+  六项顶层检查通过（0.490s）。没有重复已过的 handler/Python。
+  本批八路径 `git diff --check` exit 0；未跑 full、PG 或新镜像。
+
+日志 SHA-256（上述 Data 证据目录）：
+
+| 文件 | SHA-256 |
+|---|---|
+| positive.log | `2ce2a5a58f193413d0f1062296e6c46c2c66a9e341d7e6e7c6282fcad5f4a4dc` |
+| final-positive.log | `5f0e3096a70e1e68b912f611a78480ca23b6e3e2df3a3898601010e8afb6d350` |
+| negative.log | `86ed1e20a925751249245bd18c21b2738b4aaca792d9b95261af7ed005d441d0` |
+| restored.log | `5e5a4338ff25ef7d45c5cc746007848aeedf02ec0ca062961c14c7c6b272856f` |
+
+范围限制：SQLite 原 repository 检查不证明 PostgreSQL 行锁并发；handler
+和 Python 本地 HTTP 服务夹具不等于真实 Core/Gateway 跨服务验收。
+原 `knowledgebase_search.go::GetQueryEmbedding` 仍未向模型构造传递 KB owner，
+`ResolveEmbeddingModelKeys` 的跨 KB 分组/缓存也仍待同链闭合。本批只关闭
+投递/HMAC 与已有文档 owner 消费者，不能据此声称所有 KB query/chat 模型
+请求已隔离，受管 binding 的完整生产激活继续阻断。隔离 bootstrap 源码不在本批。

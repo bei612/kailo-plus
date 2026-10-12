@@ -24,15 +24,17 @@ func modelDeliveryFixture(t *testing.T) (*gorm.DB, *config.Config, *types.Model,
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	require.NoError(t, db.AutoMigrate(&types.Model{}))
+	require.NoError(t, db.AutoMigrate(&types.Model{}, &types.KnowledgeBase{}))
 	model := &types.Model{ID: uuid.NewString(), TenantID: 42, Name: "fixture-route", Source: types.ModelSourceRemote,
 		Type: types.ModelTypeEmbedding, Status: types.ModelStatusActive,
 		Parameters: types.ModelParameters{BaseURL: "https://gateway.example.test/v1", Provider: "generic", APIKey: "synthetic-key"}}
 	require.NoError(t, db.Create(model).Error)
+	kb := &types.KnowledgeBase{ID: uuid.NewString(), TenantID: model.TenantID, Name: "receiver fixture", EmbeddingModelID: model.ID}
+	require.NoError(t, db.Create(kb).Error)
 	route := uuid.NewString()
 	input := map[string]any{
 		"projection": map[string]any{"bindingId": uuid.NewString(), "gatewayPrincipalId": uuid.NewString(),
-			"generation": 1, "configDigest": strings.Repeat("ab", 32), "nativeScopeRef": "42",
+			"generation": 1, "configDigest": strings.Repeat("ab", 32), "nativeScopeRef": kb.ID,
 			"routeResourceIds": []string{route}, "routes": []map[string]any{{"resourceId": route, "nativeId": model.Name}}},
 		"models": []map[string]any{{"routeResourceId": route, "nativeModelRef": model.ID, "baseUrl": model.Parameters.BaseURL}},
 	}
@@ -61,7 +63,7 @@ func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {
 		Source: types.ModelSourceRemote, Type: types.ModelTypeEmbedding, Status: types.ModelStatusActive,
 		Parameters: types.ModelParameters{BaseURL: "https://independent.example.test/v1", Provider: "openai"}}
 	require.NoError(t, db.Create(independent).Error)
-	owner := &types.Knowledge{ID: uuid.NewString(), TenantID: model.TenantID, KnowledgeBaseID: uuid.NewString(), Type: "file"}
+	owner := &types.Knowledge{ID: uuid.NewString(), TenantID: model.TenantID, KnowledgeBaseID: projection["nativeScopeRef"].(string), Type: "file"}
 	require.NoError(t, db.Create(owner).Error)
 	metadata := func(binding any, generation any) types.JSON {
 		value, err := json.Marshal(map[string]any{"platform_receiver_binding_id": binding, "platform_receiver_generation": generation})
@@ -85,6 +87,7 @@ func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {
 		{"removed-ownership", nil, metadata(binding, "1"), model.ID, false},
 		{"late-ownership", metadata(binding, "1"), nil, model.ID, false},
 		{"independent-native", nil, nil, independent.ID, true},
+		{"native-document-own-kb-managed-model", nil, nil, model.ID, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NoError(t, db.Model(owner).UpdateColumn("metadata", tc.stored).Error)
@@ -101,6 +104,23 @@ func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {
 			}
 		})
 	}
+	t.Run("other-kb-cannot-borrow-same-tenant-model", func(t *testing.T) {
+		other := &types.KnowledgeBase{ID: uuid.NewString(), TenantID: model.TenantID, Name: "other", EmbeddingModelID: model.ID}
+		require.NoError(t, db.Create(other).Error)
+		owner.Metadata = metadata(binding, "1")
+		require.NoError(t, db.Model(owner).Updates(map[string]any{"knowledge_base_id": other.ID, "metadata": owner.Metadata}).Error)
+		snapshot := *owner
+		snapshot.KnowledgeBaseID = other.ID
+		_, err := repo.GetByID(context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, &snapshot), owner.TenantID, model.ID)
+		require.ErrorIs(t, err, errPlatformModelDelivery)
+		require.NoError(t, db.Model(owner).UpdateColumn("metadata", nil).Error)
+		snapshot.Metadata = nil
+		_, err = repo.GetByID(context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, &snapshot), owner.TenantID, model.ID)
+		require.ErrorIs(t, err, errPlatformModelDelivery, "ordinary documents cannot borrow another KB's managed credentials")
+		_, err = repo.GetByID(context.WithValue(context.Background(), types.KnowledgeModelOwnerContextKey, &snapshot), owner.TenantID, independent.ID)
+		require.NoError(t, err, "the independent model remains an ordinary native provider")
+		require.NoError(t, db.Model(owner).UpdateColumn("knowledge_base_id", projection["nativeScopeRef"]).Error)
+	})
 	owner.Metadata = metadata(binding, "1")
 	owner.Channel = "file_storage"
 	require.NoError(t, db.Model(owner).Updates(map[string]any{"channel": owner.Channel, "metadata": nil}).Error)
@@ -119,13 +139,17 @@ func TestKnowledgeModelConstructionConsumesPersistedBinding(t *testing.T) {
 }
 
 func TestPlatformModelDeliveryProtectsOriginalRowAndCredentials(t *testing.T) {
-	db, cfg, original, _ := modelDeliveryFixture(t)
+	db, cfg, original, input := modelDeliveryFixture(t)
 	repo, err := NewModelRepository(db, cfg)
 	require.NoError(t, err)
 	ctx := context.Background()
 	current, err := repo.GetByID(ctx, original.TenantID, original.ID)
 	require.NoError(t, err)
 	require.Equal(t, platformModelManagedBy, current.ManagedBy)
+	require.Equal(t, input["projection"].(map[string]any)["nativeScopeRef"], current.PlatformScopeRef)
+	encoded, err := json.Marshal(current)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), current.PlatformScopeRef, "verified proof scope is not a client-writable model property")
 	for name, change := range map[string]func(*types.Model){
 		"endpoint":       func(m *types.Model) { m.Parameters.BaseURL = "https://other.example.test/v1" },
 		"source":         func(m *types.Model) { m.Source = types.ModelSourceLocal },
@@ -163,7 +187,7 @@ func TestPlatformModelDeliveryProtectsOriginalRowAndCredentials(t *testing.T) {
 }
 
 func TestPlatformModelDeliveryMissingMappingDoesNotDowngrade(t *testing.T) {
-	for _, failure := range []string{"removed-file", "missing-path", "removed-model", "different-scope", "changed-route", "changed-endpoint"} {
+	for _, failure := range []string{"removed-file", "missing-path", "removed-model", "different-scope", "changed-route", "changed-endpoint", "missing-kb", "foreign-kb-tenant", "unselected-model"} {
 		t.Run(failure, func(t *testing.T) {
 			db, cfg, model, input := modelDeliveryFixture(t)
 			repo, err := NewModelRepository(db, cfg)
@@ -182,6 +206,12 @@ func TestPlatformModelDeliveryMissingMappingDoesNotDowngrade(t *testing.T) {
 			case "different-scope":
 				input["projection"].(map[string]any)["nativeScopeRef"] = "43"
 				writeModelDelivery(t, cfg.ModelDeliveryInputFile, input)
+			case "missing-kb":
+				require.NoError(t, db.Where("id = ?", input["projection"].(map[string]any)["nativeScopeRef"]).Delete(&types.KnowledgeBase{}).Error)
+			case "foreign-kb-tenant":
+				require.NoError(t, db.Model(&types.KnowledgeBase{}).Where("id = ?", input["projection"].(map[string]any)["nativeScopeRef"]).UpdateColumn("tenant_id", 43).Error)
+			case "unselected-model":
+				require.NoError(t, db.Model(&types.KnowledgeBase{}).Where("id = ?", input["projection"].(map[string]any)["nativeScopeRef"]).UpdateColumn("embedding_model_id", "").Error)
 			case "changed-route":
 				input["projection"].(map[string]any)["routes"].([]map[string]any)[0]["nativeId"] = "other"
 				writeModelDelivery(t, cfg.ModelDeliveryInputFile, input)

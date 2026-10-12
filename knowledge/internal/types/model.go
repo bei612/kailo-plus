@@ -209,6 +209,9 @@ type Model struct {
 	// id is no longer present in the file. Future origins (e.g. "helm",
 	// "operator") can claim their own slice without interfering.
 	ManagedBy string `yaml:"managed_by"  json:"managed_by,omitempty"  gorm:"type:varchar(32);default:''"`
+	// Set only by the repository after checking the delivered KB and its model
+	// references. Not a request field, persisted mapping or second authority.
+	PlatformScopeRef string `yaml:"-" json:"-" gorm:"-"`
 	// Model status, default: active, possible: downloading, download_failed
 	Status ModelStatus `yaml:"status"      json:"status"`
 	// Creation time of the model

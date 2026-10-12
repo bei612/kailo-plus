@@ -25,14 +25,15 @@ var errPlatformModelDelivery = errors.New("platform model mapping is unavailable
 // registry or an authorization decision. Gateway remains the fresh binding,
 // generation, route, permission and quota authority for every model request.
 type deliveredNativeModel struct {
-	tenantID   uint64
-	name       string
-	baseURL    string
-	bindingID  string
-	generation int64
+	tenantID        uint64
+	knowledgeBaseID string
+	name            string
+	baseURL         string
+	bindingID       string
+	generation      int64
 }
 
-func (r *modelRepository) modelDelivery() (map[string]deliveredNativeModel, error) {
+func (r *modelRepository) modelDelivery(db *gorm.DB) (map[string]deliveredNativeModel, error) {
 	if r.modelDeliveryInputFile == "" {
 		return nil, nil
 	}
@@ -68,16 +69,22 @@ func (r *modelRepository) modelDelivery() (map[string]deliveredNativeModel, erro
 		return nil, errPlatformModelDelivery
 	}
 	p := input.Projection
-	tenantID, err := strconv.ParseUint(p.NativeScopeRef, 10, 64)
 	digest, digestErr := hex.DecodeString(p.ConfigDigest)
 	validID := func(value string) bool {
 		id, err := uuid.Parse(value)
 		return err == nil && id != uuid.Nil && id.String() == value
 	}
-	if err != nil || tenantID == 0 || strconv.FormatUint(tenantID, 10) != p.NativeScopeRef ||
+	if !validID(p.NativeScopeRef) ||
 		!validID(p.BindingID) || !validID(p.GatewayPrincipalID) || p.Generation < 1 ||
 		digestErr != nil || len(digest) != 32 || hex.EncodeToString(digest) != p.ConfigDigest ||
 		len(input.Models) == 0 || len(input.Models) != len(p.Routes) || len(p.Routes) != len(p.RouteResourceIDs) {
+		return nil, errPlatformModelDelivery
+	}
+	// Binding scope is the native KB UUID, not its numeric tenant. Resolve the
+	// current original row and references; old numeric deliveries fail closed.
+	var kb types.KnowledgeBase
+	if err := db.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ?", p.NativeScopeRef).
+		Take(&kb).Error; err != nil || kb.TenantID == 0 {
 		return nil, errPlatformModelDelivery
 	}
 	routes := make(map[string]string, len(p.Routes))
@@ -102,8 +109,11 @@ func (r *modelRepository) modelDelivery() (map[string]deliveredNativeModel, erro
 			!validID(model.NativeModelRef) || models[model.NativeModelRef].tenantID != 0 || !seenRoutes[model.RouteResourceID] {
 			return nil, errPlatformModelDelivery
 		}
+		if len(knowledgeBaseModelUsageBindings(&kb, model.NativeModelRef)) == 0 {
+			return nil, errPlatformModelDelivery
+		}
 		delete(seenRoutes, model.RouteResourceID)
-		models[model.NativeModelRef] = deliveredNativeModel{tenantID: tenantID, name: routes[model.RouteResourceID], baseURL: model.BaseURL,
+		models[model.NativeModelRef] = deliveredNativeModel{tenantID: kb.TenantID, knowledgeBaseID: kb.ID, name: routes[model.RouteResourceID], baseURL: model.BaseURL,
 			bindingID: p.BindingID, generation: p.Generation}
 	}
 	return models, nil
@@ -122,11 +132,14 @@ func (mapping deliveredNativeModel) matches(m *types.Model) bool {
 }
 
 func (r *modelRepository) initializeModelDelivery(ctx context.Context) error {
-	models, err := r.modelDelivery()
-	if err != nil || len(models) == 0 {
-		return err
+	if r.modelDeliveryInputFile == "" {
+		return nil
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		models, err := r.modelDelivery(tx)
+		if err != nil {
+			return err
+		}
 		for id, mapping := range models {
 			var current types.Model
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, mapping.tenantID).
@@ -146,14 +159,16 @@ func (r *modelRepository) initializeModelDelivery(ctx context.Context) error {
 
 // All service Get*Model methods resolve through GetByID before constructing
 // their real client, including explicit-tenant background embedding/chat.
-func (r *modelRepository) validateModelDelivery(m *types.Model) error {
+func (r *modelRepository) validateModelDelivery(db *gorm.DB, m *types.Model) error {
+	m.PlatformScopeRef = ""
 	if m.ManagedBy != platformModelManagedBy {
 		return nil
 	}
-	models, err := r.modelDelivery()
+	models, err := r.modelDelivery(db)
 	if err != nil || !models[m.ID].matches(m) {
 		return errPlatformModelDelivery
 	}
+	m.PlatformScopeRef = models[m.ID].knowledgeBaseID
 	return nil
 }
 
@@ -177,6 +192,9 @@ func (r *modelRepository) validateKnowledgeModel(ctx context.Context, m *types.M
 		Take(&current).Error; err != nil {
 		return errPlatformModelDelivery
 	}
+	if m.ManagedBy == platformModelManagedBy && (m.PlatformScopeRef != current.KnowledgeBaseID || m.TenantID != current.TenantID) {
+		return errPlatformModelDelivery
+	}
 	original, originalErr := owner.Metadata.Map()
 	fields, fieldsErr := current.Metadata.Map()
 	if originalErr != nil || fieldsErr != nil {
@@ -198,12 +216,13 @@ func (r *modelRepository) validateKnowledgeModel(ctx context.Context, m *types.M
 	originalBinding, originalBindingOK := original[bindingKey].(string)
 	originalGeneration, originalGenerationOK := original[generationKey].(string)
 	generation, err := strconv.ParseInt(generationText, 10, 64)
-	models, deliveryErr := r.modelDelivery()
+	models, deliveryErr := r.modelDelivery(r.db.WithContext(ctx))
 	mapping := models[m.ID]
 	if !bindingOK || !generationOK || !originalBindingOK || !originalGenerationOK || binding != originalBinding || generationText != originalGeneration ||
 		err != nil || generation <= 0 || strconv.FormatInt(generation, 10) != generationText ||
 		deliveryErr != nil || m.ManagedBy != platformModelManagedBy || !mapping.matches(m) ||
-		mapping.bindingID != binding || generation > mapping.generation || current.TenantID != m.TenantID {
+		mapping.bindingID != binding || generation > mapping.generation || current.TenantID != m.TenantID ||
+		mapping.knowledgeBaseID != current.KnowledgeBaseID {
 		return errPlatformModelDelivery
 	}
 	return nil

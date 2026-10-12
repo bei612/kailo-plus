@@ -437,7 +437,7 @@ class NativeProvisioningTests(unittest.TestCase):
             model = "55555555-5555-4555-8555-555555555555"
             reference = {"locator": f"tenants/{tenant}/kv/application-model/{binding}/1", "version": 1, "audience": "native-fixture"}
             projection = {"bindingId": binding, "tenantId": tenant, "generation": 1, "configDigest": "ab"*32,
-                "gatewayPrincipalId": service, "nativeScopeRef": "42", "serviceSecretRef": reference,
+                "gatewayPrincipalId": service, "nativeScopeRef": "77777777-7777-4777-8777-777777777777", "serviceSecretRef": reference,
                 "secretRef": {**reference, "audience": "core-fixture"},
                 "secretReader": {"servicePrincipalId": service, "audience": "native-fixture", "roleName": "native-reader"},
                 "routeResourceIds": [route], "routes": [{"resourceId": route, "nativeId": "fixture-route"}],
@@ -462,7 +462,9 @@ class NativeProvisioningTests(unittest.TestCase):
             def response(path):
                 method, _, headers, raw = received[-1]
                 self.assertEqual(headers["Authorization"], "Bearer synthetic-native-session")
-                if method == "GET":
+                if method == "GET" and path == "/api/v1/knowledge-bases/" + projection["nativeScopeRef"]:
+                    payload = {"id": projection["nativeScopeRef"], "tenant_id": 42, "embedding_model_id": model["nativeModelRef"]}
+                elif method == "GET":
                     payload = {"id": model["nativeModelRef"], "tenant_id": 42, "name": "fixture-route",
                                "is_builtin": False, "parameters": {"base_url": model["baseUrl"]}}
                 else:
@@ -488,7 +490,7 @@ class NativeProvisioningTests(unittest.TestCase):
                 self.assertNotIn(material["value"], (root / "model-delivery-receipt.json").read_text())
 
     def test_model_delivery_rejects_configured_only_stale_nonce_and_wrong_native_scope(self):
-        for failure in ("configured", "stale", "wrong-key", "foreign-tenant", "foreign-model", "wrong-endpoint", "unmanaged"):
+        for failure in ("configured", "stale", "wrong-key", "foreign-tenant", "foreign-model", "wrong-endpoint", "unmanaged", "wrong-kb", "unselected-model", "missing-kb", "old-tenant-proof"):
             with self.subTest(failure=failure), self.model_delivery_fixture() as (env, value, material, root):
                 model = value["models"][0]
                 nonce = value["projection"]["deliveryChallenges"][0]["verificationNonce"]
@@ -496,7 +498,12 @@ class NativeProvisioningTests(unittest.TestCase):
 
                 def response(path):
                     method, _, _, raw = received[-1]
-                    if method == "GET":
+                    if method == "GET" and path == "/api/v1/knowledge-bases/" + value["projection"]["nativeScopeRef"]:
+                        if failure == "missing-kb": return 404, {}, b'{}'
+                        data = {"id": value["projection"]["nativeScopeRef"], "tenant_id": 42, "embedding_model_id": model["nativeModelRef"]}
+                        if failure == "wrong-kb": data["id"] = "other"
+                        if failure == "unselected-model": data["embedding_model_id"] = ""
+                    elif method == "GET":
                         data = {"id": model["nativeModelRef"], "tenant_id": 42, "name": "fixture-route",
                                 "is_builtin": False, "parameters": {"base_url": model["baseUrl"]}}
                         if failure == "foreign-tenant": data["tenant_id"] = 43
@@ -508,7 +515,8 @@ class NativeProvisioningTests(unittest.TestCase):
                             writes.append(body)
                         chosen = "ef"*32 if failure == "stale" else nonce
                         key = "wrong-fixture" if failure == "wrong-key" else material["value"]
-                        message = "application-model-key:v1\0" + "42\0" + model["nativeModelRef"] + "\0" + chosen
+                        scope = "42" if failure == "old-tenant-proof" else value["projection"]["nativeScopeRef"]
+                        message = "application-model-key:v1\0" + scope + "\0" + model["nativeModelRef"] + "\0" + chosen
                         data = {"managed_by": "kailo-model-route", "verification_nonce": chosen, "api_key_proof": hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()}
                         if failure == "unmanaged": data.pop("managed_by")
                         if failure == "configured": data = {"fields": {"api_key": {"configured": True}}}
@@ -518,7 +526,7 @@ class NativeProvisioningTests(unittest.TestCase):
                     env["KNOWLEDGE_NATIVE_ORIGIN"] = origin
                     provision.model_delivery(env)
                 self.assertLessEqual(len(writes), 1)
-                if failure == "unmanaged": self.assertEqual(len(writes), 0)
+                if failure in ("unmanaged", "wrong-kb", "unselected-model", "missing-kb", "foreign-tenant"): self.assertEqual(len(writes), 0)
                 self.assertFalse((root / "model-delivery-receipt.json").exists())
 
     def test_model_delivery_rejects_mismatched_agent_version_and_duplicate_route(self):
