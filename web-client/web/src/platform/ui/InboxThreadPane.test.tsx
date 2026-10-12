@@ -21,7 +21,10 @@ vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
   InboxDetailHeader: ({ title,openLabel }: {title: string;openLabel:string}) => <header title={openLabel}>{title}</header>,
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
-vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
+vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}}),
+  messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.authorProfile(scope,id)])))}),
+  conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.dmAuthorProfile(scope,id)])))}),
+},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
 vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople,placeholder }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string;author:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[];placeholder?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)} data-placeholder={placeholder}>
   <ComposerReplyBanner replyTarget={replyTarget}/>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
@@ -402,7 +405,7 @@ it("restores the original Inbox detail author avatar through each admitted messa
   expect(host.querySelector("img")).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
 });
 
-it("reads Inbox DM avatars only through the admitted conversation and keeps a rejected identity as the original fallback",async()=>{
+it("reads Inbox DM avatars only through the admitted conversation and rejects the entire batch on a mismatched identity",async()=>{
   const avatarUrl="https://community.example/media/dm-author.png",mediaPath="/api/v1/conversations/private-binding/media/author";
   state.dmQuery.mockImplementation(async(_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
   state.dmAuthorProfile.mockImplementation(async(_id,eventId)=>({pubkey:eventId===replyId?"f".repeat(64):pubkey,eventId:"profile",displayName:"Peer",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}}));
@@ -411,7 +414,7 @@ it("reads Inbox DM avatars only through the admitted conversation and keeps a re
   expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding",replyId);
   expect(state.authorProfile).not.toHaveBeenCalled();
   const row=(id:string)=>host.querySelector(`[data-message-id="${id}"]`)!;
-  expect(row(rootId).querySelector("img")?.getAttribute("src")).toBe(mediaPath);
+  expect(row(rootId).querySelector("img")).toBeNull();
   expect(row(replyId).querySelector("img")).toBeNull();
   expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
   expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();

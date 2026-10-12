@@ -163,7 +163,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
       const target = {principalId:myPrincipalId,workspaceId,eventId:message.eventId,pubkey:message.pubkey};
       return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>
         <ForumAuthorButton displayName={name}
-          large={large} preview={preview} avatar={<MessageAuthorAvatar target={target} displayName={name} size={large ? "md" : "sm"} />} />
+          large={large} preview={preview} avatar={<MessageAuthorAvatar target={target} profile={{value:authorLabel.profile(message.eventId)}} displayName={name} size={large ? "md" : "sm"} />} />
       </MessageAuthorIdentity> : <ForumAuthorButton displayName={name} large={large} preview={preview} disabled
         avatar={<UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} />} />; }}
     renderContent={(message, preview) => <MessageContent messageId={message.eventId} workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}

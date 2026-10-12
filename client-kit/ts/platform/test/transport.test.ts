@@ -22,6 +22,23 @@ function json(status: number, body: unknown): Response {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("message authors use the typed batch transport for workspace, DM and a singleton caller", async () => {
+  const eventId="a".repeat(64), secondId="c".repeat(64);
+  const profile={pubkey:"b".repeat(64),avatarMediaPaths:{}};
+  const send=vi.fn(async(request:{body?:unknown})=>({status:200,body:{profiles:Object.fromEntries((request.body as {eventIds:string[]}).eventIds.map(id=>[id,profile]))}}));
+  const client=createBffClient({send});
+  await client.messageAuthorProfiles("workspace",{eventIds:[eventId,secondId]});
+  await client.conversationMessageAuthorProfiles("private",{eventIds:[eventId]});
+  expect(await client.messageAuthorProfile("workspace",eventId)).toEqual(profile);
+  expect(send.mock.calls.map(([request])=>request)).toEqual([
+    {method:"POST",path:"/api/v1/workspaces/workspace/messages/author-profiles",body:{eventIds:[eventId,secondId]}},
+    {method:"POST",path:"/api/v1/conversations/private/messages/author-profiles",body:{eventIds:[eventId]}},
+    {method:"POST",path:"/api/v1/workspaces/workspace/messages/author-profiles",body:{eventIds:[eventId]}},
+  ]);
+  send.mockResolvedValue({status:200,body:{profiles:{}}});
+  await expect(client.messageAuthorProfile("workspace",eventId)).rejects.toThrow();
+});
+
 describe("web-fetch", () => {
   it("同源、带 cookie、不跟随重定向；有正文才带 JSON 头", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { revoked: true }));

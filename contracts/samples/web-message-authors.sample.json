@@ -1,0 +1,23 @@
+{
+  "request": {"eventIds": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
+  "view": {"profiles": {
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "pubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "avatarMediaPaths": {},
+      "displayName": "Original author",
+      "eventId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "about": "Author supplied profile"
+    },
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "pubkey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "avatarMediaPaths": {}
+    }
+  }},
+  "legacyView": {"profiles": {
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "pubkey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "avatarMediaPaths": {},
+      "eventId": null, "displayName": null, "avatarUrl": null, "about": null, "nip05Handle": null
+    }
+  }}
+}

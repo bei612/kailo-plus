@@ -4,7 +4,7 @@ import { useUserProfileQuery } from "./host";
 import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "../profile/avatar-host";
 import { useUiLocale } from "../context";
-import type { UserProfileSummary } from "./host";
+import type { WebProfileView } from "@client-kit/contracts";
 import { usePulseHost } from "./host";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { truncateNpub } from "./host";
@@ -217,7 +217,7 @@ export function UserProfilePopoverBody({
   mediaUrl,
   status,
 }: ProfilePopoverBodyProps & {
-  profile: Pick<UserProfileSummary, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
+  profile: Pick<WebProfileView, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
   mediaUrl: (url: string) => string;
   status?: React.ReactNode;
 }) {

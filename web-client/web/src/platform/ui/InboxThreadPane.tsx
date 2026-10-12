@@ -117,7 +117,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
             renderIdentity={!interrupted ? (node,kind) => {
               const target={principalId,workspaceId,...(conversation ? {conversationId:conversation.id} : {}),eventId:event.id,pubkey:event.pubkey};
               const identity=kind === "avatar" ? <span className="inline-flex shrink-0"><MessageAuthorAvatar
-                target={target} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></span>
+                target={target} profile={{value:authorLabel.profile(event.id)}} className="h-9 w-9 shrink-0" displayName={author} size="md" testId="message-avatar" /></span>
                 : node;
               return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(target)}>{identity}</MessageAuthorIdentity> : identity;
             } : undefined}

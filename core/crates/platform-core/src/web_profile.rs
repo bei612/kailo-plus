@@ -109,6 +109,49 @@ pub(crate) async fn read_author(
     profile_event(value, author).map_err(|_| unavailable())
 }
 
+/// One Relay query for the distinct authors already proven by message evidence.
+pub(crate) async fn read_authors(
+    state: &BffState,
+    client: &IdentityClient,
+    authors: &[String],
+) -> Result<std::collections::HashMap<String, nostr::Event>, Response> {
+    if authors.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    // A per-author limit selects each latest kind:0 independently. A global
+    // limit must not let one author's history crowd another out of the result.
+    let filters: Vec<_> = authors
+        .iter()
+        .map(|author| json!({"kinds":[0], "authors":[author], "limit":1}))
+        .collect();
+    let value = client
+        .query(&state.http, &filters)
+        .await
+        .map_err(|error| relay_error_response(&error, None))?;
+    author_events(value, authors).map_err(|_| unavailable())
+}
+
+fn author_events(
+    value: Value,
+    authors: &[String],
+) -> Result<std::collections::HashMap<String, nostr::Event>, ()> {
+    let rows = value.as_array().ok_or(())?;
+    if rows.len() > authors.len() {
+        return Err(());
+    }
+    let mut profiles = std::collections::HashMap::new();
+    for row in rows {
+        let event: nostr::Event = serde_json::from_value(row.clone()).map_err(|_| ())?;
+        let author = event.pubkey.to_hex();
+        if !authors.contains(&author) || profiles.contains_key(&author) {
+            return Err(());
+        }
+        let verified = profile_event(json!([row]), &author)?.ok_or(())?;
+        profiles.insert(author, verified);
+    }
+    Ok(profiles)
+}
+
 pub(crate) fn avatar_media_paths(
     picture: Option<&str>,
     host: &str,

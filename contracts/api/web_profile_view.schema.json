@@ -5,7 +5,7 @@
   "description": "Profile read from Buzz for the current identity or an author proven by a currently admitted channel/private-conversation message, never a Core profile copy. An absent kind:0 is an empty profile, not a fabricated event.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["pubkey", "eventId", "displayName", "avatarUrl", "about", "nip05Handle", "avatarMediaPaths"],
+  "required": ["pubkey", "avatarMediaPaths"],
   "properties": {
     "avatarMediaPaths": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Same-origin BFF paths for exact media URLs on the current community. A read projection, never an upload or remote proxy authority." },
     "pubkey": { "type": "string" },

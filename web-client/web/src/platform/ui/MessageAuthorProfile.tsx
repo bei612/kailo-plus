@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
+import type { WebProfileView } from "@client-kit/contracts";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePanelFrame, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
 import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useIsThreadPanelOverlay, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
@@ -24,15 +25,20 @@ export type MessageAuthor = {
 
 // The original avatars and open/hover surfaces share this admitted-event read.
 // No Community directory lookup: the current message is the authorization proof.
-function messageAuthorQuery(target: MessageAuthor) {
+function messageAuthorsQuery(scope: Omit<MessageAuthor, "eventId" | "pubkey">, targets: readonly {eventId:string;pubkey:string}[]) {
+  const ordered = [...targets].sort((a,b)=>a.eventId.localeCompare(b.eventId));
   return {
-    queryKey: ["platform", "message-author", target.principalId, target.conversationId ? "conversation" : "workspace", target.conversationId ?? target.workspaceId, target.pubkey, target.eventId],
+    queryKey: ["platform", "message-author", scope.principalId, scope.conversationId ? "conversation" : "workspace", scope.conversationId ?? scope.workspaceId, ordered],
     queryFn: async () => {
-      const profile = await (target.conversationId
-        ? bff.conversationMessageAuthorProfile(target.conversationId, target.eventId)
-        : bff.messageAuthorProfile(target.workspaceId, target.eventId));
-      if (profile.pubkey !== target.pubkey) throw new TransportError("Message author did not match the admitted event.");
-      return profile;
+      const request={eventIds:ordered.map(target=>target.eventId)};
+      const view = await (scope.conversationId
+        ? bff.conversationMessageAuthorProfiles(scope.conversationId, request)
+        : bff.messageAuthorProfiles(scope.workspaceId, request));
+      if (!view?.profiles || Object.keys(view.profiles).length !== ordered.length
+        || ordered.some(target=>view.profiles[target.eventId]?.pubkey !== target.pubkey)) {
+        throw new TransportError("Message authors did not match the admitted events.");
+      }
+      return view.profiles;
     },
     retry: false as const,
     staleTime: 0,
@@ -40,13 +46,36 @@ function messageAuthorQuery(target: MessageAuthor) {
 }
 
 function useMessageAuthor(target: MessageAuthor) {
-  return useQuery(messageAuthorQuery(target));
+  return useQuery({...messageAuthorsQuery(target,[target]),select:profiles=>profiles[target.eventId]});
+}
+
+function authorScopeKey(scope: Omit<MessageAuthor,"eventId"|"pubkey">) {
+  return JSON.stringify([scope.principalId,scope.conversationId?"conversation":"workspace",scope.conversationId??scope.workspaceId]);
+}
+
+// Inbox spans scopes. Each batch keeps its own fresh admission and cannot lend
+// another workspace/conversation's successful profile to an unavailable group.
+export function useMessageAuthorProfiles(targets:readonly MessageAuthor[],available:boolean) {
+  const groups=new Map<string,{scope:MessageAuthor;targets:Map<string,MessageAuthor>}>();
+  for(const target of targets) {
+    const key=authorScopeKey(target);
+    let group=groups.get(key);
+    if(!group){group={scope:target,targets:new Map()};groups.set(key,group);}
+    group.targets.set(target.eventId,target);
+  }
+  const entries=[...groups.entries()].sort(([a],[b])=>a.localeCompare(b));
+  const queries=useQueries({queries:entries.map(([,group])=>({...messageAuthorsQuery(group.scope,[...group.targets.values()]),enabled:available}))});
+  const profiles=new Map(entries.map(([key],index)=>{
+    const query=queries[index];
+    return [key,available&&query?.isSuccess&&!query.isFetching?query.data:{}] as const;
+  }));
+  return (target:Omit<MessageAuthor,"pubkey">)=>profiles.get(authorScopeKey(target))?.[target.eventId];
 }
 
 // Resolve before constructing TimelineMessage, as in Buzz formatMessageAuthor:
 // rows, reply targets, accessibility and video comments share the same author.
 // The event remains the read proof; even another event by this author cannot
-// supply a profile for a failed/disabled query. Avatars share these exact keys.
+// supply a profile for a failed/disabled query. Avatars consume this exact result.
 export function useMessageAuthorLabels(scope: Omit<MessageAuthor, "eventId" | "pubkey">,
   events: readonly {id: string; pubkey: string; kind: number}[], available: boolean) {
   const t = useUiT();
@@ -54,25 +83,31 @@ export function useMessageAuthorLabels(scope: Omit<MessageAuthor, "eventId" | "p
   // their Relay signer is not a message author (Buzz collectMessageAuthorPubkeys).
   const targets = [...new Map(events.filter(event => event.kind !== KIND_SYSTEM_MESSAGE)
     .map(event => [event.id, {...scope, eventId: event.id, pubkey: event.pubkey}])).values()];
-  const queries = useQueries({
-    queries: targets.map(target => ({...messageAuthorQuery(target), enabled: available})),
-  });
-  const profiles = new Map(targets.flatMap((target, index) => {
-    const query = queries[index];
-    return available && query.isSuccess && !query.isFetching ? [[target.eventId, query.data] as const] : [];
-  }));
-  return (event: {id: string; pubkey: string}, fallbackName?: string | null) => {
-    const profile = profiles.get(event.id);
+  const profileFor = useMessageAuthorProfiles(targets,available);
+  const label = (event: {id: string; pubkey: string}, fallbackName?: string | null) => {
+    const profile = profileFor({...scope,eventId:event.id});
     return resolveUserLabel({pubkey: event.pubkey, fallbackName,
-      profiles: profile ? {[normalizePubkey(profile.pubkey)]: {...profile, ownerPubkey: null}} : undefined,
+      profiles: profile ? {[normalizePubkey(profile.pubkey)]: {...profile,
+        displayName: profile.displayName ?? null, avatarUrl: profile.avatarUrl ?? null,
+        about: profile.about ?? null, nip05Handle: profile.nip05Handle ?? null, ownerPubkey: null}} : undefined,
       preferResolvedSelfLabel: true, t});
   };
+  // Avatars consume exactly the same admitted batch result, not another query
+  // for every row. A failed/in-flight read exposes neither labels nor avatars.
+  return Object.assign(label,{profile:(eventId:string)=>profileFor({...scope,eventId})});
 }
 
-export function MessageAuthorAvatar({ target, ...props }: {
+export function MessageAuthorAvatar({ target, profile, ...props }: {
   target: MessageAuthor;
+  profile?: {value:WebProfileView|undefined};
 } & Omit<UserAvatarProps, "avatarUrl" | "resolveMediaUrl">) {
-  const query = useMessageAuthor(target);
+  if (profile) return <UserAvatar {...props} avatarUrl={profile.value?.pubkey===target.pubkey?profile.value.avatarUrl??null:null}
+    resolveMediaUrl={(url)=>profile.value?.avatarMediaPaths[url]??url}/>;
+  return <QueriedMessageAuthorAvatar target={target} {...props}/>;
+}
+
+function QueriedMessageAuthorAvatar({target,...props}: {target:MessageAuthor}&Omit<UserAvatarProps,"avatarUrl"|"resolveMediaUrl">) {
+  const query=useMessageAuthor(target);
   const data = query.isSuccess && !query.isFetching ? query.data : undefined;
   return <UserAvatar {...props} avatarUrl={data?.avatarUrl ?? null}
     resolveMediaUrl={(url) => data?.avatarMediaPaths[url] ?? url} />;

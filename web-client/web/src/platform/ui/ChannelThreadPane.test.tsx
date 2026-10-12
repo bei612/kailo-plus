@@ -26,7 +26,10 @@ vi.mock("@/features/chat/ui/MessageContent", async (original) => {
 });
 vi.mock("@/platform/bff-client", async(original) => ({
   ...await original<typeof import("@/platform/bff-client")>(),
-  bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.conversationProfile(...args)},
+  bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.conversationProfile(...args),
+    messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.profile(scope,id)])))}),
+    conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.conversationProfile(scope,id)])))}),
+  },
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
   publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),

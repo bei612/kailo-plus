@@ -6846,6 +6846,51 @@ pub struct WebMessageAttachment {
     pub url: String,
 }
 
+/// Typed read of authors proven by signed events in one currently admitted channel or
+/// private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
+/// reads by its existing page/NIP-11 limits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebMessageAuthorQuery {
+    pub event_ids: Vec<String>,
+}
+
+/// Exact event-id keyed profiles from one fresh admitted read. Every requested message must
+/// be verified; a missing kind:0 is an empty profile, while missing message proof fails the
+/// whole read. No profile body is persisted by Core.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebMessageAuthorView {
+    pub profiles: HashMap<String, ProfileValue>,
+}
+
+/// Profile read from Buzz for the current identity or an author proven by a currently
+/// admitted channel/private-conversation message, never a Core profile copy. An absent
+/// kind:0 is an empty profile, not a fabricated event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
+
+    /// Same-origin BFF paths for exact media URLs on the current community. A read projection,
+    /// never an upload or remote proxy authority.
+    pub avatar_media_paths: HashMap<String, String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip05_handle: Option<String>,
+
+    pub pubkey: String,
+}
+
 /// 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

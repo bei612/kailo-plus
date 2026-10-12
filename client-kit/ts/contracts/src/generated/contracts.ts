@@ -4734,6 +4734,43 @@ export interface WebMessageAttachment {
 }
 
 /**
+ * Typed read of authors proven by signed events in one currently admitted channel or
+ * private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
+ * reads by its existing page/NIP-11 limits.
+ */
+export interface WebMessageAuthorQuery {
+    eventIds: string[];
+}
+
+/**
+ * Exact event-id keyed profiles from one fresh admitted read. Every requested message must
+ * be verified; a missing kind:0 is an empty profile, while missing message proof fails the
+ * whole read. No profile body is persisted by Core.
+ */
+export interface WebMessageAuthorView {
+    profiles: { [key: string]: ProfileValue };
+}
+
+/**
+ * Profile read from Buzz for the current identity or an author proven by a currently
+ * admitted channel/private-conversation message, never a Core profile copy. An absent
+ * kind:0 is an empty profile, not a fabricated event.
+ */
+export interface ProfileValue {
+    about?: null | string;
+    /**
+     * Same-origin BFF paths for exact media URLs on the current community. A read projection,
+     * never an upload or remote proxy authority.
+     */
+    avatarMediaPaths: { [key: string]: string };
+    avatarUrl?:       null | string;
+    displayName?:     null | string;
+    eventId?:         null | string;
+    nip05Handle?:     null | string;
+    pubkey:           string;
+}
+
+/**
  * 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
  */
 export interface WebMessageCursor {
@@ -4790,16 +4827,16 @@ export interface WebProfileUpdateRequest {
  * kind:0 is an empty profile, not a fabricated event.
  */
 export interface WebProfileView {
-    about: null | string;
+    about?: null | string;
     /**
      * Same-origin BFF paths for exact media URLs on the current community. A read projection,
      * never an upload or remote proxy authority.
      */
     avatarMediaPaths: { [key: string]: string };
-    avatarUrl:        null | string;
-    displayName:      null | string;
-    eventId:          null | string;
-    nip05Handle:      null | string;
+    avatarUrl?:       null | string;
+    displayName?:     null | string;
+    eventId?:         null | string;
+    nip05Handle?:     null | string;
     pubkey:           string;
 }
 

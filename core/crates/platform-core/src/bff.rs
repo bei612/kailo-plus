@@ -320,8 +320,14 @@ pub fn router(state: BffState) -> Router {
             axum::routing::post(crate::projects::query),
         )
         .exposed_route("/api/v1/reminders", get(crate::reminders::query))
-        .exposed_route("/api/v1/reminders/source", axum::routing::post(crate::reminders::read_source))
-        .exposed_route("/api/v1/reminders/publish", axum::routing::post(crate::web_transport::publish_reminder))
+        .exposed_route(
+            "/api/v1/reminders/source",
+            axum::routing::post(crate::reminders::read_source),
+        )
+        .exposed_route(
+            "/api/v1/reminders/publish",
+            axum::routing::post(crate::web_transport::publish_reminder),
+        )
         .exposed_route(
             "/api/v1/projects/publish",
             axum::routing::post(crate::web_transport::publish_project),
@@ -380,6 +386,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile",
             get(crate::web_transport::message_author_profile),
+        )
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/messages/author-profiles",
+            axum::routing::post(crate::web_transport::message_author_profiles),
         )
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/channel",
@@ -564,6 +574,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile",
             get(crate::web_transport::conversation_message_author_profile),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/messages/author-profiles",
+            axum::routing::post(crate::web_transport::conversation_message_author_profiles),
         )
         .exposed_route(
             "/api/v1/conversations/{conversation_id}/media",

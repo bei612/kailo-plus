@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_message_author_view.schema.json",
+  "title": "WebMessageAuthorView",
+  "description": "Exact event-id keyed profiles from one fresh admitted read. Every requested message must be verified; a missing kind:0 is an empty profile, while missing message proof fails the whole read. No profile body is persisted by Core.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles"],
+  "properties": {
+    "profiles": {"type": "object", "additionalProperties": {"$ref": "web_profile_view.schema.json"}}
+  }
+}

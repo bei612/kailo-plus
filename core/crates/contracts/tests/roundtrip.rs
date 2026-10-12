@@ -899,6 +899,31 @@ fn file_storage_share_preserves_exact_native_reference() {
 }
 
 #[test]
+fn message_authors_preserve_exact_event_mapping_and_absent_metadata() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("web-message-authors.sample.json")).unwrap(),
+    )
+    .unwrap();
+    let request: contracts::WebMessageAuthorQuery =
+        serde_json::from_value(sample["request"].clone()).unwrap();
+    let view: contracts::WebMessageAuthorView = serde_json::from_value(sample["view"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
+    assert_eq!(serde_json::to_value(view).unwrap(), sample["view"]);
+    let legacy: contracts::WebMessageAuthorView =
+        serde_json::from_value(sample["legacyView"].clone()).unwrap();
+    let expected: serde_json::Map<_, _> = sample["legacyView"]["profiles"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|id| (id.clone(), sample["view"]["profiles"][id].clone()))
+        .collect();
+    assert_eq!(
+        serde_json::to_value(legacy).unwrap(),
+        serde_json::json!({"profiles":expected})
+    );
+}
+
+#[test]
 fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
     let rows: Vec<serde_json::Value> = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("file-storage-revision-io.sample.json"))

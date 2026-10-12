@@ -16,6 +16,7 @@ import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
 const api=vi.hoisted(()=>({projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
+const authorBatches=vi.hoisted(()=>vi.fn());
 // Existing message-only cases run with no admitted reminder identity. Dedicated
 // reminder consumers below the shared host are exercised in reminders.test.tsx.
 const reminderHost:ReminderHost={scopeKey:"inbox-message-fixture",pubkey:"",query:async()=>[],
@@ -23,7 +24,10 @@ const reminderHost:ReminderHost={scopeKey:"inbox-message-fixture",pubkey:"",quer
   source:async()=>{throw new Error("Reminder identity not admitted");},navigate:async()=>{throw new Error("Reminder identity not admitted");}};
 function InboxPane(props:ComponentProps<typeof OriginalInboxPane>){return <ReminderHostProvider host={reminderHost}><RemindMeLaterProvider><OriginalInboxPane {...props}/></RemindMeLaterProvider></ReminderHostProvider>;}
 vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
-vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
+vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:{...api,
+  messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>{authorBatches(scope,{eventIds});return {profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.messageAuthorProfile(scope,id)])))};},
+  conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.conversationMessageAuthorProfile(scope,id)])))}),
+},queryProjects:api.projectQuery,queryPulse:async()=>({events:[],mediaPaths:{}}),openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));
 
 const event = {
@@ -45,6 +49,7 @@ const timestampCases = (["en", "zh-CN"] as const).flatMap(locale => [
 ]);
 
 beforeEach(() => {
+  authorBatches.mockClear();
   api.projectQuery.mockReset().mockResolvedValue({events:[],pubkey:"c".repeat(64),limit:20,bindingVersion:1});
   api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
   api.readAt.mockReset().mockReturnValue(null);
@@ -335,6 +340,7 @@ it("uses the original shared virtual list for admitted Inbox rows and reaches ro
     await vi.waitFor(() => expect(list.querySelector(`[data-testid="home-inbox-item-${messages[0]!.id}"]`)).not.toBeNull());
     expect(list.querySelectorAll(rowSelector).length).toBeLessThan(messages.length);
     expect(api.write).not.toHaveBeenCalled();
+    expect(authorBatches).toHaveBeenCalledExactlyOnceWith("workspace-a",{eventIds:messages.map(message=>message.id).sort()});
   } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
 });
 

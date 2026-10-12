@@ -392,10 +392,10 @@ export function ChannelPane({
         if (!author?.pubkey) return <UserAvatar avatarUrl={null} className={className} displayName={participant.displayName} shape="circle" size="md"/>;
         const target = {principalId:myPrincipalId,workspaceId,conversationId:conversation.id,eventId:author.id,pubkey:author.pubkey};
         return <MessageAuthorIdentity target={target} onOpen={() => handleOpenAuthor(author)}>
-          <MessageAuthorAvatar target={target} className={className} displayName={participant.displayName}/>
+          <MessageAuthorAvatar target={target} profile={{value:authorLabel.profile(author.id)}} className={className} displayName={participant.displayName}/>
         </MessageAuthorIdentity>;
       }};
-  }, [conversation, live, denied, metadataPending, members.isSuccess, members.isError, members.isFetching, members.data, myPrincipalId, workspaceId, timelineMessages, handleOpenAuthor, uiT]);
+  }, [conversation, live, denied, metadataPending, members.isSuccess, members.isError, members.isFetching, members.data, myPrincipalId, workspaceId, timelineMessages, handleOpenAuthor, uiT, authorLabel]);
   const composerPlaceholder = archived
     ? uiT("composer.archivedPlaceholder")
     : conversation
@@ -739,6 +739,7 @@ export function ChannelPane({
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
                   onOpen={() => handleOpenAuthor(message)}>{kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
                     target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
+                    profile={{value:routeMessages.some(event=>event.id===message.id)?routeAuthorLabel.profile(message.id):authorLabel.profile(message.id)}}
                     accent={message.accent} className="shrink-0" displayName={message.author} testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}

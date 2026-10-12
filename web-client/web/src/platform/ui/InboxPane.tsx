@@ -39,7 +39,7 @@ import { hex, inboxEvents, inboxReactionEvents, inboxWindowEvents, type Event } 
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
-import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, useMessageAuthorProfiles, type MessageAuthor } from "./MessageAuthorProfile";
 import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
 import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,type ProjectInboxWorkItem,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
 import {useProjectsHost} from "./ProjectsPane";
@@ -309,6 +309,11 @@ export function InboxPane({
         ),
     );
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
+  const authorProfiles=useMessageAuthorProfiles(visibleRows.flatMap(({item})=>{
+    if(item.channelId===null)return [];
+    const conversation=snapshot?.conversations.find(value=>value.channelId===item.channelId);
+    return [{principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey,...(conversation?{conversationId:conversation.id}:{})}];
+  }),!failed&&!reads.failed&&!reads.unknown&&Boolean(snapshot&&reads.state)&&!["drafts","reminders"].includes(filter));
   const visibleInboxRows=buildInboxListRows({items:visibleRows.map(row=>({...row,id:row.item.id,groupItems:row.items,conversationId:row.scopeKey})),
     reminders:filter==="all"&&!unreadOnly?(reminders.data??[]).filter(reminder=>isDue(reminder,Math.floor(Date.now()/1000))):[]});
   useInboxDraftSelection({ items: drafts.entries.map(entry => ({ entry })), selectedKey: selectedDraft, setSelectedKey: setSelectedDraft,
@@ -410,7 +415,7 @@ export function InboxPane({
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
               reminderDue={Boolean(entry.dueReminder)}
               sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
-              avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
+              avatar={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} profile={{value:authorProfiles(target)}} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>}
               timestamp={formatItemTimestamp(row.latestActivityAt)}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
               label={typeLabel.text}

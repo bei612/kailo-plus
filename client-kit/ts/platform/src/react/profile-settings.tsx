@@ -785,7 +785,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, fallbackD
                               <IdentityRow locale={locale} onCopy={onCopy}
                                 label={t("platform.profile.nip05")}
                                 testId="profile-nip05"
-                                value={profile.nip05Handle}
+                                value={profile.nip05Handle ?? null}
                               />
                               {nativeIdentityDetails}
                             </div>

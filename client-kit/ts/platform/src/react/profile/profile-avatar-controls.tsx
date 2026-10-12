@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { WebProfileView } from "@client-kit/contracts";
 import type { PlatformLocale } from "../../i18n";
 import { AvatarHostProvider, type AvatarHost } from "./avatar-host";
 import { ProfileAvatarEditor } from "./buzz/features/profile/ui/ProfileAvatarEditor";
@@ -26,10 +27,10 @@ export function ProfileAvatarControls({ avatarUrl, previewName, locale, isDark, 
 export function ProfileAvatarPreview({ avatarUrl, label, locale, rewriteMediaUrl, upload, className = "size-24", iconClassName, testId }: {
   locale: PlatformLocale;
   className?: string; iconClassName?: string; testId?: string;
-  avatarUrl: string | null; label: string; rewriteMediaUrl: AvatarHost["rewriteMediaUrl"]; upload: AvatarHost["uploadMediaBytes"];
+  avatarUrl: WebProfileView["avatarUrl"]; label: string; rewriteMediaUrl: AvatarHost["rewriteMediaUrl"]; upload: AvatarHost["uploadMediaBytes"];
 }) {
   const host = useMemo<AvatarHost>(() => ({ locale, rewriteMediaUrl, performDefaultHaptic: browserHaptic,
     uploadMediaBytes: upload,
   }), [locale, rewriteMediaUrl, upload]);
-  return <AvatarHostProvider value={host}><ProfileAvatar avatarUrl={avatarUrl} label={label} className={className} iconClassName={iconClassName} testId={testId} /></AvatarHostProvider>;
+  return <AvatarHostProvider value={host}><ProfileAvatar avatarUrl={avatarUrl ?? null} label={label} className={className} iconClassName={iconClassName} testId={testId} /></AvatarHostProvider>;
 }

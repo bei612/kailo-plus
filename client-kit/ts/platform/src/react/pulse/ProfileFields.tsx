@@ -6,7 +6,7 @@ import { useUiLocale } from "@client-kit/platform/react/context";
 import { Fingerprint, UserRound } from "lucide-react";
 import type * as React from "react";
 
-import type { UserProfileSummary as Profile } from "./host";
+import type { WebProfileView as Profile } from "@client-kit/contracts";
 import { canonicalNpub, truncateNpub } from "../conversations/pubkey";
 import {
   HoverCopyIndicator,

@@ -2375,69 +2375,184 @@ async fn message_author_profile_for(
     headers: HeaderMap,
     event_id: String,
 ) -> Response {
-    if nostr::EventId::from_hex(&event_id).is_err() {
-        return StatusCode::BAD_REQUEST.into_response();
+    // Compatibility for the deployed old Web; both routes use one reader.
+    match read_message_authors(&state, target, &headers, std::slice::from_ref(&event_id)).await {
+        Ok(mut view) => match view.profiles.remove(&event_id) {
+            Some(profile) => (
+                [(axum::http::header::CACHE_CONTROL, "no-store")],
+                Json(profile),
+            )
+                .into_response(),
+            None => invalid_message_evidence(),
+        },
+        Err(response) => response,
     }
+}
+
+pub async fn message_author_profiles(
+    State(state): State<BffState>,
+    Path(workspace_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::WebMessageAuthorQuery>,
+) -> Response {
+    message_author_profiles_for(
+        &state,
+        MessageTarget::Workspace(workspace_id),
+        &headers,
+        request,
+    )
+    .await
+}
+
+pub async fn conversation_message_author_profiles(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::WebMessageAuthorQuery>,
+) -> Response {
+    message_author_profiles_for(
+        &state,
+        MessageTarget::Conversation(conversation_id),
+        &headers,
+        request,
+    )
+    .await
+}
+
+async fn message_author_profiles_for(
+    state: &BffState,
+    target: MessageTarget,
+    headers: &HeaderMap,
+    request: contracts::WebMessageAuthorQuery,
+) -> Response {
+    match read_message_authors(state, target, headers, &request.event_ids).await {
+        Ok(view) => (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(view),
+        )
+            .into_response(),
+        Err(response) => response,
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn message_author_ids(ids: &[String]) -> Result<(), Response> {
+    let mut unique = std::collections::HashSet::new();
+    if ids.is_empty()
+        || ids.iter().any(|id| {
+            nostr::EventId::from_hex(id).is_err() || id != &id.to_lowercase() || !unique.insert(id)
+        })
+    {
+        return Err(StatusCode::BAD_REQUEST.into_response());
+    }
+    Ok(())
+}
+
+#[allow(clippy::result_large_err)]
+fn author_message_events(
+    value: serde_json::Value,
+    channel: &str,
+    ids: &[String],
+) -> Result<Vec<nostr::Event>, Response> {
+    let rows = value.as_array().ok_or_else(invalid_message_evidence)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut events = Vec::new();
+    for row in rows {
+        let event = channel_message_event(row.clone(), channel)?;
+        if !ids.contains(&event.id.to_hex()) || !seen.insert(event.id) {
+            return Err(invalid_message_evidence());
+        }
+        events.push(event);
+    }
+    if events.len() != ids.len() {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    }
+    Ok(events)
+}
+
+async fn read_message_authors(
+    state: &BffState,
+    target: MessageTarget,
+    headers: &HeaderMap,
+    event_ids: &[String],
+) -> Result<contracts::WebMessageAuthorView, Response> {
+    message_author_ids(event_ids)?;
     let read_target = match target {
         MessageTarget::Workspace(id) => crate::user_state::ReadTarget::Workspace(id),
         MessageTarget::Conversation(id) => crate::user_state::ReadTarget::Conversation(id),
-        MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+        MessageTarget::Pulse(_) => return Err(StatusCode::BAD_REQUEST.into_response()),
     };
-    let ctx = match resolve_execution_context(&state, &headers).await {
-        Ok(ctx) => ctx,
-        Err(response) => return response,
-    };
-    let admitted = match read_target.admit(&state, &ctx).await {
-        Ok(scope) => scope,
-        Err(response) => return response,
-    };
-    let keys = match actor_keys(&state, &ctx).await {
-        Ok(keys) => keys,
-        Err(response) => return response,
-    };
-    let client = match community_client(&state, &keys, admitted.community_host()) {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
-    // The original signed event proves this author belongs to this readable
-    // message surface. Neither a requested pubkey nor the Pulse directory does.
-    let message = match read_message_event(&state, &client, admitted.channel_id(), &event_id).await
-    {
-        Ok(message) => message,
-        Err(response) => return response,
-    };
-    let author = message.pubkey.to_hex();
-    let profile = match crate::web_profile::read_author(&state, &client, &author).await {
-        Ok(profile) => profile,
-        Err(response) => return response,
-    };
-    let current = match read_target.admit(&state, &ctx).await {
-        Ok(scope) => scope,
-        Err(response) => return response,
-    };
-    let current_keys = match actor_keys(&state, &ctx).await {
-        Ok(keys) => keys,
-        Err(response) => return response,
-    };
-    if !admitted.same_admission(&current) || current_keys.public_key() != keys.public_key() {
-        return AdmissionFailure::BindingNotActive.into_response();
+    let ctx = resolve_execution_context(state, headers).await?;
+    let admitted = read_target.admit(state, &ctx).await?;
+    let keys = actor_keys(state, &ctx).await?;
+    let client = community_client(state, &keys, admitted.community_host())?;
+    let limits = community_limits(state, admitted.community_host())
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let cap = usize::try_from(page_limit(state, &limits))
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(invalid_message_evidence)?;
+    let mut messages = Vec::new();
+    for ids in event_ids.chunks(cap) {
+        let value = client
+            .query(
+                &state.http,
+                &[serde_json::json!({
+                    "ids":ids, "#h":[admitted.channel_id()], "limit":ids.len()
+                })],
+            )
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        messages.extend(author_message_events(value, admitted.channel_id(), ids)?);
     }
-    let mut view = crate::web_profile::view(author, profile.as_ref(), admitted.community_host());
+    let authors: Vec<_> = messages
+        .iter()
+        .map(|event| event.pubkey.to_hex())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut profiles = HashMap::new();
+    for authors in authors.chunks(limits.max_filters) {
+        profiles.extend(crate::web_profile::read_authors(state, &client, authors).await?);
+    }
+    let current = read_target.admit(state, &ctx).await?;
+    let current_keys = actor_keys(state, &ctx).await?;
+    if !admitted.same_admission(&current) || current_keys.public_key() != keys.public_key() {
+        return Err(AdmissionFailure::BindingNotActive.into_response());
+    }
     let media_prefix = match target {
         MessageTarget::Workspace(id) => format!("/api/v1/workspaces/{id}/media/"),
         MessageTarget::Conversation(id) => format!("/api/v1/conversations/{id}/media/"),
-        MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+        MessageTarget::Pulse(_) => return Err(StatusCode::BAD_REQUEST.into_response()),
     };
-    for path in view.avatar_media_paths.values_mut() {
-        if let Some(hash) = path.strip_prefix("/api/v1/profile/media/") {
-            *path = format!("{media_prefix}{hash}");
+    let mut views = HashMap::new();
+    for event in messages {
+        let author = event.pubkey.to_hex();
+        let mut view = crate::web_profile::view(
+            author.clone(),
+            profiles.get(&author),
+            admitted.community_host(),
+        );
+        for path in view.avatar_media_paths.values_mut() {
+            if let Some(hash) = path.strip_prefix("/api/v1/profile/media/") {
+                *path = format!("{media_prefix}{hash}");
+            }
         }
+        views.insert(
+            event.id.to_hex(),
+            contracts::ProfileValue {
+                about: view.about,
+                avatar_media_paths: view.avatar_media_paths,
+                avatar_url: view.avatar_url,
+                display_name: view.display_name,
+                event_id: view.event_id,
+                nip05_handle: view.nip05_handle,
+                pubkey: view.pubkey,
+            },
+        );
     }
-    (
-        [(axum::http::header::CACHE_CONTROL, "no-store")],
-        Json(view),
-    )
-        .into_response()
+    Ok(contracts::WebMessageAuthorView { profiles: views })
 }
 
 /// Read-only native thread kinds, shared by the query and receipt validation.
@@ -3595,6 +3710,51 @@ mod tests {
             serde_json::json!({"messageType":"UNKNOWN"})
         )
         .is_err());
+    }
+
+    #[test]
+    fn batch_author_messages_require_the_exact_admitted_signed_event_set() {
+        let keys = nostr::Keys::generate();
+        let signed = |kind, channel: &str, body: &str| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), body)
+                .tags([nostr::Tag::parse(["h", channel]).unwrap()])
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let one = signed(9, "channel", "one");
+        let two = signed(9, "channel", "two");
+        let ids = vec![one.id.to_hex(), two.id.to_hex()];
+        assert!(message_author_ids(&ids).is_ok());
+        assert_eq!(
+            author_message_events(serde_json::json!([two, one]), "channel", &ids)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(author_message_events(serde_json::json!([one]), "channel", &ids).is_err());
+        assert!(author_message_events(serde_json::json!([one, one]), "channel", &ids).is_err());
+        assert!(author_message_events(serde_json::json!([one, two]), "foreign", &ids).is_err());
+        assert!(author_message_events(serde_json::json!([one]), "channel", &ids[1..]).is_err());
+        let unknown = signed(42, "channel", "unknown");
+        assert!(author_message_events(
+            serde_json::json!([unknown]),
+            "channel",
+            &[unknown.id.to_hex()]
+        )
+        .is_err());
+        let mut tampered = serde_json::to_value(one).unwrap();
+        tampered["content"] = serde_json::json!("tampered");
+        assert!(
+            author_message_events(serde_json::json!([tampered, two]), "channel", &ids).is_err()
+        );
+        for bad in [
+            vec![],
+            vec![ids[0].clone(), ids[0].clone()],
+            vec![ids[0].to_uppercase()],
+            vec!["invalid".into()],
+        ] {
+            assert!(message_author_ids(&bad).is_err());
+        }
     }
 
     #[test]

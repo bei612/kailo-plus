@@ -9,6 +9,27 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Message authors preserve exact event mapping and absent metadata', () {
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/web-message-authors.sample.json',
+      ).readAsStringSync(),
+    );
+    expect(
+      WebMessageAuthorQuery.fromJson(sample['request']).toJson(),
+      sample['request'],
+    );
+    expect(
+      WebMessageAuthorView.fromJson(sample['view']).toJson(),
+      sample['view'],
+    );
+    expect(WebMessageAuthorView.fromJson(sample['legacyView']).toJson(), {
+      'profiles': {
+        for (final id in (sample['legacyView']['profiles'] as Map).keys)
+          id: sample['view']['profiles'][id],
+      },
+    });
+  });
   test(
     'Native task admission preserves pending without ticket and frozen deadline',
     () {

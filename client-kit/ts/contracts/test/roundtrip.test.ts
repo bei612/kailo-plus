@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Message authors preserve exact event mapping and absent metadata", () => {
+  type Request = import("../src/generated/contracts.js").WebMessageAuthorQuery;
+  type View = import("../src/generated/contracts.js").WebMessageAuthorView;
+  const sample: {request:Request;view:View;legacyView:View}=JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-message-authors.sample.json",import.meta.url),"utf8"));
+  const request:Request={eventIds:sample.request.eventIds};
+  const view:View={profiles:Object.fromEntries(Object.entries(sample.view.profiles).map(([id,p])=>[id,{pubkey:p.pubkey,avatarMediaPaths:p.avatarMediaPaths,displayName:p.displayName,eventId:p.eventId,about:p.about,avatarUrl:p.avatarUrl,nip05Handle:p.nip05Handle}]))};
+  deepStrictEqual(JSON.parse(JSON.stringify({request,view})),{request:sample.request,view:sample.view});
+  const legacy:View={profiles:Object.fromEntries(Object.entries(sample.legacyView.profiles).map(([id,p])=>[id,{pubkey:p.pubkey,avatarMediaPaths:p.avatarMediaPaths,displayName:p.displayName??undefined,eventId:p.eventId??undefined,about:p.about??undefined,avatarUrl:p.avatarUrl??undefined,nip05Handle:p.nip05Handle??undefined}]))};
+  deepStrictEqual(JSON.parse(JSON.stringify(legacy)),{profiles:Object.fromEntries(Object.keys(sample.legacyView.profiles).map(id=>[id,sample.view.profiles[id]]))});
+});
+
 test("Native task admission preserves pending without ticket and frozen deadline", () => {
   type Request = import("../src/generated/contracts.js").NativeTaskExecutionAdmissionRequest;
   type Response = import("../src/generated/contracts.js").NativeTaskExecutionAdmissionResponse;

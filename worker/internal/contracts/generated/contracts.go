@@ -412,6 +412,12 @@
 //    webMessageAttachment, err := UnmarshalWebMessageAttachment(bytes)
 //    bytes, err = webMessageAttachment.Marshal()
 //
+//    webMessageAuthorQuery, err := UnmarshalWebMessageAuthorQuery(bytes)
+//    bytes, err = webMessageAuthorQuery.Marshal()
+//
+//    webMessageAuthorView, err := UnmarshalWebMessageAuthorView(bytes)
+//    bytes, err = webMessageAuthorView.Marshal()
+//
 //    webMessageCursor, err := UnmarshalWebMessageCursor(bytes)
 //    bytes, err = webMessageCursor.Marshal()
 //
@@ -2070,6 +2076,26 @@ func UnmarshalWebMessageAttachment(data []byte) (WebMessageAttachment, error) {
 }
 
 func (r *WebMessageAttachment) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageAuthorQuery(data []byte) (WebMessageAuthorQuery, error) {
+	var r WebMessageAuthorQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageAuthorQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageAuthorView(data []byte) (WebMessageAuthorView, error) {
+	var r WebMessageAuthorView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageAuthorView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5975,6 +6001,35 @@ type WebMessageAttachment struct {
 	URL   string  `json:"url"`
 }
 
+// Typed read of authors proven by signed events in one currently admitted channel or
+// private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
+// reads by its existing page/NIP-11 limits.
+type WebMessageAuthorQuery struct {
+	EventIDS []string `json:"eventIds"`
+}
+
+// Exact event-id keyed profiles from one fresh admitted read. Every requested message must
+// be verified; a missing kind:0 is an empty profile, while missing message proof fails the
+// whole read. No profile body is persisted by Core.
+type WebMessageAuthorView struct {
+	Profiles map[string]ProfileValue `json:"profiles"`
+}
+
+// Profile read from Buzz for the current identity or an author proven by a currently
+// admitted channel/private-conversation message, never a Core profile copy. An absent
+// kind:0 is an empty profile, not a fabricated event.
+type ProfileValue struct {
+	About *string `json:"about,omitempty"`
+	// Same-origin BFF paths for exact media URLs on the current community. A read projection,
+	// never an upload or remote proxy authority.
+	AvatarMediaPaths map[string]string `json:"avatarMediaPaths"`
+	AvatarURL        *string           `json:"avatarUrl,omitempty"`
+	DisplayName      *string           `json:"displayName,omitempty"`
+	EventID          *string           `json:"eventId,omitempty"`
+	Nip05Handle      *string           `json:"nip05Handle,omitempty"`
+	Pubkey           string            `json:"pubkey"`
+}
+
 // 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 type WebMessageCursor struct {
 	CreatedAt int64  `json:"createdAt"`
@@ -6011,14 +6066,14 @@ type WebProfileUpdateRequest struct {
 // admitted channel/private-conversation message, never a Core profile copy. An absent
 // kind:0 is an empty profile, not a fabricated event.
 type WebProfileView struct {
-	About *string `json:"about"`
+	About *string `json:"about,omitempty"`
 	// Same-origin BFF paths for exact media URLs on the current community. A read projection,
 	// never an upload or remote proxy authority.
 	AvatarMediaPaths map[string]string `json:"avatarMediaPaths"`
-	AvatarURL        *string           `json:"avatarUrl"`
-	DisplayName      *string           `json:"displayName"`
-	EventID          *string           `json:"eventId"`
-	Nip05Handle      *string           `json:"nip05Handle"`
+	AvatarURL        *string           `json:"avatarUrl,omitempty"`
+	DisplayName      *string           `json:"displayName,omitempty"`
+	EventID          *string           `json:"eventId,omitempty"`
+	Nip05Handle      *string           `json:"nip05Handle,omitempty"`
 	Pubkey           string            `json:"pubkey"`
 }
 

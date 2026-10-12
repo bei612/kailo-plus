@@ -14,6 +14,58 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestMessageAuthorsPreserveExactEventMappingAndAbsentMetadata(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-message-authors.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed struct {
+		Request generated.WebMessageAuthorQuery `json:"request"`
+		View    generated.WebMessageAuthorView  `json:"view"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	sample := original.(map[string]any)
+	if !reflect.DeepEqual(map[string]any{"request": sample["request"], "view": sample["view"]}, back) {
+		t.Fatalf("roundtrip lost author proof mapping: %s", encoded)
+	}
+	legacyRaw, err := json.Marshal(sample["legacyView"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy generated.WebMessageAuthorView
+	if err := json.Unmarshal(legacyRaw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]any{}
+	for id := range legacy.Profiles {
+		expected[id] = sample["view"].(map[string]any)["profiles"].(map[string]any)[id]
+	}
+	if !reflect.DeepEqual(map[string]any{"profiles": expected}, back) {
+		t.Fatalf("legacy null profile was not accepted: %s", encoded)
+	}
+}
+
 func TestNativeTaskAdmissionPreservesPendingWithoutTicketAndFrozenDeadline(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "native-task-execution-admission.sample.json"))
 	if err != nil {

@@ -137,6 +137,8 @@
 //     final webCustomEmojiMutation = webCustomEmojiMutationFromJson(jsonString);
 //     final webCustomEmojiView = webCustomEmojiViewFromJson(jsonString);
 //     final webMessageAttachment = webMessageAttachmentFromJson(jsonString);
+//     final webMessageAuthorQuery = webMessageAuthorQueryFromJson(jsonString);
+//     final webMessageAuthorView = webMessageAuthorViewFromJson(jsonString);
 //     final webMessageCursor = webMessageCursorFromJson(jsonString);
 //     final webMessageQuery = webMessageQueryFromJson(jsonString);
 //     final webMessageType = webMessageTypeFromJson(jsonString);
@@ -1077,6 +1079,18 @@ WebMessageAttachment webMessageAttachmentFromJson(String str) =>
     WebMessageAttachment.fromJson(json.decode(str));
 
 String webMessageAttachmentToJson(WebMessageAttachment data) =>
+    json.encode(data.toJson());
+
+WebMessageAuthorQuery webMessageAuthorQueryFromJson(String str) =>
+    WebMessageAuthorQuery.fromJson(json.decode(str));
+
+String webMessageAuthorQueryToJson(WebMessageAuthorQuery data) =>
+    json.encode(data.toJson());
+
+WebMessageAuthorView webMessageAuthorViewFromJson(String str) =>
+    WebMessageAuthorView.fromJson(json.decode(str));
+
+String webMessageAuthorViewToJson(WebMessageAuthorView data) =>
     json.encode(data.toJson());
 
 WebMessageCursor webMessageCursorFromJson(String str) =>
@@ -13681,6 +13695,95 @@ class WebMessageAttachment {
   });
 }
 
+///Typed read of authors proven by signed events in one currently admitted channel or
+///private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
+///reads by its existing page/NIP-11 limits.
+class WebMessageAuthorQuery {
+  final List<String> eventIds;
+
+  WebMessageAuthorQuery({required this.eventIds});
+
+  factory WebMessageAuthorQuery.fromJson(Map<String, dynamic> json) =>
+      WebMessageAuthorQuery(
+        eventIds: List<String>.from(json["eventIds"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"eventIds": List<dynamic>.from(eventIds.map((x) => x))});
+}
+
+///Exact event-id keyed profiles from one fresh admitted read. Every requested message must
+///be verified; a missing kind:0 is an empty profile, while missing message proof fails the
+///whole read. No profile body is persisted by Core.
+class WebMessageAuthorView {
+  final Map<String, ProfileValue> profiles;
+
+  WebMessageAuthorView({required this.profiles});
+
+  factory WebMessageAuthorView.fromJson(Map<String, dynamic> json) =>
+      WebMessageAuthorView(
+        profiles: Map.from(json["profiles"]).map(
+          (k, v) => MapEntry<String, ProfileValue>(k, ProfileValue.fromJson(v)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "profiles": Map.from(
+      profiles,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v.toJson())),
+  });
+}
+
+///Profile read from Buzz for the current identity or an author proven by a currently
+///admitted channel/private-conversation message, never a Core profile copy. An absent
+///kind:0 is an empty profile, not a fabricated event.
+class ProfileValue {
+  final String? about;
+
+  ///Same-origin BFF paths for exact media URLs on the current community. A read projection,
+  ///never an upload or remote proxy authority.
+  final Map<String, String> avatarMediaPaths;
+  final String? avatarUrl;
+  final String? displayName;
+  final String? eventId;
+  final String? nip05Handle;
+  final String pubkey;
+
+  ProfileValue({
+    this.about,
+    required this.avatarMediaPaths,
+    this.avatarUrl,
+    this.displayName,
+    this.eventId,
+    this.nip05Handle,
+    required this.pubkey,
+  });
+
+  factory ProfileValue.fromJson(Map<String, dynamic> json) => ProfileValue(
+    about: json["about"],
+    avatarMediaPaths: Map.from(
+      json["avatarMediaPaths"],
+    ).map((k, v) => MapEntry<String, String>(k, v)),
+    avatarUrl: json["avatarUrl"],
+    displayName: json["displayName"],
+    eventId: json["eventId"],
+    nip05Handle: json["nip05Handle"],
+    pubkey: json["pubkey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "about": about,
+    "avatarMediaPaths": Map.from(
+      avatarMediaPaths,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "avatarUrl": avatarUrl,
+    "displayName": displayName,
+    "eventId": eventId,
+    "nip05Handle": nip05Handle,
+    "pubkey": pubkey,
+  });
+}
+
 ///原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 class WebMessageCursor {
   final int createdAt;
@@ -13802,12 +13905,12 @@ class WebProfileView {
   final String pubkey;
 
   WebProfileView({
-    required this.about,
+    this.about,
     required this.avatarMediaPaths,
-    required this.avatarUrl,
-    required this.displayName,
-    required this.eventId,
-    required this.nip05Handle,
+    this.avatarUrl,
+    this.displayName,
+    this.eventId,
+    this.nip05Handle,
     required this.pubkey,
   });
 

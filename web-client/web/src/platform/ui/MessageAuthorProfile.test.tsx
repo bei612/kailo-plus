@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
-import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, useMessageAuthorProfiles, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 import { MessageAuthorText, UserAvatar } from "@client-kit/platform/react/messages";
 import { MoreUnreadButton, type UnreadDmPreview } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
 import { canonicalNpub, truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
@@ -15,7 +15,7 @@ import { KIND_STREAM_MESSAGE, KIND_SYSTEM_MESSAGE } from "@client-kit/platform/r
 import { toast } from "sonner";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread/auxiliaryPanelLayout";
 
-const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn()}));
+const api=vi.hoisted(()=>({messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),messageAuthorProfiles:vi.fn(),conversationMessageAuthorProfiles:vi.fn()}));
 vi.mock("../bff-client",()=>({bff:api}));
 const author="a".repeat(64),other="b".repeat(64),eventId="c".repeat(64);
 const target={principalId:"human",workspaceId:"workspace",eventId,pubkey:author};
@@ -26,6 +26,8 @@ beforeEach(()=>{
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener:()=>{},removeEventListener:()=>{}}));
   vi.stubGlobal("ResizeObserver",class{observe(){} unobserve(){} disconnect(){}});
   api.messageAuthorProfile.mockReset();api.conversationMessageAuthorProfile.mockReset();
+  api.messageAuthorProfiles.mockReset().mockImplementation(async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.messageAuthorProfile(scope,id)])))}));
+  api.conversationMessageAuthorProfiles.mockReset().mockImplementation(async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.conversationMessageAuthorProfile(scope,id)])))}));
   host=document.createElement("div");document.body.append(host);root=createRoot(host);
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 });
@@ -62,8 +64,8 @@ function ResolvedAuthor({target, fallbackName, available=true, surface="text"}: 
   const message={...event,author:label(event,fallbackName),createdAt:1,body:"Message body",depth:0,time:""};
   if(surface==="inbox") return <InboxMessageRowSurface message={message} renderBody={()=>message.body}/>;
   if(surface==="forum") return <ForumAuthorButton displayName={message.author} large preview
-    avatar={<MessageAuthorAvatar target={target} displayName={message.author}/>}/>;
-  return <>{surface==="avatar"?<MessageAuthorAvatar target={target} displayName={message.author} testId="author-avatar"/>:null}
+    avatar={<MessageAuthorAvatar target={target} profile={{value:label.profile(event.id)}} displayName={message.author}/>}/>;
+  return <>{surface==="avatar"?<MessageAuthorAvatar target={target} profile={{value:label.profile(event.id)}} displayName={message.author} testId="author-avatar"/>:null}
     <MessageAuthorText hoverUnderline>{message.author}</MessageAuthorText></>;
 }
 
@@ -186,7 +188,60 @@ it("does not reuse another event's successful profile for a refused event by the
   }
   await render(<TwoEvents/>);
   await vi.waitFor(()=>expect(cache.isFetching()).toBe(0));
-  await vi.waitFor(() => expect([...host.querySelectorAll("output")].map(node=>node.textContent)).toEqual(["Message author","Member"]));
+  await vi.waitFor(() => expect([...host.querySelectorAll("output")].map(node=>node.textContent)).toEqual(["Member","Member"]));
+  expect(api.messageAuthorProfiles).toHaveBeenCalledExactlyOnceWith("workspace",{eventIds:[eventId,"d".repeat(64)]});
+});
+
+it("reads repeated authors in one actual batch and passes only the admitted result to every row avatar",async()=>{
+  loadedImages();
+  const events=Array.from({length:30},(_,index)=>({id:index.toString(16).padStart(64,"0"),pubkey:author,kind:KIND_STREAM_MESSAGE}));
+  const avatarUrl=`https://community.example/media/${eventId}.png`;
+  api.messageAuthorProfiles.mockResolvedValue({profiles:Object.fromEntries(events.map(event=>[event.id,{...profile(),avatarUrl}]))});
+  function Rows({available=true}:{available?:boolean}) {
+    const labels=useMessageAuthorLabels(target,events,available);
+    return <>{events.map(event=><div key={event.id}><output>{labels(event,"Member")}</output>
+      <MessageAuthorAvatar target={{...target,eventId:event.id}} profile={{value:labels.profile(event.id)}} displayName={labels(event,"Member")}/></div>)}</>;
+  }
+  await render(<Rows/>);
+  await vi.waitFor(()=>expect(host.querySelectorAll("img")).toHaveLength(events.length));
+  expect(api.messageAuthorProfiles).toHaveBeenCalledExactlyOnceWith("workspace",{eventIds:events.map(event=>event.id)});
+  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+  let finish!:(value:unknown)=>void;
+  api.messageAuthorProfiles.mockReturnValue(new Promise(resolve=>{finish=resolve;}));
+  await act(async()=>{void cache.invalidateQueries({queryKey:["platform","message-author"]});});
+  await vi.waitFor(()=>expect(host.querySelectorAll("img")).toHaveLength(0));
+  expect([...host.querySelectorAll("output")].every(node=>node.textContent==="Member")).toBe(true);
+  await render(<Rows available={false}/>);
+  await act(async()=>finish({profiles:Object.fromEntries(events.map(event=>[event.id,{...profile(),avatarUrl}]))}));
+  expect(host.querySelectorAll("img")).toHaveLength(0);
+});
+
+it("keeps Inbox batch evidence separate across workspace and conversation scopes and drops a late prior identity",async()=>{
+  const targets=[target,{...target,eventId:"d".repeat(64)},{...target,workspaceId:"other"},{...target,conversationId:"private"}];
+  api.messageAuthorProfiles.mockImplementation(async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(eventIds.map(id=>[id,{...profile(),displayName:scope}]))}));
+  api.conversationMessageAuthorProfiles.mockRejectedValue(new Error("403"));
+  function Rows({principalId=target.principalId,available=true}:{principalId?:string;available?:boolean}) {
+    const current=targets.map(row=>({...row,principalId}));
+    const profileFor=useMessageAuthorProfiles(current,available);
+    return <>{current.map((row,index)=><output key={index}>{profileFor(row)?.displayName??"Member"}</output>)}</>;
+  }
+  await render(<Rows/>);
+  await vi.waitFor(()=>expect([...host.querySelectorAll("output")].map(row=>row.textContent)).toEqual(["workspace","workspace","other","Member"]));
+  expect(api.messageAuthorProfiles).toHaveBeenCalledTimes(2);
+  expect(api.messageAuthorProfiles).toHaveBeenCalledWith("workspace",{eventIds:[eventId,"d".repeat(64)]});
+  expect(api.messageAuthorProfiles).toHaveBeenCalledWith("other",{eventIds:[eventId]});
+  expect(api.conversationMessageAuthorProfiles).toHaveBeenCalledExactlyOnceWith("private",{eventIds:[eventId]});
+  const finish:Array<(value:unknown)=>void>=[];
+  api.messageAuthorProfiles.mockImplementation(()=>new Promise(resolve=>finish.push(resolve)));
+  await act(async()=>{void cache.invalidateQueries({queryKey:["platform","message-author"]});});
+  await vi.waitFor(()=>expect(finish).toHaveLength(2));
+  api.messageAuthorProfiles.mockRejectedValue(new Error("new identity denied"));
+  await render(<Rows principalId="new-human"/>);
+  await act(async()=>finish.forEach(resolve=>resolve({profiles:Object.fromEntries(targets.map(row=>[row.eventId,{...profile(),displayName:"Late prior identity"}]))})));
+  await vi.waitFor(()=>expect(cache.isFetching()).toBe(0));
+  expect([...host.querySelectorAll("output")].every(row=>row.textContent==="Member")).toBe(true);
+  await render(<Rows available={false}/>);
+  expect([...host.querySelectorAll("output")].every(row=>row.textContent==="Member")).toBe(true);
 });
 
 it("does not query a Relay system-row signer as an admitted message author",async()=>{

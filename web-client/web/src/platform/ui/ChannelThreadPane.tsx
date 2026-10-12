@@ -203,6 +203,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       renderIdentity={row.message.pubkey && !unavailable && !interrupted ? (node,kind) => {
         const target={principalId,workspaceId,conversationId:conversation?.id,eventId:row.message.id,pubkey:row.message.pubkey!};
         const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar target={target}
+          profile={{value:authorLabel.profile(row.message.id)}}
           accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div>
           : node;
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;

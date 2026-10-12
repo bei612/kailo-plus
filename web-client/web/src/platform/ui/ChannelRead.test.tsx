@@ -55,6 +55,8 @@ vi.mock("@/platform/bff-client", async () => ({
     conversationMessages:(...args:unknown[])=>state.history(...args),
     messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),
     conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),
+    messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.authorProfile(scope,id)])))}),
+    conversationMessageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.dmAuthorProfile(scope,id)])))}),
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),

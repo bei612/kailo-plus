@@ -10,6 +10,35 @@ fn event(keys: &nostr::Keys, kind: nostr::Kind, content: &str) -> nostr::Event {
 }
 
 #[test]
+fn batch_author_profiles_require_each_requested_signed_metadata_author() {
+    let first = nostr::Keys::generate();
+    let second = nostr::Keys::generate();
+    let authors = vec![first.public_key().to_hex(), second.public_key().to_hex()];
+    let one = event(&first, nostr::Kind::Metadata, r#"{"name":"First"}"#);
+    let two = event(&second, nostr::Kind::Metadata, r#"{"name":"Second"}"#);
+    let profiles = author_events(json!([two, one]), &authors).unwrap();
+    assert_eq!(profiles[&authors[0]].id, one.id);
+    assert_eq!(profiles[&authors[1]].id, two.id);
+    assert_eq!(author_events(json!([one]), &authors).unwrap().len(), 1);
+    assert!(author_events(json!([]), &authors).unwrap().is_empty());
+    assert!(author_events(json!([one, one]), &authors).is_err());
+    assert!(author_events(json!([two]), &authors[..1]).is_err());
+    assert!(author_events(
+        json!([event(&first, nostr::Kind::TextNote, "{}")]),
+        &authors
+    )
+    .is_err());
+    assert!(author_events(
+        json!([event(&first, nostr::Kind::Metadata, "[]")]),
+        &authors
+    )
+    .is_err());
+    let mut tampered = serde_json::to_value(one).unwrap();
+    tampered["content"] = json!(r#"{"name":"Forged"}"#);
+    assert!(author_events(json!([tampered]), &authors).is_err());
+}
+
+#[test]
 fn own_profile_read_requires_the_original_signed_metadata_shape() {
     let keys = nostr::Keys::generate();
     let author = keys.public_key().to_hex();

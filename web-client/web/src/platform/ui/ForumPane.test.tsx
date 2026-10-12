@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messa
   publish:vi.fn(), receive:null as null | ((frame: StreamFrame) => void)}));
 vi.mock("@/platform/bff-client", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/platform/bff-client")>(),
-  bff:api, publishMessage:api.publish, deleteMessage:api.delete,
+  bff:{...api,messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await api.messageAuthorProfile(scope,id)])))})}, publishMessage:api.publish, deleteMessage:api.delete,
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {api.receive=receive;return () => {};}}));
 vi.mock("./ChannelPane", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ChannelPane")>(),

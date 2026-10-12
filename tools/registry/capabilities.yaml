@@ -75,6 +75,7 @@ capabilities:
   - /api/v1/workspaces/{workspace_id}/stream
   - /api/v1/workspaces/{workspace_id}/channel
   - /api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile
+  - /api/v1/workspaces/{workspace_id}/messages/author-profiles
   actions:
   - workspace.message.publish
   tools: []
@@ -94,6 +95,7 @@ capabilities:
   - /api/v1/conversations/{conversation_id}/reopen
   - /api/v1/conversations/{conversation_id}/visibility
   - /api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile
+  - /api/v1/conversations/{conversation_id}/messages/author-profiles
   actions:
   - conversation.open
   - conversation.message.publish

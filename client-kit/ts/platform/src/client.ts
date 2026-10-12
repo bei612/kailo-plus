@@ -65,6 +65,8 @@ import type {
   ReadMarkRequest,
   UserStateVersion,
   WebProfileView,
+  WebMessageAuthorQuery,
+  WebMessageAuthorView,
   WebProfileUpdateRequest,
   WebCustomEmojiMutation,
   WebCustomEmojiView,
@@ -79,15 +81,25 @@ export function createBffClient(transport: BffTransport) {
   const call = async <T>(request: BffRequest): Promise<T> =>
     unwrap<T>(request, await transport.send(request));
   const get = <T>(path: string) => call<T>({ method: "GET", path });
+  const messageAuthors = (kind:"workspaces"|"conversations", id:string, body:WebMessageAuthorQuery) =>
+    call<WebMessageAuthorView>({method:"POST",path:`/api/v1/${kind}/${encodeURIComponent(id)}/messages/author-profiles`,body});
+  const singleMessageAuthor = async (kind:"workspaces"|"conversations",id:string,eventId:string) => {
+    const view=await messageAuthors(kind,id,{eventIds:[eventId]});
+    const profile=view.profiles[eventId];
+    if(!profile || Object.keys(view.profiles).length!==1) throw new Error("Missing admitted message author.");
+    return profile;
+  };
 
   return {
     transport,
     profile: () => get<WebProfileView>("/api/v1/profile"),
     customEmoji: () => get<WebCustomEmojiView>("/api/v1/custom-emoji"),
     updateCustomEmoji: (body: WebCustomEmojiMutation) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/custom-emoji", body }),
-    messageAuthorProfile: (workspaceId: string, eventId: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
+    messageAuthorProfiles: (workspaceId: string, body: WebMessageAuthorQuery) => messageAuthors("workspaces",workspaceId,body),
+    messageAuthorProfile: (workspaceId:string,eventId:string) => singleMessageAuthor("workspaces",workspaceId,eventId),
     memberProfile: (workspaceId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
-    conversationMessageAuthorProfile: (conversationId: string, eventId: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
+    conversationMessageAuthorProfiles: (conversationId: string, body: WebMessageAuthorQuery) => messageAuthors("conversations",conversationId,body),
+    conversationMessageAuthorProfile: (conversationId:string,eventId:string) => singleMessageAuthor("conversations",conversationId,eventId),
     updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),
 
     /** 部署的公开平台信息（DD-111）：界面上的产品名只取自这里，不写在客户端里。 */

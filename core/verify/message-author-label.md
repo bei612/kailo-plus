@@ -182,3 +182,136 @@ main 尚不包含现网已有的线程历史、线程模式及 Workflow 频道�
 BuildKit；确认上述回退范围后，精确取消本次 buildx PID 472768，句柄 15353
 退出 130，原输出 `Canceled: context canceled`。保留同目录
 `build-web-client.pDpajt.log` 和缓存；未完成产物、未更新部署 pin、未切换在线服务。
+
+## 2026-10-12 原批量作者消费与实际 429 纠偏
+
+本节替代旧段落将“各事件一次独立请求”作为最终恢复方式的判断；每个事件仍须
+提供已授权读取证据，但不要求每条消息各发两次 Relay 请求。固定官方版本仍为
+`779af8886caae1317b4de962082429867ab61503`，实际原调用链是：
+
+- `desktop/src/features/messages/lib/formatTimelineMessages.ts::collectMessageAuthorPubkeys`
+  去重作者并识别系统消息的 actor，不把 Relay signer 当普通作者。
+- `desktop/src/features/channels/useMessageEventProfilePubkeys.ts::useMessageEventProfilePubkeys`
+  收集窗口、线程及实际引用作者；
+  `desktop/src/features/channels/ui/ChannelScreen.tsx::ChannelScreen` 将实际集合交给
+  `desktop/src/features/profile/hooks.ts::useUsersBatchQuery`。
+- `desktop/src/shared/api/tauriProfiles.ts::getUsersBatch` 调用
+  `desktop/src-tauri/src/commands/profile.rs::get_users_batch`；原批量结果由
+  `desktop/src-tauri/src/nostr_convert.rs::users_batch_from_events` 消费。
+
+### 四步实现后结论与兼容窗口
+
+1. 权威：`.design/02`、`.design/07`、DD-75/77 的本人身份、Web BFF 与 Native
+   本机钥边界不变；本批恢复原批量读取消费者，不放宽 fresh scope/message 授权。
+   2026-10-12 01:38 UTC 普通 SSO 实际点击已有 Inbox 消息，再打开完整线程，
+   1.103 秒内新增 33 条 429（30 作者、2 STREAM parent、1 channel），不是旧日志
+   累积。线上仍为 `9d718234b74b688d9b81816f9b67470d4fc80440`，此次源码未部署。
+2. 影响：频道窗口/线程、Inbox 线程/跨 scope feed、论坛的姓名与头像消费同一个
+   批量 query；principal、scope 类型/ID、eventId 和预期 pubkey 全部进入身份键。
+   Core 逐事件验证 kind、签名、频道及原 ancestry；消息按原运行时 page limit
+   分段，每作者一个 kind:0、limit:1 filter，按原 NIP-11 max_filters 分组。
+   不用全局 limit 让某作者历史挤掉其他作者。返回前重验 scope 与 actor key，
+   头像继续原媒体映射。新 typed POST 接口不接受任意 pubkey/filter。
+3. 副作用：Core 不存 profile 或正文，不新增权限/数据库/注册表。任一消息不符、
+   作者重复/签名错/未知 kind、返回 map 不完整或 pubkey 不符均整批拒绝；尚未返回、
+   fetching、撤权、换身份/scope、旧请求晚返回均不得把旧姓名或头像交回当前页面。
+   没有按 pubkey 长期缓存、提高预算、延迟查询或跨 scope 合并。显式 hover/资料
+   面板仍通过同一批读接口执行单事件 fresh 读取，不由缓存替代权限。
+4. 边界：空窗口不发批读，全系统窗口不查询 Relay signer；缺 kind:0 是原合法空资料，
+   与缺消息授权证据不同。批量读取复用 `06` §4 的 DENIED/PRECONDITION/LIMIT
+   既有失败边界，保留原无效参数及证据错误响应，不把读取失败当已成功；
+   本批没有外部写入终态、重试账本或状态迁移，不新增 UNKNOWN 成功判据。
+   大窗口按原实际上限分段；没有新增硬编码业务阈值。Web 与 Native 原布局不变，
+   Mobile 本批无页面改动，仅取得生成契约。
+
+原 `WebProfileView` 的五个 nullable 展示字段此前同时列为 required，但 Rust/Dart
+省略 None，Go 会输出 null，真实新往返检查因此失败。现仅从 required 移除
+`about/avatarUrl/displayName/eventId/nip05Handle`，保留各字段 `string|null`；
+`pubkey/avatarMediaPaths` 仍必填。四侧类型均从原 schema 生成；原展示消费者使用
+生成 `WebProfileView`/Pick 和原 `?? null` 缺省。缺省、显式 null 与有值均有原往返
+证据；旧显式 null 响应仍能读取，不改布局、账号模型或权限。
+
+兼容窗口有实际旧线上消费者：两个旧 GET author-profile 路由暂时保留，但都委托
+同一批读实现，不保留另一授权算法。新 TS 单事件 convenience 方法也走 POST。
+部署新 Core 后再部署新 Web、确认旧请求无消费者，然后删除旧 GET 路由及对应
+追溯登记，才算窗口关闭。本批没有发布，旧路由收缩未执行，不称完整闭环。
+
+### 原入口证据与已知失败
+
+Web/兼容证据目录：
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/message-author-batch.uNkzAC`。
+Core/合同私有输入及原执行日志：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/message-author-batch.aE7Y6M`。
+复用既有 SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Web/Core 各 4 CPU、8 GiB，memory+swap 总限额等于内存（无额外 swap），
+源码/缓存/TMPDIR 均为 Data。启动前确认两 SDK 仅 sleep，宿主可用内存 29 GiB。
+没有修改 HOME、重新安装工具、启动 full 或构建发布镜像。
+
+- `tools/gen.sh` 四侧生成实际退出 0。原 `python3 tools/gen-registry.py` 退出 0，
+  两个 POST 的正式登记与生成结果 cmp 0。首次 registry 小输入缺设计文件失败，
+  补齐原 authority 文件后通过，没有修改生成器或另写注册表。
+- Core `cargo test --locked --offline -p platform-core --bin platform-core batch_author -- --nocapture`
+  实际 2 passed；同 binary `generated_registry_closes_unreleased_user_entries` 1 passed；
+  首次 Rust 新合同往返 1 passed，整体句柄 88363 退出 0，见 `core-restored.log`。
+  先前 login shell 丢失原 Dart PATH 导致 25003 退出 1，保留 `core-positive.log`；
+  改回原非 login exec，不修改工具或生成器。
+- 原 Web 六套消费者最终 27768 退出 0：186 passed，类型通过，见
+  `feed-corrected.log`。包含 Inbox 40 条真实虚拟列表仅一次批读、30 条头像与姓名
+  同一批读、同作者不同事件拒绝、不同 scope/身份分组及迟到结果清空。
+  初次 28202 的 184 pass/1 fail 是旧 DM 断言错误允许局部成功；现与整批拒绝一致。
+  中间 30955 的 getter 参数类型失败和对应 `feed-final.log` 保留。
+- 私有禁用头像对既有批读结果的消费，恢复逐行查询，42157 实际退出 1，
+  2 failed/1 passed/74 skipped，见 `avatar-mutation.log`。正式源码未变。
+- Core 私有副本将完整消息数校验改为仅拒绝超出、并移除 profile 重复作者校验，
+  原两项真实消费者在 67325 实际退出 101、0 passed/2 failed/440 filtered；
+  缺消息与重复 profile 断言分别准确失败，见 `core-mutation.log`。
+  正式源码未变；两处私有变异已按正式原字节恢复，逐文件 cmp 0。
+- 对 `bff.rs/web_profile.rs/web_transport.rs` 原 edition 2021 的
+  `rustfmt --check` 退出 1，`core-format.log` 仅报告 HEAD 已存在的两条 reminder
+  路由需要换行；本批两个 profile/transport 文件未报格式差异。没有隐藏失败或
+  修改 formatter 配置，也不将这个局部检查称为全批格式通过。
+  在 Core 原作业结束后，仅按原 formatter 将这两条既有 route 换行，正式/私有
+  bff 文件 cmp 0；同一三文件 `rustfmt --check --edition 2021` 随后退出 0，见
+  `core-format-restored.log`。这八行机械增量不增加提醒功能。
+- 原还原句柄 42366 中 `batch_author` 两项均通过（2 passed/440 filtered），
+  之后 `cargo clippy --locked --offline -p platform-core --bin platform-core -- -D warnings`
+  退出 101：唯一诊断为已有 `reminders.rs:47` 的 `nonminimal_bool`，原日志为
+  `core-final-restored.log`。没有对该 lint 加 allow；本批批读检查通过不等于
+  整个 Core 静态门禁通过，该既有表达式已交主线程收口。
+- Go 31179 初次新合同往返退出 1，见 `wire-go-dart.log`，真实暴露 required/null
+  不一致。修 schema 后原 Go `TestMessageAuthors` 通过；54147 的 Dart pub 解析
+  因私有输入缺 lock 尝试网络失败，保留 `wire-final.log`。沿原缓存
+  `dart pub get --offline` 后 28137 退出 0，Dart 与 Rust 新往返各 1 passed，见
+  `wire-dart-rust-final.log`。没有换成全有值样例掩盖失败。
+- TS contracts 原 typecheck/新增 absent 与 legacy-null 往返通过。可选字段暴露
+  展示消费者的 required 类型假设，48509/53672 均退出 2；保留
+  `nullable-restored.log` 和 `nullable-consumers-final.log`。五个原共享展示消费者
+  修正后共享类型通过，profile-settings/members/transport 三套 73 passed；
+  后续 Web 的 label 与 avatar 两处也沿原缺省归一化，不改语义或断言。
+- 末版 38871 的 Web 类型检查退出 0，随后两个原 DOM 文件都在 fork worker 启动
+  阶段超时，整句柄退出 1、0 用例/2 errors，见 `web-final.log`。没有修改超时或
+  循环重跑；不能以此前 186 项通过替代最终 nullable 适配后的 DOM 还原验收。
+  头像私有反证已按原字节恢复，恢复 cmp 0，但此末版套件不是通过。
+  在原 Core 编译实际结束、SDK 仅 sleep 后按主线程排队要求，用同一末版字节、
+  同配置/超时/断言串行再执行一次原两套，86115 实际退出 0：
+  MessageAuthorProfile 29、InboxPane 48，共 77 passed，见 `web-serial-final.log`。
+  耗时 155.71 秒，实际断言 4.08 秒；React act 警告保留。这补齐末版 DOM
+  还原消费者证据，不抹去 38871 的启动失败，也不等于浏览器业务或全量通过。
+- 原 `tools/check.sh` 的 `LAST_TAG` 兼容片段在同镜像 2 CPU/2 GiB、只读源码/Git/
+  精确 schema 与私有 index、无网络容器运行，实际退出 0；
+  `compatibility.log`：`PASS 相对 contracts-v0.1.0 无破坏性变更（316 个 schema，匹配 3 个历史 schema）`。
+  这是原兼容片段，不是整套 check.sh 或所有历史 schema 都有 tag 基线。
+
+本批四类归属：原展示/交互与姓名解析原样保留；现有共享组件继续两端共源；
+Web batch 的逐事件证据、scope/identity 分组与 fresh admission 为明确治理适配；
+未部署实拍、旧路由收缩、真实 HTTP/Relay/SpiceDB 集成与完整原 Agent owner/role
+呈现仍未验收或缺失。单元和 DOM fixture 不是线上授权验收，旧 429 截图不是修复
+后的截图，定向通过不替代仍未通过的全量门禁，不声明完整还原或生产就绪。
+
+末版原文档入口由主线程统一执行，33309 实际退出 0；日志为
+`/volumes/data/kailo/tmp/batch-closure-docs.o8zaH0/check-docs.log`，SHA-256
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+该脚本范围是当时当前工作树的顶层/docs/design，不覆盖本回执子目录正文，
+不称固定候选 full 通过。本批仅私有 index 选择实际 39 路径；四侧生成从
+独立 schema 输入取得，正式其他生成物、TS/Dart 词条和原公开暂存均未覆盖。
+Rust/Dart 往返原文件已有无关格式变化，本候选只选择新增实际往返块。

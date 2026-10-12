@@ -11,7 +11,7 @@ import {
   buildPublicFields,
   ProfileFieldGroup,
 } from "./ProfileFields";
-import type { UserProfileSummary as Profile } from "./host";
+import type { WebProfileView as Profile } from "@client-kit/contracts";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { MaskedAvatarBadgeFrame, STATUS_DOT_MASK_CURVE } from "../messages/thread/MaskedAvatarBadgeFrame";
 import { ProfilePrimaryActions } from "./UserProfilePrimaryActions";
