@@ -12,6 +12,10 @@ import { remindersQueryKey } from "../src/react/reminders/hooks";
 import { AppSidebarPrimaryMenu } from "../src/react/sidebar/app-sidebar-primary-menu";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { DEFAULT_SLOT_ALERTS_ENABLED, DEFAULT_SLOT_SOUNDS } from "../src/react/notifications/sound";
+import { InboxListPane } from "../src/react/inbox-list-pane";
+import { TooltipProvider } from "../src/react/sidebar/tooltip";
+import { PlatformProvider } from "../src/react/context";
+import { createBffClient } from "../src/client";
 
 const notificationEffects=vi.hoisted(()=>({sound:vi.fn()}));
 vi.mock("../src/react/notifications/sound",async original=>({
@@ -30,6 +34,59 @@ beforeAll(()=>{
   }))});
 });
 beforeEach(()=>{localStorage.clear();setLocale("en");notificationEffects.sound.mockReset();});
+
+it.each(["en", "zh-CN"] as const)("shares the original Inbox list actions, UNKNOWN and personal branches (%s)", async locale => {
+  setLocale(locale);
+  const h=host(), select=vi.fn(), markRead=vi.fn(), markUnread=vi.fn(), open=vi.fn(), selectReminder=vi.fn();
+  const item={id:eventId,conversationId:"same-conversation",latestActivityAt:3,
+    item:{id:eventId,channelId:"admitted-workspace",pubkey,content:"original body"},groupItems:[{id:eventId}]};
+  const orphan={...reminder("orphan"),content:parseReminderContent(JSON.stringify({status:"pending",note:"personal reminder"}))!};
+  vi.mocked(h.query).mockResolvedValue([reminder(),orphan]);
+  const height=vi.spyOn(HTMLElement.prototype,"offsetHeight","get").mockImplementation(function(this:HTMLElement){return this.hasAttribute("data-index")?96:420;});
+  const width=vi.spyOn(HTMLElement.prototype,"offsetWidth","get").mockReturnValue(800);
+  const rect=vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){return new DOMRect(0,0,800,this.offsetHeight);});
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  function List() {
+    const [filter,setFilter]=useState<"all"|"drafts"|"reminders">("all");
+    const [pending,setPending]=useState(false),[admitted,setAdmitted]=useState(true);
+    return <><button onClick={()=>setPending(true)}>pending read</button><button onClick={()=>setFilter("drafts")}>draft branch</button>
+      <button onClick={()=>setFilter("reminders")}>reminder branch</button><button onClick={()=>setAdmitted(false)}>revoke</button>
+      <InboxListPane items={admitted?[item]:[]} filter={filter} onFilterChange={value=>{if(value==="all"||value==="drafts"||value==="reminders")setFilter(value);}}
+        unreadOnly={false} onUnreadOnlyChange={vi.fn()} activeDraftCount={1} selectedConversationId={item.conversationId}
+        selectedReminderId="orphan" onSelectReminder={selectReminder} onSelect={select} isRead={()=>false}
+        onMarkRead={markRead} onMarkUnread={markUnread} readPending={pending} onOpen={open}
+        reopenState={()=>({pending:false,error:true,unknown:true})} sourceChannelId={()=>target.channelId}
+        presentation={()=>({senderLabel:"Author",sender:"Author",avatar:null,preview:"original body",timestamp:"now",unreadCount:2,label:"Thread",channel:"actual"})}
+        draftList={<p>original admitted draft list</p>} />
+    </>;
+  }
+  try {
+    const client=createBffClient({send:async()=>{throw new Error("No additional transport in list presentation");}});
+    const root=await render(<PlatformProvider client={client} locale={locale}><Cache><TooltipProvider><ReminderHostProvider host={h}><RemindMeLaterProvider pubkey={pubkey}><List/></RemindMeLaterProvider></ReminderHostProvider></TooltipProvider></Cache></PlatformProvider>);
+    await vi.waitFor(()=>expect(root.querySelector(`[data-testid="home-inbox-item-${eventId}"]`)).not.toBeNull());
+    const row=root.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${eventId}"]`)!;
+    expect(row.getAttribute("aria-current")).toBe("true");
+    await vi.waitFor(()=>expect(row.querySelector('[data-testid="home-inbox-reminder-due"]')).not.toBeNull());
+    await click(row.querySelector<HTMLButtonElement>('button[aria-label]')!);
+    expect(select).toHaveBeenCalledExactlyOnceWith(item);expect(markRead).toHaveBeenCalledExactlyOnceWith(item);
+    const retry=row.querySelector<HTMLButtonElement>(`[data-testid="home-inbox-reopen-retry-${eventId}"]`);
+    expect(retry).not.toBeNull();await click(retry!);expect(open).toHaveBeenCalledExactlyOnceWith(item);
+    await act(async()=>row.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,button:2})));
+    const menu=[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(entry=>entry.textContent===(locale==="en"?"Mark as read":"标为已读"));
+    expect(menu).toBeDefined();await click(menu!);expect(markRead).toHaveBeenCalledTimes(2);
+    await click(button(root,"pending read"));
+    expect(row.querySelector<HTMLButtonElement>(`button[aria-label="${locale==="en"?"Mark as read":"标为已读"}"]`)?.disabled).toBe(true);
+    await click(row.querySelector<HTMLButtonElement>('button[aria-label]')!);expect(markRead).toHaveBeenCalledTimes(2);
+    await click(root.querySelector<HTMLElement>('[data-testid="home-all-reminders-orphan"]')!);
+    expect(selectReminder).toHaveBeenCalledExactlyOnceWith("orphan");
+    await click(button(root,"revoke"));expect(root.textContent).not.toContain("original body");
+    await click(button(root,"draft branch"));expect(root.querySelector('[data-testid="home-inbox-drafts"]')?.textContent).toContain("original admitted draft list");
+    expect(root.querySelector('[data-testid="home-inbox-list"]')).toBeNull();
+    await click(button(root,"reminder branch"));expect(root.querySelector('[data-testid="home-inbox-reminders"]')).not.toBeNull();
+    expect(root.textContent).not.toContain("original admitted draft list");
+    expect(h.publish).not.toHaveBeenCalled();expect(markUnread).not.toHaveBeenCalled();
+  } finally {height.mockRestore();width.mockRestore();rect.mockRestore();vi.unstubAllGlobals();}
+});
 
 function notifyingHost():ReminderHost {
   return {...host(),notifications:{

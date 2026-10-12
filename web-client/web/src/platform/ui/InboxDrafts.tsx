@@ -42,10 +42,10 @@ export function useInboxDrafts(principalId: string) {
 
 type Destination = { kind: "workspace"; workspace: WorkspaceView } | { kind: "conversation"; conversation: ConversationView };
 
-export function InboxDrafts({ principalId, workspaces, participants, entries, selectedKey, onSelect, onDelete, showList, showDetail, onBack, header, onOpen }: {
+export function InboxDrafts({ principalId, workspaces, participants, entries, selectedKey, onSelect, onDelete, showList, showDetail, onBack, renderList, onOpen }: {
   principalId: string; workspaces: WorkspaceView[]; entries: DraftListEntry[]; selectedKey: string | null;
   onSelect: (key: string | null) => void; onDelete: (key: string) => void; showList: boolean; showDetail: boolean; onBack?: () => void;
-  participants: ConversationParticipant[]; header: ReactNode;
+  participants: ConversationParticipant[]; renderList: (list: ReactNode) => ReactNode;
   onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: ConversationView}) => void | Promise<void>;
 }) {
   const t = useT(); const client = useBffClient(); const conversations = useConversations();
@@ -95,7 +95,7 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
       ? <MessageContent content={draft.content} workspaceId={draft.channelId} conversationId={target?.kind === "conversation" ? target.conversation.id : undefined} />
       : t("drafts.attachments", { count: draft.pendingImeta.length })}</div>;
   };
-  return <>{showList ? <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60">{header}<div className="min-h-0 flex-1 overflow-y-auto"><DraftListSurface items={items} selectedKey={selectedKey} onSelect={onSelect} onOpen={(entry) => open(entry, false)} onSend={(entry) => open(entry, true)} onDelete={onDelete} renderPreview={preview} /></div></section> : null}
+  return <>{showList ? renderList(<DraftListSurface items={items} selectedKey={selectedKey} onSelect={onSelect} onOpen={(entry) => open(entry, false)} onSend={(entry) => open(entry, true)} onDelete={onDelete} renderPreview={preview} />) : null}
     {showDetail ? <DraftDetailSurface item={selected} onBack={onBack} onOpen={(entry) => {void open(entry, false);}} onSend={(entry) => {void open(entry, true);}} onDelete={onDelete} renderPreview={preview} /> : null}
   </>;
 }

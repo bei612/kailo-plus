@@ -605,6 +605,7 @@ export function HomeView({
               isReopenPending={hiddenDm.isReopenPending}
               isReopenErrored={hiddenDm.isReopenErrored}
               isReopenUnknown={hiddenDm.isReopenUnknown}
+              readPending={coreReads.pending}
               onSelect={(itemId) => {
                 setSelectedReminderId(null);
                 const item = findInboxItemByEventId(inboxItems, itemId);
@@ -618,7 +619,6 @@ export function HomeView({
                 );
                 setSelectedDraftKey(null);
                 handleUserSelectItem(itemId);
-                markItemRead(itemId);
               }}
               onSelectDraft={(draftKey) => {
                 setSelectedReminderId(null);

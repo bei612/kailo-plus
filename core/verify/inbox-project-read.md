@@ -2060,3 +2060,24 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 5. 原生产字节精确恢复且 `cmp` 为 0；还原句柄 `38289` 实际 exit 0，同一共享 6 个新增用例及 Native 2 个消费者全部通过。日志 `restored.log`。
 
 全部日志/冻结输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-selection-anchor.KknsMJ`。没有 Rust/GTK、模型调用或线上业务授权验收；没有新 schema，四侧生成/兼容检查本轮无适用对象。公共暂存未写；历史 i18n/verify/MM 不纳入源码候选。
+
+## 2026-10-12 Inbox 现有列表操作主体共源
+
+- 权威与定位：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane`；真实调用为 Native `HomeScreen → HomeView → InboxListPane` 与 Web `PlatformApp → InboxPane`。按工程 06 / ADR-09 的 Web、Desktop 同一 TS 主体要求，将两端实际重复的列表操作迁入 `client-kit/ts/platform/src/react/inbox-list-pane.tsx`，不是仅共享类型、hook 或让宿主继续传入整行交互。
+- 引用与读写：共享主体拥有原 header/filter、虚拟滚动、行选择与标读、按钮/上下文菜单、reopen 状态/重试、到期提醒合并、RemindersPanel 和 drafts 分支。Native 原 InboxListPane 只适配已准入条目、可信 profile/正文与原命令；HomeView 原选中标读搬入共享主体，移除重复写。Web InboxPane 移除相同主体，InboxDrafts 将原 DraftListSurface 交同一列表分支，不改变目的地校验或草稿意图。
+- 副作用：仍仅原 `coreReads.write` / Web `reads.write`、hidden-DM 原导航和 reminder 原生产者。共享组件无 BFF/Relay/凭据传输，不增加权限、账本、持久缓存、接口或自动发送。Native channel 与 Web Workspace 不混用：提醒目标由宿主提供原生 channel，实际 read/open 仍经原已授权映射。
+- 异常：标读 pending 禁止再次写入；reopen UNKNOWN 保留中性提示与原同意图重试。Web principal/snapshot/fresh scope、Native session/频道/可见性与 read failure 清屏均留在原宿主，没有从列表迁移绕过。授权条目撤除即移除正文；上下文菜单和按钮消费同一原动作，草稿 UNKNOWN 及提醒发布结果仍由原消费者管理。
+- 路径四分类：原样保留原布局、行呈现、虚拟滚动和既有 DraftListSurface/RemindersPanel；同源迁移原列表、菜单、选择/标读及个人分支；宿主必要差异仅身份/资料/原正文和治理命令适配；本批未迁移详情/Composer、完整 HomeView/InboxPane 数据与页面编排，不能据此称完整 Inbox 页面共源。未做真设备、线上 BFF/Relay 授权、full、构建或部署验收。
+- 实现后交叉复核：主线守则轴及 Cells 原版/需求轴未发现本批确定新增缺陷；对照固定上游，`needs_action` producer/筛选和 `isActionRequired` 行强调在现有 `inbox-surface` / `InboxRow` 仍未恢复，是继承缺项而非本批新增回退。本批只收口现有列表操作主体共源，不称完整原版列表或百分之百恢复，不为收口扩展第二组数据模型。
+
+### 本批实际消费者与失败
+
+基底 `993da21e9619ddac8763778394bea07c504a8022`，8 个源码/测试路径（6 生产、2 原测试）。原 `tools/container-safety.sh` 在 22:48:40 UTC 实读 MemAvailable 37297768 kB、memory PSI 0；现有 SDK `kailo-inbox-forum-r5kqbx` 仅 sleep。固定镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，2 CPU / 4 GiB，memory+swap 总额同为 4 GiB，无额外 swap，UID 1000:1000、network none、只读 root，源码/依赖/cache/tmp 全部沿原 Data 挂载。没有新依赖、i18n、schema、四侧生成或新镜像。
+
+1. `77521` 真实 exit 0：共享 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`、Web 与 Native 原 `tsc --noEmit` 均 0。原私有输入准备曾因不存在的旧测试路径 exit 2，未启动编译；纠正精确已提交路径后再运行，不生成假文件。
+2. `33344` / `48913` 真实 exit 1：两次共享 test types 均 0；新增两语言夹具先缺 PlatformProvider，随后 UNKNOWN 夹具没有同时表达原导航的 error=true。仅纠正原测试输入，生产没有为通过而改语义；Web 后续步骤因串行失败未运行。原 `consumers-first.log` / `consumers-fixed.log` 均保留。
+3. `5614` 真实 exit 0：共享 test types 0；原 `vitest run test/reminders.test.tsx -t "shares the original Inbox list"` 2/2，其余 16 项明确未选；原 Web `vitest run src/platform/ui/InboxPane.test.tsx src/platform/ui/InboxDrafts.test.tsx` 为 60/60 + 8/8。覆盖真实虚拟行、两语言上下文菜单/选择标读、UNKNOWN、提醒/draft 分支、主体移除，以及 Web 原 scope/身份/冷恢复/作者/草稿消费者；不是在线服务授权证明。
+4. `27940` 私有单处生产反证真实 exit 1：仅去掉共享 onSelect 中的 `!readPending` 守卫，两语言均捕获“预期 2 次标读但实际 3 次”。正式源码未破坏，未删断言或放宽数据。
+5. 原生产字节 apply_patch 恢复，正式/私有 cmp 0；`20482` 原还原检查真实 exit 0，共享 2/2、Web 原身份切换/hidden DM/原生 channel 标读 4/4，其余 56 项明确未选。React act 与原 query fixture 警告保留，未屏蔽。
+
+原日志与冻结输入：`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-list-pane.kTLKuC`；最终 docs/本文 selected lint 结果只留该 Data receipt，不在本文追加自引用。公共 index、原 i18n/其他历史 dirty 均未纳入本批；Native 此轮验证为 TypeScript 与实际共用列表 JS 主体，不冒称 Rust/GTK 或设备交互已验收。

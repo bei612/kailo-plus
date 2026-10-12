@@ -54,7 +54,7 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
   const client={workspaceChannel:vi.fn()} as unknown as BffClient;
   const render=()=>act(async()=>root.render(<PlatformProvider client={client} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
     <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[{principalId:"alice",displayName:"Alice",pubkeys:["c".repeat(64)]},{principalId:"peer",displayName:"Actual peer",pubkeys:["d".repeat(64)]},{principalId:"foreign",displayName:"Unrelated",pubkeys:["e".repeat(64)]}]}
-      entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
+      entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list => list}/>
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   try {
     await render();
@@ -76,7 +76,7 @@ it("does not open a hidden DM draft or confuse a native channel draft with anoth
   views.error=false;views.loading=false;views.hidden=new Set([channel]);views.open.mockClear();views.toast.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const render=()=>act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
-    <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
+    <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list => list}/>
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
   try {
     await render();expect(host.querySelector<HTMLButtonElement>('button[aria-label="Open draft"]')?.disabled).toBe(true);
@@ -94,7 +94,7 @@ it("uses the original confirmation then opens the admitted DM composer with only
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   try {
     await act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
-      <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail header={null}/>
+      <InboxDrafts onOpen={views.open} principalId="alice" workspaces={[]} participants={[]} entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList={false} showDetail renderList={list => list}/>
     </TooltipProvider></QueryClientProvider></PlatformProvider>));
     await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')!.click());
     expect(views.open).not.toHaveBeenCalled();
@@ -115,7 +115,7 @@ it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM sourc
   try {
     await act(async () => root.render(<PlatformProvider client={{} as BffClient} locale={locale}><QueryClientProvider client={cache}><TooltipProvider>
       <InboxDrafts onOpen={views.open} principalId={people[0]!.principalId} workspaces={[]} participants={people}
-        entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList showDetail header={null} />
+        entries={[entry]} selectedKey={entry.key} onSelect={vi.fn()} onDelete={vi.fn()} showList showDetail renderList={list => list} />
     </TooltipProvider></QueryClientProvider></PlatformProvider>));
     const expected = locale === "en" ? "First, Second, Third, +1 more" : "First, Second, Third, +1 人";
     const list = host.querySelector('[data-testid="home-inbox-drafts-list"]')!;
