@@ -17,10 +17,12 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/platform/platform_api.dart';
+import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/buzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -31,6 +33,7 @@ import 'channel_actions_sheet.dart';
 import 'channel_management_actions.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
+import 'direct_messages.dart';
 import 'relay_sync_banner.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
 import '../../shared/read_state/read_state_format.dart';
@@ -47,8 +50,9 @@ part 'channels_page/community.dart';
 part 'channels_page/quick_actions.dart';
 part 'channels_page/quick_actions_launcher.dart';
 part 'channels_page/sheets.dart';
+part 'channels_page/new_direct_message_sheet.dart';
 
-enum _QuickAction { createChannel }
+enum _QuickAction { createChannel, newDm }
 
 String _channelText(
   BuildContext context,

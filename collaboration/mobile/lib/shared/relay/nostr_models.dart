@@ -261,6 +261,7 @@ class ChannelData {
   final String description;
   final String? topic;
   final bool isArchived;
+  final List<String> participantPubkeys;
 
   const ChannelData({
     required this.id,
@@ -270,6 +271,7 @@ class ChannelData {
     required this.description,
     this.topic,
     this.isArchived = false,
+    this.participantPubkeys = const [],
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -300,6 +302,10 @@ class ChannelData {
       description: description,
       topic: topic,
       isArchived: isArchived,
+      participantPubkeys: [
+        for (final tag in event.tags)
+          if (tag.length >= 2 && tag.first == 'p') tag[1],
+      ],
     );
   }
 }

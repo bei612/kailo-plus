@@ -63,6 +63,50 @@ Core 依据为 apps commit `c661236d5d85dcb29fca4b7d1f8727ec4d46df7d` 的 `core/
 
 交付分层：源码已写入并形成上述私有候选；仅定向模拟消费者验收通过；本批没有独立 commit/push；没有部署、APK/iOS 构建、安装包、真机或正常 SSO 在线创建验收；未运行 Flutter 全套或 `check.sh --full`，交由主线合批门禁，不能据这 34 项提高生产交付完成率。
 
+## 受治理 New DM 恢复（2026-10-12）
+
+本节继续纠正历史裁剪记录，只恢复原 Mobile New DM→HUMAN 收件人选择→原生私聊回读。上节「本批没有恢复 New DM」仅指频道创建批次。本批不是完整 launcher、DM 管理、Mobile 全量或原版 100% 一致验收；presence、Browse Channels、其他删项与设备视觉对照仍未恢复或未验证。
+
+### 编辑前四项核对结论
+
+1. 权威为 `.design/03-领域模型与权限模型.md` 的 ConversationBuzzBinding 与 `.design/09-统一身份与Buzz协议投影.md` 的 DM 投影边界：同 tenant、不可变 HUMAN Principal 集合、当前发起人必须在内、ACTIVE 绑定和 fresh discover。DM 不是 Workspace；管理面使用现有 `conversation.open`，设备不直接创建 CONTROL。
+2. 影响面为原 New DM sheet/launcher、Channel DM 字段、列表/详情显示、原消息与已读消费者、NativeSession/BFF 的现有目录/Action/Task 合同及本机 Relay 原读取/签名入口。没有改契约、数据库、Core/Worker、工作流类型、Mobile 非组件宿主边界或另建身份目录；文案只增量使用原 TS→Dart 生成路径。
+3. fresh FULL session、actor/tenant 与本机 CLIENT 映射必须一致。目录只消费 BFF 的 HUMAN 与其全部当前公钥，重复 Principal、公钥、分页游标、变化上限和缺失自身投影均拒绝；多公钥不膨胀成人数。Task 必须匹配本次 AE/operation/action/workflow/target，结果不明、查询失败或投影未收敛不能成为成功或确定失败。
+4. 原 command/key/响应引用在 POST 前后持久保存，仅当前 actor+tenant+运行时平台地址可读取，没有 token、Cookie、密码或第二执行终态。并发重入、sheet 重挂载、重启和响应丢失不换 key；未知引用仅用户显式同字节/同 key 回查，已知引用只 GET。sheet 在原 consumer 改变时锁定并关闭，不沿用另一身份收件人。确定结束或成功也须先移除原本机意图，存储失败不能放行新提交。
+
+### 固定源码差异与实际消费者
+
+固定 Buzz commit `779af8886caae1317b4de962082429867ab61503`：`mobile/lib/features/channels/channels_page/sheets.dart::_NewDirectMessageSheet`、`_SelectedDmRecipientChip`，`mobile/lib/features/channels/channels_page/quick_actions.dart::_MorphingQuickActionsButton`，`mobile/lib/features/channels/channel.dart::Channel`，`mobile/lib/features/channels/channels_page/channel_tile.dart::_DmAvatar` 和 `mobile/lib/features/channels/channel_detail_page/app_bar.dart::_DmAppBarTitle` 是恢复来源。`mobile/lib/features/channels/channel_management_actions.dart::ChannelActions.openDm` 的 selected-p 直接创建与原预览目录不恢复。
+
+- 原样保留：原菜单 New DM 卡片、收件人 To/输入/搜索结果/移除 chip、头像回退、键盘 Done、原 sheet 几何和原生 DM 消息/列表消费；没有发明摘要页面或假 Offline。
+- 共享迁移：仅补 `native.quickActions.newDm`、`native.dm.searchPerson`、`native.dm.section` 三 key，由现有 TS 目录生成 Dart；不手写另一翻译权威。
+- 已授权治理改造：`collaboration/mobile/lib/features/channels/direct_messages.dart::DirectMessages` 消费真实 NativeSession 管理面与 HUMAN 目录；`direct_message_actions.dart::_DirectMessageActions` 持久保存原意图并精确回读；原 native `SignedEventRelay` 仍使用本机 CLIENT 密钥。
+- 缺失需恢复：presence、Browse、完整 DM/频道管理及其他历史裁剪仍缺项；本批未做完整页面截图、APK/iOS 或设备验收，不称全量一致。
+
+Core 依据固定 apps commit `993da21e9619ddac8763778394bea07c504a8022` 的 `core/crates/platform-core/src/conversations.rs::{OPEN,participants,list,target,prewrite,advance}` 与 `core/crates/platform-core/src/governance.rs::Governance::{submit_with_native_origin,by_idempotency,replay}`。原 dedupe 为 tenant/initiator/key 与 action/参数摘要；同键回查可推进同一 AE，不等于永不再调用 decide/dispatch。Mobile 模拟消费者只证明同字节/key、已知引用 GET-only 和关联检查，不代替 Core 在线无第二 AE/operation/业务执行证据。
+
+本次完成确认必须同时具备 Task 的当前 operation、ACTIVE Conversation 的精确 target 与 immutable participants、本机直连读取的有效 Relay 签名 39000/39002、精确完整 roster 与当前 CLIENT 准入，再刷新原 channelsProvider 回读同一个 DM。已存在 DM 的 binding.operationId 是原创建引用，允许与本次 AE.operationId 不同；不能用同名或任意可见资源代替结果。DM 作者名称消费原 UserCache 的可信 HUMAN 映射，不把 DM ID 当 Workspace 调平台成员目录。
+
+个人 unhide 依据同一 apps commit `collaboration/crates/buzz-relay/src/handlers/command_executor.rs::{handle_dm_open,handle_dm_visibility}`：设备只签名空正文、唯一 h 的原 41010，绝不含 selected-p。签名前验证 Relay 签名且精确 viewer 的 NIP-DV 30622；原有初始 snapshot 缺失仅表示没有隐藏记录，异常 snapshot 不降级为空。必要 unhide 先持久保存原签名事件，OK 丢失后精确回读；确未应用时只显式重发同一个事件，确认已应用不重复发布。
+
+### 实际验证与交付界限
+
+候选及原日志在 `/volumes/data/kailo/tmp/mobile-new-dm.1gPwk4/`，输入基于上述 apps commit，公共 index、共享 TS/Dart 与继承主题修改均未覆盖。本批实现后才补原消费者用例，没有先写规格或 TDD。
+
+复用已有不可变 Flutter 镜像 `sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`。每次执行前读取原构建进程与 CPU/内存压力，实际容器为 2 CPU、4294967296 字节 memory=memory+swap、UID 1000、network none；源码输入、SDK/pub 缓存、HOME、tmp 与日志均在 Data，未宿主编译、pull/load、打新 APK 或并行重量构建。
+
+`analyze.log` 中原 `python3 tools/gen-platform-i18n.py` 及 `--check` 生成校验通过；原 18 项 `flutter analyze --no-pub` 在 `consumers-round4.log` 为 `No issues found! (ran in 32.1s)`。该次测试为 +45/-1：原 Channel Creation/Channels/Home 三文件 34 项全部通过，唯一失败是本批模拟夹具误用了契约外 observation，真实契约 parser 拒绝；已改为原 `EXTERNAL_RESULT_UNKNOWN`。失败原件未删，后续 New DM 专项结论单独记录。
+
+修正后最终 `consumers-final.log`：18 项原 `flutter analyze --no-pub` 为 `No issues found! (ran in 76.9s)`；`flutter test --no-pub --reporter expanded test/features/channels/direct_messages_test.dart` 为 `00:01 +13: All tests passed!`，容器与外层命令实际 exit 0。覆盖 HUMAN/多公钥、错误分页/投影、响应丢失重启、原字节/key、GET-only、AE/operation/UNKNOWN、binding/roster、签名个人 unhide 丢失 OK/精确重发、actor 隔离、NIP-DV 和原收件人 widget/身份切换关闭；原 34 项没有重复运行。
+
+仅在私有输入移除 Task operation 精确关联时，原专项实际 exit 1：应抛 FormatException 却返回 Channel，见 `mutation-operation-mismatch.log`。恢复原 Actions 字节 SHA256 `80dbc4fc9f97ea220f1427b2cb8d6d2daf3fc5dfe33fa000f73bd1db026abe6c` 后，同一专项 `+1: All tests passed!`、exit 0，见 `restored-operation-mismatch.log`；正式源码从未被破坏。17 个正式源码路径已与最终私有输入逐一 cmp 相等，独立源码 patch SHA256 `52e60098f275f617f826c939868b19148f93d83e77059de12a3ec425ddf37f54`，+1536/-79；独立三 key patch SHA256 `5c64014438a216100a90444f401b788714fc1428d914c2fe0a590b6c955c73ca`，两路径 +9。
+
+失败原件还包括 `analyze.log` 的四项 lint、`consumers.log` 的新用例括号解析（65）与旧 nostr Keys API/大括号错误、`consumers-round3.log` 的原页面新增 loading import 与大括号错误，均直接修正实际消费者，不把失败记成通过。
+
+首次 `check-docs.sh` 的普通 npx 调用在 network none 容器等待 npm 元数据，原前六项与设计自检已通过但命令未终结，主动停止本人容器，原 `docs-selected.log` 保留且不称 OOM/通过。后续原命令只通过 `npm_config_offline=true` 复用已有缓存，不构建或拉取工具镜像；候选 Mobile 文档按私有 HEAD 加本节检查，不纳入正式继承文档的历史 MD032。
+
+源码写入与定向模拟消费者不等于线上可用；本批不自行 commit/push，没有部署、新安装包、真机/模拟器正常 SSO 私聊或真实多人互发验收，也未重跑 Flutter 全套和 `check.sh --full`。发布与全量门禁由主线合批，本节不据代码量或定向通过提高生产完成率。
+
 ## 清单可复现
 
 上一轮清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `463d59637c265052e99ea7f1d7a4559eab9121cf`）。

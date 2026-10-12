@@ -46,7 +46,13 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
     final admitted =
         role.asData?.value.createActionKey == CreateActionKey.WORKSPACE_CREATE;
     final recovering = actions.asData?.value.pendingCommand != null;
-    final available = visible && (admitted || recovering);
+    final dm = ref.watch(directMessagesProvider);
+    final people = ref.watch(conversationDirectoryProvider);
+    final newDm =
+        (people.asData?.value.people.length ?? 0) >= 2 ||
+        dm.asData?.value.pendingCommand != null;
+    final createChannel = admitted || recovering;
+    final available = visible && (createChannel || newDm);
     final quickActionsOpen = useState(false);
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     final navigationBottomInset = systemBottomInset > navigationBarBottomGap
@@ -101,6 +107,16 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
           if (created != null && context.mounted) {
             await openChannel(created);
           }
+        case _QuickAction.newDm:
+          final opened = await showBuzzModalBottomSheet<Channel>(
+            context: context,
+            title: _channelText(context, PlatformMessageKey.sidebarNewMessage),
+            constraints: _quickActionSheetConstraints(context),
+            isScrollControlled: true,
+            showDragHandle: true,
+            builder: (_) => const _NewDirectMessageSheet(),
+          );
+          if (opened != null && context.mounted) await openChannel(opened);
       }
     }
 
@@ -157,6 +173,8 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
                 ),
                 child: _MorphingQuickActionsButton(
                   open: effectiveOpen,
+                  createChannel: createChannel,
+                  newDm: newDm,
                   openEdgeOffset: rightInset - Grid.gutter,
                   onToggle: () {
                     unawaited(HapticFeedback.lightImpact());

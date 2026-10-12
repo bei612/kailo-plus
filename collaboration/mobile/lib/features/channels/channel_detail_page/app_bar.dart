@@ -124,3 +124,50 @@ class _ChannelAppBarTitle extends ConsumerWidget {
     );
   }
 }
+
+// Original Buzz _DmAppBarTitle's avatar/name subtree. HUMAN labels are projected
+// from Conversation participants, never fetched through a fabricated Workspace.
+// Native presence has no current consumer; do not invent Online/Offline state.
+class _DmAppBarTitle extends ConsumerWidget {
+  const _DmAppBarTitle({required this.channel, required this.currentPubkey});
+  final Channel channel;
+  final String? currentPubkey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final other = channel.participantPubkeys
+        .where((key) => key != currentPubkey?.toLowerCase())
+        .firstOrNull;
+    final profile = ref.watch(
+      userCacheProvider.select((profiles) => profiles[other]),
+    );
+    final label = channel.displayLabel(currentPubkey: currentPubkey);
+    return Row(
+      children: [
+        AvatarImage(
+          key: const ValueKey('dm-header-avatar'),
+          imageUrl: profile?.avatarUrl,
+          radius: 16,
+          backgroundColor: context.colors.primaryContainer,
+          fallback: Text(
+            profile?.initial ?? label.characters.first.toUpperCase(),
+            style: context.textTheme.labelSmall?.copyWith(
+              color: context.colors.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: Grid.xxs),
+        Expanded(
+          child: Text(
+            label,
+            key: const ValueKey('dm-header-name'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.textTheme.titleSmall,
+          ),
+        ),
+      ],
+    );
+  }
+}

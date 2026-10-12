@@ -13,8 +13,8 @@ import 'channels_provider.dart';
 
 /// Opens the mobile channel actions sheet.
 ///
-/// 移动端只提供读取面的动作：已读/未读、成员名单、复制。建 Channel、
-/// 加人、改名、静音、收藏、离开、归档与删除都不在移动端交付，入口一律不生成。
+/// 此 sheet 只提供已读/未读、频道成员名单与复制；受治理的频道创建和
+/// New DM 由原 launcher 发起。其余频道/DM 管理仍未恢复，不生成假入口。
 Future<void> showChannelActionsSheet({
   required BuildContext context,
   required Channel channel,
@@ -102,24 +102,25 @@ class ChannelActionsSheet extends ConsumerWidget {
                   }
                 },
               ),
-              ListTile(
-                key: const ValueKey('channel-action-members'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(LucideIcons.users),
-                title: const Text('Members'),
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  close();
-                  navigator.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => PlatformMembersPage(
-                        workspaceId: channel.id,
-                        title: channel.name,
+              if (!channel.isDm)
+                ListTile(
+                  key: const ValueKey('channel-action-members'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(LucideIcons.users),
+                  title: const Text('Members'),
+                  onTap: () {
+                    final navigator = Navigator.of(context);
+                    close();
+                    navigator.push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PlatformMembersPage(
+                          workspaceId: channel.id,
+                          title: channel.name,
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.copy),

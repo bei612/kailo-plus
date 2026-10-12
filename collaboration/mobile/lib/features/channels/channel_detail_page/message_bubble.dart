@@ -335,6 +335,7 @@ class _UserAvatar extends StatelessWidget {
 }
 
 IconData channelIcon(Channel channel) {
+  if (channel.isDm) return LucideIcons.messagesSquare;
   if (channel.isPrivate) return LucideIcons.lock;
   return LucideIcons.hash;
 }

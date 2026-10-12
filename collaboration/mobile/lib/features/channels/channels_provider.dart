@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 import 'channel.dart';
+import 'direct_messages.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import '../../shared/read_state/read_state_provider.dart';
@@ -217,7 +218,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
               ),
             ),
           );
-    final channels = <Channel>[];
+    var channels = <Channel>[];
     for (final event in dedupedMetas) {
       final id = event.getTagValue('d');
       if (id == null) continue;
@@ -235,6 +236,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       if (count != null) {
         channels[i] = channels[i].copyWith(memberCount: count);
       }
+    }
+
+    if (channels.any((channel) => channel.isDm)) {
+      final dm = await _fenced(fence, ref.read(directMessagesProvider.future));
+      channels = await _fenced(fence, dm.hydrate(channels));
     }
 
     // Step 3: fetch the most recent message per channel to populate lastMessageAt.
@@ -259,7 +265,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         final channelId = event.channelId;
         if (channelId == null) continue;
         if (!channelById.containsKey(channelId)) continue;
-        if (!shouldNotifyForEvent(event, myPk, channelId: channelId)) {
+        if (!channelById[channelId]!.isDm &&
+            !shouldNotifyForEvent(event, myPk, channelId: channelId)) {
           continue;
         }
         final current = lastMessageMap[channelId];
@@ -417,6 +424,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
             )
           : null,
       isMember: isMember,
+      participantPubkeys: data.participantPubkeys,
     );
   }
 
@@ -501,14 +509,15 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         final readAt = readAtByChannel[channelId];
         if (event.pubkey.toLowerCase() == myPk.toLowerCase()) continue;
         if (readAt != null && event.createdAt <= readAt) continue;
-        if (!shouldNotifyForEvent(
-          event,
-          myPk,
-          participatedRootIds: _participatedRootIds,
-          followedRootIds: _followedRootIds(),
-          authoredRootIds: _authoredRootIds,
-          channelId: channel.id,
-        )) {
+        if (!channel.isDm &&
+            !shouldNotifyForEvent(
+              event,
+              myPk,
+              participatedRootIds: _participatedRootIds,
+              followedRootIds: _followedRootIds(),
+              authoredRootIds: _authoredRootIds,
+              channelId: channel.id,
+            )) {
           continue;
         }
         _recordUnreadEvent(channel, event, myPk);
@@ -548,14 +557,16 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       }
 
       if (myPk != null &&
-          shouldNotifyForEvent(
-            event,
-            myPk,
-            participatedRootIds: _participatedRootIds,
-            followedRootIds: _followedRootIds(),
-            authoredRootIds: _authoredRootIds,
-            channelId: channel.id,
-          )) {
+          event.pubkey.toLowerCase() != myPk.toLowerCase() &&
+          (channel.isDm ||
+              shouldNotifyForEvent(
+                event,
+                myPk,
+                participatedRootIds: _participatedRootIds,
+                followedRootIds: _followedRootIds(),
+                authoredRootIds: _authoredRootIds,
+                channelId: channel.id,
+              ))) {
         _recordUnreadEvent(channel, event, myPk);
         final eventTime = DateTime.fromMillisecondsSinceEpoch(
           event.createdAt * 1000,

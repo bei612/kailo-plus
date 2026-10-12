@@ -183,7 +183,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         initialForcedUnreadMessageIdsRef.value;
     final currentPubkey = ref.watch(currentPubkeyProvider);
     // 作者名取自平台成员名单：原生设备的公钥没有 kind:0 资料（DD-77）
-    ref.watch(platformAuthorNamesProvider(channel.id));
+    if (!channel.isDm) ref.watch(platformAuthorNamesProvider(channel.id));
     final baseChannel =
         channelsAsync
             .whenData(
@@ -292,17 +292,22 @@ class ChannelDetailPage extends HookConsumerWidget {
                 ? iosGlassChannelHeaderTitleSpacing
                 : 0,
           ),
-          child: _ChannelAppBarTitle(
-            channel: resolvedChannel,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => PlatformMembersPage(
-                  workspaceId: resolvedChannel.id,
-                  title: resolvedChannel.name,
+          child: resolvedChannel.isDm
+              ? _DmAppBarTitle(
+                  channel: resolvedChannel,
+                  currentPubkey: currentPubkey,
+                )
+              : _ChannelAppBarTitle(
+                  channel: resolvedChannel,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PlatformMembersPage(
+                        workspaceId: resolvedChannel.id,
+                        title: resolvedChannel.name,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
         ),
         actions: [
           IconButton(

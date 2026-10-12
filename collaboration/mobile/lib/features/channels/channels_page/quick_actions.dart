@@ -7,8 +7,8 @@ const _kMorphCloseCurve = Cubic(0.22, 1, 0.36, 1);
 const double _kMorphOpenBounce = 0.14;
 const double _kMorphCloseBounce = 0.06;
 const double _kMorphClosedSize = 56;
-// Keep the upstream row geometry; unclosed DM/Browse actions do not render.
-const double _kMorphOpenHeight = (216 - Grid.xxs * 4) / 3 + Grid.xxs * 2;
+// Keep the upstream row geometry; unclosed Browse does not render.
+const double _kMorphRowHeight = (216 - Grid.xxs * 4) / 3;
 const double _kMorphOpenRadius = 20;
 const double _kMorphSlide = 40;
 const double _kMorphScale = 0.97;
@@ -21,17 +21,23 @@ class _MorphingQuickActionsButton extends HookWidget {
   final double openEdgeOffset;
   final VoidCallback onToggle;
   final ValueChanged<_QuickAction> onSelected;
+  final bool createChannel;
+  final bool newDm;
 
   const _MorphingQuickActionsButton({
     required this.open,
     required this.openEdgeOffset,
     required this.onToggle,
     required this.onSelected,
+    required this.createChannel,
+    required this.newDm,
   });
 
   @override
   Widget build(BuildContext context) {
     final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final rowCount = (createChannel ? 1 : 0) + (newDm ? 1 : 0);
+    final openHeight = _kMorphRowHeight * rowCount + Grid.xxs * (rowCount + 1);
     final mediaQuery = MediaQuery.of(context);
     final openWidth = (mediaQuery.size.width - (Grid.gutter * 2))
         .clamp(_kMorphClosedSize, double.infinity)
@@ -105,11 +111,7 @@ class _MorphingQuickActionsButton extends HookWidget {
         final surfaceProgress = surfaceValue.clamp(0.0, 1.0);
         final fadeValue = fadeAnimation.value.clamp(0.0, 1.0);
         final width = lerpDouble(_kMorphClosedSize, openWidth, surfaceValue)!;
-        final height = lerpDouble(
-          _kMorphClosedSize,
-          _kMorphOpenHeight,
-          surfaceValue,
-        )!;
+        final height = lerpDouble(_kMorphClosedSize, openHeight, surfaceValue)!;
         final radius = lerpDouble(
           _kMorphClosedSize / 2,
           _kMorphOpenRadius,
@@ -147,8 +149,8 @@ class _MorphingQuickActionsButton extends HookWidget {
                           alignment: Alignment.bottomRight,
                           minWidth: openWidth,
                           maxWidth: openWidth,
-                          minHeight: _kMorphOpenHeight,
-                          maxHeight: _kMorphOpenHeight,
+                          minHeight: openHeight,
+                          maxHeight: openHeight,
                           child: IgnorePointer(
                             ignoring: !open || fadeValue < 0.9,
                             child: ExcludeSemantics(
@@ -173,6 +175,8 @@ class _MorphingQuickActionsButton extends HookWidget {
                                               surfaceProgress),
                                       child: _QuickActionsMenu(
                                         onSelected: onSelected,
+                                        createChannel: createChannel,
+                                        newDm: newDm,
                                       ),
                                     ),
                                   ),
@@ -258,8 +262,14 @@ class _MorphingQuickActionsButton extends HookWidget {
 
 class _QuickActionsMenu extends StatelessWidget {
   final ValueChanged<_QuickAction> onSelected;
+  final bool createChannel;
+  final bool newDm;
 
-  const _QuickActionsMenu({required this.onSelected});
+  const _QuickActionsMenu({
+    required this.onSelected,
+    required this.createChannel,
+    required this.newDm,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -270,15 +280,27 @@ class _QuickActionsMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _QuickActionItem(
-            icon: LucideIcons.hash,
-            title: _channelText(
-              context,
-              PlatformMessageKey.actionsWorkspaceCreate,
+          if (createChannel)
+            _QuickActionItem(
+              icon: LucideIcons.hash,
+              title: _channelText(
+                context,
+                PlatformMessageKey.actionsWorkspaceCreate,
+              ),
+              key: const Key('quick-action-create-channel-card'),
+              onTap: () => onSelected(_QuickAction.createChannel),
             ),
-            key: const Key('quick-action-create-channel-card'),
-            onTap: () => onSelected(_QuickAction.createChannel),
-          ),
+          if (createChannel && newDm) const SizedBox(height: Grid.xxs),
+          if (newDm)
+            _QuickActionItem(
+              key: const Key('quick-action-new-dm-card'),
+              icon: LucideIcons.messagesSquare,
+              title: _channelText(
+                context,
+                PlatformMessageKey.nativeQuickActionsNewDm,
+              ),
+              onTap: () => onSelected(_QuickAction.newDm),
+            ),
         ],
       ),
     );

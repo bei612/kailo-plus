@@ -35,6 +35,24 @@ class SignedEventRelay {
     int? createdAt,
     void Function(NostrEvent event)? onSigned,
   }) async {
+    final event = prepare(
+      kind: kind,
+      content: content,
+      tags: tags,
+      createdAt: createdAt,
+    );
+    onSigned?.call(event);
+    return _session.publish(event);
+  }
+
+  /// Prepare without publishing so an original personal command can be stored
+  /// before the network seam and later replayed with the same signed event id.
+  NostrEvent prepare({
+    required int kind,
+    required String content,
+    required List<List<String>> tags,
+    int? createdAt,
+  }) {
     final nsec = _nsec;
     if (nsec == null || nsec.isEmpty) {
       throw Exception('Cannot submit event: no signing key available');
@@ -54,9 +72,7 @@ class SignedEventRelay {
       verify: false,
     );
 
-    final nostrEvent = NostrEvent.fromJson(event.toMap());
-    onSigned?.call(nostrEvent);
-    return _session.publish(nostrEvent);
+    return NostrEvent.fromJson(event.toMap());
   }
 
   /// 原样重发一个已签名事件（同一 id）。用于结果不明后的重试：Relay 若已存储

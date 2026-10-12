@@ -19,6 +19,9 @@ class Channel {
   final DateTime? lastMessageAt;
   final DateTime? archivedAt;
   final bool isMember;
+  final List<String> participants;
+  final List<String> participantPubkeys;
+  final List<String> participantPrincipalIds;
 
   const Channel({
     required this.id,
@@ -34,9 +37,23 @@ class Channel {
     this.lastMessageAt,
     this.archivedAt,
     this.isMember = false,
+    this.participants = const [],
+    this.participantPubkeys = const [],
+    this.participantPrincipalIds = const [],
   });
 
   bool get isPrivate => visibility == 'private';
+  bool get isDm => channelType == 'dm';
+
+  String displayLabel({String? currentPubkey}) {
+    if (!isDm || participants.length != participantPubkeys.length) return name;
+    return [
+      for (var index = 0; index < participants.length; index++)
+        if (participantPubkeys[index].toLowerCase() !=
+            currentPubkey?.toLowerCase())
+          participants[index],
+    ].join(', ');
+  }
 
   bool get isArchived => archivedAt != null;
 
@@ -54,6 +71,9 @@ class Channel {
     lastMessageAt: lastMessageAt,
     archivedAt: details.archivedAt,
     isMember: isMember,
+    participants: participants,
+    participantPubkeys: participantPubkeys,
+    participantPrincipalIds: participantPrincipalIds,
   );
 
   Channel copyWith({
@@ -63,6 +83,9 @@ class Channel {
     Object? archivedAt = _sentinel,
     int? memberCount,
     bool? isMember,
+    List<String>? participants,
+    List<String>? participantPubkeys,
+    List<String>? participantPrincipalIds,
   }) => Channel(
     id: id,
     name: name ?? this.name,
@@ -81,6 +104,10 @@ class Channel {
         ? this.archivedAt
         : archivedAt as DateTime?,
     isMember: isMember ?? this.isMember,
+    participants: participants ?? this.participants,
+    participantPubkeys: participantPubkeys ?? this.participantPubkeys,
+    participantPrincipalIds:
+        participantPrincipalIds ?? this.participantPrincipalIds,
   );
 }
 

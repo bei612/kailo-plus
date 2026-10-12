@@ -101,6 +101,18 @@ class _SliverChannelsList extends HookConsumerWidget {
         .toList();
 
     final channelsExpanded = useState(true);
+    final dmsExpanded = useState(true);
+    final pubkey = ref.watch(myPubkeyProvider);
+    final dmChannels = visibleChannels.where((channel) => channel.isDm).toList()
+      ..sort(
+        (left, right) => left
+            .displayLabel(currentPubkey: pubkey)
+            .toLowerCase()
+            .compareTo(right.displayLabel(currentPubkey: pubkey).toLowerCase()),
+      );
+    final streamChannels = visibleChannels
+        .where((channel) => !channel.isDm)
+        .toList();
     final initialSeedComplete = useState(false);
     final seededPubkey = useRef<String?>(null);
     final seedCompleteForPubkey =
@@ -164,9 +176,21 @@ class _SliverChannelsList extends HookConsumerWidget {
               showTopDivider: false,
               expanded: channelsExpanded.value,
               onToggle: () => channelsExpanded.value = !channelsExpanded.value,
-              channels: visibleChannels,
+              channels: streamChannels,
               unreadChannelIds: unreadChannelIds,
               emptyLabel: 'No channels yet',
+              onSelectChannel: onSelectChannel,
+            ),
+          if (dmChannels.isNotEmpty)
+            _ChannelSection(
+              title: _channelText(context, PlatformMessageKey.nativeDmSection),
+              icon: LucideIcons.messagesSquare,
+              expanded: dmsExpanded.value,
+              showTopDivider: true,
+              onToggle: () => dmsExpanded.value = !dmsExpanded.value,
+              channels: dmChannels,
+              unreadChannelIds: unreadChannelIds,
+              emptyLabel: _channelText(context, PlatformMessageKey.dmEmpty),
               onSelectChannel: onSelectChannel,
             ),
         ],
