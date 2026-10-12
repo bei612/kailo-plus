@@ -375,7 +375,7 @@ fi
 # 持久化 realm 不会再次导入 JSON。只收敛已有浏览器与原生客户端的回调：期望值取自本次渲染的导入文件
 # （与首次导入同源），不重建用户、client 或 credential；HTTP 结果不明时退出失败，重跑先读当前值再收敛。
 if [ "${1:-}" = '--sync-client-redirects' ] && [ "$#" -eq 1 ]; then
-  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+  python3 - "$OIDC_ISSUER" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
     "${OIDC_BROWSER_CLIENT_ID:?}" "${OIDC_NATIVE_CLIENT_ID:?}" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYSYNC'
 import json
 import pathlib
@@ -384,11 +384,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-port, realm, admin, browser_id, native_id, timeout = sys.argv[1:]
+issuer, realm, admin, browser_id, native_id, timeout = sys.argv[1:]
 timeout = int(timeout)
 if timeout <= 0:
     raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
-base = "http://127.0.0.1:" + port
+origin = urllib.parse.urlsplit(issuer)
+base = urllib.parse.urlunsplit((origin.scheme, origin.netloc, "", "", ""))
 KEYS = ("redirectUris", "webOrigins")
 
 
@@ -442,7 +443,7 @@ fi
 # 恰好 0 个则按 realm 模板中的同一条定义创建，恰好 1 个不改动，多于 1 个拒绝；
 # 其他用户、client、角色与 mapper 不读不写。口令只从文件读入进程内存并放进请求体。
 if [ "${1:-}" = '--ensure-platform-admin' ] && [ "$#" -eq 1 ]; then
-  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+  python3 - "$OIDC_ISSUER" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
     "$PLATFORM_ADMIN_USER" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYADMIN'
 import copy
 import json
@@ -453,11 +454,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-port, realm, admin, username, timeout = sys.argv[1:]
+issuer, realm, admin, username, timeout = sys.argv[1:]
 timeout = int(timeout)
 if timeout <= 0:
     raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
-base = "http://127.0.0.1:" + port
+origin = urllib.parse.urlsplit(issuer)
+base = urllib.parse.urlunsplit((origin.scheme, origin.netloc, "", "", ""))
 users_path = "/admin/realms/" + urllib.parse.quote(realm, safe="") + "/users"
 lookup = users_path + "?" + urllib.parse.urlencode({"exact": "true", "username": username})
 try:
@@ -515,7 +517,7 @@ fi
 # client 上网关管理面 audience 这一个 mapper：定义取自本次渲染的导入文件（与首次导入同源），
 # 恰好 0 个则创建，恰好 1 个且与定义一致不改动，其余情形拒绝；其他 mapper 与 secret 不读不写。
 if [ "${1:-}" = '--ensure-service-audience' ] && [ "$#" -eq 1 ]; then
-  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+  python3 - "$OIDC_ISSUER" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
     "${OIDC_SERVICE_CLIENT_ID:?}" "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYAUD'
 import json
 import pathlib
@@ -524,12 +526,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-port, realm, admin, client_id, timeout = sys.argv[1:]
+issuer, realm, admin, client_id, timeout = sys.argv[1:]
 timeout = int(timeout)
 if timeout <= 0:
     raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
 MAPPER = "agentgateway-admin-audience"
-base = "http://127.0.0.1:" + port
+origin = urllib.parse.urlsplit(issuer)
+base = urllib.parse.urlunsplit((origin.scheme, origin.netloc, "", "", ""))
 try:
     rendered = json.loads(pathlib.Path("secrets/idp-import/realm.json").read_text(encoding="utf-8"))
     wanted = [m for c in rendered.get("clients", []) if c.get("clientId") == client_id

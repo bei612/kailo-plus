@@ -152,3 +152,70 @@ set-cookie: agw_oidc_t_ee32d8ac206f2fbc.<事务id>=<redacted>; HttpOnly; SameSit
 | 两者都无 | 422（上游对非浏览器客户端放行；浏览器的跨源 POST 必带 Origin，不构成缺口） |
 
 结论：此前记录的“同站跨源页面可触发不读 JSON 的 POST”在网关层关闭；本源浏览器请求照常（Web 走查另行复验）。
+
+## 2026-10-12 原 IdP 引导消费已校验 issuer 地址
+
+本批基于 `c1011eb611c448648094cea8d234dc11f7fe5c64`，落实 DD-02、
+DD-78 与运行基线 §2.2 的同源身份投递。原 Compose 的 IdP 只发布配置中的
+`PUBLIC_BIND_ADDR`，但三个 bootstrap 收尾模式及 `idp-subject.sh`
+硬编码回环地址；在独立环境仅绑定指定网卡时，原消费者无法连接。
+
+四步影响核对：
+
+1. 权威：沿原 `OIDC_ISSUER` 与 realm/host/port 校验消费同一 IdP；不增加
+   回退 URL、认证豁免、配置开关或身份注册表。私钥、客户端 secret 与主体仍由
+   原 IdP 和受控文件管理。
+2. 消费者：仅 `--sync-client-redirects`、`--ensure-platform-admin`、
+   `--ensure-service-audience` 改用与现有 `--sync-realm-locales` 相同的
+   issuer origin 解析；`idp-subject.sh` 同源取址并在读取密码前核对本机拓扑。
+   原 init-local、原 Web/native 核验的调用方式不变。
+3. 副作用：三个模式原有的精确 client/user/mapper 匹配、只写指定字段和
+   事后回读不变；未知响应不推断成功，不重建 realm 或重发业务。subject
+   读取仍使用原管理员 API，仅输出唯一 subject，不输出密码或 token。
+4. 异常：错误 issuer 在密码读取/HTTP 前拒绝；缺失或不唯一用户、来源不匹配、
+   原连接错误继续失败。登录、IdP 身份或配置回读均不等于 Core principal、
+   ApplicationBinding ACTIVE、上传完成或组件 conformance 通过。
+
+实际使用唯一隔离环境 `receiver-conformance-runtime.wTPxcU`，不是另建
+服务或使用线上凭据。原 Keycloak 镜像
+`sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007`
+已沿原 Compose 启动；实际 UID 1000、2 CPU、2 GiB memory 与等额 memory+swap，
+H2 数据在 Data bind，未构建、pull 或 load 镜像。宿主 MemAvailable 33008 MiB、
+memory PSI avg10=0.00；此时原 Wren 构建和 Core 隔离迁移仍在运行。
+本批原部署 Bash/Python 消费者使用 2 CPU/2 GiB scope，不运行项目编译器。
+
+原 `bootstrap.sh --sync-client-redirects` 先真实退出 1，日志明确“客户端
+回调同步未完成”。修正的两个精确文件同步到同一隔离运行副本后，按原
+init-local 顺序运行四模式，再经原 `idp-subject.sh` 读取三人：
+82026 退出 0，四模式全部确认现状已一致，没有新建/修改用户或 mapper。
+原始 subject 分别为：
+
+- BOOTSTRAP_USER：`86250b0c-55e0-4db6-b7d6-c508cf518d5c`。
+- PLATFORM_ADMIN_USER：`9607c8d0-393d-40ba-8d99-c0b9f6a587ca`。
+- VERIFY_USER：`0bbb329d-c7fe-4c0e-80af-e59f09a66904`。
+
+私有反证仅把验证副本 issuer 的 realm 改成与配置不符：原四模式分别退出 1，
+subject 入口也退出 1；后者密码文件设为不存在的路径，实际先报 issuer 拒绝，
+没有读取密码或发出管理员认证。反证外层核对五项非零而退出 0，不把它称为
+业务成功。恢复原 .env 字节并 cmp 一致后，50529 再跑同四模式/三 subject，
+退出 0、结果相同。运行环境 .env 未被反证修改。
+
+末次核对将 subject 的主机比较保持为原 bootstrap 的 DNS 不区分大小写语义；
+最终字节再次读取三 subject 成功，错误 issuer 仍退出 1，见 `subject-final.log`。
+
+源码 `bash -n` 与选定路径 `git diff --check` 均退出 0。
+原件位于 Data `idp-original-origin.N7yYf1`：
+`positive.log` SHA256
+`069b80d892c17001cb5b4d21721532b5443d3498633b2795a66f0ca749d3f3af`；
+`wrong-issuer.log` SHA256
+`095fc2d42804f4070e30e74b76b8efee47bc0384f3818e8c12e1a8b9eeb875d2`；
+恢复输出见同目录 `restored.log`。初始回环失败保存在
+`receiver-conformance-runtime.wTPxcU/cells-source/idp-original-loopback-failure.log`，
+SHA256 `ccbeb2bb887878e1a45fe01a44679ca3e71b435a56ad01ad20f737f23526cf81`。
+
+本批无 schema、四侧生成、数据库迁移或镜像变化，未运行 full；
+旧 bootstrap 中 PUBLIC_BIND_ADDR 校验等继承脏差异不纳入本批提交。
+已取得的真实 subject 交原 Core bootstrap-tenant 消费。独立 Bao 首次初始化
+已读回 initialized=true 但回执丢失；唯一隔离空实例保留故障数据后，知识库
+席位沿原入口重新初始化及配置均退出 0，SpiceDB 迁移与 schema 投递亦退出 0。
+未复制私钥或绕过 binding 生命周期；这些前置成功不等于上传或绑定 ACTIVE。
