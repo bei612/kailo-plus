@@ -35,6 +35,7 @@ import (
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config"
 	cellserrors "github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -145,7 +146,7 @@ func TestNativeDeleteCannotQueueOrRunWithoutDelayedAuthority(t *testing.T) {
 		{jobstore.NativeDeleteJob: ""}, {jobstore.NativeDeleteTask: ""},
 	} {
 		job := &jobs.Job{ID: "managed-child", Metadata: metadata}
-		task := NewTaskFromEvent(context.Background(), job, &jobs.JobTriggerEvent{JobID: job.ID, RunTaskId: job.ID, RunNow: true})
+		task := NewTaskFromEvent(config.WithStubStore(context.Background()), job, &jobs.JobTriggerEvent{JobID: job.ID, RunTaskId: job.ID, RunNow: true})
 		queue := make(chan RunnerFunc, 1)
 		puts := 0
 		grpcclient.RegisterMock(common.ServiceJobsGRPC, &nativeClaimService{put: func(_ context.Context, r *jobs.PutTaskRequest) (*jobs.PutTaskResponse, error) {
@@ -165,7 +166,7 @@ func TestNativeDeleteCannotQueueOrRunWithoutDelayedAuthority(t *testing.T) {
 			t.Fatalf("delayed worker did not retain the refusal: calls=%d err=%v %v", implementation.calls, task.err, task.Clone())
 		}
 	}
-	if err := jobstore.AuthorizeNativeDeleteDispatch(&jobs.Job{ID: "independent-native-job"}); err != nil {
+	if _, err := jobstore.AuthorizeNativeDeleteDispatch(context.Background(), &jobs.Job{ID: "independent-native-job"}); err != nil {
 		t.Fatal("independent native execution changed", err)
 	}
 }

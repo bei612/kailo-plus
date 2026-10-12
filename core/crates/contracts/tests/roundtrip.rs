@@ -6,6 +6,25 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn native_task_admission_preserves_pending_without_ticket_and_frozen_deadline() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            sample_path().with_file_name("native-task-execution-admission.sample.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let request: contracts::NativeTaskExecutionAdmissionRequest =
+        serde_json::from_value(sample["request"].clone()).unwrap();
+    let responses: Vec<contracts::NativeTaskExecutionAdmissionResponse> =
+        serde_json::from_value(sample["responses"].clone()).unwrap();
+    assert_eq!(
+        serde_json::json!({"request":request,"responses":responses}),
+        sample
+    );
+}
+
+#[test]
 fn reminder_wire_preserves_original_status_optional_fields_and_safe_timestamps() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("reminder.sample.json")).unwrap(),

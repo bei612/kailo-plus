@@ -205,6 +205,14 @@ func (c *CopyMoveAction) Run(ctx context.Context, channels *actions.RunnableChan
 	}
 
 	output := input.Clone()
+	if c.nativeDelete {
+		router, ok := cli.(nodes.Client)
+		if !ok {
+			err := errors.WithStack(errors.StatusForbidden)
+			return output.WithError(err), err
+		}
+		cli = nativeDeleteRouter{Client: router}
+	}
 
 	if e := nodes.CopyMoveNodes(ctx, cli, sourceNode, targetNode, c.move, true, channels.StatusMsg, channels.Progress, T); e != nil {
 		output = output.WithError(e)

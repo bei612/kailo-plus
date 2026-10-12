@@ -1,0 +1,23 @@
+{
+  "request": {
+    "bindingId": "00000000-0000-4000-8000-000000000001",
+    "actionExecutionId": "00000000-0000-4000-8000-000000000002",
+    "execution": {
+      "externalExecutionId": "00000000-0000-4000-8000-000000000003",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000004",
+      "nativeType": "job",
+      "nativeId": "00000000-0000-4000-8000-000000000004"
+    },
+    "nativeTaskDeadline": "2026-10-11T12:00:00.000Z"
+  },
+  "responses": [
+    {"state": "PENDING_REFERENCE", "nativeTaskDeadline": "2026-10-11T12:00:00.000Z"},
+    {
+      "state": "ADMITTED",
+      "actionToken": "non-secret-contract-fixture",
+      "argumentsJson": "{\"target\":{},\"input\":{}}",
+      "expiresAt": "2026-10-11T11:59:00.000Z",
+      "nativeTaskDeadline": "2026-10-11T12:00:00.000Z"
+    }
+  ]
+}

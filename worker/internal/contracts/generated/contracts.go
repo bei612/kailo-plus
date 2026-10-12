@@ -73,6 +73,12 @@
 //    adapterExecutionUsage, err := UnmarshalAdapterExecutionUsage(bytes)
 //    bytes, err = adapterExecutionUsage.Marshal()
 //
+//    nativeTaskExecutionAdmissionRequest, err := UnmarshalNativeTaskExecutionAdmissionRequest(bytes)
+//    bytes, err = nativeTaskExecutionAdmissionRequest.Marshal()
+//
+//    nativeTaskExecutionAdmissionResponse, err := UnmarshalNativeTaskExecutionAdmissionResponse(bytes)
+//    bytes, err = nativeTaskExecutionAdmissionResponse.Marshal()
+//
 //    adapterPepCheckRequest, err := UnmarshalAdapterPepCheckRequest(bytes)
 //    bytes, err = adapterPepCheckRequest.Marshal()
 //
@@ -934,6 +940,26 @@ func UnmarshalAdapterExecutionUsage(data []byte) (AdapterExecutionUsage, error) 
 }
 
 func (r *AdapterExecutionUsage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeTaskExecutionAdmissionRequest(data []byte) (NativeTaskExecutionAdmissionRequest, error) {
+	var r NativeTaskExecutionAdmissionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeTaskExecutionAdmissionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeTaskExecutionAdmissionResponse(data []byte) (NativeTaskExecutionAdmissionResponse, error) {
+	var r NativeTaskExecutionAdmissionResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeTaskExecutionAdmissionResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3313,6 +3339,33 @@ type AdapterExecutionUsageMeasurement struct {
 	Quantity   int64  `json:"quantity"`
 }
 
+// 绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。
+type NativeTaskExecutionAdmissionRequest struct {
+	ActionExecutionID string         `json:"actionExecutionId"`
+	BindingID         string         `json:"bindingId"`
+	Execution         ExecutionClass `json:"execution"`
+	// 首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
+	NativeTaskDeadline string `json:"nativeTaskDeadline"`
+}
+
+// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+// 未取得时只用冻结幂等键查证。
+type ExecutionClass struct {
+	ExternalExecutionID string  `json:"externalExecutionId"`
+	IdempotencyKey      string  `json:"idempotencyKey"`
+	NativeID            *string `json:"nativeId,omitempty"`
+	NativeType          string  `json:"nativeType"`
+}
+
+// 仅当次原任务执行上下文可用的票据；原生任务不得持久化票据或参数凭据。
+type NativeTaskExecutionAdmissionResponse struct {
+	ActionToken        *string                  `json:"actionToken,omitempty"`
+	ArgumentsJSON      *string                  `json:"argumentsJson,omitempty"`
+	ExpiresAt          *string                  `json:"expiresAt,omitempty"`
+	NativeTaskDeadline string                   `json:"nativeTaskDeadline"`
+	State              NativeTaskAdmissionState `json:"state"`
+}
+
 // ADR-12
 // adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
 type AdapterPepCheckRequest struct {
@@ -3331,7 +3384,10 @@ type AdapterPepCheckResponse struct {
 	// 原业务 AE 冻结的 component_projection_generation；由 Core 核验同 binding 后返回，不从调用方 token
 	// 扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
 	BindingGeneration *int64 `json:"bindingGeneration,omitempty"`
-	OperationID       string `json:"operationId"`
+	// 仅声明原生异步任务执行期限的 HUMAN COMPONENT_ACTION 返回；原首次 dispatch 时间加已批准声明的期限，RFC3339，不随本次 fresh
+	// Check 续期。
+	NativeTaskDeadline *string `json:"nativeTaskDeadline,omitempty"`
+	OperationID        string  `json:"operationId"`
 	// 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
 	TargetResource *AdapterAuthorizedResource `json:"targetResource,omitempty"`
 }
@@ -7474,6 +7530,14 @@ const (
 	Succeeded                        ExternalExecutionStatus = "SUCCEEDED"
 )
 
+// 单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。
+type NativeTaskAdmissionState string
+
+const (
+	NativeTaskAdmissionStateADMITTED NativeTaskAdmissionState = "ADMITTED"
+	PendingReference                 NativeTaskAdmissionState = "PENDING_REFERENCE"
+)
+
 type Phase string
 
 const (
@@ -8328,7 +8392,6 @@ const (
 type ProtocolSessionViewState string
 
 const (
-	Admitted       ProtocolSessionViewState = "ADMITTED"
 	FluffyCONFLICT ProtocolSessionViewState = "CONFLICT"
 	FluffyDIRTY    ProtocolSessionViewState = "DIRTY"
 	FluffyEXPIRED  ProtocolSessionViewState = "EXPIRED"
@@ -8338,6 +8401,7 @@ const (
 	IndigoUNKNOWN  ProtocolSessionViewState = "UNKNOWN"
 	Opening        ProtocolSessionViewState = "OPENING"
 	ReadOnly       ProtocolSessionViewState = "READ_ONLY"
+	StateADMITTED  ProtocolSessionViewState = "ADMITTED"
 	StateCLOSED    ProtocolSessionViewState = "CLOSED"
 	StateOPEN      ProtocolSessionViewState = "OPEN"
 )

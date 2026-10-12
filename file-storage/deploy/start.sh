@@ -120,7 +120,8 @@ try:
                 meters.add(meter['meterKey'])
         if 'delete' in delivery:
             deletion = delivery['delete']
-            require(isinstance(deletion, dict) and set(deletion) == {'nativeJobId', 'bindingGeneration', 'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native delete metadata must match its original Task/HUMAN consumers')
+            require(isinstance(deletion, dict) and set(deletion) == {'nativeJobId', 'bindingGeneration', 'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion', 'admissionPollInterval'}, 'native delete metadata must match its original Task/HUMAN consumers')
+            require(isinstance(deletion['admissionPollInterval'], str) and deletion['admissionPollInterval'].strip() == deletion['admissionPollInterval'] != '', 'native delete admission polling must be explicitly delivered')
             for key in ('bindingGeneration', 'actionVersion', 'resultExposurePolicyVersion'):
                 require(type(deletion[key]) is int and deletion[key] > 0, 'native delete versions must come from the approved binding')
             for key in ('nativeJobId', 'nativeType'):

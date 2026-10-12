@@ -24,6 +24,8 @@
 //     final adapterExecutionReference = adapterExecutionReferenceFromJson(jsonString);
 //     final adapterExecutionResponse = adapterExecutionResponseFromJson(jsonString);
 //     final adapterExecutionUsage = adapterExecutionUsageFromJson(jsonString);
+//     final nativeTaskExecutionAdmissionRequest = nativeTaskExecutionAdmissionRequestFromJson(jsonString);
+//     final nativeTaskExecutionAdmissionResponse = nativeTaskExecutionAdmissionResponseFromJson(jsonString);
 //     final adapterPepCheckRequest = adapterPepCheckRequestFromJson(jsonString);
 //     final adapterPepCheckResponse = adapterPepCheckResponseFromJson(jsonString);
 //     final protocolRevisionQuery = protocolRevisionQueryFromJson(jsonString);
@@ -382,6 +384,22 @@ AdapterExecutionUsage adapterExecutionUsageFromJson(String str) =>
 
 String adapterExecutionUsageToJson(AdapterExecutionUsage data) =>
     json.encode(data.toJson());
+
+NativeTaskExecutionAdmissionRequest nativeTaskExecutionAdmissionRequestFromJson(
+  String str,
+) => NativeTaskExecutionAdmissionRequest.fromJson(json.decode(str));
+
+String nativeTaskExecutionAdmissionRequestToJson(
+  NativeTaskExecutionAdmissionRequest data,
+) => json.encode(data.toJson());
+
+NativeTaskExecutionAdmissionResponse
+nativeTaskExecutionAdmissionResponseFromJson(String str) =>
+    NativeTaskExecutionAdmissionResponse.fromJson(json.decode(str));
+
+String nativeTaskExecutionAdmissionResponseToJson(
+  NativeTaskExecutionAdmissionResponse data,
+) => json.encode(data.toJson());
 
 AdapterPepCheckRequest adapterPepCheckRequestFromJson(String str) =>
     AdapterPepCheckRequest.fromJson(json.decode(str));
@@ -2860,6 +2878,112 @@ class AdapterExecutionUsageMeasurement {
   });
 }
 
+///绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。
+class NativeTaskExecutionAdmissionRequest {
+  final String actionExecutionId;
+  final String bindingId;
+  final ExecutionClass execution;
+
+  ///首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
+  final String nativeTaskDeadline;
+
+  NativeTaskExecutionAdmissionRequest({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.execution,
+    required this.nativeTaskDeadline,
+  });
+
+  factory NativeTaskExecutionAdmissionRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeTaskExecutionAdmissionRequest(
+    actionExecutionId: json["actionExecutionId"],
+    bindingId: json["bindingId"],
+    execution: ExecutionClass.fromJson(json["execution"]),
+    nativeTaskDeadline: json["nativeTaskDeadline"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "execution": execution.toJson(),
+    "nativeTaskDeadline": nativeTaskDeadline,
+  });
+}
+
+///原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+///未取得时只用冻结幂等键查证。
+class ExecutionClass {
+  final String externalExecutionId;
+  final String idempotencyKey;
+  final String? nativeId;
+  final String nativeType;
+
+  ExecutionClass({
+    required this.externalExecutionId,
+    required this.idempotencyKey,
+    this.nativeId,
+    required this.nativeType,
+  });
+
+  factory ExecutionClass.fromJson(Map<String, dynamic> json) => ExecutionClass(
+    externalExecutionId: json["externalExecutionId"],
+    idempotencyKey: json["idempotencyKey"],
+    nativeId: json["nativeId"],
+    nativeType: json["nativeType"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "externalExecutionId": externalExecutionId,
+    "idempotencyKey": idempotencyKey,
+    "nativeId": nativeId,
+    "nativeType": nativeType,
+  });
+}
+
+///仅当次原任务执行上下文可用的票据；原生任务不得持久化票据或参数凭据。
+class NativeTaskExecutionAdmissionResponse {
+  final String? actionToken;
+  final String? argumentsJson;
+  final String? expiresAt;
+  final String nativeTaskDeadline;
+  final NativeTaskAdmissionState state;
+
+  NativeTaskExecutionAdmissionResponse({
+    this.actionToken,
+    this.argumentsJson,
+    this.expiresAt,
+    required this.nativeTaskDeadline,
+    required this.state,
+  });
+
+  factory NativeTaskExecutionAdmissionResponse.fromJson(
+    Map<String, dynamic> json,
+  ) => NativeTaskExecutionAdmissionResponse(
+    actionToken: json["actionToken"],
+    argumentsJson: json["argumentsJson"],
+    expiresAt: json["expiresAt"],
+    nativeTaskDeadline: json["nativeTaskDeadline"],
+    state: nativeTaskAdmissionStateValues.map[json["state"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionToken": actionToken,
+    "argumentsJson": argumentsJson,
+    "expiresAt": expiresAt,
+    "nativeTaskDeadline": nativeTaskDeadline,
+    "state": nativeTaskAdmissionStateValues.reverse[state],
+  });
+}
+
+///单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。
+enum NativeTaskAdmissionState { ADMITTED, PENDING_REFERENCE }
+
+final nativeTaskAdmissionStateValues = EnumValues({
+  "ADMITTED": NativeTaskAdmissionState.ADMITTED,
+  "PENDING_REFERENCE": NativeTaskAdmissionState.PENDING_REFERENCE,
+});
+
 ///ADR-12
 ///adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
 class AdapterPepCheckRequest {
@@ -2917,6 +3041,10 @@ class AdapterPepCheckResponse {
   ///原业务 AE 冻结的 component_projection_generation；由 Core 核验同 binding 后返回，不从调用方 token
   ///扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
   final int? bindingGeneration;
+
+  ///仅声明原生异步任务执行期限的 HUMAN COMPONENT_ACTION 返回；原首次 dispatch 时间加已批准声明的期限，RFC3339，不随本次 fresh
+  ///Check 续期。
+  final String? nativeTaskDeadline;
   final String operationId;
 
   ///本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
@@ -2926,6 +3054,7 @@ class AdapterPepCheckResponse {
     required this.actionExecutionId,
     required this.authorizationMinZedToken,
     this.bindingGeneration,
+    this.nativeTaskDeadline,
     required this.operationId,
     this.targetResource,
   });
@@ -2935,6 +3064,7 @@ class AdapterPepCheckResponse {
         actionExecutionId: json["actionExecutionId"],
         authorizationMinZedToken: json["authorizationMinZedToken"],
         bindingGeneration: json["bindingGeneration"],
+        nativeTaskDeadline: json["nativeTaskDeadline"],
         operationId: json["operationId"],
         targetResource: json["targetResource"] == null
             ? null
@@ -2945,6 +3075,7 @@ class AdapterPepCheckResponse {
     "actionExecutionId": actionExecutionId,
     "authorizationMinZedToken": authorizationMinZedToken,
     "bindingGeneration": bindingGeneration,
+    "nativeTaskDeadline": nativeTaskDeadline,
     "operationId": operationId,
     "targetResource": targetResource?.toJson(),
   });

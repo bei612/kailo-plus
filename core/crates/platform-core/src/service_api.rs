@@ -215,6 +215,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::application_action::native_human::handle),
         )
         .route(
+            "/service/v1/adapter/request_native_task_execution_admission",
+            post(crate::application_action::native_task::handle),
+        )
+        .route(
             "/service/v1/adapter/request_read_grant",
             post(crate::application_binding::read_grant::request),
         )

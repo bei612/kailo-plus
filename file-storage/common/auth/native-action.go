@@ -142,8 +142,11 @@ type NativeWriteDelivery struct {
 // the other actions. These fields are approved action metadata, not policy.
 type NativeDeleteDelivery struct {
 	NativeActorDelivery
-	WorkspaceID string `json:"workspaceId"`
-	Delete      struct {
+	ExecutionDeadline   string `json:"-"`
+	ExecutionGeneration int64  `json:"-"`
+	WorkspaceID         string `json:"workspaceId"`
+	Delete              struct {
+		AdmissionPollInterval       string `json:"admissionPollInterval"`
 		NativeJobID                 string `json:"nativeJobId"`
 		BindingGeneration           int64  `json:"bindingGeneration"`
 		ActionVersion               int64  `json:"actionVersion"`
@@ -178,7 +181,7 @@ func NativeShareAuthority(request *http.Request, raw, operation string) (NativeS
 	// never infer task ownership from the current delivered generation.
 	var generation int64
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.share@v1", delivery.Share.ActionVersion, delivery.Share.ResultExposurePolicyID, delivery.Share.ResultExposurePolicyVersion, &generation)
+		"file_storage.share@v1", delivery.Share.ActionVersion, delivery.Share.ResultExposurePolicyID, delivery.Share.ResultExposurePolicyVersion, &generation, nil)
 	return delivery, claims, target, arguments, generation, err
 }
 
@@ -187,8 +190,12 @@ func NativeDeleteAuthority(request *http.Request, raw, operation string) (Native
 	if config.Get(request.Context(), "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil || delivery.Delete.NativeJobID == "" || strings.TrimSpace(delivery.Delete.NativeJobID) != delivery.Delete.NativeJobID {
 		return delivery, nil, nil, "", errors.WithStack(errors.StatusForbidden)
 	}
+	var deadline *string
+	if operation == "execute" {
+		deadline = &delivery.ExecutionDeadline
+	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion, nil)
+		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion, &delivery.ExecutionGeneration, deadline)
 	return delivery, claims, target, arguments, err
 }
 
@@ -217,11 +224,11 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 		return delivery, nil, nil, "", refused
 	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion, nil)
+		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion, nil, nil)
 	return delivery, claims, target, arguments, err
 }
 
-func nativeMutationAuthority(request *http.Request, raw, operation string, delivery NativeActorDelivery, workspace, action string, version int64, policy string, policyVersion int64, frozenGeneration *int64) (map[string]interface{}, map[string]interface{}, string, error) {
+func nativeMutationAuthority(request *http.Request, raw, operation string, delivery NativeActorDelivery, workspace, action string, version int64, policy string, policyVersion int64, frozenGeneration *int64, taskDeadline *string) (map[string]interface{}, map[string]interface{}, string, error) {
 	refused := errors.WithStack(errors.StatusForbidden)
 	ctx := request.Context()
 	if delivery.MaxResponseBytes <= 0 || int64(len(raw)) > delivery.MaxResponseBytes || version <= 0 || policyVersion <= 0 || !NativeActorUUID(policy) {
@@ -242,7 +249,12 @@ func nativeMutationAuthority(request *http.Request, raw, operation string, deliv
 		return nil, nil, "", refused
 	}
 	var claims, target map[string]interface{}
-	if frozenGeneration == nil {
+	if taskDeadline != nil {
+		if frozenGeneration == nil || operation != "execute" {
+			return nil, nil, "", refused
+		}
+		claims, target, *frozenGeneration, *taskDeadline, err = delivery.AuthorizeNativeTask(ctx, proof.ActionToken, proof.ArgumentsJSON)
+	} else if frozenGeneration == nil {
 		claims, target, err = delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
 	} else {
 		var generation int64

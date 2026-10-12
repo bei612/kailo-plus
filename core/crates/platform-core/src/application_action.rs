@@ -19,6 +19,8 @@ pub(crate) mod native_execution;
 pub(crate) mod native_human;
 #[path = "application_native_read.rs"]
 pub(crate) mod native_read;
+#[path = "application_native_task_execution.rs"]
+pub(crate) mod native_task;
 fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
@@ -150,7 +152,9 @@ pub(crate) async fn fresh_execution(g: &Governance, ae: &Execution) -> Result<Ev
     }
     let p = ae.parameters.as_ref().ok_or_else(invalid)?;
     let mut tx = g.pool.begin().await?;
-    let dispatched_native: bool = if native_execution::is_native_writer(ae) {
+    let dispatched_native: bool = if native_execution::is_native_writer(ae)
+        || native_task::duration(&mut tx, ae).await?.is_some()
+    {
         sqlx::query_scalar("select exists(select 1 from admission.external_execution where action_execution_id=$1 and operation_id=$2)")
             .bind(ae.id).bind(ae.operation_id).fetch_one(&mut *tx).await?
     } else {

@@ -14,6 +14,35 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestNativeTaskAdmissionPreservesPendingWithoutTicketAndFrozenDeadline(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "native-task-execution-admission.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed struct {
+		Request   generated.NativeTaskExecutionAdmissionRequest    `json:"request"`
+		Responses []generated.NativeTaskExecutionAdmissionResponse `json:"responses"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual any
+	if err := json.Unmarshal(encoded, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, actual) {
+		t.Fatalf("native task ownership or pending ticket omission changed: %s", encoded)
+	}
+}
+
 func TestReminderWirePreservesOriginalStatusOptionalFieldsAndSafeTimestamps(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "reminder.sample.json"))
 	if err != nil {

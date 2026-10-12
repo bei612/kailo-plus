@@ -113,7 +113,9 @@ func (j *JobsHandler) EnsureNativeActionJobs(ctx context.Context) error {
 	}
 	deletion := deleteDelivery.Delete
 	if deletion.NativeJobID != "" {
+		poll, pollError := time.ParseDuration(deletion.AdmissionPollInterval)
 		if strings.TrimSpace(deletion.NativeJobID) != deletion.NativeJobID || deletion.ActionVersion <= 0 ||
+			pollError != nil || poll <= 0 ||
 			deletion.NativeType == "" || strings.TrimSpace(deletion.NativeType) != deletion.NativeType ||
 			!auth.NativeActorUUID(deletion.ResultExposurePolicyID) || deletion.ResultExposurePolicyVersion <= 0 ||
 			deletion.NativeJobID == write.NativeJobID || (delivery.Read != nil && deletion.NativeJobID == delivery.Read.NativeJobID) {

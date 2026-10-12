@@ -54,7 +54,7 @@ pub(super) async fn admit(
     )
 }
 
-fn admission_expiry(claims: &Value, now: i64) -> Result<String, Refusal> {
+pub(super) fn admission_expiry(claims: &Value, now: i64) -> Result<String, Refusal> {
     let expires = claims["exp"]
         .as_i64()
         .filter(|expires| *expires > now)
@@ -83,6 +83,20 @@ pub(crate) async fn authorize(
     let deadline = p["inputArguments"]["input"]["nativeDeadline"]
         .as_i64()
         .ok_or_else(denied)?;
+    authorize_retained(state, ae, external, binding, deadline).await
+}
+
+// The two callers first establish either the current HUMAN writer intent or
+// the separately declared retained native task. Neither caller can use an
+// observation ticket or an arbitrary native reference as execution authority.
+pub(super) async fn authorize_retained(
+    state: &ServiceState,
+    ae: &Execution,
+    external: Uuid,
+    binding: Uuid,
+    deadline: i64,
+) -> Result<(Uuid, String, String, i64), Refusal> {
+    let p = ae.parameters.as_ref().ok_or_else(denied)?;
     if deadline <= Utc::now().timestamp() {
         return Err(denied());
     }

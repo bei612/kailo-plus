@@ -244,12 +244,14 @@ func (r *Runnable) Dispatch(input *jobs.ActionMessage, aa []*jobs.Action, queue 
 func (r *Runnable) RunAction(queue chan RunnerFunc) {
 	// Queue may precede revocation or a process upgrade. Historical admitted
 	// metadata cannot authorize a delayed side effect at the actual worker.
-	if err := jobstore.AuthorizeNativeDeleteDispatch(r.Task.Job); err != nil {
-		r.Task.SetError(err, true)
+	authorizedContext, admissionErr := jobstore.AuthorizeNativeDeleteDispatch(r.Context, r.Task.Job)
+	if admissionErr != nil {
+		r.Task.SetError(admissionErr, true)
 		r.Task.SaveStatus(r.Context, jobs.TaskStatus_Error)
 		r.Done()
 		return
 	}
+	r.Context = authorizedContext
 
 	label := r.Action.GetLabel()
 	if label == "" {

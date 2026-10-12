@@ -54,7 +54,9 @@ function nativeResult(config, native, key, nativeId) {
     || !nonempty(execution.lastObservedAt) || !Number.isFinite(Date.parse(execution.lastObservedAt))
     || !['UNKNOWN', 'SUCCEEDED'].includes(execution.platformStatus)) throw new Refused(503);
   if (execution.platformStatus !== 'SUCCEEDED') {
-    if (Object.hasOwn(execution, 'nativeId') || Object.hasOwn(execution, 'terminalAt') || nativeId !== undefined) throw new Refused(503);
+    if (Object.hasOwn(execution, 'terminalAt')
+      || (Object.hasOwn(execution, 'nativeId') && execution.nativeId !== key)
+      || (nativeId !== undefined && execution.nativeId !== nativeId)) throw new Refused(503);
     return {execution};
   }
   if (execution.nativeId !== key || (nativeId !== undefined && nativeId !== key)

@@ -44,6 +44,7 @@ import (
 	"github.com/pydio/cells/v5/scheduler/actions"
 	"github.com/pydio/cells/v5/scheduler/actions/tools"
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
+	"github.com/pydio/cells/v5/scheduler/jobs/userspace"
 	"github.com/pydio/cells/v5/scheduler/lang"
 )
 
@@ -56,6 +57,7 @@ type DeleteAction struct {
 	childrenOnlyParam string
 	ignoreNonExisting string
 	nativeDelete      bool
+	nativeCoordinator *jobs.Job
 }
 
 func (c *DeleteAction) GetDescription(_ ...string) actions.ActionDescription {
@@ -106,6 +108,12 @@ func (c *DeleteAction) GetName() string {
 // Init passes parameters to the action
 func (c *DeleteAction) Init(ctx context.Context, job *jobs.Job, action *jobs.Action) error {
 	c.nativeDelete = jobstore.IsNativeDeleteJob(job)
+	if action.Parameters[jobstore.NativeDeleteCoordinator] == "true" {
+		if !c.nativeDelete || job.Metadata[jobstore.NativeDeleteCoordinator] != "true" || action.Parameters["scope"] != "owner" {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		c.nativeCoordinator = job
+	}
 
 	if co, ok := action.Parameters["childrenOnly"]; ok {
 		c.childrenOnlyParam = co
@@ -122,6 +130,22 @@ func (c *DeleteAction) Init(ctx context.Context, job *jobs.Job, action *jobs.Act
 
 // Run the actual action code
 func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChannels, input *jobs.ActionMessage) (*jobs.ActionMessage, error) {
+	if c.nativeCoordinator != nil {
+		ownerContext, handler, err := c.GetHandler(ctx)
+		if err != nil {
+			return input.WithError(err), err
+		}
+		router, ok := handler.(nodes.Client)
+		if !ok {
+			err = errors.WithStack(errors.StatusForbidden)
+			return input.WithError(err), err
+		}
+		err = userspace.RunNativeDeleteCoordinator(ownerContext, c.nativeCoordinator, router)
+		if err != nil {
+			return input.WithError(err), err
+		}
+		return input, nil
+	}
 
 	if len(input.Nodes) == 0 {
 		return input.WithIgnore(), nil // Ignore
@@ -158,6 +182,9 @@ func (c *DeleteAction) Run(ctx context.Context, channels *actions.RunnableChanne
 	// Only an acknowledged native deletion is a completed action. This is not
 	// a conditional delete or evidence that an uncertain request may be replayed.
 	deleteNode := func(node *tree.Node, session string) error {
+		if err := jobstore.FreshNativeDeleteStep(ctx, c.nativeDelete); err != nil {
+			return err
+		}
 		response, err := cli.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: node, IndexationSession: session})
 		if err == nil && !response.GetSuccess() {
 			err = errors.WithStack(errors.StatusInternalServerError)

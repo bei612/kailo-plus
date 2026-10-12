@@ -79,6 +79,18 @@ type NativeWriteIntent struct {
 	NativeUserID   string                 `json:"nativeUserId"`
 	Scope          map[string]interface{} `json:"scope"`
 	InputReference map[string]interface{} `json:"inputReference"`
+	NativeTask     *NativeTaskExecution   `json:"nativeTask,omitempty"`
+}
+
+// Only native deletion writes this retained execution reference. The shared
+// writer's existing serialized claim is unchanged when this field is absent.
+type NativeTaskExecution struct {
+	ExternalExecutionID string `json:"externalExecutionId"`
+	IdempotencyKey      string `json:"idempotencyKey"`
+	NativeType          string `json:"nativeType"`
+	NativeID            string `json:"nativeId"`
+	Generation          int64  `json:"generation"`
+	Deadline            string `json:"deadline"`
 }
 
 func nativeWriteScope(claims map[string]interface{}) map[string]interface{} {
@@ -93,6 +105,10 @@ func nativeWriteScope(claims map[string]interface{}) map[string]interface{} {
 
 func NewNativeWriteTask(binding, job, key, owner, nativeUser string, claims, input map[string]interface{}) (*jobproto.Task, error) {
 	intent := NativeWriteIntent{BindingID: binding, NativeUserID: nativeUser, Scope: nativeWriteScope(claims), InputReference: input}
+	return newNativeWriteTask(job, key, owner, intent)
+}
+
+func newNativeWriteTask(job, key, owner string, intent NativeWriteIntent) (*jobproto.Task, error) {
 	encoded, err := json.Marshal(intent)
 	if err != nil {
 		return nil, err

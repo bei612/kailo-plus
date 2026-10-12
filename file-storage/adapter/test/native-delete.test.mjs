@@ -12,6 +12,17 @@ const deleteArguments = permanent => ({target:{resourceId:adapterIds[10]},input:
 const completedDelete = () => ({execution:{idempotencyKey:adapterIds[7],nativeType:'job',nativeId:adapterIds[7],
   platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'}});
 
+test('pending native coordinator exposes only the original task identity for fresh admission',async t=>{
+  const pending=completedDelete();pending.execution.platformStatus='UNKNOWN';delete pending.execution.terminalAt;
+  const f=await setup(t,{delete:true,validation:true,operation:'execute',businessHuman:true,businessAction:deleteKey,
+    arguments:deleteArguments(true),deleteResult:pending});
+  const result=await f.invoke({path:'/platform-adapter/v1/execute',key:adapterIds[7],
+    raw:canonical({actionKey:deleteKey,idempotencyKey:adapterIds[7],arguments:f.requestArguments})});
+  assert.equal(result.status,200);const value=await result.json();
+  assert.equal(value.execution.nativeId,adapterIds[7]);assert.equal(value.execution.platformStatus,'UNKNOWN');
+  assert.equal(value.execution.terminalAt,undefined);assert.equal(f.state.deletions,1);
+});
+
 test('governed native deletion preserves permanent/recycle and HUMAN/AGENT identity without treating dispatch as completion',async t=>{
   for (const businessHuman of [true,false]) for (const permanent of [true,false]) await t.test(`${businessHuman}/${permanent}`,async nested=>{
     const f=await setup(nested,{delete:true,validation:true,operation:'execute',businessHuman,businessAction:deleteKey,arguments:deleteArguments(permanent)});

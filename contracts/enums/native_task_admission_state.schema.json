@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/native_task_admission_state.schema.json",
+  "title": "NativeTaskAdmissionState",
+  "description": "单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。",
+  "type": "string",
+  "enum": ["PENDING_REFERENCE", "ADMITTED"]
+}

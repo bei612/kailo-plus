@@ -65,6 +65,10 @@ import (
 )
 
 func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []string, permanently bool, languages ...string) ([]*jobs.Job, error) {
+	return deleteNodesTask(ctx, router, selectedPaths, permanently, nil, languages...)
+}
+
+func deleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []string, permanently bool, execution *nativeDeleteExecution, languages ...string) ([]*jobs.Job, error) {
 
 	var jj []*jobs.Job
 	username := claim.UserNameFromContext(ctx)
@@ -80,11 +84,20 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 			return nil, er
 		}
 		node := read.GetNode()
+		if execution != nil && (node == nil || execution.nodes[nodePath] != node.Uuid) {
+			return nil, errors.WithStack(errors.StatusConflict)
+		}
 
 		e := router.WrapCallback(func(inputFilter nodes.FilterFunc, outputFilter nodes.FilterFunc) error {
 			ctx, filtered, filterErr := inputFilter(ctx, node, "in")
 			if filterErr != nil {
 				return filterErr
+			}
+			if execution != nil {
+				if filtered == nil || filtered.Uuid != node.Uuid {
+					return errors.WithStack(errors.StatusConflict)
+				}
+				execution.nodes[filtered.Path] = node.Uuid
 			}
 			_, ancestors, e := nodes.AncestorsListFromContext(ctx, filtered, "in", false)
 			if e != nil {
@@ -150,7 +163,12 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 					return er
 				}
 				// Recycle metadata is itself a write, not a read-only job plan.
-				// Independent native ACLs precede this first effect.
+				// Native ACLs and the governed claim precede this first effect.
+				if execution != nil {
+					if err := execution.fresh(ctx); err != nil {
+						return err
+					}
+				}
 				if response, err := metaClient.CreateNode(ctx, &tree.CreateNodeRequest{Node: metaNode, Silent: true}); err != nil {
 					return err
 				} else if !response.GetSuccess() {
@@ -184,6 +202,11 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 		if _, e := fullPathRouter.ReadNode(ctx, &tree.ReadNodeRequest{Node: recycleNode}); e != nil {
 			if !errors.Is(e, errors.NodeNotFound) && !errors.Is(e, errors.ObjectNotFound) {
 				return nil, e
+			}
+			if execution != nil {
+				if err := execution.fresh(ctx); err != nil {
+					return nil, err
+				}
 			}
 			created, e := fullPathRouter.CreateNode(ctx, &tree.CreateNodeRequest{Node: recycleNode, IndexationSession: "close-create-recycle"})
 			if e != nil {
@@ -228,7 +251,7 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 		ctx = propagator.WithAdditionalMetadata(ctx, map[string]string{
 			keys.CtxWorkspaceUuid: rMoves.Workspace.UUID,
 		})
-		if resp, er := cli.PutJob(ctx, &jobs.PutJobRequest{Job: job}); er != nil {
+		if resp, er := putDeleteJob(ctx, cli, job, execution); er != nil {
 			return nil, er
 		} else {
 			jj = append(jj, resp.GetJob())
@@ -260,7 +283,7 @@ func DeleteNodesTask(ctx context.Context, router nodes.Client, selectedPaths []s
 				},
 			},
 		}
-		if resp, er := cli.PutJob(ctx, &jobs.PutJobRequest{Job: job}); er != nil {
+		if resp, er := putDeleteJob(ctx, cli, job, execution); er != nil {
 			return nil, er
 		} else {
 			jj = append(jj, resp.GetJob())

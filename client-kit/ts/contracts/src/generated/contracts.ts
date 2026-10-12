@@ -458,6 +458,49 @@ export interface AdapterExecutionUsageMeasurement {
 }
 
 /**
+ * 绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。
+ */
+export interface NativeTaskExecutionAdmissionRequest {
+    actionExecutionId: string;
+    bindingId:         string;
+    execution:         ExecutionClass;
+    /**
+     * 首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
+     */
+    nativeTaskDeadline: string;
+}
+
+/**
+ * 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+ * 未取得时只用冻结幂等键查证。
+ */
+export interface ExecutionClass {
+    externalExecutionId: string;
+    idempotencyKey:      string;
+    nativeId?:           string;
+    nativeType:          string;
+}
+
+/**
+ * 仅当次原任务执行上下文可用的票据；原生任务不得持久化票据或参数凭据。
+ */
+export interface NativeTaskExecutionAdmissionResponse {
+    actionToken?:       string;
+    argumentsJson?:     string;
+    expiresAt?:         string;
+    nativeTaskDeadline: string;
+    state:              NativeTaskAdmissionState;
+}
+
+/**
+ * 单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。
+ */
+export enum NativeTaskAdmissionState {
+    Admitted = "ADMITTED",
+    PendingReference = "PENDING_REFERENCE",
+}
+
+/**
  * ADR-12
  * adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
  */
@@ -481,7 +524,12 @@ export interface AdapterPepCheckResponse {
      * 扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
      */
     bindingGeneration?: number;
-    operationId:        string;
+    /**
+     * 仅声明原生异步任务执行期限的 HUMAN COMPONENT_ACTION 返回；原首次 dispatch 时间加已批准声明的期限，RFC3339，不随本次 fresh
+     * Check 续期。
+     */
+    nativeTaskDeadline?: string;
+    operationId:         string;
     /**
      * 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
      */

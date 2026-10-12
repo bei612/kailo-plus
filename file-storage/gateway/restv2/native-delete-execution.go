@@ -35,8 +35,8 @@ func nativeDeleteInput(input map[string]interface{}) ([]string, bool, bool) {
 	return nodes, permanent, true
 }
 
-// This original v2 route only resolves a previously admitted delete claim;
-// new managed work is refused until delayed workers can freshly authorize it.
+// The original v2 route claims and dispatches only the native coordinator;
+// its worker freshly authorizes the same retained execution before mutation.
 // Service transport never supplies the native user's ACLs: nativeActor still
 // checks each selected UUID under the admitted Resource/root.
 func (h *Handler) executeNativeDelete(req *restful.Request, resp *restful.Response, proof string) error {
@@ -89,6 +89,6 @@ func (h *Handler) executeNativeDelete(req *restful.Request, resp *restful.Respon
 	}
 	resp.Header().Set("Cache-Control", "no-store")
 	return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": map[string]interface{}{
-		"idempotencyKey": keys[0], "nativeType": "job", "platformStatus": "UNKNOWN", "cancelCapability": "UNSUPPORTED", "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano),
+		"idempotencyKey": keys[0], "nativeType": "job", "nativeId": task.ID, "platformStatus": "UNKNOWN", "cancelCapability": "UNSUPPORTED", "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano),
 	}}, restful.MIME_JSON)
 }

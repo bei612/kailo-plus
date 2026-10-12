@@ -6,11 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/auth/protocol"
 	"github.com/pydio/cells/v5/common/client/commons/jobsc"
+	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -20,6 +25,86 @@ const NativeNodeMutationResult = "nativeNodeMutationResult"
 const NativeDeleteJob = "nativeDeleteJob"
 const NativeDeleteDispatchComplete = "nativeDeleteDispatchComplete"
 const NativeDeleteTask = "nativeDeleteTask"
+const NativeDeleteCoordinator = "nativeDeleteCoordinator"
+
+func NewNativeDeleteTask(delivery auth.NativeDeleteDelivery, key, owner, nativeUser string, claims, input map[string]interface{}) (*jobproto.Task, error) {
+	deadline, err := time.Parse(time.RFC3339Nano, delivery.ExecutionDeadline)
+	interval, intervalErr := time.ParseDuration(delivery.Delete.AdmissionPollInterval)
+	external, ok := claims["external_execution_id"].(string)
+	if owner == "" || owner == common.PydioSystemUsername || err != nil || intervalErr != nil || interval <= 0 || !deadline.After(time.Now()) || delivery.ExecutionGeneration <= 0 ||
+		!ok || !auth.NativeActorUUID(external) || !auth.NativeActorUUID(key) || claims["idempotency_key"] != key ||
+		claims["actor_principal_id"] != claims["initiating_human_principal_id"] || claims["agent_principal_id"] != nil {
+		return nil, errors.WithStack(errors.StatusForbidden)
+	}
+	intent := NativeWriteIntent{BindingID: delivery.BindingID, NativeUserID: nativeUser,
+		Scope: nativeWriteScope(claims), InputReference: input,
+		NativeTask: &NativeTaskExecution{ExternalExecutionID: external, IdempotencyKey: key,
+			NativeType: delivery.Delete.NativeType, NativeID: key, Generation: delivery.ExecutionGeneration, Deadline: delivery.ExecutionDeadline}}
+	return newNativeWriteTask(delivery.Delete.NativeJobID, key, owner, intent)
+}
+
+// NativeDeleteFresh obtains a request-local ticket for the same persisted
+// coordinator. Neither this callback nor Core can create or replay its steps.
+func NativeDeleteFresh(ctx context.Context, task *jobproto.Task, wait bool) error {
+	intent, err := NativeWriteTaskIntent(task)
+	if err != nil || intent.NativeTask == nil || task.TriggerOwner == "" || task.TriggerOwner == common.PydioSystemUsername || intent.Scope["action_key"] != "file_storage.delete@v1" {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	ref := intent.NativeTask
+	var delivery auth.NativeDeleteDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
+		delivery.BindingID != intent.BindingID || delivery.Delete.NativeJobID != task.JobID || ref.NativeID != task.ID || ref.IdempotencyKey != task.ID ||
+		ref.NativeType != delivery.Delete.NativeType || ref.Generation <= 0 {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	principal, ok := intent.Scope["initiating_human_principal_id"].(string)
+	nativeUser, userErr := delivery.User(delivery.TenantID, principal, "HUMAN")
+	if !ok || userErr != nil || nativeUser != intent.NativeUserID || intent.Scope["tenant_id"] != delivery.TenantID {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	interval, err := time.ParseDuration(delivery.Delete.AdmissionPollInterval)
+	end, endErr := time.Parse(time.RFC3339Nano, ref.Deadline)
+	if err != nil || interval <= 0 || endErr != nil || !end.After(time.Now()) {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	ctx, cancel := context.WithDeadline(ctx, end)
+	defer cancel()
+	execution, ok := intent.Scope["action_execution_id"].(string)
+	if !ok {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	for {
+		token, arguments, admissionErr := delivery.NativeTaskAdmission(ctx, execution, map[string]interface{}{
+			"externalExecutionId": ref.ExternalExecutionID, "idempotencyKey": ref.IdempotencyKey,
+			"nativeType": ref.NativeType, "nativeId": ref.NativeID}, ref.Deadline)
+		if admissionErr == nil {
+			claims, target, generation, deadline, freshErr := delivery.AuthorizeNativeTask(ctx, token, arguments)
+			var envelope map[string]interface{}
+			if freshErr != nil || generation != ref.Generation || deadline != ref.Deadline ||
+				claims["external_execution_id"] != ref.ExternalExecutionID || claims["idempotency_key"] != task.ID ||
+				!NativeWriteTaskMatches(task, delivery.BindingID, nativeUser, claims) || json.Unmarshal([]byte(arguments), &envelope) != nil ||
+				target["nativeInstanceRef"] != delivery.NativeInstanceRef || target["nativeScopeRef"] != delivery.NativeScopeRef || target["nativeRef"] != delivery.NativeRootRef {
+				return errors.WithStack(errors.StatusForbidden)
+			}
+			before, _ := json.Marshal(intent.InputReference)
+			after, _ := json.Marshal(envelope["input"])
+			if string(before) != string(after) {
+				return errors.WithStack(errors.StatusForbidden)
+			}
+			return nil
+		}
+		if !wait || !errors.Is(admissionErr, protocol.ErrNativeTaskReferencePending) {
+			return admissionErr
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
 
 // These existing Job metadata references identify an immutable admitted
 // execution, including incomplete metadata which must never downgrade it.
@@ -29,15 +114,83 @@ func IsNativeDeleteJob(job *jobproto.Job) bool {
 	return coordinator || operation
 }
 
-// A frozen native claim proves attribution, not fresh execution permission.
-// Until the delayed worker can authorize that same platform execution, refuse
-// managed children at both Queue and RunAction. Independent native jobs retain
-// their original execution path; historical managed tasks remain observable.
-func AuthorizeNativeDeleteDispatch(job *jobproto.Job) error {
-	if IsNativeDeleteJob(job) {
-		return errors.WithMessage(errors.StatusForbidden, "managed deletion lacks delayed execution authority")
+// Queueing validates immutable task attribution only. Actual worker execution
+// separately obtains fresh platform authority before any native side effect.
+func NativeDeleteDispatchTask(ctx context.Context, job *jobproto.Job) (*jobproto.Task, error) {
+	if !IsNativeDeleteJob(job) {
+		return nil, nil
 	}
-	return nil
+	var delivery auth.NativeDeleteDelivery
+	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
+		job.Metadata[NativeDeleteJob] != delivery.Delete.NativeJobID || job.Metadata[NativeDeleteTask] == "" {
+		return nil, errors.WithStack(errors.StatusForbidden)
+	}
+	task, err := ReadNativeWriteTask(ctx, delivery.Delete.NativeJobID, job.Metadata[NativeDeleteTask], delivery.MaxResponseBytes)
+	if err != nil {
+		return nil, err
+	}
+	intent, err := NativeWriteTaskIntent(task)
+	if err != nil || intent.NativeTask == nil || intent.BindingID != delivery.BindingID || task.TriggerOwner != job.Owner {
+		return nil, errors.WithStack(errors.StatusForbidden)
+	}
+	digest, err := NativeJobDefinitionDigest(job)
+	if err != nil {
+		return nil, err
+	}
+	for _, log := range task.ActionsLogs {
+		for _, output := range log.GetOutputMessage().GetOutputChain() {
+			if output.GetVars()[NativeDeleteJob] != "true" && output.GetVars()[NativeDeleteCoordinator] != "true" {
+				continue
+			}
+			var reference struct {
+				JobID     string `json:"jobId"`
+				TaskID    string `json:"taskId"`
+				JobDigest string `json:"jobDigest"`
+			}
+			if json.Unmarshal(output.JsonBody, &reference) == nil && reference.JobID == job.ID && reference.TaskID == job.ID && reference.JobDigest == digest {
+				return task, nil
+			}
+		}
+	}
+	return nil, errors.WithStack(errors.StatusForbidden)
+}
+
+type nativeDeleteContextKey struct{}
+
+func AuthorizeNativeDeleteDispatch(ctx context.Context, job *jobproto.Job) (context.Context, error) {
+	task, err := NativeDeleteDispatchTask(ctx, job)
+	if err != nil || task == nil {
+		return ctx, err
+	}
+	intent, err := NativeWriteTaskIntent(task)
+	if err != nil {
+		return ctx, err
+	}
+	// A delayed owner login must still denote the originally mapped UUID.
+	// Never let the scoped router resolve a reused login as a different user.
+	user, err := auth.ResolveNativeUser(ctx, intent.NativeUserID)
+	if err != nil || user.Login != task.TriggerOwner || user.Login == common.PydioSystemUsername {
+		return ctx, errors.WithStack(errors.StatusForbidden)
+	}
+	ctx = auth.WithImpersonate(ctx, user)
+	if err := NativeDeleteFresh(ctx, task, true); err != nil {
+		return ctx, err
+	}
+	return context.WithValue(ctx, nativeDeleteContextKey{}, task), nil
+}
+
+func FreshNativeDeleteStep(ctx context.Context, required bool) error {
+	task, bound := ctx.Value(nativeDeleteContextKey{}).(*jobproto.Task)
+	if !bound {
+		if required {
+			return errors.WithStack(errors.StatusForbidden)
+		}
+		return nil
+	}
+	if claimed, _ := ctx.Value(ClaimedTaskContextKey{}).(bool); !claimed {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	return NativeDeleteFresh(ctx, task, false)
 }
 
 // NativeJobDefinitionDigest excludes only service-assigned timestamps and

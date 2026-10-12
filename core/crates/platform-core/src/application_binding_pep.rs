@@ -115,7 +115,8 @@ async fn authorized_resource(
     .bind(ae.tenant_id)
     .bind(binding)
     .bind(ae.id)
-    .bind(crate::application_action::native_execution::is_native_writer(ae))
+    .bind(crate::application_action::native_execution::is_native_writer(ae)
+        || crate::application_action::native_task::duration(&mut *state.pool.acquire().await?, ae).await?.is_some())
     .fetch_optional(&state.pool)
     .await?;
     let (resource, kind, reference, instance, scope) = row.ok_or_else(blocked)?;
@@ -259,6 +260,7 @@ pub(crate) async fn check(
         }
         if !management {
             let parameters=ae.parameters.as_ref().ok_or_else(invalid)?;
+            let native_task=crate::application_action::native_task::duration(&mut tx,&ae).await?.is_some();
             let attached:bool=sqlx::query_scalar("select exists(select 1 from admission.action_execution a
                 join catalog.application_binding b on b.id=a.component_binding_id
                 join projection.application_runtime runtime on runtime.binding_id=b.id
@@ -267,7 +269,7 @@ pub(crate) async fn check(
                   and (b.workspace_id is null or b.workspace_id=a.workspace_id)
                   and b.state in ('ACTIVE','DISABLING')
                   and ($3 or (b.component_release_id=a.component_release_id and b.active_projection_generation=a.component_projection_generation)))")
-                .bind(ae.id).bind(binding).bind(crate::application_action::native_execution::is_native_writer(&ae))
+                .bind(ae.id).bind(binding).bind(crate::application_action::native_execution::is_native_writer(&ae) || native_task)
                 .fetch_one(&mut *tx).await?;
             let expected_workspace=ae.workspace_id.map(|id|json!(id));
             let operation_kind=business_operation(operation,&status)?;
@@ -313,6 +315,7 @@ pub(crate) async fn check(
             }
             let binding_generation=frozen_binding_generation(&mut tx,ae.id,binding).await?;
             tx.commit().await?;
+            let mut native_task_deadline=None;
             let revision=if matches!(operation_kind,contracts::ComponentConformanceOperation::Observe|contracts::ComponentConformanceOperation::ExtractUsage) {
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
             } else if operation_kind==contracts::ComponentConformanceOperation::QueryRevision {
@@ -323,6 +326,12 @@ pub(crate) async fn check(
                     &state,&ae,uuid(&claims,"external_execution_id")?,binding).await?;
                 if key!=uuid(&claims,"idempotency_key")? || expected_audience!=audience { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
                 revision
+            } else if executing && native_task {
+                let (key,expected_audience,revision,deadline)=crate::application_action::native_task::authorize(
+                    &state,&ae,uuid(&claims,"external_execution_id")?,binding).await?;
+                if key!=uuid(&claims,"idempotency_key")? || expected_audience!=audience { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
+                native_task_deadline=Some(deadline);
+                revision
             } else {
                 let decision=crate::application_tool::fresh_execution_with_sources(&state.governance,&ae,sources).await?;
                 if !decision.allowed {return Err(Refusal::Denied(ReasonCode::PermissionDenied));}
@@ -331,6 +340,9 @@ pub(crate) async fn check(
             let mut response=json!({"actionExecutionId":ae.id,
                 "operationId":ae.operation_id,"authorizationMinZedToken":revision,
                 "bindingGeneration":binding_generation});
+            if let Some(deadline)=native_task_deadline {
+                response["nativeTaskDeadline"]=json!(crate::application_action::native_task::timestamp(deadline));
+            }
             if executing && def.target_type=="RESOURCE" {
                 response["targetResource"]=authorized_resource(&state,&ae,binding).await?;
             }
@@ -446,7 +458,7 @@ mod revision_pep_tests {
         // Retain the original approved, unmetered declaration and all database
         // guards. This is a PEP intent query check, not an Agent/SSO E2E.
         let fixture = include_str!("../../../verify/application-execution-dispatch.sql")
-            .replace("'executionMode','PROTOCOL'", "'executionMode','TEMPORAL'")
+            .replace("'executionMode','PROTOCOL'", "'nativeTaskExecutionTimeoutSeconds',3600,'executionMode','TEMPORAL'")
             .replace("'workflowType','NONE'", "'workflowType','ComponentTaskWorkflow'")
             .replace("manifest:=jsonb_build_object('componentTypeKey',provider,",
                 "manifest:=jsonb_build_object('executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER'),'componentTypeKey',provider,")
@@ -615,6 +627,74 @@ mod revision_pep_tests {
             );
             terminal.rollback().await.unwrap();
         }
+        // Retained task time is the original DISPATCH fact, not the time of a
+        // subsequent ticket request. Exercise the real audit writer and query.
+        let definition: crate::governance::Definition = sqlx::query_as(&format!(
+            "select {} from catalog.action_definition where id=(select action_definition_id from admission.action_execution where id=$1)",
+            crate::governance::DEFINITION_COLUMNS))
+            .bind(ae.id).fetch_one(&mut *outer).await.unwrap();
+        assert!(
+            crate::application_action::native_task::deadline(&mut outer, &ae, ee)
+                .await
+                .is_err()
+        );
+        let mut wrong_audit = outer.begin().await.unwrap();
+        let mut changed = ae.clone();
+        changed.parameter_hash = "c".repeat(64);
+        crate::governance::audit(
+            &mut wrong_audit,
+            &changed,
+            &definition,
+            "component_action:dispatch",
+            "DISPATCH",
+            "ALLOW",
+            "DISPATCH_RESULT_UNKNOWN",
+            None,
+            vec![],
+        )
+        .await
+        .unwrap();
+        assert!(
+            crate::application_action::native_task::deadline(&mut wrong_audit, &ae, ee)
+                .await
+                .is_err()
+        );
+        wrong_audit.rollback().await.unwrap();
+        crate::governance::audit(
+            &mut outer,
+            &ae,
+            &definition,
+            "component_action:dispatch",
+            "DISPATCH",
+            "ALLOW",
+            "DISPATCH_RESULT_UNKNOWN",
+            None,
+            vec![],
+        )
+        .await
+        .unwrap();
+        let deadline = crate::application_action::native_task::deadline(&mut outer, &ae, ee)
+            .await
+            .unwrap()
+            .unwrap();
+        let occurred: chrono::DateTime<chrono::Utc> =
+            sqlx::query_scalar("select occurred_at from audit.audit_event where event_key=$1")
+                .bind(format!("{}:component_action:dispatch", ae.operation_id))
+                .fetch_one(&mut *outer)
+                .await
+                .unwrap();
+        assert_eq!(deadline.timestamp(), occurred.timestamp() + 3600);
+        assert_eq!(
+            Some(deadline),
+            crate::application_action::native_task::deadline(&mut outer, &ae, ee)
+                .await
+                .unwrap()
+        );
+        assert!(
+            crate::application_action::native_task::deadline(&mut outer, &ae, Uuid::new_v4())
+                .await
+                .is_err()
+        );
         outer.rollback().await.unwrap();
     }
 }

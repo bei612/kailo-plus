@@ -3269,3 +3269,122 @@ knowledge@1 ACTIVE，新增 file_storage seed 尚未部署。这些是当次事�
 principal→native User/scope 映射。必须先部署种子与当前源码、走原注册/验证/
 绑定生命周期，才可由既有 owner-only 目录交付真实配置；这次时序修正不解除
 七项能力门禁，也不掩盖完整受管删除与分享的剩余缺项。
+
+## 2026-10-11 原异步删除同任务 fresh 准入
+
+本批权威为独立设计提交 `a760a1a7346b2b965db8150af50c67abb41a3520`
+的 design 03 §6 / 07 §5.2。实现基于 main
+`a3923f375435e31f587b703c1f72f9eb35825849`，不是部署回执。
+
+固定 Cells 上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 已从只读
+`.references/cells` 用 git grep 复核：`scheduler/jobs/userspace/userspace.go::DeleteNodesTask`、
+`scheduler/tasks/task.go::Task.Queue`、`scheduler/tasks/runnable.go::Runnable.RunAction`、
+`scheduler/actions/tree/delete.go::DeleteAction.Run` 与
+`common/nodes/copy-move.go::CopyMoveNodes` 均成立。改动属于已授权治理接入，
+原永久删除、回收站及 CopyMoveNodes 保留；没有运行或修改证据目录。
+
+- 定位权威：原 ComponentTaskWorkflow、AE/EE 与 Cells Task 继续分别拥有平台
+  执行及原生任务事实。新增受限 SERVICE 入站仅允许同一已派发任务领取短票据，
+  不改变同请求 HUMAN writer 接口，不以 observe 票据写入，不新建 AE 或再次派发。
+- 影响面：原 ActionDefinition implementationDeclaration 的明确执行时长与首次
+  DISPATCH 审计时间给出固定 deadline；关联 tenant/Operation/AE/EE、actor、target、
+  parameter hash 与 correlation，轮询不得重算延长。旧声明缺字段时不开放异步执行。
+  原 Task 持久化冻结引用而非令牌；新增可选引用不改变已有无该字段的任务摘要。
+  四侧新增请求/带枚举回应、PEP 可选 deadline，生成输入保留已提交 Reminder 合同。
+- 副作用：原 Task CreateOnly 和 dispatch 引用先于 PutJob/broker。丢 ACK 后同键只
+  观察，不再建 Task/Job；原 HUMAN 的权限、审批、quota、暂停、撤权与 Temporal
+  状态每次 fresh，SERVICE 不替换发起人。原用户 UUID 再解析且拒绝 system owner；
+  recycle/递归删除仍用原 planner/router，实际每次写入前重验，不另造删除执行器。
+- 边界：同 EE.nativeId 尚未投影且全部 fresh 成立时仅返回 PENDING_REFERENCE，
+  不给票据；同一协调任务按受控必填 admissionPollInterval 等待至固定 deadline。
+  已非空却不同的引用、generation/input/deadline 不符、撤权、取消和不可核网络结果
+  均无新写。实际 child ACK 才能终结；部分写、丢 ACK、旧引用缺字段继续 UNKNOWN，
+  由原 observe/reconcile 读取同一 Task，不将 TaskError 当业务整体 FAILED。
+
+原 Cells SDK `kailo-cells-native-check-lftow7` 保持 4 CPU / 8 GiB / 等额 swap，
+缓存 `/cache/build`、`/cache/mod` 为原 Data 挂载。冻结私有输入及日志：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/.native-delete-task.UoOc6R`。
+`GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local`，`GOTMPDIR`、`TMPDIR`、
+CELLS 工作/数据目录均显式位于该 Data 快照的 tmp，不使用宿主 Go。
+
+```sh
+go test -tags=kv -mod=readonly -timeout=5m -count=1 -v \
+  -run 'NativeDelete|ManagedDelete|NativeAcknowledgement|NativeMutation|NativeAction|Authorize' \
+  ./common/auth/protocol ./common/auth ./scheduler/jobs ./scheduler/jobs/userspace \
+  ./scheduler/tasks ./scheduler/actions/tree ./scheduler/jobs/rest ./gateway/restv2
+```
+
+最终还原 `52780` exit 0，`final-restored.log`：八包命令通过，其中 auth 与
+jobs/rest 无匹配用例，不算新增覆盖；其余包含原 coordinator 五种 ACK 边界、fresh
+八种响应边界以及真实 DeleteAction.Run 递归撤权消费者。私有删除实际逐项
+FreshNativeDeleteStep 后，`61414` exit 1，`recursive-private-negative-assertion.log`
+明确报告 `revocation crossed recursive side effect: err=internal calls=3`；恢复生产
+原字节 cmp 0 后得到上述八包 exit 0。没有改预期放行撤权后写。
+
+原失败保留：`90896` 为归档误排除 nested common/service/frontend，`50291` 为旧
+检查上下文缺原 config store，`44798` 为新递归夹具缺原 OIDC policy responder；
+分别补同 HEAD 输入或原夹具，不关闭安全检查。`47158` 反证首先由重复关闭通道
+panic 捕获第二写；夹具使用一次性信号后才运行 `61414` 的直接业务断言。原语言
+元数据 RPC 与任务日志驱动未投递的警告保留，不把隔离夹具说成完整后端验收。
+
+共同生成与 Core 输入目录：
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/native-task-generation.NR9iJv`。
+原 gen.sh `45151` exit 0；TS native-task 往返 1/1 exit 0，Go `9891`、Dart
+`86612` 同一新增往返均 1/1 exit 0。私有 Go 生成物只把请求 deadline 的 JSON tag
+改为 `-`，`31956` exit 1，原断言捕获冻结字段丢失；原字节 cmp 0 后 `84974`
+还原 1/1 exit 0，日志为 `roundtrip-go-negative.log` / `roundtrip-go-restored.log`。
+共同生成新增 ADMITTED 导致 quicktype 将 Go 原 ProtocolSessionViewState 常量
+`Admitted` 命名为 `StateADMITTED`；线值未变，当前 Worker 无该旧枚举符号调用，
+同名 bool 字段不受影响。这不证明第三方旧源码兼容，不手工覆盖生成物。
+Dart 首次 `30302` 缺原合同导出文件 exit 1
+保留，补同 HEAD barrel 前已核完整 import/export、全部样例、pubspec 和原离线
+缓存依赖闭包；未修改运行中的输入或安装新版本。Rust `27829` 原 contracts
+roundtrip 定向 1/1 exit 0，四侧本次新增 wire 均实际通过，不代表全套契约兼容。
+首次 Core 命令的 shell
+PATH exit 127、误选 lib target exit 101、`41770` 漏原 proto 输入 exit 101 均保留；
+随后一次核对 build.rs/include 输入并补同 HEAD proto、registry 与 NIP fixture。
+`88674` 误缺 `--bin platform-core` 扩大到集成编译，核实唯一进程组后正常 TERM，
+exit 143 记取消；仅以原 `--bin platform-core --no-run` 命令继续，不清缓存。
+
+`42441` 正确原命令 `cargo test --locked --offline -j16 -p platform-core
+--bin platform-core --no-run` 真实 exit 0，用时 36m33s；实际输出二进制为
+`/cache/rust-target/debug/deps/platform_core-b1cef2465232201a`。随后复用已有
+4 CPU / 8 GiB、Data 挂载的隔离 runner `kailo-receiver-observe-sdk-w4qug0`，
+连接其既有已迁移专属库 `receiver_observe_w4qug0`，运行同二进制原
+`execute_ticket_requires_exact_frozen_nonterminal_intent --ignored --nocapture`，
+1 passed / 0 ignored、exit 0。该原事务夹具真实消费治理审计 writer 与 deadline
+查询：缺首次派发、错 parameter hash、错 EE 拒绝，正确审计按同 occurred_at 和
+冻结 duration 得到稳定期限；事务回滚，不写生产库。它不是 HTTP SERVICE 认证
+或真实 Temporal/SpiceDB/quota 联调验收。两容器 TMPDIR 显式位于 Data，未新增
+服务或镜像。原 Rust 往返命令仅筛选
+`native_task_admission_preserves_pending_without_ticket_and_frozen_deadline`，
+未重跑已通过的其他三侧或 Cells 八包。
+
+同目录日志 SHA-256：
+
+- `core-bin-compile.log`：`b8a89c74570117125025e2f32d4b20654854c1d5e5b77804d0cfbc21f46603ef`。
+- `core-pg-native-task.log`：`4c147b1ac08407b1b64c6c74e34a7d8678e829873e4c104c0e9493d4ae1d54f8`。
+- `roundtrip-rust.log`：`8311065d4264db57326a2ddc57faec6523b3a4ed6c7104641698fdc9d085441b`。
+
+Adapter 原删除文件直接导入 query-revision 检查文件，不能把它误称仅删除检查。
+`91179` 全文件 520 pass / 299 fail（遗漏固定前端读入文件及原超时）保留；完整
+读取闭包补齐后 `34531` 仍误跑大范围，核实唯一 Node 进程组后 TERM，exit 1
+（447 pass、原 final-pep-rotation socket 错误及取消）也保留。最终沿原
+`node --test --test-name-pattern` 逐字锚定 native-delete.test.mjs 全部十个顶层名，
+原子项全部保留，33/33 exit 0，日志 `adapter-delete-scoped.log`；其余导入检查
+由名称过滤排除，未执行，不以此覆盖完整 query/ONLYOFFICE 验收。初始仅新增
+UNKNOWN Task 引用检查 `52652` 1/1 exit 0 另存 `adapter-pending.log`。
+
+上述 Go/adapter 的 Core HTTP 与原生 RPC 使用隔离夹具，不证明新 SERVICE HTTP
+认证或真实部署已验收。未运行 full、未构建镜像、未部署、未激活 binding；原 release
+完整能力验证门禁仍保留。Core/Cells/adapter 合同消费者必须同批发布，不把可选字段
+推断为任意旧版本都能执行新受管异步删除。
+
+最终原只读 docs `71665` exit 0，七段全部通过；输入是当前实施文档与设计，
+不冒充固定发布树全量门禁。原 check.sh 历史兼容 Python 区块 exit 0：314 个
+schema、匹配 `contracts-v0.1.0` 三个历史 schema；314 份实际输入逐一与最终
+私有 index blob 相同，不等于所有旧客户端兼容。两项复用固定 `10ad51a279b8…`
+镜像、2 CPU / 2 GiB、只读挂载、network none、Data tmp，无下载或大树导出，
+短命容器已精确删除。日志目录 `/volumes/data/kailo/tmp/native-task-final-docs.AfPzuS`：
+`check.log` SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`；
+`compatibility.log` SHA-256 `2a2a4aaedf4dd174a77da9c96bb39e355d789f39b60914758b3dbfdd36325b55`。

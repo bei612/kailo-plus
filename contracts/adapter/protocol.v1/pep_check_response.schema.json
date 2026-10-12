@@ -11,6 +11,7 @@
     "operationId": {"type": "string", "format": "uuid"},
     "authorizationMinZedToken": {"type": "string"},
     "bindingGeneration": {"type": "integer", "minimum": 1, "description": "原业务 AE 冻结的 component_projection_generation；由 Core 核验同 binding 后返回，不从调用方 token 扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。"},
+    "nativeTaskDeadline": {"type": "string", "description": "仅声明原生异步任务执行期限的 HUMAN COMPONENT_ACTION 返回；原首次 dispatch 时间加已批准声明的期限，RFC3339，不随本次 fresh Check 续期。"},
     "targetResource": {
       "title": "AdapterAuthorizedResource",
       "description": "本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。",

@@ -637,6 +637,63 @@ pub struct AdapterExecutionUsageMeasurement {
     pub quantity: i64,
 }
 
+/// 绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeTaskExecutionAdmissionRequest {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub execution: ExecutionClass,
+
+    /// 首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
+    pub native_task_deadline: String,
+}
+
+/// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
+/// 未取得时只用冻结幂等键查证。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionClass {
+    pub external_execution_id: String,
+
+    pub idempotency_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_id: Option<String>,
+
+    pub native_type: String,
+}
+
+/// 仅当次原任务执行上下文可用的票据；原生任务不得持久化票据或参数凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeTaskExecutionAdmissionResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_token: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+
+    pub native_task_deadline: String,
+
+    pub state: NativeTaskAdmissionState,
+}
+
+/// 单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NativeTaskAdmissionState {
+    Admitted,
+
+    #[serde(rename = "PENDING_REFERENCE")]
+    PendingReference,
+}
+
 /// ADR-12
 /// adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -669,6 +726,11 @@ pub struct AdapterPepCheckResponse {
     /// 扩展或当前部署配置推断。缺省时原生任务不得新建代次归属。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_generation: Option<i64>,
+
+    /// 仅声明原生异步任务执行期限的 HUMAN COMPONENT_ACTION 返回；原首次 dispatch 时间加已批准声明的期限，RFC3339，不随本次 fresh
+    /// Check 续期。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_task_deadline: Option<String>,
 
     pub operation_id: String,
 

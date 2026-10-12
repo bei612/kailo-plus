@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"strings"
+	"time"
 )
 
 // Core may return the original AE's frozen bindingGeneration. This callback
@@ -24,6 +25,12 @@ func actionPEPFields(result map[string]interface{}, withTarget bool) bool {
 		case "bindingGeneration":
 			generation, ok := value.(float64)
 			if !ok || generation < 1 || generation > 1<<53-1 || math.Trunc(generation) != generation {
+				return false
+			}
+		case "nativeTaskDeadline":
+			deadline, ok := value.(string)
+			_, err := time.Parse(time.RFC3339Nano, deadline)
+			if !withTarget || !ok || err != nil {
 				return false
 			}
 		default:
@@ -81,7 +88,7 @@ func (d Delivery) AuthorizeSourceRead(ctx context.Context, token, arguments stri
 // AuthorizeOperation observes the same frozen native Task without replaying an
 // execute token. Core deliberately omits a resource body for an old observation.
 func (d Delivery) AuthorizeOperation(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, error) {
-	return d.authorizeOperation(ctx, token, arguments, operation, nil)
+	return d.authorizeOperation(ctx, token, arguments, operation, nil, nil)
 }
 
 // Native byte-step ownership must use the AE generation actually confirmed by
@@ -92,11 +99,18 @@ func (d Delivery) AuthorizeNativeWriter(ctx context.Context, token, arguments st
 
 func (d Delivery) AuthorizeOperationGeneration(ctx context.Context, token, arguments, operation string) (map[string]interface{}, map[string]interface{}, int64, error) {
 	var generation int64
-	claims, target, err := d.authorizeOperation(ctx, token, arguments, operation, &generation)
+	claims, target, err := d.authorizeOperation(ctx, token, arguments, operation, &generation, nil)
 	return claims, target, generation, err
 }
 
-func (d Delivery) authorizeOperation(ctx context.Context, token, arguments, operation string, generation *int64) (map[string]interface{}, map[string]interface{}, error) {
+func (d Delivery) AuthorizeNativeTask(ctx context.Context, token, arguments string) (map[string]interface{}, map[string]interface{}, int64, string, error) {
+	var generation int64
+	var deadline string
+	claims, target, err := d.authorizeOperation(ctx, token, arguments, "execute", &generation, &deadline)
+	return claims, target, generation, deadline, err
+}
+
+func (d Delivery) authorizeOperation(ctx context.Context, token, arguments, operation string, generation *int64, deadline *string) (map[string]interface{}, map[string]interface{}, error) {
 	refused := errors.New("native action authority refused or unavailable")
 	if err := d.validate(); err != nil || int64(len(token)+len(arguments)) > d.MaxResponseBytes || (operation != "execute" && operation != "observe" && operation != "extract_usage" && operation != "reconcile") {
 		return nil, nil, refused
@@ -130,6 +144,14 @@ func (d Delivery) authorizeOperation(ctx context.Context, token, arguments, oper
 			return nil, nil, refused
 		}
 		*generation = int64(value)
+	}
+	if deadline != nil {
+		value, ok := result["nativeTaskDeadline"].(string)
+		expires, err := time.Parse(time.RFC3339Nano, value)
+		if !ok || err != nil || !expires.After(time.Now()) {
+			return nil, nil, refused
+		}
+		*deadline = value
 	}
 	if operation != "execute" {
 		return claims, nil, nil

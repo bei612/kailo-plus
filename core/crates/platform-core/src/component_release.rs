@@ -674,7 +674,7 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
                 "inputSchemaDigest",
                 "outputSchemaDigest",
             ],
-            &[],
+            &["nativeTaskExecutionTimeoutSeconds"],
         )?;
         let key = text(action, "actionKey")?;
         if !action_keys.insert(key.to_owned())
@@ -720,6 +720,14 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
         }
         if action["approvalPolicyId"] != "NONE" {
             Uuid::parse_str(text(action, "approvalPolicyId")?).map_err(|_| bad())?;
+        }
+        if let Some(seconds) = action.get("nativeTaskExecutionTimeoutSeconds") {
+            if action["executionMode"] != "TEMPORAL"
+                || action["workflowType"] != "ComponentTaskWorkflow"
+                || seconds.as_i64().is_none_or(|value| value <= 0)
+            {
+                return Err(bad());
+            }
         }
         let meters = action["meters"].as_array().ok_or_else(bad)?;
         if meters

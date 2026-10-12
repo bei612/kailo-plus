@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Native task admission preserves pending without ticket and frozen deadline", () => {
+  type Request = import("../src/generated/contracts.js").NativeTaskExecutionAdmissionRequest;
+  type Response = import("../src/generated/contracts.js").NativeTaskExecutionAdmissionResponse;
+  const sample: {request: Request; responses: Response[]} = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-task-execution-admission.sample.json", import.meta.url), "utf8"));
+  const row=sample.request;
+  const request: Request={bindingId:row.bindingId,actionExecutionId:row.actionExecutionId,nativeTaskDeadline:row.nativeTaskDeadline,
+    execution:{externalExecutionId:row.execution.externalExecutionId,idempotencyKey:row.execution.idempotencyKey,nativeType:row.execution.nativeType,nativeId:row.execution.nativeId}};
+  const responses: Response[]=sample.responses.map(row=>({state:row.state,nativeTaskDeadline:row.nativeTaskDeadline,actionToken:row.actionToken,argumentsJson:row.argumentsJson,expiresAt:row.expiresAt}));
+  deepStrictEqual(JSON.parse(JSON.stringify({request,responses})),sample);
+});
+
 test("Reminder wire preserves original status, optional fields and safe timestamps", () => {
   type Request = import("../src/generated/contracts.js").ReminderPublishRequest;
   type View = import("../src/generated/contracts.js").ReminderView;

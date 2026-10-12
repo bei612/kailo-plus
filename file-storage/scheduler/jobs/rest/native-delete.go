@@ -62,6 +62,7 @@ func nativeDeleteObservation(req *restful.Request, resp *restful.Response, proof
 		if !jobstore.NativeWriteTaskMatches(task, delivery.BindingID, current.Subject, claims) {
 			return refused
 		}
+		answer["nativeId"] = task.ID
 		if completedAt, terminalError := jobstore.NativeDeleteTerminal(req.Request.Context(), task, delivery.MaxResponseBytes); terminalError == nil {
 			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = task.ID, "SUCCEEDED", time.Unix(int64(completedAt), 0).UTC().Format(time.RFC3339)
 		}
@@ -70,7 +71,7 @@ func nativeDeleteObservation(req *restful.Request, resp *restful.Response, proof
 	if _, _, _, _, err := auth.NativeDeleteAuthority(transport, proof, operation); err != nil {
 		return err
 	}
-	if _, present := args["nativeId"]; present && answer["platformStatus"] != "SUCCEEDED" {
+	if _, present := args["nativeId"]; present && answer["nativeId"] != args["nativeId"] {
 		return errors.WithStack(errors.StatusConflict)
 	}
 	resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))

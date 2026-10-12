@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/native_task_execution_admission_request.schema.json",
+  "title": "NativeTaskExecutionAdmissionRequest",
+  "description": "绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bindingId", "actionExecutionId", "execution", "nativeTaskDeadline"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "execution": {"$ref": "execution_reference.schema.json"},
+    "nativeTaskDeadline": {"type": "string", "description": "首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。"}
+  }
+}

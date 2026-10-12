@@ -10,6 +10,25 @@ import 'package:test/test.dart';
 
 void main() {
   test(
+    'Native task admission preserves pending without ticket and frozen deadline',
+    () {
+      final sample = jsonDecode(
+        File('../../contracts/samples/native-task-execution-admission.sample.json')
+            .readAsStringSync(),
+      );
+      expect(
+        NativeTaskExecutionAdmissionRequest.fromJson(sample['request']).toJson(),
+        sample['request'],
+      );
+      expect(
+        (sample['responses'] as List)
+            .map((row) => NativeTaskExecutionAdmissionResponse.fromJson(row).toJson())
+            .toList(),
+        sample['responses'],
+      );
+    },
+  );
+  test(
     'Reminder wire preserves original status, optional fields and safe timestamps',
     () {
       final sample = jsonDecode(

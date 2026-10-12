@@ -348,6 +348,37 @@ pub(crate) async fn issue_component_action(
     issue_application_intent(state, ae, arguments, external, key).await
 }
 
+pub(crate) async fn issue_native_task(
+    state: &ServiceState,
+    ae: &Execution,
+    external: Uuid,
+    key: Uuid,
+    audience: &str,
+    revision: String,
+    deadline: i64,
+) -> Result<String, Refusal> {
+    let expected = crate::application_action::native_task::deadline(
+        &mut *state.pool.acquire().await?,
+        ae,
+        external,
+    )
+    .await?
+    .ok_or_else(invalid)?;
+    if expected.timestamp() != deadline || external.is_nil() || key.is_nil() || revision.is_empty()
+    {
+        return Err(invalid());
+    }
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let claims = application_claims(
+        ae,
+        p,
+        p["toolParameterHash"].clone(),
+        revision,
+        Some((external, key)),
+    )?;
+    sign_claims_before(state, audience, claims, Some(deadline)).await
+}
+
 pub(crate) async fn issue_native_execution(
     state: &ServiceState,
     ae: &Execution,
@@ -634,6 +665,12 @@ pub(crate) async fn observation_revision(
     if serde_json::to_value(parsed).map_err(|_| invalid())? != *args {
         return Err(invalid());
     }
+    let retained_native = crate::application_action::native_execution::is_native_writer(ae) || {
+        let mut connection = state.pool.acquire().await?;
+        crate::application_action::native_task::duration(&mut connection, ae)
+            .await?
+            .is_some()
+    };
     let revision:Option<String>=sqlx::query_scalar("select d.zed_token from admission.external_execution e
         join admission.action_execution a on a.id=e.action_execution_id and a.operation_id=e.operation_id
         join admission.action_execution root on root.id=coalesce(a.parent_action_execution_id,a.id) and root.operation_id=a.operation_id
@@ -657,7 +694,7 @@ pub(crate) async fn observation_revision(
         .bind(binding).bind(ae.tenant_id).bind(ae.workspace_id)
         .bind(Uuid::parse_str(text(args,"idempotencyKey")?).map_err(|_|invalid())?).bind(text(args,"nativeType")?)
         .bind(args.get("nativeId").and_then(Value::as_str))
-        .bind(crate::application_action::native_execution::is_native_writer(ae)).fetch_optional(&state.pool).await?;
+        .bind(retained_native).fetch_optional(&state.pool).await?;
     revision.ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))
 }
 

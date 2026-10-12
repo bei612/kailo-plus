@@ -266,6 +266,13 @@ export async function freshPep(config, deadline, token, args, claims, operation 
       operation, argumentsJson: canonical(args) }),
   });
   const keys = ['actionExecutionId', 'operationId', 'authorizationMinZedToken'];
+  if (object(answer) && Object.hasOwn(answer, 'nativeTaskDeadline')) {
+    keys.push('nativeTaskDeadline');
+    const expiry = Date.parse(answer.nativeTaskDeadline);
+    if (operation !== 'execute' || typeof answer.nativeTaskDeadline !== 'string'
+      || !Number.isFinite(expiry) || new Date(expiry).toISOString() !== answer.nativeTaskDeadline)
+      throw new Refused(503);
+  }
   if (object(answer) && Object.hasOwn(answer, 'bindingGeneration')) {
     keys.push('bindingGeneration');
     if (!Number.isSafeInteger(answer.bindingGeneration) || answer.bindingGeneration <= 0)
