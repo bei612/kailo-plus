@@ -49,7 +49,10 @@ describe('original HUMAN adjustment provenance and dispatch', () => {
             return {
               where: jest.fn(() => ({
                 forUpdate: jest.fn(() => ({
-                  first: jest.fn(async () => ({ id: 7, native_binding_fences: null })),
+                  first: jest.fn(async () => ({
+                    id: 7,
+                    native_binding_fences: null,
+                  })),
                 })),
               })),
             };
