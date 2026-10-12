@@ -407,3 +407,105 @@ TMPDIR/npm cache 均在 Data。基底六个原详情/宿主依赖逐字 cmp 0 �
 本批没有部署、安装包或对应新版浏览器截图；现网 9d718 的图片不能认领上述改动。
 这只是源码/隔离 DOM/路由定向证据，不是实际 BFF/Relay 端到端或完整原版恢复。
 未重跑全量，已有 full 失败和发布阻断保持。
+
+### 原 Tasks/Reviews 列表与精确详情返回链
+
+基底 `c4ea0957896b292b220d1823ad580deaa918faf8`；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。本批恢复全局 Projects 的原
+Tasks/Reviews 列表实际消费者，不是完整仓库详情、全部筛选或全部项目功能。
+
+四步变更核对：
+
+1. 权威为 REQ-24 原版恢复及 DD-72/75 双宿主边界。固定官方
+   `desktop/src/features/projects/ui/ProjectsToolbar.tsx::ProjectsToolbar`、
+   `ProjectsIssuesList.tsx::ProjectsIssuesList` 与
+   `ProjectsPullRequestsList.tsx::ProjectsPullRequestsList` 的原分类、网格/列表、
+   项目分组、作者入口及精确详情调用直接进入共享主体，不新造页面布局。
+2. 实际读链复用 `loadProjectWorkItems`，沿既有有界 Project/Repository/Issue/PR
+   查询读取；Tasks/Reviews 两类仅在宿主有实际目标导航时开放。原 repository
+   `id` 是 owner/dtag，不是带 kind 的 `repoAddress`；两端传相同 project、
+   repository 与互斥工作项引用到已恢复详情。原 `buzz.projects.filter` 保存分类，
+   宿主原历史返回后恢复该分类；没有新合同、服务、数据库或业务写入权威。
+3. URL、作者与缓存均不充当身份：正文和列表 fresh 查询失败立即不显示旧内容，
+   scope 变更取消/移除旧查询。资料宿主 viewer 来自当前已验证读结果的
+   `viewerPubkey`。Web/Native 普通项目目录不挂完整 Pulse；资料宿主只在真实
+   工作项内容挂载，composer 人目录读取移至真实 composer 子组件。Web 不再
+   让无关本人 profile 请求失败阻断只读列表；Native 工作项资料宿主保留原
+   scoped session 读取，DM 仍用原 fresh session 准入。异步导航 Promise 两端
+   实际向上传回，拒绝显示原错误而不自动重发。
+4. 空列表沿原空态；不存在/跨 scope/撤权目标仍走既有错误态，不能落到项目公告。
+   读取期间不渲染旧正文，查询分页、主体及 generation 校验保持。未引入外部
+   副作用、持久状态、重试账本或 UNKNOWN 转成功逻辑，06 §4 分类不变；Mobile
+   只沿原词条生成路径更新，无本批新页面。并发卸载后的导航拒绝不回写旧视图。
+
+固定源码四类映射：
+
+- 原样保留：上述两列表的行/卡片布局、原分组与渐进挂载；
+  `desktop/src/features/projects/ui/ProjectEventTypeIcon.tsx::ProjectEventTypeIcon`
+  的原图标映射；`projectGridCardStyles.ts::PROJECT_GRID_CARD_BODY_CLASS` 两行
+  原定义，两个真实列表共用。原 `desktop/src/shared/ui/card.tsx::Card` 本身输出
+  div；此处 div 使用该默认类与原调用类合并后的最终类（覆盖背景、阴影、边框），
+  不是新的卡片设计，也不归因于治理。
+- 共享迁移：上述模块进入 `client-kit/ts/platform/src/react/projects/`；
+  `desktop/src/features/projects/ui/ProjectAuthorIdentity.tsx::ProjectAuthorIdentity`
+  保留原 Tooltip、禁重复 hover popover 和资料点击；
+  `projectWorkItemGroups.ts::groupProjectWorkItemsByProject`、
+  `desktop/src/shared/hooks/useIncrementalMount.ts::useIncrementalMount` 的实际
+  分组/渐进消费两端同源。Web/Desktop 仅保留传输、资料与原导航适配。
+- 已授权接入：BFF/本机 Relay 有界读取、fresh 失败关闭、当前 viewer 投递与
+  中文默认/英文适配。原部分段失败后保留可用段的加载方式不适用此原子治理读链，
+  本批整次读取失败保持错误，不伪装部分成功或空列表。
+- 缺失需恢复：原 selection→Agent 上下文、share link、Activity/Repositories
+  分类、updated 排序和完整原加载视觉仍未闭合；完整
+  `desktop/src/features/projects/ui/ProjectDetailChrome.tsx::ProjectDetailChrome`、
+  `ProjectWorkspaceTabs.tsx::WorkspaceTabs`、`ProjectChannelHome.tsx::ProjectChannelHome`
+  与 Git/CommitDetail 及工作项写动作依旧缺失。本批没有把原 Home 链接改为
+  不可点击文字、没有七个空 tab，也不以两只读列表声称完整 Project 恢复。
+
+检查沿现有 `kailo-web-thread-tooltip-sdk`，4 CPU/8 GiB，memory+swap 总限额
+等于内存（无额外 swap）；源码、依赖、TMPDIR 与 npm cache 均在 Data。
+没有新增镜像、安装包、全仓导出或全量编译。日志目录：
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/projects-lists.grYYl4/`。
+
+- 60649 exit 1：共享生产/测试类型通过，原三套件 87 passed/5 failed；新增原
+  toolbar 消费漏 jsdom ResizeObserver，按已有 Projects 夹具补齐，不改产品。
+  原件 `platform-typecheck.log`、`test-typecheck.log`、`positive.log` 保留。
+- 21972 exit 1：共享生产、共享测试、Web、Native 四项 `tsc --noEmit` 均为 0；
+  原共享 88/92，四项期望误将 repoAddress 当 repository.id；固定官方
+  `desktop/src/features/projects/projectModels.ts::eventToRepository`
+  的 owner/dtag 原语义与既有解析消费者确认后只纠正期望。Web 11/12，新增目录
+  消费缺 scrollIntoView DOM 夹具；只补原夹具方法。Native 因本次命令漏原
+  `--import ./test-loader.mjs`，ERR_UNKNOWN_FILE_EXTENSION，未执行断言。
+  对应 `*-final-typecheck.log`、`web-typecheck.log`、`native-typecheck.log`、
+  `final-positive.log`、`web-positive.log`、`native-positive.log` 不覆盖。
+- 28934 exit 0：共享测试类型与原
+  `vitest run test/project-inbox.test.tsx test/projects.test.tsx test/pulse.test.tsx --no-file-parallelism`
+  92/92；Web 原 `vitest run src/platform/ui/PulsePane.test.tsx --no-file-parallelism`
+  12/12；Native 原
+  `node --import ./test-loader.mjs --experimental-strip-types --test src/features/platform/PulseScreen.test.mjs`
+  8/8。日志 `test-corrected-typecheck.log`、`corrected-positive.log`、
+  `web-corrected-positive.log`、`native-corrected-positive.log`。
+- 11863 仅私有输入断开列表 `onOpen` 委托；原 ProjectInbox 套件加
+  `-t "list and exact detail"`，4 failed/20 skipped、exit 1，
+  `navigation-mutation.log`。中英 Issue/PR 真正 overlay 按钮均未调用导航，
+  断言实际捕获 0 次回调。正式字节还原且本批 20 个源路径逐个 cmp 0 后，
+  16298 原三套件 92/92、exit 0，`restored.log`；包含最后原样式常量双消费者。
+  实际作者按钮不触发行导航、正确 project/repository/类型、分类返回、撤权隐藏
+  正文、Promise 拒绝只发生一次且不发布事件均有原消费者断言。返回为隔离 React
+  宿主状态，不冒称真实浏览器历史或 BFF/Relay 端到端。React act 警告保留。
+- 88929 原 closure 私有 HEAD 加 23 新 TS 词条，执行
+  `python3 tools/gen-platform-i18n.py` exit 0。输入/输出位于
+  `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/projects-list-i18n.hBOGap/`；
+  Dart 仅 23 enum/23 消息共 73 新行，reason 无变化。原 public TS/Dart 历史暂存
+  未覆盖，未变更 HOME、四侧合同、其他队友生成输入或工具版本。
+
+本批没有部署或对应新版浏览器截图，现网 9d718 的原截图不能认领本批。
+Windows/Mobile 安装验收及完整原版一致性未完成；原 full 失败门禁保留。
+
+2166 原只读 `bash tools/check-docs.sh /workspace/.design` 实际 exit 0，七段全部
+通过，日志 `/volumes/data/kailo/tmp/projects-lists-docs.IFl9mh/check.log`。
+运行使用原检查镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU/2 GiB，memory+swap 总限额等于内存，无网络、UID 1000、只读根及
+apps/design 挂载；tmp/npm/node 缓存位于 Data。设计实际 HEAD 为
+`87625ff0e45ae1d89567105591f60da04b98e8d8`。该入口覆盖当前工作树 top/docs 与
+设计资料，不逐行检查 receipt 子目录，不冒称同一固定候选 full 或发布门禁通过。

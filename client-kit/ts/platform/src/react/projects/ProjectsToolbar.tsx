@@ -4,7 +4,7 @@ import { LayoutGrid, List } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
 import type { ProjectsViewMode } from "./lib/projectsViewHelpers";
-export type ProjectsFilter = "projects" | "channels";
+export type ProjectsFilter = "projects" | "channels" | "issues" | "prs";
 const PROJECT_TAB_TRIGGER_CLASS = "h-7 shrink-0 rounded-full bg-muted/30 px-3 text-xs font-medium leading-5 tracking-tight text-muted-foreground shadow-none transition-colors hover:bg-muted/55 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none";
 const PROJECT_TAB_SELECTED_CLASS = "bg-muted text-foreground";
 import { twMerge as cn } from "tailwind-merge";
@@ -27,6 +27,7 @@ type ProjectsToolbarProps = {
   onFilterChange: (filter: ProjectsFilter) => void;
   reduceMotion?: boolean;
   channelsAvailable: boolean;
+  workItemsAvailable: boolean;
 };
 
 export function ProjectsViewModeToggle({
@@ -108,6 +109,7 @@ export function ProjectsToolbar({
   onFilterChange,
   reduceMotion = false,
   channelsAvailable,
+  workItemsAvailable,
 }: ProjectsToolbarProps) {
   const t=useUiT();
   const scrollRef = React.useRef<HTMLFieldSetElement>(null);
@@ -126,6 +128,7 @@ export function ProjectsToolbar({
     value: ProjectsFilter;
   }> = [
     { label: t("platform.tab.projects"), value: "projects" },
+    ...(workItemsAvailable ? [{label:t("projects.list.tasks"),value:"issues" as const},{label:t("projects.list.reviews"),value:"prs" as const}] : []),
     ...(channelsAvailable ? [{ label: t("sidebar.channels"), value: "channels" as const }] : []),
   ];
 

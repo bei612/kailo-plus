@@ -32,8 +32,59 @@ function fixture(){
   const host:ProjectsHost={scopeKey:"tenant:human",query};
   return {issue,review,rows,host,query};
 }
-beforeEach(()=>{setLocale("en");localStorage.clear();});
+beforeEach(()=>{setLocale("en");localStorage.clear();
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  HTMLElement.prototype.scrollIntoView=vi.fn();
+});
 describe("original Inbox project read closure",()=>{
+  it.each([["issues","issue","en"],["prs","review","en"],["issues","issue","zh-CN"],["prs","review","zh-CN"]] as const)("opens original %s list and exact detail, restoring the stored section in %s/%s",async(section,kind,locale)=>{
+    setLocale(locale);localStorage.setItem("buzz.projects.viewMode","list");
+    const f=fixture(),opened=vi.fn(),openProfile=vi.fn();
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),openProfile,
+      mediaUrl:url=>url,renderComposer:()=>{throw new Error("No project write consumer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const bff=createBffClient({send:async()=>({status:200,body:{}})});
+    let back=()=>{};
+    function Page(){const [selection,setSelection]=useState<{id:string;target:ReturnType<typeof projectWorkItemTarget>}>();
+      back=()=>setSelection(undefined);
+      return <ProjectsView host={f.host} selectedProjectId={selection?.id} workItemTarget={selection?.target}
+        onSelectedProjectChange={(id,target)=>{opened(id,target);if(id&&target)setSelection({id,target});}}/>;}
+    const view=await render(<PlatformProvider client={bff} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}><Page/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await click(view.querySelector<HTMLElement>(`[data-testid="projects-section-${section}"]`)!);
+    const rowSelector=`[data-testid="projects-${kind==="issue"?"issue":"pr"}-row-${f[kind].id}"]`;
+    await vi.waitFor(()=>expect(view.querySelector(rowSelector)).not.toBeNull());
+    expect(localStorage.getItem("buzz.projects.filter")).toBe(section);
+    const row=view.querySelector(rowSelector)!;
+    expect(row.tagName).toBe("DIV");expect(row.querySelector("button button")).toBeNull();
+    const profileButton=row.querySelector<HTMLButtonElement>('[data-testid$="-author"]')!;
+    await click(profileButton);expect(openProfile).toHaveBeenCalledExactlyOnceWith(author);expect(opened).not.toHaveBeenCalled();
+    await click(row.querySelector<HTMLButtonElement>('button[title]')!);
+    expect(opened).toHaveBeenCalledExactlyOnceWith("30621:"+author+":project",{repositoryId:author+":repo",...(kind==="issue"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
+    const detailSelector=kind==="issue"?'[data-testid="project-issue-detail"]':'[data-testid="project-pull-request-detail"]';
+    await vi.waitFor(()=>expect(view.querySelector(detailSelector)).not.toBeNull());
+    await act(async()=>back());
+    await vi.waitFor(()=>expect(view.querySelector(rowSelector)).not.toBeNull());
+    expect(view.querySelector(`[data-testid="projects-section-${section}"]`)?.getAttribute("aria-pressed")).toBe("true");
+    f.host.query=async()=>{throw new Error("Revoked work item access");};
+    await act(async()=>{await cache.invalidateQueries({queryKey:["projects-work-items",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(view.querySelector(rowSelector)).toBeNull());
+    expect(view.textContent).not.toContain(f[kind].content);expect(host.publish).not.toHaveBeenCalled();cache.clear();
+  });
+  it("keeps an asynchronous rejected list navigation on the same read-only list without retrying",async()=>{
+    const f=fixture(),opened=vi.fn(async()=>{throw new Error("Navigation refused");});
+    localStorage.setItem("buzz.projects.filter","issues");
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>{throw new Error("No writer");},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const view=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}>
+      <ProjectsView host={f.host} onSelectedProjectChange={opened}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(view.querySelector('[data-projects-grid-card]')).not.toBeNull());
+    await click(view.querySelector<HTMLButtonElement>('[data-projects-grid-card] > button')!);
+    await vi.waitFor(()=>expect(view.querySelector('[role="alert"]')).not.toBeNull());
+    expect(opened).toHaveBeenCalledTimes(1);expect(view.querySelector('[data-projects-grid-card]')).not.toBeNull();
+    expect(view.querySelector('[data-testid="project-issue-detail"]')).toBeNull();expect(host.publish).not.toHaveBeenCalled();cache.clear();
+  });
   it.each(["issue","review"] as const)("opens the exact original %s target through a fresh project read",async kind=>{
     const f=fixture(),data=await loadProjectWorkItems(f.host,new AbortController().signal);
     const workItem=resolveProjectInboxWorkItem(data.items,f[kind])!;

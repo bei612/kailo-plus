@@ -2,6 +2,7 @@
 // desktop/src/features/projects/lib/projectsViewHelpers.ts. No access decision
 // or missing Git activity producer is migrated into this presentation module.
 import { getLocale, platformTimeSeconds, translate, type PlatformLocale } from "../../../i18n";
+import type {ProjectsFilter} from "../ProjectsToolbar";
 export type ProjectsViewMode = "grid" | "list";
 export function formatExactTimestamp(createdAt: number) {
   return new Date(createdAt * 1_000).toLocaleString(getLocale(), {
@@ -14,6 +15,19 @@ export function formatExactTimestamp(createdAt: number) {
   });
 }
 const PROJECTS_VIEW_MODE_STORAGE_KEY = "buzz.projects.viewMode";
+const PROJECTS_FILTER_STORAGE_KEY = "buzz.projects.filter";
+export function readStoredFilter():ProjectsFilter {
+  try {
+    const value=globalThis.localStorage?.getItem(PROJECTS_FILTER_STORAGE_KEY);
+    // Only restored consumers may be selected; un-restored Activity/Git retain
+    // their source evidence, not an empty reachable page.
+    return value==="channels"||value==="issues"||value==="prs"?value:"projects";
+  } catch {return "projects";}
+}
+export function writeStoredFilter(filter:ProjectsFilter) {
+  try {globalThis.localStorage?.setItem(PROJECTS_FILTER_STORAGE_KEY,filter);}
+  catch { /* Persistence is best-effort; the in-memory toggle still works. */ }
+}
 
 export function readStoredViewMode(): ProjectsViewMode | null {
   try {

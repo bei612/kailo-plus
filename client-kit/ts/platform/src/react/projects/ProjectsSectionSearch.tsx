@@ -14,6 +14,7 @@ export function ProjectsSectionSearch({
   onSortChange,
   sort,
   channelsAvailable,
+  workItemsAvailable,
 }: {
   filter: ProjectsFilter;
   onFilterChange: (filter: ProjectsFilter) => void;
@@ -21,9 +22,10 @@ export function ProjectsSectionSearch({
   onSortChange: (sort: ProjectsSort) => void;
   sort: ProjectsSort;
   channelsAvailable: boolean;
+  workItemsAvailable: boolean;
 }) {
   const t=useUiT();
-  const sectionTitle=t(filter==="channels"?"sidebar.channels":"platform.tab.projects");
+  const sectionTitle=t(filter==="channels"?"sidebar.channels":filter==="issues"?"projects.list.tasks":filter==="prs"?"projects.list.reviews":"platform.tab.projects");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const deferredQuery = React.useDeferredValue(query);
@@ -144,6 +146,7 @@ export function ProjectsSectionSearch({
               }}
             >
               <ProjectsToolbar
+                workItemsAvailable={workItemsAvailable}
                 filter={filter}
                 channelsAvailable={channelsAvailable}
                 onFilterChange={onFilterChange}

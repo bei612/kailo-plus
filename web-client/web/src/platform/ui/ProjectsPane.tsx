@@ -22,9 +22,10 @@ export function useProjectsHost(scopeKey:string){
   return host;
 }
 
-export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;
+export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
   const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
+    renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
     onOpenChannel={onOpenChannel} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
-  return workItemTarget&&(workItemTarget.repositoryId||workItemTarget.issueId||workItemTarget.pullRequestId)?<PulsePane scopeKey={scopeKey} onStartDm={onStartDm}>{view}</PulsePane>:view;
+  return view;
 }

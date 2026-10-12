@@ -31,7 +31,6 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
   const cache=useQueryClient();
   const platformSession=useQuery({queryKey:["platform","session"],queryFn:()=>session.client.session()});
   const directMessage=useDirectMessageOpen(platformSession.data?.tenantPrincipalId??"");
-  const directory=usePeopleDirectory(session.facts.communityHost+":"+session.devicePubkey);
   const scope=useMemo(()=>({active:true}),[session]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
   const limit=session.facts.relayQueryLimit;
@@ -49,7 +48,18 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
         await navigate({to:"/channels/$channelId",params:{channelId:conversation.channelId}});
       },
       renderContent:(content,tags,className)=><Markdown content={content} className={className} imetaByUrl={parseImetaTags(tags??[])} linkPreviewTags={tags}/>,
-      renderComposer:(props)=><div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
+      renderComposer:(props)=><NativePulseComposer props={props}/>,
+
+    };
+  },[session,scope,limit,navigate,t,cache,directMessage.open]);
+  if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
+  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={session.devicePubkey}/>}</PulseHostProvider>;
+}
+
+function NativePulseComposer({props}:{props:Parameters<PulseHost["renderComposer"]>[0]}) {
+  const session=useNativeSession();const t=useT();
+  const directory=usePeopleDirectory(session.facts.communityHost+":"+session.devicePubkey);
+  return <div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
         containerClassName={props.className} composerHeader={props.header}
         channelName={t("platform.tab.pulse")} disabled={props.disabled} isSending={props.isSending}
         profiles={props.profiles} placeholder={props.placeholder} onCancelReply={props.onCancel}
@@ -61,9 +71,5 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
             filename:media.filename,displayLabel:media.alt,blurhash:media.blurhash,thumb:media.thumb,duration:media.duration,image:media.image,
           }));
           await props.onSubmit(content,mentions,attachments);
-        }}/><PeopleDirectoryStatus directory={directory}/></div>,
-    };
-  },[session,scope,limit,navigate,t,cache,directMessage.open,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
-  if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
-  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={session.devicePubkey}/>}</PulseHostProvider>;
+        }}/><PeopleDirectoryStatus directory={directory}/></div>;
 }

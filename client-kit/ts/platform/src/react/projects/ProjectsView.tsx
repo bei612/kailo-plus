@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
-import { Folders, Hash, X, Trash2 } from "lucide-react";
+import { Folders, Hash, X, Trash2, CircleDot, GitPullRequest } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -14,7 +14,7 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectDeleteAction } from "./ProjectDeleteAction";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { useCreateProject } from "./useCreateProject";
-import { readStoredViewMode, writeStoredViewMode, type ProjectsViewMode } from "./lib/projectsViewHelpers";
+import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,type ProjectsViewMode } from "./lib/projectsViewHelpers";
 import { ProjectDetailMetaList, ProjectDetailMetaRow } from "./ProjectDetailMeta";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
@@ -24,45 +24,94 @@ import type { ProjectsFilter } from "./ProjectsToolbar";
 import { ProjectsSectionSearch } from "./ProjectsSectionSearch";
 import { ProjectsListHeaderBar } from "./ProjectsListHeaderBar";
 import type { ProjectMemberRenderer } from "./ProjectChannelMembers";
-import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTarget} from "./projectWorkItems";
+import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTarget,type ProjectInboxWorkItem} from "./projectWorkItems";
+import {ProjectsIssuesList} from "./ProjectsIssuesList";
+import {ProjectsPullRequestsList} from "./ProjectsPullRequestsList";
+import {matchesProjectsSearch} from "./lib/projectsSearch";
 import {useUsersBatchQuery} from "../pulse/host";
 import {ProjectIssueDetail} from "./ProjectIssueDetail";
 import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
 
-type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void|Promise<void>;
+type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
+  renderWorkItems?:(children:ReactNode,viewerPubkey:string)=>ReactNode;
   workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
 export function ProjectsView(props:ProjectsViewProps) {
-  if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget}/>;
+  if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget} renderWorkItems={props.renderWorkItems}/>;
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
 }
 
-function ProjectWorkItemPage({host,projectId,target}:{host:ProjectsHost;projectId?:string|null;target:ProjectWorkItemTarget}) {
+function ProjectWorkItemPage({host,projectId,target,renderWorkItems}:{host:ProjectsHost;projectId?:string|null;target:ProjectWorkItemTarget;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
   const t=useUiT();const cache=useQueryClient();
   const query=useQuery({queryKey:["project-work-item-target",host.scopeKey,projectId,target],
     queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["project-work-item-target",host.scopeKey]});cache.removeQueries({queryKey:["project-work-item-target",host.scopeKey]});},[cache,host.scopeKey]);
   const workItem=query.isSuccess&&!query.isFetching?resolveProjectWorkItemTarget(query.data.items,projectId,target):undefined;
-  const item=workItem?.type==="issue"?workItem.issue:workItem?.pullRequest;
-  const keys=item?[item.author,...item.comments.map(comment=>comment.author),...(workItem?.type==="issue"?workItem.issue.assignees:workItem?[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)]:[])]:[];
-  const profiles=useUsersBatchQuery(keys).data?.profiles;
+  const detail=workItem?<ProjectWorkItemDetail workItem={workItem}/>:null;
   // Original ProjectDetailScreen scroll chain and selected WorkspaceTabs detail
   // branch. Git, other tabs, and writes remain separately un-restored.
   return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-none px-4 pb-4" data-testid="project-detail-scroll">
       <div className="flex min-h-full w-full flex-col space-y-3">
         {query.isPending||query.isFetching?<ProjectPanelState title={t("platform.loading")}/>:!workItem?<ProjectPanelState error title={t(query.isError?"platform.loadFailed":"projects.unavailable")}/>:<div className="m-0" data-project-detail-panel>
-          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}
+          {renderWorkItems?renderWorkItems(detail,query.data!.viewerPubkey):detail}
         </div>}
       </div>
     </div>
   </div>;
 }
 
-function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember}:ProjectsViewProps) {
+function ProjectWorkItemDetail({workItem}:{workItem:ProjectInboxWorkItem}) {
+  const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
+  const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
+  return workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>;
+}
+
+function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:"created"|"name";view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
+  const t=useUiT();const cache=useQueryClient();
+  const [navigationFailed,setNavigationFailed]=useState(false);
+  const lifetime=useMemo(()=>({active:true}),[host]);
+  useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
+  const query=useQuery({queryKey:["projects-work-items",host.scopeKey],queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
+  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects-work-items",host.scopeKey]});cache.removeQueries({queryKey:["projects-work-items",host.scopeKey]});},[cache,host.scopeKey]);
+  // A stale cache or failed section never becomes an accessible/empty list.
+  const items=query.isSuccess&&!query.isFetching?query.data.items:[];
+  const visible=items.filter(item=>{
+    const value=item.type==="issue"?item.issue:item.pullRequest;
+    return (filter==="issues"?item.type==="issue":item.type==="pull-request")&&matchesProjectsSearch(search,[value.title,value.content,value.status,item.project.name,item.repository.name]);
+  }).sort((a,b)=>{
+    const left=a.type==="issue"?a.issue:a.pullRequest;const right=b.type==="issue"?b.issue:b.pullRequest;
+    return sort==="name"?left.title.localeCompare(right.title):right.createdAt-left.createdAt;
+  });
+  const open=(project:Project,repository:Project["repositories"][number],target:{id:string})=>{
+    void Promise.resolve().then(()=>{if(lifetime.active)return onOpen(project.id,{repositoryId:repository.id,...(filter==="issues"?{issueId:target.id}:{pullRequestId:target.id})});})
+      .catch(()=>{if(lifetime.active)setNavigationFailed(true);});
+  };
+  const content=<ProjectWorkItemsContent items={visible} filter={filter} view={view} search={search} onOpen={open}/>;
+  const retry=<Button onClick={()=>{void query.refetch();}} size="sm" variant="outline">{t("projects.list.retry")}</Button>;
+  return <>
+    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
+    {query.isPending||query.isFetching?<p role="status">{t("platform.loading")}</p>:query.isError?
+      <ProjectPanelState error panel={false} title={t(filter==="issues"?"projects.list.tasksFailed":"projects.list.reviewsFailed")} description={t("projects.list.relayFailed")} action={retry}/>:
+      renderWorkItems?renderWorkItems(content,query.data.viewerPubkey):content}
+  </>;
+}
+
+function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:ProjectInboxWorkItem[];filter:"issues"|"prs";view:ProjectsViewMode;search:string;onOpen:(project:Project,repository:Project["repositories"][number],target:{id:string})=>void}) {
+  const t=useUiT();
+  const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
+  const common={profiles,viewMode:view,embedded:view==="list",onOpen};
+  return filter==="issues"?<ProjectsIssuesList {...common} issues={items.filter(item=>item.type==="issue")} emptyMessage={search.trim()?t("projects.list.tasksNoMatch"):undefined}/>:
+    <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>;
+}
+
+function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
-  const [filter,setFilter]=useState<ProjectsFilter>("projects");
+  const [filter,setFilter]=useState<ProjectsFilter>(()=>{
+    const stored=readStoredFilter();
+    return stored==="channels"&&!onOpenChannel||(stored==="issues"||stored==="prs")&&!onSelectedProjectChange?"projects":stored;
+  });
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
   const [sort,setSort]=useState<"created"|"name">("created");
   const [createOpen,setCreateOpen]=useState(false);
@@ -88,6 +137,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
   const changeView=(next:ProjectsViewMode)=>{setView(next);writeStoredViewMode(next);};
+  const changeFilter=(next:ProjectsFilter)=>{setFilter(next);writeStoredFilter(next);};
   const invalidateProjects=()=>Promise.all([
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
     cache.invalidateQueries({queryKey:["sidebar-projects",host.scopeKey]}),
@@ -113,14 +163,14 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
       <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4">
-        <ProjectsSectionSearch filter={filter} onFilterChange={setFilter} onQueryChange={setSearch} onSortChange={setSort}
-          sort={sort} channelsAvailable={Boolean(onOpenChannel)}/>
+        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={setSort}
+          sort={sort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
       </div>
-      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={filter==="channels"?Hash:Folders} testId="projects-page-header"
-        title={t(filter==="channels"?"sidebar.channels":"platform.tab.projects")}
+      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={filter==="channels"?Hash:filter==="issues"?CircleDot:filter==="prs"?GitPullRequest:Folders} testId="projects-page-header"
+        title={t(filter==="channels"?"sidebar.channels":filter==="issues"?"projects.list.tasks":filter==="prs"?"projects.list.reviews":"platform.tab.projects")}
         trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>
       {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
-      {query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
+      {(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
         <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
           lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
         searchText?<EmptyFilteredState/>:<EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:

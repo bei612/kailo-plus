@@ -9,14 +9,15 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { TransportError } from "@client-kit/platform/transport";
 import { createBffClient } from "@client-kit/platform/client";
 import { PulsePane } from "./PulsePane";
+import {ProjectsPane} from "./ProjectsPane";
 import { usePulseHost } from "@client-kit/platform/react/pulse";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
 
-const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
+const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
 vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
 vi.mock("../bff-client",()=>({bff:{profile:api.profile,discoverableWorkspaces:api.discoverableWorkspaces},queryPulse:api.queryPulse,
-  publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value}));
+  publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value,queryProjects:api.queryProjects,publishProject:vi.fn()}));
 // This batch exercises the original Pulse/Profile/Message consumer, not post editing.
 vi.mock("./ChannelPane",()=>({Composer:()=>null}));
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
@@ -24,12 +25,15 @@ let root:Root,host:HTMLDivElement,cache:QueryClient;
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 beforeEach(()=>{
   setLocale("en");
+  localStorage.clear();
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  HTMLElement.prototype.scrollIntoView=vi.fn();
   vi.spyOn(HTMLElement.prototype,"offsetHeight","get").mockReturnValue(420);
   vi.spyOn(HTMLElement.prototype,"offsetWidth","get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,800,420));
   api.profile.mockReset().mockResolvedValue({pubkey:own});
+  api.queryProjects.mockReset().mockResolvedValue({events:[],pubkey:own,limit:20});
   api.error.mockReset();api.discoverableWorkspaces.mockReset();
   api.queryPulse.mockReset().mockImplementation(async(request:{view:string;authors?:string[]})=>({mediaPaths:{},events:
     request.view==="NOTES"?[{id:eventId,pubkey:peer,created_at:1,kind:1,tags:[],content:"Actual Pulse note"}]:
@@ -39,6 +43,25 @@ beforeEach(()=>{
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 });
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+it("does not gate the project directory on unrelated own-profile or composer people reads",async()=>{
+  api.profile.mockRejectedValue(new Error("Unrelated profile failed"));
+  const send=vi.fn(async()=>{throw new Error("No composer directory request");});
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en"><TooltipProvider>
+    <ProjectsPane scopeKey="tenant:viewer" onStartDm={vi.fn()} onSelectedProjectChange={vi.fn()}/>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+  await vi.waitFor(()=>expect(api.queryProjects).toHaveBeenCalled());
+  expect(host.querySelector('[data-testid="projects-screen"]')).not.toBeNull();
+  expect(api.profile).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+});
+it("uses the project read viewer for read-only content without eager own-profile or composer people queries",async()=>{
+  api.profile.mockRejectedValue(new Error("Unrelated profile failed"));
+  const send=vi.fn(async()=>{throw new Error("No composer directory request");});
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en"><TooltipProvider>
+    <PulsePane scopeKey="tenant:viewer" viewerPubkey={own} onStartDm={vi.fn()}><ProjectRichContent content="Original **read-only body**"/></PulsePane>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+  expect(host.querySelector(".message-markdown strong")?.textContent).toBe("read-only body");
+  expect(api.profile).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+});
 it.each([undefined,"mt-1 text-sm text-foreground/90","text-sm text-muted-foreground"])("passes original project rich-content classes %s to the actual Web Markdown body",async className=>{
   const client=createBffClient({send:async()=>({status:200,body:{maxParticipants:9,items:[]}})});
   await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en"><TooltipProvider>

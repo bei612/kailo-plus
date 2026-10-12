@@ -441,7 +441,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
         workItemTarget={navigation.projectWorkItemTarget} onStartDm={openDirectMessage}
-        selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}
+        selectedProjectId={navigation.projectId} onSelectedProjectChange={(id,target)=>navigation.openProject(id,target)}
         lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{await workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}

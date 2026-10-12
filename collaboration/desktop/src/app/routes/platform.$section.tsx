@@ -61,13 +61,13 @@ function PlatformRouteComponent() {
   return <PlatformScreen section={section} workspaceId={workspaceId} projectId={projectId}
     workItemTarget={{repositoryId,issueId,pullRequestId}}
     workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
-    onProjectChange={(id)=>{void navigate({search:{projectId:id??undefined}});}}
+    onProjectChange={(id,target)=>navigate({search:{projectId:id??undefined,...target}})}
     onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
 }
 
 function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation,workItemTarget }: {
   section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
-  projectId?:string;onProjectChange:(id:string|null)=>void;
+  projectId?:string;onProjectChange:(id:string|null,target?:import("@client-kit/platform/react/projects").ProjectWorkItemTarget)=>void|Promise<void>;
   workItemTarget:import("@client-kit/platform/react/projects").ProjectWorkItemTarget;
   workflowNavigation: WorkflowNavigation;
 }) {

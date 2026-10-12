@@ -52,13 +52,14 @@ export function useProjectsHost(){
   },[session,scope,limit]);
   return host;
 }
-export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workItemTarget}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void;workItemTarget?:ProjectWorkItemTarget}={}){
+export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workItemTarget}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget}={}){
   const host=useProjectsHost();const t=useUiT();
   const channels=useChannelsQuery();const {goChannel}=useAppNavigation();
   const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
     .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
   const view=host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
+    renderWorkItems={children=><PulseScreen>{children}</PulseScreen>}
     lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
     renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;
-  return workItemTarget&&(workItemTarget.repositoryId||workItemTarget.issueId||workItemTarget.pullRequestId)?<PulseScreen>{view}</PulseScreen>:view;
+  return view;
 }

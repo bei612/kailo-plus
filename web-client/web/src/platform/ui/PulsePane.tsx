@@ -31,16 +31,16 @@ function BffProjectOriginReference(props:ProjectOriginReferenceProps) {
 }
 
 /** The original Pulse surface; only transport/signing/media belong to Web. */
-export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode}) {
+export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode;viewerPubkey?:string}) {
   const t=useT();
-  const directory=usePeopleDirectory(scopeKey);
-  const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false});
-  const scope=useMemo(()=>({active:true,media:new Map<string,string>()}),[scopeKey,profile.data?.pubkey]);
+  const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false,enabled:viewerPubkey===undefined});
+  const pubkey=viewerPubkey??profile.data?.pubkey;
+  const scope=useMemo(()=>({active:true,media:new Map<string,string>()}),[scopeKey,pubkey]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
   const host=useMemo<PulseHost>(()=>{
     const check=()=>{if(!scope.active)throw new Error(t("platform.loadFailed"));};
     return {
-      scopeKey,pubkey:profile.data?.pubkey??"",
+      scopeKey,pubkey:pubkey??"",
       query:async(request)=>{check();const page=await queryPulse(request);check();
         for(const [url,path] of Object.entries(page.mediaPaths))scope.media.set(url,path);
         return page.events;},
@@ -50,14 +50,19 @@ export function PulsePane({scopeKey,onStartDm,children}:{scopeKey:string;onStart
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags,className)=><MessageContent content={content} className={className} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
-      renderComposer:(props)=><div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
-        containerClassName={props.className} composerHeader={props.header}
-        disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}
-        mentionPeople={directory.query.isSuccess?directory.people:[]}
-        draftIdentity={scopeKey} onUpload={uploadPulseMedia} onMediaUrl={pulseMediaUrl}
-        onPublish={async(content,attachments,_key,_agents,mentions)=>{check();return props.onSubmit(content,mentions??[],[...attachments]);}}/><PeopleDirectoryStatus directory={directory}/></div>,
+      renderComposer:(props)=><BffPulseComposer props={props} scopeKey={scopeKey} check={check}/>,
     };
-  },[scopeKey,scope,profile.data?.pubkey,onStartDm,t,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
-  if(!profile.data||profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
-  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={profile.data.pubkey}/>}</PulseHostProvider>;
+  },[scopeKey,scope,pubkey,onStartDm,t]);
+  if(!pubkey||viewerPubkey===undefined&&profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
+  return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={pubkey}/>}</PulseHostProvider>;
+}
+
+function BffPulseComposer({props,scopeKey,check}:{props:Parameters<PulseHost["renderComposer"]>[0];scopeKey:string;check:()=>void}) {
+  const directory=usePeopleDirectory(scopeKey);
+  return <div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
+    containerClassName={props.className} composerHeader={props.header}
+    disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}
+    mentionPeople={directory.query.isSuccess?directory.people:[]}
+    draftIdentity={scopeKey} onUpload={uploadPulseMedia} onMediaUrl={pulseMediaUrl}
+    onPublish={async(content,attachments,_key,_agents,mentions)=>{check();return props.onSubmit(content,mentions??[],[...attachments]);}}/><PeopleDirectoryStatus directory={directory}/></div>;
 }
