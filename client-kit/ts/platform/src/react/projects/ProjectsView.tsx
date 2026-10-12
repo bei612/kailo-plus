@@ -14,7 +14,7 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectDeleteAction } from "./ProjectDeleteAction";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { useCreateProject } from "./useCreateProject";
-import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,type ProjectsViewMode } from "./lib/projectsViewHelpers";
+import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,readStoredSort,writeStoredSort,type ProjectsViewMode } from "./lib/projectsViewHelpers";
 import { ProjectChannelHome, type ProjectChannelRenderer } from "./ProjectChannelHome";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
@@ -116,7 +116,10 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     return stored==="channels"&&!onOpenChannel||(stored==="issues"||stored==="prs")&&!onSelectedProjectChange?"projects":stored;
   });
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
-  const [sort,setSort]=useState<ProjectsSort>(filter==="issues"||filter==="prs"?"updated":"created");
+  const [sort,setSort]=useState<ProjectsSort>(()=>readStoredSort());
+  // Directory activity summaries remain un-restored. The visible fallback is
+  // not a new user preference: keep the original stored sort for work items.
+  const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"?"created":sort;
   const [createOpen,setCreateOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
   const creation=useCreateProject(host);
@@ -136,12 +139,13 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const visible=projects.filter(project=>matchesProjectsSearch(search,[
     project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description]),
   ]))
-    .sort((a,b)=>sort==="name"?a.name.localeCompare(b.name):b.createdAt-a.createdAt);
+    .sort((a,b)=>effectiveSort==="name"?a.name.localeCompare(b.name):b.createdAt-a.createdAt);
   const canCreate=Boolean(host.publish&&query.isSuccess&&!query.isFetching&&(
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
   const changeView=(next:ProjectsViewMode)=>{setView(next);writeStoredViewMode(next);};
-  const changeFilter=(next:ProjectsFilter)=>{if(next!=="issues"&&next!=="prs"&&sort==="updated")setSort("created");setFilter(next);writeStoredFilter(next);};
+  const changeFilter=(next:ProjectsFilter)=>{setFilter(next);writeStoredFilter(next);};
+  const changeSort=(next:ProjectsSort)=>{setSort(next);writeStoredSort(next);};
   const invalidateProjects=()=>Promise.all([
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
     cache.invalidateQueries({queryKey:["sidebar-projects",host.scopeKey]}),
@@ -172,8 +176,8 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
       <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4">
-        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={setSort}
-          sort={sort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
+        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
+          sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
       </div>
       <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={filter==="channels"?Hash:filter==="issues"?CircleDot:filter==="prs"?GitPullRequest:Folders} testId="projects-page-header"
         title={t(filter==="channels"?"sidebar.channels":filter==="issues"?"projects.list.tasks":filter==="prs"?"projects.list.reviews":"platform.tab.projects")}

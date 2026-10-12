@@ -4,6 +4,7 @@
 import { getLocale, platformTimeSeconds, translate, type PlatformLocale } from "../../../i18n";
 import type {ProjectsFilter} from "../ProjectsToolbar";
 export type ProjectsViewMode = "grid" | "list";
+export type ProjectsSort = "updated" | "created" | "name";
 export function formatExactTimestamp(createdAt: number) {
   return new Date(createdAt * 1_000).toLocaleString(getLocale(), {
     year: "numeric",
@@ -16,6 +17,24 @@ export function formatExactTimestamp(createdAt: number) {
 }
 const PROJECTS_VIEW_MODE_STORAGE_KEY = "buzz.projects.viewMode";
 const PROJECTS_FILTER_STORAGE_KEY = "buzz.projects.filter";
+const PROJECTS_SORT_STORAGE_KEY = "buzz.projects.sort";
+
+export function readStoredSort(): ProjectsSort {
+  try {
+    const value = globalThis.localStorage?.getItem(PROJECTS_SORT_STORAGE_KEY);
+    return value === "created" || value === "name" ? value : "updated";
+  } catch {
+    return "updated";
+  }
+}
+
+export function writeStoredSort(sort: ProjectsSort) {
+  try {
+    globalThis.localStorage?.setItem(PROJECTS_SORT_STORAGE_KEY, sort);
+  } catch {
+    // Persistence is best-effort; the in-memory toggle still works.
+  }
+}
 export function readStoredFilter():ProjectsFilter {
   try {
     const value=globalThis.localStorage?.getItem(PROJECTS_FILTER_STORAGE_KEY);

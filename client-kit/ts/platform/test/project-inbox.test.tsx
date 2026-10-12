@@ -473,6 +473,53 @@ describe("original Inbox project read closure",()=>{
     expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");expect(ui.querySelector('option[value="updated"]')).toBeNull();
     expect(pulse.publish).not.toHaveBeenCalled();cache.clear();
   });
+  it.each(["available","blocked"] as const)("restores original sort persistence across sections and remount with storage %s",async storage=>{
+    setLocale("en");localStorage.setItem("buzz.projects.viewMode","list");localStorage.setItem("buzz.projects.filter","issues");
+    localStorage.setItem("buzz.projects.sort","name");
+    const originalGet=Storage.prototype.getItem,originalSet=Storage.prototype.setItem;
+    const get=vi.spyOn(Storage.prototype,"getItem").mockImplementation(function(this:Storage,key){
+      if(storage==="blocked"&&key==="buzz.projects.sort")throw new Error("Storage denied");
+      return originalGet.call(this,key);
+    });
+    const set=vi.spyOn(Storage.prototype,"setItem").mockImplementation(function(this:Storage,key,value){
+      if(storage==="blocked"&&key==="buzz.projects.sort")throw new Error("Storage denied");
+      originalSet.call(this,key,value);
+    });
+    try{
+      const f=fixture();f.rows.push(event("d",1621,[["a",repository],["subject","A newer task"]],"No activity yet",25));
+      const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+      const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+      let reload=()=>{};
+      function Page(){const [generation,setGeneration]=useState(0);reload=()=>setGeneration(value=>value+1);return <ProjectsView key={generation} host={f.host} onSelectedProjectChange={vi.fn()}/>;}
+      const ui=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}><Page/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+      const first=()=>ui.querySelector('[data-testid^="projects-issue-row-"]')?.getAttribute("data-testid");
+      const id=(value:string)=>"projects-issue-row-"+value.repeat(64);
+      await vi.waitFor(()=>expect(first()).toBe(id(storage==="available"?"d":"1")));
+      const openSearch=async()=>{await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);await vi.waitFor(()=>expect(ui.querySelector("select")).not.toBeNull());};
+      const closeSearch=async()=>{await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-search-close"]')!);await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-projects"]')).not.toBeNull());};
+      const choose=async(value:string)=>act(async()=>{const select=ui.querySelector<HTMLSelectElement>("select")!;select.value=value;select.dispatchEvent(new Event("change",{bubbles:true}));});
+      await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe(storage==="available"?"name":"updated");
+      await choose("created");expect(first()).toBe(id("d"));
+      expect(originalGet.call(localStorage,"buzz.projects.sort")).toBe(storage==="available"?"created":"name");
+      await act(async()=>reload());await vi.waitFor(()=>expect(first()).toBe(id(storage==="available"?"d":"1")));
+      await openSearch();await choose("name");expect(first()).toBe(id("d"));
+      await act(async()=>reload());await vi.waitFor(()=>expect(first()).toBe(id(storage==="available"?"d":"1")));
+      await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe(storage==="available"?"name":"updated");
+      await choose("updated");expect(first()).toBe(id("1"));
+      await closeSearch();await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-projects"]')!);
+      await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");expect(ui.querySelector('option[value="updated"]')).toBeNull();
+      expect(originalGet.call(localStorage,"buzz.projects.sort")).toBe(storage==="available"?"updated":"name");
+      await act(async()=>reload());await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");
+      await closeSearch();await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-issues"]')!);
+      await vi.waitFor(()=>expect(first()).toBe(id("1")));await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated");
+      if(storage==="available"){
+        originalSet.call(localStorage,"buzz.projects.sort","unsupported");
+        await act(async()=>reload());await vi.waitFor(()=>expect(first()).toBe(id("1")));
+        await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated");
+      }
+      expect(pulse.publish).not.toHaveBeenCalled();cache.clear();
+    }finally{get.mockRestore();set.mockRestore();}
+  });
   it("keeps an asynchronous rejected list navigation on the same read-only list without retrying",async()=>{
     const f=fixture(),opened=vi.fn(async()=>{throw new Error("Navigation refused");});
     localStorage.setItem("buzz.projects.filter","issues");

@@ -1054,3 +1054,48 @@ apply_patch 还原、cmp 0 后 92149 原完整套件 exit 0、54/54；React act 
 `restored.log` SHA256 `fd232a3834e3424f843faabd76358473d825f1e1aeeb80287a64d80989724701`。
 仅定向源码证据：本批未构建、部署、截图、执行 Windows/Mobile、docs 或 full；
 线上旧 Web 不能认领新排序，已有发布门禁保持。
+
+## 2026-10-12 原 Projects 排序偏好持久消费
+
+基底 `0fc0d44226906f4138a86c10766ad3102216c099`。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/lib/projectsViewHelpers.ts::readStoredSort/writeStoredSort`
+及 `desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` 是本批依据。
+两函数和 `buzz.projects.sort` 原键直接共享迁移，不新增用户配置权威。
+
+四步结论：REQ-24 要求原偏好；影响限共享 Projects 目录/Tasks/Reviews 现有排序
+状态及原 select 委托，两端消费相同主体。原 `created`/`name` 读回保留，空值、
+未知值或存储读取拒绝按原 `updated`；写入失败保持内存操作，不新增 toast。
+用户选择才调用原 write，页面 remount 按原 read 恢复。目录仍缺原活动汇总，
+`effectiveSort` 只在目录显示既有 `created` 回退，不能把这个回退保存为用户选择；
+返回工作项或刷新仍恢复原 `updated`。目录缺项不因此成为已授权功能裁剪。
+只有排序枚举字符串进入原 localStorage，不保存业务正文/身份或授权证明；无
+schema、API、状态迁移、错误分类或读取准入变化，fresh 失败清正文的既有检查保留。
+
+四类记录：原样保留 storage key、两函数、best-effort 错误分支和原比较逻辑；
+共享迁移其实际初始化/用户选择消费者，`ProjectsSort` 回原 helper 定义，旧位置
+仅 type re-export；既有授权 Host 与同源词条不变。本批解除“sort 持久偏好”源码
+缺项，目录活动汇总、Git/审阅写操作、selection→Agent、needs_action 和 Mobile
+前述缺项继续保留；没有新样式、控件或伪造目录活动值。
+
+复用同一 Data SDK，2 CPU/4 GiB、memory+swap 总限额等于内存（无额外 swap）、
+UID 1000/network none。预检仅 sleep、可用内存 37 GiB、I/O full avg60 23.38%；
+四源码/测试文件精确投递 cmp 0，TMPDIR/npm cache 仍为原 Data 路径，无新依赖。
+原命令为 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`、
+`-p tsconfig.test.json`，以及 `node node_modules/vitest/vitest.mjs run
+test/project-inbox.test.tsx --no-file-parallelism`，未改 pool、超时或断言预算。
+
+85167 exit 0：生产/测试类型均 0、56/56；终态后仅补“实际选择 name 后 remount”
+断言，89700 测试类型 0、56/56。末版页面用例覆盖选择 created/name 后刷新、
+stored updated 跨分区/目录刷新不被覆盖、切回恢复、存储拒绝仍能内存排序，以及
+坏值回原默认。9660 私有断开 `writeStoredSort` 委托 exit 1：1 fail/1 pass/54 skip，
+实测期待 stored created 却得到旧 name；apply_patch 还原及 cmp 0 后 50627
+原完整套件 exit 0、56/56。React act 警告保留，不把反证失败当环境故障。
+
+日志 `/volumes/data/kailo/tmp/projects-stored-sort.lvzis9/`：
+`positive.log` SHA256 `38c177ea2794959f20854f9f07a6bb2991f92d94fbf8547af3edf29871476306`；
+`final-positive.log` SHA256 `dc79055ce62f8994943257c1f0e0cb1627d5f000889106c9c70a9f67ada34c0f`；
+`mutation.log` SHA256 `f46f838148f6abb380662591205fafd3339a425bd33c2c01ee46244e00fe41ae`；
+`restored.log` SHA256 `97e4e0910e7f9b555c8e4c4c59fcb62fd6a56116846864242ce417010d29b546`。
+本批未构建、部署、新截图、Windows/Mobile、docs 或 full；仅源码定向证据，
+不能借旧版线上图认领本批偏好恢复，现有发布门禁不变。

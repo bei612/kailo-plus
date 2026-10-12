@@ -1,8 +1,8 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsListHeaderBar.tsx.
-import type { ProjectsViewMode } from "./lib/projectsViewHelpers";
+import type { ProjectsSort, ProjectsViewMode } from "./lib/projectsViewHelpers";
 import { ProjectsViewModeToggle } from "./ProjectsToolbar";
 import { useUiT } from "../context";
-export type ProjectsSort = "updated" | "created" | "name";
+export type { ProjectsSort } from "./lib/projectsViewHelpers";
 
 type ProjectsListHeaderBarProps = {
   onViewModeChange: (viewMode: ProjectsViewMode) => void;
