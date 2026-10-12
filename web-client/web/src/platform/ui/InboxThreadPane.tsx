@@ -1,8 +1,9 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { InboxDetailHeader, InboxMessageRowSurface, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
-import { MessageActionBarSurface, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { InboxDetailHeader, InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
+import { MessageActionBarSurface, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 import { useQuery } from "@tanstack/react-query";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
@@ -13,7 +14,6 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { bff, deleteMessage, publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
-import { Button } from "@/shared/ui/button";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, type MessageAuthor } from "./MessageAuthorProfile";
@@ -38,7 +38,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const t = useT(); const locale = useLocale();
   const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
   const { anchor, root: anchorRoot } = selection;
-  const isFocusHighlightVisible = useInboxFocusHighlight(anchorRoot);
   const replyParent = useRef<string | null>(null);
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
   const [sending, setSending] = useState(false);
@@ -53,8 +52,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId, forum);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:canInteract && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
-  const scroller = useRef<HTMLDivElement>(null);
-  const reached = useRef(false);
   // Selection is not publication ownership. Keep the original composer and
   // parent while a send is in flight or UNKNOWN; a URL/history change must not
   // discard that intent. Once confirmed/rejected, apply the latest selection.
@@ -64,18 +61,11 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
     setReplyId(replyTargetEventId ?? null);
     setEditTarget(null);
     replyParent.current = null;
-    reached.current = false;
   }
   const anchoredMessage = messages.find((message) => message.id === anchor);
   // Original Inbox replies beside the selected event unless an explicit row
   // reply target is chosen. Latch once; live feed updates cannot retarget it.
   if (!changingSelection && replyParent.current === null && anchoredMessage) replyParent.current = inboxThread(anchoredMessage.tags).parentId ?? anchor;
-  useEffect(() => {
-    if (reached.current) return;
-    const target = scroller.current?.querySelector(`[data-message-id="${anchor}"]`);
-    if (target) { target.scrollIntoView({ block: "center" }); reached.current = true; }
-    else if (thread.hasNextPage && !thread.isFetchingNextPage && !thread.isError) void thread.fetchNextPage();
-  }, [anchor, messages.length, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === (conversation ? anchor : anchorRoot)));
   const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
     !unavailable && !interrupted && thread.isSuccess);
@@ -138,17 +128,22 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
     <InboxDetailHeader title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel} />
-    <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
-      {unavailable ? <div role="status" className="p-5">{t("platform.loadFailed")}{!denied ? <Button onClick={() => { void thread.refetch(); }}>{t("platform.refresh")}</Button> : null}</div>
-        : thread.isPending ? <p role="status" className="p-5">{t("platform.loading")}</p> : messages.map((event, index) => {
-          const message = rows[index];
-          const author = message.author;
-          const previous = messages[index - 1];
-          // Original InboxDetailPane keeps the first context boundary distinct.
-          const isContinuation = index !== 1 && !startsNewMessageGroup(event)
-            && hasSameMessageAuthor(previous, event) && isWithinGroupingWindow(previous?.createdAt, event.createdAt);
-          return <InboxMessageRowSurface key={event.id} isSelected={event.id === anchor}
-            isFocusHighlightVisible={isFocusHighlightVisible} isContinuation={isContinuation} isFirst={index === 0}
+    <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows}
+      unavailable={unavailable} interrupted={interrupted} loading={thread.isPending}
+      onRetry={!denied ? () => { void thread.refetch(); } : undefined}
+      pending={sending || deleteDialog.pending} unknown={unresolved}
+      unresolvedDeleteId={deleteDialog.unresolvedMessageId}
+      canReply={Boolean(canReply)} canManageMessage={canEdit}
+      onReply={target => selectReply(target.id)}
+      onEdit={target => {
+        setEditTarget(current => current?.id === target.id ? null : target); setReplyId(null);
+        requestAnimationFrame(() => composerContainer.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus());
+      }}
+      onDelete={deleteDialog.requestDelete}
+      pagination={!denied && !thread.isError && !interrupted ? {hasMore: thread.hasNextPage, pending: thread.isFetchingNextPage, load: thread.fetchNextPage} : undefined}
+      renderMessage={(message, presentation, index) => {
+        const event = messages[index]; const author = message.author;
+          return <InboxMessageRowSurface {...presentation} isSelected={event.id === anchor}
             onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
             reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
             renderIdentity={!interrupted ? (node,kind) => {
@@ -160,16 +155,10 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
             } : undefined}
             message={message}
             renderActions={!interrupted ? reactions => <MessageActionBarSurface {...reactions} message={message} onCopyMessage={copyMessage}
-              onEdit={canEdit(message) && !sending && !unresolved && !deleteDialog.pending && !deleteDialog.unresolvedMessageId ? target=>{
-                setEditTarget(current=>current?.id===target.id?null:target);setReplyId(null);
-                requestAnimationFrame(()=>composerContainer.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus());
-              } : undefined}
-              onDelete={canEdit(message) && !sending && !unresolved && !deleteDialog.pending && (!deleteDialog.unresolvedMessageId || deleteDialog.unresolvedMessageId===message.id) ? deleteDialog.requestDelete : undefined}
-              onReply={canReply && !sending && !unresolved && !deleteDialog.pending && !deleteDialog.unresolvedMessageId ? (target) => selectReply(target.id) : undefined} /> : undefined}
+              onEdit={presentation.onEdit} onDelete={presentation.onDelete} onReply={presentation.onReply} /> : undefined}
             renderBody={(className) => <div className={className}><MessageContent messageId={event.id} workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
-        })}
-      {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
-    </div>
+      }}
+    />
     <div className="shrink-0" ref={composerContainer}>
     {editTarget && canInteract && !unavailable && !interrupted ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
       channelType={conversation ? "dm" : undefined} draftIdentity={principalId} draftChannelId={workspaceId}

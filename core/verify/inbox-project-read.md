@@ -2081,3 +2081,25 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 5. 原生产字节 apply_patch 恢复，正式/私有 cmp 0；`20482` 原还原检查真实 exit 0，共享 2/2、Web 原身份切换/hidden DM/原生 channel 标读 4/4，其余 56 项明确未选。React act 与原 query fixture 警告保留，未屏蔽。
 
 原日志与冻结输入：`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-list-pane.kTLKuC`；最终 docs/本文 selected lint 结果只留该 Data receipt，不在本文追加自引用。公共 index、原 i18n/其他历史 dirty 均未纳入本批；Native 此轮验证为 TypeScript 与实际共用列表 JS 主体，不冒称 Rust/GTK 或设备交互已验收。
+
+## 2026-10-12：Inbox 详情消息列表主体共源
+
+基于 `5d22a317c2b4e53650e523a91cd5d50738a214d9`，关联 REQ-24、DD-75 与 Web/Desktop 同一 TS 交互主体。固定原版为 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxMessageDetailPane`、`InboxMessageRow.tsx` 及 `features/messages/ui/{useAnchoredScroll,useComposerHeightPadding}.ts`。本批不启用 DD106 已禁止的 Buzz workflow needs_action 事件生产者，不把审批 UUID、30300 提醒、未读或 UNKNOWN 伪造成该 feed。
+
+四步影响核对：
+
+1. 权威：两端仍只接各自已准入的正文与真实消息命令；共享 `client-kit/ts/platform/src/react/inbox-detail-messages.tsx::InboxDetailMessages` 不读 BFF/Relay、不签名、不写消息或已读，也不重定义 scope。
+2. 读写方：Native `collaboration/desktop/src/features/home/ui/InboxDetailPane.tsx` 与 Web `web-client/web/src/platform/ui/InboxThreadPane.tsx` 都实际消费共享消息迭代、首上下文边界/同作者十分钟分组、未读分隔、稳定锚滚动、高亮、上下文状态及回复/编辑/删除入口互锁，移除被替代的两端循环和滚动逻辑。Native 原媒体/视频/profile 与 Web 原 BFF 正文/身份仍是适配层。
+3. 副作用：实际 Composer、delete dialog、publish/receipt、同 key/target UNKNOWN 意图仍沿原宿主。共享拒绝 UNKNOWN 时另开编辑/回复，未决删除只保留原 target 对账入口；不自动发送、不创建缓存或第二执行权威。
+4. 异常：冷锚未在首个合法页时，`unavailable` 只是正文渲染状态，仍可经宿主原游标继续读取；Web 只有无 denied/error/interrupted 才提供分页消费者，真实拒绝不继续读取并清除正文。Scope/身份、撤权与编辑署名准入不弱化。
+
+原路径四分类：分组/高亮/锚滚动/高度补偿原实现复用；详情消息列表与入口互锁共享迁移；正文、身份、媒体、传输和实际确认保留宿主适配；Composer/整页数据编排仍未迁移，DraftListSurface 已共源无本批适用对象。原 needs_action producer/筛选/isActionRequired 仍因禁止的 workflow 生产源缺位而未交付，不称完整原版 Inbox 或整页已共源。
+
+实际验证（原 `kailo-inbox-forum-r5kqbx` SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，2 CPU / 4 GiB，memory+swap 总上限同为 4 GiB，UID 1000、只读根、network none，源码/缓存/tmp 均 Data）：
+
+- `47172` exit 1：共享产品/测试类型均 0，新两语言 DOM 因 jsdom 缺 CSS.escape 失败；`87140` exit 1，类型 0、1/2 DOM 通过，另一项因测试卸载前过早恢复该 stub 失败。仅修浏览器夹具/卸载，不改变产品安全断言。
+- `88778` exit 1：共享原 test types 0、新两语言 DOM 2/2、Web 类型 0；Web 原 36 项为 28 pass/8 fail，均是 jsdom 缺新增实际共源消费者所需的 HTMLElement.scrollTo。补原浏览器 fixture 后 `52732` exit 0：原 Web InboxThreadPane 36/36、Native 原 tsc 0；不是 Native Rust/GTK 或设备验收。
+- `72303` 私有单处生产反证 exit 1：从共享 locked 只移除 unknown，两语言都捕获 UNKNOWN 时仍出现 reply 动作。正式生产未破坏；apply_patch 还原后正式/私有 cmp 0。
+- `79877` 原还原检查 exit 0：共享原 inbox-surface 两语言 2/2，Web 原 `UNKNOWN|off-window` 6/6，其余 30 项未选；没有重跑全量或重建依赖。原 36 项覆盖编辑、删除、回复、实际投递/回读、分页、身份资料与撤权清屏，但仍是 JS 消费者夹具，不是在线服务授权或真实发布证明。
+
+原失败、全部命令终态、冻结输入及 docs/本文 selected lint 结果留在 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-detail-body.QhiUaj`。未构建/加载/部署新镜像，不修改 Core/合同/Mobile/i18n，不纳入公共暂存或其他历史 dirty。

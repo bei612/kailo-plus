@@ -87,6 +87,8 @@ beforeEach(() => {
   state.publish.mockResolvedValue({ eventId: "d".repeat(64), operationId: "operation" });
   state.reaction.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable:true, value:vi.fn(function(this:HTMLElement, options:ScrollToOptions) { this.scrollTop=options.top ?? this.scrollTop; }) });
+  vi.stubGlobal("CSS", {escape:(value:string)=>value}); // fixture event IDs are hex
   query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });

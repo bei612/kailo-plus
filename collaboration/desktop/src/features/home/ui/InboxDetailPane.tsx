@@ -1,13 +1,10 @@
-import { InboxEmptyDetail, InboxDetailHeader, useInboxFocusHighlight } from "@client-kit/platform/react/inbox-surface";
+import { InboxEmptyDetail, InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
+import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 import { useMessageDeleteDialog } from "@client-kit/platform/react/messages";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
-import {
-  AlertCircle,
-  LoaderCircle,
-} from "lucide-react";
 import * as React from "react";
 
 import type {
@@ -27,19 +24,12 @@ import {
 import type { TimelineMessage } from "@/features/messages/types";
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 import {
-  hasSameMessageAuthor,
-  isWithinGroupingWindow,
-  startsNewMessageGroup,
-} from "@/features/messages/lib/messageGrouping";
-import {
   buildVideoReviewPresentationByMessageId,
   hasRenderedVideoAttachment,
 } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import { MessageComposer } from "@/features/messages/ui/MessageComposer";
-import { useAnchoredScroll } from "@/features/messages/ui/useAnchoredScroll";
-import { useComposerHeightPadding } from "@/features/messages/ui/useComposerHeightPadding";
 import type { UserProfileSummary } from "@/shared/api/types";
 import { VideoReviewNavigationProvider } from "@/shared/ui/VideoReviewNavigation";
 
@@ -128,9 +118,6 @@ function InboxMessageDetailPane({
   const t = useT();
   const locale = useLocale();
   const detailPaneRef = React.useRef<HTMLElement | null>(null);
-  // Refs for the shared anchored-scroll hook's container and content roots.
-  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const contentRef = React.useRef<HTMLDivElement | null>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const [replyTargetId, setReplyTargetId] = React.useState<string | null>(null);
   const {editTarget, setEditTarget, handleCancelEdit}=useChannelMessageEdit<TimelineMessage>(editScopeKey);
@@ -167,7 +154,6 @@ function InboxMessageDetailPane({
   // event advances. All lifecycle effects (reply target reset, focus highlight,
   // scroll centering) key on this.
   const conversationId = item?.conversationId ?? null;
-  const isFocusHighlightVisible = useInboxFocusHighlight(conversationId);
   // Build the plain, non-virtualized timeline the shared hook anchors against.
   // Live arrivals rerun its layout compensation without changing the target.
 
@@ -257,16 +243,6 @@ function InboxMessageDetailPane({
       videoReviewMessages,
     ],
   );
-  const { onScroll } = useAnchoredScroll({
-    channelId: conversationId,
-    contentRef,
-    isLoading: isThreadContextLoading,
-    messages: displayMessages,
-    pinTargetCentered: true,
-    scrollContainerRef,
-    targetMessageId: selectedEventId,
-  });
-
   const focusComposer = React.useCallback(() => {
     window.requestAnimationFrame(() => {
       const textarea =
@@ -358,12 +334,6 @@ function InboxMessageDetailPane({
     setCapturedDefaultParentId(fallback);
   }, [conversationId, selectedEventId, item, latchedDefaultParentId]);
 
-  useComposerHeightPadding(
-    scrollContainerRef,
-    composerWrapperRef,
-    conversationId,
-  );
-
   if (!item) return <InboxEmptyDetail />;
 
   const isDirectMessage = item.item.channelType === "dm";
@@ -426,82 +396,27 @@ function InboxMessageDetailPane({
           fallbackTitle={item.fullTimestampLabel}
           onOpen={contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
 
-        <div
-          aria-busy={isThreadContextLoading}
-          className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-32 pt-13 [overflow-anchor:none]"
-          data-testid="home-inbox-detail-scroll"
-          // Selection copy across a rendered mention chip: restores the sigil
-          // and the identity sidecar the browser's default copy would drop.
-          // Covers only the messages — the composer is a sibling overlay, so
-          // its own copy handler is untouched.
-          onCopy={handleTimelineMentionCopy}
-          onScroll={onScroll}
-          ref={scrollContainerRef}
-        >
-          <div ref={contentRef}>
-            {isThreadContextLoading && displayMessages.length <= 1 ? (
-              <div
-                className="mx-4 mb-2 flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
-                data-testid="home-inbox-context-loading"
-              >
-                <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
-                <span>{t("inbox.contextLoading")}</span>
-              </div>
-            ) : null}
-            {hasThreadContextLoadError ? (
-              <div
-                className="mx-4 mb-2 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                data-testid="home-inbox-context-error"
-              >
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{t("inbox.contextUnavailable")}</span>
-              </div>
-            ) : null}
-            {displayMessages.map((message, index) => {
-              const hasUnreadBoundary = message.id === unreadBoundaryEventId;
-              const isAfterSeparator = index === 1 || hasUnreadBoundary;
-              const previousMessage = displayMessages[index - 1];
-              const isContinuation =
-                !isAfterSeparator &&
-                !startsNewMessageGroup(message) &&
-                hasSameMessageAuthor(
-                  { pubkey: previousMessage?.authorPubkey },
-                  { pubkey: message.authorPubkey },
-                ) &&
-                isWithinGroupingWindow(
-                  previousMessage?.createdAt,
-                  message.createdAt,
-                );
-
-              return (
-                <InboxMessageRow
-                  canReply={canReply&&!editing&&!unresolved&&!deleteDialog.pending&&!deleteDialog.unresolvedMessageId}
-                  currentPubkey={currentPubkey}
-                  onToggleReaction={onToggleReaction}
-                  onEdit={canEdit(toTimelineMessage(message))&&!editing&&!unresolved&&!isSendingReply&&!deleteDialog.pending&&!deleteDialog.unresolvedMessageId?target=>{
-                    setEditTarget(current=>current?.id===target.id?null:target);setReplyTargetId(null);focusComposer();
-                  }:undefined}
-                  onDelete={canEdit(toTimelineMessage(message))&&!editing&&!unresolved&&!isSendingReply&&!deleteDialog.pending&&(!deleteDialog.unresolvedMessageId||deleteDialog.unresolvedMessageId===message.id)?deleteDialog.requestDelete:undefined}
-                  channelId={item.item.channelId}
-                  isContinuation={isContinuation}
-                  isFirst={index === 0}
-                  isFocusHighlightVisible={isFocusHighlightVisible}
-                  key={message.id}
-                  message={message}
-                  onSelectReplyTarget={handleSelectReplyTarget}
-                  profiles={profiles}
-                  showUnreadBoundary={hasUnreadBoundary}
-                  videoReviewCommentRootId={videoReviewPresentation.commentRootIdsByMessageId.get(
-                    message.id,
-                  )}
-                  videoReviewContext={videoReviewPresentation.contextsByMessageId.get(
-                    message.id,
-                  )}
-                />
-              );
-            })}
-          </div>
-        </div>
+        <InboxDetailMessages
+          conversationId={conversationId} selectedEventId={selectedEventId}
+          messages={videoReviewMessages} unreadBoundaryEventId={unreadBoundaryEventId}
+          loading={isThreadContextLoading} contextError={hasThreadContextLoadError}
+          composerOverlayRef={composerWrapperRef} onCopy={handleTimelineMentionCopy}
+          pending={Boolean(editing || deleteDialog.pending)} unknown={Boolean(unresolved)}
+          sending={isSendingReply} unresolvedDeleteId={deleteDialog.unresolvedMessageId}
+          canReply={canReply} canManageMessage={canEdit}
+          onReply={message => { const target = displayMessages.find(row => row.id === message.id); if (target) handleSelectReplyTarget(target); }}
+          onEdit={target => { setEditTarget(current => current?.id === target.id ? null : target); setReplyTargetId(null); focusComposer(); }}
+          onDelete={deleteDialog.requestDelete}
+          renderMessage={(message, presentation, index) => <InboxMessageRow
+            {...presentation} canReply={Boolean(presentation.onReply)}
+            currentPubkey={currentPubkey} onToggleReaction={onToggleReaction}
+            channelId={item.item.channelId} message={displayMessages[index]}
+            onSelectReplyTarget={() => presentation.onReply?.(message)}
+            profiles={profiles}
+            videoReviewCommentRootId={videoReviewPresentation.commentRootIdsByMessageId.get(message.id)}
+            videoReviewContext={videoReviewPresentation.contextsByMessageId.get(message.id)}
+          />}
+        />
 
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 z-40 isolate before:absolute before:inset-x-0 before:bottom-0 before:h-12 before:bg-gradient-to-b before:from-transparent before:to-background before:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:h-4 after:bg-background after:content-['']"

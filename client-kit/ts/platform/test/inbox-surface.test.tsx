@@ -3,6 +3,8 @@ import { act, useState, type ReactNode } from "react";
 import { getLocale, setLocale } from "../src/i18n";
 import { InboxDetailHeader, InboxEmptyDetail, InboxEmptyList, InboxLayout, InboxListHeader, InboxMessageRowSurface, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, useInboxFocusHighlight } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
+import { InboxDetailMessages } from "../src/react/inbox-detail-messages";
+import type { TimelineMessage } from "../src/react/messages";
 import { click, render, settle } from "./render";
 
 let previousLocale = getLocale();
@@ -10,6 +12,68 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it.each(["en", "zh-CN"] as const)("shares the actual detail grouping, anchored selection and unresolved action locks (%s)", async locale => {
+    setLocale(locale);
+    const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const scroll = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {configurable:true,value:scroll});
+    vi.stubGlobal("CSS", {escape:(value:string)=>value}); // fixture event IDs are hex
+    const reply = vi.fn(), edit = vi.fn(), remove = vi.fn();
+    const ids = ["a", "b", "c", "d"].map(value => value.repeat(64));
+    const messages: TimelineMessage[] = ids.map((id,index) => ({id,author:"Author",pubkey:"own",signerPubkey:"own",kind:9,body:`body ${index}`,depth:0,time:"now",createdAt:index+1}));
+    function Detail() {
+      const [unknown,setUnknown] = useState(false), [deleting,setDeleting] = useState<string | null>(null);
+      const [revoked,setRevoked] = useState(false), [live,setLive] = useState(false);
+      const [mounted,setMounted] = useState(true);
+      return <><button onClick={()=>setUnknown(true)}>unknown</button>
+        <button onClick={()=>{setUnknown(false);setDeleting(ids[1]!);}}>unknown delete</button>
+        <button onClick={()=>setRevoked(true)}>revoke</button><button onClick={()=>setLive(true)}>live</button>
+        <button onClick={()=>setMounted(false)}>close detail</button>
+        {mounted ? <InboxDetailMessages conversationId="stable-thread" selectedEventId={ids[1]!}
+          messages={live ? [...messages,{...messages[0]!,id:"e".repeat(64),createdAt:5}] : messages}
+          unreadBoundaryEventId={ids[3]} unavailable={revoked} unknown={unknown} unresolvedDeleteId={deleting}
+          canReply canManageMessage={()=>true} onReply={reply} onEdit={edit} onDelete={remove}
+          renderMessage={(message,presentation)=><InboxMessageRowSurface {...presentation} message={message}
+            isSelected={message.id===ids[1]} renderBody={className=><p className={className}>{message.body}</p>}
+            renderActions={()=> <>{presentation.onReply ? <button data-action="reply" onClick={()=>presentation.onReply?.(message)}>reply</button> : null}
+              {presentation.onEdit ? <button data-action="edit" onClick={()=>presentation.onEdit?.(message)}>edit</button> : null}
+              {presentation.onDelete ? <button data-action="delete" onClick={()=>presentation.onDelete?.(message)}>delete</button> : null}</>} />}
+        /> : null}
+      </>;
+    }
+    try {
+      const host = await render(<Detail />);
+      const row = (index:number) => host.querySelector<HTMLElement>(`[data-message-id="${ids[index]}"]`)!;
+      expect(row(0).querySelector('[data-testid="message-header"]')).not.toBeNull();
+      expect(row(1).querySelector('[data-testid="message-header"]')).not.toBeNull();
+      expect(row(2).querySelector('[data-testid="message-header"]')).toBeNull();
+      expect(row(3).querySelector('[data-testid="message-header"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="home-inbox-detail-scroll"]')?.className).toContain("[overflow-anchor:none]");
+      expect(scroll.mock.contexts.some(node=>node===row(1))).toBe(true);
+      await click(row(1).querySelector<HTMLButtonElement>('[data-action="reply"]')!);
+      expect(reply).toHaveBeenCalledExactlyOnceWith(messages[1]);
+      const press = (text:string) => click([...host.querySelectorAll("button")].find(button=>button.textContent===text)!);
+      await press("live");
+      expect(host.querySelector('[data-testid="home-inbox-selected-message"]')?.getAttribute("data-message-id")).toBe(ids[1]);
+      await press("unknown");
+      expect(host.querySelector("[data-action]")).toBeNull();
+      await press("unknown delete");
+      expect(host.querySelector('[data-action="reply"]')).toBeNull();
+      expect(host.querySelector('[data-action="edit"]')).toBeNull();
+      expect(host.querySelectorAll('[data-action="delete"]')).toHaveLength(1);
+      await click(row(1).querySelector<HTMLButtonElement>('[data-action="delete"]')!);
+      expect(remove).toHaveBeenCalledExactlyOnceWith(messages[1]);expect(edit).not.toHaveBeenCalled();
+      await press("revoke");
+      expect(host.querySelector("[data-message-id]")).toBeNull();
+      expect(host.textContent).not.toContain("body 1");
+      await press("close detail");
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalScroll) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScroll);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
   it("fades the original selection once per conversation and clears its timer on unmount", async () => {
     vi.useFakeTimers();
     function FocusHighlight({conversationId}: {conversationId: string}) {
