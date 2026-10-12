@@ -944,3 +944,61 @@ full exit 0 或生产就绪。文档门禁由主线同批唯一原只读入口�
 SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
 执行为原镜像 2 CPU / 2 GiB、无额外 swap、UID 1000、network none，
 只读 apps/design，缓存/tmp 在 Data；脚本覆盖顶层/docs/design，不称其扫描本 verify 正文。
+
+## 2026-10-12 PR 提交哈希复制的原失败呈现
+
+比较基准 `581f4f890e4a45a1e8c9b9d79ddf8bfac0d08d3e`；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503`。
+
+1. 权威：REQ-24 原版恢复，原
+   `desktop/src/features/projects/ui/ProjectCommitCopyButton.tsx::CopyTextButton`
+   调用 `desktop/src/shared/lib/clipboard.ts::writeTextToClipboard`，仅成功显示
+   Check 两秒；它不是另一个带成功/错误 toast 的 `copyTextToClipboard`。
+   共享版的额外错误 toast 属未授权呈现差异，本批移除，不新增按钮或文案。
+2. 影响：共享 `ProjectPullRequestDetail.tsx::PullRequestCommitRow` 的现有按钮
+   继续经 `PulseHost.copy` 使用 Web/Desktop 各自原剪贴板适配。完整提交哈希、
+   原 class、键盘/点击冒泡阻止与成功反馈时长不变，无 schema、权限或状态迁移。
+3. 异常：宿主拒绝被处理但不显示成功勾、不弹额外 toast、不重试；失败没有被
+   转成成功。四类差异分别为原按钮呈现保留、既有共享实现继续复用、宿主/i18n
+   沿既定授权适配、原 Git 详情及其余未接通写操作继续列为缺失需恢复。
+4. 消费者证据：已有 `project-inbox.test.tsx` 从原 query/reducer 取得 PR，展开
+   原 Commits section 后点击实际提交行按钮；断言复制完整更新后哈希、父行不
+   打开、成功 Check/两秒复原，以及拒绝无 toast/无成功勾，而非只测试孤立按钮。
+
+实际复用原 `kailo-web-thread-tooltip-sdk` 与镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+本轮限额回读为 2 CPU/4 GiB，memory+swap 总限额等于内存（无额外 swap），
+UID 1000、network none；cgroup `cpu.max=200000 100000`、`memory.max=4294967296`、
+`memory.swap.max=0`。启动前无其他编译/测试进程，可用内存约 38 GiB；I/O full
+avg60 约 31.89%。仅两文件投递原 Data 输入并 cmp，相邻已提交代码字节未变；
+TMPDIR/npm cache 显式使用 `/candidate/reminder-consumers.RcN79Y` 下既有目录，
+未安装依赖、构建/加载镜像或运行 full。Node 24.21.0、TypeScript 5.9.3、Vitest 4.1.11。
+
+在该输入的 `client-kit/ts/platform` 执行原命令：
+
+```sh
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-parallelism
+```
+
+- `59414` exit 1：两项类型通过，48/50；新夹具在清空设备语言后误定位英文
+  Commits，沿既有 PR 双语检查在用例内设置语言，不改生产语言或测试超时。
+- `46509` exit 1：类型通过，48/50；新断言误写初始哈希，原 kind 1619 update
+  已使 reducer 使用更新后的完整哈希，纠正断言而不更改原 reducer/夹具事件。
+- `32138` exit 0：末版测试类型检查与原套件 50/50。
+- `88839` 私有恢复旧错误 toast，原套件加 `-t "original PR commit-copy feedback"`，
+  exit 1：1 通过、1 失败、48 显式跳过，捕获拒绝时额外 toast 一次。
+- 精确还原源码/测试 cmp 0 后，`32135` 原完整单套件 50/50、exit 0；React act
+  警告保留。正式文件和公共 index 未参与反证。
+
+日志目录 `/volumes/data/kailo/tmp/project-commit-copy.eLSdp5`：
+`positive.log` SHA256 `502c80c901df69781ce66a71e40c546fa653356c6c104c7fe11ce935d34017b1`；
+`final-positive.log` 为第二次失败，SHA256 `36b62b546c885b889d8ebfecdf284c068746cbfb9dc2c6384ecacdf027cf3167`；
+`consumer-final.log` SHA256 `aba4c643e00ea0c4f6aca289b5ebe63ada33cf35b48d9db9c47eb2ea748f35f6`；
+`mutation.log` SHA256 `91ccfae619632bd7166920291799c09f9e99d24fddfb6609f2c4c48d01450809`；
+`restored.log` SHA256 `a3a825abdcb5f95402240ec7a98b34891c3448823957bc1fd25ecc287d3933a9`。
+
+本批没有部署、新版截图、真实 OS 剪贴板或 Windows/Mobile 验收；现网旧 Web
+截图不证明此源码。needs_action 仍缺原 46010/40007 生产及受权读链，不能以本批
+小修复或现有 30300 提醒冒充已恢复；未运行 full，已有发布门禁不变。

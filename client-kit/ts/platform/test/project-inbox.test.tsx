@@ -338,6 +338,40 @@ describe("original Inbox project read closure",()=>{
       expect(button.querySelector(".lucide-link-2")).not.toBeNull();
     } finally {error.mockRestore();cache.clear();}
   });
+  it.each([false,true])("keeps the original PR commit-copy feedback when the host rejects=%s",async rejected=>{
+    setLocale("en");
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workItem=snapshot.items.find(item=>item.type==="pull-request")!;
+    const copied=vi.fn(async(_text:string)=>{if(rejected)throw new Error("clipboard denied");});
+    const opened=vi.fn();
+    const host:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:copied,startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const error=vi.spyOn(toast,"error").mockImplementation(()=>"copy-error");
+    const success=vi.spyOn(toast,"success").mockImplementation(()=>"copy-success");
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    try{
+      const view=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}>
+        <div onClick={opened}><ProjectInboxDetail host={f.host} workItem={workItem}/></div>
+      </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+      const commits=[...view.querySelectorAll<HTMLButtonElement>('[data-testid="project-detail-section"] > button')].find(button=>button.textContent==="Commits");
+      expect(commits?.getAttribute("aria-expanded")).toBe("false");
+      await click(commits!);
+      const row=view.querySelector('[data-testid="project-pull-request-commit-row"]')!;
+      const button=row.querySelector<HTMLButtonElement>('button[aria-label="Copy commit hash"]')!;
+      expect(button).not.toBeNull();expect(button.querySelector(".lucide-copy")).not.toBeNull();
+      opened.mockClear();
+      vi.useFakeTimers();
+      await click(button);
+      expect(copied).toHaveBeenCalledExactlyOnceWith("e".repeat(40));
+      expect(opened).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();expect(success).not.toHaveBeenCalled();
+      expect(button.querySelector(".lucide-check")!==null).toBe(!rejected);
+      expect(button.querySelector(".lucide-copy")!==null).toBe(rejected);
+      await act(async()=>vi.advanceTimersByTime(2_000));
+      expect(button.querySelector(".lucide-copy")).not.toBeNull();
+      expect(button.querySelector(".lucide-check")).toBeNull();
+    }finally{vi.useRealTimers();error.mockRestore();success.mockRestore();cache.clear();}
+  });
   it("does not authorize from warm metadata, wrong kind, missing event or a different repository",async()=>{
     const f=fixture(),snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
     const item=snapshot.items.find(item=>item.type==="issue")!;

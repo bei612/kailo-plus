@@ -4,7 +4,6 @@ import * as React from "react";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { usePulseHost } from "../pulse/host";
 import { useT } from "../context";
-import { toast } from "sonner";
 
 /** Icon button that copies arbitrary text with a brief check feedback. */
 export function CopyTextButton({
@@ -17,7 +16,6 @@ export function CopyTextButton({
   text: string;
 }) {
   const {copy}=usePulseHost();
-  const t=useT();
   const [copied, setCopied] = React.useState(false);
   const handleCopy = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -25,9 +23,12 @@ export function CopyTextButton({
       void copy(text).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2_000);
-      }).catch(() => toast.error(t("platform.profile.copyFailed")));
+      }).catch(() => {
+        // The original write-only helper has no toast. A rejected host copy
+        // leaves the original icon unchanged, without claiming success.
+      });
     },
-    [text,copy,t],
+    [text,copy],
   );
 
   return (
