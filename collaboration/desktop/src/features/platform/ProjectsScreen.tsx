@@ -12,15 +12,16 @@ import {UserAvatar} from "@client-kit/platform/react/messages";
 import {useUserProfileQuery} from "@/features/profile/hooks";
 import {UserProfilePopover} from "@/features/profile/ui/UserProfilePopover";
 import {rewriteRelayUrl} from "@/shared/lib/mediaUrl";
-import {ViewLoadingFallback} from "@/shared/ui/ViewLoadingFallback";
+import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
 import {useIdentityQuery} from "@/shared/api/hooks";
 import {useProfileQuery} from "@/features/profile/hooks";
 import {useHistorySearchState} from "@/shared/hooks/useHistorySearchState";
+import type {IdleAuxiliaryProps} from "@client-kit/platform/react/thread";
 
 const EMPTY_TARGET_MESSAGE_EVENTS: import("@/shared/api/types").RelayEvent[] = [];
 const ChannelScreen=lazy(async()=>({default:(await import("@/features/channels/ui/ChannelScreen")).ChannelScreen}));
 
-function ProjectHomeChannel({workspace}:{workspace:DiscoverableWorkspace}) {
+function ProjectHomeChannel({workspace,auxiliary}:{workspace:DiscoverableWorkspace;auxiliary?:IdleAuxiliaryProps}) {
   const session=useNativeSession();const t=useUiT();
   const channels=useChannelsQuery();const identity=useIdentityQuery();const profile=useProfileQuery();
   const {values}=useHistorySearchState(["autoSend","messageId"] as const);
@@ -28,9 +29,9 @@ function ProjectHomeChannel({workspace}:{workspace:DiscoverableWorkspace}) {
   const channel=channels.isSuccess&&!channels.isFetching?channels.data?.find(item=>
     item.id===workspace.channel.channelId&&item.channelType===workspace.channel.channelType&&item.isMember
       &&Boolean(item.archivedAt)===workspace.channel.archived):undefined;
-  if(channels.isPending||channels.isFetching||identity.isPending)return <p role="status">{t("platform.loading")}</p>;
+  if(channels.isPending||channels.isFetching||identity.isPending)return <ChannelLoadingFallback/>;
   if(!channel||!currentIdentity)return <p role="alert">{t("projects.home.channelMissing")}</p>;
-  return <Suspense fallback={<ViewLoadingFallback kind="channel"/>}><ChannelScreen activeChannel={channel} currentIdentity={currentIdentity}
+  return <Suspense fallback={<ChannelLoadingFallback includeHeader/>}><ChannelScreen {...auxiliary} activeChannel={channel} currentIdentity={currentIdentity}
     currentProfile={profile.data} autoSendDraftKey={values.autoSend} targetMessageEvents={EMPTY_TARGET_MESSAGE_EVENTS} targetMessageId={values.messageId}/></Suspense>;
 }
 
@@ -79,7 +80,7 @@ export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workIt
   const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
     .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
   const view=host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
-    renderChannel={workspace=><ProjectHomeChannel key={`${host.scopeKey}:${workspace.id}`} workspace={workspace}/>}
+    renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${host.scopeKey}:${workspace.id}`} workspace={workspace} auxiliary={auxiliary}/>}
     renderWorkItems={children=><PulseScreen>{children}</PulseScreen>}
     lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
     renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;

@@ -1,7 +1,7 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectHomeContextPanel.tsx.
-// Original channel section. Workspace-sheet/Git/management consumers remain un-restored;
+// Original channel and Tasks/Reviews sections. Git/management consumers remain un-restored;
 // do not turn those missing consumers into empty or alternative destinations.
-import { ChevronDown, Hash } from "lucide-react";
+import { ChevronDown, CircleDot, GitPullRequest, Hash } from "lucide-react";
 import * as React from "react";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -161,10 +161,12 @@ function ChannelContextRow({
 }
 
 
-export function ProjectHomeContextPanel({ project, channels, onOpenChannel }: {
+export function ProjectHomeContextPanel({ project, channels, onOpenChannel, activeWorkspaceTab, onOpenWorkspace }: {
   project: Project;
   channels: Channel[];
   onOpenChannel: (channelId: string) => void;
+  activeWorkspaceTab?: "issues" | "prs" | null;
+  onOpenWorkspace?: (tab: "issues" | "prs", repositoryId: string) => void;
 }) {
   const t = useUiT();
   const channelsById = new Map(channels.map(channel => [channel.id, channel]));
@@ -173,6 +175,18 @@ export function ProjectHomeContextPanel({ project, channels, onOpenChannel }: {
     return channel ? [{ ...binding, channel }] : [];
   });
   return <div className="space-y-4 px-2 pb-8 pt-3" data-testid="project-home-context-panel">
+      {onOpenWorkspace ? <ContextSection testId="project-home-context-workspace">
+        <ContextNavButton disabled={!project.repositories[0]} icon={<CircleDot/>}
+          onClick={() => { if (project.repositories[0]) onOpenWorkspace("issues", project.repositories[0].id); }}
+          pressed={activeWorkspaceTab === "issues"} testId="project-home-context-tasks">
+          {t("projects.list.tasks")}
+        </ContextNavButton>
+        <ContextNavButton disabled={!project.repositories[0]} icon={<GitPullRequest/>}
+          onClick={() => { if (project.repositories[0]) onOpenWorkspace("prs", project.repositories[0].id); }}
+          pressed={activeWorkspaceTab === "prs"} testId="project-home-context-reviews">
+          {t("projects.list.reviews")}
+        </ContextNavButton>
+      </ContextSection> : null}
       <ContextSection
         collapsible
         testId="project-home-context-channel"

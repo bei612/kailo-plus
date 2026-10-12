@@ -8,6 +8,9 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/messages/ChannelLoadingFallback": "./src/react/messages/ChannelLoadingFallback.tsx",
+    "./react/projects/BuzzLoadingState": "./src/react/projects/BuzzLoadingState.tsx",
+    "./react/projects/BuzzLogoAnimation": "./src/react/projects/buzz-logo/BuzzLogoAnimation.tsx",
     "./react/reminders": "./src/react/reminders/index.ts",
     "./react/button": "./src/react/profile/buzz/shared/ui/button.tsx",
     "./react/cn": "./src/react/profile/buzz/shared/lib/cn.ts",

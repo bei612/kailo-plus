@@ -13,5 +13,8 @@ export { getThreadRouteTarget, getRouteMainTimelineTargetId } from "./channelRou
 export { useChannelMessageEdit } from "./useChannelMessageEdit";
 export { useRoutedMessageEdit } from "./useRoutedMessageEdit";
 export { useFocusDrawerPresence } from "./useFocusDrawerPresence";
+export { useThreadPanelSurface } from "./useThreadPanelSurface";
+export { IdleAuxiliarySurface, shouldPrioritizeIdleAuxiliary, shouldUseFocusIdleDrawer } from "./IdleAuxiliarySurface";
+export type { IdleAuxiliaryProps } from "./IdleAuxiliarySurface";
 export { ThreadViewModeToggle, shouldRestoreThreadToggleFocus } from "./ThreadViewModeToggle";
 export { useThreadViewModeSwitch, findTopVisibleThreadMessageId, getResolvedThreadTargets, getScopedLayoutScrollTargetId } from "./useThreadViewModeSwitch";

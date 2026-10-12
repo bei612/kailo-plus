@@ -5,7 +5,7 @@ import type {
   RelayEvent,
 } from "@/shared/api/types";
 
-export type ChannelScreenProps = {
+export type ChannelScreenProps = import("@client-kit/platform/react/thread").IdleAuxiliaryProps & {
   activeChannel: Channel | null;
   /**
    * When non-null, the main channel composer auto-submits once on mount after

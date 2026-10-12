@@ -190,6 +190,21 @@ beforeEach(async () => {
   });
 });
 
+it("mounts the original project workspace drawer over a retained thread and removes it on scope revocation",async()=>{
+  const close=vi.fn();
+  await act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a"
+    threadHeadId="event-a" idleAuxiliaryPanel={<p>Real project Tasks consumer</p>} idleAuxiliaryTitle="Tasks"
+    idleAuxiliaryOverridesThread onCloseIdleAuxiliaryPanel={close}/></TooltipProvider>));
+  const thread=host.querySelector('[data-testid="thread-lifetime"]');
+  expect(thread).not.toBeNull();expect(thread?.closest("[inert]")).not.toBeNull();
+  expect(host.querySelector('[data-testid="focus-thread-drawer"]')?.getAttribute("aria-label")).toBe("Tasks");
+  expect(host.textContent).toContain("Real project Tasks consumer");
+  await act(async()=>window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
+  expect(close).toHaveBeenCalledOnce();
+  await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.textContent).not.toContain("Real project Tasks consumer");
+});
+
 it.each(["denied", "interrupted", "error"] as const)("does not fall back to warm root or selected reply rows after thread %s", async boundary => {
   await act(async () => state.receive!({type:"event",event:{id:"warm-reply",pubkey:"author-a",kind:9,created_at:2,
     tags:[["e","event-a","","root"],["e","event-a","","reply"]],content:"warm reply"}}));

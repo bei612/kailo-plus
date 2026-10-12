@@ -1,4 +1,5 @@
 import {useEffect,useMemo} from "react";
+import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
 import {ProjectsView,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
 import {PulsePane} from "./PulsePane";
 import {queryProjects,publishProject} from "../bff-client";
@@ -6,8 +7,9 @@ import {TransportError} from "@client-kit/platform/transport";
 import type {DiscoverableWorkspace} from "@client-kit/contracts";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {useBffClient,useCurrentPrincipalId,useUiT} from "@client-kit/platform/react/context";
+import type {IdleAuxiliaryProps} from "@client-kit/platform/react/thread";
 
-function ProjectHomeChannel({scopeKey,workspace,renderChannel}:{scopeKey:string;workspace:DiscoverableWorkspace;renderChannel:ProjectChannelRenderer}) {
+function ProjectHomeChannel({scopeKey,workspace,renderChannel,auxiliary}:{scopeKey:string;workspace:DiscoverableWorkspace;renderChannel:ProjectChannelRenderer;auxiliary?:IdleAuxiliaryProps}) {
   const client=useBffClient();const principalId=useCurrentPrincipalId();const t=useUiT();
   const cache=useQueryClient();
   const key=useMemo(()=>["platform","channel-descriptor",principalId,workspace.id,scopeKey],[principalId,workspace.id,scopeKey]);
@@ -17,11 +19,11 @@ function ProjectHomeChannel({scopeKey,workspace,renderChannel}:{scopeKey:string;
     queryFn:()=>client.workspaceChannel(workspace.id),retry:false,refetchOnMount:"always",refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:key});cache.removeQueries({queryKey:key});},[cache,key]);
   if(!principalId)return <p role="alert">{t("platform.loadFailed")}</p>;
-  if(descriptor.isPending||descriptor.isFetching)return <p role="status">{t("platform.loading")}</p>;
+  if(descriptor.isPending||descriptor.isFetching)return <ChannelLoadingFallback/>;
   if(descriptor.isError||!descriptor.data||descriptor.data.channelId!==workspace.channel.channelId
     ||descriptor.data.channelType!==workspace.channel.channelType||typeof descriptor.data.archived!=="boolean"||typeof descriptor.data.name!=="string")
     return <p role="alert">{t("projects.home.channelMissing")}</p>;
-  return <>{renderChannel({...workspace,channel:descriptor.data})}</>;
+  return <>{renderChannel({...workspace,channel:descriptor.data},auxiliary)}</>;
 }
 
 export function useProjectsHost(scopeKey:string){
@@ -45,7 +47,7 @@ export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
   const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
-    renderChannel={workspace=><ProjectHomeChannel key={`${scopeKey}:${workspace.id}`} scopeKey={scopeKey} workspace={workspace} renderChannel={renderChannel}/>}
+    renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${scopeKey}:${workspace.id}`} scopeKey={scopeKey} workspace={workspace} renderChannel={renderChannel} auxiliary={auxiliary}/>}
     onOpenChannel={onOpenChannel} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
   return view;
 }

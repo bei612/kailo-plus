@@ -60,6 +60,11 @@ export function ChannelScreen({
   targetMessageId,
   targetSearchMessageId,
   targetSearchQuery,
+  idleAuxiliaryPanel,
+  idleAuxiliaryHeaderActions,
+  idleAuxiliaryOverridesThread,
+  idleAuxiliaryTitle,
+  onCloseIdleAuxiliaryPanel,
 }: ChannelScreenProps) {
   const queryClient = useQueryClient();
   const {
@@ -409,7 +414,7 @@ export function ChannelScreen({
     threadReplyTargetMessage,
   });
   const hasAuxiliaryPanel = Boolean(
-    effectiveOpenThreadHeadId || profilePanelPubkey,
+    effectiveOpenThreadHeadId || profilePanelPubkey || idleAuxiliaryPanel,
   );
   const displayedThreadHeadMessage = threadPanelData.threadHead;
   const displayedThreadFirstUnreadReplyId = displayedThreadHeadMessage
@@ -449,6 +454,11 @@ export function ChannelScreen({
           >
             <ChannelPane
               activeChannel={activeChannel}
+              idleAuxiliaryPanel={idleAuxiliaryPanel}
+              idleAuxiliaryHeaderActions={idleAuxiliaryHeaderActions}
+              idleAuxiliaryOverridesThread={idleAuxiliaryOverridesThread}
+              idleAuxiliaryTitle={idleAuxiliaryTitle}
+              onCloseIdleAuxiliaryPanel={onCloseIdleAuxiliaryPanel}
               autoSendDraftKey={autoSendDraftKey}
               onAutoSendComplete={clearAutoSend}
               currentPubkey={currentPubkey}

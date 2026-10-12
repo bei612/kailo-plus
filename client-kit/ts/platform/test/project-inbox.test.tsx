@@ -15,6 +15,9 @@ import {issueShareLink} from "../src/react/projects/projectShareLinks";
 import {ShareLinkButton} from "../src/react/projects/ShareLinkButton";
 import {toast} from "sonner";
 import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib/composerMessageLinkNode";
+import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
+import {IdleAuxiliarySurface,type IdleAuxiliaryProps} from "../src/react/messages/thread";
+import {ChannelType,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -42,6 +45,73 @@ beforeEach(()=>{setLocale("en");localStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  async function homeSheetFixture(){
+    vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+    const f=fixture();const channelId="12345678-1234-4234-8234-123456789001";
+    f.rows.find(row=>row.kind===30621)!.tags.push(["buzz-channel",channelId]);
+    const initial=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const workspace={id:"home-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
+      channel:{channelId,name:"Home channel",channelType:ChannelType.Stream,archived:false}};
+    const bff=createBffClient({send:async()=>({status:200,body:{items:[workspace]}})});
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const renderWorkItems=vi.fn((children:React.ReactNode,pubkey:string)=>{expect(pubkey).toBe(viewer);return <PulseHostProvider host={pulse}>{children}</PulseHostProvider>;});
+    const renderChannel=(_workspace:unknown,auxiliary?:IdleAuxiliaryProps)=><div data-testid="home-channel-consumer">
+      <p>Original channel timeline</p>
+      {auxiliary?.idleAuxiliaryPanel?<IdleAuxiliarySurface {...auxiliary} channelName="Home channel" isFocusDrawer={false} isSinglePanelView={false}
+        useSplitAuxiliaryPane widthPx={400} canResetWidth={false} onResizeStart={vi.fn()} onResetWidth={vi.fn()} restoreFocusTarget={()=>null}/>:null}
+    </div>;
+    const ui=await render(<><div id="app-top-chrome-content"/><PlatformProvider client={bff} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+      <ProjectChannelHome project={initial.projects[0]!} scopeKey={f.host.scopeKey} host={f.host} renderChannel={renderChannel}
+        renderWorkItems={renderWorkItems} onOpenChannel={vi.fn()} onGoProjects={vi.fn()}/>
+    </TooltipProvider></QueryClientProvider></PlatformProvider></>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="home-channel-consumer"]')).not.toBeNull());
+    return {...f,ui,cache,renderWorkItems};
+  }
+  it.each(["tasks","reviews"] as const)("opens original project-home %s sheet, its real detail, back and close without global navigation",async kind=>{
+    const f=await homeSheetFixture();
+    await click(f.ui.querySelector<HTMLButtonElement>(`[data-testid="project-home-context-${kind}"]`)!);
+    const rowId=kind==="tasks"?"project-issue-row":"project-pull-request-row";
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${rowId}"]`)).not.toBeNull());
+    expect(f.ui.querySelector('[data-testid="project-home-summary-rail"]')?.getAttribute("aria-hidden")).toBe("true");
+    const row=f.ui.querySelector(`[data-testid="${rowId}"]`)!;
+    await click([...row.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent===`Original ${kind==="tasks"?"task":"review"}`)!);
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain(`Complete ${kind==="tasks"?"task":"review"} body`));
+    await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="idle-auxiliary-back"]')!);
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${rowId}"]`)).not.toBeNull());
+    await click(f.ui.querySelector<HTMLButtonElement>('[data-testid="idle-auxiliary-panel"] [data-testid="auxiliary-panel-close"]')!);
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="project-home-workspace-sheet"]')).toBeNull());
+    expect(f.ui.querySelector('[data-testid="project-home-context-tasks"]')).not.toBeNull();
+    expect(f.ui.querySelector('[data-testid="project-home-context-commits"]')).toBeNull();
+    expect(f.ui.querySelector('[data-testid="project-home-workspace-sheet-create"]')).toBeNull();
+  });
+  it.each(["tasks","reviews"] as const)("hides project-home %s content during fresh authorization and keeps denied content absent",async kind=>{
+    const f=await homeSheetFixture();await click(f.ui.querySelector<HTMLButtonElement>(`[data-testid="project-home-context-${kind}"]`)!);
+    const rowId=kind==="tasks"?"project-issue-row":"project-pull-request-row";
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${rowId}"]`)).not.toBeNull());
+    let reject!:(error:Error)=>void;f.query.mockImplementation(()=>new Promise((_resolve,deny)=>{reject=deny;}));
+    let pending!:Promise<void>;await act(async()=>{pending=f.cache.invalidateQueries({queryKey:["project-home-work-items"]});});
+    await vi.waitFor(()=>expect(f.ui.querySelector(`[data-testid="${rowId}"]`)).toBeNull());
+    const loading=f.ui.querySelector('[data-testid="buzz-loading-state"]');
+    expect(loading?.closest('[data-testid="project-home-workspace-sheet"]')?.getAttribute("data-tab")).toBe(kind==="tasks"?"issues":"prs");
+    expect(loading?.closest('[data-testid="project-home-workspace-sheet"]')?.classList.contains("-mx-4")).toBe(true);
+    expect(loading?.parentElement?.hasAttribute("data-project-detail-panel")).toBe(true);
+    expect(loading?.parentElement?.className).toBe("overflow-hidden rounded-xl border border-border/60 bg-transparent");
+    expect(loading?.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(`Loading ${kind}`);
+    expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 466 309");
+    expect(loading?.querySelector(".buzz-logo--background, filter")).toBeNull();
+    await act(async()=>{reject(new Error("revoked"));await pending;});
+    await vi.waitFor(()=>expect(f.ui.textContent).toContain("Couldn't load this — the result is unknown."));
+    expect(f.ui.textContent).not.toContain("Original task");
+  });
+  it("reads a repository shared by projects in the specifically selected project rather than the first global dedup owner",async()=>{
+    const f=fixture();const second=event("f",30621,[["d","second"],["name","Second project"],["a",repository]],"",21);f.rows.push(second);
+    const selected=await loadProjectWorkItems(f.host,new AbortController().signal,`30621:${author}:second`);
+    expect(selected.projects).toHaveLength(1);expect(selected.items).toHaveLength(2);
+    expect(selected.items.every(item=>item.project.dtag==="second")).toBe(true);
+    await expect(loadProjectWorkItems(f.host,new AbortController().signal,`30621:${author}:missing`)).rejects.toThrow("Project scope changed");
+  });
   it.each(["issue","review"] as const)("copies the original %s share menu and opens its exact authorized detail",async kind=>{
     const f=fixture();localStorage.setItem("buzz.projects.filter",kind==="issue"?"issues":"prs");localStorage.setItem("buzz.projects.viewMode","list");
     const copied=vi.fn(async(_value:string)=>{}),opened=vi.fn(),failed=vi.fn();

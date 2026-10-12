@@ -80,7 +80,7 @@ describe("original ProjectChannelHome actual consumers",()=>{
   }
   it("mounts the admitted full channel slot in the original home column, toggles Overview and returns via the original breadcrumb",async()=>{
     const f=await homeFixture();
-    expect(f.renderChannel).toHaveBeenLastCalledWith(homeWorkspace());
+    expect(f.renderChannel).toHaveBeenLastCalledWith(homeWorkspace(),expect.objectContaining({idleAuxiliaryPanel:undefined,idleAuxiliaryOverridesThread:false}));
     expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')?.parentElement?.className).toContain("rounded-2xl");
     expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')?.textContent).toBe("Home stream");
     expect(f.ui.querySelector('[data-testid="project-home-summary-rail"]')?.getAttribute("aria-hidden")).toBe("false");
@@ -108,6 +108,7 @@ describe("original ProjectChannelHome actual consumers",()=>{
     let pending!:Promise<void>;
     await act(async()=>{pending=f.cache.invalidateQueries({queryKey:["project-home-channels"]});});
     await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).toBeNull());
+    expect(f.ui.querySelectorAll("article .t-skel-bar")).toHaveLength(32);
     await act(async()=>{reject(new Error("revoked"));await pending;});
     expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).toBeNull();
     expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')).toBeNull();

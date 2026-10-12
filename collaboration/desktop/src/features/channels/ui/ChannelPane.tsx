@@ -38,6 +38,7 @@ import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHead
 import type { MessageTimelineProps } from "@client-kit/platform/react/messages/timeline/types";
 import { useUiT } from "@client-kit/platform/react/context";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
+import {IdleAuxiliarySurface,shouldPrioritizeIdleAuxiliary,shouldUseFocusIdleDrawer,useThreadPanelSurface} from "@client-kit/platform/react/thread";
 import { ThreadPanelSurface } from "@/features/channels/ui/ThreadPanelSurface";
 import { ThreadViewModeToggle } from "@/features/channels/ui/ThreadViewModeToggle";
 import { THREAD_SURFACE_KEY } from "@/features/channels/lib/threadFocusLayout";
@@ -78,6 +79,11 @@ export const ChannelPane = React.memo(function ChannelPane({
   isSending,
   isTimelineError = false,
   isTimelineLoading,
+  idleAuxiliaryPanel,
+  idleAuxiliaryHeaderActions,
+  idleAuxiliaryOverridesThread = false,
+  idleAuxiliaryTitle,
+  onCloseIdleAuxiliaryPanel,
   onRetryTimeline,
   messages,
   threadSummaries,
@@ -346,10 +352,19 @@ export const ChannelPane = React.memo(function ChannelPane({
     Boolean(threadHeadMessage) || shouldShowThreadSkeleton;
   const useFocusThreadDrawer =
     threadViewMode === "focus" && useSplitAuxiliaryPane && hasThreadSurface;
+  const hasIdleAuxiliary=Boolean(idleAuxiliaryPanel&&onCloseIdleAuxiliaryPanel);
+  const priorityIdleAuxiliary=shouldPrioritizeIdleAuxiliary(idleAuxiliaryOverridesThread,hasIdleAuxiliary);
+  const overlayIdleAuxiliaryOverThread=priorityIdleAuxiliary&&hasThreadSurface&&!isOverlay;
+  const replaceThreadWithIdleAuxiliary=priorityIdleAuxiliary&&hasThreadSurface&&isOverlay;
+  const useFocusIdleDrawer=shouldUseFocusIdleDrawer({channelManagementOpen:false,hasAgentSession:false,hasIdleAuxiliaryPanel:hasIdleAuxiliary,
+    hasIdlePanelCloseHandler:Boolean(onCloseIdleAuxiliaryPanel),hasProfilePanel:Boolean(profilePanelPubkey),hasThreadSurface,
+    overrideThread:overlayIdleAuxiliaryOverThread,useSplitAuxiliaryPane});
+  const showIdleAuxiliaryOverThread=overlayIdleAuxiliaryOverThread&&useFocusIdleDrawer;
   const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(
-    useFocusThreadDrawer,
-    onCloseThread,
+    useFocusThreadDrawer || useFocusIdleDrawer,
+    priorityIdleAuxiliary ? onCloseIdleAuxiliaryPanel ?? onCloseThread : useFocusThreadDrawer ? onCloseThread : onCloseIdleAuxiliaryPanel ?? onCloseThread,
   );
+  const threadSurface=useThreadPanelSurface(showIdleAuxiliaryOverThread,markExitComplete);
   const { handleEditLastOwnMainMessage, handleEditLastOwnThreadMessage, routeEdit: handleRoutedEdit } = useRoutedMessageEdit({
     activeChannelId: activeChannel.id,
     channelIsCovered,
@@ -388,6 +403,9 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapThreadPanel = (panel: React.ReactNode) => (
     <ThreadPanelSurface
       channelName={activeChannel.name}
+      covered={threadSurface.covered}
+      hasActiveEdit={threadEditTarget!==null}
+      ref={threadSurface.ref}
       isFocusDrawer={useFocusThreadDrawer}
       key={THREAD_SURFACE_KEY}
       onClose={onCloseThread}
@@ -407,6 +425,12 @@ export const ChannelPane = React.memo(function ChannelPane({
   const timelineReplyHandler = activeChannel.archivedAt
     ? undefined
     : onOpenThread;
+  const idleAuxiliarySurface=hasIdleAuxiliary?<IdleAuxiliarySurface key="idle-auxiliary-surface"
+    idleAuxiliaryPanel={idleAuxiliaryPanel} idleAuxiliaryHeaderActions={idleAuxiliaryHeaderActions} idleAuxiliaryTitle={idleAuxiliaryTitle}
+    onCloseIdleAuxiliaryPanel={onCloseIdleAuxiliaryPanel} channelName={activeChannel.name} isFocusDrawer={useFocusIdleDrawer}
+    isSinglePanelView={isSinglePanelView} useSplitAuxiliaryPane={useSplitAuxiliaryPane} canResetWidth={canResetThreadPanelWidth}
+    onResetWidth={onResetThreadPanelWidth} onResizeStart={onThreadPanelResizeStart} widthPx={threadPanelWidthPx}
+    restoreFocusTarget={threadSurface.restoreFocusTarget}/>:null;
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
       {!isSinglePanelView ? (
@@ -557,7 +581,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       ) : null}
       {/* Serialize replacements so focus drawers keep one travel direction. */}
       <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
-        {threadHeadMessage
+        {replaceThreadWithIdleAuxiliary ? idleAuxiliarySurface : threadHeadMessage
           ? wrapThreadPanel(
               <MessageThreadPanel
                 channelId={activeChannel.id}
@@ -637,8 +661,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                   />,
                   "user-profile-panel",
                 )
-              : null}
+              : idleAuxiliarySurface}
       </AnimatePresence>
+      <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence>
       {deleteMessageDialog.dialog}
     </div>
   );

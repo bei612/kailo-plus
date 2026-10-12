@@ -39,9 +39,11 @@ export function projectInboxMentions(snapshot: Awaited<ReturnType<typeof loadPro
     }));
 }
 
-export async function loadProjectWorkItems(host: ProjectsHost, signal: AbortSignal) {
+export async function loadProjectWorkItems(host: ProjectsHost, signal: AbortSignal, projectId?:string) {
   const directory = await loadProjectDirectory(host, signal);
-  const addresses = [...new Set(directory.projects.flatMap(project => project.repositories.map(repository => repository.repoAddress)))];
+  const projects=projectId?directory.projects.filter(project=>project.id===projectId):directory.projects;
+  if(projectId&&projects.length!==1)throw new Error("Project scope changed");
+  const addresses = [...new Set(projects.flatMap(project => project.repositories.map(repository => repository.repoAddress)))];
   const fetchPage = async (request: ProjectsQueryRequest) => {
     signal.throwIfAborted();
     const page = await host.query(request);
@@ -63,7 +65,7 @@ export async function loadProjectWorkItems(host: ProjectsHost, signal: AbortSign
   }
   const items: ProjectInboxWorkItem[] = [];
   const seen = new Set<string>();
-  for (const project of directory.projects) for (const repository of project.repositories) {
+  for (const project of projects) for (const repository of project.repositories) {
     const rootEvents = roots.filter(event => getTag(event, "a") === repository.repoAddress);
     const events = activity.filter(event => getTag(event, "a") === repository.repoAddress);
     const comments = events.filter(event => event.kind === 1);
@@ -82,5 +84,5 @@ export async function loadProjectWorkItems(host: ProjectsHost, signal: AbortSign
     }
   }
   signal.throwIfAborted();
-  return {items, events: [...roots, ...activity], viewerPubkey: directory.viewerPubkey};
+  return {items, events: [...roots, ...activity], viewerPubkey: directory.viewerPubkey, projects};
 }

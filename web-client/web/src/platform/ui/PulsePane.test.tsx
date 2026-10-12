@@ -67,7 +67,7 @@ it("passes only a freshly admitted matching channel descriptor to the Project ho
       onSelectedProjectChange={vi.fn()} onOpenChannel={vi.fn()} renderChannel={renderChannel}/>
   </TooltipProvider></PlatformProvider></QueryClientProvider>));
   await vi.waitFor(()=>expect(host.querySelector('[data-testid="project-native-channel"]')).not.toBeNull());
-  expect(renderChannel).toHaveBeenLastCalledWith(row);
+  expect(renderChannel).toHaveBeenLastCalledWith(row,expect.objectContaining({idleAuxiliaryPanel:undefined,idleAuxiliaryOverridesThread:false}));
   expect(send.mock.calls.map(([request])=>request.path)).toContain(`/api/v1/workspaces/${workspaceId}/channel`);
   let fail!:(error:Error)=>void;send.mockImplementation(()=>new Promise((_resolve,reject)=>{fail=reject;}));
   let pending!:Promise<void>;

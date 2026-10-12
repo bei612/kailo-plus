@@ -15,6 +15,10 @@ type FocusThreadDrawerProps = {
   active?: boolean;
   channelName?: string;
   children: React.ReactNode;
+  escapeEnabled?: boolean;
+  label?: string;
+  hasActiveEdit?: boolean;
+  restoreFocusTarget?: () => HTMLElement | null;
   onClose: () => void;
 };
 
@@ -184,6 +188,10 @@ export function FocusThreadDrawer({
   active = true,
   channelName,
   children,
+  escapeEnabled = true,
+  label,
+  hasActiveEdit = false,
+  restoreFocusTarget,
   onClose,
 }: FocusThreadDrawerProps) {
   const t = useUiT();
@@ -197,9 +205,10 @@ export function FocusThreadDrawer({
   const viewportRightInsetPx = useViewportRightInsetPx(overlayRef);
 
   React.useEffect(() => {
-    if (!active) return;
+    if (!active || !escapeEnabled) return;
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      if (hasActiveEdit && event.target instanceof Node && drawerRef.current?.contains(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       onClose();
@@ -209,7 +218,7 @@ export function FocusThreadDrawer({
     return () => {
       window.removeEventListener("keydown", handleEscape, { capture: true });
     };
-  }, [active, onClose]);
+  }, [active, escapeEnabled, hasActiveEdit, onClose]);
 
   React.useLayoutEffect(() => {
     if (!active) return;
@@ -222,6 +231,8 @@ export function FocusThreadDrawer({
     return () => {
       const previousFocus = previousFocusRef.current;
       requestAnimationFrame(() => {
+        const explicitTarget = restoreFocusTarget?.();
+        if (explicitTarget) { explicitTarget.focus({ preventScroll: true }); return; }
         // A real dismissal keeps focus mode selected; a presentation switch
         // has already selected split mode and owns focus inside the new panel.
         // Hiding the thread for another panel must not steal that panel's focus.
@@ -230,7 +241,7 @@ export function FocusThreadDrawer({
         }
       });
     };
-  }, [active]);
+  }, [active, restoreFocusTarget]);
 
   return (
     <div
@@ -277,7 +288,7 @@ export function FocusThreadDrawer({
           // see the token for why a `border-l` cannot.
           active ? "absolute inset-y-0 right-0 flex flex-col overflow-hidden rounded-l-2xl bg-background shadow-panel-left outline-hidden" : "contents",
         )}
-        aria-label={active ? t("thread.title") : undefined}
+        aria-label={active ? label ?? t("thread.title") : undefined}
         data-testid={active ? "focus-thread-drawer" : undefined}
         ref={drawerRef}
         role={active ? "complementary" : undefined}

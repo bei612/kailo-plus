@@ -440,7 +440,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={openDirectMessage}/>
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
-        renderChannel={workspace=><ChannelPane key={`${session.platformSessionId}:${workspace.id}`} workspaceId={workspace.id}
+        renderChannel={(workspace,auxiliary)=><ChannelPane {...auxiliary} key={`${session.platformSessionId}:${workspace.id}`} workspaceId={workspace.id}
           channelId={workspace.channel.channelId} channelName={workspace.channel.name} archived={workspace.channel.archived}
           myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
           threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId}

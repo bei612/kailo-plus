@@ -67,7 +67,7 @@ import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
-import { useFocusDrawerPresence, useRoutedMessageEdit } from "@client-kit/platform/react/thread";
+import { useFocusDrawerPresence, useRoutedMessageEdit, useThreadPanelSurface, useThreadPanelWidth, IdleAuxiliarySurface, shouldPrioritizeIdleAuxiliary, shouldUseFocusIdleDrawer, type IdleAuxiliaryProps } from "@client-kit/platform/react/thread";
 import { AnimatePresence } from "motion/react";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, MessageAuthorProfile } from "./MessageAuthorProfile";
@@ -137,7 +137,12 @@ export function ChannelPane({
   metadataPending = false,
   restoreEditEventId,
   onStartDm,
-}: {
+  idleAuxiliaryPanel,
+  idleAuxiliaryHeaderActions,
+  idleAuxiliaryOverridesThread = false,
+  idleAuxiliaryTitle,
+  onCloseIdleAuxiliaryPanel,
+}: IdleAuxiliaryProps & {
   workspaceId: string;
   threadHeadId: string | null;
   onThreadHeadIdChange: (headId: string | null, options?: import("@client-kit/platform/react/use-history-search-state").HistorySearchSetterOptions) => void;
@@ -346,12 +351,30 @@ export function ChannelPane({
       ? selectedReply : routeMessageById.get(effectiveThreadHeadId) ?? null
     : null;
   const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget);
-  const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer, handleCloseThread);
+  const idleWidth = useThreadPanelWidth();
+  const hasIdleAuxiliary = Boolean(idleAuxiliaryPanel && onCloseIdleAuxiliaryPanel && live && !denied && !metadataPending);
+  const priorityIdleAuxiliary = shouldPrioritizeIdleAuxiliary(idleAuxiliaryOverridesThread, hasIdleAuxiliary);
+  const overlayIdleAuxiliaryOverThread = priorityIdleAuxiliary && Boolean(replyTarget) && !threadOverlay;
+  const replaceThreadWithIdleAuxiliary = priorityIdleAuxiliary && Boolean(replyTarget) && threadOverlay;
+  const useFocusIdleDrawer = shouldUseFocusIdleDrawer({channelManagementOpen:false,hasAgentSession:false,
+    hasIdleAuxiliaryPanel:hasIdleAuxiliary,hasIdlePanelCloseHandler:Boolean(onCloseIdleAuxiliaryPanel),
+    hasProfilePanel:Boolean(profileTarget||systemProfileTarget),hasThreadSurface:Boolean(replyTarget),
+    overrideThread:overlayIdleAuxiliaryOverThread,useSplitAuxiliaryPane:!threadOverlay});
+  const showIdleAuxiliaryOverThread = overlayIdleAuxiliaryOverThread && useFocusIdleDrawer;
+  const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer || useFocusIdleDrawer,
+    priorityIdleAuxiliary ? onCloseIdleAuxiliaryPanel ?? handleCloseThread : useFocusThreadDrawer ? handleCloseThread : onCloseIdleAuxiliaryPanel ?? handleCloseThread);
+  const threadSurface = useThreadPanelSurface(showIdleAuxiliaryOverThread,markExitComplete);
+  const idleAuxiliarySurface = hasIdleAuxiliary ? <IdleAuxiliarySurface key="idle-auxiliary-surface"
+    idleAuxiliaryPanel={idleAuxiliaryPanel} idleAuxiliaryHeaderActions={idleAuxiliaryHeaderActions}
+    idleAuxiliaryTitle={idleAuxiliaryTitle} onCloseIdleAuxiliaryPanel={onCloseIdleAuxiliaryPanel}
+    channelName={channelName} isFocusDrawer={useFocusIdleDrawer} isSinglePanelView={false} useSplitAuxiliaryPane={!threadOverlay}
+    canResetWidth={idleWidth.canReset} onResetWidth={idleWidth.onResetWidth} onResizeStart={idleWidth.onResizeStart} widthPx={idleWidth.widthPx}
+    restoreFocusTarget={threadSurface.restoreFocusTarget}/> : null;
   useLayoutEffect(() => {
     // A revoked/unreadable scope cannot retain exiting content. Its presence
     // owner is removed immediately, so it cannot deliver onExitComplete.
-    if (!threadAdmissionAvailable) markExitComplete();
-  }, [threadAdmissionAvailable, markExitComplete]);
+    if (!threadAdmissionAvailable) threadSurface.markExitComplete();
+  }, [threadAdmissionAvailable, threadSurface.markExitComplete]);
   const routeTarget = targetMessageId ? routeMessageById.get(targetMessageId) ?? null : null;
   const mainTimelineTargetMessageId = getRouteMainTimelineTargetId(targetMessageId ?? null, routeTarget);
   const routedTimelineMessages = useMemo(() => {
@@ -820,7 +843,7 @@ export function ChannelPane({
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
-    {replyTarget ? <div key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
@@ -845,8 +868,9 @@ export function ChannelPane({
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink}
       isMessageUnread={isMessageUnread}
       onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}
-      onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : null}
+      onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : !profileTarget && !systemProfileTarget ? idleAuxiliarySurface : null}
     </AnimatePresence> : null}
+    {live && !denied && !metadataPending ? <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence> : null}
     {deleteMessageDialog.dialog}
     </div>
     </BffVideoReviewProvider>

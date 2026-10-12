@@ -4,7 +4,7 @@ import type { ChannelWindowThreadSummary } from "@/features/messages/lib/channel
 import type { TimelineMessage } from "@/features/messages/types";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
-export type ChannelPaneProps = {
+export type ChannelPaneProps = import("@client-kit/platform/react/thread").IdleAuxiliaryProps & {
   activeChannel: Channel;
   /**
    * When non-null, the main composer fires `submitMessage` once after loading

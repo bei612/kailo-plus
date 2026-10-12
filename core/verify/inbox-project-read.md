@@ -829,3 +829,118 @@ exit 0、63/63。原件 `home-membership-negative.log`、
 日志 `project-home-i18n.iq04CX/contraction.log`；仅回填生成的六项 Dart
 enum/翻译删除 hunk，未覆盖其余 dirty 或公共暂存。最终类型/DOM 上述结果先于
 这次无消费者词条收缩，不将生成检查冒充重新运行整端检查。
+
+## 2026-10-12：原项目首页 Tasks / Reviews 侧面板读闭包
+
+基底 `1fd25b763a21359698ddc1278d915429837f3134`；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。本批仅恢复首页 Overview 的
+Tasks / Reviews → 原侧面板分组列表 → 原共享详情 → 原返回/关闭操作，
+不是完整 Projects、写操作或已部署验收。
+
+### 权威、影响、副作用与异常
+
+1. 权威为原版一致性要求、DD-75 的双宿主传输边界与 DD-87 的共享页面边界。
+   读数据仍来自既有 ProjectsHost、目录和 Relay/BFF；不新增平台实体、注册表、
+   schema、服务或写动作，不把项目公告当频道 membership。
+2. 影响从 `ProjectHomeContextPanel` 两个原入口，经 `ProjectChannelHome`、
+   `ProjectHomeWorkspaceSheet`、`loadProjectWorkItems` 到已有 Issue/PR reducer
+   和详情。Tasks 汇总当前项目各仓库，Reviews 只读所选仓库；项目过滤在去重前，
+   共享仓库不能因全局去重归到另一个项目。Web / Desktop 经同一共享主体，
+   仅真实 ChannelPane/ChannelScreen 的辅助面板、身份、传输留在宿主。
+   没有持久格式或旧数据迁移；Mobile 未接此页面，不称移动端恢复。
+3. 新增动作均为读取/本机展开关闭；不发布事件或复制正文进 Core。
+   沿 fresh 目录、当前项目/仓库和受信 viewer 读取，scope 更换销毁旧挂载，
+   查询中不显示旧列表/详情。修复实际检查发现的撤权动画残留：Web 失去准入时
+   直接卸载辅助面板 Presence，并清覆盖状态，不等退出动画继续暴露正文。
+4. 零条目用原空态；超限/分页沿既有枚举器；重复打开不产生新写意图；
+   中断/撤权/未知保持原 `platform.loadFailed` 结果不明，不冒充空集合或成功。
+   既有六类错误及上游拒绝合同不变。原线程被侧面板覆盖时保留原线程，
+   置 inert / aria-hidden，禁用被覆盖线程 Escape，关闭后按原焦点目标恢复。
+
+### 固定原版四类对照
+
+- 原样保留：固定 `desktop/src/features/projects/ui/ProjectWorkItemRow.tsx::ProjectWorkItemRow`、
+  `desktop/src/features/projects/ui/ProjectWorkItemGroup.tsx::ProjectWorkItemGroup`、
+  `desktop/src/features/projects/ui/ProjectStatusProgressIcon.tsx::ProjectStatusProgressIcon`
+  的只读行、分组与 SVG；不另绘列表。
+- 共享迁移：固定 `desktop/src/features/projects/ui/ProjectHomeWorkspaceSheet.tsx::ProjectHomeWorkspaceSheet`、
+  `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::{ProjectIssuesPanel,IssueRow}`、
+  `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::{PullRequestsPanel,PullRequestRow}`
+  的 Tasks/Reviews 读分支与现有详情复用；固定
+  `desktop/src/features/projects/ui/IssueAssigneesRow.tsx::IssueAssigneeFacepile` 的原头像组。
+  首页 toggle 不强改 summaryOpen，沿原 previous-open 判定抑制 sheet 开关时的宽度动画。
+- 共享迁移：固定 `desktop/src/features/channels/ui/IdleAuxiliaryPanel.tsx::IdleAuxiliaryPanel`、
+  `desktop/src/features/channels/ui/ThreadPanelSurface.tsx::useThreadPanelSurface`、
+  `desktop/src/features/channels/ui/ChannelPane.tsx::ChannelPane` 的实际辅助面板/覆盖消费，
+  双端共用同一 IdleAuxiliarySurface；原
+  `desktop/src/features/channels/ui/FocusThreadDrawer.tsx::FocusThreadDrawer` 的 label、编辑 Escape、
+  覆盖和关闭焦点契约补齐，原消息/线程发布路径未改。
+- 共享迁移：固定 `desktop/src/shared/ui/ViewLoadingFallback.tsx` 的
+  `LoadingHeaderSkeleton`、`MessageRowsSkeleton`、`ChannelLoadingBody` 三函数体逐字一致，
+  96 原行移到共享 `ChannelLoadingFallback.tsx`，Native 重复实现删除。
+  原文件 SHA-256 `f15dc33b79e4e82b21ebee03c0cc68bdb10bc81ebbd9a5353afcb2cac284378d`。
+  首页目录等待无额外 header，lazy ChannelScreen 等待保留 includeHeader。
+- 共享迁移：固定 `desktop/src/shared/ui/BuzzLoadingState.tsx::BuzzLoadingState`、
+  `desktop/src/shared/ui/buzz-logo/BuzzLogoAnimation.tsx::BuzzLogoAnimation` 与
+  `desktop/src/shared/ui/buzz-logo/buzz-logo-animation.css` 原加载呈现。
+  CSS 与固定源码 cmp 0，只作用于原 `.buzz-logo` 类及原关键帧，保留 reduced-motion。
+  SVG 原 722 行仅为共享严格类型检查在源码确已初始化的 v1/v8 读取加两处非空断言，
+  类型擦除不改变动画；原 loading 函数仅改 import，Tasks/Reviews 同源消费。
+  Native 原 BuzzLoadingState/BuzzLogoAnimation 路径收缩为共享薄转发，删除唯一由
+  旧动画引用的 CSS，避免双份呈现实现；删除的源码可由 Git 历史恢复。
+  queryPending/拒绝/正常 body 始终位于原 sheet `-mx-4` / data-tab 外壳，
+  列表保留原 `desktop/src/features/projects/ui/projectPanelStyles.ts::PROJECT_DETAIL_PANEL_CLASS`，
+  不因加载把正文横向边界跳到另一布局。
+- 已授权治理改造：原 native hooks 改接现有受权读链，身份/仓库失配拒绝、scope 退出
+  撤销、fresh 时隐藏旧正文；中文默认/英文适配新增 13 个同源词条。
+  私有 HEAD + 本批词条原生成，正式 Dart 仅回填精确增量，公共旧 TS/Dart 暂存及
+  未暂存资料保留，没有把其余历史词条变更纳入候选。
+- 缺失需恢复：原 create/comment/status/assignment/review 写消费者、selection-to-Agent、
+  展开为完整仓库 WorkspaceTabs、仓库管理/healing、Commits/Files/Contributors/Git
+  仍未在本批闭合，不生成假按钮；详情内已登记的写/执行缺项继续保留。
+  四类映射只说明本批原调用闭包，不能替代全量台账或宣称 100% 原样。
+
+### 实际命令与结果
+
+原 SDK `kailo-web-thread-tooltip-sdk`：4 CPU / 8 GiB，memory+swap 总限额等于
+内存（无额外 swap），UID 1000，检查前仅 sleep，宿主可用内存约 34 GiB。
+输入 `/candidate/reminder-consumers.RcN79Y`，TMPDIR / npm 缓存均显式投递该
+Data 私有目录；没有新 SDK 镜像、冷构建或全量构建。
+日志根 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-workspace-sheet.CUh2Hi/`。
+
+- `94151`：首轮共享 tsc exit 2，PR 数组类型未收窄；修真实类型，不删消费者。
+- `43038`：共享 tsc 0，DOM 105/108（新夹具缺 matchMedia），Web/Native tsc 均 0，
+  聚合 exit 1；补现有媒体查询夹具，不改产品响应式逻辑或测试超时。
+- `55204`：共享 108/108 与类型 0；Web 类型 0，Web DOM 41/43，
+  一个实际撤权 Presence 残留和一个旧单参 spy 失败，聚合 exit 1。
+  撤权修复后 `58724` Web tsc + ChannelPane/Pulse 两原套件 43/43，实际 exit 0。
+- `59056`：仅私有断开 openWorkspace 状态投递，两条实际 Tasks/Reviews 点击检查失败，
+  exit 1；精确还原 cmp 0 后 `31414` 原四共享套件 108/108，exit 0。
+- `1756`：追加原 Buzz loading 后 DOM 109/109；类型 2 为上述原字典读取的严格类型差异。
+  两处类型适配后 `23988` 共享 TS 5.9.3、Web、Native tsc 全部实际 exit 0。
+- `21770`：私有退回非原 loading 呈现，Tasks/Reviews 两条实际 pending 检查失败，exit 1；
+  还原 cmp 0 后 `27748` 原 project-inbox 全套 34/34，实际 exit 0。
+  原父外壳接线纠正后 `72229` 共享 tsc 与同一套 34/34 均实际 exit 0；
+  新增断言检查实际 loading 父级原 class / data-tab，不只检查图形存在。
+  Native 旧入口薄转发、旧 CSS 收缩后 `89683` 原 Native tsc 实际 exit 0，
+  日志 `native-final.log`；不把类型检查称作 Windows 运行验收。
+- 共享命令为 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 与
+  `node node_modules/vitest/vitest.mjs run test/projects.test.tsx test/project-inbox.test.tsx test/thread-panel.test.tsx test/channel-loading.test.tsx --no-file-parallelism`。
+  Web 原 `./node_modules/.bin/tsc --noEmit`、
+  `./node_modules/.bin/vitest run src/platform/ui/ChannelPane.test.tsx src/platform/ui/PulsePane.test.tsx --no-file-parallelism`；
+  Native 原 `./node_modules/.bin/tsc --noEmit -p tsconfig.json`。React act 警告保留。
+- Root 骨架正反还原：31705 2/2 exit 0；私有移除 hasHeader 投递 77865 exit 1；
+  还原 cmp 0，49757 2/2 exit 0。原日志在上述 `reminder-consumers.RcN79Y`
+  的 `channel-loading-{positive,negative,restored}.log`，不是设备截图。
+- i18n `45816`：原 `kailo-wren-query-sdk-itgs2n` 4 CPU / 4 GiB（无额外 swap），
+  原 HOME 配置、独立 `project-sheet-i18n.U3sm8s` 输入，
+  `python3 tools/gen-platform-i18n.py` 与 `--check` 均实际 exit 0。
+
+源码未部署；不复用现网旧 Web 截图证明本批。没有 Windows/Mobile 新包或设备验收。
+既有 full 的 11 项 artifact source 摘要失配发布门禁仍未解除，本批定向通过不等于
+full exit 0 或生产就绪。文档门禁由主线同批唯一原只读入口负责，不额外导出全树。
+主线 `29634` 的原 `tools/check-docs.sh` 实际 exit 0，七部分通过，
+日志 `/volumes/data/kailo/tmp/projects-sheet-docs.afxLm7/check-docs.log`，
+SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+执行为原镜像 2 CPU / 2 GiB、无额外 swap、UID 1000、network none，
+只读 apps/design，缓存/tmp 在 Data；脚本覆盖顶层/docs/design，不称其扫描本 verify 正文。

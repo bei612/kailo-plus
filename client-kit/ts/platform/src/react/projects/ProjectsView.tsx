@@ -164,7 +164,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   };
   if (selected) return active && renderChannel && onOpenChannel
     ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} scopeKey={host.scopeKey}
-        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onGoProjects={()=>setSelected(null)}/>
+        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onGoProjects={()=>setSelected(null)} host={host} renderWorkItems={renderWorkItems}/>
     : <ProjectPanelState error={!query.isPending&&!query.isFetching}
         title={t(query.isPending||query.isFetching?"platform.loading":query.isError?"platform.loadFailed":"projects.home.channelMissing")}/>;
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">

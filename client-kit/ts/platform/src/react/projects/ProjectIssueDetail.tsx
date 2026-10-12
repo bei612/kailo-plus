@@ -17,6 +17,7 @@ import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ShareLinkButton } from "./ShareLinkButton";
 import { issueShareLink } from "./projectShareLinks";
 import { useT } from "../context";
+import type { ProjectStatusProgressState } from "./ProjectStatusProgressIcon";
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
 export function issueStatusClassName(status: ProjectIssue["status"]) {
@@ -28,37 +29,43 @@ export function issueStatusClassName(status: ProjectIssue["status"]) {
   return "text-muted-foreground";
 }
 
-function issueStatusVisual(status: ProjectIssue["status"]): {
+export function issueStatusVisual(status: ProjectIssue["status"]): {
   className: string;
   icon: LucideIcon;
+  progress: ProjectStatusProgressState;
 } {
   if (status === "Done") {
     return {
       className: "text-purple-400",
       icon: CircleCheck,
+      progress: "completed",
     };
   }
   if (status === "Closed") {
     return {
       className: "text-destructive",
       icon: CircleX,
+      progress: "canceled",
     };
   }
   if (status === "Backlog") {
     return {
       className: issueStatusClassName(status),
       icon: Circle,
+      progress: "queued",
     };
   }
   if (status === "Triage") {
     return {
       className: issueStatusClassName(status),
       icon: CircleDashed,
+      progress: "queued",
     };
   }
   return {
     className: issueStatusClassName(status),
     icon: CircleDot,
+    progress: status === "In Review" ? "review" : "started",
   };
 }
 
