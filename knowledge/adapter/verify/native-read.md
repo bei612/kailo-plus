@@ -5152,6 +5152,7 @@ Data 反证去掉最新 APIKey 保留、绕过运行时 mapping 检查、放开�
 完成 native binding/generation fence、任务冻结归属或三组件上架。
 本批不是完整治理接入，也不解除既有全局发布门禁；未修改 .design 或平台契约。
 
+
 ### 2026-10-11 原生 receiver 冻结代次归属与真实入站消费者
 
 本批基于 Kailo `e186cf33829251d2946a6d6e0834c1149a5f9eac` 实现，
@@ -6415,3 +6416,117 @@ was used to correct the verification entry.
 | corrected.log (final test/clippy) | `5f2e76a2a737b9f4a579727ac995510ebca6aeb6bed925a6e78999c18af30d96` |
 
 No deployment or binding activation is claimed.
+
+### DD-89 — isolated receiver setup consumes the original owner approval
+
+Comparison base: `bca0e2819e9e298cf97d77076a74b8420c8c23db`. This batch
+finishes the existing, previously uncommitted platform-owned receiver setup in
+`core/verify/receiver-environment-bootstrap.rs` and its SQL companion. The two
+Core source changes are test-only inclusion and reuse of the original capability
+registration validator. There is no production endpoint, SDK, authorization
+relation, Workflow kind, generated contract or second execution ledger.
+
+1. **Authority.** `.design/07` §8A permits explicitly isolated setup facts but
+   requires the original Core admission, PEP and receipt consumers. Real
+   Catalog/business sessions, SERVICE clients and approved capability contracts
+   are input prerequisites, not minted by this fixture. The SQL companion only
+   prepares marked `CONFORMANCE_ONLY` release-directory prerequisites; its
+   synthetic registration/approval projections have `executed:false` and are
+   never candidate release approval or conformance evidence. It does not create
+   Tenant/identity, binding/runtime/resource ACTIVE rows or model credentials.
+2. **Actual consumers.** The original Core test-binary entry invokes
+   `POST /api/v1/actions` for `application_binding.create`, `resource.create` and
+   `resource.grant_read`. It observes the same retained AE/Operation, original
+   terminal audit and model delivery. `execute_action` waits for the original
+   approval projection; `approve_read_grant` reads
+   `GET /api/v1/approvals/{workflowId}` and uses the authenticated frozen resource
+   owner's session for the original `POST .../decision`. The production
+   `governance_api::decide` retains its fresh Temporal admission and immutable
+   workflow/principal Update ID. `self_approval=ALLOW` is not automatic approval.
+3. **Side effects and compatibility.** Setup requires a different Core/SpiceDB
+   origin, exact dedicated database name/owner/immutable input marker, private
+   canonical token files, real session identity readback and a same-setup
+   advisory lock. First submission alone may send an owner decision; an existing
+   AE or uncertain submission is only observed, without a replacement key or
+   retry POST. Binding creation consumes the actual `PLATFORM_LLM_ROUTE` model
+   delivery for RECEIVER. The original read grant writes the SOURCE reader edge;
+   the only direct relationship prerequisite retained is explicitly isolated
+   RECEIVER editor/deleter, never a production permission repair.
+4. **Failure boundaries.** Wrong frozen owner/version/actor, already dispatched
+   intent, mismatched approval AE/resource/workflow, unknown observation, prior
+   denial, closed approval or an unconfirmed decision response refuses setup.
+   Partial setup preserves original intents for reconciliation. Rebuilding
+   failed setup is limited to its explicitly owned isolated database and
+   SpiceDB deployment; it never repairs or deletes shared/production stores.
+
+The existing constrained SDK `kailo-receiver-binding-check` uses image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+4 CPU, 8 GiB RAM and equal memory-swap, UID 1000, read-only root, network none,
+and Data-backed source/cache/tmp. Before this execution it held only sleep,
+no Cargo/rustc was active, available memory was 36.4 GiB and memory PSI full
+avg60 was 0.02. The fixed input is the comparison base plus these four paths.
+Original validation entry:
+
+```sh
+cargo test --locked --offline -j16 -p platform-core --bin platform-core receiver_environment_bootstrap -- --nocapture
+```
+
+Positive session `85133` exited 0 after the original 9m 33s compile: 2 passed,
+0 failed, 1 ignored. Private negative session `39492` removed only the
+`approve_read_grant` observation's exact `actionExecutionId` check. The original
+HTTP consumer test then exited 101: the mismatched AE was admitted and
+`observation mode 1` failed (`true` versus `false`). No formal source was
+mutated. The original bytes were restored with `cmp` exit 0. Restored session
+`33227` exited 0: the original filter again passed 2 tests with the real setup
+entry still ignored, followed by the original narrow clippy exiting 0 (10m 49s):
+
+```sh
+cargo clippy --locked --offline -j16 -p platform-core --bin platform-core -- -D warnings
+```
+
+The final fixture source SHA-256 is
+`6bad633e3f6a8f4afe7a5fee3347aec09cb8daffe924c7a8813f81eeea5aee6e`;
+its SQL companion is
+`5002d95af25e954f3992355d4f0a74bf501048e9b53a154ac48edba0f2dc8dbf`.
+The earlier bootstrap session `46238` (1 passed, 1 ignored) predates this owner
+approval consumer and is not evidence for these new branches. No full check was
+run. Original docs session `80783` subsequently exited 0 (all seven sections),
+reusing `kailo-read-pr-docs-linked`: the same fixed SDK image, UID 1000,
+2 CPU / 2 GiB / equal memory-swap, network none, read-only root and apps/design
+mounts, with Data tmp/npm cache and offline npm. The command was
+`bash tools/check-docs.sh /.design`. This checks the current top-level/docs
+corpus and design links, not every receipt line or a fixed release tree.
+`docs.log` SHA-256 is
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`.
+Rebase to main
+`33ae0b8761f41408a6eac99bd3519316cafbb5c4` preserves the unrelated Cells and
+Inbox commits; compared with the tested base, Core/contracts changed only an
+unrelated receipt, not compiled source.
+
+The local HTTP consumer check does not execute production authentication,
+Temporal, the SQL companion or the actual SOURCE/RECEIVER business operation.
+The real environment entry remains explicitly ignored until its runtime inputs
+are delivered. Evidence directory:
+`/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/owner-approval`.
+
+| Original log | SHA-256 |
+| --- | --- |
+| positive.log | `3767161a4f817d0b84976d12ba4d875e99003fa1a87f83f602c885a03e852242` |
+| negative.log | `bd9f1a0cdfcd6c509ba973075f924fabf7988cd486b9b1b77e3892c9eae3dd3c` |
+| restored.log | `12856a66f29223cc52ff1c1365e455340504e99cf77ca8160e3f3175e07aed20` |
+
+Real native references remain the previously created dedicated Cells workspace
+`86351be8-654a-4898-9a26-d4efc908c7a1` / root
+`385ae08e-7bc2-44d7-8b15-ab18f98a01b0` and WeKnora KB
+`e37f9e96-a356-4441-bd93-efc1d5d3cc80`; native user IDs are not platform
+principals. Cells service/adapter artifacts now exist in the Data registry but
+are not deployed. The Cells operator separately created and read back the real
+OIDC client `kailo-upload-sync-service-20261012-3tqnvd` and verified its original
+client-credentials grant with Core audience `kailo-core`; public facts are in
+`/volumes/data/kailo/tmp/cells-upload-delivery.3TQNvd/oidc-service-facts.json`.
+That identity is not a platform principal or binding. The isolated Core's actual
+ActionToken signing/JWKS delivery must not be replaced by the IdP JWKS. Matching
+receiver artifacts and actual isolated model/binding lifecycle evidence remain
+required. No
+synthetic identity, successful receipt, production ACTIVE binding, shared
+runtime replacement or cross-service acceptance is claimed by this batch.

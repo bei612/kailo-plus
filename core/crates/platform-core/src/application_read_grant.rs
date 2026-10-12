@@ -882,6 +882,10 @@ fn validate_claims(
 }
 
 #[cfg(test)]
+#[path = "../../../verify/receiver-environment-bootstrap.rs"]
+mod receiver_environment_bootstrap;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

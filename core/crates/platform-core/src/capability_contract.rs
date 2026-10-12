@@ -249,6 +249,16 @@ struct Registration {
     suite_digest: String,
 }
 
+/// Internal isolated deployment fixture only. Reuse the registration parser and
+/// canonical schema/vector digests; never turn fixture setup into a suite result.
+#[cfg(test)]
+pub(crate) fn receiver_fixture_registration(value: Value) -> Result<Value, Refusal> {
+    let value = registration(&value)?;
+    Ok(json!({"category":value.category,"version":value.version,
+        "content":value.content,"schemas":value.schemas,"vectors":value.vectors,
+        "schemaDigest":value.schema_digest,"suiteDigest":value.suite_digest}))
+}
+
 /// Fixed jsonschema 0.33.0 uses its built-in meta-schemas; external I/O is disabled
 /// at dependency level and here. Only actual supplied documents can satisfy refs.
 struct NoExternalSchema;
