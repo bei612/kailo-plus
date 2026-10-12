@@ -77,6 +77,10 @@ export function usePlatformNavigation(scopeKey?: string) {
   const newMessage = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/_platform/messages/new") });
   const tab: PlatformTab = params.channelId ? "channel" : params.conversationId ? "conversation"
     : params.bindingId ? "application" : newMessage ? "new-message" : params.section ?? "channel";
+  // The original project home embeds a channel; its thread uses the same URL
+  // history. Repository/work-item routes do not mount that channel consumer.
+  const projectChannelRoute = tab === "projects" && Boolean(search.projectId) &&
+    !search.repositoryId && !search.issueId && !search.pullRequestId;
   const replaceDefaultChannel = useCallback((channelId: string) => {
     // The host supplies a freshly admitted default. An explicit route is never
     // rewritten to a directory fallback, including after access is revoked.
@@ -98,7 +102,7 @@ export function usePlatformNavigation(scopeKey?: string) {
       return draftTarget && current.searchHighlightScope === scopeKey && current.draftNavigation?.key === draftTarget.key
         ? {...previous, draftNavigation:{...current.draftNavigation,send:false}} : previous;
     }} as never),
-    threadHeadId: params.channelId || params.conversationId ? threadHistory.values.thread : null,
+    threadHeadId: params.channelId || params.conversationId || projectChannelRoute ? threadHistory.values.thread : null,
     setThreadHeadId,
     clearMessageRouteTarget,
     registerThreadNavigationGuard,

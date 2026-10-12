@@ -1,0 +1,107 @@
+// Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
+// desktop/src/features/projects/ui/ProjectChannelHome.tsx.
+// The original channel host, overview rail, toggle and chrome are shared.
+// Repository healing/management and workspace sheets need their original governed consumers.
+import * as React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { useBffClient, useUiT } from "../context";
+import { loadChannelDirectory } from "../channel-browser/loadChannelDirectory";
+import { cn } from "../profile/buzz/shared/lib/cn";
+import { Button } from "../profile/buzz/shared/ui/button";
+import { DrawerPanelIcon } from "../sidebar/DrawerPanelIcon";
+import { SIDEBAR_WIDTH_MIN, useOptionalSidebar } from "../sidebar/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../sidebar/tooltip";
+import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
+import { ProjectContextRail } from "./ProjectContextRail";
+import { ProjectDetailChrome } from "./ProjectDetailChrome";
+import { ProjectHomeColumn } from "./ProjectHomeColumn";
+import { ProjectHomeContextPanel } from "./ProjectHomeContextPanel";
+import type { Project } from "./projectModels";
+
+const PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY = "buzz.desktop.project-home-summary-width";
+
+export type ProjectChannelRenderer = (workspace: DiscoverableWorkspace) => React.ReactNode;
+
+export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProjects, onOpenChannel }: {
+  project: Project;
+  scopeKey: string;
+  renderChannel: ProjectChannelRenderer;
+  onGoProjects: () => void | Promise<void>;
+  onOpenChannel: (workspace: DiscoverableWorkspace) => void | Promise<void>;
+}) {
+  const t = useUiT();
+  const client = useBffClient();
+  const cache = useQueryClient();
+  const sidebar = useOptionalSidebar();
+  const [summaryOpen, setSummaryOpen] = React.useState(true);
+  const [navigationFailed, setNavigationFailed] = React.useState(false);
+  const lifetime = React.useMemo(() => ({ active: true }), [client, scopeKey]);
+  React.useEffect(() => {
+    lifetime.active = true;
+    return () => { lifetime.active = false; };
+  }, [lifetime]);
+  const key = React.useMemo(() => ["project-home-channels", scopeKey, project.id], [scopeKey, project.id]);
+  const channelsQuery = useQuery({ queryKey: key,
+    queryFn: ({ signal }) => loadChannelDirectory(client, () => lifetime.active && !signal.aborted),
+    retry: false, refetchOnWindowFocus: "always" });
+  React.useEffect(() => () => {
+    void cache.cancelQueries({ queryKey: key });
+    cache.removeQueries({ queryKey: key });
+  }, [cache, key]);
+  // A signed project reference and a stale directory never grant channel access.
+  const channels = channelsQuery.isSuccess && !channelsQuery.isFetching ? channelsQuery.data.filter(
+    channel => channel.isMember && channel.membershipState === WorkspaceMembershipState.Active,
+  ) : [];
+  const homeChannel = channels.find(channel => channel.channel.channelId === project.projectChannelId
+    && channel.channel.channelType === ChannelType.Stream);
+  const width = useThreadPanelWidth(undefined, {
+    minWidthPx: SIDEBAR_WIDTH_MIN, sessionKey: PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY,
+  });
+  const navigate = (action: () => void | Promise<void>) => {
+    void Promise.resolve().then(() => { if (lifetime.active) return action(); })
+      .catch(() => { if (lifetime.active) setNavigationFailed(true); });
+  };
+  const openChannel = (channelId: string) => navigate(async () => {
+    const current = (await loadChannelDirectory(client, () => lifetime.active, channelId))[0];
+    if (!current?.isMember || current.membershipState !== WorkspaceMembershipState.Active)
+      throw new Error("Project channel membership changed");
+    if (lifetime.active) await onOpenChannel(current);
+  });
+  const toggleLabel = t(summaryOpen ? "projects.home.hideOverview" : "projects.home.showOverview");
+  return <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
+    summaryOpen && "bg-sidebar", summaryOpen && sidebar?.open === false && "pl-2")}
+    data-project-context-detached={summaryOpen ? "true" : undefined}
+    data-project-detail-screen data-repository-healing-enabled={false} data-testid="project-channel-home">
+    <div className={cn("relative flex min-h-0 min-w-60 flex-1 flex-col overflow-hidden",
+      summaryOpen ? "mb-2 ml-px mt-px rounded-2xl bg-background" : "bg-muted/20")}>
+      <ProjectDetailChrome actions={<Tooltip disableHoverableContent><TooltipTrigger asChild>
+        <Button aria-label={toggleLabel} aria-pressed={summaryOpen}
+          className="h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent"
+          data-testid="project-home-drawer-toggle" onClick={() => setSummaryOpen(open => !open)}
+          size="icon" title={t("projects.home.overview")} type="button" variant="ghost">
+          <DrawerPanelIcon className="-scale-x-100" side={summaryOpen ? "left" : "right"}/>
+        </Button>
+      </TooltipTrigger><TooltipContent>{t("projects.home.overview")}</TooltipContent></Tooltip>}
+        activeTabCrumb={null} activeWorkItemCrumb={null} onGoProjectHome={() => undefined}
+        onGoProjects={() => navigate(onGoProjects)} project={project}/>
+      {navigationFailed ? <p role="alert">{t("platform.loadFailed")}</p> : null}
+      {channelsQuery.isPending || channelsQuery.isFetching ? <p role="status">{t("platform.loading")}</p>
+        : channelsQuery.isError ? <p role="alert">{t("platform.loadFailed")}</p>
+        : homeChannel ? renderChannel(homeChannel)
+        : <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
+          <p className="text-sm text-muted-foreground">{t("projects.home.channelMissing")}</p>
+        </div>}
+    </div>
+    <ProjectContextRail open={summaryOpen} panelWidthPx={width.widthPx} resizing={width.isResizing}
+      rounded={false} testId="project-home-summary-rail">
+      {summaryOpen ? <ProjectHomeColumn bodyClassName="overflow-y-auto overflow-x-hidden overscroll-contain"
+        canResetWidth={width.canReset} onResetWidth={width.onResetWidth} onResizeStart={width.onResizeStart}
+        testId="project-home-summary-column" widthPx={width.widthPx}>
+        <ProjectHomeContextPanel project={project}
+          channels={channels.map(channel => ({ id: channel.channel.channelId, name: channel.channel.name }))}
+          onOpenChannel={openChannel}/>
+      </ProjectHomeColumn> : null}
+    </ProjectContextRail>
+  </div>;
+}

@@ -15,7 +15,9 @@ import {listSidebarProjects,writeSidebarProjectsFilter} from "../src/react/sideb
 import {act,useState} from "react";
 import {PlatformProvider} from "../src/react/context";
 import {createBffClient} from "../src/client";
-import {CreateActionKey, ErrorClass, WorkspaceVisibility} from "@client-kit/contracts";
+import {CreateActionKey, ErrorClass, WorkspaceVisibility, ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace} from "@client-kit/contracts";
+import {TooltipProvider} from "../src/react/sidebar/tooltip";
+import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {getEventHash} from "nostr-tools/pure";
 import {prepareProjectCreation,resumeProjectCreation,ProjectCreationPending,ProjectCreationRejected} from "../src/react/projects/createProject";
 import {buildProjectBootstrapTemplates} from "../src/react/projects/projectCreation";
@@ -28,6 +30,10 @@ const owner="a".repeat(64),other="b".repeat(64);
 function project(name="Real project",id="p",time=10):PulseEvent{return {id,pubkey:owner,kind:30621,created_at:time,content:"",tags:[["d",id],["name",name],["description","Signed announcement"],["a",`30617:${other}:missing`]]};}
 function host(rows:PulseEvent[]=[project()]):ProjectsHost{return {scopeKey:"tenant:owner",query:async req=>({events:req.view==="PROJECTS"?rows:[],pubkey:owner,limit:3})};}
 const signal=()=>new AbortController().signal;
+const homeId="12345678-1234-4234-8234-123456789001",relatedId="12345678-1234-4234-8234-123456789002";
+function homeWorkspace(channelId=homeId):DiscoverableWorkspace{return {id:`workspace-${channelId}`,createdAt:new Date(0),isMember:true,
+  membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
+  channel:{channelId,name:channelId===homeId?"Home stream":"Related stream",channelType:ChannelType.Stream,archived:false}};}
 const bff=createBffClient({send:async()=>({status:200,body:{workspaces:[]}})});
 const creationInput={name:"Real creation",description:"Original description",channelVisibility:WorkspaceVisibility.Open,projectVisibility:"listed" as const};
 async function creationFixture(){
@@ -54,6 +60,78 @@ const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><butto
 beforeEach(()=>{localStorage.clear();setLocale("en");sessionStorage.clear();
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
+});
+
+describe("original ProjectChannelHome actual consumers",()=>{
+  function homeProject(){const source=project();source.tags.push(["buzz-channel",homeId],["buzz-related-channel",relatedId]);
+    return buildProjectReadModels({projectEvents:[source],repositoryEvents:[]})[0]!;}
+  async function homeFixture(){
+    let entries=[homeWorkspace(),homeWorkspace(relatedId)];
+    const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:{items:request.path.includes("channelId=")
+      ?entries.filter(item=>request.path.includes(item.channel.channelId)):entries}}));
+    const client=createBffClient({send});const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const renderChannel=vi.fn((workspace:DiscoverableWorkspace)=><div data-testid="actual-channel-consumer">{workspace.id}</div>);
+    const onOpenChannel=vi.fn(),onGoProjects=vi.fn();
+    const ui=await render(<><div id="app-top-chrome-content"/><TooltipProvider><PlatformProvider client={client}><QueryClientProvider client={cache}>
+      <ProjectChannelHome project={homeProject()} scopeKey="home-scope" renderChannel={renderChannel} onOpenChannel={onOpenChannel} onGoProjects={onGoProjects}/>
+    </QueryClientProvider></PlatformProvider></TooltipProvider></>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="actual-channel-consumer"]')).not.toBeNull());
+    return {ui,cache,send,renderChannel,onOpenChannel,onGoProjects,setEntries:(value:DiscoverableWorkspace[])=>{entries=value;}};
+  }
+  it("mounts the admitted full channel slot in the original home column, toggles Overview and returns via the original breadcrumb",async()=>{
+    const f=await homeFixture();
+    expect(f.renderChannel).toHaveBeenLastCalledWith(homeWorkspace());
+    expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')?.parentElement?.className).toContain("rounded-2xl");
+    expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')?.textContent).toBe("Home stream");
+    expect(f.ui.querySelector('[data-testid="project-home-summary-rail"]')?.getAttribute("aria-hidden")).toBe("false");
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-drawer-toggle"]')!);
+    expect(f.ui.querySelector('[data-testid="project-home-summary-rail"]')?.getAttribute("aria-hidden")).toBe("true");
+    expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).not.toBeNull();
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-drawer-toggle"]')!);
+    expect(f.ui.querySelector('[data-testid="project-home-context-panel"]')).not.toBeNull();
+    await click(button(f.ui,"Channels"));expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')).toBeNull();
+    await click(button(f.ui,"Channels"));expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')).not.toBeNull();
+    await click(button(f.ui,"Projects"));expect(f.onGoProjects).toHaveBeenCalledOnce();
+    expect(f.ui.querySelector('[data-testid="project-home-context-commits"]')).toBeNull();
+  });
+  it("rechecks related membership before navigation and never sends a revoked directory snapshot",async()=>{
+    const f=await homeFixture();
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-context-channel-Related stream"]')!);
+    expect(f.onOpenChannel).toHaveBeenCalledExactlyOnceWith(homeWorkspace(relatedId));
+    f.onOpenChannel.mockClear();f.setEntries([homeWorkspace(),{...homeWorkspace(relatedId),isMember:false,membershipState:WorkspaceMembershipState.Revoked}]);
+    await click(f.ui.querySelector<HTMLElement>('[data-testid="project-home-context-channel-Related stream"]')!);
+    expect(f.onOpenChannel).not.toHaveBeenCalled();expect(f.ui.querySelector('[role="alert"]')).not.toBeNull();
+  });
+  it("unmounts the old channel while a fresh read is pending and keeps it absent after rejection",async()=>{
+    const f=await homeFixture();let reject!:(error:Error)=>void;
+    f.send.mockImplementation(()=>new Promise((_resolve,deny)=>{reject=deny;}));
+    let pending!:Promise<void>;
+    await act(async()=>{pending=f.cache.invalidateQueries({queryKey:["project-home-channels"]});});
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).toBeNull());
+    await act(async()=>{reject(new Error("revoked"));await pending;});
+    expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).toBeNull();
+    expect(f.ui.querySelector('[data-testid="project-home-context-home-channel"]')).toBeNull();
+  });
+  it("does not mount a channel from public discovery without active membership",async()=>{
+    const f=await homeFixture();f.renderChannel.mockClear();f.setEntries([{...homeWorkspace(),isMember:false}]);
+    await act(async()=>{await f.cache.invalidateQueries({queryKey:["project-home-channels"]});});
+    await vi.waitFor(()=>expect(f.ui.querySelector('[data-testid="actual-channel-consumer"]')).toBeNull());
+    expect(f.renderChannel).not.toHaveBeenCalled();
+    expect(f.ui.textContent).toContain("This project's channel could not be found.");
+  });
+  it("drops an old identity directory response rather than mounting it in the replacement scope",async()=>{
+    let resolve!:(result:{status:number;body:unknown})=>void;
+    const old=createBffClient({send:()=>new Promise(done=>{resolve=done;})});
+    const next=createBffClient({send:async()=>({status:200,body:{items:[]}})});
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});const renderChannel=vi.fn();
+    function Host(){const [current,setCurrent]=useState(false);return <><button onClick={()=>setCurrent(true)}>Switch identity</button>
+      <PlatformProvider client={current?next:old}><ProjectChannelHome key={current?"next":"old"} project={homeProject()}
+        scopeKey={current?"next":"old"} renderChannel={renderChannel} onOpenChannel={vi.fn()} onGoProjects={vi.fn()}/></PlatformProvider></>;}
+    const ui=await render(<TooltipProvider><QueryClientProvider client={cache}><Host/></QueryClientProvider></TooltipProvider>);
+    await vi.waitFor(()=>expect(resolve).toBeDefined());await click(button(ui,"Switch identity"));
+    await act(async()=>resolve({status:200,body:{items:[homeWorkspace()]}}));
+    expect(renderChannel).not.toHaveBeenCalled();expect(ui.querySelector('[data-testid="project-home-context-home-channel"]')).toBeNull();
+  });
 });
 
 describe("governed original project creation",()=>{
@@ -263,7 +341,8 @@ describe("original Projects directory management consumers",()=>{
     await click(row as HTMLButtonElement);
     expect(onSelectedProjectChange).toHaveBeenCalledOnce();
     expect(onSelectedProjectChange).toHaveBeenCalledWith(`30621:${owner}:original`);
-    expect(ui.querySelector("aside")?.textContent).toContain("Original announcement");
+    expect(ui.querySelector("aside")).toBeNull();
+    expect(ui.textContent).toContain(locale==="en"?"This project's channel could not be found.":"找不到此项目的频道。");
     expect(ui.querySelectorAll("button button")).toHaveLength(0);
     expect(ui.querySelector('[data-testid="project-activity-bar"]')).toBeNull();
   });
@@ -295,7 +374,8 @@ describe("original Projects directory management consumers",()=>{
     expect(f.publish.mock.calls.map(call=>call[0].operation)).toEqual(["CREATE_PROJECT","CREATE_REPOSITORY"]);
     expect(f.send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(1);
     expect(sessionStorage.length).toBe(0);expect(document.querySelector('[data-testid="create-project-name"]')).toBeNull();
-    expect(ui.textContent).toContain(creationInput.name);
+    expect(ui.querySelector('aside[aria-label="Project announcement"]')).toBeNull();
+    expect(ui.textContent).toContain("This project's channel could not be found.");
   });
   it.each(["denied","offline"])("does not render creation when the real capability is %s",async outcome=>{
     const publish=vi.fn();const client=createBffClient({send:async()=>{if(outcome==="offline")throw new TransportError("capability offline");return {status:200,body:{workspaces:[]}};}});
@@ -354,7 +434,7 @@ describe("original Projects directory management consumers",()=>{
     const query=vi.fn<ProjectsHost["query"]>(async request=>({pubkey:owner,limit:20,
       events:request.view==="PROJECTS"?[matched,unmatched]:request.view==="REPOSITORIES"?[repository]:[]}));
     const h:ProjectsHost={scopeKey:"project-search",query},selected=vi.fn(),clientCache=cache();
-    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={clientCache}><ProjectsView host={h} onSelectedProjectChange={selected}/></QueryClientProvider></PlatformProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={clientCache}><ProjectsView host={h} selectedProjectId={null} onSelectedProjectChange={selected}/></QueryClientProvider></PlatformProvider>);
     const card=(id:string)=>ui.querySelector(`[data-testid="project-card-${id}"]`);
     await vi.waitFor(()=>expect(card("alpha")).not.toBeNull());
     expect(card("other")).not.toBeNull();
@@ -438,13 +518,14 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     expect(ui.querySelector('[role="alert"]')).not.toBeNull();expect(navigate).toHaveBeenCalledOnce();
     expect(ui.textContent).not.toContain("Project created");expect(ui.textContent).not.toContain("Creation is not confirmed");
   });
-  it("uses the actual controlled project route and clears it on the original detail close",async()=>{
+  it("uses the actual controlled project route and clears it on the original Projects breadcrumb",async()=>{
     const h=host();const cache=new QueryClient();const changed=vi.fn();
-    function Host(){const [selected,setSelected]=useState<string|null>(`30621:${owner}:p`);return <ProjectsView host={h} selectedProjectId={selected} onSelectedProjectChange={id=>{changed(id);setSelected(id);}}/>;}
-    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><Host/></QueryClientProvider></PlatformProvider>);
-    await vi.waitFor(()=>expect(ui.querySelector("aside")).not.toBeNull());
-    await click(ui.querySelector<HTMLButtonElement>('button[aria-label="Close project announcement"]')!);
-    expect(changed).toHaveBeenCalledWith(null);expect(ui.querySelector("aside")).toBeNull();
+    function Host(){const [selected,setSelected]=useState<string|null>(`30621:${owner}:p`);return <ProjectsView host={h} selectedProjectId={selected} renderChannel={vi.fn()} onOpenChannel={vi.fn()} onSelectedProjectChange={id=>{changed(id);setSelected(id);}}/>;}
+    const client=createBffClient({send:async()=>({status:200,body:{items:[]}})});
+    const ui=await render(<><div id="app-top-chrome-content"/><TooltipProvider><PlatformProvider client={client}><QueryClientProvider client={cache}><Host/></QueryClientProvider></PlatformProvider></TooltipProvider></>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-detail-chrome"]')).not.toBeNull());
+    await click(button(ui,"Projects"));
+    expect(changed).toHaveBeenCalledWith(null);expect(ui.querySelector('[data-testid="project-channel-home"]')).toBeNull();
   });
   it("uses the Chinese catalog for the original section and Add control",async()=>{
     setLocale("zh-CN");const {ui}=await sidebar(host([]));
@@ -513,16 +594,15 @@ describe("original Projects announcements",()=>{
     const abort=new AbortController();const h=host();const query=h.query;h.query=async r=>{abort.abort();return query(r);};
     await expect(loadProjects(h,abort.signal)).rejects.toThrow();
   });
-  it("opens the original announcement card, switches layout and removes old detail on failed fresh read",async()=>{
+  it("opens the original project route and removes it on failed fresh read instead of an announcement substitute",async()=>{
     const h=host();const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><ProjectsView host={h}/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
-    await click(button(ui,"View Real project"));
-    expect(ui.querySelector("aside")?.textContent).toContain(`30617:${other}:missing`);
-    expect(ui.querySelector("aside")?.textContent).toContain("does not grant access");
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="List layout"]')!);expect(ui.querySelectorAll("[data-projects-grid-card]")).toHaveLength(0);
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-row-p"]')!);
+    expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).toContain("This project's channel could not be found.");
     h.query=async()=>{throw new Error("revoked");};await act(async()=>{await cache.invalidateQueries({queryKey:["projects",h.scopeKey]});});
-    await vi.waitFor(()=>expect(ui.querySelector('[role="alert"]')).not.toBeNull());
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Couldn't load this — the result is unknown."));
     expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).not.toContain("Real project");
   });
   it("uses the same Chinese catalog without fabricating create or Git actions",async()=>{

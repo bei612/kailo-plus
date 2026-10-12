@@ -7,7 +7,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { hasPrimaryShortcutModifier } from "../../keyboard-platform";
 import { useIsMobile } from "./use-mobile";
-const SIDEBAR_WIDTH_MIN = 220;
+export const SIDEBAR_WIDTH_MIN = 220;
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DrawerPanelIcon } from "./DrawerPanelIcon";
 import { Input } from "../composer/shared/ui/input";

@@ -303,6 +303,48 @@ it("opens the actual selected project through the existing route and restores it
   expect(node!.querySelector("[data-project]")?.getAttribute("data-project")).toBe("signed-project");
 });
 
+it("keeps project-home threads in the original URL history and edit navigation guard", async () => {
+  let router = await mount("/app/projects?projectId=signed-project");
+  const click = (label: string) => act(async () => {
+    [...node!.querySelectorAll("button")].find(button => button.textContent === label)!.click();
+  });
+  const length = router.history.length;
+  await click("open thread");
+  expect(router.history.length).toBe(length + 1);
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  expect(node!.querySelector("[data-project]")?.getAttribute("data-project")).toBe("signed-project");
+  const reloadUrl = router.history.location.href;
+  await click("edit thread reply");
+  await click("audit");
+  expect(router.history.location.pathname).toBe("/app/projects");
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  await click("finish thread edit");
+  await click("close thread");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  await act(async () => { router.history.back(); await router.load(); });
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  await act(async () => { router.history.forward(); await router.load(); });
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  router = await mount(reloadUrl);
+  expect(node!.querySelector("[data-thread]")?.getAttribute("data-thread")).toBe("thread-a");
+  await click("task");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+  await click("project");
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+});
+
+it.each([
+  "projects?thread=thread-a",
+  "projects?projectId=signed-project&repositoryId=repository&thread=thread-a",
+  "projects?projectId=signed-project&issueId=issue&thread=thread-a",
+  "projects?projectId=signed-project&pullRequestId=review&thread=thread-a",
+  "inbox?projectId=signed-project&thread=thread-a",
+])("does not mount project-home thread state on a non-channel destination %s", async route => {
+  await mount(`/app/${route}`);
+  expect(node!.querySelector("[data-thread]")).toBeNull();
+});
+
 it.each(["task","review"])("retains the original repository and %s event reference after project navigation and reload",async kind=>{
   const router=await mount("/app/inbox");
   await act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent===kind)!.click();});

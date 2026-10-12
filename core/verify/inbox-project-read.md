@@ -727,3 +727,105 @@ test/projects.test.tsx --no-file-parallelism`；未改原超时或执行池。
 
 本批未执行 docs/full、未构建部署、未截图或 Windows 验收；旧线上图不能认领
 本批搜索。没有修改 i18n、Dart、公开暂存或其他治理模块。
+
+## 2026-10-12 原项目首页频道、Overview 与返回导航
+
+基底 `ab7c601970500bfd0f8cc5b6c05c1101d20ea2fa`。固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的实际来源为：
+
+- `desktop/src/features/projects/ui/ProjectChannelHome.tsx::ProjectChannelHome`；
+- `desktop/src/features/projects/ui/ProjectHomeContextPanel.tsx::ProjectHomeContextPanel`；
+- `desktop/src/features/projects/ui/ProjectHomeColumn.tsx::ProjectHomeColumn`；
+- `desktop/src/features/projects/ui/ProjectContextRail.tsx::ProjectContextRail`；
+- `desktop/src/features/projects/ui/ProjectDetailChrome.tsx::ProjectDetailChrome`；
+- `desktop/src/app/AppTopChromePortal.tsx::AppTopChromePortal`。
+
+四步结论：REQ-24 要求项目卡片打开原项目首页，不是自造公告侧栏。本批删除
+该替代侧栏，将已受权项目的原频道、Overview Channels、开关/收起/拖宽、原
+Projects 返回 crumb 接到共享主体。影响为 ProjectsView → ProjectChannelHome
+→ 原 Web ChannelPane / Native ChannelScreen；不是另写聊天面。Web 传递原
+PlatformApp 的线程、导航守卫、已读和身份消费者；根导航补齐 projectId 且无
+repository/issue/PR 目标时的 thread history，不让工作项页误接频道线程。
+Native 沿原 history hook、本机 identity、profile 和频道查询消费。
+
+项目签名内的频道引用不授权读频道。共享层用现有目录读取当前 scope 的 ACTIVE
+成员，相关频道点击重新读取；Web 另复用原 channel-descriptor key 前缀与 BFF
+读取，原撤权失效通知会卸载频道。Native 同时核实际频道 id/type/member/archive
+与本机 identity，不凭项目作者推导本人、不制造 archived 时间值。目录或频道
+刷新中、失败、非成员、身份晚返回均不沿旧正文继续挂载；原错误态不表示成功。
+scope/session key 变化销毁旧消费，原异步导航拒绝保留失败，不先改变本地选中。
+无新契约、数据库、权限、写动作或错误分类；正文仍由原频道服务负责。
+
+四类差异逐项说明：
+
+- 原样保留：原 portal 目标、主页列/rail 样式、Overview toggle/折叠/拖宽，
+  原 Channels 行及 clickable Projects crumb；没有重排原模块内布局。
+- 共享迁移：上述六模块进入 `client-kit/ts/platform/src/react/projects/`，
+  两端实际入口共用；sidebar 原最小宽度只增加真实 export，不复制常量。
+- 已授权治理适配：现有 BFF/本机 Relay 宿主、fresh 目录与成员准入、身份隔离、
+  不确定/拒绝清正文，以及原六句中英词条；Core 不复制正文。
+- 缺失需恢复：完整 Overview 的工作区 sheet、Tasks/Reviews/Commits/Files/
+  People/Codebase 与 repository healing/management 原消费者尚未接通，不生成
+  假入口或以全局 Tasks 页替代；WorkspaceTabs 和 repository/detail Chrome
+  调用仍缺。当前目录/元数据 pending 是既有加载文案，未迁入完整原首页骨架。
+  本批不声称完整 ProjectChannelHome/Projects。Web 项目首页的 draft/search/
+  message URL 定位不因传递宿主 props 就视为已恢复，Mobile 没有本批页面消费者。
+
+原 SDK `kailo-web-thread-tooltip-sdk` 实核空闲，4 CPU/8 GiB，memory+swap 总
+限额等于内存（无额外 swap），UID 1000，输入、TMPDIR、npm cache 均在 Data；
+可用内存约 34 GiB。只投递本批路径到既有
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/reminder-consumers.RcN79Y`，
+没有新镜像、冷构建或 full。原命令为共享 `node node_modules/typescript/bin/tsc
+--noEmit -p tsconfig.test.json` 和 `node node_modules/vitest/vitest.mjs run
+test/projects.test.tsx --no-file-parallelism`；Web 原 `tsc --noEmit`、Vitest 的
+`src/platform/ui/PulsePane.test.tsx` / `src/app/platform-navigation.test.tsx`；
+Native 原 `tsc --noEmit -p tsconfig.json`。未改超时、线程池或断言安全要求。
+
+失败原件保留：72629 exit 1（59/63）、74499 exit 1（62/63）暴露旧公告断言及
+异步查询 DOM/既有错误文案不匹配；86480 共享类型和 63/63、Web 类型与导航
+32/32 通过，但 Pulse 12/13，原项目 fixture 错用了 `channel` 而不是固定官方
+`buzz-channel`，整轮 exit 1，Native 未执行。纠正 fixture 后 68477 exit 1，
+Pulse 撤权断言读到 Query 尚未通知的 Loading；改为原 vi.waitFor 等待实际错误
+DOM，不使用固定 sleep。70184 Pulse 13/13 后 Native 首次执行报 TS18048，
+本批 channels.data 可空；改为原数据可空时拒绝挂载。31543 最终 exit 0，分别
+记录 Native 类型 0、共享 TypeScript 5.9.3 类型 0、真实共享消费者 63/63。
+React act 警告保留；类型/DOM 不等于 Windows 安装包或浏览器业务验收。
+
+根导航反证 38884 exit 1（1 failed/31 passed），私有副本恢复旧路由判断使项目
+首页 thread 变成 undefined；精确还原 cmp 0 后 37361 exit 0、32/32。原日志在
+上述 `reminder-consumers.RcN79Y/navigation-project-home-negative.log` 与
+`navigation-project-home-restored.log`，SHA256 分别为
+`9469d4717f6eed28fd0b24822b81f6271fd70805fec1577bdd927014dafbe69d` 与
+`55e8d93a72fa3c99cc517d664094d219373fdcea2c26051abbda7cc675b8cc3f`。
+
+同源词条先在 Web SDK 原入口失败：Dart analytics 写 `/.dart-tool` 无权限，
+`i18n.log` exit 1、`dart-entry-error.log` exit 255；未改 HOME 或生成脚本。
+随后复用运行中原 Wren SDK（4 CPU/4 GiB、原 HOME 配置），独立 Data 输入
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/project-home-i18n.iq04CX`，
+52908 原 `python3 tools/gen-platform-i18n.py` 与 `--check` 实际 exit 0。
+输入仅 HEAD 加本批六词条，Dart 输出只取六枚举/六翻译 hunk；正式 TS/Dart
+既有暂存和未暂存差异均保留，不整文件覆盖正式 Dart。
+
+本批其余原始日志目录为
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-channel-home.EtRkGd`。
+根合批 docs 52910 已 exit 0、七节通过（只读当前顶层/docs/design，不覆盖此
+receipt 正文），日志 `project-wren-batch-docs.htxK34/docs.log` SHA256
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+本批未部署、未截图、未 Windows/OS 验收；线上旧 9d718 图片不能认领本批。
+
+共享首页反证 28417 仅在私有输入去掉实际 ACTIVE/member 过滤，原非成员拒绝
+用例实际 exit 1（1 failed/62 skipped）：非法频道 slot 仍被挂载，被断言捕获；
+不是静态字符串检查。复制正式原字节还原、cmp 0 后，14091 原完整项目套件
+exit 0、63/63。原件 `home-membership-negative.log`、
+`home-membership-restored.log` 保留于上述本批日志目录；正式生产文件从未变异。
+
+提交前同批收缩：全树精确检索 TS 字符串与 Dart enum 消费（排除两份词条
+定义）确认已删除公告 aside 的 `projects.announcement`、`projects.close`、
+`projects.owner`、`projects.address`、`projects.repositories`、
+`projects.readBoundary` 六项已无调用，正式 TS 与私有生成输入一并删除。
+`projects.unavailable` 仍由 `ProjectsView.tsx::ProjectWorkItemPage` 的拒绝态
+消费，保留；`projects.closeSearch` / `projects.closeSearchTitle` 没有改动。
+同一原 Wren SDK / 独立输入执行原生成和 `--check`，60236 实际 exit 0，
+日志 `project-home-i18n.iq04CX/contraction.log`；仅回填生成的六项 Dart
+enum/翻译删除 hunk，未覆盖其余 dirty 或公共暂存。最终类型/DOM 上述结果先于
+这次无消费者词条收缩，不将生成检查冒充重新运行整端检查。

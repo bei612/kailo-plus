@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
-import { Folders, Hash, X, Trash2, CircleDot, GitPullRequest } from "lucide-react";
+import { Folders, Hash, Trash2, CircleDot, GitPullRequest } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -15,7 +15,7 @@ import { ProjectDeleteAction } from "./ProjectDeleteAction";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { useCreateProject } from "./useCreateProject";
 import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,type ProjectsViewMode } from "./lib/projectsViewHelpers";
-import { ProjectDetailMetaList, ProjectDetailMetaRow } from "./ProjectDetailMeta";
+import { ProjectChannelHome, type ProjectChannelRenderer } from "./ProjectChannelHome";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
 import type { Project } from "./projectModels";
@@ -34,6 +34,7 @@ import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
+  renderChannel?:ProjectChannelRenderer;
   renderWorkItems?:(children:ReactNode,viewerPubkey:string)=>ReactNode;
   workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
 export function ProjectsView(props:ProjectsViewProps) {
@@ -105,7 +106,7 @@ function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:Projec
     <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>;
 }
 
-function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems}:ProjectsViewProps) {
+function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState<ProjectsFilter>(()=>{
@@ -121,7 +122,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
   const [localSelected,setLocalSelected]=useState<string|null>(null);
   const selected=selectedProjectId===undefined?localSelected:selectedProjectId;
-  const setSelected=async(id:string|null)=>{if(!lifetime.active)return;setLocalSelected(id);await onSelectedProjectChange?.(id);};
+  const setSelected=async(id:string|null)=>{if(!lifetime.active)return;await onSelectedProjectChange?.(id);if(lifetime.active)setLocalSelected(id);};
   const query=useQuery({queryKey:["projects",host.scopeKey],queryFn:({signal})=>loadProjectDirectory(host,signal),retry:false,refetchOnWindowFocus:"always"});
   const createCapability=useQuery({queryKey:["project-create-capability",host.scopeKey],queryFn:()=>client.roleWorkspaces(),
     enabled:Boolean(host.publish)&&query.isSuccess&&!query.isFetching,retry:false,refetchOnWindowFocus:"always"});
@@ -161,6 +162,11 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
           onSelect={event=>{event.preventDefault();event.stopPropagation();onDelete();}}><Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>
       </ProjectListRowMenu>)}/>:<Fragment key={project.id}>{row()}</Fragment>;
   };
+  if (selected) return active && renderChannel && onOpenChannel
+    ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} scopeKey={host.scopeKey}
+        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onGoProjects={()=>setSelected(null)}/>
+    : <ProjectPanelState error={!query.isPending&&!query.isFetching}
+        title={t(query.isPending||query.isFetching?"platform.loading":query.isError?"platform.loadFailed":"projects.home.channelMissing")}/>;
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
       <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4">
@@ -179,17 +185,6 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
           {visible.map(projectRow)}
         </section>}
     </div>
-    {active&&filter==="projects"?<aside className="flex w-96 max-w-full shrink-0 flex-col overflow-auto border-l border-border bg-background" aria-label={t("projects.announcement")}>
-      <header className="flex items-center gap-2 px-6 py-4"><h2 className="min-w-0 flex-1 break-words text-lg font-semibold">{active.name}</h2>
-        <Button variant="ghost" size="icon" aria-label={t("projects.close")} onClick={()=>{void setSelected(null).catch(()=>{if(lifetime.active)setNavigationFailed("open");});}}><X className="h-4 w-4"/></Button></header>
-      <p className="whitespace-pre-wrap break-words px-6 text-sm text-muted-foreground">{active.description}</p>
-      <ProjectDetailMetaList><ProjectDetailMetaRow label={t("projects.owner")}><code className="break-all text-xs">{active.owner}</code></ProjectDetailMetaRow><ProjectDetailMetaRow label={t("projects.address")}><code className="break-all text-xs">{active.projectAddress}</code></ProjectDetailMetaRow></ProjectDetailMetaList>
-      <div className="space-y-3 px-6 pb-6"><h3 className="text-sm font-semibold">{t("projects.repositories")}</h3>
-        {active.repositories.map(repo=><div key={repo.repoAddress} className="space-y-1 rounded-lg bg-muted/35 p-3"><p className="break-words text-sm font-medium">{repo.name}</p><p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{repo.description}</p><code className="block break-all text-xs">{repo.repoAddress}</code></div>)}
-        {active.unavailableRepositoryAddresses?.map(address=><p key={address} className="break-all text-xs">{t("projects.unavailable")} <code>{address}</code></p>)}
-        <p className="text-xs text-muted-foreground">{t("projects.readBoundary")}</p>
-      </div>
-    </aside>:null}
     <CreateProjectDialog open={createOpen&&(canCreate||creation.busy)} onOpenChange={setCreateOpen} isCreating={creation.busy} frozen={creation.intent?.input}
       onCreate={async input=>{
         const project=await creation.create(input);

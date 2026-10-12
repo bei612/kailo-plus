@@ -13,6 +13,7 @@ import {ProjectsPane} from "./ProjectsPane";
 import { usePulseHost } from "@client-kit/platform/react/pulse";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
+import type {BffTransport} from "@client-kit/platform/transport";
 
 const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
 vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
@@ -47,11 +48,34 @@ it("does not gate the project directory on unrelated own-profile or composer peo
   api.profile.mockRejectedValue(new Error("Unrelated profile failed"));
   const send=vi.fn(async()=>{throw new Error("No composer directory request");});
   await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en"><TooltipProvider>
-    <ProjectsPane scopeKey="tenant:viewer" onStartDm={vi.fn()} onSelectedProjectChange={vi.fn()}/>
+    <ProjectsPane scopeKey="tenant:viewer" onStartDm={vi.fn()} onSelectedProjectChange={vi.fn()} renderChannel={vi.fn()}/>
   </TooltipProvider></PlatformProvider></QueryClientProvider>));
   await vi.waitFor(()=>expect(api.queryProjects).toHaveBeenCalled());
   expect(host.querySelector('[data-testid="projects-screen"]')).not.toBeNull();
   expect(api.profile).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+});
+it("passes only a freshly admitted matching channel descriptor to the Project home host and unloads on live invalidation",async()=>{
+  const channelId="12345678-1234-4234-8234-123456789001",workspaceId="22345678-1234-4234-8234-123456789001";
+  const channel={channelId,channelType:"stream",name:"Project home",archived:false};
+  const row={id:workspaceId,channel,isMember:true,membershipState:"ACTIVE",visibility:"open",memberCount:1};
+  api.queryProjects.mockImplementation(async(request:{view:string})=>({pubkey:own,limit:20,events:request.view==="PROJECTS"?
+    [{id:eventId,pubkey:own,kind:30621,created_at:1,content:"",tags:[["d","project"],["name","Actual project"],["buzz-channel",channelId]]}]:[]}));
+  const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:request.path.includes("discoverable-workspaces")?{items:[row]}:channel}));
+  const client=createBffClient({send});const renderChannel=vi.fn(workspace=><div data-testid="project-native-channel">{workspace.channel.name}</div>);
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} currentPrincipalId="principal" locale="en"><TooltipProvider>
+    <ProjectsPane scopeKey="tenant:principal:session" selectedProjectId={`30621:${own}:project`} onStartDm={vi.fn()}
+      onSelectedProjectChange={vi.fn()} onOpenChannel={vi.fn()} renderChannel={renderChannel}/>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="project-native-channel"]')).not.toBeNull());
+  expect(renderChannel).toHaveBeenLastCalledWith(row);
+  expect(send.mock.calls.map(([request])=>request.path)).toContain(`/api/v1/workspaces/${workspaceId}/channel`);
+  let fail!:(error:Error)=>void;send.mockImplementation(()=>new Promise((_resolve,reject)=>{fail=reject;}));
+  let pending!:Promise<void>;
+  await act(async()=>{pending=cache.invalidateQueries({queryKey:["platform","channel-descriptor","principal",workspaceId]});});
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="project-native-channel"]')).toBeNull());
+  await act(async()=>{fail(new Error("membership revoked"));await pending;});
+  expect(host.querySelector('[data-testid="project-native-channel"]')).toBeNull();
+  await vi.waitFor(()=>expect(host.textContent).toContain("This project's channel could not be found."));
 });
 it("uses the project read viewer for read-only content without eager own-profile or composer people queries",async()=>{
   api.profile.mockRejectedValue(new Error("Unrelated profile failed"));

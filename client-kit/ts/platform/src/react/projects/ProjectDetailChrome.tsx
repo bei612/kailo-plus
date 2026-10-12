@@ -1,0 +1,141 @@
+// Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectDetailChrome.tsx.
+import { useUiT } from "../context";
+import { ChevronRight, Folders } from "lucide-react";
+import type * as React from "react";
+
+import { AppTopChromePortal } from "./AppTopChromePortal";
+import type { Project, Repository } from "./projectModels";
+
+export type ProjectDetailWorkItemCrumb = {
+  category: string;
+  title: string;
+  clear: () => void;
+};
+
+export function ProjectDetailChrome({
+  actions,
+  activeTabCrumb,
+  activeWorkItemCrumb,
+  onGoProjectHome,
+  onGoProjects,
+  project,
+  repository,
+}: {
+  /** Repository-scoped controls, rendered left of the project-wide ones. */
+  actions?: React.ReactNode;
+  activeTabCrumb: string | null;
+  activeWorkItemCrumb: ProjectDetailWorkItemCrumb | null;
+  onGoProjectHome: () => void;
+  onGoProjects: () => void;
+  project: Project;
+  repository?: Repository | null;
+}) {
+  const t = useUiT();
+  const repositoryCrumb = repository ? (
+    activeWorkItemCrumb ? (
+      <>
+        <button
+          className="min-w-0 truncate rounded-md px-0.5 py-1 font-medium transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="project-breadcrumb-repository"
+          onClick={onGoProjectHome}
+          type="button"
+        >
+          {repository.name}
+        </button>
+        <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
+        <button
+          className="shrink-0 rounded-md px-0.5 py-1 font-medium transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={activeWorkItemCrumb.clear}
+          type="button"
+        >
+          {activeWorkItemCrumb.category}
+        </button>
+        <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
+        <span
+          aria-current="page"
+          className="min-w-0 truncate px-0.5 font-medium opacity-60"
+        >
+          {activeWorkItemCrumb.title}
+        </span>
+      </>
+    ) : activeTabCrumb ? (
+      <>
+        <button
+          className="min-w-0 truncate rounded-md px-0.5 py-1 font-medium transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="project-breadcrumb-repository"
+          onClick={onGoProjectHome}
+          type="button"
+        >
+          {repository.name}
+        </button>
+        <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
+        <span
+          aria-current="page"
+          className="min-w-0 truncate px-0.5 font-medium opacity-60"
+        >
+          {activeTabCrumb}
+        </span>
+      </>
+    ) : (
+      <span
+        aria-current="page"
+        className="min-w-0 truncate px-0.5 font-medium opacity-60"
+        data-testid="project-breadcrumb-repository"
+      >
+        {repository.name}
+      </span>
+    )
+  ) : null;
+  return (
+    <AppTopChromePortal>
+      <div
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 pl-2"
+        data-tauri-drag-region
+        data-testid="project-detail-chrome"
+      >
+        <nav
+          aria-label={t("projects.home.breadcrumb")}
+          className="absolute flex max-w-[50%] min-w-0 -translate-x-1/2 -translate-y-px items-center gap-0.5 text-xs text-sidebar-foreground/65 transition-[left] duration-200 ease-linear motion-reduce:transition-none"
+          style={{
+            left: "calc(50% + var(--app-top-chrome-center-offset, 0rem))",
+          }}
+        >
+          <button
+            className="flex shrink-0 items-center gap-1.5 rounded-md px-1 py-1 font-medium transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onGoProjects}
+            type="button"
+          >
+            <Folders className="h-3.5 w-3.5" />
+            {t("platform.tab.projects")}
+          </button>
+          <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
+          {repositoryCrumb ? (
+            <>
+              <button
+                className="min-w-0 truncate rounded-md px-0.5 py-1 font-medium transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="project-breadcrumb-project"
+                onClick={onGoProjectHome}
+                type="button"
+              >
+                {project.name}
+              </button>
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
+              {repositoryCrumb}
+            </>
+          ) : (
+            <span
+              aria-current="page"
+              className="min-w-0 truncate px-0.5 font-medium opacity-60"
+              data-testid="project-breadcrumb-project"
+            >
+              {project.name}
+            </span>
+          )}
+        </nav>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {actions}
+        </div>
+      </div>
+    </AppTopChromePortal>
+  );
+}

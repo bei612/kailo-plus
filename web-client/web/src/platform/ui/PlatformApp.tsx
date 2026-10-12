@@ -440,6 +440,19 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={openDirectMessage}/>
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
+        renderChannel={workspace=><ChannelPane key={`${session.platformSessionId}:${workspace.id}`} workspaceId={workspace.id}
+          channelId={workspace.channel.channelId} channelName={workspace.channel.name} archived={workspace.channel.archived}
+          myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+          threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId}
+          onClearMessageRouteTarget={navigation.clearMessageRouteTarget} onNavigationGuardChange={navigation.registerThreadNavigationGuard}
+          restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId}
+          autoSendDraftKey={navigation.draftTarget?.send?navigation.draftTarget.key:undefined} onAutoSendConsumed={navigation.consumeDraftSend}
+          onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
+          onStartDm={openDirectMessage} onOpenMessageLink={openMessageLink}
+          targetMessageId={messageTarget?.channelId===workspace.id?messageTarget.messageId:undefined}
+          targetThreadRootId={messageTarget?.channelId===workspace.id?messageTarget.threadRootId??undefined:undefined}
+          targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
+          targetSearchActivationId={navigation.searchHighlight?.activationId}/>}
         workItemTarget={navigation.projectWorkItemTarget} onStartDm={openDirectMessage}
         selectedProjectId={navigation.projectId} onSelectedProjectChange={(id,target)=>navigation.openProject(id,target)}
         lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{await workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
