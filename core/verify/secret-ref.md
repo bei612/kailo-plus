@@ -578,3 +578,79 @@ BuildKit 与 cgroup 中恢复 Core。随后将部署引导及直接建 Tenant �
 
 原有 16 个子 namespace 不属于本轮登记清单，未删除，也不据此声称
 生产 Tenant 销毁已闭合；本轮删除的四个测试 namespace 中的密钥不可恢复。
+
+## 2026-10-12 ActionToken 首键生产与原 Agent 投递接线
+
+本批四步影响结论：
+
+1. 权威为 `.design/03` §6、`.design/07` §2.5 与原
+   `ActionTokenSigningDelivery`。既有 Core signer 已读取版本化私钥并用投递 JWKS
+   自验签，但缺少首键生产、公钥导出及原启动文件挂载消费者；IdP JWKS 不可替代。
+   OpenBao 固定来源 `735723da5628148f232497a48a35a137b6512103` 的 KV CAS、
+   AppRole wrapping 与 Agent template 仍是写入、引导、分发机制。
+2. 影响仅原 Core 部署 CLI、`secret-store::write_once` 的多字段原 CAS 消费、
+   `start-core.sh`、原环境示例与原部署检查。既有单字段写入委托同一实现；
+   无新 schema、数据库状态或业务动作。首键 CLI 需要新增二进制，已冻结的
+   `236b` 发布制品不含此命令；已有 signer 消费投递的能力不等于有首键生产者。
+3. 初始化不接受业务调用、不监听端口、不注册 SERVICE 或创建 binding。
+   用途与私钥同一 CAS 写入；错误或 ACK 不明不覆盖原位置，公钥导出错误不得报告
+   完成。Root 引导凭据只经原受控文件和 stdin；Agent 只获专属公钥读策略的一次性
+   wrapped secret ID，配置、公钥和日志均不包含私钥。Core 完成后撤销本次凭据。
+4. 零组件无签名投递保持启动；半份或歧义配置拒绝。首键并发写冲突由原 CAS 与
+   精确字段比对拒绝，重新进入只读原版本；已轮换版本不回退。Agent 超时、文件
+   错配、读回不符均非成功，只清理本次精确短命运行体，不停止业务服务。
+   公钥元数据不代替资源授权、quota 或 release/binding 门禁。
+
+本批原 Rust、部署消费者与真实 OpenBao/Agent 均已执行；没有部署新业务 Core、
+注册 release 或激活 binding。已冻结、尚未部署的 `236b` 制品没有新增 CLI，不能据此改写其来源。
+验证输入与原命令日志目录：
+`/volumes/data/kailo/tmp/receiver-binding-lifecycle.VredXg/tmp/action-token-bootstrap.saKgg5`。
+
+执行入口和真实结果：
+
+- 原 SDK `kailo-receiver-binding-check` 回读为 `4 CPU / 8 GiB / swap 0`、UID 1000、
+  只读根与 Data 挂载，执行前仅 sleep，宿主可用内存 35 GiB。固定 SDK image 为
+  `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+  未新增 Cargo target、下载依赖、构建或加载镜像。
+- `cargo test --locked --offline -j16 -p secret-store deterministic_multi_field_write_keeps_one_cas_and_rejects_partial_or_changed_intent -- --nocapture`：
+  1 passed；`cargo test --locked --offline -j16 -p platform-core --bin platform-core bootstrap_public_key_verifies_the_original_pem_signer_without_private_fields -- --nocapture`：
+  1 passed；外层 56757 退出 0。首次 65043 因错误指定不存在的 `stable` toolchain
+  退出 1；改用 SDK 原固定 1.90.0，不安装或升级。
+- 私有删除逐字段相等判断，原 CAS 测试明确在不同 key 意图断言失败，1768 退出 101；
+  原字节恢复后相同 lib 过滤 1 passed。随后同 SDK 原
+  `cargo build --locked --offline -j16 -p platform-core --bin platform-core` 完成，
+  82996 整体退出 0。该新引导二进制 SHA256
+  `ed7ebb8e3fd1429875c30ca9369d3b4a7600569c7edd92b822ed1bb75ca64133`。
+- 原 `tools/check.sh::step_security` 中实际 adapter/ActionToken 投递消费者原样执行，
+  45849 退出 0；私有移除 `secretAudience` 校验，44012 退出 1，命中同名否定断言；
+  恢复后 54930 退出 0。完整 step_security 初次 48098 退出 1：窄快照没有真实 Git
+  ignore 上下文及设计文件，新增投递段本身通过，不能称整安全门禁通过。
+- 原 Core `bootstrap-action-token` 在一次性 `4 CPU / 8 GiB`、只读根、app 网络的
+  同固定 SDK 镜像中运行，使用原 AppRole wrapping 生产者，首次 Core 退出 0，
+  外层 42540 退出 1 是把原 JSON 日志加结果当单一文档的证据解析错误。修正运维
+  解析后仅对同引用重入，8278 退出 0，`secretVersion=publicJwksVersion=1`；
+  原 Core 读回已存在首版，不重新生成或覆盖私钥。
+- `start-core.sh` 中原 `PYACTIONAGENT` 片段直接执行，50342 退出 0。public-reader
+  仅有该公钥 data 路径的 read policy；Agent 的一次性 wrapping 投递、版本固定模板、
+  公钥 JSON 与 Core 导出一致均真实通过。Agent `2 CPU / 2 GiB`、无 swap、非 root，
+  两个精确 Core 短命容器与该 Agent 已清理；缓存、秘密引用和日志保留。
+
+真实公钥位于
+`/volumes/data/kailo/tmp/cells-upload-delivery.3TQNvd/action-token/public/jwks.json`，
+SHA256 `399e117f9c267683f72ab53f03f825b45c0a4dc106f6c583cd8cdb006cca4ce0`。
+同级上层 `signing.json` 只含版本化引用：私钥位置为
+`platform/kv/action-token/kailo-upload-sync-service-20261012-3tqnvd`，公钥位置为
+`platform/kv/action-token-public/kailo-upload-sync-service-20261012-3tqnvd`。
+两者均为专属 fixture，不复制线上私钥，不把此公钥称为尚未部署的独立 receiver Core
+已消费。私钥只在 Core 内存与 OpenBao，未写入宿主文件或日志；运行文件中的一次性
+wrapping 凭据不是私钥，也不交给浏览器。原平台身份、业务数据及线上 Core 未改动。
+
+原件 SHA256：`core-positive-correct-toolchain.log`
+`f5eeeabbccdbb70c74a1d661a0cdb4657086f74e06cd834314719be894ada0a1`；
+`cas-mutation.log` `d2241a7965c5a71992b86c9977c035bea28c1f02e81efa2da68962c3886d90c3`；
+`cas-restored-and-cli-build.log` `39da60d415e7780559e5c65f9e61b02a584f5acb404b70ac3f6873ea8d8a7085`；
+`deployment-mutation.log` `f931255d5f9b9ade32f49cf78e239956c253b0c2d0afd7d4b683e97c5c5a91f5`；
+`deployment-restored.log` `1323cc829e9d396cb03ff0272215e0352d361040b9ace5eaf1bd491ff205eedb`；
+`real-first-key.log` `dbf9f9f34513cca3d2106935938ef27ac89aac25ef53e8a3d16d2879db612f31`；
+`real-same-key.log` `806175221d79bde4ea98d90c713ea278dd6e2c9bf486ce025c81c852ac8cd36b`；
+`real-public-agent.log` `a22c6d01caded84384195560ecc43d8b943bb6977c3e0f9dad8e7fc16b59d5b4`。

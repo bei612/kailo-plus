@@ -59,6 +59,161 @@ fn delivery() -> Result<Value, Refusal> {
     Ok(value)
 }
 
+/// Deployment-only first-key initialization. No HTTP listener, business action,
+/// identity registration or binding transition is reachable from this command.
+/// Keys remain in the original versioned OpenBao authority; the public-only
+/// record is consumed by the existing OpenBao Agent template transport.
+pub(crate) async fn bootstrap_signing() -> Result<Value, String> {
+    let config = delivery().map_err(|_| "ActionToken signing configuration invalid")?;
+    let public_locator = std::env::var("ACTION_TOKEN_PUBLIC_JWKS_LOCATOR")
+        .map_err(|_| "Missing ACTION_TOKEN_PUBLIC_JWKS_LOCATOR")?;
+    let audience = std::env::var("OPENBAO_SERVICE_IDENTITY")
+        .map_err(|_| "Missing OPENBAO_SERVICE_IDENTITY")?;
+    if config["secretAudience"] != audience
+        || config["secretVersion"] != 1
+        || config["privateKeyField"] == "purpose"
+        || !public_locator.starts_with("platform/")
+        || config["secretLocator"] == public_locator
+        || ["SERVICE_OIDC_ISSUER", "GATEWAY_SERVICE_ISSUER"]
+            .iter()
+            .any(|name| {
+                std::env::var(name)
+                    .ok()
+                    .is_some_and(|issuer| config["issuer"] == issuer)
+            })
+    {
+        return Err("ActionToken initial key delivery refused; rotation is not bootstrap".into());
+    }
+    let secrets = secret_store::SecretStore::from_env()?;
+    let audit = secret_store::AuditObserver::from_env()?;
+    secrets
+        .connect()
+        .await
+        .map_err(|_| "ActionToken secret credential unavailable")?;
+    let result = async {
+        audit
+            .connect()
+            .await
+            .map_err(|_| "ActionToken audit credential unavailable")?;
+        if audit
+            .enabled_devices()
+            .await
+            .map_err(|_| "ActionToken audit unavailable")?
+            == 0
+        {
+            return Err("ActionToken initialization requires an enabled audit device".to_owned());
+        }
+        bootstrap_signing_key(&secrets, &config, &public_locator).await
+    }
+    .await;
+    // Do not leave either one-use bootstrap session alive on a partial failure.
+    let audit_closed = audit.revoke_current().await;
+    let secrets_closed = secrets.revoke_current().await;
+    if audit_closed.is_err() || secrets_closed.is_err() {
+        return Err("ActionToken bootstrap credential revocation incomplete".into());
+    }
+    result
+}
+
+async fn bootstrap_signing_key(
+    secrets: &secret_store::SecretStore,
+    config: &Value,
+    public_locator: &str,
+) -> Result<Value, String> {
+    let field = text(config, "privateKeyField").map_err(|_| "Invalid private key field")?;
+    let locator = text(config, "secretLocator").map_err(|_| "Invalid private key reference")?;
+    let current = secrets
+        .observed_version(locator)
+        .await
+        .map_err(|_| "ActionToken private key version unavailable")?;
+    if current == 0 {
+        let private = fresh_signing_key().map_err(|_| "ActionToken key generation failed")?;
+        let version = secrets
+            .write_once_fields(locator, &[("purpose", "ACTION_TOKEN"), (field, &private)])
+            .await
+            .map_err(|_| "ActionToken initial write unconfirmed; observe the same reference")?;
+        if version != 1 {
+            return Err("ActionToken initial version mismatch".into());
+        }
+    } else if current != 1 {
+        return Err("ActionToken existing version is not an initial key".into());
+    }
+    let reference = secret_store::SecretRef {
+        locator: locator.into(),
+        version: 1,
+        audience: text(config, "secretAudience")
+            .map_err(|_| "Invalid key audience")?
+            .into(),
+    };
+    let purpose = secrets
+        .read(&reference, "purpose")
+        .await
+        .map_err(|_| "ActionToken key purpose unavailable")?;
+    if purpose.expose() != "ACTION_TOKEN" {
+        return Err("ActionToken key purpose mismatch".into());
+    }
+    let private = secrets
+        .read(&reference, field)
+        .await
+        .map_err(|_| "ActionToken private key unavailable")?;
+    let public = public_signing_key(private.expose(), reference.version)
+        .map_err(|_| "ActionToken private key is not the expected ES256 key")?;
+    let public =
+        serde_json::to_string(&public).map_err(|_| "ActionToken public encoding failed")?;
+    let public_version = secrets
+        .write_once(public_locator, "value", &public)
+        .await
+        .map_err(|_| "ActionToken public export unconfirmed; observe the same reference")?;
+    if public_version != 1 {
+        return Err("ActionToken public export is not an initial version".into());
+    }
+    Ok(
+        json!({"secretLocator":locator,"secretVersion":reference.version,
+        "publicJwksLocator":public_locator,"publicJwksVersion":public_version,
+        "jwksFile":config["jwksFile"],"bindingActivated":false}),
+    )
+}
+
+fn fresh_signing_key() -> Result<String, ()> {
+    use base64::Engine;
+    let random = ring::rand::SystemRandom::new();
+    let private = ring::signature::EcdsaKeyPair::generate_pkcs8(
+        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+        &random,
+    )
+    .map_err(|_| ())?;
+    // PKCS#8 PEM is the exact format consumed by the existing ActionToken signer.
+    Ok(format!(
+        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+        base64::engine::general_purpose::STANDARD.encode(private.as_ref())
+    ))
+}
+
+fn public_signing_key(private: &str, version: u32) -> Result<Value, ()> {
+    use base64::Engine;
+    use ring::signature::KeyPair;
+    let body = private
+        .strip_prefix("-----BEGIN PRIVATE KEY-----\n")
+        .ok_or(())?
+        .strip_suffix("\n-----END PRIVATE KEY-----\n")
+        .ok_or(())?;
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(body.replace('\n', ""))
+        .map_err(|_| ())?;
+    let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
+        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+        &der,
+        &ring::rand::SystemRandom::new(),
+    )
+    .map_err(|_| ())?;
+    let point = pair.public_key().as_ref();
+    let encode = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    Ok(json!({"keys":[{"kty":"EC","crv":"P-256","alg":"ES256",
+        "kid":version.to_string(),"use":"sig","key_ops":["verify"],
+        "x":encode.encode(point.get(1..33).ok_or(())?),
+        "y":encode.encode(point.get(33..65).ok_or(())?)}]}))
+}
+
 pub(crate) fn native_read_deadline() -> Result<i64, Refusal> {
     chrono::Utc::now()
         .timestamp()
@@ -847,6 +1002,44 @@ pub(crate) fn verify(token: &str, audience: &str) -> Result<Value, Refusal> {
 #[cfg(test)]
 mod application_intent_tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_public_key_verifies_the_original_pem_signer_without_private_fields() {
+        let private = fresh_signing_key().unwrap();
+        let public = public_signing_key(&private, 1).unwrap();
+        assert_eq!(public["keys"][0]["kid"], "1");
+        assert_eq!(public["keys"][0].as_object().unwrap().len(), 8);
+        let keyset: jsonwebtoken::jwk::JwkSet = serde_json::from_value(public).unwrap();
+        let mut header = Header::new(Algorithm::ES256);
+        header.kid = Some("1".into());
+        let claims = json!({"iss":"action-fixture","aud":"adapter-fixture",
+            "exp":chrono::Utc::now().timestamp()+60});
+        let token = jsonwebtoken::encode(
+            &header,
+            &claims,
+            &EncodingKey::from_ec_pem(private.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_issuer(&["action-fixture"]);
+        validation.set_audience(&["adapter-fixture"]);
+        let verified = jsonwebtoken::decode::<Value>(
+            &token,
+            &DecodingKey::from_jwk(keyset.find("1").unwrap()).unwrap(),
+            &validation,
+        )
+        .unwrap();
+        assert_eq!(verified.claims, claims);
+        assert!(public_signing_key("not-a-private-key", 1).is_err());
+        let other = public_signing_key(&fresh_signing_key().unwrap(), 1).unwrap();
+        let other: jsonwebtoken::jwk::JwkSet = serde_json::from_value(other).unwrap();
+        assert!(jsonwebtoken::decode::<Value>(
+            &token,
+            &DecodingKey::from_jwk(other.find("1").unwrap()).unwrap(),
+            &validation
+        )
+        .is_err());
+    }
 
     fn execution(human: bool) -> Execution {
         let initiator = Uuid::new_v4();

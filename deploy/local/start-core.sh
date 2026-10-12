@@ -11,10 +11,12 @@
 # 镜像先构建、投递后取：构建可能远长于 OPENBAO_SECRET_ID_WRAP_TTL，先取投递再构建，
 # 投递在 Core 启动前就已过期。
 set -euo pipefail
+prepare_action_token=false
 case "$#:$*" in
   0:) build=true ;;
   1:--no-build) build=false ;;
-  *) echo '用法：start-core.sh [--no-build]' >&2; exit 2 ;;
+  1:--prepare-action-token) build=false; prepare_action_token=true ;;
+  *) echo '用法：start-core.sh [--no-build|--prepare-action-token]' >&2; exit 2 ;;
 esac
 cd "$(dirname "$0")"
 (cd ../.. && python3 tools/gen-registry.py --check)
@@ -22,6 +24,13 @@ cd "$(dirname "$0")"
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
   "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
+if [ "$prepare_action_token" = true ]; then
+  : "${ACTION_TOKEN_SIGNING_FILE:?}" "${ACTION_TOKEN_PUBLIC_JWKS_LOCATOR:?}" \
+    "${ACTION_TOKEN_JWKS_READER_ROLE:?}" "${CHECK_CPUS:?}" "${CHECK_MEMORY:?}"
+  . ../../tools/container-safety.sh
+  container_safety_init
+  container_resource_preflight
+fi
 # 可选运行投递仅在五项完整时合入同一 Compose；关闭态不能给 Core 注入空值。
 runtime_names=(AGENT_RUNTIME_BINARY AGENT_RUNTIME_STATE_ROOT AGENT_RUNTIME_RPC_TIMEOUT_SECONDS
   AGENT_RUNTIME_MAX_MESSAGE_BYTES AGENT_RUNTIME_PROFILES_FILE)
@@ -36,6 +45,7 @@ fi
 runtime_config=
 gateway_config=
 adapter_config=
+action_token_config=
 tmp=
 cleanup_start_core() {
   local status=$?
@@ -43,6 +53,7 @@ cleanup_start_core() {
   if [ -n "$runtime_config" ]; then rm -f -- "$runtime_config" || status=2; fi
   if [ -n "$gateway_config" ]; then rm -f -- "$gateway_config" || status=2; fi
   if [ -n "$adapter_config" ]; then rm -f -- "$adapter_config" || status=2; fi
+  if [ -n "$action_token_config" ]; then rm -f -- "$action_token_config" || status=2; fi
   if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
   exit "$status"
 }
@@ -92,6 +103,129 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump({"services": {"core-bff": {"environment": values, "volumes": volumes}}}, stream)
 PYRUNTIME
   runtime_compose=(-f "$runtime_config")
+fi
+# DD-49/70/94: Core reads only versioned SecretRef metadata and Agent-rendered
+# public keys here. Its private signing key remains in OpenBao.
+action_token_compose=()
+if [ -n "${ACTION_TOKEN_SIGNING_FILE:-}" ]; then
+  action_token_config=$(mktemp)
+  ACTION_TOKEN_SIGNING_FILE="$ACTION_TOKEN_SIGNING_FILE" \
+  ACTION_TOKEN_PREPARE="$prepare_action_token" \
+  ACTION_TOKEN_PUBLIC_JWKS_LOCATOR="${ACTION_TOKEN_PUBLIC_JWKS_LOCATOR:-}" \
+  CHECK_CPUS="${CHECK_CPUS:-}" CHECK_MEMORY="${CHECK_MEMORY:-}" \
+  OPENBAO_SERVICE_IDENTITY="${OIDC_SERVICE_CLIENT_ID:?}" \
+  OIDC_ISSUER="$OIDC_ISSUER" GATEWAY_SERVICE_ISSUER="${GATEWAY_SERVICE_ISSUER:-}" \
+  python3 - "$action_token_config" <<'PYACTIONTOKEN'
+import base64
+import ctypes
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import sys
+
+def reject():
+    raise SystemExit("ActionToken 投递无效：要求完整版本化 SecretRef 与匹配 public-only JWKS，不挂载私钥")
+
+def unique(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            reject()
+        value[key] = item
+    return value
+
+def document(raw):
+    if not isinstance(raw, str):
+        reject()
+    path = Path(raw)
+    canonical = PurePosixPath(raw)
+    if (not canonical.is_absolute() or str(canonical) != raw or ".." in canonical.parts
+            or not path.is_file() or path.resolve(strict=True) != path):
+        reject()
+    value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+    if not isinstance(value, dict):
+        reject()
+    return path, value
+
+try:
+    source, value = document(os.environ["ACTION_TOKEN_SIGNING_FILE"])
+    schema = json.loads(Path("../../contracts/domain/action_token_signing_delivery.schema.json").read_text(encoding="utf-8"))
+    if set(value) != set(schema["required"]):
+        reject()
+    for name, field in schema["properties"].items():
+        item = value[name]
+        if field["type"] == "string" and (not isinstance(item, str) or not item or item.strip() != item
+                or any(ord(c) < 32 or ord(c) == 127 for c in item)):
+            reject()
+        if field["type"] == "integer" and (type(item) is not int or item <= 0):
+            reject()
+    if (value["secretVersion"] > ctypes.c_uint32(-1).value
+            or value["tokenSeconds"] > (1 << (ctypes.sizeof(ctypes.c_int64) * 8 - 1)) - 1
+            or not re.fullmatch(r"platform/[A-Za-z0-9_-]+/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+", value["secretLocator"])
+            or value["secretAudience"] != os.environ["OPENBAO_SERVICE_IDENTITY"]
+            or value["issuer"] in {os.environ["OIDC_ISSUER"], os.environ["GATEWAY_SERVICE_ISSUER"]}
+            or value["privateKeyField"] == "purpose"):
+        reject()
+    preparing = os.environ["ACTION_TOKEN_PREPARE"] == "true"
+    public = Path(value["jwksFile"])
+    public_name = PurePosixPath(value["jwksFile"])
+    if (not public_name.is_absolute() or str(public_name) != value["jwksFile"]
+            or ".." in public_name.parts or public == source
+            or not public.parent.is_dir() or public.parent.resolve(strict=True) != public.parent):
+        reject()
+    if preparing:
+        locator = os.environ["ACTION_TOKEN_PUBLIC_JWKS_LOCATOR"]
+        if (not re.fullmatch(r"platform/[A-Za-z0-9_-]+/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+", locator)
+                or locator == value["secretLocator"] or value["secretVersion"] != 1
+                or not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)?", os.environ["CHECK_CPUS"])
+                or not re.fullmatch(r"[1-9][0-9]*(?:[kKmMgG][bB]?)?", os.environ["CHECK_MEMORY"])
+                or public.parent == source.parent or public.parent.stat().st_mode & 0o077
+                or public.parent.stat().st_uid != os.geteuid()
+                or public.name in {"action-token-role-id", "action-token-wrapped-secret-id", "action-token-agent.hcl"}
+                or any(path.name not in {public.name, "action-token-role-id", "action-token-wrapped-secret-id", "action-token-agent.hcl"}
+                    or not path.is_file() or path.is_symlink() for path in public.parent.iterdir())):
+            reject()
+        # The initial Core command must run before Agent can render the public
+        # file. It does not listen, serve a binding or consume this absent file.
+        initial = {"environment": {"ACTION_TOKEN_SIGNING_FILE": str(source),
+                    "ACTION_TOKEN_PUBLIC_JWKS_LOCATOR": locator},
+            "cpus": os.environ["CHECK_CPUS"], "mem_limit": os.environ["CHECK_MEMORY"],
+            "memswap_limit": os.environ["CHECK_MEMORY"],
+            "volumes": [{"type":"bind", "source":str(source), "target":str(source),
+                "read_only":True, "bind":{"create_host_path":False}}]}
+        with open(sys.argv[1], "w", encoding="utf-8") as stream:
+            json.dump({"services":{"core-bff":initial}}, stream)
+        raise SystemExit(0)
+    public, jwks = document(value["jwksFile"])
+    if public == source or set(jwks) != {"keys"} or not isinstance(jwks["keys"], list) or not jwks["keys"]:
+        reject()
+    ids = set()
+    for key in jwks["keys"]:
+        if (not isinstance(key, dict) or set(key) - {"kty", "crv", "alg", "kid", "x", "y", "use", "key_ops"}
+                or key.get("kty") != "EC" or key.get("crv") != "P-256" or key.get("alg") != "ES256"
+                or key.get("use", "sig") != "sig" or key.get("key_ops", ["verify"]) != ["verify"]):
+            reject()
+        kid = key.get("kid")
+        if not isinstance(kid, str) or not re.fullmatch(r"[1-9][0-9]*", kid) or kid in ids:
+            reject()
+        ids.add(kid)
+        for field in ("x", "y"):
+            coordinate = key.get(field)
+            if (not isinstance(coordinate, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", coordinate)
+                    or len(base64.urlsafe_b64decode(coordinate + "=" * (-len(coordinate) % 4))) != 32):
+                reject()
+    if str(value["secretVersion"]) not in ids:
+        reject()
+    delivery = {"environment": {"ACTION_TOKEN_SIGNING_FILE": str(source)}, "volumes": [
+        {"type": "bind", "source": str(path), "target": str(path), "read_only": True,
+         "bind": {"create_host_path": False}} for path in (source, public)]}
+    with open(sys.argv[1], "w", encoding="utf-8") as stream:
+        json.dump({"services": {"core-bff": delivery}}, stream)
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+PYACTIONTOKEN
+  action_token_compose=(-f "$action_token_config")
 fi
 # DD-94/98: the original Core consumer reads a controlled adapter directory.
 # No directory means no business-component delivery, not an empty credential or
@@ -259,7 +393,7 @@ if [ "$gateway_present" -ne 0 ] && [ "$gateway_present" -ne "${#gateway_names[@]
   exit 2
 fi
 gateway_compose=()
-if [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; then
+if [ "${prepare_action_token:-false}" != true ] && { [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; }; then
   gateway_config=$(mktemp)
   for gateway_name in "${gateway_names[@]}"; do export "$gateway_name"; done
   OIDC_ISSUER="$OIDC_ISSUER" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
@@ -428,7 +562,7 @@ app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IP
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
@@ -463,6 +597,182 @@ tmp=$(mktemp)
 [ "$(grep -c '=.\+' "$tmp")" = 10 ] || { echo "投递不完整，未改动 secrets/openbao-core.env" >&2; exit 2; }
 mv "$tmp" secrets/openbao-core.env
 tmp=
+
+if [ "$prepare_action_token" = true ]; then
+  # This is a deployment bootstrap invocation, not a service restart. It writes
+  # no platform business objects; a pre-bootstrap binary must fail, not fall back.
+  compose run --rm --no-deps --pull never core-bff bootstrap-action-token
+  ACTION_TOKEN_SIGNING_FILE="$ACTION_TOKEN_SIGNING_FILE" \
+  ACTION_TOKEN_PUBLIC_JWKS_LOCATOR="$ACTION_TOKEN_PUBLIC_JWKS_LOCATOR" \
+  ACTION_TOKEN_JWKS_READER_ROLE="$ACTION_TOKEN_JWKS_READER_ROLE" \
+  OPENBAO_ADDR="$OPENBAO_ADDR" OPENBAO_HTTP_TIMEOUT_SECONDS="$OPENBAO_HTTP_TIMEOUT_SECONDS" \
+  OPENBAO_SECRET_ID_TTL="$OPENBAO_SECRET_ID_TTL" OPENBAO_TOKEN_PERIOD="$OPENBAO_TOKEN_PERIOD" \
+  OPENBAO_SECRET_ID_WRAP_TTL="$OPENBAO_SECRET_ID_WRAP_TTL" \
+  CHECK_CPUS="$CHECK_CPUS" CHECK_MEMORY="$CHECK_MEMORY" ACTION_TOKEN_AGENT_NETWORK="${project}_app" \
+  python3 - <<'PYACTIONAGENT'
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import tempfile
+
+def require(condition):
+    if not condition:
+        raise ValueError("ActionToken Agent delivery refused")
+
+def private_read(path):
+    require(path.is_absolute() and path.resolve(strict=True) == path)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, encoding="utf-8") as stream:
+        metadata = os.fstat(stream.fileno())
+        require(stat.S_ISREG(metadata.st_mode) and not metadata.st_mode & 0o077)
+        return stream.read()
+
+def atomic(path, content):
+    if path.exists():
+        private_read(path)
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+def seconds(value):
+    match = re.fullmatch(r"([1-9][0-9]*)(s|m|h)", value)
+    require(match is not None)
+    return int(match[1]) * {"s":1,"m":60,"h":3600}[match[2]]
+
+try:
+    config = json.loads(Path(os.environ["ACTION_TOKEN_SIGNING_FILE"]).read_text())
+    public = Path(config["jwksFile"])
+    directory = public.parent
+    require(directory.resolve(strict=True) == directory and not directory.stat().st_mode & 0o077
+            and directory.stat().st_uid == os.geteuid())
+    locator = os.environ["ACTION_TOKEN_PUBLIC_JWKS_LOCATOR"]
+    namespace, mount, keypath = locator.split("/", 2)
+    require(namespace == "platform" and locator != config["secretLocator"])
+    role = os.environ["ACTION_TOKEN_JWKS_READER_ROLE"]
+    require(re.fullmatch(r"[A-Za-z0-9_-]+", role) is not None)
+    timeout = int(os.environ["OPENBAO_HTTP_TIMEOUT_SECONDS"])
+    require(timeout > 0)
+    root = json.loads(private_read(Path("secrets/openbao_init.json").resolve()))["root_token"]
+    compose = ["sudo","-n","docker","compose","--env-file",".env","-f","compose.yaml"]
+    def bao(path, fields=None, missing=False, wrap=None, version=None):
+        args = (["kv", "get", "-version=" + str(version), "-format=json"] if version is not None
+            else ["read" if fields is None else "write", "-format=json"])
+        if wrap:
+            args.append("-wrap-ttl=" + wrap)
+        if fields == {}:
+            args.append("-f")
+        args.append(path)
+        if fields:
+            # Bodies, including policies, enter only stdin, never process args.
+            args.append("-")
+        command = compose + ["exec","-T","-e","BAO_ADDR=" + os.environ["OPENBAO_ADDR"],
+            "-e","BAO_NAMESPACE=" + namespace,"openbao","sh","-c",
+            'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"',"bao",*args]
+        result = subprocess.run(command, input=root + "\n" + (json.dumps(fields) if fields else ""),
+            capture_output=True, text=True, timeout=timeout)
+        if missing and result.returncode and "No value found at " + path in result.stderr:
+            return None
+        require(result.returncode == 0)
+        return json.loads(result.stdout) if result.stdout.strip() else None
+    lock = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        record = bao(mount + "/" + keypath, version=1)
+        require(record["data"]["metadata"]["version"] == 1 and set(record["data"]["data"]) == {"value"})
+        exported = json.loads(record["data"]["data"]["value"])
+        require(set(exported) == {"keys"} and len(exported["keys"]) == 1
+                and exported["keys"][0]["kid"] == str(config["secretVersion"])
+                and not set(exported["keys"][0]).intersection({"d","p","q","k"}))
+        policy = f'path "{mount}/data/{keypath}" {{ capabilities = ["read"] }}\n'
+        policy_path = "sys/policies/acl/" + role
+        existing = bao(policy_path, missing=True)
+        if existing is None:
+            bao(policy_path, {"policy":policy})
+            existing = bao(policy_path)
+        require(existing["data"]["policy"] == policy)
+        role_path = "auth/approle/role/" + role
+        ttl = seconds(os.environ["OPENBAO_TOKEN_PERIOD"])
+        wanted = {"bind_secret_id":True, "secret_id_num_uses":1,
+            "secret_id_ttl":seconds(os.environ["OPENBAO_SECRET_ID_TTL"]),
+            "token_policies":[role],"token_ttl":ttl,"token_max_ttl":ttl}
+        existing = bao(role_path, missing=True)
+        if existing is None:
+            bao(role_path, wanted)
+            existing = bao(role_path)
+        require(all(existing["data"].get(k) == v for k,v in wanted.items()))
+        role_id = bao(role_path + "/role-id")["data"]["role_id"]
+        wrapped = bao(role_path + "/secret-id", {}, wrap=os.environ["OPENBAO_SECRET_ID_WRAP_TTL"])
+        role_file = directory / "action-token-role-id"
+        wrapped_file = directory / "action-token-wrapped-secret-id"
+        agent_file = directory / "action-token-agent.hcl"
+        require(public not in {role_file, wrapped_file, agent_file})
+        quote = json.dumps
+        template = '{{ with secret "' + mount + '/data/' + keypath + '?version=1" }}{{ .Data.data.value }}{{ end }}'
+        agent = ('exit_after_auth = true\n' + f'vault {{ address = {quote(os.environ["OPENBAO_ADDR"])} }}\n'
+            + 'auto_auth {\n method "approle" {\n' + f' namespace = {quote(namespace)}\n config = {{\n'
+            + f' role_id_file_path = {quote(str(role_file))}\n secret_id_file_path = {quote(str(wrapped_file))}\n'
+            + f' secret_id_response_wrapping_path = {quote(role_path + "/secret-id")}\n'
+            + ' }\n }\n}\ntemplate_config { exit_on_retry_failure = true }\n'
+            + 'template {\n' + f' contents = {quote(template)}\n destination = {quote(str(public))}\n'
+            + ' perms = "0444"\n error_on_missing_key = true\n}\n')
+        atomic(role_file, role_id)
+        atomic(wrapped_file, wrapped["wrap_info"]["token"])
+        atomic(agent_file, agent)
+        description = subprocess.run(compose + ["config","--format","json"], capture_output=True, text=True, timeout=timeout)
+        require(description.returncode == 0)
+        image = json.loads(description.stdout)["services"]["openbao"]["image"]
+        require("@sha256:" in image)
+        command = ["sudo","-n","docker","create","--pull","never","--read-only",
+            "--cpus",os.environ["CHECK_CPUS"],"--memory",os.environ["CHECK_MEMORY"],
+            "--memory-swap",os.environ["CHECK_MEMORY"],"--user",f"{os.geteuid()}:{os.getegid()}",
+            "--network",os.environ["ACTION_TOKEN_AGENT_NETWORK"],"--cap-drop","ALL",
+            "--security-opt","no-new-privileges", "--mount",f"type=bind,src={directory},dst={directory}",
+            "--entrypoint","bao",image,"agent","-config="+str(agent_file)]
+        # No root token is passed to Agent, only the scoped one-use wrapped role.
+        created = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        require(created.returncode == 0 and re.fullmatch(r"[a-f0-9]{64}\n?", created.stdout) is not None)
+        container = created.stdout.strip()
+        try:
+            inspected = subprocess.run(["sudo","-n","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
+            require(inspected.returncode == 0)
+            facts = json.loads(inspected.stdout)[0]
+            limits = facts["HostConfig"]
+            require(facts["State"]["Status"] == "created" and limits["NanoCpus"] > 0
+                    and limits["Memory"] > 0 and limits["MemorySwap"] == limits["Memory"])
+            result = subprocess.run(["sudo","-n","docker","start","--attach",container], capture_output=True,
+                text=True, timeout=seconds(os.environ["OPENBAO_SECRET_ID_WRAP_TTL"]))
+            require(result.returncode == 0)
+            ended = subprocess.run(["sudo","-n","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
+            require(ended.returncode == 0)
+            state = json.loads(ended.stdout)[0]["State"]
+            require(state["Status"] == "exited" and state["ExitCode"] == 0 and not state["OOMKilled"])
+        finally:
+            # Only the exact newly-created one-off Agent is stopped/removed.
+            # Never leave a timed-out renderer running with its scoped token.
+            stopped = subprocess.run(["sudo","-n","docker","stop",container], capture_output=True, timeout=timeout)
+            require(stopped.returncode == 0)
+            removed = subprocess.run(["sudo","-n","docker","rm",container], capture_output=True, timeout=timeout)
+            require(removed.returncode == 0)
+        require(json.loads(public.read_text()) == exported)
+        print("ActionToken Core export and original OpenBao Agent public JWKS readback complete; no binding activated")
+    finally:
+        os.close(lock)
+except Exception:
+    raise SystemExit("ActionToken Agent preparation failed; preserve the exact references and inspect protected delivery, never regenerate a signing key") from None
+PYACTIONAGENT
+  exit 0
+fi
 
 compose up -d --no-deps --force-recreate --no-build core-bff
 # The conformance consumer runs in the original Worker, not in Core. Recreate

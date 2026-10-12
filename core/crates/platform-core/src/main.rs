@@ -109,9 +109,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    // 部署引导（DD-82、ADR-11）：不监听任何端口、不取 OpenBao 投递，做完即退出。
-    // 只有能在 Core 容器内执行命令的人能走到这里。
+    // 部署引导不监听端口；只有能在 Core 容器内执行命令的人能走到这里。
     let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("bootstrap-action-token") {
+        if argv.len() != 2 {
+            return Err("bootstrap-action-token takes only controlled environment delivery".into());
+        }
+        let outcome = action_token::bootstrap_signing().await?;
+        println!("{}", serde_json::to_string(&outcome)?);
+        return Ok(());
+    }
+    // Tenant 引导（DD-82、ADR-11）不取 OpenBao 投递，做完即退出。
     if argv.get(1).map(String::as_str) == Some("bootstrap-tenant") {
         let outcome = tenant_bootstrap::run(tenant_bootstrap::Args::parse(&argv[2..])?).await?;
         println!("{}", serde_json::to_string(&outcome)?);

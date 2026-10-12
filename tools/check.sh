@@ -984,6 +984,71 @@ with tempfile.TemporaryDirectory() as temporary:
     assert '"${adapter_compose[@]}"' in starter[starter.index("compose() {"):]
     assert "adapter_config" in starter[starter.index("cleanup_start_core()"):starter.index("trap cleanup_start_core EXIT")]
 print("  \033[32mPASS\033[0m Application/conformance 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥/混合 artifact/半份配置拒绝、Core 与 Worker 分离及 receiver 私有凭据精确投递")
+action_start = starter.index("action_token_compose=()")
+action_end = starter.index("# DD-94/98:", action_start)
+action_program = "set -eu\nprepare_action_token=${ACTION_TOKEN_TEST_PREPARE:-false}\n" + starter[cleanup_start:cleanup_end] + starter[action_start:action_end] + '''
+if [ -n "${action_token_config:-}" ]; then
+  python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$action_token_config"
+fi
+'''
+with tempfile.TemporaryDirectory() as temporary:
+    location = pathlib.Path(temporary)
+    public_dir = location / "public"
+    public_dir.mkdir(mode=0o700)
+    public = public_dir / "jwks.json"
+    signing = location / "signing.json"
+    original_public = {"keys":[{"kty":"EC","crv":"P-256","alg":"ES256","kid":"1",
+        "x":"A" * 43,"y":"A" * 43,"use":"sig","key_ops":["verify"]}]}
+    original_signing = {"issuer":"fixture-action","tokenSeconds":60,"secretLocator":"platform/kv/action-token/fixture",
+        "secretVersion":1,"secretAudience":"fixture-core","privateKeyField":"private_key","jwksFile":str(public)}
+    public.write_text(json.dumps(original_public))
+    signing.write_text(json.dumps(original_signing))
+    base_env = {k:v for k,v in os.environ.items() if not k.startswith("ACTION_TOKEN_")}
+    base_env.update(TMPDIR=temporary, OIDC_SERVICE_CLIENT_ID="fixture-core", OIDC_ISSUER="fixture-oidc")
+    def action_produce(path=None, extra=None):
+        env = base_env | ({} if path is None else {"ACTION_TOKEN_SIGNING_FILE":str(path)}) | (extra or {})
+        result = subprocess.run(["bash","-c",action_program], cwd="deploy/local", env=env, capture_output=True, text=True)
+        assert not list(location.glob("tmp.*")), "原 EXIT 必须清理所有签名投递临时文件"
+        return result
+    assert action_produce().returncode == 0 and action_produce().stdout == ""
+    result = action_produce(signing)
+    assert result.returncode == 0, result.stderr
+    service = json.loads(result.stdout)["services"]["core-bff"]
+    assert service["environment"] == {"ACTION_TOKEN_SIGNING_FILE":str(signing)}
+    assert {v["source"] for v in service["volumes"]} == {str(signing),str(public)}
+    assert all(v["source"] == v["target"] and v["read_only"] and not v["bind"]["create_host_path"] for v in service["volumes"])
+    for key,value in (("secretVersion",0),("secretVersion",True),("secretVersion",2),
+                      ("tokenSeconds",0),("secretAudience","other"),("issuer","fixture-oidc"),
+                      ("secretLocator","platform/kv/../other"),("privateKeyField","purpose"),("unexpected","field")):
+        signing.write_text(json.dumps(original_signing | {key:value}))
+        assert action_produce(signing).returncode != 0, key
+    for missing in original_signing:
+        signing.write_text(json.dumps({k:v for k,v in original_signing.items() if k != missing}))
+        assert action_produce(signing).returncode != 0, missing
+    signing.write_text(json.dumps(original_signing))
+    for key,value in (("d","fixture-private"),("alg","HS256"),("kid","2"),("x","invalid")):
+        public.write_text(json.dumps({"keys":[original_public["keys"][0] | {key:value}]}))
+        result = action_produce(signing)
+        assert result.returncode != 0 and "fixture-private" not in result.stdout + result.stderr
+    public.write_text(json.dumps({"keys":original_public["keys"] * 2}))
+    assert action_produce(signing).returncode != 0
+    public.unlink()
+    assert action_produce(signing).returncode != 0
+    prepare = {"ACTION_TOKEN_TEST_PREPARE":"true","ACTION_TOKEN_PUBLIC_JWKS_LOCATOR":"platform/kv/action-public/fixture",
+        "CHECK_CPUS":"2","CHECK_MEMORY":"2g"}
+    result = action_produce(signing, prepare)
+    assert result.returncode == 0, result.stderr
+    initial = json.loads(result.stdout)["services"]["core-bff"]
+    assert [v["source"] for v in initial["volumes"]] == [str(signing)]
+    assert initial["cpus"] == "2" and initial["mem_limit"] == initial["memswap_limit"] == "2g"
+    assert action_produce(signing, prepare | {"ACTION_TOKEN_PUBLIC_JWKS_LOCATOR":original_signing["secretLocator"]}).returncode != 0
+    (public_dir / "unrelated-secret").write_text("must-not-mount")
+    assert action_produce(signing, prepare).returncode != 0
+    (public_dir / "unrelated-secret").unlink()
+    public.write_text(json.dumps(original_public))
+    assert action_produce(signing).returncode == 0
+    assert '"${action_token_compose[@]}"' in starter[starter.index("compose() {"):]
+print("  \033[32mPASS\033[0m ActionToken 原投递：零组件可缺席、版本/公钥/用途隔离、半份/私钥/未知字段拒绝、Core初始导出与正常挂载分离")
 gateway_start = starter.index("gateway_names=(")
 gateway_end = starter.index("\nproject=", gateway_start)
 gateway_program = "set -eu\n" + starter[gateway_start:gateway_end]

@@ -1602,6 +1602,27 @@ impl SecretStore {
         field: &str,
         value: &str,
     ) -> Result<u32, SecretError> {
+        self.write_once_fields(locator, &[(field, value)]).await
+    }
+
+    /// One KV version may contain an inseparable purpose and private key. All
+    /// fields use the same original CAS=0 write; re-entry compares every field.
+    pub async fn write_once_fields(
+        &self,
+        locator: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<u32, SecretError> {
+        if fields.is_empty()
+            || fields.iter().any(|(field, _)| field.is_empty())
+            || fields
+                .iter()
+                .map(|(field, _)| field)
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != fields.len()
+        {
+            return Err(SecretError::Malformed);
+        }
         let (namespace, mount, path) = split_locator(locator)?;
         let token = self.token_for_namespace(&namespace).await?;
         let current = self
@@ -1609,7 +1630,7 @@ impl SecretStore {
             .await?;
         if current == 0 {
             match self
-                .write_with_cas((&namespace, &mount, &path), token.as_str(), field, value, 0)
+                .write_fields_with_cas((&namespace, &mount, &path), token.as_str(), fields, 0)
                 .await
             {
                 Ok(1) => {}
@@ -1628,18 +1649,16 @@ impl SecretStore {
         if observed == 0 {
             return Err(SecretError::VersionUnavailable);
         }
-        let existing = self
-            .read(
-                &SecretRef {
-                    locator: locator.to_owned(),
-                    version: observed,
-                    audience: self.identity.clone(),
-                },
-                field,
-            )
-            .await?;
-        if existing.expose() != value {
-            return Err(SecretError::WriteRejected);
+        let reference = SecretRef {
+            locator: locator.to_owned(),
+            version: observed,
+            audience: self.identity.clone(),
+        };
+        for (field, value) in fields {
+            let existing = self.read(&reference, field).await?;
+            if existing.expose() != *value {
+                return Err(SecretError::WriteRejected);
+            }
         }
         Ok(observed)
     }
@@ -1680,14 +1699,26 @@ impl SecretStore {
         value: &str,
         current_version: u32,
     ) -> Result<u32, SecretError> {
+        self.write_fields_with_cas(location, token, &[(field, value)], current_version)
+            .await
+    }
+
+    async fn write_fields_with_cas(
+        &self,
+        location: (&str, &str, &str),
+        token: &str,
+        fields: &[(&str, &str)],
+        current_version: u32,
+    ) -> Result<u32, SecretError> {
         let (namespace, mount, path) = location;
+        let data: std::collections::BTreeMap<_, _> = fields.iter().copied().collect();
         let resp = self
             .session
             .http
             .post(format!("{}/v1/{mount}/data/{path}", self.session.addr))
             .header("X-Vault-Namespace", namespace)
             .header("X-Vault-Token", token)
-            .json(&serde_json::json!({ "data": { field: value }, "options": { "cas": current_version } }))
+            .json(&serde_json::json!({ "data": data, "options": { "cas": current_version } }))
             .send()
             .await?;
         match resp.status().as_u16() {
@@ -2273,6 +2304,72 @@ mod tests {
             1
         );
         assert!(requests[1].contains("\"cas\":0"));
+    }
+
+    #[tokio::test]
+    async fn deterministic_multi_field_write_keeps_one_cas_and_rejects_partial_or_changed_intent() {
+        const VERSION: &str = r#"{"data":{"current_version":1}}"#;
+        const KEY: &str = r#"{"data":{"data":{"purpose":"ACTION_TOKEN","private":"same-key"},"metadata":{"version":1}}}"#;
+        for lost_ack in [false, true] {
+            let mut replies = vec![("404 Not Found", "")];
+            if lost_ack {
+                replies.push(("", ""));
+            } else {
+                replies.extend([
+                    ("200 OK", r#"{"data":{"version":1}}"#),
+                    ("200 OK", VERSION),
+                    ("200 OK", KEY),
+                    ("200 OK", KEY),
+                ]);
+            }
+            replies.extend([
+                ("200 OK", VERSION),
+                ("200 OK", KEY),
+                ("200 OK", KEY),
+                ("200 OK", VERSION),
+                ("200 OK", KEY),
+                ("200 OK", KEY),
+            ]);
+            let (addr, server) = scripted_openbao(replies);
+            let store = fake_store(&addr);
+            *store.session.lease.write().await = Some(Lease {
+                token: Arc::new("service".to_owned()),
+                ttl: Duration::from_secs(120),
+            });
+            let locator = "platform/kv/action-token/fixture";
+            let fields = [("purpose", "ACTION_TOKEN"), ("private", "same-key")];
+            assert!(store.write_once_fields(locator, &[]).await.is_err());
+            assert!(store
+                .write_once_fields(locator, &[("private", "a"), ("private", "b")])
+                .await
+                .is_err());
+            let initial = store.write_once_fields(locator, &fields).await;
+            if lost_ack {
+                assert!(matches!(initial, Err(SecretError::Transport(_))));
+            } else {
+                assert_eq!(initial.unwrap(), 1);
+            }
+            assert_eq!(store.write_once_fields(locator, &fields).await.unwrap(), 1);
+            assert!(matches!(
+                store
+                    .write_once_fields(
+                        locator,
+                        &[("purpose", "ACTION_TOKEN"), ("private", "different-key")]
+                    )
+                    .await,
+                Err(SecretError::WriteRejected)
+            ));
+            let requests = server.join().unwrap();
+            let writes: Vec<_> = requests.iter().filter(|r| r.starts_with("POST ")).collect();
+            assert_eq!(writes.len(), 1);
+            let body: serde_json::Value =
+                serde_json::from_str(writes[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+            assert_eq!(
+                body,
+                serde_json::json!({"options":{"cas":0},
+                "data":{"purpose":"ACTION_TOKEN","private":"same-key"}})
+            );
+        }
     }
 
     #[tokio::test]
