@@ -3604,3 +3604,81 @@ up 顺序投递，保留现有独立数据库、Data 卷及已创建的专属测
 提交前复用原只读文档容器执行 `bash tools/check-docs.sh /.design`，实际
 2 CPU/2 GiB、UID 1000、Data tmp/npm，无新镜像。会话 91696 exit 0，
 七项全部 PASS；日志为 `/volumes/data/kailo/tmp/cells-release-receipt.LPJshr/docs.log`。
+
+## 2026-10-12 原 Authfront 已跟踪产物与当前源码同步
+
+本批固定 apps `66afa4f8b26fa51076dbcd06ea9ea73aee3e9a28`，仅重新生成原
+`core.authfront/res/dist/AuthfrontCoreActions.min.js` 与 `.gz`，不改生产 JS。
+四步影响：
+
+1. 权威为原版完整前端与 `.design/07` §4.6。固定 Cells 上游
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 原 `core.authfront/manifest.xml`
+   引用该 bundle，`frontend/assets.go` 嵌入 assets；不是死产物。既有
+   `edac76e72` 原登录按钮源码已增加 iframe target/rel，旧 tracked bundle
+   仍是前文 b9d64/4329 输出。这次只同步该原生成消费者。
+2. 影响为同一个 `webpack.config.js`→`webpack-commons.js::configLoader`→
+   CompressionPlugin；固定当前完整 plugin 源（包括 forgotPasswordLink），
+   复用原依赖，不手工拼 min.js 或 gzip。正式 service Dockerfile 本来先重建
+   完整 GUI 再覆盖 Go embed，因此这次不推断既有匹配镜像缺失该源码修改。
+3. 无新 API/权限/配置/身份/数据迁移。目标仍取原同源 nativeLogin.href；
+   只在 iframe 下 `_blank`，`rel=noopener noreferrer`；PASSWORD_AUTH_ONLY
+   和 KAILO_OIDC_LOGIN 原门槛保留。没有部署、浏览器登录或窗口验收。
+4. 原 webpack/压缩失败应停止生成，不用旧包冒充新包；原 UI 身份/拒绝行为
+   仍由原消费者决定，不增加重试或回退。缓存与原失败证据均保留。
+
+主机预检 MemAvailable 38,931,451,904 bytes，memory pressure avg10 0；
+其他两席确认无在途 Node/Cargo。复用原 `kailo-cells-login-ui-node-20261005`
+（原停止137不算本轮失败），start 后仅 PID1 sleep；镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID1000，实际 `cpu.max=400000 100000`、memory.max=8589934592、
+memory.swap.max=0、起始memory.current=1003520。原 workspace/npm/pnpm
+均为 Data bind；未拉镜像、安装依赖或构建整个 GUI。Node24.21.0、
+webpack5.104.1、compression-webpack-plugin10.0.0 为原已安装依赖；
+不是重新验证生产镜像 Node22 stage。
+
+独立固定输入与产物目录：
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/apps/file-storage/frontend/assets/authfront-sync.vDGSvl`。
+原命令（宿主 pipefail + tee 保留真实退出）：
+
+```sh
+sudo -n docker exec --user 1000:1000 \
+  --workdir /workspace/assets/authfront-sync.vDGSvl/core.authfront \
+  --env NODE_ENV=production --env npm_config_cache=/cache/npm \
+  --env npm_config_store_dir=/cache/pnpm --env npm_config_offline=true \
+  kailo-cells-login-ui-node-20261005 npm run build
+```
+
+96793 实际 exit0，webpack compiled successfully in 5368 ms，14.9 KiB。
+保留 npm 对 store-dir 的 Unknown env config 警告；未隐藏为无警告运行。
+`webpack.log` SHA256 `f63846766d1d3ebf9eddfbb90233066110d10e6e3785a974ce5b97a5c8f93817`。
+生成 JS SHA256 `d48b9701ef163d8b91910c77853f4241fe244702175cbe24151a78225f99d43b`；
+gzip SHA256 `05b1955af0af9f6f180f148d406a4aaa1051ef912f5d891a775f401a7a7dae4a`。
+`gzip -cd ... | cmp - ...` 实际0。原生成表达式在 Node VM 读取验证：
+top-level 返回 undefined、iframe 返回 `_blank`；实际 rel 与两个原门槛
+字符串存在，exit0。这是生成表达式验证，不是浏览器 popup/SSO 验收。
+
+用原已安装 Babel parser/generator 格式展开完整旧/新 bundle 后逐段 diff：
+唯一业务差异为 target/rel 两属性；另有压缩局部变量 ResetPasswordDialog
+的 D→k 对应定义/导出重命名。没有删除其他 exports/原页面实现。完整旧/新
+展开文件保留于同目录 old.pretty.js/new.pretty.js；原压缩二文件完整 patch
+交主线私有 index，旧生成日志与回执不覆盖。无本轮镜像、部署、binding
+激活或完整上传验收；原 service artifact 来源需由原 planner 单独确认。
+
+原 `tools/upstream_manifest.py plan` 两产物前后实际执行均0（34786）：
+service 由 `sha256:1c61d165e105aff1131eda543fe9a3fc17140307f65906240fd9ef2896e628f9`
+变为 `sha256:2507bb31b94568e49c293ea7b5e0586eaf33a3f845e57f858182fc4867600540`；
+adapter 保持 `sha256:6ccd12a879286b4ea7f7eb53d7700d64c59e78b93c2128aa301a2562a46aae10`。
+四份 `planner-{service,adapter}-{before,after}.log` 留在同 Data 目录。
+原来源算法实际包含这两个 tracked 文件，不因生产Docker另行重编而豁免；
+没有更改 inputs/exclude 或把旧 service artifact 重登记为新 source。
+原 service `0444e566…` 只证明旧 source 构建，本候选没有匹配的新 service
+artifact；adapter 来源仍匹配。后续发布应沿原入口重建并真实记录，不借本次
+生成声明已部署或普通 SSO 上传已验收。
+
+原文档快路径复用 `kailo-read-pr-docs-linked`（2CPU/2GiB、等额swap、UID1000、
+network none、apps/design只读、Data tmp/npm），实际执行
+`bash tools/check-docs.sh /.design`；72054 exit0，七段全部通过。
+同目录 `docs.log` SHA256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+此原脚本检查顶层实施合同/docs及design，不冒称单独lint全部fork回执。
+Node SDK确认仅sleep后原docker stop25332退出0；容器最终137、OOM=false，
+没有在途webpack被停止。仅停止本次恢复的该SDK，不删除容器/缓存/证据。
