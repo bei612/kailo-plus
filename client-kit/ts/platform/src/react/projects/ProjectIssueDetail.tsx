@@ -29,6 +29,8 @@ import type {WebMessageAttachment} from "@client-kit/contracts";
 import {publishProjectIssueComment} from "./issueMutations";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
+import {DiscussedInChannels} from "./DiscussionChannels";
+import {entityDiscussionQuery} from "./discussionChannels";
 type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository}};
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
@@ -184,6 +186,9 @@ function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
       ) : null}
       <ProjectDetailSection defaultOpen title={t("projects.workItem.activity")}>
         <div className="space-y-3">
+          <DiscussedInChannels entityLabel={t("projects.discussion.thisTask")}
+            originChannelId={issue.channelId} originCreatedAt={issue.createdAt}
+            originPubkey={issue.author} query={entityDiscussionQuery(issue.id)} testId="issue-discussed-in"/>
           <ProjectIssueCommentTimeline
             comments={issue.comments}
             key={issue.id}

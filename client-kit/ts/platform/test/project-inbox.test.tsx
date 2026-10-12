@@ -21,6 +21,7 @@ import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib
 import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {IdleAuxiliarySurface,type IdleAuxiliaryProps} from "../src/react/messages/thread";
 import {ChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
+import type {SearchHit,SearchChannel} from "../src/react/search/types";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
 const event=(id:string,kind:number,tags:string[][],content="",time=20):PulseEvent=>({id:id.repeat(64),kind,pubkey:author,tags,content,created_at:time});
@@ -49,6 +50,42 @@ beforeEach(()=>{setLocale("en");localStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  it.each(["en","zh-CN"] as const)("restores actual task and review Related Conversations, exact navigation and revoked reads (%s)",async locale=>{
+    setLocale(locale);
+    const failure=vi.spyOn(toast,"error").mockImplementation(()=>"discussion-failed");
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const channels:SearchChannel[]=Array.from({length:4},(_,i)=>({id:`channel-${i}`,name:`Original ${i}`,channelType:"stream",visibility:"open",isMember:true,description:"",lastMessageAt:null}));
+    const hits:SearchHit[]=channels.slice(1).map((channel,i)=>({eventId:String(i+1).repeat(64),channelId:channel.id,channelName:null,pubkey:author,createdAt:80-i,content:`Original discussion ${i} buzz://issue?id=${f.issue.id}`,kind:9,score:1,threadRootId:"f".repeat(64)}));
+    const read=vi.fn<NonNullable<PulseHost["discussions"]>["read"]>(async()=>({hits,found:hits.length,channels}));
+    const openHit=vi.fn(),openChannel=vi.fn(),openProfile=vi.fn();
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),openProfile,mediaUrl:url=>url,
+      OriginReference:()=>null,renderComposer:()=>null,renderContent:content=><p>{content}</p>,discussions:{read,openHit,openChannel,renderPreview:content=><div data-testid="original-discussion-preview">{content}</div>}};
+    for(const item of snapshot.items){
+      if(item.type!=="issue"&&item.type!=="pull-request")continue;
+      const workItem=item.type==="issue"?{...item,issue:{...item.issue,channelId:channels[0]!.id}}:{...item,pullRequest:{...item.pullRequest,channelId:channels[0]!.id}};
+      const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+      const view=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}><ProjectInboxDetail workItem={workItem}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+      await vi.waitFor(()=>expect(view.querySelectorAll('[data-testid="discussion-mention-row"]')).toHaveLength(3));
+      expect(read.mock.calls.at(-1)?.[0]).toBe(item.type==="issue"?item.issue.id:item.pullRequest.id);
+      const origin=view.querySelectorAll('[data-testid="discussion-mention-row"]')[0]!;
+      expect(origin.querySelector('[data-testid="original-discussion-preview"]')).toBeNull();
+      expect(origin.textContent).toContain("Original 0");
+      expect(view.textContent).not.toContain("buzz://issue");
+      const more=Array.from(view.querySelectorAll("button")).find(button=>button.textContent?.includes(locale==="en"?"Show 1 more conversation":"再显示 1 个对话"))!;
+      await click(more);expect(view.querySelectorAll('[data-testid="discussion-mention-row"]')).toHaveLength(4);
+      openChannel.mockClear();await click(origin.querySelector("button")!);
+      await vi.waitFor(()=>expect(openChannel).toHaveBeenCalledExactlyOnceWith("channel-0"));
+      await vi.waitFor(()=>expect(view.querySelectorAll('[data-testid="discussion-mention-row"]')).toHaveLength(4));
+      openHit.mockClear();await click(view.querySelectorAll('[data-testid="discussion-mention-row"]')[1]!.querySelector("button")!);
+      await vi.waitFor(()=>expect(openHit).toHaveBeenCalledExactlyOnceWith(hits[0]));
+      await vi.waitFor(()=>expect(view.querySelectorAll('[data-testid="discussion-mention-row"]')).toHaveLength(4));
+      read.mockRejectedValueOnce(new BffError(403,"revoked",{class:ErrorClass.Denied}));
+      openHit.mockClear();await click(view.querySelectorAll('[data-testid="discussion-mention-row"]')[1]!.querySelector("button")!);
+      await vi.waitFor(()=>expect(view.querySelector('[data-testid="discussion-mention-row"]')).toBeNull());
+      expect(openHit).not.toHaveBeenCalled();
+      expect(failure).toHaveBeenCalled();
+    }
+  });
   async function reviewCommentFixture(){
     const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
     const item=snapshot.items.find(item=>item.type==="pull-request")!;

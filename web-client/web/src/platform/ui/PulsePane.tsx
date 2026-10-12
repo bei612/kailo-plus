@@ -2,7 +2,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
-import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl } from "../bff-client";
+import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl, searchMessages } from "../bff-client";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Composer } from "./ChannelPane";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
@@ -34,6 +34,7 @@ function BffProjectOriginReference(props:ProjectOriginReferenceProps) {
 /** The original Pulse surface; only transport/signing/media belong to Web. */
 export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:string;onStartDm:(pubkey:string)=>void|Promise<void>;children?:ReactNode;viewerPubkey?:string}) {
   const t=useT();
+  const channelRuntime=useBffChannelLinkRuntime();
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false,enabled:viewerPubkey===undefined});
   const pubkey=viewerPubkey??profile.data?.pubkey;
   const scope=useMemo(()=>({active:true,media:new Map<string,string>()}),[scopeKey,pubkey]);
@@ -48,12 +49,26 @@ export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:s
       publish:async(request,key)=>{check();const receipt=await publishPulse(request,key);check();return receipt;},
       copy:writeTextToClipboard,
       OriginReference:BffProjectOriginReference,
+      discussions:{
+        read:async(query,_origin,signal)=>{
+          const current=()=>{check();signal.throwIfAborted();return true;};current();
+          const results=await searchMessages({q:query,limit:500});current();
+          const directory=await loadChannelDirectory(bff,current);current();
+          return {...results,channels:directory.map(row=>({id:row.channel.channelId,name:row.channel.name,
+            visibility:row.visibility,isMember:row.isMember,channelType:row.channel.channelType,
+            description:row.channel.description??"",lastMessageAt:null}))};
+        },
+        openChannel:id=>{check();return channelRuntime.onOpenChannel(id);},
+        openHit:hit=>{check();if(!hit.channelId)throw new Error(t("platform.loadFailed"));
+          return channelRuntime.onOpenMessageLink({channelId:hit.channelId,messageId:hit.eventId,threadRootId:hit.threadRootId??null});},
+        renderPreview:content=><MessageContent content={content} className="inbox-preview-markdown mt-0.5 text-inherit leading-6" interactive={false}/>,
+      },
       startDm:async(pubkey)=>{check();await onStartDm(pubkey);check();},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags,className)=><MessageContent content={content} className={className} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
       renderComposer:(props)=><BffPulseComposer props={props} scopeKey={scopeKey} check={check}/>,
     };
-  },[scopeKey,scope,pubkey,onStartDm,t]);
+  },[scopeKey,scope,pubkey,onStartDm,t,channelRuntime]);
   if(!pubkey||viewerPubkey===undefined&&profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
   return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={pubkey}/>}</PulseHostProvider>;
 }

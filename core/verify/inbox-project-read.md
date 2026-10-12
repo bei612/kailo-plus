@@ -1310,3 +1310,68 @@ DOM 63/63，但新增夹具错误地给单参数 mock 传 signal，类型 exit 2
 `d38e9ffc436293f763913089fba56e074f60273dfb20d543a58bbf75d851f44e`。
 未运行新 full、构建、部署或浏览器；旧在线图及新 236b 构建均不包含本增量，
 不宣称新版本视觉或 Native 设备验收。公共三路径暂存未改。
+
+## 2026-10-12 Tasks/Reviews Related Conversations 原消费者恢复
+
+比较基准 `a0bb89ee97249029b6908665e3778b517f69622f`；固定 Buzz
+`779af8886caae1317b4de962082429867ab61503`。本批只接已存在 Issue/PR
+Activity 详情，不开放 Git、Commit 或新的 Channels 页。
+
+1. 权威为 REQ-24 原版恢复及 DD-72/75 的双宿主读取边界。原
+   `desktop/src/features/projects/ui/DiscussionChannels.tsx::DiscussedInChannels`、
+   `desktop/src/features/projects/lib/discussionChannels.ts::entityDiscussionQuery` /
+   `groupDiscussionChannels` / `mergeOriginDiscussionChannel` / `discussionSnippet`，
+   以及 `desktop/src/features/projects/ui/ProjectEntityListRow.tsx::ProjectEntityFacepile`
+   为固定源码依据，不新建讨论数据权威。
+2. 影响为共享 `ProjectIssueDetail` / `ProjectPullRequestDetail` 的原 Activity 卡片，
+   和现有 `PulseHost` 的双端实际读取/导航。Web 沿原 `searchMessages` BFF 与
+   `loadChannelDirectory`，Native 沿原 `search_messages`、`get_channels`、
+   `get_channel_details`；两端消费同一共享呈现与归约，不复制两份页面。
+3. 无 schema/API/Workflow/写入或持久状态变化。原 500 条有界搜索、按频道聚合、
+   三行收起、展开、作者头像/资料、原非交互 Markdown 预览和精确消息导航保留。
+   原 `h` 仅为作者声明来源；只有 fresh 目录的 member/open 可形成来源行，不能
+   据来源标签推导消息正文或项目权限。展示与点击均检查当前 scope；点击重新读取，
+   原引用已不在有界结果时拒绝，不能当成功。身份晚返回不导航。
+4. 加载/refetch/拒绝不复用旧内容，点击拒绝复用既有
+   `platform.linkChannelUnavailable` 提示，无新增错误布局。Native 仅接受原
+   `commands/channels.rs::get_channel_details` 经 `toTauriError` 传递的
+   `TauriInvokeError.payload === "channel not found"` 为不存在；包含该文本的
+   依赖错误仍拒绝。不存正文、不新增业务操作或重试执行。
+
+四类差异：本批没有新增整文件“原样”认领；共享迁移上述已消费函数、JSX/classes、
+排序/预览/展开语义。授权适配为 imports、同源中英 17 词条、Web BFF / Native
+Relay host、fresh/scope 门控及既有失败提示。原组件只在 channels 为空时不渲染，
+原缓存/来源能跨 search pending 留存；本批 pending/error 无旧内容、无 Host 不读取
+也不渲染，明确是治理适配而非字节原样。未恢复：原可选
+`ProjectConversationPanelContext` 侧对话面板、完整 `DiscussionChannelsPanel`、
+Commit 第三调用者；当前消费原 `openSearchHit` / `goChannel` fallback，不能据此
+称完整 Projects 恢复。原 needs_action 的生产链、Git/Files/管理写入等缺项不变。
+
+实际证据目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-discussions.jDzBTS`。
+原 Web SDK 启动前仅 sleep，2 CPU/4 GiB、memory+swap 总限额等于内存、UID1000、
+network none；源码/依赖/TMPDIR/npm/node 缓存在 Data，未安装依赖或启 builder。
+44824：原共享 `tsc --noEmit -p tsconfig.test.json`、Web/Native 各自
+`tsc --noEmit -p tsconfig.json` exit 0。18835 串行初验 exit 1：共享 63/65
+（新增夹具漏原 OriginReference）、Web PulsePane 15/15 exit 0、Native 8/9
+（真正 Tauri wrapper 返回 Error，首版按裸字符串识别遗漏）。修夹具并按真实 payload
+纠偏后，85948 exit 0：共享 65/65、三端类型全部 0、Native PulseScreen 9/9。
+命令沿原 Vitest `run test/project-inbox.test.tsx --pool=threads --maxWorkers=1`、
+Web `run src/platform/ui/PulsePane.test.tsx --pool=threads --maxWorkers=1`，Native
+`node --import ./test-loader.mjs --test src/features/platform/PulseScreen.test.mjs`。
+保留 React act 警告；这些是实际 React/宿主代码的隔离消费者，不是生产 Relay 或设备验收。
+
+60719 私有仅把点击 `search.refetch()` 改回旧 snapshot，中英两新增详情消费者都在
+撤权残留行断言失败，exit 1；apply_patch 还原且 cmp 0，50431 同两项 exit 0，
+其余 63 项不重复。`restored.log` SHA256
+`6373211c3f4d7b05d3abdf14b1f297fb5147eb5cbb2dfccb2b35b103988a6861`。
+实际覆盖来源不伪造引用、三行展开、Issue/PR 精确事件导航、撤权清空/失败提示、
+双端原非交互 Markdown、Native 精确不存在与未知区分、身份切换后晚返回拒绝。
+
+词条生成是私有 HEAD + 本批 17 条，沿原 `tools/gen-platform-i18n.py` 和 `--check`。
+最初 login shell 遮蔽镜像默认 Dart PATH，两次启动均 exit 1；首份 `i18n.log` 保留。
+改用同一缓存镜像默认 PATH、Data `/.dart-tool`/tmp（不改 HOME），7687 gen/check
+exit 0，临时容器已删除；只把 70 行新增 Dart 投回正式文件，旧未暂存删除不覆盖。
+正式 TS/Dart 历史脏改与公共三暂存不纳入候选，公共 staged patch SHA256 仍为
+`9a67c7044797bdbebafd706982d2845b68d2fa121a2ca10d2959f5b695b320fb`。
+本批未新跑 full、未构建/部署/浏览器；现在线旧版和已构建 236b 均不含本恢复，
+不认领旧截图，不解除现有发布门禁。

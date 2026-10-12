@@ -100,13 +100,14 @@ export function InboxListHeader({ filter, onFilterChange, activeDraftCount, unre
   unreadOnly: boolean; onUnreadOnlyChange: (value: boolean) => void; unreadCount: number; onMarkAllRead: () => void; pending?: boolean;
 }) {
   const t = useUiT(); const id = React.useId();
+  const unreadDisabled = filter === "reminders" || filter === "drafts";
   return <div className="relative z-40 shrink-0"><div className="px-5 py-2"><div className="flex min-h-9 w-full min-w-0 items-center justify-between gap-3">
     <div className="order-2 ml-auto flex shrink-0 items-center justify-end"><Popover><PopoverTrigger asChild>
       <button aria-label={t("inbox.options")} className={cn(iconButton, "-mr-4")} data-testid="inbox-options-trigger" type="button"><Ellipsis className="h-4 w-4" /></button>
     </PopoverTrigger><PopoverContent align="end" className="w-60 p-2">
-      <div className={cn("flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 py-1.5", filter === "drafts" && "opacity-50")}>
+      <div className={cn("flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 py-1.5", unreadDisabled && "opacity-50")}>
         <label className="text-sm font-medium text-foreground" htmlFor={id}>{t("inbox.unreadOnly")}</label>
-        <Switch id={id} checked={unreadOnly} onCheckedChange={onUnreadOnlyChange} disabled={filter === "drafts"} className="shadow-none [&>span]:shadow-none" data-testid="inbox-unread-only-toggle" />
+        <Switch id={id} checked={unreadOnly} onCheckedChange={onUnreadOnlyChange} disabled={unreadDisabled} className="shadow-none [&>span]:shadow-none" data-testid="inbox-unread-only-toggle" />
       </div><div role="separator" className="my-1 h-px bg-muted" />
       <button className="flex min-h-9 w-full items-center rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50" disabled={!unreadCount || pending} onClick={onMarkAllRead} type="button">
         <span>{t("inbox.markAllRead")}</span>{unreadCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">{unreadCount}</span> : null}

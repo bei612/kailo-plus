@@ -371,3 +371,39 @@ cargo clippy --locked --offline -j16 -p platform-core --bin platform-core -- -D 
 SHA-256 `63971d9e1b5b6ef873d1841b3cd2320525b4932584401f6c6cf095f6f9210b66`。
 本批没有新增检查或删除断言，没有重复旧式 lint 失败编译；不是全量检查、
 真实 BFF/Relay HTTP 验收或部署。文档由主线合批，候选仅本源码与此回执。
+
+## 2026-10-12 Inbox 提醒分区的原未读选项语义
+
+比较基准 `26b9c37743eb6f3f2b73931d3bb901bea3ed6f0f`。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 在原 options
+中同时对 Reminders / Drafts 禁用未读开关并应用 `opacity-50`；共享
+`client-kit/ts/platform/src/react/inbox-surface.tsx::InboxListHeader` 此前只禁 Drafts。
+
+1. REQ-24 原交互恢复；提醒独立列表不消费未读过滤，不能允许在该分区改掉
+   之后返回 All 时才生效的筛选偏好。复用原条件，不新定提醒已读状态。
+2. 影响限现有共享 Header：Web `web-client/web/src/platform/ui/InboxPane.tsx`
+   与 Native `collaboration/desktop/src/features/home/ui/InboxListPane.tsx` 均已消费。
+   切分区保留父层原 unreadOnly；回到普通消息分区重新可操作，mark-all 不变。
+3. 无 API/schema/持久状态/权限/网络/发布动作变化；不改词条、布局或提示，不触
+   DD-75 双端读取边界，也不放开 needs_action 的未接通生产链。
+4. 原错误/UNKNOWN 分类与 fresh 授权不变。实际 React 原开关验证中英路径
+   All → Reminders → Drafts → All：禁用期间不调用变更回调、不改变 checked；
+   回普通分区保留原值，再次操作只产生一次真实回调。
+
+四类差异：原 disabled/opacity 条件原样恢复于现有共享消费者，不新增整文件
+“原样”认领；共享迁移仍为既有 Header 双宿主调用。无新增授权治理差异；
+其它提醒/Inbox/Projects 与 Mobile 缺项、未部署边界不变。
+
+证据目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-reminder-filter.IlnKFq`。
+复用原空闲 Web SDK，2 CPU/4 GiB、memory+swap 总限额等于内存、UID1000、
+network none；Data 输入/依赖/tmp/node 缓存，不安装依赖、不启 builder。
+14875 原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json`
+与 `node node_modules/vitest/vitest.mjs run test/inbox-surface.test.tsx
+--pool=threads --maxWorkers=1` 聚合 exit 0：类型 0、15/15。
+71213 私有仅删除 reminders 条件，同原套件筛选
+`-t "preserves the original unread preference"`，两个中英用例均在真实 disabled
+断言失败/exit 1；apply_patch 还原、正式/私有 cmp 0，64831 同两项 exit 0。
+还原日志 SHA256 `e98cb101fef6199361a7267e328daf41897e4d6d01a58e827b230b23e9114ebf`。
+未重复 full/镜像构建/浏览器旧图；未声明新版部署、设备或生产 Relay 验收。
+原公共三暂存未动，和相邻 Related Conversations 冻结 14 路径互不覆盖。

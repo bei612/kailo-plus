@@ -16,10 +16,10 @@ import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
 import type {BffTransport} from "@client-kit/platform/transport";
 
-const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn(),composer:vi.fn()}));
+const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),searchMessages:vi.fn(),error:vi.fn(),composer:vi.fn()}));
 vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
 vi.mock("../bff-client",()=>({bff:{profile:api.profile,discoverableWorkspaces:api.discoverableWorkspaces},queryPulse:api.queryPulse,
-  publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value,queryProjects:api.queryProjects,publishProject:vi.fn()}));
+  publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value,queryProjects:api.queryProjects,publishProject:vi.fn(),searchMessages:api.searchMessages}));
 // This batch exercises the original Pulse/Profile/Message consumer, not post editing.
 vi.mock("./ChannelPane",()=>({Composer:(props:Parameters<typeof import("./ChannelPane").Composer>[0])=>{api.composer(props);return null;}}));
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
@@ -38,6 +38,7 @@ beforeEach(()=>{
   api.queryProjects.mockReset().mockResolvedValue({events:[],pubkey:own,limit:20});
   api.error.mockReset();api.discoverableWorkspaces.mockReset();
   api.composer.mockReset();
+  api.searchMessages.mockReset();
   api.queryPulse.mockReset().mockImplementation(async(request:{view:string;authors?:string[]})=>({mediaPaths:{},events:
     request.view==="NOTES"?[{id:eventId,pubkey:peer,created_at:1,kind:1,tags:[],content:"Actual Pulse note"}]:
       request.view==="PROFILES"?(request.authors??[]).map(pubkey=>({id:eventId,pubkey,created_at:1,kind:0,tags:[],
@@ -153,6 +154,35 @@ it("the actual Web Pulse adapter propagates an unknown result and keeps the orig
 const originId="12345678-1234-4234-8234-123456789012";
 const origin=()=>({id:"origin-workspace",visibility:"open",isMember:false,memberCount:1,
   createdAt:new Date("2026-10-07T00:00:00Z"),channel:{channelId:originId,channelType:"stream",name:"Visible origin",description:"",archived:false}});
+it("the actual Web discussion host reads governed search and fresh metadata, passes exact navigation and fences late scope results",async()=>{
+  let discussions:ReturnType<typeof usePulseHost>["discussions"];
+  function Consumer(){discussions=usePulseHost().discussions;return discussions!.renderPreview("Original **preview** [link](https://example.test/page)");}
+  const open=vi.fn(),message=vi.fn();
+  const hit={eventId,channelId:originId,channelName:null,pubkey:peer,createdAt:3,content:"Actual link",kind:9,score:1,threadRootId:"d".repeat(64)};
+  api.searchMessages.mockResolvedValue({hits:[hit],found:1});api.discoverableWorkspaces.mockResolvedValue({items:[origin()]});
+  const client=createBffClient({send:vi.fn()});
+  const renderScope=async(scopeKey:string)=>act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en"><TooltipProvider>
+    <BffMessageLinkHost scopeKey={scopeKey} principalId="viewer" conversations={[]} onOpenChannel={open} onOpenMessageLink={message} onOpenProject={vi.fn()}>
+      <PulsePane scopeKey={scopeKey} viewerPubkey={own} onStartDm={vi.fn()}><Consumer/></PulsePane>
+    </BffMessageLinkHost></TooltipProvider></PlatformProvider></QueryClientProvider>));
+  await renderScope("first");
+  const current=discussions!;
+  const result=await current.read(eventId,originId,new AbortController().signal);
+  expect(api.searchMessages).toHaveBeenCalledExactlyOnceWith({q:eventId,limit:500});
+  expect(api.discoverableWorkspaces).toHaveBeenCalledExactlyOnceWith(undefined,undefined);
+  expect(result.hits).toEqual([hit]);expect(result.channels[0]?.isMember).toBe(false);
+  const preview=host.querySelector(".inbox-preview-markdown")!;
+  expect(preview.querySelector("strong")?.textContent).toBe("preview");expect(preview.querySelector("a")).toBeNull();
+  await current.openChannel(originId);await current.openHit(hit);
+  expect(open).toHaveBeenCalledExactlyOnceWith(originId);
+  expect(message).toHaveBeenCalledExactlyOnceWith({channelId:originId,messageId:eventId,threadRootId:hit.threadRootId});
+  let resolve!:(value:{hits:typeof hit[];found:number})=>void;
+  api.searchMessages.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+  const late=current.read(eventId,originId,new AbortController().signal);
+  await renderScope("second");resolve({hits:[hit],found:1});
+  await expect(late).rejects.toThrow();expect(()=>current.openHit(hit)).toThrow();
+  expect(message).toHaveBeenCalledTimes(1);
+});
 function OriginConsumer(){const {OriginReference}=usePulseHost();if(!OriginReference)throw new Error("Missing original origin consumer");return <OriginReference channelId={originId}/>;}
 async function mountOrigin(open:(id:string)=>void,scopeKey="tenant:viewer") {
   const client=createBffClient({send:async()=>({status:200,body:{maxParticipants:9,items:[]}})});

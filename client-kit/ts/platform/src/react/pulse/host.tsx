@@ -6,6 +6,7 @@ import { newIdempotencyKey } from "../../governance";
 import { isOutcomeUnknown } from "../../transport";
 import { usePulseQuery } from "./hooks";
 import { ProfilePanel } from "./ProfilePanel";
+import type { ProjectDiscussionHost } from "../projects/DiscussionChannels";
 export { UserProfilePopover } from "./UserProfilePopover";
 export { AnimatedCount } from "./AnimatedCount";
 
@@ -30,6 +31,7 @@ export type PulseHost = {
   startDm:(pubkey:string)=>Promise<void>;
   openProfile?:(pubkey:string)=>void;
   OriginReference?:React.ComponentType<{agentName?:string|null;channelId?:string|null}>;
+  discussions?:ProjectDiscussionHost;
 };
 const Context=React.createContext<PulseHost|null>(null);
 export function PulseHostProvider({host,children}:{host:PulseHost;children:React.ReactNode}) {

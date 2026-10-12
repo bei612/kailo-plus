@@ -28,6 +28,8 @@ import {publishProjectPullRequestComment} from "./issueMutations";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
 import {useUiT} from "../context";
+import {DiscussedInChannels} from "./DiscussionChannels";
+import {entityDiscussionQuery} from "./discussionChannels";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -369,6 +371,9 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication}
       </ProjectDetailSection>
       <ProjectDetailSection defaultOpen title={t("projects.workItem.activity")}>
         <div className="space-y-3">
+          <DiscussedInChannels entityLabel={t("projects.discussion.thisReview")}
+            originChannelId={pullRequest.channelId} originCreatedAt={pullRequest.createdAt}
+            originPubkey={pullRequest.author} query={entityDiscussionQuery(pullRequest.id)} testId="pull-request-discussed-in"/>
           <div className="group/timeline -mx-6 overflow-hidden">
             {reviewHistory.length > 0 ? (
               <button

@@ -154,6 +154,40 @@ describe("original shared Inbox presentation", () => {
     expect(markAll).toHaveBeenCalledOnce();
   });
 
+  it.each(["en", "zh-CN"] as const)("preserves the original unread preference across Reminders and Drafts without enabling an ineffective switch (%s)", async locale => {
+    setLocale(locale);
+    const changed = vi.fn();
+    function Header() {
+      const [filter, setFilter] = useState<"all" | "reminders" | "drafts">("all");
+      const [unread, setUnread] = useState(false);
+      return <>
+        {(["all", "reminders", "drafts"] as const).map(value => <button key={value} data-filter={value} onClick={() => setFilter(value)}>{value}</button>)}
+        <InboxListHeader filter={filter} onFilterChange={vi.fn()} unreadOnly={unread} onUnreadOnlyChange={value => { changed(value); setUnread(value); }} unreadCount={0} onMarkAllRead={vi.fn()} />
+      </>;
+    }
+    const host = await render(<Header />);
+    await click(host.querySelector<HTMLButtonElement>("[data-testid=inbox-options-trigger]")!);
+    const toggle = () => document.querySelector<HTMLButtonElement>("[data-testid=inbox-unread-only-toggle]")!;
+    await click(toggle());
+    expect(changed).toHaveBeenCalledExactlyOnceWith(true);
+    for (const filter of ["reminders", "drafts"]) {
+      await click(host.querySelector<HTMLButtonElement>(`[data-filter=${filter}]`)!);
+      if (!toggle()) await click(host.querySelector<HTMLButtonElement>("[data-testid=inbox-options-trigger]")!);
+      expect(toggle().disabled).toBe(true);
+      expect(toggle().parentElement?.classList.contains("opacity-50")).toBe(true);
+      expect(toggle().getAttribute("aria-checked")).toBe("true");
+      await click(toggle());
+      expect(changed).toHaveBeenCalledTimes(1);
+    }
+    await click(host.querySelector<HTMLButtonElement>("[data-filter=all]")!);
+    if (!toggle()) await click(host.querySelector<HTMLButtonElement>("[data-testid=inbox-options-trigger]")!);
+    expect(toggle().disabled).toBe(false);
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    await click(toggle());
+    expect(changed).toHaveBeenLastCalledWith(false);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps row actions separate from selection and wires detail back/open callbacks", async () => {
     const select = vi.fn(); const mark = vi.fn(); const back = vi.fn(); const open = vi.fn();
     const host = await render(<TooltipProvider><div onClick={select}><InboxRowActionButton label="mark" onClick={mark}>mark</InboxRowActionButton></div>

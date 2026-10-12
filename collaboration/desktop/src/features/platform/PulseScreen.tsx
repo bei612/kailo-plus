@@ -17,6 +17,7 @@ import { channelsQueryKey } from "@/features/channels/hooks";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { channelReferenceQueryKey, useChannelReferences } from "@/features/channels/channelReference";
 import { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "@client-kit/platform/react/projects";
+import {getChannels,getChannelDetails,searchMessages,TauriInvokeError} from "@/shared/api/tauri";
 
 function NativeProjectOriginReference(props:ProjectOriginReferenceProps) {
   const references=useChannelReferences(props.channelId?[props.channelId]:[]);
@@ -29,6 +30,7 @@ function NativeProjectOriginReference(props:ProjectOriginReferenceProps) {
 
 export function PulseScreen({children}:{children?:ReactNode}={}) {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
+  const {goChannel,openSearchHit}=useAppNavigation();
   const cache=useQueryClient();
   const platformSession=useQuery({queryKey:["platform","session"],queryFn:()=>session.client.session()});
   const directMessage=useDirectMessageOpen(platformSession.data?.tenantPrincipalId??"");
@@ -41,6 +43,24 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
     return {scopeKey:`${session.facts.communityHost}:${session.devicePubkey}`,pubkey:session.devicePubkey,...transport,
       mediaUrl:rewriteRelayUrl,copy:writeTextToClipboard,
       OriginReference:NativeProjectOriginReference,
+      discussions:{
+        read:async(query,origin,signal)=>{
+          const check=()=>{signal.throwIfAborted();if(!scope.active)throw new Error(t("platform.loadFailed"));};check();
+          const results=await searchMessages({q:query,limit:500});check();
+          const directory=await getChannels(null);check();
+          if(!directory.channels)throw new Error(t("platform.loadFailed"));
+          const channels=[...directory.channels];
+          if(origin&&!channels.some(channel=>channel.id===origin)){
+            try{const detail=await getChannelDetails(origin);check();
+              channels.push({...detail,isMember:false});
+            }catch(error){check();if(!(error instanceof TauriInvokeError&&error.payload==="channel not found"))throw error;}
+          }
+          return {...results,channels};
+        },
+        openChannel:id=>{if(!scope.active)throw new Error(t("platform.loadFailed"));return goChannel(id);},
+        openHit:hit=>{if(!scope.active)throw new Error(t("platform.loadFailed"));return openSearchHit(hit);},
+        renderPreview:content=><Markdown content={content} className="inbox-preview-markdown mt-0.5 text-inherit leading-6" interactive={false}/>,
+      },
       startDm:async(pubkey)=>{
         const check=()=>{if(!scope.active)throw new Error(t("dm.viewInactive"));};
         check();
@@ -52,7 +72,7 @@ export function PulseScreen({children}:{children?:ReactNode}={}) {
       renderComposer:(props)=><NativePulseComposer props={props}/>,
 
     };
-  },[session,scope,limit,navigate,t,cache,directMessage.open]);
+  },[session,scope,limit,navigate,t,cache,directMessage.open,goChannel,openSearchHit]);
   if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
   return <PulseHostProvider host={host}>{children??<PulseView currentPubkey={session.devicePubkey}/>}</PulseHostProvider>;
 }

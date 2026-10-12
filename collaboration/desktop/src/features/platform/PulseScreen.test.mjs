@@ -16,14 +16,15 @@ Object.defineProperties(HTMLElement.prototype,{offsetHeight:{configurable:true,g
 HTMLElement.prototype.getBoundingClientRect=()=>new dom.window.DOMRect(0,0,800,420);
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
 const originId="12345678-1234-4234-8234-123456789012";
-let nativeOrigin,originReads=[];
+let nativeOrigin,originReads=[],nativeSearch,searchReads=[],detailFailure;
 window.__TAURI_INTERNALS__=globalThis.__TAURI_INTERNALS__={invoke:async (command,args)=>{
   if(command==="get_identity")return {pubkey:own,displayName:"Viewer"};
   if(command==="get_custom_emoji")return {items:[]};
   if(command==="plugin:event|listen")return 1;
   if(command==="plugin:event|unlisten")return;
   if(command==="get_channels")return {hash:"original-member-snapshot",channels:[],last_messages:{}};
-  if(command==="get_channel_details"){originReads.push(args.channelId);return nativeOrigin;}
+  if(command==="get_channel_details"){originReads.push(args.channelId);if(detailFailure)throw detailFailure;return nativeOrigin;}
+  if(command==="search_messages"){searchReads.push(args);return typeof nativeSearch==="function"?nativeSearch():nativeSearch;}
   throw new Error(`Unexpected native command ${command}`);
 }};
 const React=await import("react");const {act}=React;
@@ -68,7 +69,8 @@ async function mount(options={}) {
   const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
   const base=createRootRoute();
   function OriginConsumer(){const {OriginReference}=usePulseHost();assert.ok(OriginReference);return React.createElement(OriginReference,{channelId:originId});}
-  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):
+  function DiscussionConsumer(){const {discussions}=usePulseHost();options.discussions(discussions);return discussions.renderPreview("Original **preview** [link](https://example.test/page)");}
+  const pulse=createRoute({getParentRoute:()=>base,path:"/",component:options.discussions?()=>React.createElement(PulseScreen,null,React.createElement(DiscussionConsumer)):options.origin?()=>React.createElement(PulseScreen,null,React.createElement(OriginConsumer)):
     options.richContent?()=>React.createElement(PulseScreen,null,React.createElement(ProjectRichContent,{className:options.className,content:"Original **project body** with [a link](https://example.test/page)"})):PulseScreen});
   const channel=createRoute({getParentRoute:()=>base,path:"/channels/$channelId",component:()=>React.createElement("p",null,"Actual governed DM")});
   const compose=createRoute({getParentRoute:()=>base,path:"/messages/new",component:()=>React.createElement("p",null,"Wrong compose route")});
@@ -90,6 +92,29 @@ async function openProfile(view){
   await act(async()=>[...view.host.querySelectorAll("article button")].find(button=>button.textContent==="Actual author").click());
   await until(()=>view.host.querySelector('[data-testid="user-profile-message"]'));
 }
+
+test("Native discussion host consumes original search, exact missing metadata, noninteractive preview and scope cancellation",async()=>{
+  searchReads=[];detailFailure="channel not found";
+  nativeSearch={hits:[{event_id:eventId,channel_id:originId,channel_name:null,pubkey:peer,created_at:3,content:"Actual discussion",kind:9,score:1}],found:1};
+  let host;
+  const view=await mount({discussions:value=>{host=value;}});
+  try{
+    await until(()=>host);const current=host;
+    const result=await current.read(eventId,originId,new AbortController().signal);
+    assert.equal(searchReads[0].q,eventId);assert.equal(searchReads[0].limit,500);
+    assert.equal(result.hits[0].eventId,eventId);assert.deepEqual(result.channels,[]);
+    assert.equal(view.host.querySelector(".inbox-preview-markdown strong").textContent,"preview");
+    assert.equal(view.host.querySelector(".inbox-preview-markdown a"),null);
+    detailFailure="Dependency unavailable: channel not found";
+    await assert.rejects(current.read(eventId,originId,new AbortController().signal),error=>error.payload===detailFailure);
+    detailFailure=null;
+    let finish;nativeSearch=()=>new Promise(resolve=>{finish=resolve;});
+    const late=current.read(eventId,null,new AbortController().signal);
+    await view.render("two.test");finish({hits:[],found:0});
+    await assert.rejects(late);assert.throws(()=>current.openChannel(originId));
+    assert.equal(view.router.state.location.pathname,"/");
+  }finally{detailFailure=null;await view.close();}
+});
 
 for(const className of [undefined,"mt-1 text-sm text-foreground/90","text-sm text-muted-foreground"]){
   test(`Native original project rich-content passes ${className??"default"} to the actual Markdown body`,async()=>{
