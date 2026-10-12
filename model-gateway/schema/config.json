@@ -284,6 +284,17 @@
             "null"
           ]
         },
+        "adminAuthentication": {
+          "description": "Service authentication required for every admin request. Without it, the admin plane\nrejects all requests.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RawAdminAuthentication"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "standardAttributes": {
           "description": "Standard request log attributes populated for database-backed local runtime features.",
           "anyOf": [
@@ -802,6 +813,68 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawAdminAuthentication": {
+      "description": "`config.adminAuthentication` as written in the configuration file.",
+      "type": "object",
+      "properties": {
+        "issuer": {
+          "description": "Expected token issuer. The JWT `iss` claim must match exactly.",
+          "type": "string"
+        },
+        "audiences": {
+          "description": "Accepted token audiences. Must be non-empty; the JWT `aud` claim must contain one of them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "jwks": {
+          "description": "JSON Web Key Set used to verify token signatures. Can be inline, from a file, or fetched remotely.",
+          "$ref": "#/$defs/FileInlineOrRemote"
+        },
+        "clientId": {
+          "description": "The only OAuth2 client allowed to call the admin plane. The JWT `azp` claim must match exactly.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "audiences",
+        "jwks",
+        "clientId"
+      ]
+    },
+    "FileInlineOrRemote": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "Path to a file on disk to load the value from.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file"
+          ]
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      ]
     },
     "RawStandardAttributes": {
       "type": "object",
@@ -4867,36 +4940,6 @@
       "type": "object",
       "additionalProperties": true
     },
-    "FileInlineOrRemote": {
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "file": {
-              "description": "Path to a file on disk to load the value from.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "file"
-          ]
-        },
-        {
-          "type": "string"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "url"
-          ]
-        }
-      ]
-    },
     "McpAuthenticationMode": {
       "oneOf": [
         {
@@ -6562,6 +6605,18 @@
           },
           "default": []
         },
+        "uiLocales": {
+          "description": "Pass the supported browser preference, or the configured default, to the IdP.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OidcUiLocales"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "login": {
           "description": "Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.",
           "anyOf": [
@@ -6600,6 +6655,30 @@
       "enum": [
         "clientSecretBasic",
         "clientSecretPost"
+      ]
+    },
+    "OidcUiLocales": {
+      "description": "Presentation-only locale projection. Never used as an authentication claim.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "supported": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cookie": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "default",
+        "supported",
+        "cookie"
       ]
     },
     "OidcLogin": {
@@ -8139,6 +8218,13 @@
         },
         "responseIdleTimeout": {
           "description": "Maximum time to wait for a frame from the upstream response body.\n\nLimits how long the gateway waits for more response data from the backend.\nTime spent processing the response or waiting for the client to receive it does not count.\n\nThis complements the other two rather than overlapping them: both `requestTimeout` and\n`backendRequestTimeout` stop applying once the response headers arrive, so neither places\nany bound on how long the response body may take, and neither can distinguish a stalled\nstream from a slow one.\n\nThe timeout is disabled when this field is unset or set to zero. It does not apply to\nresponses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never\nterminated by it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamingUsageDrainTimeout": {
+          "description": "After a downstream disconnect, maximum time to finish reading an already dispatched\nLLM stream for its original usage log. No request is replayed. Shutdown stops the drain.\nUnset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.\nStreams with active streaming response guards retain immediate cancellation, because\npolling those guards can dispatch further webhook or moderation requests.",
           "type": [
             "string",
             "null"

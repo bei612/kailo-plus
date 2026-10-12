@@ -669,6 +669,39 @@ async fn test_llm_simple_config() {
 }
 
 #[tokio::test]
+async fn streaming_usage_drain_llm_route_normalizes_optional_timeout() {
+	for (policy, expected) in [
+		("null", None),
+		(
+			"{streamingUsageDrainTimeout: 2s}",
+			Some(std::time::Duration::from_secs(2)),
+		),
+	] {
+		let yaml = format!(
+			"llm:\n  policies:\n    timeout: {policy}\n  models:\n  - name: test-model\n    provider: openai\n"
+		);
+		let normalized = normalize_test_config(&yaml).await.unwrap();
+		let timeouts: Vec<_> = normalized
+			.policies
+			.iter()
+			.filter_map(|targeted| match &targeted.policy {
+				PolicyType::Traffic(phase) => match &phase.policy {
+					TrafficPolicy::Timeout(timeout) => Some(timeout.streaming_usage_drain_timeout),
+					_ => None,
+				},
+				_ => None,
+			})
+			.collect();
+		assert_eq!(
+			timeouts.is_empty(),
+			expected.is_none(),
+			"the original delivery must not emit an absent timeout policy"
+		);
+		assert!(timeouts.into_iter().all(|actual| actual == expected));
+	}
+}
+
+#[tokio::test]
 async fn test_llm_provider_reference_config() {
 	test_config_parsing("llm_provider_reference").await;
 }

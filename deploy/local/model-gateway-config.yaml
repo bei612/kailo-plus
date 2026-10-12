@@ -49,6 +49,9 @@ routes: []
 llm:
   port: ${AGENTGATEWAY_MODEL_PORT}
   policies:
+    # Optional runtime drain is projected by the same native config delivery.
+    # Absent delivery must not introduce an empty policy overriding inherited timeouts.
+    timeout: null # GATEWAY_STREAMING_USAGE_DRAIN_POLICY
     apiKey:
       mode: strict
       keys: []

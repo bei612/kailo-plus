@@ -267,6 +267,7 @@ if [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]
   SERVICE_CONTAINER_PORT="$SERVICE_CONTAINER_PORT" \
   AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY="$AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY" \
   AGENTGATEWAY_MODEL_PORT="$AGENTGATEWAY_MODEL_PORT" \
+  AGENTGATEWAY_STREAMING_USAGE_DRAIN_TIMEOUT="${AGENTGATEWAY_STREAMING_USAGE_DRAIN_TIMEOUT:-}" \
   python3 - "$gateway_config" "$gateway_present" <<'PYGATEWAY'
 import base64
 import json
@@ -282,9 +283,12 @@ def write_backend_auth(value, gateways):
     # new input or credential store. Keep it for init-local's subsequent Gateway
     # start, and replace the old value when returning to the all-absent mode.
     source = Path("model-gateway-config.yaml").read_text(encoding="utf-8")
+    usage_drain = os.environ["AGENTGATEWAY_STREAMING_USAGE_DRAIN_TIMEOUT"]
+    usage_timeout = {"streamingUsageDrainTimeout": usage_drain} if usage_drain else None
     for marker, replacement in (
         ("gateways: {} # GATEWAY_SERVICE_DELIVERY_GATEWAYS", "gateways: " + json.dumps(gateways)),
         ("backendAuth: null # GATEWAY_SERVICE_DELIVERY_AUTH", "backendAuth: " + json.dumps(value)),
+        ("timeout: null # GATEWAY_STREAMING_USAGE_DRAIN_POLICY", "timeout: " + json.dumps(usage_timeout)),
     ):
         if source.count(marker) != 1:
             raise SystemExit("Gateway 原配置缺少唯一投递位置")

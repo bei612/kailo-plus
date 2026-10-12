@@ -646,3 +646,113 @@ artifact 为
 `59febf01ecfd620fe8339b8939269abdc3f47c875751413df1b07b64ee2108df`，
 `deploy-after-containers.log` SHA-256
 `90baac82a962193c7874765583a9111ae97ed20c70b8d978eafc506fa90deb44`。
+
+## 2026-10-11 下游断开后的同流用量收尾（源码阶段）
+
+本批依据 `.design/11` §3–4 的实际用量、稳定 Gateway log ID、UNKNOWN 保留与不重放要求，
+修正当前请求断开就丢弃原上游解析器、无法读取末帧用量的消费者生命周期；
+不将此次真实调用缺失的用量补零，不以相邻请求或 Codex 自报量替代。
+固定上游为 `1f7ebbf87cbdbe9517f6f181221879d04dc50692`，
+`crates/llm/src/parse/transform.rs::TransformedBody` 仅在 poll 时处理原流；
+`crates/agentgateway/src/llm/mod.rs::AIProvider::process_streaming` 的原翻译与
+`AmendOnDrop` 是实际用量读方，未另写 SSE 解析器或计量账本。
+
+写入前四步结论：
+
+1. 权威：仅延长同一已派发响应的观测，原计量、quota、trace、outbox 权威不变。
+   未获得实际 usage 时仍 UNKNOWN；不把“取消已接受”或 HTTP 200 当结算完成。
+2. 影响面：原 timeout Policy 的新增可选 `streamingUsageDrainTimeout` 经本地 LLM／route
+   解析与 ResponsePolicies 到最终 Gateway body 消费；xDS 原协议不含此字段，仍为 None。
+   `HTTPProxy::proxy` 先附原 `DropOnLog`，`Gateway::proxy` 再附原请求 permit，
+   最外层收尾保留二者直到同一个 body 结束。非 LLM、升级连接及缺省配置保持原行为。
+   `GuardedSseBody` 的逐窗口响应守卫会调用原 webhook／远端审核消费者，因此仅无 streaming
+   guard 的翻译结果携带 drain 标记；有 guard 时保持原取消，不绕过守卫或继续派发审核请求。
+3. 副作用：没有新 provider 请求、工具派发、重试、身份或用量复制；启用后读取同流产生的
+   实际用量仍受原上限约束，并占原并发许可。原 responseIdleTimeout 保持帧间空闲语义，
+   不偷换成总预算。原 runtime shutdown、EOF、错误或新显式预算均结束收尾。
+4. 边界：零时长、非法时长拒绝；缺省为 None。正常结束仍走原解析器；下游断开后仅在
+   配置窗口内继续读取原流；缺 usage、上游错误、预算／停机截断不制造完成数量。
+   新策略不修复已经持久化的历史 NULL usage，也不解除该 Invocation 的待对账状态。
+
+运行期投递仅补原 `deploy/local/.env.example`、`start-core.sh::write_backend_auth` 和原
+`model-gateway-config.yaml` 的 `llm.policies.timeout`。未更改现存 `.env`、未选择默认时限、
+未重启或发布镜像；空投递使整项 timeout 为 YAML null，不生成覆盖继承值的空 Policy，
+非空值经原 JSON 编码和 Gateway 时长解析，不把字符串 "null" 当作缺省。
+运行行为与缺省边界同时记入 `07` §1。
+本批原始证据目录为 `/volumes/data/kailo/tmp/gateway-usage-drain.rvNu3E`。
+首次验证缺原 `RUSTUP_TOOLCHAIN=1.98.0`，rustup 在 none 网络尝试取得 `1.98` 别名失败，
+`positive.log` 退出 1，未进入检查断言；纠正为原固定工具链，不安装、不更改锁文件。
+当前检查使用原不可变 SDK `sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5efff67d5698d3c449cb6ffb94936`，
+实际 4 CPU／8 GiB、memory+swap 同额、UID 1000，原 Data 独立 Gateway target、Cargo 并行 16。
+2026-10-12 原 session 30512 自然退出 0，`positive-correct-toolchain.log` 记录
+121m05s 编译后 2 passed、2138 filtered：原时长解析与六场景消费者通过。
+该输入早于最终 shutdown guard、独立 timeout 继承、配置解析和 streaming guard 修正，
+不能覆盖末版；原记录保留，未将其改写成末版通过。
+随后将 `final-guarded-source.o2u1Vk` 八份 Rust 源逐一复制及 cmp 到原私有快照，
+同一受限 SDK／Data target 的原过滤命令继续验证，不重建环境、不修改在途输入。
+末版原消费者检查结果见下文；全量门禁与部署未验收，不声明真实两 Agent 调用已恢复。
+末版第七个 guarded-disconnect 场景仅核验原 `process_streaming` 不附 drain 标记、
+直接丢弃原 body 后不执行守卫；不代表真实远端 Webhook 请求验收。
+
+2026-10-12 末版 session 93323 与恢复 session 77304 均实际退出 0，分别编译
+30m59s／12m04s 后得到 `4 passed; 0 failed; 2138 filtered out`。同一原命令：
+
+```sh
+cargo test --offline --locked --profile ci -p agentgateway --lib streaming_usage_drain -- --nocapture
+```
+
+四项分别验证时长缺省／非零解析、独立 timeout 继承、原 LLM 配置 null／显式投递解析，
+以及原 `AIProvider::process_streaming`、用量解析器、`AsyncLog`、请求 permit 与最终 body
+的七场景：正常结束、下游断开、预算耗尽、shutdown、无 usage、上游 body 错误、有守卫断开。
+实际同流 usage 为 7 时才保留 7；预算／停机截断、无 usage、body 错误及有守卫断开均不制造 0。
+shutdown 在原日志析构期间
+仍等待原 watcher／release guard。使用隔离流和日志观察夹具，没有实际 PostgreSQL
+usage outbox 入库、远端模型、远端守卫或线上 HTTP 请求链验收。
+
+私有反证只反向 `StreamingUsageBody::drop` 的结束条件，使未完流立即丢弃；
+session 29878 实际退出 101，原消费者在 `gateway_test.rs:178` 报
+`disconnect: disconnect must not release permit`，0 passed／1 failed。
+随后原字节恢复，并逐一 cmp 八个 Rust 文件与 `final-guarded-source.o2u1Vk` 一致，
+再取得上述恢复 4／4；正式源码没有承载破坏版。没有另开冷环境或重放业务调用。
+
+上述目录内原日志 SHA-256：
+
+- `positive.log`：`f0dd64a8beef7b6bc432eb3240c4d980aefe7ab74eaa120b9601aadf5cba723e`（工具链投递失败）。
+- `positive-correct-toolchain.log`：`78d47d7b0117cecdf75766bedcce6d65371d0c2846823dd9293602fbf76faf39`（旧输入 2／2）。
+- `final-guarded-positive.log`：`38a5f25e790c221fa304dadc9fe8f4385bd7513aff48107448c53eacf68f6286`。
+- `mutation-disconnect-drop.log`：`a248c1eb6e6d56fd20f16c476869a4809c21c9071460cd15853377e4ec3d8a5b`。
+- `final-guarded-restored.log`：`9a2442992e618090eeb0a91d3c650112f9c1a4d7c90f04026e28cf2158d6b21c`。
+
+同一 SDK 的原 `cargo run --offline --locked --profile ci -p xtask -- schema`
+在 session 39475 编译 34m27s 后运行原生成器，实际退出 1：原 `schema-to-md.sh` 第 5 行
+找不到 `jq`。该次三份 JSON 已由原生成器写出，Markdown 消费者未完成，不记完整生成通过。
+失败原件 `schema-final.log` SHA-256 为
+`3736154126302993c1b324b0bc7eef77e1a9ed82f52e935a4445ef74353d9690`。
+
+根因是原 `tools/check.Dockerfile` 的 APT 依赖未包含原文档生成器必需的 `jq`；
+本批仅在该原列表补入 `jq`。本次不重建 SDK，而在同一不可变镜像的 Debian 13／trixie
+环境以 2 CPU／2 GiB、memory+swap 同额、UID 1000、只读根文件系统下载原签名仓库的包，
+APT 索引、包、临时文件与解包结果均在上述 Data 证据目录的 `debian-jq.dIdXCZ`。
+未全局安装、未投递宿主 Ubuntu 库。原 APT 清理 hook 对只读缓存目录的拒绝警告保留，
+session 69243 下载、解包与 `jq --version` 实际退出 0。
+
+- `jq`／`libjq1`：`1.7.1-6+deb13u4`；包 SHA-256 分别为
+  `7350392f700e20e46b7ae174a57f54e4ea106dd559753646d629b4e618bf2bff`、
+  `70bb2cbd66d5ada4349067ae9f61d0560b3b359d4203f2c051ca5773153ae0ba`。
+- `libonig5`：`6.9.9-1+b1`；包 SHA-256 为
+  `3abee130696244050500bcc7870e3b4cb82ddd87149ece3fd55010c3d4e1d18c`。
+- `jq-runtime-delivery.log` SHA-256：
+  `9073af559da9576b9be16c4147c3f7dd44203fd749270a39d305032b18fd8960`。
+
+随后仅向原 Gateway SDK 该次进程投递私有 `PATH`／`LD_LIBRARY_PATH` 与原
+`CARGO_MANIFEST_DIR=/workspace/model-gateway/crates/xtask`，直接运行已编译的
+`/target/ci/xtask schema`；session 62140 实际退出 0，未再次运行 Cargo。
+原生成器依次完成三 JSON、两 Markdown（包括内联 schema、原 jq 转换及去重），
+`schema-final-with-debian-jq.log` 为无输出的成功日志，SHA-256 为
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+实际入库差异仅 `schema/config.json` 与 `schema/config.md`，SHA-256 分别为
+`1494af222862da2463d3b9ce67c199405f52eb95cf7562541dd7c2ed5865ce09`、
+`3ef4d83182aac9f3daa3a48dfe5fb774cad13b93d806801631cab3c9cc38f6e3`；其余三文件与基底一致。
+原生成同时补齐已提交 `RawAdminAuthentication`／`OidcUiLocales` 源码的既有 schema 差距，
+并移动同一个 `FileInlineOrRemote` 定义的位置；这两处源码与现主干 blob 一致，未新增业务。
+生成物未手工修改。该次成功不代表已重建含 jq 的 SDK、全量门禁或线上部署通过。

@@ -207,6 +207,11 @@ async fn apply_request_policies(
 	// TODO we only need allow policies to be timeout-aware because we odn't have
 	// a unified timeout guard that applies during policy evalutation
 	rp.timeout = pol.timeout.select("timeout", req).as_deref().cloned();
+	rp.streaming_usage_drain_timeout = pol
+		.streaming_usage_drain_timeout
+		.select("streamingUsageDrainTimeout", req)
+		.as_deref()
+		.copied();
 	if let Some(timeout) = rp.timeout.as_ref().and_then(|t| t.request_timeout) {
 		req.extensions_mut().insert(http::filters::RequestDeadline(
 			l.start.as_instant() + timeout,
@@ -816,6 +821,18 @@ impl HTTPProxy {
 				.await
 				.unwrap_or_else(|e| e.into_response_with_grpc(is_grpc_request))
 		} else {
+			if resp
+				.extensions()
+				.get::<llm::StreamingUsageResponse>()
+				.is_some()
+				&& let Some(timeout) = response_policies
+					.streaming_usage_drain_timeout
+					.filter(|duration| !duration.is_zero())
+			{
+				resp
+					.extensions_mut()
+					.insert(http::timeout::StreamingUsageDrain(timeout));
+			}
 			resp.map(move |body| body.with_observer(log))
 		}
 	}
@@ -4747,6 +4764,7 @@ pub struct ServiceCallOverride {
 #[derive(Debug, Default)]
 struct ResponsePolicies {
 	timeout: Option<http::timeout::Policy>,
+	streaming_usage_drain_timeout: Option<std::time::Duration>,
 	route_response_header: ResponsePolicy<filters::HeaderModifier>,
 	backend_response_header: ResponsePolicy<filters::HeaderModifier>,
 	buffer: ResponsePolicy<Buffer>,

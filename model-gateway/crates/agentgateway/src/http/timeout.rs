@@ -44,7 +44,36 @@ pub struct Policy {
 	)]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
 	pub response_idle_timeout: Option<Duration>,
+	/// After a downstream disconnect, maximum time to finish reading an already dispatched
+	/// LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.
+	/// Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.
+	/// Streams with active streaming response guards retain immediate cancellation, because
+	/// polling those guards can dispatch further webhook or moderation requests.
+	#[serde(
+		default,
+		skip_serializing_if = "Option::is_none",
+		serialize_with = "serde_dur_option::serialize",
+		deserialize_with = "deserialize_usage_drain_timeout"
+	)]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	pub streaming_usage_drain_timeout: Option<Duration>,
 }
+
+fn deserialize_usage_drain_timeout<'de, D: serde::Deserializer<'de>>(
+	deserializer: D,
+) -> Result<Option<Duration>, D::Error> {
+	let duration = serde_dur_option::deserialize(deserializer)?;
+	if duration.is_some_and(|d| d.is_zero()) {
+		return Err(serde::de::Error::custom(
+			"streamingUsageDrainTimeout must be nonzero",
+		));
+	}
+	Ok(duration)
+}
+
+/// Internal response extension. Only the actual LLM streaming consumer may enable this.
+#[derive(Clone, Copy)]
+pub(crate) struct StreamingUsageDrain(pub Duration);
 
 /// Attach the idle timeout to the upstream body before response processing.
 pub fn apply_response_idle_timeout(
@@ -64,6 +93,28 @@ mod tests {
 	use http_body_util::BodyExt;
 
 	use super::*;
+
+	#[test]
+	fn streaming_usage_drain_policy_preserves_absence_and_rejects_zero() {
+		let absent: Policy = serde_json::from_str("{}").unwrap();
+		assert_eq!(absent.streaming_usage_drain_timeout, None);
+		let null: Policy = serde_json::from_str(r#"{"streamingUsageDrainTimeout":null}"#).unwrap();
+		assert_eq!(null.streaming_usage_drain_timeout, None);
+		let configured: Policy =
+			serde_json::from_str(r#"{"streamingUsageDrainTimeout":"2s"}"#).unwrap();
+		assert_eq!(
+			configured.streaming_usage_drain_timeout,
+			Some(Duration::from_secs(2))
+		);
+		for invalid in ["0s", "-1s", "invalid"] {
+			assert!(
+				serde_json::from_value::<Policy>(serde_json::json!({
+					"streamingUsageDrainTimeout": invalid
+				}))
+				.is_err()
+			);
+		}
+	}
 
 	#[tokio::test(start_paused = true)]
 	async fn idle_body_times_out() {

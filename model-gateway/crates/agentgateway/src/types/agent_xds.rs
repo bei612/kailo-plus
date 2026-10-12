@@ -2531,6 +2531,8 @@ fn traffic_policy_from_proto(
 	use crate::types::proto::agent::traffic_policy_spec as tps;
 	Ok(match &spec.kind {
 		Some(tps::Kind::Timeout(t)) => TrafficPolicy::Timeout(http::timeout::Policy {
+			// The upstream xDS protocol does not expose this local route option.
+			streaming_usage_drain_timeout: None,
 			request_timeout: t.request.as_ref().map(|d| (*d).try_into()).transpose()?,
 			backend_request_timeout: t
 				.backend_request

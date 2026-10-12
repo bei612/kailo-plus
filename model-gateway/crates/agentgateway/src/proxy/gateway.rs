@@ -46,6 +46,94 @@ mod tests;
 #[path = "locality_test.rs"]
 mod locality_tests;
 
+// This must wrap the final body, including its original log observer and request permit.
+// Keeping only the LLM parser alive would finalize the durable log before usage arrives.
+struct StreamingUsageBody {
+	body: Option<crate::http::Body>,
+	timeout: Duration,
+	shutdown: Option<DrainWatcher>,
+}
+
+impl http_body::Body for StreamingUsageBody {
+	type Data = Bytes;
+	type Error = axum_core::Error;
+
+	fn poll_frame(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Option<Result<http_body::Frame<Bytes>, Self::Error>>> {
+		let this = self.get_mut();
+		let Some(body) = this.body.as_mut() else {
+			return std::task::Poll::Ready(None);
+		};
+		let result = std::pin::Pin::new(body).poll_frame(cx);
+		if matches!(result, std::task::Poll::Ready(None | Some(Err(_)))) {
+			this.body.take();
+			this.shutdown.take();
+		}
+		result
+	}
+
+	fn is_end_stream(&self) -> bool {
+		self
+			.body
+			.as_ref()
+			.is_none_or(http_body::Body::is_end_stream)
+	}
+
+	fn size_hint(&self) -> http_body::SizeHint {
+		self
+			.body
+			.as_ref()
+			.map(http_body::Body::size_hint)
+			.unwrap_or_default()
+	}
+}
+
+impl Drop for StreamingUsageBody {
+	fn drop(&mut self) {
+		use http_body_util::BodyExt;
+		let Some(mut body) = self.body.take() else {
+			return;
+		};
+		if http_body::Body::is_end_stream(&body) {
+			return;
+		}
+		let Some(shutdown) = self.shutdown.take() else {
+			return;
+		};
+		let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+			return;
+		};
+		let Some(deadline) = tokio::time::Instant::now().checked_add(self.timeout) else {
+			return;
+		};
+		runtime.spawn(
+			async move {
+				// Drain only the already dispatched response through its original translation/usage
+				// observers. Never replay a request, emit tool calls, or manufacture missing usage.
+				let read = async {
+					while let Some(frame) = body.frame().await {
+						if frame.is_err() {
+							break;
+						}
+					}
+				};
+				let shutdown_guard = tokio::select! {
+					biased;
+					guard = shutdown.clone().wait_for_drain() => Some(guard),
+					_ = tokio::time::timeout_at(deadline, read) => None,
+				};
+				// Dropping this same body finalizes the same log/outbox and releases its permit.
+				drop(body);
+				drop(shutdown_guard);
+				drop(shutdown);
+			}
+			.in_current_span(),
+		);
+	}
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum HboneAddress {
 	SocketAddr(SocketAddr),
@@ -961,12 +1049,14 @@ impl Gateway {
 			})
 			.clone();
 		let drain_proxy = proxy.clone();
+		let usage_drain = drain.clone();
 
 		let serve = server.serve_connection_with_upgrades(
 			TokioIo::new(stream),
 			hyper::service::service_fn(move |mut req| {
 				let proxy = proxy.clone();
 				let connection = connection.clone();
+				let usage_drain = usage_drain.clone();
 
 				// Ensure we have capacity before we allocate the large proxy future.
 				let Some(request_permit) = request_admission.requests.try_acquire(max_requests) else {
@@ -993,7 +1083,21 @@ impl Gateway {
 						.assert_size::<{ 18 * 1024 }>(),
 					)
 					.await?;
-					Ok(response.map(|body| body.with_drop_guard(request_permit)))
+					let timeout = response
+						.extensions()
+						.get::<crate::http::timeout::StreamingUsageDrain>()
+						.map(|t| t.0);
+					Ok(response.map(|body| {
+						let body = body.with_drop_guard(request_permit);
+						match timeout {
+							Some(timeout) => crate::http::Body::new(StreamingUsageBody {
+								body: Some(body),
+								timeout,
+								shutdown: Some(usage_drain),
+							}),
+							None => body,
+						}
+					}))
 				})
 			}),
 		);

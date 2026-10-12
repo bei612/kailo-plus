@@ -18,7 +18,7 @@ ENV CARGO_HOME=/usr/local/cargo \
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-       bash build-essential ca-certificates curl git libssl-dev \
+       bash build-essential ca-certificates curl git jq libssl-dev \
        pkg-config postgresql-client procps python3 python3-yaml \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \

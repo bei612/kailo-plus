@@ -56,6 +56,9 @@ mod gemini_tests;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone, Copy)]
+pub(crate) struct StreamingUsageResponse;
+
 fn normalize_sse_response_headers(mut resp: Response) -> Response {
 	resp.headers_mut().insert(
 		header::CONTENT_TYPE,
@@ -2944,7 +2947,7 @@ impl AIProvider {
 				stream_format.to_string(),
 			)
 		});
-		let translated = if input_format.is_chat() {
+		let mut translated = if input_format.is_chat() {
 			let translation = chat_translation.expect("chat translation was selected for chat input");
 			translation.stream(
 				resp,
@@ -2983,6 +2986,9 @@ impl AIProvider {
 					.map(|b| b.transform_stream(|b| GuardedSseBody::new(b, evaluators, buffer, None))),
 			);
 		}
+		// Streaming guards may dispatch further moderation/webhook requests per window.
+		// Do not keep polling those consumers after their downstream has disconnected.
+		translated.extensions_mut().insert(StreamingUsageResponse);
 		Ok(translated)
 	}
 

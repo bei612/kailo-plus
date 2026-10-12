@@ -395,6 +395,8 @@ pub struct RoutePolicies {
 
 	pub llm: RequestPolicy<llm::Policy>,
 	pub timeout: RequestPolicy<timeout::Policy>,
+	#[serde(skip_serializing_if = "RequestPolicy::is_empty")]
+	pub streaming_usage_drain_timeout: RequestPolicy<std::time::Duration>,
 	pub retry: RequestPolicy<retry::Policy>,
 	pub delay: RequestPolicy<http::delay::Policy>,
 
@@ -1137,9 +1139,25 @@ impl Store {
 				},
 
 				TrafficPolicy::Timeout(p) => {
-					pol
-						.timeout
-						.merge_with_inheritance(&RequestPolicy::single(p.clone()), lock_inheritance);
+					if let Some(duration) = p.streaming_usage_drain_timeout {
+						pol
+							.streaming_usage_drain_timeout
+							.merge_with_inheritance(&RequestPolicy::single(duration), lock_inheritance);
+					}
+					// A drain-only addition must not reset inherited request/backend/idle limits.
+					// Existing timeout policies (including an explicit empty reset) keep their
+					// original whole-policy inheritance behavior.
+					if p.streaming_usage_drain_timeout.is_none()
+						|| p.request_timeout.is_some()
+						|| p.backend_request_timeout.is_some()
+						|| p.response_idle_timeout.is_some()
+					{
+						let mut legacy = p.clone();
+						legacy.streaming_usage_drain_timeout = None;
+						pol
+							.timeout
+							.merge_with_inheritance(&RequestPolicy::single(legacy), lock_inheritance);
+					}
 				},
 				TrafficPolicy::Retry(p) => {
 					pol
@@ -2679,6 +2697,7 @@ mod tests {
 		request_timeout_secs: u64,
 	) -> timeout::Policy {
 		let pol = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(request_timeout_secs)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,
@@ -3393,6 +3412,7 @@ mod tests {
 			port: None,
 		});
 		let svc_timeout = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(7)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,
@@ -3821,11 +3841,13 @@ mod tests {
 			..listener()
 		};
 		let set_timeout = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(1)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,
 		};
 		let section_timeout = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(2)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,
@@ -3910,6 +3932,7 @@ mod tests {
 		let child_route = route("child", "ns", Some("HTTPRoute"));
 
 		let parent_timeout = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(1)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,
@@ -3936,11 +3959,67 @@ mod tests {
 	}
 
 	#[test]
+	fn streaming_usage_drain_does_not_replace_inherited_timeouts() {
+		let store = Store::default();
+		let listener = listener();
+		let parent = route("parent", "ns", Some("HTTPRoute"));
+		let child = route("child", "ns", Some("HTTPRoute"));
+		let original = timeout::Policy {
+			request_timeout: Some(Duration::from_secs(7)),
+			backend_request_timeout: Some(Duration::from_secs(5)),
+			response_idle_timeout: Some(Duration::from_secs(3)),
+			streaming_usage_drain_timeout: None,
+		};
+		let parent_inline = [TrafficPolicy::Timeout(original.clone())];
+		let child_inline = [TrafficPolicy::Timeout(timeout::Policy {
+			streaming_usage_drain_timeout: Some(Duration::from_secs(2)),
+			..Default::default()
+		})];
+		let policies = store.route_policies(&RoutePath {
+			listener: &listener,
+			service: None,
+			routes: vec![&parent, &child],
+			route_inlines: vec![&parent_inline, &child_inline],
+		});
+		let request = request_for_policy_selection();
+		assert_eq!(
+			policies.timeout.select("timeout", &request).as_deref(),
+			Some(&original)
+		);
+		assert_eq!(
+			policies
+				.streaming_usage_drain_timeout
+				.select("streamingUsageDrainTimeout", &request)
+				.as_deref(),
+			Some(&Duration::from_secs(2))
+		);
+		// A more-specific original timeout still replaces the original group, without clearing drain.
+		let policies = store.route_policies(&RoutePath {
+			listener: &listener,
+			service: None,
+			routes: vec![&parent, &child],
+			route_inlines: vec![&child_inline, &parent_inline],
+		});
+		assert_eq!(
+			policies.timeout.select("timeout", &request).as_deref(),
+			Some(&original)
+		);
+		assert_eq!(
+			policies
+				.streaming_usage_drain_timeout
+				.select("streamingUsageDrainTimeout", &request)
+				.as_deref(),
+			Some(&Duration::from_secs(2))
+		);
+	}
+
+	#[test]
 	fn route_policy_override_stops_more_specific_policy_type_inheritance() {
 		let mut store = Store::default();
 		let listener = listener();
 		let route = route("route", "ns", Some("HTTPRoute"));
 		let gateway_timeout = timeout::Policy {
+			streaming_usage_drain_timeout: None,
 			request_timeout: Some(Duration::from_secs(1)),
 			backend_request_timeout: None,
 			response_idle_timeout: None,

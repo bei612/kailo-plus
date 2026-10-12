@@ -11,6 +11,236 @@ use crate::types::discovery::{
 	GatewayAddress, Identity, InboundProtocol, NamespacedHostname, NetworkAddress, Service, Workload,
 };
 
+#[tokio::test(start_paused = true)]
+async fn streaming_usage_drain_preserves_parser_log_and_admission_until_completion() {
+	use crate::http::{Body, Response};
+	use crate::llm::{
+		AIProvider, CacheTokenConvention, InputFormat, LLMInfo, LLMLogging, LLMRequest, openai,
+	};
+	use crate::store::LLMResponsePolicies;
+	use crate::telemetry::log::AsyncLog;
+	use bytes::Bytes;
+	use http_body_util::BodyExt;
+	use std::num::NonZeroU32;
+	use std::sync::{Arc, Mutex};
+	use std::time::Duration;
+	type SharedShutdown = Arc<Mutex<futures_util::future::BoxFuture<'static, ()>>>;
+
+	struct FinalLog {
+		log: AsyncLog<LLMInfo>,
+		result: Arc<Mutex<Option<Option<u64>>>>,
+		shutdown: Option<SharedShutdown>,
+	}
+	impl Drop for FinalLog {
+		fn drop(&mut self) {
+			if let Some(shutdown) = &self.shutdown {
+				let mut context = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+				assert!(
+					shutdown
+						.lock()
+						.unwrap()
+						.as_mut()
+						.poll(&mut context)
+						.is_pending(),
+					"shutdown must still wait while the original log is being finalized"
+				);
+			}
+			*self.result.lock().unwrap() =
+				Some(self.log.take().and_then(|info| info.response.total_tokens));
+		}
+	}
+
+	for mode in [
+		"complete",
+		"disconnect",
+		"timeout",
+		"shutdown",
+		"no-usage",
+		"body-error",
+		"guarded-disconnect",
+	] {
+		let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(4);
+		let provider = AIProvider::OpenAI(openai::Provider {
+			model_override: None,
+			moderation: None,
+		});
+		let log = AsyncLog::default();
+		let guardrail_log = crate::telemetry::log::GuardrailLog::default();
+		let result = Arc::new(Mutex::new(None));
+		let guarded = mode == "guarded-disconnect";
+		let mut policies = LLMResponsePolicies::default();
+		if guarded {
+			use crate::llm::policy::{ResponseGuard, ResponseGuardKind, Webhook};
+			use crate::types::agent::{SimpleBackendReference, SimpleBackendReferenceWithPolicies};
+			policies.streaming_prompt_guard_enabled = true;
+			policies.prompt_guard.push(ResponseGuard {
+				rejection: Default::default(),
+				kind: ResponseGuardKind::Webhook(Webhook {
+					target: SimpleBackendReferenceWithPolicies {
+						target: Arc::new(SimpleBackendReference::Invalid),
+						policies: vec![],
+					},
+					headers: Default::default(),
+					forward_header_matches: vec![],
+					failure_mode: Default::default(),
+					action: Default::default(),
+				}),
+			});
+		}
+		let response = provider
+			.process_streaming(
+				httpproxy::PolicyClient::new(setup_proxy_test("{}").unwrap().pi),
+				LLMRequest {
+					input_tokens: None,
+					input_format: InputFormat::Completions,
+					cache_convention: CacheTokenConvention::pending(),
+					request_model: "test-model".into(),
+					provider: "openai".into(),
+					streaming: true,
+					params: Default::default(),
+					prompt: None,
+					provider_state: None,
+				},
+				policies,
+				None,
+				LLMLogging {
+					response: log.clone(),
+					guardrails: guardrail_log.clone(),
+					..Default::default()
+				},
+				None,
+				Response::new(Body::from_stream(
+					tokio_stream::wrappers::ReceiverStream::new(receiver),
+				)),
+			)
+			.unwrap();
+		assert_eq!(
+			response
+				.extensions()
+				.get::<crate::llm::StreamingUsageResponse>()
+				.is_some(),
+			!guarded,
+			"guarded streams must retain cancellation without dispatching more guard requests"
+		);
+		let limiter = crate::proxy::admission::Limiter::default();
+		let limit = NonZeroU32::new(1);
+		let permit = limiter.try_acquire(limit).unwrap();
+		let (shutdown, watcher) = agent_core::drain::new();
+		let shutdown: SharedShutdown = Arc::new(Mutex::new(Box::pin(
+			shutdown.start_drain_and_wait(agent_core::drain::DrainMode::Immediate),
+		)));
+		let body = response
+			.into_body()
+			.with_drop_guard(FinalLog {
+				log,
+				result: result.clone(),
+				shutdown: (mode == "shutdown").then(|| shutdown.clone()),
+			})
+			.with_drop_guard(permit);
+		if guarded {
+			drop(body);
+			tokio::task::yield_now().await;
+			assert!(
+				sender.is_closed(),
+				"original guarded stream must be dropped"
+			);
+			assert_eq!(*result.lock().unwrap(), Some(None));
+			assert!(
+				guardrail_log.take().is_none(),
+				"no guard evaluation after disconnect"
+			);
+			assert!(limiter.try_acquire(limit).is_some());
+			continue;
+		}
+		let mut body = Body::new(super::StreamingUsageBody {
+			body: Some(body),
+			timeout: Duration::from_secs(2),
+			shutdown: Some(watcher),
+		});
+		sender.send(Ok(Bytes::from_static(b"data: {\"id\":\"completion\",\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n"))).await.unwrap();
+		body.frame().await.unwrap().unwrap();
+		assert!(
+			limiter.try_acquire(limit).is_none(),
+			"{mode}: request permit retained"
+		);
+		assert_eq!(
+			*result.lock().unwrap(),
+			None,
+			"{mode}: final log still live"
+		);
+		if mode == "complete" {
+			sender.send(Ok(Bytes::from_static(b"data: {\"id\":\"completion\",\"model\":\"test-model\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":3,\"total_tokens\":7}}\n\ndata: [DONE]\n\n"))).await.unwrap();
+			drop(sender);
+			body.collect().await.unwrap();
+		} else {
+			drop(body);
+			tokio::task::yield_now().await;
+			assert!(
+				limiter.try_acquire(limit).is_none(),
+				"{mode}: disconnect must not release permit"
+			);
+			assert_eq!(
+				*result.lock().unwrap(),
+				None,
+				"{mode}: disconnect must not finalize log"
+			);
+			match mode {
+				"disconnect" => {
+					sender.send(Ok(Bytes::from_static(b"data: {\"id\":\"completion\",\"model\":\"test-model\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":3,\"total_tokens\":7}}\n\ndata: [DONE]\n\n"))).await.unwrap();
+				},
+				"timeout" => tokio::time::advance(Duration::from_secs(2)).await,
+				"shutdown" => {
+					let mut context = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+					assert!(
+						shutdown
+							.lock()
+							.unwrap()
+							.as_mut()
+							.poll(&mut context)
+							.is_pending()
+					);
+				},
+				"no-usage" => sender
+					.send(Ok(Bytes::from_static(b"data: [DONE]\n\n")))
+					.await
+					.unwrap(),
+				"body-error" => sender
+					.send(Err(std::io::Error::other("upstream lost")))
+					.await
+					.unwrap(),
+				_ => unreachable!(),
+			}
+			drop(sender);
+			tokio::task::yield_now().await;
+		}
+		let expected = if matches!(mode, "complete" | "disconnect") {
+			Some(7)
+		} else {
+			None
+		};
+		assert_eq!(
+			*result.lock().unwrap(),
+			Some(expected),
+			"{mode}: only actual original stream usage may settle"
+		);
+		assert!(
+			limiter.try_acquire(limit).is_some(),
+			"{mode}: terminal drain releases original permit"
+		);
+		if mode == "shutdown" {
+			let mut context = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+			assert!(
+				shutdown
+					.lock()
+					.unwrap()
+					.as_mut()
+					.poll(&mut context)
+					.is_ready()
+			);
+		}
+	}
+}
+
 #[test]
 fn hbone_address_parsing() {
 	let uri = "127.0.0.1:8080".parse::<http::Uri>().unwrap();

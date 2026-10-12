@@ -58,6 +58,13 @@
 |`config.clusterId`|string|Identifier for the cluster this gateway runs in. Defaults to "Kubernetes".|
 |`config.network`|string|Network name for this gateway, used for locality-aware routing.|
 |`config.adminAddr`|string|Admin UI address in the format "ip:port", "localhost:port", "unix:/path/to/socket", or "off"|
+|`config.adminAuthentication`|object|Service authentication required for every admin request. Without it, the admin plane<br>rejects all requests.|
+|`config.adminAuthentication.issuer`|string|Expected token issuer. The JWT `iss` claim must match exactly.|
+|`config.adminAuthentication.audiences`|[]string|Accepted token audiences. Must be non-empty; the JWT `aud` claim must contain one of them.|
+|`config.adminAuthentication.jwks`|object|JSON Web Key Set used to verify token signatures. Can be inline, from a file, or fetched remotely.|
+|`config.adminAuthentication.jwks.file`|string|Path to a file on disk to load the value from.|
+|`config.adminAuthentication.jwks.url`|string||
+|`config.adminAuthentication.clientId`|string|The only OAuth2 client allowed to call the admin plane. The JWT `azp` claim must match exactly.|
 |`config.standardAttributes`|object|Standard request log attributes populated for database-backed local runtime features.|
 |`config.standardAttributes.user`|string|CEL expression used to populate the `agentgateway.user` request log attribute.|
 |`config.standardAttributes.group`|string|CEL expression used to populate the `agentgateway.group` request log attribute.|
@@ -4421,6 +4428,10 @@
 |`binds[].listeners[].routes[].policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`binds[].listeners[].routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`binds[].listeners[].routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`binds[].listeners[].routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`binds[].listeners[].routes[].policies.oidc.uiLocales.default`|string||
+|`binds[].listeners[].routes[].policies.oidc.uiLocales.supported`|[]string||
+|`binds[].listeners[].routes[].policies.oidc.uiLocales.cookie`|string||
 |`binds[].listeners[].routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`binds[].listeners[].routes[].policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`binds[].listeners[].routes[].policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -6548,6 +6559,7 @@
 |`binds[].listeners[].routes[].policies.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`binds[].listeners[].routes[].policies.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`binds[].listeners[].routes[].policies.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`binds[].listeners[].routes[].policies.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`binds[].listeners[].routes[].policies.retry`|object|Retry matching failed upstream requests.|
 |`binds[].listeners[].routes[].policies.retry.attempts`|integer|Total number of attempts, including the original request.|
 |`binds[].listeners[].routes[].policies.retry.backoff`|string|Delay between retry attempts.|
@@ -19047,6 +19059,10 @@
 |`binds[].listeners[].policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`binds[].listeners[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`binds[].listeners[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`binds[].listeners[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`binds[].listeners[].policies.oidc.uiLocales.default`|string||
+|`binds[].listeners[].policies.oidc.uiLocales.supported`|[]string||
+|`binds[].listeners[].policies.oidc.uiLocales.cookie`|string||
 |`binds[].listeners[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`binds[].listeners[].policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`binds[].listeners[].policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -26148,6 +26164,10 @@
 |`policies[].policy.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`policies[].policy.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`policies[].policy.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`policies[].policy.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`policies[].policy.oidc.uiLocales.default`|string||
+|`policies[].policy.oidc.uiLocales.supported`|[]string||
+|`policies[].policy.oidc.uiLocales.cookie`|string||
 |`policies[].policy.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`policies[].policy.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`policies[].policy.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -28275,6 +28295,7 @@
 |`policies[].policy.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`policies[].policy.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`policies[].policy.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`policies[].policy.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`policies[].policy.retry`|object|Retry matching failed upstream requests.|
 |`policies[].policy.retry.attempts`|integer|Total number of attempts, including the original request.|
 |`policies[].policy.retry.backoff`|string|Delay between retry attempts.|
@@ -44733,6 +44754,10 @@
 |`routeGroups[].routes[].policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`routeGroups[].routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`routeGroups[].routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`routeGroups[].routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`routeGroups[].routes[].policies.oidc.uiLocales.default`|string||
+|`routeGroups[].routes[].policies.oidc.uiLocales.supported`|[]string||
+|`routeGroups[].routes[].policies.oidc.uiLocales.cookie`|string||
 |`routeGroups[].routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`routeGroups[].routes[].policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`routeGroups[].routes[].policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -46860,6 +46885,7 @@
 |`routeGroups[].routes[].policies.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`routeGroups[].routes[].policies.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`routeGroups[].routes[].policies.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`routeGroups[].routes[].policies.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`routeGroups[].routes[].policies.retry`|object|Retry matching failed upstream requests.|
 |`routeGroups[].routes[].policies.retry.attempts`|integer|Total number of attempts, including the original request.|
 |`routeGroups[].routes[].policies.retry.backoff`|string|Delay between retry attempts.|
@@ -59066,6 +59092,10 @@
 |`gateways.*.listeners[].oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`gateways.*.listeners[].oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`gateways.*.listeners[].oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`gateways.*.listeners[].oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`gateways.*.listeners[].oidc.uiLocales.default`|string||
+|`gateways.*.listeners[].oidc.uiLocales.supported`|[]string||
+|`gateways.*.listeners[].oidc.uiLocales.cookie`|string||
 |`gateways.*.listeners[].oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`gateways.*.listeners[].oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`gateways.*.listeners[].oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -60397,6 +60427,10 @@
 |`gateways.*.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`gateways.*.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`gateways.*.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`gateways.*.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`gateways.*.oidc.uiLocales.default`|string||
+|`gateways.*.oidc.uiLocales.supported`|[]string||
+|`gateways.*.oidc.uiLocales.cookie`|string||
 |`gateways.*.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`gateways.*.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`gateways.*.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -65989,6 +66023,10 @@
 |`routes[].policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`routes[].policies.oidc.uiLocales.default`|string||
+|`routes[].policies.oidc.uiLocales.supported`|[]string||
+|`routes[].policies.oidc.uiLocales.cookie`|string||
 |`routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`routes[].policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`routes[].policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -68116,6 +68154,7 @@
 |`routes[].policies.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`routes[].policies.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`routes[].policies.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`routes[].policies.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`routes[].policies.retry`|object|Retry matching failed upstream requests.|
 |`routes[].policies.retry.attempts`|integer|Total number of attempts, including the original request.|
 |`routes[].policies.retry.backoff`|string|Delay between retry attempts.|
@@ -84680,6 +84719,10 @@
 |`llm.policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`llm.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`llm.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`llm.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`llm.policies.oidc.uiLocales.default`|string||
+|`llm.policies.oidc.uiLocales.supported`|[]string||
+|`llm.policies.oidc.uiLocales.cookie`|string||
 |`llm.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`llm.policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`llm.policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -88851,6 +88894,7 @@
 |`llm.policies.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`llm.policies.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`llm.policies.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`llm.policies.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`mcp`|object|mcp defines a set of MCP servers exposed by the proxy. When configured, the MCP servers will be<br>served under the attached `gateways` at /mcp and /sse.<br>All MCP servers listed will be served as a single virtual MCP server.|
 |`mcp.gateways`|string|gateways attaches the MCP routes to named gateways. This can take the form of `<gateway-name>` or `<gateway-name>/<listener-name>` to attach to a specific listener within a gateway.<br>When omitted and a gateway named `default` exists, the MCP routes attach to it unless port is set.|
 |`mcp.port`|integer|port defines the port to serve the LLM routes under. Deprecated; use `gateways` instead.|
@@ -93435,6 +93479,10 @@
 |`mcp.policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`mcp.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`mcp.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`mcp.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`mcp.policies.oidc.uiLocales.default`|string||
+|`mcp.policies.oidc.uiLocales.supported`|[]string||
+|`mcp.policies.oidc.uiLocales.cookie`|string||
 |`mcp.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`mcp.policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`mcp.policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
@@ -95562,6 +95610,7 @@
 |`mcp.policies.timeout.requestTimeout`|string|Maximum time allowed from the start of downstream request processing until response headers<br>are received. The response body is not included; use `responseIdleTimeout` to bound gaps<br>between body frames.|
 |`mcp.policies.timeout.backendRequestTimeout`|string|Maximum time allowed for the upstream backend request.|
 |`mcp.policies.timeout.responseIdleTimeout`|string|Maximum time to wait for a frame from the upstream response body.<br><br>Limits how long the gateway waits for more response data from the backend.<br>Time spent processing the response or waiting for the client to receive it does not count.<br><br>This complements the other two rather than overlapping them: both `requestTimeout` and<br>`backendRequestTimeout` stop applying once the response headers arrive, so neither places<br>any bound on how long the response body may take, and neither can distinguish a stalled<br>stream from a slow one.<br><br>The timeout is disabled when this field is unset or set to zero. It does not apply to<br>responses that switch protocols, so upgraded WebSocket and CONNECT tunnels are never<br>terminated by it.|
+|`mcp.policies.timeout.streamingUsageDrainTimeout`|string|After a downstream disconnect, maximum time to finish reading an already dispatched<br>LLM stream for its original usage log. No request is replayed. Shutdown stops the drain.<br>Unset preserves immediate cancellation; zero is invalid. Missing usage remains unknown.<br>Streams with active streaming response guards retain immediate cancellation, because<br>polling those guards can dispatch further webhook or moderation requests.|
 |`mcp.policies.retry`|object|Retry matching failed upstream requests.|
 |`mcp.policies.retry.attempts`|integer|Total number of attempts, including the original request.|
 |`mcp.policies.retry.backoff`|string|Delay between retry attempts.|
@@ -95595,6 +95644,10 @@
 |`ui.policies.oidc.clientSecret`|string|OAuth2 client secret used for token exchange.|
 |`ui.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`ui.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
+|`ui.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
+|`ui.policies.oidc.uiLocales.default`|string||
+|`ui.policies.oidc.uiLocales.supported`|[]string||
+|`ui.policies.oidc.uiLocales.cookie`|string||
 |`ui.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
 |`ui.policies.oidc.login.path`|string|Local endpoint that starts OAuth, for example `/auth/login`. Point your sign-in<br>link here, optionally with `?returnTo=/app` to choose the destination after login.<br>`returnTo` must be a safe local path and defaults to `/`.<br>This endpoint is handled by the policy, not forwarded to your application.|
 |`ui.policies.oidc.login.redirect`|string|Local page to redirect unauthenticated browser navigations to, for example<br>`/login`. This happens BEFORE authentication; it is not the OAuth callback or<br>the destination after successful login. The gateway appends `returnTo` so your<br>page can preserve it in its sign-in link to `login.path`.<br>Serve this page and its assets on routes that bypass authentication, using a<br>conditional policy or separate routes. This setting does not make them public.<br>Fetch requests receive 401 with this destination in the Location header.<br>If omitted, unauthenticated navigations start OAuth directly.|
