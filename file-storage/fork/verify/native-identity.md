@@ -3497,3 +3497,46 @@ apply_patch 还原并与正式两文件 cmp 0 后，同原过滤命令 exit 0，
 `sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4`，
 revision `afc462d836c770b6f402372b53cd05b3c203786a`，仅原四个挂载，无
 native-actions 目录。本批未构建/部署、未跑 full/docs，未更改线上配置。
+
+## 2026-10-12 收口原页面构建的直接依赖
+
+本批仅收口上文 2026-10-11 已有构建失败/修复对应的两处遗漏提交，不重建产物。
+基底为 `a70a03444d5d96a8243a09a4fe0b12fbdcf63641`。四步结论：
+
+1. 权威为 DD-87/88 与原完整页面复用；固定上游 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `frontend/assets/gui.ajax/package.json::dependencies.uuid4` 已固定 1.1.4。
+2. 实际 `access.gateway/res/js/callback/nativeDelete.js` 已提交的 import/请求键
+   消费 uuid4；该 workspace 的 package.json 与锁 importer 缺直接依赖会在原
+   完整 webpack 构建拒绝。只补同版本声明及 importer，原锁已有 package integrity
+   和 snapshot，无新包版本、页面或行为变化。
+3. 不影响运行期权限、执行意图或终态；无数据迁移、三端合同、生成物变化。
+   不修改上游源码、原 pnpm 冻结锁安装或构建入口，不把依赖 hoist 当作声明。
+4. 原缺包失败保留；未知副作用、撤权、重复任务仍由既有消费者处理。本批构建
+   依赖收口不宣称业务验收，原 release/conformance 门禁不变。
+
+本次只读核对原成功输入
+`/volumes/data/kailo/tmp/cells-delivery-release.qFNxaW/file-storage/`：
+access.gateway/package.json 与本候选逐字 cmp 0，SHA-256 同为
+`41034086894605c8ec7148667d68546712e963749d9b5bbe862885f40a722332`。
+锁文件 access.gateway importer 段逐字 diff 0；整锁与旧快照只差后来已经提交
+`e17c85dcd067c44ba34a8ba5a5bc6b4628f3aa1f` 的 action.share 同版本依赖段，
+不能将整锁或当前全树称为旧构建输入。原成功日志 SHA-256 本次重新计算仍为
+`b821e0c3060630980083a440495d8bb9fc83646975df164eeb004aaead9a0932`，
+对应前文原构建 33443 exit 0；日志保留实际 webpack 完成、Cells 版本自检与
+OCI 导出，不补造本轮构建结果。
+
+原服务来源 inputs 为 `file-storage/`，Docker frontend stage 完整复制
+`frontend/assets` 并执行原 build.sh 全 workspace；compile stage 复制服务树，
+用新前端输出替换旧 embed 树后编译 `frontend/assets.go::EmbededAssets`。
+已提交的 NFC、首字节、Task/Version 与完成观察源码均处于这个输入闭包；adapter
+另由原 src 与 client-kit/adapter 输入构建，没有发现本批文件被排除。
+现存 upstream.yaml 四行脏 digest 属旧 2026-10-11 候选，不纳入本提交，不当作
+当前源码产物。新版本须由原 build-upstream.sh 实际构建后 record 更新。
+
+准确原入口为 `tools/build-upstream.sh file-storage-service` 与
+`tools/build-upstream.sh file-storage-adapter`；前者须投递原 CELLS_VERSION、
+GIT_REV、BUILD_STAMP、DOCKER_ENTRYPOINT_SRC_DIR，二者使用受限 BUILDX_BUILDER、
+Data TMPDIR 和现有 REGISTRY。入口当前执行 `--load`，所以存储切换前不运行。
+本批未重建、未启动 SDK、未部署、未激活 binding；重用的是上述两处相同构建
+输入的历史验证，不是当前完整源码通过或生产就绪。全量检查仍由主线程集中执行。
