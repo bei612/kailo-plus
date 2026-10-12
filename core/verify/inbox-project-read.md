@@ -618,3 +618,70 @@ Native TypeScript 或金样本文件存在替代。没有新部署、Windows 安
 缓存和临时目录均为 Data。实际命令为 `bash tools/check-docs.sh /workspace/.design`。
 该脚本检查当前 top/docs 与设计资料，不逐行检查本回执，也不是固定发布树的
 `check.sh --full`；本段补记不触发另一轮相同全局检查。
+
+## 2026-10-12 原任务/审阅详情分享按钮恢复
+
+本批基准 `2e6973daea764b3d447c894f54773c5a9cb0e765`，固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。此前分享菜单与打开链已经成立，
+但详情标题里的原按钮仍缺；不能把菜单已恢复等同所有原分享入口均恢复。
+
+四步变更结论：
+
+1. 权威为 REQ-24 原版恢复和 DD-72/75 双宿主边界。直接迁移官方
+   `desktop/src/features/projects/ui/ShareLinkButton.tsx::ShareLinkButton`，
+   按 `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`
+   与 `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::PullRequestDetailHeader`
+   的原调用位置接入，不设计新的标题、菜单或 URL。
+2. 两个共享详情同时由 `ProjectInboxDetail` 与
+   `ProjectsView.tsx::ProjectWorkItemPage` 消费，Web/Desktop 复用同一主体。
+   原 `issueShareLink` / `pullRequestShareLink` → `PulseHost.copy` → 两宿主现有
+   剪贴板适配；打开仍复用前节实际 fresh 项目/仓库/事件匹配链。本批没有新增
+   契约、Core 状态、权限、工作项写入、i18n key 或持久数据。
+3. 原图标、标题内位置、class、Tooltip、复制成功后 Check、两秒反馈及卸载
+   timer 清理均保留。授权适配逐项为宿主剪贴板与既有同源中英文词条；
+   宿主拒绝时不增加 toast，也不把失败渲染为已复制。成功提示复用现有
+   `video.linkCopied`（英文为 “Link copied to clipboard”，官方为 “Link copied”），
+   这是既有共用反馈词条适配，不宣称提示文案逐字原样。
+4. 原构造器返回 null 时不生成按钮；拒绝不显示成功勾、不自动重试；重复成功
+   仍按原 timer 替换语义。剪贴板不是项目读取授权，链接不携带凭据，既有
+   撤权/错 repository/未知事件的拒绝与历史引用规则不变，无新增错误分类。
+
+实际验证复用 `kailo-web-thread-tooltip-sdk`，启动前只有 sleep；4 CPU/8 GiB，
+memory+swap 总限额等于内存（无额外 swap），可用内存约 36 GiB，I/O full
+avg60 约 26.84%。仅向已验证 Data 私有输入投递本批四文件并逐个 cmp；
+TMPDIR、npm cache 和依赖均在 Data，不改 HOME、不安装依赖或构建镜像。
+原输入中 client-kit 在 dd65 与本基准之间无源码变化；旧候选/日志保持不改。
+
+在原 `client-kit/ts/platform` 目录执行：
+
+```sh
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-parallelism
+```
+
+17335 实际 exit 0：TypeScript 5.9.3 两项通过，原套件 29/29。两个已有分享
+用例继续实际复制菜单→原 entity 解析→fresh 读取→精确详情，并新增在真实详情
+标题点击原按钮、核精确链接、原 class 及成功/两秒恢复断言；新增一个 null
+和拒绝消费者，中文默认标签也已核对。夹具不是实际 Core/Relay 或 OS 剪贴板。
+
+私有副本只把 `copy(link)` 改为无调用的 resolved Promise，76137 实际 exit 1，
+3 个相关用例全部失败（copy 调用为 0），其余 26 个显式跳过。还原后 cmp 0，
+99759 原完整套件实际 exit 0、29/29。原 React act 警告保留，未修改超时。
+日志均在 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-detail-share.QNfj38`：
+
+- `positive.log` SHA256 `f3f3e80f39c6df44eb1122543da1d4c1b91f463ae433287618fb2b004112ed93`。
+- `mutation.log` SHA256 `20757c905a2c4e124e154b2945f393d820cf603faf7d1eb55af09cb5714cdfa8`。
+- `restored.log` SHA256 `13245a19c2e71754b4401c89ce014f35533d071c285e8764595d4fff53678a2b`。
+
+四类差异：原样保留按钮原布局/交互；共享迁移上述组件与两详情调用；已授权
+适配仅上列宿主与词条；仍缺完整 Chrome/WorkspaceTabs/Home/Git、
+其他 entity 类型分享、selection→Agent、工作项写入和 Mobile 实际消费者。
+本批未部署，未拍新版截图、未运行 Windows/OS 或 full；旧 9d718 截图不得认领。
+
+交叉复核纠偏：首版错误沿用菜单的错误 toast；固定官方
+`desktop/src/shared/lib/clipboard.ts::writeTextToClipboard` 只有剪贴板调用，
+并非另一个带 toast 的 helper。本批已删除新按钮错误 toast，拒绝只保持原图标，
+消费者明确断言无 toast/无成功勾。14503 末版实际 exit 0，测试类型检查通过、
+原完整套件 29/29；`no-toast-final.log` 保留原输出。首版三份正反日志未覆盖或
+删去，不将首版呈现称为正确。末版只改此拒绝呈现，精确链接调用和反证点不变。

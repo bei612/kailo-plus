@@ -16,6 +16,8 @@ import {ProfileAuthorName,ProfileIdentityButton} from "./ProjectProfileIdentity"
 import {ProjectRichContent} from "./ProjectRichContent";
 import {PullRequestMetaHeader} from "./PullRequestMetaHeader";
 import {ProjectOriginReference} from "./ProjectOriginReference";
+import { ShareLinkButton } from "./ShareLinkButton";
+import { pullRequestShareLink } from "./projectShareLinks";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -172,6 +174,12 @@ export function PullRequestDetailHeader({
         <span className="font-normal text-muted-foreground">
           #{pullRequest.id.slice(0, 8)}
         </span>
+        <ShareLinkButton
+          className="ml-1 inline-flex h-7 w-7 align-text-bottom"
+          label={t("projects.share.copyReview")}
+          link={pullRequestShareLink(pullRequest)}
+          testId="project-pull-request-copy-link"
+        />
       </h3>
       <p
         className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground"

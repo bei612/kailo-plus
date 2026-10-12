@@ -12,6 +12,8 @@ import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click} from "./render";
 import {EntityLinkAnchor,openProjectEntity,parseEntityLink} from "../src/react/projects";
 import {issueShareLink} from "../src/react/projects/projectShareLinks";
+import {ShareLinkButton} from "../src/react/projects/ShareLinkButton";
+import {toast} from "sonner";
 import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib/composerMessageLinkNode";
 
 const viewer="a".repeat(64),author="b".repeat(64),repository=`30617:${author}:repo`;
@@ -69,6 +71,41 @@ describe("original Inbox project read closure",()=>{
     await vi.waitFor(()=>expect(view.querySelector(kind==="issue"?'[data-testid="project-issue-detail"]':'[data-testid="project-pull-request-detail"]')).not.toBeNull());
     expect(opened).toHaveBeenCalledExactlyOnceWith(`30621:${author}:project`,{repositoryId:`${author}:repo`,...(kind==="issue"?{issueId:f.issue.id}:{pullRequestId:f.review.id})});
     expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEMS")).toBe(true);expect(failed).not.toHaveBeenCalled();expect(host.publish).not.toHaveBeenCalled();cache.clear();
+    const detailCopy=view.querySelector<HTMLButtonElement>(`[data-testid="project-${kind==="issue"?"issue":"pull-request"}-copy-link"]`)!;
+    expect(detailCopy.closest("h3")).not.toBeNull();
+    expect(detailCopy.classList.contains("inline-flex")).toBe(true);
+    expect(detailCopy.classList.contains("align-text-bottom")).toBe(true);
+    expect(detailCopy.querySelector(".lucide-link-2")).not.toBeNull();
+    copied.mockClear();
+    vi.useFakeTimers();
+    try {
+      await click(detailCopy);
+      expect(copied).toHaveBeenCalledExactlyOnceWith(href);
+      expect(detailCopy.querySelector(".lucide-check")).not.toBeNull();
+      await act(async()=>vi.advanceTimersByTime(2_000));
+      expect(detailCopy.querySelector(".lucide-link-2")).not.toBeNull();
+    } finally {vi.useRealTimers();}
+  });
+  it("keeps the original detail share control absent for an invalid coordinate and does not confirm a rejected copy",async()=>{
+    const rejected=vi.fn(async()=>{throw new Error("clipboard denied");});
+    const host:PulseHost={scopeKey:"tenant:human",pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:rejected,startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const error=vi.spyOn(toast,"error").mockImplementation(()=>"copy-failure");
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    try {
+      const view=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{}})})} locale="zh-CN"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={host}>
+        <ShareLinkButton link={null} testId="unshareable"/>
+        <ShareLinkButton link={`buzz://issue?id=${"1".repeat(64)}&owner=${author}&d=repo`} testId="refused-copy"/>
+      </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+      expect(view.querySelector('[data-testid="unshareable"]')).toBeNull();
+      const button=view.querySelector<HTMLButtonElement>('[data-testid="refused-copy"]')!;
+      expect(button.getAttribute("aria-label")).toBe("复制链接");
+      await click(button);
+      expect(rejected).toHaveBeenCalledTimes(1);
+      expect(error).not.toHaveBeenCalled();
+      expect(button.querySelector(".lucide-check")).toBeNull();
+      expect(button.querySelector(".lucide-link-2")).not.toBeNull();
+    } finally {error.mockRestore();cache.clear();}
   });
   it("does not authorize from warm metadata, wrong kind, missing event or a different repository",async()=>{
     const f=fixture(),snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);

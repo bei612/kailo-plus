@@ -2470,6 +2470,66 @@ test('original governed upload waits for the original execution receipt and neve
   });
 });
 
+test('governed upload keeps original NFC S3 target through admission, receipt and equivalent-path reentry', async t => {
+  for (const multipart of [false,true]) for (const scenario of ['completed','lost receipt','concurrent equivalent paths']) {
+    await t.test(`${multipart ? 'multipart' : 'PUT'} ${scenario}`,async () => {
+      const {api,pydio,state,sandbox,flush}=await nativeMultipartFixture();
+      pydio.Parameters.set('other',{nativeWriteRequired:true});
+      pydio.Parameters.set('ENDPOINT_REST_API_V2','/a/v2');
+      const decomposed='/documents/cafe\u0301/re\u0301sume\u0301.txt';
+      const target='documents/café/résumé.txt';
+      const file={name:'re\u0301sume\u0301.txt',size:multipart ? api.constructor.getMultipartPartSize()+1 : 3};
+      const requests=[];
+      let intents=0, writes=0, lost=scenario==='lost receipt';
+      sandbox.uuid4=()=>ids[6+intents++];
+      sandbox.setTimeout=setTimeout;
+      sandbox.fetch=async (_url,options)=>{
+        const input=JSON.parse(options.body);
+        requests.push(input);
+        assert.equal(options.credentials,'same-origin');
+        assert.equal(options.redirect,'error');
+        // The native completion reader compares the claimed S3 object path
+        // exactly. A different spelling is not a completed publication.
+        if(writes && input.Path!==target) return {ok:false};
+        if(writes && lost) {lost=false; throw new Error('original receipt unavailable');}
+        return {ok:true,json:async()=>writes
+          ? {NativeIntentId:input.Uuid,Completed:true,VersionId:'original-immutable-version'}
+          : {NativeIntentId:input.Uuid,Ready:true,ActionExecutionId:ids[1],ExternalExecutionId:ids[2],IdempotencyKey:ids[4]}};
+      };
+      sandbox.Connexion=class {uploadFile(_file,_unused,url,complete) {
+        writes++; assert.equal(state.signed.at(-1).params.Key,target);
+        complete({status:200}); return {abort(){}};
+      }};
+      const send=path=>new Promise(resolve=>api[multipart?'uploadMultipart':'uploadPresigned'](file,path,
+        value=>resolve({value}),error=>resolve({error})));
+      const first=send(decomposed);
+      const concurrent=scenario==='concurrent equivalent paths' ? send(target) : null;
+      await flush();
+      assert.equal(intents,1,'concurrent equivalent paths must not create a second writer intent');
+      if(multipart && state.managed) {
+        assert.equal(state.managed.options.params.Key,target);
+        writes++;
+        state.managed.callback(null,{});
+      }
+      const result=await first;
+      if(scenario==='lost receipt') {
+        assert.equal(result.error?.nativeExecutionUnknown,true);
+        assert.equal(writes,1);
+        assert.equal((await send(target)).value?.VersionId,'original-immutable-version');
+      } else assert.equal(result.value?.VersionId,'original-immutable-version');
+      if(concurrent) {
+        const answer=await concurrent;
+        assert.ok(answer.value?.VersionId==='original-immutable-version'||answer.error?.nativeExecutionUnknown===true);
+      }
+      assert.equal(intents,1,'equivalent original S3 targets retain one File intent');
+      assert.equal(writes,1,'receipt recovery never redispatches bytes');
+      assert.ok(requests.length>=2);
+      assert.ok(requests.every(value=>value.Path===target && value.Uuid===ids[6]));
+      assert.equal(multipart ? state.sends : state.signed.length,1);
+    });
+  }
+});
+
 // The four original browser consumers run together. Only browser storage, the
 // REST transport and the external AWS SDK are fixtures; no upload/retry/auth
 // implementation is copied from the production methods into the assertions.
@@ -2507,6 +2567,10 @@ async function nativeMultipartFixture() {
   class S3 {
     constructor() { this.config={credentials}; }
     addAllRequestListeners() {}
+    getSignedUrl(operation,params) {
+      state.signed.push(JSON.parse(JSON.stringify({operation,params})));
+      return `https://cells.example.invalid/${params.Bucket}/${params.Key}`;
+    }
     uploadPart(params) {
       state.parts.push(params);
       return {on(){}, send:callback => state.partCallbacks.push(callback)};

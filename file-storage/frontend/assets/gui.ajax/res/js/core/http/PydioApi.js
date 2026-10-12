@@ -340,6 +340,9 @@ class PydioApi{
         const current = () => user && pydio.user === user && user.id === userId && !isAborted();
         pydio.notify('longtask_starting');
         try {
+        // Match the original S3 upload target before freezing the intent or
+        // requesting admission; receipt lookups must name that same object.
+        path = path.normalize('NFC').replace(/^\//, '');
         // The original AWS ManagedUpload sends a single PUT when only one
         // part fits. Freeze the protocol that will actually carry the bytes.
         multipart = multipart && file.size > PydioApi.getMultipartPartSize();
@@ -400,7 +403,7 @@ class PydioApi{
                             original.call(this, request);
                             request.on('build', () => Object.assign(request.httpRequest.headers, refs));
                         };
-                        const managed = new ManagedMultipart({service, params: {Bucket: this.getBucket(), Key: path.normalize('NFC').replace(/^\//, ''),
+                        const managed = new ManagedMultipart({service, params: {Bucket: this.getBucket(), Key: path,
                             Body: file, ContentType: 'application/octet-stream', Metadata: {'pydio-clear-size': String(file.size), ...userMeta}},
                             partSize: PydioApi.getMultipartPartSize(), queueSize: PydioApi.getMultipartPartQueueSize(), leavePartsOnError: true});
                         managed.nativeExecution = true;

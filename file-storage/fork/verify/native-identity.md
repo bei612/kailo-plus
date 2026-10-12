@@ -3388,3 +3388,57 @@ schema、匹配 `contracts-v0.1.0` 三个历史 schema；314 份实际输入逐�
 短命容器已精确删除。日志目录 `/volumes/data/kailo/tmp/native-task-final-docs.AfPzuS`：
 `check.log` SHA-256 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`；
 `compatibility.log` SHA-256 `2a2a4aaedf4dd174a77da9c96bb39e355d789f39b60914758b3dbfdd36325b55`。
+
+## 2026-10-12 原上传目标 NFC 与冻结意图一致性
+
+本批四步结论：
+
+1. 权威：`.design/07` §5.2 要求上传沿同一冻结执行与目标观察，不因结果不明重发。
+   固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `frontend/assets/gui.ajax/res/js/core/http/PydioApi.js::uploadMultipart` 与
+   `buildPresignedPutUrl` 都先 NFC 规范化、再去掉一个前导斜杠。本批原样复用该
+   发送目标语义，不改变文件显示名、独立上传或平台资源命名规则。
+2. 影响：仅将 `uploadNativeFile` 的原 S3 目标规范化提前至 WeakMap 意图键与
+   prepare 请求之前；multipart 直接消费同一目标。原后端完成分支对
+   `publication.Node.Path` 的精确比对不放宽。原同一 File 的 NFD/NFC 重入不再
+   产生两个意图；准备、实际发送与完成回读使用同一键。无合同、数据库或迁移变更。
+3. 副作用：不新增请求类型、权限来源或重试。原当前用户校验、执行引用、S3 签名、
+   完整终态回读保持；丢回执只观察，不重新发送字节。旧逻辑在 prepare 中冻结 NFD，
+   却在真实发送时使用 NFC，导致完成拒绝或等价路径并发重复准入，本批修正此差异。
+4. 边界：单 PUT/multipart 的合法完成、回执丢失与等价路径并发都有实际原消费者
+   断言；空文件、取消、暂停/恢复、原 token 失败的既有行为在同批回归。未知结果
+   不转成功，不扩大原目录/对象授权；非法入参仍由原错误路径拒绝。
+
+源码输入基底 `2e6973daea764b3d447c894f54773c5a9cb0e765`，仅两源码及本回执。
+原 SDK `kailo-cells-closure-kxbrvt` 实核 4 CPU / 8 GiB、等额 memory+swap、
+UID 1000，执行前仅原 sleep，宿主可用内存 35 GiB。固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+临时目录全部 Data，复用原 MCP 1.26.0 / xml2js 0.6.2 依赖，不安装或编译。
+
+原执行命令（工作目录 `/evidence/upload-nfc.PDLCHi`）：
+
+```sh
+docker exec -w /evidence/upload-nfc.PDLCHi -e TMPDIR=/evidence/upload-nfc.PDLCHi kailo-cells-closure-kxbrvt node --test --test-name-pattern="^(original governed upload|governed upload keeps|governed multipart|original native refresh|original native multipart)" file-storage/adapter/test/query-revision.test.mjs
+```
+
+`final-positive.log` exit 0、47/47；随后私有反证仅撤销本批提前规范化并恢复旧
+multipart Key 表达式。中间 `final-mutation.log` 已捕获五个失败，但最后并发样例
+因旧行为创建两 manager、夹具只保留最后回调而等待；核实专属子进程及 cwd 后
+仅 TERM 测试子进程，原会话 exit 1，不能记完整反证通过。补入发送后、等待完成前
+的同一意图计数断言，未修改产品来适配夹具；最终以
+`--test-name-pattern="^governed upload keeps"` 运行 `mutation-direct-intent.log`，
+自然 exit 1、六个分支全部捕获（含父项共七失败），并发明确断言 `2 !== 1`。
+恢复私有源与正式两源码逐字 cmp 0 后，原完整过滤命令 `restored.log`
+exit 0、47/47、257 ms。末版断言已实际执行，不用早期通过覆盖新增断言。
+
+日志目录 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/upload-nfc.PDLCHi`：
+
+- `final-positive.log` SHA-256 `e3ec79e2992306cf6fb213631a93aec36c9d70323472ed6306e00a9397ba8cbe`。
+- `final-mutation.log` SHA-256 `ca47651c7e5b10bdc537ffae0e6eb48611ace81ed056e4e9637cb7557c79eafa`。
+- `mutation-direct-intent.log` SHA-256 `2ee46f04cdabf09ca7a782c1a7cb62f4b5b2cc88b2bac4d5db376075a2639340`。
+- `restored.log` SHA-256 `cab9bf551713caf624b76376b798002400c6646a00a9346715ac03f9b7f7a889`。
+
+这是原 PydioApi / RestClient / ManagedMultipart 的隔离 JS 消费者验证，服务端与
+S3 传输使用夹具，不是浏览器或真实 Core/S3 部署验收。本批未构建/部署、未执行
+full、未激活或核验完整 binding；真实页面上传与整类 release conformance 门禁
+不因该修复通过而解除。未更改 `upstream.yaml` 或其他前端依赖脏改。

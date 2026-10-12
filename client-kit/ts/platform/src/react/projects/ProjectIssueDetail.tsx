@@ -14,6 +14,8 @@ import {UserAvatar} from "../messages/UserAvatar";
 import {Tooltip,TooltipContent,TooltipTrigger} from "../sidebar/tooltip";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { ProjectOriginReference } from "./ProjectOriginReference";
+import { ShareLinkButton } from "./ShareLinkButton";
+import { issueShareLink } from "./projectShareLinks";
 import { useT } from "../context";
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
@@ -76,6 +78,12 @@ export function ProjectIssueDetail({issue,profiles}:{issue:ProjectIssue;profiles
           <span className="font-normal text-muted-foreground">
             #{issue.id.slice(0, 8)}
           </span>
+          <ShareLinkButton
+            className="ml-1 inline-flex h-7 w-7 align-text-bottom"
+            label={t("projects.share.copyTask")}
+            link={issueShareLink(issue)}
+            testId="project-issue-copy-link"
+          />
         </h3>
         <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
           <span>{t("projects.task.created")}</span>
