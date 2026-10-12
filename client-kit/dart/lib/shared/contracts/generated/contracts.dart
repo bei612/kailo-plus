@@ -12600,6 +12600,7 @@ enum ProjectPublicationOperation {
   CREATE_ISSUE,
   CREATE_ISSUE_COMMENT,
   CREATE_PROJECT,
+  CREATE_PULL_REQUEST_COMMENT,
   CREATE_REPOSITORY,
   DELETE,
 }
@@ -12608,6 +12609,8 @@ final projectPublicationOperationValues = EnumValues({
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
+  "CREATE_PULL_REQUEST_COMMENT":
+      ProjectPublicationOperation.CREATE_PULL_REQUEST_COMMENT,
   "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
   "DELETE": ProjectPublicationOperation.DELETE,
 });

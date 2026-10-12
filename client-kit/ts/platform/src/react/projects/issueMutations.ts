@@ -8,6 +8,7 @@ import {TransportError,writeFailure} from "../../transport";
 import {loadProjectDirectory,type ProjectsHost} from "./projectEnumeration";
 import {loadProjectWorkItems} from "./projectWorkItems";
 import {buildGitIssueTags,type ProjectIssue} from "./projectIssues.mjs";
+import type {ProjectPullRequest} from "./projectPullRequests.mjs";
 import {buildImetaTags} from "../composer/features/messages/lib/imetaMediaMarkdown";
 import type {Repository} from "./projectModels";
 import type {CreateProjectWorkItemDialogInput} from "./CreateProjectWorkItemDialog";
@@ -19,37 +20,38 @@ function recovery<T>(action:()=>T):T {
 }
 
 // Fixed hooks.ts::createProjectIssueComment: original e/a/p/imeta ordering.
-export function buildProjectIssueCommentTags(repository:Pick<Repository,"owner"|"repoAddress">,issue:ProjectIssue,mentions:readonly string[],attachments:readonly WebMessageAttachment[]) {
+export function buildProjectCommentTags(repository:Pick<Repository,"owner"|"repoAddress">,issue:Pick<ProjectIssue,"id"|"author"|"recipients">,mentions:readonly string[],attachments:readonly WebMessageAttachment[]) {
   const recipients=new Set([repository.owner.toLowerCase(),issue.author.toLowerCase(),...issue.recipients.map(key=>key.toLowerCase()),...mentions.map(key=>key.toLowerCase())]);
   return [["e",issue.id,"","root"],["a",repository.repoAddress],...[...recipients].map(key=>["p",key]),...buildImetaTags(attachments)];
 }
 
-export async function publishProjectIssueComment(host:ProjectsHost,projectId:string,repository:Repository,issue:ProjectIssue,
+async function publishProjectComment(host:ProjectsHost,projectId:string,repository:Repository,target:ProjectIssue|ProjectPullRequest,type:"issue"|"pull-request",
   content:string,mentions:string[],attachments:WebMessageAttachment[],signal:AbortSignal,onReadUnavailable?:()=>void) {
   if(!host.publish)throw new Error("Project publication unavailable");
   signal.throwIfAborted();
   const body=content.trim();
   if(!body)throw new Error("Comment cannot be empty");
-  const slot=JSON.stringify(["project-issue-comment-publication",host.scopeKey,projectId,repository.repoAddress,issue.id]);
-  const digest=hashPayload([repository.repoAddress,issue.id,body,mentions,attachments]);
+  const slot=JSON.stringify([type==="issue"?"project-issue-comment-publication":"project-pull-request-comment-publication",host.scopeKey,projectId,repository.repoAddress,target.id]);
+  const digest=hashPayload([repository.repoAddress,target.id,body,mentions,attachments]);
   const stored=recovery(()=>localStorage.getItem(slot));
   const previous:Intent|null=stored===null?null:recovery(()=>JSON.parse(stored));
   if(stored!==null&&(!previous||typeof previous.key!=="string"||!/^[0-9a-f-]{36}$/.test(previous.key)||previous.digest!==digest
-    ||previous.targetEventId!==issue.id||previous.eventId!==undefined&&!eventId(previous.eventId)
+    ||previous.targetEventId!==target.id||previous.eventId!==undefined&&!eventId(previous.eventId)
     ||previous.acceptedEventId!==undefined&&!eventId(previous.acceptedEventId)
     ||previous.eventId&&previous.acceptedEventId&&previous.eventId!==previous.acceptedEventId))
     throw new TransportError("Project publication outcome unknown");
-  const intent:Intent=previous??{key:newIdempotencyKey(),digest,targetEventId:issue.id};
+  const intent:Intent=previous??{key:newIdempotencyKey(),digest,targetEventId:target.id};
   // Persist unconfirmed references before any publication. Never persist body.
   recovery(()=>localStorage.setItem(slot,JSON.stringify(intent)));
   const read=async()=>{try{return await loadProjectWorkItems(host,signal,projectId);}catch(error){onReadUnavailable?.();throw error;}};
   try {
     const before=await read();
-    const current=before.items.find(item=>item.type==="issue"&&item.issue.id===issue.id&&item.repository.repoAddress===repository.repoAddress);
-    if(!current||current.type!=="issue"){onReadUnavailable?.();throw new Error("Project task unavailable");}
-    const tags=buildProjectIssueCommentTags(current.repository,current.issue,mentions,attachments);
+    const matches=(item:(typeof before.items)[number])=>item.type===type&&(item.type==="issue"?item.issue.id:item.pullRequest.id)===target.id&&item.repository.repoAddress===repository.repoAddress;
+    const current=before.items.find(matches);
+    if(!current){onReadUnavailable?.();throw new Error("Project work item unavailable");}
+    const tags=buildProjectCommentTags(current.repository,current.type==="issue"?current.issue:current.pullRequest,mentions,attachments);
     if(!intent.acceptedEventId){
-      const receipt=await host.publish({operation:ProjectPublicationOperation.CreateIssueComment,targetEventId:intent.targetEventId,body,mentions,attachments},
+      const receipt=await host.publish({operation:type==="issue"?ProjectPublicationOperation.CreateIssueComment:ProjectPublicationOperation.CreatePullRequestComment,targetEventId:intent.targetEventId,body,mentions,attachments},
         intent.key,stored!==null,{eventId:intent.eventId,onPrepared:id=>{
           signal.throwIfAborted();
           if(!eventId(id))throw new TransportError("Project publication event unavailable");
@@ -61,11 +63,11 @@ export async function publishProjectIssueComment(host:ProjectsHost,projectId:str
     signal.throwIfAborted();
     const snapshot=await read();
     const published=snapshot.events.find(event=>event.id===intent.acceptedEventId);
-    const updated=snapshot.items.find(item=>item.type==="issue"&&item.issue.id===issue.id&&item.repository.repoAddress===repository.repoAddress);
+    const updated=snapshot.items.find(matches);
     if(snapshot.viewerPubkey!==before.viewerPubkey||!published||published.kind!==1||published.pubkey!==before.viewerPubkey
-      ||published.content!==body||JSON.stringify(published.tags)!==JSON.stringify(tags)||!updated||updated.type!=="issue"
-      ||!updated.issue.comments.some(comment=>comment.id===published.id))throw new TransportError("Project publication outcome unknown");
-    return {issue:updated.issue,snapshot,complete:()=>{
+      ||published.content!==body||JSON.stringify(published.tags)!==JSON.stringify(tags)||!updated
+      ||!(updated.type==="issue"?updated.issue:updated.pullRequest).comments.some(comment=>comment.id===published.id))throw new TransportError("Project publication outcome unknown");
+    return {item:updated,snapshot,complete:()=>{
       signal.throwIfAborted();host.completePublication?.(intent.key,published.id);recovery(()=>localStorage.removeItem(slot));
     }};
   }catch(error){
@@ -73,6 +75,20 @@ export async function publishProjectIssueComment(host:ProjectsHost,projectId:str
     if(stored!==null||intent.acceptedEventId)throw new TransportError("Project publication outcome unknown");
     throw error;
   }
+}
+
+export async function publishProjectIssueComment(host:ProjectsHost,projectId:string,repository:Repository,issue:ProjectIssue,
+  content:string,mentions:string[],attachments:WebMessageAttachment[],signal:AbortSignal,onReadUnavailable?:()=>void) {
+  const result=await publishProjectComment(host,projectId,repository,issue,"issue",content,mentions,attachments,signal,onReadUnavailable);
+  if(result.item.type!=="issue")throw new TransportError("Project publication outcome unknown");
+  return {...result,issue:result.item.issue};
+}
+
+export async function publishProjectPullRequestComment(host:ProjectsHost,projectId:string,repository:Repository,pullRequest:ProjectPullRequest,
+  content:string,mentions:string[],attachments:WebMessageAttachment[],signal:AbortSignal,onReadUnavailable?:()=>void) {
+  const result=await publishProjectComment(host,projectId,repository,pullRequest,"pull-request",content,mentions,attachments,signal,onReadUnavailable);
+  if(result.item.type!=="pull-request")throw new TransportError("Project publication outcome unknown");
+  return {...result,pullRequest:result.item.pullRequest};
 }
 
 export async function publishProjectIssue(host:ProjectsHost,projectId:string,repository:Repository,input:CreateProjectWorkItemDialogInput,signal:AbortSignal) {

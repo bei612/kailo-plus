@@ -44,6 +44,45 @@ test("Native existing project operations reject all issue-only fields before rea
 });
 
 const commentRequest=()=>({operation:"CREATE_ISSUE_COMMENT",targetEventId:task.id,body:"Original comment",mentions:[viewer],attachments:[]});
+const review=finalizeEvent({kind:1618,created_at:2,content:"Original PR",tags:[["a",`30617:${repo.pubkey}:repo`],["p",viewer]]},ownerKey);
+const reviewCommentRequest=()=>({...commentRequest(),operation:"CREATE_PULL_REQUEST_COMMENT",targetEventId:review.id});
+function reviewCommentReads(root=review){
+  relayClient.fetchEvents=async filter=>{
+    reads++;
+    if(filter.ids&&filter.kinds[0]===1618)return [root];
+    if(filter.kinds[0]===30617)return [headEvent];
+    if(filter.ids)return delivered?[delivered]:[];
+    assert.fail("Ordinary PR comments must not borrow Task timestamp history");
+  };
+}
+test("Native original PR comment signs kind1 with a distinct verified kind1618 root and no Task timestamp override",async()=>{
+  reviewCommentReads();
+  const media={url:"/media/"+"a".repeat(64),sha256:"a".repeat(64),type:"image/png",size:12,filename:"image.png"};
+  const request={...reviewCommentRequest(),body:"Original review ![image](/media/file)",attachments:[media]};
+  const result=await publisher()(request,"review-comment",false,observation());
+  assert.equal(result.eventId,delivered.id);assert.equal(delivered.kind,1);assert.equal(delivered.created_at,2);
+  assert.equal(delivered.content,request.body);assert.equal(delivered.pubkey,viewer);
+  assert.deepEqual(delivered.tags,[["e",review.id,"","root"],["a",`30617:${repo.pubkey}:repo`],["p",repo.pubkey],["p",viewer],
+    ["imeta",`url ${media.url}`,"m image/png",`x ${media.sha256}`,"size 12","filename image.png"]]);
+  assert.equal(admissions,0);assert.equal(signed,1);assert.equal(published,1);
+});
+test("Native PR comment restart observes the same event without republishing and rejects changed content",async()=>{
+  reviewCommentReads();loseAck=true;const publish=publisher();
+  await assert.rejects(publish(reviewCommentRequest(),"pr-unknown",false,observation()),/unknown/i);
+  relayClient.unconfirmedEvents.clear();loseAck=false;
+  assert.equal((await publish(reviewCommentRequest(),"pr-unknown",true,observation())).eventId,delivered.id);
+  await assert.rejects(publish({...reviewCommentRequest(),body:"changed"},"pr-unknown",true,observation()),/unknown|mismatch/i);
+  assert.equal(signed,1);assert.equal(published,1);
+});
+test("Native PR comment refuses Task substitution, forged PR and late identity loss before signing",async()=>{
+  reviewCommentReads(task);await assert.rejects(publisher()(reviewCommentRequest(),"pr-task",false,observation()));
+  reviewCommentReads({...JSON.parse(JSON.stringify(review)),content:"forged"});
+  await assert.rejects(publisher()(reviewCommentRequest(),"pr-forged",false,observation()));
+  reviewCommentReads();const read=relayClient.fetchEvents;
+  relayClient.fetchEvents=async filter=>{const rows=await read(filter);if(filter.kinds[0]===30617)active=false;return rows;};
+  await assert.rejects(publisher()(reviewCommentRequest(),"pr-revoked",false,observation()));
+  assert.equal(signed,0);assert.equal(published,0);
+});
 function commentReads(latest){
   relayClient.fetchEvents=async filter=>{
     reads++;

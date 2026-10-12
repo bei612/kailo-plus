@@ -4287,6 +4287,7 @@ export enum ProjectPublicationOperation {
     CreateIssue = "CREATE_ISSUE",
     CreateIssueComment = "CREATE_ISSUE_COMMENT",
     CreateProject = "CREATE_PROJECT",
+    CreatePullRequestComment = "CREATE_PULL_REQUEST_COMMENT",
     CreateRepository = "CREATE_REPOSITORY",
     Delete = "DELETE",
 }

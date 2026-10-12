@@ -64,7 +64,8 @@ pub(crate) async fn publication_target(
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
     let target_kinds = if kind == 1 {
-        vec![1621]
+        vec![collab_bridge::projects::comment_target_kind(request)
+            .map_err(|_| StatusCode::BAD_REQUEST.into_response())?]
     } else if kind == 1621 {
         vec![30617]
     } else {
@@ -322,10 +323,12 @@ pub(crate) async fn confirm_accepted_issue_publication(
         // Retained receipt comparison needs the immutable issue, not today's
         // replaceable repository head or a freshly chosen comment timestamp.
         let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
+        let target_kind =
+            collab_bridge::projects::comment_target_kind(request).map_err(|_| unknown())?;
         let page = client
             .query(
                 &state.http,
-                &[json!({"ids":[target_id],"kinds":[1621],"limit":1})],
+                &[json!({"ids":[target_id],"kinds":[target_kind],"limit":1})],
             )
             .await
             .map_err(|_| unknown())?;

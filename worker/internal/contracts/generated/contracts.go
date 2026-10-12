@@ -8446,6 +8446,7 @@ const (
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
+	CreatePullRequestComment          ProjectPublicationOperation = "CREATE_PULL_REQUEST_COMMENT"
 	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
 )

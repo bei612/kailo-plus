@@ -1,4 +1,4 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {act,useState} from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {createBffClient} from "../src/client";
@@ -10,7 +10,7 @@ import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,pr
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click,type} from "./render";
-import {publishProjectIssue,publishProjectIssueComment,buildProjectIssueCommentTags} from "../src/react/projects/issueMutations";
+import {publishProjectIssue,publishProjectIssueComment,publishProjectPullRequestComment,buildProjectCommentTags} from "../src/react/projects/issueMutations";
 import {buildGitIssueTags} from "../src/react/projects/projectIssues.mjs";
 import {BffError,TransportError} from "../src/transport";
 import {EntityLinkAnchor,openProjectEntity,parseEntityLink} from "../src/react/projects";
@@ -43,11 +43,71 @@ function fixture(){
   const host:ProjectsHost={scopeKey:"tenant:human",query};
   return {issue,review,rows,host,query};
 }
+afterEach(()=>vi.restoreAllMocks());
 beforeEach(()=>{setLocale("en");localStorage.clear();
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  async function reviewCommentFixture(){
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const item=snapshot.items.find(item=>item.type==="pull-request")!;
+    if(item.type!=="pull-request")throw new Error("Review fixture missing");
+    return {...f,item};
+  }
+  it("submits the original PR ForumComposer through its distinct typed target and shows success only after exact activity readback",async()=>{
+    const f=await reviewCommentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"test");
+    const media={url:"/media/"+"a".repeat(64),sha256:"a".repeat(64),type:"image/png",size:12};
+    let submit!:Parameters<PulseHost["renderComposer"]>[0]["onSubmit"];
+    let acknowledge!:(value:{eventId:string})=>void;
+    f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      expect(request.operation).toBe("CREATE_PULL_REQUEST_COMMENT");expect(request.targetEventId).toBe(f.review.id);
+      expect(request.body).toContain("Review response");expect(request.body).toContain(media.url);
+      expect(request.attachments).toEqual([media]);expect(localStorage.length).toBe(1);
+      expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Review response");
+      const created={...event("c",1,buildProjectCommentTags(f.item.repository,f.item.pullRequest,request.mentions??[],request.attachments??[]),request.body!,50),pubkey:viewer};
+      observation?.onPrepared(created.id);f.rows.push(created);return new Promise(resolve=>{acknowledge=resolve;});
+    });
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:props=>{submit=props.onSubmit;expect("onSecondarySubmit" in props).toBe(false);return <div data-testid="original-review-composer" className={props.className}>{props.placeholder}</div>;},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectInboxDetail host={f.host} workItem={f.item}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    expect(ui.querySelector('[data-testid="project-pull-request-comment-composer"]')?.className).toBe("px-6 pb-6 pt-4");
+    expect(ui.querySelector('[data-testid="original-review-composer"]')?.className).toBe("border border-border/60 bg-background/45");
+    let pending!:Promise<unknown>;
+    await act(async()=>{pending=Promise.resolve(submit("Review response",[viewer],[media]));});
+    await vi.waitFor(()=>expect(f.host.publish).toHaveBeenCalledTimes(1));
+    await expect(submit("Review response",[viewer],[media])).rejects.toThrow();expect(success).not.toHaveBeenCalled();
+    await act(async()=>{acknowledge({eventId:"c".repeat(64)});await pending;});
+    expect(ui.textContent).toContain("Review response");expect(success).toHaveBeenCalledWith("Comment posted.");
+    expect(localStorage.length).toBe(0);expect(f.host.publish).toHaveBeenCalledTimes(1);success.mockRestore();
+  });
+  it("keeps PR UNKNOWN on the same intent, refuses edited retries, and confirms only its own signed-author content and target",async()=>{
+    const f=await reviewCommentFixture();
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(_request,_key,_observe,observation)=>{observation?.onPrepared("c".repeat(64));throw new TransportError("lost ACK");});f.host.publish=publish;
+    const send=(body="Review pending")=>publishProjectPullRequestComment(f.host,f.item.project.id,f.item.repository,f.item.pullRequest,body,[viewer],[],new AbortController().signal);
+    await expect(send()).rejects.toThrow();await expect(send("Changed")).rejects.toThrow("outcome unknown");expect(publish).toHaveBeenCalledTimes(1);
+    publish.mockResolvedValue({eventId:"c".repeat(64)});
+    await expect(send()).rejects.toThrow("outcome unknown");
+    f.rows.push({...event("c",1,buildProjectCommentTags(f.item.repository,f.item.pullRequest,[viewer],[]),"Wrong body",50),pubkey:viewer});
+    await expect(send()).rejects.toThrow("outcome unknown");expect(localStorage.length).toBe(1);
+    f.rows[f.rows.length-1]!.content="Review pending";
+    const result=await send();expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);expect(publish.mock.calls[1]?.[2]).toBe(true);
+    expect(result.pullRequest.id).toBe(f.review.id);result.complete();expect(localStorage.length).toBe(0);
+  });
+  it("does not publish a PR comment after fresh read rejection, Task substitution or identity cancellation",async()=>{
+    const f=await reviewCommentFixture();const denied=vi.fn();f.host.publish=vi.fn();
+    const send=(signal=new AbortController().signal)=>publishProjectPullRequestComment(f.host,f.item.project.id,f.item.repository,f.item.pullRequest,"Review",[],[],signal,denied);
+    f.query.mockRejectedValueOnce(new BffError(403,"revoked",{class:ErrorClass.Denied}));
+    await expect(send()).rejects.toThrow();expect(denied).toHaveBeenCalledOnce();expect(f.host.publish).not.toHaveBeenCalled();
+    const row=f.rows.find(row=>row.id===f.review.id)!;row.kind=1621;
+    await expect(send()).rejects.toThrow();expect(f.host.publish).not.toHaveBeenCalled();row.kind=1618;
+    const controller=new AbortController();f.host.publish=vi.fn(async()=>{controller.abort();return {eventId:"c".repeat(64)};});
+    await expect(send(controller.signal)).rejects.toThrow();expect(localStorage.length).toBe(1);
+  });
   async function commentFixture(){
     const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
     const item=snapshot.items.find(item=>item.type==="issue")!;
@@ -61,7 +121,7 @@ describe("original Inbox project read closure",()=>{
     let complete!:(value:{eventId:string})=>void;
     f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
       expect(localStorage.length).toBe(1);expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Original new comment");
-      const created={...event("c",1,buildProjectIssueCommentTags(f.item.repository,f.item.issue,request.mentions??[],request.attachments??[]),request.body!,50),pubkey:viewer};
+      const created={...event("c",1,buildProjectCommentTags(f.item.repository,f.item.issue,request.mentions??[],request.attachments??[]),request.body!,50),pubkey:viewer};
       observation?.onPrepared(created.id);f.rows.push(created);
       return new Promise(resolve=>{complete=resolve;});
     });
@@ -92,7 +152,7 @@ describe("original Inbox project read closure",()=>{
     await expect(send("Edited comment")).rejects.toThrow("outcome unknown");expect(publish).toHaveBeenCalledTimes(1);
     publish.mockResolvedValue({eventId:"c".repeat(64)});
     await expect(send()).rejects.toThrow("outcome unknown");expect(localStorage.length).toBe(1);
-    f.rows.push({...event("c",1,buildProjectIssueCommentTags(f.item.repository,f.item.issue,[viewer],[]),"Secret comment",50),pubkey:viewer});
+    f.rows.push({...event("c",1,buildProjectCommentTags(f.item.repository,f.item.issue,[viewer],[]),"Secret comment",50),pubkey:viewer});
     const result=await send();expect(publish).toHaveBeenCalledTimes(2);
     expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);expect(publish.mock.calls[1]?.[2]).toBe(true);
     result.complete();expect(localStorage.length).toBe(0);

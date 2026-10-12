@@ -103,7 +103,9 @@ pub async fn sign_event(
             .map(|tag| Tag::parse(tag).map_err(|error| format!("invalid tag: {error}")))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut builder = EventBuilder::new(Kind::Custom(kind), content).tags(nostr_tags);
+        let mut builder = EventBuilder::new(Kind::Custom(kind), content)
+            .tags(nostr_tags)
+            .allow_self_tagging();
         if let Some(created_at) = created_at {
             builder = builder.custom_created_at(Timestamp::from(created_at));
         }

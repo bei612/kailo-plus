@@ -56,15 +56,17 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
         && (request.title.is_some() || request.category.is_some())
         || !matches!(
             operation.as_str(),
-            Some("CREATE_ISSUE" | "CREATE_ISSUE_COMMENT")
+            Some("CREATE_ISSUE" | "CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT")
         ) && request.body.is_some()
-        || operation.as_str() != Some("CREATE_ISSUE_COMMENT")
-            && (request.mentions.is_some() || request.attachments.is_some())
+        || !matches!(
+            operation.as_str(),
+            Some("CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT")
+        ) && (request.mentions.is_some() || request.attachments.is_some())
     {
         return Err(invalid("issue fields on another project operation"));
     }
     match operation.as_str() {
-        Some("CREATE_ISSUE_COMMENT") => {
+        Some("CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT") => {
             if request
                 .body
                 .as_deref()
@@ -321,8 +323,20 @@ pub fn publication_builder(
 
 /// Fixed Buzz hooks.ts::createProjectIssueComment: retain the original root,
 /// repository and ordered recipient union. Callers supply only validated media.
+pub fn comment_target_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
+    match serde_json::to_value(&request.operation)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .as_deref()
+    {
+        Some("CREATE_ISSUE_COMMENT") => Ok(1621),
+        Some("CREATE_PULL_REQUEST_COMMENT") => Ok(1618),
+        _ => Err(invalid("invalid comment operation")),
+    }
+}
+
 pub fn comment_repository(issue: &Event) -> Result<&str, OperatorError> {
-    if issue.kind.as_u16() != 1621 || issue.verify().is_err() {
+    if !matches!(issue.kind.as_u16(), 1618 | 1621) || issue.verify().is_err() {
         return Err(invalid("invalid comment issue"));
     }
     let coordinate = issue
@@ -375,6 +389,7 @@ fn comment_tags(
     media_tags: &[Vec<String>],
 ) -> Result<Vec<Tag>, OperatorError> {
     if publication_kind(request)? != 1
+        || comment_target_kind(request)? != issue.kind.as_u16()
         || request.target_event_id.as_deref() != Some(issue.id.to_hex().as_str())
     {
         return Err(invalid("comment issue mismatch"));
@@ -432,6 +447,13 @@ pub fn comment_publication_builder(
         return Err(invalid("invalid comment author"));
     }
     let tags = comment_tags(request, issue, media_tags)?;
+    // Original ordinary PR comments use signing time; only Tasks and review
+    // decisions have an activity-based monotonic timestamp. No decision here.
+    if issue.kind.as_u16() == 1618 && latest.is_some() {
+        return Err(invalid(
+            "ordinary review comment has no previous timestamp evidence",
+        ));
+    }
     let created_at = match latest {
         Some(event) if comment_activity_matches(issue, event, owner) => Timestamp::from_secs(
             event
@@ -449,6 +471,7 @@ pub fn comment_publication_builder(
         request.body.as_deref().unwrap_or_default().trim(),
     )
     .tags(tags)
+    .allow_self_tagging()
     .custom_created_at(created_at))
 }
 
@@ -570,6 +593,97 @@ mod tests {
                 .sig;
             assert!(publication_observed(json!([forged_signature]), &id, &actor, kind).is_err());
         }
+    }
+
+    #[test]
+    fn original_pull_request_comment_keeps_typed_root_media_and_ordinary_timestamp() {
+        let repository_owner = Keys::generate();
+        let author = Keys::generate();
+        let repository = format!("30617:{}:garden", repository_owner.public_key());
+        let target = EventBuilder::new(nostr::Kind::from(1618), "pull request")
+            .tags([
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+                Tag::parse(["p", author.public_key().to_hex().as_str()]).unwrap(),
+            ])
+            .sign_with_keys(&repository_owner)
+            .unwrap();
+        let request: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"CREATE_PULL_REQUEST_COMMENT","targetEventId":target.id.to_hex(),
+            "body":"  Review ![image](original-media)  ","mentions":[author.public_key().to_hex()]
+        }))
+        .unwrap();
+        let media = vec![vec!["imeta".to_owned(), "url original-media".to_owned()]];
+        let before = Timestamp::now();
+        let event = comment_publication_builder(
+            &request,
+            &target,
+            None,
+            &author.public_key().to_hex(),
+            &media,
+        )
+        .unwrap()
+        .sign_with_keys(&author)
+        .unwrap();
+        assert_eq!(comment_target_kind(&request).unwrap(), 1618);
+        assert_eq!(event.kind.as_u16(), 1);
+        assert_eq!(event.content, "Review ![image](original-media)");
+        assert!(event.created_at >= before && event.created_at <= Timestamp::now());
+        assert_eq!(
+            event
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice().to_vec())
+                .collect::<Vec<_>>(),
+            vec![
+                vec![
+                    "e".to_owned(),
+                    target.id.to_hex(),
+                    String::new(),
+                    "root".to_owned()
+                ],
+                vec!["a".to_owned(), repository.clone()],
+                vec!["p".to_owned(), repository_owner.public_key().to_hex()],
+                vec!["p".to_owned(), author.public_key().to_hex()],
+                media[0].clone(),
+            ]
+        );
+        assert!(comment_publication_matches(&request, &target, &event, &media).unwrap());
+        let mut changed = request.clone();
+        changed.body = Some("different".into());
+        assert!(!comment_publication_matches(&changed, &target, &event, &media).unwrap());
+        assert!(!comment_publication_matches(&request, &target, &event, &[]).unwrap());
+        let issue = EventBuilder::new(nostr::Kind::from(1621), "issue")
+            .tags([Tag::parse(["a", repository.as_str()]).unwrap()])
+            .sign_with_keys(&repository_owner)
+            .unwrap();
+        changed = request.clone();
+        changed.target_event_id = Some(issue.id.to_hex());
+        assert!(comment_publication_builder(
+            &changed,
+            &issue,
+            None,
+            &author.public_key().to_hex(),
+            &media
+        )
+        .is_err());
+        assert!(comment_publication_builder(
+            &request,
+            &target,
+            Some(&event),
+            &author.public_key().to_hex(),
+            &media
+        )
+        .is_err());
+        let mut forged = target.clone();
+        forged.content = "unsigned".into();
+        assert!(comment_publication_builder(
+            &request,
+            &forged,
+            None,
+            &author.public_key().to_hex(),
+            &media
+        )
+        .is_err());
     }
 
     #[test]

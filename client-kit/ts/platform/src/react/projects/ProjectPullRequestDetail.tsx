@@ -18,6 +18,16 @@ import {PullRequestMetaHeader} from "./PullRequestMetaHeader";
 import {ProjectOriginReference} from "./ProjectOriginReference";
 import { ShareLinkButton } from "./ShareLinkButton";
 import { pullRequestShareLink } from "./projectShareLinks";
+import {useQueryClient} from "@tanstack/react-query";
+import {toast} from "sonner";
+import type {WebMessageAttachment} from "@client-kit/contracts";
+import {ForumComposer} from "../pulse/host";
+import {isOutcomeUnknown,TransportError} from "../../transport";
+import type {ProjectsHost} from "./projectEnumeration";
+import {publishProjectPullRequestComment} from "./issueMutations";
+import {ProjectPanelState} from "./ProjectPanelState";
+import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
+import {useUiT} from "../context";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -199,7 +209,47 @@ export function PullRequestDetailHeader({
   );
 }
 
-export function ProjectPullRequestDetail({profiles,project,pullRequest}:{profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest}) {
+type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string}};
+export function ProjectPullRequestDetail(props:PullRequestDetailProps) {
+ return <PullRequestDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.pullRequest.id}`} {...props}/>;
+}
+function PullRequestDetailBody({profiles,project,pullRequest:source,publication}:PullRequestDetailProps) {
+ const t=useUiT();
+ const cache=useQueryClient();
+ const [confirmed,setConfirmed]=React.useState<{source:ProjectPullRequest;pullRequest:ProjectPullRequest}|null>(null);
+ const pullRequest=confirmed?.source===source?confirmed.pullRequest:source;
+ const [isSending,setIsSending]=React.useState(false);
+ const [readUnavailable,setReadUnavailable]=React.useState(false);
+ const sending=React.useRef(false);
+ const lifetime=React.useMemo(()=>({controller:new AbortController()}),[publication?.host]);
+ React.useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
+ const members=React.useMemo(()=>[...new Set([project.owner,pullRequest.author,...project.contributors,...pullRequest.recipients])].map(pubkey=>{
+   const profile=profileForPubkey(pubkey,profiles);
+   return {pubkey,role:"member",isAgent:profile?.isAgent===true,joinedAt:new Date(0).toISOString(),displayName:profile?.displayName?.trim()||profile?.nip05Handle?.trim()||null};
+ }),[project,pullRequest,profiles]);
+ async function handleCommentSubmit(content:string,mentions:string[],attachments:WebMessageAttachment[]=[],contentIncludesAttachments=false){
+   if(!publication||sending.current)throw new TransportError(t("projects.comment.unknown"));
+   sending.current=true;setIsSending(true);
+   try{
+     const {host,projectId}=publication;
+     const body=contentIncludesAttachments?content:buildOutgoingMessage(content,attachments,new Set(attachments.filter(item=>item.spoiler).map(item=>item.url))).content;
+     const result=await publishProjectPullRequestComment(host,projectId,project,pullRequest,body,mentions,attachments.filter(item=>item.sha256.length>0),lifetime.controller.signal,
+       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+     lifetime.controller.signal.throwIfAborted();
+     result.complete();setConfirmed({source,pullRequest:result.pullRequest});
+     cache.setQueryData(["project-home-work-items",host.scopeKey,projectId],result.snapshot);
+     cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===host.scopeKey&&query.queryKey[2]===projectId},result.snapshot);
+     void cache.invalidateQueries({queryKey:["projects-work-items",host.scopeKey]});
+     void cache.invalidateQueries({queryKey:["projects",host.scopeKey,"inbox-work-items"]});
+     toast.success(t("projects.comment.posted"));
+   }catch(error){
+     if(!lifetime.controller.signal.aborted){
+       if(isOutcomeUnknown(error))toast.message(t("projects.comment.unknown"));
+       else toast.error(t("video.postFailed"));
+     }
+     throw error;
+   }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
+ }
  const [expandedReviewHistoryPullRequestIds,setExpandedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
  const [collapsedReviewHistoryPullRequestIds,setCollapsedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
   const commitCount = Math.max(1, pullRequest.updates.length + 1);
@@ -227,6 +277,7 @@ export function ProjectPullRequestDetail({profiles,project,pullRequest}:{profile
   const displayedReviewHistory = reviewHistoryCollapsed
     ? []
     : visibleReviewHistory;
+  if(readUnavailable)return <ProjectPanelState error title={t("platform.loadFailed")}/>;
   return (
     <div
       className="mx-auto w-full max-w-3xl overflow-hidden"
@@ -477,6 +528,10 @@ export function ProjectPullRequestDetail({profiles,project,pullRequest}:{profile
           </div>
         </div>
       </ProjectDetailSection>
+      {publication?.host.publish?<div className="px-6 pb-6 pt-4" data-testid="project-pull-request-comment-composer">
+        <ForumComposer className="border border-border/60 bg-background/45" disabled={isSending} isSending={isSending}
+          members={members} profiles={profiles} onSubmit={handleCommentSubmit} placeholder={t("projects.comment.placeholder")}/>
+      </div>:null}
     </div>
   );
 }

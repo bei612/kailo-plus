@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["operation"],
   "properties": {
-    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE", "CREATE_ISSUE_COMMENT"]},
+    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE", "CREATE_ISSUE_COMMENT", "CREATE_PULL_REQUEST_COMMENT"]},
     "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "workspaceId": {"type": "string", "format": "uuid"},
     "name": {"type": "string", "minLength": 1, "maxLength": 256},
@@ -24,6 +24,7 @@
     {"properties": {"operation": {"const": "CREATE_PROJECT"}}, "required": ["workspaceId", "name", "visibility"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
     {"properties": {"operation": {"const": "CREATE_REPOSITORY"}}, "required": ["workspaceId", "name"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
     {"properties": {"operation": {"const": "CREATE_ISSUE"}}, "required": ["targetEventId", "title", "body", "category"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
-    {"properties": {"operation": {"const": "CREATE_ISSUE_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}}
+    {"properties": {"operation": {"const": "CREATE_ISSUE_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}},
+    {"properties": {"operation": {"const": "CREATE_PULL_REQUEST_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}}
   ]
 }

@@ -6206,6 +6206,9 @@ pub enum ProjectPublicationOperation {
     #[serde(rename = "CREATE_PROJECT")]
     CreateProject,
 
+    #[serde(rename = "CREATE_PULL_REQUEST_COMMENT")]
+    CreatePullRequestComment,
+
     #[serde(rename = "CREATE_REPOSITORY")]
     CreateRepository,
 

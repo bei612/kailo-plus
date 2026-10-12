@@ -12,6 +12,7 @@ import {ProjectStatusProgressIcon,type ProjectStatusProgressState} from "./Proje
 import {ProjectWorkItemRow} from "./ProjectWorkItemRow";
 import {ProjectWorkItemGroup} from "./ProjectWorkItemGroup";
 import {ProjectPanelState} from "./ProjectPanelState";
+import type {ProjectsHost} from "./projectEnumeration";
 const statusKey={"Open":"projects.status.open","Draft":"projects.status.draft","Merged":"projects.status.merged","Closed":"projects.status.closed"} as const;
 function pullRequestStatusClassName(status: ProjectPullRequest["status"]) {
   if (status === "Closed") return "text-destructive";
@@ -117,12 +118,13 @@ function PullRequestRow({
   );
 }
 
-export function PullRequestsPanel({project,pullRequests,selectedPullRequest,onSelectedPullRequestIdChange,profiles}:{
+export function PullRequestsPanel({project,pullRequests,selectedPullRequest,onSelectedPullRequestIdChange,profiles,host,projectId}:{
  project:Repository;pullRequests:ProjectPullRequest[];selectedPullRequest:ProjectPullRequest|null;
  onSelectedPullRequestIdChange:(id:string|null)=>void;profiles?:UserProfileLookup;
+ host?:ProjectsHost;projectId?:string;
 }) {
  const t=useUiT();
- if(selectedPullRequest)return <ProjectPullRequestDetail project={project} pullRequest={selectedPullRequest} profiles={profiles}/>;
+ if(selectedPullRequest)return <ProjectPullRequestDetail project={project} pullRequest={selectedPullRequest} profiles={profiles} publication={host&&projectId?{host,projectId}:undefined}/>;
  if(pullRequests.length===0)return <ProjectPanelState testId="project-pull-requests-empty" title={t("projects.list.reviewsEmpty")} description={t("projects.sheet.reviewsHint")}/>;
  const groups=PULL_REQUEST_STATUS_ORDER.map(status=>({items:pullRequests.filter(value=>value.status===status),status})).filter(group=>group.items.length>0);
  return <div>{groups.map(({items,status})=><ProjectWorkItemGroup key={status} count={items.length} label={t(statusKey[status])}

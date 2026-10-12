@@ -1,6 +1,7 @@
 export { ProjectsView } from "./ProjectsView";
 export {buildGitIssueTags,eventToProjectIssue,nextProjectIssueCommentCreatedAt} from "./projectIssues.mjs";
-export {buildProjectIssueCommentTags} from "./issueMutations";
+export {eventToProjectPullRequest} from "./projectPullRequests.mjs";
+export {buildProjectCommentTags} from "./issueMutations";
 export type { ProjectChannelRenderer } from "./ProjectChannelHome";
 export { parseEntityLink, isEntityLink, type ParsedEntityLink } from "./entityLink";
 export { readProjectEntity, openProjectEntity } from "./projectEntityNavigation";

@@ -572,3 +572,113 @@ UID 1000、2 CPU、2 GiB memory=memory+swap、network none；临时目录及 npm
 `/volumes/data/kailo/tmp/tasks-comment-final-docs.Mzss3f/docs-cached.log`。
 首轮遗漏 npm 缓存投递，停在 npx 准备阶段后主动终止、exit 137；没有 OOM 或
 文档通过结论。修正实际 mount 后完成的是文档门禁，不是重新执行或通过 full。
+
+### 2026-10-12 原 Reviews 普通评论共享闭环
+
+固定输入为 `236bdbf3e688424e1ede3a2e556e71e0236187fa` 加本批精确增量；
+固定上游为 Buzz `779af8886caae1317b4de962082429867ab61503`。
+依据 REQ-24、DD-75、DD-77、DD-80；不扩展仓库管理或 Review 决策权限。
+
+1. 原权威：`desktop/src/features/projects/hooks.ts::createProjectPullRequestComment`
+   和 `useCreateProjectPullRequestCommentMutation` 发布普通 kind 1 评论，根为
+   已签 kind 1618 PR，不是 kind 1621 Task；原
+   `desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx::ProjectPullRequestDetail`
+   经 `handleCommentSubmit` 消费原 ForumComposer。
+2. 调用影响：共享 `ProjectPullRequestDetail` 同时由 `ProjectsView`、
+   `ProjectInboxDetail`、`ProjectHomeWorkspaceSheet` 的原详情分支消费，
+   本批逐一接入已有 ProjectsHost。原 e/root、a/repository、保序去重 p、
+   imeta 与正文媒体保留；正文只追加一次媒体 markdown。普通 PR 评论没有
+   decision，因此使用原签名时间，不借用 Tasks 的上一条评论时间递增。
+3. 治理适配：唯一 `ProjectsPublishRequest` 增加
+   `CREATE_PULL_REQUEST_COMMENT`，原四侧生成入口生成类型。Core/Web 和
+   Native 同验签 kind 1618 目标及当前仓库坐标，沿已有本人签名/托管钥、
+   Community MessagesWrite 准入与 publish intent；不扩大 ReposWrite，
+   不添加正文数据库或正文审计字段。`comment_target_kind` 将两种根精确区分，
+   既有 ACCEPTED 恢复仍读原事件核对实际正文和 tags。
+4. 失败与状态：先持久化原未确认引用和请求摘要，再调用真实发布宿主；
+   双点拒绝、UNKNOWN 保留同 key/event、编辑重试拒绝，空回读或正文不符
+   不成功、不清引用；只有精确活动回读后才清理并显示原成功反馈。
+   scope 卸载/撤权终止当前页面反馈，未证明目标归属不允许派发。
+
+四类差异：原样保留原 composer 的 `px-6 pb-6 pt-4` 外壳与
+`border border-border/60 bg-background/45` 呈现、原成员集合和普通评论
+e/a/p/imeta 次序；共享迁移是原三详情消费同一评论实现和同源词条，
+已删除无生产消费者的旧 `buildProjectIssueCommentTags` 别名，Task/PR
+实际消费同一个 `buildProjectCommentTags`；授权治理差异是 typed operation、
+fresh 读授权、持久未决意图与精确回读确认，不另造界面；仍缺 inline comments、
+request-changes/review decisions、Git 相关能力及其执行消费者，不能称 Reviews
+完整恢复。Mobile 本批只有生成契约，不等于页面已消费。
+
+验证输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-pr-comment.N4cguf`。
+所有工具复用原 SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+非 root、network none、Data 源/缓存/tmp；Web 与轻量四侧检查 2 CPU/4 GiB，
+Core 4 CPU/8 GiB，memory+swap 总限额等于内存（无额外 swap）。不改 HOME，
+不装新依赖、不新增镜像、不降低 Cargo 并行；唯一 Cargo 窗口在队友检查终态后取得。
+
+- 原 `bash tools/gen.sh` 28228 实际 exit 0，四侧全部生成；输入是 HEAD
+  contracts 加本批 schema/sample，未覆盖公共四个继承脏生成文件；无新词条，
+  私有 i18n 伴随投影不进入本批。
+- 原聚合 87815 exit 1：共享 TS 5.9.3 `tsc --noEmit -p tsconfig.test.json`、
+  Web `tsc --noEmit`、Native `tsc --noEmit -p tsconfig.json` 均 exit 0；
+  Native `node --import ./test-loader.mjs --experimental-strip-types --test
+  src/features/platform/projectsTransport.test.mjs src/shared/api/relayClientUnconfirmedResend.test.mjs`
+  28/28，TS 原 Projects publication 往返 1/1。原 DOM 57/59，PR 成功反馈
+  读取设备语言而非宿主 locale，且失败后 spy 未清理影响后续 Task 用例。
+- 51512 的测试清理顺序调整导致 43/59，另有 2 个未处理错误，实际 exit 1；
+  该调整引入额外语言存储项，已撤回，不修改原 intent 数量断言。正式 PR Body
+  改为既有 `useUiT` 消费宿主语言，测试增加原 spy 清理；32823 原共享类型与
+  `vitest run test/project-inbox.test.tsx --no-file-parallelism` 实际 exit 0，
+  59/59。随后旧别名删除，45156 类型加原 `-t "PR|comment"` 11/11 exit 0，
+  48 个无关用例未在这次窄验执行。保留原 React act 警告，不提高超时。
+- 私有副本仅删除最终 readback 的 `published.content !== body`，83899
+  `-t "keeps PR UNKNOWN"` 精确 1 failed/exit 1：错误正文被误认成功。
+  apply_patch 还原、与正式源码 cmp 0，13626 同一用例 1 passed/exit 0；
+  未对生产数据或公共源码做变异。
+- `rustfmt --edition 2021` 25852 exit 0，仅整理本批三个 Rust 文件。
+  首轮 Core 聚合 41327 exit 1：私有快照漏 collab-bridge 的本地
+  buzz-core/buzz-sdk 依赖，四条命令均 manifest 加载 exit 101、无断言执行；
+  只补固定 HEAD 原依赖，不改生产 Cargo 配置，失败保留于 `core-positive.log`。
+- 5376 原聚合实际 exit 1：Bridge 8/9，新真实签名用例证明自身 p 被底层
+  builder 删除；Core test 与 clippy 各 exit 101，原因是私有输入缺原
+  `tools/registry/capabilities.yaml`，没有执行 Core 断言。Rust contracts 原
+  `projects_publication_preserves_native_metadata_and_exact_head_reference`
+  1/1 exit 0。该轮后先释放共享 Cargo 窗口，不把失败静默重记为成功。
+  下轮前已一次核对 Cargo 本地 path、全部 literal include 与 build.rs：
+  直接取现有干净 236b 发布树原 registry；另从同 HEAD 取原 buzz-sdk
+  `collaboration/docs/nips/NIP-MP.fixtures.json`，其为 SDK 自己的测试引用；
+  其余 Core/契约/SQL 与原 ext_mcp.proto 已完整，不改 registry 或 build.rs。
+- Go 原 `go test ./internal/contracts -run '^TestProjectsPublicationRoundtrip$'
+  -count=1 -v` 1/1、原兼容片段 316 schema/3 历史匹配均 exit 0；67205
+  聚合 exit 1 是 Dart 私有输入缺 `lib/shared/contracts/contracts.dart` 原导出，
+  尚无 Dart 断言执行。仅补 HEAD 该导出后33719原
+  `dart test test/roundtrip_test.dart --name "Projects publication preserves"`
+  1/1 exit 0；不修改生成代码或更换样例，未重跑已过 Go/兼容。
+
+实际签名检查还暴露底层 SDK 默认删除自身 p 标签：普通评论的原 recipients
+明确包含仓库/PR 作者及 mentions，签名者属于此集合时不能静默删除。
+`comment_publication_builder` 已沿现有 nostr `allow_self_tagging()` 保留原 tags；
+原 Bridge 断言保留，未把期望改为丢标签。Core
+`core/crates/collab-bridge/src/bridge.rs::sign_project` 实际消费该 builder。
+Native `collaboration/desktop/src-tauri/src/commands/identity.rs::sign_event`
+统一保留传入 tags，不增加 kind/e/a 产品特判；全量八处实际
+`signRelayEvent` 调用覆盖消息、提醒、Projects 四分支、Pulse 和私聊显隐，
+未发现依赖删除自身 p 的调用；无 p 的分支不受影响，项目精确回读不再被
+签名层改标签。消息编辑自己的提及过滤仍由原独立 helper 负责。
+这项是宿主签名语义的授权纠偏，不声称固定上游 identity 原文件已经具有该调用。
+Native 文件原 `rustfmt --edition 2021 --check` exit 0，仅为解析/格式证据；
+本批未编译 Tauri Rust、未做设备运行验收，不以 TS signer 夹具代替。
+
+完整私有输入补齐且签名修正后，原 SDK 末轮 9930 实际 exit 0：
+`cargo test --locked --offline -p collab-bridge projects::tests -- --nocapture`
+9/9，通过原自身 p 标签断言；
+`cargo test --locked --offline -p platform-core --bin platform-core projects::tests -- --nocapture`
+7/7；`cargo clippy --locked --offline -p platform-core --bin platform-core -- -D warnings`
+exit 0，三个本批 Rust 文件 `rustfmt --edition 2021 --check` 亦 exit 0。
+日志为上述私有目录的 `core-final.log`，SHA256
+`258781cd11ed2bba5cd0f5ba56b5bc4c70252453a7510b3123dd28bfa422141c`。
+这轮没有重复已通过的 UI、四侧往返或全量检查；Core 仅运行原 projects 单元
+消费者，不扩大为 HTTP/SpiceDB/Relay 端到端验收。5376 的真实签名失败与
+本轮同断言恢复分别保留，共享正文匹配另有上述私有变异/还原证据。
+
+此处只记录源码和隔离原消费者证据；本批尚未部署，旧在线 Web 截图不用于认领
+新 PR 评论。既有 full 制品摘要失败门禁未被本批定向结果替代。

@@ -39,7 +39,7 @@ export function ProjectInboxDetail({workItem,onBack,onOpenProject,host}:{workIte
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" ref={detailContentRef}>
       <div className="p-3"><div className="overflow-hidden rounded-xl border border-border/60 bg-card" data-testid="project-inbox-work-item-card">
         <div data-testid="project-inbox-work-item-layout">
-          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={host?{host,projectId:workItem.project.id,repository:workItem.repository}:undefined}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}
+          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={host?{host,projectId:workItem.project.id,repository:workItem.repository}:undefined}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles} publication={host?{host,projectId:workItem.project.id}:undefined}/>}
         </div>
       </div></div>
     </div>

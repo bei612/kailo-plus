@@ -1875,7 +1875,11 @@ async fn publish(
         None
     };
     let latest_project_comment = if matches!(&publication, Publication::Project(_)) {
-        if requested_kind == 1 {
+        if requested_kind == 1
+            && project_target
+                .as_ref()
+                .is_some_and(|target| target.kind.as_u16() == 1621)
+        {
             let Some(issue) = project_target.as_ref() else {
                 return StatusCode::BAD_REQUEST.into_response();
             };

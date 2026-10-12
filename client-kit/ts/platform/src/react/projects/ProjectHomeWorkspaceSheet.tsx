@@ -36,7 +36,7 @@ function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setS
   const missing=tab==="issues"?selectedIssueId&&!selected:selectedPullRequestId&&!selected;
   const body=missing?<ProjectPanelState error title={t("platform.loadFailed")}/>:
     tab==="issues"?<ProjectIssuesPanel host={host} projectId={projectId} issueItems={issues.map(item=>({issue:item.issue,project:item.repository}))} selectedIssueId={selectedIssueId} onSelectedIssueIdChange={setSelectedIssueId} profiles={profiles}/>:
-    <PullRequestsPanel project={repository} pullRequests={prs.map(item=>item.pullRequest)} selectedPullRequest={selected?.type==="pull-request"?selected.pullRequest:null} onSelectedPullRequestIdChange={setSelectedPullRequestId} profiles={profiles}/>;
+    <PullRequestsPanel host={host} projectId={projectId} project={repository} pullRequests={prs.map(item=>item.pullRequest)} selectedPullRequest={selected?.type==="pull-request"?selected.pullRequest:null} onSelectedPullRequestIdChange={setSelectedPullRequestId} profiles={profiles}/>;
   return body;
 }
 

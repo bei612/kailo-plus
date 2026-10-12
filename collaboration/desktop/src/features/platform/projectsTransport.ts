@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectIssueCommentTags,eventToProjectIssue,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -48,13 +48,14 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
     let enteredPublication=false;
     try {
       check();
-      if(request.operation==="CREATE_ISSUE_COMMENT"){
+      if(request.operation==="CREATE_ISSUE_COMMENT"||request.operation==="CREATE_PULL_REQUEST_COMMENT"){
+        const targetKind=request.operation==="CREATE_ISSUE_COMMENT"?1621:1618;
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
           ||request.visibility!==undefined||request.title!==undefined||request.category!==undefined||typeof request.body!=="string"||!request.body.trim()
           ||request.mentions?.some(pubkey=>!/^[0-9a-f]{64}$/.test(pubkey))||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid task comment");
         const readTarget=async()=>{
-          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1621],limit:1});check();
-          if(!root||root.id!==request.targetEventId||root.kind!==1621||!verifyEvent(root))throw new Error("Task unavailable");
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[targetKind],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==targetKind||!verifyEvent(root))throw new Error("Project work item unavailable");
           const address=root.tags.find(tag=>tag[0]==="a")?.[1];
           const [kind,owner,...identifier]=address?.split(":")??[];
           const slug=identifier.join(":");
@@ -65,7 +66,7 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
         };
         const target=await readTarget();
         const content=request.body.trim();
-        const tags=buildProjectIssueCommentTags(target.repository,eventToProjectIssue(target.root),request.mentions??[],request.attachments??[]);
+        const tags=buildProjectCommentTags(target.repository,targetKind===1621?eventToProjectIssue(target.root):eventToProjectPullRequest(target.root),request.mentions??[],request.attachments??[]);
         enteredPublication=true;
         const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
           try{
@@ -73,14 +74,19 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
             if(fresh.root.id!==target.root.id||fresh.repository.repoAddress!==target.repository.repoAddress)throw new Error("Task changed");
             // Relay applies generic tags after its SQL limit. Drain unfiltered
             // author history first; a newer other task must not hide this root.
+            let createdAt:number|undefined;
+            if(targetKind===1621){
             const history=await enumerateProjectEvents(async page=>{
               const events=await relayClient.fetchEvents({kinds:[1],authors:[viewer],limit:relayQueryLimit,since:page.since,until:page.until});check();
               if(events.some(event=>event.kind!==1||event.pubkey!==viewer||!verifyEvent(event)))throw new Error("Task comment history unavailable");
               return events;
             },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
             const comments=history.filter(comment=>comment.tags.some(tag=>tag[0]==="a"&&tag[1]===target.repository.repoAddress));
-            const createdAt=nextProjectIssueCommentCreatedAt(eventToProjectIssue(fresh.root,[],comments),Math.floor(Date.now()/1_000),viewer);
-            const signed=await signRelayEvent({kind:1,content,tags,createdAt});check();
+            createdAt=nextProjectIssueCommentCreatedAt(eventToProjectIssue(fresh.root,[],comments),Math.floor(Date.now()/1_000),viewer);
+            }
+            // Fixed original ordinary PR comment signs at current time. Only
+            // Tasks (and separately review decisions) use monotonic activity.
+            const signed=await signRelayEvent({kind:1,content,tags,...(createdAt===undefined?{}:{createdAt})});check();
             if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Comment signing identity changed");
             return signed;
           }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
