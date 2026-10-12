@@ -197,6 +197,34 @@ class NativeEntrypointTests(unittest.TestCase):
             self.assertEqual(len(calls.read_text().splitlines()), 1)
             calls.unlink()
 
+    def test_start_consumes_explicit_native_env_without_adjacent_copy(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        native = root / "controlled" / "native.env"
+        native.parent.mkdir()
+        native.write_text("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        command = ["bash", str(root / "start.sh"), "--native-env", str(native), "--file-storage-sync", "--validate"]
+        result = subprocess.run(command, env=env, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        operations = [json.loads(line) for line in calls.read_text().splitlines()]
+        self.assertEqual(len(operations), 1)
+        self.assertEqual(operations[0][operations[0].index("--env-file") + 1], str(native))
+        self.assertEqual(operations[0][operations[0].index("--project-directory") + 1], str(root))
+        self.assertIn(str(root / "compose.file-storage-sync.yaml"), operations[0])
+        self.assertEqual(operations[0][-2:], ["config", "--quiet"])
+        self.assertFalse((root / ".env").exists())
+        calls.unlink()
+        for arguments in (["--native-env"], ["--native-env", "relative.env"], ["--native-env", str(root / "absent")]):
+            with self.subTest(arguments=arguments):
+                refused = subprocess.run(["bash", str(root / "start.sh"), *arguments, "--validate"], env=env, capture_output=True)
+                self.assertEqual(refused.returncode, 64)
+                self.assertFalse(calls.exists())
+
     def test_model_start_separates_transport_from_existing_mapping_delivery(self):
         root = Path(self.directory.name)
         (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())

@@ -6038,3 +6038,69 @@ check.sh 为
 真实部署仍须匹配本批源码的 artifact 和合法隔离身份材料。
 本批未注册/激活 binding、未构建/加载镜像、未重跑 full；原生服务与 adapter
 既有 artifact 不能代替新源码验收。文档门禁由主线合批，未借旧结果声明通过。
+
+## 2026-10-12 原生受控 env 显式选择与真实同步预检
+
+本批基准 `13273932c77164d8498d9f5e8341230d286e3ee3`，不修改原生业务、
+绑定、凭据或模型。四步影响结论：
+
+1. 权威为 `.design/13` §4.1–4.4 与既有原生配置投递约束。原导入器仍由
+   原 `file_storage_sync` 配置注册，未重写固定上游
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/config/config.go::LoadConfig`。仅补 Kailo 已有部署入口接缝。
+2. 运行中 `kailo-knowledge-app-1` 的 Compose 标签指向实际受控 env：
+   `/volumes/data/kailo/tmp/codex-knowledge-edge-20261006.hk1xfO/runtime/knowledge/fork/deploy/.env`。
+   原 `start.sh` 只读取其脚本同目录 `.env`，无法用当前源码读取这份
+   已存在投递。新增 `--native-env /absolute/native.env` 后仍由原
+   Compose `--env-file` 消费；不复制配置、不 source/执行 env。
+3. 默认调用不变；显式输入必须为绝对且已存在的文件，否则 exit 64，
+   不调用 Docker。Compose 的 project-directory、文件相对路径解析、
+   platform-model 最后覆盖顺序、原只读挂载和仅 app 重建边界均不变。
+   `--validate` 仍只运行 `config --quiet`，不执行 up/build/pull。
+4. 无值、相对路径、缺文件均拒绝；不能把 SSO client secret 当作接收
+   binding 的 SERVICE 凭据。此参数不创建身份/权限/绑定，不放宽 Core
+   准入；缺少受控同步输入仍 fail closed，未知业务结果不改写。
+
+真实原命令（未输出 env/secret 内容）：
+
+```sh
+bash knowledge/fork/deploy/start.sh \
+  --native-env /volumes/data/kailo/tmp/codex-knowledge-edge-20261006.hk1xfO/runtime/knowledge/fork/deploy/.env \
+  --platform-model /volumes/kailo/apps/deploy/local/.env \
+  --file-storage-sync --validate
+```
+
+实际 exit 1：`required variable KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE
+is missing a value: controlled full native config with file_storage_sync required`。
+该实际 env 中 `KNOWLEDGE_FILE_STORAGE_SYNC_CONFIG_FILE`、
+`KNOWLEDGE_FILE_STORAGE_SYNC_OIDC_SECRET_FILE`、
+`KNOWLEDGE_ADAPTER_PLATFORM_NETWORK` 三项均不存在；运行 app 的 mounts
+也无对应同步配置/SERVICE 文件。现有 SSO secret 不作替代。
+这只证明当前已部署配置尚未投递该集成，不宣称所有 Data 目录均无可用材料。
+
+实现后复用空闲 `kailo-knowledge-delete-handoff`，实际 cgroup
+CPU `400000 100000`、memory `8589934592`、swap `0`；
+Data 挂载的独立输入与 `TMPDIR=/tmp`，`PYTHONDONTWRITEBYTECODE=1`，
+无安装、编译或新镜像。原 `python3 -m unittest -v test_native_entrypoint`
+首次 63313 exit 1：33 项中 31 通过、两项因私有输入漏原 nginx 模板而错误。
+保留失败，补齐相同源码的原目录层级和 render_proxy.awk/nginx-api-proxy.conf，
+未改产品/断言；53493 同原完整 33 项通过，exit 0，86.176s。
+私有仅移除 `native_env=$2`，原新增用例实际 exit 1（78 != 0）；
+还原后正式/私有 start.sh cmp 0，9862 原 NativeEntrypointTests 全类
+20 项通过，exit 0，8.371s；同次 bash -n exit 0。
+没有将还原 20 项称作整套 33 项重跑。
+
+日志目录：
+`/volumes/data/kailo/tmp/knowledge-delete-handoff-20261011.F8S91D/native-env.1a7evp`。
+
+| 文件 | SHA-256 |
+| --- | --- |
+| positive.log（缺输入失败） | `927d709a7ffde1fa820fc2edea7d71b9eb9f66a16cd107e78ed1f3ae6764773e` |
+| fixed-positive.log | `22e2603f327c721970cbbc88cf5c29adcc1d2cba5f89e6de6bf84595f7cebbf9` |
+| negative.log | `1fc54e806d4197712b8f9070dc828885818c878b38b94dcb423d2a945bfcb49b` |
+| restored.log | `f5ab2d4376a15f09f63258a0b77faf6d507e2e6c51af74d2ff415d96feca533f` |
+
+录制 Docker 调用的原用例证明精确 env 参数、原 overlay 与只校验行为，
+不代替真实 Compose 配置通过或 HTTP 业务验收。真实配置预检仍失败；
+未激活 binding、轮换账号、重启服务、加载镜像或重跑 full。
+文档检查交主线合批；没有用旧检查结果覆盖本批新增段。

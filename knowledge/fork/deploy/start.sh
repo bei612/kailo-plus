@@ -9,6 +9,14 @@ file_storage_sync=false
 validate=false
 while (($#)); do
   case "$1" in
+    --native-env)
+      [[ $# -ge 2 && "$2" = /* && -f "$2" ]] || {
+        echo 'native deployment requires an absolute existing env file' >&2
+        exit 64
+      }
+      native_env=$2
+      shift 2
+      ;;
     --platform-model)
       [[ $# -ge 2 && "$2" = /* && -f "$2" ]] || {
         echo 'platform model requires the absolute existing sole platform env file' >&2
@@ -20,7 +28,7 @@ while (($#)); do
     --validate) validate=true; shift ;;
     --platform-adapter) platform_adapter=true; shift ;;
     --file-storage-sync) file_storage_sync=true; shift ;;
-    *) echo 'usage: start.sh [--platform-model /absolute/deploy/local/.env] [--platform-adapter] [--file-storage-sync] [--validate]' >&2; exit 64 ;;
+    *) echo 'usage: start.sh [--native-env /absolute/native.env] [--platform-model /absolute/deploy/local/.env] [--platform-adapter] [--file-storage-sync] [--validate]' >&2; exit 64 ;;
   esac
 done
 [[ -f "$native_env" ]] || { echo 'native deployment .env is required' >&2; exit 78; }
