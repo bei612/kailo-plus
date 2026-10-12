@@ -304,6 +304,30 @@ trait RenderAttachment {
     fn render(&self, community_host: &str) -> Option<(String, Vec<String>)>;
 }
 
+// The original comment composer already includes attachment markdown in body.
+// Reuse the existing media-origin validation, retaining only the imeta tag.
+#[allow(clippy::result_large_err)]
+pub(crate) fn project_comment_media(
+    request: &contracts::ProjectsPublishRequest,
+    community_host: &str,
+) -> Result<Vec<Vec<String>>, Response> {
+    request
+        .attachments
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        // Original buildImetaTags: external GIFs have no blob hash and remain
+        // markdown only. They must not be signed as local imeta blobs.
+        .filter(|attachment| !attachment.sha256.is_empty())
+        .map(|attachment| {
+            attachment
+                .render(community_host)
+                .map(|(_, tag)| tag)
+                .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())
+        })
+        .collect()
+}
+
 /// The existing BFF media-origin fence applies to every attachment URL, not
 /// just the original blob. Sidecar/content validation remains in Buzz Relay.
 fn attachment_media_url(raw: &str, community_host: &str) -> Option<reqwest::Url> {
@@ -715,7 +739,7 @@ pub(crate) async fn publish_project(
     let target = match crate::projects::publication_kind(&request) {
         // NIP-34 issues, like deletion, are Community-global. A repository's
         // buzz-channel metadata must not silently become a Workspace grant.
-        Ok(5 | 1621) => MessageTarget::Pulse(ctx.tenant_id),
+        Ok(1 | 5 | 1621) => MessageTarget::Pulse(ctx.tenant_id),
         Ok(_) => match request
             .workspace_id
             .as_deref()
@@ -1570,8 +1594,8 @@ async fn publish(
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 if let Publication::Project(request) = &publication {
-                    if requested_kind == 1621 {
-                        if let Err(response) = crate::projects::confirm_accepted_issue(
+                    if matches!(requested_kind, 1 | 1621) {
+                        if let Err(response) = crate::projects::confirm_accepted_issue_publication(
                             &state,
                             &ctx,
                             request,
@@ -1682,6 +1706,10 @@ async fn publish(
         // Issue content is transient input to the original signed Relay event.
         // Include it in the existing byte-limit check, never in audit/storage.
         content.push_str(request.body.as_deref().unwrap_or_default().trim());
+        match project_comment_media(request, &community_host) {
+            Ok(tags) => media_tags.extend(tags),
+            Err(response) => return response,
+        }
     }
 
     if message.is_some() && delete_event_id.is_none() {
@@ -1744,15 +1772,39 @@ async fn publish(
     } else {
         None
     };
+    let latest_project_comment = if matches!(&publication, Publication::Project(_)) {
+        if requested_kind == 1 {
+            let Some(issue) = project_target.as_ref() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            match crate::projects::latest_comment(&state, &client, issue, &community_host).await {
+                Ok(latest) => latest,
+                Err(response) => return response,
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     if let Publication::Project(request) = &publication {
-        if collab_bridge::projects::publication_builder(
-            request,
-            project_target.as_ref(),
-            matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
-            &keys.public_key().to_hex(),
-        )
-        .is_err()
-        {
+        let builder = if requested_kind == 1 {
+            collab_bridge::projects::comment_publication_builder(
+                request,
+                project_target.as_ref().expect("comment issue checked"),
+                latest_project_comment.as_ref(),
+                &keys.public_key().to_hex(),
+                &media_tags,
+            )
+        } else {
+            collab_bridge::projects::publication_builder(
+                request,
+                project_target.as_ref(),
+                matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
+                &keys.public_key().to_hex(),
+            )
+        };
+        if builder.is_err() {
             return StatusCode::BAD_REQUEST.into_response();
         }
     }
@@ -1874,6 +1926,8 @@ async fn publish(
             &request,
             project_target.as_ref(),
             matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
+            latest_project_comment.as_ref(),
+            &media_tags,
         ),
         Publication::Reminder(_) => {
             let Some(prepared) = reminder else {
@@ -4577,6 +4631,41 @@ mod tests {
             value["spoiler"] = spoiler.into();
         }
         serde_json::from_value(value).expect("generated attachment contract")
+    }
+
+    #[test]
+    fn project_comment_media_preserves_complete_markdown_and_rejects_foreign_origin() {
+        let attachment = media_attachment("image/png", "png", Some("image.png"), Some(true));
+        let (markdown, imeta) = attachment.render("relay.example").unwrap();
+        let body = format!("Original comment{markdown}");
+        let mut request: contracts::ProjectsPublishRequest =
+            serde_json::from_value(serde_json::json!({
+                "operation":"CREATE_ISSUE_COMMENT", "targetEventId":"b".repeat(64),
+                "body":body, "attachments":[attachment]
+            }))
+            .unwrap();
+        assert_eq!(
+            project_comment_media(&request, "relay.example").unwrap(),
+            vec![imeta]
+        );
+        assert_eq!(
+            request.body.as_deref(),
+            Some(body.as_str()),
+            "original complete markdown is not appended twice"
+        );
+        assert!(project_comment_media(&request, "another.example").is_err());
+        request.attachments.as_mut().unwrap()[0].url =
+            "https://foreign.example/media/file.png".into();
+        assert!(project_comment_media(&request, "relay.example").is_err());
+        request.attachments.as_mut().unwrap()[0].sha256.clear();
+        assert!(project_comment_media(&request, "relay.example")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            request.body.as_deref(),
+            Some(body.as_str()),
+            "markdown-only external media stays original content"
+        );
     }
 
     /// Fixed Buzz 779af8886caae1317b4de962082429867ab61503,

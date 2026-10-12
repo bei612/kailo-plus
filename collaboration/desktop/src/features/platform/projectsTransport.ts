@@ -5,18 +5,93 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectIssueCommentTags,eventToProjectIssue,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {ProjectsQueryRequestView} from "@client-kit/contracts";
+
+// The existing Native typed query, next to its publication consumer. Generic
+// a-tag filters run after Relay's SQL limit, so activity must drain before fold.
+export function createProjectsQuery(viewer:string,active:()=>boolean,limit:number):ProjectsHost["query"]{
+  const check=()=>{if(!active())throw new Error("Project identity changed");};
+  return async request=>{
+    check();const kinds=request.view==="PROJECTS"?[30621]:request.view==="REPOSITORIES"?[30617]:request.view==="DELETIONS"?[5]
+      :request.view==="WORK_ITEMS"?[1618,1621]:request.view==="WORK_ITEM_ACTIVITY"?[1,1619,1630,1631,1632,1633]:null;
+    const coordinateScoped=request.view!=="PROJECTS"&&request.view!=="REPOSITORIES";
+    if(!Number.isSafeInteger(limit)||limit<1||kinds===null||coordinateScoped&&(!request.coordinates?.length||request.coordinates.length>limit||
+      new Set(request.coordinates).size!==request.coordinates.length||request.coordinates.some(value=>
+        !(request.view==="DELETIONS"?/^(30617|30621):[0-9a-f]{64}:.+$/:/^30617:[0-9a-f]{64}:.+$/).test(value)))
+      ||!coordinateScoped&&request.coordinates!==undefined)throw new Error("Invalid project query");
+    let events;
+    if(request.view===ProjectsQueryRequestView.WorkItemActivity){
+      const history=await enumerateProjectEvents(async page=>{
+        const since=page.since===undefined?request.since:request.since===undefined?page.since:Math.max(page.since,request.since);
+        const until=page.until===undefined?request.until:request.until===undefined?page.until:Math.min(page.until,request.until);
+        if(since!==undefined&&until!==undefined&&since>until)return [];
+        const rows=await relayClient.fetchEvents({kinds,limit,since,until});check();
+        if(rows.some(event=>!kinds.includes(event.kind)||!verifyEvent(event)))throw new Error("Invalid project response");
+        return rows;
+      },request.view,limit,new AbortController().signal);
+      events=history.filter(event=>request.coordinates!.includes(event.tags.find(tag=>tag[0]==="a")?.[1]??""))
+        .sort((left,right)=>right.created_at-left.created_at||right.id.localeCompare(left.id)).slice(0,limit);
+    }else{
+      events=await relayClient.fetchEvents({kinds,limit,since:request.since,until:request.until,...(request.coordinates?{"#a":request.coordinates}:{})});
+    }
+    check();if(events.length>limit||events.some(event=>!kinds.includes(event.kind)||
+      request.coordinates&&!event.tags.some(tag=>tag[0]==="a"&&request.coordinates!.includes(tag[1]??""))))throw new Error("Invalid project response");
+    return {events,limit,pubkey:viewer};
+  };
+}
 
 // Original projectCreation/projectDeletion; CLIENT signs and Relay decides ownership.
-export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:string,active:()=>boolean,client:Pick<BffClient,"workspaces">){
+export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:string,active:()=>boolean,client:Pick<BffClient,"workspaces">,relayQueryLimit:number){
   const check=()=>{if(!active())throw new TransportError("Project identity changed");};
   return async(request:ProjectsPublishRequest,key:string,observeOnly=false,observation?:{eventId?:string;onPrepared:(eventId:string)=>void})=>{
     let enteredPublication=false;
     try {
       check();
+      if(request.operation==="CREATE_ISSUE_COMMENT"){
+        if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
+          ||request.visibility!==undefined||request.title!==undefined||request.category!==undefined||typeof request.body!=="string"||!request.body.trim()
+          ||request.mentions?.some(pubkey=>!/^[0-9a-f]{64}$/.test(pubkey))||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid task comment");
+        const readTarget=async()=>{
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1621],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==1621||!verifyEvent(root))throw new Error("Task unavailable");
+          const address=root.tags.find(tag=>tag[0]==="a")?.[1];
+          const [kind,owner,...identifier]=address?.split(":")??[];
+          const slug=identifier.join(":");
+          if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository coordinate unavailable");
+          const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
+          if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          return {root,repository:{owner,repoAddress:address!}};
+        };
+        const target=await readTarget();
+        const content=request.body.trim();
+        const tags=buildProjectIssueCommentTags(target.repository,eventToProjectIssue(target.root),request.mentions??[],request.attachments??[]);
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            const fresh=await readTarget();
+            if(fresh.root.id!==target.root.id||fresh.repository.repoAddress!==target.repository.repoAddress)throw new Error("Task changed");
+            // Relay applies generic tags after its SQL limit. Drain unfiltered
+            // author history first; a newer other task must not hide this root.
+            const history=await enumerateProjectEvents(async page=>{
+              const events=await relayClient.fetchEvents({kinds:[1],authors:[viewer],limit:relayQueryLimit,since:page.since,until:page.until});check();
+              if(events.some(event=>event.kind!==1||event.pubkey!==viewer||!verifyEvent(event)))throw new Error("Task comment history unavailable");
+              return events;
+            },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
+            const comments=history.filter(comment=>comment.tags.some(tag=>tag[0]==="a"&&tag[1]===target.repository.repoAddress));
+            const createdAt=nextProjectIssueCommentCreatedAt(eventToProjectIssue(fresh.root,[],comments),Math.floor(Date.now()/1_000),viewer);
+            const signed=await signRelayEvent({kind:1,content,tags,createdAt});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Comment signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==1||event.pubkey!==viewer||!verifyEvent(event)||event.content!==content||JSON.stringify(event.tags)!==JSON.stringify(tags))throw new TransportError("Comment publication receipt mismatch");
+        return {eventId:event.id};
+      }
       if(request.operation==="CREATE_ISSUE"){
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
-          ||request.visibility!==undefined||typeof request.title!=="string"||typeof request.body!=="string"
+          ||request.visibility!==undefined||request.mentions!==undefined||request.attachments!==undefined||typeof request.title!=="string"||typeof request.body!=="string"
           ||!["issue","change-request","improvement"].includes(request.category??""))throw new Error("Invalid task creation");
         const [repo]=await relayClient.fetchEvents({ids:[request.targetEventId],kinds:[30617],limit:1});check();
         if(!repo||repo.id!==request.targetEventId||repo.kind!==30617||!verifyEvent(repo))throw new Error("Repository head unavailable");
@@ -42,11 +117,11 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
       const creating=request.operation!=="DELETE";
       if(creating){
         if((request.operation!=="CREATE_PROJECT"&&request.operation!=="CREATE_REPOSITORY")||!request.workspaceId||!request.name||request.targetEventId
-          ||request.title!==undefined||request.body!==undefined||request.category!==undefined
+          ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
           ||request.operation==="CREATE_PROJECT"&&!['listed','unlisted'].includes(request.visibility??'')
           ||request.operation==="CREATE_REPOSITORY"&&request.visibility!==undefined)throw new Error("Invalid project creation");
       }else if(!request.targetEventId||request.workspaceId||request.name!==undefined||request.description!==undefined||request.visibility!==undefined
-        ||request.title!==undefined||request.body!==undefined||request.category!==undefined)throw new Error("Invalid project deletion");
+        ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined)throw new Error("Invalid project deletion");
       const admitHome=async()=>{
         const workspace=(await client.workspaces()).find(row=>row.id===request.workspaceId&&row.isMember===true);check();
         if(!workspace)throw new Error("Project home channel unavailable");

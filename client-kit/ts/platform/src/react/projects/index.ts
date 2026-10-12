@@ -1,5 +1,6 @@
 export { ProjectsView } from "./ProjectsView";
-export {buildGitIssueTags} from "./projectIssues.mjs";
+export {buildGitIssueTags,eventToProjectIssue,nextProjectIssueCommentCreatedAt} from "./projectIssues.mjs";
+export {buildProjectIssueCommentTags} from "./issueMutations";
 export type { ProjectChannelRenderer } from "./ProjectChannelHome";
 export { parseEntityLink, isEntityLink, type ParsedEntityLink } from "./entityLink";
 export { readProjectEntity, openProjectEntity } from "./projectEntityNavigation";
@@ -11,5 +12,5 @@ export { loadProjectWorkItems, projectInboxMentions, resolveProjectInboxWorkItem
 export {projectWorkItemTarget,resolveProjectWorkItemTarget,type ProjectWorkItemTarget} from "./projectWorkItems";
 export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedProject } from "./projectCreation";
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";
-export { loadProjects, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
+export { loadProjects, enumerateProjectEvents, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";

@@ -5,7 +5,7 @@ import { Button } from "../profile/buzz/shared/ui/button";
 import type { MentionSuggestion } from "./PeopleMentionAutocomplete";
 
 /** Existing participant projection, not a second Community identity registry. */
-export function usePeopleDirectory(scopeKey:string) {
+export function usePeopleDirectory(scopeKey:string,enabled=true) {
   const client=useBffClient();
   const query=useInfiniteQuery({
     queryKey:["platform",scopeKey,"pulse-people"],
@@ -13,6 +13,7 @@ export function usePeopleDirectory(scopeKey:string) {
     initialPageParam:undefined as string|undefined,
     getNextPageParam:page=>page.nextCursor??undefined,
     retry:false,
+    enabled,
   });
   const people=useMemo<MentionSuggestion[]>(()=>{
     const byKey=new Map<string,MentionSuggestion>();

@@ -20,7 +20,7 @@ pub fn publication_observed(
 ) -> Result<bool, OperatorError> {
     let unverified =
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
-    if !matches!(expected_kind, 5 | 1621 | 30617 | 30621) {
+    if !matches!(expected_kind, 1 | 5 | 1621 | 30617 | 30621) {
         return Err(unverified());
     }
     let events: Vec<Event> = serde_json::from_value(page).map_err(|_| unverified())?;
@@ -53,11 +53,43 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     let operation = serde_json::to_value(&request.operation)
         .map_err(|_| invalid("invalid project operation"))?;
     if operation.as_str() != Some("CREATE_ISSUE")
-        && (request.title.is_some() || request.body.is_some() || request.category.is_some())
+        && (request.title.is_some() || request.category.is_some())
+        || !matches!(
+            operation.as_str(),
+            Some("CREATE_ISSUE" | "CREATE_ISSUE_COMMENT")
+        ) && request.body.is_some()
+        || operation.as_str() != Some("CREATE_ISSUE_COMMENT")
+            && (request.mentions.is_some() || request.attachments.is_some())
     {
         return Err(invalid("issue fields on another project operation"));
     }
     match operation.as_str() {
+        Some("CREATE_ISSUE_COMMENT") => {
+            if request
+                .body
+                .as_deref()
+                .is_none_or(|body| body.trim().is_empty())
+                || !request.target_event_id.as_deref().is_some_and(|id| {
+                    nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
+                })
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+                || request
+                    .mentions
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|key| {
+                        nostr::PublicKey::from_hex(key)
+                            .map_or(true, |parsed| parsed.to_hex() != *key)
+                    })
+            {
+                return Err(invalid("invalid issue comment"));
+            }
+            Ok(1)
+        }
         Some("CREATE_ISSUE") => {
             let schema: serde_json::Value = serde_json::from_str(include_str!(
                 "../../../../contracts/api/projects_publish_request.schema.json"
@@ -168,6 +200,9 @@ pub fn publication_builder(
     owner: &str,
 ) -> Result<EventBuilder, OperatorError> {
     let kind = publication_kind(request)?;
+    if kind == 1 {
+        return Err(invalid("issue comment requires signed activity evidence"));
+    }
     if kind == 1621 {
         let event = target.ok_or_else(|| invalid("issue repository missing"))?;
         if channel_id.is_some()
@@ -284,6 +319,157 @@ pub fn publication_builder(
         .map_err(|error| invalid(&error.to_string()))
 }
 
+/// Fixed Buzz hooks.ts::createProjectIssueComment: retain the original root,
+/// repository and ordered recipient union. Callers supply only validated media.
+pub fn comment_repository(issue: &Event) -> Result<&str, OperatorError> {
+    if issue.kind.as_u16() != 1621 || issue.verify().is_err() {
+        return Err(invalid("invalid comment issue"));
+    }
+    let coordinate = issue
+        .tags
+        .iter()
+        .find(|tag| tag.as_slice().first().is_some_and(|field| field == "a"))
+        .and_then(|tag| tag.as_slice().get(1))
+        .map(String::as_str)
+        .ok_or_else(|| invalid("comment repository missing"))?;
+    let mut parts = coordinate.splitn(3, ':');
+    if parts.next() != Some("30617")
+        || !parts.next().is_some_and(|key| {
+            nostr::PublicKey::from_hex(key).is_ok_and(|parsed| parsed.to_hex() == key)
+        })
+        || parts.next().is_none_or(str::is_empty)
+    {
+        return Err(invalid("invalid comment repository"));
+    }
+    Ok(coordinate)
+}
+
+pub fn comment_activity_matches(issue: &Event, event: &Event, owner: &str) -> bool {
+    let Ok(repository) = comment_repository(issue) else {
+        return false;
+    };
+    event.kind.as_u16() == 1
+        && event.verify().is_ok()
+        && event.pubkey.to_hex() == owner
+        && event
+            .tags
+            .iter()
+            .find(|tag| tag.as_slice().first().is_some_and(|name| name == "a"))
+            .and_then(|tag| tag.as_slice().get(1))
+            .map(String::as_str)
+            == Some(repository)
+        && event.tags.iter().any(|tag| {
+            let fields = tag.as_slice();
+            fields
+                .first()
+                .is_some_and(|name| name == "e" || name == "E")
+                && fields
+                    .get(1)
+                    .is_some_and(|value| value == &issue.id.to_hex())
+        })
+}
+
+fn comment_tags(
+    request: &ProjectsPublishRequest,
+    issue: &Event,
+    media_tags: &[Vec<String>],
+) -> Result<Vec<Tag>, OperatorError> {
+    if publication_kind(request)? != 1
+        || request.target_event_id.as_deref() != Some(issue.id.to_hex().as_str())
+    {
+        return Err(invalid("comment issue mismatch"));
+    }
+    let repository = comment_repository(issue)?;
+    let repository_owner = repository.split(':').nth(1).unwrap_or_default();
+    let mut recipients = vec![repository_owner.to_owned()];
+    let issue_author = issue.pubkey.to_hex();
+    for key in std::iter::once(issue_author.as_str())
+        .chain(issue.tags.iter().filter_map(|tag| {
+            let fields = tag.as_slice();
+            (fields.first().is_some_and(|name| name == "p"))
+                .then(|| fields.get(1).map(String::as_str))
+                .flatten()
+        }))
+        .chain(
+            request
+                .mentions
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(String::as_str),
+        )
+    {
+        let key = key.to_lowercase();
+        if !recipients.contains(&key) {
+            recipients.push(key);
+        }
+    }
+    let mut tags = vec![
+        vec![
+            "e".to_owned(),
+            issue.id.to_hex(),
+            String::new(),
+            "root".to_owned(),
+        ],
+        vec!["a".to_owned(), repository.to_owned()],
+    ];
+    tags.extend(recipients.into_iter().map(|key| vec!["p".to_owned(), key]));
+    tags.extend_from_slice(media_tags);
+    tags.into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid comment tags"))
+}
+
+pub fn comment_publication_builder(
+    request: &ProjectsPublishRequest,
+    issue: &Event,
+    latest: Option<&Event>,
+    owner: &str,
+    media_tags: &[Vec<String>],
+) -> Result<EventBuilder, OperatorError> {
+    if nostr::PublicKey::from_hex(owner).map_or(true, |key| key.to_hex() != owner) {
+        return Err(invalid("invalid comment author"));
+    }
+    let tags = comment_tags(request, issue, media_tags)?;
+    let created_at = match latest {
+        Some(event) if comment_activity_matches(issue, event, owner) => Timestamp::from_secs(
+            event
+                .created_at
+                .as_secs()
+                .checked_add(1)
+                .ok_or_else(|| invalid("comment timestamp overflow"))?,
+        )
+        .max(Timestamp::now()),
+        Some(_) => return Err(invalid("invalid previous comment evidence")),
+        None => Timestamp::now(),
+    };
+    Ok(EventBuilder::new(
+        nostr::Kind::from(1),
+        request.body.as_deref().unwrap_or_default().trim(),
+    )
+    .tags(tags)
+    .custom_created_at(created_at))
+}
+
+pub fn comment_publication_matches(
+    request: &ProjectsPublishRequest,
+    issue: &Event,
+    event: &Event,
+    media_tags: &[Vec<String>],
+) -> Result<bool, OperatorError> {
+    if event.kind.as_u16() != 1 || event.verify().is_err() {
+        return Err(invalid("invalid retained comment"));
+    }
+    Ok(
+        event.content == request.body.as_deref().unwrap_or_default().trim()
+            && event
+                .tags
+                .iter()
+                .eq(comment_tags(request, issue, media_tags)?.iter()),
+    )
+}
+
 /// Compare the original accepted issue, without requiring its replaceable repo
 /// head to remain current. Core separately checks the persisted parent event id.
 pub fn issue_publication_matches(
@@ -348,7 +534,7 @@ mod tests {
     #[test]
     fn publication_receipt_verifies_frozen_actor_kind_hash_and_signature() {
         let keys = Keys::generate();
-        for kind in [5, 1621, 30617, 30621] {
+        for kind in [1, 5, 1621, 30617, 30621] {
             let event = EventBuilder::new(nostr::Kind::from(kind as u16), "original")
                 .sign_with_keys(&keys)
                 .unwrap();
@@ -383,6 +569,184 @@ mod tests {
                 .unwrap()
                 .sig;
             assert!(publication_observed(json!([forged_signature]), &id, &actor, kind).is_err());
+        }
+    }
+
+    #[test]
+    fn original_issue_comment_keeps_recipients_media_and_same_author_ordering() {
+        let repository_owner = Keys::generate();
+        let issue_owner = Keys::generate();
+        let author = Keys::generate();
+        let mentioned = Keys::generate().public_key().to_hex();
+        let repository = format!("30617:{}:garden", repository_owner.public_key());
+        let issue = EventBuilder::new(nostr::Kind::from(1621), "issue")
+            .tags([
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+                Tag::parse(["p", mentioned.as_str()]).unwrap(),
+                Tag::parse(["p", &issue_owner.public_key().to_hex()]).unwrap(),
+            ])
+            .sign_with_keys(&issue_owner)
+            .unwrap();
+        let request: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"CREATE_ISSUE_COMMENT", "targetEventId":issue.id.to_hex(),
+            "body":"  Comment ![image](original-media)  ",
+            "mentions":[mentioned,repository_owner.public_key().to_hex()], "attachments":[]
+        }))
+        .unwrap();
+        let media = vec![vec!["imeta".to_owned(), "url original-media".to_owned()]];
+        let previous = EventBuilder::new(nostr::Kind::from(1), "previous")
+            .tags([
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+                Tag::parse(["e", &issue.id.to_hex(), "", "root"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from_secs(Timestamp::now().as_secs() + 20))
+            .sign_with_keys(&author)
+            .unwrap();
+        let event = comment_publication_builder(
+            &request,
+            &issue,
+            Some(&previous),
+            &author.public_key().to_hex(),
+            &media,
+        )
+        .unwrap()
+        .sign_with_keys(&author)
+        .unwrap();
+        assert_eq!(event.kind.as_u16(), 1);
+        assert_eq!(event.content, "Comment ![image](original-media)");
+        assert_eq!(
+            event.created_at.as_secs(),
+            previous.created_at.as_secs() + 1
+        );
+        assert_eq!(
+            event
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice().to_vec())
+                .collect::<Vec<_>>(),
+            vec![
+                vec![
+                    "e".to_owned(),
+                    issue.id.to_hex(),
+                    String::new(),
+                    "root".to_owned()
+                ],
+                vec!["a".to_owned(), repository],
+                vec!["p".to_owned(), repository_owner.public_key().to_hex()],
+                vec!["p".to_owned(), issue_owner.public_key().to_hex()],
+                vec!["p".to_owned(), mentioned],
+                media[0].clone(),
+            ]
+        );
+        assert!(comment_publication_matches(&request, &issue, &event, &media).unwrap());
+        let mut changed = request.clone();
+        changed.body = Some("different body under same key".into());
+        assert!(!comment_publication_matches(&changed, &issue, &event, &media).unwrap());
+        changed = request.clone();
+        changed.mentions = Some(vec![Keys::generate().public_key().to_hex()]);
+        assert!(!comment_publication_matches(&changed, &issue, &event, &media).unwrap());
+        assert!(!comment_publication_matches(&request, &issue, &event, &[]).unwrap());
+        assert!(
+            publication_builder(&request, Some(&issue), None, &author.public_key().to_hex())
+                .is_err()
+        );
+        for (key, tags) in [
+            (
+                &issue_owner,
+                previous.tags.iter().cloned().collect::<Vec<_>>(),
+            ),
+            (
+                &author,
+                vec![
+                    Tag::parse([
+                        "a",
+                        &format!("30617:{}:another-repo", repository_owner.public_key()),
+                    ])
+                    .unwrap(),
+                    Tag::parse(["e", &issue.id.to_hex()]).unwrap(),
+                ],
+            ),
+            (
+                &author,
+                vec![
+                    Tag::parse(["a", comment_repository(&issue).unwrap()]).unwrap(),
+                    Tag::parse(["e", &"a".repeat(64)]).unwrap(),
+                ],
+            ),
+        ] {
+            let unrelated = EventBuilder::new(nostr::Kind::from(1), "unrelated")
+                .tags(tags)
+                .sign_with_keys(key)
+                .unwrap();
+            assert!(comment_publication_builder(
+                &request,
+                &issue,
+                Some(&unrelated),
+                &author.public_key().to_hex(),
+                &media
+            )
+            .is_err());
+        }
+        let mut forged = previous.clone();
+        forged.content = "unsigned replacement".into();
+        assert!(comment_publication_builder(
+            &request,
+            &issue,
+            Some(&forged),
+            &author.public_key().to_hex(),
+            &media
+        )
+        .is_err());
+        let mut forged_issue = issue.clone();
+        forged_issue.content = "unsigned issue".into();
+        assert!(comment_publication_builder(
+            &request,
+            &forged_issue,
+            None,
+            &author.public_key().to_hex(),
+            &media
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn issue_comment_rejects_mixed_operations_and_empty_body() {
+        let value = json!({"operation":"CREATE_ISSUE_COMMENT","targetEventId":"b".repeat(64),"body":"comment"});
+        assert_eq!(
+            publication_kind(&serde_json::from_value(value.clone()).unwrap()).unwrap(),
+            1
+        );
+        for (field, rejected) in [
+            ("body", json!(" \n ")),
+            ("targetEventId", json!("invalid")),
+            ("workspaceId", json!(uuid::Uuid::new_v4())),
+            ("title", json!("issue title")),
+            ("category", json!("issue")),
+            ("name", json!("repo")),
+            ("description", json!("description")),
+            ("visibility", json!("listed")),
+            ("mentions", json!(["invalid"])),
+        ] {
+            let mut invalid = value.clone();
+            invalid[field] = rejected;
+            assert!(
+                publication_kind(&serde_json::from_value(invalid).unwrap()).is_err(),
+                "{field}"
+            );
+        }
+        for operation in [
+            "DELETE",
+            "CREATE_PROJECT",
+            "CREATE_REPOSITORY",
+            "CREATE_ISSUE",
+        ] {
+            let mut invalid = value.clone();
+            invalid["operation"] = json!(operation);
+            invalid["mentions"] = json!([]);
+            assert!(
+                publication_kind(&serde_json::from_value(invalid).unwrap()).is_err(),
+                "{operation}"
+            );
         }
     }
 

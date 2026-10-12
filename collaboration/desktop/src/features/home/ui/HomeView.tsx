@@ -617,7 +617,7 @@ export function HomeView({
           ) : null}
 
 
-          {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined} onOpenProject={()=>{void goProject(selectedProject.project.id,projectWorkItemTarget(selectedProject));}}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
+          {showDetailPane&&detailMode==="messages"&&selectedProject?<PulseScreen><ProjectInboxDetail host={projectsHost??undefined} key={selectedItem?.conversationId} workItem={selectedProject} onBack={isSinglePanelDetailView?()=>handleUserSelectItem(null):undefined} onOpenProject={()=>{void goProject(selectedProject.project.id,projectWorkItemTarget(selectedProject));}}/></PulseScreen>:showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
               canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}

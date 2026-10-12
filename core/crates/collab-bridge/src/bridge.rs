@@ -699,8 +699,31 @@ impl IdentityClient {
         request: &contracts::ProjectsPublishRequest,
         target: Option<&Event>,
         channel_id: Option<&str>,
+        latest_comment: Option<&Event>,
+        media_tags: &[Vec<String>],
     ) -> Result<Event, OperatorError> {
-        crate::projects::publication_builder(request, target, channel_id, &self.pubkey_hex())?
+        let builder = if crate::projects::publication_kind(request)? == 1 {
+            if channel_id.is_some() {
+                return Err(OperatorError::Sign(
+                    "comment channel is not supported".into(),
+                ));
+            }
+            crate::projects::comment_publication_builder(
+                request,
+                target.ok_or_else(|| OperatorError::Sign("comment issue missing".into()))?,
+                latest_comment,
+                &self.pubkey_hex(),
+                media_tags,
+            )?
+        } else {
+            if latest_comment.is_some() || !media_tags.is_empty() {
+                return Err(OperatorError::Sign(
+                    "comment fields on another project operation".into(),
+                ));
+            }
+            crate::projects::publication_builder(request, target, channel_id, &self.pubkey_hex())?
+        };
+        builder
             .sign_with_keys(&self.keys)
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }

@@ -12435,11 +12435,15 @@ class ProjectPreferenceRequest {
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
 class ProjectsPublishRequest {
-  ///Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
-  ///enforced before signing.
+  final List<AttachmentElement>? attachments;
+
+  ///Original complete markdown including attachment markdown. Issues may be empty; comments
+  ///must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
+  ///before signing.
   final String? body;
   final ProjectIssueCategory? category;
   final String? description;
+  final List<String>? mentions;
   final String? name;
   final ProjectPublicationOperation operation;
   final String? targetEventId;
@@ -12451,9 +12455,11 @@ class ProjectsPublishRequest {
   final String? workspaceId;
 
   ProjectsPublishRequest({
+    this.attachments,
     this.body,
     this.category,
     this.description,
+    this.mentions,
     this.name,
     required this.operation,
     this.targetEventId,
@@ -12464,11 +12470,19 @@ class ProjectsPublishRequest {
 
   factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
       ProjectsPublishRequest(
+        attachments: json["attachments"] == null
+            ? null
+            : List<AttachmentElement>.from(
+                json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
+              ),
         body: json["body"],
         category: json["category"] == null
             ? null
             : projectIssueCategoryValues.map[json["category"]]!,
         description: json["description"],
+        mentions: json["mentions"] == null
+            ? null
+            : List<String>.from(json["mentions"]!.map((x) => x)),
         name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
         targetEventId: json["targetEventId"],
@@ -12480,15 +12494,97 @@ class ProjectsPublishRequest {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "attachments": attachments == null
+        ? null
+        : List<dynamic>.from(attachments!.map((x) => x.toJson())),
     "body": body,
     "category": projectIssueCategoryValues.reverse[category],
     "description": description,
+    "mentions": mentions == null
+        ? null
+        : List<dynamic>.from(mentions!.map((x) => x)),
     "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
     "targetEventId": targetEventId,
     "title": title,
     "visibility": projectListingVisibilityValues.reverse[visibility],
     "workspaceId": workspaceId,
+  });
+}
+
+class AttachmentElement {
+  ///原 Buzz imeta 模糊预览编码。
+  final String? blurhash;
+
+  ///原 Buzz imeta 媒体尺寸显示元数据。
+  final String? dim;
+
+  ///原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+  final String? displayLabel;
+
+  ///原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+  final double? duration;
+
+  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+  final String? filename;
+
+  ///原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+  final String? image;
+  final String sha256;
+  final int size;
+
+  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+  final bool? spoiler;
+
+  ///当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+  final String? thumb;
+  final String type;
+  final String url;
+
+  AttachmentElement({
+    this.blurhash,
+    this.dim,
+    this.displayLabel,
+    this.duration,
+    this.filename,
+    this.image,
+    required this.sha256,
+    required this.size,
+    this.spoiler,
+    this.thumb,
+    required this.type,
+    required this.url,
+  });
+
+  factory AttachmentElement.fromJson(Map<String, dynamic> json) =>
+      AttachmentElement(
+        blurhash: json["blurhash"],
+        dim: json["dim"],
+        displayLabel: json["displayLabel"],
+        duration: json["duration"]?.toDouble(),
+        filename: json["filename"],
+        image: json["image"],
+        sha256: json["sha256"],
+        size: json["size"],
+        spoiler: json["spoiler"],
+        thumb: json["thumb"],
+        type: json["type"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "blurhash": blurhash,
+    "dim": dim,
+    "displayLabel": displayLabel,
+    "duration": duration,
+    "filename": filename,
+    "image": image,
+    "sha256": sha256,
+    "size": size,
+    "spoiler": spoiler,
+    "thumb": thumb,
+    "type": type,
+    "url": url,
   });
 }
 
@@ -12502,6 +12598,7 @@ final projectIssueCategoryValues = EnumValues({
 
 enum ProjectPublicationOperation {
   CREATE_ISSUE,
+  CREATE_ISSUE_COMMENT,
   CREATE_PROJECT,
   CREATE_REPOSITORY,
   DELETE,
@@ -12509,6 +12606,7 @@ enum ProjectPublicationOperation {
 
 final projectPublicationOperationValues = EnumValues({
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
+  "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
   "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
   "DELETE": ProjectPublicationOperation.DELETE,
@@ -12721,82 +12819,6 @@ class PulsePublishRequest {
         : List<dynamic>.from(mentions!.map((x) => x)),
     "operation": operationValues.reverse[operation],
     "targetEventId": targetEventId,
-  });
-}
-
-class AttachmentElement {
-  ///原 Buzz imeta 模糊预览编码。
-  final String? blurhash;
-
-  ///原 Buzz imeta 媒体尺寸显示元数据。
-  final String? dim;
-
-  ///原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-  final String? displayLabel;
-
-  ///原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-  final double? duration;
-
-  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-  final String? filename;
-
-  ///原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-  final String? image;
-  final String sha256;
-  final int size;
-
-  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-  final bool? spoiler;
-
-  ///当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-  final String? thumb;
-  final String type;
-  final String url;
-
-  AttachmentElement({
-    this.blurhash,
-    this.dim,
-    this.displayLabel,
-    this.duration,
-    this.filename,
-    this.image,
-    required this.sha256,
-    required this.size,
-    this.spoiler,
-    this.thumb,
-    required this.type,
-    required this.url,
-  });
-
-  factory AttachmentElement.fromJson(Map<String, dynamic> json) =>
-      AttachmentElement(
-        blurhash: json["blurhash"],
-        dim: json["dim"],
-        displayLabel: json["displayLabel"],
-        duration: json["duration"]?.toDouble(),
-        filename: json["filename"],
-        image: json["image"],
-        sha256: json["sha256"],
-        size: json["size"],
-        spoiler: json["spoiler"],
-        thumb: json["thumb"],
-        type: json["type"],
-        url: json["url"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "blurhash": blurhash,
-    "dim": dim,
-    "displayLabel": displayLabel,
-    "duration": duration,
-    "filename": filename,
-    "image": image,
-    "sha256": sha256,
-    "size": size,
-    "spoiler": spoiler,
-    "thumb": thumb,
-    "type": type,
-    "url": url,
   });
 }
 

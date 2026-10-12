@@ -5697,11 +5697,14 @@ type ProjectPreferenceRequest struct {
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
 type ProjectsPublishRequest struct {
-	// Original markdown, empty allowed; current Relay NIP-11 and body admission limits are
-	// enforced before signing.
+	Attachments []AttachmentElement `json:"attachments,omitempty"`
+	// Original complete markdown including attachment markdown. Issues may be empty; comments
+	// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
+	// before signing.
 	Body          *string                     `json:"body,omitempty"`
 	Category      *ProjectIssueCategory       `json:"category,omitempty"`
 	Description   *string                     `json:"description,omitempty"`
+	Mentions      []string                    `json:"mentions,omitempty"`
 	Name          *string                     `json:"name,omitempty"`
 	Operation     ProjectPublicationOperation `json:"operation"`
 	TargetEventID *string                     `json:"targetEventId,omitempty"`
@@ -5710,6 +5713,29 @@ type ProjectsPublishRequest struct {
 	Title       *string                   `json:"title,omitempty"`
 	Visibility  *ProjectListingVisibility `json:"visibility,omitempty"`
 	WorkspaceID *string                   `json:"workspaceId,omitempty"`
+}
+
+type AttachmentElement struct {
+	// 原 Buzz imeta 模糊预览编码。
+	Blurhash *string `json:"blurhash,omitempty"`
+	// 原 Buzz imeta 媒体尺寸显示元数据。
+	Dim *string `json:"dim,omitempty"`
+	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+	DisplayLabel *string `json:"displayLabel,omitempty"`
+	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+	Duration *float64 `json:"duration,omitempty"`
+	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+	Filename *string `json:"filename,omitempty"`
+	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+	Image  *string `json:"image,omitempty"`
+	Sha256 string  `json:"sha256"`
+	Size   int64   `json:"size"`
+	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+	Spoiler *bool `json:"spoiler,omitempty"`
+	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+	Thumb *string `json:"thumb,omitempty"`
+	Type  string  `json:"type"`
+	URL   string  `json:"url"`
 }
 
 // Original Buzz Community project/repository announcements, coordinate-scoped work-item
@@ -5747,29 +5773,6 @@ type PulsePublishRequest struct {
 	Mentions      []string            `json:"mentions,omitempty"`
 	Operation     Operation           `json:"operation"`
 	TargetEventID *string             `json:"targetEventId,omitempty"`
-}
-
-type AttachmentElement struct {
-	// 原 Buzz imeta 模糊预览编码。
-	Blurhash *string `json:"blurhash,omitempty"`
-	// 原 Buzz imeta 媒体尺寸显示元数据。
-	Dim *string `json:"dim,omitempty"`
-	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-	DisplayLabel *string `json:"displayLabel,omitempty"`
-	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-	Duration *float64 `json:"duration,omitempty"`
-	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-	Filename *string `json:"filename,omitempty"`
-	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-	Image  *string `json:"image,omitempty"`
-	Sha256 string  `json:"sha256"`
-	Size   int64   `json:"size"`
-	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-	Spoiler *bool `json:"spoiler,omitempty"`
-	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-	Thumb *string `json:"thumb,omitempty"`
-	Type  string  `json:"type"`
-	URL   string  `json:"url"`
 }
 
 type PulseQueryRequest struct {
@@ -8438,6 +8441,7 @@ type ProjectPublicationOperation string
 
 const (
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
+	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
 	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"

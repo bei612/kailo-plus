@@ -11,6 +11,7 @@ import { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from 
 import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import { useBffChannelLinkRuntime } from "@/features/chat/ui/BffMessageLinkHost";
 import { toast } from "sonner";
+import {resolveUserLabel} from "@client-kit/platform/react/messages/system/identity";
 
 function BffProjectOriginReference(props:ProjectOriginReferenceProps) {
   const {scopeKey}=usePulseHost();const t=useT();
@@ -58,11 +59,12 @@ export function PulsePane({scopeKey,onStartDm,children,viewerPubkey}:{scopeKey:s
 }
 
 function BffPulseComposer({props,scopeKey,check}:{props:Parameters<PulseHost["renderComposer"]>[0];scopeKey:string;check:()=>void}) {
-  const directory=usePeopleDirectory(scopeKey);
+  const directory=usePeopleDirectory(scopeKey,props.members===undefined);
+  const people=props.members?.map(member=>({pubkey:member.pubkey,displayName:resolveUserLabel({pubkey:member.pubkey,profiles:props.profiles,fallbackName:member.displayName}),avatarUrl:props.profiles?.[member.pubkey]?.avatarUrl??null,role:member.role}))??(directory.query.isSuccess?directory.people:[]);
   return <div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
     containerClassName={props.className} composerHeader={props.header}
     disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}
-    mentionPeople={directory.query.isSuccess?directory.people:[]}
+    mentionPeople={people}
     draftIdentity={scopeKey} onUpload={uploadPulseMedia} onMediaUrl={pulseMediaUrl}
-    onPublish={async(content,attachments,_key,_agents,mentions)=>{check();return props.onSubmit(content,mentions??[],[...attachments]);}}/><PeopleDirectoryStatus directory={directory}/></div>;
+    onPublish={async(content,attachments,_key,_agents,mentions)=>{check();return props.onSubmit(content,mentions??[],[...attachments],false);}}/>{props.members===undefined?<PeopleDirectoryStatus directory={directory}/>:null}</div>;
 }

@@ -48,7 +48,7 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems}:{host:Proje
     queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["project-work-item-target",host.scopeKey]});cache.removeQueries({queryKey:["project-work-item-target",host.scopeKey]});},[cache,host.scopeKey]);
   const workItem=query.isSuccess&&!query.isFetching?resolveProjectWorkItemTarget(query.data.items,projectId,target):undefined;
-  const detail=workItem?<ProjectWorkItemDetail workItem={workItem}/>:null;
+  const detail=workItem?<ProjectWorkItemDetail workItem={workItem} host={host}/>:null;
   // Original ProjectDetailScreen scroll chain and selected WorkspaceTabs detail
   // branch. Git, other tabs, and writes remain separately un-restored.
   return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
@@ -62,10 +62,10 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems}:{host:Proje
   </div>;
 }
 
-function ProjectWorkItemDetail({workItem}:{workItem:ProjectInboxWorkItem}) {
+function ProjectWorkItemDetail({workItem,host}:{workItem:ProjectInboxWorkItem;host:ProjectsHost}) {
   const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
   const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
-  return workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>;
+  return workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>;
 }
 
 function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:"created"|"name";view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {

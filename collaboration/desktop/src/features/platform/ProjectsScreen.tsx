@@ -4,7 +4,7 @@ import {PulseScreen} from "./PulseScreen";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
 import {useNativeSession} from "./activeCommunity";
-import {createProjectsPublisher} from "./projectsTransport";
+import {createProjectsPublisher,createProjectsQuery} from "./projectsTransport";
 import {useChannelsQuery} from "@/features/channels/hooks";
 import {useAppNavigation} from "@/app/navigation/useAppNavigation";
 import type {WorkspaceMemberView,DiscoverableWorkspace} from "@client-kit/contracts";
@@ -56,21 +56,9 @@ export function useProjectsHost(){
     if(!limit||!Number.isSafeInteger(limit)||limit<1)return null;
     const check=()=>{if(!scope.active)throw new Error("Project identity changed");};
     const scopeKey=`${session.facts.communityHost}:${session.devicePubkey}`;
-    return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active,session.client),
-      completePublication:(key,eventId)=>{check();relayClient.completeProjectIntent(`${scopeKey}:${key}`,session.facts.relayUrl,eventId);},query:async request=>{
-      check();const kinds=request.view==="PROJECTS"?[30621]:request.view==="REPOSITORIES"?[30617]:request.view==="DELETIONS"?[5]
-        :request.view==="WORK_ITEMS"?[1618,1621]:request.view==="WORK_ITEM_ACTIVITY"?[1,1619,1630,1631,1632,1633]:null;
-      const coordinateScoped=request.view!=="PROJECTS"&&request.view!=="REPOSITORIES";
-      if(kinds===null||coordinateScoped&&(!request.coordinates?.length||request.coordinates.length>limit||
-        new Set(request.coordinates).size!==request.coordinates.length||request.coordinates.some(value=>
-          !(request.view==="DELETIONS"?/^(30617|30621):[0-9a-f]{64}:.+$/:/^30617:[0-9a-f]{64}:.+$/).test(value)))
-        ||!coordinateScoped&&request.coordinates!==undefined)throw new Error("Invalid project query");
-      const events=await relayClient.fetchEvents({kinds,limit,since:request.since,until:request.until,
-        ...(request.coordinates?{"#a":request.coordinates}:{})});
-      check();if(events.length>limit||events.some(event=>!kinds.includes(event.kind)||
-        request.coordinates&&!event.tags.some(tag=>tag[0]==="a"&&request.coordinates!.includes(tag[1]??""))))throw new Error("Invalid project response");
-      return {events,limit,pubkey:session.devicePubkey};
-    }};
+    return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active,session.client,limit),
+      completePublication:(key,eventId)=>{check();relayClient.completeProjectIntent(`${scopeKey}:${key}`,session.facts.relayUrl,eventId);},
+      query:createProjectsQuery(session.devicePubkey,()=>scope.active,limit)};
   },[session,scope,limit]);
   return host;
 }

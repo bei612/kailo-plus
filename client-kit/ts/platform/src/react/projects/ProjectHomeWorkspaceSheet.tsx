@@ -19,7 +19,7 @@ export type ProjectHomeWorkspaceDetail={backLabel:string;onBack:()=>void};
 export type ProjectHomeWorkspaceCreateAction={label:string;disabled:boolean;onClick:()=>void};
 export type ProjectWorkItemsRenderer=(children:React.ReactNode,viewerPubkey:string)=>React.ReactNode;
 
-function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setSelectedIssueId,selectedPullRequestId,setSelectedPullRequestId}:{items:ProjectInboxWorkItem[];repository:Project["repositories"][number];tab:ProjectHomeWorkspaceSheetTab;onDetailChange:(detail:ProjectHomeWorkspaceDetail|null)=>void;selectedIssueId:string|null;setSelectedIssueId:(id:string|null)=>void;selectedPullRequestId:string|null;setSelectedPullRequestId:(id:string|null)=>void}) {
+function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setSelectedIssueId,selectedPullRequestId,setSelectedPullRequestId,host,projectId}:{items:ProjectInboxWorkItem[];repository:Project["repositories"][number];tab:ProjectHomeWorkspaceSheetTab;onDetailChange:(detail:ProjectHomeWorkspaceDetail|null)=>void;selectedIssueId:string|null;setSelectedIssueId:(id:string|null)=>void;selectedPullRequestId:string|null;setSelectedPullRequestId:(id:string|null)=>void;host:ProjectsHost;projectId:string}) {
   const t=useUiT();
   const issues=items.filter(item=>item.type==="issue");
   const prs=items.filter((item):item is Extract<ProjectInboxWorkItem,{type:"pull-request"}>=>item.type==="pull-request"&&item.repository.id===repository.id);
@@ -35,7 +35,7 @@ function WorkspaceBody({items,repository,tab,onDetailChange,selectedIssueId,setS
   // Selected references do not authorize a detail absent from the fresh read.
   const missing=tab==="issues"?selectedIssueId&&!selected:selectedPullRequestId&&!selected;
   const body=missing?<ProjectPanelState error title={t("platform.loadFailed")}/>:
-    tab==="issues"?<ProjectIssuesPanel issueItems={issues.map(item=>({issue:item.issue,project:item.repository}))} selectedIssueId={selectedIssueId} onSelectedIssueIdChange={setSelectedIssueId} profiles={profiles}/>:
+    tab==="issues"?<ProjectIssuesPanel host={host} projectId={projectId} issueItems={issues.map(item=>({issue:item.issue,project:item.repository}))} selectedIssueId={selectedIssueId} onSelectedIssueIdChange={setSelectedIssueId} profiles={profiles}/>:
     <PullRequestsPanel project={repository} pullRequests={prs.map(item=>item.pullRequest)} selectedPullRequest={selected?.type==="pull-request"?selected.pullRequest:null} onSelectedPullRequestIdChange={setSelectedPullRequestId} profiles={profiles}/>;
   return body;
 }
@@ -62,7 +62,7 @@ export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderW
   const body=query.isPending||query.isFetching?<BuzzLoadingState label={t(tab==="issues"?"projects.sheet.loadingTasks":"projects.sheet.loadingReviews")}/>:
     !snapshot||!repository?<ProjectPanelState error title={t("platform.loadFailed")}/>:
     renderWorkItems(<WorkspaceBody key={`${host.scopeKey}:${project.id}:${repository.id}:${tab}`} items={snapshot.items}
-    repository={repository} tab={tab} onDetailChange={onDetailChange}
+    host={host} projectId={project.id} repository={repository} tab={tab} onDetailChange={onDetailChange}
     selectedIssueId={selectedIssueId} setSelectedIssueId={setSelectedIssueId}
     selectedPullRequestId={selectedPullRequestId} setSelectedPullRequestId={setSelectedPullRequestId}/>,snapshot.viewerPubkey);
   const listPanel=tab==="issues"?!selectedIssueId:!selectedPullRequestId;

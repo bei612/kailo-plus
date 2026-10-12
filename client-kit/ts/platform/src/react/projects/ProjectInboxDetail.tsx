@@ -10,8 +10,9 @@ import { ProjectIssueDetail } from "./ProjectIssueDetail";
 import { ProjectPullRequestDetail } from "./ProjectPullRequestDetail";
 import type { ProjectInboxWorkItem } from "./projectWorkItems";
 import {useElementWidth} from "../sidebar/use-mobile";
+import type {ProjectsHost} from "./projectEnumeration";
 
-export function ProjectInboxDetail({workItem,onBack,onOpenProject}:{workItem:ProjectInboxWorkItem;onBack?:()=>void;onOpenProject?:()=>void}) {
+export function ProjectInboxDetail({workItem,onBack,onOpenProject,host}:{workItem:ProjectInboxWorkItem;onBack?:()=>void;onOpenProject?:()=>void;host?:ProjectsHost}) {
   const t=useT();
   const [detailContentRef,detailContentWidth]=useElementWidth<HTMLDivElement>();
   const showWideActions=detailContentWidth>=760;
@@ -38,7 +39,7 @@ export function ProjectInboxDetail({workItem,onBack,onOpenProject}:{workItem:Pro
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" ref={detailContentRef}>
       <div className="p-3"><div className="overflow-hidden rounded-xl border border-border/60 bg-card" data-testid="project-inbox-work-item-card">
         <div data-testid="project-inbox-work-item-layout">
-          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}
+          {workItem.type==="issue"?<ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={host?{host,projectId:workItem.project.id,repository:workItem.repository}:undefined}/>:<ProjectPullRequestDetail project={workItem.repository} pullRequest={workItem.pullRequest} profiles={profiles}/>}
         </div>
       </div></div>
     </div>

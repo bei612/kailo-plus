@@ -63,7 +63,9 @@ pub(crate) async fn publication_target(
     if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
-    let target_kinds = if kind == 1621 {
+    let target_kinds = if kind == 1 {
+        vec![1621]
+    } else if kind == 1621 {
         vec![30617]
     } else {
         vec![30621, 30617]
@@ -83,6 +85,38 @@ pub(crate) async fn publication_target(
     {
         return Err(StatusCode::BAD_GATEWAY.into_response());
     }
+    if kind == 1 {
+        let repository = collab_bridge::projects::comment_repository(event)
+            .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        let mut parts = repository.splitn(3, ':');
+        parts.next();
+        let owner = parts
+            .next()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        let slug = parts
+            .next()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        let rows = client
+            .query(
+                &state.http,
+                &[json!({"kinds":[30617],"authors":[owner],"#d":[slug],"limit":1})],
+            )
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let repositories: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        let [repo] = repositories.as_slice() else {
+            return Err(StatusCode::NOT_FOUND.into_response());
+        };
+        if repo.kind.as_u16() != 30617
+            || repo.pubkey.to_hex() != owner
+            || repo.tags.identifier() != Some(slug)
+            || repo.verify().is_err()
+        {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        return Ok(Some(event.clone()));
+    }
     let slug = event
         .tags
         .identifier()
@@ -97,10 +131,161 @@ pub(crate) async fn publication_target(
     Ok(Some(event.clone()))
 }
 
+/// Relay applies #a/#E after SQL LIMIT. Page only SQL-pushed author/kind,
+/// using its original (created_at DESC, id ASC) cursor, then match either root
+/// tag locally. Kind 1 is Community-global and has no channel visibility filter.
+pub(crate) async fn latest_comment(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    issue: &nostr::Event,
+    community_host: &str,
+) -> Result<Option<nostr::Event>, Response> {
+    collab_bridge::projects::comment_repository(issue)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let author = client.pubkey_hex();
+    let cap = community_limits(state, community_host)
+        .await
+        .map_err(IntoResponse::into_response)?
+        .max_limit;
+    let cap = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let mut cursor: Option<(u64, String)> = None;
+    loop {
+        let mut filter = json!({"kinds":[1],"authors":[author],"limit":cap});
+        if let Some((until, before_id)) = &cursor {
+            filter["until"] = json!(until);
+            filter["before_id"] = json!(before_id);
+        }
+        // IdentityClient::query retains its original per-query budget, timeout
+        // and Relay authentication; exhaustion refuses, it is not an empty page.
+        let rows = client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        validate_project_page(&events, &[1], Some(&author), cap, cursor.as_ref())?;
+        if let Some(event) = events
+            .iter()
+            .find(|event| collab_bridge::projects::comment_activity_matches(issue, event, &author))
+        {
+            return Ok(Some(event.clone()));
+        }
+        if events.len() < cap {
+            return Ok(None);
+        }
+        let last = events
+            .last()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        cursor = Some((last.created_at.as_secs(), last.id.to_hex()));
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn validate_project_page(
+    events: &[nostr::Event],
+    kinds: &[u16],
+    author: Option<&str>,
+    cap: usize,
+    cursor: Option<&(u64, String)>,
+) -> Result<(), Response> {
+    if events.len() > cap
+        || events.iter().any(|event| {
+            !kinds.contains(&event.kind.as_u16())
+                || author.is_some_and(|author| event.pubkey.to_hex() != author)
+                || event.verify().is_err()
+                || cursor.is_some_and(|(until, before)| {
+                    event.created_at.as_secs() > *until
+                        || event.created_at.as_secs() == *until && event.id.to_hex() <= *before
+                })
+        })
+        || events.windows(2).any(|pair| {
+            pair[0].created_at < pair[1].created_at
+                || pair[0].created_at == pair[1].created_at && pair[0].id >= pair[1].id
+        })
+    {
+        return Err(StatusCode::BAD_GATEWAY.into_response());
+    }
+    Ok(())
+}
+
+/// Fill a requested activity page from unfiltered SQL pages. A short filtered
+/// page is not evidence of exhaustion: advance the original native keyset until
+/// the output is full or the underlying global-kind history really ends.
+async fn work_item_activity_page(
+    http: &reqwest::Client,
+    client: &collab_bridge::bridge::IdentityClient,
+    request: &contracts::ProjectsQueryRequest,
+    kinds: &[u16],
+    mut filter: Value,
+    cap: i64,
+) -> Result<Value, Response> {
+    let cap = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    filter
+        .as_object_mut()
+        .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?
+        .remove("#a");
+    let mut result = Vec::new();
+    let mut cursor = None;
+    loop {
+        if let Some((until, before_id)) = &cursor {
+            filter["until"] = json!(until);
+            filter["before_id"] = json!(before_id);
+        }
+        let page = client
+            .query(http, &[filter.clone()])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(page).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        validate_project_page(&events, kinds, None, cap, cursor.as_ref())?;
+        if events.iter().any(|event| {
+            request
+                .since
+                .is_some_and(|since| event.created_at.as_secs() < since as u64)
+                || request
+                    .until
+                    .is_some_and(|until| event.created_at.as_secs() > until as u64)
+        }) {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        for event in &events {
+            let repository = event
+                .tags
+                .iter()
+                .find(|tag| tag.as_slice().first().is_some_and(|name| name == "a"))
+                .and_then(|tag| tag.as_slice().get(1));
+            if repository.is_some_and(|repository| {
+                request
+                    .coordinates
+                    .as_ref()
+                    .is_some_and(|coordinates| coordinates.contains(repository))
+            }) {
+                result.push(event.clone());
+                if result.len() == cap {
+                    return Ok(json!(result));
+                }
+            }
+        }
+        if events.len() < cap {
+            return Ok(json!(result));
+        }
+        let last = events
+            .last()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        cursor = Some((last.created_at.as_secs(), last.id.to_hex()));
+    }
+}
+
 /// An accepted idempotency key names the original issue, not any later body
 /// submitted under that key. Compare transient input to Relay's signed source;
 /// never retain the body or a guessable body digest in Core.
-pub(crate) async fn confirm_accepted_issue(
+pub(crate) async fn confirm_accepted_issue_publication(
     state: &BffState,
     ctx: &crate::bff::ExecutionContext,
     request: &contracts::ProjectsPublishRequest,
@@ -118,10 +303,11 @@ pub(crate) async fn confirm_accepted_issue(
     let before = pulse::admit(state, ctx).await?;
     let keys = actor_keys(state, ctx).await?;
     let client = community_client(state, &keys, &before.community_host)?;
+    let kind = publication_kind(request)?;
     let page = client
         .query(
             &state.http,
-            &[json!({"ids":[event_id],"authors":[client.pubkey_hex()],"kinds":[1621],"limit":1})],
+            &[json!({"ids":[event_id],"authors":[client.pubkey_hex()],"kinds":[kind],"limit":1})],
         )
         .await
         .map_err(|_| unknown())?;
@@ -132,8 +318,28 @@ pub(crate) async fn confirm_accepted_issue(
     if event.id.to_hex() != event_id || event.pubkey != keys.public_key() {
         return Err(unknown());
     }
-    let matches = collab_bridge::projects::issue_publication_matches(request, event)
-        .map_err(|_| unknown())?;
+    let matches = if kind == 1 {
+        // Retained receipt comparison needs the immutable issue, not today's
+        // replaceable repository head or a freshly chosen comment timestamp.
+        let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
+        let page = client
+            .query(
+                &state.http,
+                &[json!({"ids":[target_id],"kinds":[1621],"limit":1})],
+            )
+            .await
+            .map_err(|_| unknown())?;
+        let issues: Vec<nostr::Event> = serde_json::from_value(page).map_err(|_| unknown())?;
+        let [issue] = issues.as_slice() else {
+            return Err(unknown());
+        };
+        let media_tags =
+            crate::web_transport::project_comment_media(request, &before.community_host)?;
+        collab_bridge::projects::comment_publication_matches(request, issue, event, &media_tags)
+            .map_err(|_| unknown())?
+    } else {
+        collab_bridge::projects::issue_publication_matches(request, event).map_err(|_| unknown())?
+    };
     if pulse::admit(state, ctx).await? != before
         || actor_keys(state, ctx).await?.public_key() != keys.public_key()
     {
@@ -318,10 +524,16 @@ async fn query_inner(
         .map_err(IntoResponse::into_response)?
         .max_limit;
     let (kinds, filter) = filter(&request, cap)?;
-    let value = client
-        .query(&state.http, &[filter])
-        .await
-        .map_err(|e| relay_error_response(&e, None))?;
+    let value = if serde_json::to_value(&request.view)
+        .is_ok_and(|view| view.as_str() == Some("WORK_ITEM_ACTIVITY"))
+    {
+        work_item_activity_page(&state.http, &client, &request, &kinds, filter, cap).await?
+    } else {
+        client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|e| relay_error_response(&e, None))?
+    };
     let rows = value
         .as_array()
         .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
@@ -363,6 +575,76 @@ async fn query_inner(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn work_item_activity_reads_past_unrelated_sql_page_before_returning() {
+        use std::sync::{Arc, Mutex};
+        let keys = nostr::Keys::generate();
+        let address = format!("30617:{}:target", keys.public_key());
+        let unrelated = nostr::EventBuilder::new(nostr::Kind::from(1), "other repository")
+            .tags([
+                nostr::Tag::parse(["a", &format!("30617:{}:other", keys.public_key())]).unwrap(),
+            ])
+            .custom_created_at(nostr::Timestamp::from_secs(42))
+            .sign_with_keys(&keys)
+            .unwrap();
+        let comment = nostr::EventBuilder::new(nostr::Kind::from(1), "expected comment")
+            .tags([nostr::Tag::parse(["a", address.as_str()]).unwrap()])
+            .custom_created_at(nostr::Timestamp::from_secs(41))
+            .sign_with_keys(&keys)
+            .unwrap();
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let pages = Arc::new(Mutex::new(vec![json!([unrelated]), json!([comment])]));
+        let app = axum::Router::new().route(
+            "/query",
+            axum::routing::post({
+                let calls = calls.clone();
+                move |Json(filters): Json<Value>| {
+                    let calls = calls.clone();
+                    let pages = pages.clone();
+                    async move {
+                        calls.lock().unwrap().push(filters);
+                        Json(pages.lock().unwrap().remove(0))
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = collab_bridge::bridge::IdentityClient::new(
+            collab_bridge::bridge::Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            &endpoint,
+            "community.test",
+        )
+        .unwrap();
+        let request = request(json!({"view":"WORK_ITEM_ACTIVITY","coordinates":[address]}));
+        let (kinds, filter) = filter(&request, 1).unwrap();
+        let result = work_item_activity_page(
+            &reqwest::Client::new(),
+            &client,
+            &request,
+            &kinds,
+            filter,
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, json!([comment]));
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.len(),
+            2,
+            "an unrelated SQL page must not terminate the repository read"
+        );
+        assert!(calls.iter().all(|request| request[0].get("#a").is_none()));
+        assert_eq!(calls[1][0]["until"], 42);
+        assert_eq!(calls[1][0]["before_id"], unrelated.id.to_hex());
+        server.abort();
+    }
+
     use super::*;
     fn request(value: Value) -> contracts::ProjectsQueryRequest {
         serde_json::from_value(value).unwrap()
@@ -468,5 +750,79 @@ mod tests {
         )
         .is_err());
         assert!(filter(&request(json!({"view":"PROJECTS"})), 0).is_err());
+    }
+    #[test]
+    fn comment_history_pages_keep_uppercase_root_and_exact_cursor() {
+        let owner = nostr::Keys::generate();
+        let author = nostr::Keys::generate();
+        let coordinate = format!("30617:{}:repo", owner.public_key());
+        let issue = nostr::EventBuilder::new(nostr::Kind::from(1621), "issue")
+            .tags([nostr::Tag::parse(["a", coordinate.as_str()]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let newer = nostr::EventBuilder::new(nostr::Kind::from(1), "another task")
+            .custom_created_at(nostr::Timestamp::from_secs(42))
+            .sign_with_keys(&author)
+            .unwrap();
+        let previous = nostr::EventBuilder::new(nostr::Kind::from(1), "earlier target comment")
+            .tags([
+                nostr::Tag::parse(["a", coordinate.as_str()]).unwrap(),
+                nostr::Tag::parse(["E", &issue.id.to_hex()]).unwrap(),
+            ])
+            .custom_created_at(nostr::Timestamp::from_secs(41))
+            .sign_with_keys(&author)
+            .unwrap();
+        let actor = author.public_key().to_hex();
+        validate_project_page(std::slice::from_ref(&newer), &[1], Some(&actor), 1, None).unwrap();
+        assert!(!collab_bridge::projects::comment_activity_matches(
+            &issue, &newer, &actor
+        ));
+        let cursor = (newer.created_at.as_secs(), newer.id.to_hex());
+        validate_project_page(
+            std::slice::from_ref(&previous),
+            &[1],
+            Some(&actor),
+            1,
+            Some(&cursor),
+        )
+        .unwrap();
+        assert!(collab_bridge::projects::comment_activity_matches(
+            &issue, &previous, &actor
+        ));
+        assert!(validate_project_page(
+            std::slice::from_ref(&newer),
+            &[1],
+            Some(&actor),
+            1,
+            Some(&cursor)
+        )
+        .is_err());
+        assert!(validate_project_page(
+            &[previous.clone(), newer.clone()],
+            &[1],
+            Some(&actor),
+            2,
+            None
+        )
+        .is_err());
+        assert!(validate_project_page(
+            std::slice::from_ref(&previous),
+            &[1],
+            Some(&owner.public_key().to_hex()),
+            1,
+            None
+        )
+        .is_err());
+        let same_second = nostr::EventBuilder::new(nostr::Kind::from(1), "same second")
+            .custom_created_at(newer.created_at)
+            .sign_with_keys(&author)
+            .unwrap();
+        let mut page = vec![newer, same_second];
+        page.sort_by_key(|event| event.id);
+        validate_project_page(&page, &[1], Some(&actor), 2, None).unwrap();
+        let cursor = (page[0].created_at.as_secs(), page[0].id.to_hex());
+        validate_project_page(&page[1..], &[1], Some(&actor), 1, Some(&cursor)).unwrap();
+        page[1].content = "forged".into();
+        assert!(validate_project_page(&page, &[1], Some(&actor), 2, None).is_err());
     }
 }

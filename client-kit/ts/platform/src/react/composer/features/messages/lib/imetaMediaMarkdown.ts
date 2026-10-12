@@ -23,7 +23,7 @@ export type ImetaMedia = BlobDescriptor;
  * literal `"size 0"` values.
  */
 export function buildImetaTags(
-  imetaMedia: ReadonlyArray<ImetaMedia>,
+  imetaMedia: ReadonlyArray<WebMessageAttachment>,
 ): string[][] {
   return imetaMedia
     .filter((d) => d.sha256.length > 0)
@@ -52,7 +52,7 @@ export function buildImetaTags(
  * image MIME so the renderer can upgrade them to the import/download card.
  */
 export function formatImetaMediaLine(
-  { url, type, filename }: ImetaMedia,
+  { url, type, filename }: WebMessageAttachment,
   options: { label?: string; spoiler?: boolean } = {},
 ): string {
   // A PNG snapshot is image/png on the wire, but it is an importable file, not
@@ -94,7 +94,7 @@ export function formatImetaMediaLine(
  */
 export function buildOutgoingMessage(
   body: string,
-  pendingImeta: ReadonlyArray<ImetaMedia>,
+  pendingImeta: ReadonlyArray<WebMessageAttachment>,
   spoileredMediaUrls: ReadonlySet<string> = new Set(),
 ): { content: string; mediaTags: string[][] | undefined } {
   let content = body;

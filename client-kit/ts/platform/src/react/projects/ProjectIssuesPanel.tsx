@@ -7,6 +7,7 @@ import {normalizePubkey} from "../conversations/pubkey";
 import {resolveUserLabel,type UserProfileLookup} from "../messages/system/identity";
 import type {ProjectIssue} from "./projectIssues.mjs";
 import type {Repository} from "./projectModels";
+import type {ProjectsHost} from "./projectEnumeration";
 import {relativeTime} from "./lib/projectsViewHelpers";
 import {issueStatusVisual,ProjectIssueDetail} from "./ProjectIssueDetail";
 import {IssueAssigneeFacepile} from "./IssueAssigneeFacepile";
@@ -126,12 +127,13 @@ function IssueRow({
   );
 }
 
-export function ProjectIssuesPanel({issueItems,onSelectedIssueIdChange,profiles,selectedIssueId}:{
+export function ProjectIssuesPanel({issueItems,onSelectedIssueIdChange,profiles,selectedIssueId,host,projectId}:{
   issueItems:ProjectIssuePanelItem[];onSelectedIssueIdChange:(id:string|null)=>void;profiles?:UserProfileLookup;selectedIssueId:string|null;
+  host?:ProjectsHost;projectId?:string;
 }) {
  const t=useUiT();
  const selectedItem=issueItems.find(({issue})=>issue.id===selectedIssueId);
- if(selectedItem)return <ProjectIssueDetail issue={selectedItem.issue} profiles={profiles}/>;
+ if(selectedItem)return <ProjectIssueDetail issue={selectedItem.issue} profiles={profiles} publication={host&&projectId?{host,projectId,repository:selectedItem.project}:undefined}/>;
  if(issueItems.length===0)return <ProjectPanelState title={t("projects.sheet.noTasks")} description={t("projects.sheet.tasksHint")}/>;
  const groups=ISSUE_STATUS_ORDER.map(status=>({items:issueItems.filter(({issue})=>issue.status===status),status})).filter(group=>group.items.length>0);
  return <div>{groups.map(({items,status})=>{const visual=issueStatusVisual(status);return <ProjectWorkItemGroup key={status} count={items.length}

@@ -10,7 +10,7 @@ import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,pr
 import {aggregateInbox,inboxReadContext,matchesInbox} from "../src/inbox";
 import {inboxReadContexts} from "../src/react/use-inbox-state";
 import {render,click,type} from "./render";
-import {publishProjectIssue} from "../src/react/projects/issueMutations";
+import {publishProjectIssue,publishProjectIssueComment,buildProjectIssueCommentTags} from "../src/react/projects/issueMutations";
 import {buildGitIssueTags} from "../src/react/projects/projectIssues.mjs";
 import {BffError,TransportError} from "../src/transport";
 import {EntityLinkAnchor,openProjectEntity,parseEntityLink} from "../src/react/projects";
@@ -48,6 +48,65 @@ beforeEach(()=>{setLocale("en");localStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  async function commentFixture(){
+    const f=fixture();const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const item=snapshot.items.find(item=>item.type==="issue")!;
+    if(item.type!=="issue")throw new Error("Issue fixture missing");
+    return {...f,item};
+  }
+  it("restores the original Inbox task ForumComposer and confirms a real comment before clearing intent or showing success",async()=>{
+    const f=await commentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"test");
+    const media={url:"/media/"+"a".repeat(64),sha256:"a".repeat(64),type:"image/png",size:12};
+    let submit!:Parameters<PulseHost["renderComposer"]>[0]["onSubmit"];
+    let complete!:(value:{eventId:string})=>void;
+    f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      expect(localStorage.length).toBe(1);expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Original new comment");
+      const created={...event("c",1,buildProjectIssueCommentTags(f.item.repository,f.item.issue,request.mentions??[],request.attachments??[]),request.body!,50),pubkey:viewer};
+      observation?.onPrepared(created.id);f.rows.push(created);
+      return new Promise(resolve=>{complete=resolve;});
+    });
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:props=>{submit=props.onSubmit;return <div data-testid="actual-forum-host" className={props.className}>{props.placeholder}</div>;},renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <ProjectInboxDetail host={f.host} workItem={f.item}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    expect(ui.querySelector('[data-testid="project-issue-comment-composer"]')?.className).toBe("px-6 pb-6 pt-4");
+    expect(ui.querySelector('[data-testid="actual-forum-host"]')?.className).toBe("border border-border/60 bg-background/45");
+    let pending!:Promise<unknown>;
+    await act(async()=>{pending=Promise.resolve(submit("Original new comment",[viewer],[media]));});
+    await vi.waitFor(()=>expect(f.host.publish).toHaveBeenCalledTimes(1));
+    await expect(submit("Original new comment",[viewer],[media])).rejects.toThrow();
+    expect(success).not.toHaveBeenCalled();expect(localStorage.length).toBe(1);
+    await act(async()=>{complete({eventId:"c".repeat(64)});await pending;});
+    expect(f.host.publish).toHaveBeenCalledTimes(1);expect(localStorage.length).toBe(0);
+    expect(ui.textContent).toContain("Original new comment");expect(success).toHaveBeenCalledWith("Comment posted.");
+    success.mockRestore();
+  });
+  it("retains comment UNKNOWN across restart, rejects edited retry, and verifies the exact Relay comment before completion",async()=>{
+    const f=await commentFixture();
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(_request,_key,_observe,observation)=>{observation?.onPrepared("c".repeat(64));throw new TransportError("lost ACK");});f.host.publish=publish;
+    const send=(body="Secret comment")=>publishProjectIssueComment(f.host,f.item.project.id,f.item.repository,f.item.issue,body,[viewer],[],new AbortController().signal);
+    await expect(send()).rejects.toThrow();expect(localStorage.length).toBe(1);
+    expect(localStorage.getItem(localStorage.key(0)!)).not.toContain("Secret comment");
+    await expect(send("Edited comment")).rejects.toThrow("outcome unknown");expect(publish).toHaveBeenCalledTimes(1);
+    publish.mockResolvedValue({eventId:"c".repeat(64)});
+    await expect(send()).rejects.toThrow("outcome unknown");expect(localStorage.length).toBe(1);
+    f.rows.push({...event("c",1,buildProjectIssueCommentTags(f.item.repository,f.item.issue,[viewer],[]),"Secret comment",50),pubkey:viewer});
+    const result=await send();expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);expect(publish.mock.calls[1]?.[2]).toBe(true);
+    result.complete();expect(localStorage.length).toBe(0);
+  });
+  it("does not dispatch a comment for revoked reads or corrupt recovery, and never cleans an accepted intent after scope loss",async()=>{
+    const f=await commentFixture();const denied=vi.fn();f.host.publish=vi.fn();
+    const slot=JSON.stringify(["project-issue-comment-publication",f.host.scopeKey,f.item.project.id,f.item.repository.repoAddress,f.item.issue.id]);
+    const send=(signal=new AbortController().signal)=>publishProjectIssueComment(f.host,f.item.project.id,f.item.repository,f.item.issue,"Comment",[],[],signal,denied);
+    localStorage.setItem(slot,"broken");await expect(send()).rejects.toThrow("outcome unknown");expect(f.host.publish).not.toHaveBeenCalled();
+    localStorage.removeItem(slot);f.query.mockRejectedValueOnce(new BffError(403,"revoked",{class:ErrorClass.Denied}));
+    await expect(send()).rejects.toThrow();expect(denied).toHaveBeenCalledOnce();expect(f.host.publish).not.toHaveBeenCalled();
+    const controller=new AbortController();f.host.publish=vi.fn(async()=>{controller.abort();return {eventId:"c".repeat(64)};});
+    await expect(send(controller.signal)).rejects.toThrow();expect(localStorage.length).toBe(1);
+  });
   async function homeSheetFixture(writer?: (f:ReturnType<typeof fixture>)=>void){
     vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
     const f=fixture();const channelId="12345678-1234-4234-8234-123456789001";

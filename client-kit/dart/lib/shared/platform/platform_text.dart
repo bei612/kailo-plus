@@ -427,6 +427,9 @@ enum PlatformMessageKey {
   projectsIssueCreated,
   projectsIssueCreateFailed,
   projectsIssueUnknown,
+  projectsCommentPosted,
+  projectsCommentPlaceholder,
+  projectsCommentUnknown,
   projectsIssueChooseRepository,
   projectsIssueInRepository,
   projectsIssueDialogTitle,
@@ -3364,6 +3367,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsIssueUnknown: (
     'Task creation outcome unknown. Retry checks the same publication.',
     '任务创建结果不明。重试将核验同一次发布。',
+  ),
+  PlatformMessageKey.projectsCommentPosted: ('Comment posted.', '评论已发布。'),
+  PlatformMessageKey.projectsCommentPlaceholder: ('Add a comment…', '添加评论…'),
+  PlatformMessageKey.projectsCommentUnknown: (
+    'Comment publication outcome unknown. Retry checks the same publication.',
+    '评论发布结果不明。重试将核验同一次发布。',
   ),
   PlatformMessageKey.projectsIssueChooseRepository: (
     'Choose a repository for this task.',

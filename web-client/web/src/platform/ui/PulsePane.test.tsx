@@ -11,16 +11,17 @@ import { createBffClient } from "@client-kit/platform/client";
 import { PulsePane } from "./PulsePane";
 import {ProjectsPane} from "./ProjectsPane";
 import { usePulseHost } from "@client-kit/platform/react/pulse";
+import { ForumComposer } from "../../../../../client-kit/ts/platform/src/react/pulse/host";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
 import type {BffTransport} from "@client-kit/platform/transport";
 
-const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn()}));
+const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),error:vi.fn(),composer:vi.fn()}));
 vi.mock("sonner",()=>({toast:{error:api.error,success:vi.fn()}}));
 vi.mock("../bff-client",()=>({bff:{profile:api.profile,discoverableWorkspaces:api.discoverableWorkspaces},queryPulse:api.queryPulse,
   publishPulse:vi.fn(),uploadPulseMedia:vi.fn(),pulseMediaUrl:(value:string)=>value,queryProjects:api.queryProjects,publishProject:vi.fn()}));
 // This batch exercises the original Pulse/Profile/Message consumer, not post editing.
-vi.mock("./ChannelPane",()=>({Composer:()=>null}));
+vi.mock("./ChannelPane",()=>({Composer:(props:Parameters<typeof import("./ChannelPane").Composer>[0])=>{api.composer(props);return null;}}));
 const own="a".repeat(64),peer="b".repeat(64),eventId="c".repeat(64);
 let root:Root,host:HTMLDivElement,cache:QueryClient;
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -36,6 +37,7 @@ beforeEach(()=>{
   api.profile.mockReset().mockResolvedValue({pubkey:own});
   api.queryProjects.mockReset().mockResolvedValue({events:[],pubkey:own,limit:20});
   api.error.mockReset();api.discoverableWorkspaces.mockReset();
+  api.composer.mockReset();
   api.queryPulse.mockReset().mockImplementation(async(request:{view:string;authors?:string[]})=>({mediaPaths:{},events:
     request.view==="NOTES"?[{id:eventId,pubkey:peer,created_at:1,kind:1,tags:[],content:"Actual Pulse note"}]:
       request.view==="PROFILES"?(request.authors??[]).map(pubkey=>({id:eventId,pubkey,created_at:1,kind:0,tags:[],
@@ -44,6 +46,19 @@ beforeEach(()=>{
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 });
 afterEach(async()=>{await act(async()=>root.unmount());cache.clear();host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
+it("passes original supplied task members without extra directory authority and identifies raw Web composer media exactly once",async()=>{
+  const send=vi.fn(async()=>{throw new Error("Task members do not query unrelated people");});
+  const submit=vi.fn(async()=>undefined);
+  await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en"><TooltipProvider>
+    <PulsePane scopeKey="tenant:viewer" viewerPubkey={own} onStartDm={vi.fn()}><ForumComposer
+      members={[{pubkey:peer,role:"member",isAgent:true,joinedAt:"",displayName:"Original task participant"}]} onSubmit={submit}/></PulsePane>
+  </TooltipProvider></PlatformProvider></QueryClientProvider>));
+  const props=api.composer.mock.lastCall![0] as Parameters<typeof import("./ChannelPane").Composer>[0];
+  expect(props.mentionPeople?.map(person=>person.pubkey)).toEqual([peer]);expect(send).not.toHaveBeenCalled();
+  const media={url:"/media/"+"c".repeat(64),sha256:"c".repeat(64),type:"image/png",size:12,uploaded:1};
+  await props.onPublish!("Original raw draft",[media],"composer-key",[],[peer]);
+  expect(submit).toHaveBeenCalledWith("Original raw draft",[peer],[media],false);
+});
 it("does not gate the project directory on unrelated own-profile or composer people reads",async()=>{
   api.profile.mockRejectedValue(new Error("Unrelated profile failed"));
   const send=vi.fn(async()=>{throw new Error("No composer directory request");});

@@ -7,20 +7,23 @@
   "additionalProperties": false,
   "required": ["operation"],
   "properties": {
-    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE"]},
+    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY", "CREATE_ISSUE", "CREATE_ISSUE_COMMENT"]},
     "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "workspaceId": {"type": "string", "format": "uuid"},
     "name": {"type": "string", "minLength": 1, "maxLength": 256},
     "description": {"type": "string", "maxLength": 2048},
     "visibility": {"title": "ProjectListingVisibility", "type": "string", "enum": ["listed", "unlisted"]},
     "title": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Original trimmed issue subject; the consumer additionally enforces the original JavaScript 256 UTF-16 code-unit limit."},
-    "body": {"type": "string", "description": "Original markdown, empty allowed; current Relay NIP-11 and body admission limits are enforced before signing."},
+    "body": {"type": "string", "description": "Original complete markdown including attachment markdown. Issues may be empty; comments must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced before signing."},
+    "mentions": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "attachments": {"type": "array", "items": {"$ref": "web_message_attachment.schema.json"}},
     "category": {"title": "ProjectIssueCategory", "type": "string", "enum": ["issue", "change-request", "improvement"]}
   },
   "oneOf": [
-    {"properties": {"operation": {"const": "DELETE"}}, "required": ["targetEventId"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}]}},
-    {"properties": {"operation": {"const": "CREATE_PROJECT"}}, "required": ["workspaceId", "name", "visibility"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}]}},
-    {"properties": {"operation": {"const": "CREATE_REPOSITORY"}}, "required": ["workspaceId", "name"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}]}},
-    {"properties": {"operation": {"const": "CREATE_ISSUE"}}, "required": ["targetEventId", "title", "body", "category"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}]}}
+    {"properties": {"operation": {"const": "DELETE"}}, "required": ["targetEventId"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
+    {"properties": {"operation": {"const": "CREATE_PROJECT"}}, "required": ["workspaceId", "name", "visibility"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
+    {"properties": {"operation": {"const": "CREATE_REPOSITORY"}}, "required": ["workspaceId", "name"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["body"]}, {"required": ["category"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
+    {"properties": {"operation": {"const": "CREATE_ISSUE"}}, "required": ["targetEventId", "title", "body", "category"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["mentions"]}, {"required": ["attachments"]}]}},
+    {"properties": {"operation": {"const": "CREATE_ISSUE_COMMENT"}}, "required": ["targetEventId", "body"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}, {"required": ["title"]}, {"required": ["category"]}]}}
   ]
 }

@@ -378,3 +378,186 @@ Native 原 CREATE_PROJECT/CREATE_REPOSITORY/DELETE 校验同步拒绝 title/body
 - 7522 exit0/outcome-restored.log：共享类型0、原45/45、Native类型0、原18/18；末行 TYPES=0 DOM=0 NATIVE_TYPES=0 NATIVE=0。
 - 14598 exit1/outcome-mutation.log：私有恢复旧 instanceof catch 后原分类4项2通过/2失败（BFF UNKNOWN被误报失败）；私有删除Native字段拒绝后原5项4通过/1失败（准入调用1而非0）。未降低超时/断言。
 - 正式源码精确还原两处私有变异且 cmp0，32361 exit0/outcome-restored-final.log：原分类4/4（其余41项本次过滤，已由7522通过），Native原5/5；DOM_RESTORED=0 NATIVE_RESTORED=0。所有本批非词条源与私有已验输入再次逐路径cmp0，类型及其它同字节证据沿用7522/52613，不重复全量。
+
+## 2026-10-12 原 Tasks 评论发布：Core 与 Bridge 消费者
+
+本节记录源码实现，当前尚未完成本批生成、编译、原消费者正反验证或部署。
+不以此前任务创建、只读评论或旧契约往返结果覆盖本批评论写入。
+
+四步影响结论：
+
+1. 权威为 `.design/09` §3 的原 Projects/Relay 事件边界及 DD-81 发布意图。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+   `desktop/src/features/projects/hooks.ts::createProjectIssueComment`、
+   `desktop/src/features/projects/hooks.ts::useCreateProjectIssueCommentMutation` 和
+   `desktop/src/features/projects/projectIssues.mjs::nextProjectIssueCommentCreatedAt`：
+   kind 1，正文 trim，原 e/root、a，repo owner→issue author→原 recipients→mentions
+   的 lowercase Set 顺序；时间为 now 与同作者历史评论时间加一的最大值。
+   不从 issueMutations.ts 推导评论行为，不借仓库引用授予 Git 或 Workspace 权限。
+2. 既有 ProjectsPublishRequest 增加 CREATE_ISSUE_COMMENT、mentions、原附件类型；
+   targetEventId 指向真实 1621，body 为宿主已组成的完整 Markdown。旧操作拒绝评论
+   专属字段。四侧沿原生成入口，原样本追加带媒体评论，TS 原字段投影同步两字段；
+   不手写另一套类型。Bridge 原 sign_project 消费新分支，Core 原 publish_project、
+   publication_target 和 publish_reconcile 消费同一 kind 1。原数据库约束已允许 1，
+   不新增表或迁移；Core 的 publish_attempt 仍仅保存身份、目标和事件引用。
+3. Core 在签名前读验签 issue、真实仓库 head 和同 issue/repo/当前协议作者的
+   最新评论；Bridge 再核同一证据。当前用户、scope、Relay 准入、正文大小、
+   NIP-11、签名前 fresh 和原 DISPATCH 均沿已有消费者。媒体仅复用原 render 的
+   当前 Community 校验与 imeta，不再追加第二份 Markdown；原外部 GIF 的空 hash
+   附件沿原 buildImetaTags 只保留 Markdown、不签 imeta，非空 hash 仍严查本地来源。
+   同 key 已接受请求
+   回读原签名评论和不可变 issue，核瞬时正文、mentions 与媒体，不存正文或正文摘要；
+   不要求今日 repo head 仍相同。UNKNOWN 只走原事件对账，早于最新时间选择返回。
+4. 空白正文、混用字段、错误目标、坏签名、跨 issue/repo/作者、媒体异源拒绝。
+   同 Human 的不同协议钥匙不合并为同作者；最新评论缺证据或读取失败不能重发。
+   递增时间溢出拒绝。缺/旧事件不能报成功；原先已允许的独立创建/删除组合保持。
+   暂未运行真实 Core/Relay HTTP、并发多用户或设备安装验收，也未更新线上产物。
+
+本批源码八路径局部 `git diff --check` 已 exit 0；这仅是差异格式检查。
+原集中生成由主线调度，首次 SDK 出现 shim disconnected 后输出不齐，不能记生成通过。
+新增原 Bridge 评论/签名/回执用例和 Core 媒体消费者用例均在实现之后补入，等待同一
+最终输入的受限 SDK 验证及私有破坏、字节还原结果。本节不宣称完整 Tasks 已恢复。
+
+交叉复核发现并在原消费者修正：当前及固定 Buzz 的
+`crates/buzz-relay/src/handlers/req.rs::filter_to_query_params` 仅将小写 e 下推 SQL，
+`crates/buzz-relay/src/api/bridge.rs::query_events` 在 SQL LIMIT 后做 a/E 过滤。
+故最新时间读取不能用 a/E + limit 1 将空结果解释为无历史。Core 原 latest_comment
+改用真实 kind 1/当前作者下推查询、现有 NIP-11 max_limit 与原 until/before_id
+复合游标逐页读取；每页验签、核排序和严格前进，再按原 issue/repository 匹配。
+kind 1 在原 ingest 中为 global-only，不借此访问 channel 内容。原 query 预算或请求
+失败直接拒绝，不静默截断为完整历史。两页大写 E、相同秒事件及重复游标检查已补入
+原 Core 测试，但当前还没有执行结果。
+
+同一发布后的必要回读也存在 a 后过滤短页误判：Core 原 query_inner 的
+WORK_ITEM_ACTIVITY 现在先按其原全局 kind 集合读取 SQL 页，复用上述原 keyset
+验签、顺序和游标校验，再按首 a 筛入当前请求仓库。输出填满原 NIP-11 cap 或
+未过滤历史真正耗尽才返回；对外 ProjectsPage 及 since/until 合同、其它 view 不变。
+原共享 enumerateProjectEvents 的同秒边界拒绝仍保留。新增原 Core HTTP fixture
+实际调用 IdentityClient::query→work_item_activity_page，首 SQL 页是其它仓库、
+第二页才是目标评论；检查真实第二次请求 until/before_id，尚未执行，不当线上验收。
+
+### 本批后置验证读回（2026-10-12）
+
+上述“尚未执行”为实现时检查点。随后实际使用已有不可变 SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID/GID 1000、4 CPU；契约容器 4 GiB，Rust 容器 8 GiB，memory+swap 总限额
+均等于内存，无网络、只读根，源码、依赖、target、临时目录及日志均在 Data。
+未修改 HOME，未安装新镜像；Dart 实际写入的 `/.dart-tool` 单独绑定 Data。
+检查前核对构建进程与 CPU/内存压力，原 containerd 预复制暂停，不并发写同一
+Rust target。四侧输入是当前 HEAD 的完整 schema 加本批请求与样例；独立候选
+保留 HEAD 已有消息作者类型，不把公共生成文件中原有的其他 dirty 删除带入。
+
+- 原 `tools/gen.sh` 和 `tools/gen.sh --check` 均退出 0，Rust/Go/TypeScript/Dart
+  同步及 Mobile 同源词条检查通过。首次退出 255 的原因是只读根拒绝创建
+  `/.dart-tool`，并非契约已被证明错误；修正实际挂载后保留原生成脚本重跑。
+- TypeScript 原 `Projects publication` 1/1、Go 原
+  `TestProjectsPublicationRoundtrip`、Dart 原 `Projects publication` 1/1，均退出 0。
+  私有输入暂时删除 TS 字段投影中的 mentions/attachments，原断言实际退出 1、
+  0 passed/1 failed；原样恢复并 cmp 0 后，1/1、退出 0。
+- 原 `step_contract` 实际退出 0：四侧同步，相对 `contracts-v0.1.0` 无破坏性变更，
+  316 schema、匹配 3 个历史 schema。历史匹配范围不证明旧 Core 能消费新操作；
+  上线仍须先更新 Core，再更新提供新写入的 Web/Desktop。
+- `cargo test --locked --offline -p collab-bridge projects:: -- --nocapture`：8/8。
+  `cargo test --locked --offline -p platform-core --bin platform-core project -- --nocapture`：
+  19 passed、7 ignored、419 filtered；7 项独立数据库演练明确未执行，不记通过。
+  本批媒体、同秒游标和两页实际 HTTP 消费者均在 19 项中通过。
+- Rust 原 contracts 的 `projects_publication_preserves_native_metadata_and_exact_head_reference`
+  1/1 通过，55 项过滤。四侧往返均有本批样例，不借之前任务创建结果充数。
+- 首次 Rust 格式检查退出 1，实际容器 rustfmt 纠正后编译通过；首次 clippy
+  退出 101，指出只取第二段时无需 splitn，改原表达式为 split，不添加 allow。
+  `cargo clippy --locked --offline -p collab-bridge -p platform-core --all-targets -- -D warnings`
+  修正后实际退出 0。
+
+契约日志根为
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/issue-comment-gen.fyljf9`，
+对应 `contract-positive.log`、`contract-compatibility.log`、`contract-ts-mutation.log`
+及 `contract-ts-restored.log`。Rust 首次/格式修正日志为
+`/volumes/data/kailo/tmp/project-issue-comments.DbJdB5/rust-positive.log` 和
+`rust-formatted-positive.log`；修正后 clippy 日志为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-worker.W4qug0/tasks-comment-clippy-restored.log`。
+这些均为源码与原消费者验证，不是新部署、真实三人多 Agent 协作或设备验收。
+
+### 同批原评论 UI / Native 消费者（2026-10-12）
+
+1. 权威：沿 REQ-24、DD-75/77 与设计 `09` Community 协作面，固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/projects/hooks.ts::createProjectIssueComment` /
+   `useCreateProjectIssueCommentMutation`、
+   `desktop/src/features/projects/ui/ProjectIssuesPanel.tsx::ProjectIssueDetail`
+   / `issueMembers`。不把 kind 1 评论改为 Workspace 或 ReposWrite 操作。
+2. 影响：共享 ProjectIssueDetail 的原 ForumComposer 经首页 WorkspaceSheet、
+   Projects 目标页、Inbox 三条真实父链使用同一 ProjectsHost。Web 传原正文与附件，
+   Native 已拼好媒体 Markdown；既有 Host 回调增加实际宿主标识，Tasks 只补一次媒体
+   Markdown，不改变原 Pulse 正文。成员包含原 Agent，不据成员展示推导执行权限。
+3. 副作用：先持久化 scoped key / 请求摘要 / event 引用，正文不进恢复槽；原 typed
+   publication 发出后精确回读本人、kind、正文、e/a/p/imeta tags 与 reducer 评论 id，
+   才清理引用、更新列表/详情并显示原成功通知。UNKNOWN 只观察同 key / 同 event。
+4. 异常：双点不重入，空正文拒绝；坏 JSON、Storage 拒绝、改写恢复请求保持 UNKNOWN。
+   fresh 读取失败隐藏正文，scope 卸载 abort 后晚响应不清理、不显示成功。Native
+   复用原 enumerateProjectEvents，在原 runtime limit 下整页验签后筛选 e/E 与仓库；
+   同秒 bucket 无法证明完整时拒绝，不用固定放大 limit 掩盖历史遗漏。
+
+四类原版差异分别是：原样保留评论末尾 `px-6 pb-6 pt-4`、ForumComposer
+`border border-border/60 bg-background/45`、成员来源、原 e→a→p→imeta 次序；
+共享迁移原评论详情、原媒体 helper 和事件 reducer，三个入口与双端同源；已授权治理
+适配为 BFF SERVER / Native CLIENT、typed 附件校验、持久意图、fresh 授权、UNKNOWN
+与中英词条，未伪造缺 hash 的 imeta；assignment/status 写入、PR 评论、Git、完整管理
+页、Mobile 评论、原全局 mention 搜索仍为独立缺项，不宣称本批完整恢复。
+
+使用原 `kailo-web-thread-tooltip-sdk`（上述固定 SDK 镜像），4 CPU / 8 GiB，
+memory+swap 总限额等于内存（无额外 swap），UID 1000、network none。检查前可用
+内存 37 GiB，无 Cargo/rustc/Vitest/tsc 检查进程；仅启动该原 sleep 容器，不启动其余
+数据库依赖 SDK。TMPDIR 与 npm cache 显式指向 Data 私有输入；不改 HOME、不安装
+依赖。实际 Node 24.21.0、TypeScript 5.9.3、Vitest 4.1.11。TS 合同使用上述原生成
+目录的完整文件，cmp 0，没有覆盖公共 generated 或原三项 staged。
+
+串行脚本与日志位于
+`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-issue-comment-check/`：
+
+- 共享原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json`；
+  `node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx --no-file-parallelism`。
+- Web 原 `./node_modules/.bin/tsc --noEmit`；
+  `node node_modules/vitest/vitest.mjs run src/platform/ui/PulsePane.test.tsx --no-file-parallelism`。
+- Native 原 `./node_modules/.bin/tsc --noEmit -p tsconfig.json`；
+  `node --import ./test-loader.mjs --experimental-strip-types --test src/features/platform/projectsTransport.test.mjs src/shared/api/relayClientUnconfirmedResend.test.mjs`。
+
+首轮 `17547` exit 1：共享新 mock 返回 Promise 未标注，Web 新检查误从未导出的入口
+导入 ForumComposer；分别纠正既有 ProjectsHost 类型与真实 host 导入，不放宽生产
+接口。共享 48/48、Native 类型 0，但 Native 24/25 还揭示实际恢复白名单漏 kind 1；
+原 `relayClientSession.ts::publishProjectIntent` 仅增加这一原 kind，调用方本人验签、
+正文/tags 精确比对与 UNKNOWN 同事件观察均保留。原失败 `positive.log` 不覆盖。
+
+末版 `39734` exit 0：三处类型均 0、共享 48/48、Web 14/14、Native 25/25。
+保留既有 React act 警告。仅私有副本移除恢复白名单 kind 1，`19041` exit 1，
+原评论 UNKNOWN 同事件恢复断言失败（24 passed/1 failed）；apply_patch 还原且
+cmp 0 后，`4275` exit 0、25/25。末版 20 个非词条源/检查文件与正式字节 cmp 0，
+词条与精确私有候选 cmp 0，未改变超时。三份末版日志 SHA256：
+`final-positive.log` 为 `8f6a32087780703146aa26ec27ac9d1f095b18f462d78d36f90293133821574d`；
+`native-negative.log` 为 `87c2bfe71173385300ea6a97d7481d54397c9026f5c1afe67bf67afea7f90f18`；
+`native-restored.log` 为 `52af8a57ffb14fc35039f5a27cdfd2bb2250a5d414778ba08901fc5e3f637ef1`。
+Native Relay 为签名事件夹具，DOM 为真实共享组件加宿主夹具；不替代线上 HTTP、
+Windows 设备或真实评论验收。本批未构建/部署、未截图，既有 full 失败门禁仍保留。
+
+主线补充同批 Bridge 反证：私有副本移除原 imeta 拼接，原 8 项变为 7 passed /
+1 failed、exit 101；apply_patch 还原且 cmp 0 后 8/8、exit 0。原日志为
+`/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/receiver-worker.W4qug0/tasks-comment-bridge-mutation.log`
+及同目录 `tasks-comment-bridge-restored.log`。当前 full 配方对应的 `7c1a` SDK 标签
+不存在，只有本次实际使用的旧 `10ad` image；这是独立环境门禁，不重新打 tag 冒充
+规范 full 已运行或通过。
+
+2026-10-12 07:07 UTC 对末版代码树
+`1d4b27f730552ff99fbd5f9c21b931fdd425eec4` 实际执行原
+`./tools/check.sh --full`，投递 `CHECK_CPUS=4`、`CHECK_MEMORY=8g`、
+`CHECK_NETWORK=none`、Data 上的 `CHECK_CACHE_ROOT` 与 `TMPDIR`，使用原配置的
+`BUILDX_BUILDER=kailo-core-data`。原入口输出：
+
+```text
+ERROR: no builder "kailo-core-data" found
+容器执行拒绝：无法读取已有 builder：kailo-core-data
+```
+
+日志为 `/volumes/data/kailo/tmp/project-issue-comments.DbJdB5/full.log`。
+当前配方 `7c1a6a138f80e2490b77617fba9525f0a7ca42bdc527eac9129f0204f4328f10`
+对应镜像不存在；没有重标旧 SDK、没有启动新镜像构建。记录时原脚本仍在清理自身
+导出目录，尚未取得最终退出码；明确为全量门禁未通过，而非通过或跳过。
+本批只允许记录源码检查点，不据此发布、增加实际业务验收完成度或声明生产就绪。
