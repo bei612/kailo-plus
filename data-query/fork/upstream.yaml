@@ -33,8 +33,8 @@ artifacts:
     build_context: data-query/wren-engine
     build_dockerfile: data-query/wren-engine/ibis-server/Dockerfile
     inputs: [data-query/wren-engine/ibis-server/, data-query/wren-engine/wren-core-py/, data-query/wren-engine/wren-core/, data-query/wren-engine/wren-core-base/]
-    source_digest: none
-    artifact_digest: none
+    source_digest: sha256:6d71cc61000fe37c8fbc57235a7b2d43acc9dbb2d1b73d07c70c7f61d7f3f164
+    artifact_digest: sha256:3120ee0d1da585569f4440c9d9e58640c66004594600afcaa2503ca723278f86
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
 compatibility_evidence: [data-query/fork/verify/native-integration.md]
