@@ -1,7 +1,7 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/IssueAssigneesRow.tsx::IssueAssigneesRow.
 // Restore the original HUMAN picker; managed-agent signing remains absent.
-import { Search, X } from "lucide-react";
+import { Check, Search, UserPlus, Users, X } from "lucide-react";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useBffClient,useUiT } from "../context";
@@ -16,8 +16,10 @@ import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogT
 import { Input } from "../composer/shared/ui/input";
 import { loadProjectAssignmentHumans } from "./issueAssignments";
 import { useUsersBatchQuery } from "../pulse/host";
+import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
 
-export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, canAssignOthers, pending, recoveryOperation, recoveryAssignee, onAssign, onUnassign }: {
+export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, canAssignOthers, pending, recoveryOperation, recoveryAssignee, onAssign, onUnassign,
+  contextActions=false,showAssignees=true,showSelfAssignmentState=false,testIdPrefix="project-issue" }: {
   issue: ProjectIssue;
   profiles?: UserProfileLookup;
   viewerPubkey: string | null;
@@ -28,6 +30,10 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
   recoveryAssignee?:string;
   onAssign: (pubkey:string,label:string) => Promise<boolean>;
   onUnassign: (pubkey:string,label:string) => Promise<boolean>;
+  contextActions?:boolean;
+  showAssignees?:boolean;
+  showSelfAssignmentState?:boolean;
+  testIdPrefix?:string;
 }) {
   const t = useUiT();
   const client=useBffClient();
@@ -57,8 +63,8 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
   async function assign(pubkey:string,label:string){if(await onAssign(pubkey,label)){setPickerOpen(false);setAssigneeQuery("");}}
   const canSelfAssign = viewer !== null && !displayedAssignees.some(pubkey => normalizePubkey(pubkey) === viewer);
   if (displayedAssignees.length === 0 && !canSelfAssign&&!canAssignOthers) return null;
-  return <div className="min-w-0 text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
-    {displayedAssignees.map(pubkey => {
+  return <div className={cn("min-w-0 text-muted-foreground",contextActions?"grid gap-0.5":"flex flex-wrap items-center gap-1.5 text-xs")}>
+    {(showAssignees?displayedAssignees:[]).map(pubkey => {
       const profile = profiles?.[normalizePubkey(pubkey)];
       const label = profile?.displayName?.trim() || profile?.nip05Handle?.trim() || truncateNpub(pubkey);
       const canUnassign = viewer !== null && (normalizePubkey(pubkey) === viewer||canAssignOthers&&humans?.has(normalizePubkey(pubkey)));
@@ -69,7 +75,7 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
           {canUnassign ? <button
             aria-label={t("projects.assignment.unassignPerson", { name: label })}
             className={cn("group relative inline-flex rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring")}
-            data-testid={`project-issue-unassign-${normalizePubkey(pubkey)}`} disabled={pending||!allowedPending("unassign",normalizePubkey(pubkey))}
+            data-testid={`${testIdPrefix}-unassign-${normalizePubkey(pubkey)}`} disabled={pending||!allowedPending("unassign",normalizePubkey(pubkey))}
             onClick={()=>void onUnassign(normalizePubkey(pubkey),label)} type="button">
             {avatar}
             <span className={cn("absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
@@ -80,14 +86,18 @@ export function IssueAssigneesRow({ issue, profiles, viewerPubkey, scopeKey, can
       </Tooltip>;
     })}
     {canSelfAssign ? <Button
-      className="h-5 px-0 text-xs text-primary hover:bg-transparent hover:text-primary hover:underline"
-      data-testid="project-issue-self-assign" disabled={pending||!allowedPending("assign",viewer!)}
+      className={cn(contextActions?"h-5 px-1 text-xs text-muted-foreground hover:text-foreground":"h-5 px-0 text-xs text-primary hover:bg-transparent hover:text-primary hover:underline",
+        contextActions&&PROJECT_CONTEXT_ACTION_BUTTON_CLASS)}
+      data-testid={`${testIdPrefix}-self-assign`} disabled={pending||!allowedPending("assign",viewer!)}
       onClick={()=>void assign(viewer!,profiles?.[viewer!]?.displayName?.trim()||profiles?.[viewer!]?.nip05Handle?.trim()||truncateNpub(viewer!))}
-      size="xs" type="button" variant="ghost">{t("projects.assignment.self")}</Button> : null}
+      size="xs" type="button" variant="ghost">{contextActions?<UserPlus/>:null}{t("projects.assignment.self")}</Button> : null}
+    {showSelfAssignmentState&&viewer&&displayedAssignees.includes(viewer)?<Button
+      className={cn("h-5 gap-1 px-1 text-xs text-muted-foreground disabled:opacity-100",contextActions&&PROJECT_CONTEXT_ACTION_BUTTON_CLASS)}
+      disabled size="xs" type="button" variant="ghost"><Check className="h-3 w-3"/>{t("projects.assignment.assignedSelf")}</Button>:null}
     {canAssignOthers?<Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-      <DialogTrigger asChild><Button className="h-5 px-1 text-xs text-muted-foreground hover:text-foreground"
-        data-testid="project-issue-assign" disabled={pending||Boolean(recoveryOperation&&(recoveryOperation!=="assign"||pendingAssignee===viewer))}
-        size="xs" type="button" variant="ghost">{t("projects.assignment.choose")}</Button></DialogTrigger>
+      <DialogTrigger asChild><Button className={cn("h-5 px-1 text-xs text-muted-foreground hover:text-foreground",contextActions&&PROJECT_CONTEXT_ACTION_BUTTON_CLASS)}
+        data-testid={`${testIdPrefix}-assign`} disabled={pending||Boolean(recoveryOperation&&(recoveryOperation!=="assign"||pendingAssignee===viewer))}
+        size="xs" type="button" variant="ghost">{contextActions?<Users/>:null}{t("projects.assignment.choose")}</Button></DialogTrigger>
       <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border/60 px-6 py-5 pr-14">
           <DialogTitle>{t("projects.assignment.title")}</DialogTitle>

@@ -1911,3 +1911,33 @@ npm 与 PUB_CACHE，没有改 HOME、安装依赖、启动 builder 或 GTK 构�
 末版在原事务夹具内另明确核 AGENT principal／DISABLED principal／DISABLED HUMAN 均拒绝（非只写 SQL 条件），23628 同 binary 入口实际 exit 0、1/1；日志 `pg-final.log` SHA-256 `59c960a33b14a18fc59b8ccab47374ea0ab165e9af0806c96794a0f17182e90d`。测试正常 rollback，末尾实际读回 `tenant|0`、`publish_attempt|0`，未留下业务对象。末版原 rustfmt --check 与同窄 clippy 78306 exit 0，`final-clippy.log` SHA-256 `7abb74afeb60ffe8592bc4f390be5a4d8b20c0752c35fc01361cbac7063cf760`。原 DB 与 SDK 保持运行，未停止其他项目。
 
 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-other-assignment.6k2ZK6/` 内保留所有日志、`candidate.index`、`source.patch`、`paths.txt`。私有 diff --check 0；公共三项 staged 没有写入，本基底摘要 `93fa733a04c994683cac61f3a1139aa8535b9dda2b600f08febbcc694ca6f04a`。TS 原往返由 UI 席 67093 1/1 exit 0，合批历史契约兼容及 docs 由同席沿原入口另记实际终态。未 full、未部署，真实多 HUMAN UI→BFF→Relay 操作及 UNKNOWN 故障端到端尚未验收。
+
+## 2026-10-12 Task 原 context Actions 与实际父消费者
+
+基底 `94b1bfe99f8efed4939d0e0fb5f759dee05cf7ba`；本批关联 REQ-24、DD-74/75/77，沿已交付的 Projects publication 与 HUMAN 分派，不新增平台实体、权限、合同、后端或签名路径。固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`，不是把源码写入算成部署验收。
+
+### 四步影响结论
+
+1. 原始缺口：已共享的 `IssueAssigneesRow` 只有详情行；原 `desktop/src/features/projects/ui/ProjectWorkItemContextActions.tsx::ProjectWorkItemContextActions` 的 Task 分支及其右侧实际父消费者缺失。原操作不是三点菜单。本批直接恢复原 repository context 区、原按钮、详情计数、折叠和宽度，不设计替代菜单。
+2. 原引用：同 commit 的 `desktop/src/features/projects/ui/ProjectRepositoryActionsPanel.tsx::ProjectRepositoryActionsPanel`、`ProjectWorkItemContextDetails.tsx::ProjectWorkItemContextDetails`、`ProjectDetailRightPanel.tsx::ProjectDetailRightPanel`、`ProjectConversationPanelContext.tsx::ProjectConversationPanelController`、`ProjectRightPanelControls.tsx::ProjectRightPanelControls`、`useProjectPanelWidths.ts::useProjectPanelWidths`、`useProjectRepositoryPanel.ts::useProjectRepositoryPanel`。`ProjectDetailScreen.tsx` 的 `useCreateProjectIssueMutation(repository)`、`handleCreateIssue` 与 `onCreateTask` 使用当前 repository，不能改投 primary repository。
+3. 实际消费：两宿主既有 `ProjectsView` 精确 Task 目标页挂载该共享分支。`ProjectIssueDetail` 的同一 `handleAssignment`、`sending.current`、`isSending` 和原持久意图同时供详情行／context 行；UNKNOWN 只观察原 key、目标、operation、label。折叠不清执行意图。fresh 目录错误或撤权卸载正文、右栏和 portal 控件，不把旧显示权限留给操作。
+4. 异常与兼容：现有 `CreateProjectIssueDialog` 新增可选 `initialRepositoryId`，父投当前 Task repository；初始和每次打开均消费，找不到精确仓库则无 selection、禁止提交，不回落另一个仓库。原未投递参数的首页入口保留 `selectProjectRepository(project, null)` 默认。只新增可选前端 prop；Core、四语言业务合同、迁移和既有 typed operation 不变。用户存储拒绝沿原 best-effort 折叠／宽度语义，不新增 toast。
+
+### 固定源码四类差异
+
+- 原样保留：`projectContextActionStyles.ts::PROJECT_CONTEXT_ACTION_BUTTON_CLASS` 字符串、Task action 图标/高度、原 detached card、Details 行、context rail、resize/reset 与 session key。宽度 280／最小 240／rail gutter 8 来自上述固定原模块，不是新增平台阈值。
+- 共享迁移：原 Task `contextActions`／`showAssignees=false`／`showSelfAssignmentState` 分支；repository-only 父层的 detached fallback、top-chrome repository 控件及宽度/折叠处理迁入同一共享模块，复用现存 `RightAuxiliaryPane`、`ProjectContextRail`、`useThreadPanelWidth`、`AppTopChromePortal`。详情和右栏复用同一分派处理，不复制第二执行实现。
+- 授权适配：中文英文六个同源 key 经原 TS→Dart 生成；可信 viewer／fresh resource read／HUMAN 目录及持久 UNKNOWN 沿前批治理消费者，原页面显示不替代服务端授权。创建只复用现有表单、当前 repository 和原目标导航，不把原作者标签当授权。
+- 缺失需恢复：原 PR reviewers、managed-owner/Agent、chat/selection、Git/source/terminal 分支、完整 repository Chrome/WorkspaceTabs 仍缺相应实际闭包，本批不造空控件；Mobile 原完整 Projects 页面、Windows 设备操作、在线真实 BFF→Relay 行为与新部署截图未验收。当前原 Inbox Forum 无行内回复仍属原样保留，不列作本批恢复对象。已有全量清单的其他缺项不因本批改变状态。
+
+### 实际定向结果
+
+全部输入与日志在 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/task-context-actions.bj0taW/`；实际源码投递根为同父目录 `reminder-consumers.RcN79Y`。原 `kailo-inbox-forum-r5kqbx` SDK 镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，2 CPU／4 GiB、memory+swap 总限额等于内存，UID 1000、network none、只读 root。原 Data cache/tmp/依赖；`TMPDIR=/tmp NODE_COMPILE_CACHE=/tmp/node-compile npm_config_cache=/cache/npm npm_config_offline=true`，没有改 HOME、安装依赖或新建 builder。执行前实际 memory available 35 GiB、memory PSI 0，SDK 仅 sleep；Cells 唯一 builder 已协调。
+
+- 58185 实际 exit 1：共享 `node node_modules/typescript/bin/tsc --noEmit` 与 `-p tsconfig.test.json` 各 0；原 `node node_modules/vitest/vitest.mjs run test/project-inbox.test.tsx` 为 79/81。两失败为新夹具把完成回调放进发布回应，真实消费者调用的是 `host.completePublication`；按真实宿主签名纠正夹具，没有改产品语义、超时或断言。`positive.log` SHA-256 `231906d5daaa5f74202902d5333428fbc0b5164758ad4ea52d889602a2543c00`。
+- 70441 实际 exit 0：新增三项选择执行 3/3；随后独立 HEAD＋六 key 输入原 `python3 tools/gen-platform-i18n.py` 与 `--check` 均 0。仅本批 TS 六行／Dart 十五行进入候选，正式两文件的历史 staged/unstaged 不覆盖。`corrected.log` SHA-256 `04789ed457189fd3c4dd6cbc428b76e0318fc21ff29b4a365135545ae4890c50`。
+- 交叉复核发现非 primary B 仓库目标会误取 primary A；沿原 dialog 必要 prop 修正，并新增真实 `ProjectsView` 右栏 Create task→B signed head typed request→fresh B 新 Task 详情断言。5261 末版实际 exit 0：上述共享/测试类型各 0、原 DOM 82/82。新增原 context 自分派、详情头像、UNKNOWN 新 snapshot/重挂载同 key 观察、原折叠/session 宽度/reset、中英文、撤权清正文及新建精确目标均通过。`final.log` SHA-256 `4a7d5a958035f01d52f86ad914abd863cea3b6e51f9a2b4cd575f25647873ab3`。
+- 54335 私有变异实际 exit 1：仅将 context 行 `contextActions` 置 false，并移除父 `initialRepositoryId` 透传；选中三用例分别抓到原 `h-7` class 消失和 B 被置为 A。`mutation.log` SHA-256 `09fb523580f5a77f0446e34130dffded9afa3c834687ba3baf3517b74200464d`。首次 apply_patch 因不匹配整行而未应用、未运行测试；纠正补丁定位后才取得该真实反证。
+- apply_patch 还原两私有生产文件，与正式末版 cmp 0；84797 同原新增四项实际 exit 0、4/4（其余 78 项本次未选，不另记通过）。`restored.log` SHA-256 `ca3903987b1f0095f6fbf60f237e97e0d129fc3b57829f32440c49053d43d153`。既有 React act 警告保留；未重跑全局、Rust/设备编译或部署。
+
+公共 index 未写入，本批开工 staged patch SHA-256 为 `60fa04bbb153c4e535a877cfbfd22ebca63631ad3f329cd36fff1db33cb7531b`。原文档快路径只扫描顶层实施文档与 docs，本文需单列原 selected markdownlint 结果；这两项日志另留 Data，不在正文递归追加自引用回执。本批不称 full 0、完整 Buzz 恢复或已上线。

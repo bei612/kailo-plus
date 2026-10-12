@@ -30,7 +30,9 @@ import {DiscussedInChannels} from "./DiscussionChannels";
 import {entityDiscussionQuery} from "./discussionChannels";
 import {IssueAssigneesRow} from "./IssueAssigneesRow";
 import {publishProjectIssueAssignment,readProjectIssueAssignmentIntent,type IssueAssignmentOperation} from "./issueAssignments";
-type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository}};
+import {ProjectDetailRightPanel} from "./ProjectDetailRightPanel";
+import {ProjectWorkItemContextActions} from "./ProjectWorkItemContextActions";
+type IssueDetailProps={issue:ProjectIssue;profiles?:UserProfileLookup;publication?:{host:ProjectsHost;projectId:string;repository:Repository};contextPanel?:{onCreateTask?:()=>void}};
 const issueStatusKey = {"Triage":"projects.status.triage","Backlog":"projects.status.backlog","In Progress":"projects.status.inProgress","In Review":"projects.status.inReview","Done":"projects.status.done","Closed":"projects.status.closed"} as const;
 const taskCategoryKey = {"issue":"projects.category.issue","change-request":"projects.category.changeRequest","improvement":"projects.category.improvement"} as const;
 export function issueStatusClassName(status: ProjectIssue["status"]) {
@@ -85,7 +87,7 @@ export function issueStatusVisual(status: ProjectIssue["status"]): {
 export function ProjectIssueDetail(props:IssueDetailProps) {
   return <IssueDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.issue.id}`} {...props}/>;
 }
-function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
+function IssueDetailBody({issue:source,profiles,publication,contextPanel}:IssueDetailProps) {
   const t=useT();
   const client=useBffClient();
   const cache=useQueryClient();
@@ -156,7 +158,14 @@ function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
   const status=issueStatusVisual(issue.status);
   const labels=projectTaskUserLabels(issue.labels);
   if(readUnavailable)return <ProjectPanelState error title={t("platform.loadFailed")}/>;
-  return (
+  const assignmentProps:React.ComponentProps<typeof IssueAssigneesRow>={
+    issue,profiles,viewerPubkey:publication?.host.publish?viewer:null,scopeKey:publication?.host.scopeKey??"read",
+    canAssignOthers:Boolean(publication?.host.publish&&(viewer===issue.author||viewer===publication.repository.owner)),
+    pending:isSending,recoveryOperation:assignmentIntent?.operation,recoveryAssignee:assignmentIntent?(assignmentIntent.assigneePubkey??viewer):undefined,
+    onAssign:(pubkey,label)=>handleAssignment("assign",pubkey,label),
+    onUnassign:(pubkey,label)=>handleAssignment("unassign",pubkey,label),
+  };
+  const detail=(
     <div
       className="mx-auto w-full max-w-3xl overflow-hidden"
       data-project-detail-panel
@@ -197,12 +206,7 @@ function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
         </ProjectDetailMetaRow>
         {issue.assignees.length > 0 || publication?.host.publish && viewer ? (
           <ProjectDetailMetaRow icon={User} label={t("projects.workItem.assignees")}>
-            <IssueAssigneesRow issue={issue} profiles={profiles} viewerPubkey={publication?.host.publish?viewer:null}
-              scopeKey={publication?.host.scopeKey??"read"}
-              canAssignOthers={Boolean(publication?.host.publish&&(viewer===issue.author||viewer===publication.repository.owner))}
-              pending={isSending} recoveryOperation={assignmentIntent?.operation} recoveryAssignee={assignmentIntent?(assignmentIntent.assigneePubkey??viewer):undefined}
-              onAssign={(pubkey,label)=>handleAssignment("assign",pubkey,label)}
-              onUnassign={(pubkey,label)=>handleAssignment("unassign",pubkey,label)}/>
+            <IssueAssigneesRow {...assignmentProps}/>
           </ProjectDetailMetaRow>
         ) : null}
         {labels.length > 0 ? (
@@ -234,4 +238,6 @@ function IssueDetailBody({issue:source,profiles,publication}:IssueDetailProps) {
       </div>:null}
     </div>
   );
+  return contextPanel?<ProjectDetailRightPanel issue={issue} onCreateTask={contextPanel.onCreateTask}
+    actions={<ProjectWorkItemContextActions {...assignmentProps}/>}>{detail}</ProjectDetailRightPanel>:detail;
 }

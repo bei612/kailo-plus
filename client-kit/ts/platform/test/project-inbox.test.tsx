@@ -47,7 +47,7 @@ function fixture(){
   return {issue,review,rows,host,query};
 }
 afterEach(()=>vi.restoreAllMocks());
-beforeEach(()=>{setLocale("en");localStorage.clear();
+beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
@@ -173,6 +173,109 @@ describe("original Inbox project read closure",()=>{
     }:{items:[{principalId:"viewer",displayName:"Original Human",pubkeys:[viewer]}],maxParticipants:50,nextCursor:"next"});
     return {...f,item,client,people};
   }
+  it.each(["en","zh-CN"] as const)("restores original Task context actions through the actual target page, shared publication and context controls (%s)",async locale=>{
+    const f=await commentFixture();const completed=vi.fn();f.host.completePublication=completed;
+    f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      expect(request.operation).toBe("SELF_ASSIGN_ISSUE");
+      const built=buildProjectIssueAssignment("assign",f.issue.id,repository,viewer,request.assigneeLabel!);
+      const created={...event("c",1,built.tags,built.content,50),pubkey:viewer};f.rows.push(created);observation?.onPrepared(created.id);
+      return {eventId:created.id};
+    });
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+      renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const opened=vi.fn();let reload!:()=>void;
+    function Page(){const [generation,setGeneration]=useState(0);reload=()=>setGeneration(v=>v+1);return <ProjectsView key={generation} host={f.host}
+      selectedProjectId={f.item.project.id} workItemTarget={projectWorkItemTarget(f.item)} onSelectedProjectChange={opened}/>;}
+    const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale={locale}><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <div id="app-top-chrome-content"/><Page/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-task-assignment"]')).not.toBeNull());
+    const rail=()=>ui.querySelector<HTMLElement>('[data-testid="project-context-rail"]')!;
+    expect(rail().style.width).toBe("288px");
+    expect(ui.querySelector('[data-testid="project-panel-layout"]')?.getAttribute("data-detached")).toBe("true");
+    const context=()=>ui.querySelector<HTMLElement>('[data-testid="project-context-actions"]')!;
+    expect(context().querySelector('[data-testid="project-context-issue-assign"]')).toBeNull();
+    const assign=context().querySelector<HTMLButtonElement>('[data-testid="project-context-issue-self-assign"]')!;
+    expect(assign.classList.contains("h-7")).toBe(true);expect(assign.querySelector("svg")).not.toBeNull();
+    expect(assign.textContent).toBe(locale==="en"?"Assign to me":"分配给我");
+    await click(assign);
+    await vi.waitFor(()=>expect(context().textContent).toContain(locale==="en"?"Assigned to me":"已分配给我"));
+    expect(f.host.publish).toHaveBeenCalledTimes(1);expect(completed).toHaveBeenCalledOnce();
+    expect(ui.querySelector(`[data-testid="project-issue-unassign-${viewer}"]`)).not.toBeNull();
+    expect(ui.querySelector('[data-testid="project-context-details"]')?.textContent).toContain("1");
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-right-panel-repository-tab"]')!);
+    expect(rail().style.width).toBe("0px");expect(sessionStorage.getItem("buzz.desktop.project-repository-panel-collapsed")).toBe("true");
+    sessionStorage.setItem("buzz.desktop.project-context-width","360");
+    await act(async()=>reload());await vi.waitFor(()=>expect(rail().style.width).toBe("0px"));
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-right-panel-repository-tab"]')!);
+    expect(rail().style.width).toBe("368px");
+    await act(async()=>{ui.querySelector('[data-testid="right-auxiliary-pane-resize-handle"]')!.dispatchEvent(new MouseEvent("dblclick",{bubbles:true}));});
+    expect(rail().style.width).toBe("288px");
+    const create=[...context().querySelectorAll("button")].find(button=>button.textContent===(locale==="en"?"Create task":"创建任务"))!;
+    await click(create);await vi.waitFor(()=>expect(document.querySelector('[data-testid="create-issue-repository"]')).not.toBeNull());
+    expect(document.querySelector<HTMLSelectElement>('[data-testid="create-issue-repository"]')?.value).toBe(f.item.repository.id);
+    const close=document.querySelector<HTMLButtonElement>('button[data-slot="dialog-close"]')??[...document.querySelectorAll("button")].find(b=>b.textContent?.includes("Close"));
+    if(close)await click(close);
+    f.host.query=async()=>{throw new BffError(403,"revoked",{class:ErrorClass.Denied});};
+    await act(async()=>{await cache.invalidateQueries({queryKey:["project-work-item-target",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-actions"]')).toBeNull());
+    expect(ui.querySelector('[data-testid="project-right-panel-repository-tab"]')).toBeNull();
+    expect(opened).not.toHaveBeenCalled();expect(f.host.publish).toHaveBeenCalledTimes(1);
+  });
+  it("keeps context and detail on the same UNKNOWN assignment across context collapse and a fresh assignee snapshot",async()=>{
+    const f=await commentFixture();
+    const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,observe,observation)=>{
+      if(!observe){const built=buildProjectIssueAssignment("assign",f.issue.id,repository,viewer,request.assigneeLabel!);
+        f.rows.push({...event("c",1,built.tags,built.content,50),pubkey:viewer});observation?.onPrepared("c".repeat(64));throw new TransportError("lost receipt");}
+      return {eventId:"c".repeat(64)};
+    });f.host.publish=publish;
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
+      <div id="app-top-chrome-content"/><ProjectsView host={f.host} selectedProjectId={f.item.project.id} workItemTarget={projectWorkItemTarget(f.item)}/>
+    </PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-issue-self-assign"]')).not.toBeNull());
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-context-issue-self-assign"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector<HTMLButtonElement>('[data-testid="project-context-issue-self-assign"]')?.disabled).toBe(false));
+    const key=publish.mock.calls[0]![1];expect(localStorage.length).toBe(1);
+    await act(async()=>{await cache.invalidateQueries({queryKey:["project-work-item-target",f.host.scopeKey]});});
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-issue-self-assign"]')).not.toBeNull());
+    expect(ui.querySelector(`[data-testid="project-issue-unassign-${viewer}"]`)).toBeNull();
+    await click(ui.querySelector<HTMLElement>('[data-testid="project-context-issue-self-assign"]')!);
+    await vi.waitFor(()=>expect(localStorage.length).toBe(0));
+    expect(publish).toHaveBeenCalledTimes(2);expect(publish.mock.calls[1]![1]).toBe(key);expect(publish.mock.calls[1]![2]).toBe(true);
+    expect(publish.mock.calls[1]![0]).toEqual(publish.mock.calls[0]![0]);
+    expect(ui.querySelector(`[data-testid="project-issue-unassign-${viewer}"]`)).not.toBeNull();
+  });
+  it("creates from Task context in the selected non-primary repository and opens the exact fresh Task",async()=>{
+    const f=fixture();const second=`30617:${author}:second`;
+    const repo=event("f",30617,[["d","second"],["name","Second repo"],["clone","https://example.test/second.git"]]);
+    f.rows.push(repo);f.rows.find(row=>row.kind===30621)!.tags.push(["a",second]);
+    f.issue.tags[0]![1]=second;
+    const snapshot=await loadProjectWorkItems(f.host,new AbortController().signal);
+    const item=snapshot.items.find(item=>item.type==="issue")!;
+    if(item.type!=="issue")throw new Error("Task missing");
+    f.host.publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+      expect(request.operation).toBe("CREATE_ISSUE");expect(request.targetEventId).toBe(repo.id);
+      const created={...event("c",1621,buildGitIssueTags({repoAddress:second,repoOwner:author,title:request.title!,labels:[request.category!]}),request.body!),pubkey:viewer};
+      f.rows.push(created);observation?.onPrepared(created.id);return {eventId:created.id};
+    });
+    const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});const opened=vi.fn();
+    function Page(){const [target,setTarget]=useState(projectWorkItemTarget(item));return <ProjectsView host={f.host} selectedProjectId={item.project.id}
+      workItemTarget={target} onSelectedProjectChange={(id,next)=>{opened(id,next);if(next)setTarget(next);}}/>;}
+    const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}><Page/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-context-actions"]')).not.toBeNull());
+    await click([...ui.querySelectorAll('[data-testid="project-context-actions"] button')].find(button=>button.textContent==="Create task") as HTMLElement);
+    await vi.waitFor(()=>expect(document.querySelector<HTMLSelectElement>('[data-testid="create-issue-repository"]')?.value).toBe(item.repository.id));
+    await type(document.querySelector<HTMLInputElement>('[data-testid="create-issue-title"]')!,"Original repository B task");
+    await type(document.querySelector<HTMLTextAreaElement>('[data-testid="create-issue-body"]')!,"Body belonging to B");
+    await click(document.querySelector<HTMLElement>('[data-testid="create-issue-submit"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-issue-detail"]')?.textContent).toContain("Body belonging to B"));
+    expect(opened).toHaveBeenCalledExactlyOnceWith(item.project.id,{repositoryId:item.repository.id,issueId:"c".repeat(64)});
+    expect(f.host.publish).toHaveBeenCalledTimes(1);
+  });
   it.each(["en","zh-CN"] as const)("original HUMAN picker searches the actual directory, assigns and removes another person (%s)",async locale=>{
     const f=await otherAssignmentFixture();const success=vi.spyOn(toast,"success").mockImplementation(()=>"assigned");
     const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,observe,observation):Promise<{eventId:string}>=>{
@@ -919,7 +1022,7 @@ describe("original Inbox project read closure",()=>{
     const detailSelector=kind==="issue"?'[data-testid="project-issue-detail"]':'[data-testid="project-pull-request-detail"]';
     await vi.waitFor(()=>expect(view.querySelector(detailSelector)).not.toBeNull());
     expect(view.textContent).toContain(kind==="issue"?"Complete task body":"Complete review body");
-    expect(view.querySelector('aside')).toBeNull();
+    expect(Boolean(view.querySelector('[data-testid="project-repository-actions-panel"]'))).toBe(kind==="issue");
     expect(f.query.mock.calls.some(([request])=>request.view==="PROJECTS")).toBe(true);
     expect(f.query.mock.calls.some(([request])=>request.view==="WORK_ITEM_ACTIVITY")).toBe(true);
     expect(host.publish).not.toHaveBeenCalled();

@@ -16,6 +16,7 @@ import {
 export function CreateProjectIssueDialog({
   host,
   initialProjectId,
+  initialRepositoryId,
   onCreated,
   onOpenChange,
   open,
@@ -23,6 +24,7 @@ export function CreateProjectIssueDialog({
 }: {
   host: ProjectsHost;
   initialProjectId?: string;
+  initialRepositoryId?: string;
   onCreated: (
     project: Project,
     repository: Repository,
@@ -47,12 +49,12 @@ export function CreateProjectIssueDialog({
   const initialProject =
     projects.find((project) => project.id === initialProjectId) ?? projects[0];
   const [repositoryId, setRepositoryId] = React.useState(
-    selectProjectRepository(initialProject, null)?.id ?? "",
+    initialRepositoryId ?? selectProjectRepository(initialProject, null)?.id ?? "",
   );
   const selection =
     repositoryOptions.find(
       (candidate) => candidate.repository.id === repositoryId,
-    ) ?? repositoryOptions[0];
+    );
   const project = selection?.project;
   const repository = selection?.repository;
 
@@ -61,8 +63,8 @@ export function CreateProjectIssueDialog({
     const nextProject =
       projects.find((candidate) => candidate.id === initialProjectId) ??
       projects[0];
-    setRepositoryId(selectProjectRepository(nextProject, null)?.id ?? "");
-  }, [initialProjectId, open, projects]);
+    setRepositoryId(initialRepositoryId ?? selectProjectRepository(nextProject, null)?.id ?? "");
+  }, [initialProjectId, initialRepositoryId, open, projects]);
 
   async function handleCreate(input: CreateProjectWorkItemDialogInput) {
     if (!project || !repository) throw new Error(t("projects.issue.chooseRepository"));
