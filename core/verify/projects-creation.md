@@ -558,6 +558,17 @@ ERROR: no builder "kailo-core-data" found
 
 日志为 `/volumes/data/kailo/tmp/project-issue-comments.DbJdB5/full.log`。
 当前配方 `7c1a6a138f80e2490b77617fba9525f0a7ca42bdc527eac9129f0204f4328f10`
-对应镜像不存在；没有重标旧 SDK、没有启动新镜像构建。记录时原脚本仍在清理自身
-导出目录，尚未取得最终退出码；明确为全量门禁未通过，而非通过或跳过。
+对应镜像不存在；没有重标旧 SDK、没有启动新镜像构建。原脚本清理自身导出目录
+完成后，07:29 UTC 原句柄实际返回 exit 2；全量门禁未通过，而非通过或跳过。
+后续同 daemon 双身份核对确认：该 builder 登记在 sudo 身份下且已停止，普通
+Docker 身份看不到登记。已有容器及其 Data 缓存仍在，不是需要新建 builder；
+后续须统一原 Docker 调用身份并恢复已有受限节点，再取得正确配方镜像。
 本批只允许记录源码检查点，不据此发布、增加实际业务验收完成度或声明生产就绪。
+
+最终退出码补记后，原 `tools/check-docs.sh /volumes/kailo/.design` 在既有
+`10ad` SDK 内实际 exit 0，七节全部通过。容器只读挂载实际工程和设计，
+UID 1000、2 CPU、2 GiB memory=memory+swap、network none；临时目录及 npm
+离线缓存均绑定 Data。日志为
+`/volumes/data/kailo/tmp/tasks-comment-final-docs.Mzss3f/docs-cached.log`。
+首轮遗漏 npm 缓存投递，停在 npx 准备阶段后主动终止、exit 137；没有 OOM 或
+文档通过结论。修正实际 mount 后完成的是文档门禁，不是重新执行或通过 full。
