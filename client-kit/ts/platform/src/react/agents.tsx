@@ -2429,9 +2429,9 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
             <AgentIdentityFields displayName={name} onDisplayNameChange={setName} description={description}
               onDescriptionChange={setDescription} disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} />
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-instructions`}>{t("agents.version.instructions")}</label>
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-instructions`}>{t("agents.identity.instructions")}</label>
               <div className={PERSONA_FIELD_SHELL_CLASS}>
-                <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
+                <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={t("agents.identity.instructionsPlaceholder")} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
               </div>
             </div>
             <div className="space-y-1.5">

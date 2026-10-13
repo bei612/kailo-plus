@@ -1692,6 +1692,8 @@ enum PlatformMessageKey {
   agentsInstallationResourceDeleted,
   agentsVersionModelRoute,
   agentsVersionInstructions,
+  agentsIdentityInstructions,
+  agentsIdentityInstructionsPlaceholder,
   agentsVersionHash,
   agentsAutomationTitle,
   agentsAutomationScope,
@@ -6311,6 +6313,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '声明的模型路由',
   ),
   PlatformMessageKey.agentsVersionInstructions: ('Instructions', '指令'),
+  PlatformMessageKey.agentsIdentityInstructions: (
+    'Agent instructions',
+    'Agent 指令',
+  ),
+  PlatformMessageKey.agentsIdentityInstructionsPlaceholder: (
+    'Describe what this agent should do.',
+    '描述这个 Agent 应该做什么。',
+  ),
   PlatformMessageKey.agentsVersionHash: ('Configuration hash', '配置摘要'),
   PlatformMessageKey.agentsAutomationTitle: ('Automations', '自动化'),
   PlatformMessageKey.agentsAutomationScope: (

@@ -1836,6 +1836,8 @@ export const platformMessages = {
   "agents.installation.resource.deleted": { en: "Deleted resource", "zh-CN": "资源已删除" },
   "agents.version.modelRoute": { en: "Requested model route", "zh-CN": "声明的模型路由" },
   "agents.version.instructions": { en: "Instructions", "zh-CN": "指令" },
+  "agents.identity.instructions": { en: "Agent instructions", "zh-CN": "Agent 指令" },
+  "agents.identity.instructionsPlaceholder": { en: "Describe what this agent should do.", "zh-CN": "描述这个 Agent 应该做什么。" },
   "agents.version.hash": { en: "Configuration hash", "zh-CN": "配置摘要" },
   "agents.automation.title": { en: "Automations", "zh-CN": "自动化" },
   "agents.automation.scope": { en: "Automations that keep your community moving.", "zh-CN": "让社区协作自动运转。" },

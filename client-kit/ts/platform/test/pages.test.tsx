@@ -1851,7 +1851,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect([...configurationPickers].every((field) => field.textContent === "Choose a verified record")).toBe(true);
     expect(action.querySelectorAll("select")).toHaveLength(0);
     await change(action, "Agent name", "New governed draft");
-    await change(action, "Instructions", "New exact instructions");
+    const instructionsField = action.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(instructionsField.placeholder).toBe("Describe what this agent should do.");
+    await change(action, "Agent instructions", "New exact instructions");
     await change(action, "Requested runtime profile", profile.key);
     await change(action, "Requested model route", route.resourceId);
     await change(action, "Reply policy declared by this runtime profile", content.replyPolicy);
@@ -1880,15 +1882,16 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
-    await change(action, "Instructions", "Edited exact draft");
+    await change(action, "Agent instructions", "Edited exact draft");
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
     await click(button(action, "Submit governed request"));
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.update", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion, assetId: version.assetId,
       assetVersion: version.assetVersion, agentVersionContent: { ...content, instructions: "Edited exact draft" } });
-    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
-    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
+    await click(button(host.querySelector<HTMLElement>('[role="dialog"]')!, "Close"));
+    await click(button(section(host, "agent-installations"), "View installation"));
+    expect(section(host, "agent-installation-detail").textContent).toContain(installation.pinnedVersionAssetId);
     expect(posts(t)).toHaveLength(1);
   });
 
@@ -1926,7 +1929,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
     expect(action.querySelector<HTMLInputElement>("#persona-description")!.value).toBe(description);
-    await change(action, "Instructions", "Only instructions changed");
+    await change(action, "Agent instructions", "Only instructions changed");
     await click(button(action, "Review request"));
     await click(button(action, "Submit governed request"));
     expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { personaIdentity: historical.personaIdentity } });
