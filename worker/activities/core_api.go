@@ -24,6 +24,10 @@ const (
 	ErrTypeAdmissionDenied = "ADMISSION_DENIED"
 )
 
+// errorExcerptBytes 是非 200 回应写进错误消息的正文上界：错误消息会进入
+// Temporal history，不能随 Core 的错误体无界增长。成功回应不受它约束。
+const errorExcerptBytes = 4096
+
 // CoreAPI 是 Worker 到 Core service API 的客户端（01 §4）。
 //
 // 令牌来自与 Temporal 连接共用的 oidc.Source：同一个服务身份只有一份取令牌、
@@ -77,18 +81,27 @@ func (c *CoreAPI) post(ctx context.Context, path string, payload any, out any) e
 		if err != nil {
 			return err
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode == http.StatusOK {
+			// 200 的正文是 Core 的权威结果，必须完整读取：截断后解码失败会落进
+			// 「结果不明」的重试分支，同一请求永远拿不到它已经给出的回答。
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return err
+			}
+			if out == nil {
+				return nil
+			}
+			return json.Unmarshal(body, out)
+		}
+		// 非 200 的正文只进错误消息、进而进入 Workflow history，按摘录上界截取
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorExcerptBytes))
 		resp.Body.Close()
 
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized && attempt == 0:
 			c.tokens.Invalidate()
 			continue
-		case resp.StatusCode == http.StatusOK:
-			if out == nil {
-				return nil
-			}
-			return json.Unmarshal(body, out)
 		case resp.StatusCode == http.StatusForbidden:
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("%s 前置条件不成立: %s", path, body), ErrTypeAdmissionDenied, nil)
