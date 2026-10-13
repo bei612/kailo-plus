@@ -2820,7 +2820,7 @@ async fn finish_billed_turn(
     native_status: &str,
     reply: Option<&str>,
     reply_delivered: Option<bool>,
-    proof: (Vec<Uuid>, Vec<crate::audit::Evidence>),
+    proof: (Vec<Uuid>, Vec<crate::audit::Evidence>, bool),
 ) -> Response {
     let Some((status, wire_status)) = billed_outcome(
         native_status,
@@ -2836,7 +2836,11 @@ async fn finish_billed_turn(
     };
     // Observe already settled this exact turn before reply handling. The final
     // transaction below rechecks every committed ID/scope and release receipt.
-    let (ids, mut evidence) = proof;
+    // `billing_unavailable`: at least one completed native request had no native
+    // quantity. 03 §8 records that as BILLING_UNAVAILABLE + NONE, never as zero
+    // usage; it does not hold the business terminal hostage, so an otherwise
+    // provable turn may close with fewer (or no) UsageEvents than requests.
+    let (ids, mut evidence, billing_unavailable) = proof;
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(error) => return unavailable(error),
@@ -2923,7 +2927,7 @@ async fn finish_billed_turn(
         Ok(settled) => settled,
         Err(error) => return unavailable(error),
     };
-    if settled != Some(true) || ids.is_empty() {
+    if settled != Some(true) || (ids.is_empty() && !billing_unavailable) {
         return result(
             invocation.id,
             TaskStatus::Running,
@@ -2967,20 +2971,22 @@ async fn finish_billed_turn(
             reply,
         ));
     }
+    let outcome = if native_status == "completed" && wire_status == "FAILED" {
+        "FAILED_REPLY_NOT_DELIVERED"
+    } else {
+        wire_status
+    };
+    let outcome = if billing_unavailable {
+        format!("{outcome}_BILLING_UNAVAILABLE")
+    } else {
+        outcome.to_owned()
+    };
     if let Err(error) = turn_audit(
         state,
         &mut tx,
         &ae,
         invocation.id,
-        (
-            "check-usage-committed",
-            "OUTCOME",
-            if native_status == "completed" && wire_status == "FAILED" {
-                "FAILED_REPLY_NOT_DELIVERED"
-            } else {
-                wire_status
-            },
-        ),
+        ("check-usage-committed", "OUTCOME", outcome.as_str()),
         evidence,
     )
     .await

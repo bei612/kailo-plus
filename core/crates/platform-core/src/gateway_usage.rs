@@ -705,11 +705,16 @@ async fn application_correlation(
 }
 
 /// 来源、scope、meter 和数量在 checkpoint 前一起持久。所有重读只接受同一事件。
+///
+/// 返回 `false` 表示平台自有 Agent 链的这条已完成请求没有冻结 meter 的原生数量：
+/// 按 03 §8 记为 `BILLING_UNAVAILABLE + NONE` 的审计事实，不创建无法计量的
+/// UsageEvent、不推测零用量，也不让这一条阻塞全局游标。业务能力 binding 的模型
+/// 调用不适用该处理（不免于计量），缺数量仍按不可核验返回错误。
 async fn correlate(
     tx: &mut Transaction<'_, Postgres>,
     entry: &Entry,
     namespace: &str,
-) -> Result<(), &'static str> {
+) -> Result<bool, &'static str> {
     let trace = entry.trace_id.as_deref().filter(|trace| !trace.is_empty());
     let origin = if let Some(origin) = application_correlation(tx, entry).await? {
         origin
@@ -777,18 +782,41 @@ async fn correlate(
             data[key] = quantity.into();
         }
     }
+    // 先核对全部冻结 meter 的原生数量，再写任何事件：一条请求要么完整入账，
+    // 要么整体记为不可计量，不出现只写了部分 meter 的半条用量。
     let mut seen = HashSet::new();
-    for meter in meters {
+    let mut quantities = Vec::with_capacity(meters.len());
+    for meter in &meters {
         if !seen.insert(meter.key.clone()) {
             return Err("Gateway usage 冻结 meter 重复");
         }
-        let quantity = match meter.value_property.as_str() {
+        quantities.push(match meter.value_property.as_str() {
             "$.inputTokens" => entry.usage.input_tokens,
             "$.outputTokens" => entry.usage.output_tokens,
             "$.totalTokens" => entry.usage.total_tokens,
             _ => return Err("Gateway usage 未知原生计量字段"),
+        });
+    }
+    if quantities.iter().any(Option::is_none) {
+        if origin.component_binding_id.is_some() {
+            return Err("Gateway durable usage 没有该 meter 的实际数量");
         }
-        .ok_or("Gateway durable usage 没有该 meter 的实际数量")?;
+        let mut evidence = vec![Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id)];
+        if let Some(trace) = trace {
+            evidence.push(Evidence::new(EvidenceKind::TraceId, trace));
+        }
+        usage_audit(
+            tx,
+            origin.operation_id,
+            &format!("usage:gateway:{}:BILLING_UNAVAILABLE", entry.id),
+            "RECONCILIATION",
+            "BILLING_UNAVAILABLE",
+            evidence,
+        )
+        .await?;
+        return Ok(false);
+    }
+    for (meter, quantity) in meters.into_iter().zip(quantities.into_iter().flatten()) {
         let id = Uuid::new_v5(
             &Uuid::NAMESPACE_URL,
             format!(
@@ -839,7 +867,7 @@ async fn correlate(
         )
         .await?;
     }
-    Ok(())
+    Ok(true)
 }
 
 /// 同一权威 AuditEvent，与引用和状态写同事务；不建立计量审计的第二份表。
@@ -1505,7 +1533,9 @@ pub(crate) async fn committed_application(
         .map_err(|_| "Application usage transaction unavailable")?;
     let mut expected = HashSet::new();
     for entry in &entries {
-        correlate(&mut tx, entry, &namespace).await?;
+        if !correlate(&mut tx, entry, &namespace).await? {
+            return Err("Application model usage lacks a native quantity");
+        }
         for meter in &meters {
             expected.insert((entry.id, meter.key.clone()));
         }
@@ -1590,7 +1620,9 @@ pub(crate) async fn committed_application_action(
         .map_err(|_| "HUMAN model usage transaction unavailable")?;
     let mut expected = HashSet::new();
     for entry in &entries {
-        correlate(&mut tx, entry, &namespace).await?;
+        if !correlate(&mut tx, entry, &namespace).await? {
+            return Err("Application model usage lacks a native quantity");
+        }
         for meter in &meters {
             expected.insert((entry.id, meter.key.clone()));
         }
@@ -1659,7 +1691,9 @@ async fn application_model_children(
             .await
             .map_err(|_| "Application model child transaction unavailable")?;
         for entry in &entries {
-            correlate(&mut tx, entry, &facts.namespace).await?;
+            if !correlate(&mut tx, entry, &facts.namespace).await? {
+                return Err("Application model usage lacks a native quantity");
+            }
             let rows: Vec<(Uuid, String)> = sqlx::query_as(
                 "select id,meter_key from outbox.usage_event
                  where source_type='GATEWAY_DURABLE_USAGE' and source_id=$1
@@ -1693,7 +1727,7 @@ pub(crate) async fn committed_turn(
     invocation: Uuid,
     turn: &str,
     native_status: &str,
-) -> Result<Option<(Vec<Uuid>, Vec<Evidence>)>, &'static str> {
+) -> Result<Option<(Vec<Uuid>, Vec<Evidence>, bool)>, &'static str> {
     if !matches!(native_status, "completed" | "failed" | "interrupted") {
         return Err("计量查证缺确定 native turn 终态");
     }
@@ -1747,11 +1781,18 @@ pub(crate) async fn committed_turn(
         expected.insert(("AGENT_INVOCATION".to_owned(), invocation, count.key));
     }
     let mut evidence = vec![Evidence::new(EvidenceKind::TraceId, &facts.trace_id)];
+    let mut billing_unavailable = false;
     let mut tx = pool.begin().await.map_err(|_| "计量全集关联事务不可用")?;
     for entry in &entries {
         // Reuses exactly the global ingress attribution, native quantities and
         // stable event identities; it does not create another source or ledger.
-        correlate(&mut tx, entry, &facts.namespace).await?;
+        // A completed request without native quantities is BILLING_UNAVAILABLE
+        // (03 §8): it stays in the evidence but has no UsageEvent to expect.
+        evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id));
+        if !correlate(&mut tx, entry, &facts.namespace).await? {
+            billing_unavailable = true;
+            continue;
+        }
         for meter in &meters {
             expected.insert((
                 "GATEWAY_DURABLE_USAGE".to_owned(),
@@ -1759,7 +1800,6 @@ pub(crate) async fn committed_turn(
                 meter.key.clone(),
             ));
         }
-        evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id));
     }
     // The same root Operation also owns its governed Memory read children.
     // Do not filter them out of the Invocation set or mistake their usage for
@@ -1885,7 +1925,7 @@ pub(crate) async fn committed_turn(
             return Ok(None);
         }
     }
-    Ok(Some((ids, evidence)))
+    Ok(Some((ids, evidence, billing_unavailable)))
 }
 
 /// The same outbox publisher serves the exact UsageEvents of a governed read.
