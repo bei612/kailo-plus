@@ -466,10 +466,39 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
             .await
             .map_err(|_| "CONTROL_UNREADABLE")?;
-        return control
+        if control
             .event_exists(&state.http, &p.event_id)
             .await
-            .map_err(|_| "QUERY_FAILED");
+            .map_err(|_| "QUERY_FAILED")?
+        {
+            return Ok(true);
+        }
+        // Relay queries hide soft-deleted events. The Relay only stores a kind:5
+        // deletion whose e-target already exists (validate_standard_deletion_event
+        // reads including deleted), so an accepted deletion of this exact id
+        // proves it was delivered. Without this, a message the author deleted
+        // inside the settle window is judged NOT_DELIVERED and the same key
+        // re-signs a duplicate.
+        let page = control
+            .query(
+                &state.http,
+                &[serde_json::json!({
+                    "kinds": [collab_bridge::bridge::KIND_DELETION],
+                    "#e": [p.event_id],
+                })],
+            )
+            .await
+            .map_err(|_| "QUERY_FAILED")?;
+        let deletions: Vec<nostr::Event> =
+            serde_json::from_value(page).map_err(|_| "EVIDENCE_INVALID")?;
+        return Ok(deletions.iter().any(|deletion| {
+            u32::from(deletion.kind.as_u16()) == collab_bridge::bridge::KIND_DELETION
+                && deletion.verify().is_ok()
+                && deletion.tags.iter().map(nostr::Tag::as_slice).any(|tag| {
+                    tag.first().map(String::as_str) == Some("e")
+                        && tag.get(1) == Some(&p.event_id)
+                })
+        }));
     }
     if ![
         CONVERSATION_PUBLISH_ACTION,
