@@ -107,6 +107,44 @@ Core 依据固定 apps commit `993da21e9619ddac8763778394bea07c504a8022` 的 `co
 
 源码写入与定向模拟消费者不等于线上可用；本批不自行 commit/push，没有部署、新安装包、真机/模拟器正常 SSO 私聊或真实多人互发验收，也未重跑 Flutter 全套和 `check.sh --full`。发布与全量门禁由主线合批，本节不据代码量或定向通过提高生产完成率。
 
+## 受治理 DM 静音恢复（2026-10-12）
+
+本批仅恢复原 Mobile DM 的 Mute/Unmute、列表静音标识与真实未读通知筛选。它不补 Star、sections、Browse、presence、普通频道静音、系统推送或完整 DM 管理；既有缺项没有变成空按钮。本节是实现与实际验证记录，不替代设计权威，也不声明 Mobile 完整还原或生产就绪。
+
+### 编辑前四项核对结论
+
+1. 权威为 DD-40、`.design/03-领域模型与权限模型.md` 的 CollaborationUserState 与 ConversationBuzzBinding、`.design/09-统一身份与Buzz协议投影.md` 的 HUMAN/CLIENT 和私聊准入。只有 Core 的 conversationPreferences 是三端偏好权威，原 NIP78 写入不恢复。
+2. 影响面为原 ChannelActionsSheet、原 `_ChannelTile`、ChannelsNotifier 的历史补拉/实时事件与原 unreadBadgeProvider，管理面复用 NativeSession/BFF 和生成的 ConversationPreferenceRequest/UserStateVersion。没有改契约、数据库、Core/Worker、Relay 协议、共享文案或 Mobile 非组件宿主边界；直接消费已有 TS→Dart 的 sidebar.mute/unmute/preferenceUnknown 等词条。
+3. 写前 fresh FULL actor/tenant/platform-session、本机 CLIENT、精确 ACTIVE Conversation 与 HUMAN 全公钥目录必须成立；共用 New DM 的有效签名 39000/39002 与完整 roster 核对，不把用于显示的代表公钥当完整 roster。原 AE/operation、个人 unhide 与本机内容传输不改；设置面仍经 BFF，本机 Relay 不成为另一偏好权威。
+4. 每次 PUT 前必须成功持久保存原 CAS 参数，按平台地址+tenant+actor 隔离，不存凭据、正文或自造终态。重复点击串行；关闭 sheet/重启恢复原意图；actor/session 切换锁定并关闭旧 sheet、隔离旧响应。读取旧 version、异常快照或失败不默认未静音；409 首次明确拒绝不自动换 version 覆盖另一端 starred；旧 UNKNOWN 的后续 4xx 不能否定仍在途的旧 PUT，因此保留原意图，只由权威 version 推进令旧 CAS 失效。刷新/恢复只 GET，同 version 仅用户显式重查同字节 CAS；保存失败不准 PUT。没有新增后台重放或过期成功状态。
+
+### 固定源码差异与实际消费者
+
+固定 Buzz commit `779af8886caae1317b4de962082429867ab61503`：`mobile/lib/features/channels/channel_actions_sheet.dart::ChannelActionsSheet`、`mobile/lib/features/channels/channels_page/channel_tile.dart::_ChannelTile`、`mobile/lib/features/channels/channels_provider.dart::ChannelsNotifier` 的 `_catchUpUnreadEvents`/`_handleLiveEvent`、`mobile/lib/features/channels/unread_badge/should_notify_for_event.dart::shouldNotifyForEvent` 是本批恢复来源。
+
+- 原样保留：原 ListTile 的 bell/bellOff、Mute/Unmute、零 contentPadding，原列表 secondary foreground 与 12px bellOff；静音不擅自把旧未读标成已读，原 broadcast/本人 mention 优先级保留。
+- 共享迁移：直接消费既有同源词条，没有新增或覆盖共享 TS/Dart 翻译文件。
+- 已授权治理改造：原 channelMutesProvider/NIP78 替换为 `collaboration/mobile/lib/features/channels/direct_message_preferences.dart::ConversationMuteNotifier` 的 Core readback/CAS/原意图恢复，未知与失败仅使用既有治理文案和明确重查；没有乐观成功或另一偏好账本。
+- 缺失需恢复：上节及本节开头列出的其他原生管理/浏览/presence/系统推送、设备视觉对照仍未完成，不借静音专项通过删减全量目标。
+
+已有 Core/TS 依据固定 apps commit `54306bc7d4af23495a4c318427e025df6850df1c` 的 `core/crates/platform-core/src/user_state.rs::{get_user_state,put_conversation_preference,upsert}` 与 `client-kit/ts/platform/src/react/conversations/use-conversation-state.tsx::useConversationState`。GET `/api/v1/user-state` 与 PUT `/api/v1/user-state/conversations/{id}` 使用同一共享 version；提交前 fresh GET 保留当前 starred，返回 version 必须为原版+1，仍须权威回读。更高 version 仅证明旧 CAS 不可再写，不据此声称一定是本次 PUT 成功。DENIED/PRECONDITION/LIMIT 沿既有 BFF 错误，409 为 CONFLICT；不可核验的写入、撤权中断或投影滞后保持 UNKNOWN，未开放能力为 BLOCKED，不另造错误码。
+
+列表和通知不是无消费者字段：原 `_ChannelTile` 显示已确认 muted；ChannelsNotifier 初始/重连先读取权威，历史 catch-up 与 live 均调用原 shouldNotifyForEvent 并传 mutedChannelIds。普通私聊事件被静音过滤，原本人 mention/broadcast 仍可触发；原 unreadBadgeProvider 消费实际已观察事件。偏好不可读时不回退 unmuted，也不清掉已确认的历史未读。
+
+### 实际验证与交付界限
+
+候选及原日志位于 `/volumes/data/kailo/tmp/mobile-dm-mute.EBqGIR/`，固定输入基于上述 apps commit。复用既有不可变 Flutter 镜像 `sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`；每次执行前检查原构建进程及 CPU/内存压力，实际 2 CPU、4294967296 字节 memory=memory+swap、UID 1000、network none，输入、HOME、tmp、SDK/pub 缓存与日志均在 Data。没有宿主编译、pull/load、重建镜像或新 APK。
+
+实现后原 `flutter test --no-pub --reporter expanded test/features/channels/direct_messages_test.dart test/features/channels/channels_provider_test.dart` 在 `verify-round5.log` 为 `00:22 +65: All tests passed!`，实际容器 exit 0、OOMKilled=false。其中原 New DM 13 项、本批静音 9 项与原 Channels 43 项；覆盖真实 action tile/list bellOff、catch-up/live/badge、starred 保留、同字节恢复、旧快照、重复点击、actor 切换、完整 roster、UNKNOWN 后续 403 与本机保存失败。测试在实现之后补充，未写先行规格或 TDD。
+
+失败原件保留：`verify-initial.log` 为原测试 helper 一条大括号 info、exit 1；`verify-round2.log` 的生产分析无问题，但本批原 ChannelsPage 夹具缺必需构造参数，测试加载失败，原 Channels 43 项通过不能冒充整批通过；`verify-round3.log` 为新 part 四条循环大括号 info、exit 1；`verify-round4.log` 为真实 Channels 夹具未覆盖原 queryRelay 入口导致 30 秒超时、+62/-1，修正原夹具后才得到上述 +65。
+
+终版 `verify-final.log` 的八项原 `flutter analyze --no-pub` 为 `No issues found! (ran in 58.1s)`，恢复后的原 DM 消费者为 `00:03 +22: All tests passed!`，实际容器 exit 0、OOMKilled=false；原 Channels 43 项不重复运行。普通频道不渲染静音入口也已通过原 sheet widget 断言。
+
+主动破坏仅发生在私有输入：移除 durable save 时，存储失败用例本应没有 PUT，却出现一次 PUT，见 `mutation-persistence-unknown.log`，exit 1；恢复 save、仅移除首次/旧 UNKNOWN 区分时，原 403 用例的 pendingId 应为原 Conversation ID 却变 null，见 `mutation-old-unknown-4xx.log`，exit 1。两 guard 恢复后与原件 cmp 相等，preferences SHA256 `dbad05f3c4b55de58a50c0a7c1066500c83bfcb384d218f449638ded4330056d`，再得到上述终版 +22；正式源码从未破坏。
+
+源码和模拟消费者通过不等于线上交付：本批不自行 commit/push，没有部署、新安装包、真机正常 SSO、跨端实际偏好或系统通知验收，未运行 Flutter 全套、`check-docs.sh` 或 `check.sh --full`。本批只运行精确候选文档 lint；原全局文档与全量门禁由主线合批，提交/push、部署分别报告，不凭代码量或定向通过提高生产完成率。
+
 ## 清单可复现
 
 上一轮清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `463d59637c265052e99ea7f1d7a4559eab9121cf`）。

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import 'channels_provider.dart';
 
 part 'direct_message_actions.dart';
 part 'direct_message_visibility.dart';
+part 'direct_message_preferences.dart';
 
 /// The BFF's current HUMAN directory, not a second identity registry. Limits
 /// and people come from the existing generated contracts and tenant authority.

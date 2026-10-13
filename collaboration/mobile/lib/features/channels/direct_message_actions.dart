@@ -157,67 +157,8 @@ extension _DirectMessageActions on DirectMessages {
     // Reopening an existing participant set targets the original binding. Its
     // operationId legitimately predates this AE; task/receipt own this action.
     final binding = matches.single;
+    final probe = await _verifiedNativeConversation(binding);
     final session = _ref.read(relaySessionProvider.notifier);
-    final metadata = await session.fetchHistory(
-      NostrFilters.channelMetadata([binding.channelId]),
-    );
-    _fence();
-    final event = metadata
-        .where(
-          (row) =>
-              row.kind == 39000 && row.getTagValue('d') == binding.channelId,
-        )
-        .singleOrNull;
-    if (event == null) throw DirectMessagePending(receipt);
-    nostr.Event.fromMap(event.toJson());
-    final data = ChannelData.fromEvent(event);
-    if (data.channelType != 'dm' ||
-        data.visibility != 'private' ||
-        data.isArchived) {
-      throw DirectMessagePending(receipt);
-    }
-    final people = await directory();
-    final expected = <String>{};
-    for (final id in binding.participantPrincipalIds) {
-      final person = people.people
-          .where((row) => row.principalId == id)
-          .singleOrNull;
-      if (person == null) throw DirectMessagePending(receipt);
-      expected.addAll(person.pubkeys);
-    }
-    final members = await session.fetchHistory(
-      NostrFilters.channelMembers(binding.channelId),
-    );
-    _fence();
-    final roster = members
-        .where(
-          (row) =>
-              row.kind == 39002 && row.getTagValue('d') == binding.channelId,
-        )
-        .singleOrNull;
-    if (roster == null) throw DirectMessagePending(receipt);
-    nostr.Event.fromMap(roster.toJson());
-    if (!setEquals(expected, data.participantPubkeys.toSet()) ||
-        !setEquals(
-          expected,
-          membersFromEvent(roster).map((member) => member.pubkey).toSet(),
-        ) ||
-        roster.pubkey != event.pubkey ||
-        !expected.contains(_pubkey)) {
-      throw DirectMessagePending(receipt);
-    }
-    final probe = Channel(
-      id: data.id,
-      name: data.name,
-      channelType: data.channelType,
-      visibility: data.visibility,
-      description: data.description,
-      createdBy: event.pubkey,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
-      memberCount: 0,
-      isMember: true,
-      participantPubkeys: data.participantPubkeys,
-    );
     final hidden = await _hidden(probe);
     if (hidden.contains(binding.channelId)) {
       final relay = SignedEventRelay(
@@ -265,6 +206,77 @@ extension _DirectMessageActions on DirectMessages {
     final channel = native.single;
     await _clear();
     return channel;
+  }
+
+  /// Shared original signed 39000/39002 verification for DM consumers. A
+  /// hydrated display channel contains representative keys, not the roster.
+  Future<Channel> _verifiedNativeConversation(ConversationView binding) async {
+    if (binding.state != ItemState.ACTIVE ||
+        !binding.participantPrincipalIds.contains(principalId) ||
+        _ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      throw const PlatformUnavailable('Conversation is not admitted');
+    }
+    final session = _ref.read(relaySessionProvider.notifier);
+    final metadata = await session.fetchHistory(
+      NostrFilters.channelMetadata([binding.channelId]),
+    );
+    _fence();
+    final event = metadata
+        .where(
+          (row) =>
+              row.kind == 39000 && row.getTagValue('d') == binding.channelId,
+        )
+        .singleOrNull;
+    if (event == null) throw DirectMessagePending(_submission);
+    nostr.Event.fromMap(event.toJson());
+    final data = ChannelData.fromEvent(event);
+    if (data.channelType != 'dm' ||
+        data.visibility != 'private' ||
+        data.isArchived) {
+      throw DirectMessagePending(_submission);
+    }
+    final people = await directory();
+    final expected = <String>{};
+    for (final id in binding.participantPrincipalIds) {
+      final person = people.people
+          .where((row) => row.principalId == id)
+          .singleOrNull;
+      if (person == null) throw DirectMessagePending(_submission);
+      expected.addAll(person.pubkeys);
+    }
+    final members = await session.fetchHistory(
+      NostrFilters.channelMembers(binding.channelId),
+    );
+    _fence();
+    final roster = members
+        .where(
+          (row) =>
+              row.kind == 39002 && row.getTagValue('d') == binding.channelId,
+        )
+        .singleOrNull;
+    if (roster == null) throw DirectMessagePending(_submission);
+    nostr.Event.fromMap(roster.toJson());
+    if (!setEquals(expected, data.participantPubkeys.toSet()) ||
+        !setEquals(
+          expected,
+          membersFromEvent(roster).map((member) => member.pubkey).toSet(),
+        ) ||
+        roster.pubkey != event.pubkey ||
+        !expected.contains(_pubkey)) {
+      throw DirectMessagePending(_submission);
+    }
+    return Channel(
+      id: data.id,
+      name: data.name,
+      channelType: data.channelType,
+      visibility: data.visibility,
+      description: data.description,
+      createdBy: event.pubkey,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
+      memberCount: 0,
+      isMember: true,
+      participantPubkeys: data.participantPubkeys,
+    );
   }
 }
 

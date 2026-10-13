@@ -4,6 +4,8 @@ import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channels_page.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
+import 'package:buzz/features/channels/channel_actions_sheet.dart';
+import 'package:buzz/features/channels/unread_badge/unread_badge_provider.dart';
 import 'package:buzz/features/channels/direct_messages.dart';
 import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
@@ -23,12 +25,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/platform/platform_test_support.dart';
 
+part 'direct_message_preferences_cases.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<SharedPreferences> preferences() async {
     SharedPreferences.setMockInitialValues({});
     return SharedPreferences.getInstance();
   }
+
+  mutePreferenceCases(preferences);
 
   test(
     'fresh HUMAN directory maps multiple keys to two people, not three',
@@ -446,6 +452,18 @@ class _Server {
   bool hidden = false;
   bool losePublish = false;
   bool applyBeforeLostOk = false;
+  bool muted = false;
+  bool starred = true;
+  int preferenceVersion = 0;
+  int? snapshotVersion;
+  bool loseMute = false;
+  bool applyMuteBeforeLost = false;
+  bool failPreferenceRead = false;
+  bool conflictMute = false;
+  int? rejectMuteStatus;
+  final mutePuts = <String>[];
+  final history = <NostrEvent>[];
+  final live = <void Function(NostrEvent)>[];
   final posts = <String>[];
   final published = <NostrEvent>[];
   Map<String, Object?> get actor => {
@@ -531,6 +549,37 @@ class _Server {
         return jsonResponse({
           'items': [binding],
         });
+      case '/api/v1/user-state':
+        if (failPreferenceRead) throw http.ClientException('read unavailable');
+        return jsonResponse({
+          'version': snapshotVersion ?? preferenceVersion,
+          'conversationPreferences': {
+            target: {'muted': muted, 'starred': starred},
+          },
+          'readContexts': {},
+          'workspacePreferences': {},
+          'projectPreferences': {},
+        });
+      case '/api/v1/user-state/conversations/$target':
+        expect(request.method, 'PUT');
+        mutePuts.add(request.body);
+        if (rejectMuteStatus != null) {
+          return http.Response('', rejectMuteStatus!);
+        }
+        final preference = ConversationPreferenceRequest.fromJson(
+          jsonDecode(request.body),
+        );
+        if (conflictMute || preference.version != preferenceVersion) {
+          return http.Response('', 409);
+        }
+        if (loseMute && !applyMuteBeforeLost) {
+          throw http.ClientException('lost preference response');
+        }
+        muted = preference.muted;
+        starred = preference.starred;
+        ++preferenceVersion;
+        if (loseMute) throw http.ClientException('lost committed response');
+        return jsonResponse({'version': preferenceVersion});
       case '/api/v1/actions':
         posts.add(request.body);
         if (losePost) throw http.ClientException('lost after POST');
@@ -571,7 +620,11 @@ class _Harness {
   final ProviderContainer container;
   Future<DirectMessages> get dm =>
       container.read(directMessagesProvider.future);
-  static Future<_Harness> start(_Server server, SharedPreferences prefs) async {
+  static Future<_Harness> start(
+    _Server server,
+    SharedPreferences prefs, {
+    bool realChannels = false,
+  }) async {
     final session = NativeSession(
       client: MockClient(server.respond),
       refreshStore: MemoryRefreshStore(),
@@ -596,7 +649,9 @@ class _Harness {
           (ref) => PlatformSessionView.fromJson(server.actor),
         ),
         relaySessionProvider.overrideWith(() => _Relay(server)),
-        channelsProvider.overrideWith(() => _Channels(server)),
+        if (!realChannels)
+          channelsProvider.overrideWith(() => _Channels(server)),
+        appLifecycleProvider.overrideWith(_Lifecycle.new),
       ],
     );
     await container.read(authProvider.future);
@@ -642,7 +697,29 @@ class _Relay extends RelaySessionNotifier {
     if (filter.kinds.contains(39000)) return [server.metadata];
     if (filter.kinds.contains(39002)) return [server.roster];
     if (filter.kinds.contains(30622)) return [server.visibility];
+    if (filter.kinds.any(EventKind.channelMessageEventKinds.contains)) {
+      return server.history;
+    }
     throw StateError('Unexpected native filter ${filter.kinds}');
+  }
+
+  @override
+  Future<List<NostrEvent>> queryRelay(
+    List<NostrFilter> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async => [
+    for (final filter in filters)
+      ...(await fetchHistory(filter, timeout: timeout)),
+  ];
+
+  @override
+  Future<void Function()> subscribe(
+    NostrFilter filter,
+    void Function(NostrEvent) onEvent, {
+    void Function(String)? onClosed,
+  }) async {
+    server.live.add(onEvent);
+    return () => server.live.remove(onEvent);
   }
 
   @override
@@ -656,6 +733,11 @@ class _Relay extends RelaySessionNotifier {
     server.hidden = false;
     return event;
   }
+}
+
+class _Lifecycle extends AppLifecycleNotifier {
+  @override
+  AppLifecycleState build() => AppLifecycleState.resumed;
 }
 
 class _Channels extends ChannelsNotifier {

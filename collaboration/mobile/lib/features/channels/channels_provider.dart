@@ -241,6 +241,12 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     if (channels.any((channel) => channel.isDm)) {
       final dm = await _fenced(fence, ref.read(directMessagesProvider.future));
       channels = await _fenced(fence, dm.hydrate(channels));
+      // Initial catch-up and reconnect observe the same confirmed Core mute
+      // snapshot as the tiles, never a default-unmuted loading state.
+      await _fenced(
+        fence,
+        ref.read(conversationMuteProvider.notifier).refresh(),
+      );
     }
 
     // Step 3: fetch the most recent message per channel to populate lastMessageAt.
@@ -509,15 +515,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         final readAt = readAtByChannel[channelId];
         if (event.pubkey.toLowerCase() == myPk.toLowerCase()) continue;
         if (readAt != null && event.createdAt <= readAt) continue;
-        if (!channel.isDm &&
-            !shouldNotifyForEvent(
-              event,
-              myPk,
-              participatedRootIds: _participatedRootIds,
-              followedRootIds: _followedRootIds(),
-              authoredRootIds: _authoredRootIds,
-              channelId: channel.id,
-            )) {
+        if (!_shouldNotifyForChannel(channel, event, myPk)) {
           continue;
         }
         _recordUnreadEvent(channel, event, myPk);
@@ -558,15 +556,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
       if (myPk != null &&
           event.pubkey.toLowerCase() != myPk.toLowerCase() &&
-          (channel.isDm ||
-              shouldNotifyForEvent(
-                event,
-                myPk,
-                participatedRootIds: _participatedRootIds,
-                followedRootIds: _followedRootIds(),
-                authoredRootIds: _authoredRootIds,
-                channelId: channel.id,
-              ))) {
+          _shouldNotifyForChannel(channel, event, myPk)) {
         _recordUnreadEvent(channel, event, myPk);
         final eventTime = DateTime.fromMillisecondsSinceEpoch(
           event.createdAt * 1000,
@@ -584,6 +574,28 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
   Set<String> _followedRootIds() =>
       ref.read(threadFollowsProvider).followedRootIds;
+
+  bool _shouldNotifyForChannel(
+    Channel channel,
+    NostrEvent event,
+    String pubkey,
+  ) {
+    final muted = channel.isDm
+        ? ref.read(conversationMuteProvider).muted(channel.id)
+        : false;
+    // Missing/revoked authority is not an unmuted preference. The original
+    // predicate retains broadcast/own-mention precedence for confirmed mutes.
+    if (muted == null) return false;
+    return shouldNotifyForEvent(
+      event,
+      pubkey,
+      participatedRootIds: _participatedRootIds,
+      followedRootIds: _followedRootIds(),
+      authoredRootIds: _authoredRootIds,
+      channelId: channel.id,
+      mutedChannelIds: muted ? {channel.id} : const {},
+    );
+  }
 
   void _loadThreadInterestStores(String pubkey) {
     final normalizedPubkey = pubkey.toLowerCase();

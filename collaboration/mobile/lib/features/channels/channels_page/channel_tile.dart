@@ -13,9 +13,14 @@ class _ChannelTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final contentColor = navigationPrimaryForeground(
-      context,
-    ).withValues(alpha: isUnread ? 1 : 0.8);
+    final isMuted =
+        channel.isDm &&
+        ref.watch(conversationMuteProvider).muted(channel.id) == true;
+    final contentColor = isMuted
+        ? navigationSecondaryForeground(context)
+        : navigationPrimaryForeground(
+            context,
+          ).withValues(alpha: isUnread ? 1 : 0.8);
 
     return InkWell(
       borderRadius: BorderRadius.circular(Radii.md),
@@ -65,6 +70,15 @@ class _ChannelTile extends ConsumerWidget {
                 ),
               ),
             ),
+            if (isMuted) ...[
+              const SizedBox(width: Grid.xxs),
+              Icon(
+                LucideIcons.bellOff,
+                key: ValueKey('channel-muted-${channel.id}'),
+                size: 12,
+                color: context.colors.onSurface.withValues(alpha: 0.4),
+              ),
+            ],
           ],
         ),
       ),
