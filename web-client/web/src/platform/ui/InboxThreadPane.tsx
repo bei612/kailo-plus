@@ -51,6 +51,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const publicationOwnerRef=useRef(publicationOwner);publicationOwnerRef.current=publicationOwner;
   useEffect(()=>{publicationOwner.active=true;return()=>{publicationOwner.active=false;};},[publicationOwner]);
   const composerContainer = useRef<HTMLDivElement>(null);
+  const currentHeaderDelete = useRef<(() => void) | undefined>(undefined);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId, forum);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:canInteract && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
@@ -138,11 +139,23 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
         if (publicationOwner.active && publicationOwnerRef.current === publicationOwner) toast.error(t("buzz.copyFailed"));
       }
     } : undefined;
+  const headerDeleteTarget = rows.find(message => message.id === anchor);
+  const headerDeletePending = sending || unresolved || deleteDialog.pending || Boolean(editTarget) ||
+    Boolean(deleteDialog.unresolvedMessageId && deleteDialog.unresolvedMessageId !== headerDeleteTarget?.id);
+  const requestHeaderDelete: (() => void) | undefined = headerDeleteTarget && canEdit(headerDeleteTarget) ? () => {
+    if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner ||
+      currentHeaderDelete.current !== requestHeaderDelete || headerDeletePending) return;
+    deleteDialog.requestDelete(headerDeleteTarget);
+  } : undefined;
+  currentHeaderDelete.current = requestHeaderDelete;
   return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id}
     channelName={channelName} channelType={conversation ? "dm" : forum ? "forum" : "stream"} messages={rows}
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
-    <InboxDetailHeader title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel} />
+    <InboxDetailHeader key={JSON.stringify([principalId, ownProfile.data?.pubkey, workspaceId, conversation?.id, anchor])}
+      title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel}
+      deletePending={headerDeletePending}
+      onDelete={requestHeaderDelete} />
     <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows}
       unavailable={unavailable} interrupted={interrupted} loading={thread.isPending}
       onRetry={!denied ? () => { void thread.refetch(); } : undefined}

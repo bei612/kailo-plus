@@ -2125,3 +2125,25 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 - apply_patch 原字节还原后正式/私有组件 cmp 0；`14809` 同过滤原消费者 exit 0，4/4（其余 40 未选）。正式产品未参与破坏，公共 index 未写入。
 
 日志根 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-copy-link.te3Yuc`：`positive.log` SHA-256 `aee34602b59db668a6708fefbb6d05deb7bf43b05182476a7a20603886ab2b12`，`positive-complete-input.log` 为 `aee8f125249eaef2214cdbb37bc5c28ea02d4af7b0f38feae6fa43329434e9a0`，`mutation.log` 为 `b506a867910dc438c5d5bb9aa3652e37d9f7187b9d0ed15681155222ab43864e`，`restored.log` 为 `0de0e823a36e22788321e38b81172687ffd1799c273d62eb3460f8b7d0010736`。这些是原 JS 消费者的隔离 DOM/clipboard 夹具，不是在线 BFF/Relay、系统剪贴板或设备验收；没有构建、加载、部署新制品，也不认领 full/e2e 通过。
+
+### 2026-10-13 Inbox 原详情顶栏 HeaderMoreMenu 删除入口
+
+基准 `968f50867486cc059284f128fd2c52f45c00e24c`；关联 REQ-24、DD-75。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/ui/InboxDetailPane.tsx::HeaderMoreMenu` 与 `HomeView.tsx::onDelete` 已有“More actions → Delete message”；本批恢复缺失的顶栏消费者，不把已有行菜单算作顶栏已恢复。
+
+四步影响核对：
+
+1. 权威：共享 `client-kit/ts/platform/src/react/inbox-surface.tsx::InboxDetailHeader` 仅复用原 dropdown/tooltip/删除文案与 destructive 样式，不读取或签名。可打开上下文不等于可删除；两宿主独立沿当前已准入消息的原 canEdit、署名及 scope 判定。
+2. 读写方：Web `web-client/web/src/platform/ui/InboxThreadPane.tsx`、Native `collaboration/desktop/src/features/home/ui/InboxDetailPane.tsx` 都投递真实 loaded anchor；不取首行、代表最新行或缺失消息的占位对象。两端继续消费原 `useMessageDeleteDialog`，Web 原 deleteMessage/BFF 与 Native 原 HomeView mutateMessage/签名删除消费者不替换。
+3. 副作用：只有确认后沿原删除命令执行。菜单按当前身份/scope/anchor 重置，迟到回调必须仍是当前捕获的回调；不能切详情后把旧菜单指向新目标。发送、编辑、删除 pending 及 UNKNOWN 互锁保留，未决删除只允许同 target 原确认/对账，不换意图或伪造成功。
+4. 异常：未加载/外人署名/撤权/不可核验目标不提供删除；没有借 onOpen 放行。两端原错误呈现、拒绝及 UNKNOWN 状态不变。没有 Core/合同/权限/schema/词条/四侧生成变化。
+
+原路径四分类：菜单结构与既有词条原样复用；顶栏动作共享迁移；真实身份、loaded target、scope/传输与删除确认继续宿主适配；needs_action、完整 Composer/Inbox 页面数据编排仍是既有未交付部分，不宣称整页或原版全部恢复。
+
+实际验证使用既有 `kailo-inbox-forum-r5kqbx`（SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`），2 CPU/4 GiB，memory+swap 总限额 4 GiB、UID 1000、只读根、network none；输入、依赖、缓存/tmp 全在 Data。原 container-safety preflight 0，启动前仅 sleep；没有新 SDK、下载、镜像构建或部署。
+
+- `78018` exit 1：共享产品/测试 tsc 与 Web tsc 均 0，共享两语言菜单 2/2；原 Web 48 项为 46 pass/2 fail，失败是新增 Forum 夹具漏传原 forum 标志，原 44 项通过。只纠正原 fixture 投递，不放宽生产过滤。
+- `27029` exit 1：纠正后 Web 新四项 4/4、Native tsc 0；随后首次 Node 命令漏原 `--import ./test-loader.mjs`，模块 alias 无法加载，Native 断言未执行。沿原 loader 纠正后 `native-original.log` 命令实际 exit 0、23/23，包含本批真实 JSX 捕获和既有 Native mutateMessage 原消费者。
+- `60209` 私有单处主动破坏 exit 1：Web headerDeleteTarget 从匹配 anchor 改为 rows[0]，三个原 header→确认→BFF 用例实际捕获错绑目标、Forum type 与 UNKNOWN；不是只检查源码字符串。正式源码未参与破坏。
+- apply_patch 精确还原后正式/私有 cmp 0；`60647` exit 0：末版 Web tsc 0、原新增 4/4，共享菜单两语言 2/2，Native 原新增 1/1。没有重复全量/依赖重建。Native 的新增检查执行原 TSX AST/回调、共享 DOM 验证同一菜单；不是 Native Rust、设备或在线 Relay 验收。
+
+全部实际命令、失败原件及冻结输入位于 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-header-delete.jMa8l6`。日志 SHA-256：`positive.log` 为 `9e0c09a9ab11cd08e820561b44d54960a11fb897cb46d5c3143c1640e0f6337f`，`positive-corrected.log` 为 `7872b79cef6caa692b782881227371f8d77db95738d8e14c2c11f3ff99983cd4`，`native-original.log` 为 `f71cd02f3b9ec02ac9d84edc07f7bea2447c9049c069463ff84c8c8883e2015a`，`mutation.log` 为 `190bb912a0b7486a4fdfba16ae5abf1a29dd22998bf6bb9b5787cf9423ddba24`，`restored.log` 为 `2422d35e116bcfcf6d58fe3da08256e009dee0953d89606f6c203fb9521b4ce9`。本批不认领线上 SSO/实际删除/full/部署通过；文档与发布由主线集中收口。

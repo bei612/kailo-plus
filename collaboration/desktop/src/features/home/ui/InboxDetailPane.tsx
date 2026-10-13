@@ -119,6 +119,8 @@ function InboxMessageDetailPane({
   const locale = useLocale();
   const detailPaneRef = React.useRef<HTMLElement | null>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const currentHeaderDelete = React.useRef<(() => void) | undefined>(undefined);
+  currentHeaderDelete.current = undefined;
   const [replyTargetId, setReplyTargetId] = React.useState<string | null>(null);
   const {editTarget, setEditTarget, handleCancelEdit}=useChannelMessageEdit<TimelineMessage>(editScopeKey);
   const owner=React.useMemo(()=>({active:true}),[editScopeKey]);
@@ -375,6 +377,14 @@ function InboxMessageDetailPane({
   const openContextLabel = isThreadContext
     ? t("inbox.openFullThread")
     : isDirectMessage ? t("inbox.openConversation") : t("inbox.open");
+  const headerDeleteTarget = videoReviewMessages.find(message => message.id === sourceEventId);
+  const headerDeletePending = Boolean(editing || unresolved || isSendingReply || editTarget || deleteDialog.pending ||
+    (deleteDialog.unresolvedMessageId && deleteDialog.unresolvedMessageId !== headerDeleteTarget?.id));
+  const requestHeaderDelete: (() => void) | undefined = headerDeleteTarget && canEdit(headerDeleteTarget) ? () => {
+    if (!owner.active || currentHeaderDelete.current !== requestHeaderDelete || headerDeletePending) return;
+    deleteDialog.requestDelete(headerDeleteTarget);
+  } : undefined;
+  currentHeaderDelete.current = requestHeaderDelete;
 
   const handleSelectReplyTarget = (message: InboxDisplayMessage) => {
     if(editing||unresolved||deleteDialog.pending||deleteDialog.unresolvedMessageId)return;
@@ -392,8 +402,11 @@ function InboxMessageDetailPane({
       ref={detailPaneRef}
     >
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InboxDetailHeader title={contextLabel} onBack={onBack} openLabel={openContextLabel}
+        <InboxDetailHeader key={JSON.stringify([editScopeKey, currentPubkey, sourceEventId])}
+          title={contextLabel} onBack={onBack} openLabel={openContextLabel}
           fallbackTitle={item.fullTimestampLabel}
+          deletePending={headerDeletePending}
+          onDelete={requestHeaderDelete}
           onOpen={contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
 
         <InboxDetailMessages

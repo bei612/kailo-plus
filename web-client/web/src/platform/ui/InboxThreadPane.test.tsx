@@ -24,10 +24,11 @@ vi.mock("@client-kit/platform/react/video-review", async original => {
   }};
 });
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string,variables?:Record<string,string|number>) => translate("en",key as Parameters<typeof translate>[1],variables) }));
-vi.mock("@client-kit/platform/react/inbox-surface", async original => ({
-  ...await original<typeof import("@client-kit/platform/react/inbox-surface")>(),
-  InboxDetailHeader: ({ title,openLabel }: {title: string;openLabel:string}) => <header title={openLabel}>{title}</header>,
-}));
+vi.mock("@client-kit/platform/react/inbox-surface", async original => {
+  const actual = await original<typeof import("@client-kit/platform/react/inbox-surface")>();
+  return {...actual, InboxDetailHeader: (props: React.ComponentProps<typeof actual.InboxDetailHeader>) =>
+    <header title={props.openLabel}><actual.InboxDetailHeader {...props} /></header>};
+});
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
 vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),messageAuthorProfile:(...args:unknown[])=>state.authorProfile(...args),conversationMessageAuthorProfile:(...args:unknown[])=>state.dmAuthorProfile(...args),customEmoji:async()=>({events:[],mediaPaths:{}}),
   messageAuthorProfiles:async(scope:string,{eventIds}:{eventIds:string[]})=>({profiles:Object.fromEntries(await Promise.all(eventIds.map(async id=>[id,await state.authorProfile(scope,id)])))}),
@@ -62,9 +63,9 @@ async function editMessage(id:string) {
 const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
-async function mount(replyTargetEventId?: string, selected = replyId, selectedRoot = rootId, explicitSelection = false) {
+async function mount(replyTargetEventId?: string, selected = replyId, selectedRoot = rootId, explicitSelection = false, forum = false) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" rootId={selectedRoot} selectedEventId={selected}
-    selectionItemId={explicitSelection ? selected : undefined} replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
+    forum={forum} selectionItemId={explicitSelection ? selected : undefined} replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
   await settle();
 }
 async function mountDm(selected = replyId, rootEventId = rootId, members: {principalId:string;displayName:string;pubkeys:string[]}[] = [],draft?:{key:string;parent:string}) {
@@ -94,6 +95,50 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); query.clear(); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+async function openHeaderDelete() {
+  const trigger = host.querySelector<HTMLElement>('[data-testid="home-inbox-detail-more"]');
+  expect(trigger).not.toBeNull();
+  await act(async () => { trigger!.focus(); trigger!.dispatchEvent(new KeyboardEvent("keydown", {key:"ArrowDown", bubbles:true})); });
+  await settle();
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent?.includes(translate("en", "buzz.deleteMessage")))!;
+}
+
+it.each([9, 45001, 45003])("restores the original header delete for kind %s without retargeting its UNKNOWN intent", async kind => {
+  const targetId = kind === 45001 ? rootId : replyId;
+  state.query.mockResolvedValue({events:[{...rootEvent,kind:kind === 9 ? 9 : 45001},{...reply,kind:kind === 9 ? 9 : 45003}]});
+  state.delete.mockRejectedValueOnce(new TransportError("lost delete receipt")).mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"delete-op"});
+  await mount(undefined,targetId,rootId,true,kind !== 9);
+  const remove = await openHeaderDelete();
+  await act(async () => remove.click()); await settle();
+  const confirm = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button =>
+    button.textContent === translate("en", "buzz.delete") || button.textContent === translate("en", "forum.deleteCheck"))!;
+  expect(state.delete).not.toHaveBeenCalled();
+  await act(async () => confirm().click()); await settle();
+  const messageType = kind === 45001 ? "FORUM_POST" : kind === 45003 ? "FORUM_COMMENT" : "STREAM";
+  expect(state.delete).toHaveBeenCalledExactlyOnceWith("workspace",targetId,messageType,undefined);
+  await mount(undefined,targetId === rootId ? replyId : rootId,rootId,true,kind !== 9);
+  await act(async () => confirm().click()); await settle();
+  expect(state.delete.mock.calls).toEqual([["workspace",targetId,messageType,undefined],["workspace",targetId,messageType,undefined]]);
+});
+
+it("closes the captured header menu on another anchor and denies foreign or revoked delete targets", async () => {
+  await mount();
+  const previous = await openHeaderDelete();
+  expect(previous).toBeDefined();
+  await mount(undefined,rootId,rootId,true);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await act(async () => previous.click()); await settle();
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(state.delete).not.toHaveBeenCalled();
+  state.query.mockResolvedValue({events:[rootEvent,{...reply,pubkey:"f".repeat(64)}]});
+  await act(async () => query.invalidateQueries()); await settle();
+  await mount(undefined,replyId,rootId,true);
+  expect(host.querySelector('[data-testid="home-inbox-detail-more"]')).toBeNull();
+  await act(async()=>state.receive?.({type:"closed",reason:"scope-revoked"})); await settle();
+  expect(host.querySelector('[data-testid="home-inbox-detail-more"]')).toBeNull();
+  expect(state.delete).not.toHaveBeenCalled();
+});
 
 it.each([45001,45003])("reads original Forum kind %s context without pretending inline replies are supported",async kind=>{
   const post={...rootEvent,kind:45001};

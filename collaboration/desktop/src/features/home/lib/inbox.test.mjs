@@ -16,6 +16,44 @@ import {
 import { getHomeMessageCapabilities } from "./homeMessageCapabilities.ts";
 import { hasInboxThreadContext } from "./inboxViewHelpers.ts";
 
+test("Native original header delete captures its admitted anchor and cannot retarget a stale or UNKNOWN intent", () => {
+  const file=ts.createSourceFile("InboxDetailPane.tsx",readFileSync(new URL("../ui/InboxDetailPane.tsx",import.meta.url),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const names=new Set(["canEdit","headerDeleteTarget","headerDeletePending","requestHeaderDelete"]), declarations=[];
+  let header;
+  function visit(node) {
+    if(ts.isVariableDeclaration(node)&&names.has(node.name.getText(file)))declarations.push(`const ${node.getText(file)};`);
+    if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==="InboxDetailHeader")header=node.getText(file);
+    ts.forEachChild(node,visit);
+  }
+  visit(file);assert.equal(declarations.length,names.size);assert.ok(header);
+  const fields=["videoReviewMessages","sourceEventId","canManageMessages","hasThreadContextLoadError","isThreadContextLoading","currentPubkey","editing","unresolved","isSendingReply","editTarget","deleteDialog","owner","currentHeaderDelete","editScopeKey","contextLabel","onBack","openContextLabel","item","contextChannelId","canOpenContext","onOpenContext","contextThreadRootId"];
+  const source=ts.transpile(`const {${fields.join(",")}}=input;${declarations.join("\n")}currentHeaderDelete.current=requestHeaderDelete;return ${header};`,{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React});
+  const render=new Function("React","InboxDetailHeader","input",source);
+  const calls=[],pubkey="a".repeat(64),target={id:"b".repeat(64),kind:9,signerPubkey:pubkey};
+  const currentHeaderDelete={current:undefined};
+  const input={videoReviewMessages:[target],sourceEventId:target.id,canManageMessages:true,hasThreadContextLoadError:false,isThreadContextLoading:false,currentPubkey:pubkey,
+    editing:false,unresolved:false,isSendingReply:false,editTarget:null,deleteDialog:{pending:false,unresolvedMessageId:null,requestDelete:message=>calls.push(message)},owner:{active:true},currentHeaderDelete,
+    editScopeKey:"actor/channel/thread",contextLabel:"Original channel",openContextLabel:"open",item:{fullTimestampLabel:"now"},contextChannelId:"channel",canOpenContext:false,onOpenContext:()=>assert.fail("delete cannot navigate"),contextThreadRootId:"root"};
+  const build=changes=>render(React,()=>null,{...input,...changes});
+  for(const kind of [9,45001,45003]) {
+    const message={...target,kind};const element=build({videoReviewMessages:[message]});
+    assert.equal(element.props.onOpen,undefined,"open permission is not delete permission");
+    element.props.onDelete();assert.equal(calls.at(-1),message);
+  }
+  const stale=build();const next={...target,id:"c".repeat(64)};const current=build({sourceEventId:next.id,videoReviewMessages:[next]});
+  assert.notEqual(stale.key,current.key,"changing anchor closes the original menu");
+  const before=calls.length;stale.props.onDelete();assert.equal(calls.length,before);
+  for(const changes of [{canManageMessages:false},{hasThreadContextLoadError:true},{isThreadContextLoading:true},{currentPubkey:"other"},{videoReviewMessages:[]}])assert.equal(build(changes).props.onDelete,undefined);
+  for(const changes of [{editing:true},{unresolved:true},{isSendingReply:true},{editTarget:target},{deleteDialog:{...input.deleteDialog,pending:true}},
+    {deleteDialog:{...input.deleteDialog,unresolvedMessageId:next.id}}]) {
+    const blocked=build(changes);assert.equal(blocked.props.deletePending,true);blocked.props.onDelete();
+  }
+  assert.equal(calls.length,before);
+  const retry=build({deleteDialog:{...input.deleteDialog,unresolvedMessageId:target.id}});
+  assert.equal(retry.props.deletePending,false);retry.props.onDelete();assert.equal(calls.at(-1),target);
+  const late=build();input.owner.active=false;late.props.onDelete();assert.equal(calls.length,before+1);
+});
+
 test("Native Inbox's actual detail header and composer restore original DM context, draft and send target", async () => {
   const file = ts.createSourceFile("InboxDetailPane.tsx", readFileSync(new URL("../ui/InboxDetailPane.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const bindings = new Set(["isDirectMessage", "composerChannelType", "replyTarget", "composerParentEventId", "composerReplyTarget", "channelContextName", "isThreadContext", "contextLabel", "contextThreadRootId", "openContextLabel"]);

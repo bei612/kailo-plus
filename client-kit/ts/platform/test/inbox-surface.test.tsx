@@ -12,6 +12,34 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it.each(["en", "zh-CN"] as const)("restores the original header more menu and pending delete guard (%s)", async locale => {
+    setLocale(locale);
+    const remove = vi.fn(), open = vi.fn();
+    function Header() {
+      const [pending, setPending] = useState(false), [admitted, setAdmitted] = useState(true);
+      return <TooltipProvider><button onClick={()=>setPending(true)}>pending</button><button onClick={()=>setAdmitted(false)}>revoke</button>
+        <InboxDetailHeader title="Original channel" openLabel="open" onOpen={open} onDelete={admitted ? remove : undefined} deletePending={pending}/>
+      </TooltipProvider>;
+    }
+    const host = await render(<Header />);
+    const show = async () => {
+      const trigger = host.querySelector<HTMLElement>('[data-testid="home-inbox-detail-more"]')!;
+      await act(async()=>{trigger.focus();trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true}));});
+      await settle();
+      return document.querySelector<HTMLElement>('[role="menuitem"]')!;
+    };
+    const action = await show();
+    expect(action.textContent).toBe(locale === "en" ? "Delete message" : "删除消息");
+    expect(action.className).toContain("text-destructive");
+    await click(action);expect(remove).toHaveBeenCalledTimes(1);expect(open).not.toHaveBeenCalled();
+    await click([...host.querySelectorAll("button")].find(button=>button.textContent==="pending")!);
+    const disabled = await show();expect(disabled.getAttribute("aria-disabled")).toBe("true");
+    await click(disabled);expect(remove).toHaveBeenCalledTimes(1);
+    await click([...host.querySelectorAll("button")].find(button=>button.textContent==="revoke")!);
+    expect(host.querySelector('[data-testid="home-inbox-detail-more"]')).toBeNull();
+    expect(document.querySelector('[role="menuitem"]')).toBeNull();
+  });
+
   it.each(["en", "zh-CN"] as const)("shares the actual detail grouping, anchored selection and unresolved action locks (%s)", async locale => {
     setLocale(locale);
     const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");

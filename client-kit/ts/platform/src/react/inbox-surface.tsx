@@ -2,11 +2,11 @@
 // desktop/src/features/home/ui/{HomeView,InboxListPane,InboxFilterMenu,InboxDetailPane}.tsx.
 // Presentation only. Each host retains its real message/read/transport authority.
 import * as React from "react";
-import { ArrowLeft, ChevronDown, Ellipsis, ExternalLink, Mail, LoaderCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, ChevronDown, Ellipsis, ExternalLink, Mail, LoaderCircle, AlertCircle, Trash2 } from "lucide-react";
 import { useUiT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { Popover, PopoverContent, PopoverTrigger } from "./conversations/popover";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
 import { useRemindLater } from "./reminders/ui/RemindMeLaterProvider";
@@ -139,8 +139,10 @@ export function InboxEmptyDetail() {
   </div></section>;
 }
 
-export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle }: {
+export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTitle, onDelete, deletePending = false }: {
   title: string; onBack?: () => void; onOpen?: () => void; openLabel: string; fallbackTitle?: string;
+  /** The host supplies only its current admitted original message target. */
+  onDelete?: () => void; deletePending?: boolean;
 }) {
   const t = useUiT();
   return <div className="relative z-40 shrink-0"><div className="px-5 py-2"><div className="flex min-h-9 min-w-0 items-center justify-between gap-3">
@@ -149,7 +151,18 @@ export function InboxDetailHeader({ title, onBack, onOpen, openLabel, fallbackTi
       <div className="min-w-0"><h2 className="min-w-0 text-sm font-semibold leading-5 tracking-tight text-foreground" title={fallbackTitle}>
         {onOpen ? <button className="block min-w-0 max-w-full text-left text-sm font-semibold leading-5 tracking-tight text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" data-testid="home-inbox-context-title" onClick={onOpen} title={openLabel} type="button"><span className="block min-w-0 translate-y-px truncate">{title}</span></button> : <span className="block min-w-0 translate-y-px truncate">{title}</span>}
       </h2></div>
-    </div><div className="flex shrink-0 items-center gap-1">{onOpen ? <InboxRowActionButton label={openLabel} onClick={onOpen}><ExternalLink /></InboxRowActionButton> : null}</div>
+    </div><div className="flex shrink-0 items-center gap-1">{onOpen ? <InboxRowActionButton label={openLabel} onClick={onOpen}><ExternalLink /></InboxRowActionButton> : null}
+      {onDelete ? <DropdownMenu modal={false}>
+        <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
+          <button aria-label={t("buzz.moreActions")} data-testid="home-inbox-detail-more" type="button" className={cn(iconButton, "rounded-full text-muted-foreground")}><Ellipsis /></button>
+        </DropdownMenuTrigger></TooltipTrigger><TooltipContent>{t("buzz.moreActions")}</TooltipContent></Tooltip>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={deletePending} onSelect={() => { if (!deletePending) onDelete(); }}>
+            <Trash2 className="h-4 w-4" />{t("buzz.deleteMessage")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu> : null}
+    </div>
   </div></div></div>;
 }
 
