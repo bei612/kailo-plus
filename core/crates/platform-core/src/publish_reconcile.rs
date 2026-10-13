@@ -92,6 +92,10 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
         // Scheduling cursor only; audit remains the publication authority. An
         // unobservable replaceable profile must not starve later intents.
         let mut profile_cursor = None;
+        // Same scheduling-only cursor for message publications: a DISPATCH that
+        // can never settle (missing evidence, unobservable replaceable event)
+        // stays unsettled and counted, but must not starve later intents.
+        let mut publish_cursor = None;
         loop {
             tick.tick().await;
             if let Err(e) =
@@ -99,7 +103,7 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             {
                 tracing::warn!(error = %e, "Profile publication reconciliation incomplete");
             }
-            if let Err(e) = pass(&state, &metrics, &cfg).await {
+            if let Err(e) = pass(&state, &metrics, &cfg, &mut publish_cursor).await {
                 tracing::warn!(error = %e, "发布结果对账本轮未完成");
             }
         }
@@ -124,6 +128,7 @@ struct Pending {
 #[derive(sqlx::FromRow)]
 struct PendingRow {
     operation_id: Uuid,
+    occurred_at: chrono::DateTime<chrono::Utc>,
     tenant_id: Uuid,
     workspace_id: Option<Uuid>,
     human_identity_id: Option<Uuid>,
@@ -137,11 +142,16 @@ struct PendingRow {
     settled: bool,
 }
 
-async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(), String> {
+async fn pass(
+    state: &ServiceState,
+    metrics: &Metrics,
+    cfg: &Config,
+    cursor: &mut Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+) -> Result<(), String> {
     let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
     let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
     let rows = sqlx::query_as::<_, PendingRow>(
-        r#"select d.operation_id, d.tenant_id, d.workspace_id,
+        r#"select d.operation_id, d.occurred_at, d.tenant_id, d.workspace_id,
                   d.human_identity_id, d.initiator_principal_id, d.actor_principal_id,
                   d.target_id, d.action_key, d.target_type, d.evidence_refs,
                   (select e->>'value' from jsonb_array_elements(d.evidence_refs) e
@@ -155,7 +165,8 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
                  select 1 from audit.audit_event o
                  where o.operation_id = d.operation_id
                    and o.event_type in ('OUTCOME', 'RECONCILIATION'))
-           order by d.occurred_at
+             and ($5::timestamptz is null or (d.occurred_at, d.operation_id) > ($5, $6))
+           order by d.occurred_at, d.operation_id
            limit $2"#,
     )
     .bind(
@@ -173,11 +184,17 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
     .bind(cfg.batch)
     .bind(settle)
     .bind(min_age)
+    .bind(cursor.map(|c| c.0))
+    .bind(cursor.map(|c| c.1))
     .fetch_all(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
 
+    if rows.is_empty() {
+        *cursor = None;
+    }
     for r in rows {
+        *cursor = Some((r.occurred_at, r.operation_id));
         let Some(event_id) = r.event_id else {
             // DISPATCH 没有 event id 就无从查证。写入路径保证它总在，走到这里
             // 说明记录被别的路径写坏了：计数，不猜
