@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -16,7 +19,7 @@ import 'direct_messages.dart';
 
 /// Opens the mobile channel actions sheet.
 ///
-/// 此 sheet 提供已读/未读、私聊静音、频道成员名单与复制；受治理的频道创建和
+/// 此 sheet 提供频道收藏、已读/未读、私聊静音、频道成员名单与复制；频道创建和
 /// New DM 由原 launcher 发起。其余频道/DM 管理仍未恢复，不生成假入口。
 Future<void> showChannelActionsSheet({
   required BuildContext context,
@@ -54,9 +57,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     void close() => Navigator.of(context).pop();
-    final currentConsumer = channel.isDm
-        ? ref.watch(directMessagesProvider).asData?.value
-        : null;
+    final currentConsumer = ref.watch(directMessagesProvider).asData?.value;
     final originalConsumer = useRef<DirectMessages?>(null);
     if (originalConsumer.value == null && currentConsumer != null) {
       originalConsumer.value = currentConsumer;
@@ -72,10 +73,37 @@ class ChannelActionsSheet extends HookConsumerWidget {
       }
       return null;
     }, [currentConsumer]);
-    final muteState = channel.isDm ? ref.watch(conversationMuteProvider) : null;
-    final muted = ownsConsumer ? muteState?.muted(channel.id) : null;
+    final preferenceState = ref.watch(collaborationPreferencesProvider);
+    final muted = ownsConsumer ? preferenceState.muted(channel.id) : null;
+    final starred = ownsConsumer && channel.channelType == 'stream'
+        ? preferenceState.starred(channel.id)
+        : null;
     String text(PlatformMessageKey key) =>
         platformText(key, locale: Localizations.localeOf(context).languageCode);
+
+    void toggleRead() {
+      close();
+      final timestamp = dateTimeToUnixSeconds(channel.lastMessageAt);
+      if (isUnread) {
+        onMarkRead?.call();
+        if (timestamp != null) {
+          ref
+              .read(readStateProvider.notifier)
+              .markContextRead(
+                channel.id,
+                timestamp,
+                clearForcedMessages: true,
+              );
+          ref
+              .read(channelsProvider.notifier)
+              .clearObservedUnreadCoveredByRead(channel.id, timestamp);
+        }
+      } else {
+        ref
+            .read(readStateProvider.notifier)
+            .markContextUnread(channel.id, channelId: channel.id);
+      }
+    }
 
     return SafeArea(
       top: false,
@@ -91,42 +119,74 @@ class ChannelActionsSheet extends HookConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                key: const ValueKey('channel-action-read'),
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  isUnread ? LucideIcons.checkCheck : LucideIcons.circleDot,
+              if (channel.channelType == 'stream') ...[
+                _ChannelQuickActionsRow(
+                  isStarred: starred == true,
+                  isUnread: isUnread,
+                  onToggleRead: toggleRead,
+                  onToggleStar:
+                      starred == null ||
+                          preferenceState.busy ||
+                          preferenceState.pendingId != null
+                      ? null
+                      : () async {
+                          await ref
+                              .read(collaborationPreferencesProvider.notifier)
+                              .setStarred(channel.id, !starred);
+                          if (context.mounted &&
+                              ref
+                                      .read(collaborationPreferencesProvider)
+                                      .starred(channel.id) ==
+                                  !starred &&
+                              ref
+                                      .read(collaborationPreferencesProvider)
+                                      .pendingId ==
+                                  null) {
+                            close();
+                          }
+                        },
                 ),
-                title: Text(isUnread ? 'Mark read' : 'Mark unread'),
-                onTap: () {
-                  close();
-                  final timestamp = dateTimeToUnixSeconds(
-                    channel.lastMessageAt,
-                  );
-                  if (isUnread) {
-                    onMarkRead?.call();
-                    if (timestamp != null) {
-                      ref
-                          .read(readStateProvider.notifier)
-                          .markContextRead(
-                            channel.id,
-                            timestamp,
-                            clearForcedMessages: true,
-                          );
-                      ref
-                          .read(channelsProvider.notifier)
-                          .clearObservedUnreadCoveredByRead(
-                            channel.id,
-                            timestamp,
-                          );
-                    }
-                  } else {
-                    ref
-                        .read(readStateProvider.notifier)
-                        .markContextUnread(channel.id, channelId: channel.id);
-                  }
-                },
-              ),
+                const SizedBox(height: Grid.xs),
+                if (preferenceState.busy ||
+                    preferenceState.pendingId != null ||
+                    starred == null)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      text(
+                        preferenceState.pendingId != null
+                            ? PlatformMessageKey.sidebarPreferenceUnknown
+                            : PlatformMessageKey.platformLoadFailed,
+                      ),
+                    ),
+                    trailing: preferenceState.busy
+                        ? const SizedBox.square(
+                            dimension: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            tooltip: text(
+                              preferenceState.pendingId != null
+                                  ? PlatformMessageKey.dmCheckStatus
+                                  : PlatformMessageKey.platformRefresh,
+                            ),
+                            icon: const Icon(LucideIcons.refreshCw),
+                            onPressed: () => ref
+                                .read(collaborationPreferencesProvider.notifier)
+                                .recheck(),
+                          ),
+                  ),
+              ],
+              if (channel.channelType != 'stream')
+                ListTile(
+                  key: const ValueKey('channel-action-read'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    isUnread ? LucideIcons.checkCheck : LucideIcons.circleDot,
+                  ),
+                  title: Text(isUnread ? 'Mark read' : 'Mark unread'),
+                  onTap: toggleRead,
+                ),
               if (channel.isDm)
                 ListTile(
                   key: const ValueKey('channel-action-mute'),
@@ -141,44 +201,46 @@ class ChannelActionsSheet extends HookConsumerWidget {
                           : PlatformMessageKey.sidebarMute,
                     ),
                   ),
-                  subtitle: muteState!.pendingId != null
+                  subtitle: preferenceState.pendingId != null
                       ? Text(text(PlatformMessageKey.sidebarPreferenceUnknown))
-                      : muteState.error != null
+                      : preferenceState.error != null
                       ? Text(text(PlatformMessageKey.platformLoadFailed))
                       : null,
-                  trailing: muteState.busy
+                  trailing: preferenceState.busy
                       ? const SizedBox.square(
                           dimension: 22,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : muted == null || muteState.pendingId != null
+                      : muted == null || preferenceState.pendingId != null
                       ? IconButton(
                           tooltip: text(
-                            muteState.pendingId != null
+                            preferenceState.pendingId != null
                                 ? PlatformMessageKey.dmCheckStatus
                                 : PlatformMessageKey.platformRefresh,
                           ),
                           icon: const Icon(LucideIcons.refreshCw),
                           onPressed: () => ref
-                              .read(conversationMuteProvider.notifier)
+                              .read(collaborationPreferencesProvider.notifier)
                               .recheck(),
                         )
                       : null,
                   onTap:
                       muted == null ||
-                          muteState.busy ||
-                          muteState.pendingId != null
+                          preferenceState.busy ||
+                          preferenceState.pendingId != null
                       ? null
                       : () async {
                           await ref
-                              .read(conversationMuteProvider.notifier)
+                              .read(collaborationPreferencesProvider.notifier)
                               .setMuted(channel.id, !muted);
                           if (context.mounted &&
                               ref
-                                      .read(conversationMuteProvider)
+                                      .read(collaborationPreferencesProvider)
                                       .muted(channel.id) ==
                                   !muted &&
-                              ref.read(conversationMuteProvider).pendingId ==
+                              ref
+                                      .read(collaborationPreferencesProvider)
+                                      .pendingId ==
                                   null) {
                             close();
                           }
@@ -235,4 +297,103 @@ class ChannelActionsSheet extends HookConsumerWidget {
       ),
     );
   }
+}
+
+// Original Buzz quick-action row; only its preference authority and translated
+// labels differ. An unavailable Core read disables Star, not an optimistic write.
+class _ChannelQuickActionsRow extends StatelessWidget {
+  const _ChannelQuickActionsRow({
+    required this.isStarred,
+    required this.isUnread,
+    required this.onToggleStar,
+    required this.onToggleRead,
+  });
+  final bool isStarred;
+  final bool isUnread;
+  final VoidCallback? onToggleStar;
+  final VoidCallback onToggleRead;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: _ChannelQuickAction(
+          key: const ValueKey('channel-action-star'),
+          icon: isStarred ? LucideIcons.starOff : LucideIcons.star,
+          label: platformText(
+            isStarred
+                ? PlatformMessageKey.nativeChannelUnstar
+                : PlatformMessageKey.nativeChannelStar,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
+          onTap: onToggleStar,
+        ),
+      ),
+      const SizedBox(width: Grid.twelve),
+      Expanded(
+        child: _ChannelQuickAction(
+          key: const ValueKey('channel-action-read'),
+          icon: isUnread ? LucideIcons.checkCheck : LucideIcons.circleDot,
+          label: platformText(
+            isUnread
+                ? PlatformMessageKey.nativeChannelMarkRead
+                : PlatformMessageKey.nativeChannelMarkUnread,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
+          onTap: onToggleRead,
+        ),
+      ),
+    ],
+  );
+}
+
+class _ChannelQuickAction extends StatelessWidget {
+  const _ChannelQuickAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap == null
+        ? null
+        : () {
+            unawaited(HapticFeedback.lightImpact());
+            onTap!();
+          },
+    behavior: HitTestBehavior.opaque,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          height: 68 + (Grid.xxs * 2),
+          decoration: BoxDecoration(
+            color: context.colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(Radii.dialog),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 22, color: context.colors.onSurface),
+              const SizedBox(height: Grid.xxs),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.textTheme.labelMedium?.copyWith(
+                  color: context.colors.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }

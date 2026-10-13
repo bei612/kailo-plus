@@ -2,10 +2,12 @@ part of 'direct_messages.dart';
 
 /// Only a Core readback is a preference. Pending local data is the original
 /// CAS request, never an optimistic preference or another user-state store.
-class ConversationMuteState {
-  const ConversationMuteState({
+class CollaborationPreferenceState {
+  const CollaborationPreferenceState({
     this.preferences = const {},
     this.activeIds = const {},
+    this.workspacePreferences = const {},
+    this.workspaceIds = const {},
     this.version,
     this.pendingId,
     this.busy = false,
@@ -13,6 +15,8 @@ class ConversationMuteState {
   });
   final Map<String, ConversationPreferenceRequest> preferences;
   final Set<String> activeIds;
+  final Map<String, WorkspacePreferenceRequest> workspacePreferences;
+  final Set<String> workspaceIds;
   final int? version;
   final String? pendingId;
   final bool busy;
@@ -21,41 +25,69 @@ class ConversationMuteState {
   bool? muted(String id) => version == null || !activeIds.contains(id)
       ? null
       : preferences[id]?.muted ?? false;
+  bool? starred(String id) => version == null || !workspaceIds.contains(id)
+      ? null
+      : workspacePreferences[id]?.starred ?? false;
 }
 
-class _ConversationMuteIntent {
-  const _ConversationMuteIntent(this.id, this.request);
+class _CollaborationPreferenceIntent {
+  const _CollaborationPreferenceIntent.conversation(this.id, this.conversation)
+    : workspace = null;
+  const _CollaborationPreferenceIntent.workspace(this.id, this.workspace)
+    : conversation = null;
   final String id;
-  final ConversationPreferenceRequest request;
+  final ConversationPreferenceRequest? conversation;
+  final WorkspacePreferenceRequest? workspace;
+  int get version => conversation?.version ?? workspace!.version;
+  Map<String, dynamic> get request =>
+      conversation?.toJson() ?? workspace!.toJson();
+  bool get isWorkspace => workspace != null;
 }
 
 extension _DirectMessagePreferences on DirectMessages {
-  String get _muteStorageKey =>
+  String get _preferenceStorageKey =>
       'platform.conversation-preference.v1:'
       '${Uri.encodeComponent(_config.nativeApiUrl)}:'
       '${_actor.tenantId}:$principalId';
 
-  _ConversationMuteIntent? _restoreMuteIntent() {
-    final saved = _prefs.getString(_muteStorageKey);
+  _CollaborationPreferenceIntent? _restorePreferenceIntent() {
+    final saved = _prefs.getString(_preferenceStorageKey);
     if (saved == null) return null;
     final json = jsonDecode(saved) as Map<String, dynamic>;
-    final id = json['conversationId'] as String;
-    final request = ConversationPreferenceRequest.fromJson(json['request']);
-    if (id.isEmpty || request.version < 0) {
+    final conversationId = json['conversationId'] as String?;
+    final workspaceId = json['workspaceId'] as String?;
+    if ((conversationId == null) == (workspaceId == null)) {
+      throw const FormatException('Invalid original preference target');
+    }
+    final intent = workspaceId == null
+        ? _CollaborationPreferenceIntent.conversation(
+            conversationId!,
+            ConversationPreferenceRequest.fromJson(json['request']),
+          )
+        : _CollaborationPreferenceIntent.workspace(
+            workspaceId,
+            WorkspacePreferenceRequest.fromJson(json['request']),
+          );
+    if (intent.id.isEmpty || intent.version < 0) {
       throw const FormatException('Invalid original preference intent');
     }
-    return _ConversationMuteIntent(id, request);
+    return intent;
   }
 
-  Future<void> _saveMuteIntent(_ConversationMuteIntent? intent) async {
+  Future<void> _savePreferenceIntent(
+    _CollaborationPreferenceIntent? intent,
+  ) async {
     _fence();
     final saved = intent == null
-        ? await _prefs.remove(_muteStorageKey)
+        ? await _prefs.remove(_preferenceStorageKey)
         : await _prefs.setString(
-            _muteStorageKey,
+            _preferenceStorageKey,
             jsonEncode({
-              'conversationId': intent.id,
-              'request': intent.request.toJson(),
+              if (intent.isWorkspace)
+                'workspaceId': intent.id
+              else
+                'conversationId': intent.id,
+              'request': intent.request,
             }),
           );
     _fence();
@@ -64,9 +96,10 @@ extension _DirectMessagePreferences on DirectMessages {
     }
   }
 
-  Future<ConversationMuteState> _readMuteState(int floor) async {
+  Future<CollaborationPreferenceState> _readPreferenceState(int floor) async {
     await _checkActor();
     final bindings = await conversations();
+    final workspaces = await _workspaces();
     final response = await _send(PlatformMethod.get, '/api/v1/user-state');
     final json = response.body! as Map<String, dynamic>;
     final version = json['version'] as int;
@@ -88,14 +121,30 @@ extension _DirectMessagePreferences on DirectMessages {
       );
       if (active.contains(entry.key)) preferences[entry.key] = preference;
     }
-    return ConversationMuteState(
+    final workspaceIds = {for (final row in workspaces) row.id};
+    final workspacePreferences = <String, WorkspacePreferenceRequest>{};
+    for (final entry
+        in (json['workspacePreferences'] as Map<String, dynamic>).entries) {
+      final value = entry.value as Map<String, dynamic>;
+      final preference = WorkspacePreferenceRequest(
+        muted: value['muted'] as bool,
+        starred: value['starred'] as bool,
+        version: version,
+      );
+      if (workspaceIds.contains(entry.key)) {
+        workspacePreferences[entry.key] = preference;
+      }
+    }
+    return CollaborationPreferenceState(
       preferences: Map.unmodifiable(preferences),
       activeIds: Set.unmodifiable(active),
+      workspacePreferences: Map.unmodifiable(workspacePreferences),
+      workspaceIds: Set.unmodifiable(workspaceIds),
       version: version,
     );
   }
 
-  Future<void> _admitMute(String id) async {
+  Future<void> _admitConversationPreference(String id) async {
     await _checkActor();
     final binding = (await conversations())
         .where((row) => row.id == id && row.state == ItemState.ACTIVE)
@@ -105,11 +154,67 @@ extension _DirectMessagePreferences on DirectMessages {
     }
     await _verifiedNativeConversation(binding);
   }
+
+  Future<List<WorkspaceView>> _workspaces() async {
+    final response = await _send(PlatformMethod.get, '/api/v1/workspaces');
+    final rows = [
+      for (final row in response.body! as List<dynamic>)
+        WorkspaceView.fromJson(row as Map<String, dynamic>),
+    ];
+    if (rows.any((row) => row.id.isEmpty) ||
+        rows.map((row) => row.id).toSet().length != rows.length) {
+      throw const FormatException('Invalid workspace directory');
+    }
+    // Core filters ACTIVE scope/bindings and fresh authorization. Discovery
+    // as an administrator does not make this an original joined channel.
+    return rows.where((row) => row.isMember == true).toList();
+  }
+
+  Future<void> _admitWorkspacePreference(String id) async {
+    await _checkActor();
+    if (!(await _workspaces()).any((row) => row.id == id)) {
+      throw const PlatformUnavailable('Workspace is not admitted');
+    }
+    final session = _ref.read(relaySessionProvider.notifier);
+    if (_ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      throw const PlatformUnavailable('Relay is not connected');
+    }
+    final metadata = await session.fetchHistory(
+      NostrFilters.channelMetadata([id]),
+    );
+    _fence();
+    final event = metadata
+        .where((row) => row.kind == 39000 && row.getTagValue('d') == id)
+        .singleOrNull;
+    if (event == null) {
+      throw const PlatformUnavailable('Channel metadata is unavailable');
+    }
+    nostr.Event.fromMap(event.toJson());
+    final channel = ChannelData.fromEvent(event);
+    final members = await session.fetchHistory(NostrFilters.channelMembers(id));
+    _fence();
+    final roster = members
+        .where((row) => row.kind == 39002 && row.getTagValue('d') == id)
+        .singleOrNull;
+    if (roster == null) {
+      throw const PlatformUnavailable('Channel roster is unavailable');
+    }
+    nostr.Event.fromMap(roster.toJson());
+    if (channel.id != id ||
+        channel.channelType != 'stream' ||
+        channel.visibility != 'private' ||
+        channel.isArchived ||
+        roster.pubkey != event.pubkey ||
+        !membersFromEvent(roster).any((member) => member.pubkey == _pubkey)) {
+      throw const PlatformUnavailable('Workspace native projection is stale');
+    }
+  }
 }
 
-class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
+class CollaborationPreferenceNotifier
+    extends Notifier<CollaborationPreferenceState> {
   DirectMessages? _consumer;
-  _ConversationMuteIntent? _original;
+  _CollaborationPreferenceIntent? _original;
   bool _restoreFailed = false;
   int _epoch = 0;
   int _floor = 0;
@@ -118,20 +223,20 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
   int? _flightEpoch;
 
   @override
-  ConversationMuteState build() {
+  CollaborationPreferenceState build() {
     final consumer = ref.watch(directMessagesProvider).asData?.value;
     _consumer = consumer;
     _original = null;
     _restoreFailed = false;
     _floor = 0;
     ++_epoch;
-    if (consumer == null) return const ConversationMuteState();
+    if (consumer == null) return const CollaborationPreferenceState();
     try {
-      _original = consumer._restoreMuteIntent();
-      _floor = _original?.request.version ?? 0;
+      _original = consumer._restorePreferenceIntent();
+      _floor = _original?.version ?? 0;
     } on Object catch (error) {
       _restoreFailed = true;
-      return ConversationMuteState(error: error);
+      return CollaborationPreferenceState(error: error);
     }
     ref.listen(appLifecycleProvider, (_, next) {
       if (next == AppLifecycleState.resumed) refresh();
@@ -143,7 +248,7 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
       if (next == SessionStatus.connected && previous != next) refresh();
     });
     Future.microtask(refresh);
-    return ConversationMuteState(pendingId: _original?.id);
+    return CollaborationPreferenceState(pendingId: _original?.id);
   }
 
   void _ensure(DirectMessages consumer, int epoch) {
@@ -153,10 +258,12 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
     consumer._fence();
   }
 
-  void _publish(ConversationMuteState snapshot, {Object? error}) {
-    state = ConversationMuteState(
+  void _publish(CollaborationPreferenceState snapshot, {Object? error}) {
+    state = CollaborationPreferenceState(
       preferences: snapshot.preferences,
       activeIds: snapshot.activeIds,
+      workspacePreferences: snapshot.workspacePreferences,
+      workspaceIds: snapshot.workspaceIds,
       version: snapshot.version,
       pendingId: _original?.id,
       busy: _runningEpoch == _epoch,
@@ -164,18 +271,18 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
     );
   }
 
-  Future<ConversationMuteState> _load(
+  Future<CollaborationPreferenceState> _load(
     DirectMessages consumer,
     int epoch,
   ) async {
-    final snapshot = await consumer._readMuteState(_floor);
+    final snapshot = await consumer._readPreferenceState(_floor);
     _ensure(consumer, epoch);
     _floor = snapshot.version!;
     final original = _original;
-    if (original != null && snapshot.version! > original.request.version) {
+    if (original != null && snapshot.version! > original.version) {
       // A shared-version advance fences the old CAS, even when another client
       // changed a different preference. Never overwrite its starred value.
-      await consumer._saveMuteIntent(null);
+      await consumer._savePreferenceIntent(null);
       _ensure(consumer, epoch);
       _original = null;
     }
@@ -189,11 +296,23 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
   Future<void> recheck() => _start(recheck: true);
   Future<void> setMuted(String id, bool muted) =>
       _start(id: id, muted: muted, recheck: false);
+  Future<void> setStarred(String id, bool starred) =>
+      _start(id: id, starred: starred, recheck: false);
 
-  Future<void> _start({String? id, bool? muted, required bool recheck}) {
+  Future<void> _start({
+    String? id,
+    bool? muted,
+    bool? starred,
+    required bool recheck,
+  }) {
     if (_flightEpoch == _epoch && _flight != null) return _flight!;
     _flightEpoch = _epoch;
-    final flight = _run(id: id, muted: muted, recheck: recheck);
+    final flight = _run(
+      id: id,
+      muted: muted,
+      starred: starred,
+      recheck: recheck,
+    );
     _flight = flight;
     flight.whenComplete(() {
       if (identical(_flight, flight)) _flight = null;
@@ -201,53 +320,82 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
     return flight;
   }
 
-  Future<void> _run({String? id, bool? muted, required bool recheck}) async {
+  Future<void> _run({
+    String? id,
+    bool? muted,
+    bool? starred,
+    required bool recheck,
+  }) async {
     final consumer = _consumer;
     final epoch = _epoch;
     if (consumer == null || _runningEpoch == epoch) return;
-    if (id != null && (_original != null || state.muted(id) == null)) return;
+    if (id != null &&
+        (_original != null ||
+            (starred == null ? state.muted(id) : state.starred(id)) == null)) {
+      return;
+    }
     _runningEpoch = epoch;
     _publish(state);
     try {
       _ensure(consumer, epoch);
       if (_restoreFailed) {
-        _original = consumer._restoreMuteIntent();
-        _floor = _original?.request.version ?? 0;
+        _original = consumer._restorePreferenceIntent();
+        _floor = _original?.version ?? 0;
         _restoreFailed = false;
       }
       final snapshot = await _load(consumer, epoch);
       if (id != null) {
-        if (snapshot.muted(id) == null) {
-          throw const PlatformUnavailable('Conversation is not admitted');
+        if ((starred == null ? snapshot.muted(id) : snapshot.starred(id)) ==
+            null) {
+          throw const PlatformUnavailable('Preference target is not admitted');
         }
-        await consumer._admitMute(id);
+        if (starred == null) {
+          await consumer._admitConversationPreference(id);
+        } else {
+          await consumer._admitWorkspacePreference(id);
+        }
         _ensure(consumer, epoch);
-        _original = _ConversationMuteIntent(
-          id,
-          ConversationPreferenceRequest(
-            muted: muted!,
-            starred: snapshot.preferences[id]?.starred ?? false,
-            version: snapshot.version!,
-          ),
-        );
+        _original = starred == null
+            ? _CollaborationPreferenceIntent.conversation(
+                id,
+                ConversationPreferenceRequest(
+                  muted: muted!,
+                  starred: snapshot.preferences[id]?.starred ?? false,
+                  version: snapshot.version!,
+                ),
+              )
+            : _CollaborationPreferenceIntent.workspace(
+                id,
+                WorkspacePreferenceRequest(
+                  muted: snapshot.workspacePreferences[id]?.muted ?? false,
+                  starred: starred,
+                  version: snapshot.version!,
+                ),
+              );
       }
       final original = _original;
       if (original == null || (id == null && !recheck)) return;
-      if (id == null) await consumer._admitMute(original.id);
+      if (id == null) {
+        if (original.isWorkspace) {
+          await consumer._admitWorkspacePreference(original.id);
+        } else {
+          await consumer._admitConversationPreference(original.id);
+        }
+      }
       // Every attempt, including recovery after a failed first save, must
       // durably retain these exact bytes before it may reach the BFF.
-      await consumer._saveMuteIntent(original);
+      await consumer._savePreferenceIntent(original);
       _ensure(consumer, epoch);
       try {
         final response = await consumer._send(
           PlatformMethod.put,
-          '/api/v1/user-state/conversations/${Uri.encodeComponent(original.id)}',
-          body: original.request.toJson(),
+          '/api/v1/user-state/${original.isWorkspace ? 'workspaces' : 'conversations'}/${Uri.encodeComponent(original.id)}',
+          body: original.request,
         );
         final receipt = UserStateVersion.fromJson(
           response.body! as Map<String, dynamic>,
         );
-        if (receipt.version != original.request.version + 1) {
+        if (receipt.version != original.version + 1) {
           throw const FormatException('Preference version mismatch');
         }
         _ensure(consumer, epoch);
@@ -256,7 +404,7 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
         if (id != null &&
             error.response.status >= 400 &&
             error.response.status < 500) {
-          await consumer._saveMuteIntent(null);
+          await consumer._savePreferenceIntent(null);
           _ensure(consumer, epoch);
           _original = null;
           // Only this first, definitively rejected attempt may be cleared.
@@ -274,7 +422,7 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
       if (ref.mounted && _epoch == epoch && _consumer == consumer) {
         // No optimistic success, and an unconfirmed intent still locks new
         // writes. Read/query failures do not turn UNKNOWN into a failed PUT.
-        _publish(const ConversationMuteState(), error: error);
+        _publish(const CollaborationPreferenceState(), error: error);
       }
     } finally {
       if (ref.mounted && _epoch == epoch && _consumer == consumer) {
@@ -285,7 +433,8 @@ class ConversationMuteNotifier extends Notifier<ConversationMuteState> {
   }
 }
 
-final conversationMuteProvider =
-    NotifierProvider<ConversationMuteNotifier, ConversationMuteState>(
-      ConversationMuteNotifier.new,
-    );
+final collaborationPreferencesProvider =
+    NotifierProvider<
+      CollaborationPreferenceNotifier,
+      CollaborationPreferenceState
+    >(CollaborationPreferenceNotifier.new);

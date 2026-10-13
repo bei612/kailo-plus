@@ -96,10 +96,12 @@ class _SliverChannelsList extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final readState = ref.watch(readStateProvider);
+    final preferences = ref.watch(collaborationPreferencesProvider);
     final visibleChannels = channels
         .where((channel) => channel.isMember && !channel.isArchived)
         .toList();
 
+    final starredExpanded = useState(true);
     final channelsExpanded = useState(true);
     final dmsExpanded = useState(true);
     final pubkey = ref.watch(myPubkeyProvider);
@@ -112,6 +114,28 @@ class _SliverChannelsList extends HookConsumerWidget {
       );
     final streamChannels = visibleChannels
         .where((channel) => !channel.isDm)
+        .toList();
+    // Original Starred is exclusive and stream-only. A DM never moves here.
+    final starredStreamChannels =
+        streamChannels
+            .where(
+              (channel) =>
+                  channel.channelType == 'stream' &&
+                  preferences.starred(channel.id) == true,
+            )
+            .toList()
+          ..sort((left, right) {
+            final name = left.name.toLowerCase().compareTo(
+              right.name.toLowerCase(),
+            );
+            return name != 0 ? name : left.id.compareTo(right.id);
+          });
+    final ungroupedStreamChannels = streamChannels
+        .where(
+          (channel) =>
+              channel.channelType != 'stream' ||
+              preferences.starred(channel.id) != true,
+        )
         .toList();
     final initialSeedComplete = useState(false);
     final seededPubkey = useRef<String?>(null);
@@ -169,18 +193,31 @@ class _SliverChannelsList extends HookConsumerWidget {
         children: [
           if (visibleChannels.isEmpty)
             const _EmptyState()
-          else
+          else ...[
+            if (starredStreamChannels.isNotEmpty)
+              _ChannelSection(
+                title: _channelText(context, PlatformMessageKey.sidebarStarred),
+                icon: LucideIcons.star,
+                showTopDivider: false,
+                expanded: starredExpanded.value,
+                onToggle: () => starredExpanded.value = !starredExpanded.value,
+                channels: starredStreamChannels,
+                unreadChannelIds: unreadChannelIds,
+                emptyLabel: '',
+                onSelectChannel: onSelectChannel,
+              ),
             _ChannelSection(
               title: 'Channels',
               icon: LucideIcons.hash,
-              showTopDivider: false,
+              showTopDivider: starredStreamChannels.isNotEmpty,
               expanded: channelsExpanded.value,
               onToggle: () => channelsExpanded.value = !channelsExpanded.value,
-              channels: streamChannels,
+              channels: ungroupedStreamChannels,
               unreadChannelIds: unreadChannelIds,
               emptyLabel: 'No channels yet',
               onSelectChannel: onSelectChannel,
             ),
+          ],
           if (dmChannels.isNotEmpty)
             _ChannelSection(
               title: _channelText(context, PlatformMessageKey.nativeDmSection),

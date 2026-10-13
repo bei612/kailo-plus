@@ -94,6 +94,10 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "native.channel.star": { en: "Star", "zh-CN": "收藏" },
+  "native.channel.unstar": { en: "Unstar", "zh-CN": "取消收藏" },
+  "native.channel.markRead": { en: "Mark Read", "zh-CN": "标为已读" },
+  "native.channel.markUnread": { en: "Mark Unread", "zh-CN": "标为未读" },
   "native.quickActions.open": { en: "Create or start conversation", "zh-CN": "创建或发起会话" },
   "native.quickActions.close": { en: "Close quick actions", "zh-CN": "关闭快捷操作" },
   "native.channelCreate.type": { en: "Channel type", "zh-CN": "频道类型" },

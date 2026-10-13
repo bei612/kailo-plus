@@ -245,7 +245,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       // snapshot as the tiles, never a default-unmuted loading state.
       await _fenced(
         fence,
-        ref.read(conversationMuteProvider.notifier).refresh(),
+        ref.read(collaborationPreferencesProvider.notifier).refresh(),
       );
     }
 
@@ -581,7 +581,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     String pubkey,
   ) {
     final muted = channel.isDm
-        ? ref.read(conversationMuteProvider).muted(channel.id)
+        ? ref.read(collaborationPreferencesProvider).muted(channel.id)
         : false;
     // Missing/revoked authority is not an unmuted preference. The original
     // predicate retains broadcast/own-mention precedence for confirmed mutes.

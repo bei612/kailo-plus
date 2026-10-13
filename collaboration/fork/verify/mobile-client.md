@@ -145,6 +145,46 @@ Core 依据固定 apps commit `993da21e9619ddac8763778394bea07c504a8022` 的 `co
 
 源码和模拟消费者通过不等于线上交付：本批不自行 commit/push，没有部署、新安装包、真机正常 SSO、跨端实际偏好或系统通知验收，未运行 Flutter 全套、`check-docs.sh` 或 `check.sh --full`。本批只运行精确候选文档 lint；原全局文档与全量门禁由主线合批，提交/push、部署分别报告，不凭代码量或定向通过提高生产完成率。
 
+## 受治理 Stream Star/Unstar 恢复（2026-10-13）
+
+本批恢复固定原 Mobile 普通 stream channel 的 Star/Unstar→原独占 Starred 分组，私聊不进入该分组。先前「DM Star」分派经固定源码核实为「无适用对象」，没有制造 DM 收藏页面。普通频道静音、排序菜单、自定义 sections、Browse 与 presence 仍是缺项；本批不声明 Mobile 完整还原或生产就绪。
+
+### 编辑前四项核对结论
+
+1. 权威为 DD-40、DD-75 与 `.design/03-领域模型与权限模型.md` 的 CollaborationUserState、`.design/09-统一身份与Buzz协议投影.md` 的 Workspace↔Channel 同 ID 映射。Core workspacePreferences 是唯一收藏权威；Mobile 管理面仍经 NativeSession/BFF，本机持钥直连 Relay 读取原 metadata/roster，不恢复 NIP78 写入。
+2. 影响面为原 ChannelActionsSheet quick row、`_SliverChannelsList` 原 Starred、既有 DM 静音列表/通知消费者及同一共享 version CAS notifier。生成 WorkspacePreferenceRequest 的 muted/starred/version 全部消费；写 star 保留 fresh Core workspace muted，DM mute 保留 fresh conversation starred。没有改平台契约、数据库、Temporal、额度、审计权威或 Mobile 非组件宿主边界。
+3. 当前 FULL actor/platform session/tenant 与本机 CLIENT 消费者一致才读取偏好。Core 受权 ACTIVE Workspace 目录还须 isMember=true；普通管理员可发现不等于已加入。写前重新查当前准入，直连核对精确 signed 39000/39002、stream/private、未归档、同签名者及本人 roster，失败不 PUT、不乐观收藏。
+4. 两类偏好共享一份持久原意图、一条 flight 与同一 Core version，不建第二 provider/账本。每次首次/恢复 PUT 前均须保存原字节；未知仅明确重查可重放原 CAS，refresh 只 GET。旧 UNKNOWN 的同版本重查 4xx 不清意图；权威共享 version 推进后旧 CAS 失效。账号/tenant/platform-session 切换 fence，保存失败、撤权、超时、陈旧或未知格式保持中性不可写。无成员/空目录、重复 ID、旧快照及签名异常 fail closed；六类沿 apps/06 §4：认证授权 DENIED、未开放 BLOCKED、投影/存储/准入 PRECONDITION、429 LIMIT、版本 CONFLICT、结果未确认 UNKNOWN，不把查询失败渲染为创建或偏好写入失败。
+
+本机存储保留原 v1 的 conversationId/request 字节，新增 workspaceId 目标时互斥，原 muted/starred/version 不变；旧 DM 意图可恢复并阻止新 star。旧客户端不识别 workspaceId 时沿原格式拒绝，不删除或新发意图。无数据库迁移、新状态权威或后台循环重放；本机记录只由权威版本推进并成功移除后收敛，不能由本机超时自造终态。
+
+### 固定源码差异与当前消费者
+
+固定 Buzz commit `779af8886caae1317b4de962082429867ab61503`：`mobile/lib/features/channels/channel_actions_sheet.dart::{ChannelActionsSheet,_ChannelQuickActionsRow,_ChannelQuickAction}` 与 `mobile/lib/features/channels/channels_page/body.dart::_SliverChannelsList`；原 star 仅非 DM，原 Starred 输入仅 stream。默认字母序依据 `mobile/lib/features/channels/channel_sort/channel_sort_storage.dart::{compareChannelsByName,sortChannelsForList}`。原 DM 详情使用 `mobile/lib/features/channels/channel_detail_page/app_bar.dart::_DmAppBarTitle`，不从该标题进入频道收藏。
+
+- 原样保留：原双卡 quick row、尺寸/间距/图标/触感与 Star/Unstar、Mark Read/Mark Unread 英文；原 Starred 置顶、独占、折叠/展开与取消收藏返回 Channels。DM 分组、既有 forum 呈现和各类型已有已读操作不删除。
+- 共享迁移：四个原 quick row 词条仅增量加入 TS 单一目录，再由原生成器生成 Dart；中文为收藏/取消收藏/标为已读/标为未读。
+- 已授权治理改造：`collaboration/mobile/lib/features/channels/direct_message_preferences.dart::{CollaborationPreferenceNotifier,_DirectMessagePreferences}` 将刚交付 DM 偏好消费者统一为一份 CAS；`channel_actions_sheet.dart::ChannelActionsSheet` 只在 Core 回读确认后关闭，未知不伪装成功。
+- 缺失需恢复：原排序菜单、自定义 sections、普通频道静音与其余已登记删项没有用新入口冒充完成；本批没有全页面视觉、APK/iOS 或真机验收。
+
+Core 与 TS 依据固定 apps commit `1c3c95f397f34fad916825f67072809d75870f56` 的 `core/crates/platform-core/src/user_state.rs::{get_user_state,put_workspace_preference,require_visible_workspace}`、`core/crates/platform-core/src/platform_views.rs::list_workspaces`、`client-kit/ts/platform/src/inbox.ts::checkedUserState` 和 `client-kit/ts/platform/src/react/conversations/use-conversation-state.tsx::useConversationState`。Core 用当前授权过滤 ACTIVE scope/binding，偏好写只更新选中 workspace 并原子推进共享 version；本次 Mobile 模拟证据不替代真实 Core/跨端在线验收。
+
+### 实际验证与交付界限
+
+源码与日志位于 `/volumes/data/kailo/tmp/mobile-channel-star.gf4xvw/`，八个 Mobile 路径独立 source.index/patch 为 +968/-146，tree `8d74714b2f88b26cc092104187a7aeea61765056`，patch SHA256 `0ba2844c9c2a0bb641940c95fb554e2def67128bdece89537dd92e3dbb793cf4`；四 key 独立增量两路径 +12/0，SHA256 `32197dc2436de92768e4894441b9cae143c334faccc6da217d9c6b14f9d9c92a`。正式八路径与选定 SDK 输入逐 cmp 一致；历史 theme、公共三项暂存及共享翻译脏改均未纳入。
+
+复用已有不可变 Flutter 镜像 `sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`；执行前查现有构建/CPU/内存，实际 2 CPU、4294967296 字节 memory=memory+swap、UID 1000、network none，输入/HOME/tmp/SDK/pub 缓存和日志均在 Data。没有宿主 SDK、pull/load、镜像/APK 重建或并行重量构建。
+
+`frozen-consumers-locale-corrected.log`：原 `python3 tools/gen-platform-i18n.py` 与 `--check` PASS；九项 `flutter analyze --no-pub` 为 `No issues found! (ran in 49.6s)`；`flutter test --no-pub --reporter expanded test/features/channels/direct_messages_test.dart` 为 `00:04 +30: All tests passed!`，外层与容器 exit 0、OOMKilled=false。包含八项新 Star 原消费者及二十二项原 DM/静音，实际 modal 点击 Star/Unstar、原英文与中文、Starred 独占与折叠、旧 v1 恢复、共享版本、保存失败、旧 UNKNOWN→403、撤成员/roster/归档与 actor fence。之前 `revised-consumers.log` 的原 ChannelsNotifier 四十三项、`final-consumers.log` 的原 ChannelsPage 二十项分别 exit 0，不称 Flutter 全套。
+
+失败原件保留：`initial-consumers.log` 十一处新大括号 lint，exit 1；`frozen-consumers.log` 是新中文 widget 的 Flutter Locale 与生成枚举同名，九项分析报三错、exit 1。仅测试导入 hide 生成 Locale 后才得到上述末版通过，没有改合同或忽略失败。
+
+主动破坏仅在私有输入移除 Workspace isMember=true 筛选，新 Star 准入原用例实际出现不应有的 PUT，`mutation-workspace-member.log` 为 `+0 -1: Some tests failed.`、exit 1。恢复后 `restored-workspace-member.log` 同一用例 `+1: All tests passed!`、外层/容器 exit 0，preferences 字节与正式 cmp 相等，SHA256 `7482b85e917aa1d49e65aff89ca85a9c430e89a2192fdb8ebf8d91dd1ea3dde9`；正式源码从未被破坏。
+
+精确 HEAD 加本节的 `npx --offline markdownlint-cli2 collaboration/fork/verify/mobile-client.md` 实际 `Linting: 1 file`、`Summary: 0 issues in 0 files`、容器 exit 0，见 `docs-selected.log`；Summary 的 files 是报错文件数，不是被检查文件数。
+
+交付分层：源码已写入并形成独立候选，仅上述定向模拟验收；本批不自行 commit/push，没有部署、新安装包、正常 SSO 真机或跨端偏好验收，不据代码量或定向通过提高生产完成率。未跑 Flutter 全套、`check-docs.sh` 与 `check.sh --full`，全量门禁交主线合批；文档只检查精确 HEAD 加本节，避免纳入继承历史脏改。
+
 ## 清单可复现
 
 上一轮清单由 `tools/upstream_manifest.py export` 从开发分支导出（HEAD `463d59637c265052e99ea7f1d7a4559eab9121cf`）。

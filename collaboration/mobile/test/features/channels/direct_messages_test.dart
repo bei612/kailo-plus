@@ -14,7 +14,8 @@ import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart'
+    hide SessionStatus, Locale;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -26,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/platform/platform_test_support.dart';
 
 part 'direct_message_preferences_cases.dart';
+part 'workspace_preferences_cases.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +37,7 @@ void main() {
   }
 
   mutePreferenceCases(preferences);
+  starPreferenceCases(preferences);
 
   test(
     'fresh HUMAN directory maps multiple keys to two people, not three',
@@ -432,6 +435,7 @@ void main() {
 class _Server {
   static const bob = '00000000-0000-4000-8000-000000000010';
   static const target = '00000000-0000-4000-8000-000000000020';
+  static const workspace = '00000000-0000-4000-8000-000000000030';
   static const execution = 'original-dm-execution';
   static const operation = 'current-dm-operation';
   final client = nostr.Keys('01'.padLeft(64, '0'));
@@ -461,7 +465,18 @@ class _Server {
   bool failPreferenceRead = false;
   bool conflictMute = false;
   int? rejectMuteStatus;
+  bool workspaceMember = true;
+  bool workspaceVisible = true;
+  bool wrongWorkspaceRoster = false;
+  bool workspaceArchived = false;
+  bool includeWorkspace = false;
+  bool workspaceMuted = true;
+  bool workspaceStarred = false;
+  bool loseStar = false;
+  bool applyStarBeforeLost = false;
+  int? rejectStarStatus;
   final mutePuts = <String>[];
+  final starPuts = <String>[];
   final history = <NostrEvent>[];
   final live = <void Function(NostrEvent)>[];
   final posts = <String>[];
@@ -508,6 +523,29 @@ class _Server {
     ['p', client.public],
     if (hidden) ['h', target],
   ]);
+  NostrEvent get workspaceMetadata => event(39000, [
+    ['d', workspace],
+    ['name', 'Workspace'],
+    ['t', 'stream'],
+    ['private'],
+    if (workspaceArchived) ['archived', 'true'],
+  ]);
+  NostrEvent get workspaceRoster => event(39002, [
+    ['d', workspace],
+    if (!wrongWorkspaceRoster) ['p', client.public],
+    ['p', peer.public],
+  ]);
+  Channel nativeWorkspace() => Channel(
+    id: workspace,
+    name: 'Workspace',
+    channelType: 'stream',
+    visibility: 'private',
+    description: '',
+    createdBy: relay.public,
+    createdAt: DateTime(2026),
+    isMember: true,
+    memberCount: 2,
+  );
   Channel native({bool raw = false}) => Channel(
     id: target,
     name: 'DM',
@@ -549,6 +587,17 @@ class _Server {
         return jsonResponse({
           'items': [binding],
         });
+      case '/api/v1/workspaces':
+        return jsonResponse([
+          if (workspaceVisible)
+            {
+              'id': workspace,
+              'name': 'Workspace',
+              'slug': 'workspace',
+              'isMember': workspaceMember,
+              'visibility': 'private',
+            },
+        ]);
       case '/api/v1/user-state':
         if (failPreferenceRead) throw http.ClientException('read unavailable');
         return jsonResponse({
@@ -557,7 +606,9 @@ class _Server {
             target: {'muted': muted, 'starred': starred},
           },
           'readContexts': {},
-          'workspacePreferences': {},
+          'workspacePreferences': {
+            workspace: {'muted': workspaceMuted, 'starred': workspaceStarred},
+          },
           'projectPreferences': {},
         });
       case '/api/v1/user-state/conversations/$target':
@@ -579,6 +630,28 @@ class _Server {
         starred = preference.starred;
         ++preferenceVersion;
         if (loseMute) throw http.ClientException('lost committed response');
+        return jsonResponse({'version': preferenceVersion});
+      case '/api/v1/user-state/workspaces/$workspace':
+        expect(request.method, 'PUT');
+        starPuts.add(request.body);
+        if (rejectStarStatus != null) {
+          return http.Response('', rejectStarStatus!);
+        }
+        final preference = WorkspacePreferenceRequest.fromJson(
+          jsonDecode(request.body),
+        );
+        if (preference.version != preferenceVersion) {
+          return http.Response('', 409);
+        }
+        if (loseStar && !applyStarBeforeLost) {
+          throw http.ClientException('lost star response');
+        }
+        workspaceMuted = preference.muted;
+        workspaceStarred = preference.starred;
+        ++preferenceVersion;
+        if (loseStar) {
+          throw http.ClientException('lost committed star response');
+        }
         return jsonResponse({'version': preferenceVersion});
       case '/api/v1/actions':
         posts.add(request.body);
@@ -694,8 +767,27 @@ class _Relay extends RelaySessionNotifier {
     NostrFilter filter, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
-    if (filter.kinds.contains(39000)) return [server.metadata];
-    if (filter.kinds.contains(39002)) return [server.roster];
+    if (filter.kinds.contains(39000)) {
+      return [
+        for (final event in [
+          server.metadata,
+          if (server.includeWorkspace ||
+              filter.tags['#d']?.contains(_Server.workspace) == true)
+            server.workspaceMetadata,
+        ])
+          if (filter.tags['#d'] == null ||
+              filter.tags['#d']!.contains(event.getTagValue('d')))
+            event,
+      ];
+    }
+    if (filter.kinds.contains(39002)) {
+      return [
+        for (final event in [server.roster, server.workspaceRoster])
+          if (filter.tags['#d'] == null ||
+              filter.tags['#d']!.contains(event.getTagValue('d')))
+            event,
+      ];
+    }
     if (filter.kinds.contains(30622)) return [server.visibility];
     if (filter.kinds.any(EventKind.channelMessageEventKinds.contains)) {
       return server.history;
@@ -744,9 +836,15 @@ class _Channels extends ChannelsNotifier {
   _Channels(this.server);
   final _Server server;
   @override
-  Future<List<Channel>> build() async => [server.native()];
+  Future<List<Channel>> build() async => [
+    server.native(),
+    if (server.includeWorkspace) server.nativeWorkspace(),
+  ];
   @override
-  Future<void> refresh() async => state = AsyncData([server.native()]);
+  Future<void> refresh() async => state = AsyncData([
+    server.native(),
+    if (server.includeWorkspace) server.nativeWorkspace(),
+  ]);
   @override
   List<ChannelMember> cachedMembersForChannel(String channelId) => [
     for (final key in server.keys)

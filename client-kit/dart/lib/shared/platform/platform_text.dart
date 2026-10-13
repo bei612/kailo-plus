@@ -4,6 +4,10 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  nativeChannelStar,
+  nativeChannelUnstar,
+  nativeChannelMarkRead,
+  nativeChannelMarkUnread,
   nativeQuickActionsOpen,
   nativeQuickActionsClose,
   nativeChannelCreateType,
@@ -2498,6 +2502,10 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.nativeChannelStar: ('Star', '收藏'),
+  PlatformMessageKey.nativeChannelUnstar: ('Unstar', '取消收藏'),
+  PlatformMessageKey.nativeChannelMarkRead: ('Mark Read', '标为已读'),
+  PlatformMessageKey.nativeChannelMarkUnread: ('Mark Unread', '标为未读'),
   PlatformMessageKey.nativeQuickActionsOpen: (
     'Create or start conversation',
     '创建或发起会话',

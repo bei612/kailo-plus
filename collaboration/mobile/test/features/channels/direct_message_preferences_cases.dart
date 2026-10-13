@@ -1,9 +1,11 @@
 part of 'direct_messages_test.dart';
 
 void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
-  Future<ConversationMuteNotifier> ready(_Harness harness) async {
+  Future<CollaborationPreferenceNotifier> ready(_Harness harness) async {
     await harness.dm;
-    final notifier = harness.container.read(conversationMuteProvider.notifier);
+    final notifier = harness.container.read(
+      collaborationPreferencesProvider.notifier,
+    );
     await notifier.refresh();
     return notifier;
   }
@@ -16,7 +18,9 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       addTearDown(harness.container.dispose);
       final notifier = await ready(harness);
       expect(
-        harness.container.read(conversationMuteProvider).muted(_Server.target),
+        harness.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         false,
       );
       server.starred = false;
@@ -27,14 +31,16 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
         'version': 0,
       });
       expect(
-        harness.container.read(conversationMuteProvider).muted(_Server.target),
+        harness.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         true,
       );
       await notifier.setMuted(_Server.target, false);
       expect(server.preferenceVersion, 2);
       expect(server.starred, false);
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         isNull,
       );
       expect(
@@ -54,11 +60,13 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await (await ready(first)).setMuted(_Server.target, true);
       final original = server.mutePuts.single;
       expect(
-        first.container.read(conversationMuteProvider).pendingId,
+        first.container.read(collaborationPreferencesProvider).pendingId,
         _Server.target,
       );
       expect(
-        first.container.read(conversationMuteProvider).muted(_Server.target),
+        first.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         isNull,
       );
       first.container.dispose();
@@ -69,7 +77,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       server.failPreferenceRead = true;
       await notifier.recheck();
       expect(
-        resumed.container.read(conversationMuteProvider).pendingId,
+        resumed.container.read(collaborationPreferencesProvider).pendingId,
         _Server.target,
       );
       expect(server.mutePuts, [original]);
@@ -81,7 +89,9 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.recheck();
       expect(server.mutePuts, [original, original]);
       expect(
-        resumed.container.read(conversationMuteProvider).muted(_Server.target),
+        resumed.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         true,
       );
       expect(
@@ -104,7 +114,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       final notifier = await ready(harness);
       await notifier.setMuted(_Server.target, true);
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         _Server.target,
       );
       server.starred = false;
@@ -113,11 +123,13 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       expect(server.mutePuts, hasLength(1));
       expect(server.starred, false);
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         isNull,
       );
       expect(
-        harness.container.read(conversationMuteProvider).muted(_Server.target),
+        harness.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         true,
       );
     },
@@ -140,7 +152,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.recheck();
       expect(server.mutePuts, [original, original]);
       expect(
-        resumed.container.read(conversationMuteProvider).pendingId,
+        resumed.container.read(collaborationPreferencesProvider).pendingId,
         _Server.target,
       );
       expect(
@@ -155,11 +167,13 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.recheck();
       expect(server.mutePuts, [original, original]);
       expect(
-        resumed.container.read(conversationMuteProvider).pendingId,
+        resumed.container.read(collaborationPreferencesProvider).pendingId,
         isNull,
       );
       expect(
-        resumed.container.read(conversationMuteProvider).muted(_Server.target),
+        resumed.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         false,
       );
     },
@@ -176,7 +190,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.setMuted(_Server.target, true);
       expect(server.mutePuts, isEmpty);
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         _Server.target,
       );
       await notifier.recheck();
@@ -185,7 +199,9 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.recheck();
       expect(server.mutePuts, hasLength(1));
       expect(
-        harness.container.read(conversationMuteProvider).muted(_Server.target),
+        harness.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         true,
       );
     },
@@ -202,13 +218,15 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await notifier.setMuted(_Server.target, true);
       expect(server.mutePuts, hasLength(1));
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         isNull,
       );
       server.snapshotVersion = 2;
       await notifier.refresh();
       expect(
-        harness.container.read(conversationMuteProvider).muted(_Server.target),
+        harness.container
+            .read(collaborationPreferencesProvider)
+            .muted(_Server.target),
         isNull,
       );
       await notifier.setMuted(_Server.target, true);
@@ -241,7 +259,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
       await harness.container.read(platformSessionViewProvider.future);
       await ready(harness);
       expect(
-        harness.container.read(conversationMuteProvider).pendingId,
+        harness.container.read(collaborationPreferencesProvider).pendingId,
         isNull,
       );
       expect(server.mutePuts, hasLength(2));
