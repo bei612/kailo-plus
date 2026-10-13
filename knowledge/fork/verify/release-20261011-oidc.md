@@ -72,3 +72,113 @@ todo 0
 ## 尚未成立的交付结论
 
 当前账号仅有一个已有 workspace，未新增 membership，不能宣称跨空间切换已验收。进入原“新对话”后提交最小连接验证消息，原就绪检查明确提示“快速问答未就绪，需要配置对话模型”，没有发出 SSE，因此在线 SSE 未验收。原 auth/refresh/SSE 窄验证通过不能代替这一在线结果。全局 `./tools/check.sh --full` 未因本回执而通过；不得据此宣称完整治理接入、三组件菜单上线或生产就绪。
+
+## 2026-10-12 原生 HUMAN 登录、刷新与跨用户拒绝实测
+
+本次沿已运行的独立原生入口 `http://192.168.0.193:58094`，不是平台 iframe。
+运行容器 `kailo-knowledge-frontend-1` 的配置与实际 image 均读回上述
+`sha256:bcd43618a3c6ee85e8a130b2a74e292f7210286c2239318884fa7bab70bfe01e`。
+该产物来源 `8a47534c96c9bf09048ee282ca4e62d5d9d73079` 确实包含
+`76f2378fd0698ee5679bb160a5ac8cd02a3acde2`，且在下述源码修正前与本轮 HEAD 的完整
+`knowledge/frontend` 输入 diff 为空，原 plan 的 source digest 仍是本节上文的
+`b8909da8…`。因此没有重建。当前 Data registry 对同 digest HEAD 返回 404，
+curl exit 22；本地 RepoDigest 和运行容器仍保留，不把旧 registry 200 外推到现在。
+
+采用原 playwright-cli 和两个独立 Data 浏览器 profile，从原页面点击 OIDC，
+经原 kailo realm 登录表单输入既有 HUMAN 凭据，没有注入令牌、借用组件 admin、
+修改密码、成员、租户权限或平台 binding。真实 `/api/v1/auth/me` 回读分别为：
+
+| HUMAN | native user | native tenant | 系统管理员／全部租户权限 |
+| --- | --- | --- | --- |
+| kailo-bootstrap-admin | 116a8d6b-c7cd-4abb-b6a4-1bd8589eda24 | 10000 | false / false |
+| seam-verifier | 80a92504-e0ce-43fa-9be4-67d4f313935e | 10001 | false / false |
+
+第一位显示名 `local-administrator` 是原 native 昵称，不能据此认定系统管理员；
+两位真实 native ID 与租户不同，不是所有 HUMAN 映射同一账号。第二位是既有 IdP
+HUMAN 的首次原生 OIDC，原服务自动开通其 native profile 和默认 workspace；这项
+正常登录副作用真实保留，不声称零数据写入，也没有手工造模拟身份或批准结果。
+这些事实不证明平台 principal 到 ApplicationBinding 的治理投影已验收。
+
+实际浏览器结果：
+
+1. 第一位首次回调进入知识库列表，刷新后身份不变，auth/me、models、knowledge-bases、
+   sessions 等原 GET 均 200。原共享空间内部导航成功，显示没有已加入共享空间。
+   仅看到此前专属空 KB，模型未初始化；点击进入原设置后取消，未保存配置或正文。
+2. 原“退出”后再访问该 KB 的原 URL，回到 `/login`，旧正文不显示。随后正常 IdP
+   SSO 重新登录，仍读回同一 native ID；不是通过改 localStorage 恢复身份。
+3. 第二位原 KB 列表 HTTP 200 且为空。直接访问第一位既有专属空 KB
+   `e37f9e96-a356-4441-bd93-efc1d5d3cc80` 的原页面：KB、knowledge、folders、tags
+   原请求均 403，未显示对方 KB 标题或正文。日志是实际页面发起的 HTTP，不是 route mock。
+4. **拒绝呈现仍有缺口**：403 后原页面保留通用“知识为空，拖放上传”及上传控件，
+   而非明确无权访问。没有点击上传验证写入；不能把本次服务端拒绝称为完整页面通过。
+   两个 HUMAN 最终都通过原“退出”回到 `/login`。没有变更会员权限来制造撤权，
+   未独立验证后端 access-token 吊销、自然到期 refresh 轮换、跨 tab 同字节登录或在线 SSE。
+
+Data 原件：`/volumes/data/kailo/tmp/knowledge-human-readback.zcW82S`。
+截图均实际打开视觉复核，不以加载帧作为最终成功证据：
+
+| 最终截图 | SHA-256 |
+| --- | --- |
+| human-a-refreshed-visible.png | 4e3c1cf27b3cef262c3c53cd2f5d4aca74b823a8741e8be70537e11b1e873ba8 |
+| human-a-logout-old-url.png | eeef8d1408d9fcd270f401cb65256ee5c74d62d31201fa7417456fbe991a0219 |
+| human-b-denied-final.png | f3a010a6807acdc8620f8449b63988444a13e99e8bf4c9ea670dab895e8a9035 |
+
+`human-a-identity.log`、`human-b-identity-scope.log`、`refresh-readback.log`
+仅包含白名单身份／路径／状态；跨用户请求日志 `human-b-cross-user-denial.log`
+SHA-256 为 `01f1d79d26e6f881a98e03f46126af97570e893b3d208aacc33db2bdfb9585a7`。
+原登录与读取命令最终退出 0，但 CLI 也会对页面操作错误退出 0，所以结论依据
+实际页面、响应及截图，而非单独的 CLI 退出码。
+
+失败边界保留：首次匿名 stdin 投递未填表、run-code 宿主 URL 未定义，后改匿名 FD
+与浏览器内 location 读取；引导遮罩曾阻止账号菜单点击，正常跳过后再操作，未强点。
+第二位回调过早快照使 CLI 工具输出出现瞬时 oidc_result URL；未将其复制到回执，
+随后统一 raw 白名单并等待 fragment 清除，秘密不进入证据文件；本次会话正常退出。
+这不是令牌泄露无风险的证明，也不声称退出已独立证明所有后端令牌失效。
+浏览器阶段未构建、加载、部署镜像，未重跑 26 项／SDK／full，未发送模型请求、写文档内容
+或激活组件。平台 iframe、真实模型/检索/SSE、完整 Cells→WeKnora 与整体治理仍未验收。
+
+### 2026-10-13 同批 KB 拒绝呈现与上传确认修正（未部署）
+
+四步影响核对：
+
+1. 权威：沿 DD-89/93 的原身份、Resource 读取和原生完整页面边界，不增加权限或
+   新端点。固定 WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `frontend/src/stores/chatResources.ts::fetchKnowledgeBaseById` 将失败转为 null；
+   `frontend/src/views/knowledge/KnowledgeBase.vue::canEdit/canManage` 在缺少详情时
+   仍可按本地 tenant admin 返回 true，原 empty-knowledge 无条件提示拖放。
+   上述真实第二 HUMAN 的 403 页面验证了这一缺口，不是模拟登录发现。
+2. 读写：仅原 KnowledgeBase.vue 接上当前 KB ID、原 auth 用户／活动租户和读取代际。
+   页面进入或 scope 改变强制读取原详情，未读到／错误 ID／失败不挂载业务详情，
+   清原列表、选择和详情，再沿原错误提示返回 KB 列表；没有修改共享 cache 契约。
+   已授权详情的原布局、FAQ、文件列表、权限分支仍保留；只读空 KB 不提示上传。
+3. 副作用：原拖放、文件、URL、手填入口复用 canEdit，上传确认返回后再次核同一
+   读取代际与身份 scope，批量 URL 之间也核对，禁止旧确认写入切换后的 KB。
+   原 Axios 403 分类、401 refresh、服务端授权、上传队列与模型配置均未改；
+   没有把 SSO 或前端可见性当服务端写权限，没有 schema／迁移／新存储。
+4. 异常：null、网络失败、错 ID、晚到身份响应及旧上传确认均关闭写入口；
+   当前服务器仍运行旧 artifact，前述截图仍是缺陷证据，不是修正后浏览器验收。
+
+复用原 App.oidc.test.ts 的 Vue SFC 编译／renderer 消费方式，新增原详情旁
+`KnowledgeBase.access.test.ts`，实际编译整个原 script 与 template，mock 仅限
+HTTP/store、子组件和上传队列边界，不创建真实文件或声明 HTTP 治理通过。
+同一现存 `kailo-inbox-forum-r5kqbx`：image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+2 CPU／4 GiB，memory+swap 总额等于内存，UID 1000、只读 root、network none；
+source/dependencies/cache/tmp/log 均在 Data。原安全检查和 cgroup 回读退出 0，
+没有新 SDK、下载或构建。实际命令为 `node --experimental-transform-types --test
+src/views/knowledge/KnowledgeBase.access.test.ts`（Node v24.21.0，SFC compiler 与
+TypeScript 来自已有知识库验证依赖）。
+
+原件目录：`/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/knowledge-kb-access.Oifqm1`。
+首轮 86844 exit 1 是 fixture ESModule default 包装缺项；77679 exit 1 是 renderer
+缺 v-show style 以及原 watcher 合法重复读与夹具单次数假设不符，均保留日志。
+纠正后 11348 exit 0；末版 16305 exit 0，5/5 消费者覆盖拒绝、授权上传、只读分享、
+身份／路由晚返回与确认、失败／错 ID。`positive-final.log` SHA-256
+`d6c1e5820258a0c4d0c9bb17c0a938c64e484220f17e83c9289923323aa9e2cb`。
+私有仅去掉原上传确认后的 scope/generation guard，原消费者 exit 1，确实捕获文件
+被排入新 KB b；`negative.log` SHA-256
+`106ff6b5986e03710678f43c96218e1717fd5a3ba9bf1a6027bf75dfa9078c88`。
+apply_patch 还原、生产与验证输入两个文件 cmp 均 0 后，同命令 5/5 exit 0；
+`restored.log` SHA-256
+`4af41b2fbdb90246a541da3a18939cab056ab88b04dcf7fc9de602f3253367e0`。
+未执行完整 type-check/full、未部署此修复，线上原生／iframe 写入和模型业务仍未验收。

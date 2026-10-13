@@ -85,6 +85,14 @@ const kbId = computed(() => (route.params as any).kbId as string || '');
 const kbInfo = ref<any>(null);
 const uploadSourceRef = ref<InstanceType<typeof KbUploadSourceDropdown> | null>(null);
 const kbLoading = ref(false);
+const kbScope = computed(() => JSON.stringify([
+  authStore.user?.id, authStore.selectedTenantId ?? authStore.currentTenantId,
+]));
+const loadedKbScope = ref('');
+const hasCurrentKb = computed(() => !!kbInfo.value
+  && kbInfo.value.id === kbId.value && loadedKbScope.value === kbScope.value);
+let kbLoadGeneration = 0;
+onUnmounted(() => { kbLoadGeneration++; });
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
@@ -287,6 +295,7 @@ const isViaShare = computed(() => !!currentSharedKb.value);
 // hasRole('contributor') is intentionally NOT here — being a Contributor
 // in a tenant does not by itself grant edit on someone else's KB.
 const canEdit = computed(() => {
+  if (!hasCurrentKb.value) return false;
   if (isViaShare.value) return orgStore.canEditKB(kbId.value, false);
   if (isOwner.value) return true;
   if (authStore.hasRole('admin')) return true;
@@ -297,6 +306,7 @@ const canEdit = computed(() => {
 // shared KBs only an 'admin' share grant qualifies — editor/viewer (and
 // even being the creator viewed via share) never grant delete/settings.
 const canManage = computed(() => {
+  if (!hasCurrentKb.value) return false;
   if (isViaShare.value) return orgStore.canManageKB(kbId.value, false);
   if (isOwner.value) return true;
   if (authStore.hasRole('admin')) return true;
@@ -329,6 +339,7 @@ const effectiveKBPermission = computed(() => orgStore.getKBPermission(kbId.value
 // Viewer can never download; for cross-tenant KBs the effective share
 // permission must additionally be Editor or Admin.
 const canDownloadKnowledge = computed(() => {
+  if (!hasCurrentKb.value) return false;
   if (!authStore.hasRole('contributor')) return false;
   const permission = effectiveKBPermission.value;
   return !permission || permission === 'owner' || permission === 'admin' || permission === 'editor';
@@ -771,7 +782,7 @@ const getTagName = (tagId?: string | number) => {
 };
 
 const loadKnowledgeFiles = (kbIdValue: string): Promise<void> => {
-  if (!kbIdValue) return Promise.resolve();
+  if (!hasCurrentKb.value || kbIdValue !== kbId.value) return Promise.resolve();
   if (!isFAQ.value) {
     docListLoading.value = true;
   }
@@ -1008,6 +1019,18 @@ const handleKnowledgeTagChange = async (knowledgeId: string, tagIds: string[]) =
 };
 
 const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
+  const generation = ++kbLoadGeneration;
+  const scope = kbScope.value;
+  const isCurrent = () => generation === kbLoadGeneration
+    && isCurrentKb(targetKbId) && scope === kbScope.value;
+  kbInfo.value = null;
+  loadedKbScope.value = '';
+  isCardDetails.value = false;
+  cardList.value = [];
+  total.value = 0;
+  folderTree.value = null;
+  tagList.value = [];
+  selectedIds.value.clear();
   if (!targetKbId) {
     kbInfo.value = null;
     cardList.value = [];
@@ -1017,9 +1040,15 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
   kbLoading.value = true;
   try {
     const data = await chatResources.fetchKnowledgeBaseById(targetKbId, force);
-    if (!isCurrentKb(targetKbId)) return;
+    if (!isCurrent()) return;
+    // The shared detail cache returns null for denied/failed reads. That is
+    // not an empty writable KB, even when this HUMAN administers another KB.
+    if (!data || data.id !== targetKbId) {
+      throw new Error(t('knowledgeEditor.messages.loadDataFailed'));
+    }
 
     kbInfo.value = data;
+    loadedKbScope.value = scope;
     selectedTagIds.value = [];
     tagFilterCleared.value = false;
     uiStore.clearSelectedTagIds();
@@ -1035,14 +1064,17 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
     }
     loadTags(targetKbId, true);
   } catch (error) {
-    if (!isCurrentKb(targetKbId)) return;
+    if (!isCurrent()) return;
 
     console.error('Failed to load knowledge base info:', error);
     kbInfo.value = null;
     cardList.value = [];
     total.value = 0;
+    folderTree.value = null;
+    MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'));
+    void router.replace('/platform/knowledge-bases');
   } finally {
-    if (isCurrentKb(targetKbId)) {
+    if (isCurrent()) {
       kbLoading.value = false;
     }
   }
@@ -1088,14 +1120,13 @@ watch(activeKbTab, (tab) => {
   router.replace({ query })
 })
 
-watch(() => kbId.value, (newKbId, oldKbId) => {
+watch([kbId, kbScope], ([newKbId], [oldKbId]) => {
   if (!newKbId) {
     kbInfo.value = null;
     cardList.value = [];
     total.value = 0;
     return;
   }
-  if (newKbId === oldKbId && kbInfo.value) return;
 
   if (newKbId !== oldKbId) {
     clearTraceAvailabilityCache();
@@ -1109,7 +1140,9 @@ watch(() => kbId.value, (newKbId, oldKbId) => {
     folderTree.value = null;
     selectedFolderPath.value = ROOT_FOLDER_PATH;
   }
-  loadKnowledgeBaseInfo(newKbId);
+  // This page's first permission decision must use a current detail read,
+  // not a previous sidebar or identity's cached KB record.
+  loadKnowledgeBaseInfo(newKbId, true);
 }, { immediate: true });
 
 watch(selectedTagIds, (newVal, oldVal) => {
@@ -1563,6 +1596,7 @@ const documentTitle = computed(() => {
 });
 
 const ensureDocumentKbReady = () => {
+  if (!canEdit.value) return false;
   if (isFAQ.value) {
     MessagePlugin.warning(t('knowledgeBase.operationNotSupportedForType'));
     return false;
@@ -1667,6 +1701,8 @@ const executeUrlImport = async (
 };
 
 const handleUploadConfirmResult = async (result: UploadConfirmResult) => {
+  const generation = kbLoadGeneration;
+  const scope = kbScope.value;
   if (result.mode === 'manual') {
     return;
   }
@@ -1685,13 +1721,16 @@ const handleUploadConfirmResult = async (result: UploadConfirmResult) => {
   }
 
   for (const url of urls) {
+    if (generation !== kbLoadGeneration || scope !== kbScope.value || !canEdit.value) return;
     await executeUrlImport(url, processConfig, tagIds);
   }
 };
 
 const openUploadConfirmDialog = async (files: File[], urls: string[] = []) => {
-  if (!kbInfo.value) return;
+  if (!canEdit.value) return;
   if (files.length === 0 && urls.length === 0) return;
+  const generation = kbLoadGeneration;
+  const scope = kbScope.value;
   try {
     const result = await uploadConfirmStore.open({
       mode: 'file',
@@ -1706,6 +1745,7 @@ const openUploadConfirmDialog = async (files: File[], urls: string[] = []) => {
       targetFolder: selectedFolderPath.value,
       folderOptions: folderOptions.value,
     });
+    if (generation !== kbLoadGeneration || scope !== kbScope.value || !canEdit.value) return;
     await handleUploadConfirmResult(result);
   } catch {
     // cancelled
@@ -2232,6 +2272,8 @@ async function createNewSession(value: string): Promise<void> {
 </script>
 
 <template>
+  <t-loading v-if="kbLoading && !hasCurrentKb" />
+  <template v-if="hasCurrentKb">
   <template v-if="!isFAQ">
     <div class="knowledge-layout">
       <div class="document-header">
@@ -2529,7 +2571,8 @@ async function createNewSession(value: string): Promise<void> {
                         ? $t('knowledgeBase.folderTree.emptySearch')
                         : $t('knowledgeBase.folderTree.emptyFolder') }}
                     </p>
-                    <EmptyKnowledge v-else />
+                    <EmptyKnowledge v-else-if="canEdit" />
+                    <t-empty v-else :description="t('common.noData')" />
                   </div>
                 </template>
               </div>
@@ -2590,6 +2633,7 @@ async function createNewSession(value: string): Promise<void> {
     :is-faq="isFAQ"
     @changed="onTagManageChanged"
   />
+  </template>
 </template>
 <style>
 /* 下拉菜单容器样式已统一至 @/assets/dropdown-menu.less */
