@@ -263,9 +263,6 @@ class ChannelDetailPage extends HookConsumerWidget {
         ref
             .read(readStateProvider.notifier)
             .markContextRead(channel.id, readTimestamp);
-        ref
-            .read(channelsProvider.notifier)
-            .clearObservedUnreadCoveredByRead(channel.id, readTimestamp);
       });
     }, [channel.id, readState.isReady, readTimestamp]);
 

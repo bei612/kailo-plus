@@ -14,6 +14,7 @@ import 'package:buzz/shared/platform/platform_oidc.dart';
 import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
+import 'package:buzz/shared/read_state/read_state_provider.dart';
 import 'package:client_kit/shared/contracts/contracts.dart'
     hide SessionStatus, Locale;
 import 'package:flutter/material.dart';
@@ -477,6 +478,9 @@ class _Server {
   int? rejectStarStatus;
   final mutePuts = <String>[];
   final starPuts = <String>[];
+  final readPuts = <String>[];
+  final readContexts = <String, String>{};
+  bool loseRead = false;
   final history = <NostrEvent>[];
   final live = <void Function(NostrEvent)>[];
   final posts = <String>[];
@@ -605,12 +609,22 @@ class _Server {
           'conversationPreferences': {
             target: {'muted': muted, 'starred': starred},
           },
-          'readContexts': {},
+          'readContexts': readContexts,
           'workspacePreferences': {
             workspace: {'muted': workspaceMuted, 'starred': workspaceStarred},
           },
           'projectPreferences': {},
         });
+      case '/api/v1/user-state/read':
+        final read = ReadMarkRequest.fromJson(jsonDecode(request.body));
+        readPuts.add(request.body);
+        if (loseRead) throw const PlatformUnavailable('Read response lost');
+        if (!workspaceMember || read.contextKey != workspace) {
+          return jsonResponse(null, 403);
+        }
+        if (read.version != preferenceVersion) return jsonResponse(null, 409);
+        readContexts[read.contextKey] = read.lastReadAt;
+        return jsonResponse({'version': ++preferenceVersion});
       case '/api/v1/user-state/conversations/$target':
         expect(request.method, 'PUT');
         mutePuts.add(request.body);

@@ -1,4 +1,5 @@
 import 'package:buzz/shared/read_state/read_state_manager.dart';
+import 'package:buzz/shared/read_state/read_state_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,10 @@ class _FakeRemote implements ReadStateRemote {
   final Map<String, int> stored;
   final published = <Map<String, int>>[];
   bool failNext = false;
+  @override
+  String? get pendingContextId => null;
+  @override
+  int? get pendingReadAt => null;
 
   @override
   Future<Map<String, int>> fetch() async => Map.of(stored);
@@ -31,6 +36,7 @@ Future<ReadStateManager> _manager(ReadStateRemote? remote) async {
   final prefs = await SharedPreferences.getInstance();
   final manager = ReadStateManager(
     pubkey: 'self',
+    storageScope: 'trusted-actor-tenant:self',
     prefs: prefs,
     remote: remote,
     onChanged: () {},
@@ -48,6 +54,14 @@ void main() {
 
     expect(manager.getEffectiveTimestamp(_channel), 200);
     expect(manager.drainSyncedAdvances(), {_channel});
+  });
+
+  test('a Core cursor at Unix second zero is present, not missing', () async {
+    final manager = await _manager(_FakeRemote({_channel: 0}));
+    expect(manager.effectiveContexts.containsKey(_channel), isTrue);
+    expect(manager.getEffectiveTimestamp(_channel), 0);
+    expect(manager.confirmedTimestamp(_channel), 0);
+    manager.dispose(flushPending: false);
   });
 
   test('writes only positions that advanced past the authority', () async {
@@ -74,6 +88,11 @@ void main() {
 
     expect(remote.published, isEmpty);
     expect(manager.getEffectiveTimestamp(_channel), 100);
+    // An empty flush must not leave a completed future holding the writer slot.
+    expect(await manager.markContextReadConfirmed(_channel, 120), isTrue);
+    expect(remote.published, [
+      {_channel: 120},
+    ]);
   });
 
   test('an unconfirmed write is retried at the next flush', () async {
@@ -83,6 +102,12 @@ void main() {
     manager.markContextRead(_channel, 100);
     await manager.flush();
     expect(remote.published, isEmpty);
+    expect(manager.getEffectiveTimestamp(_channel), isNull);
+
+    // Rehydrating an unconfirmed intent must not make it a confirmed cursor.
+    final restored = await _manager(remote);
+    expect(restored.getEffectiveTimestamp(_channel), isNull);
+    restored.dispose(flushPending: false);
 
     await manager.flush();
     expect(remote.published, [
@@ -112,4 +137,22 @@ void main() {
     final reloaded = await _manager(null);
     expect(reloaded.getEffectiveTimestamp(_channel), 100);
   });
+
+  test(
+    'legacy and foreign-scope cache cannot be adopted as this actor',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'buzz.channel-read-state.v2:self',
+        '{"$_channel":"2026-09-24T00:01:00Z"}',
+      );
+      await ReadStateStorage(
+        prefs,
+      ).write('other-tenant:self', {_channel: 100}, {});
+      final manager = await _manager(_FakeRemote());
+      expect(manager.getEffectiveTimestamp(_channel), isNull);
+      expect(manager.effectiveContexts, isEmpty);
+      manager.dispose(flushPending: false);
+    },
+  );
 }

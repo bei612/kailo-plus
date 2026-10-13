@@ -8,6 +8,8 @@ import '../theme/theme_provider.dart';
 import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_read_state.dart';
+import '../platform/platform_views.dart';
+import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
 import 'read_state_manager.dart';
 
 class ReadStateState {
@@ -15,6 +17,7 @@ class ReadStateState {
   final String? pubkey;
   final Map<String, int> contexts;
   final int version;
+  final String? pendingContextId;
 
   /// Session-local forced-unread flags, keyed by the forced context id
   /// (a channel id from the channel tile, or a `msg:` key from the message
@@ -28,6 +31,7 @@ class ReadStateState {
     required this.contexts,
     required this.version,
     this.forcedUnreadContexts = const {},
+    this.pendingContextId,
   });
 
   const ReadStateState.inert()
@@ -35,6 +39,7 @@ class ReadStateState {
       pubkey = null,
       contexts = const {},
       version = 0,
+      pendingContextId = null,
       forcedUnreadContexts = const {};
 
   /// Channels that should surface as unread because of a forced-unread flag —
@@ -60,6 +65,7 @@ class ReadStateState {
       contexts: Map.unmodifiable({...contexts, contextId: timestamp}),
       version: version + 1,
       forcedUnreadContexts: forcedUnreadContexts,
+      pendingContextId: pendingContextId,
     );
   }
 }
@@ -68,13 +74,17 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
   ReadStateManager? _manager;
   bool _isInitialized = false;
   final Map<String, String> _forcedUnreadContexts = {};
+  final Map<String, int> _clearForcedMessages = {};
+  int _generation = 0;
 
   @override
   ReadStateState build() {
+    final generation = ++_generation;
     _manager?.dispose(flushPending: false);
     _manager = null;
     _isInitialized = false;
     _forcedUnreadContexts.clear();
+    _clearForcedMessages.clear();
 
     ref.watch(relaySessionProvider);
     // 没有设备密钥就没有协作连接，也就没有已读状态
@@ -85,25 +95,42 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
       return const ReadStateState.inert();
     }
     final config = ref.watch(platformConfigProvider);
+    final session = ref.watch(nativeSessionProvider);
+    final actor = ref.watch(platformSessionViewProvider).asData?.value;
+    if (config == null ||
+        actor == null ||
+        actor.accessMode != PlatformSessionAccessMode.FULL ||
+        actor.tenantPrincipalId.isEmpty) {
+      return const ReadStateState.inert();
+    }
+    final credentialGeneration = session.credentialGeneration;
+    final storageScope =
+        '${Uri.encodeComponent(config.nativeApiUrl)}:'
+        '${actor.tenantId}:${actor.tenantPrincipalId}:$pubkey';
 
     final prefs = ref.read(savedPrefsProvider);
     late final ReadStateManager manager;
     manager = ReadStateManager(
       pubkey: pubkey,
+      storageScope: storageScope,
       prefs: prefs,
-      // 权威副本在 Core（DD-40）；没有部署配置时只有本机缓存
-      remote: config == null
-          ? null
-          : PlatformReadStateRemote(
-              session: ref.read(nativeSessionProvider),
-              config: config,
-            ),
+      remote: PlatformReadStateRemote(
+        session: session,
+        config: config,
+        actor: actor,
+        prefs: prefs,
+        storageScope: storageScope,
+        isCurrent: () =>
+            ref.mounted &&
+            generation == _generation &&
+            session.credentialGeneration == credentialGeneration,
+      ),
       onChanged: () => _emitManagerState(manager),
     );
     _manager = manager;
 
     ref.onDispose(() {
-      manager.dispose();
+      manager.dispose(flushPending: false);
       if (_manager == manager) {
         _manager = null;
       }
@@ -127,7 +154,7 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     Future.microtask(() async {
       await manager.initialize();
       if (_manager != manager) return;
-      _isInitialized = true;
+      _isInitialized = manager.authorityReady;
       _emitManagerState(manager);
     });
 
@@ -145,18 +172,40 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     int unixTimestamp, {
     bool clearForcedMessages = false,
   }) {
-    var removed = _forcedUnreadContexts.remove(contextId) != null;
-    if (clearForcedMessages) {
-      final before = _forcedUnreadContexts.length;
-      _forcedUnreadContexts.removeWhere(
-        (_, channelId) => channelId == contextId,
-      );
-      removed = removed || _forcedUnreadContexts.length != before;
-    }
+    if (clearForcedMessages) _clearForcedMessages[contextId] = unixTimestamp;
     _manager?.markContextRead(contextId, unixTimestamp);
-    if (removed) {
+    if ((_manager?.confirmedTimestamp(contextId) ?? -1) >= unixTimestamp) {
+      _forcedUnreadContexts.remove(contextId);
+      if (clearForcedMessages) {
+        _forcedUnreadContexts.removeWhere(
+          (_, channelId) => channelId == contextId,
+        );
+        _clearForcedMessages.remove(contextId);
+      }
       _refreshForcedState();
     }
+  }
+
+  Future<bool> markContextReadConfirmed(
+    String contextId,
+    int unixTimestamp, {
+    bool clearForcedMessages = true,
+  }) async {
+    final manager = _manager;
+    if (manager == null || !state.isReady) return false;
+    if (clearForcedMessages) _clearForcedMessages[contextId] = unixTimestamp;
+    final confirmed = await manager.markContextReadConfirmed(
+      contextId,
+      unixTimestamp,
+    );
+    if (!ref.mounted || _manager != manager || !confirmed) return false;
+    _forcedUnreadContexts.removeWhere(
+      (key, channelId) =>
+          key == contextId || (clearForcedMessages && channelId == contextId),
+    );
+    _clearForcedMessages.remove(contextId);
+    _emitManagerState(manager);
+    return true;
   }
 
   /// Force a context unread for the rest of the session. [contextId] is a
@@ -184,12 +233,28 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     _manager?.seedContextRead(contextId, unixTimestamp);
   }
 
+  Future<void> recheck() async {
+    final manager = _manager;
+    if (manager == null) return;
+    await manager.reinitializeRemote();
+    if (ref.mounted && identical(_manager, manager)) _emitManagerState(manager);
+  }
+
   void _emitManagerState(ReadStateManager manager) {
     if (_manager != manager) return;
     final advances = manager.drainSyncedAdvances();
     for (final contextId in advances) {
       _forcedUnreadContexts.remove(contextId);
+      final clearAt = _clearForcedMessages[contextId];
+      if (clearAt != null &&
+          (manager.getEffectiveTimestamp(contextId) ?? -1) >= clearAt) {
+        _forcedUnreadContexts.removeWhere(
+          (_, channelId) => channelId == contextId,
+        );
+        _clearForcedMessages.remove(contextId);
+      }
     }
+    _isInitialized = manager.authorityReady;
     state = _stateFromManager(
       manager,
       isReady: _isInitialized,
@@ -210,6 +275,7 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
       forcedUnreadContexts: Map.unmodifiable(
         Map<String, String>.from(_forcedUnreadContexts),
       ),
+      pendingContextId: manager.pendingContextId,
     );
   }
 }

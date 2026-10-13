@@ -356,4 +356,94 @@ void starPreferenceCases(Future<SharedPreferences> Function() preferences) {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets(
+    'original channel Mark Read waits for Core, preserves UNKNOWN and rechecks exact CAS',
+    (tester) async {
+      final server = _Server()
+        ..includeWorkspace = true
+        ..loseRead = true;
+      final harness = await _Harness.start(server, await preferences());
+      addTearDown(harness.container.dispose);
+      await ready(harness);
+      final read = harness.container.read(readStateProvider.notifier);
+      for (
+        var i = 0;
+        i < 10 && !harness.container.read(readStateProvider).isReady;
+        ++i
+      ) {
+        await tester.pump();
+      }
+      read.markContextUnread(_Server.workspace, channelId: _Server.workspace);
+      final channel = server.nativeWorkspace().copyWith(
+        lastMessageAt: DateTime.fromMillisecondsSinceEpoch(1760000000000),
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: harness.container,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showChannelActionsSheet(
+                    context: context,
+                    channel: channel,
+                    isUnread: true,
+                  ),
+                  child: const Text('Open original sheet'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open original sheet'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('channel-action-read')));
+      await tester.pumpAndSettle();
+      expect(server.readPuts, hasLength(1));
+      expect(
+        harness.container
+            .read(readStateProvider)
+            .isForcedUnread(_Server.workspace),
+        isTrue,
+      );
+      expect(
+        harness.container
+            .read(readStateProvider)
+            .effectiveTimestamp(_Server.workspace),
+        isNull,
+      );
+      expect(
+        find.byKey(const ValueKey('channel-read-unconfirmed')),
+        findsOneWidget,
+      );
+      final original = server.readPuts.single;
+      server.loseRead = false;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('channel-read-unconfirmed')),
+          matching: find.byType(IconButton),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(server.readPuts, [original, original]);
+      expect(
+        harness.container
+            .read(readStateProvider)
+            .isForcedUnread(_Server.workspace),
+        isFalse,
+      );
+      expect(
+        harness.container
+            .read(readStateProvider)
+            .effectiveTimestamp(_Server.workspace),
+        1760000000,
+      );
+      expect(server.published, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

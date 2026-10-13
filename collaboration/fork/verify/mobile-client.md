@@ -354,3 +354,85 @@ dart analyze 为 0，原 `platform_pages_test.dart` 实际 63/63、退出 0。
 SDK 实际4CPU/8Gi、swap0、UID1000；停止清理的 idle tail 137 与检查退出0分开，
 OOMKilled=false。本轮未做新破坏、签名、真机/BFF业务 E2E或安装包构建，
 不将前一输入的反例、旧25项或静态枚举检查替代这些验收。
+
+## 原 Mobile 频道已读确认与身份隔离（2026-10-13）
+
+本批只闭合原频道动作 sheet 的 Mark Read，以及同一 read-state 的自动打开、
+未读列表和重启回读；不恢复排序、Browse、普通频道静音或组件宿主。
+固定官方 `779af8886caae1317b4de962082429867ab61503` 的
+`mobile/lib/features/channels/channel_actions_sheet.dart` 原 quick row、
+`mobile/lib/shared/read_state/read_state_provider.dart::markContextRead/markContextUnread`
+是呈现和交互基准。后者明确 Mark Unread 是会话内 forced flag，本批原样保留，
+不增加跨会话 Unread 同步承诺。原排序的 NIP78 同步没有当前 Core 承载字段，
+仍是缺项，未用本地排序替代；曾写的窄本地草稿已撤销，未提交。
+
+### 实现后的四步影响结论
+
+1. 权威为 DD-40、DD-75、DD-80：同一 Core CollaborationUserState.read_contexts
+   是跨端已读权威。管理写入仍由 NativeSession/BFF 发起，本机钥匙直连 Relay
+   的协作面不变，不恢复 NIP78、第二偏好权威或 WebView。
+2. 实际消费者为原 ChannelActionsSheet → ReadStateNotifier → ReadStateManager →
+   PlatformReadStateRemote → `PUT /api/v1/user-state/read`；Core
+   `core/crates/platform-core/src/user_state.rs::put_read_mark` 仍做 fresh 授权与
+   既有 version/CAS。频道详情自动已读、消息/线程和未读 badge 共用同一 manager。
+   没有修改 Core、契约、迁移、Temporal、共享词条或三端生成合同。
+3. manager 区分 Core 已确认 cursor、本机待写 intent 和合法初始 seed；待写值
+   不因缓存、重启、刷新或 HTTP 200 变成已确认。只有精确 Core cursor 回读后，
+   sheet 才清未读/关闭。自动打开已由 Core 确认覆盖的频道仍清 exact-channel force，
+   不清手动 message-level Unread；empty flush 不再占死同一 writer 槽。
+4. 原 actor、Tenant、PlatformSession 与 NativeSession credential generation
+   共同 fence，在途旧回包不推进新身份。缓存按可信 API、Tenant、Principal、
+   本机 pubkey 隔离；不把旧 pubkey-only 缓存认领给当前 actor。
+
+v3 是单原子缓存记录，cursor 值与 publishable 来源同写，避免原两键撕裂后把 intent
+误当 seed；原两键 reader/helper 已删除。物理旧缓存仍隔离保留，本批没有清除无法
+归属的其他 actor 数据，不能称物理迁移收缩完成。设备维护确认归属后才能清理该
+设备的精确旧 key，不批量删除其他账号缓存。
+
+每次 PUT 前，同一 remote 必须成功持久化原 ReadMarkRequest；保存失败没有 PUT。
+UNKNOWN 只有用户显式重查可重复原 version/原字节 CAS，不后台重复 PUT；重查拒绝
+不能否定旧 UNKNOWN。Core 权威 version 推进才证明旧 CAS 不可能随后提交，或由
+精确 cursor 回读确认已读。旧 snapshot 拒绝；Unix 秒 0 与缺失 cursor 分开。
+坏原 intent 保留 bytes 并令 read consumer not-ready，禁止新 PUT，不让频道页构造
+崩溃；维护责任在当前设备使用人/运维，须核对原请求后定点修复，未解决时入口禁用。
+超时、撤权、保存失败和未知回应保留未确认，不把查询失败当业务失败或成功；
+不改变 `06` §4 的六类 BFF 错误及其 reason code。
+
+### 实际定向证据与交付范围
+
+实现比较基准 `968f50867486cc059284f128fd2c52f45c00e24c`，固定私有源码树
+`6a0c614f5672ddb27164b30b76b5f8cf50b7c988`，12 路径 `+872/-192`，
+原件 `/volumes/data/kailo/tmp/mobile-read-confirm.Fjr46r/source.patch` 的 SHA256 为
+`112a4852637c0e0dda75d7d3fa0143f2d8bf6c3cd89b1e9057aff9859e9196a9`。
+正式 12 文件与私有 SDK 输入逐字节相同，公共暂存与历史 theme dirty 未纳入。
+
+原 Flutter 3.41.7 镜像
+`sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`
+执行；每次先用原 container-safety preflight/limits，实际 CPU 2、内存与
+memory+swap 均 4294967296 字节、UID 1000，源码/临时/cache/log 全在 Data。
+`terminal-consumers.log` 实际退出 0：原 formatter 12 文件、五份原消费者文件
+`flutter test --no-pub --reporter expanded` 输出 `+75: All tests passed!`，
+`flutter analyze --no-pub` 同 12 路径输出 `No issues found! (ran in 348.8s)`。
+包括原 sheet UNKNOWN/重查/确认关闭、原自动已读、0、坏 bytes、保存失败、身份切换、
+在途回包、scope 隔离及原 DM/Star/Channels 回归；这些是原消费者夹具证据，不是线上
+SSO、Core 在线事务、真机、APK 或发布验收。
+
+失败原件也在同一目录：`initial.log` 退出 1，pub cache 挂载路径投递错误；
+`revised.log` 退出 1，真实 lint 和 provider override 适配错误；
+`final-consumers.log` 退出 1，最后一条 curly-braces info；`consumers.log` 的
+exited 容器限额 guard 已拒绝，但外层误启动，随后本人停止退出 137，不计产品验证。
+`verified-consumers.log` 的旧拒绝夹具请求早于 Core cursor，实际只读确认而非 PUT，
+原断言失败；新 widget 使用 fake-clock 零定时器挂起，本人停止退出 137。后续以真实
+较新 cursor 触发拒绝、原 tester.pump 驱动 widget，不改产品迁就错误夹具。
+
+本批没有宿主编译、新工具链、下载、镜像/APK 构建、设备安装、部署或独立提交/push；
+SDK 源码写入、定向验证、主线提交发布和设备验收分别记录，不以旧包替代本批。
+
+实现通过后，私有暂撤 actor 身份比较、暂把 pending 值当 confirmed 展示、暂撤原
+自动 exact-context force 清理，原三个消费者分别真实退出 1：期望身份拒绝却返回
+cursor、期望 null 却得到 100、期望 false 却得到 true。原件为
+`mutation-actor.log`、`mutation-confirmation.log`、`mutation-automatic.log`。
+三处 apply_patch 还原后 12 文件逐 cmp 为 0，`restored-consumers.log` 同三消费者
+输出 `+3: All tests passed!`，实际退出 0。未将反证破坏留在正式源码或候选中。
+私有 HEAD 加本批独立 hunk 的原 `npx --offline markdownlint-cli2` selected 检查
+退出 0（`docs-selected.log`）；正式文件的继承 dirty 不混入本批提交范围。

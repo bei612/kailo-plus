@@ -132,6 +132,9 @@ class NativeSession {
   String? _accessToken;
   Future<String>? _refreshing;
   int _generation = 0;
+
+  /// Fences consumers bound to one adopted login, not an access-token refresh.
+  int get credentialGeneration => _generation;
   Future<void> _credentialWrite = Future<void>.value();
 
   void _requireCurrent(int generation) {

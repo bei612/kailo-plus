@@ -81,27 +81,41 @@ class ChannelActionsSheet extends HookConsumerWidget {
     String text(PlatformMessageKey key) =>
         platformText(key, locale: Localizations.localeOf(context).languageCode);
 
-    void toggleRead() {
-      close();
+    final readBusy = useState(false);
+    final readUnconfirmed = useState(false);
+    final readState = ref.watch(readStateProvider);
+    Future<void> toggleRead() async {
+      if (readBusy.value || !ownsConsumer || !readState.isReady) return;
       final timestamp = dateTimeToUnixSeconds(channel.lastMessageAt);
       if (isUnread) {
-        onMarkRead?.call();
         if (timestamp != null) {
-          ref
+          readBusy.value = true;
+          final confirmed = await ref
               .read(readStateProvider.notifier)
-              .markContextRead(
-                channel.id,
-                timestamp,
-                clearForcedMessages: true,
-              );
+              .markContextReadConfirmed(channel.id, timestamp);
+          if (!context.mounted ||
+              !identical(
+                ref.read(directMessagesProvider).asData?.value,
+                originalConsumer.value,
+              )) {
+            return;
+          }
+          readBusy.value = false;
+          if (!confirmed) {
+            readUnconfirmed.value = true;
+            return;
+          }
+          onMarkRead?.call();
           ref
               .read(channelsProvider.notifier)
               .clearObservedUnreadCoveredByRead(channel.id, timestamp);
+          close();
         }
       } else {
         ref
             .read(readStateProvider.notifier)
             .markContextUnread(channel.id, channelId: channel.id);
+        close();
       }
     }
 
@@ -123,7 +137,10 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 _ChannelQuickActionsRow(
                   isStarred: starred == true,
                   isUnread: isUnread,
-                  onToggleRead: toggleRead,
+                  onToggleRead:
+                      ownsConsumer && readState.isReady && !readBusy.value
+                      ? toggleRead
+                      : null,
                   onToggleStar:
                       starred == null ||
                           preferenceState.busy ||
@@ -177,6 +194,37 @@ class ChannelActionsSheet extends HookConsumerWidget {
                           ),
                   ),
               ],
+              if (!readState.isReady ||
+                  readBusy.value ||
+                  readUnconfirmed.value ||
+                  readState.pendingContextId == channel.id)
+                ListTile(
+                  key: const ValueKey('channel-read-unconfirmed'),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    text(
+                      readState.isReady
+                          ? PlatformMessageKey.sidebarPreferenceUnknown
+                          : PlatformMessageKey.platformLoadFailed,
+                    ),
+                  ),
+                  trailing: readBusy.value
+                      ? const SizedBox.square(
+                          dimension: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : IconButton(
+                          tooltip: text(PlatformMessageKey.dmCheckStatus),
+                          icon: const Icon(LucideIcons.refreshCw),
+                          onPressed: !ownsConsumer
+                              ? null
+                              : readState.isReady
+                              ? toggleRead
+                              : () => ref
+                                    .read(readStateProvider.notifier)
+                                    .recheck(),
+                        ),
+                ),
               if (channel.channelType != 'stream')
                 ListTile(
                   key: const ValueKey('channel-action-read'),
@@ -185,7 +233,9 @@ class ChannelActionsSheet extends HookConsumerWidget {
                     isUnread ? LucideIcons.checkCheck : LucideIcons.circleDot,
                   ),
                   title: Text(isUnread ? 'Mark read' : 'Mark unread'),
-                  onTap: toggleRead,
+                  onTap: ownsConsumer && readState.isReady && !readBusy.value
+                      ? toggleRead
+                      : null,
                 ),
               if (channel.isDm)
                 ListTile(
@@ -311,7 +361,7 @@ class _ChannelQuickActionsRow extends StatelessWidget {
   final bool isStarred;
   final bool isUnread;
   final VoidCallback? onToggleStar;
-  final VoidCallback onToggleRead;
+  final VoidCallback? onToggleRead;
 
   @override
   Widget build(BuildContext context) => Row(
