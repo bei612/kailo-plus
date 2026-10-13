@@ -128,3 +128,63 @@ GET 索引字节 SHA256 也精确一致；不是平台子 manifest 或 image con
 没有部署、浏览器/设备验收、新 SBOM 扫描或 `--full`，不重写历史失败，
 不宣称整个 Inbox/Composer、三组件绑定或生产门禁已经完成。Core/Worker、
 Windows/Mobile 产物及其部署未随本次 Web 构建改变。
+
+## 2026-10-13 ec89ae Web 稳定批产物：已构建、未部署
+
+本次唯一 Web 构建固定已推送的
+`ec89ae72ab91c447b987b31b1dee9170c9d4770f`，tree
+`0b8f81d7f6a8ce9359c496eb18d93b50662e49f4`。Data 干净稀疏输入未混入
+正式工作树 dirty；沿原 manifest、Dockerfile 和 lock，未修改依赖／recipe。
+固定上游仍为 `a6766c482533d028582d0efcfd3740769f86217c`；
+原 plan 无 build secret／额外参数，source/buildId 为
+`sha256:c787ce0c8c4cf3a147292f292ebd7311bf8aef5ae066cc220960a6e8c36873bd`。
+相比上节 54306 的输入，实际变化为 InboxThreadPane 原实现／消费者和共享
+i18n；包含随后提交的晚到回复 owner、原 Copy link 修复和四个共享词条。
+不把旧 54306 镜像算作已包含这些修正。
+
+原入口 `36849` 真实 exit 0，命令为：
+
+```sh
+sudo -n -H env \
+  TMPDIR=/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ec89ae.g8d515/tmp \
+  REGISTRY=127.0.0.1:55000 BUILDX_BUILDER=kailo-core-data \
+  bash /volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ec89ae.g8d515/apps/tools/build-upstream.sh web-client
+```
+
+00:53 UTC 原 safety 预检退出 0：builder 仅永久 init/buildkitd，无另一个
+在途镜像构建；8 CPU／16 GiB，memory+swap 总限额等于内存，
+实际 state 为 `/volumes/data/kailo/buildkit-core-state`。
+MemAvailable 36422028 kB、memory PSI 0、Data 可用 167138586624 bytes；
+I/O full avg10 5.44。沿已有 Data registry/cache/tmp 执行，不另建 SDK。
+主线拥有原预复制 scope 的暂停与恢复，本次没有启动第二份复制或停业务服务。
+
+原 tsc/Vite 通过，4101 modules，Vite 8.04 秒；原大分块警告保留，
+没有改阈值或据此宣称漏洞、安全／全量门禁通过。原入口只使用 buildx
+`--push`，没有 `--load`、根盘镜像导入、宿主编译或更换运行实例。
+顶层 OCI index 为
+`sha256:3ad69b4288d4ac75389e617ee4c496206e18e6f43620aac246adbb513a076b02`，
+不是子 manifest 或 image config。00:55:32 UTC registry 对此 immutable
+digest HEAD 返回 200 与同一 Docker-Content-Digest，GET exit 0，
+正文 SHA-256 同样为该 digest；成功后原 helper 才登记 source/artifact。
+build ref：`kailo-core-data/kailo-core-data0/b0c5vggl9pex6ma8yehizjr4z`。
+
+原件目录：`/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ec89ae.g8d515`。
+
+| 原件 | SHA-256 |
+| --- | --- |
+| build.log | 674da08001c3ae6bf710a64ab289fff451f546a42af0b1cd92d5a03eeb0e7f77 |
+| source-plan.env | 776ce864d572a385d6e9d9afb2918576fd5edae9c3b6603bfb890c429b431ed1 |
+| registry-head.log | 6107ec29ca99d1791fbca611ff857e69bbcf64f1a23f3d52b87ad8fdd6ba7543 |
+| registry-index.json | 3ad69b4288d4ac75389e617ee4c496206e18e6f43620aac246adbb513a076b02 |
+| tmp/build-web-client.0Vfvit.metadata.json | eace4692656a0529ed521930329713bef3b5046533130ca7069b5415c39b7462 |
+
+首次新建 `--no-checkout` 稀疏工作树未物化，plan exit 2；
+经原 `read-tree -mu HEAD` 物化同一固定输入后 clean 与 plan 均为 0，
+才启动这一次构建。未修改产品、发布脚本或公共 index 来迁就输入错误。
+本逻辑批已有原 docs 七节通过；本次只对精确候选本文做 selected lint，
+真实结果保留在原件目录，不重复 full 或新 SBOM，也不重写历史失败。
+
+该产物保留此前 Tasks/Reviews 与共享 Inbox 列表／详情主体，
+但产物构建不等于部署、修正后浏览器／设备验收、三组件 binding、
+完整 Inbox/Composer 或生产就绪。Core/Worker、Windows/Mobile 产物与运行实例
+未随本次 Web 构建改变；后续部署仍须沿原受控入口另行验收。
