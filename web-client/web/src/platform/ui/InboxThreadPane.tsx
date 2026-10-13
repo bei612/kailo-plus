@@ -3,16 +3,18 @@ import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMem
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxDetailHeader, InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
-import { MessageActionBarSurface, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
 import { useQuery } from "@tanstack/react-query";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
+import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
 import { inboxReply, inboxThread } from "@client-kit/platform/inbox";
 import { BffError, isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { bff, deleteMessage, publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
@@ -123,6 +125,19 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       toast.success(t("buzz.copiedMessage"));
     } catch { toast.error(t("buzz.copyFailed")); }
   };
+  // Keep the original native Channel reference; a Workspace or Conversation
+  // binding ID is not a message-link target and cannot fill a missing channel.
+  const messageChannelId = conversation ? conversation.channelId : channelId;
+  const copyMessageLink = messageChannelId && canInteract && !unavailable && !interrupted && thread.isSuccess
+    ? async (message: TimelineMessage) => {
+      const { rootId } = getThreadReference(message.tags ?? []);
+      try {
+        await writeTextToClipboard(buildMessageLink({ channelId: messageChannelId, messageId: message.id, threadRootId: rootId }));
+        if (publicationOwner.active && publicationOwnerRef.current === publicationOwner) toast.success(t("buzz.copiedLink"));
+      } catch {
+        if (publicationOwner.active && publicationOwnerRef.current === publicationOwner) toast.error(t("buzz.copyFailed"));
+      }
+    } : undefined;
   return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id}
     channelName={channelName} channelType={conversation ? "dm" : forum ? "forum" : "stream"} messages={rows}
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
@@ -155,6 +170,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
             } : undefined}
             message={message}
             renderActions={!interrupted ? reactions => <MessageActionBarSurface {...reactions} message={message} onCopyMessage={copyMessage}
+              onCopyLink={copyMessageLink}
               onEdit={presentation.onEdit} onDelete={presentation.onDelete} onReply={presentation.onReply} /> : undefined}
             renderBody={(className) => <div className={className}><MessageContent messageId={event.id} workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
       }}

@@ -2103,3 +2103,25 @@ Data 目录 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/review-discuss.8A
 - `79877` 原还原检查 exit 0：共享原 inbox-surface 两语言 2/2，Web 原 `UNKNOWN|off-window` 6/6，其余 30 项未选；没有重跑全量或重建依赖。原 36 项覆盖编辑、删除、回复、实际投递/回读、分页、身份资料与撤权清屏，但仍是 JS 消费者夹具，不是在线服务授权或真实发布证明。
 
 原失败、全部命令终态、冻结输入及 docs/本文 selected lint 结果留在 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-detail-body.QhiUaj`。未构建/加载/部署新镜像，不修改 Core/合同/Mobile/i18n，不纳入公共暂存或其他历史 dirty。
+
+### 2026-10-13 Web Inbox 原 Copy link 宿主接线
+
+关联 REQ-24、DD-75、SS-WEB-RELAY；固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow` 与 `desktop/src/features/messages/ui/MessageActionBar.tsx::{copyMessageLink,canCopyMessageLink}`：详情消息 hover 与 More 菜单均消费同一原消息深链。当前 Native 保留此调用；Web 详情只传 `onCopyMessage`，遗漏共享操作栏已有的 `onCopyLink`。本批仅恢复 Web 宿主接线，不新建按钮、协议或服务端操作。
+
+四步影响核对：
+
+1. 权威：链接取已准入详情的消息 ID、原 thread root 与真实 native Channel ID。Workspace UUID、Conversation binding ID 不能替代缺失 Channel；DM 使用原 ConversationView.channelId，不杜撰另一 URL。复制不构成资源读取授权，打开仍沿原重新准入的导航消费者。
+2. 读写方：InboxPane 的已读取 channelIds/ConversationView 投递至 InboxThreadPane；复用 Web ChannelPane 已消费的 buildMessageLink/getThreadReference/writeTextToClipboard，再交共享 MessageActionBarSurface 原 hover 与 More 消费者。没有 schema、API、Workflow 或四侧生成变化。
+3. 副作用：只有用户点击后的原浏览器剪贴板写入与本地提示，不发消息、不刷新数据、不触碰原 publication-owner fence、同 key UNKNOWN、编辑/删除或任何 AE 状态。当前 owner 退出后不显示迟到复制提示。
+4. 异常：无 native channel、读取不可查证、hidden/interrupted/撤权时不提供复制链接；pending 消息继续由共享原操作栏拒绝。原 Clipboard API 明确拒绝不换 API 重试；HTTP 无 Clipboard API 才沿既有同步 fallback，失败显示原本地化错误。复制成功不宣告历史 UNKNOWN 已完成。
+
+原版四分类为现有共享操作栏/链接编码原样复用，Web 剪贴板宿主适配，补齐遗漏的已授权展示操作；Native 原调用不变。源码基准 `1c3c95f397f34fad916825f67072809d75870f56`，仅组件、原测试与本段三路径。
+
+实际复用 `kailo-inbox-forum-r5kqbx`（固定镜像 `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`）2 CPU/4 GiB、memory+swap 总 4 GiB、UID 1000、network none，执行前仅原 sleep；MemAvailable 33172636 KiB，memory PSI 0。私有输入、原依赖、缓存/tmp 都在 Data，不新增 SDK、依赖或镜像。
+
+- `51113` 原 tsc exit 2：私有输入缺少已有 main.test 跨树使用的 Native EmojiBurstProvider 七行共享 reexport；未进入本批 DOM。按同基准只补该原文件，不改产品或检查规则，原失败保留。
+- `23926` 实际 exit 0：原 `node node_modules/typescript/bin/tsc --noEmit` 与 `node node_modules/vitest/vitest.mjs run src/platform/ui/InboxThreadPane.test.tsx` 均通过，44/44。既有 40 项包括 d935 晚到回复 owner、UNKNOWN/撤权、编辑删除、DM 原游标与原身份消费者；新四项实际点击频道/DM root+reply 的 hover/More、验证两语言标签、精确深链、缺 Channel 不回退、HTTP 原 fallback、现代 Clipboard 拒绝不 fallback，以及复制不修改 UNKNOWN publication 或发起 refresh/publish。
+- `11599` 私有仅删 `onCopyLink` 接线，原相同 test 的 `-t 'copies original Inbox|HTTP clipboard fallback|missing native channel'` 实际 exit 1，三项失败于丢失的 hover/More 消费者、一项缺 Channel 拒绝通过，其余 40 明确未选；不是另造算法检查。
+- apply_patch 原字节还原后正式/私有组件 cmp 0；`14809` 同过滤原消费者 exit 0，4/4（其余 40 未选）。正式产品未参与破坏，公共 index 未写入。
+
+日志根 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/inbox-copy-link.te3Yuc`：`positive.log` SHA-256 `aee34602b59db668a6708fefbb6d05deb7bf43b05182476a7a20603886ab2b12`，`positive-complete-input.log` 为 `aee8f125249eaef2214cdbb37bc5c28ea02d4af7b0f38feae6fa43329434e9a0`，`mutation.log` 为 `b506a867910dc438c5d5bb9aa3652e37d9f7187b9d0ed15681155222ab43864e`，`restored.log` 为 `0de0e823a36e22788321e38b81172687ffd1799c273d62eb3460f8b7d0010736`。这些是原 JS 消费者的隔离 DOM/clipboard 夹具，不是在线 BFF/Relay、系统剪贴板或设备验收；没有构建、加载、部署新制品，也不认领 full/e2e 通过。

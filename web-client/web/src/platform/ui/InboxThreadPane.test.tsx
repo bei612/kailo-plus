@@ -9,6 +9,7 @@ import { ComposerReplyBanner, type TimelineMessage } from "@client-kit/platform/
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS, KIND_TYPING_INDICATOR, KIND_CHANNEL_THREAD_SUMMARY } from "@client-kit/platform/react/thread/kinds";
@@ -649,4 +650,82 @@ it("reads Inbox DM avatars only through the admitted conversation and rejects th
   expect(state.dmPublish).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
   await act(async()=>state.receive!({type:"closed",reason:"binding-not-active"}));await settle();
   expect(host.querySelector("img")).toBeNull();expect(host.textContent).not.toContain("selected reply");
+});
+
+it.each(["channel", "conversation"] as const)("copies original Inbox %s root/reply links without publishing or refreshing", async scope => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", Object.create(navigator, {clipboard:{value:{writeText}}}));
+  const success = vi.spyOn(toast, "success");
+  state.dmQuery.mockImplementation(async (_id, options) => ({events:options.parentEventId ? [rootEvent, reply] : [rootEvent, reply, bounds()]}));
+  await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane
+    principalId="human" workspaceId="workspace" channelId={scope === "channel" ? "workspace" : "not-the-dm-channel"}
+    conversation={scope === "conversation" ? conversation : undefined}
+    rootId={rootId} selectedEventId={replyId} channelName="Admitted channel" members={[]} />
+  </TooltipProvider></QueryClientProvider>));
+  await settle();
+  const reads = state.query.mock.calls.length + state.dmQuery.mock.calls.length;
+  for (const id of [rootId, replyId]) {
+    const button = host.querySelector<HTMLButtonElement>(`[data-testid="copy-link-message-${id}"]`);
+    expect(button?.getAttribute("aria-label")).toBe(translate("en", "buzz.copyLink"));
+    await act(async () => button!.click());
+  }
+  expect(writeText.mock.calls).toEqual([
+    [`buzz://message?channel=workspace&id=${rootId}`],
+    [`buzz://message?channel=workspace&id=${replyId}&thread=${rootId}`],
+  ]);
+  await act(async () => setLocale("zh-CN"));
+  expect(host.querySelector(`[data-testid="copy-link-message-${replyId}"]`)?.getAttribute("aria-label"))
+    .toBe(translate("zh-CN", "buzz.copyLink"));
+  expect(success).toHaveBeenCalledTimes(2);
+  expect(state.query.mock.calls.length + state.dmQuery.mock.calls.length).toBe(reads);
+  expect(state.publish).not.toHaveBeenCalled(); expect(state.dmPublish).not.toHaveBeenCalled();
+  expect(state.delete).not.toHaveBeenCalled(); expect(state.reaction).not.toHaveBeenCalled();
+  await act(async () => state.receive!({type:"interrupted"})); await settle();
+  expect(host.querySelector(`[data-testid="copy-link-message-${replyId}"]`)).toBeNull();
+  expect(writeText).toHaveBeenCalledTimes(2);
+  success.mockRestore();
+});
+
+it("does not substitute the Inbox Workspace ID for a missing native channel", async () => {
+  await mount(); await openMessageMenu(replyId);
+  expect(host.querySelector(`[data-testid="copy-link-message-${replyId}"]`)).toBeNull();
+  expect(document.querySelector(`[data-testid="copy-message-link-${replyId}"]`)).toBeNull();
+});
+
+it("uses the original HTTP clipboard fallback and keeps a refused copy separate from UNKNOWN publication", async () => {
+  const success = vi.spyOn(toast, "success"), error = vi.spyOn(toast, "error");
+  const descriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
+  const copied: string[] = [];
+  const exec = vi.fn(() => {copied.push((document.activeElement as HTMLTextAreaElement).value); return true;});
+  Object.defineProperty(document, "execCommand", {configurable:true, value:exec});
+  vi.stubGlobal("navigator", Object.create(navigator, {clipboard:{value:undefined}}));
+  const pending = vi.fn();
+  try {
+    await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane
+      principalId="human" workspaceId="workspace" channelId="workspace" rootId={rootId} selectedEventId={replyId}
+      channelName="Admitted channel" members={[{principalId:"human", displayName:"Member", pubkeys:[pubkey], state:WorkspaceMembershipState.Active}]}
+      onPublicationPendingChange={pending} /> </TooltipProvider></QueryClientProvider>));
+    await settle();
+    state.publish.mockRejectedValue(new TransportError("unknown"));
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+    await settle();
+    expect(pending.mock.calls).toEqual([[true], [true]]);
+    await openMessageMenu(replyId);
+    await act(async () => document.querySelector<HTMLElement>(`[data-testid="copy-message-link-${replyId}"]`)!.click());
+    expect(copied).toEqual([`buzz://message?channel=workspace&id=${replyId}&thread=${rootId}`]);
+    expect(success).toHaveBeenCalledWith(translate("en", "buzz.copiedLink"));
+    success.mockClear();
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    vi.stubGlobal("navigator", Object.create(navigator, {clipboard:{value:{writeText}}}));
+    await act(async () => host.querySelector<HTMLButtonElement>(`[data-testid="copy-link-message-${replyId}"]`)!.click());
+    expect(writeText).toHaveBeenCalledTimes(1); expect(exec).toHaveBeenCalledTimes(1);
+    expect(success).not.toHaveBeenCalled(); expect(error).toHaveBeenCalledWith(translate("en", "buzz.copyFailed"));
+    expect(pending.mock.calls).toEqual([[true], [true]]); expect(state.publish).toHaveBeenCalledTimes(1);
+    await act(async () => state.receive!({type:"closed", reason:"scope-revoked"})); await settle();
+    expect(host.querySelector(`[data-testid="copy-link-message-${replyId}"]`)).toBeNull();
+    expect(pending.mock.calls).toEqual([[true], [true]]);
+  } finally {
+    if (descriptor) Object.defineProperty(document, "execCommand", descriptor); else Reflect.deleteProperty(document, "execCommand");
+    success.mockRestore(); error.mockRestore();
+  }
 });
