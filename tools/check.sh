@@ -21,6 +21,15 @@ skip() { printf '  \033[90mSKIP\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAIL=1; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+# 成功时不输出；失败时打印该命令的完整输出，CI 日志是开发端唯一的诊断来源。
+diag() {
+  local out rc=0
+  out=$(mktemp) || return 2
+  "$@" >"$out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] && cat "$out"
+  rm -f -- "$out"
+  return "$rc"
+}
 # 目录存在且含至少一个非隐藏条目
 populated() { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null | grep -v '^\.')" ]; }
 
@@ -150,7 +159,7 @@ step_lint() {
   local ran=0
   if populated core && have cargo; then
     ran=1
-    cargo fmt --manifest-path core/Cargo.toml --all --check >/dev/null 2>&1 \
+    diag cargo fmt --manifest-path core/Cargo.toml --all --check \
       && pass "cargo fmt" || fail "cargo fmt"
     # 编译一律用入库的 sqlx 离线数据，与镜像构建（core/Dockerfile）同一输入；离线数据与
     # 查询是否同步由第 4 步在演练库迁移到最新之后核对，不在空库上在线编译。
@@ -159,17 +168,17 @@ step_lint() {
   fi
   if populated worker && have go; then
     ran=1
-    (cd worker && gofmt -l . | grep -q . ) && fail "gofmt 有未格式化文件" || pass "gofmt"
-    (cd worker && go vet ./... >/dev/null 2>&1) && pass "go vet" || fail "go vet"
+    (cd worker && gofmt -l . | grep . ) && fail "gofmt 有未格式化文件" || pass "gofmt"
+    (cd worker && diag go vet ./...) && pass "go vet" || fail "go vet"
   fi
   if populated client-kit/ts && have pnpm; then
     ran=1
-    pnpm -r typecheck >/dev/null 2>&1 && pass "tsc --noEmit" || fail "tsc --noEmit"
+    diag pnpm -r typecheck && pass "tsc --noEmit" || fail "tsc --noEmit"
   fi
   if populated client-kit/dart/lib; then
     if have dart; then
       ran=1
-      (cd client-kit/dart && dart analyze >/dev/null 2>&1) && pass "dart analyze" || fail "dart analyze"
+      (cd client-kit/dart && diag dart analyze) && pass "dart analyze" || fail "dart analyze"
     else
       fail "client-kit/dart 有 Dart 源码但本机无 dart 工具链，该侧无法校验"
     fi
@@ -183,11 +192,11 @@ step_verify()   { hdr "2/10 受影响范围的验证"
   if populated core && have cargo; then ran=1
     SQLX_OFFLINE=true cargo test --manifest-path core/Cargo.toml && pass "cargo test" || fail "cargo test"; fi
   if populated worker && have go; then ran=1
-    (cd worker && go test ./... >/dev/null 2>&1) && pass "go test" || fail "go test"; fi
+    (cd worker && diag go test ./...) && pass "go test" || fail "go test"; fi
   if populated client-kit/ts && have pnpm; then ran=1
     pnpm -r test && pass "pnpm -r test（TypeScript）" || fail "pnpm -r test（TypeScript）"; fi
   if populated client-kit/dart/test && have dart; then ran=1
-    (cd client-kit/dart && dart test >/dev/null 2>&1) && pass "dart test" || fail "dart test"; fi
+    (cd client-kit/dart && diag dart test) && pass "dart test" || fail "dart test"; fi
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
   return 0
 }
@@ -341,7 +350,7 @@ PY
 
 step_replay()   { hdr "5/10 Workflow replay"
   if populated worker/replay-tests && have go; then
-    (cd worker && go test ./replay-tests/... >/dev/null 2>&1) && pass "replay 回归" || fail "replay 回归"
+    (cd worker && diag go test ./replay-tests/...) && pass "replay 回归" || fail "replay 回归"
   else skip "尚无录制 history"; fi
   return 0
 }
