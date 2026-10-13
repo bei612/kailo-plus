@@ -3,5 +3,5 @@
   "$id": "enums/automation_trigger_kind.schema.json",
   "title": "AutomationTriggerKind",
   "type": "string",
-  "enum": ["CHANNEL_MESSAGE", "MENTION", "SCHEDULE"]
+  "enum": ["CHANNEL_MESSAGE", "MENTION", "SCHEDULE", "DIFF_POSTED"]
 }
