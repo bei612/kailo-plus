@@ -31,8 +31,8 @@ artifacts:
     build_context: knowledge/frontend
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/]
-    source_digest: sha256:b8909da811690461605a6ea46cdd3e93d6a5eb7450b0a0b028fa0c7210a71728
-    artifact_digest: sha256:bcd43618a3c6ee85e8a130b2a74e292f7210286c2239318884fa7bab70bfe01e
+    source_digest: sha256:6ac832434e300e899211640a8ea20ac4d293b8e8de62e440a15bbc8ede5d27b8
+    artifact_digest: sha256:68ef2c49ed230d2a52c83a5fdb042ea350ee140a148d7cc5b911dfa6e37dc4fe
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image

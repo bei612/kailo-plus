@@ -182,3 +182,64 @@ apply_patch 还原、生产与验证输入两个文件 cmp 均 0 后，同命令
 `restored.log` SHA-256
 `4af41b2fbdb90246a541da3a18939cab056ab88b04dcf7fc9de602f3253367e0`。
 未执行完整 type-check/full、未部署此修复，线上原生／iframe 写入和模型业务仍未验收。
+
+### 2026-10-13 KB 拒绝修正匹配前端产物（仅构建，未部署）
+
+沿 DD-89/93 与原发布来源登记，使用已提交
+`1c3c95f397f34fad916825f67072809d75870f56`，源码树
+`543c2a6e3dd9228ffdeeb00bcf6ba3403d7303d2` 的干净 Data 稀疏工作树。
+固定上游仍为 `2be7bd40631dda1dd485306038f07a62e9ee287e`；
+原 `knowledge/frontend/Dockerfile`、依赖锁与构建参数未改。
+`package-lock.json` SHA-256：
+`b5466d4ff3ffa48c452fbfdcd1600da775d1278eaacf005eddb4c01bf6c6ba91`。
+本次包含上述 KB null/403、身份切换与上传确认护栏，以及此前已提交的
+auth/refresh/SSE 修复；不修改 API、schema、Workflow 或权限权威。
+
+原 `tools/upstream_manifest.py plan` 的 source/buildId 为
+`sha256:6ac832434e300e899211640a8ea20ac4d293b8e8de62e440a15bbc8ede5d27b8`。
+原 `tools/build-upstream.sh knowledge-native-ui` 在 90855 真实退出 0；
+仅向 Data registry 推送，没有 Docker load、根盘 pull、宿主编译或部署。
+原命令如下（所有输入、临时目录与证据均在 Data）：
+
+```sh
+sudo -n -H env \
+  TMPDIR=/volumes/data/kailo/tmp/knowledge-ui-1c3c95-release.v5q8S9/tmp \
+  REGISTRY=127.0.0.1:55000 BUILDX_BUILDER=kailo-core-data \
+  bash /volumes/data/kailo/tmp/knowledge-ui-1c3c95-release.v5q8S9/apps/tools/build-upstream.sh knowledge-native-ui
+```
+
+执行前原 safety 检查退出 0：已有 builder 8 CPU／16 GiB，
+memory+swap 总限额等于内存，state 位于 Data；无另一项在途镜像构建，
+MemAvailable 36638004 kB、memory PSI 为 0、Data 可用 167162269696 bytes。
+I/O 压力仍高；00:32 UTC 主线暂停同一自有预复制 scope 为串行发布让行，
+没有将暂停或进程 D 状态当成写回排空证明，也没有重新发起复制。
+
+成功 exporter 的顶层 OCI index（不是子 manifest/config）为
+`sha256:68ef2c49ed230d2a52c83a5fdb042ea350ee140a148d7cc5b911dfa6e37dc4fe`。
+00:36:47 UTC 原 registry 对该 immutable digest HEAD 返回 200，
+GET 退出 0，返回正文 SHA-256 与此 digest 相同。
+build ref 为 `kailo-core-data/kailo-core-data0/ws75jfk8i5o8ovcgxw51sx3o9`。
+原 helper 仅在成功后记录 source/artifact 两字段；既有 blocked gate 保留，
+其中旧版已部署描述仍是历史事实，不能外推本次新镜像已运行。
+
+原件目录：`/volumes/data/kailo/tmp/knowledge-ui-1c3c95-release.v5q8S9`。
+
+| 原件 | SHA-256 |
+| --- | --- |
+| build.log | ebbf9faea530fa1750c55f874a66b530aa537328e026f86e91f39a317b189571 |
+| registry-head.log | 031466c927793ce80ba7d38f384770515133bb91cb33114a70eba42fcda83128 |
+| registry-index.json | 68ef2c49ed230d2a52c83a5fdb042ea350ee140a148d7cc5b911dfa6e37dc4fe |
+| tmp/build-knowledge-native-ui.KZ1KBk.metadata.json | f3dd2a043bec201cf570327180fabc02288bd333584ada034632a210cc460257 |
+
+首轮稀疏 plan 缺同 manifest 的其他输入路径退出 1，补齐同 commit 的
+knowledge 与 client-kit/adapter 后 plan 退出 0；没有修改构建声明。
+首次非 sudo builder 查询未找到 root 注册的原 builder；改用原 sudo 身份，
+没有创建第二 builder。上述失败与最终原输出保留。
+npm ci 报告 14 项依赖漏洞（2 low、3 moderate、8 high、1 critical），
+未运行自动修复；Vite 7.3.6 原构建转换 6626 modules、36.77 秒完成，
+原 install-script／bundle 警告仍保留，不能因 exit 0 称安全门禁全部通过。
+
+本次只闭合匹配源码的构建、推送与 registry 读回，不重跑 full/SBOM，
+不代表组件 release/binding 已批准、已部署、修正后浏览器验收或业务终态。
+现有两 HUMAN 旧版截图仍是前节原缺陷证据；平台 iframe、模型／检索／SSE、
+完整 Cells→WeKnora 与整体治理仍未验收。
