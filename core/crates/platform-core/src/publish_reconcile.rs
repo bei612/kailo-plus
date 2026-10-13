@@ -495,8 +495,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             u32::from(deletion.kind.as_u16()) == collab_bridge::bridge::KIND_DELETION
                 && deletion.verify().is_ok()
                 && deletion.tags.iter().map(nostr::Tag::as_slice).any(|tag| {
-                    tag.first().map(String::as_str) == Some("e")
-                        && tag.get(1) == Some(&p.event_id)
+                    tag.first().map(String::as_str) == Some("e") && tag.get(1) == Some(&p.event_id)
                 })
         }));
     }

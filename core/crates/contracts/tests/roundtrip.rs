@@ -436,8 +436,9 @@ fn receiver_read_grant_preserves_distinct_source_and_receiver_provenance() {
 
 #[test]
 fn native_receiver_preserves_original_batch_and_observe_only_lookup() {
-    let raw = fs::read_to_string(sample_path().with_file_name("component-native-receiver.sample.json"))
-        .unwrap();
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("component-native-receiver.sample.json"))
+            .unwrap();
     let sample: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let request: contracts::ComponentNativeReceiverRequest =
         serde_json::from_value(sample["request"].clone()).unwrap();
@@ -912,12 +913,14 @@ fn file_storage_share_preserves_exact_native_reference() {
 #[test]
 fn message_authors_preserve_exact_event_mapping_and_absent_metadata() {
     let sample: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(sample_path().with_file_name("web-message-authors.sample.json")).unwrap(),
+        &fs::read_to_string(sample_path().with_file_name("web-message-authors.sample.json"))
+            .unwrap(),
     )
     .unwrap();
     let request: contracts::WebMessageAuthorQuery =
         serde_json::from_value(sample["request"].clone()).unwrap();
-    let view: contracts::WebMessageAuthorView = serde_json::from_value(sample["view"].clone()).unwrap();
+    let view: contracts::WebMessageAuthorView =
+        serde_json::from_value(sample["view"].clone()).unwrap();
     assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
     assert_eq!(serde_json::to_value(view).unwrap(), sample["view"]);
     let legacy: contracts::WebMessageAuthorView =
