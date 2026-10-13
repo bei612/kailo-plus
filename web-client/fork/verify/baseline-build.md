@@ -188,3 +188,57 @@ build ref：`kailo-core-data/kailo-core-data0/b0c5vggl9pex6ma8yehizjr4z`。
 但产物构建不等于部署、修正后浏览器／设备验收、三组件 binding、
 完整 Inbox/Composer 或生产就绪。Core/Worker、Windows/Mobile 产物与运行实例
 未随本次 Web 构建改变；后续部署仍须沿原受控入口另行验收。
+
+## 2026-10-13 ede2f8 Web 合批产物：已构建、未部署
+
+本次唯一构建固定已正常推送并由 `ls-remote` 精确核对的
+`ede2f83a6e0e48240cd995bd938b3ae6f5b2639a`，tree
+`8b88cbf82eb52a0394cda65ba1dd9ac85ee071f2`。Data 干净稀疏工作树只消费
+原 manifest 声明的输入，不混入正式工作树的历史 dirty；固定上游仍为
+`a6766c482533d028582d0efcfd3740769f86217c`。本次包含原 Inbox
+HeaderMoreMenu 恢复及该固定树的共享词条；Mobile 独有源码不属于 Web 输入。
+原 Dockerfile、锁文件、发布脚本与参数没有为本次构建另行修改。
+
+原 plan exit 0，无额外 build secret／参数；source/buildId 为
+`sha256:ecf134ac39e45bab2361e21e39f2e8da4d4243b7905778ca939cccb42453d994`。
+08:28–08:29 UTC 原 safety 预检 exit 0：已有 builder 闲置，8 CPU／16 GiB，
+memory+swap 总限额等于内存；state 位于 `/volumes/data/kailo/buildkit-core-state`。
+MemAvailable 32738184 kB、memory PSI 0、Data 可用 114127527936 bytes，
+I/O full avg10 30.35。使用已有 Data cache／tmp／registry，不另建 SDK 或 builder。
+主线管理原预复制及索引 scope 的暂停／恢复，本批未操作它们或停业务服务。
+
+唯一原入口 `97774` 真实 exit 0，命令为：
+
+```sh
+sudo -n -H env \
+  TMPDIR=/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ede2f8.onSBsz/tmp \
+  REGISTRY=127.0.0.1:55000 BUILDX_BUILDER=kailo-core-data \
+  bash /volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ede2f8.onSBsz/apps/tools/build-upstream.sh web-client
+```
+
+原 `tsc && vite build` 通过，4101 modules，Vite 11.87 秒；大分块警告保留。
+共享包 COPY 464.7 秒及依赖层等待期间保持原进程，未重启或重发。
+原 buildx 只 `--push`，没有 `--load`、根盘 daemon 拉取／加载、宿主编译或部署。
+顶层 OCI index 为
+`sha256:52712143321c4018257928fe38a09f4088c5acd756525d49638b0e3479ee5243`。
+08:57:48 UTC registry 对该 immutable digest HEAD 200，Docker-Content-Digest
+一致；GET exit 0，正文 SHA-256 同该 digest。不是子 manifest／image config。
+原 helper 仅在成功后登记 source/artifact；build ref 为
+`kailo-core-data/kailo-core-data0/ly5gqvia9dfrqj0a7o5yoi3qe`。
+
+原件目录：`/volumes/data/kailo/tmp/task-batch-release.zThtjJ/web-ede2f8.onSBsz`。
+
+| 原件 | SHA-256 |
+| --- | --- |
+| build.log | e5e00fb608bbd4b1b45568261d005ea2211e4ca607209c011f3e13a486eb5a3c |
+| source-plan.env | f7ebd890b06bb6c14ac61471c56ee9cfc170ad0b0c5c3b621e1d99b1fd25003c |
+| registry-head.log | 1eb14283b31a4a017f1f047bdaf27106b7a39cdc0e5beacc03f25917166438a5 |
+| registry-index.json | 52712143321c4018257928fe38a09f4088c5acd756525d49638b0e3479ee5243 |
+| tmp/build-web-client.rW8RdC.metadata.json | 8119c8e673260c2550ef2fa952d97979ba24db396a6e8447278d2bb7b768d834 |
+
+本批只登记两个产物字段和本文独立追加，历史工作树改动不纳入候选。
+沿已有离线受限 SDK 对精确候选本文做 selected lint，结果保留在原件目录；
+不重复全局 docs、`--full`、SBOM 或业务消费者检查。
+本节证明已构建并推送匹配产物，**不证明部署、修后浏览器／设备验收、
+完整 Inbox/Composer 或生产门禁通过**。Core/Worker 和 Mobile 原生制品未重建，
+当前运行实例未由本批切换。远端只编写代码，本机 193 负责 CI/CD 和运行。
