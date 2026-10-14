@@ -13,6 +13,7 @@
     "topic": {"type": "string", "description": "原频道主题；空字符串清空主题，不改变频道名称、描述或成员。"},
     "emoji": {"type": "string", "minLength": 1, "maxLength": 64, "description": "原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。"},
     "duration": {"type": "string", "minLength": 1},
+    "if": {"type": "string", "minLength": 1, "description": "固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以 CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该 ActionExecution；求值错误使该运行在任何副作用前失败。"},
     "timeout_secs": {"type": "integer", "minimum": 1, "description": "固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer 执行，缺省保持既有版本行为，不给历史补写默认值。"},
     "approvalPolicy": {"$ref": "automation_approval_policy_ref.schema.json", "description": "request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。"},
     "message": {"type": "string", "minLength": 1},
