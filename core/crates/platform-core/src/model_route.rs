@@ -1939,9 +1939,17 @@ pub(crate) async fn provision(
         return Err(conflict());
     }
     if existing.is_none() && binding.native_dispatch_started {
-        return Err(unavailable());
-    }
-    if existing.is_none() {
+        // The original create was dispatched but the native store, read under
+        // this binding row lock, holds no key of this exact scope/hash: that
+        // synchronous ConfigResource write did not commit. Re-send the same
+        // frozen intent (same locator, secret version and projection); never a
+        // different credential. A late duplicate of the earlier request would
+        // be two identical scope/hash rows, which find_key rejects as CONFLICT
+        // (fail closed) rather than binding either one. The lock spans this
+        // re-dispatch so concurrent reconcilers cannot each re-send.
+        gateway.create_key(&key).await?;
+        lock.commit().await?;
+    } else if existing.is_none() {
         // 提交后才跨外部边界；失败/超时均不撤掉已落的 dispatch fence。
         sqlx::query(
             "update catalog.agent_model_binding set native_dispatch_started=true
