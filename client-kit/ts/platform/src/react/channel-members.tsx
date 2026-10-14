@@ -8,10 +8,10 @@
 // add, remove and role changes are the existing governed workspace.member.add/revoke and
 // workspace.admin.grant/revoke actions (DD-41/46/82), re-admitted by Core on submit.
 // Huddle is not offered on governed channels (SS-BUZ-GOVERNANCE), so the bar has no
-// huddle control. Channel roles are the platform admin relation only: no owner/guest.
+// huddle control; Manage channel opens the shared channel-management-sheet. Channel roles are the platform admin relation only: no owner/guest.
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
+import { Ellipsis, EllipsisVertical, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
 import { WorkspaceMembershipState, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
@@ -45,12 +45,16 @@ export function channelMembersQueryKey(workspaceId: string) {
   return ["platform", "channel-members", workspaceId] as const;
 }
 
-function useChannelMembers(workspaceId: string, enabled = true) {
+export function useChannelMembers(workspaceId: string, enabled = true) {
   const client = useBffClient();
   return useQuery({ queryKey: channelMembersQueryKey(workspaceId), queryFn: () => client.members(workspaceId), enabled });
 }
 
-export function ChannelMembersBar({ workspaceId, onToggleMembers }: { workspaceId: string; onToggleMembers: () => void }) {
+export function ChannelMembersBar({ workspaceId, onToggleMembers, onManageChannel }: {
+  workspaceId: string;
+  onToggleMembers: () => void;
+  onManageChannel: () => void;
+}) {
   const t = useT();
   const members = useChannelMembers(workspaceId);
   const memberCount = members.isSuccess
@@ -73,6 +77,21 @@ export function ChannelMembersBar({ workspaceId, onToggleMembers }: { workspaceI
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t("channelMembers.title")}</TooltipContent>
+      </Tooltip>
+      <Tooltip disableHoverableContent>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={t("channelManagement.manage")}
+            data-testid="channel-management-trigger"
+            onClick={onManageChannel}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <EllipsisVertical />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("channelManagement.settings")}</TooltipContent>
       </Tooltip>
     </div>
   );

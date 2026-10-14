@@ -48,6 +48,7 @@ import {
 } from "@client-kit/platform/react/pages";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog } from "@client-kit/platform/react/channel-members";
+import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -252,6 +253,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ?? rows[0];
   const active = activeRow?.id ?? null;
   const [membersOpenFor, setMembersOpenFor] = useState<string | null>(null);
+  const [manageOpenFor, setManageOpenFor] = useState<string | null>(null);
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
   const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">, query?:string) => {
@@ -579,7 +581,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
               channelType={channel.data.channelType}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
-              actions={<ChannelMembersBar workspaceId={active} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)} />}
+              actions={<ChannelMembersBar workspaceId={active} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
+                onManageChannel={() => setManageOpenFor(active)} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -597,6 +600,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} workspaceId={active} open={membersOpenFor === active}
               onOpenChange={(open) => setMembersOpenFor(open ? active : null)} archived={channel.data.archived}
               currentPrincipalId={session.tenantPrincipalId} /> : null}
+          {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
+            <ChannelManagementSheet key={`manage:${session.tenantPrincipalId}:${active}`} workspaceId={active} open={manageOpenFor === active}
+              onOpenChange={(open) => setManageOpenFor(open ? active : null)}
+              channel={{channelId: channel.data.channelId, name: channel.data.name, description: channel.data.description ?? "",
+                channelType: channel.data.channelType === "forum" ? "forum" : "stream", visibility: activeRow.visibility,
+                ttlSeconds: channel.data.ttlSeconds ?? null}}
+              onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
+              onCopy={writeTextToClipboard} /> : null}
           <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
             {body}
           </main>

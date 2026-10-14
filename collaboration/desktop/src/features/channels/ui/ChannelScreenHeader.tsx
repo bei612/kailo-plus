@@ -4,6 +4,7 @@ import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
 import * as React from "react";
 import { ChannelMembersBar, ChannelMembersDialog } from "@client-kit/platform/react/channel-members";
+import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { toast } from "sonner";
 
 import { getChannelDescription } from "@/features/channels/lib/channelDescription";
@@ -41,6 +42,7 @@ export function ChannelScreenHeader({
   const workspace = activeChannel.channelType === "dm" ? undefined
     : nativeApplicationWorkspace(directory.data, { channelId: activeChannel.id });
   const [membersOpenFor, setMembersOpenFor] = React.useState<string | null>(null);
+  const [manageOpenFor, setManageOpenFor] = React.useState<string | null>(null);
   const { openProfilePanel } = useProfilePanel();
 
   async function handleCopyTitle(value: string) {
@@ -65,7 +67,14 @@ export function ChannelScreenHeader({
           : activeChannel.channelType !== "dm" ? <ChannelGlyph channel={activeChannel} className="h-4 w-4 translate-y-px text-muted-foreground" /> : undefined}
         statusBadge={activeChannelEphemeralDisplay ? <ChannelHeaderStatusBadge ephemeralDisplay={activeChannelEphemeralDisplay} /> : undefined}
         actions={workspace ? <ChannelMembersBar workspaceId={workspace.id}
-          onToggleMembers={() => setMembersOpenFor(membersOpenFor === workspace.id ? null : workspace.id)} /> : undefined} />
+          onToggleMembers={() => setMembersOpenFor(membersOpenFor === workspace.id ? null : workspace.id)}
+          onManageChannel={() => setManageOpenFor(workspace.id)} /> : undefined} />
+      {workspace && activeChannel.channelType !== "dm" ? <ChannelManagementSheet key={`manage:${workspace.id}`} workspaceId={workspace.id}
+        open={manageOpenFor === workspace.id} onOpenChange={(open) => setManageOpenFor(open ? workspace.id : null)}
+        channel={{ channelId: activeChannel.id, name: activeChannel.name, description: activeChannel.description,
+          channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds }}
+        onOpenMembers={() => { const id = workspace.id; window.requestAnimationFrame(() => setMembersOpenFor(id)); }}
+        onCopy={(value) => writeTextToClipboard(value)} /> : null}
       {workspace ? <ChannelMembersDialog key={workspace.id} workspaceId={workspace.id} open={membersOpenFor === workspace.id}
         onOpenChange={(open) => setMembersOpenFor(open ? workspace.id : null)} archived={Boolean(activeChannel.archivedAt)}
         currentPubkey={currentPubkey}

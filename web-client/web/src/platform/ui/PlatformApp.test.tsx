@@ -12,6 +12,7 @@ vi.mock("@client-kit/platform/react/channel-members", () => ({
   ChannelMembersBar: ({workspaceId}:{workspaceId:string}) => <div data-testid="channel-members-trigger" data-workspace={workspaceId} />,
   ChannelMembersDialog: () => null,
 }));
+vi.mock("@client-kit/platform/react/channel-management-sheet", () => ({ ChannelManagementSheet: () => null }));
 
 const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false,
   channelType: "stream", conversationId: null as string | null, emptyWorkspaces: false,
