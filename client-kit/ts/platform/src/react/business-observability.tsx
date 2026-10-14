@@ -560,8 +560,8 @@ export function BusinessOperationsPage() {
           </span>
         ) : null}
       </div>
-      {view === "mine" ? null : <Summary key={view} workspaceId={view === "tenant" ? undefined : view} />}
-      <Timeline key={view} view={view} workspaces={workspaces} />
+      {view === "mine" ? null : <Summary key={`summary:${view}`} workspaceId={view === "tenant" ? undefined : view} />}
+      <Timeline key={`timeline:${view}`} view={view} workspaces={workspaces} />
     </div>
   );
 }

@@ -49,16 +49,20 @@ fn operation_query(filter: &str) -> String {
                          or (ae.action_definition_id is null
                              and d.action_key = ae.action_key and d.version = ae.action_version))
                     and d.obs_usage_source <> 'NONE') as metered,
+           -- 确定终态时间只取审计事实（审计按 operation 追加，action_execution_id 可空）：
+           -- Workflow 取与 TaskProjection 终态同名的首个 OUTCOME；同步动作取首个
+           -- DISPATCHED 或 OUTCOME。投影写回、兜底对账或后来的过期/撤销不当作终态时间。
            case
              when tp.status in ('COMPLETED','FAILED','CANCELED','TERMINATED','TIMED_OUT')
-               then tp.updated_at
+               then (select min(a.occurred_at) from audit.audit_event a
+                     where a.tenant_id = ae.tenant_id and a.operation_id = ae.operation_id
+                       and a.event_type = 'OUTCOME' and a.result_code = tp.status)
              when ae.temporal_workflow_id is null and ae.gate_state = 'ALLOWED'
                   and ae.dispatch_state = 'DISPATCHED'
-               -- 审计行按 operation 追加（action_execution_id 可空），同步结果以同一
-               -- operation 的 DISPATCH/OUTCOME 为确定终态时间
-               then (select max(a.occurred_at) from audit.audit_event a
+               then (select min(a.occurred_at) from audit.audit_event a
                      where a.tenant_id = ae.tenant_id and a.operation_id = ae.operation_id
-                       and a.event_type in ('DISPATCH','OUTCOME'))
+                       and ((a.event_type = 'DISPATCH' and a.result_code = 'DISPATCHED')
+                            or a.event_type = 'OUTCOME'))
            end as terminal_at,
            coalesce((select jsonb_agg(jsonb_build_object(
                          'meterKey', u.meter_key, 'quantity', u.quantity,
