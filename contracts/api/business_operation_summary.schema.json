@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/business_operation_summary.schema.json",
+  "title": "BusinessOperationSummary",
+  "description": "GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有 audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId", "from", "to", "total", "phases", "actions", "usageStates"],
+  "properties": {
+    "tenantId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "from": {"type": "string", "description": "RFC3339，含"},
+    "to": {"type": "string", "description": "RFC3339，不含"},
+    "total": {"type": "integer"},
+    "phases": {"type": "array", "items": {"$ref": "business_operation_phase_count.schema.json"}},
+    "actions": {
+      "type": "array",
+      "items": {
+        "title": "BusinessOperationActionSummary",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actionKey", "total", "phases", "timedTerminalCount"],
+        "properties": {
+          "actionKey": {"type": "string"},
+          "total": {"type": "integer"},
+          "phases": {"type": "array", "items": {"$ref": "business_operation_phase_count.schema.json"}},
+          "timedTerminalCount": {"type": "integer", "description": "有确定终态时间、计入平均耗时的操作数"},
+          "averageTerminalSeconds": {"type": "number", "description": "timedTerminalCount 为 0 时缺省"}
+        }
+      }
+    },
+    "usageStates": {"type": "array", "items": {"$ref": "operation_usage_count.schema.json"}}
+  }
+}

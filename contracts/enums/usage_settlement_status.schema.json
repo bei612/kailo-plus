@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/usage_settlement_status.schema.json",
+  "title": "UsageSettlementStatus",
+  "description": "Core UsageEvent outbox 的投递事实（.design/11 §4 第 7 条）。PENDING_PUBLISH 尚未取得 OpenMeter 回应；ACCEPTED 只表示 202 接收；COMMITTED 表示按 ID/source 查到 stored_at；UNKNOWN 待对账；FAILED 为确定拒绝。均不表示 invoice 已结算。",
+  "type": "string",
+  "enum": [
+    "PENDING_PUBLISH",
+    "ACCEPTED",
+    "COMMITTED",
+    "UNKNOWN",
+    "FAILED"
+  ]
+}

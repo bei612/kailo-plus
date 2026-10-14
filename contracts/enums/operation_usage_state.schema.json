@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/operation_usage_state.schema.json",
+  "title": "OperationUsageState",
+  "description": "一个业务操作的用量结算状态（.design/11 §4、§6，.design/14 §8）。NOT_METERED：动作定义没有用量来源；NOT_DISPATCHED：有计量但没有派发；BILLING_UNAVAILABLE：已派发却没有可结算的持久用量事实（不显示零）；SETTLEMENT_PENDING：用量事件待发布或 OpenMeter 仅 202 接收；COMMITTED：全部事件已按 ID/source 查到 stored_at；UNKNOWN：投递或查证结果不明，待对账；FAILED：投递被确定拒绝。COMMITTED 不代表账单已结算。",
+  "type": "string",
+  "enum": [
+    "NOT_METERED",
+    "NOT_DISPATCHED",
+    "BILLING_UNAVAILABLE",
+    "SETTLEMENT_PENDING",
+    "COMMITTED",
+    "UNKNOWN",
+    "FAILED"
+  ]
+}

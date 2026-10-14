@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/usage_billing_view.schema.json",
+  "title": "UsageBillingView",
+  "description": "GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14 §7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core 不复制或聚合成账本；投递计数只来自 Core UsageEvent outbox。缺口用确定状态表达，不显示零或已结算。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenantId",
+    "from",
+    "to",
+    "customerState",
+    "meters",
+    "entitlementState",
+    "entitlements",
+    "delivery",
+    "operationUsage",
+    "billingState",
+    "invoices"
+  ],
+  "properties": {
+    "tenantId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "from": {"type": "string", "description": "RFC3339，含"},
+    "to": {"type": "string", "description": "RFC3339，不含"},
+    "customerState": {"$ref": "../enums/usage_customer_state.schema.json"},
+    "meters": {
+      "type": "array",
+      "items": {
+        "title": "UsageMeterView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["meterKey", "state"],
+        "properties": {
+          "meterKey": {"type": "string", "description": "ActionDefinition 登记的平台 meter 选择键"},
+          "aggregation": {"type": "string", "description": "原生 meter 的聚合方式原文"},
+          "state": {"$ref": "../enums/meter_usage_state.schema.json"},
+          "quantity": {"type": "string", "description": "仅 COMMITTED 时给出；OpenMeter 返回的十进制原文"}
+        }
+      }
+    },
+    "entitlementState": {"$ref": "../enums/usage_section_state.schema.json"},
+    "entitlements": {
+      "type": "array",
+      "items": {
+        "title": "UsageEntitlementView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["featureKey", "entitlementType", "hasAccess"],
+        "properties": {
+          "featureKey": {"type": "string"},
+          "entitlementType": {"type": "string", "description": "原生 entitlement 类型原文"},
+          "hasAccess": {"type": "boolean"},
+          "balance": {"type": "string", "description": "仅 metered；OpenMeter 十进制原文"},
+          "usage": {"type": "string", "description": "仅 metered；当前用量周期内的原生 usage"},
+          "overage": {"type": "string", "description": "仅 metered"}
+        }
+      }
+    },
+    "delivery": {
+      "type": "array",
+      "items": {
+        "title": "UsageDeliveryCount",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "count"],
+        "properties": {
+          "status": {"$ref": "../enums/usage_settlement_status.schema.json"},
+          "count": {"type": "integer"}
+        }
+      }
+    },
+    "operationUsage": {"type": "array", "items": {"$ref": "operation_usage_count.schema.json"}},
+    "billingState": {"$ref": "../enums/usage_section_state.schema.json"},
+    "invoices": {
+      "type": "array",
+      "items": {
+        "title": "UsageInvoiceView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "number": {"type": "string"},
+          "status": {"type": "string", "description": "原生 invoice status 原文；只有原生终态才可称为已结算"},
+          "currency": {"type": "string"},
+          "total": {"type": "string", "description": "原生 totals.total 十进制原文"},
+          "servicePeriodFrom": {"type": "string"},
+          "servicePeriodTo": {"type": "string"},
+          "issuedAt": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -350,7 +350,11 @@ pub(crate) struct TaskRow {
     observation_gap: Option<bool>,
 }
 
-pub(crate) const TASK_QUERY: &str = "
+// TaskRow 的列与投影连接；`$3` 固定为投影新鲜度秒数。本人任务与业务操作视图共用，
+// 不各自维护一份阶段事实的读取口径。
+macro_rules! task_select {
+    () => {
+        "
     select ae.id, ae.operation_id, ae.action_key, ae.action_version, ae.workspace_id, ae.target_id,
            ae.gate_state, ae.dispatch_state, ae.reason_code, ae.approval_workflow_id,
            ae.temporal_workflow_id, ae.created_at,
@@ -359,13 +363,29 @@ pub(crate) const TASK_QUERY: &str = "
            aw.created_at < now() - make_interval(secs => $3::bigint) as approval_ref_stale,
            w.kind, w.projection_state as ref_state,
            w.created_at < now() - make_interval(secs => $3::bigint) as ref_stale,
-           tp.status as task_status, tp.waiting_reason, tp.observation_gap
+           tp.status as task_status, tp.waiting_reason, tp.observation_gap"
+    };
+}
+
+macro_rules! task_from {
+    () => {
+        "
     from admission.action_execution ae
     left join projection.approval_projection ap on ap.workflow_id = ae.approval_workflow_id
     left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
     left join projection.workflow_ref w on w.workflow_id = ae.temporal_workflow_id
-    left join projection.task_projection tp on tp.workflow_id = ae.temporal_workflow_id
-    where ae.tenant_id = $1 and ae.initiator_principal_id = $2";
+    left join projection.task_projection tp on tp.workflow_id = ae.temporal_workflow_id"
+    };
+}
+
+pub(crate) const TASK_SELECT: &str = task_select!();
+pub(crate) const TASK_FROM: &str = task_from!();
+pub(crate) const TASK_QUERY: &str = concat!(
+    task_select!(),
+    task_from!(),
+    "
+    where ae.tenant_id = $1 and ae.initiator_principal_id = $2"
+);
 
 /// 投影能否担保为当前（`.design/06` §3.1、RB-05）。返回 None 即当前；否则是
 /// UI 必须显示为「待对账」的原因，不得渲染成成功或失败（`06` §4）。

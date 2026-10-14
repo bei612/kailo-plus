@@ -183,6 +183,7 @@
     "./react/message-body": "./src/react/message-body.tsx",
     "./react/navigation": "./src/react/navigation.tsx",
     "./react/pages": "./src/react/pages.tsx",
+    "./react/business-observability": "./src/react/business-observability.tsx",
     "./react/roles": "./src/react/roles.tsx",
     "./react/settings": "./src/react/settings.tsx",
     "./react/features": "./src/react/features/index.ts",

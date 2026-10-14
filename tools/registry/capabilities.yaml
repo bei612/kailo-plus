@@ -317,6 +317,15 @@ capabilities:
   tools: []
   workflow_kinds:
   - WORKSPACE_LIFECYCLE
+- id: metering.business_observability
+  exposure: end_user
+  routes:
+  - /api/v1/operations
+  - /api/v1/operations/summary
+  - /api/v1/usage-billing
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: metering.core_authentication
   exposure: none
   routes: []

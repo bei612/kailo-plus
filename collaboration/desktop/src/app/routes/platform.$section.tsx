@@ -13,6 +13,7 @@ import {
   DevicesPage,
   WorkspaceMembersPage,
 } from "@client-kit/platform/react/pages";
+import { BusinessOperationsPage, UsageBillingPage } from "@client-kit/platform/react/business-observability";
 
 import {
   isPlatformSection,
@@ -101,6 +102,10 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
         <TasksPage />
       ) : section === "approvals" ? (
         <ApprovalsPage />
+      ) : section === "usage" ? (
+        <UsageBillingPage />
+      ) : section === "operations" ? (
+        <BusinessOperationsPage />
       ) : section === "audit" ? (
         <AuditPage />
       ) : (

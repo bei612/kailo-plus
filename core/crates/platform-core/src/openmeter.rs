@@ -366,17 +366,89 @@ impl CreditValue {
         ]
         .into_iter()
         .chain(self.grant_balances.values())
-        .all(|value| {
-            let decimal = value.strip_prefix('-').unwrap_or(value);
-            let mut parts = decimal.split('.');
-            let integer = parts.next().unwrap_or_default();
-            let fraction = parts.next();
-            !integer.is_empty()
-                && integer.bytes().all(|b| b.is_ascii_digit())
-                && fraction.is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()))
-                && parts.next().is_none()
-        })
+        .all(|value| valid_numeric(value))
     }
+}
+
+/// 原生 Numeric 的十进制字符串形状；只校验，不换算成浮点或另算余额。
+fn valid_numeric(value: &str) -> bool {
+    let decimal = value.strip_prefix('-').unwrap_or(value);
+    let mut parts = decimal.split('.');
+    let integer = parts.next().unwrap_or_default();
+    let fraction = parts.next();
+    !integer.is_empty()
+        && integer.bytes().all(|b| b.is_ascii_digit())
+        && fraction.is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()))
+        && parts.next().is_none()
+}
+
+/// `.design/11` §7：一个已登记 meter 在区间内的原生 committed usage 结论。
+pub(crate) enum MeterUsage {
+    Committed {
+        aggregation: String,
+        quantity: String,
+    },
+    NoCommittedUsage {
+        aggregation: String,
+    },
+    WorkspaceDimensionUnavailable {
+        aggregation: String,
+    },
+    NotRegistered,
+}
+
+/// 原生 entitlement-access 的读取投影；数值保持 OpenMeter 十进制原文。
+pub(crate) struct EntitlementFact {
+    pub feature_key: String,
+    pub kind: &'static str,
+    pub has_access: bool,
+    pub balance: Option<String>,
+    pub usage: Option<String>,
+    pub overage: Option<String>,
+}
+
+/// 原生 standard invoice 的读取投影；status 原文由页面按已知值呈现。
+pub(crate) struct InvoiceFact {
+    pub id: String,
+    pub number: Option<String>,
+    pub status: String,
+    pub currency: Option<String>,
+    pub total: Option<String>,
+    pub service_period: Option<(String, String)>,
+    pub issued_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MeterQueryResult {
+    data: Vec<MeterQueryRow>,
+}
+
+#[derive(Deserialize)]
+struct MeterQueryRow {
+    value: String,
+    dimensions: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct NativeInvoice {
+    id: String,
+    number: Option<String>,
+    status: String,
+    currency: Option<String>,
+    totals: Option<NativeInvoiceTotals>,
+    service_period: Option<NativePeriod>,
+    issued_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NativeInvoiceTotals {
+    total: String,
+}
+
+#[derive(Deserialize)]
+struct NativePeriod {
+    from: String,
+    to: String,
 }
 
 fn valid_resource_key(key: &str) -> bool {
@@ -1365,6 +1437,199 @@ impl OpenMeter {
             return Err(Error::Unknown);
         }
         Ok(tombstone)
+    }
+
+    /// `.design/11` §7、§3：只读该 Tenant 唯一 Customer 的原生 committed usage。
+    /// Workspace 归因只在原生 meter 声明 `workspace_id` 维度时才查询，不按时间或
+    /// Core 自己的 outbox 推算。空结果是原生确认的「区间内无已存储事件」。
+    pub(crate) async fn committed_meter_usage(
+        &self,
+        customer_id: &str,
+        key: &str,
+        workspace: Option<Uuid>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<MeterUsage, Error> {
+        if !valid_customer_id(customer_id) {
+            return Err(Error::Conflict);
+        }
+        let Ok(native_key) = native_meter_key(key, self.automation_native_meter_key.as_deref())
+        else {
+            return Ok(MeterUsage::NotRegistered);
+        };
+        let mut meter_url = self.collection_url("meters")?;
+        meter_url
+            .query_pairs_mut()
+            .append_pair("filter[key][eq]", native_key);
+        let native: Vec<Meter> = self.collection(meter_url).await?;
+        let live: Vec<&Meter> = native
+            .iter()
+            .filter(|m| m.key == native_key && m.deleted_at.is_none())
+            .collect();
+        let [meter] = live.as_slice() else {
+            return Ok(MeterUsage::NotRegistered);
+        };
+        if !valid_customer_id(&meter.id) {
+            return Err(Error::Conflict);
+        }
+        let aggregation = meter.aggregation.clone();
+        let mut dimensions = serde_json::Map::new();
+        dimensions.insert(
+            "customer_id".into(),
+            serde_json::json!({ "eq": customer_id }),
+        );
+        if let Some(workspace) = workspace {
+            if !meter
+                .dimensions
+                .as_ref()
+                .is_some_and(|d| d.contains_key("workspace_id"))
+            {
+                return Ok(MeterUsage::WorkspaceDimensionUnavailable { aggregation });
+            }
+            dimensions.insert(
+                "workspace_id".into(),
+                serde_json::json!({ "eq": workspace.to_string() }),
+            );
+        }
+        let mut query_url = self.collection_url("meters")?;
+        query_url
+            .path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .push(&meter.id)
+            .push("query");
+        let response = self
+            .http
+            .post(query_url)
+            .json(&serde_json::json!({
+                "from": from.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                "to": to.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                "filters": { "dimensions": dimensions },
+            }))
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        if response.status() != StatusCode::OK {
+            return Err(status_error(response.status()));
+        }
+        let result: MeterQueryResult = response.json().await.map_err(|_| Error::Unknown)?;
+        match result.data.as_slice() {
+            [] => Ok(MeterUsage::NoCommittedUsage { aggregation }),
+            [row]
+                if row.dimensions.get("customer_id").map(String::as_str) == Some(customer_id)
+                    && valid_numeric(&row.value) =>
+            {
+                Ok(MeterUsage::Committed {
+                    aggregation,
+                    quantity: row.value.clone(),
+                })
+            }
+            // 单一 Customer 过滤后不应出现多行或别的 Customer；不选第一行。
+            _ => Err(Error::Unknown),
+        }
+    }
+
+    /// `.design/11` §7：原生 entitlement/credit 只读展示，不复制余额。
+    pub(crate) async fn entitlement_facts(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+    ) -> Result<Vec<EntitlementFact>, Error> {
+        self.customer_by_id(customer_id, tenant)
+            .await?
+            .filter(Customer::is_active)
+            .ok_or(Error::Precondition)?;
+        let mut access_url = self.customer_url(customer_id)?;
+        access_url
+            .path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .push("entitlement-access");
+        let list: EntitlementAccessList = self.read(access_url.clone()).await?;
+        let mut seen = HashSet::new();
+        let mut facts = Vec::with_capacity(list.data.len());
+        for access in list.data {
+            if !valid_resource_key(&access.feature_key)
+                || !seen.insert(access.feature_key.clone())
+            {
+                return Err(Error::Unknown);
+            }
+            let kind = match access.kind {
+                EntitlementType::Metered => "metered",
+                EntitlementType::Static => "static",
+                EntitlementType::Boolean => "boolean",
+            };
+            if access.kind != EntitlementType::Metered {
+                facts.push(EntitlementFact {
+                    feature_key: access.feature_key,
+                    kind,
+                    has_access: access.has_access,
+                    balance: None,
+                    usage: None,
+                    overage: None,
+                });
+                continue;
+            }
+            let mut value_url = access_url.clone();
+            value_url
+                .path_segments_mut()
+                .map_err(|_| Error::Unknown)?
+                .push("features")
+                .push(&access.feature_key);
+            value_url.query_pairs_mut().append_pair("expand", "value");
+            let detail: EntitlementAccess = self.read(value_url).await?;
+            if detail.feature_key != access.feature_key {
+                return Err(Error::Conflict);
+            }
+            let value = detail
+                .value
+                .filter(CreditValue::valid)
+                .ok_or(Error::Unknown)?;
+            facts.push(EntitlementFact {
+                feature_key: access.feature_key,
+                kind,
+                has_access: detail.has_access,
+                balance: Some(value.balance),
+                usage: Some(value.usage),
+                overage: Some(value.overage),
+            });
+        }
+        Ok(facts)
+    }
+
+    /// `.design/11` §6：账单状态只读原生 invoice；没有 invoice 不等于已结算或零账单。
+    pub(crate) async fn invoice_facts(&self, customer_id: &str) -> Result<Vec<InvoiceFact>, Error> {
+        if !valid_customer_id(customer_id) {
+            return Err(Error::Conflict);
+        }
+        let mut url = self.collection_url("billing")?;
+        url.path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .push("invoices");
+        url.query_pairs_mut()
+            .append_pair("filter[customer_id][eq]", customer_id);
+        let invoices: Vec<NativeInvoice> = self.collection(url).await?;
+        invoices
+            .into_iter()
+            .map(|invoice| {
+                if invoice.id.is_empty()
+                    || invoice.status.is_empty()
+                    || invoice
+                        .totals
+                        .as_ref()
+                        .is_some_and(|t| !valid_numeric(&t.total))
+                {
+                    return Err(Error::Unknown);
+                }
+                Ok(InvoiceFact {
+                    id: invoice.id,
+                    number: invoice.number,
+                    status: invoice.status,
+                    currency: invoice.currency,
+                    total: invoice.totals.map(|t| t.total),
+                    service_period: invoice.service_period.map(|p| (p.from, p.to)),
+                    issued_at: invoice.issued_at,
+                })
+            })
+            .collect()
     }
 }
 

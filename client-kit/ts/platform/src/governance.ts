@@ -13,6 +13,7 @@ import {
   ActionDispatchState,
   ActionGateState,
   ApprovalStatus,
+  BusinessOperationPhase,
   type InvitationRedemptionView,
   ReasonCode,
   type TaskView,
@@ -33,6 +34,27 @@ const terminal: Record<TaskStatus, TaskPhase> = {
   [TaskStatus.Canceled]: phase("tasks.status.canceled", "negative"),
   [TaskStatus.Terminated]: phase("tasks.status.terminated", "negative"),
   [TaskStatus.TimedOut]: phase("tasks.status.timedOut", "negative"),
+};
+
+/** Core 判定的业务操作阶段沿用任务页同一组文案与色调，不另立一套说法。 */
+export const businessOperationPhase: Record<BusinessOperationPhase, TaskPhase> = {
+  [BusinessOperationPhase.Evaluating]: phase("tasks.status.evaluating"),
+  [BusinessOperationPhase.AwaitingApproval]: phase("tasks.status.waitingApproval"),
+  [BusinessOperationPhase.Denied]: phase("tasks.status.denied", "negative"),
+  [BusinessOperationPhase.Revoked]: phase("tasks.status.revoked", "negative"),
+  [BusinessOperationPhase.Expired]: phase("tasks.status.expired", "negative"),
+  [BusinessOperationPhase.NotStarted]: phase("tasks.status.notStarted"),
+  [BusinessOperationPhase.Aborted]: phase("tasks.status.aborted", "negative"),
+  [BusinessOperationPhase.CancelRequested]: phase("tasks.status.cancelRequestAccepted"),
+  [BusinessOperationPhase.Applied]: phase("tasks.status.applied", "positive"),
+  [BusinessOperationPhase.Running]: terminal[TaskStatus.Running],
+  [BusinessOperationPhase.Completed]: terminal[TaskStatus.Completed],
+  [BusinessOperationPhase.Failed]: terminal[TaskStatus.Failed],
+  [BusinessOperationPhase.Canceled]: terminal[TaskStatus.Canceled],
+  [BusinessOperationPhase.Terminated]: terminal[TaskStatus.Terminated],
+  [BusinessOperationPhase.TimedOut]: terminal[TaskStatus.TimedOut],
+  [BusinessOperationPhase.ProjectionDelayed]: phase("tasks.status.delayed"),
+  [BusinessOperationPhase.Unknown]: phase("tasks.status.unknown"),
 };
 
 export function taskPhase(task: TaskView): TaskPhase {

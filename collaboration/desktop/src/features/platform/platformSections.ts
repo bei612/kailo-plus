@@ -23,6 +23,8 @@ export const PLATFORM_SECTION_LABEL: Record<
   workflows: "platform.tab.workflows",
   tasks: "platform.tab.tasks",
   approvals: "platform.tab.approvals",
+  usage: "platform.tab.usage",
+  operations: "platform.tab.operations",
   audit: "platform.tab.audit",
   devices: "platform.tab.devices",
 };

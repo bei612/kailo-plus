@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/business_operation_view.schema.json",
+  "title": "BusinessOperationView",
+  "description": "业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operationId",
+    "actionExecutionId",
+    "actionKey",
+    "actionVersion",
+    "targetId",
+    "initiatorPrincipalId",
+    "actorPrincipalId",
+    "phase",
+    "usageState",
+    "usage",
+    "createdAt"
+  ],
+  "properties": {
+    "operationId": {"type": "string", "format": "uuid"},
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "actionKey": {"type": "string"},
+    "actionVersion": {"type": "integer"},
+    "workspaceId": {"type": "string", "format": "uuid", "description": "缺省即 Tenant 级动作"},
+    "targetId": {"type": "string", "format": "uuid"},
+    "initiatorPrincipalId": {"type": "string", "format": "uuid"},
+    "actorPrincipalId": {"type": "string", "format": "uuid"},
+    "phase": {"$ref": "../enums/business_operation_phase.schema.json"},
+    "reason": {"$ref": "../enums/reason_code.schema.json"},
+    "approvalStatus": {"$ref": "../enums/approval_status.schema.json"},
+    "workflowKind": {"$ref": "../enums/workflow_kind.schema.json"},
+    "usageState": {"$ref": "../enums/operation_usage_state.schema.json"},
+    "usage": {
+      "type": "array",
+      "items": {
+        "title": "OperationUsageLine",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["meterKey", "quantity", "status"],
+        "properties": {
+          "meterKey": {"type": "string"},
+          "quantity": {"type": "integer", "description": "冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账"},
+          "status": {"$ref": "../enums/usage_settlement_status.schema.json"}
+        }
+      }
+    },
+    "createdAt": {"type": "string", "description": "RFC3339，UTC"},
+    "terminalAt": {"type": "string", "description": "RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出"}
+  }
+}

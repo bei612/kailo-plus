@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/business_operation_phase.schema.json",
+  "title": "BusinessOperationPhase",
+  "description": "业务操作视图的当前阶段（.design/14 §7、§8），由 Core 按 ActionExecution 准入/派发、ApprovalProjection 与 TaskProjection 唯一推导；投影不可担保为当前时为 PROJECTION_DELAYED，外部结果不明时为 UNKNOWN，二者都不是成功或失败。APPLIED 只用于无 Workflow 的同步动作返回结果；CANCEL_REQUESTED 只表示取消控制被接受，不表示原任务已终结。",
+  "type": "string",
+  "enum": [
+    "EVALUATING",
+    "AWAITING_APPROVAL",
+    "DENIED",
+    "REVOKED",
+    "EXPIRED",
+    "NOT_STARTED",
+    "ABORTED",
+    "CANCEL_REQUESTED",
+    "APPLIED",
+    "RUNNING",
+    "COMPLETED",
+    "FAILED",
+    "CANCELED",
+    "TERMINATED",
+    "TIMED_OUT",
+    "PROJECTION_DELAYED",
+    "UNKNOWN"
+  ]
+}

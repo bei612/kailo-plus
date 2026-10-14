@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/business_operation_phase_count.schema.json",
+  "title": "BusinessOperationPhaseCount",
+  "description": "一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["phase", "count"],
+  "properties": {
+    "phase": {"$ref": "../enums/business_operation_phase.schema.json"},
+    "count": {"type": "integer"}
+  }
+}

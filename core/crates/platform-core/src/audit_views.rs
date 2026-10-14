@@ -35,6 +35,37 @@ pub struct AuditScopeQuery {
     cursor: Option<Uuid>,
 }
 
+/// 范围读取的准入：Workspace 先确认属于调用方 Tenant（跨 Tenant 的 ID 不走到授权
+/// 判定），再对该范围的 `audit` 做 fresh Check。范围审计、业务操作聚合与用量账单
+/// 视图共用这一个判定（`.design/14` §7、`.design/11` §7）。
+pub(crate) async fn authorize_scope(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    workspace_id: Option<Uuid>,
+) -> Result<(), Response> {
+    if let Some(workspace_id) = workspace_id {
+        let belongs: Result<Option<i32>, _> =
+            sqlx::query_scalar("select 1 from identity.workspace where id = $1 and tenant_id = $2")
+                .bind(workspace_id)
+                .bind(ctx.tenant_id)
+                .fetch_optional(&state.pool)
+                .await;
+        match belongs {
+            Ok(Some(_)) => {}
+            Ok(None) => return Err(StatusCode::FORBIDDEN.into_response()),
+            Err(e) => {
+                tracing::warn!(error = %e, "审计范围的 Workspace 归属判定失败");
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+            }
+        }
+    }
+    if audit_allowed(state, ctx, workspace_id).await? {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN.into_response())
+    }
+}
+
 /// 对 `tenant` 或其中一个 Workspace 的 `audit` 做 fresh Check。
 ///
 /// 判定失败是结果不明，回 503；不把它当成「无权」或「有权」。
@@ -122,28 +153,8 @@ pub async fn list_scope_audit(
         Ok(c) => c,
         Err(r) => return r,
     };
-    if let Some(workspace_id) = query.workspace_id {
-        // 先确认 Workspace 属于调用方的 Tenant，再问 SpiceDB：跨 Tenant 的 ID
-        // 不该走到授权判定那一步
-        let belongs: Result<Option<i32>, _> =
-            sqlx::query_scalar("select 1 from identity.workspace where id = $1 and tenant_id = $2")
-                .bind(workspace_id)
-                .bind(ctx.tenant_id)
-                .fetch_optional(&state.pool)
-                .await;
-        match belongs {
-            Ok(Some(_)) => {}
-            Ok(None) => return StatusCode::FORBIDDEN.into_response(),
-            Err(e) => {
-                tracing::warn!(error = %e, "审计范围的 Workspace 归属判定失败");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-        }
-    }
-    match audit_allowed(&state, &ctx, query.workspace_id).await {
-        Ok(true) => {}
-        Ok(false) => return StatusCode::FORBIDDEN.into_response(),
-        Err(r) => return r,
+    if let Err(r) = authorize_scope(&state, &ctx, query.workspace_id).await {
+        return r;
     }
 
     let page = state.message_page_limit;

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/operation_usage_count.schema.json",
+  "title": "OperationUsageCount",
+  "description": "一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "count"],
+  "properties": {
+    "state": {"$ref": "../enums/operation_usage_state.schema.json"},
+    "count": {"type": "integer"}
+  }
+}

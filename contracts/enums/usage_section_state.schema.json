@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/usage_section_state.schema.json",
+  "title": "UsageSectionState",
+  "description": "用量与账单页中额度、账单两类 Customer 级事实的读取结论。AVAILABLE：原生查询成功（列表可以为空）；UNAVAILABLE：原生查询失败或结果不可查证；TENANT_SCOPE_ONLY：所选 Workspace 视图不展示 Customer 级事实；NOT_PROVISIONED：Tenant 没有有效 Customer 映射。",
+  "type": "string",
+  "enum": [
+    "AVAILABLE",
+    "UNAVAILABLE",
+    "TENANT_SCOPE_ONLY",
+    "NOT_PROVISIONED"
+  ]
+}

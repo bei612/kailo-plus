@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/meter_usage_state.schema.json",
+  "title": "MeterUsageState",
+  "description": "一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该 Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生 meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。",
+  "type": "string",
+  "enum": [
+    "COMMITTED",
+    "NO_COMMITTED_USAGE",
+    "WORKSPACE_DIMENSION_UNAVAILABLE",
+    "METER_NOT_REGISTERED",
+    "UNAVAILABLE"
+  ]
+}

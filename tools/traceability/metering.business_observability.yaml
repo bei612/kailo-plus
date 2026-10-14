@@ -1,0 +1,44 @@
+capability_id: metering.business_observability
+title: 受权业务操作时间线、Tenant/Workspace 聚合与用量账单视图
+stage: S4
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-10]
+  decisions: [DD-07, DD-38, DD-51]
+  facts: []
+  seams: [SS-OMT-AUTH]
+  blockers: []
+  entities: [OpenMeterBinding, UsageEvent, ActionExecution, AuditEvent]
+
+validation:
+  scenarios: [V-SCN-27, V-SCN-44]
+  evidence:
+    - dimension: 上游接缝
+      ref: metering/fork/verify/core-authentication.md
+    - dimension: 领域规则
+      ref: core/verify/business-observability.md
+    - dimension: 呈现
+      ref: core/verify/business-observability.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/business_observability.rs, core/crates/platform-core/src/openmeter.rs, core/crates/platform-core/src/audit_views.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/react/business-observability.tsx, client-kit/ts/platform/src/react/navigation.tsx, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/i18n.ts, client-kit/ts/platform/src/governance.ts, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop/src/app/routes/platform.$section.tsx]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/usage_billing_view.schema.json, contracts/api/business_operation_page.schema.json, contracts/api/business_operation_view.schema.json, contracts/api/business_operation_summary.schema.json, contracts/api/business_operation_phase_count.schema.json, contracts/api/operation_usage_count.schema.json, contracts/enums/business_operation_phase.schema.json, contracts/enums/operation_usage_state.schema.json, contracts/enums/usage_settlement_status.schema.json, contracts/enums/usage_customer_state.schema.json, contracts/enums/meter_usage_state.schema.json, contracts/enums/usage_section_state.schema.json]
+  migrations: []
+
+runtime:
+  routes: ["/api/v1/operations", "/api/v1/operations/summary", "/api/v1/usage-billing"]
+  actions: []
+  workflow_kinds: []
+
+release:
+  # 仅记录当前已构建候选；本能力的新 Core/Web 构建、部署与业务验收以 core/verify/business-observability.md 为准。
+  artifacts:
+    - name: core
+      digest: sha256:76eb93c4d4662ff1cc7731615000e976f57c7366b3d5e0011ba65d4e90f23c28
+    - name: web-client
+      digest: sha256:19d8aa47eac962b5e4bf300ca51a91a0ecb145655fd52dd7b3b818196c4bdefd
+  gate: blocked_until_seams_closed

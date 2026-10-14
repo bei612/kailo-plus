@@ -15,6 +15,8 @@ export const platformNavigationSections = [
   "workflows",
   "tasks",
   "approvals",
+  "usage",
+  "operations",
   "audit",
   "devices",
 ] as const;
@@ -30,6 +32,8 @@ const sectionLabel: Record<PlatformNavigationSection, PlatformMessageKey> = {
   workflows: "platform.tab.workflows",
   tasks: "platform.tab.tasks",
   approvals: "platform.tab.approvals",
+  usage: "platform.tab.usage",
+  operations: "platform.tab.operations",
   audit: "platform.tab.audit",
   devices: "platform.tab.devices",
 };

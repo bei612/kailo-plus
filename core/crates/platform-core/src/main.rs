@@ -32,6 +32,7 @@ mod audit_views;
 mod automation;
 mod automation_query;
 mod bff;
+mod business_observability;
 mod capability_contract;
 mod capability_registry;
 mod capacity;

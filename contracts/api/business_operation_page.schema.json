@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/business_operation_page.schema.json",
+  "title": "BusinessOperationPage",
+  "description": "GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的 Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operations"],
+  "properties": {
+    "operations": {"type": "array", "items": {"$ref": "business_operation_view.schema.json"}},
+    "nextCursor": {"type": "string", "description": "下一页首项之前的 ActionExecution ID；缺省即已读完"}
+  }
+}

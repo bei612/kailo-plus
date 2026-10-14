@@ -242,7 +242,7 @@ function AuditResult({ decision, resultCode }: Pick<OwnAuditEntry, "decision" | 
   </>;
 }
 
-const isForbidden = (error: unknown) => error instanceof BffError && error.status === 403;
+export const isForbidden = (error: unknown) => error instanceof BffError && error.status === 403;
 const isNotFound = (error: unknown) => error instanceof BffError && error.status === 404;
 
 /** 200 回应也要合契约才用；缺字段的页当作读取失败，不当作「没有事件」。 */
@@ -409,7 +409,7 @@ function ScopedAudit() {
  * 范围选择：整个 Tenant，或页面已有来源（可进入的 Workspace 列表）中的一个。列表读不到
  * 时仍可选整个 Tenant，并如实说明工作区列表未载入。
  */
-function ScopeSelect({
+export function ScopeSelect({
   scope,
   workspaces,
   workspacesFailed,

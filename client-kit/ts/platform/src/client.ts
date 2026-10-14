@@ -41,6 +41,8 @@ import type {
   ApprovalDecisionRequest,
   ApprovalView,
   AuditEventPage,
+  BusinessOperationPage,
+  BusinessOperationSummary,
   CapabilityContractPage,
   ComponentReleasePage,
   ClientKeyStatus,
@@ -51,6 +53,7 @@ import type {
   LegacySecretRefPage,
   NativeCommunityFacts,
   OwnAuditEntry,
+  UsageBillingView,
   PlatformInfo,
   PlatformToolPage,
   PlatformSessionView,
@@ -298,6 +301,31 @@ export function createBffClient(transport: BffTransport) {
       if (cursor) query.set("cursor", cursor);
       const suffix = query.size > 0 ? `?${query}` : "";
       return get<AuditEventPage>(`/api/v1/audit/events${suffix}`);
+    },
+
+    /**
+     * 业务操作时间线（.design/14 §7）：scope=mine 为本人发起或实际执行；tenant/workspace
+     * 须对该范围持有 audit permission（无权 403，判定不明 503）。
+     */
+    operations: (scope: "mine" | "tenant" | "workspace", workspaceId?: string, cursor?: string) => {
+      const query = new URLSearchParams({ scope });
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      if (cursor) query.set("cursor", cursor);
+      return get<BusinessOperationPage>(`/api/v1/operations?${query}`);
+    },
+
+    /** Tenant/Workspace 业务聚合；区间 [from, to) 为 RFC3339，需该范围 audit。 */
+    operationSummary: (from: string, to: string, workspaceId?: string) => {
+      const query = new URLSearchParams({ from, to });
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      return get<BusinessOperationSummary>(`/api/v1/operations/summary?${query}`);
+    },
+
+    /** 用量与账单（.design/11 §7）：OpenMeter 事实与 Core 投递事实，需该范围 audit。 */
+    usageBilling: (from: string, to: string, workspaceId?: string) => {
+      const query = new URLSearchParams({ from, to });
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      return get<UsageBillingView>(`/api/v1/usage-billing?${query}`);
     },
 
     /** 单条证据解引用：每次 fresh 授权；不可用时只有原因，没有任何 ref 内容。 */

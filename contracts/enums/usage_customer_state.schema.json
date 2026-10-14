@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/usage_customer_state.schema.json",
+  "title": "UsageCustomerState",
+  "description": "当前 Tenant 的 OpenMeter Customer 映射（DD-38、.design/11 §3）。ACTIVE：Core binding 有效且原生 Customer 读回同 Tenant 且未删除；NOT_PROVISIONED：没有 binding；REVOKED：binding 已撤销；UNAVAILABLE：原生事实不可读或与 binding 不一致，结果不明。",
+  "type": "string",
+  "enum": [
+    "ACTIVE",
+    "NOT_PROVISIONED",
+    "REVOKED",
+    "UNAVAILABLE"
+  ]
+}

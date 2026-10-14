@@ -538,6 +538,20 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/audit/events/{event_id}/evidence/{index}",
             get(crate::audit_views::dereference_evidence),
         )
+        // 业务操作时间线、范围聚合与用量账单（V-REQ-10、.design/14 §7、.design/11 §7）：
+        // 范围视图每次按 audit permission fresh 授权，计量事实直接读 OpenMeter
+        .exposed_route(
+            "/api/v1/operations",
+            get(crate::business_observability::list_operations),
+        )
+        .exposed_route(
+            "/api/v1/operations/summary",
+            get(crate::business_observability::summary),
+        )
+        .exposed_route(
+            "/api/v1/usage-billing",
+            get(crate::business_observability::usage_billing),
+        )
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
         .exposed_route(
             crate::client_keys::REGISTER_PATH,
