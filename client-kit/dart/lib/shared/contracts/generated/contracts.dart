@@ -4876,6 +4876,12 @@ class StepElement {
   ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
   final String? emoji;
   final String id;
+
+  ///固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+  ///字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+  ///CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+  ///ActionExecution；求值错误使该运行在任何副作用前失败。
+  final String? automationStepIf;
   final String? message;
   final String? name;
   final String? text;
@@ -4893,6 +4899,7 @@ class StepElement {
     this.duration,
     this.emoji,
     required this.id,
+    this.automationStepIf,
     this.message,
     this.name,
     this.text,
@@ -4908,6 +4915,7 @@ class StepElement {
     duration: json["duration"],
     emoji: json["emoji"],
     id: json["id"],
+    automationStepIf: json["if"],
     message: json["message"],
     name: json["name"],
     text: json["text"],
@@ -4921,6 +4929,7 @@ class StepElement {
     "duration": duration,
     "emoji": emoji,
     "id": id,
+    "if": automationStepIf,
     "message": message,
     "name": name,
     "text": text,
@@ -16265,6 +16274,12 @@ class AutomationStep {
   ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
   final String? emoji;
   final String id;
+
+  ///固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+  ///字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+  ///CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+  ///ActionExecution；求值错误使该运行在任何副作用前失败。
+  final String? automationStepIf;
   final String? message;
   final String? name;
   final String? text;
@@ -16282,6 +16297,7 @@ class AutomationStep {
     this.duration,
     this.emoji,
     required this.id,
+    this.automationStepIf,
     this.message,
     this.name,
     this.text,
@@ -16297,6 +16313,7 @@ class AutomationStep {
     duration: json["duration"],
     emoji: json["emoji"],
     id: json["id"],
+    automationStepIf: json["if"],
     message: json["message"],
     name: json["name"],
     text: json["text"],
@@ -16310,6 +16327,7 @@ class AutomationStep {
     "duration": duration,
     "emoji": emoji,
     "id": id,
+    "if": automationStepIf,
     "message": message,
     "name": name,
     "text": text,

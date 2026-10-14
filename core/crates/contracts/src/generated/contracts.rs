@@ -1747,6 +1747,14 @@ pub struct StepElement {
 
     pub id: String,
 
+    /// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+    /// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+    /// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+    /// ActionExecution；求值错误使该运行在任何副作用前失败。
+    #[serde(rename = "if")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_step_if: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 
@@ -8135,6 +8143,14 @@ pub struct AutomationStep {
     pub emoji: Option<String>,
 
     pub id: String,
+
+    /// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+    /// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+    /// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+    /// ActionExecution；求值错误使该运行在任何副作用前失败。
+    #[serde(rename = "if")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_step_if: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
