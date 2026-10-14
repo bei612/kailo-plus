@@ -367,6 +367,9 @@ services:
       CLICKHOUSE_PASSWORD_FILE: /run/secrets/openmeter_clickhouse_password
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     secrets: [openmeter_clickhouse_password]
+    configs:
+      - source: openmeter_clickhouse_system_logs
+        target: /etc/clickhouse-server/config.d/kailo-system-logs.xml
     volumes:
       - openmeter-clickhouse-data:/var/lib/clickhouse
       - openmeter-clickhouse-logs:/var/log/clickhouse-server
@@ -1117,6 +1120,17 @@ configs:
             database: ${OPENMETER_SINK_DEDUPE_DATABASE:?必须显式提供，禁止硬编码}
             expiration: "${OPENMETER_DEDUPE_EXPIRATION:?必须显式提供，禁止硬编码}"
             mode: rawkey
+  # 固定镜像默认开启、没有保留期的两张诊断表：2026-10-14 实测 trace_log 23 GiB /
+  # 10 亿行、text_log 7.9 GiB，OpenMeter 事件只有 34 行。它们的后台合并在本服务
+  # 内存预算内反复 MEMORY_LIMIT_EXCEEDED，进程被 OOM kill 后 OpenMeter 的
+  # entitlement 查询失败，agent.invoke 的 Quota CHECK 只能 fail closed。采样
+  # profiler 与服务文本日志的表副本都不是计量权威（文本日志仍写入 logs 卷），故关闭。
+  openmeter_clickhouse_system_logs:
+    content: |
+      <clickhouse>
+        <trace_log remove="1"/>
+        <text_log remove="1"/>
+      </clickhouse>
   spicedb_schema:
     file: ./authorization/schema.zed
   agentgateway_config:
