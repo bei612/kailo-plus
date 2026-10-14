@@ -1148,7 +1148,10 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />
         </>}
   </>;
-  const title = creating ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"
+  // Original WorkflowDialog TITLES for create/duplicate/edit; the remaining
+  // titles name Kailo's governed lifecycle reviews.
+  const title = creating ? edit?.action === "copy" ? "workflows.dialog.duplicate" : "workflows.dialog.create"
+    : edit.action === "publish_version" ? "workflows.dialog.edit"
     : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause"
     : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
