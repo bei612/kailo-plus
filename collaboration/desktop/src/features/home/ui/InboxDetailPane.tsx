@@ -1,4 +1,5 @@
-import { InboxEmptyDetail, InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
+import { InboxEmptyDetail } from "@client-kit/platform/react/inbox-surface";
+import { InboxDetailFrame } from "@client-kit/platform/react/inbox/InboxDetailFrame";
 import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
@@ -118,7 +119,6 @@ function InboxMessageDetailPane({
   const t = useT();
   const locale = useLocale();
   const detailPaneRef = React.useRef<HTMLElement | null>(null);
-  const composerWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const currentHeaderDelete = React.useRef<(() => void) | undefined>(undefined);
   currentHeaderDelete.current = undefined;
   const [replyTargetId, setReplyTargetId] = React.useState<string | null>(null);
@@ -396,24 +396,17 @@ function InboxMessageDetailPane({
   };
 
   return (
-    <section
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60"
-      data-testid="home-inbox-detail"
-      ref={detailPaneRef}
-    >
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InboxDetailHeader key={JSON.stringify([editScopeKey, currentPubkey, sourceEventId])}
-          title={contextLabel} onBack={onBack} openLabel={openContextLabel}
-          fallbackTitle={item.fullTimestampLabel}
-          deletePending={headerDeletePending}
-          onDelete={requestHeaderDelete}
-          onOpen={contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
-
-        <InboxDetailMessages
+    <InboxDetailFrame
+      sectionRef={detailPaneRef}
+      headerKey={JSON.stringify([editScopeKey, currentPubkey, sourceEventId])}
+      header={{ title: contextLabel, onBack, openLabel: openContextLabel,
+        fallbackTitle: item.fullTimestampLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete,
+        onOpen: contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined }}
+      renderMessages={(composerOverlayRef) => <InboxDetailMessages
           conversationId={conversationId} selectedEventId={selectedEventId}
           messages={videoReviewMessages} unreadBoundaryEventId={unreadBoundaryEventId}
           loading={isThreadContextLoading} contextError={hasThreadContextLoadError}
-          composerOverlayRef={composerWrapperRef} onCopy={handleTimelineMentionCopy}
+          composerOverlayRef={composerOverlayRef} onCopy={handleTimelineMentionCopy}
           pending={Boolean(editing || deleteDialog.pending)} unknown={Boolean(unresolved)}
           sending={isSendingReply} unresolvedDeleteId={deleteDialog.unresolvedMessageId}
           canReply={canReply} canManageMessage={canEdit}
@@ -429,34 +422,8 @@ function InboxMessageDetailPane({
             videoReviewCommentRootId={videoReviewPresentation.commentRootIdsByMessageId.get(message.id)}
             videoReviewContext={videoReviewPresentation.contextsByMessageId.get(message.id)}
           />}
-        />
-
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-40 isolate before:absolute before:inset-x-0 before:bottom-0 before:h-12 before:bg-gradient-to-b before:from-transparent before:to-background before:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:h-4 after:bg-background after:content-['']"
-          data-testid="home-inbox-detail-composer-overlay"
-          ref={composerWrapperRef}
-        >
-          <span
-            aria-hidden="true"
-            className="absolute bottom-4 left-4 h-4 w-4 bg-background"
-            style={{
-              maskImage:
-                "radial-gradient(circle at top right, transparent 0 1rem, black calc(1rem + 0.5px))",
-              WebkitMaskImage:
-                "radial-gradient(circle at top right, transparent 0 1rem, black calc(1rem + 0.5px))",
-            }}
-          />
-          <span
-            aria-hidden="true"
-            className="absolute bottom-4 right-4 h-4 w-4 bg-background"
-            style={{
-              maskImage:
-                "radial-gradient(circle at top left, transparent 0 1rem, black calc(1rem + 0.5px))",
-              WebkitMaskImage:
-                "radial-gradient(circle at top left, transparent 0 1rem, black calc(1rem + 0.5px))",
-            }}
-          />
-          <div className="pointer-events-auto">
+        />}
+      composer={<>
             {editTarget&&canEdit(editTarget) ? <MessageComposer key={`edit:${editTarget.id}`}
               channelId={item.item.channelId} channelType={composerChannelType}
               channelName={item.channelLabel ?? t("inbox.channelFallback")} containerClassName="px-4 pb-4 sm:px-4"
@@ -497,10 +464,8 @@ function InboxMessageDetailPane({
               replyTarget={composerReplyTarget}
             />
             </div>
-          </div>
-        </div>
-      </div>
-      {deleteDialog.dialog}
-    </section>
+      </>}
+      dialog={deleteDialog.dialog}
+    />
   );
 }

@@ -1,7 +1,8 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
 import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
-import { InboxDetailHeader, InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
+import { InboxDetailFrame } from "@client-kit/platform/react/inbox/InboxDetailFrame";
 import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
 import { MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
@@ -151,12 +152,9 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   return <BffVideoReviewProvider Composer={Composer} mentionPeople={mentionPeopleFromMembers(members)} principalId={principalId} workspaceId={workspaceId} conversationId={conversation?.id}
     channelName={channelName} channelType={conversation ? "dm" : forum ? "forum" : "stream"} messages={rows}
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
-    <InboxDetailHeader key={JSON.stringify([principalId, ownProfile.data?.pubkey, workspaceId, conversation?.id, anchor])}
-      title={contextLabel} onBack={onBack} onOpen={onOpen} openLabel={openContextLabel}
-      deletePending={headerDeletePending}
-      onDelete={requestHeaderDelete} />
-    <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows}
+    <InboxDetailFrame headerKey={JSON.stringify([principalId, ownProfile.data?.pubkey, workspaceId, conversation?.id, anchor])}
+      header={{title: contextLabel, onBack, onOpen, openLabel: openContextLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete}}
+      renderMessages={composerOverlayRef => <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows} composerOverlayRef={composerOverlayRef}
       unavailable={unavailable} interrupted={interrupted} loading={thread.isPending}
       onRetry={!denied ? () => { void thread.refetch(); } : undefined}
       pending={sending || deleteDialog.pending} unknown={unresolved}
@@ -187,9 +185,10 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
               onEdit={presentation.onEdit} onDelete={presentation.onDelete} onReply={presentation.onReply} /> : undefined}
             renderBody={(className) => <div className={className}><MessageContent messageId={event.id} workspaceId={workspaceId} conversationId={conversation?.id} content={event.content} mediaTags={event.tags} /></div>} />;
       }}
-    />
-    <div className="shrink-0" ref={composerContainer}>
-    {editTarget && canInteract && !unavailable && !interrupted ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+    />}
+      dialog={deleteDialog.dialog}
+      composer={<div ref={composerContainer}>
+    {editTarget && canInteract && !unavailable && !interrupted ? <Composer key={`edit:${editTarget.id}`} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId}
       channelType={conversation ? "dm" : undefined} draftIdentity={principalId} draftChannelId={workspaceId}
       draftKey={`edit:${workspaceId}:${editTarget.id}`} editTarget={editTarget}
       onCancelEdit={!sending && !unresolved ? handleCancelEdit : undefined} onConfirmed={handleCancelEdit}
@@ -221,7 +220,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           throw error;
         }
       }} /> : null}
-    <div hidden={Boolean(editTarget)}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
+    <div hidden={Boolean(editTarget)}><Composer key={replyId ?? "default"} containerClassName="px-4 pb-4 sm:px-4" workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={restoreDraftKey ?? (conversation ? workspaceId : `thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`)} autoSendDraftKey={autoSendDraftKey} disabled={!canReply || Boolean(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
       channelType={conversation ? "dm" : forum ? "forum" : undefined}
       audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
@@ -257,7 +256,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
           if (unknown && !isOutcomeUnknown(error)) throw new TransportError("Inbox reply still has an unresolved intent.");
           throw error;
         }
-      }} /></div></div>
-    {deleteDialog.dialog}
-  </section></BffVideoReviewProvider>;
+      }} /></div></div>} />
+  </BffVideoReviewProvider>;
 }
