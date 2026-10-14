@@ -1,10 +1,49 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/features/projects/ui/ProjectsOverviewPanel.tsx::ProjectsOverviewPanel
-// and ProjectsActivityIntro; wording comes from the shared catalog.
-import type * as React from "react";
+// desktop/src/features/projects/ui/ProjectsOverviewPanel.tsx; wording comes from
+// the shared catalog. The multi-item selection branch (ProjectsSelectionCountMenu
+// with Agent chat / review creation) has no shared consumer, so only the
+// original unselected context pod is rendered.
+import {
+  CheckCircle2,
+  CircleDot,
+  Folders,
+  GitMerge,
+  GitPullRequest,
+  Hash,
+  Plus,
+} from "lucide-react";
+import * as React from "react";
 
 import { useUiT } from "../context";
+import type { UserProfileLookup } from "../messages/system/identity";
+import { Button } from "../profile/buzz/shared/ui/button";
+import type { ProjectActivitySummary } from "./lib/projectActivitySummaries";
 import type { ProjectsActivityDigest } from "./lib/projectsActivityDigest";
+import type { ProjectIssue } from "./projectIssues.mjs";
+import type { Project } from "./projectModels";
+import type { ProjectPullRequest } from "./projectPullRequests.mjs";
+import { ProjectsOverviewPeople } from "./ProjectsOverviewRail";
+import {
+  type OverviewContextAction,
+  type OverviewContextStatIcon,
+  type ProjectsOverviewSection,
+  projectsOverviewContext,
+} from "./projectsOverviewContext";
+import type { ProjectsFilter } from "./ProjectsToolbar";
+
+export type { ProjectsOverviewSection };
+
+const STAT_ICONS: Record<
+  OverviewContextStatIcon,
+  React.ComponentType<{ className?: string }>
+> = {
+  channels: Hash,
+  completed: CheckCircle2,
+  merged: GitMerge,
+  projects: Folders,
+  reviews: GitPullRequest,
+  tasks: CircleDot,
+};
 
 type ProjectsOverviewPanelProps = {
   children: React.ReactNode;
@@ -57,5 +96,153 @@ export function ProjectsActivityIntro({
         {digest.suffix}
       </p>
     </section>
+  );
+}
+
+type ProjectsOverviewContextPanelProps = {
+  filter: ProjectsFilter;
+  issues: ProjectIssue[];
+  onCreateIssue?: () => void;
+  onCreateProject?: () => void;
+  onSelectSection: (section: ProjectsOverviewSection) => void;
+  profiles?: UserProfileLookup;
+  projectReadModels: Project[];
+  projects: Project[];
+  pullRequests: ProjectPullRequest[];
+  summaries?: Record<string, ProjectActivitySummary>;
+};
+
+function OverviewCreateButton({
+  action,
+  onCreateIssue,
+  onCreateProject,
+}: {
+  action: Exclude<OverviewContextAction, null>;
+  onCreateIssue?: () => void;
+  onCreateProject?: () => void;
+}) {
+  const t = useUiT();
+  const actionHandler = action.kind === "issue" ? onCreateIssue : onCreateProject;
+  // A section's create action exists only while its governed writer is available.
+  if (!actionHandler) return null;
+  return (
+    <Button
+      aria-label={t(action.label)}
+      className="h-6 w-6 shrink-0 rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+      data-testid={action.testId}
+      onClick={actionHandler}
+      size="icon"
+      title={t(action.label)}
+      type="button"
+      variant="ghost"
+    >
+      <Plus className="h-4 w-4" />
+    </Button>
+  );
+}
+
+function OverviewStatRow({
+  count,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  count: number;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="-mx-2 flex h-7 w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-muted/70 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground"
+      data-testid="projects-overview-stat"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex min-w-0 items-center gap-3 text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        {label}
+      </span>
+      <span className="font-medium tabular-nums text-muted-foreground/65">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+export function ProjectsOverviewContextPanel({
+  filter,
+  issues,
+  onCreateIssue,
+  onCreateProject,
+  onSelectSection,
+  profiles,
+  projectReadModels,
+  projects,
+  pullRequests,
+  summaries,
+}: ProjectsOverviewContextPanelProps) {
+  const t = useUiT();
+  // Memoized: the rail re-renders with every Projects-view state change, and
+  // the context stats walk every issue and pull request in the community.
+  const context = React.useMemo(
+    () =>
+      projectsOverviewContext({
+        filter,
+        issues,
+        projectReadModels,
+        projects,
+        pullRequests,
+        summaries,
+      }),
+    [filter, issues, projectReadModels, projects, pullRequests, summaries],
+  );
+  return (
+    <div
+      className="min-w-0 overflow-hidden"
+      data-testid="projects-overview-context-panel"
+    >
+      <div className="px-4 pb-3 pt-3">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <h2
+            className="min-w-0 truncate text-sm font-normal text-muted-foreground/70"
+            data-testid="projects-overview-context-title"
+          >
+            {t(context.title)}
+          </h2>
+          {context.action ? (
+            <OverviewCreateButton
+              action={context.action}
+              onCreateIssue={onCreateIssue}
+              onCreateProject={onCreateProject}
+            />
+          ) : null}
+        </div>
+        <div className="space-y-2.5 pt-2">
+          <section
+            className="space-y-2.5 text-sm"
+            data-testid="projects-overview-stats-pod"
+          >
+            {context.stats.map((stat) => (
+              <OverviewStatRow
+                count={stat.count}
+                icon={STAT_ICONS[stat.icon]}
+                key={`${stat.section}:${stat.label}`}
+                label={t(stat.label)}
+                onClick={() => onSelectSection(stat.section)}
+              />
+            ))}
+          </section>
+          {context.people.length > 0 ? (
+            <div className="mt-3 space-y-3 py-3">
+              <ProjectsOverviewPeople
+                people={context.people}
+                profiles={profiles}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }

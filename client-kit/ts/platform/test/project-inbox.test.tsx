@@ -51,6 +51,7 @@ function fixture(){
 }
 afterEach(()=>vi.restoreAllMocks());
 beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   Object.defineProperty(document,"fonts",{configurable:true,value:{ready:Promise.resolve()}});
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();

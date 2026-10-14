@@ -46,6 +46,7 @@ const cards=(ui:HTMLElement)=>[...ui.querySelectorAll('[data-testid="projects-ac
 
 afterEach(()=>vi.restoreAllMocks());
 beforeEach(()=>{localStorage.clear();sessionStorage.clear();
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
@@ -70,6 +71,26 @@ describe("original Projects Activity overview",()=>{
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="Open Original task in Original project"]')!);
     expect(opened).toHaveBeenCalledExactlyOnceWith(`30621:${author}:project`,{repositoryId:`${author}:repo`,issueId:f.issue.id});
     expect(pulse.publish).not.toHaveBeenCalled();expect(f.host.publish).toBeUndefined();cache.clear();
+  });
+  it("restores the original detached context rail that follows the section and opens its stats",async()=>{
+    const f=fixture();const {ui,cache}=await mount(f);
+    const rail=()=>ui.querySelector<HTMLElement>('[data-testid="projects-overview-context-rail"]')!;
+    const stats=()=>[...ui.querySelectorAll('[data-testid="projects-overview-stat"]')].map(node=>node.textContent);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-overview-context-panel"]')).not.toBeNull());
+    expect(ui.querySelector('[data-testid="projects-overview-layout"]')?.getAttribute("data-project-context-detached")).toBe("true");
+    expect(ui.querySelector('[data-testid="projects-overview-content-pod"]')).not.toBeNull();
+    expect(rail().style.width).toBe("288px");
+    expect(ui.querySelector('[data-testid="projects-overview-context-title"]')?.textContent).toBe("Activity");
+    expect(stats()).toEqual(["Projects1","Channels0","Tasks1","Reviews1"]);
+    expect(ui.querySelector('[data-testid="projects-overview-people"]')).not.toBeNull();
+    await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="projects-overview-stat"]')].find(node=>node.textContent==="Tasks1")!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-issues"]')?.getAttribute("aria-pressed")).toBe("true"));
+    expect(ui.querySelector('[data-testid="projects-overview-context-title"]')?.textContent).toBe("Tasks");
+    expect(stats()).toEqual(["Tasks1","Active1","Completed0"]);
+    // No governed task writer in this host: the original create action is absent, not disabled.
+    expect(ui.querySelector('[data-testid="projects-overview-create-issue"]')).toBeNull();
+    expect(ui.querySelector('[data-testid="projects-overview-chat-toggle"]')).toBeNull();
+    cache.clear();
   });
   it("uses this week's original highlights and Chinese catalog wording",async()=>{
     const now=Math.floor(Date.now()/1_000)-120;

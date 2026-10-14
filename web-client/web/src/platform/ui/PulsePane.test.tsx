@@ -101,7 +101,7 @@ it("does not gate the project directory on unrelated own-profile or composer peo
   </TooltipProvider></PlatformProvider></QueryClientProvider>));
   await vi.waitFor(()=>expect(api.queryProjects).toHaveBeenCalled());
   // An empty original directory renders its page-level empty state instead of the section screen.
-  expect(host.querySelector('[data-testid="projects-screen"]')!==null||host.textContent?.includes("No projects yet")).toBe(true);
+  expect(host.querySelector('[data-testid="projects-overview-layout"]')!==null||host.textContent?.includes("No projects yet")).toBe(true);
   expect(api.profile).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
 });
 it("passes only a freshly admitted matching channel descriptor to the Project home host and unloads on live invalidation",async()=>{

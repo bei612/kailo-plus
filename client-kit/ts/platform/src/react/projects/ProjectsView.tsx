@@ -3,7 +3,7 @@
 // reads announcements/work-item targets and uses the governed publication hosts;
 // Git, terminal and unsupported work-item operations retain missing consumers.
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
@@ -50,6 +50,16 @@ import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
 import {projectActivitySummaries} from "./lib/projectActivitySummaries";
 import {projectsSectionIcon,projectsSectionTitleKey} from "./projectsSectionMeta";
 import {useNow} from "../useNow";
+import {cn} from "../profile/buzz/shared/lib/cn";
+import {topChromeInset} from "../messages/chromeLayout";
+import {useOptionalSidebar} from "../sidebar/sidebar";
+import {useMediaBreakpoint} from "../sidebar/use-mobile";
+import {ProjectContextRail} from "./ProjectContextRail";
+import {ProjectsWorkspaceChrome} from "./ProjectDetailChrome";
+import {ProjectsOverviewChromeActions,ProjectsOverviewContextSheet,ProjectsOverviewNarrowContextToggle} from "./ProjectsOverviewChromeActions";
+import {ProjectsOverviewContextPanel,type ProjectsOverviewSection} from "./ProjectsOverviewPanel";
+import {projectsOverviewContext} from "./projectsOverviewContext";
+import {useProjectsScrollIndicator} from "./useProjectsScrollIndicator";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
   onDiscussInChannel?:ProjectDiscussInChannel;
@@ -181,13 +191,11 @@ function ProjectWorkItemDetail({workItem,host,onOpen,onDiscussInChannel}:{workIt
     contextPanel={onDiscussInChannel?{channelId,onDiscussInChannel}:undefined}/>;
 }
 
-function ProjectWorkItemsList({host,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
-  const t=useUiT();const cache=useQueryClient();
+function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;query:ProjectWorkItemsQuery;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
+  const t=useUiT();
   const [navigationFailed,setNavigationFailed]=useState(false);
   const lifetime=useMemo(()=>({active:true}),[host]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
-  const query=useQuery({queryKey:["projects-work-items",host.scopeKey],queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
-  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects-work-items",host.scopeKey]});cache.removeQueries({queryKey:["projects-work-items",host.scopeKey]});},[cache,host.scopeKey]);
   // A stale cache or failed section never becomes an accessible/empty list.
   const items=query.isSuccess&&!query.isFetching?query.data.items:[];
   const visible=items.filter(item=>{
@@ -221,17 +229,25 @@ function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:Projec
     <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>;
 }
 
+type ProjectWorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
+type ProjectWorkItemsQuery=UseQueryResult<ProjectWorkItemsSnapshot>;
+
+// Original ProjectsView constants.
+const PROJECTS_CONTEXT_POD_MIN_VIEWPORT_PX=1024;
+// desktop/src/features/projects/ui/useProjectPanelWidths.ts::PROJECT_CONTEXT_PANEL_DEFAULT_WIDTH_PX
+const PROJECT_CONTEXT_PANEL_DEFAULT_WIDTH_PX=280;
+// desktop/src/features/projects/ui/projectPanelStyles.ts::PROJECT_COLUMN_HEADER_BACKDROP_CLASS
+const PROJECT_COLUMN_HEADER_BACKDROP_CLASS="bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/70 dark:bg-background/70 dark:backdrop-blur-xl dark:supports-backdrop-filter:bg-background/55";
+
 // Original ProjectsView filter "all": ProjectsOverviewPanel > ProjectsActivityIntro
 // + ProjectsWorkItemsLoadNotice + ProjectsActivityFeed, over the same work-item
 // read and cache key as the Tasks/Reviews sections.
-function ProjectsActivityOverview({host,search,onOpenProject,onOpen,renderWorkItems}:{host:ProjectsHost;search:string;onOpenProject:(project:Project)=>void;
+function ProjectsActivityOverview({host,query,search,onOpenProject,onOpen,renderWorkItems}:{host:ProjectsHost;query:ProjectWorkItemsQuery;search:string;onOpenProject:(project:Project)=>void;
   onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
-  const t=useUiT();const cache=useQueryClient();
+  const t=useUiT();
   const [navigationFailed,setNavigationFailed]=useState(false);
   const lifetime=useMemo(()=>({active:true}),[host]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
-  const query=useQuery({queryKey:["projects-work-items",host.scopeKey],queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
-  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects-work-items",host.scopeKey]});cache.removeQueries({queryKey:["projects-work-items",host.scopeKey]});},[cache,host.scopeKey]);
   const open=(project:Project,target:ProjectWorkItemTarget)=>{
     void Promise.resolve().then(()=>{if(lifetime.active)return onOpen(project.id,target);})
       .catch(()=>{if(lifetime.active)setNavigationFailed(true);});
@@ -249,7 +265,7 @@ function ProjectsActivityOverview({host,search,onOpenProject,onOpen,renderWorkIt
   </>;
 }
 
-function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:Awaited<ReturnType<typeof loadProjectWorkItems>>;search:string;
+function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:ProjectWorkItemsSnapshot;search:string;
   onOpenProject:(project:Project)=>void;onOpen:(project:Project,target:ProjectWorkItemTarget)=>void}) {
   const t=useUiT();
   // Original overview counts only explicit projects; standalone repositories
@@ -273,6 +289,20 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:A
   </>;
 }
 
+// Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
+// over the same directory and work-item reads; profiles come from the work-item host.
+function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
+  projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreateProject?:()=>void}) {
+  const projects=useMemo(()=>snapshot.projects.filter(project=>!project.legacy),[snapshot]);
+  const issues=useMemo(()=>snapshot.items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[snapshot]);
+  const pullRequests=useMemo(()=>snapshot.items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[snapshot]);
+  const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
+  const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,summaries]);
+  const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
+  return <ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
+    summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/>;
+}
+
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
@@ -286,13 +316,25 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   // not a new user preference: keep the original stored sort for work items.
   const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"?"created":sort;
   const [createOpen,setCreateOpen]=useState(false);
+  const [createIssueOpen,setCreateIssueOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
   const creation=useCreateProject(host);
+  const sidebar=useOptionalSidebar();
+  const {handleContentScroll,scrollIndicatorRef}=useProjectsScrollIndicator();
+  const [overviewPanelOpen,setOverviewPanelOpen]=useState(true);
+  const [narrowContextOpen,setNarrowContextOpen]=useState(false);
+  const contextToggleRef=useRef<HTMLButtonElement|null>(null);
+  const isNarrowProjectsLayout=useMediaBreakpoint(PROJECTS_CONTEXT_POD_MIN_VIEWPORT_PX);
   const lifetime=useMemo(()=>({active:true}),[host]);
   useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
   const [localSelected,setLocalSelected]=useState<string|null>(null);
   const selected=selectedProjectId===undefined?localSelected:selectedProjectId;
   const setSelected=async(id:string|null)=>{if(!lifetime.active)return;await onSelectedProjectChange?.(id);if(lifetime.active)setLocalSelected(id);};
+  // One work-item read feeds Activity, Tasks, Reviews and the context rail;
+  // an open project home owns its own scoped read.
+  const workItems=useQuery({queryKey:["projects-work-items",host.scopeKey],enabled:Boolean(onSelectedProjectChange)&&!selected,
+    queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
+  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects-work-items",host.scopeKey]});cache.removeQueries({queryKey:["projects-work-items",host.scopeKey]});},[cache,host.scopeKey]);
   const query=useQuery({queryKey:["projects",host.scopeKey],queryFn:({signal})=>loadProjectDirectory(host,signal),retry:false,refetchOnWindowFocus:"always"});
   const createCapability=useQuery({queryKey:["project-create-capability",host.scopeKey],queryFn:()=>client.roleWorkspaces(),
     enabled:Boolean(host.publish)&&query.isSuccess&&!query.isFetching,retry:false,refetchOnWindowFocus:"always"});
@@ -353,26 +395,75 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     <EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>
     {createDialog}
   </>;
-  return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
-      <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4" data-testid="projects-page-tabs">
-        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
-          sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
+  const workSnapshot=workItems.isSuccess&&!workItems.isFetching?workItems.data:undefined;
+  const contextAvailable=Boolean(onSelectedProjectChange);
+  const explicitProjects=workSnapshot?workSnapshot.projects.filter(project=>!project.legacy):[];
+  const selectSection=(section:ProjectsOverviewSection)=>changeFilter(section);
+  const railContent=workSnapshot&&query.isSuccess&&!query.isFetching?<ProjectsOverviewContextRailContent snapshot={workSnapshot} projectReadModels={projects} filter={filter}
+    onSelectSection={section=>{selectSection(section);if(isNarrowProjectsLayout)setNarrowContextOpen(false);}}
+    onCreateIssue={host.publish&&explicitProjects.length>0?()=>setCreateIssueOpen(true):undefined}
+    onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:null;
+  const rail=railContent&&workSnapshot?renderWorkItems?renderWorkItems(railContent,workSnapshot.viewerPubkey):railContent:null;
+  const overviewContextOpen=contextAvailable&&overviewPanelOpen&&!isNarrowProjectsLayout;
+  const overviewDetached=overviewContextOpen;
+  const chromeActions=!contextAvailable?null:isNarrowProjectsLayout?
+    <ProjectsOverviewNarrowContextToggle onToggle={()=>setNarrowContextOpen(open=>!open)} open={narrowContextOpen} ref={contextToggleRef}/>:
+    <ProjectsOverviewChromeActions contextOpen={overviewPanelOpen} onToggleContext={()=>setOverviewPanelOpen(open=>!open)}/>;
+  return <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",!isNarrowProjectsLayout&&"bg-sidebar pb-2 pr-2 pt-px",
+      !isNarrowProjectsLayout&&sidebar?.open===false&&"pl-2")}
+    data-project-context-detached={isNarrowProjectsLayout?undefined:"true"} data-testid="projects-overview-layout">
+    <ProjectsWorkspaceChrome actions={chromeActions} onActivity={filter==="all"} onGoActivity={contextAvailable?()=>changeFilter("all"):undefined}
+      section={t(projectsSectionTitleKey(filter))}/>
+    <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",!isNarrowProjectsLayout?"ml-px rounded-2xl bg-background":cn("rounded-tl-xl",topChromeInset.divider))}
+      data-testid={overviewDetached?"projects-overview-content-pod":undefined}>
+      {createDialog}
+      {host.publish&&onSelectedProjectChange&&explicitProjects.length>0?<CreateProjectIssueDialog host={host} projects={explicitProjects} open={createIssueOpen} onOpenChange={setCreateIssueOpen}
+        onCreated={(project,repository,issueId)=>onSelectedProjectChange(project.id,{repositoryId:repository.id,issueId})}/>:null}
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="relative min-h-0 min-w-0 flex-1">
+          <div aria-hidden="true" className="pointer-events-none absolute right-[3px] top-0 z-50 w-1 rounded-full bg-border/80 opacity-0 transition-opacity duration-200" ref={scrollIndicatorRef}/>
+          <div className="buzz-content-scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-scroll" onScroll={handleContentScroll}>
+            <div className="px-4 pb-4">
+              <div className="w-full space-y-3">
+                <div className={cn("sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 px-4",PROJECT_COLUMN_HEADER_BACKDROP_CLASS,overviewDetached&&"rounded-t-2xl")} data-testid="projects-page-tabs">
+                  <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
+                    sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={contextAvailable}/>
+                </div>
+                {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
+                <div className={filter==="all"?"mx-auto w-full max-w-6xl":"w-full"}>
+                  {filter==="all"&&onSelectedProjectChange?
+                    <ProjectsActivityOverview key={host.scopeKey} host={host} query={workItems} search={search} onOpenProject={onOpen} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:<>
+                    <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={projectsSectionIcon(filter)} testId="projects-page-header"
+                      title={t(projectsSectionTitleKey(filter))}
+                      trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>
+                    <section><div className="space-y-3">
+                      {(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} query={workItems} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
+                        <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
+                          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
+                        <EmptyFilteredState/>:
+                        <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
+                          {visible.map(projectRow)}
+                        </section>}
+                    </div></section>
+                  </>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      {filter==="all"?null:<ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={projectsSectionIcon(filter)} testId="projects-page-header"
-        title={t(projectsSectionTitleKey(filter))}
-        trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>}
-      {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
-      {filter==="all"&&onSelectedProjectChange?<div className="mx-auto w-full max-w-6xl">
-        <ProjectsActivityOverview key={host.scopeKey} host={host} search={search} onOpenProject={onOpen} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>
-      </div>:(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
-        <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
-          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
-        <EmptyFilteredState/>:
-        <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
-          {visible.map(projectRow)}
-        </section>}
     </div>
-    {createDialog}
+    {contextAvailable?<ProjectContextRail open={overviewContextOpen} panelWidthPx={PROJECT_CONTEXT_PANEL_DEFAULT_WIDTH_PX} rounded={false} testId="projects-overview-context-rail">
+      <aside aria-label={t("projects.context.title")} className="relative z-30 flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+        <div className="min-h-0 flex-1 overflow-y-auto">{overviewContextOpen?rail:null}</div>
+      </aside>
+    </ProjectContextRail>:null}
+    {contextAvailable&&isNarrowProjectsLayout?<ProjectsOverviewContextSheet onOpenChange={setNarrowContextOpen} open={narrowContextOpen}
+      onCloseAutoFocus={event=>{
+        // Return focus to the chrome toggle so the keyboard journey can
+        // continue where it started.
+        event.preventDefault();
+        contextToggleRef.current?.focus();
+      }}>{rail}</ProjectsOverviewContextSheet>:null}
   </div>;
 }
