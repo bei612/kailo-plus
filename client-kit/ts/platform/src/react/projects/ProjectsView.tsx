@@ -431,6 +431,12 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
         try{await setSelected(project.id);if(lifetime.active)setNavigationFailed(null);}
         catch{if(lifetime.active)setNavigationFailed("created");}
       }}/>;
+  // Original ProjectsView: a failed directory read is a page-level error with
+  // Retry (Kailo wording keeps the unknown outcome), not an empty section.
+  if(query.isError&&!query.isFetching)return <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+    <p className="text-sm text-red-400" role="alert">{t("platform.loadFailed")}</p>
+    <Button onClick={()=>{void query.refetch();}} size="sm" variant="outline">{t("projects.list.retry")}</Button>
+  </div>;
   // Original ProjectsView: an empty directory is the page-level EmptyState,
   // without section tabs.
   if(query.isSuccess&&!query.isFetching&&projects.length===0)return <>

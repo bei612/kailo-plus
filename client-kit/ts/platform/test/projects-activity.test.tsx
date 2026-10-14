@@ -56,7 +56,7 @@ describe("original Projects Activity overview",()=>{
     const f=fixture();const {ui,opened,pulse,cache}=await mount(f);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-activity-timeline"]')).not.toBeNull());
     expect(ui.querySelector('[data-testid="projects-section-all"]')?.getAttribute("aria-pressed")).toBe("true");
-    expect([...ui.querySelectorAll('[data-testid^="projects-section-"]')].map(node=>node.textContent)).toEqual(["Activity","Projects","Tasks","Reviews"]);
+    expect([...ui.querySelectorAll('[data-testid^="projects-section-"]')].map(node=>node.getAttribute("aria-label"))).toEqual(["Activity","Projects","Tasks","Reviews"]);
     expect(ui.querySelector('[data-testid="projects-page-header"]')?.textContent).toBe("Projects Activity");
     expect(ui.querySelector('[data-testid="projects-activity-summary"]')?.textContent).toBe("Currently tracking 1 project, 1 task, and 1 review.");
     expect([...ui.querySelectorAll('[data-testid="projects-activity-group"] h3')].map(node=>node.textContent)).toEqual(["Earlier"]);
@@ -96,7 +96,7 @@ describe("original Projects Activity overview",()=>{
     const now=Math.floor(Date.now()/1_000)-120;
     const f=fixture(now);const {ui,cache}=await mount(f,"zh-CN");
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-activity-timeline"]')).not.toBeNull());
-    expect(ui.querySelector('[data-testid="projects-section-all"]')?.textContent).toBe("动态");
+    expect(ui.querySelector('[data-testid="projects-section-all"]')?.getAttribute("aria-label")).toBe("动态");
     expect(ui.querySelector('[data-testid="projects-page-header"]')?.textContent).toBe("项目动态");
     expect(ui.querySelector('[data-testid="projects-activity-summary"]')?.textContent).toBe("本周： 新开 1 个任务、新开 1 个审阅，以及1 个活跃项目。");
     expect([...ui.querySelectorAll('[data-testid="projects-activity-group"] h3')].map(node=>node.textContent)).toEqual(["本周","更早"]);

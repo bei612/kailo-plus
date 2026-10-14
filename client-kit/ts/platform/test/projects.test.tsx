@@ -339,14 +339,18 @@ describe("original Projects directory management consumers",()=>{
     expect(card.querySelector("span.rounded-full")?.textContent).toBe(locale==="en"?"Unlisted":"未公开列出");
     expect(card.textContent).toContain(locale==="en"?"1 repository":"1 个仓库");
     await click(ui.querySelector<HTMLButtonElement>(`[aria-label="${locale==="en"?"List layout":"列表布局"}"]`)!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-row-original"] [data-testid="projects-row-people"]')).not.toBeNull());
     const row=ui.querySelector('[data-testid="project-row-original"]')!;
     expect(row.querySelector("span.rounded-full")?.textContent).toBe(locale==="en"?"Unlisted":"未公开列出");
     expect(row.querySelector('[data-testid="projects-row-date"]')?.getAttribute("title")).toBe(new Date(source.created_at*1000).toLocaleString());
     expect(row.querySelector('[data-testid="projects-row-date"]')?.textContent).toBe(locale==="en"?"1 minute ago":"1 分钟前");
     expect(row.querySelector('[data-testid="projects-row-context"]')?.getAttribute("title")).toBe(locale==="en"?"1 repository":"1 个仓库");
-    expect(row.tagName).toBe("BUTTON");
+    // The original people facepile from the completed work-item read turns the
+    // row into the overlay form; its full-row open control is the first child.
+    expect(row.tagName).toBe("DIV");
+    expect(row.querySelector('[data-testid="projects-row-people"]')).not.toBeNull();
     onSelectedProjectChange.mockClear();
-    await click(row as HTMLButtonElement);
+    await click(row.querySelector<HTMLButtonElement>(":scope > button")!);
     expect(onSelectedProjectChange).toHaveBeenCalledOnce();
     expect(onSelectedProjectChange).toHaveBeenCalledWith(`30621:${owner}:original`);
     expect(ui.querySelector("aside")).toBeNull();
@@ -617,8 +621,9 @@ describe("original Projects announcements",()=>{
     setLocale("zh-CN");const cache=new QueryClient();
     const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><ProjectsView host={host([])}/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.textContent).toContain("暂无项目"));
-    expect(ui.querySelector('button[aria-label="网格布局"]')).not.toBeNull();
-    expect(ui.textContent).not.toMatch(/Create project|Delete project|terminal/);
+    // Original empty directory: page-level empty state without section tabs.
+    expect(ui.querySelector('[data-testid="projects-page-tabs"]')).toBeNull();
+    expect(ui.textContent).not.toMatch(/Create project|Delete project|terminal|创建项目/);
   });
   it("retains the original project deletion dialog and clears only after its accepted tombstone is read back",async()=>{
     const source=project("Owned", "c".repeat(64));const model=buildProjectReadModels({projectEvents:[source],repositoryEvents:[]})[0]!;
