@@ -57,6 +57,7 @@ import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import { reactionConditionValue } from "./workflow-reaction-condition";
 import { getWorkflowActivationWarning } from "./workflow-activation-warning";
 import { WorkflowActivationDialog } from "./workflow-activation-dialog";
+import { useWorkflowTriggerPresentation } from "./workflow-trigger-presentation";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./workflow-author-directory";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
@@ -908,6 +909,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
+  const triggerPresentation = useWorkflowTriggerPresentation(formContent, workspaceId);
   const yamlContent = editorMode === "yaml" ? automationFromYaml(yamlText) : null;
   const nameDocument = editorMode === "yaml" ? parseDocument(yamlText) : null;
   const yamlName = nameDocument?.get("name");
@@ -1230,6 +1232,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           </select>
         </label>
         <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
+          triggerPresentation={triggerPresentation}
           action={actionKind === ActionKind.AgentTurn ? {kind: ActionKind.AgentTurn, template} : undefined}
           actionFields={actionKind === ActionKind.AgentTurn ? <div className="space-y-1.5">
             <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${formId}-agent-template`}>{t("agents.automation.template")}</label>

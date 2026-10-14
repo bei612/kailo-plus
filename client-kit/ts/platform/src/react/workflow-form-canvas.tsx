@@ -13,6 +13,7 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { nextStepId, WorkflowStepCard, type WorkflowStepDraft } from "./workflow-steps";
+import { WorkflowRichTriggerDescription, type WorkflowTriggerNodePresentation } from "./workflow-trigger-presentation";
 
 type Pane = { type: "trigger" } | { type: "step"; stepId: string } | { type: "action" } | null;
 type DraftAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
@@ -58,7 +59,7 @@ function workflowStepDescription(step: AutomationStep, actionLabel: string, t: T
 }
 
 function WorkflowNode({ description, label, disabled, icon, title, number, showTitle = true, subtitle, selected, terminal, onSelect, onRemove, actions, onAddAfter }: {
-  description: string; label: string; disabled?: boolean; icon?: ReactNode; title: string; number?: number;
+  description: ReactNode; label: string; disabled?: boolean; icon?: ReactNode; title: string; number?: number;
   showTitle?: boolean; subtitle?: string;
   selected: boolean; terminal: boolean; onSelect: () => void; onRemove?: () => void;
   actions: DraftAction[]; onAddAfter: (action: DraftAction) => void;
@@ -112,8 +113,10 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   steps: WorkflowStepDraft[]; onStepsChange: (steps: WorkflowStepDraft[]) => void;
   action?: NonNullable<AutomationVersionContent["action"]>; actionFields?: ReactNode;
   trigger: AutomationTriggerKind; triggerFields: ReactNode; scopeField?: ReactNode;
+  /** Original useWorkflowTriggerPresentation for the trigger node. */
+  triggerPresentation?: WorkflowTriggerNodePresentation;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
-}>(function WorkflowFormCanvas({ steps, onStepsChange, action, actionFields, trigger, triggerFields, scopeField, policies, disabled }, ref) {
+}>(function WorkflowFormCanvas({ steps, onStepsChange, action, actionFields, trigger, triggerFields, triggerPresentation, scopeField, policies, disabled }, ref) {
   const t = useT();
   const [pane, setPane] = useState<Pane>(null);
   const [selectionDirection, setSelectionDirection] = useState<1 | -1>(1);
@@ -211,8 +214,11 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5"><div className="mx-auto w-full max-w-sm">
         {scopeField ? <div className="mb-3">{scopeField}</div> : null}
         <ol aria-label={t("workflows.sequence")}>
-          <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} label={`${t("agents.automation.trigger")}: ${triggerLabel}`} disabled={disabled}
-            icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" />
+          <WorkflowNode title={t("agents.automation.trigger")}
+            description={triggerPresentation ? <WorkflowRichTriggerDescription {...triggerPresentation} /> : triggerLabel}
+            label={`${t("agents.automation.trigger")}: ${triggerPresentation?.description ?? triggerLabel}`} disabled={disabled}
+            icon={triggerPresentation?.iconEmoji ? <ActionEmoji value={triggerPresentation.iconEmoji} />
+              : trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" />
               : trigger === AutomationTriggerKind.DiffPosted ? <GitPullRequest className="h-4 w-4" />
               : trigger === AutomationTriggerKind.ReactionAdded ? <SmilePlus className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             selected={selectedNode?.type === "trigger"} terminal={!action && steps.length === 0} onSelect={() => selectNode({type: "trigger"})}

@@ -35,6 +35,7 @@ import {
   TasksPage,
 } from "@client-kit/platform/react/governance";
 import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigationState } from "@client-kit/platform/react/workflows";
+import { webWorkflowMessageHost } from "./workflowMessageHost";
 import { useBlocker } from "@tanstack/react-router";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
 import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
@@ -465,7 +466,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
     ) : tab === "workflows" ? (
-      <WorkflowsPage workspaceId={chosen ?? active ?? undefined}
+      <WorkflowsPage workspaceId={chosen ?? active ?? undefined} messageHost={webWorkflowMessageHost}
         workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("workflows", workspaceId); }} />
     ) : tab === "tasks" ? (

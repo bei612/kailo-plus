@@ -3740,7 +3740,8 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalTint)).toHaveLength(2);
         text = text.replace(originalTint, "active");
       }
-      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx" || source.name === "workflow-delete-dialog.tsx") {
+      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx" || source.name === "workflow-delete-dialog.tsx"
+        || source.name === "workflow-activation-dialog.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
         // This exact modal backdrop is original; other literal colours remain

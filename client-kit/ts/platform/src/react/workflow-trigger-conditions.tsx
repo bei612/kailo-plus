@@ -9,6 +9,9 @@ import { UserAvatar } from "./messages/UserAvatar";
 import { Tabs, TabsList, TabsTrigger } from "./profile/buzz/shared/ui/tabs";
 import { WorkflowAuthorPicker } from "./workflow-author-picker";
 import { WorkflowEmojiField } from "./workflow-emoji-field";
+import { useWorkflowTriggerMessage, WorkflowMessagePicker } from "./workflow-message-picker";
+import { useWorkflowMessageScope } from "./workflow-message-host";
+import { normalizeMessageEventId } from "./workflow-message-candidates";
 import {
   buildConditionExpressions,
   conditionFieldsForTrigger,
@@ -176,7 +179,13 @@ export function WorkflowTriggerConditions({
   const authorKey = parseDirectAuthorInput(authorCondition?.value ?? "");
   const authorProfile = useWorkflowAuthorProfiles(workflowChannelId ?? undefined, authorKey ? [authorKey] : [], directory);
   const candidate = directory.rows.find((row) => row.pubkey === authorKey);
+  const messageScope = useWorkflowMessageScope(workflowChannelId);
+  const messageCondition = conditions.find((condition) => condition.field === "trigger_message_id");
+  const messageId = messageCondition ? normalizeMessageEventId(messageCondition.value) : null;
+  const message = useWorkflowTriggerMessage(messageId, messageScope.scope);
   const triggerPresentation = {
+    messageId,
+    messageLabel: message.messageLabel,
     pubkey: authorKey,
     label: authorKey ? resolveUserLabel({pubkey: authorKey, fallbackName: candidate?.displayName, profiles: authorProfile.profiles, t}) : null,
     avatarUrl: authorKey ? authorProfile.profiles[authorKey]?.avatarUrl ?? null : null,
@@ -296,6 +305,15 @@ export function WorkflowTriggerConditions({
               triggerPresentation.label
                 ? triggerPresentation.label
                 : null;
+            const messageSummary =
+              existing &&
+              field.value === "trigger_message_id" &&
+              triggerPresentation.messageId &&
+              triggerPresentation.messageLabel
+                ? triggerPresentation.messageLabel
+                    .trim()
+                    .replaceAll(/\s+/g, " ")
+                : null;
             return (
               <div
                 className={cn(
@@ -331,6 +349,15 @@ export function WorkflowTriggerConditions({
                       isAgent={triggerPresentation.isAgent}
                       label={authorSummary}
                     />
+                  ) : messageSummary ? (
+                    <span
+                      className={cn(
+                        "max-w-44 truncate text-xs text-muted-foreground",
+                        condition.operator === "not_equals" && "line-through",
+                      )}
+                    >
+                      “{messageSummary}”
+                    </span>
                   ) : existing &&
                     field.value === "trigger_emoji" &&
                     condition.value.trim() ? (
@@ -432,6 +459,30 @@ export function WorkflowTriggerConditions({
                                   ),
                             )
                           }
+                          value={condition.value}
+                        />
+                      ) : field.value === "trigger_message_id" ? (
+                        <WorkflowMessagePicker
+                          directory={directory}
+                          disabled={disabled}
+                          id="wf-trigger-message-id-value"
+                          key={messageScope.scope?.channelId ?? "unscoped"}
+                          onEscape={() => collapsePicker(field.value)}
+                          onChange={(messageId) =>
+                            updateConditions(
+                              messageId
+                                ? [
+                                    ...conditions.filter(
+                                      (item) => item.field !== field.value,
+                                    ),
+                                    { ...condition, value: messageId },
+                                  ]
+                                : conditions.filter(
+                                    (item) => item.field !== field.value,
+                                  ),
+                            )
+                          }
+                          scope={messageScope.scope}
                           value={condition.value}
                         />
                       ) : (

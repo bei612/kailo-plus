@@ -23,6 +23,7 @@ import { useNativeSession } from "@/features/platform/activeCommunity";
 import { PulseScreen } from "@/features/platform/PulseScreen";
 import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
 import { AgentDefinitionsPane } from "@/features/platform/AgentDefinitionsPane";
+import { desktopWorkflowMessageHost } from "@/features/platform/workflowMessageHost";
 
 export const Route = createFileRoute("/platform/$section")({
   validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string;repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string } => ({
@@ -94,7 +95,8 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
         <WorkspaceMembersPage renderIdentity={(pubkey,children,label)=><UserProfilePopover pubkey={pubkey}
           triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
       ) : section === "workflows" ? (
-        <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} workflowNavigation={workflowNavigation} />
+        <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} workflowNavigation={workflowNavigation}
+          messageHost={desktopWorkflowMessageHost} />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (
