@@ -473,7 +473,11 @@ fn member_removal_permissions_preserve_true_false_and_legacy_absence() {
     for permission in [Some(true), Some(false), None] {
         let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let row = value["members"][0].as_object_mut().unwrap();
-        for key in ["canRemoveFromWorkspace", "canAddToWorkspace", "canRemoveFromTenant"] {
+        for key in [
+            "canRemoveFromWorkspace",
+            "canAddToWorkspace",
+            "canRemoveFromTenant",
+        ] {
             if let Some(permission) = permission {
                 row.insert(key.into(), permission.into());
             } else {
